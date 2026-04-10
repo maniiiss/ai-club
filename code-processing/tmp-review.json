@@ -1,0 +1,19 @@
+{
+  "provider": "OPENAI",
+  "apiBaseUrl": "https://api.minimaxi.com/v1",
+  "apiKey": "__MODEL_KEY__",
+  "model": "MiniMax-M2.7",
+  "prompt": "你是一个严格的代码审查助手。请只返回 JSON。",
+  "mergeRequestTitle": "Agent Test",
+  "mergeRequestDescription": "测试代码审查",
+  "changes": [
+    {
+      "oldPath": "sample.txt",
+      "newPath": "sample.txt",
+      "diff": "@@ -1 +1 @@\n-console.log('old')\n+console.log('new')",
+      "newFile": false,
+      "deletedFile": false,
+      "renamedFile": false
+    }
+  ]
+}

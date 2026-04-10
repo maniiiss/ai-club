@@ -1,0 +1,73 @@
+package com.aiclub.platform.dto;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+public record TaskSummary(
+        Long id,
+        /**
+         * 工作项编号，由系统自动生成。
+         */
+        String workItemCode,
+        String name,
+        String workItemType,
+        Long creatorUserId,
+        /**
+         * 创建人展示名称。
+         */
+        String creatorName,
+        String status,
+        String priority,
+        String assignee,
+        Long assigneeUserId,
+        List<Long> collaboratorUserIds,
+        List<String> collaboratorNames,
+        /**
+         * 工作项计划开始日期。
+         */
+        String planStartDate,
+        /**
+         * 工作项计划结束日期。
+         */
+        String planEndDate,
+        String updatedAt,
+        String description,
+        /**
+         * 需求模板 Markdown 文档。
+         */
+        String requirementMarkdown,
+        /**
+         * 原型链接。
+         */
+        String prototypeUrl,
+        /**
+         * 当前需求是否已开发通过。
+         */
+        boolean devPassed,
+        /**
+         * 当前需求是否已测试通过。
+         */
+        boolean testPassed,
+        /**
+         * 关联需求是否已开发通过。
+         */
+        Boolean requirementDevPassed,
+        /**
+         * 关联需求是否已测试通过。
+         */
+        Boolean requirementTestPassed,
+        /**
+         * 任务工时，单位为小时。
+         */
+        BigDecimal workHours,
+        Long projectId,
+        String projectName,
+        Long agentId,
+        String agentName,
+        Long iterationId,
+        String iterationName,
+        Long requirementTaskId,
+        String requirementTaskName,
+        boolean canDelete
+) {
+}

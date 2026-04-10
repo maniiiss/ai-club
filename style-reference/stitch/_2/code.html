@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-tertiary-fixed": "#001e2e",
+                    "on-tertiary-container": "#004360",
+                    "on-tertiary": "#ffffff",
+                    "on-secondary": "#ffffff",
+                    "on-primary-fixed": "#2f1500",
+                    "background": "#f8f9fa",
+                    "surface-container-highest": "#e1e3e4",
+                    "surface-container-lowest": "#ffffff",
+                    "secondary": "#865224",
+                    "on-surface": "#191c1d",
+                    "tertiary": "#00658f",
+                    "inverse-on-surface": "#f0f1f2",
+                    "surface-variant": "#e1e3e4",
+                    "on-secondary-container": "#78471a",
+                    "primary-fixed-dim": "#ffb77d",
+                    "on-primary": "#ffffff",
+                    "on-primary-container": "#623200",
+                    "primary-container": "#ff8c00",
+                    "secondary-container": "#fdb881",
+                    "on-error-container": "#93000a",
+                    "inverse-primary": "#ffb77d",
+                    "surface-container-high": "#e7e8e9",
+                    "surface-dim": "#d9dadb",
+                    "secondary-fixed-dim": "#fdb881",
+                    "surface-container-low": "#f3f4f5",
+                    "secondary-fixed": "#ffdcc3",
+                    "on-secondary-fixed": "#2f1500",
+                    "on-background": "#191c1d",
+                    "outline-variant": "#ddc1ae",
+                    "surface-tint": "#904d00",
+                    "surface-bright": "#f8f9fa",
+                    "tertiary-fixed-dim": "#85cfff",
+                    "on-surface-variant": "#564334",
+                    "primary-fixed": "#ffdcc3",
+                    "surface-container": "#edeeef",
+                    "on-tertiary-fixed-variant": "#004c6c",
+                    "tertiary-container": "#00b5fc",
+                    "on-secondary-fixed-variant": "#6a3b0f",
+                    "primary": "#904d00",
+                    "error-container": "#ffdad6",
+                    "surface": "#f8f9fa",
+                    "inverse-surface": "#2e3132",
+                    "on-error": "#ffffff",
+                    "tertiary-fixed": "#c7e7ff",
+                    "outline": "#897362",
+                    "error": "#ba1a1a",
+                    "on-primary-fixed-variant": "#6e3900"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "fontFamily": {
+                    "headline": ["Manrope"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+            font-size: 1.25rem;
+        }
+        .tonal-layering-no-borders {
+            border: none !important;
+        }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e1e3e4; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #ddc1ae; }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface selection:bg-primary-fixed">
+<aside class="fixed left-0 top-0 h-full z-40 bg-slate-100 dark:bg-slate-900 h-screen w-20 flex flex-col items-center py-6 border-r-0 tonal-layering-no-borders flat-no-shadows font-['Manrope'] font-medium text-sm tracking-tight">
+<div class="mb-10 text-xl font-bold text-slate-900 dark:text-white tracking-tighter">
+            Atelier
+        </div>
+<nav class="flex-1 flex flex-col gap-6">
+<button class="relative text-slate-900 dark:text-white before:absolute before:left-[-24px] before:w-1 before:h-8 before:bg-orange-500 flex items-center justify-center w-full group scale-95 active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+</button>
+<button class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-center w-full group scale-95 active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="smart_toy">smart_toy</span>
+</button>
+<button class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-center w-full group scale-95 active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+</button>
+<button class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-center w-full group scale-95 active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="rocket_launch">rocket_launch</span>
+</button>
+<button class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors flex items-center justify-center w-full group scale-95 active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+</nav>
+<div class="mt-auto flex flex-col gap-6 border-t border-outline-variant/10 pt-6">
+<button class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors scale-95 active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+<button class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors scale-95 active:scale-90 duration-150">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+</button>
+</div>
+</aside>
+<main class="pl-20 min-h-screen">
+<header class="w-full h-16 sticky top-0 z-30 bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-xl flex justify-between items-center px-8 pl-10 w-full font-['Manrope'] font-semibold text-base">
+<div class="flex items-center gap-8">
+<span class="text-lg font-black text-slate-900 dark:text-white tracking-tighter">The Kinetic Workspace</span>
+<div class="hidden md:flex items-center gap-6">
+<a class="text-slate-600 dark:text-slate-400 hover:text-orange-500 dark:hover:text-orange-400 transition-all" href="#">Models</a>
+<a class="text-slate-600 dark:text-slate-400 hover:text-orange-500 dark:hover:text-orange-400 transition-all" href="#">API Keys</a>
+<a class="text-orange-600 dark:text-orange-500 border-b-2 border-orange-500" href="#">Usage</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative group">
+<span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-outline text-sm" data-icon="search">search</span>
+<input class="bg-surface-container-low border-none rounded-lg pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-1 focus:ring-primary-container outline-none transition-all" placeholder="Jump to..." type="text"/>
+</div>
+<div class="flex items-center gap-2">
+<button class="p-2 text-slate-600 hover:bg-slate-200/50 rounded-full transition-all">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 text-slate-600 hover:bg-slate-200/50 rounded-full transition-all">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+</button>
+</div>
+<button class="bg-gradient-to-br from-primary-container to-primary text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all">
+                    Deploy
+                </button>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant/30">
+<img alt="Manager Avatar" class="w-full h-full object-cover" data-alt="professional portrait of a creative director in a minimalist studio setting with soft side lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDS-pDWnjAiGFEc6_hMnIQCZdab4P8XExyDhYeCciYVsTniDxaQqYk019T9_4yiVVwhvSDjvTvWBFF12Vql3pmftz4up9sqtqO6Q237ApDPBpJaniXUDMNmFrVAyoGDqXSM91_AxUFoJBcZh7JGhMs2qWpVIscipC_h7HuRZIArMJRVdNTrYdS-43zdgqQefX11yM5n9IyULfAyncyUkxYZYLgELUOk_nJcXVtPhZ_aMqc9rD4KuRr1xQxCroXI3rwFUubd8pU9OpDk"/>
+</div>
+</div>
+</header>
+<section class="px-8 py-4">
+<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
+<div class="bg-surface-container-lowest p-3 rounded-xl shadow-sm flex items-center justify-between border-b-2 border-primary-container">
+<div>
+<p class="text-[10px] uppercase tracking-widest text-outline font-bold">Active Projects</p>
+<h3 class="text-xl font-black text-on-surface">42</h3>
+</div>
+<span class="material-symbols-outlined text-primary" data-icon="bolt" data-weight="fill" style="font-variation-settings: 'FILL' 1;">bolt</span>
+</div>
+<div class="bg-surface-container-lowest p-3 rounded-xl shadow-sm flex items-center justify-between">
+<div>
+<p class="text-[10px] uppercase tracking-widest text-outline font-bold">Total Tasks</p>
+<h3 class="text-xl font-black text-on-surface">1,284</h3>
+</div>
+<span class="material-symbols-outlined text-tertiary" data-icon="checklist">checklist</span>
+</div>
+<div class="bg-surface-container-lowest p-3 rounded-xl shadow-sm flex items-center justify-between">
+<div>
+<p class="text-[10px] uppercase tracking-widest text-outline font-bold">Resource Load</p>
+<h3 class="text-xl font-black text-on-surface">84%</h3>
+</div>
+<span class="material-symbols-outlined text-secondary" data-icon="pie_chart">pie_chart</span>
+</div>
+<div class="bg-surface-container-lowest p-3 rounded-xl shadow-sm flex items-center justify-between">
+<div>
+<p class="text-[10px] uppercase tracking-widest text-outline font-bold">Avg. Velocity</p>
+<h3 class="text-xl font-black text-on-surface">18.4 <span class="text-xs font-medium text-emerald-600">↑</span></h3>
+</div>
+<span class="material-symbols-outlined text-outline" data-icon="show_chart">show_chart</span>
+</div>
+</div>
+<div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden border border-outline-variant/10">
+<div class="px-4 py-3 flex items-center justify-between bg-surface-container-low/50">
+<div class="flex items-center gap-4">
+<div class="flex bg-surface-container-highest p-1 rounded-lg">
+<button class="px-3 py-1 text-xs font-bold bg-white shadow-sm rounded-md text-primary">Live</button>
+<button class="px-3 py-1 text-xs font-bold text-outline hover:text-on-surface-variant transition-colors">Archive</button>
+<button class="px-3 py-1 text-xs font-bold text-outline hover:text-on-surface-variant transition-colors">Drafts</button>
+</div>
+<div class="h-6 w-[1px] bg-outline-variant/30"></div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-sm text-outline" data-icon="filter_list">filter_list</span>
+<span class="text-xs font-semibold text-outline">Filter</span>
+</div>
+</div>
+<button class="flex items-center gap-2 bg-on-surface text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-800 transition-all">
+<span class="material-symbols-outlined text-xs" data-icon="add">add</span>
+                        New Project
+                    </button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low/30 border-b border-outline-variant/10">
+<th class="px-4 py-2 text-[10px] font-black text-outline uppercase tracking-wider">Project Name</th>
+<th class="px-4 py-2 text-[10px] font-black text-outline uppercase tracking-wider">Owner</th>
+<th class="px-4 py-2 text-[10px] font-black text-outline uppercase tracking-wider">Members</th>
+<th class="px-4 py-2 text-[10px] font-black text-outline uppercase tracking-wider">Status</th>
+<th class="px-4 py-2 text-[10px] font-black text-outline uppercase tracking-wider">Tasks</th>
+<th class="px-4 py-2 text-[10px] font-black text-outline uppercase tracking-wider text-center">Repos</th>
+<th class="px-4 py-2 text-[10px] font-black text-outline uppercase tracking-wider text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/5">
+<!-- Rows 1 to 15 -->
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary-container text-lg" data-icon="token">token</span>
+<span class="text-sm font-bold text-on-surface">Neural Engine v4</span>
+</div>
+</td>
+<td class="px-4 py-2">
+<div class="flex items-center gap-2">
+<img alt="User" class="w-5 h-5 rounded-full object-cover" data-alt="headshot of a smiling developer with short dark hair in a bright modern office" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBqUkxC0GcNALOIfL0pxaOAkYXeBWLpzuWHQkgLWCh6BxGGS3q1eL2irwI2RNTxN_JL8IbxH8eA7dPPf-3fK5_0grw--a-Ly4G99nk4XD8nJaC36l7H0v9gMaVjfzA8y41gHChuv5VQnkVr8nje5S_RNcjpoTALWo0dECi9Tun2EQIFWNov5ucGG7Ena4OEtEqbnUZU39LzEIKJHnF9IH1THURLN5J43t-_wvW97SDkroTn3sv65Jamv3c2gUzcZj3wO6IsgnfE76ZO"/>
+<span class="text-xs font-medium text-on-surface-variant">Alex Chen</span>
+</div>
+</td>
+<td class="px-4 py-2">
+<div class="flex -space-x-1.5">
+<img alt="Avatar" class="w-5 h-5 rounded-full ring-2 ring-white" data-alt="professional portrait of a young woman with curly hair against a soft blue background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBLy7VuFs7kGZ_sHdBQXO9b27cXE0zOuobzAN5yPGDV5MWAJCvW7r9iXtTZ_CDV3aPwg8Mq8nchEa8MR57jR4r4Tl5o9BwtgXOyscr4WqZyZ8x3_ulmeq4h_UU92siZ9GEj6INC1J5Oc4LsCyTyiJehb5nShiqwU1PRq9aa-o7EtgsppHIwSWAlcesvzxHbGEenwG7AE5kO-2iC0Fy5Ns_tHrimeB1I8o7xiyKxsOv930kOdbkeOiv-YK18_WSk430PKI7HEQGIQID8"/>
+<img alt="Avatar" class="w-5 h-5 rounded-full ring-2 ring-white" data-alt="studio headshot of a middle-aged man wearing glasses and a dark sweater" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCnPiwauYVTgE7otob_TLeuc1c6JLcXmwlyYsxyNOLdbCGCt3kQAZ2B2nRupSOnTZfy3SEYDfTOviAwTFeqvt8zDT6bZXhgfWDkay7-aqdD-VAlrikNY9mrxBp5GPHs9-vloBM2KECdbG1SPO8KTPLz8Au1Til4Ygd0wP2_dCJG4Z-UtguD1P2lkdTufRDPANPy6AZ_94VdCdi9gD85GoWZ0ws6qbHrw1B5F8dAGiCMvxCtiP1S-t-hg7oqUxIvMy2j1OcXHmD67iiR"/>
+<div class="w-5 h-5 rounded-full bg-surface-container-high ring-2 ring-white flex items-center justify-center text-[8px] font-bold">+8</div>
+</div>
+</td>
+<td class="px-4 py-2">
+<span class="px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed text-[10px] font-black uppercase">Running</span>
+</td>
+<td class="px-4 py-2">
+<div class="w-full bg-surface-container-high h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary-container h-full" style="width: 72%"></div>
+</div>
+<span class="text-[9px] font-bold text-outline">72/100 complete</span>
+</td>
+<td class="px-4 py-2 text-center">
+<span class="text-xs font-mono font-bold text-tertiary">3</span>
+</td>
+<td class="px-4 py-2 text-right">
+<button class="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-surface-container-highest rounded-md">
+<span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Repeat for 15 Rows with slight variations -->
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary text-lg" data-icon="hub">hub</span>
+<span class="text-sm font-bold text-on-surface">Data Pipeline 2.0</span>
+</div>
+</td>
+<td class="px-4 py-2">
+<div class="flex items-center gap-2">
+<img alt="User" class="w-5 h-5 rounded-full object-cover" data-alt="portrait of a man with glasses smiling" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBQVYDBmPwmt9HQj9Ncuja2YYhUb7NI9-MQdJ1jYhHfFT-EI3KMNLT1XSvgwjTGzqeFV3Q68jFEADRF2iIc_lG64dIey7siYEZsDDm6D1MkYHQbJTJDIVl8L2Es9mF0g7t0q1HTRSLB7VZC3uZv46WyHvtPsPYCzrsFlChsqD0hABR3n9rIok1bxrVxLOIa2wxJifpDf8y_mWfkqHJOqTxtp3hkKhrt7VLNAuRDi9c_NArqYoChyuwsq3Zt6gnKF16yCRAvpdI1KTIL"/>
+<span class="text-xs font-medium text-on-surface-variant">S. Miller</span>
+</div>
+</td>
+<td class="px-4 py-2">
+<div class="flex -space-x-1.5">
+<img alt="Avatar" class="w-5 h-5 rounded-full ring-2 ring-white" data-alt="headshot of a man with a friendly expression" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAvaVkITM9TziGVNFnqseN_YIEXxrtyPY_GT382aaCVKQxZmuUgbcSTQMFbZ8BLz8EGy0xRcNosVUsNnV3FqgB25Eu4TcZBEmazh7IDwE09BxeFvA1-0CEhvfIU87JRRWKwnXHKcJYzbyiTIRqzZKlg_o1NkBs7lZKaRPFKNg6Etf3CmZTE5dScMVZzFFnNpSYRtKDLisDTciN-L8qdPly95kBlQeEksLC3HrlKOECIltVN3OcPpNR5E9StxknPYBd7aHIf9A2Bh4U6"/>
+<img alt="Avatar" class="w-5 h-5 rounded-full ring-2 ring-white" data-alt="professional portrait of a young woman with auburn hair" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAjgpZuw4KePYHZJmJ9HdJ8lN_AcRP-_lGkdTMw-yCsWEof4yHwqRTJY4PMiwi2wDz9cEj8ggw0TWInZPsT_60qW9kK0WilOfSZ3lVsFkRBO1nu8CfUWzMn8NEMhAr0paVA80XS4evPbHsDdg1TA5tsKoxemVuc3Zah5exq79PrTdEPQJx5Cehl6ynEFg0VvuM1sHUBG3fJ57FaLKxqrZF29raqUqNhYiHSVoEYyD0mkCSbi4cpeqW7iJMcHBMMFlX_YvP_L5ZMhoN2"/>
+<div class="w-5 h-5 rounded-full bg-surface-container-high ring-2 ring-white flex items-center justify-center text-[8px] font-bold">+12</div>
+</div>
+</td>
+<td class="px-4 py-2">
+<span class="px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed text-[10px] font-black uppercase">Active</span>
+</td>
+<td class="px-4 py-2">
+<div class="w-full bg-surface-container-high h-1.5 rounded-full overflow-hidden">
+<div class="bg-secondary h-full" style="width: 45%"></div>
+</div>
+<span class="text-[9px] font-bold text-outline">45/100 complete</span>
+</td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">8</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+<!-- Project 3 -->
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-tertiary text-lg" data-icon="biotech">biotech</span><span class="text-sm font-bold">Bio-Metric Scan</span></div></td>
+<td class="px-4 py-2"><div class="flex items-center gap-2"><img alt="User" class="w-5 h-5 rounded-full object-cover" data-alt="business portrait of a confident woman in a workspace" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCgW69qSuxHZw0G_0P9Db6a7hBuM89uqNEZEKqTQe1kN0avmPOsHak-_7yLPc1IOStaHRzX9CeerzwOwJkfp7kEvNUrCXag3GVVwZB-7u76bGIdpcYKbud0Ck0q8FVWF9HNJrcOvN5axAYICjONubYIdtfhUTKc-u83i_rnUQdWtBiPyE-NWjSDbTOqgEFuRjtYypzb8jsOo9-2nWNodq92qeTigjyN3011tQmrDozh6V2kOisRwNwNv6qlkn-X0M_fTNI1OEAYrs5e"/><span class="text-xs font-medium">J. Thompson</span></div></td>
+<td class="px-4 py-2"><div class="flex -space-x-1.5"><img alt="Avatar" class="w-5 h-5 rounded-full ring-2 ring-white" data-alt="portrait of a creative professional" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAr5IbJdpMC0tAbQDTCzCNmS4VoHZO-cu-hZZ9erPGJSqzoz5gTWApiQ0jGLtocIVghYhdc12pfZ1ZtU-4_O1mqurOz-PAuO51JnjRjAgESPWu9BYEIDnSLuCW2o4YZa2HC-1O9MZ0J6yKf37Y-Zi2s-oBZM5Zs7u_cKKuUwbTJycq1qpMQ-nndRxfU9tICokhIueD3DIX5F-Ql0y9twq67y_QAG1M66VgQpx_KCN5fivX6o7UC-OYwjjONS8RUzFN1QY0E4AiItsf9"/><div class="w-5 h-5 rounded-full bg-surface-container-high ring-2 ring-white flex items-center justify-center text-[8px] font-bold">+2</div></div></td>
+<td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full bg-error-container text-on-error-container text-[10px] font-black uppercase">Delayed</span></td>
+<td class="px-4 py-2"><div class="w-full bg-surface-container-high h-1.5 rounded-full overflow-hidden"><div class="bg-error h-full" style="width: 12%"></div></div><span class="text-[9px] font-bold text-outline">12/100 complete</span></td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">1</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+<!-- More Rows Generated for Density -->
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-slate-400 text-lg" data-icon="layers">layers</span><span class="text-sm font-bold">Cloud Infrastructure</span></div></td>
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="text-xs font-medium">System Admin</span></div></td>
+<td class="px-4 py-2"><div class="flex -space-x-1.5"><div class="w-5 h-5 rounded-full bg-primary-fixed ring-2 ring-white flex items-center justify-center text-[8px] font-bold">SA</div></div></td>
+<td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-outline text-[10px] font-black uppercase">On Hold</span></td>
+<td class="px-4 py-2"><div class="w-full bg-surface-container-high h-1.5 rounded-full overflow-hidden"><div class="bg-outline h-full" style="width: 90%"></div></div><span class="text-[9px] font-bold text-outline">90/100 complete</span></td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">15</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+<!-- Row 5 to 15 (Simplified structure for speed/density) -->
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary text-lg" data-icon="shopping_cart">shopping_cart</span><span class="text-sm font-bold">eCom Replatform</span></div></td>
+<td class="px-4 py-2"><span class="text-xs font-medium">M. Kadeer</span></td>
+<td class="px-4 py-2"><div class="flex -space-x-1.5"><div class="w-5 h-5 rounded-full bg-tertiary text-white flex items-center justify-center text-[8px]">MK</div></div></td>
+<td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed text-[10px] font-black uppercase">Running</span></td>
+<td class="px-4 py-2"><div class="w-full bg-surface-container-high h-1.5 rounded-full"><div class="bg-primary-container h-full w-[33%]"></div></div></td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">4</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-orange-400 text-lg" data-icon="security">security</span><span class="text-sm font-bold">Cyber Audit Q3</span></div></td>
+<td class="px-4 py-2"><span class="text-xs font-medium">L. Vaughn</span></td>
+<td class="px-4 py-2"><div class="flex -space-x-1.5"><div class="w-5 h-5 rounded-full bg-secondary-container flex items-center justify-center text-[8px]">LV</div></div></td>
+<td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed text-[10px] font-black uppercase">Active</span></td>
+<td class="px-4 py-2"><div class="w-full bg-surface-container-high h-1.5 rounded-full"><div class="bg-primary-container h-full w-[88%]"></div></div></td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">2</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-indigo-400 text-lg" data-icon="rocket">rocket</span><span class="text-sm font-bold">Mars Rover ML</span></div></td>
+<td class="px-4 py-2"><span class="text-xs font-medium">Dr. Peterson</span></td>
+<td class="px-4 py-2"><div class="w-5 h-5 rounded-full bg-slate-200 text-[8px] flex items-center justify-center">+5</div></td>
+<td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed text-[10px] font-black uppercase">Running</span></td>
+<td class="px-4 py-2"><div class="w-full bg-surface-container-high h-1.5 rounded-full"><div class="bg-primary-container h-full w-[61%]"></div></div></td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">24</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-teal-400 text-lg" data-icon="eco">eco</span><span class="text-sm font-bold">Green Energy UX</span></div></td>
+<td class="px-4 py-2"><span class="text-xs font-medium">B. Waters</span></td>
+<td class="px-4 py-2"><div class="flex -space-x-1.5"><div class="w-5 h-5 rounded-full bg-tertiary-fixed flex items-center justify-center text-[8px]">BW</div></div></td>
+<td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed text-[10px] font-black uppercase">Active</span></td>
+<td class="px-4 py-2"><div class="w-full bg-surface-container-high h-1.5 rounded-full"><div class="bg-primary-container h-full w-[14%]"></div></div></td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">5</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-pink-400 text-lg" data-icon="api">api</span><span class="text-sm font-bold">Core API Refresh</span></div></td>
+<td class="px-4 py-2"><span class="text-xs font-medium">K. Saito</span></td>
+<td class="px-4 py-2"><div class="flex -space-x-1.5"><div class="w-5 h-5 rounded-full bg-primary flex items-center justify-center text-[8px] text-white">KS</div></div></td>
+<td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full bg-error-container text-on-error-container text-[10px] font-black uppercase">Review</span></td>
+<td class="px-4 py-2"><div class="w-full bg-surface-container-high h-1.5 rounded-full"><div class="bg-error h-full w-[95%]"></div></div></td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">1</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary-container text-lg" data-icon="brush">brush</span><span class="text-sm font-bold">Brand Evolution</span></div></td>
+<td class="px-4 py-2"><span class="text-xs font-medium">Design Ops</span></td>
+<td class="px-4 py-2"><div class="w-5 h-5 rounded-full bg-secondary-fixed flex items-center justify-center text-[8px]">DO</div></td>
+<td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed text-[10px] font-black uppercase">Active</span></td>
+<td class="px-4 py-2"><div class="w-full bg-surface-container-high h-1.5 rounded-full"><div class="bg-primary-container h-full w-[41%]"></div></div></td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">0</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-blue-400 text-lg" data-icon="database">database</span><span class="text-sm font-bold">DB Migration</span></div></td>
+<td class="px-4 py-2"><span class="text-xs font-medium">Ops Lead</span></td>
+<td class="px-4 py-2"><div class="w-5 h-5 rounded-full bg-on-tertiary-container text-white text-[8px] flex items-center justify-center">OL</div></td>
+<td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed text-[10px] font-black uppercase">Running</span></td>
+<td class="px-4 py-2"><div class="w-full bg-surface-container-high h-1.5 rounded-full"><div class="bg-primary-container h-full w-[100%]"></div></div></td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">3</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary-container text-lg" data-icon="videocam">videocam</span><span class="text-sm font-bold">Stream Optim.</span></div></td>
+<td class="px-4 py-2"><span class="text-xs font-medium">V. Zhao</span></td>
+<td class="px-4 py-2"><div class="w-5 h-5 rounded-full bg-outline-variant text-[8px] flex items-center justify-center">VZ</div></td>
+<td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed text-[10px] font-black uppercase">Active</span></td>
+<td class="px-4 py-2"><div class="w-full bg-surface-container-high h-1.5 rounded-full"><div class="bg-primary-container h-full w-[20%]"></div></div></td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">2</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-amber-600 text-lg" data-icon="warning">warning</span><span class="text-sm font-bold">Legacy Shutdown</span></div></td>
+<td class="px-4 py-2"><span class="text-xs font-medium">H. Stark</span></td>
+<td class="px-4 py-2"><div class="w-5 h-5 rounded-full bg-secondary-fixed-dim flex items-center justify-center text-[8px]">HS</div></td>
+<td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full bg-error-container text-on-error-container text-[10px] font-black uppercase">Review</span></td>
+<td class="px-4 py-2"><div class="w-full bg-surface-container-high h-1.5 rounded-full"><div class="bg-error h-full w-[5%]"></div></div></td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">1</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary text-lg" data-icon="psychology">psychology</span><span class="text-sm font-bold">NLP Training Lab</span></div></td>
+<td class="px-4 py-2"><span class="text-xs font-medium">A. Lovelace</span></td>
+<td class="px-4 py-2"><div class="w-5 h-5 rounded-full bg-primary-fixed flex items-center justify-center text-[8px]">AL</div></td>
+<td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed text-[10px] font-black uppercase">Running</span></td>
+<td class="px-4 py-2"><div class="w-full bg-surface-container-high h-1.5 rounded-full"><div class="bg-primary-container h-full w-[38%]"></div></div></td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">11</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 transition-colors group">
+<td class="px-4 py-2"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-slate-400 text-lg" data-icon="link">link</span><span class="text-sm font-bold">Z-Integrations</span></div></td>
+<td class="px-4 py-2"><span class="text-xs font-medium">External Team</span></td>
+<td class="px-4 py-2"><div class="w-5 h-5 rounded-full bg-surface-container-high flex items-center justify-center text-[8px]">EX</div></td>
+<td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed text-[10px] font-black uppercase">Active</span></td>
+<td class="px-4 py-2"><div class="w-full bg-surface-container-high h-1.5 rounded-full"><div class="bg-primary-container h-full w-[67%]"></div></div></td>
+<td class="px-4 py-2 text-center"><span class="text-xs font-mono font-bold text-tertiary">6</span></td>
+<td class="px-4 py-2 text-right"><button class="opacity-0 group-hover:opacity-100 p-1 rounded-md"><span class="material-symbols-outlined text-sm" data-icon="more_vert">more_vert</span></button></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="px-4 py-3 bg-surface-container-low/30 border-t border-outline-variant/10 flex items-center justify-between text-[10px] font-bold text-outline">
+<div>Showing 15 of 42 Projects</div>
+<div class="flex items-center gap-2">
+<button class="px-2 py-1 hover:bg-surface-container-high rounded transition-all">Prev</button>
+<span class="w-5 h-5 flex items-center justify-center bg-primary text-white rounded">1</span>
+<button class="px-2 py-1 hover:bg-surface-container-high rounded transition-all">2</button>
+<button class="px-2 py-1 hover:bg-surface-container-high rounded transition-all">3</button>
+<button class="px-2 py-1 hover:bg-surface-container-high rounded transition-all">Next</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Floating Glass Overlay for Contextual Help -->
+<div class="fixed bottom-6 right-6 z-50 bg-surface-container-lowest/80 backdrop-blur-xl p-3 rounded-2xl shadow-2xl border border-white/40 flex items-center gap-3">
+<div class="flex flex-col">
+<span class="text-[10px] font-black text-primary uppercase">System Status</span>
+<span class="text-xs font-bold text-on-surface">All Nodes Operational</span>
+</div>
+<div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+</div>
+</main>
+</body></html>

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Atelier - System Settings</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed": "#001e2e",
+                        "on-tertiary-container": "#004360",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "on-primary-fixed": "#2f1500",
+                        "background": "#f8f9fa",
+                        "surface-container-highest": "#e1e3e4",
+                        "surface-container-lowest": "#ffffff",
+                        "secondary": "#865224",
+                        "on-surface": "#191c1d",
+                        "tertiary": "#00658f",
+                        "inverse-on-surface": "#f0f1f2",
+                        "surface-variant": "#e1e3e4",
+                        "on-secondary-container": "#78471a",
+                        "primary-fixed-dim": "#ffb77d",
+                        "on-primary": "#ffffff",
+                        "on-primary-container": "#623200",
+                        "primary-container": "#ff8c00",
+                        "secondary-container": "#fdb881",
+                        "on-error-container": "#93000a",
+                        "inverse-primary": "#ffb77d",
+                        "surface-container-high": "#e7e8e9",
+                        "surface-dim": "#d9dadb",
+                        "secondary-fixed-dim": "#fdb881",
+                        "surface-container-low": "#f3f4f5",
+                        "secondary-fixed": "#ffdcc3",
+                        "on-secondary-fixed": "#2f1500",
+                        "on-background": "#191c1d",
+                        "outline-variant": "#ddc1ae",
+                        "surface-tint": "#904d00",
+                        "surface-bright": "#f8f9fa",
+                        "tertiary-fixed-dim": "#85cfff",
+                        "on-surface-variant": "#564334",
+                        "primary-fixed": "#ffdcc3",
+                        "surface-container": "#edeeef",
+                        "on-tertiary-fixed-variant": "#004c6c",
+                        "tertiary-container": "#00b5fc",
+                        "on-secondary-fixed-variant": "#6a3b0f",
+                        "primary": "#904d00",
+                        "error-container": "#ffdad6",
+                        "surface": "#f8f9fa",
+                        "inverse-surface": "#2e3132",
+                        "on-error": "#ffffff",
+                        "tertiary-fixed": "#c7e7ff",
+                        "outline": "#897362",
+                        "error": "#ba1a1a",
+                        "on-primary-fixed-variant": "#6e3900"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "fontFamily": {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+            font-size: 1.25rem;
+        }
+        .b-side-table tr:hover {
+            background-color: #f3f4f5;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f8f9fa;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #e1e3e4;
+            border-radius: 10px;
+        }
+        .tonal-layering-no-borders {
+            border: none !important;
+        }
+        .flat-no-shadows {
+            box-shadow: none !important;
+        }
+    </style>
+</head>
+<body class="bg-background font-body text-on-surface antialiased overflow-hidden">
+<!-- Sidebar Shell (JSON Definition) -->
+<aside class="fixed left-0 top-0 h-full z-40 bg-slate-100 dark:bg-slate-900 h-screen w-20 flex flex-col items-center py-6 border-r-0 tonal-layering-no-borders flat-no-shadows">
+<div class="mb-8">
+<span class="text-xl font-bold text-slate-900 dark:text-white font-headline tracking-tighter">A.</span>
+</div>
+<nav class="flex flex-col gap-6 flex-1">
+<a class="relative text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors scale-95 active:scale-90 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+</a>
+<a class="relative text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors scale-95 active:scale-90 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="smart_toy">smart_toy</span>
+</a>
+<a class="relative text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors scale-95 active:scale-90 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+</a>
+<a class="relative text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors scale-95 active:scale-90 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="rocket_launch">rocket_launch</span>
+</a>
+<a class="relative text-slate-900 dark:text-white before:absolute before:-left-4 before:w-1 before:h-8 before:bg-orange-500 transition-colors scale-95 active:scale-90 duration-150" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</a>
+</nav>
+<div class="flex flex-col gap-6 mt-auto">
+<a class="text-slate-500 hover:text-slate-700 transition-colors" href="#"><span class="material-symbols-outlined" data-icon="help">help</span></a>
+<img class="w-8 h-8 rounded-full border border-outline-variant" data-alt="close-up profile photo of a modern software architect in a minimalist workspace" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAy32bbjvR4FtY7SYQssxzNSFlrfGK4Yw08_ydJ0sw8UICxUwN_YBGFjjtCBDc8VHCluzwV2Y0dhpAbbdqbOpfuIeH7Hs-nD83KVA9SgM5tBR9x--REcjN0mmAgTscqLvacoXRK74jKaPxJwRQ3ANM89w8sFN0syTtzILobTq-Ar-xyyuXJAsTubRIVV7wX-W-IpyyEvu_hG2ETrkvjieR8G24quMuCA-Rrpqsk2s8EJApjFQRoqcuezHdZx8wVKViHlLHOTtdKn2M1"/>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-20 h-screen flex flex-col">
+<!-- Header Shell (JSON Definition) -->
+<header class="w-full h-16 sticky top-0 z-30 bg-slate-50/80 backdrop-blur-xl flex justify-between items-center px-8 pl-10 w-full flat-no-shadows tonal-shift-bg-surface-0">
+<div class="flex items-center gap-6">
+<span class="text-lg font-black text-slate-900 tracking-tighter font-headline">THE KINETIC WORKSPACE</span>
+<nav class="hidden md:flex gap-6 font-['Manrope'] font-semibold text-base">
+<a class="text-slate-600 hover:text-orange-500 transition-all opacity-80 hover:opacity-100" href="#">Models</a>
+<a class="text-slate-600 hover:text-orange-500 transition-all opacity-80 hover:opacity-100" href="#">API Keys</a>
+<a class="text-slate-600 hover:text-orange-500 transition-all opacity-80 hover:opacity-100" href="#">Usage</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="bg-gradient-to-br from-primary-container to-primary text-white px-4 py-1.5 rounded-lg text-sm font-semibold tracking-tight hover:opacity-90 transition-all">Deploy</button>
+<span class="material-symbols-outlined text-slate-600 cursor-pointer" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined text-slate-600 cursor-pointer" data-icon="history">history</span>
+</div>
+</header>
+<!-- Sub-page Layout (Settings Context) -->
+<div class="flex-1 overflow-hidden flex flex-col p-6 bg-surface">
+<!-- Bento-style System Controls & Search (Compact) -->
+<div class="grid grid-cols-12 gap-4 mb-4">
+<div class="col-span-8 bg-surface-container-lowest p-1 px-3 rounded-lg flex items-center gap-4">
+<div class="flex items-center flex-1">
+<span class="material-symbols-outlined text-slate-400 mr-2 text-sm" data-icon="search">search</span>
+<input class="w-full bg-transparent border-none focus:ring-0 text-sm font-medium py-1.5 placeholder-slate-400" placeholder="Filter identities, roles, or access levels..." type="text"/>
+</div>
+<div class="h-4 w-[1px] bg-outline-variant/30"></div>
+<div class="flex gap-2">
+<button class="flex items-center gap-1.5 px-3 py-1 bg-surface-container-low hover:bg-surface-container-high text-xs font-semibold rounded transition-colors">
+<span class="material-symbols-outlined !text-[14px]" data-icon="filter_list">filter_list</span>
+                            Filter
+                        </button>
+<button class="flex items-center gap-1.5 px-3 py-1 bg-surface-container-low hover:bg-surface-container-high text-xs font-semibold rounded transition-colors">
+<span class="material-symbols-outlined !text-[14px]" data-icon="download">download</span>
+                            Export
+                        </button>
+</div>
+</div>
+<div class="col-span-4 flex justify-end gap-2">
+<button class="flex items-center gap-1.5 px-4 py-1.5 bg-on-surface text-surface-container-lowest text-xs font-bold rounded-lg hover:bg-slate-800 transition-colors uppercase tracking-widest">
+<span class="material-symbols-outlined !text-[16px]" data-icon="person_add">person_add</span>
+                        Provision
+                    </button>
+</div>
+</div>
+<!-- High Density Data Workspace -->
+<div class="flex-1 bg-surface-container-lowest rounded-lg overflow-hidden flex flex-col shadow-[0px_12px_32px_rgba(25,28,29,0.04)]">
+<div class="overflow-auto flex-1">
+<table class="w-full text-left b-side-table border-separate border-spacing-0">
+<thead class="sticky top-0 bg-surface-container-lowest z-10">
+<tr class="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-surface-container-low/50">
+<th class="py-2.5 px-4 border-b border-outline-variant/15 font-headline">Identity</th>
+<th class="py-2.5 px-4 border-b border-outline-variant/15 font-headline text-center">Role</th>
+<th class="py-2.5 px-4 border-b border-outline-variant/15 font-headline">Access Level</th>
+<th class="py-2.5 px-4 border-b border-outline-variant/15 font-headline">Last Login</th>
+<th class="py-2.5 px-4 border-b border-outline-variant/15 font-headline">Status</th>
+<th class="py-2.5 px-4 border-b border-outline-variant/15 font-headline text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/10">
+<!-- High density row template (repeated 15 times for the prompt) -->
+<tr class="group">
+<td class="py-1.5 px-4">
+<div class="flex items-center gap-3">
+<div class="w-6 h-6 rounded bg-slate-200 overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="professional corporate headshot avatar for a system administrator" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAuKwXjYVrqUa3LXBntL929fgGSGhAlaFtTEGxBLj6Dvjw_k_qXoLHDHYiUZLyqw0dPS77IjhTBwNdQp4Qrvi7XG2vJ7YIWsO3i26ywrAWsLTH2XX_D0pJq5CLn1VvHtlU-zLL1r5PLxy0WUCnCJs-6RbmkLu0OPsB3uUEWivzw7Z8W3IkRDXFtgiMo1b58aVYrDEwB-iCRHrN7r9bruBZWCUXoKGIbl1vneq8GI2P6SH3QYCQWyxDY9_luBRff1A5eiJf8no2oXiNi"/>
+</div>
+<div class="flex flex-col leading-none">
+<span class="text-xs font-bold text-slate-900">Elias Thorne</span>
+<span class="text-[10px] text-slate-500 font-medium tracking-tight">elias.thorne@workspace.io</span>
+</div>
+</div>
+</td>
+<td class="py-1.5 px-4 text-center">
+<span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[9px] font-bold uppercase tracking-tighter border border-slate-200">Architect</span>
+</td>
+<td class="py-1.5 px-4">
+<div class="flex gap-1">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span class="text-[10px] font-semibold text-slate-700 ml-1">L3 - Admin</span>
+</div>
+</td>
+<td class="py-1.5 px-4 text-[11px] font-medium text-slate-500">2 min ago</td>
+<td class="py-1.5 px-4">
+<span class="flex items-center gap-1.5 px-2 py-0.5 w-fit rounded-full bg-tertiary/10 text-tertiary text-[10px] font-bold">
+<span class="w-1 h-1 rounded-full bg-tertiary animate-pulse"></span> Active
+                                    </span>
+</td>
+<td class="py-1.5 px-4 text-right">
+<div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined !text-[16px] text-slate-400 hover:text-primary cursor-pointer" data-icon="edit_square">edit_square</span>
+<span class="material-symbols-outlined !text-[16px] text-slate-400 hover:text-error cursor-pointer" data-icon="key">key</span>
+<span class="material-symbols-outlined !text-[16px] text-slate-400 hover:text-slate-900 cursor-pointer" data-icon="more_vert">more_vert</span>
+</div>
+</td>
+</tr>
+<!-- Repeating data for density -->
+<script>
+                                const tbody = document.querySelector('tbody');
+                                const users = [
+                                    { name: "Sarah Chen", email: "s.chen@tech.ai", role: "DevOps", level: "L2 - Lead", status: "Active", time: "14m ago" },
+                                    { name: "Marcus Volkov", email: "mv@workspace.io", role: "Security", level: "L3 - Admin", status: "Active", time: "1h ago" },
+                                    { name: "Julia Santos", email: "j.santos@lab.ai", role: "ML Engineer", level: "L1 - User", status: "Inactive", time: "2d ago" },
+                                    { name: "Alex Rivera", email: "alex.r@workspace.io", role: "Architect", level: "L3 - Admin", status: "Active", time: "Now" },
+                                    { name: "Liam Wu", email: "lwu@tech.ai", role: "DevOps", level: "L2 - Lead", status: "Restricted", time: "5h ago" },
+                                    { name: "Priya Sharma", email: "priya@workspace.io", role: "Manager", level: "L2 - Lead", status: "Active", time: "34m ago" },
+                                    { name: "Thomas Müller", email: "tm@lab.ai", role: "Security", level: "L3 - Admin", status: "Offline", time: "1w ago" },
+                                    { name: "Nina Ricci", email: "nina@tech.ai", role: "ML Engineer", level: "L1 - User", status: "Active", time: "12m ago" },
+                                    { name: "Oscar V.", email: "ov@workspace.io", role: "DevOps", level: "L1 - User", status: "Active", time: "44m ago" },
+                                    { name: "Elena Gilbert", email: "eg@tech.ai", role: "Architect", level: "L3 - Admin", status: "Offline", time: "3d ago" },
+                                    { name: "David Kim", email: "dk@lab.ai", role: "ML Engineer", level: "L2 - Lead", status: "Active", time: "5m ago" },
+                                    { name: "S. Jansson", email: "sj@workspace.io", role: "Manager", level: "L1 - User", status: "Active", time: "1h ago" },
+                                    { name: "Yuki Tanaka", email: "yuki@tech.ai", role: "Security", level: "L2 - Lead", status: "Restricted", time: "15m ago" },
+                                    { name: "Ben Carter", email: "bc@lab.ai", role: "ML Engineer", level: "L1 - User", status: "Active", time: "22h ago" },
+                                    { name: "C. Mendez", email: "cm@workspace.io", role: "DevOps", level: "L2 - Lead", status: "Active", time: "Just now" }
+                                ];
+
+                                users.forEach(user => {
+                                    const statusClass = user.status === 'Active' ? 'bg-tertiary/10 text-tertiary' : 
+                                                        user.status === 'Restricted' ? 'bg-orange-100 text-orange-700' : 
+                                                        'bg-slate-100 text-slate-500';
+                                    const statusDot = user.status === 'Active' ? 'bg-tertiary' : 
+                                                      user.status === 'Restricted' ? 'bg-orange-500' : 
+                                                      'bg-slate-400';
+
+                                    tbody.innerHTML += `
+                                        <tr class="group">
+                                            <td class="py-1.5 px-4 border-b border-outline-variant/5">
+                                                <div class="flex items-center gap-3">
+                                                    <div class="w-6 h-6 rounded bg-surface-container-high overflow-hidden flex-shrink-0">
+                                                        <img src="https://openui.fly.dev/openui/24x24.svg?text=${user.name[0]}" class="w-full h-full opacity-50" data-alt="professional avatar icon for ${user.name}">
+                                                    </div>
+                                                    <div class="flex flex-col leading-none">
+                                                        <span class="text-xs font-bold text-slate-900">${user.name}</span>
+                                                        <span class="text-[10px] text-slate-500 font-medium tracking-tight">${user.email}</span>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="py-1.5 px-4 border-b border-outline-variant/5 text-center">
+                                                <span class="inline-block px-1.5 py-0.5 rounded bg-surface-container-low text-slate-500 text-[9px] font-bold uppercase tracking-tighter border border-outline-variant/10">${user.role}</span>
+                                            </td>
+                                            <td class="py-1.5 px-4 border-b border-outline-variant/5">
+                                                <div class="flex gap-1 items-center">
+                                                    <span class="w-1.5 h-1.5 rounded-full ${user.level.includes('L3') ? 'bg-primary-container' : user.level.includes('L2') ? 'bg-orange-300' : 'bg-slate-300'}"></span>
+                                                    <span class="text-[10px] font-semibold text-slate-700">${user.level}</span>
+                                                </div>
+                                            </td>
+                                            <td class="py-1.5 px-4 border-b border-outline-variant/5 text-[11px] font-medium text-slate-500">${user.time}</td>
+                                            <td class="py-1.5 px-4 border-b border-outline-variant/5">
+                                                <span class="flex items-center gap-1.5 px-2 py-0.5 w-fit rounded-full ${statusClass} text-[10px] font-bold">
+                                                    <span class="w-1 h-1 rounded-full ${statusDot}"></span> ${user.status}
+                                                </span>
+                                            </td>
+                                            <td class="py-1.5 px-4 border-b border-outline-variant/5 text-right">
+                                                <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <span class="material-symbols-outlined !text-[16px] text-slate-400 hover:text-primary cursor-pointer" data-icon="edit_square">edit_square</span>
+                                                    <span class="material-symbols-outlined !text-[16px] text-slate-400 hover:text-error cursor-pointer" data-icon="key">key</span>
+                                                    <span class="material-symbols-outlined !text-[16px] text-slate-400 hover:text-slate-900 cursor-pointer" data-icon="more_vert">more_vert</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `;
+                                });
+                            </script>
+</tbody>
+</table>
+</div>
+<!-- Table Footer / Pagination Metadata -->
+<div class="bg-surface-container-low/50 px-4 py-2 border-t border-outline-variant/10 flex justify-between items-center">
+<div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        Total Units: <span class="text-slate-600">1,248</span>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-1">
+<span class="text-[10px] font-bold text-slate-400 uppercase">Page size:</span>
+<select class="bg-transparent border-none py-0 pl-1 text-[10px] font-bold text-slate-600 focus:ring-0">
+<option>50</option>
+<option>100</option>
+</select>
+</div>
+<div class="flex gap-2">
+<button class="w-6 h-6 flex items-center justify-center rounded hover:bg-white transition-colors">
+<span class="material-symbols-outlined !text-[14px]" data-icon="chevron_left">chevron_left</span>
+</button>
+<span class="text-[10px] font-bold text-slate-600 self-center">1 of 12</span>
+<button class="w-6 h-6 flex items-center justify-center rounded hover:bg-white transition-colors">
+<span class="material-symbols-outlined !text-[14px]" data-icon="chevron_right">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

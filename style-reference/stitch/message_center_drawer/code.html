@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Message Center - Intelligent Atelier</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-lowest": "#ffffff",
+                    "on-surface": "#191c1d",
+                    "surface-container": "#edeeef",
+                    "background": "#f8f9fa",
+                    "on-primary-fixed": "#2f1500",
+                    "surface-container-highest": "#e1e3e4",
+                    "on-secondary-fixed": "#2f1500",
+                    "surface-container-low": "#f3f4f5",
+                    "outline-variant": "#ddc1ae",
+                    "on-tertiary-container": "#004360",
+                    "on-primary-fixed-variant": "#6e3900",
+                    "on-primary-container": "#623200",
+                    "tertiary-fixed-dim": "#85cfff",
+                    "secondary-fixed": "#ffdcc3",
+                    "secondary": "#865224",
+                    "on-secondary": "#ffffff",
+                    "on-tertiary-fixed": "#001e2e",
+                    "error": "#ba1a1a",
+                    "secondary-fixed-dim": "#fdb881",
+                    "inverse-primary": "#ffb77d",
+                    "tertiary": "#00658f",
+                    "on-surface-variant": "#564334",
+                    "tertiary-container": "#00b5fc",
+                    "primary-fixed-dim": "#ffb77d",
+                    "outline": "#897362",
+                    "on-background": "#191c1d",
+                    "inverse-on-surface": "#f0f1f2",
+                    "primary": "#904d00",
+                    "on-tertiary": "#ffffff",
+                    "surface-tint": "#904d00",
+                    "on-secondary-fixed-variant": "#6a3b0f",
+                    "on-secondary-container": "#78471a",
+                    "surface": "#f8f9fa",
+                    "tertiary-fixed": "#c7e7ff",
+                    "surface-bright": "#f8f9fa",
+                    "inverse-surface": "#2e3132",
+                    "surface-container-high": "#e7e8e9",
+                    "error-container": "#ffdad6",
+                    "surface-variant": "#e1e3e4",
+                    "surface-dim": "#d9dadb",
+                    "secondary-container": "#fdb881",
+                    "on-tertiary-fixed-variant": "#004c6c",
+                    "on-error-container": "#93000a",
+                    "primary-fixed": "#ffdcc3",
+                    "primary-container": "#ff8c00",
+                    "on-primary": "#ffffff",
+                    "on-error": "#ffffff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "fontFamily": {
+                    "headline": ["Manrope"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #e7e8e9;
+            border-radius: 10px;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background font-body text-on-surface antialiased overflow-hidden">
+<!-- Subtle Backdrop to emphasize drawer -->
+<div class="fixed inset-0 bg-on-surface/10 backdrop-blur-sm z-0"></div>
+<!-- Main Workspace Background (Mock Content) -->
+<main class="fixed inset-0 p-8 grid grid-cols-3 gap-6 opacity-40 select-none pointer-events-none">
+<div class="col-span-2 space-y-6">
+<div class="h-64 bg-surface-container-lowest rounded-xl"></div>
+<div class="grid grid-cols-2 gap-6">
+<div class="h-40 bg-surface-container-lowest rounded-xl"></div>
+<div class="h-40 bg-surface-container-lowest rounded-xl"></div>
+</div>
+<div class="h-96 bg-surface-container-lowest rounded-xl"></div>
+</div>
+<div class="space-y-6">
+<div class="h-full bg-surface-container-low rounded-xl"></div>
+</div>
+</main>
+<!-- Right-aligned Drawer (NavigationDrawer Semantic Shell) -->
+<aside class="fixed right-0 top-0 h-screen w-full md:w-[420px] bg-[#f3f4f5] dark:bg-slate-900 border-l border-outline-variant/10 shadow-2xl z-50 flex flex-col h-full py-0">
+<!-- Header - TopAppBar Context -->
+<header class="flex justify-between items-center px-6 py-6 bg-[#f8f9fa] dark:bg-slate-950">
+<div class="flex flex-col">
+<h1 class="text-[#191c1d] dark:text-white font-black tracking-tighter text-xl font-headline">Message Center</h1>
+<span class="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Intelligent Atelier</span>
+</div>
+<button class="flex items-center gap-2 px-3 py-1.5 rounded-full hover:bg-surface-container-high transition-colors group">
+<span class="material-symbols-outlined text-sm text-primary">done_all</span>
+<span class="text-xs font-semibold text-on-surface-variant group-hover:text-primary">Mark all as read</span>
+</button>
+</header>
+<!-- Tab Navigation (NavigationDrawer Logic Mapping) -->
+<nav class="flex px-2 bg-[#f8f9fa] dark:bg-slate-950 border-b border-surface-container-high">
+<!-- All Messages (Active) -->
+<button class="flex-1 flex flex-col items-center gap-1 py-3 text-[#191c1d] dark:text-white border-b-2 border-[#FF8C00] bg-white/50 dark:bg-white/5 transition-all duration-200 ease-in-out">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">mail</span>
+<span class="font-headline text-[11px] font-bold tracking-tight">All Messages</span>
+</button>
+<!-- Unread -->
+<button class="flex-1 flex flex-col items-center gap-1 py-3 text-slate-500 dark:text-slate-400 hover:bg-white/30 dark:hover:bg-white/5 transition-colors">
+<span class="material-symbols-outlined text-[20px]">mark_as_unread</span>
+<span class="font-headline text-[11px] font-semibold tracking-tight">Unread</span>
+</button>
+<!-- Mentions -->
+<button class="flex-1 flex flex-col items-center gap-1 py-3 text-slate-500 dark:text-slate-400 hover:bg-white/30 dark:hover:bg-white/5 transition-colors">
+<span class="material-symbols-outlined text-[20px]">alternate_email</span>
+<span class="font-headline text-[11px] font-semibold tracking-tight">Mentions</span>
+</button>
+<!-- Alerts -->
+<button class="flex-1 flex flex-col items-center gap-1 py-3 text-slate-500 dark:text-slate-400 hover:bg-white/30 dark:hover:bg-white/5 transition-colors">
+<span class="material-symbols-outlined text-[20px]">warning</span>
+<span class="font-headline text-[11px] font-semibold tracking-tight">Alerts</span>
+</button>
+</nav>
+<!-- Message List Canvas -->
+<div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
+<!-- Message Item: Unread -->
+<div class="group relative bg-surface-container-lowest p-4 rounded-xl transition-all duration-200 border border-transparent hover:border-outline-variant/30 hover:shadow-sm">
+<div class="flex justify-between items-start mb-1">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span class="text-xs font-bold font-headline text-on-surface">GitLab Agent</span>
+</div>
+<span class="text-[10px] font-medium text-slate-400">2 mins ago</span>
+</div>
+<h3 class="text-sm font-semibold text-on-surface mb-1">Merge Request Alert: Conflict detected</h3>
+<p class="text-xs text-on-surface-variant leading-relaxed mb-3">Conflict detected in project Alpha's main branch after push from user: dev_kyle.</p>
+<div class="flex items-center gap-2">
+<a class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-tertiary-fixed text-[10px] font-bold text-on-tertiary-fixed-variant hover:bg-tertiary-container transition-colors" href="#">
+<span class="material-symbols-outlined text-[12px]">account_tree</span>
+                        Project Alpha
+                    </a>
+<span class="text-[10px] text-slate-300">•</span>
+<span class="text-[10px] font-semibold text-primary">Priority: High</span>
+</div>
+</div>
+<!-- Message Item: System -->
+<div class="group relative bg-surface-container-lowest p-4 rounded-xl transition-all duration-200 border border-transparent hover:border-outline-variant/30 hover:shadow-sm opacity-80 hover:opacity-100">
+<div class="flex justify-between items-start mb-1">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-slate-200"></span>
+<span class="text-xs font-bold font-headline text-on-surface">System</span>
+</div>
+<span class="text-[10px] font-medium text-slate-400">1 hour ago</span>
+</div>
+<h3 class="text-sm font-semibold text-on-surface mb-1">Compute Limit Warning</h3>
+<p class="text-xs text-on-surface-variant leading-relaxed mb-3">Workspace #942 has reached 85% of allocated GPU credits for this billing cycle.</p>
+<div class="flex items-center gap-2">
+<a class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-surface-container-high text-[10px] font-bold text-on-surface-variant" href="#">
+<span class="material-symbols-outlined text-[12px]">monitoring</span>
+                        Resource Monitor
+                    </a>
+</div>
+</div>
+<!-- Message Item: Mention -->
+<div class="group relative bg-surface-container-lowest p-4 rounded-xl transition-all duration-200 border border-transparent hover:border-outline-variant/30 hover:shadow-sm">
+<div class="flex justify-between items-start mb-1">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<div class="flex items-center gap-1.5">
+<img class="w-4 h-4 rounded-full object-cover" data-alt="portrait of a professional software architect with glasses in a minimalist studio setting with soft lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCBuD7VC9_wbLqmmXYyH0-CjviM3UN51aid42eeIUYaQTdi7qQpQ4FBQvx_cM8s8_1_wW2goRnigByqkNChImsZzgrLeVAU2Ch0uKEJYzxjjDIJtk3v2akjxlYiI6jFLnrQdkbqc7TP2G6_6SVNwWOlFG5G4bvqLEU6KkaqlKRUWftmBabuYA7IUZUCK6OaaKE8O0wx7ILnE5Yr3El-F-VXVobELYjXmNKTvZsVR5-I_rcHrl4sEawfmhQp6ZMiDSyl0IlbLp9gmcfq"/>
+<span class="text-xs font-bold font-headline text-on-surface">Sarah Chen</span>
+</div>
+</div>
+<span class="text-[10px] font-medium text-slate-400">3 hours ago</span>
+</div>
+<h3 class="text-sm font-semibold text-on-surface mb-1">Mentioned you in "Model V4 Feedback"</h3>
+<p class="text-xs text-on-surface-variant leading-relaxed mb-3">"I think we need to adjust the prompt weighting here. What do you think about the latest output logs?"</p>
+<div class="flex items-center gap-2">
+<a class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-secondary-fixed text-[10px] font-bold text-on-secondary-container" href="#">
+<span class="material-symbols-outlined text-[12px]">chat_bubble</span>
+                        View Thread
+                    </a>
+</div>
+</div>
+<!-- Empty State Context (Hidden for demo, but present in DOM) -->
+<div class="hidden flex flex-col items-center justify-center py-20 px-8 text-center">
+<div class="w-24 h-24 mb-6 relative">
+<div class="absolute inset-0 bg-primary/5 rounded-full blur-2xl"></div>
+<span class="material-symbols-outlined text-6xl text-slate-200 relative z-10">inbox</span>
+</div>
+<h4 class="text-base font-headline font-bold text-on-surface mb-2">Workspace Quiet</h4>
+<p class="text-xs text-slate-400 leading-relaxed max-w-[200px]">No new messages in this category. Enjoy the focus time!</p>
+</div>
+<!-- More Items for Density (Render 10+ items requirement) -->
+<div class="space-y-3">
+<!-- Repeated pattern with variations -->
+<div class="group bg-surface-container-lowest p-3 rounded-xl border border-transparent opacity-60">
+<div class="flex justify-between items-start text-[10px] mb-1">
+<span class="font-bold font-headline text-on-surface-variant">Security Bot</span>
+<span class="text-slate-400">4h ago</span>
+</div>
+<h3 class="text-xs font-semibold text-on-surface">Dependency Vulnerability Found</h3>
+</div>
+<div class="group bg-surface-container-lowest p-3 rounded-xl border border-transparent opacity-60">
+<div class="flex justify-between items-start text-[10px] mb-1">
+<span class="font-bold font-headline text-on-surface-variant">Manager (David L.)</span>
+<span class="text-slate-400">5h ago</span>
+</div>
+<h3 class="text-xs font-semibold text-on-surface">Weekly Sync Rescheduled</h3>
+</div>
+<div class="group bg-surface-container-lowest p-3 rounded-xl border border-transparent opacity-60">
+<div class="flex justify-between items-start text-[10px] mb-1">
+<span class="font-bold font-headline text-on-surface-variant">Deployment Agent</span>
+<span class="text-slate-400">Yesterday</span>
+</div>
+<h3 class="text-xs font-semibold text-on-surface">Staging V2 Deployed Successfully</h3>
+</div>
+<div class="group bg-surface-container-lowest p-3 rounded-xl border border-transparent opacity-60">
+<div class="flex justify-between items-start text-[10px] mb-1">
+<span class="font-bold font-headline text-on-surface-variant">CI/CD Pipeline</span>
+<span class="text-slate-400">Yesterday</span>
+</div>
+<h3 class="text-xs font-semibold text-on-surface">Build #10842 Failed (Unit Tests)</h3>
+</div>
+<div class="group bg-surface-container-lowest p-3 rounded-xl border border-transparent opacity-40">
+<div class="flex justify-between items-start text-[10px] mb-1">
+<span class="font-bold font-headline text-on-surface-variant">System</span>
+<span class="text-slate-400">2d ago</span>
+</div>
+<h3 class="text-xs font-semibold text-on-surface">New Feature: GPU Pre-emption</h3>
+</div>
+<div class="group bg-surface-container-lowest p-3 rounded-xl border border-transparent opacity-40">
+<div class="flex justify-between items-start text-[10px] mb-1">
+<span class="font-bold font-headline text-on-surface-variant">Jira Integration</span>
+<span class="text-slate-400">2d ago</span>
+</div>
+<h3 class="text-xs font-semibold text-on-surface">Ticket AT-104 moved to DONE</h3>
+</div>
+<div class="group bg-surface-container-lowest p-3 rounded-xl border border-transparent opacity-40">
+<div class="flex justify-between items-start text-[10px] mb-1">
+<span class="font-bold font-headline text-on-surface-variant">Feedback Loop</span>
+<span class="text-slate-400">3d ago</span>
+</div>
+<h3 class="text-xs font-semibold text-on-surface">User testing feedback uploaded</h3>
+</div>
+</div>
+</div>
+<!-- Footer Actions -->
+<footer class="p-4 bg-surface-container-low border-t border-surface-container-high">
+<button class="w-full py-3 bg-gradient-to-br from-primary-container to-primary text-white font-bold text-sm rounded-lg shadow-lg shadow-primary/20 flex items-center justify-center gap-2 active:scale-[0.98] transition-transform">
+<span class="material-symbols-outlined text-[18px]">settings</span>
+                Manage Notification Preferences
+            </button>
+</footer>
+</aside>
+<!-- Drawer Close Trigger (Simulated) -->
+<button class="fixed top-6 right-[436px] w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-xl hover:bg-slate-50 transition-colors z-50 group md:flex hidden">
+<span class="material-symbols-outlined text-slate-400 group-hover:text-on-surface">close</span>
+</button>
+</body></html>

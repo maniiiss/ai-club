@@ -1,0 +1,13 @@
+frontend/node_modules/
+frontend/dist/
+backend/target/
+*.log
+.idea/
+.vscode/
+*.iml
+.DS_Store
+APITOKEN.md
+.run-logs/
+.env
+.env.server
+.env.host

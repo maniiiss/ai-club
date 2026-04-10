@@ -1,0 +1,25 @@
+FROM node:20-alpine AS build
+WORKDIR /app
+
+ARG VITE_API_BASE_URL=""
+ARG VITE_API_PORT=""
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_API_PORT=${VITE_API_PORT}
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+FROM nginx:1.27-alpine
+WORKDIR /usr/share/nginx/html
+
+ENV NGINX_LISTEN_PORT=5173
+ENV BACKEND_PROXY_URL=http://127.0.0.1:8087
+
+COPY --from=build /app/dist ./
+COPY nginx.host.conf.template /etc/nginx/templates/default.conf.template
+
+EXPOSE 5173
+CMD ["nginx", "-g", "daemon off;"]

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AI代理工程管理平台 - 样式规范</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-dim": "#d9dadb",
+                    "on-secondary": "#ffffff",
+                    "secondary-fixed": "#ffdcc3",
+                    "inverse-on-surface": "#f0f1f2",
+                    "on-secondary-fixed": "#2f1500",
+                    "surface-tint": "#904d00",
+                    "surface-container-low": "#f3f4f5",
+                    "on-secondary-fixed-variant": "#6a3b0f",
+                    "inverse-surface": "#2e3132",
+                    "tertiary-fixed-dim": "#85cfff",
+                    "surface": "#f8f9fa",
+                    "primary-container": "#ff8c00",
+                    "on-surface": "#191c1d",
+                    "tertiary-container": "#00b5fc",
+                    "on-error": "#ffffff",
+                    "outline-variant": "#ddc1ae",
+                    "on-tertiary-fixed": "#001e2e",
+                    "on-background": "#191c1d",
+                    "surface-container-highest": "#e1e3e4",
+                    "secondary-container": "#fdb881",
+                    "error-container": "#ffdad6",
+                    "on-secondary-container": "#78471a",
+                    "surface-bright": "#f8f9fa",
+                    "on-tertiary-fixed-variant": "#004c6c",
+                    "surface-variant": "#e1e3e4",
+                    "on-primary-fixed-variant": "#6e3900",
+                    "tertiary-fixed": "#c7e7ff",
+                    "tertiary": "#00658f",
+                    "primary": "#904d00",
+                    "on-tertiary": "#ffffff",
+                    "inverse-primary": "#ffb77d",
+                    "secondary-fixed-dim": "#fdb881",
+                    "surface-container": "#edeeef",
+                    "surface-container-high": "#e7e8e9",
+                    "on-error-container": "#93000a",
+                    "error": "#ba1a1a",
+                    "background": "#f8f9fa",
+                    "on-tertiary-container": "#004360",
+                    "outline": "#897362",
+                    "primary-fixed-dim": "#ffb77d",
+                    "on-surface-variant": "#564334",
+                    "on-primary-container": "#623200",
+                    "on-primary": "#ffffff",
+                    "secondary": "#865224",
+                    "primary-fixed": "#ffdcc3",
+                    "on-primary-fixed": "#2f1500",
+                    "surface-container-lowest": "#ffffff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "fontFamily": {
+                    "headline": ["Manrope"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .tonal-layering-no-borders {
+            border: none !important;
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(24px);
+        }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface">
+<!-- Top Navigation Anchor -->
+<nav class="fixed top-0 w-full z-40 bg-slate-50/80 backdrop-blur-xl flex items-center justify-between px-6 py-3 w-full tonal-layering-no-borders">
+<div class="flex items-center gap-8">
+<span class="font-headline text-xl font-bold text-slate-900 tracking-tight">Kinetic Workspace</span>
+<div class="hidden md:flex gap-6">
+<a class="text-slate-600 font-semibold border-b-2 border-orange-600 pb-1" href="#">Dashboard</a>
+<a class="text-slate-600 hover:text-slate-900 transition-colors" href="#">Agents</a>
+<a class="text-slate-600 hover:text-slate-900 transition-colors" href="#">Workspaces</a>
+<a class="text-slate-600 hover:text-slate-900 transition-colors" href="#">Logs</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-slate-600 cursor-pointer p-2 hover:bg-slate-100 rounded-full">notifications</span>
+<span class="material-symbols-outlined text-slate-600 cursor-pointer p-2 hover:bg-slate-100 rounded-full">settings</span>
+<button class="bg-primary-container text-on-primary-container px-4 py-2 rounded-xl font-semibold text-sm hover:opacity-90 transition-all">Deploy Agent</button>
+</div>
+</nav>
+<!-- Background Canvas (Blurred Dashboard Content) -->
+<main class="pt-20 px-8 blur-sm select-none pointer-events-none overflow-hidden h-screen">
+<header class="mb-10">
+<h1 class="font-headline text-3xl font-extrabold tracking-tight mb-2">Iteration Workspace</h1>
+<p class="text-on-surface-variant">Active Sprint: Q3 Intelligence Orchestration</p>
+</header>
+<!-- Bento Grid Background Layout -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Summary Card -->
+<div class="col-span-8 bg-surface-container-lowest rounded-xl p-6 h-64">
+<div class="flex justify-between items-center mb-6">
+<h2 class="font-headline text-lg font-bold">Requirement Performance</h2>
+<span class="bg-tertiary-fixed text-on-tertiary-fixed px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase">Running</span>
+</div>
+<div class="space-y-4">
+<div class="h-4 bg-surface-container-low rounded-full w-full"></div>
+<div class="h-4 bg-surface-container-low rounded-full w-3/4"></div>
+<div class="h-4 bg-surface-container-low rounded-full w-5/6"></div>
+</div>
+</div>
+<!-- Side Metric -->
+<div class="col-span-4 bg-surface-container-low rounded-xl p-6 h-64 flex flex-col justify-end">
+<span class="text-6xl font-headline font-black text-primary mb-2">84%</span>
+<p class="font-semibold text-on-surface-variant">System Efficiency</p>
+</div>
+<!-- Table-like Structure -->
+<div class="col-span-12 bg-surface-container-lowest rounded-xl p-0 overflow-hidden">
+<div class="px-6 py-4 bg-surface-container-high flex justify-between items-center">
+<h3 class="font-headline font-bold">Agent Deployment Logs</h3>
+</div>
+<div class="p-6 space-y-4">
+<div class="flex items-center gap-4 py-3 border-b border-outline-variant/10">
+<div class="w-10 h-10 rounded-lg bg-orange-100"></div>
+<div class="flex-1 h-4 bg-surface-container-low rounded"></div>
+<div class="w-24 h-4 bg-surface-container-low rounded"></div>
+</div>
+<div class="flex items-center gap-4 py-3 border-b border-outline-variant/10">
+<div class="w-10 h-10 rounded-lg bg-slate-100"></div>
+<div class="flex-1 h-4 bg-surface-container-low rounded"></div>
+<div class="w-24 h-4 bg-surface-container-low rounded"></div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Modal Overlay -->
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-on-surface/40 backdrop-blur-sm p-4">
+<!-- Main Modal Dialog -->
+<div class="bg-surface-container-lowest w-full max-w-lg rounded-xl overflow-hidden shadow-[0px_12px_32px_rgba(25,28,29,0.15)] flex flex-col">
+<!-- Modal Header -->
+<div class="px-8 pt-8 pb-4 flex items-start gap-4">
+<div class="w-12 h-12 flex-shrink-0 bg-primary/10 rounded-xl flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-3xl">info</span>
+</div>
+<div class="flex-1">
+<h2 class="font-headline text-2xl font-extrabold text-on-surface tracking-tight leading-tight">确认提交需求评审</h2>
+<p class="text-on-surface-variant text-sm mt-1">Review ID: REQ-2024-08</p>
+</div>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<!-- Modal Body -->
+<div class="px-8 py-4">
+<div class="bg-surface-container-low rounded-xl p-4 mb-6">
+<p class="text-on-surface text-sm leading-relaxed">
+                        您正在将需求 <span class="font-bold text-primary">[REQ-2024-08]</span> 提交至评审阶段。提交后，系统将自动通知开发与测试负责人，且该需求在评审期间将进入只读状态。
+                    </p>
+</div>
+<!-- High-Density Form -->
+<div class="grid grid-cols-2 gap-6">
+<div class="flex flex-col gap-2">
+<label class="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">评审优先级</label>
+<div class="relative group">
+<select class="w-full bg-transparent border-0 border-b-2 border-outline-variant py-2 pl-1 pr-8 text-sm font-semibold focus:ring-0 focus:border-primary transition-all appearance-none cursor-pointer">
+<option>P0 - 紧急</option>
+<option selected="">P1 - 高</option>
+<option>P2 - 中</option>
+<option>P3 - 低</option>
+</select>
+<span class="material-symbols-outlined absolute right-1 top-2 pointer-events-none text-on-surface-variant group-hover:text-primary">expand_more</span>
+</div>
+</div>
+<div class="flex flex-col gap-2">
+<label class="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">截止日期</label>
+<div class="relative">
+<input class="w-full bg-transparent border-0 border-b-2 border-outline-variant py-2 pl-1 text-sm font-semibold focus:ring-0 focus:border-primary transition-all cursor-pointer" type="date" value="2024-08-25"/>
+<span class="material-symbols-outlined absolute right-1 top-2 pointer-events-none text-on-surface-variant">calendar_today</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Modal Actions -->
+<div class="px-8 py-8 flex justify-end gap-3 mt-2">
+<button class="px-6 py-2.5 rounded-xl font-bold text-sm text-on-surface-variant hover:bg-surface-container-high transition-all">
+                    取消
+                </button>
+<button class="px-8 py-2.5 rounded-xl font-bold text-sm text-white bg-gradient-to-br from-primary-container to-primary shadow-lg shadow-orange-600/20 hover:scale-[1.02] active:scale-95 transition-all">
+                    确认提交
+                </button>
+</div>
+</div>
+</div>
+<!-- Layout Decorative Elements -->
+<div class="fixed bottom-10 right-10 z-30 opacity-20 pointer-events-none">
+<img class="w-64 h-64 object-contain" data-alt="abstract minimalist geometric pattern with warm orange and slate blue shapes soft gradients technical feel" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAG0m_5eYSohDDftrkGi1MCxxwvgPbNxVi90wxzaooM_5hTYHz0PAjTQvKZmMUiXuQ8C1d0vPACX0QZsfZa8eYMuZt8YGfLkvFpwG7au02lspo8m0w7fPogFLTjNZcuICEH4wF_-vAwey66fXTtiZlxD_pDzEJ0n9m_CfAWPDI0TEeiwVTgwq1dUh4vsnzPmF1iy5cOEbYqnM-RSAtEUuKC_-UMIozL_s9ekujhVYUXdyeNQRhMw4kiAxBL4IJOCyibNGDYjfFJCkNo"/>
+</div>
+</body></html>

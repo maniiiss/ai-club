@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command \"\\(Get-Command mvn\\).Source; \\(Get-Command npm\\).Source; \\(Get-Command mvn\\).CommandType; \\(Get-Command npm\\).CommandType\")",
+      "Bash(C:/Users/dlhxy/Downloads/Programs/git-ai-club/code-processing/.venv/Scripts/python.exe:*)",
+      "Bash(tasklist //FI \"PID eq 26216\")",
+      "Bash(PYTHON_BASIC_REPL=1 .venv/Scripts/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 9000)",
+      "Bash(curl -s http://localhost:9000/health)",
+      "Bash(kill %1)",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 9000,8080,5173 -State Listen -ErrorAction SilentlyContinue | Select-Object LocalPort,OwningProcess | Format-Table -AutoSize\")",
+      "Bash(powershell:*)"
+    ]
+  }
+}

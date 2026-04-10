@@ -1,0 +1,135 @@
+# Host 网络部署编排文件。
+# 适用于 Docker bridge 端口转发在当前服务器上不稳定的场景，直接复用宿主机网络栈。
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16}
+    container_name: git-ai-club-host-postgres
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_agent_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-aiclub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      PGTZ: ${APP_TZ:-Asia/Shanghai}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiclub} -d ${POSTGRES_DB:-ai_agent_platform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    container_name: git-ai-club-host-redis
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command: >
+      sh -c "if [ -n \"$$REDIS_PASSWORD\" ]; then
+        redis-server --appendonly yes --port ${REDIS_PORT:-6379} --requirepass \"$$REDIS_PASSWORD\";
+      else
+        redis-server --appendonly yes --port ${REDIS_PORT:-6379};
+      fi"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -p ${REDIS_PORT:-6379} -a \"$$REDIS_PASSWORD\" ping; else redis-cli -p ${REDIS_PORT:-6379} ping; fi"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-02-28T09-55-16Z}
+    container_name: git-ai-club-host-minio
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      MINIO_ROOT_USER: ${PLATFORM_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${PLATFORM_MINIO_SECRET_KEY:-minioadmin}
+    command: server /data --address ":${MINIO_PORT:-19000}" --console-address ":${MINIO_CONSOLE_PORT:-19001}"
+    volumes:
+      - minio_data:/data
+
+  code-processing:
+    build:
+      context: ./code-processing
+      dockerfile: Dockerfile
+    image: ${CODE_PROCESSING_IMAGE:-git-ai-club-code-processing:latest}
+    container_name: git-ai-club-host-code-processing
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "${CODE_PROCESSING_PORT:-9001}"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ${BACKEND_IMAGE:-git-ai-club-backend:latest}
+    container_name: git-ai-club-host-backend
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      code-processing:
+        condition: service_started
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      SERVER_PORT: ${BACKEND_PORT:-8087}
+      DB_URL: jdbc:postgresql://127.0.0.1:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-ai_agent_platform}
+      DB_USERNAME: ${POSTGRES_USER:-aiclub}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      PLATFORM_CODE_PROCESSING_BASE_URL: http://127.0.0.1:${CODE_PROCESSING_PORT:-9001}
+      PLATFORM_GITLAB_DEFAULT_API_URL: ${PLATFORM_GITLAB_DEFAULT_API_URL:-http://192.168.110.138:30080/api/v4}
+      PLATFORM_TOKEN_SECRET: ${PLATFORM_TOKEN_SECRET:-ai-club-demo-token-secret}
+      PLATFORM_TOKEN_EXPIRE_HOURS: ${PLATFORM_TOKEN_EXPIRE_HOURS:-12}
+      PLATFORM_SECURITY_SESSION_KEY_PREFIX: ${PLATFORM_SECURITY_SESSION_KEY_PREFIX:-ai-club:login:token:}
+      PLATFORM_MINIO_ENDPOINT: http://127.0.0.1:${MINIO_PORT:-19000}
+      PLATFORM_MINIO_ACCESS_KEY: ${PLATFORM_MINIO_ACCESS_KEY:-minioadmin}
+      PLATFORM_MINIO_SECRET_KEY: ${PLATFORM_MINIO_SECRET_KEY:-minioadmin}
+      PLATFORM_MINIO_BUCKET: ${PLATFORM_MINIO_BUCKET:-ai-club-assets}
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.host
+      args:
+        # Host 网络下前端直接请求宿主机后端端口，不再依赖前端代理。
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-}"
+        VITE_API_PORT: "${VITE_API_PORT:-8087}"
+    image: ${FRONTEND_IMAGE:-git-ai-club-frontend:latest}
+    container_name: git-ai-club-host-frontend
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      backend:
+        condition: service_started
+    environment:
+      NGINX_LISTEN_PORT: ${FRONTEND_PORT:-5173}
+      BACKEND_PROXY_URL: http://127.0.0.1:${BACKEND_PORT:-8087}
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

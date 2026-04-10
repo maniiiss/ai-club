@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>首页看板 - Kinetic Atelier</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary-container": "#623200",
+                        "surface-container-high": "#e7e8e9",
+                        "primary-fixed-dim": "#ffb77d",
+                        "primary": "#904d00",
+                        "on-tertiary-fixed-variant": "#004c6c",
+                        "on-primary": "#ffffff",
+                        "surface-tint": "#904d00",
+                        "error-container": "#ffdad6",
+                        "outline-variant": "#ddc1ae",
+                        "on-background": "#191c1d",
+                        "secondary": "#865224",
+                        "primary-container": "#ff8c00",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-low": "#f3f4f5",
+                        "surface-dim": "#d9dadb",
+                        "on-surface": "#191c1d",
+                        "outline": "#897362",
+                        "surface": "#f8f9fa",
+                        "tertiary-container": "#00b5fc",
+                        "on-primary-fixed": "#2f1500",
+                        "tertiary-fixed-dim": "#85cfff",
+                        "surface-bright": "#f8f9fa",
+                        "secondary-fixed-dim": "#fdb881",
+                        "on-secondary-container": "#78471a",
+                        "error": "#ba1a1a",
+                        "tertiary": "#00658f",
+                        "on-error-container": "#93000a",
+                        "on-tertiary-container": "#004360",
+                        "surface-container-highest": "#e1e3e4",
+                        "primary-fixed": "#ffdcc3",
+                        "inverse-on-surface": "#f0f1f2",
+                        "tertiary-fixed": "#c7e7ff",
+                        "surface-variant": "#e1e3e4",
+                        "on-secondary-fixed-variant": "#6a3b0f",
+                        "secondary-fixed": "#ffdcc3",
+                        "on-primary-fixed-variant": "#6e3900",
+                        "on-tertiary-fixed": "#001e2e",
+                        "secondary-container": "#fdb881",
+                        "inverse-primary": "#ffb77d",
+                        "on-error": "#ffffff",
+                        "on-secondary": "#ffffff",
+                        "surface-container": "#edeeef",
+                        "on-secondary-fixed": "#2f1500",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-surface": "#2e3132",
+                        "on-surface-variant": "#564334",
+                        "background": "#f8f9fa"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "fontFamily": {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; color: #191c1d; }
+        .font-manrope { font-family: 'Manrope', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e1e3e4; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-surface selection:bg-primary-container selection:text-on-primary-container">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-0 h-full flex flex-col items-center py-4 bg-slate-50 dark:bg-slate-900 h-screen w-20 border-r-0 z-50">
+<div class="mb-8 flex flex-col items-center">
+<div class="w-10 h-10 rounded-lg bg-primary-container flex items-center justify-center text-white mb-1 shadow-lg shadow-orange-500/20">
+<span class="material-symbols-outlined text-2xl" data-icon="polymer">polymer</span>
+</div>
+<div class="text-xs font-black tracking-tighter text-slate-900 dark:text-slate-100 font-manrope">Kinetic</div>
+<div class="text-[8px] uppercase tracking-widest text-slate-400 font-bold">Atelier</div>
+</div>
+<nav class="flex-1 flex flex-col items-center gap-4 w-full">
+<!-- Active Tab: Dashboard -->
+<button class="w-full flex flex-col items-center py-3 border-l-4 border-orange-500 text-slate-900 dark:text-white font-bold bg-white/50 dark:bg-slate-800/50 transition-all">
+<span class="material-symbols-outlined mb-1" data-icon="dashboard">dashboard</span>
+<span class="font-manrope font-semibold text-[10px]">Dashboard</span>
+</button>
+<button class="w-full flex flex-col items-center py-3 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="folder_managed">folder_managed</span>
+<span class="font-manrope font-semibold text-[10px]">Projects</span>
+</button>
+<button class="w-full flex flex-col items-center py-3 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="sync">sync</span>
+<span class="font-manrope font-semibold text-[10px]">Iterations</span>
+</button>
+<button class="w-full flex flex-col items-center py-3 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="smart_toy">smart_toy</span>
+<span class="font-manrope font-semibold text-[10px]">Agent</span>
+</button>
+<button class="w-full flex flex-col items-center py-3 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="terminal">terminal</span>
+<span class="font-manrope font-semibold text-[10px]">GitLab</span>
+</button>
+<button class="w-full flex flex-col items-center py-3 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="biotech">biotech</span>
+<span class="font-manrope font-semibold text-[10px]">Testing</span>
+</button>
+<button class="w-full flex flex-col items-center py-3 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors">
+<span class="material-symbols-outlined mb-1" data-icon="settings">settings</span>
+<span class="font-manrope font-semibold text-[10px]">Settings</span>
+</button>
+</nav>
+<div class="mt-auto">
+<button class="w-12 h-12 rounded-full bg-primary-container text-white flex items-center justify-center hover:scale-110 active:opacity-80 transition-all shadow-lg shadow-orange-500/30 mb-4">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+<img alt="User Avatar" class="w-10 h-10 rounded-full border-2 border-white shadow-sm" data-alt="Professional user workspace avatar portrait with clean aesthetic background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC-pMg5srN5hilCUN6uazoX7939OQ_WvrxuqYKfh4FOi7QmvGVTVryIKQDulZsv8nhAnSAJcQQPg5f61RaMDBXCPN1wenjsjiWh8nU89ChpOXTNL9UNhOUnedpusG6-Rzi52V3qwp53jPlPb2YB89ycyThKI9q_CVrrn3-zJuI3XiE430vTutwtizN_5Tan0fJ7sPKaEW_9xBIo0BK-UPj-ratgo9_U0hi-0JTTkkcGzOgsf7JNCG2fpzaJW9B1c2-oPWvc3w2NRVT1"/>
+</div>
+</aside>
+<!-- Main Content Wrapper -->
+<div class="ml-20 min-h-screen">
+<!-- TopNavBar -->
+<header class="flex justify-between items-center h-16 px-6 fixed top-0 left-20 right-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl">
+<div class="flex items-center gap-8">
+<h1 class="text-xl font-bold text-slate-900 dark:text-slate-100 font-manrope">首页看板</h1>
+<div class="relative group">
+<span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-slate-400 text-lg" data-icon="search">search</span>
+<input class="pl-10 pr-4 py-1.5 bg-surface-container-low border-none rounded-lg text-sm w-80 focus:ring-2 focus:ring-orange-500/20 transition-all outline-none" placeholder="搜索资源、Agent 或 任务..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-slate-600 dark:text-slate-400 hover:text-orange-500 transition-colors relative">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-primary rounded-full"></span>
+</button>
+<div class="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-slate-800">
+<div class="text-right">
+<div class="text-xs font-bold text-slate-900 dark:text-slate-100">Chen Wei</div>
+<div class="text-[10px] text-slate-500">高级架构师</div>
+</div>
+<span class="material-symbols-outlined text-slate-600" data-icon="account_circle">account_circle</span>
+</div>
+</div>
+</header>
+<!-- Page Canvas -->
+<main class="pt-24 px-8 pb-12 max-w-[1360px] mx-auto">
+<!-- Hero Stats Row (Asymmetric Information Cluster) -->
+<div class="grid grid-cols-12 gap-6 mb-8">
+<div class="col-span-12 lg:col-span-8 grid grid-cols-3 gap-4">
+<div class="bg-surface-container-lowest p-6 rounded-xl shadow-sm border-b-2 border-transparent hover:border-primary-container transition-all">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-orange-50 rounded-lg text-orange-600">
+<span class="material-symbols-outlined" data-icon="folder">folder</span>
+</div>
+<span class="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">+4 🆕</span>
+</div>
+<div class="text-3xl font-black font-manrope text-slate-900">24</div>
+<div class="text-sm text-slate-500 font-medium">总项目数量</div>
+</div>
+<div class="bg-surface-container-lowest p-6 rounded-xl shadow-sm border-b-2 border-transparent hover:border-primary-container transition-all">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-blue-50 rounded-lg text-blue-600">
+<span class="material-symbols-outlined" data-icon="smart_toy">smart_toy</span>
+</div>
+<div class="flex items-center gap-1">
+<div class="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+<span class="text-[10px] font-bold text-slate-400">运行中</span>
+</div>
+</div>
+<div class="text-3xl font-black font-manrope text-slate-900">156</div>
+<div class="text-sm text-slate-500 font-medium">活跃智能体</div>
+</div>
+<div class="bg-surface-container-lowest p-6 rounded-xl shadow-sm border-b-2 border-transparent hover:border-primary-container transition-all">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-purple-50 rounded-lg text-purple-600">
+<span class="material-symbols-outlined" data-icon="bolt">bolt</span>
+</div>
+<span class="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">99.2%</span>
+</div>
+<div class="text-3xl font-black font-manrope text-slate-900">1.2k</div>
+<div class="text-sm text-slate-500 font-medium">今日调用量</div>
+</div>
+</div>
+<div class="col-span-12 lg:col-span-4 bg-primary-container rounded-xl p-6 relative overflow-hidden text-white flex flex-col justify-between">
+<div class="absolute -right-8 -top-8 w-32 h-32 bg-white/10 rounded-full blur-3xl"></div>
+<div class="z-10">
+<h3 class="text-lg font-bold mb-1">系统状态良好</h3>
+<p class="text-white/80 text-xs">所有工作流节点运行正常，无阻塞任务。</p>
+</div>
+<div class="flex gap-2 z-10">
+<button class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-xs font-bold transition-all backdrop-blur-sm">查看报告</button>
+<button class="bg-white text-primary-container px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-md">立即部署</button>
+</div>
+</div>
+</div>
+<!-- Main Layout Grid -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Task Matrix (Large Bento) -->
+<section class="col-span-12 lg:col-span-8 space-y-6">
+<div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
+<div class="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
+<h2 class="font-manrope font-bold text-slate-900 flex items-center gap-2">
+<span class="material-symbols-outlined text-orange-500" data-icon="grid_view">grid_view</span>
+                                任务矩阵 (Task Matrix)
+                            </h2>
+<div class="flex gap-2">
+<button class="text-xs bg-surface-container-low px-3 py-1 rounded-full font-bold">按优先级</button>
+<button class="text-xs text-slate-400 px-3 py-1 font-bold">按时间</button>
+</div>
+</div>
+<div class="p-6 grid grid-cols-2 gap-4">
+<!-- Matrix Item -->
+<div class="bg-surface-container-low p-4 rounded-lg group hover:bg-white hover:shadow-md transition-all">
+<div class="flex justify-between items-start mb-3">
+<span class="text-[10px] font-bold text-orange-600 bg-orange-100/50 px-2 py-0.5 rounded-full">高优先级</span>
+<span class="material-symbols-outlined text-slate-300 group-hover:text-orange-500 text-sm" data-icon="more_vert">more_vert</span>
+</div>
+<h4 class="font-bold text-slate-900 text-sm mb-1">重构 API 集成层</h4>
+<p class="text-xs text-slate-500 mb-4">优化 Agent 与外部工具的通信协议，减少 30% 延迟。</p>
+<div class="flex items-center justify-between">
+<div class="flex -space-x-2">
+<img alt="User" class="w-6 h-6 rounded-full border-2 border-white" data-alt="Team member portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuARHNGCRCe1-ifzorT-ixWql6o4d50P1dmgzCAKnSIMA9Prh4HyXW6JJMTddL2GTbC1HQgQdbTNc-wnkWAImZ2PIAj5DGnoCanvEcVJ3TINvXVDx6NbsVGkUjRtoK6mTwucfdJ00sG_ITza7-FmSnOmudyDrO0Xs9wOuHbx1gV9koYYYZN4hfoJuKOg_5HHeS5h48Cg67Bz5sc6FqIlW-qrmRc7N-vtsOC7FKm5mQ5jDkWM8YTxkPcZpE1zhxL6h94H_rnV-GwgRqr6"/>
+<div class="w-6 h-6 rounded-full border-2 border-white bg-slate-200 flex items-center justify-center text-[8px] font-bold text-slate-600">+2</div>
+</div>
+<div class="text-[10px] font-mono text-slate-400">#KIN-249</div>
+</div>
+</div>
+<div class="bg-surface-container-low p-4 rounded-lg group hover:bg-white hover:shadow-md transition-all">
+<div class="flex justify-between items-start mb-3">
+<span class="text-[10px] font-bold text-blue-600 bg-blue-100/50 px-2 py-0.5 rounded-full">进行中</span>
+<span class="material-symbols-outlined text-slate-300 group-hover:text-orange-500 text-sm" data-icon="more_vert">more_vert</span>
+</div>
+<h4 class="font-bold text-slate-900 text-sm mb-1">分布式压力测试</h4>
+<p class="text-xs text-slate-500 mb-4">模拟 10,000 并发智能体对 Core 模块的压力承载。</p>
+<div class="flex items-center justify-between">
+<div class="flex -space-x-2">
+<img alt="User" class="w-6 h-6 rounded-full border-2 border-white" data-alt="Team member portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCHXB_KXRCQNvE1QIttlVdI8iZe8C8z5dZBTSSmJIdMQ9WF99J_JuPMqZNnDioJsR7E38Hm6P8mHAGnYqf5JthhVX-NNYUE9qNRMwns1os47D-JCm2PkLxTHRPUvKSvLAcAHNzuSZnYZE7elU4r4XT3vZP1PlR6P_fBCY3AG3NnbPizGW0gVG4Bs0JkevBmVBYiX41b_dqRsJAJ4DJ-xbfHDou_aWuplC2gPfdFtyoxgOuu10O2z3enoMP017irb7Q7yaX4EXtjSUvX"/>
+</div>
+<div class="text-[10px] font-mono text-slate-400">#KIN-182</div>
+</div>
+</div>
+<!-- Matrix Item 3 -->
+<div class="bg-surface-container-low p-4 rounded-lg group hover:bg-white hover:shadow-md transition-all">
+<div class="flex justify-between items-start mb-3">
+<span class="text-[10px] font-bold text-slate-400 bg-slate-200/50 px-2 py-0.5 rounded-full">待处理</span>
+<span class="material-symbols-outlined text-slate-300 group-hover:text-orange-500 text-sm" data-icon="more_vert">more_vert</span>
+</div>
+<h4 class="font-bold text-slate-900 text-sm mb-1">安全审计 - v2.4</h4>
+<p class="text-xs text-slate-500 mb-4">全面检查密钥管理与 Agent 执行沙箱的安全性。</p>
+<div class="flex items-center justify-between">
+<div class="flex -space-x-2">
+<div class="w-6 h-6 rounded-full border-2 border-white bg-slate-200 flex items-center justify-center text-[8px] font-bold text-slate-600">UN</div>
+</div>
+<div class="text-[10px] font-mono text-slate-400">#KIN-091</div>
+</div>
+</div>
+<div class="bg-surface-container-low p-4 rounded-lg group hover:bg-white hover:shadow-md transition-all">
+<div class="flex justify-between items-start mb-3">
+<span class="text-[10px] font-bold text-green-600 bg-green-100/50 px-2 py-0.5 rounded-full">已完成</span>
+<span class="material-symbols-outlined text-slate-300 group-hover:text-orange-500 text-sm" data-icon="more_vert">more_vert</span>
+</div>
+<h4 class="font-bold text-slate-900 text-sm mb-1">模型适配: GPT-4o</h4>
+<p class="text-xs text-slate-500 mb-4">集成最新 GPT-4o 多模态接口至工作流引擎。</p>
+<div class="flex items-center justify-between">
+<div class="flex -space-x-2">
+<img alt="User" class="w-6 h-6 rounded-full border-2 border-white" data-alt="Team member portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBcWj0HMFHJIldRYhWjW-LldibiizXukNF9yhXdKfKkLNyRy69WIQKuUwnGEobpSo-1ltxJHPqTAKVsTkI1ZC92i_TWxFw8KzAOHnUa_5w22lIZQxtLR09J7MmzSxxXzPnibjGHlSYovNTOFRMw7hKHhwB-qlMJBNFbEGdYYrtRNjp8_lT11_83a1J-IDiPIDUtBl7cye2GRH74C4GpYvkArlFkjieaoMPvsJjAIIcMP1gonp-PcSBR5uuL32xuvvCfYNF2XWUidPr5"/>
+</div>
+<div class="text-[10px] font-mono text-slate-400">#KIN-312</div>
+</div>
+</div>
+</div>
+</div>
+<!-- GitLab MRs (Data Table Aesthetic) -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
+<div class="px-6 py-4 border-b border-outline-variant/10 flex justify-between items-center">
+<h2 class="font-manrope font-bold text-slate-900 flex items-center gap-2">
+<span class="material-symbols-outlined text-orange-500" data-icon="account_tree">account_tree</span>
+                                GitLab 合并请求 (MRs)
+                            </h2>
+<button class="text-xs font-bold text-orange-600">查看全部</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead class="bg-surface-container-low text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+<tr>
+<th class="px-6 py-3">合并请求</th>
+<th class="px-6 py-3">分支</th>
+<th class="px-6 py-3">状态</th>
+<th class="px-6 py-3">时间</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/5">
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-slate-100 flex items-center justify-center text-slate-400">!124</div>
+<div>
+<div class="text-xs font-bold text-slate-900">feat: add vector store provider</div>
+<div class="text-[10px] text-slate-400">authored by li.ming</div>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-mono">feature/vector-store</span>
+</td>
+<td class="px-6 py-4">
+<span class="flex items-center gap-1.5 text-[10px] font-bold text-orange-600">
+<span class="w-1.5 h-1.5 bg-orange-500 rounded-full"></span> 审查中
+                                            </span>
+</td>
+<td class="px-6 py-4 text-[10px] text-slate-400">2 小时前</td>
+</tr>
+<tr class="hover:bg-surface-container-low transition-colors group">
+<td class="px-6 py-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-slate-100 flex items-center justify-center text-slate-400">!123</div>
+<div>
+<div class="text-xs font-bold text-slate-900">fix: memory leak in workflow</div>
+<div class="text-[10px] text-slate-400">authored by zhang.san</div>
+</div>
+</div>
+</td>
+<td class="px-6 py-4">
+<span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-mono">hotfix/mem-leak</span>
+</td>
+<td class="px-6 py-4">
+<span class="flex items-center gap-1.5 text-[10px] font-bold text-green-600">
+<span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span> 已批准
+                                            </span>
+</td>
+<td class="px-6 py-4 text-[10px] text-slate-400">5 小时前</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+<!-- Sidebar Content (Logs & Quick Tasks) -->
+<aside class="col-span-12 lg:col-span-4 space-y-6">
+<!-- Quick Tasks -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm p-6">
+<div class="flex justify-between items-center mb-4">
+<h3 class="font-bold text-sm text-slate-900">快捷任务 (Quick Tasks)</h3>
+<button class="material-symbols-outlined text-slate-400" data-icon="add_circle">add_circle</button>
+</div>
+<div class="space-y-3">
+<label class="flex items-center gap-3 group cursor-pointer">
+<input class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary-container" type="checkbox"/>
+<span class="text-xs text-slate-600 group-hover:text-slate-900 transition-colors">更新生产环境 SSL 证书</span>
+</label>
+<label class="flex items-center gap-3 group cursor-pointer">
+<input checked="" class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary-container" type="checkbox"/>
+<span class="text-xs text-slate-400 line-through">周会汇报 PPT 准备</span>
+</label>
+<label class="flex items-center gap-3 group cursor-pointer">
+<input class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary-container" type="checkbox"/>
+<span class="text-xs text-slate-600 group-hover:text-slate-900 transition-colors">代码审查: Core-Module v0.9</span>
+</label>
+</div>
+</div>
+<!-- System Logs (Monospace Aesthetic) -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden flex flex-col h-[400px]">
+<div class="px-6 py-4 border-b border-outline-variant/10 bg-slate-900">
+<h3 class="font-bold text-sm text-slate-100 flex items-center gap-2">
+<span class="material-symbols-outlined text-green-400 text-lg" data-icon="terminal">terminal</span>
+                                系统日志 (System Logs)
+                            </h3>
+</div>
+<div class="bg-slate-950 p-4 font-mono text-[10px] flex-1 overflow-y-auto space-y-2">
+<div class="flex gap-2">
+<span class="text-slate-500">[14:22:01]</span>
+<span class="text-blue-400">INFO:</span>
+<span class="text-slate-300">Agent-X7 成功加载向量索引 'wiki_2023'.</span>
+</div>
+<div class="flex gap-2">
+<span class="text-slate-500">[14:23:45]</span>
+<span class="text-orange-400">WARN:</span>
+<span class="text-slate-300">数据库连接池使用率达到 85%.</span>
+</div>
+<div class="flex gap-2">
+<span class="text-slate-500">[14:25:12]</span>
+<span class="text-green-400">OK:</span>
+<span class="text-slate-300">CI/CD 流水线 #4421 部署成功.</span>
+</div>
+<div class="flex gap-2">
+<span class="text-slate-500">[14:28:09]</span>
+<span class="text-blue-400">INFO:</span>
+<span class="text-slate-300">收到来自 GitLab 的 Webhook 触发.</span>
+</div>
+<div class="flex gap-2">
+<span class="text-slate-500">[14:30:00]</span>
+<span class="text-purple-400">SYS:</span>
+<span class="text-slate-300">自动清理临时文件 (3.2GB).</span>
+</div>
+<div class="flex gap-2">
+<span class="text-slate-500">[14:32:15]</span>
+<span class="text-orange-400">WARN:</span>
+<span class="text-slate-300">GPU 核心温度上升至 72°C.</span>
+</div>
+<div class="flex gap-2">
+<span class="text-slate-500">[14:35:55]</span>
+<span class="text-blue-400">INFO:</span>
+<span class="text-slate-300">心跳检测: 所有节点在线.</span>
+</div>
+</div>
+</div>
+<!-- Active Agents (Visual Cluster) -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm p-6">
+<h3 class="font-bold text-sm text-slate-900 mb-4">活跃智能体概览</h3>
+<div class="space-y-4">
+<div class="flex items-center justify-between p-3 bg-surface-container-low rounded-lg">
+<div class="flex items-center gap-3">
+<div class="w-2 h-2 bg-green-500 rounded-full"></div>
+<span class="text-xs font-bold">Research_Bot_v2</span>
+</div>
+<span class="text-[10px] font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200">GPT-4o</span>
+</div>
+<div class="flex items-center justify-between p-3 bg-surface-container-low rounded-lg">
+<div class="flex items-center gap-3">
+<div class="w-2 h-2 bg-orange-500 rounded-full"></div>
+<span class="text-xs font-bold">Code_Architect</span>
+</div>
+<span class="text-[10px] font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200">Claude-3.5</span>
+</div>
+</div>
+</div>
+</aside>
+</div>
+</main>
+</div>
+</body></html>

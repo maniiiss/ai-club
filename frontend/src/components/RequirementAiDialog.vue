@@ -1,0 +1,824 @@
+<template>
+  <el-dialog
+    :model-value="modelValue"
+    width="1080px"
+    align-center
+    destroy-on-close
+    class="requirement-ai-dialog"
+    @close="emit('update:modelValue', false)"
+  >
+    <template #header>
+      <div class="requirement-ai-header">
+        <div class="requirement-ai-title">需求 AI 助手</div>
+        <div class="requirement-ai-subtitle">{{ task?.name || '-' }}</div>
+      </div>
+    </template>
+
+    <template v-if="task">
+      <div class="requirement-ai-toolbar">
+        <el-select
+          v-model="selectedModelConfigId"
+          clearable
+          filterable
+          placeholder="选择模型，不选则使用第一个启用模型"
+          style="width: 320px"
+        >
+          <el-option v-for="item in modelOptions" :key="item.id" :label="item.name" :value="item.id" />
+        </el-select>
+        <el-space wrap>
+          <el-button :loading="runningAction === 'STANDARDIZE'" @click="runAction('STANDARDIZE')">标准化需求</el-button>
+          <el-button :loading="runningAction === 'BREAKDOWN'" @click="runAction('BREAKDOWN')">拆解子任务</el-button>
+          <el-button :loading="runningAction === 'TEST_CASES'" @click="runAction('TEST_CASES')">生成测试用例</el-button>
+        </el-space>
+      </div>
+
+      <div class="requirement-ai-body">
+        <div class="requirement-ai-preview">
+          <div class="requirement-ai-section-head">
+            <div>
+              <div class="requirement-ai-section-title">{{ result?.title || 'AI 结果预览' }}</div>
+              <div class="requirement-ai-section-subtitle">
+                {{ result?.modelConfigName ? `模型：${result.modelConfigName}` : '尚未生成内容' }}
+              </div>
+            </div>
+            <el-space v-if="result">
+              <el-button @click="postAsComment">发到评论</el-button>
+              <el-button v-if="canManage && !isRequirementTask" @click="appendToDescription">追加到描述</el-button>
+              <el-button v-if="canManage && result.action === 'STANDARDIZE'" type="primary" @click="replaceDescription">替换描述</el-button>
+            </el-space>
+          </div>
+          <div class="requirement-ai-markdown" v-html="renderMarkdownToHtml(result?.markdown)"></div>
+        </div>
+
+        <div class="requirement-ai-side">
+          <div v-if="result?.action === 'BREAKDOWN'" class="requirement-ai-panel">
+            <div class="requirement-ai-section-head compact">
+              <div>
+                <div class="requirement-ai-section-title">拆解建议</div>
+                <div class="requirement-ai-section-subtitle">支持编辑、删除后再创建任务</div>
+              </div>
+              <el-button
+                v-if="canManage && editableTaskSuggestions.length"
+                type="primary"
+                :loading="creatingTasks"
+                @click="createSuggestedTasks"
+              >
+                创建任务
+              </el-button>
+            </div>
+
+            <el-empty v-if="!editableTaskSuggestions.length" description="暂无拆解任务" />
+            <div v-else class="requirement-ai-suggestions">
+              <div
+                v-for="(item, index) in editableTaskSuggestions"
+                :key="`${item.name}-${index}`"
+                class="requirement-ai-suggestion editable"
+              >
+                <div class="requirement-ai-card-head">
+                  <span class="requirement-ai-card-index">子任务 {{ index + 1 }}</span>
+                  <span class="requirement-ai-card-type">{{ item.category }} / {{ item.priority }}</span>
+                </div>
+                <div class="requirement-ai-suggestion-actions">
+                  <el-button text type="primary" @click="openTaskSuggestionDrawer(index)">展开编辑</el-button>
+                  <el-button text type="danger" @click="removeTaskSuggestion(index)">删除</el-button>
+                </div>
+                <el-input v-model="item.name" placeholder="任务标题" />
+                <div class="requirement-ai-suggestion-grid">
+                  <el-select v-model="item.category">
+                    <el-option v-for="option in taskCategoryOptions" :key="option" :label="option" :value="option" />
+                  </el-select>
+                  <el-select v-model="item.priority">
+                    <el-option v-for="option in taskPriorityOptions" :key="option" :label="option" :value="option" />
+                  </el-select>
+                </div>
+                <div class="requirement-ai-suggestion-desc" v-html="renderMarkdownToHtml(item.description)"></div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else-if="result?.action === 'TEST_CASES'" class="requirement-ai-panel">
+            <div class="requirement-ai-section-head compact">
+              <div>
+                <div class="requirement-ai-section-title">测试用例建议</div>
+                <div class="requirement-ai-section-subtitle">可导入现有测试计划，或新建计划后导入</div>
+              </div>
+            </div>
+
+            <div class="requirement-ai-plan-toolbar">
+              <el-select
+                v-model="selectedPlanId"
+                clearable
+                filterable
+                placeholder="选择已有测试计划"
+                style="width: 100%"
+              >
+                <el-option v-for="item in testPlanOptions" :key="item.id" :label="item.name" :value="item.id" />
+              </el-select>
+              <el-space wrap>
+                <el-button
+                  v-if="canManage && editableTestCaseSuggestions.length && selectedPlanId"
+                  :loading="importingTestCases"
+                  @click="appendToExistingPlan"
+                >
+                  导入现有计划
+                </el-button>
+                <el-button
+                  v-if="canManage && editableTestCaseSuggestions.length"
+                  type="primary"
+                  :loading="creatingTestPlan"
+                  @click="createNewPlanWithCases"
+                >
+                  新建测试计划
+                </el-button>
+              </el-space>
+            </div>
+
+            <el-empty v-if="!editableTestCaseSuggestions.length" description="暂无测试用例" />
+            <div v-else class="requirement-ai-suggestions">
+              <div
+                v-for="(item, index) in editableTestCaseSuggestions"
+                :key="`${item.title}-${index}`"
+                class="requirement-ai-suggestion editable"
+              >
+                <div class="requirement-ai-card-head">
+                  <span class="requirement-ai-card-index">用例 {{ index + 1 }}</span>
+                  <span class="requirement-ai-card-type">{{ item.caseType }} / {{ item.priority }}</span>
+                </div>
+                <div class="requirement-ai-suggestion-actions">
+                  <el-button text type="danger" @click="removeTestCaseSuggestion(index)">删除</el-button>
+                </div>
+                <el-input v-model="item.title" placeholder="用例标题" />
+                <div class="requirement-ai-suggestion-grid triple">
+                  <el-input v-model="item.moduleName" placeholder="功能模块" />
+                  <el-select v-model="item.caseType">
+                    <el-option v-for="option in caseTypeOptions" :key="option" :label="option" :value="option" />
+                  </el-select>
+                  <el-select v-model="item.priority">
+                    <el-option v-for="option in casePriorityOptions" :key="option" :label="option" :value="option" />
+                  </el-select>
+                </div>
+                <el-input v-model="item.precondition" type="textarea" :rows="2" placeholder="前置条件" />
+                <el-input v-model="item.remarks" type="textarea" :rows="2" placeholder="备注" />
+                <div class="requirement-ai-steps">
+                  <div class="requirement-ai-steps-head">
+                    <span>步骤</span>
+                    <el-button text type="primary" @click="appendStep(item)">新增步骤</el-button>
+                  </div>
+                  <div v-for="(step, stepIndex) in item.steps" :key="stepIndex" class="requirement-ai-step">
+                    <div class="requirement-ai-step-head">
+                      <span>步骤 {{ step.stepNo }}</span>
+                      <el-button text type="danger" @click="removeStep(item, stepIndex)">删除</el-button>
+                    </div>
+                    <el-input v-model="step.action" type="textarea" :rows="2" placeholder="执行步骤" />
+                    <el-input v-model="step.expectedResult" type="textarea" :rows="2" placeholder="预期结果" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="requirement-ai-panel">
+            <div class="requirement-ai-section-head compact">
+              <div>
+                <div class="requirement-ai-section-title">结果操作</div>
+                <div class="requirement-ai-section-subtitle">生成后可发布评论或更新需求描述</div>
+              </div>
+            </div>
+            <el-empty description="当前动作没有侧边操作项" />
+          </div>
+        </div>
+      </div>
+    </template>
+  </el-dialog>
+
+  <el-drawer
+    v-model="taskSuggestionDrawerVisible"
+    size="56%"
+    destroy-on-close
+    class="requirement-ai-drawer"
+  >
+    <template #header>
+      <div class="requirement-ai-drawer-title">编辑拆解建议</div>
+    </template>
+
+    <template v-if="currentTaskSuggestion">
+      <div class="requirement-ai-drawer-body">
+        <el-input v-model="currentTaskSuggestion.name" placeholder="任务标题" />
+        <div class="requirement-ai-suggestion-grid">
+          <el-select v-model="currentTaskSuggestion.category">
+            <el-option v-for="option in taskCategoryOptions" :key="option" :label="option" :value="option" />
+          </el-select>
+          <el-select v-model="currentTaskSuggestion.priority">
+            <el-option v-for="option in taskPriorityOptions" :key="option" :label="option" :value="option" />
+          </el-select>
+        </div>
+        <MarkdownEditor v-model="currentTaskSuggestion.description" :height="520" placeholder="任务说明（Markdown）" />
+      </div>
+    </template>
+  </el-drawer>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import {
+  createTask,
+  createTaskComment,
+  createTestPlan,
+  generateTaskRequirementAi,
+  getTestPlanDetail,
+  pageTestPlans,
+  updateTask,
+  updateTestPlan
+} from '@/api/platform'
+import { listModelConfigOptions } from '@/api/models'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import { renderMarkdownToHtml } from '@/utils/markdown'
+import type {
+  AiModelConfigItem,
+  TaskItem,
+  TaskRequirementAiResultItem,
+  TaskRequirementAiSuggestionItem,
+  TaskRequirementAiTestCaseSuggestionItem,
+  TestPlanItem
+} from '@/types/platform'
+
+const props = defineProps<{
+  modelValue: boolean
+  task: TaskItem | null
+  canManage: boolean
+}>()
+
+const emit = defineEmits<{
+  'update:modelValue': [value: boolean]
+  changed: []
+}>()
+
+const taskCategoryOptions = ['需求设计', 'UI设计', '技术设计', '开发', '测试', '部署']
+const taskPriorityOptions = ['高', '中', '低']
+const caseTypeOptions = ['功能测试', '接口测试', '回归测试', '异常测试', '兼容性测试', '性能测试']
+const casePriorityOptions = ['P0', 'P1', 'P2', 'P3']
+
+const modelOptions = ref<AiModelConfigItem[]>([])
+const selectedModelConfigId = ref<number | undefined>()
+const runningAction = ref<string | null>(null)
+const creatingTasks = ref(false)
+const importingTestCases = ref(false)
+const creatingTestPlan = ref(false)
+const selectedPlanId = ref<number | undefined>()
+const testPlanOptions = ref<TestPlanItem[]>([])
+const result = ref<TaskRequirementAiResultItem | null>(null)
+const editableTaskSuggestions = ref<TaskRequirementAiSuggestionItem[]>([])
+const editableTestCaseSuggestions = ref<TaskRequirementAiTestCaseSuggestionItem[]>([])
+const taskSuggestionDrawerVisible = ref(false)
+const currentTaskSuggestionIndex = ref<number | null>(null)
+
+const currentTaskSuggestion = computed(() => {
+  if (currentTaskSuggestionIndex.value === null) {
+    return null
+  }
+  return editableTaskSuggestions.value[currentTaskSuggestionIndex.value] || null
+})
+const isRequirementTask = computed(() => props.task?.workItemType === '需求')
+
+const loadModelOptions = async () => {
+  modelOptions.value = await listModelConfigOptions()
+  if (!selectedModelConfigId.value && modelOptions.value.length === 1) {
+    selectedModelConfigId.value = modelOptions.value[0].id
+  }
+}
+
+const loadTestPlanOptions = async () => {
+  if (!props.task) {
+    testPlanOptions.value = []
+    return
+  }
+  const pageData = await pageTestPlans({
+    page: 1,
+    size: 100,
+    projectId: props.task.projectId,
+    iterationId: props.task.iterationId || undefined
+  })
+  testPlanOptions.value = pageData.records
+}
+
+const cloneTaskSuggestions = (suggestions: TaskRequirementAiSuggestionItem[] = []) =>
+  suggestions.map((item) => ({
+    name: item.name,
+    category: item.category,
+    priority: item.priority,
+    description: item.description
+  }))
+
+const cloneTestCaseSuggestions = (suggestions: TaskRequirementAiTestCaseSuggestionItem[] = []) =>
+  suggestions.map((item) => ({
+    title: item.title,
+    moduleName: item.moduleName,
+    caseType: item.caseType,
+    priority: item.priority,
+    precondition: item.precondition,
+    remarks: item.remarks,
+    steps: item.steps.map((step) => ({
+      stepNo: step.stepNo,
+      action: step.action,
+      expectedResult: step.expectedResult
+    }))
+  }))
+
+const runAction = async (action: string) => {
+  if (!props.task) {
+    return
+  }
+  runningAction.value = action
+  try {
+    result.value = await generateTaskRequirementAi(props.task.id, {
+      action,
+      modelConfigId: selectedModelConfigId.value
+    })
+    editableTaskSuggestions.value = cloneTaskSuggestions(result.value.taskSuggestions)
+    editableTestCaseSuggestions.value = cloneTestCaseSuggestions(result.value.testCaseSuggestions)
+    if (action === 'TEST_CASES') {
+      await loadTestPlanOptions()
+    }
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || 'AI 生成失败')
+  } finally {
+    runningAction.value = null
+  }
+}
+
+/**
+ * 统一构建工作项更新载荷，避免需求模板字段在 AI 更新时被清空。
+ */
+const buildTaskUpdatePayload = (nextDescription: string, nextRequirementMarkdown?: string) => {
+  if (!props.task) {
+    return null
+  }
+  return {
+    name: props.task.name,
+    workItemType: props.task.workItemType,
+    status: props.task.status,
+    priority: props.task.priority,
+    assignee: props.task.assignee,
+    assigneeUserId: props.task.assigneeUserId,
+    collaboratorUserIds: props.task.collaboratorUserIds,
+    planStartDate: props.task.planStartDate,
+    planEndDate: props.task.planEndDate,
+    description: nextDescription,
+    requirementMarkdown: isRequirementTask.value ? nextRequirementMarkdown || nextDescription : '',
+    prototypeUrl: isRequirementTask.value ? props.task.prototypeUrl : '',
+    projectId: props.task.projectId,
+    agentId: props.task.agentId,
+    iterationId: props.task.iterationId,
+    requirementTaskId: props.task.requirementTaskId
+  }
+}
+
+const replaceDescription = async () => {
+  if (!props.task || !result.value || !props.canManage) {
+    return
+  }
+  try {
+    const payload = buildTaskUpdatePayload(result.value.markdown, result.value.markdown)
+    if (!payload) {
+      return
+    }
+    await updateTask(props.task.id, payload)
+    ElMessage.success('需求描述已更新')
+    emit('changed')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '更新描述失败')
+  }
+}
+
+const appendToDescription = async () => {
+  if (!props.task || !result.value || !props.canManage) {
+    return
+  }
+  const nextDescription = [props.task.description?.trim(), result.value.markdown?.trim()].filter(Boolean).join('\n\n')
+  try {
+    const payload = buildTaskUpdatePayload(nextDescription, nextDescription)
+    if (!payload) {
+      return
+    }
+    await updateTask(props.task.id, payload)
+    ElMessage.success('AI 结果已追加到描述')
+    emit('changed')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '更新描述失败')
+  }
+}
+
+const postAsComment = async () => {
+  if (!props.task || !result.value) {
+    return
+  }
+  try {
+    await createTaskComment(props.task.id, `## ${result.value.title}\n\n${result.value.markdown}`)
+    ElMessage.success('AI 结果已发布到评论')
+    emit('changed')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '发布评论失败')
+  }
+}
+
+const removeTaskSuggestion = (index: number) => {
+  if (currentTaskSuggestionIndex.value === index) {
+    taskSuggestionDrawerVisible.value = false
+    currentTaskSuggestionIndex.value = null
+  } else if (currentTaskSuggestionIndex.value !== null && currentTaskSuggestionIndex.value > index) {
+    currentTaskSuggestionIndex.value -= 1
+  }
+  editableTaskSuggestions.value.splice(index, 1)
+}
+
+const openTaskSuggestionDrawer = (index: number) => {
+  currentTaskSuggestionIndex.value = index
+  taskSuggestionDrawerVisible.value = true
+}
+
+const createSuggestedTasks = async () => {
+  if (!props.task || !props.canManage || !editableTaskSuggestions.value.length) {
+    return
+  }
+  creatingTasks.value = true
+  try {
+    for (const item of editableTaskSuggestions.value) {
+      await createTask({
+        name: item.name.trim(),
+        workItemType: '任务',
+        status: '草稿',
+        priority: item.priority,
+        assignee: '',
+        assigneeUserId: null,
+        collaboratorUserIds: [],
+        description: item.description,
+        projectId: props.task.projectId,
+        agentId: null,
+        iterationId: props.task.iterationId,
+        requirementTaskId: props.task.id
+      })
+    }
+    ElMessage.success(`已创建 ${editableTaskSuggestions.value.length} 个任务`)
+    emit('changed')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '创建任务失败')
+  } finally {
+    creatingTasks.value = false
+  }
+}
+
+const removeTestCaseSuggestion = (index: number) => {
+  editableTestCaseSuggestions.value.splice(index, 1)
+}
+
+const appendStep = (testCase: TaskRequirementAiTestCaseSuggestionItem) => {
+  testCase.steps.push({
+    stepNo: testCase.steps.length + 1,
+    action: '',
+    expectedResult: ''
+  })
+}
+
+const removeStep = (testCase: TaskRequirementAiTestCaseSuggestionItem, index: number) => {
+  testCase.steps.splice(index, 1)
+  testCase.steps.forEach((step, stepIndex) => {
+    step.stepNo = stepIndex + 1
+  })
+}
+
+const buildCasePayload = (cases: TaskRequirementAiTestCaseSuggestionItem[]) =>
+  cases.map((item, caseIndex) => ({
+    title: item.title.trim(),
+    moduleName: item.moduleName.trim(),
+    caseType: item.caseType,
+    priority: item.priority,
+    precondition: item.precondition.trim(),
+    remarks: item.remarks.trim(),
+    sortOrder: caseIndex,
+    steps: item.steps
+      .filter((step) => step.action.trim() && step.expectedResult.trim())
+      .map((step, stepIndex) => ({
+        stepNo: step.stepNo || stepIndex + 1,
+        action: step.action.trim(),
+        expectedResult: step.expectedResult.trim()
+      }))
+  }))
+
+const appendToExistingPlan = async () => {
+  if (!selectedPlanId.value || !editableTestCaseSuggestions.value.length) {
+    return
+  }
+  importingTestCases.value = true
+  try {
+    const detail = await getTestPlanDetail(selectedPlanId.value)
+    await updateTestPlan(selectedPlanId.value, {
+      name: detail.name,
+      projectId: detail.projectId,
+      iterationId: detail.iterationId as number,
+      status: detail.status,
+      description: detail.description,
+      cases: [...detail.cases, ...buildCasePayload(editableTestCaseSuggestions.value)].map((item, index) => ({
+        ...item,
+        sortOrder: index
+      }))
+    })
+    ElMessage.success(`已导入 ${editableTestCaseSuggestions.value.length} 条测试用例`)
+    emit('changed')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '导入测试计划失败')
+  } finally {
+    importingTestCases.value = false
+  }
+}
+
+const createNewPlanWithCases = async () => {
+  if (!props.task || !editableTestCaseSuggestions.value.length) {
+    return
+  }
+  if (!props.task.iterationId) {
+    ElMessage.warning('当前需求未分配迭代，无法直接创建测试计划')
+    return
+  }
+  creatingTestPlan.value = true
+  try {
+    await createTestPlan({
+      name: `${props.task.name}-测试计划`,
+      projectId: props.task.projectId,
+      iterationId: props.task.iterationId,
+      status: '草稿',
+      description: `由需求《${props.task.name}》AI 生成`,
+      cases: buildCasePayload(editableTestCaseSuggestions.value)
+    })
+    ElMessage.success(`已创建测试计划并导入 ${editableTestCaseSuggestions.value.length} 条测试用例`)
+    emit('changed')
+    await loadTestPlanOptions()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '创建测试计划失败')
+  } finally {
+    creatingTestPlan.value = false
+  }
+}
+
+watch(
+  () => props.modelValue,
+  (visible) => {
+    if (!visible) {
+      result.value = null
+      editableTaskSuggestions.value = []
+      editableTestCaseSuggestions.value = []
+      selectedPlanId.value = undefined
+      taskSuggestionDrawerVisible.value = false
+      currentTaskSuggestionIndex.value = null
+      runningAction.value = null
+      creatingTasks.value = false
+      importingTestCases.value = false
+      creatingTestPlan.value = false
+    }
+  }
+)
+
+watch(
+  () => props.task?.id,
+  () => {
+    result.value = null
+    editableTaskSuggestions.value = []
+    editableTestCaseSuggestions.value = []
+    selectedPlanId.value = undefined
+    taskSuggestionDrawerVisible.value = false
+    currentTaskSuggestionIndex.value = null
+  }
+)
+
+onMounted(async () => {
+  await loadModelOptions()
+})
+</script>
+
+<style scoped>
+.requirement-ai-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.requirement-ai-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.requirement-ai-subtitle {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.requirement-ai-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.requirement-ai-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.92fr);
+  gap: 16px;
+  min-height: 520px;
+}
+
+.requirement-ai-preview,
+.requirement-ai-panel {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 18px;
+  padding: 16px;
+  background: #fff;
+  min-height: 0;
+}
+
+.requirement-ai-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.requirement-ai-section-head.compact {
+  margin-bottom: 10px;
+}
+
+.requirement-ai-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+
+.requirement-ai-section-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.requirement-ai-markdown {
+  max-height: 620px;
+  overflow: auto;
+  line-height: 1.7;
+  color: var(--el-text-color-primary);
+}
+
+.requirement-ai-markdown :deep(p),
+.requirement-ai-markdown :deep(ul),
+.requirement-ai-markdown :deep(ol),
+.requirement-ai-markdown :deep(blockquote),
+.requirement-ai-markdown :deep(pre) {
+  margin: 0;
+}
+
+.requirement-ai-markdown :deep(p + p),
+.requirement-ai-markdown :deep(p + ul),
+.requirement-ai-markdown :deep(p + ol),
+.requirement-ai-markdown :deep(ul + p),
+.requirement-ai-markdown :deep(ol + p),
+.requirement-ai-markdown :deep(blockquote + p),
+.requirement-ai-markdown :deep(pre + p) {
+  margin-top: 10px;
+}
+
+.requirement-ai-markdown :deep(ul),
+.requirement-ai-markdown :deep(ol) {
+  padding-left: 20px;
+}
+
+.requirement-ai-markdown :deep(pre) {
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.requirement-ai-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: 620px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.requirement-ai-suggestion {
+  border: 1px solid #d8e4ef;
+  border-radius: 18px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+}
+
+.requirement-ai-suggestion.editable {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.requirement-ai-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed #d7e2ec;
+}
+
+.requirement-ai-card-index {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0f3b66;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.requirement-ai-card-type {
+  font-size: 12px;
+  color: #6b7f93;
+  white-space: nowrap;
+}
+
+.requirement-ai-suggestion-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.requirement-ai-suggestion-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.requirement-ai-suggestion-grid.triple {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.requirement-ai-suggestion-desc {
+  padding: 10px 12px;
+  border: 1px solid #e1e8ef;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  line-height: 1.7;
+}
+
+.requirement-ai-plan-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.requirement-ai-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.requirement-ai-steps-head,
+.requirement-ai-step-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.requirement-ai-step {
+  padding: 10px;
+  border: 1px solid #dbe5ee;
+  border-radius: 12px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+
+.requirement-ai-drawer-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.requirement-ai-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+@media (max-width: 1120px) {
+  .requirement-ai-body {
+    grid-template-columns: 1fr;
+  }
+
+  .requirement-ai-suggestion-grid,
+  .requirement-ai-suggestion-grid.triple {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

@@ -1,0 +1,456 @@
+<template>
+  <div class="management-list-page">
+    <section class="management-list-toolbar">
+      <div class="management-list-toolbar-main">
+        <div class="management-list-search-shell">
+          <el-icon class="management-list-search-icon"><Search /></el-icon>
+          <input
+            v-model="filters.keyword"
+            class="management-list-search-input"
+            type="text"
+            placeholder="搜索功能名称、编码或描述..."
+            @keyup.enter="handleSearch"
+          />
+        </div>
+        <span class="management-list-toolbar-divider" aria-hidden="true"></span>
+        <el-popover v-model:visible="permissionFilterPopoverVisible" trigger="click" placement="bottom-start" :width="320" popper-class="management-list-popper">
+          <template #reference>
+            <button class="management-list-toolbar-button" type="button">
+              <el-icon><Filter /></el-icon>
+              <span>筛选</span>
+            </button>
+          </template>
+          <div class="management-list-filter-panel management-list-compact-input">
+            <div class="management-list-filter-field">
+              <label>类型</label>
+              <el-select v-model="filters.type" clearable placeholder="类型" style="width: 100%" :teleported="false">
+                <el-option label="菜单" value="MENU" />
+                <el-option label="动作" value="ACTION" />
+              </el-select>
+            </div>
+            <div class="management-list-filter-field">
+              <label>状态</label>
+              <el-select v-model="filters.enabled" clearable placeholder="状态" style="width: 100%" :teleported="false">
+                <el-option label="启用" :value="true" />
+                <el-option label="禁用" :value="false" />
+              </el-select>
+            </div>
+            <div class="management-list-filter-actions">
+              <el-button type="primary" @click="handleSearch">查询</el-button>
+              <el-button @click="handleReset">重置</el-button>
+            </div>
+          </div>
+        </el-popover>
+        <button class="management-list-toolbar-button" type="button" @click="handleReset">
+          <el-icon><RefreshRight /></el-icon>
+          <span>重置</span>
+        </button>
+      </div>
+
+      <div class="management-list-toolbar-side">
+        <button v-if="canManage" class="management-list-create-button" type="button" @click="openCreateDialog">
+          <el-icon><Plus /></el-icon>
+          <span>新建功能</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="management-list-shell">
+      <div class="management-list-table-scroll mobile-card-scroll" v-loading="loading">
+        <table class="management-list-table permission-list-table mobile-card-table">
+          <thead>
+            <tr>
+              <th class="permission-col-main">功能</th>
+              <th class="permission-col-code">编码</th>
+              <th class="permission-col-type center">类型</th>
+              <th class="permission-col-parent">上级</th>
+              <th class="permission-col-path">路径</th>
+              <th class="permission-col-sort center">排序</th>
+              <th class="permission-col-status center">状态</th>
+              <th class="permission-col-built center">内置</th>
+              <th v-if="canManage" class="permission-col-actions right">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in permissionList" :key="row.id" class="management-list-row">
+              <td class="permission-col-main" data-label="功能">
+                <div class="management-list-title-cell">
+                  <span class="management-list-title-icon"><el-icon><Setting /></el-icon></span>
+                  <div class="management-list-title-copy">
+                    <div class="management-list-title">{{ row.name }}</div>
+                    <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="permission-col-code" data-label="编码">
+                <span class="management-list-text">{{ row.code }}</span>
+              </td>
+              <td class="permission-col-type center" data-label="类型">
+                <span class="management-list-pill" :class="row.type === 'MENU' ? 'info' : 'warning'">{{ row.type === 'MENU' ? '菜单' : '动作' }}</span>
+              </td>
+              <td class="permission-col-parent" data-label="上级">
+                <span class="management-list-empty">{{ parentName(row.parentId) }}</span>
+              </td>
+              <td class="permission-col-path" data-label="路径">
+                <span class="management-list-empty">{{ row.path || '-' }}</span>
+              </td>
+              <td class="permission-col-sort center" data-label="排序">
+                <span class="management-list-text">{{ row.sortOrder }}</span>
+              </td>
+              <td class="permission-col-status center" data-label="状态">
+                <span class="management-list-pill" :class="row.enabled ? 'success' : 'danger'">{{ row.enabled ? '启用' : '禁用' }}</span>
+              </td>
+              <td class="permission-col-built center" data-label="内置">
+                <span class="management-list-pill neutral">{{ row.builtIn ? '是' : '否' }}</span>
+              </td>
+              <td v-if="canManage" class="permission-col-actions right" data-label="操作">
+                <div class="management-list-row-actions">
+                  <button class="management-list-row-button" type="button" title="编辑功能" @click="openEditDialog(row)">
+                    <el-icon><EditPen /></el-icon>
+                  </button>
+                  <button class="management-list-row-button danger" type="button" :disabled="row.builtIn" title="删除功能" @click="handleDelete(row.id)">
+                    <el-icon><Delete /></el-icon>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+        <div class="management-list-footer">
+          <div class="management-list-footer-total">
+          共 <span>{{ pagination.total }}</span> 条
+          </div>
+          <div class="management-list-footer-controls">
+            <div class="management-list-page-size management-list-compact-input">
+            <span>每页</span>
+            <el-select v-model="pagination.size" size="small" style="width: 92px" @change="handleSizeChange">
+              <el-option :value="5" label="5" />
+              <el-option :value="10" label="10" />
+              <el-option :value="20" label="20" />
+              <el-option :value="50" label="50" />
+            </el-select>
+          </div>
+          <div class="management-list-page-nav">
+            <button class="management-list-page-button" type="button" :disabled="pagination.page <= 1" @click="handlePrevPage">
+              <el-icon><ArrowLeft /></el-icon>
+            </button>
+            <span class="management-list-page-text">第 {{ pagination.page }} / {{ totalPages }} 页</span>
+            <button class="management-list-page-button" type="button" :disabled="pagination.page >= totalPages" @click="handleNextPage">
+              <el-icon><ArrowRight /></el-icon>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑功能' : '新建功能'" width="620px" class="platform-form-dialog" align-center>
+    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">功能信息</div>
+          <div class="platform-form-section-subtitle">配置功能类型、路由信息和启用状态。</div>
+        </div>
+        <el-form-item label="功能名称" prop="name">
+          <el-input v-model="form.name" placeholder="请输入功能名称" />
+        </el-form-item>
+        <el-form-item label="功能编码" prop="code">
+          <el-input v-model="form.code" :disabled="currentBuiltIn" placeholder="例如：project:view" />
+        </el-form-item>
+        <el-form-item label="功能类型" prop="type">
+          <el-radio-group v-model="form.type">
+            <el-radio label="MENU">菜单</el-radio>
+            <el-radio label="ACTION">动作</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="上级功能">
+          <el-select v-model="form.parentId" clearable placeholder="请选择上级功能" style="width: 100%">
+            <el-option v-for="item in parentOptions" :key="item.id" :label="`${item.name} (${item.code})`" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="路由路径">
+          <el-input v-model="form.path" placeholder="菜单可配置，例如 /projects" />
+        </el-form-item>
+        <el-form-item label="组件名称">
+          <el-input v-model="form.component" placeholder="例如：ProjectView" />
+        </el-form-item>
+        <el-form-item label="图标">
+          <el-input v-model="form.icon" placeholder="例如：User / Lock" />
+        </el-form-item>
+        <el-form-item label="排序值" prop="sortOrder">
+          <el-input-number v-model="form.sortOrder" :min="0" :max="9999" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="form.enabled" :disabled="currentBuiltIn" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="form.description" type="textarea" :rows="3" placeholder="请输入描述" />
+        </el-form-item>
+      </section>
+    </el-form>
+    <template #footer>
+      <el-button @click="dialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+    </template>
+  </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
+import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Plus, RefreshRight, Search, Setting } from '@element-plus/icons-vue'
+import { createPermission, deletePermission, listPermissionOptions, pagePermissions, updatePermission } from '@/api/access'
+import { useAuthStore } from '@/stores/auth'
+import type { PermissionItem } from '@/types/platform'
+
+interface PermissionForm {
+  name: string
+  code: string
+  type: 'MENU' | 'ACTION'
+  path: string
+  component: string
+  icon: string
+  parentId: number | null
+  sortOrder: number
+  enabled: boolean
+  description: string
+}
+
+const authStore = useAuthStore()
+const canManage = computed(() => authStore.hasPermission('system:permission:manage'))
+const loading = ref(false)
+const submitting = ref(false)
+const dialogVisible = ref(false)
+const isEditing = ref(false)
+const currentId = ref<number | null>(null)
+const currentBuiltIn = ref(false)
+const permissionList = ref<PermissionItem[]>([])
+const allPermissions = ref<PermissionItem[]>([])
+const formRef = ref<FormInstance>()
+
+const pagination = reactive({ page: 1, size: 10, total: 0 })
+const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
+const filters = reactive<{ keyword: string; type: '' | 'MENU' | 'ACTION'; enabled: boolean | '' }>({
+  keyword: '',
+  type: '',
+  enabled: ''
+})
+const permissionFilterPopoverVisible = ref(false)
+const form = reactive<PermissionForm>({
+  name: '',
+  code: '',
+  type: 'MENU',
+  path: '',
+  component: '',
+  icon: '',
+  parentId: null,
+  sortOrder: 100,
+  enabled: true,
+  description: ''
+})
+
+const rules: FormRules<PermissionForm> = {
+  name: [{ required: true, message: '请输入功能名称', trigger: 'blur' }],
+  code: [{ required: true, message: '请输入功能编码', trigger: 'blur' }],
+  type: [{ required: true, message: '请选择功能类型', trigger: 'change' }],
+  sortOrder: [{ required: true, message: '请输入排序值', trigger: 'change' }]
+}
+
+const permissionMap = computed(() => new Map(allPermissions.value.map((item) => [item.id, item.name])))
+const parentOptions = computed(() => allPermissions.value.filter((item) => item.id !== currentId.value))
+
+const parentName = (parentId: number | null) => {
+  if (!parentId) return '-'
+  return permissionMap.value.get(parentId) || '-'
+}
+
+const resetForm = () => {
+  currentId.value = null
+  currentBuiltIn.value = false
+  form.name = ''
+  form.code = ''
+  form.type = 'MENU'
+  form.path = ''
+  form.component = ''
+  form.icon = ''
+  form.parentId = null
+  form.sortOrder = 100
+  form.enabled = true
+  form.description = ''
+  formRef.value?.clearValidate()
+}
+
+const loadAllPermissions = async () => {
+  allPermissions.value = await listPermissionOptions()
+}
+
+const loadPermissions = async () => {
+  loading.value = true
+  try {
+    const data = await pagePermissions({
+      page: pagination.page,
+      size: pagination.size,
+      keyword: filters.keyword,
+      type: filters.type,
+      enabled: filters.enabled
+    })
+    permissionList.value = data.records
+    pagination.total = data.total
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleSearch = async () => {
+  permissionFilterPopoverVisible.value = false
+  pagination.page = 1
+  await loadPermissions()
+}
+
+const handleReset = async () => {
+  filters.keyword = ''
+  filters.type = ''
+  filters.enabled = ''
+  pagination.page = 1
+  await loadPermissions()
+}
+
+const handleSizeChange = async () => {
+  pagination.page = 1
+  await loadPermissions()
+}
+
+const handlePrevPage = async () => {
+  if (pagination.page <= 1) return
+  pagination.page -= 1
+  await loadPermissions()
+}
+
+const handleNextPage = async () => {
+  if (pagination.page >= totalPages.value) return
+  pagination.page += 1
+  await loadPermissions()
+}
+
+const openCreateDialog = () => {
+  isEditing.value = false
+  resetForm()
+  dialogVisible.value = true
+}
+
+const openEditDialog = (row: PermissionItem) => {
+  isEditing.value = true
+  currentId.value = row.id
+  currentBuiltIn.value = row.builtIn
+  form.name = row.name
+  form.code = row.code
+  form.type = row.type
+  form.path = row.path || ''
+  form.component = row.component || ''
+  form.icon = row.icon || ''
+  form.parentId = row.parentId
+  form.sortOrder = row.sortOrder
+  form.enabled = row.enabled
+  form.description = row.description
+  dialogVisible.value = true
+}
+
+const handleSubmit = async () => {
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
+
+  submitting.value = true
+  try {
+    const payload = {
+      name: form.name,
+      code: form.code,
+      type: form.type,
+      path: form.path || null,
+      component: form.component || null,
+      icon: form.icon,
+      parentId: form.parentId,
+      sortOrder: form.sortOrder,
+      enabled: form.enabled,
+      description: form.description
+    }
+    if (isEditing.value && currentId.value !== null) {
+      await updatePermission(currentId.value, payload)
+      ElMessage.success('功能更新成功')
+    } else {
+      await createPermission(payload)
+      ElMessage.success('功能创建成功')
+    }
+    dialogVisible.value = false
+    await loadAllPermissions()
+    await loadPermissions()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '操作失败')
+  } finally {
+    submitting.value = false
+  }
+}
+
+const handleDelete = async (id: number) => {
+  try {
+    await ElMessageBox.confirm('删除功能后，关联角色将失去该权限，确认继续吗？', '提示', { type: 'warning' })
+    await deletePermission(id)
+    ElMessage.success('功能删除成功')
+    await loadAllPermissions()
+    await loadPermissions()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || '删除失败')
+    }
+  }
+}
+
+onMounted(async () => {
+  await loadAllPermissions()
+  await loadPermissions()
+})
+</script>
+
+<style scoped>
+.permission-list-table {
+  min-width: 1180px;
+}
+
+.permission-col-main {
+  width: 23%;
+}
+
+.permission-col-code {
+  width: 16%;
+}
+
+.permission-col-type {
+  width: 8%;
+}
+
+.permission-col-parent {
+  width: 12%;
+}
+
+.permission-col-path {
+  width: 14%;
+}
+
+.permission-col-sort {
+  width: 6%;
+}
+
+.permission-col-status {
+  width: 8%;
+}
+
+.permission-col-built {
+  width: 6%;
+}
+
+.permission-col-actions {
+  width: 7%;
+}
+</style>

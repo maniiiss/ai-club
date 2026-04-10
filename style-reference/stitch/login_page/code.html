@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>登录 | Nexus Foundry - AI代理工程管理平台</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-secondary-container": "#78471a",
+                      "outline": "#897362",
+                      "error-container": "#ffdad6",
+                      "on-primary-fixed-variant": "#6e3900",
+                      "surface-variant": "#e1e3e4",
+                      "on-surface": "#191c1d",
+                      "on-error-container": "#93000a",
+                      "inverse-on-surface": "#f0f1f2",
+                      "on-secondary-fixed-variant": "#6a3b0f",
+                      "surface-container-low": "#f3f4f5",
+                      "on-primary": "#ffffff",
+                      "error": "#ba1a1a",
+                      "secondary": "#865224",
+                      "surface-container-high": "#e7e8e9",
+                      "tertiary-fixed-dim": "#85cfff",
+                      "primary-fixed-dim": "#ffb77d",
+                      "on-tertiary-fixed-variant": "#004c6c",
+                      "surface": "#f8f9fa",
+                      "tertiary-container": "#00b5fc",
+                      "primary-fixed": "#ffdcc3",
+                      "primary-container": "#ff8c00",
+                      "on-tertiary-container": "#004360",
+                      "on-error": "#ffffff",
+                      "tertiary-fixed": "#c7e7ff",
+                      "on-tertiary": "#ffffff",
+                      "on-secondary-fixed": "#2f1500",
+                      "secondary-fixed-dim": "#fdb881",
+                      "secondary-container": "#fdb881",
+                      "on-primary-fixed": "#2f1500",
+                      "on-primary-container": "#623200",
+                      "inverse-primary": "#ffb77d",
+                      "surface-container-lowest": "#ffffff",
+                      "outline-variant": "#ddc1ae",
+                      "surface-dim": "#d9dadb",
+                      "on-background": "#191c1d",
+                      "inverse-surface": "#2e3132",
+                      "tertiary": "#00658f",
+                      "secondary-fixed": "#ffdcc3",
+                      "surface-container": "#edeeef",
+                      "surface-tint": "#904d00",
+                      "on-tertiary-fixed": "#001e2e",
+                      "on-surface-variant": "#564334",
+                      "on-secondary": "#ffffff",
+                      "surface-bright": "#f8f9fa",
+                      "primary": "#904d00",
+                      "surface-container-highest": "#e1e3e4",
+                      "background": "#f8f9fa"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "fontFamily": {
+                      "headline": [
+                              "Manrope"
+                      ],
+                      "body": [
+                              "Inter"
+                      ],
+                      "label": [
+                              "Inter"
+                      ]
+              }
+            },
+          },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .bg-glass {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(24px);
+        }
+        .primary-gradient {
+            background: linear-gradient(135deg, #ff8c00 0%, #904d00 100%);
+        }
+        .input-underlined {
+            border: none;
+            border-bottom: 2px solid #ddc1ae;
+            background: transparent !important;
+            padding-left: 0;
+            padding-right: 0;
+        }
+        .input-underlined:focus {
+            outline: none;
+            box-shadow: none;
+            border-bottom: 2px solid #ff8c00;
+        }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface antialiased overflow-hidden">
+<div class="flex min-h-screen">
+<!-- Left Section: Abstract Technical Background -->
+<div class="hidden lg:flex lg:w-7/12 relative items-center justify-center overflow-hidden bg-surface-container-high">
+<div class="absolute inset-0 z-0">
+<img alt="Abstract Neural Network Architecture" class="w-full h-full object-cover opacity-20 mix-blend-multiply grayscale" data-alt="Abstract geometric network of glowing neural connections and code nodes on a dark technical blueprint background with architectural grid lines" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDymm8yCVML3aNMMRAoZvxIrfavAcVUKe5pNUVGguLpkPiQVRcbcnpo9IPuUfwvJH98Wnnp33d7tMlOPTfFIzQo46Xihkv02zXiC-8IqjrbmQnb_lFy3-HoTO_Loy1zIV4PdXug2yCAPxw4SjGiPtHrQBhwaTInNCdznQeJYSDhhO1Hii7tQHe8P15kXjMHwOCme4sdKke0GZpUt3EI84urFusNz-LwmhzPeVHGWMigLzZzjre-zxZeSywth7Ba09A4WQB151VjsomK"/>
+</div>
+<!-- Floating Data Layers -->
+<div class="relative z-10 w-full max-w-2xl px-12">
+<div class="space-y-8">
+<div class="bg-glass p-8 rounded-xl border-l-4 border-primary shadow-sm">
+<span class="material-symbols-outlined text-primary text-4xl mb-4">terminal</span>
+<h2 class="font-headline text-3xl font-extrabold text-on-surface tracking-tight mb-2">AI 代理工程管理平台</h2>
+<p class="text-on-surface-variant leading-relaxed">
+                            Nexus Foundry 是为您打造的智能工作坊。通过深度的 AI 协作与自动化的工程流，提升您的开发效率与团队协同能力。
+                        </p>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-lowest p-6 rounded-lg shadow-sm">
+<div class="text-primary font-headline font-bold text-2xl mb-1">99.9%</div>
+<div class="text-xs font-label uppercase tracking-widest text-on-surface-variant">系统可用性</div>
+</div>
+<div class="bg-surface-container-lowest p-6 rounded-lg shadow-sm">
+<div class="text-primary font-headline font-bold text-2xl mb-1">2.4k+</div>
+<div class="text-xs font-label uppercase tracking-widest text-on-surface-variant">活跃代理任务</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Absolute decorative elements -->
+<div class="absolute top-10 left-10 w-32 h-32 border border-outline-variant opacity-20 rounded-full animate-pulse"></div>
+<div class="absolute bottom-20 right-20 w-64 h-64 border-t border-l border-primary opacity-10"></div>
+</div>
+<!-- Right Section: Login Form -->
+<main class="w-full lg:w-5/12 bg-surface-container-lowest flex flex-col justify-between items-center px-8 lg:px-20 py-12 relative">
+<!-- Top Branding (Mobile/Internal) -->
+<header class="w-full mb-12 lg:mb-0">
+<div class="flex items-center space-x-3">
+<div class="w-8 h-8 primary-gradient rounded-sm flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-xl" style="font-variation-settings: 'FILL' 1;">hub</span>
+</div>
+<span class="font-headline text-xl font-black tracking-tight text-on-surface">Nexus Foundry</span>
+</div>
+</header>
+<!-- Login Card Content -->
+<div class="w-full max-w-md">
+<div class="mb-10">
+<h1 class="font-headline text-4xl font-extrabold text-on-surface tracking-tight mb-3">欢迎回来</h1>
+<p class="text-on-surface-variant font-medium">登录您的智能工作坊</p>
+</div>
+<form class="space-y-8" onsubmit="return false;">
+<!-- Input Fields -->
+<div class="space-y-6">
+<div class="relative">
+<label class="text-xs font-label font-bold text-on-surface-variant uppercase tracking-wider mb-1 block" for="username">用户名 / 电子邮箱</label>
+<input class="w-full input-underlined font-body text-on-surface" id="username" name="username" placeholder="name@nexusfoundry.ai" type="text"/>
+</div>
+<div class="relative">
+<div class="flex justify-between items-center mb-1">
+<label class="text-xs font-label font-bold text-on-surface-variant uppercase tracking-wider block" for="password">密码</label>
+<a class="text-xs font-medium text-primary hover:underline" href="#">忘记密码?</a>
+</div>
+<div class="relative flex items-center">
+<input class="w-full input-underlined font-body text-on-surface pr-10" id="password" name="password" placeholder="••••••••" type="password"/>
+<button class="absolute right-0 text-outline-variant hover:text-primary transition-colors" type="button">
+<span class="material-symbols-outlined">visibility</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Options -->
+<div class="flex items-center">
+<input class="w-4 h-4 rounded-sm border-outline text-primary focus:ring-primary" id="remember" type="checkbox"/>
+<label class="ml-2 text-sm font-medium text-on-surface-variant" for="remember">记住我</label>
+</div>
+<!-- Actions -->
+<div class="space-y-4 pt-4">
+<button class="w-full py-4 px-6 primary-gradient text-white font-headline font-bold rounded-xl shadow-lg shadow-primary-container/20 hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center space-x-2" type="submit">
+<span>登录</span>
+<span class="material-symbols-outlined text-sm">login</span>
+</button>
+<button class="w-full py-4 px-6 border border-outline-variant text-on-surface font-headline font-bold rounded-xl hover:bg-surface-container-low transition-colors flex items-center justify-center space-x-2" type="button">
+<span class="material-symbols-outlined text-xl">corporate_fare</span>
+<span>使用企业 SSO 登录</span>
+</button>
+</div>
+</form>
+<!-- Signup Prompt (Optional for completeness) -->
+<p class="mt-12 text-center text-sm text-on-surface-variant">
+                    还没有账号？ <a class="text-primary font-bold hover:underline" href="#">申请演示</a>
+</p>
+</div>
+<!-- Global Footer (from Shared Components JSON Logic) -->
+<footer class="w-full flex flex-wrap justify-center items-center gap-x-6 gap-y-2 mt-12 text-[10px] sm:text-xs font-medium font-body text-slate-500 dark:text-slate-500">
+<span class="w-full text-center lg:w-auto mb-4 lg:mb-0">© 2024 Nexus Foundry. All rights reserved.</span>
+<a class="hover:text-orange-600 transition-colors" href="#">Privacy Policy</a>
+<a class="hover:text-orange-600 transition-colors" href="#">Terms of Service</a>
+<a class="hover:text-orange-600 transition-colors" href="#">Security Compliance</a>
+<a class="hover:text-orange-600 transition-colors" href="#">Contact Support</a>
+</footer>
+</main>
+</div>
+</body></html>

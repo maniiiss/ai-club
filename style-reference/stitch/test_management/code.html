@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Test Management | Kinetic Workspace</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;400;600;700;800&amp;family=Inter:wght@300;400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "background": "#f8f9fa",
+                        "inverse-surface": "#2e3132",
+                        "surface-variant": "#e1e3e4",
+                        "on-tertiary-container": "#004360",
+                        "on-primary-fixed": "#2f1500",
+                        "inverse-primary": "#ffb77d",
+                        "primary-fixed": "#ffdcc3",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary-fixed-variant": "#6a3b0f",
+                        "inverse-on-surface": "#f0f1f2",
+                        "surface-container-highest": "#e1e3e4",
+                        "outline": "#897362",
+                        "on-primary-fixed-variant": "#6e3900",
+                        "on-tertiary-fixed-variant": "#004c6c",
+                        "surface": "#f8f9fa",
+                        "on-tertiary": "#ffffff",
+                        "secondary-container": "#fdb881",
+                        "surface-container": "#edeeef",
+                        "on-primary-container": "#623200",
+                        "secondary": "#865224",
+                        "tertiary": "#00658f",
+                        "surface-tint": "#904d00",
+                        "on-secondary-container": "#78471a",
+                        "primary-container": "#ff8c00",
+                        "tertiary-fixed-dim": "#85cfff",
+                        "secondary-fixed": "#ffdcc3",
+                        "error-container": "#ffdad6",
+                        "surface-container-high": "#e7e8e9",
+                        "tertiary-fixed": "#c7e7ff",
+                        "on-secondary": "#ffffff",
+                        "primary": "#904d00",
+                        "surface-container-low": "#f3f4f5",
+                        "on-background": "#191c1d",
+                        "primary-fixed-dim": "#ffb77d",
+                        "on-secondary-fixed": "#2f1500",
+                        "on-surface": "#191c1d",
+                        "on-surface-variant": "#564334",
+                        "on-tertiary-fixed": "#001e2e",
+                        "on-primary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "on-error-container": "#93000a",
+                        "secondary-fixed-dim": "#fdb881",
+                        "tertiary-container": "#00b5fc",
+                        "error": "#ba1a1a",
+                        "surface-bright": "#f8f9fa",
+                        "outline-variant": "#ddc1ae",
+                        "surface-dim": "#d9dadb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "fontFamily": {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .active-nav-border {
+            box-shadow: inset 4px 0 0 0 #ff8c00;
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #e1e3e4; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-background font-body text-on-surface overflow-hidden">
+<!-- SideNavBar Shell -->
+<aside class="fixed left-0 top-0 h-full w-64 bg-surface-container-low flex flex-col z-50">
+<div class="p-6">
+<div class="flex items-center gap-3 mb-8">
+<div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center text-on-primary-container">
+<span class="material-symbols-outlined text-sm" data-weight="fill" style="font-variation-settings: 'FILL' 1;">bolt</span>
+</div>
+<div>
+<h1 class="text-lg font-black tracking-tight text-slate-900 leading-none">The Kinetic Workspace</h1>
+<span class="text-[10px] font-headline uppercase tracking-widest text-slate-500">Intelligent Atelier</span>
+</div>
+</div>
+<nav class="space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-200/50 transition-colors font-manrope font-semibold text-sm" href="#">
+<span class="material-symbols-outlined text-[20px]">dashboard</span>
+<span>Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-200/50 transition-colors font-manrope font-semibold text-sm" href="#">
+<span class="material-symbols-outlined text-[20px]">folder_managed</span>
+<span>Projects</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-200/50 transition-colors font-manrope font-semibold text-sm" href="#">
+<span class="material-symbols-outlined text-[20px]">sync</span>
+<span>Iterations</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-200/50 transition-colors font-manrope font-semibold text-sm" href="#">
+<span class="material-symbols-outlined text-[20px]">smart_toy</span>
+<span>Agent Management</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-200/50 transition-colors font-manrope font-semibold text-sm" href="#">
+<span class="material-symbols-outlined text-[20px]">terminal</span>
+<span>GitLab</span>
+</a>
+<!-- ACTIVE NAV ITEM: Testing -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg border-l-4 border-orange-500 text-slate-900 font-bold bg-white/50 transition-all font-manrope text-sm" href="#">
+<span class="material-symbols-outlined text-[20px]">biotech</span>
+<span>Testing</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 hover:bg-slate-200/50 transition-colors font-manrope font-semibold text-sm" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+<span>System Settings</span>
+</a>
+</nav>
+</div>
+<div class="mt-auto p-4">
+<button class="w-full py-3 px-4 bg-gradient-to-br from-primary-container to-primary text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20 active:opacity-80 transition-all">
+<span class="material-symbols-outlined">add</span>
+<span>New Agent</span>
+</button>
+</div>
+</aside>
+<!-- TopNavBar Shell -->
+<header class="fixed top-0 right-0 h-16 w-[calc(100%-16rem)] bg-white/80 backdrop-blur-xl flex items-center justify-between px-8 z-40">
+<div class="flex items-center gap-4 flex-1">
+<div class="relative w-full max-w-md group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-orange-500 transition-colors">search</span>
+<input class="w-full bg-surface-container-low border-0 border-b-2 border-transparent focus:border-orange-500 focus:ring-0 text-sm py-2 pl-10 pr-4 transition-all" placeholder="Search test cases, plans, or results..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<button class="relative text-slate-600 hover:text-orange-500 transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-primary rounded-full border-2 border-white"></span>
+</button>
+<div class="flex items-center gap-3 pl-6 border-l border-outline-variant/30">
+<div class="text-right">
+<p class="text-xs font-bold text-slate-900">Dr. Aris Thorne</p>
+<p class="text-[10px] text-slate-500">Lead QA Architect</p>
+</div>
+<img class="w-8 h-8 rounded-full border-2 border-surface-container-high object-cover" data-alt="Professional headshot of a middle-aged male architect in a bright studio setting with modern glasses and serious expression" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAaj4zk0reULmwNGZMTwNT7eghGt_lRXf7x5YwNOTTOUg1ZZHzEmb_StNZ1pAdTrLa4QX38iDjFiglkORGCIziW3-ePaaQHBgmgJ5w8LKhqPD51iG45v30BWeRmjvoNfKlwaWZ7Ozm4K-BfoLP5waoXRWLR5QWkToZqnEOQVKXhL9ITLdmInC_62otYEdl6AMRzcYotfLMhmzo1_5XON0f6PFUpN2ZF4rlDvGgVTjVDJuBBUbqMQtHdsmReo9k1FfiDXIr5LAxhWaB8"/>
+</div>
+</div>
+</header>
+<!-- Main Canvas -->
+<main class="ml-64 pt-16 h-screen overflow-y-auto">
+<div class="p-8 max-w-[1440px] mx-auto">
+<!-- Page Header -->
+<div class="flex items-end justify-between mb-10">
+<div>
+<nav class="flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-2">
+<span>Workspace</span>
+<span class="material-symbols-outlined text-[10px]">chevron_right</span>
+<span class="text-orange-500">Test Management</span>
+</nav>
+<h2 class="text-3xl font-black text-slate-900 tracking-tight">Test Plan Registry</h2>
+<p class="text-slate-500 text-sm mt-1">Orchestrating quality across 12 active AI deployments.</p>
+</div>
+<button class="flex items-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-lg font-bold text-sm hover:bg-slate-800 transition-all shadow-xl shadow-slate-200">
+<span class="material-symbols-outlined">playlist_add</span>
+<span>New Test Plan</span>
+</button>
+</div>
+<!-- Bento Filter Bar -->
+<div class="grid grid-cols-12 gap-4 mb-8">
+<div class="col-span-8 bg-surface-container-lowest p-1 rounded-xl flex items-center gap-1 shadow-sm border border-outline-variant/10">
+<button class="px-6 py-2.5 bg-primary-container text-on-primary-container rounded-lg font-bold text-xs">All Plans</button>
+<button class="px-6 py-2.5 text-slate-500 hover:bg-surface-container-low rounded-lg font-semibold text-xs transition-colors">Planning</button>
+<button class="px-6 py-2.5 text-slate-500 hover:bg-surface-container-low rounded-lg font-semibold text-xs transition-colors">Running</button>
+<button class="px-6 py-2.5 text-slate-500 hover:bg-surface-container-low rounded-lg font-semibold text-xs transition-colors">Finished</button>
+<div class="h-6 w-px bg-outline-variant/30 mx-2"></div>
+<button class="flex items-center gap-2 px-4 py-2.5 text-slate-500 hover:text-slate-900 font-semibold text-xs transition-colors">
+<span class="material-symbols-outlined text-sm">filter_list</span>
+<span>Project: All</span>
+</button>
+</div>
+<div class="col-span-4 bg-surface-container-lowest p-1 rounded-xl flex items-center justify-end px-4 gap-4 shadow-sm border border-outline-variant/10">
+<span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Display: High Density</span>
+<div class="flex bg-surface-container-low rounded p-1">
+<button class="p-1 bg-white rounded shadow-sm text-orange-500">
+<span class="material-symbols-outlined text-sm">view_list</span>
+</button>
+<button class="p-1 text-slate-400 hover:text-slate-600">
+<span class="material-symbols-outlined text-sm">grid_view</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Table Workspace -->
+<div class="bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/5 overflow-hidden">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low/50">
+<th class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">Plan Identity</th>
+<th class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">Linked Context</th>
+<th class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">Metrics</th>
+<th class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+<th class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">Execution Progress</th>
+<th class="px-6 py-4 text-[11px] font-black text-slate-400 uppercase tracking-widest">Owner</th>
+<th class="px-6 py-4"></th>
+</tr>
+</thead>
+<tbody class="divide-y divide-outline-variant/10">
+<!-- Row 1: Running -->
+<tr class="group hover:bg-surface-container-low/30 transition-colors">
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<div class="w-1.5 h-10 bg-tertiary-container rounded-full"></div>
+<div>
+<p class="font-bold text-slate-900 text-sm">Core Engine Stress Test</p>
+<p class="text-[11px] text-slate-400 font-mono">TP-2024-081</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="space-y-1">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-slate-400">deployed_code</span>
+<span class="text-xs font-semibold text-slate-700">Project Phoenix</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-slate-400">cycle</span>
+<span class="text-xs text-slate-500">Iteration v2.4-Alpha</span>
+</div>
+</div>
+</td>
+<td class="px-6 py-5 text-sm">
+<span class="font-bold text-slate-900">1,240</span>
+<span class="text-slate-400 text-xs ml-1">Cases</span>
+</td>
+<td class="px-6 py-5">
+<span class="inline-flex items-center px-3 py-1 rounded-full bg-tertiary-fixed text-on-tertiary-fixed-variant text-[10px] font-black uppercase tracking-wider ring-1 ring-tertiary-fixed-dim/50">
+<span class="w-1.5 h-1.5 bg-tertiary-container rounded-full mr-2 animate-pulse"></span>
+                                    Running
+                                </span>
+</td>
+<td class="px-6 py-5 min-w-[200px]">
+<div class="flex items-center gap-3">
+<div class="flex-1 h-2 bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-tertiary-container rounded-full" style="width: 68%;"></div>
+</div>
+<span class="text-xs font-bold text-tertiary">68%</span>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<img class="w-6 h-6 rounded-full border border-outline-variant/30" data-alt="Portrait of a young female software engineer with a confident smile and neutral background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC4mzA0WVmoKrThanhZl0KRjhp4xuk5YiiYMwQL71VPoRHa4DnHY16tLLMdnUNORS2WuvDiho75GgoQmdi0EqmqsRSFk0-yP5ksx9ub69dJrwfmWxRyXT0-RyBSfzZ7mpuMCyE-LLjbyNncR0QFWF8ViJ_gCjOfqlDoPhge3acOHcD3O2Mjoqti_OvNHVQ_7_ViGSRX9OKm87S23vVd53oKGGuSyE6rS9YQBQFi1ubThXDbpxIdKFrz5d8xvPEAVPa4rSqnaXdqfEBd"/>
+<span class="text-xs text-slate-600 font-medium">Sarah J.</span>
+</div>
+</td>
+<td class="px-6 py-5 text-right">
+<button class="text-slate-300 hover:text-slate-900 transition-colors">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 2: Planning -->
+<tr class="group hover:bg-surface-container-low/30 transition-colors">
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<div class="w-1.5 h-10 bg-slate-200 rounded-full"></div>
+<div>
+<p class="font-bold text-slate-900 text-sm">Security Audit v4</p>
+<p class="text-[11px] text-slate-400 font-mono">TP-2024-085</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="space-y-1">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-slate-400">deployed_code</span>
+<span class="text-xs font-semibold text-slate-700">Sentinel UI</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-slate-400">cycle</span>
+<span class="text-xs text-slate-500">Security-Freeze-24</span>
+</div>
+</div>
+</td>
+<td class="px-6 py-5 text-sm">
+<span class="font-bold text-slate-900">452</span>
+<span class="text-slate-400 text-xs ml-1">Cases</span>
+</td>
+<td class="px-6 py-5">
+<span class="inline-flex items-center px-3 py-1 rounded-full bg-surface-container-high text-slate-500 text-[10px] font-black uppercase tracking-wider">
+                                    Planning
+                                </span>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-3 opacity-30">
+<div class="flex-1 h-2 bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-slate-300 rounded-full" style="width: 0%;"></div>
+</div>
+<span class="text-xs font-bold text-slate-400">0%</span>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<img class="w-6 h-6 rounded-full border border-outline-variant/30" data-alt="Portrait of a young male developer with beard and casual attire in a modern office" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBdj3Tj7JswW_yb40mbr1_KuT9l2qhYwptMYoE6n6AsNX321shO_z_4XibsexWiBYYwLTGjtDI3nnGvYNl2bXJYbeMpiCr11f6r1oWBB7JCgwLYLY3eAUwVv5zJmf49ft7L1H8PDCGu2dUoW5NS1dr0kg2zcZf5m6AQ3BsqIWrucarJMSs_RCVs68YeFrRVNWFsscsb-9t9aqRpDIDHFmyYLkti9vh1C2rTrFgEcSG88Ziy-uwtJEk1Bn22W7GN0JBUa-XChSm_V1tF"/>
+<span class="text-xs text-slate-600 font-medium">Marc T.</span>
+</div>
+</td>
+<td class="px-6 py-5 text-right">
+<button class="text-slate-300 hover:text-slate-900 transition-colors">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 3: Finished -->
+<tr class="group hover:bg-surface-container-low/30 transition-colors">
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<div class="w-1.5 h-10 bg-green-500 rounded-full"></div>
+<div>
+<p class="font-bold text-slate-900 text-sm">Mobile Regression Suite</p>
+<p class="text-[11px] text-slate-400 font-mono">TP-2024-079</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="space-y-1">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-slate-400">deployed_code</span>
+<span class="text-xs font-semibold text-slate-700">Project Phoenix</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-slate-400">cycle</span>
+<span class="text-xs text-slate-500">Release v2.3</span>
+</div>
+</div>
+</td>
+<td class="px-6 py-5 text-sm">
+<span class="font-bold text-slate-900">890</span>
+<span class="text-slate-400 text-xs ml-1">Cases</span>
+</td>
+<td class="px-6 py-5">
+<span class="inline-flex items-center px-3 py-1 rounded-full bg-green-50 text-green-700 text-[10px] font-black uppercase tracking-wider ring-1 ring-green-200">
+<span class="material-symbols-outlined text-[12px] mr-1">check_circle</span>
+                                    Finished
+                                </span>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<div class="flex-1 h-2 bg-green-100 rounded-full overflow-hidden">
+<div class="h-full bg-green-500 rounded-full" style="width: 100%;"></div>
+</div>
+<span class="text-xs font-bold text-green-600">100%</span>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<img class="w-6 h-6 rounded-full border border-outline-variant/30" data-alt="Close up of a professional woman with short hair and an optimistic expression against a blurred office background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXOLv_OsYhptCrsiP5f-L9Xl-3oR_cgqD0EcrtiYChu0Vbk8kmnLV60pQJlYOi6457SAG1jSqYqjkgYfS5Rw-fUzixeQGfnwtibso9VwoI5uMPYK3BrbpTl3Wh9hv8lTS4plNO8Qxi-ucFOD_IF_KVjm5TEr-kn0cSHry6Mvfab8xP6VKZ9NmvSdURMWwtfzbJTRKKDvXgvpmW-wVgch2YW8i3p2G8o7BK5LVQxBb5C-7lg5bTofDsLQ2es_tkJRri_lVmUWp1IMRW"/>
+<span class="text-xs text-slate-600 font-medium">Elena K.</span>
+</div>
+</td>
+<td class="px-6 py-5 text-right">
+<button class="text-slate-300 hover:text-slate-900 transition-colors">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</td>
+</tr>
+<!-- Row 4: Running -->
+<tr class="group hover:bg-surface-container-low/30 transition-colors">
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<div class="w-1.5 h-10 bg-tertiary-container rounded-full"></div>
+<div>
+<p class="font-bold text-slate-900 text-sm">NLP Latency Benchmark</p>
+<p class="text-[11px] text-slate-400 font-mono">TP-2024-088</p>
+</div>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="space-y-1">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-slate-400">deployed_code</span>
+<span class="text-xs font-semibold text-slate-700">Linguistic AI</span>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-slate-400">cycle</span>
+<span class="text-xs text-slate-500">Baseline Q3</span>
+</div>
+</div>
+</td>
+<td class="px-6 py-5 text-sm">
+<span class="font-bold text-slate-900">2,100</span>
+<span class="text-slate-400 text-xs ml-1">Cases</span>
+</td>
+<td class="px-6 py-5">
+<span class="inline-flex items-center px-3 py-1 rounded-full bg-tertiary-fixed text-on-tertiary-fixed-variant text-[10px] font-black uppercase tracking-wider ring-1 ring-tertiary-fixed-dim/50">
+<span class="w-1.5 h-1.5 bg-tertiary-container rounded-full mr-2 animate-pulse"></span>
+                                    Running
+                                </span>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-3">
+<div class="flex-1 h-2 bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-tertiary-container rounded-full" style="width: 12%;"></div>
+</div>
+<span class="text-xs font-bold text-tertiary">12%</span>
+</div>
+</td>
+<td class="px-6 py-5">
+<div class="flex items-center gap-2">
+<img class="w-6 h-6 rounded-full border border-outline-variant/30" data-alt="Portrait of a young black man with glasses and a friendly, professional smile" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAWBsIMKC2RqfvqbFJE0qA7VKrVxfgQjMUZuWNZFbXX-m7qMYPUjtzkyIsjh7BMu0qisUbOthmFy9o7qL88W36tZ9hWfY1clhw2FarYjIwQAw9KnA3mc6yb-uVti29rgVYoCZ8Br_NDR7cXpY-GV0I8x3ZRUMyyhiNfqg4X884w2qSXS-YP9F_NX4b7m5wVIDVXwv1Z8pF-jBJXMuRh4Uv9IOl-h57sVf1bODYaBR-3au0APPoO9ZDSEqD-165IW1AckiUqoGecJpFy"/>
+<span class="text-xs text-slate-600 font-medium">David O.</span>
+</div>
+</td>
+<td class="px-6 py-5 text-right">
+<button class="text-slate-300 hover:text-slate-900 transition-colors">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+<!-- Table Pagination/Footer -->
+<div class="px-6 py-4 bg-surface-container-low/30 flex items-center justify-between border-t border-outline-variant/5">
+<span class="text-xs text-slate-500">Showing 4 of 24 active test plans</span>
+<div class="flex items-center gap-2">
+<button class="w-8 h-8 flex items-center justify-center rounded bg-white text-slate-400 hover:text-slate-900 border border-outline-variant/20 shadow-sm transition-all">
+<span class="material-symbols-outlined text-sm">chevron_left</span>
+</button>
+<button class="w-8 h-8 flex items-center justify-center rounded bg-slate-900 text-white font-bold text-xs shadow-sm">1</button>
+<button class="w-8 h-8 flex items-center justify-center rounded bg-white text-slate-600 font-bold text-xs border border-outline-variant/20 hover:border-orange-500 transition-all">2</button>
+<button class="w-8 h-8 flex items-center justify-center rounded bg-white text-slate-600 font-bold text-xs border border-outline-variant/20 hover:border-orange-500 transition-all">3</button>
+<button class="w-8 h-8 flex items-center justify-center rounded bg-white text-slate-400 hover:text-slate-900 border border-outline-variant/20 shadow-sm transition-all">
+<span class="material-symbols-outlined text-sm">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Dashboard Bottom Glimpse -->
+<div class="mt-12 grid grid-cols-3 gap-6">
+<div class="bg-gradient-to-br from-slate-900 to-slate-800 p-6 rounded-2xl text-white">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-white/10 rounded-lg">
+<span class="material-symbols-outlined text-white">speed</span>
+</div>
+<span class="text-[10px] font-bold text-green-400">+12% vs last week</span>
+</div>
+<p class="text-xs text-slate-400 font-semibold mb-1">Avg. Test Velocity</p>
+<h3 class="text-2xl font-black">1.2k / hour</h3>
+</div>
+<div class="bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-outline-variant/10">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-orange-50 rounded-lg">
+<span class="material-symbols-outlined text-orange-500">bug_report</span>
+</div>
+</div>
+<p class="text-xs text-slate-400 font-semibold mb-1">Total Defects Found</p>
+<h3 class="text-2xl font-black text-slate-900">142</h3>
+<div class="mt-4 flex gap-2">
+<div class="h-1 flex-1 bg-red-400 rounded-full" title="Critical"></div>
+<div class="h-1 flex-1 bg-orange-400 rounded-full" title="High"></div>
+<div class="h-1 flex-[2] bg-yellow-400 rounded-full" title="Medium"></div>
+<div class="h-1 flex-[4] bg-slate-200 rounded-full" title="Low"></div>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-6 rounded-2xl shadow-sm border border-outline-variant/10">
+<div class="flex justify-between items-start mb-4">
+<div class="p-2 bg-tertiary/10 rounded-lg">
+<span class="material-symbols-outlined text-tertiary">groups</span>
+</div>
+</div>
+<p class="text-xs text-slate-400 font-semibold mb-1">QA Resource Load</p>
+<h3 class="text-2xl font-black text-slate-900">84%</h3>
+<div class="mt-4 flex -space-x-2">
+<img class="w-6 h-6 rounded-full border-2 border-white" data-alt="Portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuARqqle-fQRFic2kePNVlFUqyeCee0-e-Ys04sdqJg79PutUuRWo0B2uNpMGrC7Jo_A9-OlyL7jEklXbCizVd2RmEsmLFk7tH86_zVKVORJe9s6sYRGxaIWedSInHY-M2M8v02jZkMX5zwaSEYhyeRXEsndN2cEDMQPnZi-Xp6Bap14StopYammp-lWirT__zSajoOGfltA-V8JKSiJ8c1gQjxwj3YP1QS_tqyiVic20f-evZTex6X4IZEbHzkVNYE21VfZWPZNhE5Q"/>
+<img class="w-6 h-6 rounded-full border-2 border-white" data-alt="Portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBb6E1MzitySL9ONcEGjCuyhduuxS3XpruVQHAhGbl00ELtdvl5plZDn0MHKMYuDlZGKY2mZ1PZdCyI6aZ1kseTmjdGiW_VgL-af2Yxcv9ogyxuHjBoogpdq5GKpPFaaYUMK-67zigt1Q5J5m84bmoLQOoIEIRo_-ttfm_QOE1NKK4Vds25BBdB1W6k7iVfGJHb_NqkKbfDg5RXe1SjED0bWcCl9CfTPljdByyPZSNFID3UuHz8btQC8GXSHAIWGIARoXwa7WuVpEdp"/>
+<img class="w-6 h-6 rounded-full border-2 border-white" data-alt="Portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJFXqNhz_CMrX6aSWooVx1w5uxMLIqqZaRAe5YmFxOhtFg81yRQnQGv-0z8PPpVd4fP82tR3VySYg2heQ78eUzUYqU1iifnqIJZcLQTc8o7hdL--aYv8iOO2KhFNC1J20xlduUzQS7x9n4-mAq-6dmtRO6pXeeMkA6Aj3EEVYpj3_NHI9u4zLCPOYWuEiPkUQXM5K7L6LeMuFQJjzqfInZzofwFK6GSqtth3kvdHymuHes8PRDPQcPsy0k2m6mjECfik1SVq_6zIBQ"/>
+<div class="w-6 h-6 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[8px] font-bold text-slate-500">+5</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

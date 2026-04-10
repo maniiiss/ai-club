@@ -1,0 +1,127 @@
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16}
+    container_name: ai-agent-platform-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_agent_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-aiclub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      PGTZ: ${APP_TZ:-Asia/Shanghai}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiclub} -d ${POSTGRES_DB:-ai_agent_platform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  code-processing:
+    build:
+      context: ./code-processing
+      dockerfile: Dockerfile
+    image: ${CODE_PROCESSING_IMAGE:-git-ai-club-code-processing:latest}
+    container_name: git-ai-club-code-processing
+    restart: unless-stopped
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+    ports:
+      - "${CODE_PROCESSING_PORT:-9000}:9000"
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7.4.8}
+    container_name: git-ai-club-redis
+    restart: unless-stopped
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command: >
+      sh -c "if [ -n \"$$REDIS_PASSWORD\" ]; then
+        redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\";
+      else
+        redis-server --appendonly yes;
+      fi"
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-02-28T09-55-16Z}
+    container_name: git-ai-club-minio
+    restart: unless-stopped
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      MINIO_ROOT_USER: ${PLATFORM_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${PLATFORM_MINIO_SECRET_KEY:-minioadmin}
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_PORT:-19000}:9000"
+      - "${MINIO_CONSOLE_PORT:-19001}:9001"
+    volumes:
+      - minio_data:/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: ${BACKEND_IMAGE:-git-ai-club-backend:latest}
+    container_name: git-ai-club-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      code-processing:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ai_agent_platform}
+      DB_USERNAME: ${POSTGRES_USER:-aiclub}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      PLATFORM_CODE_PROCESSING_BASE_URL: http://code-processing:9000
+      PLATFORM_GITLAB_DEFAULT_API_URL: ${PLATFORM_GITLAB_DEFAULT_API_URL:-http://192.168.110.138:30080/api/v4}
+      PLATFORM_TOKEN_SECRET: ${PLATFORM_TOKEN_SECRET:-ai-club-demo-token-secret}
+      PLATFORM_TOKEN_EXPIRE_HOURS: ${PLATFORM_TOKEN_EXPIRE_HOURS:-12}
+      PLATFORM_SECURITY_SESSION_KEY_PREFIX: ${PLATFORM_SECURITY_SESSION_KEY_PREFIX:-ai-club:login:token:}
+      PLATFORM_MINIO_ENDPOINT: http://minio:9000
+      PLATFORM_MINIO_ACCESS_KEY: ${PLATFORM_MINIO_ACCESS_KEY:-minioadmin}
+      PLATFORM_MINIO_SECRET_KEY: ${PLATFORM_MINIO_SECRET_KEY:-minioadmin}
+      PLATFORM_MINIO_BUCKET: ${PLATFORM_MINIO_BUCKET:-ai-club-assets}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+    image: ${FRONTEND_IMAGE:-git-ai-club-frontend:latest}
+    container_name: git-ai-club-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+
+volumes:
+  postgres_data:
+  minio_data:
+  redis_data:

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Iteration Workspace | Kinetic Workspace</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "background": "#f8f9fa",
+                        "inverse-surface": "#2e3132",
+                        "surface-variant": "#e1e3e4",
+                        "on-tertiary-container": "#004360",
+                        "on-primary-fixed": "#2f1500",
+                        "inverse-primary": "#ffb77d",
+                        "primary-fixed": "#ffdcc3",
+                        "surface-container-lowest": "#ffffff",
+                        "on-secondary-fixed-variant": "#6a3b0f",
+                        "inverse-on-surface": "#f0f1f2",
+                        "surface-container-highest": "#e1e3e4",
+                        "outline": "#897362",
+                        "on-primary-fixed-variant": "#6e3900",
+                        "on-tertiary-fixed-variant": "#004c6c",
+                        "surface": "#f8f9fa",
+                        "on-tertiary": "#ffffff",
+                        "secondary-container": "#fdb881",
+                        "surface-container": "#edeeef",
+                        "on-primary-container": "#623200",
+                        "secondary": "#865224",
+                        "tertiary": "#00658f",
+                        "surface-tint": "#904d00",
+                        "on-secondary-container": "#78471a",
+                        "primary-container": "#ff8c00",
+                        "tertiary-fixed-dim": "#85cfff",
+                        "secondary-fixed": "#ffdcc3",
+                        "error-container": "#ffdad6",
+                        "surface-container-high": "#e7e8e9",
+                        "tertiary-fixed": "#c7e7ff",
+                        "on-secondary": "#ffffff",
+                        "primary": "#904d00",
+                        "surface-container-low": "#f3f4f5",
+                        "on-background": "#191c1d",
+                        "primary-fixed-dim": "#ffb77d",
+                        "on-secondary-fixed": "#2f1500",
+                        "on-surface": "#191c1d",
+                        "on-surface-variant": "#564334",
+                        "on-tertiary-fixed": "#001e2e",
+                        "on-primary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "on-error-container": "#93000a",
+                        "secondary-fixed-dim": "#fdb881",
+                        "tertiary-container": "#00b5fc",
+                        "error": "#ba1a1a",
+                        "surface-bright": "#f8f9fa",
+                        "outline-variant": "#ddc1ae",
+                        "surface-dim": "#d9dadb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"],
+                        "mono": ["JetBrains Mono"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .drawer-shadow {
+            box-shadow: -20px 0 60px -15px rgba(0, 0, 0, 0.15);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #e1e3e4;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #cbd5e1;
+        }
+    </style>
+</head>
+<body class="bg-background font-body text-on-surface antialiased overflow-hidden">
+<!-- SideNavBar Shell (Narrow) -->
+<aside class="fixed left-0 top-0 h-full flex flex-col bg-slate-50 dark:bg-slate-900 w-20 border-r border-slate-200 dark:border-slate-800 font-manrope font-semibold text-sm z-20">
+<div class="p-4 flex justify-center">
+<div class="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center text-white font-black text-xl">K</div>
+</div>
+<nav class="flex-1 mt-4 space-y-4">
+<div class="flex justify-center">
+<button class="w-12 h-12 flex items-center justify-center bg-primary text-white rounded-xl shadow-lg shadow-primary/20">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+<div class="space-y-1">
+<a class="flex flex-col items-center gap-1 py-3 text-slate-400 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="text-[9px] uppercase font-bold">Dash</span>
+</a>
+<a class="flex flex-col items-center gap-1 py-3 text-primary bg-white dark:bg-slate-800" href="#">
+<span class="material-symbols-outlined" data-weight="fill">folder_managed</span>
+<span class="text-[9px] uppercase font-bold">Proj</span>
+</a>
+<a class="flex flex-col items-center gap-1 py-3 text-slate-400 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">sync</span>
+<span class="text-[9px] uppercase font-bold">Iter</span>
+</a>
+<a class="flex flex-col items-center gap-1 py-3 text-slate-400 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">smart_toy</span>
+<span class="text-[9px] uppercase font-bold">Agent</span>
+</a>
+<a class="flex flex-col items-center gap-1 py-3 text-slate-400 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-[9px] uppercase font-bold">Set</span>
+</a>
+</div>
+</nav>
+<div class="p-4 border-t border-slate-200 dark:border-slate-800 flex justify-center">
+<div class="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-orange-600 font-bold text-xs">KW</div>
+</div>
+</aside>
+<!-- TopNavBar Shell -->
+<header class="fixed top-0 right-0 h-16 px-6 ml-20 w-[calc(100%-5rem)] flex justify-between items-center bg-white border-b border-slate-100 z-10">
+<div class="flex items-center gap-4 flex-1">
+<nav class="flex items-center gap-2 text-sm text-slate-500 font-medium">
+<a class="hover:text-primary transition-colors" href="#">Projects</a>
+<span class="material-symbols-outlined text-xs">chevron_right</span>
+<span class="text-on-surface font-bold">Kinetic-UI-Redesign</span>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 text-slate-400 hover:text-primary transition-colors"><span class="material-symbols-outlined">notifications</span></button>
+<button class="p-2 text-slate-400 hover:text-primary transition-colors"><span class="material-symbols-outlined">account_circle</span></button>
+</div>
+</header>
+<!-- Background Content -->
+<main class="ml-20 pt-20 px-8 pb-12 min-h-screen opacity-40 blur-[4px] pointer-events-none">
+<div class="max-w-5xl">
+<div class="flex items-center justify-between mb-8">
+<div>
+<h2 class="text-2xl font-headline font-extrabold text-on-surface">Iteration Workspace</h2>
+<p class="text-slate-500">Managing active development cycle v2.4</p>
+</div>
+</div>
+<div class="space-y-4">
+<div class="bg-white p-4 rounded-xl border border-slate-200 flex items-center justify-between">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400"><span class="material-symbols-outlined">description</span></div>
+<div>
+<p class="font-bold">Implement Adaptive Tonal Layering System</p>
+<p class="text-xs text-slate-400 uppercase font-bold tracking-tight">P0 - Critical • Requirement Draft</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Backdrop -->
+<div class="fixed inset-0 bg-slate-900/40 backdrop-blur-[4px] z-30 ml-20"></div>
+<!-- Right-side Drawer (Slide-over) - Width 3/5 (60%) -->
+<aside class="fixed top-0 right-0 h-full w-3/5 bg-surface-container-lowest drawer-shadow z-40 flex flex-col border-l border-surface-container-low">
+<!-- Drawer Header -->
+<div class="px-6 py-4 border-b border-surface-container-low flex items-center justify-between bg-white/80 backdrop-blur sticky top-0 z-50">
+<div class="flex items-center gap-3">
+<button class="p-2 -ml-2 hover:bg-surface-container-low rounded-full transition-colors text-slate-400">
+<span class="material-symbols-outlined">close</span>
+</button>
+<div class="h-6 w-[1px] bg-slate-200"></div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-orange-500 text-lg">edit_document</span>
+<h2 class="text-xs font-bold uppercase tracking-widest text-slate-600">Edit Work Item</h2>
+</div>
+</div>
+<div class="flex items-center gap-1">
+<span class="px-2 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded mr-2">P0 - Critical</span>
+<button class="p-2 text-slate-400 hover:text-primary transition-colors"><span class="material-symbols-outlined">history</span></button>
+<button class="p-2 text-slate-400 hover:text-primary transition-colors"><span class="material-symbols-outlined">share</span></button>
+<button class="p-2 text-slate-400 hover:text-primary transition-colors"><span class="material-symbols-outlined">more_vert</span></button>
+</div>
+</div>
+<!-- Drawer Content (Scrollable) -->
+<div class="flex-1 overflow-y-auto flex flex-col custom-scrollbar bg-slate-50/50">
+<!-- Top Property Section (Compact Grid) -->
+<div class="p-4 border-b border-surface-container-low bg-white space-y-4">
+<!-- Title Row -->
+<div class="flex items-start justify-between gap-4">
+<div class="flex-1">
+<label class="text-[9px] font-bold uppercase tracking-widest text-slate-400 block mb-1">Title &amp; ID</label>
+<div class="flex items-center gap-2">
+<span class="text-[10px] font-mono text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">REQ-2023-1024</span>
+<input class="flex-1 text-xl font-headline font-extrabold text-on-surface bg-transparent border-none focus:ring-0 p-0 placeholder:text-slate-200" placeholder="Requirement Title" type="text" value="Implement Adaptive Tonal Layering System"/>
+</div>
+</div>
+</div>
+<!-- High-Density Property Grid -->
+<div class="grid grid-cols-4 gap-4">
+<!-- Col 1: Core Type & Project -->
+<div class="space-y-3">
+<div class="space-y-1">
+<label class="text-[9px] font-bold uppercase tracking-widest text-slate-400 block">Type / 类型</label>
+<select class="block w-full rounded border-slate-200 bg-slate-50 py-1 px-2 text-[11px] font-semibold focus:border-primary focus:ring-primary">
+<option selected="">Requirement</option>
+<option>Task</option>
+<option>Defect</option>
+</select>
+</div>
+<div class="space-y-1">
+<label class="text-[9px] font-bold uppercase tracking-widest text-slate-400 block">Project</label>
+<select class="block w-full rounded border-slate-200 bg-slate-50 py-1 px-2 text-[11px] font-semibold focus:border-primary focus:ring-primary">
+<option selected="">Kinetic-UI-Redesign</option>
+</select>
+</div>
+</div>
+<!-- Col 2: Versioning -->
+<div class="space-y-3">
+<div class="space-y-1">
+<label class="text-[9px] font-bold uppercase tracking-widest text-slate-400 block">Iteration</label>
+<select class="block w-full rounded border-slate-200 bg-slate-50 py-1 px-2 text-[11px] font-semibold focus:border-primary focus:ring-primary">
+<option selected="">v2.4 Oct Release</option>
+</select>
+</div>
+<div class="space-y-1">
+<label class="text-[9px] font-bold uppercase tracking-widest text-slate-400 block">Target</label>
+<select class="block w-full rounded border-slate-200 bg-slate-50 py-1 px-2 text-[11px] font-semibold focus:border-primary focus:ring-primary">
+<option selected="">2.4.0-beta.1</option>
+</select>
+</div>
+</div>
+<!-- Col 3: Personnel -->
+<div class="space-y-3">
+<div class="space-y-1">
+<label class="text-[9px] font-bold uppercase tracking-widest text-slate-400 block">Owner / 负责人</label>
+<div class="flex items-center gap-2 p-1 bg-slate-50 rounded border border-slate-100 cursor-pointer hover:border-primary/30">
+<img class="w-5 h-5 rounded-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCORH_VTzKy6WFOvXlBEARZvyA8bT6BaOmcOTOmvbd2cSKCkDishK6vI1Uhq0waZYLLcQyfNJvsO22Cma6E-yanJtvpYTlrnuw7PINlxnij8qdIxtHZDGvqDW4T1YiKffCeT_wrg-jpUIZIHTq8wmlzyUQsxj_3XB9iTNW-55f73yT9lXGb6ZctEibw4rTTmaiTWtulqCu6_wymYcZsmFEOBJyZq_2IE5eA8bHaZlrNtbs_HLIcDrof0DY1D_e9CjdO3dMeXpyLP3VJ"/>
+<span class="text-[11px] font-bold text-on-surface truncate">Alex Rivera</span>
+</div>
+</div>
+<div class="space-y-1">
+<label class="text-[9px] font-bold uppercase tracking-widest text-slate-400 block">Assignee</label>
+<div class="flex -space-x-1.5 items-center">
+<div class="w-5 h-5 rounded-full border border-white bg-slate-200 flex items-center justify-center text-[8px] font-bold">JD</div>
+<div class="w-5 h-5 rounded-full border border-white bg-orange-100 flex items-center justify-center text-[8px] font-bold text-orange-600">MT</div>
+<button class="w-5 h-5 rounded-full border border-dashed border-slate-200 bg-white flex items-center justify-center text-slate-400 hover:border-primary"><span class="material-symbols-outlined text-[10px]">add</span></button>
+</div>
+</div>
+</div>
+<!-- Col 4: Schedule -->
+<div class="space-y-3">
+<div class="space-y-1">
+<label class="text-[9px] font-bold uppercase tracking-widest text-slate-400 block">Schedule</label>
+<div class="grid grid-cols-2 gap-1">
+<input class="w-full rounded border-slate-200 bg-slate-50 py-0.5 px-1 text-[10px] font-medium" placeholder="Start" type="text" value="10/15"/>
+<input class="w-full rounded border-slate-200 bg-slate-50 py-0.5 px-1 text-[10px] font-medium" placeholder="End" type="text" value="10/24"/>
+</div>
+</div>
+<div class="space-y-1">
+<label class="text-[9px] font-bold uppercase tracking-widest text-slate-400 block">Effort</label>
+<div class="flex items-center justify-between px-1">
+<span class="text-[10px] font-mono font-bold">40h</span>
+<span class="text-[10px] text-orange-600 font-bold">12h sp.</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Description / Markdown Editor (Expanded to 60-70% height) -->
+<div class="flex-1 flex flex-col min-h-[60vh] bg-white border-b border-surface-container-low">
+<div class="px-6 py-3 flex items-center justify-between border-b border-slate-50 bg-slate-50/30">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-sm text-slate-400">subject</span>
+<label class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Description</label>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-1 border-r border-slate-200 pr-4">
+<button class="p-1 hover:bg-slate-100 rounded text-slate-500"><span class="material-symbols-outlined text-lg">format_bold</span></button>
+<button class="p-1 hover:bg-slate-100 rounded text-slate-500"><span class="material-symbols-outlined text-lg">format_italic</span></button>
+<button class="p-1 hover:bg-slate-100 rounded text-slate-500"><span class="material-symbols-outlined text-lg">format_list_bulleted</span></button>
+<button class="p-1 hover:bg-slate-100 rounded text-slate-500"><span class="material-symbols-outlined text-lg">code</span></button>
+<button class="p-1 hover:bg-slate-100 rounded text-slate-500"><span class="material-symbols-outlined text-lg">link</span></button>
+<button class="p-1 hover:bg-slate-100 rounded text-slate-500"><span class="material-symbols-outlined text-lg">image</span></button>
+</div>
+<div class="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+<button class="text-primary">Write</button>
+<button class="hover:text-slate-600">Preview</button>
+</div>
+</div>
+</div>
+<div class="flex-1 p-6">
+<textarea class="w-full h-full p-0 font-mono text-[13px] leading-relaxed bg-transparent border-none focus:ring-0 resize-none custom-scrollbar text-on-surface" spellcheck="false">## 用户故事 (User Story)
+作为一名 **资深 UI 开发工程师**，我希望系统能够根据当前页面的内容密度自动动态计算并应用分层背景色 (Tonal Layering)，以便在多级嵌套的复杂界面中提供清晰的层级感。
+
+## 需求描述 (Requirement Description)
+1. **核心计算模块**：
+   - 监听 DOM 树变化，计算 `data-density` 属性。
+   - 映射算法：Density Score (0-10) -&gt; Background L-Value (98% - 92%)。
+
+2. **样式注入策略**：
+   - 采用 CSS Variables 注入模式，确保响应式切换时的性能。
+   - 支持自定义色系映射表。
+
+3. **验收标准**：
+   - 在 3 层以上嵌套容器中，背景色对比度需符合 WCAG AA 标准。
+   - 动态更新延迟控制在 16ms 以内。</textarea>
+</div>
+</div>
+<!-- Bottom Secondary Section (Workflow) -->
+<div class="p-6 bg-slate-50/50">
+<div class="flex items-center justify-between mb-4">
+<label class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Workflow Progress</label>
+<div class="flex items-center gap-2 px-3 py-1 bg-orange-50 rounded-lg border border-orange-100">
+<span class="material-symbols-outlined text-orange-500 text-[14px]">info</span>
+<p class="text-[10px] text-orange-700 font-medium">Requires <strong>Dev Approved</strong> to enter QA.</p>
+</div>
+</div>
+<div class="grid grid-cols-3 gap-3">
+<div class="p-3 rounded-xl border-2 border-primary bg-white flex flex-col gap-1">
+<div class="flex justify-between items-center">
+<p class="text-[9px] font-bold uppercase text-primary">Requirement</p>
+<span class="material-symbols-outlined text-sm text-primary" data-weight="fill">check_circle</span>
+</div>
+<p class="text-xs font-bold text-on-surface">Drafting</p>
+</div>
+<div class="p-3 rounded-xl border border-slate-200 bg-white/50 flex flex-col gap-1 opacity-60">
+<div class="flex justify-between items-center">
+<p class="text-[9px] font-bold uppercase text-slate-400">Development</p>
+<span class="material-symbols-outlined text-sm text-slate-300">lock</span>
+</div>
+<p class="text-xs font-bold text-slate-500">Wait Approval</p>
+</div>
+<div class="p-3 rounded-xl border border-slate-200 bg-white/50 flex flex-col gap-1 opacity-40">
+<div class="flex justify-between items-center">
+<p class="text-[9px] font-bold uppercase text-slate-400">QA &amp; Release</p>
+</div>
+<p class="text-xs font-bold text-slate-500">Pending</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Drawer Footer (Fixed Action Bar) -->
+<div class="p-6 border-t border-surface-container-low flex items-center gap-4 bg-white/90 backdrop-blur z-50">
+<button class="flex-1 px-4 py-3 rounded-xl border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 hover:border-slate-300 active:scale-95 transition-all text-sm">
+                Save as Draft
+            </button>
+<button class="flex-[1.5] px-4 py-3 rounded-xl bg-primary text-white font-bold shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-[1.01] active:scale-[0.98] transition-all text-sm flex items-center justify-center gap-2">
+<span>Submit for Review</span>
+<span class="material-symbols-outlined text-sm">send</span>
+</button>
+</div>
+</aside>
+</body></html>
