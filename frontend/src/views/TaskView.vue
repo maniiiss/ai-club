@@ -67,6 +67,7 @@
 
     <section class="task-table-shell">
       <div class="task-table-scroll mobile-card-scroll" v-loading="loading">
+        <template v-if="!isMobileViewport">
         <table class="task-table mobile-card-table">
           <thead>
             <tr>
@@ -86,20 +87,27 @@
           <tbody>
             <tr v-for="row in taskList" :key="row.id" class="task-row">
               <td class="task-col-main" data-label="任务">
-                <div class="task-primary-cell">
-                  <div class="task-primary-icon">
-                    <el-icon><Tickets /></el-icon>
+                <button class="task-title-button" type="button" @click="openTaskDetail(row)">
+                  <div class="task-primary-cell">
+                    <div class="task-primary-icon">
+                      <el-icon><Tickets /></el-icon>
+                    </div>
+                    <div class="task-primary-copy">
+                      <div class="task-primary-title">{{ row.name }}</div>
+                      <div class="task-primary-meta">{{ row.description || '暂无说明' }}</div>
+                    </div>
                   </div>
-                  <div class="task-primary-copy">
-                    <div class="task-primary-title">{{ row.name }}</div>
-                    <div class="task-primary-meta">{{ row.description || '暂无说明' }}</div>
-                  </div>
-                </div>
+                </button>
               </td>
               <td class="center task-col-type" data-label="类型">
                 <span class="task-type-pill" :class="taskTypeTone(row.workItemType)">{{ row.workItemType }}</span>
               </td>
-              <td class="task-project-cell task-col-project" data-label="所属项目">{{ row.projectName || '-' }}</td>
+              <td class="task-project-cell task-col-project" data-label="所属项目">
+                <button v-if="row.projectName" class="task-link-button" type="button" @click="openTaskProject(row.projectId)">
+                  {{ row.projectName }}
+                </button>
+                <span v-else class="task-empty-text">-</span>
+              </td>
               <td class="task-col-requirement" data-label="关联需求">
                 <button
                   v-if="row.requirementTaskId && row.requirementTaskName"
@@ -112,21 +120,10 @@
                 <span v-else class="task-empty-text">-</span>
               </td>
               <td class="task-col-owner" data-label="负责人">
-                <div class="task-owner-line">
-                  <span class="task-owner-avatar">{{ ownerInitial(row.assignee) }}</span>
-                  <span class="task-owner-name">{{ row.assignee || '未分配' }}</span>
-                </div>
+                <ListUserDisplay :user="buildTaskAssigneeDisplayItem(row)" empty-text="未分配" size="md" />
               </td>
               <td class="task-col-collaborators" data-label="协作人">
-                <div v-if="row.collaboratorNames.length" class="task-collaborator-list">
-                  <span v-for="name in row.collaboratorNames.slice(0, 3)" :key="`${row.id}-${name}`" class="task-collaborator-chip">
-                    {{ name }}
-                  </span>
-                  <span v-if="row.collaboratorNames.length > 3" class="task-collaborator-chip muted">
-                    +{{ row.collaboratorNames.length - 3 }}
-                  </span>
-                </div>
-                <span v-else class="task-empty-text">-</span>
+                <ListUserGroupDisplay :users="buildTaskCollaboratorDisplayItems(row)" empty-text="-" size="md" />
               </td>
               <td class="center task-col-priority" data-label="优先级">
                 <span class="task-priority-pill" :class="taskPriorityTone(row.priority)">{{ row.priority || '-' }}</span>
@@ -177,6 +174,126 @@
             </tr>
           </tbody>
         </table>
+        </template>
+        <template v-else>
+          <div v-if="taskList.length" class="mobile-entity-list-shell">
+            <div class="mobile-entity-list">
+              <article v-for="row in taskList" :key="row.id" class="mobile-entity-card">
+                <header class="mobile-entity-card-header">
+                  <button class="mobile-entity-header-trigger" type="button" @click="openTaskDetail(row)">
+                    <span class="mobile-entity-icon">
+                      <el-icon><Tickets /></el-icon>
+                    </span>
+                    <span class="mobile-entity-copy">
+                      <span class="mobile-entity-title">{{ row.name }}</span>
+                      <span class="mobile-entity-description">{{ row.description || '暂无说明' }}</span>
+                    </span>
+                  </button>
+                  <div class="mobile-entity-badge-group">
+                    <span class="task-status-pill" :class="taskStatusTone(row)">{{ formatTaskStatusLabel(row) }}</span>
+                    <span class="task-priority-pill" :class="taskPriorityTone(row.priority)">{{ row.priority || '-' }}</span>
+                  </div>
+                </header>
+
+                <div class="mobile-entity-fields">
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">类型</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="task-type-pill" :class="taskTypeTone(row.workItemType)">{{ row.workItemType }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">项目</span>
+                    <div class="mobile-entity-field-content">
+                      <button v-if="row.projectName" class="task-link-button" type="button" @click="openTaskProject(row.projectId)">
+                        {{ row.projectName }}
+                      </button>
+                      <span v-else class="mobile-entity-empty-text">-</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">需求</span>
+                    <div class="mobile-entity-field-content">
+                      <button
+                        v-if="row.requirementTaskId && row.requirementTaskName"
+                        class="task-link-button"
+                        type="button"
+                        @click="openRequirementTask(row)"
+                      >
+                        {{ row.requirementTaskName }}
+                      </button>
+                      <span v-else class="mobile-entity-empty-text">-</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">负责人</span>
+                    <div class="mobile-entity-field-content">
+                      <ListUserDisplay :user="buildTaskAssigneeDisplayItem(row)" empty-text="未分配" size="md" />
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">协作人</span>
+                    <div class="mobile-entity-field-content">
+                      <ListUserGroupDisplay :users="buildTaskCollaboratorDisplayItems(row)" empty-text="-" size="md" />
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">工时</span>
+                    <div class="mobile-entity-field-content">
+                      <el-tooltip
+                        v-if="canManageTasks && row.workItemType === '任务'"
+                        :content="getRowWorkHoursLockedReason(row)"
+                        :disabled="!getRowWorkHoursLockedReason(row)"
+                      >
+                        <el-input-number
+                          :model-value="row.workHours ?? undefined"
+                          :min="0"
+                          :max="15"
+                          :step="0.5"
+                          :precision="1"
+                          controls-position="right"
+                          class="list-work-hours-input"
+                          :disabled="workHoursUpdatingId === row.id || Boolean(getRowWorkHoursLockedReason(row))"
+                          @change="handleQuickWorkHoursChange(row, $event)"
+                        />
+                      </el-tooltip>
+                      <span v-else class="mobile-entity-empty-text">-</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">更新</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.updatedAt ? row.updatedAt.replace('T', ' ').slice(0, 16) : '-' }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <footer class="mobile-entity-actions">
+                  <button v-if="canManageTasks" class="mobile-entity-action-button info" type="button" @click="openRunDialog(row)">
+                    <el-icon><VideoPlay /></el-icon>
+                    <span>运行智能体</span>
+                  </button>
+                  <button v-if="canManageTasks" class="mobile-entity-action-button" type="button" @click="openEditDialog(row)">
+                    <el-icon><EditPen /></el-icon>
+                    <span>编辑</span>
+                  </button>
+                  <button
+                    v-if="canManageTasks && row.canDelete"
+                    class="mobile-entity-action-button danger"
+                    type="button"
+                    @click="handleDelete(row.id)"
+                  >
+                    <el-icon><Delete /></el-icon>
+                    <span>删除</span>
+                  </button>
+                </footer>
+              </article>
+            </div>
+          </div>
+          <div v-else class="mobile-entity-empty-state">
+            <el-empty description="当前筛选条件下暂无任务" />
+          </div>
+        </template>
       </div>
 
       <div class="task-table-footer">
@@ -206,7 +323,10 @@
       </div>
     </section>
 
-  <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑任务' : '新建任务'" width="980px" class="work-item-dialog platform-form-dialog">
+  <el-dialog v-model="dialogVisible" :title="taskDialogTitle" width="980px" class="work-item-dialog platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader :title="taskDialogTitle" :subtitle="taskDialogSubtitle" :icon="Tickets" />
+    </template>
     <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="work-item-form platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
@@ -283,8 +403,10 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      <div class="platform-dialog-footer">
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      </div>
     </template>
   </el-dialog>
 
@@ -356,7 +478,11 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Plus, RefreshRight, Search, Tickets, VideoPlay } from '@element-plus/icons-vue'
 import { listUserOptions } from '@/api/access'
+import ListUserDisplay from '@/components/ListUserDisplay.vue'
+import ListUserGroupDisplay from '@/components/ListUserGroupDisplay.vue'
+import type { ListUserDisplayItem } from '@/components/listUserDisplay'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import {
   createTask,
   deleteTask,
@@ -373,9 +499,11 @@ import {
   isRequirementFullyPassed,
   getTaskWorkHoursLockedReason
 } from '@/utils/requirementReview'
+import { resolveAssetUrl } from '@/utils/asset'
 import { uploadMarkdownImage } from '@/utils/taskImageUpload'
 import { useAuthStore } from '@/stores/auth'
 import type { AgentItem, ProjectItem, TaskAgentRunItem, TaskItem, UserOptionItem } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface TaskForm {
   name: string
@@ -403,6 +531,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const loading = ref(false)
 const submitting = ref(false)
+const { isMobileViewport } = useMobileViewport()
 const dialogVisible = ref(false)
 const runDialogVisible = ref(false)
 const runHistoryLoading = ref(false)
@@ -420,6 +549,12 @@ const currentRunTask = ref<TaskItem | null>(null)
 const runInput = ref('')
 const formRef = ref<FormInstance>()
 const canManageTasks = computed(() => authStore.hasPermission('task:manage'))
+const taskDialogTitle = computed(() => isEditing.value ? '编辑任务' : '新建任务')
+const taskDialogSubtitle = computed(() =>
+  isEditing.value
+    ? '调整任务归属、负责人和执行要求。'
+    : '填写任务基础信息，并补充执行说明。'
+)
 
 const pagination = reactive({
   page: 1,
@@ -488,6 +623,11 @@ const projectParticipantUsers = computed(() =>
   userOptions.value.filter((item) => projectParticipantUserIds.value.has(item.id))
 )
 
+/**
+ * 列表展示需要按用户ID快速补齐真实头像，这里先构造成索引避免每列重复遍历。
+ */
+const userOptionMap = computed(() => new Map(userOptions.value.map((item) => [item.id, item])))
+
 const collaboratorSelectableUsers = computed(() =>
   projectParticipantUsers.value.filter((item) => item.id !== form.assigneeUserId)
 )
@@ -515,7 +655,44 @@ const buildUserLabel = (item: UserOptionItem) => {
   return item.nickname?.trim() ? `${item.nickname} (${item.username})` : item.username
 }
 
-const ownerInitial = (value?: string | null) => (value || 'UN').slice(0, 2).toUpperCase()
+/**
+ * 任务列表展示仅依赖当前行里已有的负责人和协作人名字，避免组件反向耦合表单选项数据。
+ */
+const buildTaskAssigneeDisplayItem = (row: TaskItem): ListUserDisplayItem | null => {
+  if (!row.assignee?.trim()) {
+    return null
+  }
+  const assigneeUser = row.assigneeUserId != null ? userOptionMap.value.get(row.assigneeUserId) || null : null
+  return {
+    id: row.assigneeUserId ?? `task-assignee-${row.id}`,
+    name: row.assignee.trim(),
+    avatarUrl: resolveAssetUrl(assigneeUser?.avatarUrl)
+  }
+}
+
+const buildTaskCollaboratorDisplayItems = (row: TaskItem): ListUserDisplayItem[] => {
+  const result: ListUserDisplayItem[] = []
+
+  for (const [index, userId] of (row.collaboratorUserIds || []).entries()) {
+    const collaboratorUser = userOptionMap.value.get(userId) || null
+    const fallbackName = row.collaboratorNames?.[index] || `协作人${index + 1}`
+    result.push({
+      id: userId,
+      name: collaboratorUser?.nickname?.trim() || collaboratorUser?.username || fallbackName,
+      avatarUrl: resolveAssetUrl(collaboratorUser?.avatarUrl)
+    })
+  }
+
+  if (result.length) {
+    return result
+  }
+
+  return (row.collaboratorNames || []).map((name, index) => ({
+    id: `${row.id}-collaborator-${index}`,
+    name,
+    avatarUrl: null
+  }))
+}
 
 const taskTypeTone = (workItemType?: string | null) => {
   if (workItemType === '需求') return 'requirement'
@@ -572,6 +749,21 @@ const openRequirementTask = (row: TaskItem) => {
     name: 'project-iterations',
     params: { projectId: row.projectId },
     query: { openTaskId: String(row.requirementTaskId) }
+  })
+}
+
+const openTaskDetail = (row: TaskItem) => {
+  router.push({
+    name: 'project-iterations',
+    params: { projectId: row.projectId },
+    query: { openTaskId: String(row.id) }
+  })
+}
+
+const openTaskProject = (projectId: number) => {
+  router.push({
+    name: 'project-iterations',
+    params: { projectId }
   })
 }
 
@@ -989,6 +1181,7 @@ onMounted(async () => {
 
 .task-toolbar-button,
 .task-create-button,
+.task-title-button,
 .task-link-button,
 .task-action-button,
 .task-page-button {
@@ -1159,6 +1352,13 @@ onMounted(async () => {
   min-width: 0;
 }
 
+.task-title-button {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+}
+
 .task-primary-icon {
   width: 26px;
   height: 26px;
@@ -1166,9 +1366,10 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  background: #f3f4f5;
-  color: #94a3b8;
+  background: rgba(var(--app-primary-container-rgb), 0.14);
+  color: var(--app-primary);
   flex: 0 0 auto;
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .task-primary-copy {
@@ -1182,6 +1383,7 @@ onMounted(async () => {
   white-space: nowrap;
   font-size: 14px;
   font-weight: 800;
+  transition: color 0.18s ease;
 }
 
 .task-primary-meta {
@@ -1192,6 +1394,18 @@ onMounted(async () => {
   white-space: nowrap;
   font-size: 11px;
   font-weight: 500;
+}
+
+.task-title-button:hover .task-primary-title,
+.task-title-button:focus-visible .task-primary-title {
+  color: var(--app-primary);
+}
+
+.task-title-button:hover .task-primary-icon,
+.task-title-button:focus-visible .task-primary-icon {
+  background: rgba(var(--app-primary-container-rgb), 0.2);
+  color: var(--app-primary);
+  box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.14);
 }
 
 .task-type-pill,
@@ -1294,16 +1508,17 @@ onMounted(async () => {
   overflow: hidden;
   padding: 0;
   background: transparent;
-  color: #00658f;
+  color: var(--app-text);
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
   font-weight: 700;
   text-align: left;
+  transition: color 0.18s ease;
 }
 
 .task-link-button:hover {
-  color: #904d00;
+  color: var(--app-primary);
 }
 
 .task-empty-text,

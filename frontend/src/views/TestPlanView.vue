@@ -61,6 +61,7 @@
 
     <section class="atelier-table-shell">
       <div class="atelier-table-scroll mobile-card-scroll" v-loading="loading">
+        <template v-if="!isMobileViewport">
         <div class="atelier-data-list test-plan-list-table mobile-card-list">
           <div class="atelier-data-head test-plan-list-head">
             <div class="atelier-data-head-item test-col-main">计划</div>
@@ -71,16 +72,18 @@
             <div class="atelier-data-head-item test-col-updated">更新时间</div>
             <div class="atelier-data-head-item test-col-actions right">操作</div>
           </div>
-          <div v-for="row in list" :key="row.id" class="atelier-data-row test-plan-list-row">
-            <div class="atelier-data-cell test-col-main" data-label="计划">
-              <div class="management-list-title-cell">
-                <span class="management-list-title-icon"><el-icon><Finished /></el-icon></span>
-                <div class="management-list-title-copy">
-                  <button class="management-list-title test-plan-link" type="button" @click="openDetail(row.id)">{{ row.name }}</button>
-                  <div class="management-list-subtitle">{{ row.description || '暂无说明' }}</div>
-                </div>
+            <div v-for="row in list" :key="row.id" class="atelier-data-row test-plan-list-row">
+              <div class="atelier-data-cell test-col-main" data-label="计划">
+                <button class="management-list-title-trigger test-plan-trigger" type="button" @click="openDetail(row.id)">
+                  <div class="management-list-title-cell">
+                    <span class="management-list-title-icon"><el-icon><Finished /></el-icon></span>
+                    <div class="management-list-title-copy">
+                      <div class="management-list-title test-plan-link">{{ row.name }}</div>
+                      <div class="management-list-subtitle">{{ row.description || '暂无说明' }}</div>
+                    </div>
+                  </div>
+                </button>
               </div>
-            </div>
             <div class="atelier-data-cell test-col-project" data-label="所属项目">
               <button class="management-list-link" type="button" @click="goToProject(row.projectId)">{{ row.projectName }}</button>
             </div>
@@ -122,6 +125,87 @@
             </div>
           </div>
         </div>
+        </template>
+        <template v-else>
+          <div v-if="list.length" class="mobile-entity-list-shell">
+            <div class="mobile-entity-list">
+              <article v-for="row in list" :key="row.id" class="mobile-entity-card">
+                <header class="mobile-entity-card-header">
+                  <button class="mobile-entity-header-trigger" type="button" @click="openDetail(row.id)">
+                    <span class="mobile-entity-icon">
+                      <el-icon><Finished /></el-icon>
+                    </span>
+                    <span class="mobile-entity-copy">
+                      <span class="mobile-entity-title">{{ row.name }}</span>
+                      <span class="mobile-entity-description">{{ row.description || '暂无说明' }}</span>
+                    </span>
+                  </button>
+                </header>
+
+                <div class="mobile-entity-fields">
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">项目</span>
+                    <div class="mobile-entity-field-content">
+                      <button class="management-list-link" type="button" @click="goToProject(row.projectId)">{{ row.projectName }}</button>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">迭代</span>
+                    <div class="mobile-entity-field-content">
+                      <button v-if="row.iterationId" class="management-list-link" type="button" @click="goToIteration(row.projectId, row.iterationId)">
+                        {{ row.iterationName || '-' }}
+                      </button>
+                      <span v-else class="mobile-entity-empty-text">-</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">状态</span>
+                    <div class="mobile-entity-field-content">
+                      <CompactSelectMenu
+                        v-if="canManage"
+                        :model-value="row.status || null"
+                        :options="statusSelectOptions"
+                        class="status-select"
+                        @change="handleStatusChange(row.id, String($event))"
+                      />
+                      <span v-else class="management-list-pill" :class="testPlanStatusTone(row.status)">{{ row.status }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">用例数</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill neutral">{{ row.caseCount }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">更新</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.updatedAt }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <footer class="mobile-entity-actions">
+                  <button class="mobile-entity-action-button info" type="button" @click="openDetail(row.id)">
+                    <el-icon><Right /></el-icon>
+                    <span>{{ canManage ? '进入计划' : '查看计划' }}</span>
+                  </button>
+                  <button v-if="canManage" class="mobile-entity-action-button" type="button" @click="openEditDialog(row.id)">
+                    <el-icon><EditPen /></el-icon>
+                    <span>编辑</span>
+                  </button>
+                  <button v-if="canManage" class="mobile-entity-action-button danger" type="button" @click="handleDelete(row.id)">
+                    <el-icon><Delete /></el-icon>
+                    <span>删除</span>
+                  </button>
+                </footer>
+              </article>
+            </div>
+          </div>
+          <div v-else class="mobile-entity-empty-state">
+            <el-empty description="当前筛选条件下暂无测试计划" />
+          </div>
+        </template>
       </div>
 
       <div class="atelier-table-footer">
@@ -158,6 +242,9 @@
     align-center
     destroy-on-close
   >
+    <template #header>
+      <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="Finished" />
+    </template>
     <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
@@ -209,10 +296,12 @@
     </el-form>
 
     <template #footer>
-      <el-button @click="dialogVisible = false">{{ canManageCurrent ? '取消' : '关闭' }}</el-button>
-      <el-button v-if="canManageCurrent" type="primary" :loading="submitting" @click="handleSubmit">
-        {{ isEditing ? '保存计划' : '保存并进入' }}
-      </el-button>
+      <div class="platform-dialog-footer">
+        <el-button @click="dialogVisible = false">{{ canManageCurrent ? '取消' : '关闭' }}</el-button>
+        <el-button v-if="canManageCurrent" type="primary" :loading="submitting" @click="handleSubmit">
+          {{ isEditing ? '保存计划' : '保存并进入' }}
+        </el-button>
+      </div>
     </template>
   </el-dialog>
   </div>
@@ -225,6 +314,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Finished, Plus, RefreshRight, Right, Search } from '@element-plus/icons-vue'
 import CompactSelectMenu, { type CompactSelectOption } from '@/components/CompactSelectMenu.vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import {
   createTestPlan,
   deleteTestPlan,
@@ -236,6 +326,7 @@ import {
 } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import type { IterationItem, ProjectItem, TestCaseItem, TestPlanItem } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface PlanForm {
   name: string
@@ -259,6 +350,7 @@ const canManage = computed(() => authStore.hasPermission('test:manage'))
 
 const loading = ref(false)
 const submitting = ref(false)
+const { isMobileViewport } = useMobileViewport()
 const statusUpdatingId = ref<number | null>(null)
 const dialogVisible = ref(false)
 const isEditing = ref(false)
@@ -306,6 +398,15 @@ const dialogTitle = computed(() => {
     return '查看测试计划'
   }
   return isEditing.value ? '编辑测试计划' : '新建测试计划'
+})
+const dialogSubtitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看测试计划基础信息与归属关系。'
+  }
+  if (isEditing.value) {
+    return '调整测试计划范围、状态和版本说明。'
+  }
+  return '填写测试计划基础信息，保存后继续维护测试用例。'
 })
 
 const canManageCurrent = computed(() => canManage.value && !readonlyMode.value)
@@ -621,15 +722,10 @@ onMounted(async () => {
 
 .test-plan-link {
   margin-top: 0;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  text-align: left;
 }
 
-.test-plan-link:hover {
-  color: #904d00;
+.test-plan-trigger {
+  width: 100%;
 }
 
 .test-col-project .management-list-link,
@@ -639,6 +735,12 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--app-text);
+}
+
+.test-col-project .management-list-link:hover,
+.test-col-iteration .management-list-link:hover {
+  color: var(--app-primary);
 }
 
 @media (max-width: 1200px) {

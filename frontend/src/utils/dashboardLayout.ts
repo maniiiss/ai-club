@@ -101,7 +101,7 @@ export const DASHBOARD_WIDGET_DEFINITIONS: DashboardWidgetDefinition[] = [
   {
     id: 'quick-task-checklist',
     title: '快捷任务',
-    description: '记录首页常用的本地待办清单。',
+    description: '记录当前账号在首页临时保存的快捷任务与便签。',
     defaultWidth: 'half',
     defaultHeight: 'single',
     defaultVisible: true,

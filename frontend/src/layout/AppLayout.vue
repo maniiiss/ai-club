@@ -514,7 +514,12 @@ const systemMenuItems: MenuItem[] = [
   { path: '/permissions', label: '功能管理', shortLabel: '功能', permission: 'system:permission:view', icon: Setting, matchNames: ['permissions'] }
 ]
 
-const pageTitle = computed(() => (route.meta.title as string) || 'AI代理工程管理平台')
+const pageTitle = computed(() => {
+  if (appStore.dynamicPageTitle && appStore.dynamicPageTitleRouteName === String(route.name || '')) {
+    return appStore.dynamicPageTitle
+  }
+  return (route.meta.title as string) || 'AI代理工程管理平台'
+})
 const visiblePrimaryMenus = computed(() => primaryMenuItems.filter((item) => authStore.hasPermission(item.permission)))
 const visibleIntegrationMenus = computed(() => integrationMenuItems.filter((item) => authStore.hasPermission(item.permission)))
 const visibleTrailingMenus = computed(() => trailingMenuItems.filter((item) => authStore.hasPermission(item.permission)))
@@ -623,6 +628,33 @@ const handleOpenNotifications = async () => {
   await notificationStore.openDrawer()
 }
 
+// 将后端通知业务类型统一翻译为中文，避免抽屉里直接显示英文枚举值。
+const NOTIFICATION_BIZ_TYPE_LABELS: Record<string, string> = {
+  TASK: '工作项通知',
+  TASK_ASSIGNED: '负责人分配',
+  TASK_UNASSIGNED: '取消分配',
+  TASK_STATUS_CHANGED: '状态变更',
+  TASK_COMMENT: '任务评论',
+  TASK_COLLABORATOR_ADDED: '协作通知',
+  TASK_OVERDUE: '逾期提醒',
+  CHANGE_REQUEST: '变更申请',
+  PIPELINE_BINDING: '流水线绑定',
+  GITLAB_MERGED: '自动合并成功',
+  GITLAB_AI_REJECTED: 'AI 审核拒绝',
+  GITLAB_BRANCH_BEHIND: '分支落后提醒',
+  GITLAB_AUTO_MERGE_LOG: '合并请求',
+  SYSTEM_ANNOUNCEMENT: '系统公告'
+}
+
+// 按业务类型和通知来源决定标签色调，让消息标签随全局主题变量联动变化。
+const resolveNotificationBizKey = (item: NotificationItem) => {
+  const bizType = item.bizType?.trim()
+  if (bizType) {
+    return bizType.toUpperCase()
+  }
+  return item.type?.trim().toUpperCase() || 'SYSTEM'
+}
+
 const resolveNotificationSource = (item: NotificationItem) => {
   if (item.senderName?.trim()) {
     return item.senderName.trim()
@@ -634,8 +666,9 @@ const resolveNotificationSource = (item: NotificationItem) => {
 }
 
 const resolveNotificationContextLabel = (item: NotificationItem) => {
-  if (item.bizType?.trim()) {
-    return item.bizType.trim()
+  const bizKey = resolveNotificationBizKey(item)
+  if (NOTIFICATION_BIZ_TYPE_LABELS[bizKey]) {
+    return NOTIFICATION_BIZ_TYPE_LABELS[bizKey]
   }
   if (item.type === 'TASK') return '工作项中心'
   if (item.type === 'GITLAB') return '代码协作'
@@ -644,9 +677,16 @@ const resolveNotificationContextLabel = (item: NotificationItem) => {
 }
 
 const resolveNotificationContextTone = (item: NotificationItem) => {
+  const bizKey = resolveNotificationBizKey(item)
+  if (bizKey === 'CHANGE_REQUEST') return 'warning'
+  if (bizKey === 'TASK_UNASSIGNED' || bizKey === 'TASK_OVERDUE' || bizKey === 'GITLAB_BRANCH_BEHIND') return 'warning'
+  if (bizKey === 'TASK_COMMENT') return 'info'
+  if (bizKey === 'TASK_ASSIGNED' || bizKey === 'TASK_STATUS_CHANGED' || bizKey === 'TASK_COLLABORATOR_ADDED') return 'secondary'
+  if (bizKey === 'GITLAB_MERGED' || bizKey === 'GITLAB_AI_REJECTED' || bizKey === 'GITLAB_AUTO_MERGE_LOG') return 'tertiary'
+  if (bizKey === 'SYSTEM_ANNOUNCEMENT') return 'neutral'
   if (item.type === 'TASK') return 'secondary'
   if (item.type === 'GITLAB') return 'tertiary'
-  if (item.type === 'CICD') return 'neutral'
+  if (item.type === 'CICD') return 'info'
   return 'neutral'
 }
 
@@ -771,6 +811,14 @@ watch(
       notificationStore.disconnect()
     }
   }
+)
+
+watch(
+  pageTitle,
+  (title) => {
+    document.title = title ? `${title} - AI代理工程管理平台` : 'AI代理工程管理平台'
+  },
+  { immediate: true }
 )
 </script>
 
@@ -1610,21 +1658,37 @@ watch(
   border-radius: 6px;
   font-size: 10px;
   font-weight: 800;
+  border: 1px solid transparent;
 }
 
 .notification-item-chip.tertiary {
-  background: #c7e7ff;
-  color: #004c6c;
+  background: rgba(var(--app-tertiary-rgb), 0.14);
+  border-color: rgba(var(--app-tertiary-rgb), 0.22);
+  color: var(--app-tertiary);
 }
 
 .notification-item-chip.secondary {
-  background: #ffdcc3;
-  color: #78471a;
+  background: rgba(var(--app-primary-container-rgb), 0.16);
+  border-color: rgba(var(--app-primary-rgb), 0.18);
+  color: var(--app-primary);
+}
+
+.notification-item-chip.info {
+  background: rgba(var(--app-tertiary-rgb), 0.12);
+  border-color: rgba(var(--app-tertiary-rgb), 0.2);
+  color: var(--app-tertiary);
+}
+
+.notification-item-chip.warning {
+  background: rgba(var(--app-secondary-rgb), 0.12);
+  border-color: rgba(var(--app-secondary-rgb), 0.2);
+  color: var(--app-secondary);
 }
 
 .notification-item-chip.neutral {
-  background: #e7e8e9;
-  color: #564334;
+  background: var(--app-surface-muted);
+  border-color: rgba(var(--app-outline-rgb), 0.16);
+  color: var(--app-text-soft);
 }
 
 .notification-item-separator {
@@ -1773,6 +1837,8 @@ watch(
 
   .layout-main.iteration-main {
     padding: 0 !important;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .header-search-shell {

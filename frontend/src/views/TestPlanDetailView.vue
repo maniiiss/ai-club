@@ -3,15 +3,12 @@
     <section class="detail-hero">
       <div class="detail-hero-head">
         <div class="detail-hero-copy">
-          <button class="detail-back-link" type="button" @click="goBack">返回测试计划</button>
-          <div class="detail-title">{{ plan?.name || '测试计划详情' }}</div>
-          <div class="detail-subtitle">测试用例以列表形式维护，点击整行即可打开编辑详情，风格与现有列表页面保持一致。</div>
+          <button class="detail-back-link" type="button" @click="goBack">
+            <el-icon><ArrowLeft /></el-icon>
+            <span>返回测试计划</span>
+          </button>
         </div>
         <div class="detail-hero-actions">
-          <button class="atelier-toolbar-button" type="button" @click="loadPlan">
-            <el-icon><RefreshRight /></el-icon>
-            <span>刷新</span>
-          </button>
           <button v-if="canManage" class="atelier-create-button" type="button" @click="handleCreateCase">
             <el-icon><Plus /></el-icon>
             <span>新增测试用例</span>
@@ -20,49 +17,54 @@
       </div>
 
       <div class="detail-summary-grid">
-        <article class="detail-summary-card">
+        <article class="detail-summary-card detail-summary-card-compact">
           <div class="detail-summary-label">所属项目</div>
-          <button v-if="plan?.projectId" class="management-list-link detail-summary-link" type="button" @click="goToProject(plan.projectId)">
-            {{ plan?.projectName || '-' }}
-          </button>
-          <div v-else class="detail-summary-value">{{ plan?.projectName || '-' }}</div>
-          <div class="detail-summary-note">计划 #{{ plan?.id || '-' }}</div>
+          <div class="detail-summary-main">
+            <button v-if="plan?.projectId" class="management-list-link detail-summary-link" type="button" @click="goToProject(plan.projectId)">
+              {{ plan?.projectName || '-' }}
+            </button>
+            <div v-else class="detail-summary-value">{{ plan?.projectName || '-' }}</div>
+          </div>
         </article>
 
-        <article class="detail-summary-card">
+        <article class="detail-summary-card detail-summary-card-compact">
           <div class="detail-summary-label">所属迭代</div>
-          <button
-            v-if="plan?.projectId && plan?.iterationId"
-            class="management-list-link detail-summary-link"
-            type="button"
-            @click="goToIteration(plan.projectId, plan.iterationId)"
-          >
-            {{ plan?.iterationName || '-' }}
-          </button>
-          <div v-else class="detail-summary-value">{{ plan?.iterationName || '-' }}</div>
-          <div class="detail-summary-note">{{ plan?.updatedAt || '暂无更新时间' }}</div>
+          <div class="detail-summary-main">
+            <button
+              v-if="plan?.projectId && plan?.iterationId"
+              class="management-list-link detail-summary-link"
+              type="button"
+              @click="goToIteration(plan.projectId, plan.iterationId)"
+            >
+              {{ plan?.iterationName || '-' }}
+            </button>
+            <div v-else class="detail-summary-value">{{ plan?.iterationName || '-' }}</div>
+            <div class="detail-summary-note">{{ plan?.updatedAt || '暂无更新时间' }}</div>
+          </div>
         </article>
 
-        <article class="detail-summary-card">
+        <article class="detail-summary-card detail-summary-card-compact">
           <div class="detail-summary-label">计划状态</div>
-          <CompactSelectMenu
-            v-if="canManage && plan"
-            :model-value="plan.status"
-            :options="statusSelectOptions"
-            class="status-select"
-            @change="handlePlanStatusChange(String($event))"
-          />
-          <span v-else class="management-list-pill" :class="planStatusTone(plan?.status)">{{ plan?.status || '-' }}</span>
-          <div class="detail-summary-note">状态变更会同步保存当前用例内容</div>
+          <div class="detail-summary-main">
+            <CompactSelectMenu
+              v-if="canManage && plan"
+              :model-value="plan.status"
+              :options="statusSelectOptions"
+              class="status-select"
+              @change="handlePlanStatusChange(String($event))"
+            />
+            <span v-else class="management-list-pill" :class="planStatusTone(plan?.status)">{{ plan?.status || '-' }}</span>
+          </div>
         </article>
 
-        <article class="detail-summary-card">
+        <article class="detail-summary-card detail-summary-card-compact detail-summary-card-emphasis">
           <div class="detail-summary-label">用例总数</div>
-          <div class="detail-summary-value">{{ cases.length }}</div>
-          <div class="detail-summary-note">当前列表展示 {{ filteredCases.length }} 条</div>
+          <div class="detail-summary-main">
+            <div class="detail-summary-value">{{ cases.length }}</div>
+          </div>
         </article>
 
-        <article class="detail-summary-card detail-summary-card-wide">
+        <article class="detail-summary-card detail-summary-card-description">
           <div class="detail-summary-label">计划说明</div>
           <div class="detail-summary-description">{{ plan?.description || '暂无说明' }}</div>
         </article>
@@ -100,7 +102,7 @@
         </el-empty>
       </div>
 
-      <template v-else>
+      <template v-else-if="!isMobileViewport">
         <div class="atelier-table-scroll">
           <div class="atelier-data-list detail-case-list">
             <div class="atelier-data-head detail-case-head">
@@ -124,14 +126,14 @@
                 <div class="management-list-title-cell">
                   <span class="management-list-title-icon"><el-icon><Finished /></el-icon></span>
                   <div class="management-list-title-copy">
-                    <span class="detail-case-title">{{ row.title.trim() || '未命名测试用例' }}</span>
+                    <span class="detail-case-title">{{ formatCaseTitle(row) }}</span>
                     <div class="management-list-subtitle">{{ formatCasePreview(row) }}</div>
                   </div>
                 </div>
               </div>
 
               <div class="atelier-data-cell detail-col-module">
-                <span class="management-list-empty">{{ row.moduleName.trim() || '-' }}</span>
+                <span class="management-list-empty">{{ formatCaseModule(row) }}</span>
               </div>
 
               <div class="atelier-data-cell detail-col-type">
@@ -161,6 +163,98 @@
                 </div>
               </div>
             </button>
+          </div>
+        </div>
+
+        <div class="atelier-table-footer">
+          <div class="atelier-footer-total">共 <span>{{ filteredCases.length }}</span> 条</div>
+          <div class="atelier-footer-controls">
+            <div class="atelier-page-size atelier-compact-input">
+              <span>每页</span>
+              <el-select v-model="pagination.size" size="small" style="width: 92px" @change="handleSizeChange">
+                <el-option :value="5" label="5" />
+                <el-option :value="10" label="10" />
+                <el-option :value="20" label="20" />
+                <el-option :value="50" label="50" />
+              </el-select>
+            </div>
+            <div class="atelier-page-nav">
+              <button class="atelier-page-button" type="button" :disabled="pagination.page <= 1" @click="handlePrevPage">
+                <el-icon><ArrowLeft /></el-icon>
+              </button>
+              <span class="atelier-page-text">第 {{ pagination.page }} / {{ caseTotalPages }} 页</span>
+              <button class="atelier-page-button" type="button" :disabled="pagination.page >= caseTotalPages" @click="handleNextPage">
+                <el-icon><ArrowRight /></el-icon>
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="mobile-entity-list-shell">
+          <div class="mobile-entity-list">
+            <article
+              v-for="row in pagedCases"
+              :key="row.localId"
+              class="mobile-entity-card"
+            >
+              <header class="mobile-entity-card-header">
+                <button class="mobile-entity-header-trigger" type="button" @click="openCaseDetail(row.absoluteIndex)">
+                  <span class="mobile-entity-icon">
+                    <el-icon><Finished /></el-icon>
+                  </span>
+                  <span class="mobile-entity-copy">
+                    <span class="mobile-entity-title">{{ formatCaseTitle(row) }}</span>
+                    <span class="mobile-entity-description">{{ formatCasePreview(row) }}</span>
+                  </span>
+                </button>
+              </header>
+
+              <div class="mobile-entity-fields">
+                <div class="mobile-entity-field">
+                  <span class="mobile-entity-field-label">模块</span>
+                  <div class="mobile-entity-field-content">
+                    <span class="mobile-entity-empty-text">{{ formatCaseModule(row) }}</span>
+                  </div>
+                </div>
+                <div class="mobile-entity-field">
+                  <span class="mobile-entity-field-label">类型</span>
+                  <div class="mobile-entity-field-content">
+                    <span class="management-list-pill info">{{ row.caseType || '功能测试' }}</span>
+                  </div>
+                </div>
+                <div class="mobile-entity-field">
+                  <span class="mobile-entity-field-label">优先级</span>
+                  <div class="mobile-entity-field-content">
+                    <span class="management-list-pill" :class="casePriorityTone(row.priority)">{{ row.priority || '-' }}</span>
+                  </div>
+                </div>
+                <div class="mobile-entity-field">
+                  <span class="mobile-entity-field-label">步骤</span>
+                  <div class="mobile-entity-field-content">
+                    <span class="management-list-pill neutral">{{ row.steps.length }}</span>
+                  </div>
+                </div>
+                <div class="mobile-entity-field mobile-entity-field-full">
+                  <span class="mobile-entity-field-label">备注</span>
+                  <div class="mobile-entity-field-content">
+                    <span class="mobile-entity-empty-text">{{ formatCaseRemarks(row) }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <footer class="mobile-entity-actions">
+                <button class="mobile-entity-action-button info" type="button" @click="openCaseDetail(row.absoluteIndex)">
+                  <el-icon><Right /></el-icon>
+                  <span>查看</span>
+                </button>
+                <button v-if="canManage" class="mobile-entity-action-button danger" type="button" @click="removeCase(row.absoluteIndex)">
+                  <el-icon><Delete /></el-icon>
+                  <span>删除</span>
+                </button>
+              </footer>
+            </article>
           </div>
         </div>
 
@@ -299,37 +393,54 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, ArrowRight, Delete, Finished, Plus, RefreshRight, Right, Search } from '@element-plus/icons-vue'
 import CompactSelectMenu, { type CompactSelectOption } from '@/components/CompactSelectMenu.vue'
 import { getTestPlanDetail, updateTestPlan } from '@/api/platform'
+import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import type { TestPlanItem } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface StepForm {
+  /** 前端抽屉中用于稳定渲染步骤行的本地键。 */
   localId: string
+  /** 当前步骤序号。 */
   stepNo: number
+  /** 测试步骤描述。 */
   action: string
+  /** 当前步骤的预期结果。 */
   expectedResult: string
 }
 
 interface CaseForm {
+  /** 前端列表中用于稳定渲染用例行的本地键。 */
   localId: string
+  /** 测试用例标题。 */
   title: string
+  /** 归属功能模块。 */
   moduleName: string
+  /** 用例分类。 */
   caseType: string
+  /** 用例优先级。 */
   priority: string
+  /** 执行前置条件。 */
   precondition: string
+  /** 用例备注。 */
   remarks: string
+  /** 用例排序序号。 */
   sortOrder: number
+  /** 当前用例下的测试步骤。 */
   steps: StepForm[]
 }
 
 const route = useRoute()
 const router = useRouter()
+const appStore = useAppStore()
 const authStore = useAuthStore()
+const { isMobileViewport } = useMobileViewport()
 const canManage = computed(() => authStore.hasPermission('test:manage'))
 
 const statusOptions = ['草稿', '待执行', '执行中', '已完成']
@@ -347,7 +458,6 @@ const cases = ref<CaseForm[]>([])
 const saving = ref(false)
 const drawerVisible = ref(false)
 const activeCaseIndex = ref<number | null>(null)
-const planId = Number(route.params.planId)
 
 const pagination = reactive({
   page: 1,
@@ -356,6 +466,29 @@ const pagination = reactive({
 const caseKeyword = ref('')
 
 const createLocalId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+
+/**
+ * 统一把接口返回值收敛为字符串，避免历史空值导致详情页渲染时直接报错。
+ */
+const normalizeText = (value: unknown, fallback = '') => {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (value === null || value === undefined) {
+    return fallback
+  }
+  return String(value)
+}
+
+/**
+ * 路由参数可能在组件复用时发生变化，这里按当前路由实时解析，避免读到旧的计划ID。
+ */
+const getCurrentPlanId = () => Number(route.params.planId)
+
+const syncPageTitle = (title?: string | null) => {
+  const pageTitle = normalizeText(title).trim() || '测试计划详情'
+  appStore.setDynamicPageTitle(pageTitle, 'test-plan-detail')
+}
 
 const filteredCases = computed(() => {
   const normalizedKeyword = caseKeyword.value.trim().toLowerCase()
@@ -401,7 +534,7 @@ const drawerTitle = computed(() => {
   if (!activeCase.value) {
     return '测试用例详情'
   }
-  return activeCase.value.title.trim() || '测试用例详情'
+  return normalizeText(activeCase.value.title).trim() || '测试用例详情'
 })
 
 const planStatusTone = (status?: string | null) => {
@@ -419,7 +552,7 @@ const casePriorityTone = (priority?: string | null) => {
 }
 
 const formatCasePreview = (item: CaseForm) => {
-  const segments = [item.precondition.trim(), item.steps[0]?.action.trim() || '']
+  const segments = [normalizeText(item.precondition).trim(), normalizeText(item.steps[0]?.action).trim()]
     .filter(Boolean)
   if (!segments.length) {
     return '点击进入后补充前置条件、步骤与预期结果'
@@ -428,12 +561,16 @@ const formatCasePreview = (item: CaseForm) => {
 }
 
 const formatCaseRemarks = (item: CaseForm) => {
-  const remarks = item.remarks.trim()
+  const remarks = normalizeText(item.remarks).trim()
   if (remarks) {
     return remarks
   }
-  return item.precondition.trim() || '-'
+  return normalizeText(item.precondition).trim() || '-'
 }
+
+const formatCaseTitle = (item: CaseForm) => normalizeText(item.title).trim() || '未命名测试用例'
+
+const formatCaseModule = (item: CaseForm) => normalizeText(item.moduleName).trim() || '-'
 
 const resetCaseKeyword = () => {
   caseKeyword.value = ''
@@ -495,22 +632,26 @@ const syncOrder = () => {
   })
 }
 
+/**
+ * 详情页会直接消费后端响应，这里集中完成字段兜底，避免模板和保存逻辑到处判断空值。
+ */
 const fillCases = (detail: TestPlanItem) => {
-  cases.value = detail.cases.map((item, index) => ({
+  const sourceCases = Array.isArray(detail.cases) ? detail.cases : []
+  cases.value = sourceCases.map((item, index) => ({
     localId: createLocalId(),
-    title: item.title,
-    moduleName: item.moduleName,
-    caseType: item.caseType,
-    priority: item.priority,
-    precondition: item.precondition,
-    remarks: item.remarks,
+    title: normalizeText(item.title),
+    moduleName: normalizeText(item.moduleName),
+    caseType: normalizeText(item.caseType, '功能测试') || '功能测试',
+    priority: normalizeText(item.priority, 'P2') || 'P2',
+    precondition: normalizeText(item.precondition),
+    remarks: normalizeText(item.remarks),
     sortOrder: item.sortOrder ?? index,
-    steps: item.steps.length
+    steps: Array.isArray(item.steps) && item.steps.length
       ? item.steps.map((step, stepIndex) => ({
           localId: createLocalId(),
           stepNo: step.stepNo ?? stepIndex + 1,
-          action: step.action,
-          expectedResult: step.expectedResult
+          action: normalizeText(step.action),
+          expectedResult: normalizeText(step.expectedResult)
         }))
       : [createStep()]
   }))
@@ -518,6 +659,7 @@ const fillCases = (detail: TestPlanItem) => {
 }
 
 const loadPlan = async () => {
+  const planId = getCurrentPlanId()
   if (Number.isNaN(planId) || planId <= 0) {
     ElMessage.error('测试计划参数不正确')
     await router.replace({ name: 'tests' })
@@ -527,6 +669,7 @@ const loadPlan = async () => {
   try {
     const detail = await getTestPlanDetail(planId)
     plan.value = detail
+    syncPageTitle(detail.name)
     fillCases(detail)
     if (activeCaseIndex.value !== null && activeCaseIndex.value >= cases.value.length) {
       activeCaseIndex.value = cases.value.length ? cases.value.length - 1 : null
@@ -551,11 +694,11 @@ const buildPayloadCases = () => {
 
   for (let caseIndex = 0; caseIndex < cases.value.length; caseIndex += 1) {
     const item = cases.value[caseIndex]
-    const title = item.title.trim()
-    const moduleName = item.moduleName.trim()
-    const precondition = item.precondition.trim()
-    const remarks = item.remarks.trim()
-    const hasStepContent = item.steps.some((step) => step.action.trim() || step.expectedResult.trim())
+    const title = normalizeText(item.title).trim()
+    const moduleName = normalizeText(item.moduleName).trim()
+    const precondition = normalizeText(item.precondition).trim()
+    const remarks = normalizeText(item.remarks).trim()
+    const hasStepContent = item.steps.some((step) => normalizeText(step.action).trim() || normalizeText(step.expectedResult).trim())
     const hasCaseContent = title || moduleName || precondition || remarks || hasStepContent
 
     if (!hasCaseContent) {
@@ -566,8 +709,8 @@ const buildPayloadCases = () => {
     }
 
     const steps = item.steps.reduce<Array<{ stepNo: number; action: string; expectedResult: string }>>((result, step, stepIndex) => {
-      const action = step.action.trim()
-      const expectedResult = step.expectedResult.trim()
+      const action = normalizeText(step.action).trim()
+      const expectedResult = normalizeText(step.expectedResult).trim()
       if (!action && !expectedResult) {
         return result
       }
@@ -702,19 +845,19 @@ const handleSaveActiveCase = async () => {
   if (!activeCase.value) {
     return
   }
-  const title = activeCase.value.title.trim()
+  const title = normalizeText(activeCase.value.title).trim()
   if (!title) {
     ElMessage.warning('请填写测试用例标题')
     return
   }
-  const steps = activeCase.value.steps.filter((step) => step.action.trim() || step.expectedResult.trim())
+  const steps = activeCase.value.steps.filter((step) => normalizeText(step.action).trim() || normalizeText(step.expectedResult).trim())
   if (!steps.length) {
     ElMessage.warning('当前测试用例至少需要一条测试步骤')
     return
   }
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index]
-    if (!step.action.trim() || !step.expectedResult.trim()) {
+    if (!normalizeText(step.action).trim() || !normalizeText(step.expectedResult).trim()) {
       ElMessage.warning(`当前测试用例的第 ${index + 1} 步请填写完整`)
       return
     }
@@ -727,8 +870,16 @@ const goBack = async () => {
   await router.push({ name: 'tests' })
 }
 
-onMounted(async () => {
-  await loadPlan()
+watch(
+  () => route.params.planId,
+  async () => {
+    await loadPlan()
+  },
+  { immediate: true }
+)
+
+onBeforeUnmount(() => {
+  appStore.clearDynamicPageTitle('test-plan-detail')
 })
 </script>
 
@@ -779,46 +930,64 @@ onMounted(async () => {
 .detail-back-link {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--app-primary);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.detail-title {
-  color: var(--app-text);
-  font-family: var(--app-font-heading);
-  font-size: 30px;
-  font-weight: 800;
-}
-
-.detail-subtitle {
-  margin-top: 6px;
+  color: #374151;
   font-size: 13px;
-  color: var(--app-text-soft);
-  line-height: 1.7;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.detail-back-link .el-icon {
+  font-size: 15px;
+}
+
+.detail-back-link:hover {
+  color: var(--app-primary);
 }
 
 .detail-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
+  gap: 10px;
 }
 
 .detail-summary-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  padding: 16px;
-  border-radius: 14px;
-  background: rgba(243, 244, 245, 0.6);
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(243, 244, 245, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.12);
 }
 
-.detail-summary-card-wide {
-  grid-column: span 2;
+.detail-summary-card-compact {
+  min-height: 92px;
+}
+
+.detail-summary-card-emphasis {
+  background: linear-gradient(135deg, rgba(243, 244, 245, 0.84) 0%, rgba(233, 237, 242, 0.96) 100%);
+}
+
+.detail-summary-card-description {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.detail-summary-main {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
 }
 
 .detail-summary-label {
@@ -826,7 +995,7 @@ onMounted(async () => {
   font-family: var(--app-font-heading);
   font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -835,20 +1004,16 @@ onMounted(async () => {
   min-width: 0;
   color: var(--app-text);
   font-family: var(--app-font-heading);
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 800;
+  line-height: 1.35;
 }
 
 .detail-summary-description {
   color: var(--app-text-soft);
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.detail-summary-note {
-  color: #758393;
-  font-size: 11px;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.75;
+  padding-top: 1px;
 }
 
 .status-select {
@@ -1011,7 +1176,7 @@ onMounted(async () => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .detail-summary-card-wide {
+  .detail-summary-card-description {
     grid-column: 1 / -1;
   }
 
@@ -1040,8 +1205,9 @@ onMounted(async () => {
     grid-template-columns: 1fr;
   }
 
-  .detail-summary-card-wide {
-    grid-column: auto;
+  .detail-summary-card-description {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 
   .step-row {

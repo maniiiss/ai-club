@@ -63,7 +63,7 @@
       </section>
 
       <section class="management-list-shell project-workspace">
-      <div class="management-list-table-scroll mobile-card-scroll" v-loading="loading">
+      <div v-if="!isMobileViewport" class="management-list-table-scroll mobile-card-scroll" v-loading="loading">
         <table class="management-list-table project-table mobile-card-table">
           <thead>
             <tr>
@@ -79,11 +79,11 @@
           <tbody>
             <tr v-for="row in projectList" :key="row.id" class="management-list-row">
               <td class="project-col-main" data-label="项目">
-                <button class="project-name-button" type="button" @click="openIterationBoard(row)">
+                <button class="project-name-button management-list-title-trigger" type="button" @click="openIterationBoard(row)">
                   <span class="management-list-title-cell">
-                    <el-icon class="project-name-icon"><FolderOpened /></el-icon>
+                    <el-icon class="management-list-title-icon project-name-icon"><FolderOpened /></el-icon>
                     <span class="management-list-title-copy">
-                      <span class="project-name-text">{{ row.name }}</span>
+                      <span class="management-list-title project-name-text">{{ row.name }}</span>
                       <span class="management-list-subtitle">{{ row.description || '暂无项目说明' }}</span>
                     </span>
                   </span>
@@ -91,67 +91,11 @@
               </td>
               <td class="project-col-owner" data-label="负责人">
                 <div class="project-owner-cell">
-                  <el-popover trigger="click" placement="bottom-start" :width="220" popper-class="project-person-popper">
-                    <template #reference>
-                      <button class="project-avatar-trigger project-owner-trigger" type="button" aria-label="查看负责人详情">
-                        <el-avatar class="project-owner-avatar" :src="resolveProjectAvatarUrl(row.ownerAvatarUrl)">
-                          {{ avatarText(projectOwnerName(row)) }}
-                        </el-avatar>
-                      </button>
-                    </template>
-
-                    <div class="project-person-panel">
-                      <div v-if="hasProjectOwner(row)" class="project-person-item">
-                        <el-avatar class="project-popover-avatar" :src="resolveProjectAvatarUrl(row.ownerAvatarUrl)">
-                          {{ avatarText(projectOwnerName(row)) }}
-                        </el-avatar>
-                        <span class="project-person-name">{{ projectOwnerName(row) }}</span>
-                      </div>
-                      <div v-else class="project-person-empty">未分配</div>
-                    </div>
-                  </el-popover>
+                  <ListUserDisplay :user="buildProjectOwnerDisplayItem(row)" empty-text="未分配" size="md" />
                 </div>
               </td>
               <td class="project-col-members" data-label="成员">
-                <el-popover
-                  v-if="projectMembers(row).length"
-                  trigger="click"
-                  placement="bottom-start"
-                  :width="260"
-                  popper-class="project-person-popper"
-                >
-                  <template #reference>
-                    <button class="project-avatar-trigger project-members-trigger" type="button" aria-label="查看项目成员详情">
-                      <span class="project-member-stack">
-                        <el-avatar
-                          v-for="member in memberPreview(row)"
-                          :key="`${row.id}-${member.id}-${member.name}`"
-                          class="project-member-avatar"
-                          :src="resolveProjectAvatarUrl(member.avatarUrl)"
-                        >
-                          {{ avatarText(member.name) }}
-                        </el-avatar>
-                        <span v-if="projectMembers(row).length > 3" class="project-member-avatar extra">+{{ projectMembers(row).length - 3 }}</span>
-                      </span>
-                    </button>
-                  </template>
-
-                  <div class="project-person-panel">
-                    <div class="project-person-list">
-                      <div
-                        v-for="member in projectMembers(row)"
-                        :key="`${row.id}-${member.id}-${member.name}`"
-                        class="project-person-item"
-                      >
-                        <el-avatar class="project-popover-avatar" :src="resolveProjectAvatarUrl(member.avatarUrl)">
-                          {{ avatarText(member.name) }}
-                        </el-avatar>
-                        <span class="project-person-name">{{ member.name }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </el-popover>
-                <span v-else class="project-member-empty">暂无成员</span>
+                <ListUserGroupDisplay :users="buildProjectMemberDisplayItems(row)" empty-text="暂无成员" size="md" />
               </td>
               <td class="project-col-status" data-label="状态">
                 <span class="project-status-pill" :class="statusTone(row.status)">{{ statusLabel(row.status) }}</span>
@@ -207,6 +151,95 @@
         </table>
       </div>
 
+      <div v-else class="project-mobile-list-shell" v-loading="loading">
+        <div v-if="projectList.length" class="project-mobile-list">
+          <article v-for="row in projectList" :key="row.id" class="project-mobile-card">
+            <header class="project-mobile-card-header">
+              <button class="project-mobile-header-trigger" type="button" @click="openIterationBoard(row)">
+                <span class="project-mobile-icon">
+                  <el-icon><FolderOpened /></el-icon>
+                </span>
+                <span class="project-mobile-copy">
+                  <span class="project-mobile-title">{{ row.name }}</span>
+                  <span class="project-mobile-description">{{ row.description || '暂无项目说明' }}</span>
+                </span>
+              </button>
+              <span class="project-status-pill project-mobile-status" :class="statusTone(row.status)">{{ statusLabel(row.status) }}</span>
+            </header>
+
+            <div class="project-mobile-fields">
+              <div class="project-mobile-field">
+                <span class="project-mobile-field-label">负责人</span>
+                <div class="project-mobile-field-content">
+                  <ListUserDisplay :user="buildProjectOwnerDisplayItem(row)" empty-text="未分配" size="md" />
+                </div>
+              </div>
+
+              <div class="project-mobile-field">
+                <span class="project-mobile-field-label">成员</span>
+                <div class="project-mobile-field-content">
+                  <ListUserGroupDisplay :users="buildProjectMemberDisplayItems(row)" empty-text="暂无成员" size="md" />
+                </div>
+              </div>
+
+              <div class="project-mobile-field project-mobile-field-full">
+                <span class="project-mobile-field-label">任务</span>
+                <div class="project-mobile-field-content project-mobile-task-content">
+                  <div class="project-progress-cell">
+                    <div class="project-progress-track">
+                      <div class="project-progress-fill" :style="{ width: `${taskProgress(row)}%` }"></div>
+                    </div>
+                    <span class="project-progress-text">任务数：{{ row.taskCount }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="project-mobile-field">
+                <span class="project-mobile-field-label">仓库</span>
+                <div class="project-mobile-field-content">
+                  <button v-if="row.repoCount > 0" class="project-mobile-repo-button" type="button" @click="openRepoDialog(row)">
+                    已关联 {{ row.repoCount }} 个仓库
+                  </button>
+                  <span v-else class="project-mobile-repo-empty">未关联仓库</span>
+                </div>
+              </div>
+            </div>
+
+            <footer class="project-mobile-actions">
+              <button class="project-mobile-action-button" type="button" @click="openIterationBoard(row)">
+                <el-icon><Tickets /></el-icon>
+                <span>迭代管理</span>
+              </button>
+              <button class="project-mobile-action-button graph" type="button" @click="openKnowledgeGraph(row)">
+                <el-icon><Connection /></el-icon>
+                <span>知识图谱</span>
+              </button>
+              <button
+                v-if="canManageProjects && row.canEdit"
+                class="project-mobile-action-button"
+                type="button"
+                @click="openEditDialog(row)"
+              >
+                <el-icon><EditPen /></el-icon>
+                <span>编辑</span>
+              </button>
+              <button
+                v-if="canManageProjects && row.canDelete"
+                class="project-mobile-action-button danger"
+                type="button"
+                @click="handleDelete(row.id)"
+              >
+                <el-icon><Delete /></el-icon>
+                <span>删除</span>
+              </button>
+            </footer>
+          </article>
+        </div>
+        <div v-else class="project-mobile-empty-state">
+          <el-empty description="暂无项目数据" />
+        </div>
+      </div>
+
       <div class="management-list-footer project-footer">
         <div class="management-list-footer-total">共 <span>{{ pagination.total }}</span> 条</div>
         <div class="management-list-footer-controls">
@@ -233,52 +266,79 @@
       </section>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑项目' : '新建项目'" width="520px" class="platform-form-dialog" align-center>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px" class="platform-form-layout">
-        <section class="platform-form-section">
-          <div class="platform-form-section-head">
-            <div class="platform-form-section-title">项目信息</div>
-            <div class="platform-form-section-subtitle">定义项目负责人、成员和当前状态。</div>
+    <el-dialog
+      v-model="dialogVisible"
+      :title="dialogTitle"
+      width="680px"
+      class="platform-form-dialog project-editor-dialog"
+      align-center
+      destroy-on-close
+    >
+      <template #header>
+        <div class="project-dialog-header">
+          <span class="project-dialog-header-icon">
+            <el-icon><FolderOpened /></el-icon>
+          </span>
+          <div class="project-dialog-header-copy">
+            <div class="project-dialog-header-title">{{ dialogTitle }}</div>
+            <p class="project-dialog-header-subtitle">{{ dialogSubtitle }}</p>
           </div>
-          <el-form-item label="项目名称" prop="name">
-            <el-input v-model="form.name" placeholder="请输入项目名称" />
-          </el-form-item>
-          <el-form-item label="负责人" prop="ownerUserId">
-            <el-select v-model="form.ownerUserId" filterable placeholder="请选择负责人" style="width: 100%">
-              <el-option
-                v-for="item in userOptions"
-                :key="item.id"
-                :label="buildUserLabel(item)"
-                :value="item.id"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="项目成员">
-            <el-select v-model="form.memberUserIds" multiple filterable collapse-tags placeholder="请选择项目成员" style="width: 100%">
-              <el-option
-                v-for="item in memberSelectableUsers"
-                :key="item.id"
-                :label="buildUserLabel(item)"
-                :value="item.id"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="状态" prop="status">
-            <el-select v-model="form.status" placeholder="请选择状态" style="width: 100%">
-              <el-option label="进行中" value="进行中" />
-              <el-option label="规划中" value="规划中" />
-              <el-option label="已立项" value="已立项" />
-              <el-option label="已完成" value="已完成" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="项目说明" prop="description">
-            <el-input v-model="form.description" type="textarea" :rows="4" placeholder="请输入项目说明" />
-          </el-form-item>
-        </section>
-      </el-form>
+        </div>
+      </template>
+
+      <div class="project-dialog-shell">
+        <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="platform-form-layout project-form-layout">
+          <section class="platform-form-section">
+            <div class="platform-form-section-head">
+              <div class="platform-form-section-title">基础设置</div>
+            </div>
+            <div class="project-dialog-form-grid">
+              <el-form-item label="项目名称" prop="name" class="project-dialog-span-2">
+                <el-input v-model="form.name" placeholder="例如：智能代码评审平台" />
+              </el-form-item>
+              <el-form-item label="负责人" prop="ownerUserId">
+                <el-select v-model="form.ownerUserId" filterable placeholder="请选择负责人" style="width: 100%" @change="handleOwnerChange">
+                  <el-option
+                    v-for="item in userOptions"
+                    :key="item.id"
+                    :label="buildUserLabel(item)"
+                    :value="item.id"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="状态" prop="status">
+                <el-select v-model="form.status" placeholder="请选择状态" style="width: 100%">
+                  <el-option label="进行中" value="进行中" />
+                  <el-option label="规划中" value="规划中" />
+                  <el-option label="已立项" value="已立项" />
+                  <el-option label="已完成" value="已完成" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="项目成员" class="project-dialog-span-2">
+                <el-select v-model="form.memberUserIds" multiple filterable collapse-tags placeholder="请选择项目成员" style="width: 100%">
+                  <el-option
+                    v-for="item in memberSelectableUsers"
+                    :key="item.id"
+                    :label="buildUserLabel(item)"
+                    :value="item.id"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="项目说明" prop="description" class="project-dialog-span-2">
+                <el-input v-model="form.description" type="textarea" :rows="4" placeholder="请输入项目目标、协作范围或当前阶段说明" />
+              </el-form-item>
+            </div>
+          </section>
+        </el-form>
+      </div>
+
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        <div class="project-dialog-footer">
+          <div class="project-dialog-footer-actions">
+            <el-button @click="dialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="submitting" @click="handleSubmit">{{ dialogSubmitText }}</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
 
@@ -326,12 +386,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Delete, EditPen, Filter, FolderOpened, Lightning, PieChart, Plus, RefreshRight, Search, Tickets, TrendCharts } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { listUserOptions } from '@/api/access'
+import ListUserDisplay from '@/components/ListUserDisplay.vue'
+import ListUserGroupDisplay from '@/components/ListUserGroupDisplay.vue'
+import type { ListUserDisplayItem } from '@/components/listUserDisplay'
 import { createProject, deleteProject, pageProjects, updateProject } from '@/api/platform'
 import { pageGitlabBindings } from '@/api/gitlab'
 import { useAuthStore } from '@/stores/auth'
@@ -368,7 +431,15 @@ const formRef = ref<FormInstance>()
 const router = useRouter()
 const authStore = useAuthStore()
 const activePreset = ref<'all' | 'planning' | 'draft'>('all')
+const isMobileViewport = ref(false)
 const canManageProjects = computed(() => authStore.hasPermission('project:manage'))
+const dialogTitle = computed(() => isEditing.value ? '编辑项目' : '新建项目')
+const dialogSubtitle = computed(() =>
+  isEditing.value
+    ? '调整项目名称、负责人、成员和状态。'
+    : '填写项目基础信息，保存后即可开始继续配置。'
+)
+const dialogSubmitText = computed(() => isEditing.value ? '保存项目' : '创建项目')
 
 const pagination = reactive({
   page: 1,
@@ -440,6 +511,10 @@ const syncFormOwner = () => {
   const selected = userOptions.value.find((item) => item.id === form.ownerUserId)
   form.owner = selected?.nickname?.trim() || selected?.username || ''
   form.memberUserIds = form.memberUserIds.filter((item) => item !== form.ownerUserId)
+}
+
+const handleOwnerChange = () => {
+  syncFormOwner()
 }
 
 const loadUserList = async () => {
@@ -528,6 +603,7 @@ const openEditDialog = (row: ProjectItem) => {
   form.memberUserIds = [...row.memberUserIds]
   form.status = row.status
   form.description = row.description
+  syncFormOwner()
   dialogVisible.value = true
 }
 
@@ -618,14 +694,19 @@ const statusLabel = (status?: string | null) => {
 const taskProgress = (row: ProjectItem) => Math.min(100, Math.max(4, row.taskCount))
 
 /**
- * 统一解析项目负责人展示名称，兼容历史数据里仅有 owner 文本、没有头像字段的情况。
+ * 项目管理页在手机端切换为独立卡片模板，避免继续被通用表格压缩样式挤乱字段布局。
  */
-const projectOwnerName = (row: ProjectItem) => row.owner?.trim() || '未分配'
+const syncMobileViewport = () => {
+  if (typeof window === 'undefined') {
+    return
+  }
+  isMobileViewport.value = window.innerWidth <= 900
+}
 
 /**
- * 判断项目是否已配置负责人，用于控制弹层里的空状态文案。
+ * 统一解析项目负责人展示名称，兼容历史数据里仅有 owner 文本、没有头像字段的情况。
  */
-const hasProjectOwner = (row: ProjectItem) => Boolean(row.ownerUserId || row.owner?.trim())
+const projectOwnerName = (row: ProjectItem) => row.owner?.trim() || ''
 
 /**
  * 将后端增量返回的成员摘要与旧 memberNames 字段做兼容归一，避免前后端上线窗口期列表闪断。
@@ -641,13 +722,42 @@ const projectMembers = (row: ProjectItem): ProjectMemberItem[] => {
   }))
 }
 
-const memberPreview = (row: ProjectItem) => projectMembers(row).slice(0, 3)
-const avatarText = (name?: string | null) => (name?.trim() || '未').slice(0, 1).toUpperCase()
 const resolveProjectAvatarUrl = (avatarUrl?: string | null) => resolveAssetUrl(avatarUrl) || undefined
 
+/**
+ * 项目列表把负责人和成员映射成统一展示结构，让通用组件不依赖项目专属字段。
+ */
+const buildProjectOwnerDisplayItem = (row: ProjectItem): ListUserDisplayItem | null => {
+  const ownerName = projectOwnerName(row)
+  if (!ownerName) {
+    return null
+  }
+  return {
+    id: row.ownerUserId ?? `project-owner-${row.id}`,
+    name: ownerName,
+    avatarUrl: resolveProjectAvatarUrl(row.ownerAvatarUrl)
+  }
+}
+
+const buildProjectMemberDisplayItems = (row: ProjectItem): ListUserDisplayItem[] =>
+  projectMembers(row).map((member) => ({
+    id: member.id || `project-member-${row.id}-${member.name}`,
+    name: member.name,
+    avatarUrl: resolveProjectAvatarUrl(member.avatarUrl)
+  }))
+
 onMounted(async () => {
+  syncMobileViewport()
+  window.addEventListener('resize', syncMobileViewport)
   await loadUserList()
   await loadProjects()
+})
+
+onBeforeUnmount(() => {
+  if (typeof window === 'undefined') {
+    return
+  }
+  window.removeEventListener('resize', syncMobileViewport)
 })
 </script>
 
@@ -706,6 +816,301 @@ onMounted(async () => {
 .project-list-page {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.project-dialog-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.project-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-right: 28px;
+}
+
+.project-dialog-header-icon {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(var(--app-primary-container-rgb), 0.18) 0%, rgba(var(--app-primary-rgb), 0.14) 100%);
+  color: var(--app-primary);
+  font-size: 20px;
+}
+
+.project-dialog-header-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-dialog-header-title {
+  color: var(--app-text);
+  font-family: var(--app-font-heading);
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.12;
+}
+
+.project-dialog-header-subtitle {
+  margin: 0;
+  color: var(--app-text-soft);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.project-form-layout {
+  gap: 0;
+}
+
+.project-dialog-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.project-dialog-span-2 {
+  grid-column: 1 / -1;
+}
+
+:deep(.project-editor-dialog .el-dialog__header) {
+  padding-bottom: 10px;
+}
+
+:deep(.project-editor-dialog .el-dialog__body) {
+  padding-top: 10px;
+  padding-bottom: 18px;
+}
+
+:deep(.project-editor-dialog .el-dialog__footer) {
+  padding-top: 10px;
+  padding-bottom: 18px;
+}
+
+:deep(.project-dialog-form-grid > .el-form-item) {
+  margin-bottom: 0;
+}
+
+:deep(.project-editor-dialog .el-input__inner),
+:deep(.project-editor-dialog .el-textarea__inner),
+:deep(.project-editor-dialog .el-select__selected-item),
+:deep(.project-editor-dialog .el-select__input),
+:deep(.project-editor-dialog .el-select__tags-text) {
+  color: var(--app-text) !important;
+}
+
+:deep(.project-editor-dialog .el-select__placeholder),
+:deep(.project-editor-dialog .el-input__placeholder),
+:deep(.project-editor-dialog .el-textarea__inner::placeholder) {
+  color: #9aa6b2 !important;
+}
+
+.project-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.project-dialog-footer-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.project-mobile-list-shell {
+  flex: 1 1 auto;
+  min-height: 360px;
+  padding: 14px;
+}
+
+.project-mobile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.project-mobile-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: var(--app-shadow-soft);
+}
+
+.project-mobile-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.project-mobile-header-trigger {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+}
+
+.project-mobile-icon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(216, 240, 212, 0.82);
+  color: var(--app-success);
+  font-size: 18px;
+}
+
+.project-mobile-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-mobile-title {
+  color: var(--app-text);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.project-mobile-description {
+  color: #6d7f95;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.project-mobile-status {
+  flex: 0 0 auto;
+}
+
+.project-mobile-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.project-mobile-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(243, 244, 245, 0.76);
+}
+
+.project-mobile-field.project-mobile-field-full {
+  align-items: flex-start;
+}
+
+.project-mobile-field-label {
+  width: 52px;
+  flex: 0 0 52px;
+  color: #7a8ca4;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.6;
+}
+
+.project-mobile-field-content {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+}
+
+.project-mobile-task-content,
+.project-mobile-task-content .project-progress-cell {
+  width: 100%;
+}
+
+.project-mobile-task-content .project-progress-cell {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.project-mobile-task-content .project-progress-track {
+  width: 100%;
+  max-width: none;
+}
+
+.project-mobile-repo-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(211, 235, 248, 0.86);
+  color: var(--app-tertiary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.project-mobile-repo-empty {
+  color: #758393;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.project-mobile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.project-mobile-action-button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(243, 244, 245, 0.92);
+  color: #516174;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.project-mobile-action-button.graph {
+  color: var(--app-tertiary);
+}
+
+.project-mobile-action-button.danger {
+  color: var(--app-danger);
+}
+
+.project-mobile-empty-state {
+  display: flex;
+  min-height: 360px;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
 }
 
 .project-owner-cell,
@@ -769,14 +1174,11 @@ onMounted(async () => {
 }
 
 .project-name-icon {
-  color: var(--app-primary-container);
   font-size: 18px;
 }
 
 .project-name-text {
-  color: var(--app-text);
   font-size: 14px;
-  font-weight: 800;
 }
 
 .project-name-button .management-list-subtitle {
@@ -946,14 +1348,20 @@ onMounted(async () => {
 }
 
 .repo-link-button {
-  color: var(--app-tertiary);
+  color: var(--app-text);
   font-family: var(--app-font-mono);
   font-size: 12px;
   font-weight: 800;
+  transition: color 0.18s ease;
+}
+
+.repo-link-button:hover,
+.repo-link-button:focus-visible {
+  color: var(--app-primary);
 }
 
 .repo-link-button.muted {
-  color: #94a3b8;
+  color: var(--app-text-muted);
 }
 
 .project-row-actions {
@@ -997,33 +1405,79 @@ onMounted(async () => {
     grid-template-columns: 1fr;
   }
 
-  .project-name-text {
-    font-size: 16px;
+  .project-dialog-form-grid {
+    grid-template-columns: 1fr;
   }
 
-  .project-owner-cell,
-  .project-member-stack {
-    min-height: 28px;
+  .project-dialog-span-2 {
+    grid-column: auto;
   }
 
-  .project-progress-cell {
+  .project-dialog-footer {
     width: 100%;
-    align-items: flex-start;
+  }
+
+  .project-dialog-footer-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .project-mobile-list-shell {
+    padding: 12px;
+  }
+
+  .project-mobile-card {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .project-mobile-card-header {
     flex-direction: column;
-    gap: 8px;
+    align-items: stretch;
   }
 
-  .project-progress-track {
-    width: 100%;
-    max-width: none;
+  .project-mobile-status {
+    align-self: flex-start;
+  }
+
+  .project-mobile-title {
+    font-size: 17px;
+  }
+
+  .project-mobile-description {
+    font-size: 12px;
+  }
+
+  .project-mobile-field {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .project-mobile-field-label {
+    width: 48px;
+    flex-basis: 48px;
   }
 
   .project-progress-text {
     font-size: 11px;
   }
+}
 
-  .project-row-actions {
+@media (max-width: 640px) {
+  .project-dialog-header {
     gap: 10px;
+    padding-right: 22px;
+  }
+
+  .project-dialog-header-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    font-size: 18px;
+  }
+
+  .project-dialog-header-title {
+    font-size: 21px;
   }
 }
 </style>

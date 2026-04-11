@@ -15,9 +15,9 @@
           :disabled="disabled"
           :title="selectionTitle"
         >
-          <span v-if="hasSelection" class="work-item-member-inline">
-            <span v-if="assigneeUser" class="work-item-member-inline-owner">
-              <el-avatar :size="22" class="work-item-member-inline-avatar owner">
+            <span v-if="hasSelection" class="work-item-member-inline">
+              <span v-if="assigneeUser" class="work-item-member-inline-owner">
+              <el-avatar :size="22" class="work-item-member-inline-avatar owner" :src="resolveUserAvatarUrl(assigneeUser)">
                 {{ buildUserAvatar(assigneeUser) }}
               </el-avatar>
               <span class="work-item-member-inline-name">{{ buildUserName(assigneeUser) }}</span>
@@ -31,6 +31,7 @@
                 :key="item.id"
                 :size="20"
                 class="work-item-member-inline-avatar collaborator"
+                :src="resolveUserAvatarUrl(item)"
               >
                 {{ buildUserAvatar(item) }}
               </el-avatar>
@@ -76,7 +77,7 @@
                   :class="rowStateClass(item.id)"
                 >
                   <div class="work-item-member-user">
-                    <el-avatar :size="26" class="work-item-member-avatar">
+                    <el-avatar :size="26" class="work-item-member-avatar" :src="resolveUserAvatarUrl(item)">
                       {{ buildUserAvatar(item) }}
                     </el-avatar>
                     <div class="work-item-member-user-copy">
@@ -124,6 +125,7 @@
 import { computed, ref, watch } from 'vue'
 import { ArrowDown, Search } from '@element-plus/icons-vue'
 import type { UserOptionItem } from '@/types/platform'
+import { resolveAssetUrl } from '@/utils/asset'
 
 interface WorkItemMemberFieldProps {
   /** 当前选中的负责人用户ID。 */
@@ -248,6 +250,13 @@ function buildUserName(item: UserOptionItem | null) {
 
 function buildUserAvatar(item: UserOptionItem) {
   return buildUserName(item).slice(0, 1).toUpperCase()
+}
+
+/**
+ * 统一解析成员头像地址，兼容后端返回相对路径与空值场景。
+ */
+function resolveUserAvatarUrl(item: UserOptionItem | null) {
+  return resolveAssetUrl(item?.avatarUrl) || undefined
 }
 
 function isAssigneeSelected(userId: number) {

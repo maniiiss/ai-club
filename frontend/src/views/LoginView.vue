@@ -496,39 +496,54 @@ const handleRegister = async () => {
   }
 
   .login-shell {
-    flex-direction: column;
+    width: min(520px, 100%);
     min-height: unset;
+    border-radius: 24px;
   }
 
   .login-showcase {
-    flex-basis: auto;
-    min-height: 360px;
-    padding: 32px 24px;
-  }
-
-  .showcase-panel {
-    margin-top: 56px;
-  }
-
-  .showcase-panel h1 {
-    font-size: 34px;
+    display: none;
   }
 
   .login-form-panel {
-    flex-basis: auto;
+    flex: 1 1 auto;
     padding: 32px 24px 28px;
   }
 
   .form-brand {
-    margin-bottom: 40px;
+    margin-bottom: 28px;
   }
 
   .form-title {
     font-size: 38px;
   }
 
-  .showcase-metrics {
-    grid-template-columns: 1fr;
+  .form-subtitle {
+    font-size: 14px;
+  }
+
+  .login-footer {
+    padding-top: 24px;
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-page {
+    padding: 12px;
+  }
+
+  .login-shell {
+    width: 100%;
+    border-radius: 20px;
+  }
+
+  .login-form-panel {
+    padding: 28px 18px 24px;
+  }
+
+  .form-title {
+    font-size: 32px;
   }
 }
 </style>

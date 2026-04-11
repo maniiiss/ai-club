@@ -42,6 +42,11 @@
               <div class="dashboard-widget-title">{{ getWidgetDefinition(element.id)?.title }}</div>
               <div class="dashboard-widget-description">{{ getWidgetDefinition(element.id)?.description }}</div>
             </div>
+            <div v-if="!dashboardEditing && shouldShowQuickTaskHeaderAction(element.id)" class="dashboard-widget-head-quick-task-action">
+              <button class="dashboard-widget-quick-task-trigger" type="button" aria-label="新增快捷任务" @mousedown.prevent="handleQuickTaskAdd">
+                <el-icon class="dashboard-widget-quick-task-trigger-icon"><Plus /></el-icon>
+              </button>
+            </div>
             <div v-if="dashboardEditing" class="dashboard-widget-head-actions">
               <div class="dashboard-widget-size-group">
                 <span class="dashboard-widget-size-label">宽度</span>
@@ -246,14 +251,7 @@
             </template>
 
             <template v-else-if="element.id === 'quick-task-checklist'">
-              <div class="dashboard-widget-scroll-area">
-                <div class="quick-task-list">
-                  <label v-for="item in quickTaskItems" :key="item.id" class="quick-task-item">
-                    <input v-model="item.checked" type="checkbox" />
-                    <span :class="{ completed: item.checked }">{{ item.label }}</span>
-                  </label>
-                </div>
-              </div>
+              <DashboardQuickTaskWidget :ref="setQuickTaskWidgetRef(element.id)" />
             </template>
           </div>
         </div>
@@ -283,8 +281,11 @@
       <div v-else class="widget-empty">当前没有隐藏组件，已经全部展示。</div>
     </section>
 
-    <el-dialog v-model="quickMergeDialogVisible" title="GitLab 快速发起 MR" width="720px" align-center>
-      <el-form ref="quickMergeFormRef" :model="quickMergeForm" :rules="quickMergeRules" label-width="120px">
+    <el-dialog v-model="quickMergeDialogVisible" title="GitLab 快速发起 MR" width="720px" class="platform-form-dialog" align-center>
+      <template #header>
+        <PlatformDialogHeader title="GitLab 快速发起 MR" :subtitle="quickMergeDialogSubtitle" :icon="FolderOpened" />
+      </template>
+      <el-form ref="quickMergeFormRef" :model="quickMergeForm" :rules="quickMergeRules" label-position="top" class="platform-form-layout">
         <el-form-item label="项目" prop="bindingId">
           <el-select v-model="quickMergeForm.bindingId" placeholder="请选择已绑定 GitLab 的项目仓库" style="width: 100%">
             <el-option
@@ -342,8 +343,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="quickMergeDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="quickMergeSubmitting" @click="handleQuickMergeSubmit">创建 MR</el-button>
+        <div class="platform-dialog-footer">
+          <el-button @click="quickMergeDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="quickMergeSubmitting" @click="handleQuickMergeSubmit">创建 MR</el-button>
+        </div>
       </template>
     </el-dialog>
 
@@ -372,7 +375,9 @@ import type { ComponentPublicInstance } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Cpu, FolderOpened, Tickets } from '@element-plus/icons-vue'
+import { Cpu, FolderOpened, Plus, Tickets } from '@element-plus/icons-vue'
+import DashboardQuickTaskWidget from '@/components/DashboardQuickTaskWidget.vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { pagePipelineBindings, triggerPipelineBuild } from '@/api/cicd'
 import { VueDraggable } from 'vue-draggable-plus'
 import { createGitlabMergeRequest, listGitlabBindingOptions, listGitlabBranches } from '@/api/gitlab'
@@ -419,15 +424,6 @@ interface QuickMergeForm {
   description: string
 }
 
-interface QuickTaskChecklistItem {
-  /** 本地待办项唯一标识。 */
-  id: string
-  /** 待办文案。 */
-  label: string
-  /** 是否已完成。 */
-  checked: boolean
-}
-
 interface StatCardItem {
   id: DashboardWidgetId
   value: string | number
@@ -444,7 +440,6 @@ interface DashboardWidgetHeightOption {
   label: string
 }
 
-const QUICK_TASK_STORAGE_KEY = 'git-ai-club:dashboard-quick-tasks:v1'
 const DASHBOARD_BASE_ROW_HEIGHT_PX = 220
 const DASHBOARD_GRID_GAP_PX = 20
 const DASHBOARD_GRID_ROW_UNIT_PX = 8
@@ -467,7 +462,6 @@ const loading = ref(false)
 const dashboardEditing = ref(false)
 const overview = ref<DashboardOverview>(fallbackOverview())
 const widgetLayout = ref<DashboardWidgetLayoutItem[]>([])
-const quickTaskItems = ref<QuickTaskChecklistItem[]>([])
 const quickMergeDialogVisible = ref(false)
 const quickMergeResultVisible = ref(false)
 const quickMergeSubmitting = ref(false)
@@ -482,6 +476,7 @@ const sourceBranchLoading = ref(false)
 const targetBranchLoading = ref(false)
 const quickMergeResult = ref<GitlabCreateMergeRequestResultItem | null>(null)
 const quickMergeForm = reactive<QuickMergeForm>({ bindingId: null, sourceBranch: '', targetBranch: '', title: '', description: '' })
+const quickMergeDialogSubtitle = computed(() => '在首页快速选择仓库分支并发起新的 GitLab MR。')
 const widgetMeasuredRowSpanMap = ref<Partial<Record<DashboardWidgetId, number>>>({})
 
 const quickMergeRules: FormRules<QuickMergeForm> = {
@@ -564,6 +559,7 @@ const statCards = computed<StatCardItem[]>(() => [
   { id: 'stat-task-count', value: formatCompactNumber(overview.value.stats.taskCount || myTasks.value.length), caption: `${myTasks.value.length} 个待跟进任务` }
 ])
 const statCardMap = computed(() => new Map(statCards.value.map((item) => [item.id, item])))
+const quickTaskWidgetRef = ref<{ addTask: () => void } | null>(null)
 const widgetContentElementMap = new Map<DashboardWidgetId, HTMLElement>()
 let widgetContentResizeObserver: ResizeObserver | null = null
 
@@ -587,9 +583,8 @@ watch(
 )
 
 watch(widgetLayout, (nextLayout) => writeStoredDashboardLayout(nextLayout, dashboardLayoutUserId.value), { deep: true })
-watch(quickTaskItems, (items) => writeQuickTaskItems(items), { deep: true })
 watch(
-  [visibleWidgetLayouts, activeProjects, onlineAgents, recentTaskRows, quickTaskItems, mergeAlertCount, gitlabBindingCount, quickBuildBindingCount, dashboardEditing],
+  [visibleWidgetLayouts, activeProjects, onlineAgents, recentTaskRows, mergeAlertCount, gitlabBindingCount, quickBuildBindingCount, dashboardEditing],
   () => {
     void nextTick(syncVisibleWidgetRowSpans)
   },
@@ -629,6 +624,30 @@ function shouldShowWidgetHeader(widgetId: DashboardWidgetId) {
 
 function shouldShowWidgetHeaderCopy(widgetId: DashboardWidgetId) {
   return !isActionWidget(widgetId)
+}
+
+function shouldShowQuickTaskHeaderAction(widgetId: DashboardWidgetId) {
+  return widgetId === 'quick-task-checklist'
+}
+
+/**
+ * 由卡片头部的 + 号统一驱动快捷任务新增，保证按钮和标题处于同一行。
+ */
+function handleQuickTaskAdd() {
+  quickTaskWidgetRef.value?.addTask()
+}
+
+/**
+ * 快捷任务组件位于首页卡片循环里，不能直接使用字符串 ref；
+ * 这里按组件标识精确绑定实例，避免拿到 ref 数组后导致头部 + 号失效。
+ */
+function setQuickTaskWidgetRef(widgetId: DashboardWidgetId) {
+  return (target: Element | ComponentPublicInstance | null) => {
+    if (widgetId !== 'quick-task-checklist') {
+      return
+    }
+    quickTaskWidgetRef.value = target as { addTask: () => void } | null
+  }
 }
 
 function widgetWidthClass(width: DashboardWidgetWidth) {
@@ -783,50 +802,6 @@ function showWidget(widgetId: DashboardWidgetId) {
     { ...target, visible: true },
     ...remaining.filter((item) => !item.visible)
   ]
-}
-
-function buildDefaultQuickTaskItems() {
-  return [
-    { id: 'renew-ssl', label: '更新生产环境 SSL 证书', checked: false },
-    { id: 'prepare-weekly-report', label: '周会汇报 PPT 准备', checked: true },
-    { id: 'core-module-review', label: '代码审查：Core-Module v0.9', checked: false },
-    { id: 'task-center-follow-up', label: canViewTasks.value ? '进入任务中心跟进待办' : '整理项目清单与待办', checked: false }
-  ] satisfies QuickTaskChecklistItem[]
-}
-
-function readQuickTaskItems() {
-  const defaultItems = buildDefaultQuickTaskItems()
-  if (typeof window === 'undefined') {
-    return defaultItems
-  }
-  const rawValue = window.localStorage.getItem(QUICK_TASK_STORAGE_KEY)
-  if (!rawValue) {
-    return defaultItems
-  }
-  try {
-    const parsed = JSON.parse(rawValue)
-    if (!Array.isArray(parsed)) {
-      return defaultItems
-    }
-    const checkedMap = new Map(
-      parsed
-        .filter((item) => item && typeof item.id === 'string' && typeof item.checked === 'boolean')
-        .map((item) => [item.id, item.checked])
-    )
-    return defaultItems.map((item) => ({
-      ...item,
-      checked: checkedMap.get(item.id) ?? item.checked
-    }))
-  } catch {
-    return defaultItems
-  }
-}
-
-function writeQuickTaskItems(items: QuickTaskChecklistItem[]) {
-  if (typeof window === 'undefined') {
-    return
-  }
-  window.localStorage.setItem(QUICK_TASK_STORAGE_KEY, JSON.stringify(items))
 }
 
 async function loadOverview() {
@@ -1061,7 +1036,6 @@ onMounted(async () => {
     })
   }
 
-  quickTaskItems.value = readQuickTaskItems()
   await loadOverview()
   if (canViewGitlab.value) {
     try {
@@ -1213,6 +1187,13 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.dashboard-widget-head-quick-task-action {
+  display: inline-flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
 .dashboard-widget-title {
   color: var(--app-text);
   font-family: var(--app-font-heading);
@@ -1281,6 +1262,25 @@ onBeforeUnmount(() => {
   color: var(--app-text-soft);
   font-size: 12px;
   font-weight: 800;
+}
+
+.dashboard-widget-quick-task-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(var(--app-primary-rgb), 0.1);
+  color: var(--app-primary);
+  cursor: pointer;
+}
+
+.dashboard-widget-quick-task-trigger-icon {
+  font-size: 18px;
+  line-height: 1;
 }
 
 .dashboard-widget-drag-handle {
@@ -1806,6 +1806,11 @@ onBeforeUnmount(() => {
   justify-content: flex-start;
 }
 
+.dashboard-widget-card.width-quarter .dashboard-widget-head-quick-task-action {
+  width: 100%;
+  justify-content: flex-start;
+}
+
 .dashboard-widget-card.width-quarter .dashboard-widget-size-group {
   flex-wrap: wrap;
 }
@@ -1903,6 +1908,11 @@ onBeforeUnmount(() => {
   }
 
   .dashboard-widget-head-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .dashboard-widget-head-quick-task-action {
     width: 100%;
     justify-content: flex-start;
   }

@@ -66,6 +66,7 @@
 
     <section class="atelier-table-shell agent-list-shell">
       <div class="atelier-table-scroll mobile-card-scroll" v-loading="loading">
+        <template v-if="!isMobileViewport">
         <div v-if="agentList.length" class="atelier-data-list agent-list-table mobile-card-list">
           <div class="atelier-data-head agent-list-head">
             <div class="atelier-data-head-item agent-col-main">智能体</div>
@@ -79,18 +80,23 @@
           </div>
           <div v-for="row in agentList" :key="row.id" class="atelier-data-row agent-list-row">
             <div class="atelier-data-cell agent-col-main" data-label="智能体">
-              <div class="management-list-title-cell">
-                <span class="management-list-title-icon" :class="`agent-access-${accessTypeTagType(row.accessType)}`">
-                  <el-icon><component :is="agentAccessIcon(row.accessType)" /></el-icon>
-                </span>
-                <div class="management-list-title-copy">
-                  <div class="management-list-title">{{ row.name }}</div>
-                  <div class="management-list-subtitle">{{ row.capability || '暂无能力描述' }}</div>
+              <button class="management-list-title-trigger" type="button" @click="openDetailDialog(row)">
+                <div class="management-list-title-cell">
+                  <span class="management-list-title-icon">
+                    <el-icon><component :is="agentAccessIcon(row.accessType)" /></el-icon>
+                  </span>
+                  <div class="management-list-title-copy">
+                    <div class="management-list-title">{{ row.name }}</div>
+                    <div class="management-list-subtitle">{{ row.capability || '暂无能力描述' }}</div>
+                  </div>
                 </div>
-              </div>
+              </button>
             </div>
             <div class="atelier-data-cell agent-col-project" data-label="所属项目">
-              <span class="management-list-empty">{{ row.projectName || '全局能力' }}</span>
+              <button v-if="row.projectId && row.projectName" class="management-list-link" type="button" @click="goToProject(row.projectId)">
+                {{ row.projectName }}
+              </button>
+              <span v-else class="management-list-empty">全局能力</span>
             </div>
             <div class="atelier-data-cell agent-col-access center" data-label="接入方式">
               <span class="management-list-pill info">{{ accessTypeLabel(row.accessType) }}</span>
@@ -125,6 +131,86 @@
         <div v-else class="atelier-empty-state">
           <el-empty description="当前筛选条件下暂无智能体" />
         </div>
+        </template>
+        <template v-else>
+          <div v-if="agentList.length" class="mobile-entity-list-shell">
+            <div class="mobile-entity-list">
+              <article v-for="row in agentList" :key="row.id" class="mobile-entity-card">
+                <header class="mobile-entity-card-header">
+                  <button class="mobile-entity-header-trigger" type="button" @click="openDetailDialog(row)">
+                    <span class="mobile-entity-icon">
+                      <el-icon><component :is="agentAccessIcon(row.accessType)" /></el-icon>
+                    </span>
+                    <span class="mobile-entity-copy">
+                      <span class="mobile-entity-title">{{ row.name }}</span>
+                      <span class="mobile-entity-description">{{ row.capability || '暂无能力描述' }}</span>
+                    </span>
+                  </button>
+                </header>
+
+                <div class="mobile-entity-fields">
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">项目</span>
+                    <div class="mobile-entity-field-content">
+                      <button v-if="row.projectId && row.projectName" class="management-list-link" type="button" @click="goToProject(row.projectId)">
+                        {{ row.projectName }}
+                      </button>
+                      <span v-else class="mobile-entity-empty-text">全局能力</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">接入</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill info">{{ accessTypeLabel(row.accessType) }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">运行时</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ agentRuntimeLabel(row) }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">分类</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.category }} / {{ row.type }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">状态</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="agentStatusTone(row.status)">{{ row.status || '未知' }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">启用</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="row.enabled ? 'success' : 'danger'">{{ row.enabled ? '启用' : '停用' }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <footer class="mobile-entity-actions">
+                  <button class="mobile-entity-action-button info" type="button" @click="openTestDialog(row)">
+                    <el-icon><Promotion /></el-icon>
+                    <span>测试</span>
+                  </button>
+                  <button class="mobile-entity-action-button" type="button" @click="openEditDialog(row)">
+                    <el-icon><EditPen /></el-icon>
+                    <span>编辑</span>
+                  </button>
+                  <button class="mobile-entity-action-button danger" type="button" @click="handleDelete(row.id)">
+                    <el-icon><Delete /></el-icon>
+                    <span>删除</span>
+                  </button>
+                </footer>
+              </article>
+            </div>
+          </div>
+          <div v-else class="mobile-entity-empty-state">
+            <el-empty description="当前筛选条件下暂无智能体" />
+          </div>
+        </template>
       </div>
 
       <div class="atelier-table-footer">
@@ -153,12 +239,32 @@
       </div>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑智能体' : '新建智能体'" width="960px" destroy-on-close class="platform-form-dialog" align-center>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="110px" class="agent-dialog-form">
-        <section class="form-section">
-          <div class="form-section-head">
-            <div class="form-section-title">基础信息</div>
-            <div class="form-section-subtitle">定义智能体的定位、归属和基础能力描述。</div>
+    <el-dialog
+      v-model="dialogVisible"
+      :title="dialogTitle"
+      width="960px"
+      destroy-on-close
+      class="platform-form-dialog agent-editor-dialog"
+      align-center
+    >
+      <template #header>
+        <div class="agent-dialog-header">
+          <span class="agent-dialog-header-icon">
+            <el-icon><component :is="agentAccessIcon(form.accessType)" /></el-icon>
+          </span>
+          <div class="agent-dialog-header-copy">
+            <div class="agent-dialog-header-title">{{ dialogTitle }}</div>
+            <p class="agent-dialog-header-subtitle">{{ dialogSubtitle }}</p>
+          </div>
+        </div>
+      </template>
+
+      <div class="agent-dialog-shell">
+      <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-position="top" class="platform-form-layout agent-dialog-form">
+        <section class="platform-form-section agent-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">基础信息</div>
+            <div class="platform-form-section-subtitle">定义智能体的定位、归属和基础能力描述。</div>
           </div>
           <div class="form-grid two-columns">
             <el-form-item label="智能体名称" prop="name">
@@ -203,10 +309,10 @@
           </div>
         </section>
 
-        <section class="form-section">
-          <div class="form-section-head">
-            <div class="form-section-title">接入配置</div>
-            <div class="form-section-subtitle">根据接入方式配置模型、运行时或 HTTP 接口参数。</div>
+        <section class="platform-form-section agent-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">接入配置</div>
+            <div class="platform-form-section-subtitle">根据接入方式配置模型、运行时或 HTTP 接口参数。</div>
           </div>
 
           <template v-if="form.accessType === 'BUILT_IN'">
@@ -343,9 +449,12 @@
           </template>
         </section>
       </el-form>
+      </div>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        <div class="agent-dialog-footer">
+          <el-button @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+          <el-button v-if="!readonlyMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        </div>
       </template>
     </el-dialog>
 
@@ -378,12 +487,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Connection, Cpu, Delete, EditPen, Filter, Link, Plus, Promotion, RefreshRight, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { listModelConfigOptions } from '@/api/models'
 import { createAgent, deleteAgent, listProjectOptions, pageAgents, testAgent, updateAgent } from '@/api/platform'
 import type { AgentItem, AgentTestResult, AiModelConfigItem, ProjectItem } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface AgentForm {
   name: string
@@ -432,10 +543,12 @@ const runtimeTypeOptions = [
 
 const loading = ref(false)
 const submitting = ref(false)
+const { isMobileViewport } = useMobileViewport()
 const testing = ref(false)
 const dialogVisible = ref(false)
 const testDialogVisible = ref(false)
 const isEditing = ref(false)
+const readonlyMode = ref(false)
 const currentId = ref<number | null>(null)
 const agentList = ref<AgentItem[]>([])
 const modelOptions = ref<AiModelConfigItem[]>([])
@@ -456,6 +569,7 @@ const filters = reactive({
   projectId: undefined as number | undefined
 })
 const agentFilterPopoverVisible = ref(false)
+const router = useRouter()
 
 const defaultForm = (): AgentForm => ({
   name: '',
@@ -496,8 +610,6 @@ const rules: FormRules<AgentForm> = {
 
 const accessTypeLabel = (value?: string | null) => accessTypeOptions.find(item => item.value === value)?.label || value || '-'
 const runtimeTypeLabel = (value?: string | null) => runtimeTypeOptions.find(item => item.value === value)?.label || value || '-'
-const accessTypeTagType = (value?: string | null) =>
-  value === 'AGENT_RUNTIME' ? 'danger' : value === 'HTTP_API' ? 'warning' : value === 'LLM_PROMPT' ? 'success' : 'primary'
 const agentAccessIcon = (accessType?: string | null) =>
   accessType === 'AGENT_RUNTIME' ? Connection : accessType === 'HTTP_API' ? Link : accessType === 'LLM_PROMPT' ? Cpu : Promotion
 
@@ -516,6 +628,23 @@ const agentRuntimeLabel = (row: AgentItem) => {
   }
   return row.aiModelConfigName || '-'
 }
+
+const dialogTitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看智能体'
+  }
+  return isEditing.value ? '编辑智能体' : '新建智能体'
+})
+
+const dialogSubtitle = computed(() => {
+  if (readonlyMode.value) {
+    return `查看智能体基础信息与 ${accessTypeLabel(form.accessType)} 接入配置。`
+  }
+  if (isEditing.value) {
+    return `调整智能体定位，并维护 ${accessTypeLabel(form.accessType)} 接入参数。`
+  }
+  return '填写智能体基础信息并完成接入配置。'
+})
 
 const resetForm = () => {
   Object.assign(form, defaultForm())
@@ -584,12 +713,13 @@ const handleNextPage = async () => {
 }
 
 const openCreateDialog = () => {
+  readonlyMode.value = false
   isEditing.value = false
   resetForm()
   dialogVisible.value = true
 }
 
-const openEditDialog = (row: AgentItem) => {
+const fillForm = (row: AgentItem) => {
   isEditing.value = true
   currentId.value = row.id
   Object.assign(form, {
@@ -618,7 +748,22 @@ const openEditDialog = (row: AgentItem) => {
     httpResponsePath: row.httpResponsePath || '',
     timeoutSeconds: row.timeoutSeconds || 60
   })
+}
+
+const openDetailDialog = (row: AgentItem) => {
+  readonlyMode.value = true
+  fillForm(row)
   dialogVisible.value = true
+}
+
+const openEditDialog = (row: AgentItem) => {
+  readonlyMode.value = false
+  fillForm(row)
+  dialogVisible.value = true
+}
+
+const goToProject = async (projectId: number) => {
+  await router.push({ name: 'project-iterations', params: { projectId } })
 }
 
 const buildPayload = () => ({
@@ -771,9 +916,68 @@ onMounted(async () => {
 }
 
 .agent-dialog-form {
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
+}
+
+.agent-dialog-shell {
+  width: 100%;
+}
+
+.agent-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-right: 28px;
+}
+
+.agent-dialog-header-icon {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(var(--app-primary-container-rgb), 0.18) 0%, rgba(var(--app-primary-rgb), 0.14) 100%);
+  color: var(--app-primary);
+  font-size: 20px;
+}
+
+.agent-dialog-header-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-dialog-header-title {
+  color: var(--app-text);
+  font-family: var(--app-font-heading);
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.12;
+}
+
+.agent-dialog-header-subtitle {
+  margin: 0;
+  color: var(--app-text-soft);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.agent-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.agent-form-section {
+  padding: 16px 16px 2px;
 }
 
 .agent-filter-shell {
@@ -847,6 +1051,14 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
+.agent-col-project .management-list-link {
+  color: var(--app-text);
+}
+
+.agent-col-project .management-list-link:hover {
+  color: var(--app-primary);
+}
+
 @media (max-width: 1200px) {
   .agent-list-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -858,26 +1070,6 @@ onMounted(async () => {
   .agent-col-actions {
     grid-column: 1 / -1;
   }
-}
-
-.agent-access-primary {
-  color: var(--app-primary);
-  background: rgba(255, 220, 195, 0.88);
-}
-
-.agent-access-success {
-  color: var(--app-info);
-  background: rgba(211, 235, 248, 0.88);
-}
-
-.agent-access-warning {
-  color: var(--app-warning);
-  background: rgba(255, 225, 194, 0.88);
-}
-
-.agent-access-danger {
-  color: var(--app-danger);
-  background: rgba(255, 218, 214, 0.88);
 }
 
 .filter-form {
@@ -1040,34 +1232,9 @@ onMounted(async () => {
   gap: 12px;
 }
 
-.form-section {
-  padding: 18px 18px 6px;
-  border: 1px solid rgba(221, 230, 238, 0.92);
-  border-radius: 22px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 251, 255, 0.98) 100%);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.04);
-}
-
-.form-section-head {
-  margin-bottom: 16px;
-}
-
-.form-section-title {
-  font-size: 15px;
-  font-weight: 800;
-  color: #17324c;
-}
-
-.form-section-subtitle {
-  margin-top: 6px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: #72859a;
-}
-
 .form-grid {
   display: grid;
-  gap: 8px 16px;
+  gap: 12px 16px;
 }
 
 .two-columns {
@@ -1095,6 +1262,52 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+:deep(.el-dialog.agent-editor-dialog) {
+  --platform-dialog-max-height: min(75vh, calc(100vh - 48px));
+  max-height: var(--platform-dialog-max-height);
+}
+
+:deep(.agent-editor-dialog .el-dialog__header) {
+  padding-bottom: 10px;
+}
+
+:deep(.agent-editor-dialog .el-dialog__body) {
+  padding-top: 10px;
+  padding-bottom: 18px;
+}
+
+:deep(.agent-editor-dialog .el-dialog__footer) {
+  padding-top: 10px;
+  padding-bottom: 18px;
+}
+
+:deep(.agent-editor-dialog .form-grid > .el-form-item) {
+  margin-bottom: 0;
+}
+
+:deep(.agent-editor-dialog .el-input__inner),
+:deep(.agent-editor-dialog .el-textarea__inner),
+:deep(.agent-editor-dialog .el-select__selected-item),
+:deep(.agent-editor-dialog .el-select__input),
+:deep(.agent-editor-dialog .el-select__tags-text),
+:deep(.agent-editor-dialog .el-radio-button__inner) {
+  color: var(--app-text) !important;
+}
+
+:deep(.agent-editor-dialog .el-input.is-disabled .el-input__inner),
+:deep(.agent-editor-dialog .el-textarea.is-disabled .el-textarea__inner),
+:deep(.agent-editor-dialog .el-select.is-disabled .el-select__selected-item),
+:deep(.agent-editor-dialog .el-radio-button.is-disabled .el-radio-button__inner) {
+  color: var(--app-text) !important;
+  -webkit-text-fill-color: var(--app-text) !important;
+}
+
+:deep(.agent-editor-dialog .el-select__placeholder),
+:deep(.agent-editor-dialog .el-input__placeholder),
+:deep(.agent-editor-dialog .el-textarea__inner::placeholder) {
+  color: #9aa6b2 !important;
 }
 
 .pagination-wrap {
@@ -1138,8 +1351,12 @@ onMounted(async () => {
     grid-template-columns: 1fr;
   }
 
-  .form-section {
-    padding: 16px 14px 4px;
+  .agent-dialog-footer {
+    width: 100%;
+  }
+
+  .agent-form-section {
+    padding: 16px 14px 2px;
   }
 
   .two-columns {
@@ -1148,6 +1365,22 @@ onMounted(async () => {
 }
 
 @media (max-width: 680px) {
+  .agent-dialog-header {
+    gap: 10px;
+    padding-right: 22px;
+  }
+
+  .agent-dialog-header-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    font-size: 18px;
+  }
+
+  .agent-dialog-header-title {
+    font-size: 21px;
+  }
+
   .agent-card-meta {
     grid-template-columns: 1fr;
   }

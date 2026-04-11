@@ -56,6 +56,7 @@
 
     <section class="work-list-shell">
       <div class="work-list-scroll mobile-card-scroll" v-loading="bindingLoading">
+        <template v-if="!isMobileViewport">
         <table v-if="bindingList.length" class="work-list-table pipeline-list-table mobile-card-table">
           <thead>
             <tr>
@@ -73,15 +74,17 @@
           <tbody>
             <tr v-for="row in bindingList" :key="row.id" class="work-list-row">
               <td class="pipeline-col-main" data-label="项目">
-                <div class="management-list-title-cell">
-                  <span class="management-list-title-icon">
-                    <el-icon><DataAnalysis /></el-icon>
-                  </span>
-                  <div class="management-list-title-copy">
-                    <div class="management-list-title">{{ row.projectName }}</div>
-                    <div class="management-list-subtitle">绑定 #{{ row.id }}</div>
+                <button class="management-list-title-trigger" type="button" @click="openBindingDetailDialog(row)">
+                  <div class="management-list-title-cell">
+                    <span class="management-list-title-icon">
+                      <el-icon><DataAnalysis /></el-icon>
+                    </span>
+                    <div class="management-list-title-copy">
+                      <div class="management-list-title">{{ row.projectName }}</div>
+                      <div class="management-list-subtitle">绑定 #{{ row.id }}</div>
+                    </div>
                   </div>
-                </div>
+                </button>
               </td>
               <td class="pipeline-col-server" data-label="Jenkins 服务">
                 <span class="management-list-text">{{ row.jenkinsServerName }}</span>
@@ -133,6 +136,96 @@
         <div v-else class="work-list-empty-state">
           <el-empty description="当前筛选条件下暂无项目流水线" />
         </div>
+        </template>
+        <template v-else>
+          <div v-if="bindingList.length" class="mobile-entity-list-shell">
+            <div class="mobile-entity-list">
+              <article v-for="row in bindingList" :key="row.id" class="mobile-entity-card">
+                <header class="mobile-entity-card-header">
+                  <button class="mobile-entity-header-trigger" type="button" @click="openBindingDetailDialog(row)">
+                    <span class="mobile-entity-icon"><el-icon><DataAnalysis /></el-icon></span>
+                    <span class="mobile-entity-copy">
+                      <span class="mobile-entity-title">{{ row.projectName }}</span>
+                      <span class="mobile-entity-description">绑定 #{{ row.id }}</span>
+                    </span>
+                  </button>
+                </header>
+                <div class="mobile-entity-fields">
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">Jenkins</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.jenkinsServerName }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">任务</span>
+                    <div class="mobile-entity-field-content">
+                      <el-link v-if="row.jobUrl" :href="row.jobUrl" target="_blank" type="primary" class="pipeline-job-link">
+                        {{ row.jobName }}
+                      </el-link>
+                      <span v-else class="mobile-entity-empty-text">{{ row.jobName }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">分支</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.defaultBranch || '-' }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">启用</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="row.enabled ? 'success' : 'neutral'">
+                        {{ row.enabled ? '启用' : '停用' }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">状态</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="triggerStatusTone(row.lastTriggerStatus)">
+                        {{ formatTriggerStatus(row.lastTriggerStatus) }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">时间</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ formatDateTime(row.lastTriggeredAt) }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field mobile-entity-field-full">
+                    <span class="mobile-entity-field-label">结果</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.lastTriggerMessage || '-' }}</span>
+                    </div>
+                  </div>
+                </div>
+                <footer v-if="canView" class="mobile-entity-actions">
+                  <button class="mobile-entity-action-button info" type="button" @click="openBuildHistoryDrawer(row)">
+                    <el-icon><Tickets /></el-icon>
+                    <span>构建历史</span>
+                  </button>
+                  <button v-if="canManage" class="mobile-entity-action-button info" type="button" @click="handleTriggerBuild(row.id)">
+                    <el-icon><VideoPlay /></el-icon>
+                    <span>触发构建</span>
+                  </button>
+                  <button v-if="canManage" class="mobile-entity-action-button" type="button" @click="openBindingEditDialog(row)">
+                    <el-icon><EditPen /></el-icon>
+                    <span>编辑</span>
+                  </button>
+                  <button v-if="canManage" class="mobile-entity-action-button danger" type="button" @click="handleBindingDelete(row.id)">
+                    <el-icon><Delete /></el-icon>
+                    <span>删除</span>
+                  </button>
+                </footer>
+              </article>
+            </div>
+          </div>
+          <div v-else class="mobile-entity-empty-state">
+            <el-empty description="当前筛选条件下暂无项目流水线" />
+          </div>
+        </template>
       </div>
 
       <div class="work-list-footer">
@@ -162,8 +255,11 @@
       </div>
     </section>
 
-    <el-dialog v-model="bindingDialogVisible" :title="bindingIsEditing ? '编辑流水线绑定' : '新增流水线绑定'" width="720px" class="platform-form-dialog" align-center>
-      <el-form ref="bindingFormRef" :model="bindingForm" :rules="bindingRules" label-width="120px" class="platform-form-layout">
+    <el-dialog v-model="bindingDialogVisible" :title="bindingDialogTitle" width="720px" class="platform-form-dialog" align-center>
+      <template #header>
+        <PlatformDialogHeader :title="bindingDialogTitle" :subtitle="bindingDialogSubtitle" :icon="DataAnalysis" />
+      </template>
+      <el-form ref="bindingFormRef" :model="bindingForm" :rules="bindingRules" :disabled="bindingReadonlyMode" label-position="top" class="platform-form-layout">
         <section class="platform-form-section">
           <div class="platform-form-section-head">
             <div class="platform-form-section-title">流水线绑定</div>
@@ -196,8 +292,10 @@
         </section>
       </el-form>
       <template #footer>
-        <el-button @click="bindingDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="bindingSubmitting" @click="handleBindingSubmit">保存</el-button>
+        <div class="platform-dialog-footer">
+          <el-button @click="bindingDialogVisible = false">{{ bindingReadonlyMode ? '关闭' : '取消' }}</el-button>
+          <el-button v-if="!bindingReadonlyMode" type="primary" :loading="bindingSubmitting" @click="handleBindingSubmit">保存</el-button>
+        </div>
       </template>
     </el-dialog>
 
@@ -277,6 +375,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, DataAnalysis, Delete, EditPen, Filter, Plus, RefreshRight, Search, Tickets, VideoPlay } from '@element-plus/icons-vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import {
   createPipelineBinding,
   deletePipelineBinding,
@@ -296,6 +395,7 @@ import type {
   ProjectItem,
   ProjectPipelineBindingItem
 } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 /**
  * 流水线绑定表单。
@@ -318,6 +418,7 @@ interface PipelineBindingForm {
 const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('cicd:manage'))
 const canView = computed(() => authStore.hasPermission('cicd:view'))
+const { isMobileViewport } = useMobileViewport()
 
 const projectOptions = ref<ProjectItem[]>([])
 const serverOptions = ref<JenkinsServerItem[]>([])
@@ -326,6 +427,7 @@ const bindingLoading = ref(false)
 const bindingSubmitting = ref(false)
 const bindingDialogVisible = ref(false)
 const bindingIsEditing = ref(false)
+const bindingReadonlyMode = ref(false)
 const currentBindingId = ref<number | null>(null)
 const bindingList = ref<ProjectPipelineBindingItem[]>([])
 const bindingFormRef = ref<FormInstance>()
@@ -355,6 +457,21 @@ const buildLogVisible = ref(false)
 const currentBuildLog = ref<JenkinsBuildLogDetailItem | null>(null)
 
 const bindingTotalPages = computed(() => Math.max(1, Math.ceil(bindingPagination.total / bindingPagination.size) || 1))
+const bindingDialogTitle = computed(() => {
+  if (bindingReadonlyMode.value) {
+    return '查看流水线绑定'
+  }
+  return bindingIsEditing.value ? '编辑流水线绑定' : '新增流水线绑定'
+})
+const bindingDialogSubtitle = computed(() => {
+  if (bindingReadonlyMode.value) {
+    return '查看项目与 Jenkins Job 的映射关系。'
+  }
+  if (bindingIsEditing.value) {
+    return '调整项目、Jenkins 服务和构建参数配置。'
+  }
+  return '填写项目流水线绑定信息，并补充分支和构建参数。'
+})
 
 const bindingRules: FormRules<PipelineBindingForm> = {
   projectId: [{ required: true, message: '请选择项目', trigger: 'change' }],
@@ -502,12 +619,13 @@ const handleBindingNextPage = async () => {
 }
 
 const openBindingCreateDialog = () => {
+  bindingReadonlyMode.value = false
   bindingIsEditing.value = false
   resetBindingForm()
   bindingDialogVisible.value = true
 }
 
-const openBindingEditDialog = (row: ProjectPipelineBindingItem) => {
+const fillBindingForm = (row: ProjectPipelineBindingItem) => {
   bindingIsEditing.value = true
   currentBindingId.value = row.id
   bindingForm.projectId = row.projectId
@@ -516,6 +634,17 @@ const openBindingEditDialog = (row: ProjectPipelineBindingItem) => {
   bindingForm.defaultBranch = row.defaultBranch || ''
   bindingForm.buildParametersJson = row.buildParametersJson || ''
   bindingForm.enabled = row.enabled
+}
+
+const openBindingDetailDialog = (row: ProjectPipelineBindingItem) => {
+  bindingReadonlyMode.value = true
+  fillBindingForm(row)
+  bindingDialogVisible.value = true
+}
+
+const openBindingEditDialog = (row: ProjectPipelineBindingItem) => {
+  bindingReadonlyMode.value = false
+  fillBindingForm(row)
   bindingDialogVisible.value = true
 }
 

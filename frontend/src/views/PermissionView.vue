@@ -57,6 +57,7 @@
 
     <section class="management-list-shell">
       <div class="management-list-table-scroll mobile-card-scroll" v-loading="loading">
+        <template v-if="!isMobileViewport">
         <table class="management-list-table permission-list-table mobile-card-table">
           <thead>
             <tr>
@@ -74,13 +75,15 @@
           <tbody>
             <tr v-for="row in permissionList" :key="row.id" class="management-list-row">
               <td class="permission-col-main" data-label="功能">
-                <div class="management-list-title-cell">
-                  <span class="management-list-title-icon"><el-icon><Setting /></el-icon></span>
-                  <div class="management-list-title-copy">
-                    <div class="management-list-title">{{ row.name }}</div>
-                    <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+                <button class="management-list-title-trigger" type="button" @click="openDetailDialog(row)">
+                  <div class="management-list-title-cell">
+                    <span class="management-list-title-icon"><el-icon><Setting /></el-icon></span>
+                    <div class="management-list-title-copy">
+                      <div class="management-list-title">{{ row.name }}</div>
+                      <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+                    </div>
                   </div>
-                </div>
+                </button>
               </td>
               <td class="permission-col-code" data-label="编码">
                 <span class="management-list-text">{{ row.code }}</span>
@@ -116,6 +119,81 @@
             </tr>
           </tbody>
         </table>
+        </template>
+        <template v-else>
+          <div v-if="permissionList.length" class="mobile-entity-list-shell">
+            <div class="mobile-entity-list">
+              <article v-for="row in permissionList" :key="row.id" class="mobile-entity-card">
+                <header class="mobile-entity-card-header">
+                  <button class="mobile-entity-header-trigger" type="button" @click="openDetailDialog(row)">
+                    <span class="mobile-entity-icon"><el-icon><Setting /></el-icon></span>
+                    <span class="mobile-entity-copy">
+                      <span class="mobile-entity-title">{{ row.name }}</span>
+                      <span class="mobile-entity-description">{{ row.description || '暂无描述' }}</span>
+                    </span>
+                  </button>
+                </header>
+                <div class="mobile-entity-fields">
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">编码</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.code }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">类型</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="row.type === 'MENU' ? 'info' : 'warning'">{{ row.type === 'MENU' ? '菜单' : '动作' }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">上级</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ parentName(row.parentId) }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field mobile-entity-field-full">
+                    <span class="mobile-entity-field-label">路径</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.path || '-' }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">排序</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.sortOrder }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">状态</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="row.enabled ? 'success' : 'danger'">{{ row.enabled ? '启用' : '禁用' }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">内置</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill neutral">{{ row.builtIn ? '是' : '否' }}</span>
+                    </div>
+                  </div>
+                </div>
+                <footer v-if="canManage" class="mobile-entity-actions">
+                  <button class="mobile-entity-action-button" type="button" @click="openEditDialog(row)">
+                    <el-icon><EditPen /></el-icon>
+                    <span>编辑</span>
+                  </button>
+                  <button class="mobile-entity-action-button danger" type="button" :disabled="row.builtIn" @click="handleDelete(row.id)">
+                    <el-icon><Delete /></el-icon>
+                    <span>删除</span>
+                  </button>
+                </footer>
+              </article>
+            </div>
+          </div>
+          <div v-else class="mobile-entity-empty-state">
+            <el-empty description="当前筛选条件下暂无功能" />
+          </div>
+        </template>
       </div>
 
         <div class="management-list-footer">
@@ -145,8 +223,11 @@
       </div>
     </section>
 
-  <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑功能' : '新建功能'" width="620px" class="platform-form-dialog" align-center>
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" class="platform-form-layout">
+  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="620px" class="platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="Setting" />
+    </template>
+    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-position="top" class="platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">功能信息</div>
@@ -190,8 +271,10 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      <div class="platform-dialog-footer">
+        <el-button @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!readonlyMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      </div>
     </template>
   </el-dialog>
   </div>
@@ -202,9 +285,11 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Plus, RefreshRight, Search, Setting } from '@element-plus/icons-vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { createPermission, deletePermission, listPermissionOptions, pagePermissions, updatePermission } from '@/api/access'
 import { useAuthStore } from '@/stores/auth'
 import type { PermissionItem } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface PermissionForm {
   name: string
@@ -221,10 +306,12 @@ interface PermissionForm {
 
 const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('system:permission:manage'))
+const { isMobileViewport } = useMobileViewport()
 const loading = ref(false)
 const submitting = ref(false)
 const dialogVisible = ref(false)
 const isEditing = ref(false)
+const readonlyMode = ref(false)
 const currentId = ref<number | null>(null)
 const currentBuiltIn = ref(false)
 const permissionList = ref<PermissionItem[]>([])
@@ -239,6 +326,21 @@ const filters = reactive<{ keyword: string; type: '' | 'MENU' | 'ACTION'; enable
   enabled: ''
 })
 const permissionFilterPopoverVisible = ref(false)
+const dialogTitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看功能'
+  }
+  return isEditing.value ? '编辑功能' : '新建功能'
+})
+const dialogSubtitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看功能类型、路由信息和启用状态。'
+  }
+  if (isEditing.value) {
+    return '调整功能编码、路由信息和权限状态。'
+  }
+  return '填写功能基础信息，并补充路由、图标和排序配置。'
+})
 const form = reactive<PermissionForm>({
   name: '',
   code: '',
@@ -336,12 +438,13 @@ const handleNextPage = async () => {
 }
 
 const openCreateDialog = () => {
+  readonlyMode.value = false
   isEditing.value = false
   resetForm()
   dialogVisible.value = true
 }
 
-const openEditDialog = (row: PermissionItem) => {
+const fillForm = (row: PermissionItem) => {
   isEditing.value = true
   currentId.value = row.id
   currentBuiltIn.value = row.builtIn
@@ -355,6 +458,17 @@ const openEditDialog = (row: PermissionItem) => {
   form.sortOrder = row.sortOrder
   form.enabled = row.enabled
   form.description = row.description
+}
+
+const openDetailDialog = (row: PermissionItem) => {
+  readonlyMode.value = true
+  fillForm(row)
+  dialogVisible.value = true
+}
+
+const openEditDialog = (row: PermissionItem) => {
+  readonlyMode.value = false
+  fillForm(row)
   dialogVisible.value = true
 }
 

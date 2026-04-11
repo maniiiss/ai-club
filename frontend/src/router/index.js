@@ -1,0 +1,97 @@
+import { createRouter, createWebHistory } from 'vue-router';
+import { ElMessage } from 'element-plus';
+import AppLayout from '@/layout/AppLayout.vue';
+import DashboardView from '@/views/DashboardView.vue';
+import ProjectView from '@/views/ProjectView.vue';
+import AgentView from '@/views/AgentView.vue';
+import TaskView from '@/views/TaskView.vue';
+import TestPlanView from '@/views/TestPlanView.vue';
+import TestPlanDetailView from '@/views/TestPlanDetailView.vue';
+import GitlabView from '@/views/GitlabView.vue';
+import JenkinsServerView from '@/views/JenkinsServerView.vue';
+import PipelineBindingView from '@/views/PipelineBindingView.vue';
+import ModelView from '@/views/ModelView.vue';
+import LoginView from '@/views/LoginView.vue';
+import ForbiddenView from '@/views/ForbiddenView.vue';
+import UserView from '@/views/UserView.vue';
+import RoleView from '@/views/RoleView.vue';
+import PermissionView from '@/views/PermissionView.vue';
+import IterationView from '@/views/IterationView.vue';
+import ProfileView from '@/views/ProfileView.vue';
+import { useAuthStore } from '@/stores/auth';
+const KnowledgeGraphView = () => import('@/views/KnowledgeGraphView.vue');
+const APP_TITLE = 'AI代理工程管理平台';
+const router = createRouter({
+    history: createWebHistory(),
+    routes: [
+        {
+            path: '/login',
+            name: 'login',
+            component: LoginView,
+            meta: { requiresAuth: false, title: '登录' }
+        },
+        {
+            path: '/403',
+            name: 'forbidden',
+            component: ForbiddenView,
+            meta: { requiresAuth: false, title: '无权限' }
+        },
+        {
+            path: '/',
+            component: AppLayout,
+            redirect: '/dashboard',
+            meta: { requiresAuth: true },
+            children: [
+                { path: 'dashboard', name: 'dashboard', component: DashboardView, meta: { title: '首页看板', permission: 'dashboard:view' } },
+                { path: 'projects', name: 'projects', component: ProjectView, meta: { title: '项目管理', permission: 'project:view' } },
+                { path: 'projects/:projectId/iterations', name: 'project-iterations', component: IterationView, meta: { title: '迭代管理', permission: 'project:view' } },
+                { path: 'projects/:projectId/knowledge-graph', name: 'project-knowledge-graph', component: KnowledgeGraphView, meta: { title: '知识图谱', permission: 'project:view' } },
+                { path: 'agents', name: 'agents', component: AgentView, meta: { title: '智能体管理', permission: 'agent:view' } },
+                { path: 'tasks', name: 'tasks', component: TaskView, meta: { title: '任务管理', permission: 'task:view' } },
+                { path: 'tests', name: 'tests', component: TestPlanView, meta: { title: '测试管理', permission: 'test:view' } },
+                { path: 'tests/:planId', name: 'test-plan-detail', component: TestPlanDetailView, meta: { title: '测试计划详情', permission: 'test:view', activeMenu: '/tests' } },
+                { path: 'models', name: 'models', component: ModelView, meta: { title: '模型管理', permission: 'model:view' } },
+                { path: 'gitlab', name: 'gitlab', component: GitlabView, meta: { title: '代码仓库管理', permission: 'gitlab:view' } },
+                { path: 'cicd', redirect: { name: 'cicd-servers' } },
+                { path: 'cicd/jenkins-servers', name: 'cicd-servers', component: JenkinsServerView, meta: { title: 'Jenkins 服务', permission: 'cicd:view' } },
+                { path: 'cicd/pipeline-bindings', name: 'cicd-pipelines', component: PipelineBindingView, meta: { title: '项目流水线', permission: 'cicd:view' } },
+                { path: 'profile', name: 'profile', component: ProfileView, meta: { title: '个人中心' } },
+                { path: 'users', name: 'users', component: UserView, meta: { title: '用户管理', permission: 'system:user:view' } },
+                { path: 'roles', name: 'roles', component: RoleView, meta: { title: '角色管理', permission: 'system:role:view' } },
+                { path: 'permissions', name: 'permissions', component: PermissionView, meta: { title: '功能管理', permission: 'system:permission:view' } }
+            ]
+        }
+    ]
+});
+router.beforeEach(async (to) => {
+    const authStore = useAuthStore();
+    const requiresAuth = to.meta.requiresAuth !== false;
+    if (!requiresAuth) {
+        if (to.path === '/login' && authStore.isLoggedIn) {
+            await authStore.restoreSession();
+            if (authStore.isLoggedIn) {
+                return '/dashboard';
+            }
+        }
+        return true;
+    }
+    const profile = await authStore.restoreSession();
+    if (!authStore.isLoggedIn || !profile) {
+        return {
+            path: '/login',
+            query: to.fullPath === '/' ? undefined : { redirect: to.fullPath }
+        };
+    }
+    const permission = to.meta.permission;
+    if (permission && !authStore.hasPermission(permission)) {
+        ElMessage.warning('当前账号没有访问该页面的权限');
+        return '/403';
+    }
+    return true;
+});
+router.afterEach((to) => {
+    const routeTitle = to.meta.title;
+    document.title = routeTitle ? `${routeTitle} - ${APP_TITLE}` : APP_TITLE;
+});
+export default router;
+//# sourceMappingURL=index.js.map

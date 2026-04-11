@@ -7,7 +7,12 @@
     popper-class="compact-select-popper"
   >
     <template #reference>
-      <button class="compact-select-trigger" :class="[sizeClass, { disabled }]" type="button" :disabled="disabled">
+      <button
+        class="compact-select-trigger"
+        :class="[sizeClass, variantClass, selectedToneVariantClass, { disabled, 'is-open': visible }]"
+        type="button"
+        :disabled="disabled"
+      >
         <span class="compact-select-value">
           <i v-if="selectedToneClass" class="compact-select-dot" :class="selectedToneClass"></i>
           <span>{{ selectedOption?.label || placeholder }}</span>
@@ -36,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 
 type SelectValue = string | number
@@ -55,23 +60,44 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   popoverWidth?: number | string
   size?: 'small' | 'default'
+  variant?: 'default' | 'inline-pill'
+  openOnMount?: boolean
 }>(), {
   placeholder: '请选择',
   disabled: false,
   popoverWidth: 180,
-  size: 'small'
+  size: 'small',
+  variant: 'default',
+  openOnMount: false
 })
 
 const emit = defineEmits<{
   'update:modelValue': [value: SelectValue]
   change: [value: SelectValue]
+  'visible-change': [value: boolean]
 }>()
 
 const visible = ref(false)
 
 const selectedOption = computed(() => props.options.find((item) => item.value === props.modelValue))
 const selectedToneClass = computed(() => toneClass(selectedOption.value?.tone))
+const selectedToneVariantClass = computed(() => (selectedOption.value?.tone ? `selected-${toneClass(selectedOption.value.tone)}` : ''))
 const sizeClass = computed(() => (props.size === 'default' ? 'is-default' : 'is-small'))
+const variantClass = computed(() => `variant-${props.variant}`)
+
+onMounted(() => {
+  if (!props.openOnMount || props.disabled) {
+    return
+  }
+  // 列表内编辑态挂载后立即展开，减少用户从“显示态”切换到“编辑态”的额外点击。
+  nextTick(() => {
+    visible.value = true
+  })
+})
+
+watch(visible, (value) => {
+  emit('visible-change', value)
+})
 
 function toneClass(tone?: Tone) {
   if (!tone) return ''
@@ -127,6 +153,43 @@ function handleSelect(value: SelectValue) {
   opacity: 0.6;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.compact-select-trigger.variant-inline-pill {
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(243, 244, 245, 0.92);
+  box-shadow: inset 0 0 0 1px var(--app-border, rgba(137, 115, 98, 0.12));
+  transform: none;
+}
+
+.compact-select-trigger.variant-inline-pill.is-small,
+.compact-select-trigger.variant-inline-pill.is-default {
+  min-height: 24px;
+  font-size: 11px;
+}
+
+.compact-select-trigger.variant-inline-pill:hover,
+.compact-select-trigger.variant-inline-pill.is-open {
+  background: rgba(var(--app-primary-container-rgb), 0.12);
+  color: var(--app-primary, #904d00);
+  box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.18);
+  transform: none;
+}
+
+.compact-select-trigger.variant-inline-pill .compact-select-value,
+.compact-select-trigger.variant-inline-pill .compact-select-item-main {
+  gap: 6px;
+}
+
+.compact-select-trigger.variant-inline-pill .compact-select-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.compact-select-trigger.variant-inline-pill .compact-select-arrow {
+  font-size: 11px;
 }
 
 .compact-select-value,

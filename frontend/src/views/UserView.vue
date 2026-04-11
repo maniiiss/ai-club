@@ -56,6 +56,7 @@
 
     <section class="management-list-shell">
       <div class="management-list-table-scroll mobile-card-scroll" v-loading="loading">
+        <template v-if="!isMobileViewport">
         <table class="management-list-table user-list-table mobile-card-table">
           <thead>
             <tr>
@@ -73,13 +74,15 @@
           <tbody>
             <tr v-for="row in userList" :key="row.id" class="management-list-row">
               <td class="user-col-main" data-label="用户">
-                <div class="management-list-title-cell">
-                  <span class="management-list-avatar">{{ userInitial(row.nickname || row.username) }}</span>
-                  <div class="management-list-title-copy">
-                    <div class="management-list-title">{{ row.nickname || row.username }}</div>
-                    <div class="management-list-subtitle">{{ row.username }}</div>
+                <button class="management-list-title-trigger" type="button" @click="openDetailDialog(row)">
+                  <div class="management-list-title-cell">
+                    <span class="management-list-avatar">{{ userInitial(row.nickname || row.username) }}</span>
+                    <div class="management-list-title-copy">
+                      <div class="management-list-title">{{ row.nickname || row.username }}</div>
+                      <div class="management-list-subtitle">{{ row.username }}</div>
+                    </div>
                   </div>
-                </div>
+                </button>
               </td>
               <td class="user-col-gitlab" data-label="GitLab">
                 <span class="management-list-empty">{{ row.gitlabUsername || '-' }}</span>
@@ -122,6 +125,91 @@
             </tr>
           </tbody>
         </table>
+        </template>
+        <template v-else>
+          <div v-if="userList.length" class="mobile-entity-list-shell">
+            <div class="mobile-entity-list">
+              <article v-for="row in userList" :key="row.id" class="mobile-entity-card">
+                <header class="mobile-entity-card-header">
+                  <button class="mobile-entity-header-trigger" type="button" @click="openDetailDialog(row)">
+                    <span class="mobile-entity-icon">
+                      {{ userInitial(row.nickname || row.username) }}
+                    </span>
+                    <span class="mobile-entity-copy">
+                      <span class="mobile-entity-title">{{ row.nickname || row.username }}</span>
+                      <span class="mobile-entity-description">{{ row.username }}</span>
+                    </span>
+                  </button>
+                </header>
+                <div class="mobile-entity-fields">
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">GitLab</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.gitlabUsername || '-' }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">角色</span>
+                    <div class="mobile-entity-field-content">
+                      <div v-if="row.roleNames.length" class="management-list-stack">
+                        <span v-for="role in row.roleNames.slice(0, 2)" :key="role" class="management-list-chip">{{ role }}</span>
+                        <span v-if="row.roleNames.length > 2" class="management-list-chip muted">+{{ row.roleNames.length - 2 }}</span>
+                      </div>
+                      <span v-else class="mobile-entity-empty-text">-</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">邮箱</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.email || '-' }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">手机</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.phone || '-' }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">状态</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="row.enabled ? 'success' : 'danger'">{{ row.enabled ? '启用' : '禁用' }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">登录</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.lastLoginAt || '-' }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">内置</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill neutral">{{ row.builtIn ? '是' : '否' }}</span>
+                    </div>
+                  </div>
+                </div>
+                <footer v-if="canManage" class="mobile-entity-actions">
+                  <button class="mobile-entity-action-button" type="button" @click="openEditDialog(row)">
+                    <el-icon><EditPen /></el-icon>
+                    <span>编辑</span>
+                  </button>
+                  <button class="mobile-entity-action-button info" type="button" @click="handleResetPassword(row)">
+                    <el-icon><Key /></el-icon>
+                    <span>重置密码</span>
+                  </button>
+                  <button class="mobile-entity-action-button danger" type="button" :disabled="row.builtIn" @click="handleDelete(row.id)">
+                    <el-icon><Delete /></el-icon>
+                    <span>删除</span>
+                  </button>
+                </footer>
+              </article>
+            </div>
+          </div>
+          <div v-else class="mobile-entity-empty-state">
+            <el-empty description="当前筛选条件下暂无用户" />
+          </div>
+        </template>
       </div>
 
         <div class="management-list-footer">
@@ -151,8 +239,11 @@
       </div>
     </section>
 
-  <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑用户' : '新建用户'" width="560px" class="platform-form-dialog" align-center>
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="110px" class="platform-form-layout">
+  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px" class="platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="UserFilled" />
+    </template>
+    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-position="top" class="platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">用户信息</div>
@@ -187,8 +278,10 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      <div class="platform-dialog-footer">
+        <el-button @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!readonlyMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      </div>
     </template>
   </el-dialog>
   </div>
@@ -198,10 +291,12 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Key, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Key, Plus, RefreshRight, Search, UserFilled } from '@element-plus/icons-vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { createUser, deleteUser, listRoleOptions, pageUsers, resetUserPassword, updateUser } from '@/api/access'
 import { useAuthStore } from '@/stores/auth'
 import type { RoleItem, UserItem } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface UserForm {
   username: string
@@ -216,10 +311,12 @@ interface UserForm {
 
 const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('system:user:manage'))
+const { isMobileViewport } = useMobileViewport()
 const loading = ref(false)
 const submitting = ref(false)
 const dialogVisible = ref(false)
 const isEditing = ref(false)
+const readonlyMode = ref(false)
 const currentId = ref<number | null>(null)
 const currentBuiltIn = ref(false)
 const userList = ref<UserItem[]>([])
@@ -230,6 +327,21 @@ const pagination = reactive({ page: 1, size: 10, total: 0 })
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
 const filters = reactive<{ keyword: string; enabled: boolean | ''; roleId?: number }>({ keyword: '', enabled: '', roleId: undefined })
 const userFilterPopoverVisible = ref(false)
+const dialogTitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看用户'
+  }
+  return isEditing.value ? '编辑用户' : '新建用户'
+})
+const dialogSubtitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看账号资料、角色和启用状态。'
+  }
+  if (isEditing.value) {
+    return '调整账号资料、角色范围与启用状态。'
+  }
+  return '填写账号基础信息，并分配角色与启用状态。'
+})
 const form = reactive<UserForm>({
   username: '',
   nickname: '',
@@ -321,12 +433,13 @@ const handleNextPage = async () => {
 }
 
 const openCreateDialog = () => {
+  readonlyMode.value = false
   isEditing.value = false
   resetForm()
   dialogVisible.value = true
 }
 
-const openEditDialog = (row: UserItem) => {
+const fillForm = (row: UserItem) => {
   isEditing.value = true
   currentId.value = row.id
   currentBuiltIn.value = row.builtIn
@@ -338,6 +451,17 @@ const openEditDialog = (row: UserItem) => {
   form.enabled = row.enabled
   form.roleIds = [...row.roleIds]
   form.password = ''
+}
+
+const openDetailDialog = (row: UserItem) => {
+  readonlyMode.value = true
+  fillForm(row)
+  dialogVisible.value = true
+}
+
+const openEditDialog = (row: UserItem) => {
+  readonlyMode.value = false
+  fillForm(row)
   dialogVisible.value = true
 }
 

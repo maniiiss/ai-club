@@ -50,6 +50,7 @@
 
     <section class="work-list-shell">
       <div class="work-list-scroll mobile-card-scroll" v-loading="serverLoading">
+        <template v-if="!isMobileViewport">
         <table v-if="serverList.length" class="work-list-table jenkins-list-table mobile-card-table">
           <thead>
             <tr>
@@ -67,18 +68,20 @@
           <tbody>
             <tr v-for="row in serverList" :key="row.id" class="work-list-row">
               <td class="jenkins-col-main" data-label="服务">
-                <div class="management-list-title-cell">
-                  <span class="management-list-title-icon">
-                    <el-icon><Connection /></el-icon>
-                  </span>
-                  <div class="management-list-title-copy">
-                    <div class="management-list-title">{{ row.name }}</div>
-                    <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+                <button class="management-list-title-trigger" type="button" @click="openServerDetailDialog(row)">
+                  <div class="management-list-title-cell">
+                    <span class="management-list-title-icon">
+                      <el-icon><Connection /></el-icon>
+                    </span>
+                    <div class="management-list-title-copy">
+                      <div class="management-list-title">{{ row.name }}</div>
+                      <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+                    </div>
                   </div>
-                </div>
+                </button>
               </td>
               <td class="jenkins-col-url" data-label="Jenkins 地址">
-                <span class="management-list-link">{{ row.baseUrl }}</span>
+                <a class="management-list-link" :href="row.baseUrl" target="_blank" rel="noreferrer">{{ row.baseUrl }}</a>
               </td>
               <td class="jenkins-col-user" data-label="用户名">
                 <span class="management-list-text">{{ row.username }}</span>
@@ -124,6 +127,91 @@
         <div v-else class="work-list-empty-state">
           <el-empty description="当前筛选条件下暂无 Jenkins 服务" />
         </div>
+        </template>
+        <template v-else>
+          <div v-if="serverList.length" class="mobile-entity-list-shell">
+            <div class="mobile-entity-list">
+              <article v-for="row in serverList" :key="row.id" class="mobile-entity-card">
+                <header class="mobile-entity-card-header">
+                  <button class="mobile-entity-header-trigger" type="button" @click="openServerDetailDialog(row)">
+                    <span class="mobile-entity-icon"><el-icon><Connection /></el-icon></span>
+                    <span class="mobile-entity-copy">
+                      <span class="mobile-entity-title">{{ row.name }}</span>
+                      <span class="mobile-entity-description">{{ row.description || '暂无描述' }}</span>
+                    </span>
+                  </button>
+                </header>
+                <div class="mobile-entity-fields">
+                  <div class="mobile-entity-field mobile-entity-field-full">
+                    <span class="mobile-entity-field-label">地址</span>
+                    <div class="mobile-entity-field-content">
+                      <a class="management-list-link" :href="row.baseUrl" target="_blank" rel="noreferrer">{{ row.baseUrl }}</a>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">用户</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.username }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">任务数</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill neutral">{{ row.lastJobCount ?? 0 }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">启用</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="row.enabled ? 'success' : 'neutral'">
+                        {{ row.enabled ? '启用' : '停用' }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">测试</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="testStatusTone(row.lastTestStatus)">{{ formatTestStatus(row.lastTestStatus) }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">时间</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ formatDateTime(row.lastTestedAt) }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field mobile-entity-field-full">
+                    <span class="mobile-entity-field-label">信息</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.lastTestMessage || '-' }}</span>
+                    </div>
+                  </div>
+                </div>
+                <footer v-if="canManage" class="mobile-entity-actions">
+                  <button class="mobile-entity-action-button info" type="button" @click="handleServerTest(row.id)">
+                    <el-icon><Promotion /></el-icon>
+                    <span>测试连接</span>
+                  </button>
+                  <button class="mobile-entity-action-button info" type="button" @click="openJobDrawer(row)">
+                    <el-icon><Tickets /></el-icon>
+                    <span>查看任务</span>
+                  </button>
+                  <button class="mobile-entity-action-button" type="button" @click="openServerEditDialog(row)">
+                    <el-icon><EditPen /></el-icon>
+                    <span>编辑</span>
+                  </button>
+                  <button class="mobile-entity-action-button danger" type="button" @click="handleServerDelete(row.id)">
+                    <el-icon><Delete /></el-icon>
+                    <span>删除</span>
+                  </button>
+                </footer>
+              </article>
+            </div>
+          </div>
+          <div v-else class="mobile-entity-empty-state">
+            <el-empty description="当前筛选条件下暂无 Jenkins 服务" />
+          </div>
+        </template>
       </div>
 
       <div class="work-list-footer">
@@ -153,8 +241,11 @@
       </div>
     </section>
 
-    <el-dialog v-model="serverDialogVisible" :title="serverIsEditing ? '编辑 Jenkins 服务' : '新增 Jenkins 服务'" width="640px" class="platform-form-dialog" align-center>
-      <el-form ref="serverFormRef" :model="serverForm" :rules="serverRules" label-width="110px" class="platform-form-layout">
+    <el-dialog v-model="serverDialogVisible" :title="serverDialogTitle" width="640px" class="platform-form-dialog" align-center>
+      <template #header>
+        <PlatformDialogHeader :title="serverDialogTitle" :subtitle="serverDialogSubtitle" :icon="Connection" />
+      </template>
+      <el-form ref="serverFormRef" :model="serverForm" :rules="serverRules" :disabled="serverReadonlyMode" label-position="top" class="platform-form-layout">
         <section class="platform-form-section">
           <div class="platform-form-section-head">
             <div class="platform-form-section-title">Jenkins 服务</div>
@@ -186,8 +277,10 @@
         </section>
       </el-form>
       <template #footer>
-        <el-button @click="serverDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="serverSubmitting" @click="handleServerSubmit">保存</el-button>
+        <div class="platform-dialog-footer">
+          <el-button @click="serverDialogVisible = false">{{ serverReadonlyMode ? '关闭' : '取消' }}</el-button>
+          <el-button v-if="!serverReadonlyMode" type="primary" :loading="serverSubmitting" @click="handleServerSubmit">保存</el-button>
+        </div>
       </template>
     </el-dialog>
 
@@ -226,6 +319,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Delete, EditPen, Filter, Plus, Promotion, RefreshRight, Search, Tickets } from '@element-plus/icons-vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import {
   createJenkinsServer,
   deleteJenkinsServer,
@@ -237,6 +331,7 @@ import {
 } from '@/api/cicd'
 import { useAuthStore } from '@/stores/auth'
 import type { JenkinsJobItem, JenkinsServerItem } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 /**
  * Jenkins 服务表单。
@@ -258,11 +353,13 @@ interface JenkinsServerForm {
 
 const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('cicd:manage'))
+const { isMobileViewport } = useMobileViewport()
 
 const serverLoading = ref(false)
 const serverSubmitting = ref(false)
 const serverDialogVisible = ref(false)
 const serverIsEditing = ref(false)
+const serverReadonlyMode = ref(false)
 const currentServerId = ref<number | null>(null)
 const serverList = ref<JenkinsServerItem[]>([])
 const serverFormRef = ref<FormInstance>()
@@ -279,6 +376,21 @@ const currentJobServerId = ref<number | null>(null)
 const jobTriggeringName = ref('')
 
 const serverTotalPages = computed(() => Math.max(1, Math.ceil(serverPagination.total / serverPagination.size) || 1))
+const serverDialogTitle = computed(() => {
+  if (serverReadonlyMode.value) {
+    return '查看 Jenkins 服务'
+  }
+  return serverIsEditing.value ? '编辑 Jenkins 服务' : '新增 Jenkins 服务'
+})
+const serverDialogSubtitle = computed(() => {
+  if (serverReadonlyMode.value) {
+    return '查看 Jenkins 服务基础信息与认证配置。'
+  }
+  if (serverIsEditing.value) {
+    return '调整 Jenkins 地址、认证信息和启用状态。'
+  }
+  return '填写 Jenkins 服务基础信息并完成认证配置。'
+})
 
 const serverRules: FormRules<JenkinsServerForm> = {
   name: [{ required: true, message: '请输入 Jenkins 名称', trigger: 'blur' }],
@@ -367,12 +479,13 @@ const handleServerNextPage = async () => {
 }
 
 const openServerCreateDialog = () => {
+  serverReadonlyMode.value = false
   serverIsEditing.value = false
   resetServerForm()
   serverDialogVisible.value = true
 }
 
-const openServerEditDialog = (row: JenkinsServerItem) => {
+const fillServerForm = (row: JenkinsServerItem) => {
   serverIsEditing.value = true
   currentServerId.value = row.id
   serverForm.name = row.name
@@ -381,6 +494,17 @@ const openServerEditDialog = (row: JenkinsServerItem) => {
   serverForm.apiToken = ''
   serverForm.description = row.description
   serverForm.enabled = row.enabled
+}
+
+const openServerDetailDialog = (row: JenkinsServerItem) => {
+  serverReadonlyMode.value = true
+  fillServerForm(row)
+  serverDialogVisible.value = true
+}
+
+const openServerEditDialog = (row: JenkinsServerItem) => {
+  serverReadonlyMode.value = false
+  fillServerForm(row)
   serverDialogVisible.value = true
 }
 
@@ -523,5 +647,13 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.jenkins-col-url .management-list-link {
+  color: var(--app-text);
+}
+
+.jenkins-col-url .management-list-link:hover {
+  color: var(--app-primary);
 }
 </style>

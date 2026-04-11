@@ -57,6 +57,7 @@
 
     <section class="atelier-table-shell">
       <div class="atelier-table-scroll mobile-card-scroll" v-loading="loading">
+        <template v-if="!isMobileViewport">
         <div class="atelier-data-list model-list-table mobile-card-list">
           <div class="atelier-data-head model-list-head">
             <div class="atelier-data-head-item model-col-main">模型配置</div>
@@ -65,17 +66,19 @@
             <div class="atelier-data-head-item model-col-api">接口地址</div>
             <div class="atelier-data-head-item model-col-key center">密钥</div>
             <div class="atelier-data-head-item model-col-status center">状态</div>
-            <div class="atelier-data-head-item model-col-actions right">操作</div>
+          <div class="atelier-data-head-item model-col-actions right">操作</div>
           </div>
           <div v-for="row in list" :key="row.id" class="atelier-data-row model-list-row">
             <div class="atelier-data-cell model-col-main" data-label="模型配置">
-              <div class="management-list-title-cell">
-                <span class="management-list-title-icon"><el-icon><Cpu /></el-icon></span>
-                <div class="management-list-title-copy">
-                  <div class="management-list-title">{{ row.name }}</div>
-                  <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+              <button class="management-list-title-trigger" type="button" @click="openDetailDialog(row)">
+                <div class="management-list-title-cell">
+                  <span class="management-list-title-icon"><el-icon><Cpu /></el-icon></span>
+                  <div class="management-list-title-copy">
+                    <div class="management-list-title">{{ row.name }}</div>
+                    <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+                  </div>
                 </div>
-              </div>
+              </button>
             </div>
             <div class="atelier-data-cell model-col-provider center" data-label="提供商">
               <span class="management-list-pill neutral">{{ row.provider }}</span>
@@ -84,7 +87,9 @@
               <span class="management-list-text">{{ row.modelName }}</span>
             </div>
             <div class="atelier-data-cell model-col-api" data-label="接口地址">
-              <span class="management-list-link">{{ row.apiBaseUrl }}</span>
+              <a class="management-list-text model-api-link" :href="row.apiBaseUrl" target="_blank" rel="noreferrer">
+                {{ row.apiBaseUrl }}
+              </a>
             </div>
             <div class="atelier-data-cell model-col-key center" data-label="密钥">
               <span class="management-list-pill" :class="row.apiKeyConfigured ? 'success' : 'neutral'">
@@ -111,6 +116,83 @@
             </div>
           </div>
         </div>
+        </template>
+        <template v-else>
+          <div v-if="list.length" class="mobile-entity-list-shell">
+            <div class="mobile-entity-list">
+              <article v-for="row in list" :key="row.id" class="mobile-entity-card">
+                <header class="mobile-entity-card-header">
+                  <button class="mobile-entity-header-trigger" type="button" @click="openDetailDialog(row)">
+                    <span class="mobile-entity-icon">
+                      <el-icon><Cpu /></el-icon>
+                    </span>
+                    <span class="mobile-entity-copy">
+                      <span class="mobile-entity-title">{{ row.name }}</span>
+                      <span class="mobile-entity-description">{{ row.description || '暂无描述' }}</span>
+                    </span>
+                  </button>
+                </header>
+
+                <div class="mobile-entity-fields">
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">提供商</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill neutral">{{ row.provider }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">模型名</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.modelName }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field mobile-entity-field-full">
+                    <span class="mobile-entity-field-label">接口</span>
+                    <div class="mobile-entity-field-content">
+                      <a class="management-list-link" :href="row.apiBaseUrl" target="_blank" rel="noreferrer">
+                        {{ row.apiBaseUrl }}
+                      </a>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">密钥</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="row.apiKeyConfigured ? 'success' : 'neutral'">
+                        {{ row.apiKeyConfigured ? '已配置' : '未配置' }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">状态</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="row.enabled ? 'success' : 'danger'">
+                        {{ row.enabled ? '启用' : '停用' }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <footer class="mobile-entity-actions">
+                  <button class="mobile-entity-action-button info" type="button" @click="handleTest(row.id)">
+                    <el-icon><Connection /></el-icon>
+                    <span>测试</span>
+                  </button>
+                  <button class="mobile-entity-action-button" type="button" @click="openEditDialog(row)">
+                    <el-icon><EditPen /></el-icon>
+                    <span>编辑</span>
+                  </button>
+                  <button class="mobile-entity-action-button danger" type="button" @click="handleDelete(row.id)">
+                    <el-icon><Delete /></el-icon>
+                    <span>删除</span>
+                  </button>
+                </footer>
+              </article>
+            </div>
+          </div>
+          <div v-else class="mobile-entity-empty-state">
+            <el-empty description="当前筛选条件下暂无模型配置" />
+          </div>
+        </template>
       </div>
 
         <div class="atelier-table-footer">
@@ -140,8 +222,11 @@
       </div>
     </section>
 
-  <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑模型' : '新增模型'" width="620px" class="platform-form-dialog" align-center>
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" class="platform-form-layout">
+  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="620px" class="platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="Cpu" />
+    </template>
+    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-position="top" class="platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">模型信息</div>
@@ -174,8 +259,10 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      <div class="platform-dialog-footer">
+        <el-button @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!readonlyMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      </div>
     </template>
   </el-dialog>
   </div>
@@ -186,8 +273,10 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Cpu, Delete, EditPen, Filter, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { createModelConfig, deleteModelConfig, pageModelConfigs, testModelConfig, updateModelConfig } from '@/api/models'
 import type { AiModelConfigItem } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface ModelForm {
   name: string
@@ -201,8 +290,10 @@ interface ModelForm {
 
 const loading = ref(false)
 const submitting = ref(false)
+const { isMobileViewport } = useMobileViewport()
 const dialogVisible = ref(false)
 const isEditing = ref(false)
+const readonlyMode = ref(false)
 const testingId = ref<number | null>(null)
 const currentId = ref<number | null>(null)
 const list = ref<AiModelConfigItem[]>([])
@@ -239,6 +330,22 @@ const rules: FormRules<ModelForm> = {
   apiBaseUrl: [{ required: true, message: '请输入 API 地址', trigger: 'blur' }],
   modelName: [{ required: true, message: '请输入模型名', trigger: 'blur' }]
 }
+
+const dialogTitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看模型'
+  }
+  return isEditing.value ? '编辑模型' : '新增模型'
+})
+const dialogSubtitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看模型提供商、访问地址与启用状态。'
+  }
+  if (isEditing.value) {
+    return '调整模型提供商、访问地址和密钥配置。'
+  }
+  return '填写模型基础信息，并补充访问地址与认证参数。'
+})
 
 const resetForm = () => {
   currentId.value = null
@@ -295,12 +402,13 @@ const handleNextPage = async () => {
 }
 
 const openCreateDialog = () => {
+  readonlyMode.value = false
   isEditing.value = false
   resetForm()
   dialogVisible.value = true
 }
 
-const openEditDialog = (row: AiModelConfigItem) => {
+const fillForm = (row: AiModelConfigItem) => {
   isEditing.value = true
   currentId.value = row.id
   form.name = row.name
@@ -310,6 +418,17 @@ const openEditDialog = (row: AiModelConfigItem) => {
   form.apiKey = ''
   form.description = row.description
   form.enabled = row.enabled
+}
+
+const openDetailDialog = (row: AiModelConfigItem) => {
+  readonlyMode.value = true
+  fillForm(row)
+  dialogVisible.value = true
+}
+
+const openEditDialog = (row: AiModelConfigItem) => {
+  readonlyMode.value = false
+  fillForm(row)
   dialogVisible.value = true
 }
 
@@ -423,12 +542,16 @@ onMounted(() => {
 }
 
 .model-col-name .management-list-text,
-.model-col-api .management-list-link {
+.model-col-api .model-api-link {
   display: inline-block;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.model-api-link {
+  color: #475569;
 }
 
 @media (max-width: 1200px) {
