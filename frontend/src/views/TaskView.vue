@@ -67,6 +67,7 @@
 
     <section class="task-table-shell">
       <div class="task-table-scroll mobile-card-scroll" v-loading="loading">
+        <template v-if="!isMobileViewport">
         <table class="task-table mobile-card-table">
           <thead>
             <tr>
@@ -173,6 +174,126 @@
             </tr>
           </tbody>
         </table>
+        </template>
+        <template v-else>
+          <div v-if="taskList.length" class="mobile-entity-list-shell">
+            <div class="mobile-entity-list">
+              <article v-for="row in taskList" :key="row.id" class="mobile-entity-card">
+                <header class="mobile-entity-card-header">
+                  <button class="mobile-entity-header-trigger" type="button" @click="openTaskDetail(row)">
+                    <span class="mobile-entity-icon">
+                      <el-icon><Tickets /></el-icon>
+                    </span>
+                    <span class="mobile-entity-copy">
+                      <span class="mobile-entity-title">{{ row.name }}</span>
+                      <span class="mobile-entity-description">{{ row.description || '暂无说明' }}</span>
+                    </span>
+                  </button>
+                  <div class="mobile-entity-badge-group">
+                    <span class="task-status-pill" :class="taskStatusTone(row)">{{ formatTaskStatusLabel(row) }}</span>
+                    <span class="task-priority-pill" :class="taskPriorityTone(row.priority)">{{ row.priority || '-' }}</span>
+                  </div>
+                </header>
+
+                <div class="mobile-entity-fields">
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">类型</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="task-type-pill" :class="taskTypeTone(row.workItemType)">{{ row.workItemType }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">项目</span>
+                    <div class="mobile-entity-field-content">
+                      <button v-if="row.projectName" class="task-link-button" type="button" @click="openTaskProject(row.projectId)">
+                        {{ row.projectName }}
+                      </button>
+                      <span v-else class="mobile-entity-empty-text">-</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">需求</span>
+                    <div class="mobile-entity-field-content">
+                      <button
+                        v-if="row.requirementTaskId && row.requirementTaskName"
+                        class="task-link-button"
+                        type="button"
+                        @click="openRequirementTask(row)"
+                      >
+                        {{ row.requirementTaskName }}
+                      </button>
+                      <span v-else class="mobile-entity-empty-text">-</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">负责人</span>
+                    <div class="mobile-entity-field-content">
+                      <ListUserDisplay :user="buildTaskAssigneeDisplayItem(row)" empty-text="未分配" size="md" />
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">协作人</span>
+                    <div class="mobile-entity-field-content">
+                      <ListUserGroupDisplay :users="buildTaskCollaboratorDisplayItems(row)" empty-text="-" size="md" />
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">工时</span>
+                    <div class="mobile-entity-field-content">
+                      <el-tooltip
+                        v-if="canManageTasks && row.workItemType === '任务'"
+                        :content="getRowWorkHoursLockedReason(row)"
+                        :disabled="!getRowWorkHoursLockedReason(row)"
+                      >
+                        <el-input-number
+                          :model-value="row.workHours ?? undefined"
+                          :min="0"
+                          :max="15"
+                          :step="0.5"
+                          :precision="1"
+                          controls-position="right"
+                          class="list-work-hours-input"
+                          :disabled="workHoursUpdatingId === row.id || Boolean(getRowWorkHoursLockedReason(row))"
+                          @change="handleQuickWorkHoursChange(row, $event)"
+                        />
+                      </el-tooltip>
+                      <span v-else class="mobile-entity-empty-text">-</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">更新</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.updatedAt ? row.updatedAt.replace('T', ' ').slice(0, 16) : '-' }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <footer class="mobile-entity-actions">
+                  <button v-if="canManageTasks" class="mobile-entity-action-button info" type="button" @click="openRunDialog(row)">
+                    <el-icon><VideoPlay /></el-icon>
+                    <span>运行智能体</span>
+                  </button>
+                  <button v-if="canManageTasks" class="mobile-entity-action-button" type="button" @click="openEditDialog(row)">
+                    <el-icon><EditPen /></el-icon>
+                    <span>编辑</span>
+                  </button>
+                  <button
+                    v-if="canManageTasks && row.canDelete"
+                    class="mobile-entity-action-button danger"
+                    type="button"
+                    @click="handleDelete(row.id)"
+                  >
+                    <el-icon><Delete /></el-icon>
+                    <span>删除</span>
+                  </button>
+                </footer>
+              </article>
+            </div>
+          </div>
+          <div v-else class="mobile-entity-empty-state">
+            <el-empty description="当前筛选条件下暂无任务" />
+          </div>
+        </template>
       </div>
 
       <div class="task-table-footer">
@@ -202,7 +323,10 @@
       </div>
     </section>
 
-  <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑任务' : '新建任务'" width="980px" class="work-item-dialog platform-form-dialog">
+  <el-dialog v-model="dialogVisible" :title="taskDialogTitle" width="980px" class="work-item-dialog platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader :title="taskDialogTitle" :subtitle="taskDialogSubtitle" :icon="Tickets" />
+    </template>
     <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="work-item-form platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
@@ -279,8 +403,10 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      <div class="platform-dialog-footer">
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      </div>
     </template>
   </el-dialog>
 
@@ -356,6 +482,7 @@ import ListUserDisplay from '@/components/ListUserDisplay.vue'
 import ListUserGroupDisplay from '@/components/ListUserGroupDisplay.vue'
 import type { ListUserDisplayItem } from '@/components/listUserDisplay'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import {
   createTask,
   deleteTask,
@@ -376,6 +503,7 @@ import { resolveAssetUrl } from '@/utils/asset'
 import { uploadMarkdownImage } from '@/utils/taskImageUpload'
 import { useAuthStore } from '@/stores/auth'
 import type { AgentItem, ProjectItem, TaskAgentRunItem, TaskItem, UserOptionItem } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface TaskForm {
   name: string
@@ -403,6 +531,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const loading = ref(false)
 const submitting = ref(false)
+const { isMobileViewport } = useMobileViewport()
 const dialogVisible = ref(false)
 const runDialogVisible = ref(false)
 const runHistoryLoading = ref(false)
@@ -420,6 +549,12 @@ const currentRunTask = ref<TaskItem | null>(null)
 const runInput = ref('')
 const formRef = ref<FormInstance>()
 const canManageTasks = computed(() => authStore.hasPermission('task:manage'))
+const taskDialogTitle = computed(() => isEditing.value ? '编辑任务' : '新建任务')
+const taskDialogSubtitle = computed(() =>
+  isEditing.value
+    ? '调整任务归属、负责人和执行要求。'
+    : '填写任务基础信息，并补充执行说明。'
+)
 
 const pagination = reactive({
   page: 1,

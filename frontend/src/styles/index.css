@@ -960,14 +960,14 @@ a {
   color: #7c8794;
 }
 
-.platform-form-dialog .el-overlay-dialog {
+.el-overlay-dialog:has(.platform-form-dialog) {
   padding: 24px;
   overflow: hidden;
 }
 
-.platform-form-dialog .el-dialog {
+.el-dialog.platform-form-dialog {
   --platform-dialog-max-height: min(920px, calc(100vh - 48px));
-  margin: 0 !important;
+  margin: auto !important;
   height: auto;
   max-height: var(--platform-dialog-max-height);
   max-width: calc(100vw - 48px);
@@ -980,19 +980,19 @@ a {
     linear-gradient(180deg, rgba(248, 249, 250, 0.98) 0%, rgba(243, 244, 245, 0.98) 100%);
 }
 
-.platform-form-dialog .el-dialog__header,
-.platform-form-dialog .el-dialog__body,
-.platform-form-dialog .el-dialog__footer {
+.el-dialog.platform-form-dialog .el-dialog__header,
+.el-dialog.platform-form-dialog .el-dialog__body,
+.el-dialog.platform-form-dialog .el-dialog__footer {
   width: 100%;
 }
 
-.platform-form-dialog .el-dialog__header {
+.el-dialog.platform-form-dialog .el-dialog__header {
   flex: 0 0 auto;
   padding: 22px 28px 14px;
   background: rgba(248, 249, 250, 0.86);
 }
 
-.platform-form-dialog .el-dialog__title {
+.el-dialog.platform-form-dialog .el-dialog__title {
   color: var(--app-text);
   font-family: var(--app-font-heading);
   font-size: 26px;
@@ -1000,7 +1000,7 @@ a {
   line-height: 1.08;
 }
 
-.platform-form-dialog .el-dialog__body {
+.el-dialog.platform-form-dialog .el-dialog__body {
   flex: 1 1 auto;
   min-height: 0;
   max-height: calc(var(--platform-dialog-max-height) - 170px);
@@ -1010,36 +1010,36 @@ a {
   padding: 18px 28px 24px;
 }
 
-.platform-form-dialog .el-dialog__footer {
+.el-dialog.platform-form-dialog .el-dialog__footer {
   flex: 0 0 auto;
   padding: 16px 28px 24px;
   background: rgba(248, 249, 250, 0.9);
 }
 
-.platform-form-dialog .el-form-item {
+.el-dialog.platform-form-dialog .el-form-item {
   margin-bottom: 20px;
 }
 
-.platform-form-dialog .el-form-item__label,
-.platform-form-dialog .el-form-item__top label {
+.el-dialog.platform-form-dialog .el-form-item__label,
+.el-dialog.platform-form-dialog .el-form-item__top label {
   color: var(--app-text);
   font-weight: 700;
   white-space: nowrap;
 }
 
-.platform-form-dialog .el-form-item__content {
+.el-dialog.platform-form-dialog .el-form-item__content {
   min-width: 0;
 }
 
-.platform-form-dialog .el-input__wrapper,
-.platform-form-dialog .el-select__wrapper,
-.platform-form-dialog .el-textarea__inner,
-.platform-form-dialog .el-input-number,
-.platform-form-dialog .md-editor {
+.el-dialog.platform-form-dialog .el-input__wrapper,
+.el-dialog.platform-form-dialog .el-select__wrapper,
+.el-dialog.platform-form-dialog .el-textarea__inner,
+.el-dialog.platform-form-dialog .el-input-number,
+.el-dialog.platform-form-dialog .md-editor {
   border-radius: 0;
 }
 
-.platform-form-dialog .el-divider__text {
+.el-dialog.platform-form-dialog .el-divider__text {
   color: var(--app-text);
   font-weight: 800;
 }
@@ -1048,6 +1048,13 @@ a {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.platform-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
 .platform-form-section {
@@ -2295,6 +2302,197 @@ a {
   display: none;
 }
 
+.mobile-entity-list-shell {
+  flex: 1 1 auto;
+  min-height: 360px;
+  padding: 14px;
+}
+
+.mobile-entity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mobile-entity-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: var(--app-shadow-soft);
+}
+
+.mobile-entity-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobile-entity-header-trigger {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+}
+
+.mobile-entity-header-static {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.mobile-entity-icon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(255, 220, 195, 0.82);
+  color: var(--app-primary);
+  font-size: 18px;
+}
+
+.mobile-entity-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mobile-entity-title {
+  color: var(--app-text);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.mobile-entity-description {
+  color: #6d7f95;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.mobile-entity-badge-group {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.mobile-entity-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-entity-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(243, 244, 245, 0.76);
+}
+
+.mobile-entity-field-full {
+  align-items: flex-start;
+}
+
+.mobile-entity-field-label {
+  width: 64px;
+  flex: 0 0 64px;
+  color: #7a8ca4;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.6;
+}
+
+.mobile-entity-field-content {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mobile-entity-meta-stack {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mobile-entity-link-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(211, 235, 248, 0.86);
+  color: var(--app-tertiary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mobile-entity-empty-text {
+  color: #758393;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mobile-entity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.mobile-entity-action-button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(243, 244, 245, 0.92);
+  color: #516174;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mobile-entity-action-button.danger {
+  color: var(--app-danger);
+}
+
+.mobile-entity-action-button.info {
+  color: var(--app-tertiary);
+}
+
+.mobile-entity-empty-state {
+  display: flex;
+  min-height: 360px;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
 @media (max-width: 1280px) {
   .atelier-toolbar {
     grid-template-columns: 1fr;
@@ -2349,6 +2547,20 @@ a {
     --app-radius-lg: 10px;
   }
 
+  input,
+  textarea,
+  select,
+  .el-input__inner,
+  .el-textarea__inner,
+  .el-select__selected-item,
+  .el-select__placeholder,
+  .el-input-number .el-input__inner,
+  .management-list-search-input,
+  .atelier-search-input,
+  .work-list-search-input {
+    font-size: 16px !important;
+  }
+
   .layout-main > * {
     margin-left: 12px;
     margin-right: 12px;
@@ -2368,23 +2580,23 @@ a {
     padding: 0 18px 18px;
   }
 
-  .platform-form-dialog .el-overlay-dialog {
+  .el-overlay-dialog:has(.platform-form-dialog) {
     padding: 12px;
   }
 
-  .platform-form-dialog .el-dialog {
+  .el-dialog.platform-form-dialog {
     --platform-dialog-max-height: calc(100vh - 24px);
     width: calc(100vw - 24px) !important;
     max-height: var(--platform-dialog-max-height);
   }
 
-  .platform-form-dialog .el-dialog__body {
+  .el-dialog.platform-form-dialog .el-dialog__body {
     max-height: calc(var(--platform-dialog-max-height) - 156px);
   }
 
-  .platform-form-dialog .el-dialog__header,
-  .platform-form-dialog .el-dialog__body,
-  .platform-form-dialog .el-dialog__footer {
+  .el-dialog.platform-form-dialog .el-dialog__header,
+  .el-dialog.platform-form-dialog .el-dialog__body,
+  .el-dialog.platform-form-dialog .el-dialog__footer {
     padding-left: 18px;
     padding-right: 18px;
   }
@@ -2463,6 +2675,50 @@ a {
   .work-list-footer-controls {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .management-list-footer,
+  .atelier-table-footer,
+  .work-list-footer,
+  .task-table-footer,
+  .workspace-pagination {
+    margin-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-entity-list-shell {
+    padding: 12px;
+  }
+
+  .mobile-entity-card {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .mobile-entity-card-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .mobile-entity-badge-group {
+    justify-content: flex-start;
+  }
+
+  .mobile-entity-title {
+    font-size: 17px;
+  }
+
+  .mobile-entity-description {
+    font-size: 12px;
+  }
+
+  .mobile-entity-field {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .mobile-entity-field-label {
+    width: 56px;
+    flex-basis: 56px;
   }
 
   /* 移动端将列表表格折叠为高密度字段卡片，统一采用“头部 + 摘要网格 + 底部操作”结构。 */

@@ -4,6 +4,7 @@ import com.aiclub.platform.domain.model.TaskEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.time.LocalDate;
 import java.util.List;
 
 public interface TaskRepository extends JpaRepository<TaskEntity, Long>, JpaSpecificationExecutor<TaskEntity> {
@@ -23,4 +24,6 @@ public interface TaskRepository extends JpaRepository<TaskEntity, Long>, JpaSpec
     List<TaskEntity> findAllByIteration_Id(Long iterationId);
 
     List<TaskEntity> findAllByProject_IdOrderByUpdatedAtAscIdAsc(Long projectId);
+
+    List<TaskEntity> findAllByPlanEndDateBeforeAndAssigneeUserIsNotNullAndOverdueNotifiedAtIsNullOrderByPlanEndDateAscIdAsc(LocalDate date);
 }

@@ -281,8 +281,11 @@
       <div v-else class="widget-empty">当前没有隐藏组件，已经全部展示。</div>
     </section>
 
-    <el-dialog v-model="quickMergeDialogVisible" title="GitLab 快速发起 MR" width="720px" align-center>
-      <el-form ref="quickMergeFormRef" :model="quickMergeForm" :rules="quickMergeRules" label-width="120px">
+    <el-dialog v-model="quickMergeDialogVisible" title="GitLab 快速发起 MR" width="720px" class="platform-form-dialog" align-center>
+      <template #header>
+        <PlatformDialogHeader title="GitLab 快速发起 MR" :subtitle="quickMergeDialogSubtitle" :icon="FolderOpened" />
+      </template>
+      <el-form ref="quickMergeFormRef" :model="quickMergeForm" :rules="quickMergeRules" label-position="top" class="platform-form-layout">
         <el-form-item label="项目" prop="bindingId">
           <el-select v-model="quickMergeForm.bindingId" placeholder="请选择已绑定 GitLab 的项目仓库" style="width: 100%">
             <el-option
@@ -340,8 +343,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="quickMergeDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="quickMergeSubmitting" @click="handleQuickMergeSubmit">创建 MR</el-button>
+        <div class="platform-dialog-footer">
+          <el-button @click="quickMergeDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="quickMergeSubmitting" @click="handleQuickMergeSubmit">创建 MR</el-button>
+        </div>
       </template>
     </el-dialog>
 
@@ -372,6 +377,7 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Cpu, FolderOpened, Plus, Tickets } from '@element-plus/icons-vue'
 import DashboardQuickTaskWidget from '@/components/DashboardQuickTaskWidget.vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { pagePipelineBindings, triggerPipelineBuild } from '@/api/cicd'
 import { VueDraggable } from 'vue-draggable-plus'
 import { createGitlabMergeRequest, listGitlabBindingOptions, listGitlabBranches } from '@/api/gitlab'
@@ -470,6 +476,7 @@ const sourceBranchLoading = ref(false)
 const targetBranchLoading = ref(false)
 const quickMergeResult = ref<GitlabCreateMergeRequestResultItem | null>(null)
 const quickMergeForm = reactive<QuickMergeForm>({ bindingId: null, sourceBranch: '', targetBranch: '', title: '', description: '' })
+const quickMergeDialogSubtitle = computed(() => '在首页快速选择仓库分支并发起新的 GitLab MR。')
 const widgetMeasuredRowSpanMap = ref<Partial<Record<DashboardWidgetId, number>>>({})
 
 const quickMergeRules: FormRules<QuickMergeForm> = {

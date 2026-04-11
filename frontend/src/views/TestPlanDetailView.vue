@@ -102,7 +102,7 @@
         </el-empty>
       </div>
 
-      <template v-else>
+      <template v-else-if="!isMobileViewport">
         <div class="atelier-table-scroll">
           <div class="atelier-data-list detail-case-list">
             <div class="atelier-data-head detail-case-head">
@@ -163,6 +163,98 @@
                 </div>
               </div>
             </button>
+          </div>
+        </div>
+
+        <div class="atelier-table-footer">
+          <div class="atelier-footer-total">共 <span>{{ filteredCases.length }}</span> 条</div>
+          <div class="atelier-footer-controls">
+            <div class="atelier-page-size atelier-compact-input">
+              <span>每页</span>
+              <el-select v-model="pagination.size" size="small" style="width: 92px" @change="handleSizeChange">
+                <el-option :value="5" label="5" />
+                <el-option :value="10" label="10" />
+                <el-option :value="20" label="20" />
+                <el-option :value="50" label="50" />
+              </el-select>
+            </div>
+            <div class="atelier-page-nav">
+              <button class="atelier-page-button" type="button" :disabled="pagination.page <= 1" @click="handlePrevPage">
+                <el-icon><ArrowLeft /></el-icon>
+              </button>
+              <span class="atelier-page-text">第 {{ pagination.page }} / {{ caseTotalPages }} 页</span>
+              <button class="atelier-page-button" type="button" :disabled="pagination.page >= caseTotalPages" @click="handleNextPage">
+                <el-icon><ArrowRight /></el-icon>
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="mobile-entity-list-shell">
+          <div class="mobile-entity-list">
+            <article
+              v-for="row in pagedCases"
+              :key="row.localId"
+              class="mobile-entity-card"
+            >
+              <header class="mobile-entity-card-header">
+                <button class="mobile-entity-header-trigger" type="button" @click="openCaseDetail(row.absoluteIndex)">
+                  <span class="mobile-entity-icon">
+                    <el-icon><Finished /></el-icon>
+                  </span>
+                  <span class="mobile-entity-copy">
+                    <span class="mobile-entity-title">{{ formatCaseTitle(row) }}</span>
+                    <span class="mobile-entity-description">{{ formatCasePreview(row) }}</span>
+                  </span>
+                </button>
+              </header>
+
+              <div class="mobile-entity-fields">
+                <div class="mobile-entity-field">
+                  <span class="mobile-entity-field-label">模块</span>
+                  <div class="mobile-entity-field-content">
+                    <span class="mobile-entity-empty-text">{{ formatCaseModule(row) }}</span>
+                  </div>
+                </div>
+                <div class="mobile-entity-field">
+                  <span class="mobile-entity-field-label">类型</span>
+                  <div class="mobile-entity-field-content">
+                    <span class="management-list-pill info">{{ row.caseType || '功能测试' }}</span>
+                  </div>
+                </div>
+                <div class="mobile-entity-field">
+                  <span class="mobile-entity-field-label">优先级</span>
+                  <div class="mobile-entity-field-content">
+                    <span class="management-list-pill" :class="casePriorityTone(row.priority)">{{ row.priority || '-' }}</span>
+                  </div>
+                </div>
+                <div class="mobile-entity-field">
+                  <span class="mobile-entity-field-label">步骤</span>
+                  <div class="mobile-entity-field-content">
+                    <span class="management-list-pill neutral">{{ row.steps.length }}</span>
+                  </div>
+                </div>
+                <div class="mobile-entity-field mobile-entity-field-full">
+                  <span class="mobile-entity-field-label">备注</span>
+                  <div class="mobile-entity-field-content">
+                    <span class="mobile-entity-empty-text">{{ formatCaseRemarks(row) }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <footer class="mobile-entity-actions">
+                <button class="mobile-entity-action-button info" type="button" @click="openCaseDetail(row.absoluteIndex)">
+                  <el-icon><Right /></el-icon>
+                  <span>查看</span>
+                </button>
+                <button v-if="canManage" class="mobile-entity-action-button danger" type="button" @click="removeCase(row.absoluteIndex)">
+                  <el-icon><Delete /></el-icon>
+                  <span>删除</span>
+                </button>
+              </footer>
+            </article>
           </div>
         </div>
 
@@ -310,6 +402,7 @@ import { getTestPlanDetail, updateTestPlan } from '@/api/platform'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import type { TestPlanItem } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface StepForm {
   /** 前端抽屉中用于稳定渲染步骤行的本地键。 */
@@ -347,6 +440,7 @@ const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const { isMobileViewport } = useMobileViewport()
 const canManage = computed(() => authStore.hasPermission('test:manage'))
 
 const statusOptions = ['草稿', '待执行', '执行中', '已完成']

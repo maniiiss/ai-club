@@ -57,6 +57,7 @@
 
     <section class="atelier-table-shell">
       <div class="atelier-table-scroll mobile-card-scroll" v-loading="loading">
+        <template v-if="!isMobileViewport">
         <div class="atelier-data-list model-list-table mobile-card-list">
           <div class="atelier-data-head model-list-head">
             <div class="atelier-data-head-item model-col-main">模型配置</div>
@@ -115,6 +116,83 @@
             </div>
           </div>
         </div>
+        </template>
+        <template v-else>
+          <div v-if="list.length" class="mobile-entity-list-shell">
+            <div class="mobile-entity-list">
+              <article v-for="row in list" :key="row.id" class="mobile-entity-card">
+                <header class="mobile-entity-card-header">
+                  <button class="mobile-entity-header-trigger" type="button" @click="openDetailDialog(row)">
+                    <span class="mobile-entity-icon">
+                      <el-icon><Cpu /></el-icon>
+                    </span>
+                    <span class="mobile-entity-copy">
+                      <span class="mobile-entity-title">{{ row.name }}</span>
+                      <span class="mobile-entity-description">{{ row.description || '暂无描述' }}</span>
+                    </span>
+                  </button>
+                </header>
+
+                <div class="mobile-entity-fields">
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">提供商</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill neutral">{{ row.provider }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">模型名</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.modelName }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field mobile-entity-field-full">
+                    <span class="mobile-entity-field-label">接口</span>
+                    <div class="mobile-entity-field-content">
+                      <a class="management-list-link" :href="row.apiBaseUrl" target="_blank" rel="noreferrer">
+                        {{ row.apiBaseUrl }}
+                      </a>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">密钥</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="row.apiKeyConfigured ? 'success' : 'neutral'">
+                        {{ row.apiKeyConfigured ? '已配置' : '未配置' }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">状态</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="row.enabled ? 'success' : 'danger'">
+                        {{ row.enabled ? '启用' : '停用' }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <footer class="mobile-entity-actions">
+                  <button class="mobile-entity-action-button info" type="button" @click="handleTest(row.id)">
+                    <el-icon><Connection /></el-icon>
+                    <span>测试</span>
+                  </button>
+                  <button class="mobile-entity-action-button" type="button" @click="openEditDialog(row)">
+                    <el-icon><EditPen /></el-icon>
+                    <span>编辑</span>
+                  </button>
+                  <button class="mobile-entity-action-button danger" type="button" @click="handleDelete(row.id)">
+                    <el-icon><Delete /></el-icon>
+                    <span>删除</span>
+                  </button>
+                </footer>
+              </article>
+            </div>
+          </div>
+          <div v-else class="mobile-entity-empty-state">
+            <el-empty description="当前筛选条件下暂无模型配置" />
+          </div>
+        </template>
       </div>
 
         <div class="atelier-table-footer">
@@ -145,7 +223,10 @@
     </section>
 
   <el-dialog v-model="dialogVisible" :title="dialogTitle" width="620px" class="platform-form-dialog" align-center>
-    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-width="100px" class="platform-form-layout">
+    <template #header>
+      <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="Cpu" />
+    </template>
+    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-position="top" class="platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">模型信息</div>
@@ -178,8 +259,10 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
-      <el-button v-if="!readonlyMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      <div class="platform-dialog-footer">
+        <el-button @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!readonlyMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      </div>
     </template>
   </el-dialog>
   </div>
@@ -190,8 +273,10 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Cpu, Delete, EditPen, Filter, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { createModelConfig, deleteModelConfig, pageModelConfigs, testModelConfig, updateModelConfig } from '@/api/models'
 import type { AiModelConfigItem } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface ModelForm {
   name: string
@@ -205,6 +290,7 @@ interface ModelForm {
 
 const loading = ref(false)
 const submitting = ref(false)
+const { isMobileViewport } = useMobileViewport()
 const dialogVisible = ref(false)
 const isEditing = ref(false)
 const readonlyMode = ref(false)
@@ -250,6 +336,15 @@ const dialogTitle = computed(() => {
     return '查看模型'
   }
   return isEditing.value ? '编辑模型' : '新增模型'
+})
+const dialogSubtitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看模型提供商、访问地址与启用状态。'
+  }
+  if (isEditing.value) {
+    return '调整模型提供商、访问地址和密钥配置。'
+  }
+  return '填写模型基础信息，并补充访问地址与认证参数。'
 })
 
 const resetForm = () => {

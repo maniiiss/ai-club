@@ -58,6 +58,7 @@ public class GitlabManagementService {
     private static final String MODE_STANDALONE = "STANDALONE";
     private static final String TRIGGER_MANUAL = "MANUAL";
     private static final String TRIGGER_SCHEDULED = "SCHEDULED";
+    private static final String BRANCH_BEHIND_REASON_PREFIX = "源分支落后于目标分支";
 
     private final ProjectRepository projectRepository;
     private final AgentRepository agentRepository;
@@ -709,7 +710,7 @@ public class GitlabManagementService {
                 buildGitlabNotificationTitle(log),
                 buildGitlabNotificationContent(log),
                 "/gitlab",
-                "GITLAB_AUTO_MERGE_LOG",
+                buildGitlabNotificationBizType(log),
                 log.getId()
         );
     }
@@ -722,6 +723,9 @@ public class GitlabManagementService {
         if ("AI_REJECTED".equalsIgnoreCase(log.getResult())) {
             return mergeRequestLabel + " 被 AI 审核拒绝";
         }
+        if (isBranchBehindNotification(log)) {
+            return mergeRequestLabel + " 需先同步目标分支";
+        }
         if ("FAILED".equalsIgnoreCase(log.getResult())) {
             return mergeRequestLabel + " 自动合并失败";
         }
@@ -733,6 +737,15 @@ public class GitlabManagementService {
 
     private String buildGitlabNotificationContent(GitlabAutoMergeLogEntity log) {
         String title = hasText(log.getMergeRequestTitle()) ? "《" + log.getMergeRequestTitle().trim() + "》" : "你的 Merge Request";
+        if ("MERGED".equalsIgnoreCase(log.getResult())) {
+            return limitMessage(title + "已自动合并成功。");
+        }
+        if ("AI_REJECTED".equalsIgnoreCase(log.getResult())) {
+            return limitMessage(title + "未通过 AI 审核，原因：" + defaultString(log.getReason()));
+        }
+        if (isBranchBehindNotification(log)) {
+            return limitMessage(title + "暂未自动合并，源分支落后于目标分支，请先 rebase 或同步后再试。");
+        }
         return limitMessage(title + " 的自动合并结果为「" + formatLogResultText(log.getResult()) + "」，原因：" + defaultString(log.getReason()));
     }
 
@@ -747,6 +760,27 @@ public class GitlabManagementService {
             return NotificationService.LEVEL_WARNING;
         }
         return NotificationService.LEVEL_INFO;
+    }
+
+    /**
+     * 按日志结果细分前端消息中心展示用的业务类型，让不同 GitLab 场景有独立标签。
+     */
+    private String buildGitlabNotificationBizType(GitlabAutoMergeLogEntity log) {
+        if ("MERGED".equalsIgnoreCase(log.getResult())) {
+            return "GITLAB_MERGED";
+        }
+        if ("AI_REJECTED".equalsIgnoreCase(log.getResult())) {
+            return "GITLAB_AI_REJECTED";
+        }
+        if (isBranchBehindNotification(log)) {
+            return "GITLAB_BRANCH_BEHIND";
+        }
+        return "GITLAB_AUTO_MERGE_LOG";
+    }
+
+    private boolean isBranchBehindNotification(GitlabAutoMergeLogEntity log) {
+        return "SKIPPED".equalsIgnoreCase(log.getResult())
+                && defaultString(log.getReason()).startsWith(BRANCH_BEHIND_REASON_PREFIX);
     }
 
     private String buildLogDetailMarkdown(GitlabAutoMergeConfigEntity config,

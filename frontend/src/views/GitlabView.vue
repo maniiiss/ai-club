@@ -58,6 +58,7 @@
 
             <section class="management-list-shell">
             <div class="management-list-table-scroll mobile-card-scroll" v-loading="bindingLoading">
+              <template v-if="!isMobileViewport">
               <table class="management-list-table gitlab-binding-table mobile-card-table">
                 <thead>
                   <tr>
@@ -146,6 +147,87 @@
                   </tr>
                 </tbody>
               </table>
+              </template>
+              <template v-else>
+                <div v-if="bindingList.length" class="mobile-entity-list-shell">
+                  <div class="mobile-entity-list">
+                    <article v-for="row in bindingList" :key="row.id" class="mobile-entity-card">
+                      <header class="mobile-entity-card-header">
+                        <div class="mobile-entity-header-static">
+                          <span class="mobile-entity-icon"><el-icon><FolderOpened /></el-icon></span>
+                          <span class="mobile-entity-copy">
+                            <span class="mobile-entity-title">{{ row.gitlabProjectPath || row.gitlabProjectRef }}</span>
+                            <span class="mobile-entity-description">{{ buildBindingSubtitle(row) }}</span>
+                          </span>
+                        </div>
+                      </header>
+                      <div class="mobile-entity-fields">
+                        <div class="mobile-entity-field">
+                          <span class="mobile-entity-field-label">分支</span>
+                          <div class="mobile-entity-field-content">
+                            <span class="mobile-entity-empty-text">{{ row.defaultTargetBranch || '-' }}</span>
+                          </div>
+                        </div>
+                        <div class="mobile-entity-field mobile-entity-field-full">
+                          <span class="mobile-entity-field-label">API</span>
+                          <div class="mobile-entity-field-content">
+                            <a v-if="row.apiBaseUrl" class="management-list-link gitlab-mono-text" :href="row.apiBaseUrl" target="_blank" rel="noreferrer">
+                              {{ row.apiBaseUrl }}
+                            </a>
+                            <span v-else class="mobile-entity-empty-text">-</span>
+                          </div>
+                        </div>
+                        <div class="mobile-entity-field">
+                          <span class="mobile-entity-field-label">状态</span>
+                          <div class="mobile-entity-field-content">
+                            <span class="management-list-pill" :class="row.enabled ? 'success' : 'neutral'">{{ row.enabled ? '启用' : '停用' }}</span>
+                          </div>
+                        </div>
+                        <div class="mobile-entity-field">
+                          <span class="mobile-entity-field-label">连通</span>
+                          <div class="mobile-entity-field-content">
+                            <span class="management-list-pill" :class="bindingStatusType(row.lastTestStatus)">{{ formatBindingStatusLabel(row.lastTestStatus) }}</span>
+                          </div>
+                        </div>
+                        <div class="mobile-entity-field mobile-entity-field-full">
+                          <span class="mobile-entity-field-label">测试</span>
+                          <div class="mobile-entity-field-content">
+                            <div class="mobile-entity-meta-stack">
+                              <span class="mobile-entity-empty-text">{{ formatDateTimeText(row.lastTestedAt) }}</span>
+                              <span class="mobile-entity-empty-text">{{ row.lastTestMessage || '尚未执行连接测试' }}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <footer class="mobile-entity-actions">
+                        <button class="mobile-entity-action-button info" type="button" @click="handleBindingTest(row.id)">
+                          <el-icon><Connection /></el-icon>
+                          <span>测试连接</span>
+                        </button>
+                        <button class="mobile-entity-action-button info" type="button" @click="openBindingMergeRequests(row)">
+                          <el-icon><Tickets /></el-icon>
+                          <span>查看合并请求</span>
+                        </button>
+                        <button class="mobile-entity-action-button" type="button" @click="openTagCreateDialog(row)">
+                          <el-icon><Plus /></el-icon>
+                          <span>创建 Tag</span>
+                        </button>
+                        <button class="mobile-entity-action-button" type="button" @click="openBindingEditDialog(row)">
+                          <el-icon><EditPen /></el-icon>
+                          <span>编辑</span>
+                        </button>
+                        <button class="mobile-entity-action-button danger" type="button" @click="handleBindingDelete(row.id)">
+                          <el-icon><Delete /></el-icon>
+                          <span>删除</span>
+                        </button>
+                      </footer>
+                    </article>
+                  </div>
+                </div>
+                <div v-else class="mobile-entity-empty-state">
+                  <el-empty description="暂无仓库绑定" />
+                </div>
+              </template>
             </div>
 
             <div class="management-list-footer">
@@ -239,6 +321,7 @@
 
           <section class="management-list-shell">
           <div class="management-list-table-scroll mobile-card-scroll" v-loading="autoMergeLoading">
+            <template v-if="!isMobileViewport">
             <table class="management-list-table gitlab-auto-merge-table mobile-card-table">
               <thead>
                 <tr>
@@ -328,6 +411,95 @@
                 </tr>
               </tbody>
             </table>
+            </template>
+            <template v-else>
+              <div v-if="autoMergeList.length" class="mobile-entity-list-shell">
+                <div class="mobile-entity-list">
+                  <article v-for="row in autoMergeList" :key="row.id" class="mobile-entity-card">
+                    <header class="mobile-entity-card-header">
+                      <button class="mobile-entity-header-trigger" type="button" @click="openAutoMergeDetailDialog(row)">
+                        <span class="mobile-entity-icon"><el-icon><Tickets /></el-icon></span>
+                        <span class="mobile-entity-copy">
+                          <span class="mobile-entity-title">{{ row.name }}</span>
+                          <span class="mobile-entity-description">{{ buildAutoMergeSubtitle(row) }}</span>
+                        </span>
+                      </button>
+                    </header>
+                    <div class="mobile-entity-fields">
+                      <div class="mobile-entity-field">
+                        <span class="mobile-entity-field-label">模式</span>
+                        <div class="mobile-entity-field-content">
+                          <span class="management-list-pill" :class="row.executionMode === 'STANDALONE' ? 'warning' : 'info'">
+                            {{ formatExecutionModeLabel(row.executionMode) }}
+                          </span>
+                        </div>
+                      </div>
+                      <div class="mobile-entity-field mobile-entity-field-full">
+                        <span class="mobile-entity-field-label">规则</span>
+                        <div class="mobile-entity-field-content">
+                          <div class="mobile-entity-meta-stack">
+                            <span class="mobile-entity-empty-text">源分支：{{ row.sourceBranch || '不限' }}</span>
+                            <span class="mobile-entity-empty-text">目标分支：{{ row.targetBranch || '不限' }}</span>
+                            <span class="mobile-entity-empty-text">标题关键字：{{ row.titleKeyword || '不限' }}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="mobile-entity-field mobile-entity-field-full">
+                        <span class="mobile-entity-field-label">调度</span>
+                        <div class="mobile-entity-field-content">
+                          <div class="mobile-entity-meta-stack">
+                            <span class="mobile-entity-empty-text">{{ row.schedulerEnabled ? `Cron：${row.schedulerCron || '-'}` : '未启用调度' }}</span>
+                            <span class="mobile-entity-empty-text">AI 审核：{{ row.aiReviewEnabled ? (row.reviewAgentName || '已启用') : '关闭' }}</span>
+                            <span class="mobile-entity-empty-text">合并后 Jenkins：{{ row.triggerPipelineAfterMerge ? '开启' : '关闭' }}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="mobile-entity-field">
+                        <span class="mobile-entity-field-label">启用</span>
+                        <div class="mobile-entity-field-content">
+                          <span class="management-list-pill" :class="row.enabled ? 'success' : 'neutral'">{{ row.enabled ? '启用' : '停用' }}</span>
+                        </div>
+                      </div>
+                      <div class="mobile-entity-field mobile-entity-field-full">
+                        <span class="mobile-entity-field-label">执行</span>
+                        <div class="mobile-entity-field-content">
+                          <div class="mobile-entity-meta-stack">
+                            <span class="management-list-pill" :class="runStatusType(row.lastRunStatus)">{{ formatRunStatusLabel(row.lastRunStatus) }}</span>
+                            <span class="mobile-entity-empty-text">上次：{{ formatDateTimeText(row.lastRunAt) }}</span>
+                            <span class="mobile-entity-empty-text">下次：{{ formatDateTimeText(row.nextExecutionTime) }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <footer class="mobile-entity-actions">
+                      <button class="mobile-entity-action-button info" type="button" @click="handleAutoMergeTest(row.id)">
+                        <el-icon><Connection /></el-icon>
+                        <span>测试策略</span>
+                      </button>
+                      <button class="mobile-entity-action-button info" type="button" @click="openAutoMergeMergeRequests(row)">
+                        <el-icon><DocumentCopy /></el-icon>
+                        <span>预览 MR</span>
+                      </button>
+                      <button class="mobile-entity-action-button info" type="button" @click="handleAutoMergeRun(row.id)">
+                        <el-icon><VideoPlay /></el-icon>
+                        <span>立即执行</span>
+                      </button>
+                      <button class="mobile-entity-action-button" type="button" @click="openAutoMergeEditDialog(row)">
+                        <el-icon><EditPen /></el-icon>
+                        <span>编辑</span>
+                      </button>
+                      <button class="mobile-entity-action-button danger" type="button" @click="handleAutoMergeDelete(row.id)">
+                        <el-icon><Delete /></el-icon>
+                        <span>删除</span>
+                      </button>
+                    </footer>
+                  </article>
+                </div>
+              </div>
+              <div v-else class="mobile-entity-empty-state">
+                <el-empty description="暂无自动合并策略" />
+              </div>
+            </template>
           </div>
 
           <div class="management-list-footer">
@@ -424,6 +596,7 @@
 
             <section class="management-list-shell">
             <div class="management-list-table-scroll mobile-card-scroll" v-loading="logLoading">
+              <template v-if="!isMobileViewport">
               <table class="management-list-table gitlab-log-table mobile-card-table">
                 <thead>
                   <tr>
@@ -480,6 +653,66 @@
                   </tr>
                 </tbody>
               </table>
+              </template>
+              <template v-else>
+                <div v-if="logList.length" class="mobile-entity-list-shell">
+                  <div class="mobile-entity-list">
+                    <article v-for="row in logList" :key="row.id" class="mobile-entity-card">
+                      <header class="mobile-entity-card-header">
+                        <button class="mobile-entity-header-trigger" type="button" @click="openLogDetail(row)">
+                          <span class="mobile-entity-icon"><el-icon><DocumentCopy /></el-icon></span>
+                          <span class="mobile-entity-copy">
+                            <span class="mobile-entity-title">{{ row.configName || '自动合并执行' }}</span>
+                            <span class="mobile-entity-description">{{ buildLogSubtitle(row) }}</span>
+                          </span>
+                        </button>
+                      </header>
+                      <div class="mobile-entity-fields">
+                        <div class="mobile-entity-field">
+                          <span class="mobile-entity-field-label">触发</span>
+                          <div class="mobile-entity-field-content">
+                            <span class="management-list-pill" :class="row.triggerType === 'SCHEDULED' ? 'warning' : 'info'">{{ formatTriggerTypeLabel(row.triggerType) }}</span>
+                          </div>
+                        </div>
+                        <div class="mobile-entity-field">
+                          <span class="mobile-entity-field-label">发起人</span>
+                          <div class="mobile-entity-field-content">
+                            <span class="mobile-entity-empty-text">{{ getLogInitiatorDisplay(row) }}</span>
+                          </div>
+                        </div>
+                        <div class="mobile-entity-field">
+                          <span class="mobile-entity-field-label">结果</span>
+                          <div class="mobile-entity-field-content">
+                            <span class="management-list-pill" :class="logResultType(row.result)">{{ logResultText(row.result) }}</span>
+                          </div>
+                        </div>
+                        <div class="mobile-entity-field mobile-entity-field-full">
+                          <span class="mobile-entity-field-label">原因</span>
+                          <div class="mobile-entity-field-content">
+                            <span class="mobile-entity-empty-text">{{ row.reason || '-' }}</span>
+                          </div>
+                        </div>
+                        <div class="mobile-entity-field">
+                          <span class="mobile-entity-field-label">链接</span>
+                          <div class="mobile-entity-field-content">
+                            <a v-if="row.webUrl" class="management-list-link" :href="row.webUrl" target="_blank" rel="noreferrer">打开</a>
+                            <span v-else class="mobile-entity-empty-text">-</span>
+                          </div>
+                        </div>
+                      </div>
+                      <footer class="mobile-entity-actions">
+                        <button class="mobile-entity-action-button info" type="button" @click="openLogDetail(row)">
+                          <el-icon><DocumentCopy /></el-icon>
+                          <span>查看详情</span>
+                        </button>
+                      </footer>
+                    </article>
+                  </div>
+                </div>
+                <div v-else class="mobile-entity-empty-state">
+                  <el-empty description="暂无自动合并日志" />
+                </div>
+              </template>
             </div>
 
             <div class="management-list-footer">
@@ -512,8 +745,11 @@
 </div>
 </div>
 
-  <el-dialog v-model="bindingDialogVisible" :title="bindingIsEditing ? '编辑 GitLab 绑定' : '新增 GitLab 绑定'" width="640px" class="platform-form-dialog" align-center>
-    <el-form ref="bindingFormRef" :model="bindingForm" :rules="bindingRules" label-width="120px" class="platform-form-layout">
+  <el-dialog v-model="bindingDialogVisible" :title="bindingDialogTitle" width="640px" class="platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader :title="bindingDialogTitle" :subtitle="bindingDialogSubtitle" :icon="FolderOpened" />
+    </template>
+    <el-form ref="bindingFormRef" :model="bindingForm" :rules="bindingRules" label-position="top" class="platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">GitLab 绑定</div>
@@ -532,13 +768,18 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="bindingDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="bindingSubmitting" @click="handleBindingSubmit">保存</el-button>
+      <div class="platform-dialog-footer">
+        <el-button @click="bindingDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="bindingSubmitting" @click="handleBindingSubmit">保存</el-button>
+      </div>
     </template>
   </el-dialog>
 
   <el-dialog v-model="tagDialogVisible" title="创建 GitLab Tag" width="680px" class="platform-form-dialog" align-center>
-    <el-form ref="tagFormRef" :model="tagForm" :rules="tagRules" label-width="120px" class="platform-form-layout">
+    <template #header>
+      <PlatformDialogHeader title="创建 GitLab Tag" :subtitle="tagDialogSubtitle" :icon="DocumentCopy" />
+    </template>
+    <el-form ref="tagFormRef" :model="tagForm" :rules="tagRules" label-position="top" class="platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">Tag 信息</div>
@@ -576,8 +817,10 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="tagDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="tagSubmitting" @click="handleTagSubmit">创建</el-button>
+      <div class="platform-dialog-footer">
+        <el-button @click="tagDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="tagSubmitting" @click="handleTagSubmit">创建</el-button>
+      </div>
     </template>
   </el-dialog>
 
@@ -600,7 +843,10 @@
   </el-dialog>
 
   <el-dialog v-model="autoMergeDialogVisible" :title="autoMergeDialogTitle" width="760px" class="platform-form-dialog" align-center>
-    <el-form ref="autoMergeFormRef" class="auto-merge-form platform-form-layout" :model="autoMergeForm" :rules="autoMergeRules" :disabled="autoMergeReadonlyMode" label-width="140px">
+    <template #header>
+      <PlatformDialogHeader :title="autoMergeDialogTitle" :subtitle="autoMergeDialogSubtitle" :icon="Connection" />
+    </template>
+    <el-form ref="autoMergeFormRef" class="auto-merge-form platform-form-layout" :model="autoMergeForm" :rules="autoMergeRules" :disabled="autoMergeReadonlyMode" label-position="top">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">基础配置</div>
@@ -711,8 +957,10 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="autoMergeDialogVisible = false">{{ autoMergeReadonlyMode ? '关闭' : '取消' }}</el-button>
-      <el-button v-if="!autoMergeReadonlyMode" type="primary" :loading="autoMergeSubmitting" @click="handleAutoMergeSubmit">保存</el-button>
+      <div class="platform-dialog-footer">
+        <el-button @click="autoMergeDialogVisible = false">{{ autoMergeReadonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!autoMergeReadonlyMode" type="primary" :loading="autoMergeSubmitting" @click="handleAutoMergeSubmit">保存</el-button>
+      </div>
     </template>
   </el-dialog>
 
@@ -774,6 +1022,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Delete, DocumentCopy, EditPen, Filter, FolderOpened, Plus, RefreshRight, Search, Tickets, VideoPlay } from '@element-plus/icons-vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { listAgentOptions, listProjectOptions } from '@/api/platform'
 import {
   createGitlabAutoMergeConfig,
@@ -806,6 +1055,7 @@ import type {
   ProjectItem
 } from '@/types/platform'
 import { renderMarkdownToHtml } from '@/utils/markdown'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 const DEFAULT_GITLAB_API_URL = 'http://192.168.110.138:30080/api/v4'
 
@@ -815,6 +1065,7 @@ interface TagForm { tagName: string; branchName: string; message: string }
 interface AutoMergeForm { name: string; executionMode: 'PROJECT_BOUND' | 'STANDALONE'; description: string; bindingId: number | null; apiBaseUrl: string; gitlabProjectRef: string; apiToken: string; sourceBranch: string; targetBranch: string; titleKeyword: string; schedulerEnabled: boolean; schedulerCron: string; enabled: boolean; autoMerge: boolean; squashOnMerge: boolean; removeSourceBranch: boolean; triggerPipelineAfterMerge: boolean; requirePipelineSuccess: boolean; reviewAgentId: number | null; aiReviewEnabled: boolean; aiReviewPrompt: string }
 
 const activeTab = ref('bindings')
+const { isMobileViewport } = useMobileViewport()
 const projectOptions = ref<ProjectItem[]>([])
 const bindingOptions = ref<ProjectGitlabBindingItem[]>([])
 const reviewAgentOptions = ref<AgentItem[]>([])
@@ -870,6 +1121,13 @@ const runResult = ref<GitlabAutoMergeRunResult | null>(null)
 const bindingRules: FormRules<BindingForm> = { projectId: [{ required: true, message: '请选择平台项目', trigger: 'change' }], apiBaseUrl: [{ required: true, message: '请输入 GitLab API 地址', trigger: 'blur' }], gitlabProjectRef: [{ required: true, message: '请输入 GitLab 项目标识', trigger: 'blur' }] }
 const tagRules: FormRules<TagForm> = { tagName: [{ required: true, message: '请输入 Tag 名称', trigger: 'blur' }], branchName: [{ required: true, message: '请选择来源分支', trigger: 'change' }] }
 const autoMergeRules: FormRules<AutoMergeForm> = { name: [{ required: true, message: '请输入策略名称', trigger: 'blur' }], executionMode: [{ required: true, message: '请选择执行模式', trigger: 'change' }] }
+const bindingDialogTitle = computed(() => bindingIsEditing.value ? '编辑 GitLab 绑定' : '新增 GitLab 绑定')
+const bindingDialogSubtitle = computed(() =>
+  bindingIsEditing.value
+    ? '调整平台项目与 GitLab 仓库的映射关系。'
+    : '配置平台项目与 GitLab 仓库的基础映射信息。'
+)
+const tagDialogSubtitle = computed(() => '基于当前仓库分支创建新的 GitLab Tag。')
 
 watch(() => autoMergeForm.executionMode, (mode) => {
   if (mode === 'PROJECT_BOUND') {
@@ -924,6 +1182,15 @@ const autoMergeDialogTitle = computed(() => {
     return '查看自动合并策略'
   }
   return autoMergeIsEditing.value ? '编辑自动合并策略' : '新增自动合并策略'
+})
+const autoMergeDialogSubtitle = computed(() => {
+  if (autoMergeReadonlyMode.value) {
+    return '查看自动合并策略范围、调度和 Agent 配置。'
+  }
+  if (autoMergeIsEditing.value) {
+    return '调整策略范围、调度规则和 AI 审核行为。'
+  }
+  return '配置自动合并策略、调度规则和 Agent 能力。'
 })
 
 const resetBindingForm = () => { currentBindingId.value = null; bindingForm.projectId = projectOptions.value[0]?.id ?? null; bindingForm.apiBaseUrl = DEFAULT_GITLAB_API_URL; bindingForm.gitlabProjectRef = ''; bindingForm.defaultTargetBranch = ''; bindingForm.apiToken = ''; bindingForm.enabled = true; bindingFormRef.value?.clearValidate() }

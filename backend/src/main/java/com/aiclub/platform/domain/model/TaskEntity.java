@@ -109,6 +109,12 @@ public class TaskEntity {
     @Column(name = "plan_end_date")
     private LocalDate planEndDate;
 
+    /**
+     * 当前逾期周期首次发送提醒的时间，用于避免同一轮逾期重复推送。
+     */
+    @Column(name = "overdue_notified_at")
+    private LocalDateTime overdueNotifiedAt;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "project_id", nullable = false)
     private ProjectEntity project;
@@ -296,6 +302,14 @@ public class TaskEntity {
 
     public void setPlanEndDate(LocalDate planEndDate) {
         this.planEndDate = planEndDate;
+    }
+
+    public LocalDateTime getOverdueNotifiedAt() {
+        return overdueNotifiedAt;
+    }
+
+    public void setOverdueNotifiedAt(LocalDateTime overdueNotifiedAt) {
+        this.overdueNotifiedAt = overdueNotifiedAt;
     }
 
     public ProjectEntity getProject() {

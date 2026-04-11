@@ -36,6 +36,7 @@ import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.security.AuthContextHolder;
 import com.aiclub.platform.util.RequirementDocumentUtils;
 import com.aiclub.platform.util.RichTextUtils;
+import com.aiclub.platform.util.TaskStatusUtils;
 import jakarta.persistence.criteria.From;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
@@ -83,7 +84,7 @@ public class PlatformStoreService {
     private final TaskCommentRepository taskCommentRepository;
     private final UserRepository userRepository;
     private final TokenCipherService tokenCipherService;
-    private final NotificationService notificationService;
+    private final TaskNotificationService taskNotificationService;
     private final KnowledgeGraphService knowledgeGraphService;
     private final ProjectDataPermissionService projectDataPermissionService;
     private final SecureRandom workItemCodeRandom = new SecureRandom();
@@ -97,7 +98,7 @@ public class PlatformStoreService {
                                 TaskCommentRepository taskCommentRepository,
                                 UserRepository userRepository,
                                 TokenCipherService tokenCipherService,
-                                NotificationService notificationService,
+                                TaskNotificationService taskNotificationService,
                                 KnowledgeGraphService knowledgeGraphService,
                                 ProjectDataPermissionService projectDataPermissionService) {
         this.projectRepository = projectRepository;
@@ -109,7 +110,7 @@ public class PlatformStoreService {
         this.taskCommentRepository = taskCommentRepository;
         this.userRepository = userRepository;
         this.tokenCipherService = tokenCipherService;
-        this.notificationService = notificationService;
+        this.taskNotificationService = taskNotificationService;
         this.knowledgeGraphService = knowledgeGraphService;
         this.projectDataPermissionService = projectDataPermissionService;
     }
@@ -562,8 +563,9 @@ public class PlatformStoreService {
         entity.setWorkHours(normalizeWorkHours(workItemType, request.workHours()));
         entity.setPlanStartDate(taskPlanDateRange.planStartDate());
         entity.setPlanEndDate(taskPlanDateRange.planEndDate());
+        syncOverdueNotificationState(entity);
         TaskEntity saved = taskRepository.save(entity);
-        notifyTaskCreated(saved, assigneeUser, collaborators);
+        taskNotificationService.notifyTaskCreated(saved, assigneeUser, collaborators);
         TaskSummary summary = toTaskSummary(saved);
         knowledgeGraphService.rebuildProjectGraph(project.getId());
         return summary;
@@ -587,7 +589,7 @@ public class PlatformStoreService {
         TaskCommentEntity saved = taskCommentRepository.save(entity);
         task.setUpdatedAt(LocalDateTime.now());
         taskRepository.save(task);
-        notifyTaskCommentCreated(task, author, saved);
+        taskNotificationService.notifyTaskCommentCreated(task, author, saved);
         return toTaskCommentSummary(saved);
     }
 
@@ -633,9 +635,10 @@ public class PlatformStoreService {
         entity.setWorkHours(normalizeWorkHours(workItemType, request.workHours()));
         entity.setPlanStartDate(taskPlanDateRange.planStartDate());
         entity.setPlanEndDate(taskPlanDateRange.planEndDate());
+        syncOverdueNotificationState(entity);
 
         TaskEntity saved = taskRepository.save(entity);
-        notifyTaskUpdated(saved, previousAssigneeUserId, previousStatus, previousCollaboratorUserIds);
+        taskNotificationService.notifyTaskUpdated(saved, previousAssigneeUserId, previousStatus, previousCollaboratorUserIds);
         TaskSummary summary = toTaskSummary(saved);
         knowledgeGraphService.rebuildProjectGraph(project.getId());
         return summary;
@@ -1597,120 +1600,7 @@ public class PlatformStoreService {
     }
 
     private boolean isCompletedStatus(String status) {
-        return "已完成".equals(defaultString(status).trim()) || "完成".equals(defaultString(status).trim());
-    }
-
-    private void notifyTaskCreated(TaskEntity task, UserEntity assigneeUser, Set<UserEntity> collaborators) {
-        String taskName = task.getName();
-        String projectName = task.getProject().getName();
-        Long actorUserId = currentActorUserId();
-        if (assigneeUser != null && !assigneeUser.getId().equals(actorUserId)) {
-            notificationService.sendToUser(
-                    assigneeUser.getId(),
-                    NotificationService.TYPE_TASK,
-                    NotificationService.LEVEL_INFO,
-                    "你被分配了任务《" + taskName + "》",
-                    "项目《" + projectName + "》有一个新任务已分配给你，请及时处理。",
-                    "/tasks",
-                    "TASK",
-                    task.getId()
-            );
-        }
-        LinkedHashSet<Long> collaboratorIds = collaborators.stream().map(UserEntity::getId).collect(LinkedHashSet::new, LinkedHashSet::add, LinkedHashSet::addAll);
-        collaboratorIds.remove(actorUserId);
-        if (assigneeUser != null) {
-            collaboratorIds.remove(assigneeUser.getId());
-        }
-        notificationService.sendToUsers(
-                collaboratorIds,
-                NotificationService.TYPE_TASK,
-                NotificationService.LEVEL_INFO,
-                "你被加入任务《" + taskName + "》协作",
-                "项目《" + projectName + "》将你设为协作人，请关注任务进度。",
-                "/tasks",
-                "TASK",
-                task.getId()
-        );
-    }
-
-    private void notifyTaskUpdated(TaskEntity task, Long previousAssigneeUserId, String previousStatus, Set<Long> previousCollaboratorUserIds) {
-        Long actorUserId = currentActorUserId();
-        Long currentAssigneeUserId = task.getAssigneeUser() == null ? null : task.getAssigneeUser().getId();
-        String taskName = task.getName();
-        String projectName = task.getProject().getName();
-
-        if (currentAssigneeUserId != null && !currentAssigneeUserId.equals(previousAssigneeUserId) && !currentAssigneeUserId.equals(actorUserId)) {
-            notificationService.sendToUser(
-                    currentAssigneeUserId,
-                    NotificationService.TYPE_TASK,
-                    NotificationService.LEVEL_INFO,
-                    "任务《" + taskName + "》已转交给你",
-                    "项目《" + projectName + "》更新了任务负责人，请及时查看。",
-                    "/tasks",
-                    "TASK",
-                    task.getId()
-            );
-        }
-
-        Set<Long> currentCollaboratorIds = task.getCollaborators().stream().map(UserEntity::getId).collect(LinkedHashSet::new, LinkedHashSet::add, LinkedHashSet::addAll);
-        LinkedHashSet<Long> newCollaboratorIds = new LinkedHashSet<>(currentCollaboratorIds);
-        newCollaboratorIds.removeAll(previousCollaboratorUserIds);
-        newCollaboratorIds.remove(actorUserId);
-        if (currentAssigneeUserId != null) {
-            newCollaboratorIds.remove(currentAssigneeUserId);
-        }
-        notificationService.sendToUsers(
-                newCollaboratorIds,
-                NotificationService.TYPE_TASK,
-                NotificationService.LEVEL_INFO,
-                "你被加入任务《" + taskName + "》协作",
-                "项目《" + projectName + "》将你设为协作人，请关注任务进度。",
-                "/tasks",
-                "TASK",
-                task.getId()
-        );
-
-        if (!defaultString(previousStatus).equals(defaultString(task.getStatus()))) {
-            LinkedHashSet<Long> recipients = new LinkedHashSet<>(currentCollaboratorIds);
-            if (currentAssigneeUserId != null) {
-                recipients.add(currentAssigneeUserId);
-            }
-            recipients.remove(actorUserId);
-            notificationService.sendToUsers(
-                    recipients,
-                    NotificationService.TYPE_TASK,
-                    isCompletedStatus(task.getStatus()) ? NotificationService.LEVEL_SUCCESS : NotificationService.LEVEL_INFO,
-                    "任务《" + taskName + "》状态已更新",
-                    "项目《" + projectName + "》将任务状态更新为「" + task.getStatus() + "」。",
-                    "/tasks",
-                    "TASK",
-                    task.getId()
-            );
-        }
-    }
-
-    private void notifyTaskCommentCreated(TaskEntity task, UserEntity author, TaskCommentEntity comment) {
-        LinkedHashSet<Long> recipients = task.getCollaborators().stream()
-                .map(UserEntity::getId)
-                .collect(LinkedHashSet::new, LinkedHashSet::add, LinkedHashSet::addAll);
-        if (task.getAssigneeUser() != null) {
-            recipients.add(task.getAssigneeUser().getId());
-        }
-        recipients.remove(author.getId());
-        notificationService.sendToUsers(
-                recipients,
-                NotificationService.TYPE_TASK,
-                NotificationService.LEVEL_INFO,
-                displayName(author) + "评论了工作项《" + task.getName() + "》",
-                abbreviate(RichTextUtils.extractPlainText(comment.getContent()), 200),
-                "/projects/" + task.getProject().getId() + "/iterations",
-                "TASK_COMMENT",
-                task.getId()
-        );
-    }
-
-    private Long currentActorUserId() {
-        return AuthContextHolder.get().map(authContext -> authContext.userId()).orElse(null);
+        return TaskStatusUtils.isCompletedStatus(status);
     }
 
     private String defaultString(String value) {
@@ -1728,6 +1618,15 @@ public class PlatformStoreService {
             return normalized;
         }
         return normalized.substring(0, Math.max(maxLength - 3, 0)).trim() + "...";
+    }
+
+    /**
+     * 当工作项恢复为未逾期状态时，清空逾期通知标记，允许后续再次进入新的逾期周期时重新提醒。
+     */
+    private void syncOverdueNotificationState(TaskEntity task) {
+        if (!TaskStatusUtils.isOverdue(task.getPlanEndDate(), task.getStatus(), LocalDate.now())) {
+            task.setOverdueNotifiedAt(null);
+        }
     }
 
     /**

@@ -50,6 +50,7 @@
 
     <section class="management-list-shell">
       <div class="management-list-table-scroll mobile-card-scroll" v-loading="loading">
+        <template v-if="!isMobileViewport">
         <table class="management-list-table role-list-table mobile-card-table">
           <thead>
             <tr>
@@ -112,6 +113,78 @@
             </tr>
           </tbody>
         </table>
+        </template>
+        <template v-else>
+          <div v-if="roleList.length" class="mobile-entity-list-shell">
+            <div class="mobile-entity-list">
+              <article v-for="row in roleList" :key="row.id" class="mobile-entity-card">
+                <header class="mobile-entity-card-header">
+                  <button class="mobile-entity-header-trigger" type="button" @click="openDetailDialog(row)">
+                    <span class="mobile-entity-icon"><el-icon><UserFilled /></el-icon></span>
+                    <span class="mobile-entity-copy">
+                      <span class="mobile-entity-title">{{ row.name }}</span>
+                      <span class="mobile-entity-description">{{ row.description || '暂无描述' }}</span>
+                    </span>
+                  </button>
+                </header>
+                <div class="mobile-entity-fields">
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">编码</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ row.code }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">状态</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="row.enabled ? 'success' : 'danger'">{{ row.enabled ? '启用' : '禁用' }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field mobile-entity-field-full">
+                    <span class="mobile-entity-field-label">权限</span>
+                    <div class="mobile-entity-field-content">
+                      <div v-if="row.permissionNames.length" class="management-list-stack">
+                        <span v-for="item in row.permissionNames.slice(0, 3)" :key="item" class="management-list-chip">{{ item }}</span>
+                        <span v-if="row.permissionNames.length > 3" class="management-list-chip muted">+{{ row.permissionNames.length - 3 }}</span>
+                      </div>
+                      <span v-else class="mobile-entity-empty-text">-</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field mobile-entity-field-full">
+                    <span class="mobile-entity-field-label">数据</span>
+                    <div class="mobile-entity-field-content">
+                      <div class="management-list-stack">
+                        <span class="management-list-chip">{{ buildDataScopeLabel('项目可见', row.projectVisibilityScope) }}</span>
+                        <span class="management-list-chip">{{ buildDataScopeLabel('项目维护', row.projectManageScope) }}</span>
+                        <span class="management-list-chip">{{ buildDataScopeLabel('迭代删除', row.iterationDeleteScope) }}</span>
+                        <span class="management-list-chip">{{ buildDataScopeLabel('工作项删除', row.taskDeleteScope) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">内置</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill neutral">{{ row.builtIn ? '是' : '否' }}</span>
+                    </div>
+                  </div>
+                </div>
+                <footer v-if="canManage" class="mobile-entity-actions">
+                  <button class="mobile-entity-action-button" type="button" @click="openEditDialog(row)">
+                    <el-icon><EditPen /></el-icon>
+                    <span>编辑</span>
+                  </button>
+                  <button class="mobile-entity-action-button danger" type="button" :disabled="row.builtIn" @click="handleDelete(row.id)">
+                    <el-icon><Delete /></el-icon>
+                    <span>删除</span>
+                  </button>
+                </footer>
+              </article>
+            </div>
+          </div>
+          <div v-else class="mobile-entity-empty-state">
+            <el-empty description="当前筛选条件下暂无角色" />
+          </div>
+        </template>
       </div>
 
         <div class="management-list-footer">
@@ -142,7 +215,10 @@
     </section>
 
   <el-dialog v-model="dialogVisible" :title="dialogTitle" width="760px" class="platform-form-dialog" align-center>
-    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-width="100px" class="platform-form-layout">
+    <template #header>
+      <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="UserFilled" />
+    </template>
+    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-position="top" class="platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">角色信息</div>
@@ -200,8 +276,10 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
-      <el-button v-if="!readonlyMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      <div class="platform-dialog-footer">
+        <el-button @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!readonlyMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      </div>
     </template>
   </el-dialog>
   </div>
@@ -212,9 +290,11 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Plus, RefreshRight, Search, UserFilled } from '@element-plus/icons-vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { createRole, deleteRole, listPermissionOptions, pageRoles, updateRole } from '@/api/access'
 import { useAuthStore } from '@/stores/auth'
 import type { DataPermissionScopeValue, PermissionItem, RoleItem } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface RoleForm {
   name: string
@@ -235,6 +315,7 @@ interface DataPermissionScopeOption {
 
 const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('system:role:manage'))
+const { isMobileViewport } = useMobileViewport()
 const loading = ref(false)
 const submitting = ref(false)
 const dialogVisible = ref(false)
@@ -255,6 +336,15 @@ const dialogTitle = computed(() => {
     return '查看角色'
   }
   return isEditing.value ? '编辑角色' : '新建角色'
+})
+const dialogSubtitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看角色权限配置与数据权限范围。'
+  }
+  if (isEditing.value) {
+    return '调整角色编码、权限集合和数据权限范围。'
+  }
+  return '填写角色基础信息，并配置功能权限和数据权限。'
 })
 const dataPermissionScopeOptions: DataPermissionScopeOption[] = [
   { value: 'NONE', label: '无权限' },

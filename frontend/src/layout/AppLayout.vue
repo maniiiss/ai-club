@@ -630,10 +630,18 @@ const handleOpenNotifications = async () => {
 
 // 将后端通知业务类型统一翻译为中文，避免抽屉里直接显示英文枚举值。
 const NOTIFICATION_BIZ_TYPE_LABELS: Record<string, string> = {
-  TASK: '任务通知',
+  TASK: '工作项通知',
+  TASK_ASSIGNED: '负责人分配',
+  TASK_UNASSIGNED: '取消分配',
+  TASK_STATUS_CHANGED: '状态变更',
   TASK_COMMENT: '任务评论',
+  TASK_COLLABORATOR_ADDED: '协作通知',
+  TASK_OVERDUE: '逾期提醒',
   CHANGE_REQUEST: '变更申请',
   PIPELINE_BINDING: '流水线绑定',
+  GITLAB_MERGED: '自动合并成功',
+  GITLAB_AI_REJECTED: 'AI 审核拒绝',
+  GITLAB_BRANCH_BEHIND: '分支落后提醒',
   GITLAB_AUTO_MERGE_LOG: '合并请求',
   SYSTEM_ANNOUNCEMENT: '系统公告'
 }
@@ -671,7 +679,10 @@ const resolveNotificationContextLabel = (item: NotificationItem) => {
 const resolveNotificationContextTone = (item: NotificationItem) => {
   const bizKey = resolveNotificationBizKey(item)
   if (bizKey === 'CHANGE_REQUEST') return 'warning'
+  if (bizKey === 'TASK_UNASSIGNED' || bizKey === 'TASK_OVERDUE' || bizKey === 'GITLAB_BRANCH_BEHIND') return 'warning'
   if (bizKey === 'TASK_COMMENT') return 'info'
+  if (bizKey === 'TASK_ASSIGNED' || bizKey === 'TASK_STATUS_CHANGED' || bizKey === 'TASK_COLLABORATOR_ADDED') return 'secondary'
+  if (bizKey === 'GITLAB_MERGED' || bizKey === 'GITLAB_AI_REJECTED' || bizKey === 'GITLAB_AUTO_MERGE_LOG') return 'tertiary'
   if (bizKey === 'SYSTEM_ANNOUNCEMENT') return 'neutral'
   if (item.type === 'TASK') return 'secondary'
   if (item.type === 'GITLAB') return 'tertiary'
@@ -1826,6 +1837,8 @@ watch(
 
   .layout-main.iteration-main {
     padding: 0 !important;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .header-search-shell {

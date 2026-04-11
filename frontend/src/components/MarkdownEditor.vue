@@ -7,6 +7,7 @@
       preview-theme="github"
       code-theme="atom"
       :placeholder="placeholder"
+      :preview="preview"
       :style="{ height: normalizedHeight }"
       :toolbars="toolbars"
       :footers="[]"
@@ -26,11 +27,13 @@ const props = withDefaults(
     modelValue: string
     placeholder?: string
     height?: string | number
+    preview?: boolean
     uploadImage?: (file: File) => Promise<string>
   }>(),
   {
     placeholder: '请填写内容，支持 Markdown 语法',
     height: 360,
+    preview: true,
     uploadImage: undefined
   }
 )
@@ -88,11 +91,25 @@ const toolbars: ToolbarNames[] = [
 }
 
 .markdown-editor-wrapper :deep(.md-editor) {
+  display: flex;
+  flex-direction: column;
   border-radius: 22px;
   overflow: hidden;
   border: 0;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: inset 0 0 0 1px rgba(137, 115, 98, 0.14);
+}
+
+.markdown-editor-wrapper :deep(.md-editor-toolbar-wrapper) {
+  order: 0;
+  flex: 0 0 auto;
+}
+
+.markdown-editor-wrapper :deep(.md-editor-content) {
+  order: 1;
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
 }
 
 .markdown-editor-wrapper :deep(.md-editor-toolbar) {
