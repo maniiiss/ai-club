@@ -397,11 +397,15 @@ public class AccessManagementService {
         );
     }
 
+    /**
+     * 将用户实体映射为前端下拉和列表共用的轻量选项，同时补充真实头像地址。
+     */
     private UserOptionSummary toUserOptionSummary(UserEntity entity) {
         return new UserOptionSummary(
                 entity.getId(),
                 entity.getUsername(),
                 entity.getNickname(),
+                entity.getAvatarUrl(),
                 entity.isEnabled()
         );
     }

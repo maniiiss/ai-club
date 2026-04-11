@@ -20,7 +20,6 @@
         >
           <div class="workspace-iteration-head">
             <span class="workspace-iteration-title">未规划工作项</span>
-            <span class="workspace-iteration-icon">≡</span>
           </div>
           <div class="workspace-iteration-date">数量：{{ board.unplannedCount }}</div>
           <div class="workspace-iteration-progress">
@@ -84,20 +83,34 @@
           </button>
         </div>
         <div class="workspace-topbar-actions">
-          <div class="header-profile-group">
-            <button class="header-notification-button" type="button" aria-label="打开消息中心" @click="handleOpenNotificationsProxy">
-              <el-icon><Bell /></el-icon>
-              <span v-if="notificationStore.unreadCount > 0" class="header-notification-dot"></span>
-            </button>
-            <span class="header-divider" aria-hidden="true"></span>
-            <div class="user-trigger">
-              <span class="user-meta">
-                <strong>{{ authStore.user?.nickname || authStore.user?.username || '当前用户' }}</strong>
-                <small>{{ authStore.user?.roleNames?.[0] || '协作成员' }}</small>
-              </span>
-              <span class="user-avatar">{{ (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase() }}</span>
+          <el-dropdown @command="handleHeaderCommand">
+            <div class="header-profile-group">
+              <button class="header-notification-button" type="button" aria-label="打开消息中心" @click.stop="handleOpenNotificationsProxy">
+                <el-icon><Bell /></el-icon>
+                <span v-if="notificationStore.unreadCount > 0" class="header-notification-dot"></span>
+              </button>
+              <span class="header-divider" aria-hidden="true"></span>
+              <button class="user-trigger" type="button">
+                <span class="user-meta">
+                  <strong>{{ authStore.user?.nickname || authStore.user?.username || '当前用户' }}</strong>
+                  <small>{{ authStore.user?.roleNames?.[0] || '协作成员' }}</small>
+                </span>
+                <span class="user-avatar">
+                  <img v-if="userAvatarUrl" :src="userAvatarUrl" alt="当前用户头像" class="user-avatar-image" />
+                  <span v-else>{{ userInitial }}</span>
+                </span>
+              </button>
             </div>
-          </div>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="profile">个人中心</el-dropdown-item>
+                <el-dropdown-item command="roles" disabled>
+                  {{ authStore.user?.roleNames?.join(' / ') || '暂无角色' }}
+                </el-dropdown-item>
+                <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </header>
 
@@ -195,8 +208,8 @@
               <tr>
                 <th class="workspace-col-code">工作项编号</th>
                 <th class="workspace-col-main">标题</th>
-                <th class="workspace-col-status">状态</th>
-                <th class="workspace-col-hours">预估工时</th>
+                <th class="center workspace-col-status">状态</th>
+                <th class="center workspace-col-hours">预估工时</th>
                 <th class="center workspace-col-type">工作项类型</th>
                 <th class="workspace-col-plan">计划时间</th>
                 <th class="workspace-col-owner">负责人</th>
@@ -221,40 +234,69 @@
                 </td>
                 <td class="workspace-col-main" data-label="标题">
                   <div class="workspace-primary-cell">
-                    <div class="workspace-primary-icon">
-                      <el-icon><Tickets /></el-icon>
-                    </div>
                     <div class="workspace-primary-copy">
                       <button class="workspace-title-button" type="button" @click="openWorkItemDetailFromRow(row)">{{ row.name }}</button>
                     </div>
                   </div>
                 </td>
-                <td class="workspace-col-status" data-label="状态">
+                <td class="center workspace-col-status" data-label="状态">
                   <CompactSelectMenu
-                    v-if="canManageWorkItem && row.workItemType !== '需求'"
+                    v-if="isInlineEditorActive(row.id, 'status')"
                     :model-value="row.status || null"
                     :options="taskStatusSelectOptions"
                     class="status-select"
+                    variant="inline-pill"
+                    :popover-width="132"
+                    :open-on-mount="true"
                     :disabled="statusUpdatingId === row.id"
                     @change="handleQuickStatusChange(row, String($event))"
+                    @visible-change="handleInlineSelectVisibleChange(row.id, 'status', $event)"
                   />
+                  <button
+                    v-else-if="canEditInlineSelectField(row)"
+                    class="workspace-editable-display is-chip"
+                    type="button"
+                    :disabled="statusUpdatingId === row.id"
+                    @click="openInlineEditor(row, 'status')"
+                  >
+                    <span class="workspace-status-pill" :class="workItemTone(row.status)">{{ formatTaskStatusLabel(row) }}</span>
+                  </button>
                   <span v-else class="workspace-status-pill" :class="workItemTone(row.status)">{{ formatTaskStatusLabel(row) }}</span>
                 </td>
-                <td class="workspace-col-hours" data-label="预估工时">
-                  <el-tooltip v-if="canManageWorkItem && row.workItemType === '任务'" :content="getRowWorkHoursLockedReason(row)" :disabled="!getRowWorkHoursLockedReason(row)">
+                <td class="center workspace-col-hours" data-label="预估工时">
+                  <div
+                    v-if="isInlineEditorActive(row.id, 'hours')"
+                    class="workspace-inline-number-shell"
+                    @focusout="handleInlineHoursFocusOut(row, $event)"
+                  >
                     <el-input-number
-                      :model-value="row.workHours ?? undefined"
+                      v-model="inlineHoursDraft"
                       :min="0"
                       :max="15"
                       :step="0.5"
                       :precision="1"
-                      controls-position="right"
-                      class="work-hours-input"
-                      :disabled="statusUpdatingId === row.id || Boolean(getRowWorkHoursLockedReason(row))"
-                      @change="handleQuickWorkHoursChange(row, $event)"
+                      :controls="false"
+                      class="work-hours-input workspace-inline-number"
+                      :disabled="statusUpdatingId === row.id"
+                      @keyup.enter="handleInlineHoursSubmit(row)"
+                      @keydown.esc.prevent="handleInlineHoursCancel(row)"
                     />
+                  </div>
+                  <el-tooltip
+                    v-else-if="canManageWorkItem && row.workItemType === '任务'"
+                    :content="getRowWorkHoursLockedReason(row)"
+                    :disabled="!getRowWorkHoursLockedReason(row)"
+                  >
+                    <button
+                      class="workspace-editable-display is-chip"
+                      type="button"
+                      :disabled="statusUpdatingId === row.id"
+                      @click="openInlineEditor(row, 'hours')"
+                    >
+                      <span class="workspace-hours-pill" :class="{ empty: row.workHours == null }">{{ formatInlineWorkHours(row.workHours) }}</span>
+                    </button>
                   </el-tooltip>
-                  <span v-else class="workspace-empty-text">{{ row.workHours == null ? '-' : `${row.workHours}h` }}</span>
+                  <span v-else class="workspace-hours-pill" :class="{ empty: row.workHours == null }">{{ formatInlineWorkHours(row.workHours) }}</span>
                 </td>
                 <td class="center workspace-col-type" data-label="工作项类型">
                   <span class="workspace-type-pill" :class="workItemTypeTone(row.workItemType)">{{ row.workItemType }}</span>
@@ -267,31 +309,52 @@
                 </td>
                 <td class="workspace-col-owner" data-label="负责人">
                   <CompactSelectMenu
-                    v-if="canManageWorkItem && row.workItemType !== '需求'"
+                    v-if="isInlineEditorActive(row.id, 'assignee')"
                     :model-value="row.assigneeUserId ?? -1"
                     :options="assigneeSelectOptions"
                     class="assignee-select"
+                    variant="inline-pill"
+                    :open-on-mount="true"
                     :disabled="statusUpdatingId === row.id"
                     @change="handleQuickAssigneeChange(row, Number($event))"
+                    @visible-change="handleInlineSelectVisibleChange(row.id, 'assignee', $event)"
                   />
-                  <div v-else class="workspace-owner-line">
-                    <span class="workspace-owner-avatar">{{ ownerInitial(row.assignee) }}</span>
-                    <span class="workspace-owner-name">{{ row.assignee || '未分配' }}</span>
-                  </div>
+                  <button
+                    v-else-if="canEditInlineSelectField(row)"
+                    class="workspace-editable-display is-owner"
+                    type="button"
+                    :disabled="statusUpdatingId === row.id"
+                    @click="openInlineEditor(row, 'assignee')"
+                  >
+                    <ListUserDisplay :user="buildWorkItemAssigneeDisplayItem(row)" empty-text="未分配" size="md" />
+                  </button>
+                  <ListUserDisplay v-else :user="buildWorkItemAssigneeDisplayItem(row)" empty-text="未分配" size="md" />
                 </td>
                 <td class="center workspace-col-priority" data-label="优先级">
                   <CompactSelectMenu
-                    v-if="canManageWorkItem && row.workItemType !== '需求'"
+                    v-if="isInlineEditorActive(row.id, 'priority')"
                     :model-value="row.priority || null"
                     :options="prioritySelectOptions"
                     class="priority-select"
+                    variant="inline-pill"
+                    :open-on-mount="true"
                     :disabled="statusUpdatingId === row.id"
                     @change="handleQuickPriorityChange(row, String($event))"
+                    @visible-change="handleInlineSelectVisibleChange(row.id, 'priority', $event)"
                   />
+                  <button
+                    v-else-if="canEditInlineSelectField(row)"
+                    class="workspace-editable-display is-chip"
+                    type="button"
+                    :disabled="statusUpdatingId === row.id"
+                    @click="openInlineEditor(row, 'priority')"
+                  >
+                    <span class="workspace-priority-pill" :class="workspacePriorityTone(row.priority)">{{ row.priority || '-' }}</span>
+                  </button>
                   <span v-else class="workspace-priority-pill" :class="workspacePriorityTone(row.priority)">{{ row.priority || '-' }}</span>
                 </td>
                 <td class="workspace-col-creator" data-label="创建人">
-                  <span class="workspace-creator-name">{{ row.creatorName || '-' }}</span>
+                  <ListUserDisplay :user="buildWorkItemCreatorDisplayItem(row)" empty-text="-" size="md" />
                 </td>
                 <td class="right workspace-col-actions" data-label="操作">
                   <div class="workspace-row-actions">
@@ -679,13 +742,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Bell, ChatDotRound, Cpu, Delete, EditPen, Filter, FolderOpened, Finished, Management, Plus, RefreshRight, Search, Tickets } from '@element-plus/icons-vue'
+import { ArrowLeft, Bell, ChatDotRound, Cpu, Delete, EditPen, Filter, FolderOpened, Finished, Management, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
 import { listUserOptions } from '@/api/access'
 import CompactSelectMenu, { type CompactSelectOption } from '@/components/CompactSelectMenu.vue'
+import ListUserDisplay from '@/components/ListUserDisplay.vue'
+import type { ListUserDisplayItem } from '@/components/listUserDisplay'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import ProjectBurndownChart from '@/components/ProjectBurndownChart.vue'
 import RequirementAiDialog from '@/components/RequirementAiDialog.vue'
@@ -722,6 +787,7 @@ import {
   normalizeRequirementDocument,
   validateRequirementTemplate
 } from '@/utils/requirementTemplate'
+import { resolveAssetUrl } from '@/utils/asset'
 import { renderMarkdownToHtml } from '@/utils/markdown'
 import type {
   IterationBoardItem,
@@ -786,6 +852,8 @@ const canManageIteration = computed(() => authStore.hasPermission('project:manag
 const canManageWorkItem = computed(() => authStore.hasPermission('task:manage'))
 const canRequirementDevPass = computed(() => authStore.hasPermission('task:requirement:dev'))
 const canRequirementTestPass = computed(() => authStore.hasPermission('task:requirement:test'))
+const userInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
+const userAvatarUrl = computed(() => resolveAssetUrl(authStore.user?.avatarUrl))
 
 const board = reactive<IterationBoardItem>({
   project: {
@@ -831,6 +899,10 @@ const projectParticipantUsers = computed(() =>
 )
 
 const userOptions = ref<UserOptionItem[]>([])
+/**
+ * 工作项列表展示按用户ID取头像频率较高，这里统一建索引供负责人/创建人复用。
+ */
+const userOptionMap = computed(() => new Map(userOptions.value.map((item) => [item.id, item])))
 const requirementOptions = ref<TaskItem[]>([])
 const workItems = ref<TaskItem[]>([])
 const burndown = ref<ProjectBurndownItem | null>(null)
@@ -842,6 +914,9 @@ const keyword = ref('')
 const activeTypeTab = ref<'全部' | '需求' | '任务' | '缺陷'>('全部')
 const workItemPagination = reactive({ page: 1, size: 10, total: 0 })
 const workItemTotalPages = computed(() => Math.max(1, Math.ceil(workItemPagination.total / workItemPagination.size) || 1))
+type InlineEditableField = 'status' | 'hours' | 'assignee' | 'priority'
+const activeInlineEditor = ref<{ rowId: number; field: InlineEditableField } | null>(null)
+const inlineHoursDraft = ref<number | null>(null)
 const workItemFilters = reactive<{ status: string; priority: string; assigneeUserId?: number }>({
   status: '',
   priority: '',
@@ -1038,6 +1113,20 @@ const handleOpenNotificationsProxy = async () => {
   await notificationStore.openDrawer()
 }
 
+const handleHeaderCommand = async (command: string) => {
+  if (command === 'profile') {
+    await router.push('/profile')
+    return
+  }
+  if (command !== 'logout') {
+    return
+  }
+  notificationStore.disconnect()
+  await authStore.logout()
+  ElMessage.success('已退出登录')
+  await router.replace('/login')
+}
+
 const setTypeTab = async (tab: '全部' | '需求' | '任务' | '缺陷') => {
   if (activeTypeTab.value === tab) {
     return
@@ -1081,7 +1170,8 @@ const workItemTone = (status?: string | null) => {
   if (['进行中', '开发中', '处理中'].includes(status || '')) return 'running'
   if (['已完成', '完成'].includes(status || '')) return 'done'
   if (status === '已阻塞' || status === '阻塞') return 'blocked'
-  return 'backlog'
+  if (status === '待开始') return 'pending'
+  return 'draft'
 }
 
 const workspacePriorityTone = (priority?: string | null) => {
@@ -1090,7 +1180,116 @@ const workspacePriorityTone = (priority?: string | null) => {
   return 'medium'
 }
 
-const ownerInitial = (value?: string | null) => (value || 'UN').slice(0, 2).toUpperCase()
+/**
+ * 迭代工作项列表优先复用用户选项中的真实头像地址，再回退到字母头像。
+ */
+const buildWorkItemAssigneeDisplayItem = (item: TaskItem): ListUserDisplayItem | null => {
+  if (!item.assignee?.trim()) {
+    return null
+  }
+  const assigneeUser = item.assigneeUserId != null ? userOptionMap.value.get(item.assigneeUserId) || null : null
+  return {
+    id: item.assigneeUserId ?? `iteration-assignee-${item.id}`,
+    name: item.assignee.trim(),
+    avatarUrl: resolveAssetUrl(assigneeUser?.avatarUrl)
+  }
+}
+
+const buildWorkItemCreatorDisplayItem = (item: TaskItem): ListUserDisplayItem | null => {
+  if (!item.creatorName?.trim()) {
+    return null
+  }
+  const creatorUser = item.creatorUserId != null ? userOptionMap.value.get(item.creatorUserId) || null : null
+  return {
+    id: item.creatorUserId ?? `iteration-creator-${item.id}`,
+    name: item.creatorName.trim(),
+    avatarUrl: resolveAssetUrl(creatorUser?.avatarUrl)
+  }
+}
+
+/**
+ * 列表内状态、工时、负责人、优先级四个快捷编辑字段共用一套激活状态，
+ * 保证同一时间只会打开一个单元格编辑器。
+ */
+const isInlineEditorActive = (rowId: number, field: InlineEditableField) =>
+  activeInlineEditor.value?.rowId === rowId && activeInlineEditor.value?.field === field
+
+const canEditInlineSelectField = (row: TaskItem) => canManageWorkItem.value && row.workItemType !== '需求'
+const canEditInlineHoursField = (row: TaskItem) => canManageWorkItem.value && row.workItemType === '任务'
+const formatInlineWorkHours = (value?: number | null) => (value == null ? '-' : `${value}h`)
+
+/**
+ * 点击显示态字段后切换到编辑态；工时字段会初始化草稿值并自动聚焦输入框。
+ */
+const openInlineEditor = async (row: TaskItem, field: InlineEditableField) => {
+  if (field === 'hours') {
+    if (!canEditInlineHoursField(row)) {
+      return
+    }
+    const lockedReason = getRowWorkHoursLockedReason(row)
+    if (lockedReason) {
+      ElMessage.warning(lockedReason)
+      return
+    }
+    inlineHoursDraft.value = row.workHours
+  } else if (!canEditInlineSelectField(row)) {
+    return
+  }
+
+  activeInlineEditor.value = { rowId: row.id, field }
+
+  if (field === 'hours') {
+    await nextTick()
+    const input = document.querySelector('.workspace-inline-number input') as HTMLInputElement | null
+    input?.focus()
+    input?.select()
+  }
+}
+
+const closeInlineEditor = (rowId?: number, field?: InlineEditableField) => {
+  if (!activeInlineEditor.value) {
+    return
+  }
+  if (rowId != null && field != null) {
+    if (activeInlineEditor.value.rowId !== rowId || activeInlineEditor.value.field !== field) {
+      return
+    }
+  }
+  activeInlineEditor.value = null
+  inlineHoursDraft.value = null
+}
+
+const handleInlineSelectVisibleChange = (
+  rowId: number,
+  field: Extract<InlineEditableField, 'status' | 'assignee' | 'priority'>,
+  visible: boolean
+) => {
+  if (!visible) {
+    closeInlineEditor(rowId, field)
+  }
+}
+
+const handleInlineHoursSubmit = async (row: TaskItem) => {
+  if (!isInlineEditorActive(row.id, 'hours')) {
+    return
+  }
+  const draftValue = inlineHoursDraft.value
+  closeInlineEditor(row.id, 'hours')
+  await handleQuickWorkHoursChange(row, draftValue)
+}
+
+const handleInlineHoursFocusOut = async (row: TaskItem, event: FocusEvent) => {
+  const currentTarget = event.currentTarget as HTMLElement | null
+  const nextTarget = event.relatedTarget as Node | null
+  if (currentTarget && nextTarget && currentTarget.contains(nextTarget)) {
+    return
+  }
+  await handleInlineHoursSubmit(row)
+}
+
+const handleInlineHoursCancel = (row: TaskItem) => {
+  closeInlineEditor(row.id, 'hours')
+}
 
 const isCompletedStatus = (status?: string | null) => status === '已完成' || status === '完成'
 
@@ -1990,8 +2189,8 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: #f3f4f5;
-  border-right: 1px solid rgba(137, 115, 98, 0.08);
+  background: var(--app-surface-low);
+  border-right: 1px solid var(--app-border);
 }
 
 .workspace-sidebar-brand {
@@ -2015,7 +2214,7 @@ onMounted(async () => {
 
 .workspace-brand-copy h2 {
   margin: 0;
-  color: #1f2937;
+  color: var(--app-text);
   font-family: var(--app-font-heading);
   font-size: 12px;
   font-weight: 900;
@@ -2024,7 +2223,7 @@ onMounted(async () => {
 
 .workspace-brand-copy p {
   margin: 4px 0 0;
-  color: #8b97a7;
+  color: var(--app-text-muted);
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -2065,12 +2264,12 @@ onMounted(async () => {
 }
 
 .workspace-iteration-card.active {
-  background: #fff;
+  background: var(--app-surface-card);
   box-shadow: inset 4px 0 0 var(--app-primary);
 }
 
 .workspace-iteration-card:hover {
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.62);
 }
 
 .workspace-iteration-head {
@@ -2087,7 +2286,7 @@ onMounted(async () => {
 }
 
 .workspace-iteration-title {
-  color: #374151;
+  color: var(--app-text);
   font-size: 11px;
   font-weight: 800;
 }
@@ -2101,26 +2300,26 @@ onMounted(async () => {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--app-text-muted);
 }
 
 .workspace-iteration-action:hover {
-  background: rgba(255, 255, 255, 0.96);
-  color: #904d00;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--app-primary);
 }
 
 .workspace-iteration-action.danger:hover {
-  color: #ba1a1a;
+  color: var(--app-danger);
 }
 
 .workspace-iteration-icon {
-  color: #94a3b8;
+  color: var(--app-text-muted);
   font-size: 14px;
 }
 
 .workspace-iteration-date {
   margin-top: 6px;
-  color: #9aa5b1;
+  color: var(--app-text-muted);
   font-size: 9px;
   font-weight: 700;
 }
@@ -2130,7 +2329,7 @@ onMounted(async () => {
   height: 4px;
   margin-top: 8px;
   border-radius: 999px;
-  background: #e5e7eb;
+  background: var(--app-surface-high);
   overflow: hidden;
 }
 
@@ -2152,14 +2351,14 @@ onMounted(async () => {
   justify-content: center;
   gap: 6px;
   border-radius: 4px;
-  background: #e5e7eb;
-  color: #4b5563;
+  background: var(--app-surface-high);
+  color: var(--app-text-soft);
   font-size: 10px;
   font-weight: 800;
 }
 
 .workspace-sidebar-action:hover {
-  background: #dfe3e6;
+  background: var(--app-surface-muted);
 }
 
 .workspace-main {
@@ -2178,7 +2377,7 @@ onMounted(async () => {
   gap: 18px;
   min-height: 64px;
   padding: 0 24px;
-  background: #f8f9fa;
+  background: var(--app-surface-base);
   flex: 0 0 auto;
 }
 
@@ -2195,7 +2394,7 @@ onMounted(async () => {
   gap: 8px;
   padding: 0;
   background: transparent;
-  color: #374151;
+  color: var(--app-text);
   font-size: 13px;
   font-weight: 800;
   white-space: nowrap;
@@ -2220,7 +2419,7 @@ onMounted(async () => {
 .workspace-search .el-icon {
   position: absolute;
   left: 12px;
-  color: #94a3b8;
+  color: var(--app-text-muted);
   font-size: 14px;
 }
 
@@ -2228,9 +2427,9 @@ onMounted(async () => {
   width: 100%;
   border: 0;
   border-radius: 999px;
-  background: #f1f5f9;
+  background: var(--app-surface-muted);
   padding: 8px 14px 8px 34px;
-  color: #334155;
+  color: var(--app-text-soft);
   font-size: 12px;
   outline: none;
 }
@@ -2257,12 +2456,12 @@ onMounted(async () => {
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: #64748b;
+  color: var(--app-text-soft);
   position: relative;
 }
 
 .header-notification-button:hover {
-  background: rgba(226, 232, 240, 0.55);
+  background: rgba(var(--app-outline-rgb), 0.12);
   color: var(--app-primary);
 }
 
@@ -2274,13 +2473,13 @@ onMounted(async () => {
   height: 8px;
   border-radius: 999px;
   background: var(--app-primary-container);
-  box-shadow: 0 0 0 2px #fff;
+  box-shadow: 0 0 0 2px var(--app-surface-card);
 }
 
 .header-divider {
   width: 1px;
   height: 28px;
-  background: rgba(137, 115, 98, 0.12);
+  background: var(--app-border);
 }
 
 .user-trigger {
@@ -2303,6 +2502,14 @@ onMounted(async () => {
   background: linear-gradient(135deg, var(--app-primary-container) 0%, var(--app-primary) 100%);
   color: #fff;
   font-weight: 800;
+  overflow: hidden;
+}
+
+.user-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .user-meta {
@@ -2333,11 +2540,11 @@ onMounted(async () => {
   height: 34px;
   border-radius: 999px;
   background: transparent;
-  color: #64748b;
+  color: var(--app-text-soft);
 }
 
 .workspace-icon-button:hover {
-  background: rgba(226, 232, 240, 0.55);
+  background: rgba(var(--app-outline-rgb), 0.12);
   color: var(--app-primary);
 }
 
@@ -2353,13 +2560,13 @@ onMounted(async () => {
   min-height: 82px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  background: var(--app-surface-card);
+  box-shadow: var(--app-shadow-soft);
 }
 
 .workspace-stat-label {
   display: block;
-  color: #9aa5b1;
+  color: var(--app-text-muted);
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -2374,7 +2581,7 @@ onMounted(async () => {
 }
 
 .workspace-stat-value-row strong {
-  color: #111827;
+  color: var(--app-text);
   font-family: var(--app-font-heading);
   font-size: 30px;
   line-height: 1;
@@ -2391,7 +2598,7 @@ onMounted(async () => {
   height: 3px;
   margin-top: 8px;
   border-radius: 999px;
-  background: #eef2f4;
+  background: var(--app-surface-muted);
   overflow: hidden;
 }
 
@@ -2405,12 +2612,12 @@ onMounted(async () => {
 }
 
 .workspace-stat-fill.danger {
-  background: #ef4444;
+  background: var(--app-danger);
 }
 
 .workspace-stat-subtext {
   margin-top: 6px;
-  color: #94a3b8;
+  color: var(--app-text-muted);
   font-size: 9px;
   font-weight: 700;
 }
@@ -2425,7 +2632,7 @@ onMounted(async () => {
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: rgba(144, 77, 0, 0.2);
+  background: rgba(var(--app-primary-rgb), 0.2);
 }
 
 .workspace-stat-dot.active {
@@ -2461,7 +2668,7 @@ onMounted(async () => {
   flex: 0 0 auto;
   padding: 4px;
   border-radius: 8px;
-  background: rgba(225, 227, 228, 0.56);
+  background: rgba(var(--app-outline-rgb), 0.1);
 }
 
 .workspace-list-tab-button {
@@ -2470,15 +2677,15 @@ onMounted(async () => {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #7c8794;
+  color: var(--app-text-muted);
   font-size: 12px;
   font-weight: 800;
 }
 
 .workspace-list-tab-button.active {
-  background: #fff;
+  background: var(--app-surface-card);
   color: var(--app-primary);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  box-shadow: var(--app-shadow-soft);
 }
 
 .workspace-filter-panel {
@@ -2490,7 +2697,7 @@ onMounted(async () => {
 .workspace-filter-field label {
   display: block;
   margin-bottom: 6px;
-  color: #8b97a7;
+  color: var(--app-text-muted);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -2556,11 +2763,12 @@ onMounted(async () => {
 }
 
 .workspace-col-code {
-  width: 11%;
+  width: 7%;
 }
 
 .workspace-col-main {
-  width: 18%;
+  width: 28%;
+  min-width: 0;
 }
 
 .workspace-col-type {
@@ -2568,31 +2776,31 @@ onMounted(async () => {
 }
 
 .workspace-col-owner {
-  width: 12%;
+  width: 10%;
 }
 
 .workspace-col-priority {
-  width: 8%;
+  width: 7%;
 }
 
 .workspace-col-hours {
-  width: 8%;
+  width: 5%;
 }
 
 .workspace-col-status {
-  width: 11%;
+  width: 8%;
 }
 
 .workspace-col-plan {
-  width: 14%;
+  width: 11%;
 }
 
 .workspace-col-creator {
-  width: 10%;
+  width: 8%;
 }
 
 .workspace-col-actions {
-  width: 10%;
+  width: 8%;
 }
 
 .workspace-row:hover {
@@ -2622,23 +2830,12 @@ onMounted(async () => {
 }
 
 .workspace-primary-cell {
-  gap: 12px;
+  width: 100%;
   min-width: 0;
 }
 
-.workspace-primary-icon {
-  width: 26px;
-  height: 26px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  background: #f3f4f5;
-  color: #94a3b8;
-  flex: 0 0 auto;
-}
-
 .workspace-primary-copy {
+  width: 100%;
   min-width: 0;
 }
 
@@ -2685,6 +2882,8 @@ onMounted(async () => {
 }
 
 .workspace-title-button {
+  display: block;
+  width: 100%;
   min-width: 0;
   overflow: hidden;
   padding: 0;
@@ -2714,9 +2913,30 @@ onMounted(async () => {
   font-weight: 500;
 }
 
+.workspace-editable-display {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.workspace-editable-display.is-owner {
+  justify-content: flex-start;
+}
+
+.workspace-editable-display:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 .workspace-type-pill,
 .workspace-status-pill,
-.workspace-priority-pill {
+.workspace-priority-pill,
+.workspace-hours-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2761,23 +2981,37 @@ onMounted(async () => {
   color: #93000a;
 }
 
-.workspace-status-pill.backlog {
+.workspace-status-pill.pending {
+  background: rgba(255, 220, 195, 0.86);
+  color: #a35100;
+}
+
+.workspace-status-pill.draft {
   background: rgba(231, 232, 233, 0.88);
   color: #64748b;
 }
 
 .workspace-priority-pill.high {
+  background: rgba(255, 218, 214, 0.86);
+  color: #93000a;
+}
+
+.workspace-priority-pill.medium {
   background: rgba(255, 220, 195, 0.86);
   color: #a35100;
 }
 
-.workspace-priority-pill.medium {
-  background: rgba(199, 231, 255, 0.76);
-  color: #004c6c;
-}
-
 .workspace-priority-pill.low {
   background: rgba(231, 232, 233, 0.92);
+  color: #64748b;
+}
+
+.workspace-hours-pill {
+  background: rgba(231, 232, 233, 0.92);
+  color: #475569;
+}
+
+.workspace-hours-pill.empty {
   color: #64748b;
 }
 
@@ -2905,8 +3139,8 @@ onMounted(async () => {
   justify-content: space-between;
   gap: 16px;
   padding: 10px 14px;
-  border-top: 1px solid rgba(221, 193, 174, 0.12);
-  background: rgba(243, 244, 245, 0.56);
+  border-top: 1px solid var(--app-border);
+  background: rgba(var(--app-outline-rgb), 0.08);
   flex: 0 0 auto;
 }
 
@@ -2932,7 +3166,7 @@ onMounted(async () => {
 
 .workspace-page-size span,
 .workspace-page-text {
-  color: #64748b;
+  color: var(--app-text-soft);
   font-size: 11px;
   font-weight: 700;
 }
@@ -2942,6 +3176,11 @@ onMounted(async () => {
 }
 
 .workspace-page-button {
+  border: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  font: inherit;
   width: 26px;
   height: 26px;
   display: inline-flex;
@@ -2949,7 +3188,7 @@ onMounted(async () => {
   justify-content: center;
   border-radius: 6px;
   background: transparent;
-  color: #64748b;
+  color: var(--app-text-soft);
 }
 
 .workspace-page-button:hover:not(:disabled) {
@@ -2957,7 +3196,7 @@ onMounted(async () => {
 }
 
 .workspace-page-button:disabled {
-  color: #cbd5e1;
+  color: rgba(var(--app-outline-rgb), 0.36);
 }
 
 .workspace-empty-row {
@@ -2975,11 +3214,134 @@ onMounted(async () => {
   width: 100%;
 }
 
+.workspace-inline-number-shell {
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.status-select :deep(.compact-select-trigger.variant-inline-pill) {
+  width: auto;
+  min-height: 22px;
+  min-width: 0;
+  padding: 0 8px 0 10px;
+  border-radius: 999px;
+  box-shadow: none !important;
+  justify-content: center;
+  gap: 4px;
+}
+
+.status-select :deep(.compact-select-trigger.variant-inline-pill .compact-select-dot) {
+  display: none;
+}
+
+.status-select :deep(.compact-select-trigger.variant-inline-pill .compact-select-value) {
+  justify-content: center;
+  gap: 4px;
+}
+
+.status-select :deep(.compact-select-trigger.variant-inline-pill .compact-select-arrow) {
+  color: currentColor;
+  opacity: 0.64;
+  font-size: 10px;
+}
+
+.status-select :deep(.compact-select-trigger.variant-inline-pill.selected-tone-primary) {
+  background: rgba(199, 231, 255, 0.72);
+  color: #004c6c;
+}
+
+.status-select :deep(.compact-select-trigger.variant-inline-pill.selected-tone-success) {
+  background: rgba(216, 240, 212, 0.82);
+  color: #2f6f3e;
+}
+
+.status-select :deep(.compact-select-trigger.variant-inline-pill.selected-tone-warning) {
+  background: rgba(255, 220, 195, 0.86);
+  color: #a35100;
+}
+
+.status-select :deep(.compact-select-trigger.variant-inline-pill.selected-tone-danger) {
+  background: rgba(255, 218, 214, 0.86);
+  color: #93000a;
+}
+
+.status-select :deep(.compact-select-trigger.variant-inline-pill.selected-tone-info) {
+  background: rgba(231, 232, 233, 0.88);
+  color: #64748b;
+}
+
+.status-select :deep(.compact-select-trigger.variant-inline-pill:hover),
+.status-select :deep(.compact-select-trigger.variant-inline-pill.is-open) {
+  transform: none;
+  filter: saturate(1.02);
+}
+
+.status-select :deep(.compact-select-menu) {
+  gap: 4px;
+}
+
+.status-select :deep(.compact-select-item) {
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+
+.status-select :deep(.compact-select-item-main) {
+  gap: 6px;
+}
+
+.status-select :deep(.compact-select-item-main span) {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.status-select :deep(.compact-select-item .compact-select-dot) {
+  width: 6px;
+  height: 6px;
+}
+
+.status-select :deep(.compact-select-check) {
+  font-size: 11px;
+}
+
+:deep(.workspace-inline-number) {
+  min-height: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(243, 244, 245, 0.92);
+  box-shadow: inset 0 0 0 1px var(--app-border) !important;
+}
+
+:deep(.workspace-inline-number .el-input),
+:deep(.workspace-inline-number .el-input__wrapper) {
+  min-height: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  box-shadow: none !important;
+  background: transparent;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+:deep(.workspace-inline-number .el-input__inner) {
+  height: 22px;
+  padding: 0;
+  align-self: center;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+}
+
 :deep(.iteration-filter-popper.el-popper) {
   border: 0 !important;
   border-radius: 16px !important;
   background: rgba(255, 255, 255, 0.98) !important;
-  box-shadow: 0 16px 28px rgba(25, 28, 29, 0.12) !important;
+  box-shadow: var(--app-shadow-floating) !important;
 }
 
 :deep(.iteration-filter-popper .el-popper__arrow) {
@@ -2993,7 +3355,7 @@ onMounted(async () => {
   min-height: 30px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.96);
-  box-shadow: inset 0 0 0 1px rgba(221, 193, 174, 0.18) !important;
+  box-shadow: inset 0 0 0 1px var(--app-border-strong) !important;
   padding-left: 8px;
   padding-right: 8px;
 }
@@ -3005,15 +3367,15 @@ onMounted(async () => {
 :deep(.work-item-drawer) {
   width: min(1160px, 60vw) !important;
   max-width: min(1160px, 100vw);
-  border-left: 1px solid rgba(226, 232, 240, 0.9);
+  border-left: 1px solid var(--app-border);
   background: rgba(255, 255, 255, 0.98);
-  box-shadow: -24px 0 60px rgba(15, 23, 42, 0.16);
+  box-shadow: -24px 0 60px rgba(25, 28, 29, 0.12);
 }
 
 :deep(.work-item-drawer .el-drawer__header) {
   margin-bottom: 0;
   padding: 0;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  border-bottom: 1px solid var(--app-border);
   background: rgba(255, 255, 255, 0.9);
 }
 
@@ -3028,7 +3390,7 @@ onMounted(async () => {
 :deep(.work-item-drawer .el-drawer__footer) {
   margin: 0;
   padding: 0;
-  border-top: 1px solid rgba(226, 232, 240, 0.86);
+  border-top: 1px solid var(--app-border);
   background: rgba(255, 255, 255, 0.92);
 }
 
@@ -3053,20 +3415,20 @@ onMounted(async () => {
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: #94a3b8;
+  color: var(--app-text-muted);
   font-size: 24px;
   line-height: 1;
 }
 
 .work-item-dialog-close:hover {
-  background: rgba(243, 244, 245, 0.9);
-  color: #475569;
+  background: rgba(var(--app-outline-rgb), 0.1);
+  color: var(--app-text-soft);
 }
 
 .work-item-dialog-divider {
   width: 1px;
   height: 24px;
-  background: rgba(203, 213, 225, 0.9);
+  background: var(--app-border);
 }
 
 .work-item-dialog-heading {
@@ -3083,7 +3445,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  background: rgba(255, 140, 0, 0.12);
+  background: rgba(var(--app-primary-container-rgb), 0.12);
   color: var(--app-primary);
   flex: 0 0 auto;
 }
@@ -3093,7 +3455,7 @@ onMounted(async () => {
 }
 
 .work-item-dialog-eyebrow {
-  color: #64748b;
+  color: var(--app-text-soft);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -3110,7 +3472,7 @@ onMounted(async () => {
 
 .work-item-dialog-heading-text {
   overflow: hidden;
-  color: #111827;
+  color: var(--app-text);
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 16px;
@@ -3130,23 +3492,23 @@ onMounted(async () => {
 }
 
 .work-item-dialog-status-pill.running {
-  background: #dff1ff;
-  color: #00658f;
+  background: var(--app-info-soft);
+  color: var(--app-info);
 }
 
 .work-item-dialog-status-pill.done {
-  background: #edf8ef;
-  color: #12a150;
+  background: var(--app-success-soft);
+  color: var(--app-success);
 }
 
 .work-item-dialog-status-pill.blocked {
-  background: #ffdad6;
-  color: #ba1a1a;
+  background: var(--app-danger-soft);
+  color: var(--app-danger);
 }
 
 .work-item-dialog-status-pill.backlog {
-  background: #eef2f6;
-  color: #8a96a4;
+  background: var(--app-surface-muted);
+  color: var(--app-text-muted);
 }
 
 .work-item-dialog-header-side {
@@ -3169,22 +3531,22 @@ onMounted(async () => {
 }
 
 .work-item-priority-badge.high {
-  background: rgba(255, 140, 0, 0.14);
-  color: #a35100;
+  background: rgba(var(--app-primary-container-rgb), 0.14);
+  color: var(--app-primary);
 }
 
 .work-item-priority-badge.medium {
-  background: rgba(255, 220, 195, 0.9);
-  color: #8b5e34;
+  background: var(--app-warning-soft);
+  color: var(--app-warning);
 }
 
 .work-item-priority-badge.low {
-  background: rgba(226, 232, 240, 0.9);
-  color: #64748b;
+  background: var(--app-surface-muted);
+  color: var(--app-text-soft);
 }
 
 .work-item-dialog-updated {
-  color: #94a3b8;
+  color: var(--app-text-muted);
   font-size: 11px;
   font-weight: 700;
 }
@@ -3201,8 +3563,8 @@ onMounted(async () => {
 
 .work-item-editor-top {
   padding: 18px 18px 16px;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.86);
-  background: #fff;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface-card);
 }
 
 .work-item-editor-title-row {
@@ -3210,7 +3572,7 @@ onMounted(async () => {
 }
 
 .work-item-editor-label {
-  color: #94a3b8;
+  color: var(--app-text-muted);
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.12em;
@@ -3234,10 +3596,10 @@ onMounted(async () => {
   flex: 0 0 auto;
   min-height: 22px;
   padding: 0 8px;
-  border: 1px solid rgba(226, 232, 240, 0.92);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
-  background: #f8fafc;
-  color: #94a3b8;
+  background: var(--app-surface-base);
+  color: var(--app-text-muted);
   font-family: var(--app-font-mono);
   font-size: 11px;
   font-weight: 700;
@@ -3279,10 +3641,10 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   padding: 0 10px;
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  border: 1px solid var(--app-border);
   border-radius: 8px;
-  background: #f8fafc;
-  color: #111827;
+  background: var(--app-surface-base);
+  color: var(--app-text);
   font-size: 12px;
   font-weight: 700;
 }
@@ -3303,7 +3665,7 @@ onMounted(async () => {
 
 .work-item-inline-tip {
   margin-top: 6px;
-  color: #ba1a1a;
+  color: var(--app-danger);
   font-size: 11px;
 }
 
@@ -3315,22 +3677,22 @@ onMounted(async () => {
   padding-left: 10px;
   padding-right: 10px;
   border-radius: 8px;
-  background: #f8fafc;
-  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.92) !important;
+  background: var(--app-surface-base);
+  box-shadow: inset 0 0 0 1px var(--app-border) !important;
 }
 
 .work-item-editor-shell :deep(.el-input__wrapper:hover),
 .work-item-editor-shell :deep(.el-select__wrapper:hover),
 .work-item-editor-shell :deep(.el-input-number:hover),
 .work-item-editor-shell :deep(.el-textarea__inner:hover) {
-  box-shadow: inset 0 0 0 1px rgba(255, 140, 0, 0.34) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--app-primary-container-rgb), 0.34) !important;
 }
 
 .work-item-editor-shell :deep(.el-input__wrapper.is-focus),
 .work-item-editor-shell :deep(.el-select__wrapper.is-focused),
 .work-item-editor-shell :deep(.el-input-number:focus-within),
 .work-item-editor-shell :deep(.el-textarea__inner:focus) {
-  box-shadow: inset 0 0 0 1px rgba(255, 140, 0, 0.58) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--app-primary-container-rgb), 0.58) !important;
 }
 
 .work-item-title-form-item :deep(.el-input__wrapper) {
@@ -3342,14 +3704,14 @@ onMounted(async () => {
 }
 
 .work-item-title-form-item :deep(.el-input__inner) {
-  color: #111827;
+  color: var(--app-text);
   font-family: var(--app-font-heading);
   font-size: 28px;
   font-weight: 800;
 }
 
 .work-item-title-form-item :deep(.el-input__inner::placeholder) {
-  color: #9ca3af;
+  color: var(--app-text-muted);
   font-weight: 800;
   opacity: 1;
 }
@@ -3369,8 +3731,8 @@ onMounted(async () => {
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  background: #fff;
-  border-bottom: 1px solid rgba(226, 232, 240, 0.82);
+  background: var(--app-surface-card);
+  border-bottom: 1px solid var(--app-border);
 }
 
 .work-item-description-body {
@@ -3407,7 +3769,7 @@ onMounted(async () => {
   flex-direction: column;
   min-height: 0;
   border-radius: 14px;
-  box-shadow: inset 0 0 0 1px rgba(226, 232, 240, 0.9);
+  box-shadow: inset 0 0 0 1px var(--app-border);
 }
 
 .work-item-description-form-item :deep(.md-editor-toolbar-wrapper) {
@@ -3424,7 +3786,7 @@ onMounted(async () => {
 
 .work-item-description-form-item :deep(.md-editor-toolbar) {
   padding: 10px 12px;
-  background: rgba(248, 249, 250, 0.92);
+  background: rgba(var(--app-outline-rgb), 0.06);
 }
 
 .description-form-item {
@@ -3440,7 +3802,7 @@ onMounted(async () => {
   margin-bottom: 12px;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(243, 244, 245, 0.9);
+  background: rgba(var(--app-outline-rgb), 0.08);
 }
 
 .legacy-requirement-preview-title {

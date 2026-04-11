@@ -119,21 +119,10 @@
                 <span v-else class="task-empty-text">-</span>
               </td>
               <td class="task-col-owner" data-label="负责人">
-                <div class="task-owner-line">
-                  <span class="task-owner-avatar">{{ ownerInitial(row.assignee) }}</span>
-                  <span class="task-owner-name">{{ row.assignee || '未分配' }}</span>
-                </div>
+                <ListUserDisplay :user="buildTaskAssigneeDisplayItem(row)" empty-text="未分配" size="md" />
               </td>
               <td class="task-col-collaborators" data-label="协作人">
-                <div v-if="row.collaboratorNames.length" class="task-collaborator-list">
-                  <span v-for="name in row.collaboratorNames.slice(0, 3)" :key="`${row.id}-${name}`" class="task-collaborator-chip">
-                    {{ name }}
-                  </span>
-                  <span v-if="row.collaboratorNames.length > 3" class="task-collaborator-chip muted">
-                    +{{ row.collaboratorNames.length - 3 }}
-                  </span>
-                </div>
-                <span v-else class="task-empty-text">-</span>
+                <ListUserGroupDisplay :users="buildTaskCollaboratorDisplayItems(row)" empty-text="-" size="md" />
               </td>
               <td class="center task-col-priority" data-label="优先级">
                 <span class="task-priority-pill" :class="taskPriorityTone(row.priority)">{{ row.priority || '-' }}</span>
@@ -363,6 +352,9 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Plus, RefreshRight, Search, Tickets, VideoPlay } from '@element-plus/icons-vue'
 import { listUserOptions } from '@/api/access'
+import ListUserDisplay from '@/components/ListUserDisplay.vue'
+import ListUserGroupDisplay from '@/components/ListUserGroupDisplay.vue'
+import type { ListUserDisplayItem } from '@/components/listUserDisplay'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import {
   createTask,
@@ -380,6 +372,7 @@ import {
   isRequirementFullyPassed,
   getTaskWorkHoursLockedReason
 } from '@/utils/requirementReview'
+import { resolveAssetUrl } from '@/utils/asset'
 import { uploadMarkdownImage } from '@/utils/taskImageUpload'
 import { useAuthStore } from '@/stores/auth'
 import type { AgentItem, ProjectItem, TaskAgentRunItem, TaskItem, UserOptionItem } from '@/types/platform'
@@ -495,6 +488,11 @@ const projectParticipantUsers = computed(() =>
   userOptions.value.filter((item) => projectParticipantUserIds.value.has(item.id))
 )
 
+/**
+ * 列表展示需要按用户ID快速补齐真实头像，这里先构造成索引避免每列重复遍历。
+ */
+const userOptionMap = computed(() => new Map(userOptions.value.map((item) => [item.id, item])))
+
 const collaboratorSelectableUsers = computed(() =>
   projectParticipantUsers.value.filter((item) => item.id !== form.assigneeUserId)
 )
@@ -522,7 +520,44 @@ const buildUserLabel = (item: UserOptionItem) => {
   return item.nickname?.trim() ? `${item.nickname} (${item.username})` : item.username
 }
 
-const ownerInitial = (value?: string | null) => (value || 'UN').slice(0, 2).toUpperCase()
+/**
+ * 任务列表展示仅依赖当前行里已有的负责人和协作人名字，避免组件反向耦合表单选项数据。
+ */
+const buildTaskAssigneeDisplayItem = (row: TaskItem): ListUserDisplayItem | null => {
+  if (!row.assignee?.trim()) {
+    return null
+  }
+  const assigneeUser = row.assigneeUserId != null ? userOptionMap.value.get(row.assigneeUserId) || null : null
+  return {
+    id: row.assigneeUserId ?? `task-assignee-${row.id}`,
+    name: row.assignee.trim(),
+    avatarUrl: resolveAssetUrl(assigneeUser?.avatarUrl)
+  }
+}
+
+const buildTaskCollaboratorDisplayItems = (row: TaskItem): ListUserDisplayItem[] => {
+  const result: ListUserDisplayItem[] = []
+
+  for (const [index, userId] of (row.collaboratorUserIds || []).entries()) {
+    const collaboratorUser = userOptionMap.value.get(userId) || null
+    const fallbackName = row.collaboratorNames?.[index] || `协作人${index + 1}`
+    result.push({
+      id: userId,
+      name: collaboratorUser?.nickname?.trim() || collaboratorUser?.username || fallbackName,
+      avatarUrl: resolveAssetUrl(collaboratorUser?.avatarUrl)
+    })
+  }
+
+  if (result.length) {
+    return result
+  }
+
+  return (row.collaboratorNames || []).map((name, index) => ({
+    id: `${row.id}-collaborator-${index}`,
+    name,
+    avatarUrl: null
+  }))
+}
 
 const taskTypeTone = (workItemType?: string | null) => {
   if (workItemType === '需求') return 'requirement'

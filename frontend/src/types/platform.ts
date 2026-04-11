@@ -635,6 +635,8 @@ export interface UserOptionItem {
   id: number
   username: string
   nickname: string
+  /** 用户头像地址，为空时前端回退显示首字母头像。 */
+  avatarUrl?: string | null
   enabled: boolean
 }
 

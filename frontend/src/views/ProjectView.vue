@@ -91,67 +91,11 @@
               </td>
               <td class="project-col-owner" data-label="负责人">
                 <div class="project-owner-cell">
-                  <el-popover trigger="click" placement="bottom-start" :width="220" popper-class="project-person-popper">
-                    <template #reference>
-                      <button class="project-avatar-trigger project-owner-trigger" type="button" aria-label="查看负责人详情">
-                        <el-avatar class="project-owner-avatar" :src="resolveProjectAvatarUrl(row.ownerAvatarUrl)">
-                          {{ avatarText(projectOwnerName(row)) }}
-                        </el-avatar>
-                      </button>
-                    </template>
-
-                    <div class="project-person-panel">
-                      <div v-if="hasProjectOwner(row)" class="project-person-item">
-                        <el-avatar class="project-popover-avatar" :src="resolveProjectAvatarUrl(row.ownerAvatarUrl)">
-                          {{ avatarText(projectOwnerName(row)) }}
-                        </el-avatar>
-                        <span class="project-person-name">{{ projectOwnerName(row) }}</span>
-                      </div>
-                      <div v-else class="project-person-empty">未分配</div>
-                    </div>
-                  </el-popover>
+                  <ListUserDisplay :user="buildProjectOwnerDisplayItem(row)" empty-text="未分配" size="md" />
                 </div>
               </td>
               <td class="project-col-members" data-label="成员">
-                <el-popover
-                  v-if="projectMembers(row).length"
-                  trigger="click"
-                  placement="bottom-start"
-                  :width="260"
-                  popper-class="project-person-popper"
-                >
-                  <template #reference>
-                    <button class="project-avatar-trigger project-members-trigger" type="button" aria-label="查看项目成员详情">
-                      <span class="project-member-stack">
-                        <el-avatar
-                          v-for="member in memberPreview(row)"
-                          :key="`${row.id}-${member.id}-${member.name}`"
-                          class="project-member-avatar"
-                          :src="resolveProjectAvatarUrl(member.avatarUrl)"
-                        >
-                          {{ avatarText(member.name) }}
-                        </el-avatar>
-                        <span v-if="projectMembers(row).length > 3" class="project-member-avatar extra">+{{ projectMembers(row).length - 3 }}</span>
-                      </span>
-                    </button>
-                  </template>
-
-                  <div class="project-person-panel">
-                    <div class="project-person-list">
-                      <div
-                        v-for="member in projectMembers(row)"
-                        :key="`${row.id}-${member.id}-${member.name}`"
-                        class="project-person-item"
-                      >
-                        <el-avatar class="project-popover-avatar" :src="resolveProjectAvatarUrl(member.avatarUrl)">
-                          {{ avatarText(member.name) }}
-                        </el-avatar>
-                        <span class="project-person-name">{{ member.name }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </el-popover>
-                <span v-else class="project-member-empty">暂无成员</span>
+                <ListUserGroupDisplay :users="buildProjectMemberDisplayItems(row)" empty-text="暂无成员" size="md" />
               </td>
               <td class="project-col-status" data-label="状态">
                 <span class="project-status-pill" :class="statusTone(row.status)">{{ statusLabel(row.status) }}</span>
@@ -332,6 +276,9 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Delete, EditPen, Filter, FolderOpened, Lightning, PieChart, Plus, RefreshRight, Search, Tickets, TrendCharts } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { listUserOptions } from '@/api/access'
+import ListUserDisplay from '@/components/ListUserDisplay.vue'
+import ListUserGroupDisplay from '@/components/ListUserGroupDisplay.vue'
+import type { ListUserDisplayItem } from '@/components/listUserDisplay'
 import { createProject, deleteProject, pageProjects, updateProject } from '@/api/platform'
 import { pageGitlabBindings } from '@/api/gitlab'
 import { useAuthStore } from '@/stores/auth'
@@ -620,12 +567,7 @@ const taskProgress = (row: ProjectItem) => Math.min(100, Math.max(4, row.taskCou
 /**
  * 统一解析项目负责人展示名称，兼容历史数据里仅有 owner 文本、没有头像字段的情况。
  */
-const projectOwnerName = (row: ProjectItem) => row.owner?.trim() || '未分配'
-
-/**
- * 判断项目是否已配置负责人，用于控制弹层里的空状态文案。
- */
-const hasProjectOwner = (row: ProjectItem) => Boolean(row.ownerUserId || row.owner?.trim())
+const projectOwnerName = (row: ProjectItem) => row.owner?.trim() || ''
 
 /**
  * 将后端增量返回的成员摘要与旧 memberNames 字段做兼容归一，避免前后端上线窗口期列表闪断。
@@ -641,9 +583,29 @@ const projectMembers = (row: ProjectItem): ProjectMemberItem[] => {
   }))
 }
 
-const memberPreview = (row: ProjectItem) => projectMembers(row).slice(0, 3)
-const avatarText = (name?: string | null) => (name?.trim() || '未').slice(0, 1).toUpperCase()
 const resolveProjectAvatarUrl = (avatarUrl?: string | null) => resolveAssetUrl(avatarUrl) || undefined
+
+/**
+ * 项目列表把负责人和成员映射成统一展示结构，让通用组件不依赖项目专属字段。
+ */
+const buildProjectOwnerDisplayItem = (row: ProjectItem): ListUserDisplayItem | null => {
+  const ownerName = projectOwnerName(row)
+  if (!ownerName) {
+    return null
+  }
+  return {
+    id: row.ownerUserId ?? `project-owner-${row.id}`,
+    name: ownerName,
+    avatarUrl: resolveProjectAvatarUrl(row.ownerAvatarUrl)
+  }
+}
+
+const buildProjectMemberDisplayItems = (row: ProjectItem): ListUserDisplayItem[] =>
+  projectMembers(row).map((member) => ({
+    id: member.id || `project-member-${row.id}-${member.name}`,
+    name: member.name,
+    avatarUrl: resolveProjectAvatarUrl(member.avatarUrl)
+  }))
 
 onMounted(async () => {
   await loadUserList()
