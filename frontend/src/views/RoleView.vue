@@ -65,13 +65,15 @@
           <tbody>
             <tr v-for="row in roleList" :key="row.id" class="management-list-row">
               <td class="role-col-main" data-label="角色">
-                <div class="management-list-title-cell">
-                  <span class="management-list-title-icon"><el-icon><UserFilled /></el-icon></span>
-                  <div class="management-list-title-copy">
-                    <div class="management-list-title">{{ row.name }}</div>
-                    <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+                <button class="management-list-title-trigger" type="button" @click="openDetailDialog(row)">
+                  <div class="management-list-title-cell">
+                    <span class="management-list-title-icon"><el-icon><UserFilled /></el-icon></span>
+                    <div class="management-list-title-copy">
+                      <div class="management-list-title">{{ row.name }}</div>
+                      <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+                    </div>
                   </div>
-                </div>
+                </button>
               </td>
               <td class="role-col-code" data-label="编码">
                 <span class="management-list-text">{{ row.code }}</span>
@@ -139,8 +141,8 @@
       </div>
     </section>
 
-  <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑角色' : '新建角色'" width="760px" class="platform-form-dialog" align-center>
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" class="platform-form-layout">
+  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="760px" class="platform-form-dialog" align-center>
+    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-width="100px" class="platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">角色信息</div>
@@ -198,8 +200,8 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      <el-button @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+      <el-button v-if="!readonlyMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
     </template>
   </el-dialog>
   </div>
@@ -237,6 +239,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const dialogVisible = ref(false)
 const isEditing = ref(false)
+const readonlyMode = ref(false)
 const currentId = ref<number | null>(null)
 const currentBuiltIn = ref(false)
 const roleList = ref<RoleItem[]>([])
@@ -247,6 +250,12 @@ const pagination = reactive({ page: 1, size: 10, total: 0 })
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
 const filters = reactive<{ keyword: string; enabled: boolean | '' }>({ keyword: '', enabled: '' })
 const roleFilterPopoverVisible = ref(false)
+const dialogTitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看角色'
+  }
+  return isEditing.value ? '编辑角色' : '新建角色'
+})
 const dataPermissionScopeOptions: DataPermissionScopeOption[] = [
   { value: 'NONE', label: '无权限' },
   { value: 'OWNER_ONLY', label: '仅负责人' },
@@ -358,12 +367,13 @@ const handleNextPage = async () => {
 }
 
 const openCreateDialog = () => {
+  readonlyMode.value = false
   isEditing.value = false
   resetForm()
   dialogVisible.value = true
 }
 
-const openEditDialog = (row: RoleItem) => {
+const fillForm = (row: RoleItem) => {
   isEditing.value = true
   currentId.value = row.id
   currentBuiltIn.value = row.builtIn
@@ -376,6 +386,17 @@ const openEditDialog = (row: RoleItem) => {
   form.iterationDeleteScope = row.iterationDeleteScope
   form.taskDeleteScope = row.taskDeleteScope
   form.permissionIds = [...row.permissionIds]
+}
+
+const openDetailDialog = (row: RoleItem) => {
+  readonlyMode.value = true
+  fillForm(row)
+  dialogVisible.value = true
+}
+
+const openEditDialog = (row: RoleItem) => {
+  readonlyMode.value = false
+  fillForm(row)
   dialogVisible.value = true
 }
 

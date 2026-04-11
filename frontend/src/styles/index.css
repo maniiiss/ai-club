@@ -16,6 +16,8 @@
   --app-page-gradient-end: #eef0f1;
   --app-primary-rgb: 144, 77, 0;
   --app-primary-container-rgb: 255, 140, 0;
+  --app-secondary-rgb: 134, 82, 36;
+  --app-tertiary-rgb: 0, 101, 143;
   --app-outline-rgb: 137, 115, 98;
 
   --app-surface-base: #f8f9fa;
@@ -42,12 +44,16 @@
   --app-tertiary: #00658f;
   --app-danger: #ba1a1a;
   --app-danger-soft: #ffdad6;
+  --app-danger-rgb: 186, 26, 26;
   --app-success: #3d6f38;
   --app-success-soft: #d8f0d4;
+  --app-success-rgb: 61, 111, 56;
   --app-warning: #9d5b00;
   --app-warning-soft: #ffe1c2;
+  --app-warning-rgb: 157, 91, 0;
   --app-info: #0e5a7e;
   --app-info-soft: #d3ebf8;
+  --app-info-rgb: 14, 90, 126;
   --app-border: rgba(var(--app-outline-rgb), 0.12);
   --app-border-strong: rgba(var(--app-outline-rgb), 0.22);
   --app-ghost-border: rgba(var(--app-outline-rgb), 0.14);
@@ -1309,8 +1315,9 @@ a {
   justify-content: center;
   flex: 0 0 auto;
   border-radius: 6px;
-  background: #f3f4f5;
-  color: #94a3b8;
+  background: rgba(var(--app-primary-container-rgb), 0.14);
+  color: var(--app-primary);
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .management-list-title-copy {
@@ -1324,6 +1331,7 @@ a {
   white-space: nowrap;
   font-size: 14px;
   font-weight: 800;
+  transition: color 0.18s ease;
 }
 
 .management-list-subtitle {
@@ -1334,6 +1342,40 @@ a {
   white-space: nowrap;
   font-size: 11px;
   font-weight: 500;
+}
+
+.management-list-title-trigger {
+  width: 100%;
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.management-list-title-trigger .management-list-title-cell {
+  width: 100%;
+}
+
+.management-list-title-trigger:hover .management-list-title,
+.management-list-title-trigger:focus-visible .management-list-title {
+  color: var(--app-primary);
+}
+
+.management-list-title-trigger:hover .management-list-title-icon,
+.management-list-title-trigger:focus-visible .management-list-title-icon,
+.management-list-title-trigger:hover .management-list-avatar,
+.management-list-title-trigger:focus-visible .management-list-avatar {
+  background: rgba(var(--app-primary-container-rgb), 0.2);
+  color: var(--app-primary);
+  box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.14);
+}
+
+.management-list-title-trigger:focus-visible {
+  border-radius: 10px;
+  outline: 2px solid rgba(var(--app-primary-rgb), 0.18);
+  outline-offset: 4px;
 }
 
 .management-list-text,
@@ -1355,17 +1397,24 @@ a {
   max-width: 100%;
   overflow: hidden;
   padding: 0;
+  border: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
   background: transparent;
-  color: #00658f;
+  color: var(--app-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
   font-weight: 700;
   text-align: left;
+  font-family: inherit;
+  line-height: inherit;
+  transition: color 0.18s ease;
 }
 
 .management-list-link:hover {
-  color: #904d00;
+  color: var(--app-primary-dark-2);
 }
 
 .management-list-row-actions {
@@ -1537,10 +1586,11 @@ a {
   justify-content: center;
   flex: 0 0 auto;
   border-radius: 6px;
-  background: #e7e8e9;
-  color: #475569;
+  background: rgba(var(--app-primary-container-rgb), 0.14);
+  color: var(--app-primary);
   font-size: 9px;
   font-weight: 800;
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .management-list-name {

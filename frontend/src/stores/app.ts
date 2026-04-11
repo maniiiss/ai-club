@@ -15,9 +15,26 @@ function readSidebarCollapsedPreference() {
 export const useAppStore = defineStore('app', () => {
   const systemName = ref('AI代理工程管理平台')
   const currentProject = ref('Agent Ops')
+  const dynamicPageTitle = ref('')
+  const dynamicPageTitleRouteName = ref('')
   const sidebarCollapsed = ref(readSidebarCollapsedPreference())
   const currentThemeId = ref(readStoredThemeId())
   const currentTheme = computed(() => resolveThemePreset(currentThemeId.value))
+
+  const setDynamicPageTitle = (title: string, routeName: string) => {
+    // 为需要运行时标题的页面提供统一入口，例如测试计划详情按计划名称显示。
+    dynamicPageTitle.value = title
+    dynamicPageTitleRouteName.value = routeName
+  }
+
+  const clearDynamicPageTitle = (routeName?: string) => {
+    // 离开对应页面时清理动态标题，避免影响其他固定标题页面。
+    if (routeName && dynamicPageTitleRouteName.value !== routeName) {
+      return
+    }
+    dynamicPageTitle.value = ''
+    dynamicPageTitleRouteName.value = ''
+  }
 
   const setSidebarCollapsed = (collapsed: boolean) => {
     sidebarCollapsed.value = collapsed
@@ -48,10 +65,14 @@ export const useAppStore = defineStore('app', () => {
   return {
     systemName,
     currentProject,
+    dynamicPageTitle,
+    dynamicPageTitleRouteName,
     sidebarCollapsed,
     currentThemeId,
     currentTheme,
     themePresets: THEME_PRESETS,
+    setDynamicPageTitle,
+    clearDynamicPageTitle,
     setSidebarCollapsed,
     toggleSidebarCollapsed,
     initializeAppearance,

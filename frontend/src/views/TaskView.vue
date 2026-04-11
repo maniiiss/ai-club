@@ -86,20 +86,27 @@
           <tbody>
             <tr v-for="row in taskList" :key="row.id" class="task-row">
               <td class="task-col-main" data-label="任务">
-                <div class="task-primary-cell">
-                  <div class="task-primary-icon">
-                    <el-icon><Tickets /></el-icon>
+                <button class="task-title-button" type="button" @click="openTaskDetail(row)">
+                  <div class="task-primary-cell">
+                    <div class="task-primary-icon">
+                      <el-icon><Tickets /></el-icon>
+                    </div>
+                    <div class="task-primary-copy">
+                      <div class="task-primary-title">{{ row.name }}</div>
+                      <div class="task-primary-meta">{{ row.description || '暂无说明' }}</div>
+                    </div>
                   </div>
-                  <div class="task-primary-copy">
-                    <div class="task-primary-title">{{ row.name }}</div>
-                    <div class="task-primary-meta">{{ row.description || '暂无说明' }}</div>
-                  </div>
-                </div>
+                </button>
               </td>
               <td class="center task-col-type" data-label="类型">
                 <span class="task-type-pill" :class="taskTypeTone(row.workItemType)">{{ row.workItemType }}</span>
               </td>
-              <td class="task-project-cell task-col-project" data-label="所属项目">{{ row.projectName || '-' }}</td>
+              <td class="task-project-cell task-col-project" data-label="所属项目">
+                <button v-if="row.projectName" class="task-link-button" type="button" @click="openTaskProject(row.projectId)">
+                  {{ row.projectName }}
+                </button>
+                <span v-else class="task-empty-text">-</span>
+              </td>
               <td class="task-col-requirement" data-label="关联需求">
                 <button
                   v-if="row.requirementTaskId && row.requirementTaskName"
@@ -575,6 +582,21 @@ const openRequirementTask = (row: TaskItem) => {
   })
 }
 
+const openTaskDetail = (row: TaskItem) => {
+  router.push({
+    name: 'project-iterations',
+    params: { projectId: row.projectId },
+    query: { openTaskId: String(row.id) }
+  })
+}
+
+const openTaskProject = (projectId: number) => {
+  router.push({
+    name: 'project-iterations',
+    params: { projectId }
+  })
+}
+
 const loadRequirementOptions = async (projectId?: number | null) => {
   if (!projectId) {
     requirementOptions.value = []
@@ -989,6 +1011,7 @@ onMounted(async () => {
 
 .task-toolbar-button,
 .task-create-button,
+.task-title-button,
 .task-link-button,
 .task-action-button,
 .task-page-button {
@@ -1159,6 +1182,13 @@ onMounted(async () => {
   min-width: 0;
 }
 
+.task-title-button {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+}
+
 .task-primary-icon {
   width: 26px;
   height: 26px;
@@ -1166,9 +1196,10 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  background: #f3f4f5;
-  color: #94a3b8;
+  background: rgba(var(--app-primary-container-rgb), 0.14);
+  color: var(--app-primary);
   flex: 0 0 auto;
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .task-primary-copy {
@@ -1182,6 +1213,7 @@ onMounted(async () => {
   white-space: nowrap;
   font-size: 14px;
   font-weight: 800;
+  transition: color 0.18s ease;
 }
 
 .task-primary-meta {
@@ -1192,6 +1224,18 @@ onMounted(async () => {
   white-space: nowrap;
   font-size: 11px;
   font-weight: 500;
+}
+
+.task-title-button:hover .task-primary-title,
+.task-title-button:focus-visible .task-primary-title {
+  color: var(--app-primary);
+}
+
+.task-title-button:hover .task-primary-icon,
+.task-title-button:focus-visible .task-primary-icon {
+  background: rgba(var(--app-primary-container-rgb), 0.2);
+  color: var(--app-primary);
+  box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.14);
 }
 
 .task-type-pill,
@@ -1294,16 +1338,17 @@ onMounted(async () => {
   overflow: hidden;
   padding: 0;
   background: transparent;
-  color: #00658f;
+  color: var(--app-text);
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
   font-weight: 700;
   text-align: left;
+  transition: color 0.18s ease;
 }
 
 .task-link-button:hover {
-  color: #904d00;
+  color: var(--app-primary);
 }
 
 .task-empty-text,

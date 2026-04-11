@@ -79,18 +79,23 @@
           </div>
           <div v-for="row in agentList" :key="row.id" class="atelier-data-row agent-list-row">
             <div class="atelier-data-cell agent-col-main" data-label="智能体">
-              <div class="management-list-title-cell">
-                <span class="management-list-title-icon" :class="`agent-access-${accessTypeTagType(row.accessType)}`">
-                  <el-icon><component :is="agentAccessIcon(row.accessType)" /></el-icon>
-                </span>
-                <div class="management-list-title-copy">
-                  <div class="management-list-title">{{ row.name }}</div>
-                  <div class="management-list-subtitle">{{ row.capability || '暂无能力描述' }}</div>
+              <button class="management-list-title-trigger" type="button" @click="openDetailDialog(row)">
+                <div class="management-list-title-cell">
+                  <span class="management-list-title-icon">
+                    <el-icon><component :is="agentAccessIcon(row.accessType)" /></el-icon>
+                  </span>
+                  <div class="management-list-title-copy">
+                    <div class="management-list-title">{{ row.name }}</div>
+                    <div class="management-list-subtitle">{{ row.capability || '暂无能力描述' }}</div>
+                  </div>
                 </div>
-              </div>
+              </button>
             </div>
             <div class="atelier-data-cell agent-col-project" data-label="所属项目">
-              <span class="management-list-empty">{{ row.projectName || '全局能力' }}</span>
+              <button v-if="row.projectId && row.projectName" class="management-list-link" type="button" @click="goToProject(row.projectId)">
+                {{ row.projectName }}
+              </button>
+              <span v-else class="management-list-empty">全局能力</span>
             </div>
             <div class="atelier-data-cell agent-col-access center" data-label="接入方式">
               <span class="management-list-pill info">{{ accessTypeLabel(row.accessType) }}</span>
@@ -153,8 +158,8 @@
       </div>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑智能体' : '新建智能体'" width="960px" destroy-on-close class="platform-form-dialog" align-center>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="110px" class="agent-dialog-form">
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="960px" destroy-on-close class="platform-form-dialog" align-center>
+      <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-width="110px" class="agent-dialog-form">
         <section class="form-section">
           <div class="form-section-head">
             <div class="form-section-title">基础信息</div>
@@ -344,8 +349,8 @@
         </section>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        <el-button @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!readonlyMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
       </template>
     </el-dialog>
 
@@ -378,6 +383,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Connection, Cpu, Delete, EditPen, Filter, Link, Plus, Promotion, RefreshRight, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -436,6 +442,7 @@ const testing = ref(false)
 const dialogVisible = ref(false)
 const testDialogVisible = ref(false)
 const isEditing = ref(false)
+const readonlyMode = ref(false)
 const currentId = ref<number | null>(null)
 const agentList = ref<AgentItem[]>([])
 const modelOptions = ref<AiModelConfigItem[]>([])
@@ -456,6 +463,7 @@ const filters = reactive({
   projectId: undefined as number | undefined
 })
 const agentFilterPopoverVisible = ref(false)
+const router = useRouter()
 
 const defaultForm = (): AgentForm => ({
   name: '',
@@ -496,8 +504,6 @@ const rules: FormRules<AgentForm> = {
 
 const accessTypeLabel = (value?: string | null) => accessTypeOptions.find(item => item.value === value)?.label || value || '-'
 const runtimeTypeLabel = (value?: string | null) => runtimeTypeOptions.find(item => item.value === value)?.label || value || '-'
-const accessTypeTagType = (value?: string | null) =>
-  value === 'AGENT_RUNTIME' ? 'danger' : value === 'HTTP_API' ? 'warning' : value === 'LLM_PROMPT' ? 'success' : 'primary'
 const agentAccessIcon = (accessType?: string | null) =>
   accessType === 'AGENT_RUNTIME' ? Connection : accessType === 'HTTP_API' ? Link : accessType === 'LLM_PROMPT' ? Cpu : Promotion
 
@@ -516,6 +522,13 @@ const agentRuntimeLabel = (row: AgentItem) => {
   }
   return row.aiModelConfigName || '-'
 }
+
+const dialogTitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看智能体'
+  }
+  return isEditing.value ? '编辑智能体' : '新建智能体'
+})
 
 const resetForm = () => {
   Object.assign(form, defaultForm())
@@ -584,12 +597,13 @@ const handleNextPage = async () => {
 }
 
 const openCreateDialog = () => {
+  readonlyMode.value = false
   isEditing.value = false
   resetForm()
   dialogVisible.value = true
 }
 
-const openEditDialog = (row: AgentItem) => {
+const fillForm = (row: AgentItem) => {
   isEditing.value = true
   currentId.value = row.id
   Object.assign(form, {
@@ -618,7 +632,22 @@ const openEditDialog = (row: AgentItem) => {
     httpResponsePath: row.httpResponsePath || '',
     timeoutSeconds: row.timeoutSeconds || 60
   })
+}
+
+const openDetailDialog = (row: AgentItem) => {
+  readonlyMode.value = true
+  fillForm(row)
   dialogVisible.value = true
+}
+
+const openEditDialog = (row: AgentItem) => {
+  readonlyMode.value = false
+  fillForm(row)
+  dialogVisible.value = true
+}
+
+const goToProject = async (projectId: number) => {
+  await router.push({ name: 'project-iterations', params: { projectId } })
 }
 
 const buildPayload = () => ({
@@ -847,6 +876,14 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
+.agent-col-project .management-list-link {
+  color: var(--app-text);
+}
+
+.agent-col-project .management-list-link:hover {
+  color: var(--app-primary);
+}
+
 @media (max-width: 1200px) {
   .agent-list-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -858,26 +895,6 @@ onMounted(async () => {
   .agent-col-actions {
     grid-column: 1 / -1;
   }
-}
-
-.agent-access-primary {
-  color: var(--app-primary);
-  background: rgba(255, 220, 195, 0.88);
-}
-
-.agent-access-success {
-  color: var(--app-info);
-  background: rgba(211, 235, 248, 0.88);
-}
-
-.agent-access-warning {
-  color: var(--app-warning);
-  background: rgba(255, 225, 194, 0.88);
-}
-
-.agent-access-danger {
-  color: var(--app-danger);
-  background: rgba(255, 218, 214, 0.88);
 }
 
 .filter-form {

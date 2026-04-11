@@ -79,11 +79,11 @@
           <tbody>
             <tr v-for="row in projectList" :key="row.id" class="management-list-row">
               <td class="project-col-main" data-label="项目">
-                <button class="project-name-button" type="button" @click="openIterationBoard(row)">
+                <button class="project-name-button management-list-title-trigger" type="button" @click="openIterationBoard(row)">
                   <span class="management-list-title-cell">
-                    <el-icon class="project-name-icon"><FolderOpened /></el-icon>
+                    <el-icon class="management-list-title-icon project-name-icon"><FolderOpened /></el-icon>
                     <span class="management-list-title-copy">
-                      <span class="project-name-text">{{ row.name }}</span>
+                      <span class="management-list-title project-name-text">{{ row.name }}</span>
                       <span class="management-list-subtitle">{{ row.description || '暂无项目说明' }}</span>
                     </span>
                   </span>
@@ -769,14 +769,11 @@ onMounted(async () => {
 }
 
 .project-name-icon {
-  color: var(--app-primary-container);
   font-size: 18px;
 }
 
 .project-name-text {
-  color: var(--app-text);
   font-size: 14px;
-  font-weight: 800;
 }
 
 .project-name-button .management-list-subtitle {

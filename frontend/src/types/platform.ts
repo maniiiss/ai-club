@@ -314,6 +314,19 @@ export interface DashboardOverview {
   focusProjectBurndown?: ProjectBurndownItem | null
 }
 
+export interface DashboardQuickTaskItem {
+  /** 快捷任务主键ID。 */
+  id: number
+  /** 前端用来匹配本地草稿行的稳定键。 */
+  clientKey: string
+  /** 用户填写的临时笔记内容。 */
+  content: string
+  /** 是否已完成。 */
+  checked: boolean
+  /** 当前展示顺序。 */
+  sortOrder: number
+}
+
 export interface NotificationItem {
   id: number
   type: 'TASK' | 'GITLAB' | 'CICD' | 'SYSTEM' | string

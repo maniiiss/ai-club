@@ -65,17 +65,19 @@
             <div class="atelier-data-head-item model-col-api">接口地址</div>
             <div class="atelier-data-head-item model-col-key center">密钥</div>
             <div class="atelier-data-head-item model-col-status center">状态</div>
-            <div class="atelier-data-head-item model-col-actions right">操作</div>
+          <div class="atelier-data-head-item model-col-actions right">操作</div>
           </div>
           <div v-for="row in list" :key="row.id" class="atelier-data-row model-list-row">
             <div class="atelier-data-cell model-col-main" data-label="模型配置">
-              <div class="management-list-title-cell">
-                <span class="management-list-title-icon"><el-icon><Cpu /></el-icon></span>
-                <div class="management-list-title-copy">
-                  <div class="management-list-title">{{ row.name }}</div>
-                  <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+              <button class="management-list-title-trigger" type="button" @click="openDetailDialog(row)">
+                <div class="management-list-title-cell">
+                  <span class="management-list-title-icon"><el-icon><Cpu /></el-icon></span>
+                  <div class="management-list-title-copy">
+                    <div class="management-list-title">{{ row.name }}</div>
+                    <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+                  </div>
                 </div>
-              </div>
+              </button>
             </div>
             <div class="atelier-data-cell model-col-provider center" data-label="提供商">
               <span class="management-list-pill neutral">{{ row.provider }}</span>
@@ -84,7 +86,9 @@
               <span class="management-list-text">{{ row.modelName }}</span>
             </div>
             <div class="atelier-data-cell model-col-api" data-label="接口地址">
-              <span class="management-list-link">{{ row.apiBaseUrl }}</span>
+              <a class="management-list-text model-api-link" :href="row.apiBaseUrl" target="_blank" rel="noreferrer">
+                {{ row.apiBaseUrl }}
+              </a>
             </div>
             <div class="atelier-data-cell model-col-key center" data-label="密钥">
               <span class="management-list-pill" :class="row.apiKeyConfigured ? 'success' : 'neutral'">
@@ -140,8 +144,8 @@
       </div>
     </section>
 
-  <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑模型' : '新增模型'" width="620px" class="platform-form-dialog" align-center>
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" class="platform-form-layout">
+  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="620px" class="platform-form-dialog" align-center>
+    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-width="100px" class="platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">模型信息</div>
@@ -174,8 +178,8 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      <el-button @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+      <el-button v-if="!readonlyMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
     </template>
   </el-dialog>
   </div>
@@ -203,6 +207,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const dialogVisible = ref(false)
 const isEditing = ref(false)
+const readonlyMode = ref(false)
 const testingId = ref<number | null>(null)
 const currentId = ref<number | null>(null)
 const list = ref<AiModelConfigItem[]>([])
@@ -239,6 +244,13 @@ const rules: FormRules<ModelForm> = {
   apiBaseUrl: [{ required: true, message: '请输入 API 地址', trigger: 'blur' }],
   modelName: [{ required: true, message: '请输入模型名', trigger: 'blur' }]
 }
+
+const dialogTitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看模型'
+  }
+  return isEditing.value ? '编辑模型' : '新增模型'
+})
 
 const resetForm = () => {
   currentId.value = null
@@ -295,12 +307,13 @@ const handleNextPage = async () => {
 }
 
 const openCreateDialog = () => {
+  readonlyMode.value = false
   isEditing.value = false
   resetForm()
   dialogVisible.value = true
 }
 
-const openEditDialog = (row: AiModelConfigItem) => {
+const fillForm = (row: AiModelConfigItem) => {
   isEditing.value = true
   currentId.value = row.id
   form.name = row.name
@@ -310,6 +323,17 @@ const openEditDialog = (row: AiModelConfigItem) => {
   form.apiKey = ''
   form.description = row.description
   form.enabled = row.enabled
+}
+
+const openDetailDialog = (row: AiModelConfigItem) => {
+  readonlyMode.value = true
+  fillForm(row)
+  dialogVisible.value = true
+}
+
+const openEditDialog = (row: AiModelConfigItem) => {
+  readonlyMode.value = false
+  fillForm(row)
   dialogVisible.value = true
 }
 
@@ -423,12 +447,16 @@ onMounted(() => {
 }
 
 .model-col-name .management-list-text,
-.model-col-api .management-list-link {
+.model-col-api .model-api-link {
   display: inline-block;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.model-api-link {
+  color: #475569;
 }
 
 @media (max-width: 1200px) {

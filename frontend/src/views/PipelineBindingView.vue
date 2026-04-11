@@ -73,15 +73,17 @@
           <tbody>
             <tr v-for="row in bindingList" :key="row.id" class="work-list-row">
               <td class="pipeline-col-main" data-label="项目">
-                <div class="management-list-title-cell">
-                  <span class="management-list-title-icon">
-                    <el-icon><DataAnalysis /></el-icon>
-                  </span>
-                  <div class="management-list-title-copy">
-                    <div class="management-list-title">{{ row.projectName }}</div>
-                    <div class="management-list-subtitle">绑定 #{{ row.id }}</div>
+                <button class="management-list-title-trigger" type="button" @click="openBindingDetailDialog(row)">
+                  <div class="management-list-title-cell">
+                    <span class="management-list-title-icon">
+                      <el-icon><DataAnalysis /></el-icon>
+                    </span>
+                    <div class="management-list-title-copy">
+                      <div class="management-list-title">{{ row.projectName }}</div>
+                      <div class="management-list-subtitle">绑定 #{{ row.id }}</div>
+                    </div>
                   </div>
-                </div>
+                </button>
               </td>
               <td class="pipeline-col-server" data-label="Jenkins 服务">
                 <span class="management-list-text">{{ row.jenkinsServerName }}</span>
@@ -162,8 +164,8 @@
       </div>
     </section>
 
-    <el-dialog v-model="bindingDialogVisible" :title="bindingIsEditing ? '编辑流水线绑定' : '新增流水线绑定'" width="720px" class="platform-form-dialog" align-center>
-      <el-form ref="bindingFormRef" :model="bindingForm" :rules="bindingRules" label-width="120px" class="platform-form-layout">
+    <el-dialog v-model="bindingDialogVisible" :title="bindingDialogTitle" width="720px" class="platform-form-dialog" align-center>
+      <el-form ref="bindingFormRef" :model="bindingForm" :rules="bindingRules" :disabled="bindingReadonlyMode" label-width="120px" class="platform-form-layout">
         <section class="platform-form-section">
           <div class="platform-form-section-head">
             <div class="platform-form-section-title">流水线绑定</div>
@@ -196,8 +198,8 @@
         </section>
       </el-form>
       <template #footer>
-        <el-button @click="bindingDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="bindingSubmitting" @click="handleBindingSubmit">保存</el-button>
+        <el-button @click="bindingDialogVisible = false">{{ bindingReadonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!bindingReadonlyMode" type="primary" :loading="bindingSubmitting" @click="handleBindingSubmit">保存</el-button>
       </template>
     </el-dialog>
 
@@ -326,6 +328,7 @@ const bindingLoading = ref(false)
 const bindingSubmitting = ref(false)
 const bindingDialogVisible = ref(false)
 const bindingIsEditing = ref(false)
+const bindingReadonlyMode = ref(false)
 const currentBindingId = ref<number | null>(null)
 const bindingList = ref<ProjectPipelineBindingItem[]>([])
 const bindingFormRef = ref<FormInstance>()
@@ -355,6 +358,12 @@ const buildLogVisible = ref(false)
 const currentBuildLog = ref<JenkinsBuildLogDetailItem | null>(null)
 
 const bindingTotalPages = computed(() => Math.max(1, Math.ceil(bindingPagination.total / bindingPagination.size) || 1))
+const bindingDialogTitle = computed(() => {
+  if (bindingReadonlyMode.value) {
+    return '查看流水线绑定'
+  }
+  return bindingIsEditing.value ? '编辑流水线绑定' : '新增流水线绑定'
+})
 
 const bindingRules: FormRules<PipelineBindingForm> = {
   projectId: [{ required: true, message: '请选择项目', trigger: 'change' }],
@@ -502,12 +511,13 @@ const handleBindingNextPage = async () => {
 }
 
 const openBindingCreateDialog = () => {
+  bindingReadonlyMode.value = false
   bindingIsEditing.value = false
   resetBindingForm()
   bindingDialogVisible.value = true
 }
 
-const openBindingEditDialog = (row: ProjectPipelineBindingItem) => {
+const fillBindingForm = (row: ProjectPipelineBindingItem) => {
   bindingIsEditing.value = true
   currentBindingId.value = row.id
   bindingForm.projectId = row.projectId
@@ -516,6 +526,17 @@ const openBindingEditDialog = (row: ProjectPipelineBindingItem) => {
   bindingForm.defaultBranch = row.defaultBranch || ''
   bindingForm.buildParametersJson = row.buildParametersJson || ''
   bindingForm.enabled = row.enabled
+}
+
+const openBindingDetailDialog = (row: ProjectPipelineBindingItem) => {
+  bindingReadonlyMode.value = true
+  fillBindingForm(row)
+  bindingDialogVisible.value = true
+}
+
+const openBindingEditDialog = (row: ProjectPipelineBindingItem) => {
+  bindingReadonlyMode.value = false
+  fillBindingForm(row)
   bindingDialogVisible.value = true
 }
 

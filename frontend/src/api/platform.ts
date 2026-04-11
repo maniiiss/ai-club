@@ -4,6 +4,7 @@ import type {
   AgentTestResult,
   ApiResponse,
   DashboardOverview,
+  DashboardQuickTaskItem,
   IterationBoardItem,
   IterationItem,
   KnowledgeGraphItem,
@@ -76,6 +77,17 @@ export interface TaskPayload {
   agentId: number | null
   iterationId?: number | null
   requirementTaskId?: number | null
+}
+
+export interface DashboardQuickTaskPayloadItem {
+  /** 已存在快捷任务ID；新增时传空。 */
+  id?: number | null
+  /** 前端本地草稿唯一键，用于保存后回填对应行。 */
+  clientKey: string
+  /** 当前快捷任务内容。 */
+  content: string
+  /** 是否勾选完成。 */
+  checked: boolean
 }
 
 export interface IterationPayload {
@@ -173,6 +185,16 @@ const cleanParams = <T extends object>(params: T) =>
 
 export const getDashboardOverview = async () => {
   const { data } = await http.get<ApiResponse<DashboardOverview>>('/api/dashboard/overview')
+  return data.data
+}
+
+export const listDashboardQuickTasks = async () => {
+  const { data } = await http.get<ApiResponse<DashboardQuickTaskItem[]>>('/api/dashboard/quick-tasks')
+  return data.data
+}
+
+export const saveDashboardQuickTasks = async (items: DashboardQuickTaskPayloadItem[]) => {
+  const { data } = await http.put<ApiResponse<DashboardQuickTaskItem[]>>('/api/dashboard/quick-tasks', { items })
   return data.data
 }
 

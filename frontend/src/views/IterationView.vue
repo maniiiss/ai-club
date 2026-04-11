@@ -211,7 +211,13 @@
               </tr>
               <tr v-for="row in workItems" :key="row.id" class="workspace-row">
                 <td class="workspace-col-code" data-label="工作项编号">
-                  <span class="workspace-item-code standalone">{{ row.workItemCode }}</span>
+                  <button
+                    class="workspace-item-code standalone workspace-item-link-button"
+                    type="button"
+                    @click="openWorkItemDetailFromRow(row)"
+                  >
+                    {{ row.workItemCode }}
+                  </button>
                 </td>
                 <td class="workspace-col-main" data-label="标题">
                   <div class="workspace-primary-cell">
@@ -219,7 +225,7 @@
                       <el-icon><Tickets /></el-icon>
                     </div>
                     <div class="workspace-primary-copy">
-                      <button class="workspace-title-button" type="button" @click="openEditWorkItemDialog(row)">{{ row.name }}</button>
+                      <button class="workspace-title-button" type="button" @click="openWorkItemDetailFromRow(row)">{{ row.name }}</button>
                     </div>
                   </div>
                 </td>
@@ -295,7 +301,7 @@
                       </button>
                     </el-tooltip>
                     <el-tooltip v-if="canManageWorkItem" content="编辑" placement="top">
-                      <button class="workspace-action-button" type="button" aria-label="编辑工作项" @click="openEditWorkItemDialog(row)">
+                      <button class="workspace-action-button" type="button" aria-label="编辑工作项" @click="openWorkItemDetailFromRow(row)">
                         <el-icon><EditPen /></el-icon>
                       </button>
                     </el-tooltip>
@@ -396,11 +402,20 @@
     </template>
   </el-dialog>
 
-  <el-drawer v-model="workItemDialogVisible" :show-close="false" direction="rtl" size="60%" class="work-item-drawer" append-to-body>
+  <el-drawer
+    v-model="workItemDialogVisible"
+    :show-close="false"
+    :before-close="handleWorkItemDrawerBeforeClose"
+    direction="rtl"
+    size="60%"
+    class="work-item-drawer"
+    append-to-body
+    @closed="handleWorkItemDialogClosed"
+  >
     <template #header>
       <div class="work-item-dialog-header">
         <div class="work-item-dialog-header-main">
-          <button class="work-item-dialog-close" type="button" @click="workItemDialogVisible = false">×</button>
+          <button class="work-item-dialog-close" type="button" @click="closeWorkItemDetail">×</button>
           <span class="work-item-dialog-divider" aria-hidden="true"></span>
           <div class="work-item-dialog-heading">
             <span class="work-item-dialog-heading-icon">
@@ -600,7 +615,7 @@
 
     <template #footer>
       <div class="work-item-dialog-footer">
-        <el-button @click="workItemDialogVisible = false">取消</el-button>
+        <el-button @click="closeWorkItemDetail">取消</el-button>
         <el-button v-if="canManageWorkItem" type="primary" :loading="workItemSubmitting" @click="handleSubmitWorkItem">
           {{ workItemEditing ? '保存工作项' : '创建工作项' }}
         </el-button>
@@ -855,6 +870,7 @@ const iterationDateRange = ref<string[]>([])
 const workItemDialogVisible = ref(false)
 const workItemEditing = ref(false)
 const workItemSubmitting = ref(false)
+const workItemDialogClosing = ref(false)
 const currentWorkItemId = ref<number | null>(null)
 const workItemAssigneeFallback = ref('')
 const commentDialogVisible = ref(false)
@@ -1257,52 +1273,161 @@ const openRequirementTask = async (taskId: number) => {
   if (!taskId) {
     return
   }
-  const currentTaskId = Number(route.query.openTaskId)
-  if (currentTaskId === taskId) {
-    await openTaskFromQuery(taskId)
-    return
-  }
-  router.push({
-    name: 'project-iterations',
-    params: { projectId },
-    query: { ...route.query, openTaskId: String(taskId) }
-  })
+  await openWorkItemDetailById(taskId)
 }
 
+/**
+ * 统一解析可分享链接中的工作项详情参数，保证 URL、左侧选中迭代和详情抽屉始终指向同一个工作项。
+ */
 const openTaskFromQuery = async (taskId?: number) => {
   const targetTaskId = taskId ?? Number(route.query.openTaskId)
   if (Number.isNaN(targetTaskId) || targetTaskId <= 0) {
     return
   }
 
-  const task = await getTaskDetail(targetTaskId)
-  if (task.projectId !== projectId) {
-    return
+  try {
+    const task = await getTaskDetail(targetTaskId)
+    if (task.projectId !== projectId) {
+      await syncWorkItemRouteQuery({ openTaskId: null, mode: 'replace' })
+      return
+    }
+
+    selectedScope.type = task.iterationId ? 'iteration' : 'unplanned'
+    selectedScope.iterationId = task.iterationId
+    workItemPagination.page = 1
+    await Promise.all([loadWorkItems(), loadCurrentIterationProgress()])
+    openEditWorkItemDialog(task)
+    await syncWorkItemRouteQuery({
+      iterationId: task.iterationId,
+      openTaskId: task.id,
+      mode: 'replace'
+    })
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '打开工作项详情失败')
+    await syncWorkItemRouteQuery({ openTaskId: null, mode: 'replace' })
   }
-
-  selectedScope.type = task.iterationId ? 'iteration' : 'unplanned'
-  selectedScope.iterationId = task.iterationId
-  workItemPagination.page = 1
-  await Promise.all([loadWorkItems(), loadCurrentIterationProgress()])
-  openEditWorkItemDialog(task)
-
-  const nextQuery = { ...route.query }
-  delete nextQuery.openTaskId
-  router.replace({ name: 'project-iterations', params: { projectId }, query: nextQuery })
 }
 
 const goBack = () => {
   router.push({ name: 'projects' })
 }
 
-const syncIterationQuery = async (iterationId: number | null) => {
+/**
+ * 统一维护迭代管理页面的深链参数，只改动迭代与工作项详情相关字段，其余查询参数保持不变。
+ */
+const syncWorkItemRouteQuery = async ({
+  iterationId = selectedScope.type === 'iteration' ? selectedScope.iterationId : null,
+  openTaskId = route.query.openTaskId ? Number(route.query.openTaskId) : null,
+  mode = 'replace'
+}: {
+  iterationId?: number | null
+  openTaskId?: number | null
+  mode?: 'push' | 'replace'
+}) => {
   const nextQuery = { ...route.query }
   if (iterationId) {
     nextQuery.iterationId = String(iterationId)
   } else {
     delete nextQuery.iterationId
   }
-  await router.replace({ name: 'project-iterations', params: { projectId }, query: nextQuery })
+  if (openTaskId) {
+    nextQuery.openTaskId = String(openTaskId)
+  } else {
+    delete nextQuery.openTaskId
+  }
+
+  const currentIterationId = route.query.iterationId ? String(route.query.iterationId) : ''
+  const currentOpenTaskId = route.query.openTaskId ? String(route.query.openTaskId) : ''
+  const nextIterationId = iterationId ? String(iterationId) : ''
+  const nextOpenTaskId = openTaskId ? String(openTaskId) : ''
+  if (currentIterationId === nextIterationId && currentOpenTaskId === nextOpenTaskId) {
+    return
+  }
+
+  await router[mode]({ name: 'project-iterations', params: { projectId }, query: nextQuery })
+}
+
+const syncIterationQuery = async (iterationId: number | null) => {
+  await syncWorkItemRouteQuery({ iterationId, mode: 'replace' })
+}
+
+/**
+ * 用户从列表点击工作项时，优先把当前工作项写入 URL，再交给路由监听统一打开详情，确保链接可复制分享。
+ */
+const openWorkItemDetailFromRow = async (item: TaskItem) => {
+  const currentTaskId = Number(route.query.openTaskId)
+  const currentIterationId = route.query.iterationId ? Number(route.query.iterationId) : null
+  const targetIterationId = item.iterationId ?? null
+  if (currentTaskId === item.id && currentIterationId === targetIterationId) {
+    await openTaskFromQuery(item.id)
+    return
+  }
+  await syncWorkItemRouteQuery({
+    iterationId: targetIterationId,
+    openTaskId: item.id,
+    mode: 'push'
+  })
+}
+
+/**
+ * 某些入口只有工作项 ID，需要先补齐工作项详情后再生成标准分享链接。
+ */
+const openWorkItemDetailById = async (taskId: number) => {
+  const currentTaskId = Number(route.query.openTaskId)
+  if (currentTaskId === taskId) {
+    await openTaskFromQuery(taskId)
+    return
+  }
+  try {
+    const task = await getTaskDetail(taskId)
+    if (task.projectId !== projectId) {
+      return
+    }
+    await syncWorkItemRouteQuery({
+      iterationId: task.iterationId,
+      openTaskId: task.id,
+      mode: 'push'
+    })
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '打开工作项详情失败')
+  }
+}
+
+/**
+ * 统一关闭详情抽屉，并在关闭时清理分享链接中的工作项参数，保留当前迭代上下文。
+ */
+const closeWorkItemDetail = async () => {
+  if (workItemDialogClosing.value) {
+    return
+  }
+  workItemDialogClosing.value = true
+  try {
+    await syncWorkItemRouteQuery({ openTaskId: null, mode: 'replace' })
+    workItemDialogVisible.value = false
+  } finally {
+    workItemDialogClosing.value = false
+  }
+}
+
+/**
+ * 兼容抽屉遮罩点击、按 Esc 等系统关闭动作，避免这类关闭路径遗漏 URL 清理。
+ */
+const handleWorkItemDrawerBeforeClose = async (done: () => void) => {
+  if (workItemDialogClosing.value) {
+    done()
+    return
+  }
+  workItemDialogClosing.value = true
+  try {
+    await syncWorkItemRouteQuery({ openTaskId: null, mode: 'replace' })
+    done()
+  } finally {
+    workItemDialogClosing.value = false
+  }
+}
+
+const handleWorkItemDialogClosed = () => {
+  resetWorkItemForm()
 }
 
 const selectUnplanned = async () => {
@@ -1650,7 +1775,7 @@ const handleSubmitWorkItem = async () => {
       await createTask(payload)
       ElMessage.success('工作项已创建')
     }
-    workItemDialogVisible.value = false
+    await closeWorkItemDetail()
     await refreshBoardAndItems()
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '保存失败')
@@ -1784,10 +1909,20 @@ watch(
 watch(
   () => route.query.openTaskId,
   async (value, previousValue) => {
-    if (!value || value === previousValue) {
+    if (!value) {
+      if (previousValue && workItemDialogVisible.value && !workItemDialogClosing.value) {
+        workItemDialogVisible.value = false
+      }
       return
     }
-    await openTaskFromQuery(Number(value))
+    const nextTaskId = Number(value)
+    if (Number.isNaN(nextTaskId) || nextTaskId <= 0) {
+      return
+    }
+    if (value === previousValue && workItemDialogVisible.value && currentWorkItemId.value === nextTaskId) {
+      return
+    }
+    await openTaskFromQuery(nextTaskId)
   }
 )
 
@@ -2533,10 +2668,27 @@ onMounted(async () => {
   color: #475569;
 }
 
+.workspace-item-link-button {
+  border: none;
+  cursor: pointer;
+  transition: color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.workspace-item-link-button:hover {
+  background: rgba(15, 23, 42, 0.08);
+  color: var(--app-primary);
+}
+
+.workspace-item-link-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(12, 108, 242, 0.2);
+}
+
 .workspace-title-button {
   min-width: 0;
   overflow: hidden;
   padding: 0;
+  border: none;
   background: transparent;
   color: #191c1d;
   text-overflow: ellipsis;
@@ -2544,6 +2696,8 @@ onMounted(async () => {
   font-size: 14px;
   font-weight: 800;
   text-align: left;
+  cursor: pointer;
+  transition: color 0.2s ease;
 }
 
 .workspace-title-button:hover {

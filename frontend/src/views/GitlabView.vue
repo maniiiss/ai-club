@@ -97,7 +97,10 @@
                       <span class="management-list-text">{{ row.defaultTargetBranch || '-' }}</span>
                     </td>
                     <td class="gitlab-binding-col-api" data-label="API 地址">
-                      <span class="management-list-empty gitlab-mono-text">{{ row.apiBaseUrl || '-' }}</span>
+                      <a v-if="row.apiBaseUrl" class="management-list-link gitlab-mono-text" :href="row.apiBaseUrl" target="_blank" rel="noreferrer">
+                        {{ row.apiBaseUrl }}
+                      </a>
+                      <span v-else class="management-list-empty gitlab-mono-text">-</span>
                     </td>
                     <td class="center gitlab-binding-col-status" data-label="状态">
                       <span class="management-list-pill" :class="row.enabled ? 'success' : 'neutral'">{{ row.enabled ? '启用' : '停用' }}</span>
@@ -254,13 +257,15 @@
                 </tr>
                 <tr v-for="row in autoMergeList" :key="row.id" class="management-list-row">
                   <td class="gitlab-auto-col-main" data-label="策略">
-                    <div class="management-list-title-cell">
-                      <span class="management-list-title-icon"><el-icon><Tickets /></el-icon></span>
-                      <div class="management-list-title-copy">
-                        <div class="management-list-title">{{ row.name }}</div>
-                        <div class="management-list-subtitle">{{ buildAutoMergeSubtitle(row) }}</div>
+                    <button class="management-list-title-trigger" type="button" @click="openAutoMergeDetailDialog(row)">
+                      <div class="management-list-title-cell">
+                        <span class="management-list-title-icon"><el-icon><Tickets /></el-icon></span>
+                        <div class="management-list-title-copy">
+                          <div class="management-list-title">{{ row.name }}</div>
+                          <div class="management-list-subtitle">{{ buildAutoMergeSubtitle(row) }}</div>
+                        </div>
                       </div>
-                    </div>
+                    </button>
                   </td>
                   <td class="center gitlab-auto-col-mode" data-label="模式">
                     <span class="management-list-pill" :class="row.executionMode === 'STANDALONE' ? 'warning' : 'info'">
@@ -435,8 +440,9 @@
                   <tr v-if="!logList.length">
                     <td colspan="7" class="gitlab-empty-row">暂无自动合并日志</td>
                   </tr>
-                  <tr v-for="row in logList" :key="row.id" class="management-list-row">
-                    <td class="gitlab-log-col-main" data-label="执行记录">
+                <tr v-for="row in logList" :key="row.id" class="management-list-row">
+                  <td class="gitlab-log-col-main" data-label="执行记录">
+                    <button class="management-list-title-trigger" type="button" @click="openLogDetail(row)">
                       <div class="management-list-title-cell">
                         <span class="management-list-title-icon"><el-icon><DocumentCopy /></el-icon></span>
                         <div class="management-list-title-copy">
@@ -444,7 +450,8 @@
                           <div class="management-list-subtitle">{{ buildLogSubtitle(row) }}</div>
                         </div>
                       </div>
-                    </td>
+                    </button>
+                  </td>
                     <td class="center gitlab-log-col-trigger" data-label="触发方式">
                       <span class="management-list-pill" :class="row.triggerType === 'SCHEDULED' ? 'warning' : 'info'">{{ formatTriggerTypeLabel(row.triggerType) }}</span>
                     </td>
@@ -592,8 +599,8 @@
     </el-descriptions>
   </el-dialog>
 
-  <el-dialog v-model="autoMergeDialogVisible" :title="autoMergeIsEditing ? '编辑自动合并策略' : '新增自动合并策略'" width="760px" class="platform-form-dialog" align-center>
-    <el-form ref="autoMergeFormRef" class="auto-merge-form platform-form-layout" :model="autoMergeForm" :rules="autoMergeRules" label-width="140px">
+  <el-dialog v-model="autoMergeDialogVisible" :title="autoMergeDialogTitle" width="760px" class="platform-form-dialog" align-center>
+    <el-form ref="autoMergeFormRef" class="auto-merge-form platform-form-layout" :model="autoMergeForm" :rules="autoMergeRules" :disabled="autoMergeReadonlyMode" label-width="140px">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">基础配置</div>
@@ -704,8 +711,8 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="autoMergeDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="autoMergeSubmitting" @click="handleAutoMergeSubmit">保存</el-button>
+      <el-button @click="autoMergeDialogVisible = false">{{ autoMergeReadonlyMode ? '关闭' : '取消' }}</el-button>
+      <el-button v-if="!autoMergeReadonlyMode" type="primary" :loading="autoMergeSubmitting" @click="handleAutoMergeSubmit">保存</el-button>
     </template>
   </el-dialog>
 
@@ -836,6 +843,7 @@ const autoMergeLoading = ref(false)
 const autoMergeSubmitting = ref(false)
 const autoMergeDialogVisible = ref(false)
 const autoMergeIsEditing = ref(false)
+const autoMergeReadonlyMode = ref(false)
 const currentAutoMergeId = ref<number | null>(null)
 const autoMergeList = ref<GitlabAutoMergeConfigItem[]>([])
 const autoMergeFormRef = ref<FormInstance>()
@@ -910,6 +918,13 @@ const buildLogSubtitle = (row: GitlabAutoMergeLogItem) => {
   }
   return segments.join(' · ')
 }
+
+const autoMergeDialogTitle = computed(() => {
+  if (autoMergeReadonlyMode.value) {
+    return '查看自动合并策略'
+  }
+  return autoMergeIsEditing.value ? '编辑自动合并策略' : '新增自动合并策略'
+})
 
 const resetBindingForm = () => { currentBindingId.value = null; bindingForm.projectId = projectOptions.value[0]?.id ?? null; bindingForm.apiBaseUrl = DEFAULT_GITLAB_API_URL; bindingForm.gitlabProjectRef = ''; bindingForm.defaultTargetBranch = ''; bindingForm.apiToken = ''; bindingForm.enabled = true; bindingFormRef.value?.clearValidate() }
 const resetTagForm = () => { currentTagBinding.value = null; tagForm.tagName = ''; tagForm.branchName = ''; tagForm.message = ''; tagBranchOptions.value = []; tagFormRef.value?.clearValidate() }
@@ -1022,8 +1037,10 @@ const openTagCreateDialog = async (row: ProjectGitlabBindingItem) => { resetTagF
 const handleTagSubmit = async () => { const valid = await tagFormRef.value?.validate().catch(() => false); if (!valid || !currentTagBinding.value) return; tagSubmitting.value = true; try { const result = await createGitlabTag(currentTagBinding.value.id, { tagName: tagForm.tagName.trim(), branchName: tagForm.branchName.trim(), message: tagForm.message.trim() || undefined }); tagResult.value = result; tagDialogVisible.value = false; tagResultVisible.value = true; ElMessage.success(`Tag ${result.tagName} 已创建`) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '创建 Tag 失败') } finally { tagSubmitting.value = false } }
 const openBindingMergeRequests = async (row: ProjectGitlabBindingItem) => { mergeRequestDrawerTitle.value = `绑定仓库 MR 预览 - ${row.projectName} / ${row.gitlabProjectPath || row.gitlabProjectRef}`; mergeRequestDrawerVisible.value = true; mergeRequestLoading.value = true; try { mergeRequestList.value = await previewBindingMergeRequests(row.id, row.defaultTargetBranch || undefined) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '加载 MR 失败') } finally { mergeRequestLoading.value = false } }
 
-const openAutoMergeCreateDialog = () => { autoMergeIsEditing.value = false; resetAutoMergeForm(); autoMergeDialogVisible.value = true }
-const openAutoMergeEditDialog = (row: GitlabAutoMergeConfigItem) => { autoMergeIsEditing.value = true; currentAutoMergeId.value = row.id; autoMergeForm.name = row.name; autoMergeForm.executionMode = row.executionMode; autoMergeForm.description = row.description; autoMergeForm.bindingId = row.bindingId; autoMergeForm.apiBaseUrl = row.apiBaseUrl; autoMergeForm.gitlabProjectRef = row.executionMode === 'STANDALONE' ? row.gitlabProjectRef : ''; autoMergeForm.apiToken = ''; autoMergeForm.sourceBranch = row.sourceBranch || ''; autoMergeForm.targetBranch = row.targetBranch || ''; autoMergeForm.titleKeyword = row.titleKeyword || ''; autoMergeForm.schedulerEnabled = row.schedulerEnabled; autoMergeForm.schedulerCron = row.schedulerCron || '0 */5 * * * *'; autoMergeForm.enabled = row.enabled; autoMergeForm.autoMerge = row.autoMerge; autoMergeForm.squashOnMerge = row.squashOnMerge; autoMergeForm.removeSourceBranch = row.removeSourceBranch; autoMergeForm.triggerPipelineAfterMerge = row.triggerPipelineAfterMerge; autoMergeForm.requirePipelineSuccess = row.requirePipelineSuccess; autoMergeForm.reviewAgentId = row.reviewAgentId; autoMergeForm.aiReviewEnabled = row.aiReviewEnabled; autoMergeForm.aiReviewPrompt = row.aiReviewPrompt || ''; cronTemplate.value = ''; autoMergeDialogVisible.value = true }
+const openAutoMergeCreateDialog = () => { autoMergeReadonlyMode.value = false; autoMergeIsEditing.value = false; resetAutoMergeForm(); autoMergeDialogVisible.value = true }
+const fillAutoMergeForm = (row: GitlabAutoMergeConfigItem) => { autoMergeIsEditing.value = true; currentAutoMergeId.value = row.id; autoMergeForm.name = row.name; autoMergeForm.executionMode = row.executionMode; autoMergeForm.description = row.description; autoMergeForm.bindingId = row.bindingId; autoMergeForm.apiBaseUrl = row.apiBaseUrl; autoMergeForm.gitlabProjectRef = row.executionMode === 'STANDALONE' ? row.gitlabProjectRef : ''; autoMergeForm.apiToken = ''; autoMergeForm.sourceBranch = row.sourceBranch || ''; autoMergeForm.targetBranch = row.targetBranch || ''; autoMergeForm.titleKeyword = row.titleKeyword || ''; autoMergeForm.schedulerEnabled = row.schedulerEnabled; autoMergeForm.schedulerCron = row.schedulerCron || '0 */5 * * * *'; autoMergeForm.enabled = row.enabled; autoMergeForm.autoMerge = row.autoMerge; autoMergeForm.squashOnMerge = row.squashOnMerge; autoMergeForm.removeSourceBranch = row.removeSourceBranch; autoMergeForm.triggerPipelineAfterMerge = row.triggerPipelineAfterMerge; autoMergeForm.requirePipelineSuccess = row.requirePipelineSuccess; autoMergeForm.reviewAgentId = row.reviewAgentId; autoMergeForm.aiReviewEnabled = row.aiReviewEnabled; autoMergeForm.aiReviewPrompt = row.aiReviewPrompt || ''; cronTemplate.value = '' }
+const openAutoMergeDetailDialog = (row: GitlabAutoMergeConfigItem) => { autoMergeReadonlyMode.value = true; fillAutoMergeForm(row); autoMergeDialogVisible.value = true }
+const openAutoMergeEditDialog = (row: GitlabAutoMergeConfigItem) => { autoMergeReadonlyMode.value = false; fillAutoMergeForm(row); autoMergeDialogVisible.value = true }
 const handleAutoMergeSubmit = async () => { const valid = await autoMergeFormRef.value?.validate().catch(() => false); if (!valid) return; if (autoMergeForm.executionMode === 'PROJECT_BOUND' && !autoMergeForm.bindingId) { ElMessage.warning('关联业务项目模式必须选择 GitLab 绑定'); return } if (autoMergeForm.executionMode === 'STANDALONE') { if (!autoMergeForm.apiBaseUrl.trim() || !autoMergeForm.gitlabProjectRef.trim()) { ElMessage.warning('独立运行模式必须填写 GitLab API 和项目标识'); return } if (!autoMergeIsEditing.value && !autoMergeForm.apiToken.trim()) { ElMessage.warning('独立运行模式新增时必须填写 APIToken'); return } if (autoMergeForm.triggerPipelineAfterMerge) { ElMessage.warning('独立运行模式不支持合并后自动触发 Jenkins'); return } } if (autoMergeForm.schedulerEnabled && !autoMergeForm.schedulerCron.trim()) { ElMessage.warning('启用调度时必须填写 Cron 表达式'); return } if (autoMergeForm.aiReviewEnabled && !autoMergeForm.reviewAgentId) { ElMessage.warning('启用 AI Review 时必须选择模型'); return } autoMergeSubmitting.value = true; try { const payload = { ...autoMergeForm, schedulerCron: autoMergeForm.schedulerCron.trim() }; if (autoMergeIsEditing.value && currentAutoMergeId.value !== null) { await updateGitlabAutoMergeConfig(currentAutoMergeId.value, payload); ElMessage.success('自动合并策略已更新') } else { await createGitlabAutoMergeConfig(payload); ElMessage.success('自动合并策略已创建') } autoMergeDialogVisible.value = false; await refreshAll() } catch (error: any) { ElMessage.error(error?.response?.data?.message || '保存失败') } finally { autoMergeSubmitting.value = false } }
 const handleAutoMergeDelete = async (id: number) => { try { await ElMessageBox.confirm('确认删除该自动合并策略吗？', '提示', { type: 'warning' }); await deleteGitlabAutoMergeConfig(id); ElMessage.success('自动合并策略已删除'); await refreshAll() } catch (error: any) { if (error !== 'cancel') ElMessage.error(error?.response?.data?.message || '删除失败') } }
 const handleAutoMergeTest = async (id: number) => { try { await testGitlabAutoMergeConfig(id); ElMessage.success('策略测试成功') } catch (error: any) { ElMessage.error(error?.response?.data?.message || '策略测试失败') } }
@@ -1185,6 +1202,14 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 .gitlab-log-col-reason { width: 22%; }
 .gitlab-log-col-link { width: 8%; }
 .gitlab-log-col-actions { width: 12%; }
+
+.gitlab-binding-col-api .management-list-link {
+  color: var(--app-text);
+}
+
+.gitlab-binding-col-api .management-list-link:hover {
+  color: var(--app-primary);
+}
 
 .gitlab-title-link {
   display: inline-block;

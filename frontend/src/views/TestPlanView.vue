@@ -71,16 +71,18 @@
             <div class="atelier-data-head-item test-col-updated">更新时间</div>
             <div class="atelier-data-head-item test-col-actions right">操作</div>
           </div>
-          <div v-for="row in list" :key="row.id" class="atelier-data-row test-plan-list-row">
-            <div class="atelier-data-cell test-col-main" data-label="计划">
-              <div class="management-list-title-cell">
-                <span class="management-list-title-icon"><el-icon><Finished /></el-icon></span>
-                <div class="management-list-title-copy">
-                  <button class="management-list-title test-plan-link" type="button" @click="openDetail(row.id)">{{ row.name }}</button>
-                  <div class="management-list-subtitle">{{ row.description || '暂无说明' }}</div>
-                </div>
+            <div v-for="row in list" :key="row.id" class="atelier-data-row test-plan-list-row">
+              <div class="atelier-data-cell test-col-main" data-label="计划">
+                <button class="management-list-title-trigger test-plan-trigger" type="button" @click="openDetail(row.id)">
+                  <div class="management-list-title-cell">
+                    <span class="management-list-title-icon"><el-icon><Finished /></el-icon></span>
+                    <div class="management-list-title-copy">
+                      <div class="management-list-title test-plan-link">{{ row.name }}</div>
+                      <div class="management-list-subtitle">{{ row.description || '暂无说明' }}</div>
+                    </div>
+                  </div>
+                </button>
               </div>
-            </div>
             <div class="atelier-data-cell test-col-project" data-label="所属项目">
               <button class="management-list-link" type="button" @click="goToProject(row.projectId)">{{ row.projectName }}</button>
             </div>
@@ -621,15 +623,10 @@ onMounted(async () => {
 
 .test-plan-link {
   margin-top: 0;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  text-align: left;
 }
 
-.test-plan-link:hover {
-  color: #904d00;
+.test-plan-trigger {
+  width: 100%;
 }
 
 .test-col-project .management-list-link,
@@ -639,6 +636,12 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--app-text);
+}
+
+.test-col-project .management-list-link:hover,
+.test-col-iteration .management-list-link:hover {
+  color: var(--app-primary);
 }
 
 @media (max-width: 1200px) {

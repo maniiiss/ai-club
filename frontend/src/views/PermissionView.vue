@@ -74,13 +74,15 @@
           <tbody>
             <tr v-for="row in permissionList" :key="row.id" class="management-list-row">
               <td class="permission-col-main" data-label="功能">
-                <div class="management-list-title-cell">
-                  <span class="management-list-title-icon"><el-icon><Setting /></el-icon></span>
-                  <div class="management-list-title-copy">
-                    <div class="management-list-title">{{ row.name }}</div>
-                    <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+                <button class="management-list-title-trigger" type="button" @click="openDetailDialog(row)">
+                  <div class="management-list-title-cell">
+                    <span class="management-list-title-icon"><el-icon><Setting /></el-icon></span>
+                    <div class="management-list-title-copy">
+                      <div class="management-list-title">{{ row.name }}</div>
+                      <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+                    </div>
                   </div>
-                </div>
+                </button>
               </td>
               <td class="permission-col-code" data-label="编码">
                 <span class="management-list-text">{{ row.code }}</span>
@@ -145,8 +147,8 @@
       </div>
     </section>
 
-  <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑功能' : '新建功能'" width="620px" class="platform-form-dialog" align-center>
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" class="platform-form-layout">
+  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="620px" class="platform-form-dialog" align-center>
+    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-width="100px" class="platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">功能信息</div>
@@ -190,8 +192,8 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      <el-button @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+      <el-button v-if="!readonlyMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
     </template>
   </el-dialog>
   </div>
@@ -225,6 +227,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const dialogVisible = ref(false)
 const isEditing = ref(false)
+const readonlyMode = ref(false)
 const currentId = ref<number | null>(null)
 const currentBuiltIn = ref(false)
 const permissionList = ref<PermissionItem[]>([])
@@ -239,6 +242,12 @@ const filters = reactive<{ keyword: string; type: '' | 'MENU' | 'ACTION'; enable
   enabled: ''
 })
 const permissionFilterPopoverVisible = ref(false)
+const dialogTitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看功能'
+  }
+  return isEditing.value ? '编辑功能' : '新建功能'
+})
 const form = reactive<PermissionForm>({
   name: '',
   code: '',
@@ -336,12 +345,13 @@ const handleNextPage = async () => {
 }
 
 const openCreateDialog = () => {
+  readonlyMode.value = false
   isEditing.value = false
   resetForm()
   dialogVisible.value = true
 }
 
-const openEditDialog = (row: PermissionItem) => {
+const fillForm = (row: PermissionItem) => {
   isEditing.value = true
   currentId.value = row.id
   currentBuiltIn.value = row.builtIn
@@ -355,6 +365,17 @@ const openEditDialog = (row: PermissionItem) => {
   form.sortOrder = row.sortOrder
   form.enabled = row.enabled
   form.description = row.description
+}
+
+const openDetailDialog = (row: PermissionItem) => {
+  readonlyMode.value = true
+  fillForm(row)
+  dialogVisible.value = true
+}
+
+const openEditDialog = (row: PermissionItem) => {
+  readonlyMode.value = false
+  fillForm(row)
   dialogVisible.value = true
 }
 

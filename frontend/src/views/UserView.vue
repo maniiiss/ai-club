@@ -73,13 +73,15 @@
           <tbody>
             <tr v-for="row in userList" :key="row.id" class="management-list-row">
               <td class="user-col-main" data-label="用户">
-                <div class="management-list-title-cell">
-                  <span class="management-list-avatar">{{ userInitial(row.nickname || row.username) }}</span>
-                  <div class="management-list-title-copy">
-                    <div class="management-list-title">{{ row.nickname || row.username }}</div>
-                    <div class="management-list-subtitle">{{ row.username }}</div>
+                <button class="management-list-title-trigger" type="button" @click="openDetailDialog(row)">
+                  <div class="management-list-title-cell">
+                    <span class="management-list-avatar">{{ userInitial(row.nickname || row.username) }}</span>
+                    <div class="management-list-title-copy">
+                      <div class="management-list-title">{{ row.nickname || row.username }}</div>
+                      <div class="management-list-subtitle">{{ row.username }}</div>
+                    </div>
                   </div>
-                </div>
+                </button>
               </td>
               <td class="user-col-gitlab" data-label="GitLab">
                 <span class="management-list-empty">{{ row.gitlabUsername || '-' }}</span>
@@ -151,8 +153,8 @@
       </div>
     </section>
 
-  <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑用户' : '新建用户'" width="560px" class="platform-form-dialog" align-center>
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="110px" class="platform-form-layout">
+  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px" class="platform-form-dialog" align-center>
+    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-width="110px" class="platform-form-layout">
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">用户信息</div>
@@ -187,8 +189,8 @@
       </section>
     </el-form>
     <template #footer>
-      <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      <el-button @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+      <el-button v-if="!readonlyMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
     </template>
   </el-dialog>
   </div>
@@ -220,6 +222,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const dialogVisible = ref(false)
 const isEditing = ref(false)
+const readonlyMode = ref(false)
 const currentId = ref<number | null>(null)
 const currentBuiltIn = ref(false)
 const userList = ref<UserItem[]>([])
@@ -230,6 +233,12 @@ const pagination = reactive({ page: 1, size: 10, total: 0 })
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
 const filters = reactive<{ keyword: string; enabled: boolean | ''; roleId?: number }>({ keyword: '', enabled: '', roleId: undefined })
 const userFilterPopoverVisible = ref(false)
+const dialogTitle = computed(() => {
+  if (readonlyMode.value) {
+    return '查看用户'
+  }
+  return isEditing.value ? '编辑用户' : '新建用户'
+})
 const form = reactive<UserForm>({
   username: '',
   nickname: '',
@@ -321,12 +330,13 @@ const handleNextPage = async () => {
 }
 
 const openCreateDialog = () => {
+  readonlyMode.value = false
   isEditing.value = false
   resetForm()
   dialogVisible.value = true
 }
 
-const openEditDialog = (row: UserItem) => {
+const fillForm = (row: UserItem) => {
   isEditing.value = true
   currentId.value = row.id
   currentBuiltIn.value = row.builtIn
@@ -338,6 +348,17 @@ const openEditDialog = (row: UserItem) => {
   form.enabled = row.enabled
   form.roleIds = [...row.roleIds]
   form.password = ''
+}
+
+const openDetailDialog = (row: UserItem) => {
+  readonlyMode.value = true
+  fillForm(row)
+  dialogVisible.value = true
+}
+
+const openEditDialog = (row: UserItem) => {
+  readonlyMode.value = false
+  fillForm(row)
   dialogVisible.value = true
 }
 

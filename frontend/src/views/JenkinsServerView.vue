@@ -67,18 +67,20 @@
           <tbody>
             <tr v-for="row in serverList" :key="row.id" class="work-list-row">
               <td class="jenkins-col-main" data-label="服务">
-                <div class="management-list-title-cell">
-                  <span class="management-list-title-icon">
-                    <el-icon><Connection /></el-icon>
-                  </span>
-                  <div class="management-list-title-copy">
-                    <div class="management-list-title">{{ row.name }}</div>
-                    <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+                <button class="management-list-title-trigger" type="button" @click="openServerDetailDialog(row)">
+                  <div class="management-list-title-cell">
+                    <span class="management-list-title-icon">
+                      <el-icon><Connection /></el-icon>
+                    </span>
+                    <div class="management-list-title-copy">
+                      <div class="management-list-title">{{ row.name }}</div>
+                      <div class="management-list-subtitle">{{ row.description || '暂无描述' }}</div>
+                    </div>
                   </div>
-                </div>
+                </button>
               </td>
               <td class="jenkins-col-url" data-label="Jenkins 地址">
-                <span class="management-list-link">{{ row.baseUrl }}</span>
+                <a class="management-list-link" :href="row.baseUrl" target="_blank" rel="noreferrer">{{ row.baseUrl }}</a>
               </td>
               <td class="jenkins-col-user" data-label="用户名">
                 <span class="management-list-text">{{ row.username }}</span>
@@ -153,8 +155,8 @@
       </div>
     </section>
 
-    <el-dialog v-model="serverDialogVisible" :title="serverIsEditing ? '编辑 Jenkins 服务' : '新增 Jenkins 服务'" width="640px" class="platform-form-dialog" align-center>
-      <el-form ref="serverFormRef" :model="serverForm" :rules="serverRules" label-width="110px" class="platform-form-layout">
+    <el-dialog v-model="serverDialogVisible" :title="serverDialogTitle" width="640px" class="platform-form-dialog" align-center>
+      <el-form ref="serverFormRef" :model="serverForm" :rules="serverRules" :disabled="serverReadonlyMode" label-width="110px" class="platform-form-layout">
         <section class="platform-form-section">
           <div class="platform-form-section-head">
             <div class="platform-form-section-title">Jenkins 服务</div>
@@ -186,8 +188,8 @@
         </section>
       </el-form>
       <template #footer>
-        <el-button @click="serverDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="serverSubmitting" @click="handleServerSubmit">保存</el-button>
+        <el-button @click="serverDialogVisible = false">{{ serverReadonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!serverReadonlyMode" type="primary" :loading="serverSubmitting" @click="handleServerSubmit">保存</el-button>
       </template>
     </el-dialog>
 
@@ -263,6 +265,7 @@ const serverLoading = ref(false)
 const serverSubmitting = ref(false)
 const serverDialogVisible = ref(false)
 const serverIsEditing = ref(false)
+const serverReadonlyMode = ref(false)
 const currentServerId = ref<number | null>(null)
 const serverList = ref<JenkinsServerItem[]>([])
 const serverFormRef = ref<FormInstance>()
@@ -279,6 +282,12 @@ const currentJobServerId = ref<number | null>(null)
 const jobTriggeringName = ref('')
 
 const serverTotalPages = computed(() => Math.max(1, Math.ceil(serverPagination.total / serverPagination.size) || 1))
+const serverDialogTitle = computed(() => {
+  if (serverReadonlyMode.value) {
+    return '查看 Jenkins 服务'
+  }
+  return serverIsEditing.value ? '编辑 Jenkins 服务' : '新增 Jenkins 服务'
+})
 
 const serverRules: FormRules<JenkinsServerForm> = {
   name: [{ required: true, message: '请输入 Jenkins 名称', trigger: 'blur' }],
@@ -367,12 +376,13 @@ const handleServerNextPage = async () => {
 }
 
 const openServerCreateDialog = () => {
+  serverReadonlyMode.value = false
   serverIsEditing.value = false
   resetServerForm()
   serverDialogVisible.value = true
 }
 
-const openServerEditDialog = (row: JenkinsServerItem) => {
+const fillServerForm = (row: JenkinsServerItem) => {
   serverIsEditing.value = true
   currentServerId.value = row.id
   serverForm.name = row.name
@@ -381,6 +391,17 @@ const openServerEditDialog = (row: JenkinsServerItem) => {
   serverForm.apiToken = ''
   serverForm.description = row.description
   serverForm.enabled = row.enabled
+}
+
+const openServerDetailDialog = (row: JenkinsServerItem) => {
+  serverReadonlyMode.value = true
+  fillServerForm(row)
+  serverDialogVisible.value = true
+}
+
+const openServerEditDialog = (row: JenkinsServerItem) => {
+  serverReadonlyMode.value = false
+  fillServerForm(row)
   serverDialogVisible.value = true
 }
 
@@ -523,5 +544,13 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.jenkins-col-url .management-list-link {
+  color: var(--app-text);
+}
+
+.jenkins-col-url .management-list-link:hover {
+  color: var(--app-primary);
 }
 </style>
