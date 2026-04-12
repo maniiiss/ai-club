@@ -20,6 +20,8 @@ export interface HermesChatResponsePayload {
   content: string
   references: HermesReferenceItem[]
   suggestions: string[]
+  actions: HermesActionItem[]
+  toolResults: HermesToolResultItem[]
 }
 
 /**
@@ -40,6 +42,55 @@ export interface HermesMessageItem {
   role: 'user' | 'assistant'
   content: string
   status: 'done' | 'streaming' | 'error'
+  actions?: HermesActionItem[]
+}
+
+/**
+ * Hermes 返回的动作卡片。
+ * 第一版主要用于创建执行中心任务。
+ */
+export interface HermesActionItem {
+  type: string
+  title: string
+  description: string
+  requiresConfirm: boolean
+  params: Record<string, unknown>
+}
+
+/**
+ * Hermes 返回的工具查询结果。
+ */
+export interface HermesToolResultItem {
+  toolCode: string
+  toolName: string
+  summary: string
+  candidates: HermesToolCandidateItem[]
+  actions: HermesToolActionItem[]
+  metadata: Record<string, unknown>
+}
+
+/**
+ * Hermes 工具返回的候选对象卡片。
+ */
+export interface HermesToolCandidateItem {
+  type: string
+  id: number | null
+  title: string
+  subtitle: string
+  route: string
+  payload: Record<string, unknown>
+  actions: HermesToolActionItem[]
+}
+
+/**
+ * Hermes 工具候选对象下挂的动作。
+ */
+export interface HermesToolActionItem {
+  type: string
+  title: string
+  description: string
+  requiresConfirm: boolean
+  params: Record<string, unknown>
 }
 
 /**
@@ -50,6 +101,8 @@ export interface HermesStreamMetaEvent {
   roleName: string
   references: HermesReferenceItem[]
   suggestions: string[]
+  actions: HermesActionItem[]
+  toolResults: HermesToolResultItem[]
 }
 
 /**
@@ -68,6 +121,8 @@ export interface HermesStreamDoneEvent {
   content: string
   references: HermesReferenceItem[]
   suggestions: string[]
+  actions: HermesActionItem[]
+  toolResults: HermesToolResultItem[]
 }
 
 /**
@@ -86,4 +141,6 @@ export interface HermesConversationSession {
   references: HermesReferenceItem[]
   suggestions: string[]
   roleName: string
+  actions: HermesActionItem[]
+  toolResults: HermesToolResultItem[]
 }

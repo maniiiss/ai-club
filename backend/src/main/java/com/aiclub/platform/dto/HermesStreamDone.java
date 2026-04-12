@@ -10,6 +10,8 @@ public record HermesStreamDone(
         String roleName,
         String content,
         List<HermesReferenceSummary> references,
-        List<String> suggestions
+        List<String> suggestions,
+        List<HermesActionSummary> actions,
+        List<PlatformToolResult> toolResults
 ) {
 }

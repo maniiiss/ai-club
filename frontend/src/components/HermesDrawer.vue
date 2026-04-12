@@ -17,7 +17,7 @@
     </template>
 
     <div class="hermes-panel">
-      <div ref="messageScrollRef" class="hermes-body">
+      <div ref="messageScrollRef" class="hermes-body" @click="handleThinkSummaryClick">
         <section v-if="isMobileViewport && !currentMessages.length" class="hermes-mobile-intro">
           <div class="hermes-mobile-intro-title">问你想问</div>
           <p class="hermes-mobile-intro-description">Hermes 会结合当前页面、项目和任务上下文继续回答你的问题。</p>
@@ -61,7 +61,71 @@
           </div>
         </section>
 
-        <section v-else class="hermes-empty-state">
+        <section v-if="currentToolResults.length" class="hermes-tool-section">
+          <div class="hermes-section-title">工具结果</div>
+          <div class="hermes-tool-result-list">
+            <article v-for="(toolResult, resultIndex) in currentToolResults" :key="`${toolResult.toolCode}-${resultIndex}`" class="hermes-tool-result-card">
+              <div class="hermes-tool-result-head">
+                <strong>{{ toolResult.toolName }}</strong>
+                <span>{{ toolResult.summary }}</span>
+              </div>
+              <div v-if="toolResult.candidates.length" class="hermes-tool-candidate-list">
+                <article
+                  v-for="(candidate, candidateIndex) in toolResult.candidates"
+                  :key="`${toolResult.toolCode}-${candidate.type}-${candidate.id ?? candidateIndex}`"
+                  class="hermes-tool-candidate-card"
+                >
+                  <div class="hermes-tool-candidate-copy">
+                    <strong>{{ candidate.title }}</strong>
+                    <span>{{ candidate.subtitle }}</span>
+                  </div>
+                  <div class="hermes-tool-candidate-actions">
+                    <button
+                      v-if="candidate.route"
+                      class="hermes-tool-inline-button secondary"
+                      type="button"
+                      @click="handleOpenReference(candidate.route)"
+                    >
+                      查看
+                    </button>
+                    <button
+                      v-for="(action, actionIndex) in candidate.actions"
+                      :key="`${candidate.type}-${candidate.id ?? candidateIndex}-${action.type}-${actionIndex}`"
+                      class="hermes-tool-inline-button"
+                      type="button"
+                      :disabled="sending || executingActionKey === toolActionKey(action, candidateIndex, actionIndex)"
+                      @click="handleConfirmToolAction(action, candidateIndex, actionIndex)"
+                    >
+                      {{ executingActionKey === toolActionKey(action, candidateIndex, actionIndex) ? '执行中...' : action.title }}
+                    </button>
+                  </div>
+                </article>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section v-if="currentActions.length" class="hermes-action-section">
+          <div class="hermes-section-title">可执行动作</div>
+          <div class="hermes-action-list">
+            <article v-for="(action, index) in currentActions" :key="`${action.type}-${index}-${action.title}`" class="hermes-action-card">
+              <div class="hermes-action-card-copy">
+                <strong>{{ action.title }}</strong>
+                <span>{{ action.description }}</span>
+              </div>
+              <button
+                class="hermes-action-button"
+                type="button"
+                :disabled="sending || executingActionKey === actionKey(action, index)"
+                @click="handleConfirmAction(action, index)"
+              >
+                {{ executingActionKey === actionKey(action, index) ? '执行中...' : '确认执行' }}
+              </button>
+            </article>
+          </div>
+        </section>
+
+        <section v-if="!currentMessages.length" class="hermes-empty-state">
           <div class="hermes-empty-kicker">问你想问</div>
           <div class="hermes-empty-title">把项目上下文交给 Hermes</div>
           <p class="hermes-empty-description">
@@ -109,15 +173,20 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { streamHermesChat } from '@/api/hermes'
+import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
 import { renderHermesMarkdownToHtml } from '@/utils/hermesMarkdown'
+import { DEFAULT_REQUIREMENT_TEMPLATE } from '@/utils/requirementTemplate'
 import type {
+  HermesActionItem,
   HermesChatRequestPayload,
   HermesConversationSession,
   HermesMessageItem,
   HermesReferenceItem,
+  HermesToolActionItem,
+  HermesToolResultItem,
   HermesStreamDeltaEvent,
   HermesStreamDoneEvent,
   HermesStreamErrorEvent,
@@ -144,12 +213,15 @@ const currentRoleName = ref('协作成员')
 const currentMessages = ref<HermesMessageItem[]>([])
 const currentReferences = ref<HermesReferenceItem[]>([])
 const currentSuggestions = ref<string[]>([])
+const currentActions = ref<HermesActionItem[]>([])
+const currentToolResults = ref<HermesToolResultItem[]>([])
 const currentScopeKey = ref('')
 const scopeKeyByFingerprint = new Map<string, string>()
 const sessionCache = new Map<string, HermesConversationSession>()
 const conversationIdByFingerprint = new Map<string, string>()
 const activeStreamAbort = ref<(() => void) | null>(null)
 const thinkBlockOpenState = new Map<string, boolean>()
+const executingActionKey = ref('')
 
 const scopeFingerprint = computed(() => (props.projectId ? `project:${props.projectId}` : 'global'))
 const drawerSubtitle = computed(() => {
@@ -178,6 +250,8 @@ const loadSessionForCurrentScope = () => {
   currentMessages.value = cachedSession ? [...cachedSession.messages] : []
   currentReferences.value = cachedSession ? [...cachedSession.references] : []
   currentSuggestions.value = cachedSession ? [...cachedSession.suggestions] : []
+  currentActions.value = cachedSession ? [...(cachedSession.actions || [])] : []
+  currentToolResults.value = cachedSession ? [...(cachedSession.toolResults || [])] : []
   currentRoleName.value = cachedSession?.roleName || '协作成员'
   void restoreThinkBlocksAndScroll(false)
 }
@@ -191,7 +265,9 @@ const saveCurrentSession = () => {
     messages: [...currentMessages.value],
     references: [...currentReferences.value],
     suggestions: [...currentSuggestions.value],
-    roleName: currentRoleName.value
+    roleName: currentRoleName.value,
+    actions: [...currentActions.value],
+    toolResults: [...currentToolResults.value]
   })
 }
 
@@ -268,14 +344,12 @@ onMounted(() => {
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', syncViewportMode)
   }
-  messageScrollRef.value?.addEventListener('click', handleThinkSummaryClick)
 })
 
 onBeforeUnmount(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', syncViewportMode)
   }
-  messageScrollRef.value?.removeEventListener('click', handleThinkSummaryClick)
   if (activeStreamAbort.value) {
     activeStreamAbort.value()
     activeStreamAbort.value = null
@@ -315,6 +389,95 @@ const handleOpenReference = async (route: string) => {
     return
   }
   await router.push(route)
+}
+
+const actionKey = (action: HermesActionItem, index: number) => `${action.type}:${index}:${action.title}`
+const toolActionKey = (action: HermesToolActionItem, candidateIndex: number, actionIndex: number) =>
+  `tool:${action.type}:${candidateIndex}:${actionIndex}:${action.title}`
+
+/**
+ * Hermes 只负责给出动作建议，真正写入仍走平台执行中心接口并在用户确认后发生。
+ */
+const executeAction = async (action: { type: string; title: string; description: string; requiresConfirm: boolean; params: Record<string, unknown> }, key: string) => {
+  try {
+    if (action.requiresConfirm) {
+      await ElMessageBox.confirm(action.description || `确认执行“${action.title}”吗？`, '确认执行动作', { type: 'warning' })
+    }
+    executingActionKey.value = key
+    const params = action.params || {}
+    if (action.type === 'CREATE_EXECUTION_TASK') {
+      const executionTask = await createExecutionTask({
+        scenarioCode: String(params.scenarioCode || ''),
+        projectId: Number(params.projectId),
+        workItemId: params.workItemId == null ? null : Number(params.workItemId),
+        triggerSource: String(params.triggerSource || 'HERMES'),
+        inputPayload: (params.inputPayload || {}) as Record<string, unknown>
+      })
+      ElMessage.success('执行任务已创建')
+      drawerVisible.value = false
+      await router.push({ name: 'execution-task-detail', params: { executionTaskId: executionTask.id } })
+      return
+    }
+    if (action.type === 'CREATE_WORK_ITEM_DRAFT') {
+      const workItemType = String(params.workItemType || '需求')
+      const content = String(params.content || '')
+      const name = String(params.name || (content.slice(0, 40) || `Hermes 创建的${workItemType}草稿`))
+      const requirementMarkdown = workItemType === '需求'
+        ? `${DEFAULT_REQUIREMENT_TEMPLATE}\n\n### 临时补充\n\n${content}`
+        : ''
+      await createTask({
+        name,
+        workItemType: workItemType as '需求' | '任务' | '缺陷',
+        status: '草稿',
+        priority: '中',
+        assignee: params.assigneeUserId ? '待确认' : '',
+        assigneeUserId: params.assigneeUserId == null ? null : Number(params.assigneeUserId),
+        collaboratorUserIds: [],
+        description: workItemType === '需求' ? requirementMarkdown : content,
+        requirementMarkdown,
+        prototypeUrl: '',
+        projectId: Number(params.projectId),
+        agentId: null,
+        iterationId: params.iterationId == null ? null : Number(params.iterationId),
+        requirementTaskId: null
+      })
+      ElMessage.success('工作项草稿已创建')
+      drawerVisible.value = false
+      if (params.projectId) {
+        await router.push({ name: 'project-iterations', params: { projectId: Number(params.projectId) } })
+      }
+      return
+    }
+    if (action.type === 'CREATE_TEST_PLAN_DRAFT') {
+      await createTestPlan({
+        name: String(params.name || 'Hermes 测试计划草稿'),
+        projectId: Number(params.projectId),
+        iterationId: Number(params.iterationId),
+        status: '草稿',
+        description: String(params.description || ''),
+        cases: []
+      })
+      ElMessage.success('测试计划草稿已创建')
+      drawerVisible.value = false
+      await router.push({ name: 'tests' })
+      return
+    }
+    ElMessage.warning('暂不支持该动作类型')
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || '执行动作失败')
+    }
+  } finally {
+    executingActionKey.value = ''
+  }
+}
+
+const handleConfirmAction = async (action: HermesActionItem, index: number) => {
+  await executeAction(action, actionKey(action, index))
+}
+
+const handleConfirmToolAction = async (action: HermesToolActionItem, candidateIndex: number, actionIndex: number) => {
+  await executeAction(action, toolActionKey(action, candidateIndex, actionIndex))
 }
 
 const updateMessage = (messageId: string, updater: (current: HermesMessageItem) => HermesMessageItem) => {
@@ -420,6 +583,8 @@ const handleSubmit = async (questionOverride?: string) => {
   }
   const userMessageId = `user-${Date.now()}`
   const assistantMessageId = `assistant-${Date.now()}`
+  currentActions.value = []
+  currentToolResults.value = []
   currentMessages.value = [
     ...currentMessages.value,
     { id: userMessageId, role: 'user', content: normalizedQuestion, status: 'done' },
@@ -436,6 +601,8 @@ const handleSubmit = async (questionOverride?: string) => {
         currentRoleName.value = payload.roleName || '协作成员'
         currentReferences.value = payload.references || []
         currentSuggestions.value = payload.suggestions || []
+        currentActions.value = payload.actions || []
+        currentToolResults.value = payload.toolResults || []
         saveCurrentSession()
       },
       onDelta: (payload: HermesStreamDeltaEvent) => {
@@ -450,6 +617,8 @@ const handleSubmit = async (questionOverride?: string) => {
         currentRoleName.value = payload.roleName || currentRoleName.value
         currentReferences.value = payload.references || []
         currentSuggestions.value = payload.suggestions || []
+        currentActions.value = payload.actions || []
+        currentToolResults.value = payload.toolResults || []
         updateMessage(assistantMessageId, (current) => ({
           ...current,
           content: resolveAssistantFinalContent(current.content, payload.content),
@@ -580,6 +749,8 @@ defineExpose({
 }
 
 .hermes-quick-prompts,
+.hermes-tool-section,
+.hermes-action-section,
 .hermes-reference-section {
   display: flex;
   flex-direction: column;
@@ -587,10 +758,153 @@ defineExpose({
 }
 
 .hermes-chip-list,
+.hermes-tool-result-list,
+.hermes-action-list,
 .hermes-reference-list {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.hermes-tool-result-list,
+.hermes-action-list {
+  flex-direction: column;
+}
+
+.hermes-tool-result-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(248, 250, 252, 0.96);
+}
+
+.hermes-tool-result-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hermes-tool-result-head strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.hermes-tool-result-head span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.hermes-tool-candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hermes-tool-candidate-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.hermes-tool-candidate-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hermes-tool-candidate-copy strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.hermes-tool-candidate-copy span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hermes-tool-candidate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.hermes-tool-inline-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #0f766e;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hermes-tool-inline-button.secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.hermes-tool-inline-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.hermes-action-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(20, 184, 166, 0.28);
+  border-radius: 16px;
+  background: rgba(240, 253, 250, 0.92);
+}
+
+.hermes-action-card-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hermes-action-card-copy strong {
+  color: #0f766e;
+  font-size: 13px;
+}
+
+.hermes-action-card-copy span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hermes-action-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #0f766e;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hermes-action-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .hermes-chip-button {

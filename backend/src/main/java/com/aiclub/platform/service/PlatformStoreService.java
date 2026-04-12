@@ -531,7 +531,7 @@ public class PlatformStoreService {
         TaskEntity requirementTask = request.requirementTaskId() == null ? null : requireRequirementTask(project.getId(), request.requirementTaskId());
         UserEntity assigneeUser = request.assigneeUserId() == null ? null : requireUser(request.assigneeUserId());
         Set<UserEntity> collaborators = resolveAdditionalUsers(request.collaboratorUserIds(), assigneeUser == null ? null : assigneeUser.getId());
-        RequirementDocumentPayload requirementDocument = buildRequirementDocument(workItemType, request);
+        RequirementDocumentPayload requirementDocument = buildRequirementDocument(workItemType, request, true);
         TaskPlanDateRange taskPlanDateRange = resolveTaskPlanDateRange(request.planStartDate(), request.planEndDate());
         UserEntity creatorUser = requireCurrentUser();
         validateAgentProject(project.getId(), agent);
@@ -606,7 +606,7 @@ public class PlatformStoreService {
         TaskEntity requirementTask = request.requirementTaskId() == null ? null : requireRequirementTask(project.getId(), request.requirementTaskId());
         UserEntity assigneeUser = request.assigneeUserId() == null ? null : requireUser(request.assigneeUserId());
         Set<UserEntity> collaborators = resolveAdditionalUsers(request.collaboratorUserIds(), assigneeUser == null ? null : assigneeUser.getId());
-        RequirementDocumentPayload requirementDocument = buildRequirementDocument(workItemType, request);
+        RequirementDocumentPayload requirementDocument = buildRequirementDocument(workItemType, request, false);
         TaskPlanDateRange taskPlanDateRange = resolveTaskPlanDateRange(request.planStartDate(), request.planEndDate());
         validateAgentProject(project.getId(), agent);
         validateRequirementRelation(workItemType, requirementTask);
@@ -1273,25 +1273,31 @@ public class PlatformStoreService {
     /**
      * 根据工作项类型构建需求模板载荷，并同步兼容描述字段。
      */
-    private RequirementDocumentPayload buildRequirementDocument(String workItemType, TaskRequest request) {
+    private RequirementDocumentPayload buildRequirementDocument(String workItemType, TaskRequest request, boolean createMode) {
         if (!"需求".equals(workItemType)) {
             return new RequirementDocumentPayload("", "", defaultString(request.description()));
         }
 
         String prototypeUrl = trimToNull(request.prototypeUrl());
-        if (prototypeUrl == null) {
-            throw new IllegalArgumentException("需求原型链接不能为空");
-        }
-
         String sourceMarkdown = hasText(request.requirementMarkdown())
                 ? request.requirementMarkdown()
                 : request.description();
         String requirementMarkdown = RequirementDocumentUtils.normalizeDocument(sourceMarkdown);
-        RequirementDocumentUtils.validateForSubmit(requirementMarkdown);
+        boolean draftRequirement = "草稿".equals(defaultString(request.status()).trim());
+        if (!draftRequirement && prototypeUrl == null) {
+            throw new IllegalArgumentException("需求原型链接不能为空");
+        }
+        if (draftRequirement) {
+            if (requirementMarkdown.isBlank()) {
+                requirementMarkdown = RequirementDocumentUtils.defaultTemplate();
+            }
+        } else {
+            RequirementDocumentUtils.validateForSubmit(requirementMarkdown);
+        }
 
         return new RequirementDocumentPayload(
                 requirementMarkdown,
-                prototypeUrl,
+                prototypeUrl == null ? "" : prototypeUrl,
                 requirementMarkdown
         );
     }

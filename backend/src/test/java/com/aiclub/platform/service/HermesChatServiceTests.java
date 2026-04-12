@@ -4,6 +4,7 @@ import com.aiclub.platform.domain.model.HermesChatAuditEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.HermesChatResponse;
+import com.aiclub.platform.dto.HermesToolContext;
 import com.aiclub.platform.dto.request.HermesChatRequest;
 import com.aiclub.platform.repository.HermesChatAuditRepository;
 import com.aiclub.platform.repository.UserRepository;
@@ -46,6 +47,12 @@ class HermesChatServiceTests {
     private HermesGatewayService hermesGatewayService;
 
     @Mock
+    private HermesActionPlannerService hermesActionPlannerService;
+
+    @Mock
+    private HermesToolOrchestrator hermesToolOrchestrator;
+
+    @Mock
     private HermesChatAuditRepository hermesChatAuditRepository;
 
     /**
@@ -68,6 +75,8 @@ class HermesChatServiceTests {
                 hermesContextAssembler,
                 hermesPromptBuilder,
                 hermesGatewayService,
+                hermesActionPlannerService,
+                hermesToolOrchestrator,
                 hermesChatAuditRepository,
                 new ObjectMapper()
         );
@@ -104,7 +113,10 @@ class HermesChatServiceTests {
         when(authService.currentUser()).thenReturn(currentUserInfo);
         when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
         when(hermesContextAssembler.assemble(any(), eq(currentUserInfo))).thenReturn(context);
-        when(hermesPromptBuilder.build(eq(currentUserInfo), eq(context), any())).thenReturn(prompt);
+        when(hermesPromptBuilder.build(eq(currentUserInfo), eq(context), any(), any())).thenReturn(prompt);
+        when(hermesActionPlannerService.planActions(any(), eq(context))).thenReturn(List.of());
+        when(hermesToolOrchestrator.planAndRunReadTools(any(), eq(context), eq("test:hermes:project:12:user:5:conversation:test-conversation")))
+                .thenReturn(new HermesToolContext(List.of(), List.of(), ""));
         when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(hermesGatewayService.streamChat(eq("test:hermes:project:12:user:5:conversation:test-conversation"), eq(prompt), any()))

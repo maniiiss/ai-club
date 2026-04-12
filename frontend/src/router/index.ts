@@ -4,7 +4,8 @@ import AppLayout from '@/layout/AppLayout.vue'
 import DashboardView from '@/views/DashboardView.vue'
 import ProjectView from '@/views/ProjectView.vue'
 import AgentView from '@/views/AgentView.vue'
-import TaskView from '@/views/TaskView.vue'
+import ExecutionTaskView from '@/views/ExecutionTaskView.vue'
+import ExecutionTaskDetailView from '@/views/ExecutionTaskDetailView.vue'
 import TestPlanView from '@/views/TestPlanView.vue'
 import TestPlanDetailView from '@/views/TestPlanDetailView.vue'
 import GitlabView from '@/views/GitlabView.vue'
@@ -16,6 +17,7 @@ import ForbiddenView from '@/views/ForbiddenView.vue'
 import UserView from '@/views/UserView.vue'
 import RoleView from '@/views/RoleView.vue'
 import PermissionView from '@/views/PermissionView.vue'
+import ToolConfigView from '@/views/ToolConfigView.vue'
 import OperationLogView from '@/views/OperationLogView.vue'
 import IterationView from '@/views/IterationView.vue'
 import ProfileView from '@/views/ProfileView.vue'
@@ -51,7 +53,8 @@ const router = createRouter({
         { path: 'projects/:projectId/iterations', name: 'project-iterations', component: IterationView, meta: { title: '迭代管理', permission: 'project:view' } },
         { path: 'projects/:projectId/knowledge-graph', name: 'project-knowledge-graph', component: KnowledgeGraphView, meta: { title: '知识图谱', permission: 'project:view' } },
         { path: 'agents', name: 'agents', component: AgentView, meta: { title: '智能体管理', permission: 'agent:view' } },
-        { path: 'tasks', name: 'tasks', component: TaskView, meta: { title: '任务管理', permission: 'task:view' } },
+        { path: 'tasks', name: 'tasks', component: ExecutionTaskView, meta: { title: '执行中心', permission: 'task:view' } },
+        { path: 'tasks/:executionTaskId', name: 'execution-task-detail', component: ExecutionTaskDetailView, meta: { title: '执行详情', permission: 'task:view', activeMenu: '/tasks' } },
         { path: 'tests', name: 'tests', component: TestPlanView, meta: { title: '测试管理', permission: 'test:view' } },
         { path: 'tests/:planId', name: 'test-plan-detail', component: TestPlanDetailView, meta: { title: '测试计划详情', permission: 'test:view', activeMenu: '/tests' } },
         { path: 'models', name: 'models', component: ModelView, meta: { title: '模型管理', permission: 'model:view' } },
@@ -63,6 +66,7 @@ const router = createRouter({
         { path: 'users', name: 'users', component: UserView, meta: { title: '用户管理', permission: 'system:user:view' } },
         { path: 'roles', name: 'roles', component: RoleView, meta: { title: '角色管理', permission: 'system:role:view' } },
         { path: 'permissions', name: 'permissions', component: PermissionView, meta: { title: '功能管理', permission: 'system:permission:view' } },
+        { path: 'tools', name: 'tools', component: ToolConfigView, meta: { title: '工具配置', permission: 'system:tool:view' } },
         { path: 'operation-logs', name: 'operation-logs', component: OperationLogView, meta: { title: '操作日志', permission: 'system:operation-log:view' } }
       ]
     }

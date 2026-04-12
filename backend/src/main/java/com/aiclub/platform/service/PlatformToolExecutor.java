@@ -1,0 +1,472 @@
+package com.aiclub.platform.service;
+
+import com.aiclub.platform.domain.model.AgentEntity;
+import com.aiclub.platform.domain.model.ExecutionTaskEntity;
+import com.aiclub.platform.domain.model.IterationEntity;
+import com.aiclub.platform.domain.model.PlatformToolAuditEntity;
+import com.aiclub.platform.domain.model.ProjectEntity;
+import com.aiclub.platform.domain.model.TaskEntity;
+import com.aiclub.platform.domain.model.TestPlanEntity;
+import com.aiclub.platform.domain.model.UserEntity;
+import com.aiclub.platform.dto.PlatformToolAction;
+import com.aiclub.platform.dto.PlatformToolCandidate;
+import com.aiclub.platform.dto.PlatformToolDefinition;
+import com.aiclub.platform.dto.PlatformToolRequest;
+import com.aiclub.platform.dto.PlatformToolResult;
+import com.aiclub.platform.exception.ForbiddenException;
+import com.aiclub.platform.repository.AgentRepository;
+import com.aiclub.platform.repository.ExecutionTaskRepository;
+import com.aiclub.platform.repository.IterationRepository;
+import com.aiclub.platform.repository.ProjectRepository;
+import com.aiclub.platform.repository.TaskRepository;
+import com.aiclub.platform.repository.TestPlanRepository;
+import com.aiclub.platform.repository.UserRepository;
+import com.aiclub.platform.security.AuthContextHolder;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+
+/**
+ * 平台工具执行器。
+ * 第一版只自动执行只读工具，写工具由 Hermes 动作卡片确认后走既有业务 API。
+ */
+@Service
+@Transactional(readOnly = true)
+public class PlatformToolExecutor {
+
+    private final PlatformToolRegistry platformToolRegistry;
+    private final ToolExecutionAuditService toolExecutionAuditService;
+    private final ProjectDataPermissionService projectDataPermissionService;
+    private final ProjectRepository projectRepository;
+    private final TaskRepository taskRepository;
+    private final UserRepository userRepository;
+    private final AgentRepository agentRepository;
+    private final ExecutionTaskRepository executionTaskRepository;
+    private final TestPlanRepository testPlanRepository;
+    private final IterationRepository iterationRepository;
+    private final ExecutionWorkflowService executionWorkflowService;
+
+    public PlatformToolExecutor(PlatformToolRegistry platformToolRegistry,
+                                ToolExecutionAuditService toolExecutionAuditService,
+                                ProjectDataPermissionService projectDataPermissionService,
+                                ProjectRepository projectRepository,
+                                TaskRepository taskRepository,
+                                UserRepository userRepository,
+                                AgentRepository agentRepository,
+                                ExecutionTaskRepository executionTaskRepository,
+                                TestPlanRepository testPlanRepository,
+                                IterationRepository iterationRepository,
+                                ExecutionWorkflowService executionWorkflowService) {
+        this.platformToolRegistry = platformToolRegistry;
+        this.toolExecutionAuditService = toolExecutionAuditService;
+        this.projectDataPermissionService = projectDataPermissionService;
+        this.projectRepository = projectRepository;
+        this.taskRepository = taskRepository;
+        this.userRepository = userRepository;
+        this.agentRepository = agentRepository;
+        this.executionTaskRepository = executionTaskRepository;
+        this.testPlanRepository = testPlanRepository;
+        this.iterationRepository = iterationRepository;
+        this.executionWorkflowService = executionWorkflowService;
+    }
+
+    public PlatformToolResult execute(PlatformToolRequest request) {
+        PlatformToolDefinition definition = platformToolRegistry.requireDefinition(request.toolCode());
+        if (!platformToolRegistry.isEnabled(request.toolCode())) {
+            throw new ForbiddenException("平台工具已停用: " + request.toolCode());
+        }
+        requireToolPermission(definition);
+        PlatformToolAuditEntity audit = toolExecutionAuditService.createAudit(definition, request);
+        try {
+            PlatformToolResult result = switch (request.toolCode()) {
+                case PlatformToolRegistry.TOOL_PROJECT_SEARCH -> searchProjects(request);
+                case PlatformToolRegistry.TOOL_PROJECT_GET_DETAIL -> getProjectDetail(request);
+                case PlatformToolRegistry.TOOL_PROJECT_LIST_ITERATIONS -> listProjectIterations(request);
+                case PlatformToolRegistry.TOOL_USER_RESOLVE_PROJECT_MEMBER -> resolveProjectMember(request);
+                case PlatformToolRegistry.TOOL_USER_LIST_PROJECT_MEMBERS -> listProjectMembers(request);
+                case PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH -> searchWorkItems(request);
+                case PlatformToolRegistry.TOOL_WORK_ITEM_GET_DETAIL -> getWorkItemDetail(request);
+                case PlatformToolRegistry.TOOL_AGENT_LIST_AVAILABLE -> listAvailableAgents(request);
+                case PlatformToolRegistry.TOOL_AGENT_GET_DETAIL -> getAgentDetail(request);
+                case PlatformToolRegistry.TOOL_EXECUTION_TASK_SEARCH -> searchExecutionTasks(request);
+                case PlatformToolRegistry.TOOL_EXECUTION_TASK_GET_DETAIL -> getExecutionTaskDetail(request);
+                case PlatformToolRegistry.TOOL_TEST_PLAN_SEARCH -> searchTestPlans(request);
+                case PlatformToolRegistry.TOOL_TEST_PLAN_GET_DETAIL -> getTestPlanDetail(request);
+                default -> throw new IllegalArgumentException("第一版不自动执行写工具: " + request.toolCode());
+            };
+            toolExecutionAuditService.finishSuccess(audit, result);
+            return result;
+        } catch (RuntimeException exception) {
+            toolExecutionAuditService.finishFailure(audit, exception);
+            throw exception;
+        }
+    }
+
+    private PlatformToolResult searchProjects(PlatformToolRequest request) {
+        String keyword = stringValue(request.payload(), "keyword");
+        List<PlatformToolCandidate> candidates = projectRepository.findAll(Sort.by(Sort.Direction.DESC, "id")).stream()
+                .filter(this::canSeeProject)
+                .filter(project -> isBlank(keyword) || containsAny(project.getName(), keyword) || containsAny(project.getDescription(), keyword))
+                .limit(5)
+                .map(this::projectCandidate)
+                .toList();
+        return result(request.toolCode(), "搜索项目", "找到 " + candidates.size() + " 个相关项目", candidates, Map.of("keyword", defaultString(keyword)));
+    }
+
+    private PlatformToolResult getProjectDetail(PlatformToolRequest request) {
+        ProjectEntity project = requireVisibleProject(longValue(request.payload(), "projectId"));
+        PlatformToolCandidate candidate = projectCandidate(project);
+        return result(request.toolCode(), "项目详情", "已读取项目 “" + project.getName() + "”", List.of(candidate), Map.of("projectId", project.getId()));
+    }
+
+    private PlatformToolResult listProjectIterations(PlatformToolRequest request) {
+        ProjectEntity project = requireVisibleProject(longValue(request.payload(), "projectId"));
+        List<PlatformToolCandidate> candidates = iterationRepository.findAllByProject_IdOrderBySortOrderAscIdAsc(project.getId()).stream()
+                .map(iteration -> new PlatformToolCandidate(
+                        "ITERATION",
+                        iteration.getId(),
+                        iteration.getName(),
+                        "状态：" + defaultString(iteration.getStatus()) + " / 目标：" + defaultString(iteration.getGoal()),
+                        "/projects/" + project.getId() + "/iterations?iterationId=" + iteration.getId(),
+                        Map.of("projectId", project.getId(), "status", defaultString(iteration.getStatus())),
+                        List.of()
+                ))
+                .toList();
+        return result(request.toolCode(), "项目迭代列表", "项目 “" + project.getName() + "” 有 " + candidates.size() + " 个迭代", candidates, Map.of("projectId", project.getId()));
+    }
+
+    private PlatformToolResult resolveProjectMember(PlatformToolRequest request) {
+        ProjectEntity project = requireVisibleProject(longValue(request.payload(), "projectId"));
+        String keyword = stringValue(request.payload(), "keyword");
+        List<PlatformToolCandidate> candidates = projectParticipants(project).stream()
+                .filter(user -> isBlank(keyword) || containsAny(user.getUsername(), keyword) || containsAny(user.getNickname(), keyword))
+                .limit(5)
+                .map(user -> userCandidate(project.getId(), user))
+                .toList();
+        return result(request.toolCode(), "解析项目成员", "找到 " + candidates.size() + " 个成员候选", candidates, Map.of("projectId", project.getId(), "keyword", defaultString(keyword)));
+    }
+
+    private PlatformToolResult listProjectMembers(PlatformToolRequest request) {
+        ProjectEntity project = requireVisibleProject(longValue(request.payload(), "projectId"));
+        List<PlatformToolCandidate> candidates = projectParticipants(project).stream()
+                .map(user -> userCandidate(project.getId(), user))
+                .toList();
+        return result(request.toolCode(), "项目成员列表", "项目 “" + project.getName() + "” 有 " + candidates.size() + " 个成员候选", candidates, Map.of("projectId", project.getId()));
+    }
+
+    private PlatformToolResult searchWorkItems(PlatformToolRequest request) {
+        String keyword = stringValue(request.payload(), "keyword");
+        String workItemType = stringValue(request.payload(), "workItemType");
+        Long projectId = nullableLongValue(request.payload(), "projectId");
+        List<PlatformToolCandidate> candidates = taskRepository.findAll(Sort.by(Sort.Direction.DESC, "updatedAt", "id")).stream()
+                .filter(task -> projectId == null || Objects.equals(task.getProject().getId(), projectId))
+                .filter(this::canSeeTask)
+                .filter(task -> isBlank(workItemType) || defaultString(task.getWorkItemType()).equals(workItemType))
+                .filter(task -> isBlank(keyword)
+                        || containsAny(task.getName(), keyword)
+                        || containsAny(task.getDescription(), keyword)
+                        || containsAny(task.getWorkItemCode(), keyword))
+                .limit(5)
+                .map(task -> workItemCandidate(task, true))
+                .toList();
+        return result(request.toolCode(), "搜索工作项", "找到 " + candidates.size() + " 个相关工作项", candidates, Map.of("keyword", defaultString(keyword), "projectId", projectId));
+    }
+
+    private PlatformToolResult getWorkItemDetail(PlatformToolRequest request) {
+        TaskEntity task = requireVisibleTask(longValue(request.payload(), "workItemId"));
+        return result(request.toolCode(), "工作项详情", "已读取工作项 “" + task.getName() + "”", List.of(workItemCandidate(task, true)), Map.of("workItemId", task.getId()));
+    }
+
+    private PlatformToolResult listAvailableAgents(PlatformToolRequest request) {
+        Long projectId = nullableLongValue(request.payload(), "projectId");
+        if (projectId != null) {
+            requireVisibleProject(projectId);
+        }
+        List<PlatformToolCandidate> candidates = availableAgents(projectId).stream()
+                .limit(10)
+                .map(this::agentCandidate)
+                .toList();
+        return result(request.toolCode(), "可用 Agent 列表", "找到 " + candidates.size() + " 个可用 Agent", candidates, Map.of("projectId", projectId));
+    }
+
+    private PlatformToolResult getAgentDetail(PlatformToolRequest request) {
+        AgentEntity agent = agentRepository.findById(longValue(request.payload(), "agentId"))
+                .orElseThrow(() -> new NoSuchElementException("Agent 不存在"));
+        projectDataPermissionService.requireAgentVisible(agent);
+        return result(request.toolCode(), "Agent 详情", "已读取 Agent “" + agent.getName() + "”", List.of(agentCandidate(agent)), Map.of("agentId", agent.getId()));
+    }
+
+    private PlatformToolResult searchExecutionTasks(PlatformToolRequest request) {
+        String keyword = stringValue(request.payload(), "keyword");
+        String status = stringValue(request.payload(), "status");
+        Long projectId = nullableLongValue(request.payload(), "projectId");
+        List<PlatformToolCandidate> candidates = executionTaskRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt", "id")).stream()
+                .filter(executionTask -> projectId == null || Objects.equals(executionTask.getProject().getId(), projectId))
+                .filter(executionTask -> canSeeProject(executionTask.getProject()))
+                .filter(executionTask -> isBlank(status) || defaultString(executionTask.getStatus()).equalsIgnoreCase(status))
+                .filter(executionTask -> isBlank(keyword)
+                        || containsAny(executionTask.getTitle(), keyword)
+                        || containsAny(executionTask.getLatestSummary(), keyword)
+                        || (executionTask.getWorkItem() != null && containsAny(executionTask.getWorkItem().getName(), keyword)))
+                .limit(5)
+                .map(this::executionTaskCandidate)
+                .toList();
+        return result(request.toolCode(), "搜索执行任务", "找到 " + candidates.size() + " 个执行任务", candidates, Map.of("keyword", defaultString(keyword), "status", defaultString(status), "projectId", projectId));
+    }
+
+    private PlatformToolResult getExecutionTaskDetail(PlatformToolRequest request) {
+        ExecutionTaskEntity executionTask = executionTaskRepository.findById(longValue(request.payload(), "executionTaskId"))
+                .orElseThrow(() -> new NoSuchElementException("执行任务不存在"));
+        if (!canSeeProject(executionTask.getProject())) {
+            throw new ForbiddenException("无权访问当前执行任务");
+        }
+        return result(request.toolCode(), "执行任务详情", "已读取执行任务 “" + executionTask.getTitle() + "”", List.of(executionTaskCandidate(executionTask)), Map.of("executionTaskId", executionTask.getId()));
+    }
+
+    private PlatformToolResult searchTestPlans(PlatformToolRequest request) {
+        String keyword = stringValue(request.payload(), "keyword");
+        String status = stringValue(request.payload(), "status");
+        Long projectId = nullableLongValue(request.payload(), "projectId");
+        Long iterationId = nullableLongValue(request.payload(), "iterationId");
+        List<PlatformToolCandidate> candidates = testPlanRepository.findAll(Sort.by(Sort.Direction.DESC, "updatedAt", "id")).stream()
+                .filter(testPlan -> canSeeProject(testPlan.getProject()))
+                .filter(testPlan -> projectId == null || Objects.equals(testPlan.getProject().getId(), projectId))
+                .filter(testPlan -> iterationId == null || testPlan.getIteration() != null && Objects.equals(testPlan.getIteration().getId(), iterationId))
+                .filter(testPlan -> isBlank(status) || defaultString(testPlan.getStatus()).equalsIgnoreCase(status))
+                .filter(testPlan -> isBlank(keyword) || containsAny(testPlan.getName(), keyword) || containsAny(testPlan.getDescription(), keyword))
+                .limit(5)
+                .map(this::testPlanCandidate)
+                .toList();
+        return result(request.toolCode(), "搜索测试计划", "找到 " + candidates.size() + " 个测试计划", candidates, Map.of("keyword", defaultString(keyword), "projectId", projectId, "iterationId", iterationId));
+    }
+
+    private PlatformToolResult getTestPlanDetail(PlatformToolRequest request) {
+        TestPlanEntity testPlan = testPlanRepository.findById(longValue(request.payload(), "testPlanId"))
+                .orElseThrow(() -> new NoSuchElementException("测试计划不存在"));
+        if (!canSeeProject(testPlan.getProject())) {
+            throw new ForbiddenException("无权访问当前测试计划");
+        }
+        return result(request.toolCode(), "测试计划详情", "已读取测试计划 “" + testPlan.getName() + "”", List.of(testPlanCandidate(testPlan)), Map.of("testPlanId", testPlan.getId()));
+    }
+
+    private PlatformToolCandidate projectCandidate(ProjectEntity project) {
+        return new PlatformToolCandidate(
+                "PROJECT",
+                project.getId(),
+                project.getName(),
+                "状态：" + defaultString(project.getStatus()) + " / 负责人：" + defaultString(project.getOwner()),
+                "/projects/" + project.getId() + "/iterations",
+                Map.of("projectId", project.getId(), "status", defaultString(project.getStatus())),
+                List.of()
+        );
+    }
+
+    private PlatformToolCandidate userCandidate(Long projectId, UserEntity user) {
+        return new PlatformToolCandidate(
+                "USER",
+                user.getId(),
+                displayName(user),
+                "用户名：" + defaultString(user.getUsername()),
+                "",
+                Map.of("projectId", projectId, "userId", user.getId(), "username", defaultString(user.getUsername())),
+                List.of()
+        );
+    }
+
+    private PlatformToolCandidate workItemCandidate(TaskEntity task, boolean withExecutionAction) {
+        List<PlatformToolAction> actions = withExecutionAction
+                ? List.of(new PlatformToolAction(
+                        "CREATE_EXECUTION_TASK",
+                        "针对该工作项发起开发执行",
+                        "基于 “" + task.getName() + "” 创建开发执行任务。",
+                        true,
+                        Map.of(
+                                "scenarioCode", ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION,
+                                "projectId", task.getProject().getId(),
+                                "workItemId", task.getId(),
+                                "triggerSource", "HERMES"
+                        )
+                ))
+                : List.of();
+        return new PlatformToolCandidate(
+                "WORK_ITEM",
+                task.getId(),
+                defaultString(task.getWorkItemCode()) + " " + task.getName(),
+                "类型：" + defaultString(task.getWorkItemType()) + " / 状态：" + defaultString(task.getStatus()) + " / 项目：" + task.getProject().getName(),
+                "/projects/" + task.getProject().getId() + "/iterations?openTaskId=" + task.getId(),
+                Map.of(
+                        "projectId", task.getProject().getId(),
+                        "workItemId", task.getId(),
+                        "workItemType", defaultString(task.getWorkItemType()),
+                        "status", defaultString(task.getStatus())
+                ),
+                actions
+        );
+    }
+
+    private PlatformToolCandidate agentCandidate(AgentEntity agent) {
+        return new PlatformToolCandidate(
+                "AGENT",
+                agent.getId(),
+                agent.getName(),
+                "类型：" + defaultString(agent.getType()) + " / 接入：" + defaultString(agent.getAccessType()) + " / 状态：" + defaultString(agent.getStatus()),
+                "",
+                Map.of("agentId", agent.getId(), "projectId", agent.getProject() == null ? "" : agent.getProject().getId(), "enabled", Boolean.TRUE.equals(agent.getEnabled())),
+                List.of()
+        );
+    }
+
+    private PlatformToolCandidate executionTaskCandidate(ExecutionTaskEntity executionTask) {
+        return new PlatformToolCandidate(
+                "EXECUTION_TASK",
+                executionTask.getId(),
+                executionTask.getTitle(),
+                "场景：" + executionWorkflowService.scenarioName(executionTask.getScenarioCode()) + " / 状态：" + defaultString(executionTask.getStatus()),
+                "/tasks/" + executionTask.getId(),
+                Map.of("executionTaskId", executionTask.getId(), "projectId", executionTask.getProject().getId(), "status", defaultString(executionTask.getStatus())),
+                List.of()
+        );
+    }
+
+    private PlatformToolCandidate testPlanCandidate(TestPlanEntity testPlan) {
+        return new PlatformToolCandidate(
+                "TEST_PLAN",
+                testPlan.getId(),
+                testPlan.getName(),
+                "状态：" + defaultString(testPlan.getStatus()) + " / 项目：" + testPlan.getProject().getName() + " / 用例数：" + testPlan.getCases().size(),
+                "/tests/" + testPlan.getId(),
+                Map.of("testPlanId", testPlan.getId(), "projectId", testPlan.getProject().getId(), "iterationId", testPlan.getIteration() == null ? "" : testPlan.getIteration().getId()),
+                List.of()
+        );
+    }
+
+    private PlatformToolResult result(String toolCode,
+                                      String toolName,
+                                      String summary,
+                                      List<PlatformToolCandidate> candidates,
+                                      Map<String, Object> metadata) {
+        return new PlatformToolResult(toolCode, toolName, summary, candidates, List.of(), metadata);
+    }
+
+    private void requireToolPermission(PlatformToolDefinition definition) {
+        if (definition.permissionCode() == null || definition.permissionCode().isBlank()) {
+            return;
+        }
+        boolean allowed = AuthContextHolder.get()
+                .map(authContext -> authContext.hasPermission(definition.permissionCode()))
+                .orElse(false);
+        if (!allowed) {
+            throw new ForbiddenException("无权调用平台工具: " + definition.code());
+        }
+    }
+
+    private ProjectEntity requireVisibleProject(Long projectId) {
+        ProjectEntity project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new NoSuchElementException("项目不存在: " + projectId));
+        projectDataPermissionService.requireProjectVisible(project);
+        return project;
+    }
+
+    private TaskEntity requireVisibleTask(Long taskId) {
+        TaskEntity task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new NoSuchElementException("工作项不存在: " + taskId));
+        projectDataPermissionService.requireTaskVisible(task);
+        return task;
+    }
+
+    private boolean canSeeProject(ProjectEntity project) {
+        try {
+            projectDataPermissionService.requireProjectVisible(project);
+            return true;
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private boolean canSeeTask(TaskEntity task) {
+        try {
+            projectDataPermissionService.requireTaskVisible(task);
+            return true;
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private List<AgentEntity> availableAgents(Long projectId) {
+        LinkedHashMap<Long, AgentEntity> result = new LinkedHashMap<>();
+        agentRepository.findAllByEnabledTrueAndProjectIsNullOrderByIdAsc().forEach(agent -> result.put(agent.getId(), agent));
+        if (projectId != null) {
+            requireVisibleProject(projectId);
+            agentRepository.findAllByProject_IdAndEnabledTrueOrderByIdAsc(projectId).forEach(agent -> result.put(agent.getId(), agent));
+        }
+        return new ArrayList<>(result.values());
+    }
+
+    private List<UserEntity> projectParticipants(ProjectEntity project) {
+        LinkedHashSet<UserEntity> users = new LinkedHashSet<>();
+        if (project.getOwnerUser() != null) {
+            users.add(project.getOwnerUser());
+        }
+        if (project.getCreatorUser() != null) {
+            users.add(project.getCreatorUser());
+        }
+        users.addAll(project.getMembers());
+        return new ArrayList<>(users);
+    }
+
+    private Long longValue(Map<String, Object> payload, String key) {
+        Long value = nullableLongValue(payload, key);
+        if (value == null) {
+            throw new IllegalArgumentException("工具参数缺少 " + key);
+        }
+        return value;
+    }
+
+    private Long nullableLongValue(Map<String, Object> payload, String key) {
+        Object value = payload == null ? null : payload.get(key);
+        if (value == null || String.valueOf(value).isBlank()) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        return Long.parseLong(String.valueOf(value));
+    }
+
+    private String stringValue(Map<String, Object> payload, String key) {
+        Object value = payload == null ? null : payload.get(key);
+        return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private boolean containsAny(String value, String keyword) {
+        if (value == null || keyword == null || keyword.isBlank()) {
+            return false;
+        }
+        return value.toLowerCase(Locale.ROOT).contains(keyword.toLowerCase(Locale.ROOT));
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private String defaultString(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private String displayName(UserEntity user) {
+        if (user == null) {
+            return "";
+        }
+        String nickname = defaultString(user.getNickname());
+        return nickname.isBlank() ? defaultString(user.getUsername()) : nickname;
+    }
+}

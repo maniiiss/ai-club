@@ -142,7 +142,19 @@ public class AgentExecutionService {
     }
 
     private String executeBuiltInTextAgent(AgentEntity agent, String input) {
-        return switch (normalizeBuiltinCode(agent.getBuiltinCode())) {
+        String builtinCode = trimToNull(agent.getBuiltinCode());
+        if (builtinCode == null) {
+            if (agent.getAiModelConfig() == null) {
+                throw new IllegalArgumentException("当前内置 Agent 未配置可执行能力，请补充模型配置或内置能力编码");
+            }
+            return invokeModelAgent(
+                    agent,
+                    hasText(agent.getSystemPrompt()) ? agent.getSystemPrompt() : defaultGenericBuiltinPrompt(agent),
+                    defaultString(input)
+            );
+        }
+
+        return switch (normalizeBuiltinCode(builtinCode)) {
             case BUILTIN_CODE_REVIEW -> executeBuiltinCodeReviewAsMarkdown(agent, input);
             case BUILTIN_TEST_SUGGESTION -> invokeModelAgent(
                     agent,
@@ -162,6 +174,27 @@ public class AgentExecutionService {
             );
             default -> throw new IllegalArgumentException("?????? Agent ??");
         };
+    }
+
+    /**
+     * 对未指定 builtinCode 但已配置模型的“内置 Agent”提供兜底执行能力，方便首版执行中心复用现有 Agent 配置。
+     */
+    private String defaultGenericBuiltinPrompt(AgentEntity agent) {
+        return """
+                你是平台内置的通用执行智能体，请根据用户输入完成任务。
+                输出要求：
+                1. 使用 Markdown
+                2. 先给出结论，再给出步骤或建议
+                3. 如果信息不足，明确指出缺失信息与风险
+                4. 如果输入包含工作项上下文，请优先围绕工作项目标、实现路径、测试与风险进行回答
+                Agent名称：%s
+                Agent类型：%s
+                Agent能力：%s
+                """.formatted(
+                defaultString(agent.getName()),
+                defaultString(agent.getType()),
+                defaultString(agent.getCapability())
+        ).trim();
     }
 
     private String executeBuiltinCodeReviewAsMarkdown(AgentEntity agent, String input) {

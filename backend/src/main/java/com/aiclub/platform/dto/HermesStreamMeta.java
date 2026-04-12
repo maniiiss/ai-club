@@ -9,6 +9,8 @@ public record HermesStreamMeta(
         String scopeKey,
         String roleName,
         List<HermesReferenceSummary> references,
-        List<String> suggestions
+        List<String> suggestions,
+        List<HermesActionSummary> actions,
+        List<PlatformToolResult> toolResults
 ) {
 }

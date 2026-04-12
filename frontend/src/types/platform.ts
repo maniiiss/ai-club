@@ -255,6 +255,104 @@ export interface TaskAgentRunItem {
   createdAt: string
 }
 
+export interface ExecutionArtifactItem {
+  id: number
+  runId: number
+  stepId: number | null
+  artifactType: string
+  title: string
+  contentRef: string | null
+  contentText: string | null
+  workItemWriteback: boolean
+}
+
+export interface ExecutionStepItem {
+  id: number
+  runId: number
+  stepNo: number
+  stepCode: string
+  stepName: string
+  agentId: number | null
+  agentName: string | null
+  status: string
+  inputSnapshot: string
+  outputSnapshot: string | null
+  errorMessage: string | null
+  startedAt: string | null
+  finishedAt: string | null
+}
+
+export interface ExecutionRunItem {
+  id: number
+  executionTaskId: number
+  runNo: number
+  status: string
+  progressPercent: number
+  currentStepNo: number | null
+  currentStepName: string | null
+  inputSnapshot: string
+  outputSummary: string | null
+  errorMessage: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string
+}
+
+export interface ExecutionRunDetailItem extends ExecutionRunItem {
+  steps: ExecutionStepItem[]
+  artifacts: ExecutionArtifactItem[]
+}
+
+export interface ExecutionTaskItem {
+  id: number
+  title: string
+  scenarioCode: string
+  scenarioName: string
+  sourceType: string
+  sourceId: number | null
+  projectId: number
+  projectName: string
+  workItemId: number | null
+  workItemCode: string | null
+  workItemName: string | null
+  status: string
+  currentRunId: number | null
+  currentRunStatus: string | null
+  progressPercent: number
+  currentStepNo: number | null
+  currentStepName: string | null
+  latestSummary: string
+  createdByUserId: number | null
+  createdByName: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ExecutionTaskDetailItem {
+  id: number
+  title: string
+  scenarioCode: string
+  scenarioName: string
+  sourceType: string
+  sourceId: number | null
+  triggerSource: string
+  projectId: number
+  projectName: string
+  workItemId: number | null
+  workItemCode: string | null
+  workItemName: string | null
+  status: string
+  cancelRequested: boolean
+  latestSummary: string
+  createdByUserId: number | null
+  createdByName: string | null
+  createdAt: string
+  updatedAt: string
+  currentRunId: number | null
+  inputPayload: string
+  runs: ExecutionRunItem[]
+}
+
 export interface TestCaseStepItem {
   id: number | null
   stepNo: number
@@ -350,6 +448,23 @@ export interface NotificationRealtimeEvent {
   eventType: 'NEW_NOTIFICATION' | string
   notification: NotificationItem
   unreadCount: number
+}
+
+/**
+ * 反馈类型枚举值，前后端统一使用大写编码传输。
+ */
+export type FeedbackType = 'BUG' | 'SUGGESTION' | 'EXPERIENCE' | 'OTHER'
+
+/**
+ * 提交反馈与建议时使用的请求体。
+ */
+export interface CreateFeedbackPayload {
+  /** 反馈类型。 */
+  type: FeedbackType
+  /** 反馈标题。 */
+  title: string
+  /** 反馈详细内容。 */
+  content: string
 }
 
 /**
@@ -751,4 +866,19 @@ export interface PermissionItem {
   enabled: boolean
   builtIn: boolean
   description: string
+}
+
+export interface PlatformToolItem {
+  code: string
+  name: string
+  moduleCode: string
+  description: string
+  readOnly: boolean
+  riskLevel: string
+  permissionCode: string
+  requiresConfirm: boolean
+  enabled: boolean
+  allowAutoExecute: boolean
+  displayNameOverride: string
+  descriptionOverride: string
 }

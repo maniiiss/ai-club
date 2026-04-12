@@ -4,10 +4,13 @@ import com.aiclub.platform.domain.model.HermesChatAuditEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.HermesChatResponse;
+import com.aiclub.platform.dto.HermesActionSummary;
 import com.aiclub.platform.dto.HermesStreamDelta;
 import com.aiclub.platform.dto.HermesStreamDone;
 import com.aiclub.platform.dto.HermesStreamError;
 import com.aiclub.platform.dto.HermesStreamMeta;
+import com.aiclub.platform.dto.HermesToolContext;
+import com.aiclub.platform.dto.PlatformToolResult;
 import com.aiclub.platform.dto.request.HermesChatRequest;
 import com.aiclub.platform.repository.HermesChatAuditRepository;
 import com.aiclub.platform.repository.UserRepository;
@@ -19,6 +22,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 import java.io.IOException;
 import java.io.OutputStream;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 编排 Hermes 顶部问答的完整流程：上下文装配、流式转发和轻量审计。
@@ -32,6 +36,8 @@ public class HermesChatService {
     private final HermesContextAssembler hermesContextAssembler;
     private final HermesPromptBuilder hermesPromptBuilder;
     private final HermesGatewayService hermesGatewayService;
+    private final HermesActionPlannerService hermesActionPlannerService;
+    private final HermesToolOrchestrator hermesToolOrchestrator;
     private final HermesChatAuditRepository hermesChatAuditRepository;
     private final ObjectMapper objectMapper;
 
@@ -41,6 +47,8 @@ public class HermesChatService {
                              HermesContextAssembler hermesContextAssembler,
                              HermesPromptBuilder hermesPromptBuilder,
                              HermesGatewayService hermesGatewayService,
+                             HermesActionPlannerService hermesActionPlannerService,
+                             HermesToolOrchestrator hermesToolOrchestrator,
                              HermesChatAuditRepository hermesChatAuditRepository,
                              ObjectMapper objectMapper) {
         this.authService = authService;
@@ -49,6 +57,8 @@ public class HermesChatService {
         this.hermesContextAssembler = hermesContextAssembler;
         this.hermesPromptBuilder = hermesPromptBuilder;
         this.hermesGatewayService = hermesGatewayService;
+        this.hermesActionPlannerService = hermesActionPlannerService;
+        this.hermesToolOrchestrator = hermesToolOrchestrator;
         this.hermesChatAuditRepository = hermesChatAuditRepository;
         this.objectMapper = objectMapper;
     }
@@ -60,12 +70,16 @@ public class HermesChatService {
         CurrentUserInfo currentUser = authService.currentUser();
         HermesContextAssembler.HermesConversationContext context = hermesContextAssembler.assemble(request, currentUser);
         String scopeKey = resolveScopeKey(currentUser.id(), context.projectId(), request.clientConversationId());
+        HermesToolContext toolContext = hermesToolOrchestrator.planAndRunReadTools(request, context, scopeKey);
+        List<HermesActionSummary> actions = toolContext.actions().isEmpty()
+                ? hermesActionPlannerService.planActions(request, context)
+                : toolContext.actions();
         HermesChatAuditEntity audit = createAudit(currentUser, request, context, scopeKey);
 
         return outputStream -> {
             try {
-                writeEvent(outputStream, "meta", new HermesStreamMeta(scopeKey, context.roleName(), context.references(), context.suggestions()));
-                HermesPromptBuilder.HermesPrompt prompt = hermesPromptBuilder.build(currentUser, context, request);
+                writeEvent(outputStream, "meta", new HermesStreamMeta(scopeKey, context.roleName(), context.references(), context.suggestions(), actions, toolContext.toolResults()));
+                HermesPromptBuilder.HermesPrompt prompt = hermesPromptBuilder.build(currentUser, context, request, toolContext);
                 HermesGatewayService.HermesGatewayResult result = hermesGatewayService.streamChatCompletions(
                         prompt,
                         deltaText -> {
@@ -76,7 +90,7 @@ public class HermesChatService {
                             }
                         }
                 );
-                finishSuccess(outputStream, audit, scopeKey, context, result);
+                finishSuccess(outputStream, audit, scopeKey, context, result, actions, toolContext.toolResults());
             } catch (Exception exception) {
                 finishFailure(outputStream, audit, exception);
             }
@@ -90,10 +104,14 @@ public class HermesChatService {
         CurrentUserInfo currentUser = authService.currentUser();
         HermesContextAssembler.HermesConversationContext context = hermesContextAssembler.assemble(request, currentUser);
         String scopeKey = resolveScopeKey(currentUser.id(), context.projectId(), request.clientConversationId());
+        HermesToolContext toolContext = hermesToolOrchestrator.planAndRunReadTools(request, context, scopeKey);
+        List<HermesActionSummary> actions = toolContext.actions().isEmpty()
+                ? hermesActionPlannerService.planActions(request, context)
+                : toolContext.actions();
         HermesChatAuditEntity audit = createAudit(currentUser, request, context, scopeKey);
 
         try {
-            HermesPromptBuilder.HermesPrompt prompt = hermesPromptBuilder.build(currentUser, context, request);
+            HermesPromptBuilder.HermesPrompt prompt = hermesPromptBuilder.build(currentUser, context, request, toolContext);
             HermesGatewayService.HermesGatewayResult result = hermesGatewayService.streamChat(scopeKey, prompt, deltaText -> {
                 // 当前非流式接口直接等待完整结果，不需要向调用方回放增量。
             });
@@ -107,7 +125,9 @@ public class HermesChatService {
                     context.roleName(),
                     defaultString(result.content()),
                     context.references(),
-                    context.suggestions()
+                    context.suggestions(),
+                    actions,
+                    toolContext.toolResults()
             );
         } catch (Exception exception) {
             audit.setStatus("FAILED");
@@ -125,7 +145,9 @@ public class HermesChatService {
                                HermesChatAuditEntity audit,
                                String scopeKey,
                                HermesContextAssembler.HermesConversationContext context,
-                               HermesGatewayService.HermesGatewayResult result) {
+                               HermesGatewayService.HermesGatewayResult result,
+                               List<HermesActionSummary> actions,
+                               List<PlatformToolResult> toolResults) {
         audit.setStatus("SUCCESS");
         audit.setResponseSummary(abbreviate(result.content(), 1000));
         audit.setHermesResponseId(result.responseId());
@@ -138,7 +160,9 @@ public class HermesChatService {
                     context.roleName(),
                     defaultString(result.content()),
                     context.references(),
-                    context.suggestions()
+                    context.suggestions(),
+                    actions,
+                    toolResults
             ));
         } catch (IOException exception) {
             throw new IllegalStateException("Hermes 完成事件发送失败", exception);

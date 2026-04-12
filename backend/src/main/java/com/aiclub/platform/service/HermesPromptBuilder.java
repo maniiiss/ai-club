@@ -1,6 +1,7 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.dto.CurrentUserInfo;
+import com.aiclub.platform.dto.HermesToolContext;
 import com.aiclub.platform.dto.request.HermesChatRequest;
 import org.springframework.stereotype.Service;
 
@@ -16,9 +17,20 @@ public class HermesPromptBuilder {
     public HermesPrompt build(CurrentUserInfo currentUser,
                               HermesContextAssembler.HermesConversationContext context,
                               HermesChatRequest request) {
+        return build(currentUser, context, request, null);
+    }
+
+    /**
+     * 基于当前用户、角色、业务上下文和平台工具查询结果生成 Hermes 最终输入。
+     */
+    public HermesPrompt build(CurrentUserInfo currentUser,
+                              HermesContextAssembler.HermesConversationContext context,
+                              HermesChatRequest request,
+                              HermesToolContext toolContext) {
         String roleName = context.roleName() == null || context.roleName().isBlank() ? "协作成员" : context.roleName().trim();
         String userName = currentUser == null ? "当前用户"
                 : (currentUser.nickname() != null && !currentUser.nickname().isBlank() ? currentUser.nickname().trim() : currentUser.username().trim());
+        String toolContextMarkdown = toolContext == null ? "" : defaultString(toolContext.contextMarkdown());
 
         String systemPrompt = """
                 你是 Git AI Club 平台内置的 Hermes 协作助手。
@@ -38,7 +50,7 @@ public class HermesPromptBuilder {
                 当前路由：%s
 
                 以下是平台整理后的可见上下文：
-                %s
+                %s%s
 
                 用户问题：
                 %s
@@ -47,9 +59,14 @@ public class HermesPromptBuilder {
                 roleName,
                 request.routeName().trim(),
                 context.contextMarkdown(),
+                toolContextMarkdown,
                 request.question().trim()
         );
         return new HermesPrompt(systemPrompt, userPrompt);
+    }
+
+    private String defaultString(String value) {
+        return value == null ? "" : value;
     }
 
     /**
