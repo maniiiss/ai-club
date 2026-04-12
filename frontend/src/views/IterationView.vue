@@ -885,7 +885,7 @@
               <MarkdownEditor
                 v-model="workItemForm.requirementMarkdown"
                 :height="workItemEditorHeight"
-                :preview="false"
+                :preview="true"
                 :upload-image="handleTaskMarkdownImageUpload"
                 :placeholder="requirementDocumentPlaceholder"
               />
@@ -895,7 +895,7 @@
               <MarkdownEditor
                 v-model="workItemForm.description"
                 :height="workItemEditorHeight"
-                :preview="false"
+                :preview="true"
                 :upload-image="handleTaskMarkdownImageUpload"
                 placeholder="请填写工作项详细说明，支持 Markdown 格式"
               />
@@ -1596,12 +1596,26 @@ const resetIterationForm = () => {
   iterationFormRef.value?.clearValidate()
 }
 
+/**
+ * 新建工作项时默认跟随当前列表入口的类型筛选，
+ * 只有“全部”页签回退为任务，避免用户每次都手动切换类型。
+ */
+const resolveDefaultWorkItemType = (): WorkItemForm['workItemType'] => {
+  if (activeTypeTab.value === '需求') {
+    return '需求'
+  }
+  if (activeTypeTab.value === '缺陷') {
+    return '缺陷'
+  }
+  return '任务'
+}
+
 const resetWorkItemForm = () => {
   currentWorkItemId.value = null
   currentDialogWorkItem.value = null
   workItemForm.workItemCode = ''
   workItemForm.name = ''
-  workItemForm.workItemType = '任务'
+  workItemForm.workItemType = resolveDefaultWorkItemType()
   workItemForm.status = '草稿'
   workItemForm.priority = '中'
   workItemForm.workHours = null
@@ -3747,7 +3761,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 22px;
+  padding: 12px 22px 10px;
 }
 
 .work-item-dialog-header-main {
@@ -3910,13 +3924,13 @@ onMounted(async () => {
 }
 
 .work-item-editor-top {
-  padding: 18px 18px 16px;
+  padding: 10px 18px 14px;
   border-bottom: 1px solid var(--app-border);
   background: var(--app-surface-card);
 }
 
 .work-item-editor-title-row {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .work-item-editor-label {
@@ -4218,15 +4232,12 @@ onMounted(async () => {
   box-shadow: inset 0 0 0 1px var(--app-border);
 }
 
-.work-item-description-form-item :deep(.md-editor-preview-wrapper),
-.work-item-description-form-item :deep(.md-editor-resize-operate) {
-  display: none;
-}
-
-.work-item-description-form-item :deep(.md-editor-input-wrapper) {
-  flex: 1 1 auto;
-  width: 100%;
+.work-item-description-form-item :deep(.md-editor-input-wrapper),
+.work-item-description-form-item :deep(.md-editor-preview-wrapper) {
+  flex: 1 1 50%;
+  width: auto;
   min-height: 0;
+  min-width: 0;
 }
 
 .work-item-description-form-item :deep(.md-editor-content-wrapper) {
@@ -4234,6 +4245,10 @@ onMounted(async () => {
   flex: 1 1 auto;
   width: 100%;
   min-height: 0;
+}
+
+.work-item-description-form-item :deep(.md-editor-preview-wrapper) {
+  background: rgba(255, 255, 255, 0.82);
 }
 
 .work-item-description-form-item :deep(.cm-editor),

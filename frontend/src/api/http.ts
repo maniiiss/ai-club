@@ -19,7 +19,8 @@ const resolveApiBaseUrl = () => {
   return 'http://localhost:8080'
 }
 
-const resolvedApiBaseUrl = resolveApiBaseUrl()
+export const resolvedApiBaseUrl = resolveApiBaseUrl()
+export const getResolvedApiBaseUrl = () => resolvedApiBaseUrl
 
 export const http = axios.create({
   baseURL: resolvedApiBaseUrl,

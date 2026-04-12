@@ -56,6 +56,13 @@ platform:
     base-url: http://localhost:9000
   gitlab:
     default-api-url: http://192.168.110.138:30080/api/v4
+  hermes:
+    base-url: ${PLATFORM_HERMES_BASE_URL:http://localhost:18080/v1}
+    api-key: ${PLATFORM_HERMES_API_KEY:}
+    model: ${PLATFORM_HERMES_MODEL:hermes-agent}
+    timeout-seconds: ${PLATFORM_HERMES_TIMEOUT_SECONDS:180}
+    session-prefix: ${PLATFORM_HERMES_SESSION_PREFIX:ai-club:hermes}
+    max-context-messages: ${PLATFORM_HERMES_MAX_CONTEXT_MESSAGES:6}
   security:
     token-secret: ${PLATFORM_TOKEN_SECRET:ai-club-demo-token-secret}
     token-expire-hours: ${PLATFORM_TOKEN_EXPIRE_HOURS:12}

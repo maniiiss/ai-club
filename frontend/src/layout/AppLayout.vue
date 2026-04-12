@@ -230,15 +230,34 @@
       <el-header v-if="!isIterationWorkspaceRoute" class="layout-header">
         <div class="header-search-group">
           <h1 class="header-page-title">{{ pageTitle }}</h1>
-          <div v-if="!isMobileViewport" class="header-search-shell" aria-hidden="true">
+          <div v-if="!isMobileViewport && canUseHermes" class="header-search-shell" @click="handleOpenHermesDrawer">
             <el-icon><Search /></el-icon>
-            <span>{{ headerSearchHint }}</span>
+            <input
+              v-model="headerHermesQuestion"
+              class="header-search-input"
+              type="text"
+              placeholder="问你想问"
+              @click.stop
+              @keyup.enter="handleAskHermes"
+            />
+            <button class="header-search-button" type="button" @click.stop="handleAskHermes">
+              提问
+            </button>
           </div>
         </div>
 
         <div class="header-actions">
           <el-dropdown @command="handleCommand">
             <div class="header-profile-group">
+              <button
+                v-if="isMobileViewport && canUseHermes"
+                class="header-hermes-button"
+                type="button"
+                aria-label="打开 Hermes 助手"
+                @click.stop="handleOpenHermesDrawer"
+              >
+                <el-icon><Search /></el-icon>
+              </button>
               <button class="header-notification-button" type="button" aria-label="打开消息中心" @click.stop="handleOpenNotifications">
                 <el-icon><Bell /></el-icon>
                 <span v-if="notificationStore.unreadCount > 0" class="header-notification-dot"></span>
@@ -266,6 +285,7 @@
             </template>
           </el-dropdown>
         </div>
+
       </el-header>
 
       <el-main class="layout-main" :class="{ 'dashboard-main': isDashboardRoute, 'iteration-main': isIterationWorkspaceRoute, 'mobile-main': isMobileViewport && !isIterationWorkspaceRoute }">
@@ -362,17 +382,37 @@
     </div>
   </el-drawer>
 
-  <el-drawer v-model="notificationStore.drawerVisible" :show-close="false" size="420px" class="message-center-drawer">
+  <HermesDrawer
+    ref="hermesDrawerRef"
+    v-model="hermesDrawerVisible"
+    :route-name="hermesRouteName"
+    :project-id="hermesProjectId"
+    :task-id="hermesTaskId"
+    :iteration-id="hermesIterationId"
+    :plan-id="hermesPlanId"
+    :fallback-prompts="hermesQuickPrompts"
+  />
+
+  <el-drawer
+    v-model="notificationStore.drawerVisible"
+    :direction="notificationDrawerDirection"
+    :size="notificationDrawerSize"
+    :show-close="false"
+    :class="['message-center-drawer', { 'is-mobile': isMobileViewport }]"
+  >
     <template #header>
       <div class="drawer-head">
         <div class="drawer-head-copy">
           <div class="drawer-title">消息中心</div>
           <div class="drawer-subtitle">智能协作工作台</div>
         </div>
-        <button class="drawer-mark-all-button" type="button" @click="notificationStore.markAllRead">
-          <el-icon><Finished /></el-icon>
-          <span>全部标记已读</span>
-        </button>
+        <div class="drawer-head-actions">
+          <button class="drawer-mark-all-button" type="button" @click="notificationStore.markAllRead">
+            <el-icon><Finished /></el-icon>
+            <span>全部标记已读</span>
+          </button>
+          <button class="drawer-close-button" type="button" @click="notificationStore.drawerVisible = false">关闭</button>
+        </div>
       </div>
     </template>
 
@@ -432,7 +472,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowDown,
@@ -459,6 +499,7 @@ import {
   WarningFilled
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import HermesDrawer from '@/components/HermesDrawer.vue'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
@@ -480,6 +521,11 @@ interface MenuItem {
   matchNames?: string[]
 }
 
+interface HermesDrawerExpose {
+  openDrawer: () => void
+  openWithQuestion: (question: string) => Promise<void>
+}
+
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
@@ -489,6 +535,9 @@ const systemMenuExpanded = ref(false)
 const integrationMenuExpanded = ref(false)
 const isMobileViewport = ref(false)
 const mobileMoreDrawerVisible = ref(false)
+const hermesDrawerVisible = ref(false)
+const headerHermesQuestion = ref('')
+const hermesDrawerRef = ref<HermesDrawerExpose | null>(null)
 
 const primaryMenuItems: MenuItem[] = [
   { path: '/dashboard', label: '首页看板', shortLabel: '首页', permission: 'dashboard:view', icon: Odometer, matchNames: ['dashboard'] },
@@ -528,27 +577,39 @@ const isDashboardRoute = computed(() => route.name === 'dashboard')
 const isIterationWorkspaceRoute = computed(() => route.name === 'project-iterations')
 const effectiveSidebarCollapsed = computed(() => isMobileViewport.value || appStore.sidebarCollapsed)
 const asideWidth = computed(() => (effectiveSidebarCollapsed.value ? '80px' : '256px'))
-const todayLabel = computed(() =>
-  new Intl.DateTimeFormat('zh-CN', {
-    month: 'long',
-    day: 'numeric',
-    weekday: 'short'
-  }).format(new Date())
-)
 const userInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
 const userAvatarUrl = computed(() => resolveAssetUrl(authStore.user?.avatarUrl))
-const headerSearchHint = computed(() => {
-  const searchHints: Record<string, string> = {
-    dashboard: '搜索项目、智能体或任务...',
-    agents: '搜索智能体、模型或项目...',
-    gitlab: '搜索仓库、分支或日志...',
-    'cicd-servers': '搜索 Jenkins 服务、地址或用户名...',
-    'cicd-pipelines': '搜索项目流水线、任务或分支...',
-    tests: '搜索测试计划、用例或结果...',
-    'project-iterations': '搜索工作项、需求或负责人...'
-  }
-  return searchHints[String(route.name || '')] || '搜索页面、数据或工作项...'
+const canUseHermes = computed(() => authStore.hasPermission('hermes:chat'))
+const hermesRouteName = computed(() => String(route.name || ''))
+const hermesProjectId = computed(() => {
+  const projectId = Number(route.params.projectId)
+  return Number.isNaN(projectId) || projectId <= 0 ? null : projectId
 })
+const hermesTaskId = computed(() => {
+  const taskId = Number(route.query.openTaskId)
+  return Number.isNaN(taskId) || taskId <= 0 ? null : taskId
+})
+const hermesIterationId = computed(() => {
+  const iterationId = Number(route.query.iterationId)
+  return Number.isNaN(iterationId) || iterationId <= 0 ? null : iterationId
+})
+const hermesPlanId = computed(() => {
+  const planId = Number(route.params.planId)
+  return Number.isNaN(planId) || planId <= 0 ? null : planId
+})
+const hermesQuickPrompts = computed(() => {
+  const quickPromptMap: Record<string, string[]> = {
+    dashboard: ['我今天最该推进什么', '哪些项目本周有延期风险', '最近有哪些需要我关注的异常'],
+    projects: ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个项目本周最值得关注的风险是什么'],
+    'project-iterations': ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个任务为什么延期了'],
+    'project-knowledge-graph': ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个项目本周最值得关注的风险是什么'],
+    tasks: ['我今天优先处理哪些任务', '最近有哪些任务被卡住了', '哪些任务本周风险最高']
+  }
+  return quickPromptMap[hermesRouteName.value] || ['我今天最该推进什么', '帮我总结当前最值得关注的事项', '最近有哪些需要我关注的异常']
+})
+// 消息中心在桌面端保持右侧抽屉，在手机端切换成与 Hermes 一致的底部全屏抽屉，保证交互预期统一。
+const notificationDrawerDirection = computed(() => (isMobileViewport.value ? 'btt' : 'rtl'))
+const notificationDrawerSize = computed(() => (isMobileViewport.value ? '100%' : '420px'))
 const canLoadMoreNotifications = computed(() => notificationStore.items.length < notificationStore.total)
 const mobilePrimaryMenuPaths = ['/dashboard', '/projects', '/tasks', '/tests']
 const mobileBottomNavItems = computed(() =>
@@ -603,6 +664,31 @@ async function handleNavigate(path: string) {
  */
 async function handleMobileNavigate(path: string) {
   await handleNavigate(path)
+}
+
+/**
+ * 顶部 Hermes 入口统一走抽屉承载，桌面端输入框和手机端图标复用同一套打开逻辑。
+ */
+const handleOpenHermesDrawer = () => {
+  if (!canUseHermes.value) {
+    return
+  }
+  hermesDrawerVisible.value = true
+  hermesDrawerRef.value?.openDrawer()
+}
+
+/**
+ * 头部输入框按回车或点击按钮时，直接打开抽屉并把当前问题送入 Hermes。
+ */
+const handleAskHermes = async () => {
+  if (!canUseHermes.value) {
+    return
+  }
+  const question = headerHermesQuestion.value.trim()
+  hermesDrawerVisible.value = true
+  await nextTick()
+  await hermesDrawerRef.value?.openWithQuestion(question)
+  headerHermesQuestion.value = ''
 }
 
 const handleCommand = async (command: string) => {
@@ -1152,19 +1238,47 @@ watch(
   flex: 1 1 auto;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-height: 38px;
   padding: 0 14px;
   border-radius: 8px;
   background: rgba(243, 244, 245, 0.96);
   color: var(--app-text-muted);
   font-size: 13px;
+  cursor: text;
 }
 
-.header-search-shell span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.header-search-input,
+.header-search-button,
+.header-hermes-button {
+  border: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  font: inherit;
+}
+
+.header-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  color: var(--app-text);
+  font-size: 13px;
+}
+
+.header-search-input::placeholder {
+  color: var(--app-text-muted);
+}
+
+.header-search-button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #191c1d;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .header-actions {
@@ -1182,6 +1296,7 @@ watch(
   gap: 16px;
 }
 
+.header-hermes-button,
 .header-notification-button {
   width: 34px;
   height: 34px;
@@ -1195,6 +1310,7 @@ watch(
   position: relative;
 }
 
+.header-hermes-button:hover,
 .header-notification-button:hover {
   background: rgba(226, 232, 240, 0.55);
   color: var(--app-primary);
@@ -1428,12 +1544,20 @@ watch(
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 20px 10px;
+  padding: 10px 20px 8px;
   background: #f8f9fa;
 }
 
 .drawer-head-copy {
   min-width: 0;
+}
+
+.drawer-head-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .drawer-title {
@@ -1446,7 +1570,7 @@ watch(
 }
 
 .drawer-subtitle {
-  margin-top: 6px;
+  margin-top: 4px;
   color: #94a3b8;
   font-size: 9px;
   font-weight: 800;
@@ -1471,6 +1595,24 @@ watch(
 .drawer-mark-all-button:hover {
   background: rgba(231, 232, 233, 0.9);
   color: var(--app-primary);
+}
+
+.drawer-close-button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  color: #191c1d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.drawer-close-button:hover {
+  background: rgba(15, 23, 42, 0.14);
 }
 
 .notification-drawer {
@@ -1541,7 +1683,7 @@ watch(
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 12px 14px 18px;
+  padding: 8px 14px 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1754,6 +1896,30 @@ watch(
   padding: 0;
 }
 
+:deep(.message-center-drawer.is-mobile .el-drawer) {
+  border-left: 0;
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -20px 60px -15px rgba(0, 0, 0, 0.18);
+}
+
+@media (max-width: 900px) {
+  .drawer-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .drawer-head-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .drawer-mark-all-button,
+  .drawer-close-button {
+    flex: 1 1 calc(50% - 5px);
+    justify-content: center;
+  }
+}
+
 :deep(.sidebar-system-popper.el-popper) {
   border: 0 !important;
   border-radius: 16px !important;
@@ -1815,6 +1981,7 @@ watch(
 
 @media (max-width: 900px) {
   .layout-header {
+    flex-wrap: wrap;
     padding: 12px 16px;
     gap: 12px;
   }
@@ -1822,6 +1989,10 @@ watch(
   .header-search-group {
     gap: 10px;
     flex: 1 1 auto;
+  }
+
+  .header-actions {
+    flex: 0 0 auto;
   }
 
   .header-page-title {
@@ -1846,6 +2017,11 @@ watch(
     max-width: 220px;
     flex-basis: 160px;
     padding: 0 12px;
+  }
+
+  .header-search-button {
+    padding-left: 10px;
+    padding-right: 10px;
   }
 
   .header-profile-group {

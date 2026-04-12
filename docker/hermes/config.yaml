@@ -1,0 +1,4 @@
+# Hermes 平台内置助手最小配置。
+# API Server 相关端口和鉴权由环境变量控制，这里只固定启用 Hindsight 记忆提供方。
+memory:
+  provider: hindsight

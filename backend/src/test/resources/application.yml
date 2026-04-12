@@ -19,6 +19,13 @@ platform:
     base-url: http://localhost:9000
   gitlab:
     default-api-url: http://localhost:30080/api/v4
+  hermes:
+    base-url: http://localhost:18080/v1
+    api-key:
+    model: hermes-agent
+    timeout-seconds: 180
+    session-prefix: "test:hermes"
+    max-context-messages: 4
   security:
     token-secret: test-token-secret
     session-key-prefix: "test:session:"
