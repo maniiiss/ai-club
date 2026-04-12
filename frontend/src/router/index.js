@@ -16,6 +16,7 @@ import ForbiddenView from '@/views/ForbiddenView.vue';
 import UserView from '@/views/UserView.vue';
 import RoleView from '@/views/RoleView.vue';
 import PermissionView from '@/views/PermissionView.vue';
+import OperationLogView from '@/views/OperationLogView.vue';
 import IterationView from '@/views/IterationView.vue';
 import ProfileView from '@/views/ProfileView.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -58,7 +59,8 @@ const router = createRouter({
                 { path: 'profile', name: 'profile', component: ProfileView, meta: { title: '个人中心' } },
                 { path: 'users', name: 'users', component: UserView, meta: { title: '用户管理', permission: 'system:user:view' } },
                 { path: 'roles', name: 'roles', component: RoleView, meta: { title: '角色管理', permission: 'system:role:view' } },
-                { path: 'permissions', name: 'permissions', component: PermissionView, meta: { title: '功能管理', permission: 'system:permission:view' } }
+                { path: 'permissions', name: 'permissions', component: PermissionView, meta: { title: '功能管理', permission: 'system:permission:view' } },
+                { path: 'operation-logs', name: 'operation-logs', component: OperationLogView, meta: { title: '操作日志', permission: 'system:operation-log:view' } }
             ]
         }
     ]

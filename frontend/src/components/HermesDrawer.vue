@@ -204,6 +204,23 @@ const scrollToBottom = async () => {
 }
 
 /**
+ * 仅当用户仍停留在消息底部附近、且当前没有展开中的思考块时，才继续自动跟随流式输出滚动。
+ * 否则用户正在阅读历史内容或思考过程，强制滚动会让人误以为思考面板被自动收起。
+ */
+const shouldAutoScrollWithStream = () => {
+  if (!messageScrollRef.value) {
+    return true
+  }
+  const scrollContainer = messageScrollRef.value
+  const remainingDistance = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight
+  const isNearBottom = remainingDistance <= 48
+  const hasExpandedThinkBlock = Boolean(
+    scrollContainer.querySelector('.hermes-think-block[open]')
+  ) || Array.from(thinkBlockOpenState.values()).some(Boolean)
+  return isNearBottom && !hasExpandedThinkBlock
+}
+
+/**
  * 流式输出会触发 `v-html` 整块重绘，这里在每次重绘后把用户刚刚展开的思考块状态恢复回来。
  */
 const restoreThinkBlockOpenState = () => {
@@ -285,9 +302,12 @@ const handleThinkSummaryClick = (event: Event) => {
   if (!thinkKey) {
     return
   }
-  window.setTimeout(() => {
-    thinkBlockOpenState.set(thinkKey, thinkBlock.open)
-  }, 0)
+
+  /**
+   * 这里直接记录“点击之后将要切换成的状态”，避免流式增量刚好在同一时刻到达时，
+   * 由于 `setTimeout(0)` 尚未执行，导致新一轮 DOM 重绘把刚展开的思考面板又恢复成关闭状态。
+   */
+  thinkBlockOpenState.set(thinkKey, !thinkBlock.open)
 }
 
 const handleOpenReference = async (route: string) => {
@@ -298,9 +318,10 @@ const handleOpenReference = async (route: string) => {
 }
 
 const updateMessage = (messageId: string, updater: (current: HermesMessageItem) => HermesMessageItem) => {
+  const shouldScroll = shouldAutoScrollWithStream()
   currentMessages.value = currentMessages.value.map((item) => (item.id === messageId ? updater(item) : item))
   saveCurrentSession()
-  void restoreThinkBlocksAndScroll()
+  void restoreThinkBlocksAndScroll(shouldScroll)
 }
 
 const resolveConversationId = () => {
@@ -348,11 +369,37 @@ const buildPayload = (question: string): HermesChatRequestPayload => ({
 })
 
 /**
+ * 流式阶段已经拿到的文本通常最完整地保留了 `<think>` 思考过程。
+ * 如果完成事件返回的是去掉思考过程的“净化版答案”，这里优先保留流式阶段的原文，
+ * 避免用户刚展开的思考面板在完成瞬间直接消失，看起来像被自动关闭。
+ */
+const resolveAssistantFinalContent = (streamedContent: string, doneContent: string) => {
+  const normalizedStreamed = streamedContent || ''
+  const normalizedDone = doneContent || ''
+  if (!normalizedDone.trim()) {
+    return normalizedStreamed
+  }
+  const streamedHasThink = /<think\b/i.test(normalizedStreamed)
+  const doneHasThink = /<think\b/i.test(normalizedDone)
+  if (streamedHasThink && !doneHasThink) {
+    return normalizedStreamed
+  }
+  if (normalizedDone.length < normalizedStreamed.length && normalizedStreamed.includes(normalizedDone)) {
+    return normalizedStreamed
+  }
+  return normalizedDone
+}
+
+/**
  * 为每条消息生成带稳定思考块键的 HTML，确保思考面板在流式渲染过程中可以保持用户手动展开的状态。
  */
 const renderAssistantMessage = (message: HermesMessageItem) =>
   renderHermesMarkdownToHtml(message.content || (message.status === 'streaming' ? '正在整理回答...' : '暂无内容'), {
-    thinkBlockKeyPrefix: message.id
+    thinkBlockKeyPrefix: message.id,
+    /**
+     * 在 HTML 生成阶段直接补回 open 属性，避免流式增量导致 `<details>` 被重绘后出现“刚展开又关闭”的闪动。
+     */
+    isThinkBlockOpen: (thinkBlockKey: string) => Boolean(thinkBlockOpenState.get(thinkBlockKey))
   })
 
 const handleSubmit = async (questionOverride?: string) => {
@@ -405,7 +452,7 @@ const handleSubmit = async (questionOverride?: string) => {
         currentSuggestions.value = payload.suggestions || []
         updateMessage(assistantMessageId, (current) => ({
           ...current,
-          content: payload.content || current.content,
+          content: resolveAssistantFinalContent(current.content, payload.content),
           status: 'done'
         }))
         sending.value = false
@@ -581,6 +628,11 @@ defineExpose({
   align-items: flex-start;
 }
 
+.hermes-message-row.assistant .hermes-message-bubble {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .hermes-message-label {
   display: inline-flex;
   align-items: center;
@@ -719,10 +771,12 @@ defineExpose({
 
 .hermes-markdown-content :deep(.hermes-think-block),
 .hermes-markdown-content .hermes-think-block {
+  width: 100%;
   margin: 0 0 10px;
   border: 1px solid rgba(var(--app-outline-rgb), 0.12);
   border-radius: 16px;
   background: rgba(243, 244, 245, 0.78);
+  box-sizing: border-box;
   overflow: hidden;
 }
 
@@ -744,8 +798,44 @@ defineExpose({
 .hermes-markdown-content .hermes-think-summary-main {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   min-width: 0;
+}
+
+.hermes-markdown-content :deep(.hermes-think-status-icon),
+.hermes-markdown-content .hermes-think-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  flex: 0 0 18px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.hermes-markdown-content :deep(.hermes-think-status-icon.thinking),
+.hermes-markdown-content .hermes-think-status-icon.thinking {
+  color: rgba(var(--app-primary-rgb), 0.92);
+  background: rgba(var(--app-primary-rgb), 0.12);
+}
+
+.hermes-markdown-content :deep(.hermes-think-status-icon.done),
+.hermes-markdown-content .hermes-think-status-icon.done {
+  color: #0f766e;
+  background: rgba(15, 118, 110, 0.14);
+}
+
+.hermes-markdown-content :deep(.hermes-think-block.is-done),
+.hermes-markdown-content .hermes-think-block.is-done {
+  border-color: rgba(15, 118, 110, 0.18);
+  background: rgba(236, 253, 245, 0.88);
+}
+
+.hermes-markdown-content :deep(.hermes-think-block.is-done .hermes-think-summary-label),
+.hermes-markdown-content .hermes-think-block.is-done .hermes-think-summary-label {
+  color: #0f766e;
 }
 
 .hermes-markdown-content :deep(.hermes-think-summary-label),

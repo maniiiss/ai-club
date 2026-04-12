@@ -482,6 +482,7 @@ import {
   Connection,
   Cpu,
   DataAnalysis,
+  Document,
   DocumentCopy,
   Expand,
   Finished,
@@ -560,7 +561,8 @@ const trailingMenuItems: MenuItem[] = [
 const systemMenuItems: MenuItem[] = [
   { path: '/users', label: '用户管理', shortLabel: '用户', permission: 'system:user:view', icon: UserFilled, matchNames: ['users'] },
   { path: '/roles', label: '角色管理', shortLabel: '角色', permission: 'system:role:view', icon: Management, matchNames: ['roles'] },
-  { path: '/permissions', label: '功能管理', shortLabel: '功能', permission: 'system:permission:view', icon: Setting, matchNames: ['permissions'] }
+  { path: '/permissions', label: '功能管理', shortLabel: '功能', permission: 'system:permission:view', icon: Setting, matchNames: ['permissions'] },
+  { path: '/operation-logs', label: '操作日志', shortLabel: '日志', permission: 'system:operation-log:view', icon: Document, matchNames: ['operation-logs'] }
 ]
 
 const pageTitle = computed(() => {

@@ -352,6 +352,80 @@ export interface NotificationRealtimeEvent {
   unreadCount: number
 }
 
+/**
+ * 操作日志列表项，供列表页与详情抽屉复用。
+ */
+export interface OperationLogItem {
+  /** 日志主键ID。 */
+  id: number
+  /** 发起操作的用户ID，匿名或历史用户已删除时允许为空。 */
+  userId: number | null
+  /** 用户名历史快照。 */
+  usernameSnapshot: string
+  /** 用户昵称历史快照。 */
+  nicknameSnapshot: string
+  /** 模块编码。 */
+  moduleCode: string
+  /** 模块名称。 */
+  moduleName: string
+  /** 动作编码。 */
+  actionCode: string
+  /** 动作名称。 */
+  actionName: string
+  /** 业务对象类型。 */
+  bizType: string | null
+  /** 业务对象ID。 */
+  bizId: number | null
+  /** 请求HTTP方法。 */
+  httpMethod: string
+  /** 实际请求路径。 */
+  requestUri: string
+  /** 匹配到的路由模板。 */
+  routePattern: string
+  /** 关联权限码。 */
+  permissionCode: string | null
+  /** 操作结果状态，例如 SUCCESS、FAILED。 */
+  operationStatus: string
+  /** HTTP响应状态码。 */
+  responseStatus: number
+  /** 请求耗时，单位毫秒。 */
+  durationMs: number
+  /** 请求来源IP。 */
+  ipAddress: string | null
+  /** 浏览器或客户端标识。 */
+  userAgent: string | null
+  /** 已脱敏请求摘要。 */
+  requestSnapshot: string | null
+  /** 结果消息。 */
+  resultMessage: string | null
+  /** 操作发生时间。 */
+  createdAt: string
+}
+
+/**
+ * 操作日志分页查询条件。
+ */
+export interface OperationLogQuery {
+  /** 当前页码，从 1 开始。 */
+  page: number
+  /** 每页条数。 */
+  size: number
+  /** 关键词，匹配用户、模块、动作、路径、结果消息。 */
+  keyword?: string
+  /** 指定操作者ID。 */
+  userId?: number
+  /** 模块编码。 */
+  moduleCode?: string
+  /** 操作结果状态。 */
+  operationStatus?: string
+  /** 业务对象类型。 */
+  bizType?: string
+  /** 查询开始时间。 */
+  startTime?: string
+  /** 查询结束时间。 */
+  endTime?: string
+}
+
 export interface ProjectGitlabBindingItem {
   id: number
   projectId: number

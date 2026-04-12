@@ -137,7 +137,17 @@ interface RenderHermesMarkdownOptions {
   enableThink?: boolean
   /** 给同一条消息内的思考块生成稳定键，便于流式更新时恢复展开状态。 */
   thinkBlockKeyPrefix?: string
+  /** 根据思考块稳定键回填展开状态，避免流式吐字时 `<details>` 被整块重绘后又自动收起。 */
+  isThinkBlockOpen?: (thinkBlockKey: string) => boolean
 }
+
+type ThinkBlockStatus = 'thinking' | 'done'
+
+/**
+ * 根据 `<think>` 片段是否已经收到结束标签，判断当前思考块仍在进行中还是已经完成。
+ */
+const resolveThinkBlockStatus = (rawThinkBlock: string): ThinkBlockStatus =>
+  /<\/think>\s*$/i.test(rawThinkBlock) ? 'done' : 'thinking'
 
 /**
  * Hermes 专用 Markdown 渲染器，支持 `<think>` 思考块、HTML 回退和表格归一化。
@@ -153,15 +163,24 @@ const renderHermesMarkdownToHtmlInternal = (
   const thinkPlaceholders: string[] = []
   const normalizedMarkdown = options.enableThink === false
     ? markdown
-    : markdown.replace(/<think\b[^>]*>([\s\S]*?)(?:<\/think>|$)/gi, (_, content: string) => {
+    : markdown.replace(/<think\b[^>]*>([\s\S]*?)(?:<\/think>|$)/gi, (rawThinkBlock: string, content: string) => {
         const token = `__THINK_BLOCK_${thinkPlaceholders.length}__`
         const thinkHtml = renderHermesMarkdownToHtmlInternal(content.trim(), { enableThink: false })
         const thinkBlockKey = options.thinkBlockKeyPrefix
           ? `${options.thinkBlockKeyPrefix}-${thinkPlaceholders.length}`
           : ''
+        const thinkStatus = resolveThinkBlockStatus(rawThinkBlock)
+        const thinkLabel = thinkStatus === 'thinking' ? '思考中' : '已完成思考'
+        const thinkOpenAttr = thinkBlockKey && options.isThinkBlockOpen?.(thinkBlockKey) ? ' open' : ''
+        const thinkDots = thinkStatus === 'thinking'
+          ? '<span class="hermes-think-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>'
+          : ''
+        const thinkIcon = thinkStatus === 'thinking'
+          ? '<span class="hermes-think-status-icon thinking" aria-hidden="true">◌</span>'
+          : '<span class="hermes-think-status-icon done" aria-hidden="true">✓</span>'
 
         thinkPlaceholders.push(
-          `<details class="hermes-think-block"${thinkBlockKey ? ` data-think-key="${escapeHtml(thinkBlockKey)}"` : ''}><summary><span class="hermes-think-summary-main"><span class="hermes-think-summary-label">思考中</span><span class="hermes-think-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span></span></summary><div class="hermes-think-content">${thinkHtml}</div></details>`
+          `<details class="hermes-think-block is-${thinkStatus}"${thinkOpenAttr}${thinkBlockKey ? ` data-think-key="${escapeHtml(thinkBlockKey)}"` : ''}><summary><span class="hermes-think-summary-main">${thinkIcon}<span class="hermes-think-summary-label">${thinkLabel}</span>${thinkDots}</span></summary><div class="hermes-think-content">${thinkHtml}</div></details>`
         )
         return `\n${token}\n`
       })

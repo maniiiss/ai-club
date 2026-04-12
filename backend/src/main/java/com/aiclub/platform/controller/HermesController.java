@@ -1,5 +1,6 @@
 package com.aiclub.platform.controller;
 
+import com.aiclub.platform.annotation.OperationLog;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.HermesChatResponse;
@@ -20,6 +21,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
  */
 @RestController
 @RequestMapping("/api/hermes")
+@OperationLog(skip = true)
 public class HermesController {
 
     private final HermesChatService hermesChatService;

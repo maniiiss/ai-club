@@ -1,5 +1,6 @@
 package com.aiclub.platform.controller;
 
+import com.aiclub.platform.annotation.OperationLog;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.LoginResult;
@@ -25,6 +26,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 @RestController
 @RequestMapping("/api/auth")
+@OperationLog(moduleCode = "AUTH", moduleName = "认证与账户", bizType = "USER")
 public class AuthController {
 
     private final AuthService authService;
@@ -37,11 +39,13 @@ public class AuthController {
     }
 
     @PostMapping("/login")
+    @OperationLog(actionCode = "AUTH_LOGIN", actionName = "登录")
     public ApiResponse<LoginResult> login(@Valid @RequestBody LoginRequest request) {
         return ApiResponse.success(authService.login(request));
     }
 
     @PostMapping("/register")
+    @OperationLog(actionCode = "AUTH_REGISTER", actionName = "注册")
     public ApiResponse<Void> register(@Valid @RequestBody RegisterRequest request) {
         authService.register(request);
         return new ApiResponse<>(true, "Registered successfully", null);
@@ -53,6 +57,7 @@ public class AuthController {
     }
 
     @PutMapping("/profile")
+    @OperationLog(actionCode = "AUTH_UPDATE_PROFILE", actionName = "修改个人资料")
     public ApiResponse<CurrentUserInfo> updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
         return ApiResponse.success(authService.updateProfile(request));
     }
@@ -61,6 +66,7 @@ public class AuthController {
      * 上传当前登录用户头像，并同步刷新当前会话中的用户资料。
      */
     @PostMapping(value = "/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @OperationLog(actionCode = "AUTH_UPLOAD_AVATAR", actionName = "上传头像")
     public ApiResponse<CurrentUserInfo> uploadAvatar(@RequestParam("file") MultipartFile file) {
         TaskCommentImageStorageService.StoredCommentImage stored = taskCommentImageStorageService.store(file, "profile-avatars");
         String avatarUrl = UriComponentsBuilder.fromPath("/profile-avatars")
@@ -71,12 +77,14 @@ public class AuthController {
     }
 
     @PostMapping("/change-password")
+    @OperationLog(actionCode = "AUTH_CHANGE_PASSWORD", actionName = "修改密码")
     public ApiResponse<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
         authService.changePassword(request);
         return new ApiResponse<>(true, "Password changed successfully", null);
     }
 
     @PostMapping("/logout")
+    @OperationLog(actionCode = "AUTH_LOGOUT", actionName = "退出登录")
     public ApiResponse<Void> logout(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
         authService.logout(authorization);
         return new ApiResponse<>(true, "Logged out successfully", null);
