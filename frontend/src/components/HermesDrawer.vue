@@ -61,42 +61,45 @@
           </div>
         </section>
 
-        <section v-if="currentToolResults.length" class="hermes-tool-section">
-          <div class="hermes-section-title">工具结果</div>
-          <div class="hermes-tool-result-list">
-            <article v-for="(toolResult, resultIndex) in currentToolResults" :key="`${toolResult.toolCode}-${resultIndex}`" class="hermes-tool-result-card">
-              <div class="hermes-tool-result-head">
-                <strong>{{ toolResult.toolName }}</strong>
-                <span>{{ toolResult.summary }}</span>
+        <section v-if="currentSelectionCards.length" class="hermes-selection-section">
+          <div class="hermes-section-title">需要你确认</div>
+          <div class="hermes-selection-list">
+            <article
+              v-for="(selectionCard, cardIndex) in currentSelectionCards"
+              :key="`${selectionCard.slot}-${cardIndex}-${selectionCard.title}`"
+              class="hermes-selection-card"
+            >
+              <div class="hermes-selection-card-copy">
+                <strong>{{ selectionCard.title }}</strong>
+                <span>{{ selectionCard.description }}</span>
               </div>
-              <div v-if="toolResult.candidates.length" class="hermes-tool-candidate-list">
+              <div class="hermes-selection-option-list">
                 <article
-                  v-for="(candidate, candidateIndex) in toolResult.candidates"
-                  :key="`${toolResult.toolCode}-${candidate.type}-${candidate.id ?? candidateIndex}`"
-                  class="hermes-tool-candidate-card"
+                  v-for="(option, optionIndex) in selectionCard.options"
+                  :key="`${selectionCard.slot}-${option.entityType}-${option.entityId ?? optionIndex}`"
+                  class="hermes-selection-option-card"
                 >
-                  <div class="hermes-tool-candidate-copy">
-                    <strong>{{ candidate.title }}</strong>
-                    <span>{{ candidate.subtitle }}</span>
+                  <div class="hermes-selection-option-copy">
+                    <strong>{{ option.title }}</strong>
+                    <span>{{ option.subtitle }}</span>
+                    <small v-if="option.matchReasons.length">{{ option.matchReasons.join(' / ') }}</small>
                   </div>
-                  <div class="hermes-tool-candidate-actions">
+                  <div class="hermes-selection-option-actions">
                     <button
-                      v-if="candidate.route"
+                      v-if="option.route"
                       class="hermes-tool-inline-button secondary"
                       type="button"
-                      @click="handleOpenReference(candidate.route)"
+                      @click="handleOpenReference(option.route)"
                     >
                       查看
                     </button>
                     <button
-                      v-for="(action, actionIndex) in candidate.actions"
-                      :key="`${candidate.type}-${candidate.id ?? candidateIndex}-${action.type}-${actionIndex}`"
                       class="hermes-tool-inline-button"
                       type="button"
-                      :disabled="sending || executingActionKey === toolActionKey(action, candidateIndex, actionIndex)"
-                      @click="handleConfirmToolAction(action, candidateIndex, actionIndex)"
+                      :disabled="sending || option.entityId == null"
+                      @click="handleSelectOption(selectionCard, option)"
                     >
-                      {{ executingActionKey === toolActionKey(action, candidateIndex, actionIndex) ? '执行中...' : action.title }}
+                      选择此项
                     </button>
                   </div>
                 </article>
@@ -148,6 +151,11 @@
             </button>
           </div>
         </section>
+
+        <section v-if="isDebugMode && currentDebug" class="hermes-debug-section">
+          <div class="hermes-section-title">调试轨迹</div>
+          <pre class="hermes-debug-pre">{{ formatDebugInfo(currentDebug) }}</pre>
+        </section>
       </div>
 
       <div class="hermes-footer">
@@ -161,7 +169,7 @@
           @keydown.enter.exact.prevent="handleSubmit()"
         />
         <div class="hermes-footer-actions">
-          <span class="hermes-footer-tip">{{ sending ? 'Hermes 正在回答...' : 'Enter 发送，Shift+Enter 换行' }}</span>
+          <span class="hermes-footer-tip">{{ sending ? currentStreamStatusText : 'Enter 发送，Shift+Enter 换行' }}</span>
           <button class="hermes-send-button" type="button" :disabled="sending" @click="handleSubmit()">
             {{ sending ? '回答中...' : '发送' }}
           </button>
@@ -183,14 +191,17 @@ import type {
   HermesActionItem,
   HermesChatRequestPayload,
   HermesConversationSession,
+  HermesDebugInfoItem,
   HermesMessageItem,
   HermesReferenceItem,
-  HermesToolActionItem,
-  HermesToolResultItem,
+  HermesSelectionCardItem,
+  HermesSelectionOptionItem,
+  HermesSelectionPayload,
   HermesStreamDeltaEvent,
   HermesStreamDoneEvent,
   HermesStreamErrorEvent,
-  HermesStreamMetaEvent
+  HermesStreamMetaEvent,
+  HermesStreamStatusEvent
 } from '@/types/hermes'
 
 interface HermesDrawerProps {
@@ -214,7 +225,8 @@ const currentMessages = ref<HermesMessageItem[]>([])
 const currentReferences = ref<HermesReferenceItem[]>([])
 const currentSuggestions = ref<string[]>([])
 const currentActions = ref<HermesActionItem[]>([])
-const currentToolResults = ref<HermesToolResultItem[]>([])
+const currentSelectionCards = ref<HermesSelectionCardItem[]>([])
+const currentDebug = ref<HermesDebugInfoItem | null>(null)
 const currentScopeKey = ref('')
 const scopeKeyByFingerprint = new Map<string, string>()
 const sessionCache = new Map<string, HermesConversationSession>()
@@ -222,6 +234,10 @@ const conversationIdByFingerprint = new Map<string, string>()
 const activeStreamAbort = ref<(() => void) | null>(null)
 const thinkBlockOpenState = new Map<string, boolean>()
 const executingActionKey = ref('')
+const HERMES_DEBUG_STORAGE_KEY = 'git-ai-club:hermes:debug'
+const HERMES_CONVERSATION_VERSION = 'v3'
+const isDebugMode = ref(false)
+const currentStreamStatus = ref<HermesStreamStatusEvent | null>(null)
 
 const scopeFingerprint = computed(() => (props.projectId ? `project:${props.projectId}` : 'global'))
 const drawerSubtitle = computed(() => {
@@ -239,6 +255,7 @@ const displayPrompts = computed(() => {
   }
   return props.fallbackPrompts || []
 })
+const currentStreamStatusText = computed(() => currentStreamStatus.value?.message || 'Hermes 正在整理回答...')
 
 /**
  * 顶部抽屉只在当前浏览器会话内缓存可见消息，刷新页面后自然丢失，不恢复完整 transcript。
@@ -251,7 +268,8 @@ const loadSessionForCurrentScope = () => {
   currentReferences.value = cachedSession ? [...cachedSession.references] : []
   currentSuggestions.value = cachedSession ? [...cachedSession.suggestions] : []
   currentActions.value = cachedSession ? [...(cachedSession.actions || [])] : []
-  currentToolResults.value = cachedSession ? [...(cachedSession.toolResults || [])] : []
+  currentSelectionCards.value = cachedSession ? [...(cachedSession.selectionCards || [])] : []
+  currentDebug.value = cachedSession?.debug || null
   currentRoleName.value = cachedSession?.roleName || '协作成员'
   void restoreThinkBlocksAndScroll(false)
 }
@@ -267,7 +285,8 @@ const saveCurrentSession = () => {
     suggestions: [...currentSuggestions.value],
     roleName: currentRoleName.value,
     actions: [...currentActions.value],
-    toolResults: [...currentToolResults.value]
+    selectionCards: [...currentSelectionCards.value],
+    debug: currentDebug.value
   })
 }
 
@@ -342,6 +361,7 @@ watch(
 onMounted(() => {
   syncViewportMode()
   if (typeof window !== 'undefined') {
+    isDebugMode.value = window.localStorage.getItem(HERMES_DEBUG_STORAGE_KEY) === '1'
     window.addEventListener('resize', syncViewportMode)
   }
 })
@@ -392,8 +412,6 @@ const handleOpenReference = async (route: string) => {
 }
 
 const actionKey = (action: HermesActionItem, index: number) => `${action.type}:${index}:${action.title}`
-const toolActionKey = (action: HermesToolActionItem, candidateIndex: number, actionIndex: number) =>
-  `tool:${action.type}:${candidateIndex}:${actionIndex}:${action.title}`
 
 /**
  * Hermes 只负责给出动作建议，真正写入仍走平台执行中心接口并在用户确认后发生。
@@ -476,10 +494,6 @@ const handleConfirmAction = async (action: HermesActionItem, index: number) => {
   await executeAction(action, actionKey(action, index))
 }
 
-const handleConfirmToolAction = async (action: HermesToolActionItem, candidateIndex: number, actionIndex: number) => {
-  await executeAction(action, toolActionKey(action, candidateIndex, actionIndex))
-}
-
 const updateMessage = (messageId: string, updater: (current: HermesMessageItem) => HermesMessageItem) => {
   const shouldScroll = shouldAutoScrollWithStream()
   currentMessages.value = currentMessages.value.map((item) => (item.id === messageId ? updater(item) : item))
@@ -492,7 +506,7 @@ const resolveConversationId = () => {
   if (existing) {
     return existing
   }
-  const storageKey = `git-ai-club:hermes:conversation:${scopeFingerprint.value}`
+  const storageKey = `git-ai-club:hermes:conversation:${HERMES_CONVERSATION_VERSION}:${scopeFingerprint.value}`
   const saved = typeof window !== 'undefined' ? window.sessionStorage.getItem(storageKey) : ''
   if (saved) {
     conversationIdByFingerprint.set(scopeFingerprint.value, saved)
@@ -521,14 +535,16 @@ const adoptScopeKey = (scopeKey: string) => {
   saveCurrentSession()
 }
 
-const buildPayload = (question: string): HermesChatRequestPayload => ({
+const buildPayload = (question: string, selection?: HermesSelectionPayload | null): HermesChatRequestPayload => ({
   question,
   routeName: props.routeName,
   projectId: props.projectId ?? null,
   taskId: props.taskId ?? null,
   iterationId: props.iterationId ?? null,
   planId: props.planId ?? null,
-  clientConversationId: resolveConversationId()
+  clientConversationId: resolveConversationId(),
+  selection: selection || null,
+  debug: isDebugMode.value
 })
 
 /**
@@ -557,7 +573,7 @@ const resolveAssistantFinalContent = (streamedContent: string, doneContent: stri
  * 为每条消息生成带稳定思考块键的 HTML，确保思考面板在流式渲染过程中可以保持用户手动展开的状态。
  */
 const renderAssistantMessage = (message: HermesMessageItem) =>
-  renderHermesMarkdownToHtml(message.content || (message.status === 'streaming' ? '正在整理回答...' : '暂无内容'), {
+  renderHermesMarkdownToHtml(message.content || (message.status === 'streaming' ? currentStreamStatusText.value : '暂无内容'), {
     thinkBlockKeyPrefix: message.id,
     /**
      * 在 HTML 生成阶段直接补回 open 属性，避免流式增量导致 `<details>` 被重绘后出现“刚展开又关闭”的闪动。
@@ -565,8 +581,11 @@ const renderAssistantMessage = (message: HermesMessageItem) =>
     isThinkBlockOpen: (thinkBlockKey: string) => Boolean(thinkBlockOpenState.get(thinkBlockKey))
   })
 
-const handleSubmit = async (questionOverride?: string) => {
-  const normalizedQuestion = (questionOverride ?? draftQuestion.value).trim()
+const formatDebugInfo = (debug: HermesDebugInfoItem | null) => JSON.stringify(debug || {}, null, 2)
+
+const submitConversation = async (question: string, userContent: string, selection?: HermesSelectionPayload | null) => {
+  const normalizedQuestion = question.trim()
+  const normalizedUserContent = userContent.trim() || normalizedQuestion
   if (!normalizedQuestion) {
     drawerVisible.value = true
     return
@@ -584,10 +603,12 @@ const handleSubmit = async (questionOverride?: string) => {
   const userMessageId = `user-${Date.now()}`
   const assistantMessageId = `assistant-${Date.now()}`
   currentActions.value = []
-  currentToolResults.value = []
+  currentSelectionCards.value = []
+  currentDebug.value = null
+  currentStreamStatus.value = { stage: 'planning', message: 'Hermes 正在分析问题' }
   currentMessages.value = [
     ...currentMessages.value,
-    { id: userMessageId, role: 'user', content: normalizedQuestion, status: 'done' },
+    { id: userMessageId, role: 'user', content: normalizedUserContent, status: 'done' },
     { id: assistantMessageId, role: 'assistant', content: '', status: 'streaming' }
   ]
   draftQuestion.value = ''
@@ -595,14 +616,18 @@ const handleSubmit = async (questionOverride?: string) => {
   void restoreThinkBlocksAndScroll()
 
   try {
-    const streamController = await streamHermesChat(buildPayload(normalizedQuestion), {
+    const streamController = await streamHermesChat(buildPayload(normalizedQuestion, selection), {
+      onStatus: (payload: HermesStreamStatusEvent) => {
+        currentStreamStatus.value = payload
+      },
       onMeta: (payload: HermesStreamMetaEvent) => {
         adoptScopeKey(payload.scopeKey)
         currentRoleName.value = payload.roleName || '协作成员'
         currentReferences.value = payload.references || []
         currentSuggestions.value = payload.suggestions || []
         currentActions.value = payload.actions || []
-        currentToolResults.value = payload.toolResults || []
+        currentSelectionCards.value = payload.selectionCards || []
+        currentDebug.value = payload.debug || null
         saveCurrentSession()
       },
       onDelta: (payload: HermesStreamDeltaEvent) => {
@@ -618,12 +643,14 @@ const handleSubmit = async (questionOverride?: string) => {
         currentReferences.value = payload.references || []
         currentSuggestions.value = payload.suggestions || []
         currentActions.value = payload.actions || []
-        currentToolResults.value = payload.toolResults || []
+        currentSelectionCards.value = payload.selectionCards || []
+        currentDebug.value = payload.debug || null
         updateMessage(assistantMessageId, (current) => ({
           ...current,
           content: resolveAssistantFinalContent(current.content, payload.content),
           status: 'done'
         }))
+        currentStreamStatus.value = null
         sending.value = false
         activeStreamAbort.value = null
       },
@@ -633,6 +660,7 @@ const handleSubmit = async (questionOverride?: string) => {
           content: payload.message || current.content || 'Hermes 助手暂时不可用',
           status: 'error'
         }))
+        currentStreamStatus.value = null
         sending.value = false
         activeStreamAbort.value = null
         ElMessage.error(payload.message || 'Hermes 助手暂时不可用')
@@ -646,9 +674,31 @@ const handleSubmit = async (questionOverride?: string) => {
       content: message,
       status: 'error'
     }))
+    currentStreamStatus.value = null
     sending.value = false
     ElMessage.error(message)
   }
+}
+
+const handleSubmit = async (questionOverride?: string) => {
+  const normalizedQuestion = (questionOverride ?? draftQuestion.value).trim()
+  await submitConversation(normalizedQuestion, normalizedQuestion)
+}
+
+const handleSelectOption = async (selectionCard: HermesSelectionCardItem, option: HermesSelectionOptionItem) => {
+  if (option.entityId == null) {
+    return
+  }
+  await submitConversation(
+    (selectionCard.resumeQuestion || draftQuestion.value || option.title).trim(),
+    `我选择了：${option.title}`,
+    {
+      slot: selectionCard.slot || option.slot,
+      entityType: option.entityType,
+      entityId: Number(option.entityId),
+      resumeQuestion: selectionCard.resumeQuestion || undefined
+    }
+  )
 }
 
 const openDrawer = () => {
@@ -749,16 +799,17 @@ defineExpose({
 }
 
 .hermes-quick-prompts,
-.hermes-tool-section,
+.hermes-selection-section,
 .hermes-action-section,
-.hermes-reference-section {
+.hermes-reference-section,
+.hermes-debug-section {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
 .hermes-chip-list,
-.hermes-tool-result-list,
+.hermes-selection-list,
 .hermes-action-list,
 .hermes-reference-list {
   display: flex;
@@ -766,9 +817,81 @@ defineExpose({
   gap: 10px;
 }
 
-.hermes-tool-result-list,
+.hermes-selection-list,
 .hermes-action-list {
   flex-direction: column;
+}
+
+.hermes-selection-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(248, 250, 252, 0.96);
+}
+
+.hermes-selection-card-copy,
+.hermes-selection-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hermes-selection-card-copy strong,
+.hermes-selection-option-copy strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.hermes-selection-card-copy span,
+.hermes-selection-option-copy span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hermes-selection-option-copy small {
+  color: #0f766e;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.hermes-selection-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hermes-selection-option-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: #eef2f7;
+}
+
+.hermes-selection-option-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.hermes-debug-pre {
+  margin: 0;
+  padding: 12px;
+  border-radius: 16px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .hermes-tool-result-card {

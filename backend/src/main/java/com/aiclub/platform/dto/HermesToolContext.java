@@ -7,7 +7,11 @@ import java.util.List;
  */
 public record HermesToolContext(
         List<PlatformToolResult> toolResults,
+        List<HermesSelectionCard> selectionCards,
         List<HermesActionSummary> actions,
+        HermesGroundingState groundingState,
+        HermesDebugInfo debugInfo,
+        String failureMessage,
         String contextMarkdown
 ) {
 }

@@ -1,4 +1,14 @@
 /**
+ * Hermes 歧义对象选择请求。
+ */
+export interface HermesSelectionPayload {
+  slot: string
+  entityType: string
+  entityId: number
+  resumeQuestion?: string
+}
+
+/**
  * Hermes 流式问答请求体。
  */
 export interface HermesChatRequestPayload {
@@ -9,6 +19,68 @@ export interface HermesChatRequestPayload {
   iterationId?: number | null
   planId?: number | null
   clientConversationId?: string
+  selection?: HermesSelectionPayload | null
+  debug?: boolean
+}
+
+/**
+ * Hermes 回答中引用的业务对象摘要。
+ */
+export interface HermesReferenceItem {
+  type: string
+  id: number | null
+  title: string
+  route: string
+}
+
+/**
+ * Hermes 返回给前端的动作卡片。
+ */
+export interface HermesActionItem {
+  type: string
+  title: string
+  description: string
+  requiresConfirm: boolean
+  params: Record<string, unknown>
+}
+
+/**
+ * 歧义候选中的单个选项。
+ */
+export interface HermesSelectionOptionItem {
+  slot: string
+  entityType: string
+  entityId: number | null
+  title: string
+  subtitle: string
+  route: string
+  matchScore: number
+  matchReasons: string[]
+}
+
+/**
+ * 多候选歧义时展示给用户的选择卡片。
+ */
+export interface HermesSelectionCardItem {
+  slot: string
+  title: string
+  description: string
+  resumeQuestion: string
+  options: HermesSelectionOptionItem[]
+}
+
+/**
+ * 调试模式下透出的内部规划轨迹。
+ */
+export interface HermesDebugInfoItem {
+  model: string
+  loopStatus: string
+  loopRounds: number
+  assistantTurns: Array<Record<string, unknown>>
+  groundingBefore: Record<string, unknown>
+  groundingAfter: Record<string, unknown>
+  toolExecutions: Array<Record<string, unknown>>
+  failureMessage: string
 }
 
 /**
@@ -21,17 +93,8 @@ export interface HermesChatResponsePayload {
   references: HermesReferenceItem[]
   suggestions: string[]
   actions: HermesActionItem[]
-  toolResults: HermesToolResultItem[]
-}
-
-/**
- * Hermes 回答中引用的业务对象摘要。
- */
-export interface HermesReferenceItem {
-  type: string
-  id: number | null
-  title: string
-  route: string
+  selectionCards: HermesSelectionCardItem[]
+  debug: HermesDebugInfoItem | null
 }
 
 /**
@@ -46,54 +109,6 @@ export interface HermesMessageItem {
 }
 
 /**
- * Hermes 返回的动作卡片。
- * 第一版主要用于创建执行中心任务。
- */
-export interface HermesActionItem {
-  type: string
-  title: string
-  description: string
-  requiresConfirm: boolean
-  params: Record<string, unknown>
-}
-
-/**
- * Hermes 返回的工具查询结果。
- */
-export interface HermesToolResultItem {
-  toolCode: string
-  toolName: string
-  summary: string
-  candidates: HermesToolCandidateItem[]
-  actions: HermesToolActionItem[]
-  metadata: Record<string, unknown>
-}
-
-/**
- * Hermes 工具返回的候选对象卡片。
- */
-export interface HermesToolCandidateItem {
-  type: string
-  id: number | null
-  title: string
-  subtitle: string
-  route: string
-  payload: Record<string, unknown>
-  actions: HermesToolActionItem[]
-}
-
-/**
- * Hermes 工具候选对象下挂的动作。
- */
-export interface HermesToolActionItem {
-  type: string
-  title: string
-  description: string
-  requiresConfirm: boolean
-  params: Record<string, unknown>
-}
-
-/**
  * Hermes 流式 meta 事件。
  */
 export interface HermesStreamMetaEvent {
@@ -102,7 +117,8 @@ export interface HermesStreamMetaEvent {
   references: HermesReferenceItem[]
   suggestions: string[]
   actions: HermesActionItem[]
-  toolResults: HermesToolResultItem[]
+  selectionCards: HermesSelectionCardItem[]
+  debug: HermesDebugInfoItem | null
 }
 
 /**
@@ -110,6 +126,14 @@ export interface HermesStreamMetaEvent {
  */
 export interface HermesStreamDeltaEvent {
   content: string
+}
+
+/**
+ * Hermes 流式状态事件。
+ */
+export interface HermesStreamStatusEvent {
+  stage: string
+  message: string
 }
 
 /**
@@ -122,7 +146,8 @@ export interface HermesStreamDoneEvent {
   references: HermesReferenceItem[]
   suggestions: string[]
   actions: HermesActionItem[]
-  toolResults: HermesToolResultItem[]
+  selectionCards: HermesSelectionCardItem[]
+  debug: HermesDebugInfoItem | null
 }
 
 /**
@@ -142,5 +167,6 @@ export interface HermesConversationSession {
   suggestions: string[]
   roleName: string
   actions: HermesActionItem[]
-  toolResults: HermesToolResultItem[]
+  selectionCards: HermesSelectionCardItem[]
+  debug: HermesDebugInfoItem | null
 }

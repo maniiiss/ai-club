@@ -1,5 +1,6 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.dto.HermesConversationTurn;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -16,9 +17,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 
 /**
- * 负责将平台内部请求桥接到 Hermes OpenAI 兼容接口，并把远端流式事件转换为平台内部事件。
+ * 负责把平台内部的会话请求代理到 Hermes API Server。
+ * 新版仅使用 Chat Completions，并把工具调用完全交给 Hermes 自己的 MCP 运行时。
  */
 @Service
 public class HermesGatewayService {
@@ -37,159 +40,86 @@ public class HermesGatewayService {
     }
 
     /**
-     * 以流式方式调用 Hermes，并把文本增量回调给上层服务。
+     * 以非流式方式调用 Hermes Chat Completions。
      */
-    public HermesGatewayResult streamChat(String scopeKey,
-                                          HermesPromptBuilder.HermesPrompt prompt,
-                                          HermesDeltaConsumer consumer) {
+    public HermesGatewayResult createChatCompletion(HermesPromptBuilder.HermesPrompt prompt,
+                                                    List<HermesConversationTurn> transcript) {
         try {
-            HttpResponse<InputStream> responsesResponse = sendResponsesStream(scopeKey, prompt);
-            if (responsesResponse.statusCode() == 404) {
-                return streamViaChatCompletions(prompt, consumer);
+            ObjectNode payload = buildChatPayload(prompt, transcript, false);
+            HttpResponse<String> response = sendJsonRequest(hermesProperties.getBaseUrl() + "/chat/completions", payload);
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("Hermes Chat Completions 接口调用失败：" + limitMessage(response.body()));
             }
-            if (responsesResponse.statusCode() < 200 || responsesResponse.statusCode() >= 300) {
-                throw new IllegalStateException("Hermes Responses 接口调用失败：" + readErrorBody(responsesResponse));
+            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode choices = root.path("choices");
+            if (!choices.isArray() || choices.isEmpty()) {
+                throw new IllegalStateException("Hermes 未返回有效回答");
             }
-            try (InputStream body = responsesResponse.body()) {
-                return consumeResponsesStream(body, consumer);
+            JsonNode messageNode = choices.get(0).path("message");
+            return new HermesGatewayResult(
+                    root.path("id").asText(""),
+                    extractMessageContent(messageNode.path("content"))
+            );
+        } catch (IOException | InterruptedException exception) {
+            if (exception instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            throw new IllegalStateException("Hermes 非流式会话调用失败：" + limitMessage(exception.getMessage()), exception);
+        }
+    }
+
+    /**
+     * 以流式方式调用 Hermes Chat Completions，并把文本增量回传给上层。
+     */
+    public HermesGatewayResult streamChatCompletion(HermesPromptBuilder.HermesPrompt prompt,
+                                                    List<HermesConversationTurn> transcript,
+                                                    HermesDeltaConsumer consumer) {
+        try {
+            ObjectNode payload = buildChatPayload(prompt, transcript, true);
+            HttpResponse<InputStream> response = sendStreamRequest(hermesProperties.getBaseUrl() + "/chat/completions", payload);
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("Hermes Chat Completions 接口调用失败：" + readErrorBody(response));
+            }
+            try (InputStream body = response.body()) {
+                return consumeChatCompletionsStream(body, consumer);
             }
         } catch (IOException | InterruptedException exception) {
             if (exception instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            throw new IllegalStateException("Hermes 网关流式调用失败：" + limitMessage(exception.getMessage()), exception);
+            throw new IllegalStateException("Hermes 流式会话调用失败：" + limitMessage(exception.getMessage()), exception);
         }
     }
 
     /**
-     * 强制走 Chat Completions 原生流式协议，确保上游 token 级增量能完整传递给平台。
+     * 统一编码 Chat Completions 请求体。
      */
-    public HermesGatewayResult streamChatCompletions(HermesPromptBuilder.HermesPrompt prompt,
-                                                     HermesDeltaConsumer consumer) {
-        try {
-            return streamViaChatCompletions(prompt, consumer);
-        } catch (IOException | InterruptedException exception) {
-            if (exception instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            throw new IllegalStateException("Hermes Chat Completions 流式调用失败：" + limitMessage(exception.getMessage()), exception);
-        }
-    }
-
-    /**
-     * 优先使用 Responses API 保持 Hermes 端会话状态，并通过 conversation 绑定平台 scopeKey。
-     */
-    private HttpResponse<InputStream> sendResponsesStream(String scopeKey,
-                                                          HermesPromptBuilder.HermesPrompt prompt) throws IOException, InterruptedException {
+    private ObjectNode buildChatPayload(HermesPromptBuilder.HermesPrompt prompt,
+                                        List<HermesConversationTurn> transcript,
+                                        boolean stream) {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("model", hermesProperties.getModel());
-        payload.put("conversation", scopeKey);
-        payload.put("stream", true);
-        payload.put("instructions", prompt.systemPrompt());
-        payload.put("input", prompt.userPrompt());
-        return sendStreamRequest(hermesProperties.getBaseUrl() + "/responses", payload);
-    }
-
-    /**
-     * 当 Hermes 网关未暴露 Responses API 时，回退到更常见的 Chat Completions 流式协议。
-     */
-    private HermesGatewayResult streamViaChatCompletions(HermesPromptBuilder.HermesPrompt prompt,
-                                                         HermesDeltaConsumer consumer) throws IOException, InterruptedException {
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("model", hermesProperties.getModel());
-        payload.put("stream", true);
+        payload.put("stream", stream);
         ArrayNode messages = payload.putArray("messages");
         messages.addObject()
                 .put("role", "system")
                 .put("content", prompt.systemPrompt());
-        messages.addObject()
-                .put("role", "user")
-                .put("content", prompt.userPrompt());
-        HttpResponse<InputStream> response = sendStreamRequest(hermesProperties.getBaseUrl() + "/chat/completions", payload);
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException("Hermes Chat Completions 接口调用失败：" + readErrorBody(response));
-        }
-        try (InputStream body = response.body()) {
-            return consumeChatCompletionsStream(body, consumer);
-        }
-    }
-
-    private HttpResponse<InputStream> sendStreamRequest(String url, JsonNode payload) throws IOException, InterruptedException {
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(Duration.ofSeconds(hermesProperties.getTimeoutSeconds()))
-                .header("Accept", "text/event-stream")
-                .header("Content-Type", "application/json");
-        if (!hermesProperties.getApiKey().isBlank()) {
-            builder.header("Authorization", "Bearer " + hermesProperties.getApiKey());
-        }
-        return httpClient.send(
-                builder.POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload), StandardCharsets.UTF_8)).build(),
-                HttpResponse.BodyHandlers.ofInputStream()
-        );
-    }
-
-    /**
-     * 解析 Responses API 的 SSE 事件，优先识别 output_text 增量，再在完成事件中提取最终响应标识。
-     */
-    private HermesGatewayResult consumeResponsesStream(InputStream inputStream,
-                                                       HermesDeltaConsumer consumer) throws IOException {
-        String responseBody = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
-        if (responseBody.isBlank()) {
-            return new HermesGatewayResult(null, "");
-        }
-
-        String normalizedBody = responseBody.replace("\r", "");
-        if (normalizedBody.trim().startsWith("{")) {
-            JsonNode responseNode = objectMapper.readTree(normalizedBody);
-            String responseId = responseNode.path("id").isTextual() ? responseNode.path("id").asText() : null;
-            String content = extractResponsesOutputText(responseNode);
-            String normalizedContent = content != null && !content.isBlank() ? content : normalizedBody;
-            emitChunkedDelta(normalizedContent, consumer);
-            return new HermesGatewayResult(responseId, normalizedContent);
-        }
-
-        StringBuilder fullText = new StringBuilder();
-        StringBuilder eventData = new StringBuilder();
-        String eventName = "";
-        String responseId = null;
-        String completedText = null;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                new java.io.ByteArrayInputStream(normalizedBody.getBytes(StandardCharsets.UTF_8)),
-                StandardCharsets.UTF_8
-        ))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.isEmpty()) {
-                    HermesEventParseResult parseResult = processResponsesEvent(eventName, eventData.toString(), consumer, fullText);
-                    if (parseResult.responseId() != null) {
-                        responseId = parseResult.responseId();
-                    }
-                    if (parseResult.completedText() != null) {
-                        completedText = parseResult.completedText();
-                    }
-                    eventName = "";
-                    eventData.setLength(0);
+        if (transcript != null) {
+            for (HermesConversationTurn turn : transcript) {
+                if (turn == null || turn.role() == null || turn.role().isBlank()) {
                     continue;
                 }
-                if (line.startsWith("event:")) {
-                    eventName = line.substring("event:".length()).trim();
-                    continue;
-                }
-                if (line.startsWith("data:")) {
-                    if (eventData.length() > 0) {
-                        eventData.append('\n');
-                    }
-                    eventData.append(line.substring("data:".length()).trim());
-                }
+                messages.addObject()
+                        .put("role", turn.role())
+                        .put("content", turn.content() == null ? "" : turn.content());
             }
         }
-        String content = completedText != null && !completedText.isBlank() ? completedText : fullText.toString();
-        return new HermesGatewayResult(responseId, content);
+        return payload;
     }
 
     /**
-     * 解析 Chat Completions SSE 事件，兼容 choices[0].delta.content 形态。
+     * 解析 Hermes 返回的 SSE 文本流。
+     * 这里会原样消费 `choices[0].delta.content`，让前端直接看到 Hermes 内联的工具进度文本。
      */
     private HermesGatewayResult consumeChatCompletionsStream(InputStream inputStream,
                                                              HermesDeltaConsumer consumer) throws IOException {
@@ -208,10 +138,12 @@ public class HermesGatewayService {
                         }
                         JsonNode choices = node.path("choices");
                         if (choices.isArray() && !choices.isEmpty()) {
-                            String delta = choices.get(0).path("delta").path("content").asText("");
-                            if (!delta.isBlank()) {
-                                fullText.append(delta);
-                                consumer.onDelta(delta);
+                            String deltaText = extractDeltaContent(choices.get(0).path("delta").path("content"));
+                            if (!deltaText.isBlank()) {
+                                fullText.append(deltaText);
+                                if (consumer != null) {
+                                    consumer.onDelta(deltaText);
+                                }
                             }
                         }
                     }
@@ -229,71 +161,79 @@ public class HermesGatewayService {
         return new HermesGatewayResult(responseId, fullText.toString());
     }
 
-    private HermesEventParseResult processResponsesEvent(String eventName,
-                                                         String eventData,
-                                                         HermesDeltaConsumer consumer,
-                                                         StringBuilder fullText) throws IOException {
-        if (eventData == null || eventData.isBlank() || "[DONE]".equals(eventData)) {
-            return HermesEventParseResult.empty();
+    private String extractMessageContent(JsonNode contentNode) {
+        if (contentNode == null || contentNode.isMissingNode() || contentNode.isNull()) {
+            return "";
         }
-        JsonNode node = objectMapper.readTree(eventData);
-        String type = node.path("type").asText(eventName);
-        if (type.contains("error") || node.hasNonNull("error")) {
-            throw new IllegalStateException(resolveErrorMessage(node));
+        if (contentNode.isTextual()) {
+            return contentNode.asText("");
         }
-
-        String delta = "";
-        if (type.contains("output_text.delta")) {
-            delta = node.path("delta").asText("");
-        } else if (node.path("choices").isArray() && !node.path("choices").isEmpty()) {
-            delta = node.path("choices").get(0).path("delta").path("content").asText("");
+        if (!contentNode.isArray()) {
+            return "";
         }
-        if (!delta.isBlank()) {
-            fullText.append(delta);
-            consumer.onDelta(delta);
-        }
-
-        String responseId = null;
-        String completedText = null;
-        if (type.contains("completed") || type.contains("done")) {
-            JsonNode responseNode = node.path("response");
-            if (responseNode.path("id").isTextual()) {
-                responseId = responseNode.path("id").asText();
+        StringBuilder builder = new StringBuilder();
+        for (JsonNode item : contentNode) {
+            String text = item.path("text").asText("");
+            if (text.isBlank()) {
+                text = item.path("content").asText("");
             }
-            completedText = extractResponsesOutputText(responseNode);
-        }
-        return new HermesEventParseResult(responseId, completedText);
-    }
-
-    private String extractResponsesOutputText(JsonNode responseNode) {
-        if (responseNode == null || responseNode.isMissingNode() || responseNode.isNull()) {
-            return null;
-        }
-        if (responseNode.path("output_text").isTextual() && !responseNode.path("output_text").asText().isBlank()) {
-            return responseNode.path("output_text").asText();
-        }
-        for (JsonNode output : responseNode.path("output")) {
-            for (JsonNode content : output.path("content")) {
-                String type = content.path("type").asText();
-                if (("output_text".equals(type) || "text".equals(type)) && content.path("text").isTextual()) {
-                    String text = content.path("text").asText();
-                    if (!text.isBlank()) {
-                        return text;
-                    }
-                }
+            if (!text.isBlank()) {
+                builder.append(text);
             }
         }
-        return null;
+        return builder.toString();
     }
 
-    private String resolveErrorMessage(JsonNode node) {
-        if (node.path("error").path("message").isTextual()) {
-            return node.path("error").path("message").asText();
+    private String extractDeltaContent(JsonNode deltaNode) {
+        if (deltaNode == null || deltaNode.isMissingNode() || deltaNode.isNull()) {
+            return "";
         }
-        if (node.path("message").isTextual()) {
-            return node.path("message").asText();
+        if (deltaNode.isTextual()) {
+            return deltaNode.asText("");
         }
-        return "Hermes 远端服务返回了错误";
+        if (!deltaNode.isArray()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (JsonNode item : deltaNode) {
+            String text = item.path("text").asText("");
+            if (text.isBlank()) {
+                text = item.path("content").asText("");
+            }
+            if (!text.isBlank()) {
+                builder.append(text);
+            }
+        }
+        return builder.toString();
+    }
+
+    private HttpResponse<String> sendJsonRequest(String url, JsonNode payload) throws IOException, InterruptedException {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofSeconds(hermesProperties.getTimeoutSeconds()))
+                .header("Content-Type", "application/json");
+        if (!hermesProperties.getApiKey().isBlank()) {
+            builder.header("Authorization", "Bearer " + hermesProperties.getApiKey());
+        }
+        return httpClient.send(
+                builder.POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload), StandardCharsets.UTF_8)).build(),
+                HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+        );
+    }
+
+    private HttpResponse<InputStream> sendStreamRequest(String url, JsonNode payload) throws IOException, InterruptedException {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofSeconds(hermesProperties.getTimeoutSeconds()))
+                .header("Accept", "text/event-stream")
+                .header("Content-Type", "application/json");
+        if (!hermesProperties.getApiKey().isBlank()) {
+            builder.header("Authorization", "Bearer " + hermesProperties.getApiKey());
+        }
+        return httpClient.send(
+                builder.POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload), StandardCharsets.UTF_8)).build(),
+                HttpResponse.BodyHandlers.ofInputStream()
+        );
     }
 
     private String readErrorBody(HttpResponse<InputStream> response) throws IOException {
@@ -315,23 +255,7 @@ public class HermesGatewayService {
     }
 
     /**
-     * 当上游网关一次性返回完整文本而非原生 SSE 时，后端主动切片为多个 delta，给前端稳定流式体验。
-     */
-    private void emitChunkedDelta(String content, HermesDeltaConsumer consumer) {
-        if (content == null || content.isBlank()) {
-            return;
-        }
-        int chunkSize = content.length() > 800 ? 24 : content.length() > 300 ? 16 : 8;
-        int cursor = 0;
-        while (cursor < content.length()) {
-            int nextCursor = Math.min(content.length(), cursor + chunkSize);
-            consumer.onDelta(content.substring(cursor, nextCursor));
-            cursor = nextCursor;
-        }
-    }
-
-    /**
-     * Hermes 输出文本的增量消费回调。
+     * Hermes 输出文本的增量回调。
      */
     public interface HermesDeltaConsumer {
         /**
@@ -341,14 +265,8 @@ public class HermesGatewayService {
     }
 
     /**
-     * Hermes 流式调用结束后的关键信息。
+     * 一次 Chat Completions 调用的关键信息摘要。
      */
     public record HermesGatewayResult(String responseId, String content) {
-    }
-
-    private record HermesEventParseResult(String responseId, String completedText) {
-        private static HermesEventParseResult empty() {
-            return new HermesEventParseResult(null, null);
-        }
     }
 }

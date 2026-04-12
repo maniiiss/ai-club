@@ -96,7 +96,7 @@ public class PlatformToolManagementService {
                 definition.permissionCode(),
                 definition.requiresConfirm(),
                 config == null || config.isEnabled(),
-                config != null && config.isAllowAutoExecute() && definition.readOnly(),
+                definition.readOnly() && (config == null || config.isAllowAutoExecute()),
                 config == null ? "" : defaultString(config.getDisplayName()),
                 config == null ? "" : defaultString(config.getDescriptionOverride())
         );

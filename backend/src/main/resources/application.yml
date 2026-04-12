@@ -2,6 +2,10 @@ server:
   port: 8080
 
 spring:
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
   application:
     name: ai-agent-platform-backend
   datasource:
@@ -63,6 +67,10 @@ platform:
     timeout-seconds: ${PLATFORM_HERMES_TIMEOUT_SECONDS:180}
     session-prefix: ${PLATFORM_HERMES_SESSION_PREFIX:ai-club:hermes}
     max-context-messages: ${PLATFORM_HERMES_MAX_CONTEXT_MESSAGES:6}
+    grounding-ttl-seconds: ${PLATFORM_HERMES_GROUNDING_TTL_SECONDS:86400}
+  internal:
+    allow-local-bypass: ${PLATFORM_INTERNAL_ALLOW_LOCAL_BYPASS:true}
+    service-token: ${PLATFORM_INTERNAL_SERVICE_TOKEN:git-ai-club-internal-service-token}
   security:
     token-secret: ${PLATFORM_TOKEN_SECRET:ai-club-demo-token-secret}
     token-expire-hours: ${PLATFORM_TOKEN_EXPIRE_HOURS:12}

@@ -66,6 +66,30 @@ public class PlatformToolRegistry {
                 && definition != null;
     }
 
+    /**
+     * 判断指定工具是否允许被 Hermes 自动执行。
+     * 对于没有显式配置覆盖的只读工具，默认视为允许自动执行，保持与首版设计一致。
+     */
+    public boolean isAllowAutoExecute(String toolCode) {
+        PlatformToolDefinition definition = requireDefinition(toolCode);
+        if (!definition.readOnly() || !isEnabled(toolCode)) {
+            return false;
+        }
+        return platformToolConfigRepository.findByToolCode(toolCode)
+                .map(PlatformToolConfigEntity::isAllowAutoExecute)
+                .orElse(true);
+    }
+
+    /**
+     * 列出当前对 Hermes 可见的只读工具目录。
+     */
+    public List<PlatformToolDefinition> listAutoExecutableReadTools() {
+        return definitions.keySet().stream()
+                .filter(this::isAllowAutoExecute)
+                .map(this::requireDefinition)
+                .toList();
+    }
+
     private PlatformToolDefinition applyConfig(PlatformToolDefinition definition) {
         return platformToolConfigRepository.findByToolCode(definition.code())
                 .map(config -> new PlatformToolDefinition(

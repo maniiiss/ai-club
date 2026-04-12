@@ -63,7 +63,7 @@ class HermesContextAssemblerTests {
         loginAs(user);
 
         HermesContextAssembler.HermesConversationContext context = hermesContextAssembler.assemble(
-                new HermesChatRequest("我今天最该推进什么", "dashboard", null, null, null, null, null),
+                new HermesChatRequest("我今天最该推进什么", "dashboard", null, null, null, null, null, null, null),
                 toCurrentUserInfo(user)
         );
 
@@ -107,7 +107,7 @@ class HermesContextAssemblerTests {
         platformStoreService.createTaskComment(task.id(), new TaskCommentRequest("上游接口返回字段仍未稳定"));
 
         HermesContextAssembler.HermesConversationContext context = hermesContextAssembler.assemble(
-                new HermesChatRequest("这个任务为什么延期了", "project-iterations", project.getId(), task.id(), null, null, null),
+                new HermesChatRequest("这个任务为什么延期了", "project-iterations", project.getId(), task.id(), null, null, null, null, null),
                 toCurrentUserInfo(creator)
         );
 
@@ -154,7 +154,7 @@ class HermesContextAssemblerTests {
 
         loginAs(outsider);
         HermesContextAssembler.HermesConversationContext context = hermesContextAssembler.assemble(
-                new HermesChatRequest("这个任务现在怎么样", "project-iterations", project.getId(), task.id(), null, null, null),
+                new HermesChatRequest("这个任务现在怎么样", "project-iterations", project.getId(), task.id(), null, null, null, null, null),
                 toCurrentUserInfo(outsider)
         );
 

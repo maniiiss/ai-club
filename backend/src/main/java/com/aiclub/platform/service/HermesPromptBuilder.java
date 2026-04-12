@@ -1,76 +1,152 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.dto.CurrentUserInfo;
-import com.aiclub.platform.dto.HermesToolContext;
+import com.aiclub.platform.dto.HermesGroundingState;
+import com.aiclub.platform.dto.HermesGroundingTarget;
 import com.aiclub.platform.dto.request.HermesChatRequest;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+
 /**
- * 统一维护 Hermes 的系统提示词与用户提示词拼装逻辑。
+ * 统一维护 Hermes 会话代理模式下的系统提示词与用户提示词。
+ * 新版主链路固定走 Hermes API Server + MCP，因此这里不再区分本地 tool loop 与最终回答提示词。
  */
 @Service
 public class HermesPromptBuilder {
 
     /**
-     * 基于当前用户、角色和业务上下文生成对 Hermes 的最终输入。
+     * 构造 Hermes API Server 会话代理模式使用的提示词。
      */
-    public HermesPrompt build(CurrentUserInfo currentUser,
-                              HermesContextAssembler.HermesConversationContext context,
-                              HermesChatRequest request) {
-        return build(currentUser, context, request, null);
+    public HermesPrompt buildConversationPrompt(CurrentUserInfo currentUser,
+                                                HermesContextAssembler.HermesConversationContext context,
+                                                HermesChatRequest request,
+                                                HermesGroundingState groundingState,
+                                                String sessionToken) {
+        return new HermesPrompt(
+                """
+                        你是 Git AI Club 平台内置的 Hermes 协作助手。
+                        你可以通过平台暴露的 MCP 工具查询项目、工作项、执行任务、测试计划和成员信息。
+
+                        必须严格遵守：
+                        1. 当你需要事实、列表、详情或对象解析时，优先调用平台 MCP 工具，不要假装自己直接访问了数据库。
+                        2. 每次调用任何平台 MCP 工具时，都必须原样传入参数 `session_token`，值就是当前提示词里给你的会话令牌。
+                        3. `session_token` 只允许放在工具调用参数中，绝不能出现在你的自然语言回答里，也不能改写、截断或解释它。
+                        4. 当前提示词里给你的 `session_token` 对本轮请求始终有效。除非平台工具明确返回“权限不足”或“系统错误”，否则不要向用户索取 token，也不要声称缺少 token。
+                        5. 当用户要求“创建需求/任务/缺陷/执行任务/测试计划”时，默认先尝试通过平台 MCP 工具完成，而不是先反问用户是否有配置。
+                        6. 对创建工作项类请求，若项目未绑定，先调用 `mcp_git_ai_club_project_search` 搜索项目；若负责人未绑定，再调用 `mcp_git_ai_club_user_resolve_project_member` 解析负责人；信息足够后调用 `mcp_git_ai_club_work_item_create_draft`。
+                        7. 如果搜索结果有多个候选，就等待平台卡片让用户确认，不要自行要求用户提供项目 ID 或成员 ID。
+                        8. 平台写工具不会直接落库，而是生成待确认动作卡片；当工具结果提示“需要确认动作”时，你只需说明需要用户在界面确认。
+                        9. 当工具结果提示“需要选择候选对象”时，你只需说明平台已经生成候选卡片，等待用户选择，不要自行猜测对象。
+                        10. 如果当前上下文和已绑定对象已经足够，就直接回答，不要为了调用工具而调用工具。
+                        11. 回答和思考都必须使用中文。
+                        12. 不要调用任何平台外浏览器、网页搜索或外部服务，也不要建议用户手动去数据库里找数据。
+                        13. 如果工具返回失败或无权限信息，要基于工具返回结果如实说明，不要编造替代事实。
+                        """,
+                buildUserPrompt(currentUser, context, request, groundingState, sessionToken)
+        );
     }
 
     /**
-     * 基于当前用户、角色、业务上下文和平台工具查询结果生成 Hermes 最终输入。
+     * 组装用户侧上下文、页面锚点和 MCP 会话令牌。
      */
-    public HermesPrompt build(CurrentUserInfo currentUser,
-                              HermesContextAssembler.HermesConversationContext context,
-                              HermesChatRequest request,
-                              HermesToolContext toolContext) {
-        String roleName = context.roleName() == null || context.roleName().isBlank() ? "协作成员" : context.roleName().trim();
-        String userName = currentUser == null ? "当前用户"
-                : (currentUser.nickname() != null && !currentUser.nickname().isBlank() ? currentUser.nickname().trim() : currentUser.username().trim());
-        String toolContextMarkdown = toolContext == null ? "" : defaultString(toolContext.contextMarkdown());
-
-        String systemPrompt = """
-                你是 Git AI Club 平台内置的 Hermes 协作助手。
-                你的职责是基于平台提供的项目、任务、通知和评论摘要，帮助用户快速理解上下文、识别风险并给出下一步建议。
-
-                回答规则：
-                1. 仅基于当前输入中的上下文作答，不要臆造平台里不存在的数据。
-                2. 如果上下文不足以支撑结论，要直接说明“当前上下文不足”，并提示用户去查看哪些对象。
-                3. 回答必须使用中文，优先先给结论，再给依据，再给下一步建议。
-                4. 回答风格需要感知用户角色：项目经理更关注进度与风险，产品更关注需求背景与决策，开发更关注任务背景与变更影响，总监更关注整体健康度与关键阻塞。
-                5. 不要输出权限之外的数据，不要假装已经读取到未提供的完整数据库。
-                """;
-
-        String userPrompt = """
+    private String buildUserPrompt(CurrentUserInfo currentUser,
+                                   HermesContextAssembler.HermesConversationContext context,
+                                   HermesChatRequest request,
+                                   HermesGroundingState groundingState,
+                                   String sessionToken) {
+        String userName = resolveUserName(currentUser);
+        String roleName = resolveRoleName(currentUser, context);
+        return """
                 当前提问用户：%s
                 当前角色：%s
                 当前路由：%s
 
-                以下是平台整理后的可见上下文：
-                %s%s
+                当前可见上下文：
+                %s
 
-                用户问题：
+                当前会话已绑定对象：
+                %s
+
+                平台 MCP 调用专用会话令牌：
+                %s
+
+                重要提醒：
+                - 只要调用平台 MCP 工具，就必须传入 `session_token` = "%s"
+                - 这个 `session_token` 已经是系统为本轮请求准备好的有效值，禁止向用户索取
+                - 这个令牌不能出现在自然语言回答中
+
+                用户当前问题：
                 %s
                 """.formatted(
                 userName,
                 roleName,
-                request.routeName().trim(),
-                context.contextMarkdown(),
-                toolContextMarkdown,
-                request.question().trim()
+                defaultString(request == null ? null : request.routeName()),
+                context == null ? "- 当前没有额外页面上下文" : defaultString(context.contextMarkdown()),
+                groundingMarkdown(groundingState),
+                defaultString(sessionToken),
+                defaultString(sessionToken),
+                defaultString(request == null ? null : request.question())
         );
-        return new HermesPrompt(systemPrompt, userPrompt);
-    }
-
-    private String defaultString(String value) {
-        return value == null ? "" : value;
     }
 
     /**
-     * Hermes 调用所需的提示词载体。
+     * 将当前 grounding 摘要整理成提示词，帮助 Hermes 正确理解“这个需求”“刚才那个计划”一类指代。
+     */
+    private String groundingMarkdown(HermesGroundingState groundingState) {
+        if (groundingState == null || groundingState.boundSlots().isEmpty()) {
+            return "- 当前没有已绑定对象";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (Map.Entry<String, HermesGroundingTarget> entry : groundingState.boundSlots().entrySet()) {
+            HermesGroundingTarget target = entry.getValue();
+            if (target == null) {
+                continue;
+            }
+            builder.append("- 槽位：")
+                    .append(defaultString(entry.getKey()))
+                    .append(" / 标题：")
+                    .append(defaultString(target.title()))
+                    .append(" / 类型：")
+                    .append(defaultString(target.entityType()))
+                    .append(" / ID：")
+                    .append(target.entityId() == null ? "" : target.entityId())
+                    .append('\n');
+        }
+        return builder.toString().trim();
+    }
+
+    private String resolveUserName(CurrentUserInfo currentUser) {
+        if (currentUser == null) {
+            return "当前用户";
+        }
+        if (hasText(currentUser.nickname())) {
+            return currentUser.nickname().trim();
+        }
+        return defaultString(currentUser.username());
+    }
+
+    private String resolveRoleName(CurrentUserInfo currentUser,
+                                   HermesContextAssembler.HermesConversationContext context) {
+        if (context != null && hasText(context.roleName())) {
+            return context.roleName().trim();
+        }
+        if (currentUser != null && currentUser.roleNames() != null && !currentUser.roleNames().isEmpty()) {
+            return defaultString(currentUser.roleNames().get(0));
+        }
+        return "协作成员";
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
+    private String defaultString(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    /**
+     * Hermes 调用时使用的提示词载体。
      */
     public record HermesPrompt(String systemPrompt, String userPrompt) {
     }

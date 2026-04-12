@@ -11,6 +11,7 @@ public record HermesStreamMeta(
         List<HermesReferenceSummary> references,
         List<String> suggestions,
         List<HermesActionSummary> actions,
-        List<PlatformToolResult> toolResults
+        List<HermesSelectionCard> selectionCards,
+        HermesDebugInfo debug
 ) {
 }

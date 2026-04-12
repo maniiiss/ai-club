@@ -6,10 +6,12 @@ import type {
   HermesStreamDeltaEvent,
   HermesStreamDoneEvent,
   HermesStreamErrorEvent,
-  HermesStreamMetaEvent
+  HermesStreamMetaEvent,
+  HermesStreamStatusEvent
 } from '@/types/hermes'
 
 interface StreamHandlers {
+  onStatus?: (payload: HermesStreamStatusEvent) => void
   onMeta?: (payload: HermesStreamMetaEvent) => void
   onDelta?: (payload: HermesStreamDeltaEvent) => void
   onDone?: (payload: HermesStreamDoneEvent) => void
@@ -72,6 +74,8 @@ export const streamHermesChat = async (payload: HermesChatRequestPayload, handle
   const reader = response.body.getReader()
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
+  let didReceiveTerminalEvent = false
+  let didReceiveAnyEvent = false
 
   /**
    * SSE 事件可能被切成多次网络分片，必须按空行边界重新拼装。
@@ -93,9 +97,14 @@ export const streamHermesChat = async (payload: HermesChatRequestPayload, handle
     if (!eventName || !data) {
       return
     }
+    didReceiveAnyEvent = true
 
     if (eventName === 'meta') {
       handlers.onMeta?.(JSON.parse(data) as HermesStreamMetaEvent)
+      return
+    }
+    if (eventName === 'status') {
+      handlers.onStatus?.(JSON.parse(data) as HermesStreamStatusEvent)
       return
     }
     if (eventName === 'delta') {
@@ -103,10 +112,12 @@ export const streamHermesChat = async (payload: HermesChatRequestPayload, handle
       return
     }
     if (eventName === 'done') {
+      didReceiveTerminalEvent = true
       handlers.onDone?.(JSON.parse(data) as HermesStreamDoneEvent)
       return
     }
     if (eventName === 'error') {
+      didReceiveTerminalEvent = true
       handlers.onError?.(JSON.parse(data) as HermesStreamErrorEvent)
     }
   }
@@ -117,6 +128,18 @@ export const streamHermesChat = async (payload: HermesChatRequestPayload, handle
       if (done) {
         if (buffer.trim()) {
           consumeChunk(buffer)
+        }
+        if (!didReceiveTerminalEvent && didReceiveAnyEvent) {
+          handlers.onDone?.({
+            scopeKey: '',
+            roleName: '',
+            content: '',
+            references: [],
+            suggestions: [],
+            actions: [],
+            selectionCards: [],
+            debug: null
+          })
         }
         break
       }

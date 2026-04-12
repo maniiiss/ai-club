@@ -265,7 +265,12 @@ public class PlatformToolExecutor {
                 project.getName(),
                 "状态：" + defaultString(project.getStatus()) + " / 负责人：" + defaultString(project.getOwner()),
                 "/projects/" + project.getId() + "/iterations",
-                Map.of("projectId", project.getId(), "status", defaultString(project.getStatus())),
+                Map.of(
+                        "projectId", project.getId(),
+                        "projectName", defaultString(project.getName()),
+                        "status", defaultString(project.getStatus()),
+                        "owner", defaultString(project.getOwner())
+                ),
                 List.of()
         );
     }
@@ -277,7 +282,12 @@ public class PlatformToolExecutor {
                 displayName(user),
                 "用户名：" + defaultString(user.getUsername()),
                 "",
-                Map.of("projectId", projectId, "userId", user.getId(), "username", defaultString(user.getUsername())),
+                Map.of(
+                        "projectId", projectId,
+                        "userId", user.getId(),
+                        "username", defaultString(user.getUsername()),
+                        "nickname", defaultString(user.getNickname())
+                ),
                 List.of()
         );
     }
@@ -305,7 +315,10 @@ public class PlatformToolExecutor {
                 "/projects/" + task.getProject().getId() + "/iterations?openTaskId=" + task.getId(),
                 Map.of(
                         "projectId", task.getProject().getId(),
+                        "projectName", defaultString(task.getProject().getName()),
                         "workItemId", task.getId(),
+                        "workItemCode", defaultString(task.getWorkItemCode()),
+                        "workItemName", defaultString(task.getName()),
                         "workItemType", defaultString(task.getWorkItemType()),
                         "status", defaultString(task.getStatus())
                 ),
@@ -320,7 +333,12 @@ public class PlatformToolExecutor {
                 agent.getName(),
                 "类型：" + defaultString(agent.getType()) + " / 接入：" + defaultString(agent.getAccessType()) + " / 状态：" + defaultString(agent.getStatus()),
                 "",
-                Map.of("agentId", agent.getId(), "projectId", agent.getProject() == null ? "" : agent.getProject().getId(), "enabled", Boolean.TRUE.equals(agent.getEnabled())),
+                Map.of(
+                        "agentId", agent.getId(),
+                        "agentName", defaultString(agent.getName()),
+                        "projectId", agent.getProject() == null ? "" : agent.getProject().getId(),
+                        "enabled", Boolean.TRUE.equals(agent.getEnabled())
+                ),
                 List.of()
         );
     }
@@ -332,7 +350,12 @@ public class PlatformToolExecutor {
                 executionTask.getTitle(),
                 "场景：" + executionWorkflowService.scenarioName(executionTask.getScenarioCode()) + " / 状态：" + defaultString(executionTask.getStatus()),
                 "/tasks/" + executionTask.getId(),
-                Map.of("executionTaskId", executionTask.getId(), "projectId", executionTask.getProject().getId(), "status", defaultString(executionTask.getStatus())),
+                Map.of(
+                        "executionTaskId", executionTask.getId(),
+                        "projectId", executionTask.getProject().getId(),
+                        "title", defaultString(executionTask.getTitle()),
+                        "status", defaultString(executionTask.getStatus())
+                ),
                 List.of()
         );
     }
@@ -344,7 +367,13 @@ public class PlatformToolExecutor {
                 testPlan.getName(),
                 "状态：" + defaultString(testPlan.getStatus()) + " / 项目：" + testPlan.getProject().getName() + " / 用例数：" + testPlan.getCases().size(),
                 "/tests/" + testPlan.getId(),
-                Map.of("testPlanId", testPlan.getId(), "projectId", testPlan.getProject().getId(), "iterationId", testPlan.getIteration() == null ? "" : testPlan.getIteration().getId()),
+                Map.of(
+                        "testPlanId", testPlan.getId(),
+                        "projectId", testPlan.getProject().getId(),
+                        "testPlanName", defaultString(testPlan.getName()),
+                        "status", defaultString(testPlan.getStatus()),
+                        "iterationId", testPlan.getIteration() == null ? "" : testPlan.getIteration().getId()
+                ),
                 List.of()
         );
     }
