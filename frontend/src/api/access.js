@@ -66,4 +66,18 @@ export const updatePermission = async (id, payload) => {
 export const deletePermission = async (id) => {
     await http.delete(`/api/permissions/${id}`);
 };
+export const pagePlatformTools = async (query) => {
+    const { data } = await http.get('/api/platform-tools', {
+        params: cleanParams(query)
+    });
+    return data.data;
+};
+export const getPlatformToolDetail = async (toolCode) => {
+    const { data } = await http.get(`/api/platform-tools/${encodeURIComponent(toolCode)}`);
+    return data.data;
+};
+export const updatePlatformTool = async (toolCode, payload) => {
+    const { data } = await http.put(`/api/platform-tools/${encodeURIComponent(toolCode)}`, payload);
+    return data.data;
+};
 //# sourceMappingURL=access.js.map

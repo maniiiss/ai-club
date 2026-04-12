@@ -61,3 +61,20 @@ class ReviewResponse(BaseModel):
     provider: str
     issues: list[str] = Field(default_factory=list)
     reviewMarkdown: str = Field(default="")
+
+
+class HermesInternalToolExecuteRequest(BaseModel):
+    sessionToken: str = Field(description="Hermes MCP 会话令牌")
+    toolCode: str = Field(description="平台工具编码")
+    arguments: dict[str, Any] = Field(default_factory=dict, description="Hermes 传入的工具参数")
+
+    @field_validator("sessionToken", "toolCode", mode="before")
+    @classmethod
+    def normalize_required_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class HermesInternalToolExecuteResponse(BaseModel):
+    message: str = Field(default="", description="返回给 Hermes 的文本摘要")

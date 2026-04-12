@@ -1,0 +1,216 @@
+from contextlib import AsyncExitStack, asynccontextmanager
+
+from fastapi import FastAPI
+from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
+
+from app.services.hermes_internal_client import hermes_internal_client
+
+
+mcp_server = FastMCP(
+    "git_ai_club",
+    host="0.0.0.0",
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=[
+            "127.0.0.1:*",
+            "localhost:*",
+            "host.docker.internal:*",
+        ],
+        allowed_origins=[
+            "http://127.0.0.1:*",
+            "http://localhost:*",
+            "http://host.docker.internal:*",
+        ],
+    ),
+)
+mcp_server.settings.streamable_http_path = "/"
+SessionToken = str
+
+
+async def _execute_platform_tool(
+    tool_code: str,
+    session_token: str,
+    arguments: dict[str, object],
+) -> str:
+    """统一转发平台工具请求到 backend 内部接口。"""
+    response = await hermes_internal_client.execute_tool(
+        session_token=session_token,
+        tool_code=tool_code,
+        arguments=arguments,
+    )
+    return response.message
+
+
+@mcp_server.tool()
+async def project_search(session_token: SessionToken, keyword: str = "", ctx: Context | None = None) -> str:
+    """按名称或状态搜索当前用户可见项目。"""
+    return await _execute_platform_tool("project.search", session_token, {"keyword": keyword})
+
+
+@mcp_server.tool()
+async def project_get_detail(session_token: SessionToken, projectId: int, ctx: Context | None = None) -> str:
+    """读取项目摘要与成员信息。"""
+    return await _execute_platform_tool("project.get_detail", session_token, {"projectId": projectId})
+
+
+@mcp_server.tool()
+async def project_list_iterations(session_token: SessionToken, projectId: int, ctx: Context | None = None) -> str:
+    """读取项目迭代列表。"""
+    return await _execute_platform_tool("project.list_iterations", session_token, {"projectId": projectId})
+
+
+@mcp_server.tool()
+async def user_resolve_project_member(
+    session_token: SessionToken,
+    projectId: int,
+    keyword: str = "",
+    ctx: Context | None = None,
+) -> str:
+    """按昵称或用户名解析项目成员。"""
+    return await _execute_platform_tool(
+        "user.resolve_project_member",
+        session_token,
+        {"projectId": projectId, "keyword": keyword},
+    )
+
+
+@mcp_server.tool()
+async def user_list_project_members(session_token: SessionToken, projectId: int, ctx: Context | None = None) -> str:
+    """列出项目负责人、创建人和成员。"""
+    return await _execute_platform_tool("user.list_project_members", session_token, {"projectId": projectId})
+
+
+@mcp_server.tool()
+async def work_item_search(
+    session_token: SessionToken,
+    keyword: str = "",
+    projectId: int | None = None,
+    ctx: Context | None = None,
+) -> str:
+    """按标题、编号或说明搜索需求、任务、缺陷。"""
+    arguments: dict[str, object] = {"keyword": keyword}
+    if projectId is not None:
+        arguments["projectId"] = projectId
+    return await _execute_platform_tool("work_item.search", session_token, arguments)
+
+
+@mcp_server.tool()
+async def work_item_get_detail(session_token: SessionToken, workItemId: int, ctx: Context | None = None) -> str:
+    """读取工作项详情和评论摘要。"""
+    return await _execute_platform_tool("work_item.get_detail", session_token, {"workItemId": workItemId})
+
+
+@mcp_server.tool()
+async def agent_list_available(session_token: SessionToken, projectId: int | None = None, ctx: Context | None = None) -> str:
+    """查询全局和项目可用 Agent。"""
+    arguments: dict[str, object] = {}
+    if projectId is not None:
+        arguments["projectId"] = projectId
+    return await _execute_platform_tool("agent.list_available", session_token, arguments)
+
+
+@mcp_server.tool()
+async def agent_get_detail(session_token: SessionToken, agentId: int, ctx: Context | None = None) -> str:
+    """读取 Agent 类型、接入方式和能力。"""
+    return await _execute_platform_tool("agent.get_detail", session_token, {"agentId": agentId})
+
+
+@mcp_server.tool()
+async def execution_task_search(session_token: SessionToken, keyword: str = "", ctx: Context | None = None) -> str:
+    """按项目、工作项、状态或场景搜索执行任务。"""
+    return await _execute_platform_tool("execution_task.search", session_token, {"keyword": keyword})
+
+
+@mcp_server.tool()
+async def execution_task_get_detail(session_token: SessionToken, executionTaskId: int, ctx: Context | None = None) -> str:
+    """读取执行任务、运行、步骤和产物。"""
+    return await _execute_platform_tool(
+        "execution_task.get_detail",
+        session_token,
+        {"executionTaskId": executionTaskId},
+    )
+
+
+@mcp_server.tool()
+async def test_plan_search(session_token: SessionToken, keyword: str = "", ctx: Context | None = None) -> str:
+    """按项目、迭代、状态或关键词查询测试计划。"""
+    return await _execute_platform_tool("test_plan.search", session_token, {"keyword": keyword})
+
+
+@mcp_server.tool()
+async def test_plan_get_detail(session_token: SessionToken, testPlanId: int, ctx: Context | None = None) -> str:
+    """读取测试计划和测试用例。"""
+    return await _execute_platform_tool("test_plan.get_detail", session_token, {"testPlanId": testPlanId})
+
+
+@mcp_server.tool()
+async def work_item_create_draft(
+    session_token: SessionToken,
+    projectId: int,
+    workItemType: str = "需求",
+    name: str = "",
+    content: str = "",
+    iterationId: int | None = None,
+    assigneeUserId: int | None = None,
+    ctx: Context | None = None,
+) -> str:
+    """创建工作项草稿提案，不直接落库。"""
+    arguments: dict[str, object] = {
+        "projectId": projectId,
+        "workItemType": workItemType,
+        "name": name,
+        "content": content,
+    }
+    if iterationId is not None:
+        arguments["iterationId"] = iterationId
+    if assigneeUserId is not None:
+        arguments["assigneeUserId"] = assigneeUserId
+    return await _execute_platform_tool("work_item.create_draft", session_token, arguments)
+
+
+@mcp_server.tool()
+async def execution_task_create(
+    session_token: SessionToken,
+    projectId: int | None = None,
+    workItemId: int | None = None,
+    scenarioCode: str = "",
+    ctx: Context | None = None,
+) -> str:
+    """创建执行任务提案，不直接触发真实执行。"""
+    arguments: dict[str, object] = {"scenarioCode": scenarioCode}
+    if projectId is not None:
+        arguments["projectId"] = projectId
+    if workItemId is not None:
+        arguments["workItemId"] = workItemId
+    return await _execute_platform_tool("execution_task.create", session_token, arguments)
+
+
+@mcp_server.tool()
+async def test_plan_create_draft(
+    session_token: SessionToken,
+    projectId: int,
+    iterationId: int,
+    name: str = "",
+    description: str = "",
+    ctx: Context | None = None,
+) -> str:
+    """创建测试计划草稿提案，不直接落库。"""
+    return await _execute_platform_tool(
+        "test_plan.create_draft",
+        session_token,
+        {
+            "projectId": projectId,
+            "iterationId": iterationId,
+            "name": name,
+            "description": description,
+        },
+    )
+
+
+@asynccontextmanager
+async def mcp_lifespan(_: FastAPI):
+    """确保 FastMCP 的 session manager 与 FastAPI 生命周期保持一致。"""
+    async with AsyncExitStack() as stack:
+        await stack.enter_async_context(mcp_server.session_manager.run())
+        yield

@@ -14,6 +14,16 @@
         <div v-if="isMobileViewport" class="workspace-sidebar-brand-profile">
           <el-dropdown @command="handleHeaderCommand">
             <div class="header-profile-group">
+              <button
+                v-if="canUseHermes"
+                class="header-notification-button"
+                type="button"
+                aria-label="打开 Hermes 助手"
+                title="Hermes 助手"
+                @click.stop="handleOpenHermesDrawer"
+              >
+                <el-icon><ChatDotRound /></el-icon>
+              </button>
               <button class="header-notification-button" type="button" aria-label="打开消息中心" @click.stop="handleOpenNotificationsProxy">
                 <el-icon><Bell /></el-icon>
                 <span v-if="notificationStore.unreadCount > 0" class="header-notification-dot"></span>
@@ -115,6 +125,15 @@
           </button>
         </div>
         <div v-if="!isMobileViewport" class="workspace-topbar-actions">
+          <button
+            v-if="canUseHermes"
+            class="workspace-hermes-button"
+            type="button"
+            @click="handleOpenHermesDrawer"
+          >
+            <el-icon><ChatDotRound /></el-icon>
+            <span>Hermes 助手</span>
+          </button>
           <el-dropdown @command="handleHeaderCommand">
             <div class="header-profile-group">
               <button class="header-notification-button" type="button" aria-label="打开消息中心" @click.stop="handleOpenNotificationsProxy">
@@ -396,6 +415,11 @@
                         <el-icon><ChatDotRound /></el-icon>
                       </button>
                     </el-tooltip>
+                    <el-tooltip v-if="canManageWorkItem" content="智能执行" placement="top">
+                      <button class="workspace-action-button ai" type="button" aria-label="发起智能执行" @click="openExecutionTaskDialog(row)">
+                        <el-icon><Cpu /></el-icon>
+                      </button>
+                    </el-tooltip>
                     <el-tooltip v-if="canManageWorkItem" content="编辑" placement="top">
                       <button class="workspace-action-button" type="button" aria-label="编辑工作项" @click="openWorkItemDetailFromRow(row)">
                         <el-icon><EditPen /></el-icon>
@@ -589,6 +613,10 @@
                     <button v-if="canManageWorkItem" class="mobile-entity-action-button" type="button" @click="openWorkItemDetailFromRow(row)">
                       <el-icon><EditPen /></el-icon>
                       <span>编辑</span>
+                    </button>
+                    <button v-if="canManageWorkItem" class="mobile-entity-action-button info" type="button" @click="openExecutionTaskDialog(row)">
+                      <el-icon><Cpu /></el-icon>
+                      <span>智能执行</span>
                     </button>
                     <button v-if="row.workItemType === '需求'" class="mobile-entity-action-button info" type="button" @click="openRequirementAiDialog(row)">
                       <el-icon><Cpu /></el-icon>
@@ -885,7 +913,7 @@
               <MarkdownEditor
                 v-model="workItemForm.requirementMarkdown"
                 :height="workItemEditorHeight"
-                :preview="false"
+                :preview="true"
                 :upload-image="handleTaskMarkdownImageUpload"
                 :placeholder="requirementDocumentPlaceholder"
               />
@@ -895,7 +923,7 @@
               <MarkdownEditor
                 v-model="workItemForm.description"
                 :height="workItemEditorHeight"
-                :preview="false"
+                :preview="true"
                 :upload-image="handleTaskMarkdownImageUpload"
                 placeholder="请填写工作项详细说明，支持 Markdown 格式"
               />
@@ -907,6 +935,9 @@
 
     <template #footer>
       <div class="work-item-dialog-footer">
+        <el-button v-if="canManageWorkItem && currentDialogWorkItem" type="success" plain @click="openExecutionTaskDialog(currentDialogWorkItem)">
+          发起智能执行
+        </el-button>
         <el-button @click="closeWorkItemDetail">取消</el-button>
         <el-button v-if="canManageWorkItem" type="primary" :loading="workItemSubmitting" @click="handleSubmitWorkItem">
           {{ workItemEditing ? '保存工作项' : '创建工作项' }}
@@ -968,6 +999,12 @@
     :can-manage="canManageWorkItem"
     @changed="handleRequirementAiChanged"
   />
+
+  <ExecutionTaskCreateDialog
+    v-model="executionTaskCreateDialogVisible"
+    :work-item="currentExecutionWorkItem"
+    @created="handleExecutionTaskCreated"
+  />
 </template>
 
 <script setup lang="ts">
@@ -983,8 +1020,10 @@ import ListUserDisplay from '@/components/ListUserDisplay.vue'
 import type { ListUserDisplayItem } from '@/components/listUserDisplay'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import ProjectBurndownChart from '@/components/ProjectBurndownChart.vue'
+import ExecutionTaskCreateDialog from '@/components/ExecutionTaskCreateDialog.vue'
 import RequirementAiDialog from '@/components/RequirementAiDialog.vue'
 import WorkItemMemberField from '@/components/WorkItemMemberField.vue'
+import { HERMES_OPEN_EVENT_NAME } from '@/constants/hermes'
 import {
   createTaskComment,
   createIteration,
@@ -1023,6 +1062,7 @@ import type {
   IterationBoardItem,
   IterationItem,
   ProjectBurndownItem,
+  ExecutionTaskItem,
   TaskCommentItem,
   TaskItem,
   UserOptionItem
@@ -1084,6 +1124,7 @@ const canManageIteration = computed(() => authStore.hasPermission('project:manag
 const canManageWorkItem = computed(() => authStore.hasPermission('task:manage'))
 const canRequirementDevPass = computed(() => authStore.hasPermission('task:requirement:dev'))
 const canRequirementTestPass = computed(() => authStore.hasPermission('task:requirement:test'))
+const canUseHermes = computed(() => authStore.hasPermission('hermes:chat'))
 const userInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
 const userAvatarUrl = computed(() => resolveAssetUrl(authStore.user?.avatarUrl))
 
@@ -1138,7 +1179,17 @@ const userOptionMap = computed(() => new Map(userOptions.value.map((item) => [it
 const requirementOptions = ref<TaskItem[]>([])
 const workItems = ref<TaskItem[]>([])
 const burndown = ref<ProjectBurndownItem | null>(null)
-const currentIterationProgress = ref<IterationProgressSummary | null>(null)
+const iterationProgressMap = ref<Record<number, IterationProgressSummary>>({})
+const unplannedProgress = ref<IterationProgressSummary | null>(null)
+const currentIterationProgress = computed(() => {
+  if (selectedScope.type === 'unplanned') {
+    return unplannedProgress.value
+  }
+  if (!selectedScope.iterationId) {
+    return null
+  }
+  return iterationProgressMap.value[selectedScope.iterationId] || null
+})
 const burndownDialogVisible = ref(false)
 const statusUpdatingId = ref<number | null>(null)
 const workItemLoading = ref(false)
@@ -1194,6 +1245,8 @@ const commentImagePreviewVisible = ref(false)
 const commentImagePreviewSrc = ref('')
 const requirementAiDialogVisible = ref(false)
 const currentRequirementAiTask = ref<TaskItem | null>(null)
+const executionTaskCreateDialogVisible = ref(false)
+const currentExecutionWorkItem = ref<TaskItem | null>(null)
 const currentDialogWorkItem = ref<TaskItem | null>(null)
 const legacyRequirementNeedsUpgrade = ref(false)
 const legacyRequirementPreview = ref('')
@@ -1358,11 +1411,7 @@ const workspaceStatCards = computed(() => {
 })
 
 const unplannedProgressPercent = computed(() => {
-  if (!board.unplannedCount) {
-    return 0
-  }
-  const base = Math.min(100, Math.max(16, board.unplannedCount * 12))
-  return base
+  return unplannedProgress.value?.percent ?? 0
 })
 
 const iterationStatusType = (status: string) => {
@@ -1373,6 +1422,16 @@ const iterationStatusType = (status: string) => {
 
 const handleOpenNotificationsProxy = async () => {
   await notificationStore.openDrawer()
+}
+
+/**
+ * 迭代工作台直接唤起布局层全局 Hermes 抽屉，避免当前页面重复挂载一份助手实例。
+ */
+const handleOpenHermesDrawer = () => {
+  if (!canUseHermes.value || typeof window === 'undefined') {
+    return
+  }
+  window.dispatchEvent(new CustomEvent(HERMES_OPEN_EVENT_NAME))
 }
 
 const handleHeaderCommand = async (command: string) => {
@@ -1407,12 +1466,7 @@ const formatCompactDateRange = (startDate?: string | null, endDate?: string | nu
 }
 
 const iterationSidebarPercent = (item: IterationItem) => {
-  if (selectedScope.type === 'iteration' && selectedScope.iterationId === item.id && currentIterationProgress.value) {
-    return currentIterationProgress.value.percent
-  }
-  if (item.status === '已完成') return 100
-  if (item.status === '进行中') return 68
-  return 22
+  return iterationProgressMap.value[item.id]?.percent ?? 0
 }
 
 const iterationStatusIcon = (status: string) => {
@@ -1555,6 +1609,46 @@ const handleInlineHoursCancel = (row: TaskItem) => {
 
 const isCompletedStatus = (status?: string | null) => status === '已完成' || status === '完成'
 
+/**
+ * 左侧迭代列表和顶部统计卡统一复用真实聚合结果，避免切换选中项时进度条出现假变化。
+ */
+const buildIterationProgressSummary = (items: TaskItem[]): IterationProgressSummary => {
+  const total = items.length
+  const completed = items.filter((item) => isCompletedStatus(item.status)).length
+  return {
+    total,
+    completed,
+    remaining: Math.max(total - completed, 0),
+    percent: total ? Math.round((completed / total) * 100) : 0
+  }
+}
+
+/**
+ * 一次性按项目全量工作项聚合各个迭代与未规划工作项的真实进度，保证左侧列表始终稳定。
+ */
+const applyIterationProgressFromItems = (items: TaskItem[]) => {
+  const nextIterationProgressMap: Record<number, IterationProgressSummary> = {}
+  const groupedIterationItems = new Map<number, TaskItem[]>()
+  const nextUnplannedItems: TaskItem[] = []
+
+  for (const item of items) {
+    if (item.iterationId == null) {
+      nextUnplannedItems.push(item)
+      continue
+    }
+    const currentItems = groupedIterationItems.get(item.iterationId) || []
+    currentItems.push(item)
+    groupedIterationItems.set(item.iterationId, currentItems)
+  }
+
+  for (const iteration of board.iterations) {
+    nextIterationProgressMap[iteration.id] = buildIterationProgressSummary(groupedIterationItems.get(iteration.id) || [])
+  }
+
+  iterationProgressMap.value = nextIterationProgressMap
+  unplannedProgress.value = buildIterationProgressSummary(nextUnplannedItems)
+}
+
 const taskStatusSelectOptions: CompactSelectOption[] = [
   { label: '草稿', value: '草稿', tone: 'info' },
   { label: '待开始', value: '待开始', tone: 'warning' },
@@ -1596,12 +1690,26 @@ const resetIterationForm = () => {
   iterationFormRef.value?.clearValidate()
 }
 
+/**
+ * 新建工作项时默认跟随当前列表入口的类型筛选，
+ * 只有“全部”页签回退为任务，避免用户每次都手动切换类型。
+ */
+const resolveDefaultWorkItemType = (): WorkItemForm['workItemType'] => {
+  if (activeTypeTab.value === '需求') {
+    return '需求'
+  }
+  if (activeTypeTab.value === '缺陷') {
+    return '缺陷'
+  }
+  return '任务'
+}
+
 const resetWorkItemForm = () => {
   currentWorkItemId.value = null
   currentDialogWorkItem.value = null
   workItemForm.workItemCode = ''
   workItemForm.name = ''
-  workItemForm.workItemType = '任务'
+  workItemForm.workItemType = resolveDefaultWorkItemType()
   workItemForm.status = '草稿'
   workItemForm.priority = '中'
   workItemForm.workHours = null
@@ -1691,8 +1799,17 @@ const openRequirementAiDialog = (item: TaskItem) => {
   requirementAiDialogVisible.value = true
 }
 
+const openExecutionTaskDialog = (item: TaskItem) => {
+  currentExecutionWorkItem.value = item
+  executionTaskCreateDialogVisible.value = true
+}
+
+const handleExecutionTaskCreated = async (executionTask: ExecutionTaskItem) => {
+  await router.push({ name: 'execution-task-detail', params: { executionTaskId: executionTask.id } })
+}
+
 const handleRequirementAiChanged = async () => {
-  await Promise.all([loadBoard(), loadWorkItems(), loadCurrentIterationProgress()])
+  await Promise.all([loadBoard(), loadWorkItems()])
   if (currentCommentTask.value && currentRequirementAiTask.value && currentCommentTask.value.id === currentRequirementAiTask.value.id) {
     await loadTaskCommentList()
   }
@@ -1757,7 +1874,7 @@ const openTaskFromQuery = async (taskId?: number) => {
     selectedScope.type = task.iterationId ? 'iteration' : 'unplanned'
     selectedScope.iterationId = task.iterationId
     workItemPagination.page = 1
-    await Promise.all([loadWorkItems(), loadCurrentIterationProgress()])
+    await loadWorkItems()
     openEditWorkItemDialog(task)
     await syncWorkItemRouteQuery({
       iterationId: task.iterationId,
@@ -1896,22 +2013,22 @@ const selectUnplanned = async () => {
   selectedScope.type = 'unplanned'
   selectedScope.iterationId = null
   workItemPagination.page = 1
-  await Promise.all([loadWorkItems(), loadCurrentIterationProgress(), syncIterationQuery(null)])
+  await Promise.all([loadWorkItems(), syncIterationQuery(null)])
 }
 
 const selectIteration = async (item: IterationItem) => {
   selectedScope.type = 'iteration'
   selectedScope.iterationId = item.id
   workItemPagination.page = 1
-  await Promise.all([loadWorkItems(), loadCurrentIterationProgress(), syncIterationQuery(item.id)])
+  await Promise.all([loadWorkItems(), syncIterationQuery(item.id)])
 }
 
 const loadBoard = async () => {
-  const [boardData, users, burndownData, requirements] = await Promise.all([
+  const [boardData, users, burndownData, allWorkItems] = await Promise.all([
     getIterationBoard(projectId),
     listUserOptions(),
     getProjectBurndown(projectId),
-    listProjectWorkItems(projectId, { workItemType: '需求' })
+    listProjectWorkItems(projectId, { workItemType: '全部' })
   ])
   board.project = boardData.project
   board.unplannedCount = boardData.unplannedCount
@@ -1919,7 +2036,8 @@ const loadBoard = async () => {
   board.iterations = boardData.iterations
   userOptions.value = users
   burndown.value = burndownData
-  requirementOptions.value = requirements
+  requirementOptions.value = allWorkItems.filter((item) => item.workItemType === '需求')
+  applyIterationProgressFromItems(allWorkItems)
 
   const routeIterationId = Number(route.query.iterationId)
   if (!Number.isNaN(routeIterationId) && routeIterationId > 0 && board.iterations.some((item) => item.id === routeIterationId)) {
@@ -1963,31 +2081,9 @@ const loadWorkItems = async () => {
   }
 }
 
-const loadCurrentIterationProgress = async () => {
-  if (selectedScope.type !== 'iteration' || !selectedScope.iterationId) {
-    currentIterationProgress.value = null
-    return
-  }
-
-  const allItems = await listProjectWorkItems(projectId, {
-    iterationId: selectedScope.iterationId,
-    workItemType: '全部'
-  })
-
-  const total = allItems.length
-  const completed = allItems.filter((item) => isCompletedStatus(item.status)).length
-  const remaining = Math.max(total - completed, 0)
-  currentIterationProgress.value = {
-    total,
-    completed,
-    remaining,
-    percent: total ? Math.round((completed / total) * 100) : 0
-  }
-}
-
 const refreshBoardAndItems = async () => {
   await loadBoard()
-  await Promise.all([loadWorkItems(), loadCurrentIterationProgress()])
+  await loadWorkItems()
 }
 
 const handleTypeTabChange = async () => {
@@ -2300,7 +2396,7 @@ const updateInlineWorkItem = async (
       requirementTaskId: row.requirementTaskId
     })
     Object.assign(row, updated)
-    await Promise.all([loadBoard(), loadCurrentIterationProgress(), loadWorkItems()])
+    await Promise.all([loadBoard(), loadWorkItems()])
     ElMessage.success('工作项已更新')
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '更新失败')
@@ -2365,7 +2461,7 @@ watch(
     selectedScope.type = 'iteration'
     selectedScope.iterationId = nextIterationId
     workItemPagination.page = 1
-    await Promise.all([loadWorkItems(), loadCurrentIterationProgress()])
+    await loadWorkItems()
   }
 )
 
@@ -2529,6 +2625,7 @@ onMounted(async () => {
 .workspace-iteration-card,
 .workspace-sidebar-action,
 .workspace-back-link,
+.workspace-hermes-button,
 .workspace-icon-button,
 .workspace-filter-button,
 .workspace-new-button,
@@ -2724,7 +2821,26 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0;
+  gap: 14px;
+}
+
+.workspace-hermes-button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--app-surface-muted);
+  color: var(--app-text-soft);
+  font-size: 12px;
+  font-weight: 800;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.workspace-hermes-button:hover {
+  background: rgba(var(--app-outline-rgb), 0.12);
+  color: var(--app-primary);
 }
 
 .header-profile-group {
@@ -3747,7 +3863,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 22px;
+  padding: 12px 22px 10px;
 }
 
 .work-item-dialog-header-main {
@@ -3910,13 +4026,13 @@ onMounted(async () => {
 }
 
 .work-item-editor-top {
-  padding: 18px 18px 16px;
+  padding: 10px 18px 14px;
   border-bottom: 1px solid var(--app-border);
   background: var(--app-surface-card);
 }
 
 .work-item-editor-title-row {
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .work-item-editor-label {
@@ -4218,15 +4334,12 @@ onMounted(async () => {
   box-shadow: inset 0 0 0 1px var(--app-border);
 }
 
-.work-item-description-form-item :deep(.md-editor-preview-wrapper),
-.work-item-description-form-item :deep(.md-editor-resize-operate) {
-  display: none;
-}
-
-.work-item-description-form-item :deep(.md-editor-input-wrapper) {
-  flex: 1 1 auto;
-  width: 100%;
+.work-item-description-form-item :deep(.md-editor-input-wrapper),
+.work-item-description-form-item :deep(.md-editor-preview-wrapper) {
+  flex: 1 1 50%;
+  width: auto;
   min-height: 0;
+  min-width: 0;
 }
 
 .work-item-description-form-item :deep(.md-editor-content-wrapper) {
@@ -4234,6 +4347,10 @@ onMounted(async () => {
   flex: 1 1 auto;
   width: 100%;
   min-height: 0;
+}
+
+.work-item-description-form-item :deep(.md-editor-preview-wrapper) {
+  background: rgba(255, 255, 255, 0.82);
 }
 
 .work-item-description-form-item :deep(.cm-editor),

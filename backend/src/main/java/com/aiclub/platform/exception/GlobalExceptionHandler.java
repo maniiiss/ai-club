@@ -2,6 +2,8 @@ package com.aiclub.platform.exception;
 
 import com.aiclub.platform.common.api.ApiResponse;
 import jakarta.validation.ConstraintViolationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -12,6 +14,8 @@ import java.util.NoSuchElementException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
@@ -51,5 +55,15 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public ApiResponse<Void> handleForbiddenException(ForbiddenException ex) {
         return ApiResponse.fail(ex.getMessage());
+    }
+
+    @ExceptionHandler(Exception.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ApiResponse<Void> handleException(Exception ex) {
+        log.error("Unhandled controller exception", ex);
+        String message = ex.getMessage() == null || ex.getMessage().isBlank()
+                ? "Internal server error"
+                : ex.getMessage();
+        return ApiResponse.fail(message);
     }
 }

@@ -56,4 +56,6 @@ export interface DashboardWidgetDefinition {
   renderKey: string
   /** 访问该组件需要具备的权限，没有权限时直接从布局中剔除。 */
   requiredPermission?: string | string[]
+  /** 访问该组件必须同时满足的权限集合，用于页面权限和组件权限的联合校验。 */
+  requiredPermissionsAll?: string[]
 }

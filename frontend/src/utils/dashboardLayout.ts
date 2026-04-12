@@ -26,7 +26,7 @@ export const DASHBOARD_WIDGET_DEFINITIONS: DashboardWidgetDefinition[] = [
     defaultHeight: 'single',
     defaultVisible: true,
     renderKey: 'stat-project-count',
-    requiredPermission: 'dashboard:view'
+    requiredPermissionsAll: ['dashboard:view', 'dashboard:widget:project-stats']
   },
   {
     id: 'stat-agent-count',
@@ -36,7 +36,7 @@ export const DASHBOARD_WIDGET_DEFINITIONS: DashboardWidgetDefinition[] = [
     defaultHeight: 'single',
     defaultVisible: true,
     renderKey: 'stat-agent-count',
-    requiredPermission: 'dashboard:view'
+    requiredPermissionsAll: ['dashboard:view', 'dashboard:widget:agent-stats']
   },
   {
     id: 'stat-task-count',
@@ -46,7 +46,7 @@ export const DASHBOARD_WIDGET_DEFINITIONS: DashboardWidgetDefinition[] = [
     defaultHeight: 'single',
     defaultVisible: true,
     renderKey: 'stat-task-count',
-    requiredPermission: 'dashboard:view'
+    requiredPermissionsAll: ['dashboard:view', 'dashboard:widget:task-stats']
   },
   {
     id: 'quick-pipeline-build',
@@ -56,7 +56,7 @@ export const DASHBOARD_WIDGET_DEFINITIONS: DashboardWidgetDefinition[] = [
     defaultHeight: 'double',
     defaultVisible: true,
     renderKey: 'quick-pipeline-build',
-    requiredPermission: 'cicd:view'
+    requiredPermissionsAll: ['dashboard:view', 'dashboard:widget:quick-build']
   },
   {
     id: 'gitlab-quick-merge',
@@ -66,7 +66,7 @@ export const DASHBOARD_WIDGET_DEFINITIONS: DashboardWidgetDefinition[] = [
     defaultHeight: 'double',
     defaultVisible: true,
     renderKey: 'gitlab-quick-merge',
-    requiredPermission: 'gitlab:view'
+    requiredPermissionsAll: ['dashboard:view', 'dashboard:widget:quick-merge']
   },
   {
     id: 'active-project-list',
@@ -76,7 +76,7 @@ export const DASHBOARD_WIDGET_DEFINITIONS: DashboardWidgetDefinition[] = [
     defaultHeight: 'double',
     defaultVisible: true,
     renderKey: 'active-project-list',
-    requiredPermission: 'project:view'
+    requiredPermissionsAll: ['dashboard:view', 'dashboard:widget:active-projects']
   },
   {
     id: 'online-agent-list',
@@ -86,7 +86,7 @@ export const DASHBOARD_WIDGET_DEFINITIONS: DashboardWidgetDefinition[] = [
     defaultHeight: 'double',
     defaultVisible: true,
     renderKey: 'online-agent-list',
-    requiredPermission: 'agent:view'
+    requiredPermissionsAll: ['dashboard:view', 'dashboard:widget:online-agents']
   },
   {
     id: 'recent-task-list',
@@ -96,7 +96,7 @@ export const DASHBOARD_WIDGET_DEFINITIONS: DashboardWidgetDefinition[] = [
     defaultHeight: 'double',
     defaultVisible: true,
     renderKey: 'recent-task-list',
-    requiredPermission: 'task:view'
+    requiredPermissionsAll: ['dashboard:view', 'dashboard:widget:recent-tasks']
   },
   {
     id: 'quick-task-checklist',
@@ -106,7 +106,7 @@ export const DASHBOARD_WIDGET_DEFINITIONS: DashboardWidgetDefinition[] = [
     defaultHeight: 'single',
     defaultVisible: true,
     renderKey: 'quick-task-checklist',
-    requiredPermission: 'dashboard:view'
+    requiredPermissionsAll: ['dashboard:view', 'dashboard:widget:quick-tasks']
   }
 ]
 
@@ -117,7 +117,12 @@ export function filterDashboardWidgetsByPermission(
   definitions: DashboardWidgetDefinition[],
   hasPermission: (permission: string | string[]) => boolean
 ) {
-  return definitions.filter((definition) => !definition.requiredPermission || hasPermission(definition.requiredPermission))
+  return definitions.filter((definition) => {
+    if (definition.requiredPermissionsAll?.length) {
+      return definition.requiredPermissionsAll.every((permission) => hasPermission(permission))
+    }
+    return !definition.requiredPermission || hasPermission(definition.requiredPermission)
+  })
 }
 
 /**

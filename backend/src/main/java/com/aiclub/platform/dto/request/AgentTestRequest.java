@@ -4,8 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record AgentTestRequest(
-        @NotBlank(message = "????????")
-        @Size(max = 20000, message = "??????????20000")
+        @NotBlank(message = "测试问题不能为空")
+        @Size(max = 20000, message = "测试问题不能超过20000个字符")
         String input
 ) {
 }

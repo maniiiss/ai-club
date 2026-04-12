@@ -7,4 +7,12 @@ ai_agent_code_processing.egg-info/requires.txt
 ai_agent_code_processing.egg-info/top_level.txt
 app/__init__.py
 app/main.py
+app/mcp_server.py
 app/models.py
+app/settings.py
+app/api/__init__.py
+app/api/routes.py
+app/services/__init__.py
+app/services/hermes_internal_client.py
+app/services/repository_service.py
+app/services/review_service.py

@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { ApiResponse, DataPermissionScopeValue, PageResponse, PermissionItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
+import type { ApiResponse, DataPermissionScopeValue, PageResponse, PermissionItem, PlatformToolItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
 
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
@@ -63,6 +63,22 @@ export interface PermissionQuery {
   keyword?: string
   type?: 'MENU' | 'ACTION' | ''
   enabled?: boolean | ''
+}
+
+export interface PlatformToolQuery {
+  page: number
+  size: number
+  keyword?: string
+  moduleCode?: string
+  enabled?: boolean | ''
+  readOnly?: boolean | ''
+}
+
+export interface PlatformToolPayload {
+  displayName?: string
+  descriptionOverride?: string
+  enabled: boolean
+  allowAutoExecute: boolean
 }
 
 export const pageUsers = async (query: UserQuery) => {
@@ -145,4 +161,21 @@ export const updatePermission = async (id: number, payload: PermissionPayload) =
 
 export const deletePermission = async (id: number) => {
   await http.delete<ApiResponse<null>>(`/api/permissions/${id}`)
+}
+
+export const pagePlatformTools = async (query: PlatformToolQuery) => {
+  const { data } = await http.get<ApiResponse<PageResponse<PlatformToolItem>>>('/api/platform-tools', {
+    params: cleanParams(query)
+  })
+  return data.data
+}
+
+export const getPlatformToolDetail = async (toolCode: string) => {
+  const { data } = await http.get<ApiResponse<PlatformToolItem>>(`/api/platform-tools/${encodeURIComponent(toolCode)}`)
+  return data.data
+}
+
+export const updatePlatformTool = async (toolCode: string, payload: PlatformToolPayload) => {
+  const { data } = await http.put<ApiResponse<PlatformToolItem>>(`/api/platform-tools/${encodeURIComponent(toolCode)}`, payload)
+  return data.data
 }

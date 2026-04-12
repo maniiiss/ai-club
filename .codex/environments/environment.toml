@@ -6,7 +6,7 @@ name = "git-ai-club"
 script = ""
 
 [[actions]]
-name = "运行"
+name = "运行前端"
 icon = "run"
 command = '''
 Stop-Process -Name node -Force

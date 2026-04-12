@@ -5,6 +5,10 @@ import type {
   ApiResponse,
   DashboardOverview,
   DashboardQuickTaskItem,
+  ExecutionRunDetailItem,
+  ExecutionRunItem,
+  ExecutionTaskDetailItem,
+  ExecutionTaskItem,
   IterationBoardItem,
   IterationItem,
   KnowledgeGraphItem,
@@ -152,6 +156,30 @@ export interface TaskQuery {
   priority?: string
   projectId?: number
   agentId?: number
+}
+
+export interface ExecutionTaskQuery {
+  page: number
+  size: number
+  keyword?: string
+  status?: string
+  scenarioCode?: string
+  projectId?: number
+}
+
+export interface ExecutionAgentBindingPayload {
+  stepCode: string
+  agentId: number
+}
+
+export interface CreateExecutionTaskPayload {
+  scenarioCode: string
+  projectId: number
+  workItemId?: number | null
+  title?: string
+  triggerSource?: string
+  agentBindings?: ExecutionAgentBindingPayload[]
+  inputPayload?: Record<string, unknown>
 }
 
 export interface WorkItemQuery {
@@ -335,6 +363,43 @@ export const generateTaskRequirementAi = async (
 
 export const runTaskAgent = async (id: number, input: string) => {
   const { data } = await http.post<ApiResponse<TaskAgentRunItem>>(`/api/tasks/${id}/agent-runs`, { input })
+  return data.data
+}
+
+export const pageExecutionTasks = async (query: ExecutionTaskQuery) => {
+  const { data } = await http.get<ApiResponse<PageResponse<ExecutionTaskItem>>>('/api/execution-tasks', {
+    params: cleanParams(query)
+  })
+  return data.data
+}
+
+export const getExecutionTaskDetail = async (id: number) => {
+  const { data } = await http.get<ApiResponse<ExecutionTaskDetailItem>>(`/api/execution-tasks/${id}`)
+  return data.data
+}
+
+export const listExecutionTaskRuns = async (id: number) => {
+  const { data } = await http.get<ApiResponse<ExecutionRunItem[]>>(`/api/execution-tasks/${id}/runs`)
+  return data.data
+}
+
+export const getExecutionRunDetail = async (id: number) => {
+  const { data } = await http.get<ApiResponse<ExecutionRunDetailItem>>(`/api/execution-runs/${id}`)
+  return data.data
+}
+
+export const createExecutionTask = async (payload: CreateExecutionTaskPayload) => {
+  const { data } = await http.post<ApiResponse<ExecutionTaskItem>>('/api/execution-tasks', payload)
+  return data.data
+}
+
+export const cancelExecutionTask = async (id: number) => {
+  const { data } = await http.post<ApiResponse<ExecutionTaskItem>>(`/api/execution-tasks/${id}/cancel`)
+  return data.data
+}
+
+export const retryExecutionTask = async (id: number) => {
+  const { data } = await http.post<ApiResponse<ExecutionTaskItem>>(`/api/execution-tasks/${id}/retry`)
   return data.data
 }
 

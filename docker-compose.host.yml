@@ -55,6 +55,73 @@ services:
     volumes:
       - minio_data:/data
 
+  hindsight:
+    image: ${HINDSIGHT_IMAGE:-ghcr.io/vectorize-io/hindsight:latest}
+    container_name: git-ai-club-host-hindsight
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_API_LLM_PROVIDER:-openai}
+      HINDSIGHT_API_LLM_BASE_URL: ${HINDSIGHT_API_LLM_BASE_URL:-https://api.openai.com/v1}
+      HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_API_LLM_API_KEY:-}
+      HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_API_LLM_MODEL:-gpt-4o-mini}
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: ${HINDSIGHT_API_EMBEDDINGS_PROVIDER:-local}
+      HINDSIGHT_API_HOST: 0.0.0.0
+      HINDSIGHT_API_PORT: ${HINDSIGHT_PORT:-18888}
+      HINDSIGHT_DASHBOARD_HOST: 0.0.0.0
+      HINDSIGHT_DASHBOARD_PORT: ${HINDSIGHT_CONSOLE_PORT:-19999}
+    volumes:
+      - hindsight_data:/home/hindsight/.pg0
+
+  hermes:
+    image: ${HERMES_IMAGE:-ghcr.io/nousresearch/hermes-agent:latest}
+    container_name: git-ai-club-host-hermes
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      hindsight:
+        condition: service_started
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      HERMES_HOME: /opt/data
+      LLM_MODEL: ${HERMES_LLM_MODEL:-gpt-4.1-mini}
+      MINIMAX_CN_API_KEY: ${HERMES_LLM_API_KEY:-}
+      MINIMAX_CN_BASE_URL: ${HERMES_LLM_BASE_URL:-https://api.minimaxi.com/v1}
+      API_SERVER_ENABLED: "true"
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: ${HERMES_PORT:-18080}
+      API_SERVER_KEY: ${PLATFORM_HERMES_API_KEY:-}
+      API_SERVER_MODEL_NAME: ${PLATFORM_HERMES_MODEL:-hermes-agent}
+      HONCHO_BASE_URL: ${HONCHO_BASE_URL:-http://127.0.0.1:${HINDSIGHT_PORT:-18888}}
+      PLATFORM_HERMES_MCP_SHARED_TOKEN: ${PLATFORM_HERMES_MCP_SHARED_TOKEN:-git-ai-club-hermes-mcp-token}
+    entrypoint:
+      - /bin/sh
+      - -lc
+      - |
+        mkdir -p /opt/data
+        cat <<EOF > /opt/data/config.yaml
+        model:
+          provider: minimax-cn
+          default: ${HERMES_LLM_MODEL:-MiniMax-M2.7}
+        platform_toolsets:
+          api_server:
+            - git_ai_club
+        mcp_servers:
+          git_ai_club:
+            url: http://127.0.0.1:${CODE_PROCESSING_PORT:-9001}/mcp/
+            headers:
+              Authorization: Bearer ${PLATFORM_HERMES_MCP_SHARED_TOKEN:-git-ai-club-hermes-mcp-token}
+            enabled: true
+            tools:
+              resources: false
+              prompts: false
+        EOF
+        exec hermes gateway
+    command: []
+    volumes:
+      - hermes_data:/opt/data
+
   code-processing:
     build:
       context: ./code-processing
@@ -65,6 +132,9 @@ services:
     network_mode: host
     environment:
       TZ: ${APP_TZ:-Asia/Shanghai}
+      PLATFORM_BACKEND_INTERNAL_BASE_URL: ${PLATFORM_BACKEND_INTERNAL_BASE_URL:-http://127.0.0.1:8087}
+      PLATFORM_INTERNAL_SERVICE_TOKEN: ${PLATFORM_INTERNAL_SERVICE_TOKEN:-git-ai-club-internal-service-token}
+      PLATFORM_HERMES_MCP_SHARED_TOKEN: ${PLATFORM_HERMES_MCP_SHARED_TOKEN:-git-ai-club-hermes-mcp-token}
     command:
       - uvicorn
       - app.main:app
@@ -90,6 +160,8 @@ services:
         condition: service_started
       code-processing:
         condition: service_started
+      hermes:
+        condition: service_started
     environment:
       TZ: ${APP_TZ:-Asia/Shanghai}
       SERVER_PORT: ${BACKEND_PORT:-8087}
@@ -101,6 +173,14 @@ services:
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       PLATFORM_CODE_PROCESSING_BASE_URL: http://127.0.0.1:${CODE_PROCESSING_PORT:-9001}
+      PLATFORM_HERMES_BASE_URL: http://127.0.0.1:${HERMES_PORT:-18080}/v1
+      PLATFORM_HERMES_API_KEY: ${PLATFORM_HERMES_API_KEY:-}
+      PLATFORM_HERMES_MODEL: ${PLATFORM_HERMES_MODEL:-hermes-agent}
+      PLATFORM_HERMES_TIMEOUT_SECONDS: ${PLATFORM_HERMES_TIMEOUT_SECONDS:-180}
+      PLATFORM_HERMES_SESSION_PREFIX: ${PLATFORM_HERMES_SESSION_PREFIX:-ai-club:hermes}
+      PLATFORM_HERMES_MAX_CONTEXT_MESSAGES: ${PLATFORM_HERMES_MAX_CONTEXT_MESSAGES:-6}
+      PLATFORM_HERMES_GROUNDING_TTL_SECONDS: ${PLATFORM_HERMES_GROUNDING_TTL_SECONDS:-86400}
+      PLATFORM_INTERNAL_SERVICE_TOKEN: ${PLATFORM_INTERNAL_SERVICE_TOKEN:-git-ai-club-internal-service-token}
       PLATFORM_GITLAB_DEFAULT_API_URL: ${PLATFORM_GITLAB_DEFAULT_API_URL:-http://192.168.110.138:30080/api/v4}
       PLATFORM_TOKEN_SECRET: ${PLATFORM_TOKEN_SECRET:-ai-club-demo-token-secret}
       PLATFORM_TOKEN_EXPIRE_HOURS: ${PLATFORM_TOKEN_EXPIRE_HOURS:-12}
@@ -133,3 +213,5 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  hermes_data:
+  hindsight_data:

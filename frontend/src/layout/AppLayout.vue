@@ -230,15 +230,34 @@
       <el-header v-if="!isIterationWorkspaceRoute" class="layout-header">
         <div class="header-search-group">
           <h1 class="header-page-title">{{ pageTitle }}</h1>
-          <div v-if="!isMobileViewport" class="header-search-shell" aria-hidden="true">
+          <div v-if="!isMobileViewport && canUseHermes" class="header-search-shell" @click="handleOpenHermesDrawer">
             <el-icon><Search /></el-icon>
-            <span>{{ headerSearchHint }}</span>
+            <input
+              v-model="headerHermesQuestion"
+              class="header-search-input"
+              type="text"
+              placeholder="问你想问"
+              @click.stop
+              @keyup.enter="handleAskHermes"
+            />
+            <button class="header-search-button" type="button" @click.stop="handleAskHermes">
+              提问
+            </button>
           </div>
         </div>
 
         <div class="header-actions">
           <el-dropdown @command="handleCommand">
             <div class="header-profile-group">
+              <button
+                v-if="isMobileViewport && canUseHermes"
+                class="header-hermes-button"
+                type="button"
+                aria-label="打开 Hermes 助手"
+                @click.stop="handleOpenHermesDrawer"
+              >
+                <el-icon><Search /></el-icon>
+              </button>
               <button class="header-notification-button" type="button" aria-label="打开消息中心" @click.stop="handleOpenNotifications">
                 <el-icon><Bell /></el-icon>
                 <span v-if="notificationStore.unreadCount > 0" class="header-notification-dot"></span>
@@ -258,6 +277,7 @@
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="profile">个人中心</el-dropdown-item>
+                <el-dropdown-item command="feedback">反馈与建议</el-dropdown-item>
                 <el-dropdown-item command="roles" disabled>
                   {{ authStore.user?.roleNames?.join(' / ') || '暂无角色' }}
                 </el-dropdown-item>
@@ -266,6 +286,7 @@
             </template>
           </el-dropdown>
         </div>
+
       </el-header>
 
       <el-main class="layout-main" :class="{ 'dashboard-main': isDashboardRoute, 'iteration-main': isIterationWorkspaceRoute, 'mobile-main': isMobileViewport && !isIterationWorkspaceRoute }">
@@ -353,6 +374,10 @@
             <el-icon class="mobile-more-item-icon"><UserFilled /></el-icon>
             <span class="mobile-more-item-label">个人中心</span>
           </button>
+          <button class="mobile-more-item" type="button" @click="handleMobileCommand('feedback')">
+            <el-icon class="mobile-more-item-icon"><ChatDotRound /></el-icon>
+            <span class="mobile-more-item-label">反馈与建议</span>
+          </button>
           <button class="mobile-more-item" type="button" @click="handleMobileCommand('logout')">
             <el-icon class="mobile-more-item-icon"><SwitchButton /></el-icon>
             <span class="mobile-more-item-label">退出登录</span>
@@ -362,17 +387,93 @@
     </div>
   </el-drawer>
 
-  <el-drawer v-model="notificationStore.drawerVisible" :show-close="false" size="420px" class="message-center-drawer">
+  <HermesDrawer
+    ref="hermesDrawerRef"
+    v-model="hermesDrawerVisible"
+    :route-name="hermesRouteName"
+    :project-id="hermesProjectId"
+    :task-id="hermesTaskId"
+    :iteration-id="hermesIterationId"
+    :plan-id="hermesPlanId"
+    :fallback-prompts="hermesQuickPrompts"
+  />
+
+  <el-dialog
+    v-model="feedbackDialogVisible"
+    title="反馈与建议"
+    width="640px"
+    class="feedback-dialog"
+    :close-on-click-modal="!feedbackSubmitting"
+    :close-on-press-escape="!feedbackSubmitting"
+    :show-close="!feedbackSubmitting"
+    destroy-on-close
+    @closed="handleFeedbackDialogClosed"
+  >
+    <div class="feedback-dialog-copy">
+      <div class="feedback-dialog-title">欢迎告诉我们你的想法</div>
+      <p class="feedback-dialog-subtitle">你可以反馈问题、优化建议或使用体验，我们会把内容保存到平台后台，方便后续统一跟进。</p>
+    </div>
+
+    <el-form ref="feedbackFormRef" :model="feedbackForm" :rules="feedbackRules" label-width="92px" class="feedback-dialog-form">
+      <el-form-item label="反馈类型" prop="type">
+        <el-select v-model="feedbackForm.type" placeholder="请选择反馈类型" style="width: 100%">
+          <el-option
+            v-for="item in feedbackTypeOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="反馈标题" prop="title">
+        <el-input
+          v-model="feedbackForm.title"
+          maxlength="100"
+          show-word-limit
+          placeholder="请简要概括你的问题或建议"
+        />
+      </el-form-item>
+      <el-form-item label="反馈内容" prop="content">
+        <el-input
+          v-model="feedbackForm.content"
+          type="textarea"
+          :rows="7"
+          maxlength="2000"
+          show-word-limit
+          resize="none"
+          placeholder="请尽量描述清楚问题场景、期望结果或改进建议"
+        />
+      </el-form-item>
+    </el-form>
+
+    <template #footer>
+      <div class="feedback-dialog-footer">
+        <el-button :disabled="feedbackSubmitting" @click="feedbackDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="feedbackSubmitting" @click="handleSubmitFeedback">提交反馈</el-button>
+      </div>
+    </template>
+  </el-dialog>
+
+  <el-drawer
+    v-model="notificationStore.drawerVisible"
+    :direction="notificationDrawerDirection"
+    :size="notificationDrawerSize"
+    :show-close="false"
+    :class="['message-center-drawer', { 'is-mobile': isMobileViewport }]"
+  >
     <template #header>
       <div class="drawer-head">
         <div class="drawer-head-copy">
           <div class="drawer-title">消息中心</div>
           <div class="drawer-subtitle">智能协作工作台</div>
         </div>
-        <button class="drawer-mark-all-button" type="button" @click="notificationStore.markAllRead">
-          <el-icon><Finished /></el-icon>
-          <span>全部标记已读</span>
-        </button>
+        <div class="drawer-head-actions">
+          <button class="drawer-mark-all-button" type="button" @click="notificationStore.markAllRead">
+            <el-icon><Finished /></el-icon>
+            <span>全部标记已读</span>
+          </button>
+          <button class="drawer-close-button" type="button" @click="notificationStore.drawerVisible = false">关闭</button>
+        </div>
       </div>
     </template>
 
@@ -432,7 +533,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowDown,
@@ -442,6 +543,7 @@ import {
   Connection,
   Cpu,
   DataAnalysis,
+  Document,
   DocumentCopy,
   Expand,
   Finished,
@@ -459,10 +561,14 @@ import {
   WarningFilled
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
+import { createFeedbackApi } from '@/api/feedback'
+import HermesDrawer from '@/components/HermesDrawer.vue'
+import { HERMES_OPEN_EVENT_NAME, type HermesOpenEventDetail } from '@/constants/hermes'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
-import type { NotificationItem } from '@/types/platform'
+import type { CreateFeedbackPayload, FeedbackType, NotificationItem } from '@/types/platform'
 import { resolveAssetUrl } from '@/utils/asset'
 
 interface MenuItem {
@@ -480,6 +586,11 @@ interface MenuItem {
   matchNames?: string[]
 }
 
+interface HermesDrawerExpose {
+  openDrawer: () => void
+  openWithQuestion: (question: string) => Promise<void>
+}
+
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
@@ -489,12 +600,48 @@ const systemMenuExpanded = ref(false)
 const integrationMenuExpanded = ref(false)
 const isMobileViewport = ref(false)
 const mobileMoreDrawerVisible = ref(false)
+const hermesDrawerVisible = ref(false)
+const feedbackDialogVisible = ref(false)
+const feedbackSubmitting = ref(false)
+const headerHermesQuestion = ref('')
+const hermesDrawerRef = ref<HermesDrawerExpose | null>(null)
+const feedbackFormRef = ref<FormInstance>()
+
+/**
+ * 反馈表单固定采用结构化字段，方便后端后续按类型和标题检索问题。
+ */
+const feedbackForm = reactive<CreateFeedbackPayload>({
+  type: 'SUGGESTION',
+  title: '',
+  content: ''
+})
+
+/** 反馈类型选项。 */
+const feedbackTypeOptions: Array<{ label: string; value: FeedbackType }> = [
+  { label: '问题反馈', value: 'BUG' },
+  { label: '功能建议', value: 'SUGGESTION' },
+  { label: '体验优化', value: 'EXPERIENCE' },
+  { label: '其他', value: 'OTHER' }
+]
+
+/** 反馈弹窗的前端校验规则。 */
+const feedbackRules: FormRules<typeof feedbackForm> = {
+  type: [{ required: true, message: '请选择反馈类型', trigger: 'change' }],
+  title: [
+    { required: true, message: '请输入反馈标题', trigger: 'blur' },
+    { max: 100, message: '反馈标题长度不能超过100', trigger: 'blur' }
+  ],
+  content: [
+    { required: true, message: '请输入反馈内容', trigger: 'blur' },
+    { max: 2000, message: '反馈内容长度不能超过2000', trigger: 'blur' }
+  ]
+}
 
 const primaryMenuItems: MenuItem[] = [
   { path: '/dashboard', label: '首页看板', shortLabel: '首页', permission: 'dashboard:view', icon: Odometer, matchNames: ['dashboard'] },
   { path: '/projects', label: '项目管理', shortLabel: '项目', permission: 'project:view', icon: FolderOpened, matchNames: ['projects', 'project-iterations', 'project-knowledge-graph'] },
   { path: '/agents', label: '智能体管理', shortLabel: '智能体', permission: 'agent:view', icon: Connection, matchNames: ['agents'] },
-  { path: '/tasks', label: '任务管理', shortLabel: '任务', permission: 'task:view', icon: Tickets, matchNames: ['tasks'] },
+  { path: '/tasks', label: '执行中心', shortLabel: '执行', permission: 'task:view', icon: Tickets, matchNames: ['tasks', 'execution-task-detail'] },
   { path: '/tests', label: '测试管理', shortLabel: '测试', permission: 'test:view', icon: Finished, matchNames: ['tests', 'test-plan-detail'] },
   { path: '/gitlab', label: '代码仓库', shortLabel: '仓库', permission: 'gitlab:view', icon: DocumentCopy, matchNames: ['gitlab'] }
 ]
@@ -511,7 +658,9 @@ const trailingMenuItems: MenuItem[] = [
 const systemMenuItems: MenuItem[] = [
   { path: '/users', label: '用户管理', shortLabel: '用户', permission: 'system:user:view', icon: UserFilled, matchNames: ['users'] },
   { path: '/roles', label: '角色管理', shortLabel: '角色', permission: 'system:role:view', icon: Management, matchNames: ['roles'] },
-  { path: '/permissions', label: '功能管理', shortLabel: '功能', permission: 'system:permission:view', icon: Setting, matchNames: ['permissions'] }
+  { path: '/permissions', label: '功能管理', shortLabel: '功能', permission: 'system:permission:view', icon: Setting, matchNames: ['permissions'] },
+  { path: '/tools', label: '工具配置', shortLabel: '工具', permission: 'system:tool:view', icon: Connection, matchNames: ['tools'] },
+  { path: '/operation-logs', label: '操作日志', shortLabel: '日志', permission: 'system:operation-log:view', icon: Document, matchNames: ['operation-logs'] }
 ]
 
 const pageTitle = computed(() => {
@@ -528,27 +677,40 @@ const isDashboardRoute = computed(() => route.name === 'dashboard')
 const isIterationWorkspaceRoute = computed(() => route.name === 'project-iterations')
 const effectiveSidebarCollapsed = computed(() => isMobileViewport.value || appStore.sidebarCollapsed)
 const asideWidth = computed(() => (effectiveSidebarCollapsed.value ? '80px' : '256px'))
-const todayLabel = computed(() =>
-  new Intl.DateTimeFormat('zh-CN', {
-    month: 'long',
-    day: 'numeric',
-    weekday: 'short'
-  }).format(new Date())
-)
 const userInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
 const userAvatarUrl = computed(() => resolveAssetUrl(authStore.user?.avatarUrl))
-const headerSearchHint = computed(() => {
-  const searchHints: Record<string, string> = {
-    dashboard: '搜索项目、智能体或任务...',
-    agents: '搜索智能体、模型或项目...',
-    gitlab: '搜索仓库、分支或日志...',
-    'cicd-servers': '搜索 Jenkins 服务、地址或用户名...',
-    'cicd-pipelines': '搜索项目流水线、任务或分支...',
-    tests: '搜索测试计划、用例或结果...',
-    'project-iterations': '搜索工作项、需求或负责人...'
-  }
-  return searchHints[String(route.name || '')] || '搜索页面、数据或工作项...'
+const canUseHermes = computed(() => authStore.hasPermission('hermes:chat'))
+const hermesRouteName = computed(() => String(route.name || ''))
+const hermesProjectId = computed(() => {
+  const projectId = Number(route.params.projectId)
+  return Number.isNaN(projectId) || projectId <= 0 ? null : projectId
 })
+const hermesTaskId = computed(() => {
+  const taskId = Number(route.query.openTaskId)
+  return Number.isNaN(taskId) || taskId <= 0 ? null : taskId
+})
+const hermesIterationId = computed(() => {
+  const iterationId = Number(route.query.iterationId)
+  return Number.isNaN(iterationId) || iterationId <= 0 ? null : iterationId
+})
+const hermesPlanId = computed(() => {
+  const planId = Number(route.params.planId)
+  return Number.isNaN(planId) || planId <= 0 ? null : planId
+})
+const hermesQuickPrompts = computed(() => {
+  const quickPromptMap: Record<string, string[]> = {
+    dashboard: ['我今天最该推进什么', '哪些项目本周有延期风险', '最近有哪些需要我关注的异常'],
+    projects: ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个项目本周最值得关注的风险是什么'],
+    'project-iterations': ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个任务为什么延期了'],
+    'project-knowledge-graph': ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个项目本周最值得关注的风险是什么'],
+    tasks: ['最近有哪些执行任务失败了', '哪些智能体任务还在运行', '帮我总结执行中心的风险'],
+    'execution-task-detail': ['这次执行失败的原因是什么', '帮我总结当前执行结果', '这次执行下一步该做什么']
+  }
+  return quickPromptMap[hermesRouteName.value] || ['我今天最该推进什么', '帮我总结当前最值得关注的事项', '最近有哪些需要我关注的异常']
+})
+// 消息中心在桌面端保持右侧抽屉，在手机端切换成与 Hermes 一致的底部全屏抽屉，保证交互预期统一。
+const notificationDrawerDirection = computed(() => (isMobileViewport.value ? 'btt' : 'rtl'))
+const notificationDrawerSize = computed(() => (isMobileViewport.value ? '100%' : '420px'))
 const canLoadMoreNotifications = computed(() => notificationStore.items.length < notificationStore.total)
 const mobilePrimaryMenuPaths = ['/dashboard', '/projects', '/tasks', '/tests']
 const mobileBottomNavItems = computed(() =>
@@ -605,10 +767,57 @@ async function handleMobileNavigate(path: string) {
   await handleNavigate(path)
 }
 
+/**
+ * 顶部 Hermes 入口统一走抽屉承载，桌面端输入框和手机端图标复用同一套打开逻辑。
+ */
+const handleOpenHermesDrawer = () => {
+  if (!canUseHermes.value) {
+    return
+  }
+  hermesDrawerVisible.value = true
+  hermesDrawerRef.value?.openDrawer()
+}
+
+/**
+ * 头部输入框按回车或点击按钮时，直接打开抽屉并把当前问题送入 Hermes。
+ */
+const handleAskHermes = async () => {
+  if (!canUseHermes.value) {
+    return
+  }
+  const question = headerHermesQuestion.value.trim()
+  hermesDrawerVisible.value = true
+  await nextTick()
+  await hermesDrawerRef.value?.openWithQuestion(question)
+  headerHermesQuestion.value = ''
+}
+
+/**
+ * 业务工作台通过全局事件复用布局层唯一的 Hermes 抽屉，避免页面各自重复挂载一份助手实例。
+ */
+const handleExternalHermesOpen = async (event: Event) => {
+  if (!canUseHermes.value) {
+    return
+  }
+  const customEvent = event as CustomEvent<HermesOpenEventDetail | undefined>
+  const question = customEvent.detail?.question?.trim() || ''
+  if (question) {
+    hermesDrawerVisible.value = true
+    await nextTick()
+    await hermesDrawerRef.value?.openWithQuestion(question)
+    return
+  }
+  handleOpenHermesDrawer()
+}
+
 const handleCommand = async (command: string) => {
   mobileMoreDrawerVisible.value = false
   if (command === 'profile') {
     await router.push('/profile')
+    return
+  }
+  if (command === 'feedback') {
+    openFeedbackDialog()
     return
   }
   if (command !== 'logout') {
@@ -620,12 +829,62 @@ const handleCommand = async (command: string) => {
   await router.replace('/login')
 }
 
-async function handleMobileCommand(command: 'profile' | 'logout') {
+async function handleMobileCommand(command: 'profile' | 'feedback' | 'logout') {
   await handleCommand(command)
 }
 
 const handleOpenNotifications = async () => {
   await notificationStore.openDrawer()
+}
+
+/**
+ * 每次打开反馈弹窗前都重置表单，避免把上一次未提交内容带入下一次操作。
+ */
+const openFeedbackDialog = () => {
+  resetFeedbackForm()
+  feedbackDialogVisible.value = true
+}
+
+/**
+ * 统一清空表单内容与校验状态，保证主动取消和提交成功后的交互一致。
+ */
+const resetFeedbackForm = () => {
+  feedbackForm.type = 'SUGGESTION'
+  feedbackForm.title = ''
+  feedbackForm.content = ''
+  feedbackFormRef.value?.clearValidate()
+}
+
+/**
+ * 对话框完全关闭后再清理校验，避免关闭动画期间表单状态闪烁。
+ */
+const handleFeedbackDialogClosed = () => {
+  resetFeedbackForm()
+}
+
+/**
+ * 提交时先走表单校验，再调用后端接口真实入库，成功后关闭弹窗并恢复初始状态。
+ */
+const handleSubmitFeedback = async () => {
+  const valid = await feedbackFormRef.value?.validate().catch(() => false)
+  if (!valid) {
+    return
+  }
+
+  feedbackSubmitting.value = true
+  try {
+    await createFeedbackApi({
+      type: feedbackForm.type,
+      title: feedbackForm.title.trim(),
+      content: feedbackForm.content.trim()
+    })
+    ElMessage.success('反馈已提交')
+    feedbackDialogVisible.value = false
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '反馈提交失败，请稍后再试')
+  } finally {
+    feedbackSubmitting.value = false
+  }
 }
 
 // 将后端通知业务类型统一翻译为中文，避免抽屉里直接显示英文枚举值。
@@ -795,12 +1054,14 @@ onMounted(() => {
   syncViewportMode()
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', syncViewportMode)
+    window.addEventListener(HERMES_OPEN_EVENT_NAME, handleExternalHermesOpen as EventListener)
   }
 })
 
 onUnmounted(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', syncViewportMode)
+    window.removeEventListener(HERMES_OPEN_EVENT_NAME, handleExternalHermesOpen as EventListener)
   }
 })
 
@@ -1152,19 +1413,47 @@ watch(
   flex: 1 1 auto;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-height: 38px;
   padding: 0 14px;
   border-radius: 8px;
   background: rgba(243, 244, 245, 0.96);
   color: var(--app-text-muted);
   font-size: 13px;
+  cursor: text;
 }
 
-.header-search-shell span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.header-search-input,
+.header-search-button,
+.header-hermes-button {
+  border: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  font: inherit;
+}
+
+.header-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  color: var(--app-text);
+  font-size: 13px;
+}
+
+.header-search-input::placeholder {
+  color: var(--app-text-muted);
+}
+
+.header-search-button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #191c1d;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .header-actions {
@@ -1182,6 +1471,7 @@ watch(
   gap: 16px;
 }
 
+.header-hermes-button,
 .header-notification-button {
   width: 34px;
   height: 34px;
@@ -1195,6 +1485,7 @@ watch(
   position: relative;
 }
 
+.header-hermes-button:hover,
 .header-notification-button:hover {
   background: rgba(226, 232, 240, 0.55);
   color: var(--app-primary);
@@ -1423,17 +1714,53 @@ watch(
   font-weight: 700;
 }
 
+.feedback-dialog-copy {
+  margin-bottom: 18px;
+}
+
+.feedback-dialog-title {
+  color: var(--app-text);
+  font-family: var(--app-font-heading);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.feedback-dialog-subtitle {
+  margin: 8px 0 0;
+  color: var(--app-text-soft);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.feedback-dialog-form {
+  margin-top: 4px;
+}
+
+.feedback-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .drawer-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 20px 10px;
+  padding: 10px 20px 8px;
   background: #f8f9fa;
 }
 
 .drawer-head-copy {
   min-width: 0;
+}
+
+.drawer-head-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .drawer-title {
@@ -1446,7 +1773,7 @@ watch(
 }
 
 .drawer-subtitle {
-  margin-top: 6px;
+  margin-top: 4px;
   color: #94a3b8;
   font-size: 9px;
   font-weight: 800;
@@ -1471,6 +1798,24 @@ watch(
 .drawer-mark-all-button:hover {
   background: rgba(231, 232, 233, 0.9);
   color: var(--app-primary);
+}
+
+.drawer-close-button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  color: #191c1d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.drawer-close-button:hover {
+  background: rgba(15, 23, 42, 0.14);
 }
 
 .notification-drawer {
@@ -1541,7 +1886,7 @@ watch(
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 12px 14px 18px;
+  padding: 8px 14px 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1754,6 +2099,30 @@ watch(
   padding: 0;
 }
 
+:deep(.message-center-drawer.is-mobile .el-drawer) {
+  border-left: 0;
+  border-radius: 24px 24px 0 0;
+  box-shadow: 0 -20px 60px -15px rgba(0, 0, 0, 0.18);
+}
+
+@media (max-width: 900px) {
+  .drawer-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .drawer-head-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .drawer-mark-all-button,
+  .drawer-close-button {
+    flex: 1 1 calc(50% - 5px);
+    justify-content: center;
+  }
+}
+
 :deep(.sidebar-system-popper.el-popper) {
   border: 0 !important;
   border-radius: 16px !important;
@@ -1780,6 +2149,24 @@ watch(
 
 :deep(.mobile-more-drawer .el-drawer__body) {
   padding: 10px 18px calc(18px + env(safe-area-inset-bottom));
+}
+
+:deep(.feedback-dialog .el-dialog) {
+  border-radius: 22px;
+  overflow: hidden;
+}
+
+:deep(.feedback-dialog .el-dialog__header) {
+  margin-right: 0;
+  padding: 22px 24px 0;
+}
+
+:deep(.feedback-dialog .el-dialog__body) {
+  padding: 12px 24px 10px;
+}
+
+:deep(.feedback-dialog .el-dialog__footer) {
+  padding: 0 24px 24px;
 }
 
 @media (max-width: 1200px) {
@@ -1814,7 +2201,13 @@ watch(
 }
 
 @media (max-width: 900px) {
+  :deep(.feedback-dialog .el-dialog) {
+    width: calc(100vw - 24px) !important;
+    margin-top: 8vh !important;
+  }
+
   .layout-header {
+    flex-wrap: wrap;
     padding: 12px 16px;
     gap: 12px;
   }
@@ -1822,6 +2215,10 @@ watch(
   .header-search-group {
     gap: 10px;
     flex: 1 1 auto;
+  }
+
+  .header-actions {
+    flex: 0 0 auto;
   }
 
   .header-page-title {
@@ -1846,6 +2243,11 @@ watch(
     max-width: 220px;
     flex-basis: 160px;
     padding: 0 12px;
+  }
+
+  .header-search-button {
+    padding-left: 10px;
+    padding-right: 10px;
   }
 
   .header-profile-group {

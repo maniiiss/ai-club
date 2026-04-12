@@ -125,6 +125,36 @@ export const runTaskAgent = async (id, input) => {
     const { data } = await http.post(`/api/tasks/${id}/agent-runs`, { input });
     return data.data;
 };
+export const pageExecutionTasks = async (query) => {
+    const { data } = await http.get('/api/execution-tasks', {
+        params: cleanParams(query)
+    });
+    return data.data;
+};
+export const getExecutionTaskDetail = async (id) => {
+    const { data } = await http.get(`/api/execution-tasks/${id}`);
+    return data.data;
+};
+export const listExecutionTaskRuns = async (id) => {
+    const { data } = await http.get(`/api/execution-tasks/${id}/runs`);
+    return data.data;
+};
+export const getExecutionRunDetail = async (id) => {
+    const { data } = await http.get(`/api/execution-runs/${id}`);
+    return data.data;
+};
+export const createExecutionTask = async (payload) => {
+    const { data } = await http.post('/api/execution-tasks', payload);
+    return data.data;
+};
+export const cancelExecutionTask = async (id) => {
+    const { data } = await http.post(`/api/execution-tasks/${id}/cancel`);
+    return data.data;
+};
+export const retryExecutionTask = async (id) => {
+    const { data } = await http.post(`/api/execution-tasks/${id}/retry`);
+    return data.data;
+};
 export const passRequirementDev = async (id) => {
     const { data } = await http.post(`/api/tasks/${id}/requirement-dev-pass`);
     return data.data;
