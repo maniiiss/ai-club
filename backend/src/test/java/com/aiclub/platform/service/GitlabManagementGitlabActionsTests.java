@@ -78,6 +78,12 @@ class GitlabManagementGitlabActionsTests {
     @Mock
     private GitlabUserOauthService gitlabUserOauthService;
 
+    @Mock
+    private ExecutionTaskService executionTaskService;
+
+    @Mock
+    private RepositoryScanClientService repositoryScanClientService;
+
     private GitlabManagementService gitlabManagementService;
 
     @BeforeEach
@@ -98,6 +104,8 @@ class GitlabManagementGitlabActionsTests {
                 notificationService,
                 projectDataPermissionService,
                 gitlabUserOauthService,
+                executionTaskService,
+                repositoryScanClientService,
                 "http://gitlab.example.com/api/v4"
         );
     }

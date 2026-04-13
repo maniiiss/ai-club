@@ -65,6 +65,20 @@ public class ExecutionStepEntity {
     private String status = "PENDING";
 
     /**
+     * 当前步骤内部进度百分比。
+     * 例如仓库 clone 和扫描阶段会在同一步内持续推进，前端需要展示更细粒度进度。
+     */
+    @Column(name = "progress_percent", nullable = false)
+    private Integer progressPercent = 0;
+
+    /**
+     * 当前步骤最近一条进度说明。
+     * 该字段用于在执行中心详情页展示更贴近用户的实时状态。
+     */
+    @Column(name = "latest_message", nullable = false, length = 1000)
+    private String latestMessage = "";
+
+    /**
      * 步骤输入快照。
      */
     @Column(name = "input_snapshot", nullable = false, columnDefinition = "TEXT")
@@ -172,6 +186,22 @@ public class ExecutionStepEntity {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public Integer getProgressPercent() {
+        return progressPercent;
+    }
+
+    public void setProgressPercent(Integer progressPercent) {
+        this.progressPercent = progressPercent;
+    }
+
+    public String getLatestMessage() {
+        return latestMessage;
+    }
+
+    public void setLatestMessage(String latestMessage) {
+        this.latestMessage = latestMessage;
     }
 
     public String getInputSnapshot() {

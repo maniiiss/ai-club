@@ -275,6 +275,8 @@ export interface ExecutionStepItem {
   agentId: number | null
   agentName: string | null
   status: string
+  progressPercent: number
+  latestMessage: string
   inputSnapshot: string
   outputSnapshot: string | null
   errorMessage: string | null
@@ -557,6 +559,12 @@ export interface ProjectGitlabBindingItem {
   lastTestStatus: string | null
   lastTestMessage: string | null
   lastTestedAt: string | null
+}
+
+export interface RepositoryScanRulesetItem {
+  code: string
+  name: string
+  description: string
 }
 
 export interface JenkinsServerItem {

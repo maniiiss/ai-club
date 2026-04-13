@@ -22,3 +22,11 @@ cd scripts
 ./stop-windows.ps1
 ./start-windows.ps1
 '''
+
+[[actions]]
+name = "重启source"
+icon = "run"
+command = '''
+cd scripts
+./restart-source.ps1
+'''

@@ -1,15 +1,16 @@
 <template>
   <div class="execution-detail-page" v-loading="loading">
     <section v-if="taskDetail" class="execution-detail-hero">
-      <button class="execution-back-button" type="button" @click="goBack">返回执行中心</button>
+      <button class="execution-back-button" type="button" @click="goBack">
+        <el-icon><ArrowLeft /></el-icon>
+        <span>返回执行中心</span>
+      </button>
       <div class="execution-detail-heading">
         <div>
           <p class="execution-eyebrow">{{ taskDetail.scenarioName }}</p>
           <h1>{{ taskDetail.title }}</h1>
-          <p>{{ taskDetail.latestSummary || '等待执行结果更新' }}</p>
         </div>
         <div class="execution-detail-actions">
-          <el-tag :type="statusTagType(taskDetail.status)" size="large">{{ statusLabel(taskDetail.status) }}</el-tag>
           <el-button v-if="canCancelExecution && canCancel(taskDetail.status)" type="warning" @click="handleCancel">取消</el-button>
           <el-button v-if="canRetryExecution && canRetry(taskDetail.status)" type="success" @click="handleRetry">重试</el-button>
         </div>
@@ -45,7 +46,6 @@
             <span>开始：{{ runDetail.startedAt || '-' }}</span>
             <span>结束：{{ runDetail.finishedAt || '-' }}</span>
           </div>
-          <el-alert v-if="runDetail.errorMessage" type="error" :closable="false" :title="runDetail.errorMessage" class="execution-run-alert" />
         </template>
         <el-empty v-else description="执行运行尚未创建，请稍后刷新" />
       </section>
@@ -54,7 +54,6 @@
         <article class="execution-panel">
           <div class="execution-panel-head">
             <h2>步骤日志</h2>
-            <p>按执行模板顺序记录每个 Agent 步骤。</p>
           </div>
           <el-timeline>
             <el-timeline-item
@@ -69,6 +68,10 @@
                   <el-tag size="small" :type="statusTagType(step.status)">{{ statusLabel(step.status) }}</el-tag>
                 </div>
                 <div class="execution-step-log-agent">Agent：{{ step.agentName || '-' }}</div>
+                <div class="execution-step-log-progress">
+                  <el-progress :percentage="step.progressPercent || 0" :status="progressStatus(step.status)" />
+                  <span>{{ step.latestMessage || '等待执行' }}</span>
+                </div>
                 <el-collapse>
                   <el-collapse-item title="输入快照">
                     <pre>{{ step.inputSnapshot || '-' }}</pre>
@@ -85,7 +88,6 @@
         <article class="execution-panel">
           <div class="execution-panel-head">
             <h2>执行产物</h2>
-            <p>步骤输出、最终摘要和回写状态。</p>
           </div>
           <div v-if="runDetail.artifacts.length" class="execution-artifact-list">
             <section v-for="artifact in runDetail.artifacts" :key="artifact.id" class="execution-artifact-card">
@@ -93,9 +95,11 @@
                 <strong>{{ artifact.title }}</strong>
                 <el-tag size="small">{{ artifact.artifactType }}</el-tag>
               </div>
-              <pre>{{ artifact.contentText || artifact.contentRef || '-' }}</pre>
+              <div v-if="isMarkdownArtifact(artifact)" class="execution-artifact-markdown" v-html="renderArtifactMarkdown(artifact.contentText)"></div>
+              <pre v-else>{{ artifact.contentText || '-' }}</pre>
               <div class="execution-artifact-foot">
-                {{ artifact.workItemWriteback ? '已回写工作项' : '未回写工作项' }}
+                <span>{{ artifact.workItemWriteback ? '已回写工作项' : '未回写工作项' }}</span>
+                <el-link v-if="artifact.contentRef" type="primary" @click.prevent="handleArtifactDownload(artifact)">下载产物</el-link>
               </div>
             </section>
           </div>
@@ -112,14 +116,17 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
+import { ArrowLeft } from '@element-plus/icons-vue'
 import {
   cancelExecutionTask,
+  downloadExecutionArtifact,
   getExecutionRunDetail,
   getExecutionTaskDetail,
   retryExecutionTask
 } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
-import type { ExecutionRunDetailItem, ExecutionTaskDetailItem } from '@/types/platform'
+import type { ExecutionArtifactItem, ExecutionRunDetailItem, ExecutionTaskDetailItem } from '@/types/platform'
+import { renderMarkdownToHtml } from '@/utils/markdown'
 
 const route = useRoute()
 const router = useRouter()
@@ -167,6 +174,25 @@ const timelineType = (status: string) => {
   if (status === 'FAILED') return 'danger'
   if (status === 'RUNNING') return 'warning'
   return 'info'
+}
+
+const isMarkdownArtifact = (artifact: ExecutionArtifactItem) => artifact.artifactType === 'REPORT_MARKDOWN'
+const renderArtifactMarkdown = (content?: string | null) => renderMarkdownToHtml(content || '')
+
+const handleArtifactDownload = async (artifact: ExecutionArtifactItem) => {
+  try {
+    const { blob, fileName } = await downloadExecutionArtifact(artifact.id)
+    const objectUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = fileName
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(objectUrl)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '下载产物失败')
+  }
 }
 
 const loadTaskDetail = async () => {
@@ -272,7 +298,7 @@ onBeforeUnmount(() => {
 .execution-detail-hero,
 .execution-run-card,
 .execution-panel {
-  border-radius: 24px;
+  border-radius: 8px;
   background: #fff;
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
 }
@@ -282,11 +308,42 @@ onBeforeUnmount(() => {
 }
 
 .execution-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
   border: 0;
   background: transparent;
-  color: #0f766e;
+  color: var(--app-text);
+  font-size: 13px;
   font-weight: 800;
   cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.18s ease;
+}
+
+.execution-back-button .el-icon {
+  font-size: 15px;
+}
+
+.execution-back-button:hover {
+  color: var(--app-primary);
+}
+
+.execution-detail-actions :deep(.el-button--success) {
+  --el-button-bg-color: var(--app-primary);
+  --el-button-border-color: var(--app-primary);
+  --el-button-hover-bg-color: var(--app-primary);
+  --el-button-hover-border-color: var(--app-primary);
+  --el-button-active-bg-color: var(--app-primary);
+  --el-button-active-border-color: var(--app-primary);
+  transform: none;
+}
+
+.execution-detail-actions :deep(.el-button--success:hover),
+.execution-detail-actions :deep(.el-button--success:focus),
+.execution-detail-actions :deep(.el-button--success:active) {
+  transform: none;
 }
 
 .execution-detail-heading {
@@ -388,20 +445,30 @@ onBeforeUnmount(() => {
 }
 
 .execution-panel {
-  padding: 20px;
+  padding: 18px;
   min-width: 0;
+}
+
+.execution-panel-head {
+  margin-bottom: 18px;
 }
 
 .execution-step-log {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
 .execution-step-log-agent,
 .execution-artifact-foot {
   color: #64748b;
   font-size: 12px;
+}
+
+.execution-step-log-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 pre {
@@ -419,7 +486,7 @@ pre {
 .execution-artifact-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 
 .execution-artifact-card {
@@ -428,7 +495,23 @@ pre {
   gap: 10px;
   padding: 14px;
   border: 1px solid #e2e8f0;
-  border-radius: 16px;
+  border-radius: 12px;
+}
+
+.execution-artifact-markdown {
+  max-height: 420px;
+  overflow: auto;
+  padding: 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.execution-artifact-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 @media (max-width: 1100px) {

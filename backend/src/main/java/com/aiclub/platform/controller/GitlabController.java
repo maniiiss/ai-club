@@ -11,9 +11,12 @@ import com.aiclub.platform.dto.GitlabMergeRequestSummary;
 import com.aiclub.platform.dto.GitlabTagCreateResult;
 import com.aiclub.platform.dto.GitlabUserOauthAuthorizeResult;
 import com.aiclub.platform.dto.GitlabUserOauthBindingSummary;
+import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
+import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest;
 import com.aiclub.platform.dto.request.GitlabCreateMergeRequestRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
 import com.aiclub.platform.dto.request.GitlabUserOauthAuthorizeRequest;
@@ -99,6 +102,15 @@ public class GitlabController {
         return ApiResponse.success(gitlabManagementService.listBindingOptions());
     }
 
+    /**
+     * 返回仓库规范扫描可选规则集。
+     */
+    @GetMapping("/scan-rulesets")
+    @RequirePermission("gitlab:view")
+    public ApiResponse<List<RepositoryScanRulesetSummary>> listScanRulesets() {
+        return ApiResponse.success(gitlabManagementService.listScanRulesets());
+    }
+
     @PostMapping("/bindings")
     @RequirePermission("gitlab:manage")
     public ApiResponse<ProjectGitlabBindingSummary> createBinding(@Valid @RequestBody ProjectGitlabBindingRequest request) {
@@ -123,6 +135,16 @@ public class GitlabController {
     @RequirePermission("gitlab:manage")
     public ApiResponse<ProjectGitlabBindingSummary> testBinding(@PathVariable Long id) {
         return ApiResponse.success(gitlabManagementService.testBinding(id));
+    }
+
+    /**
+     * 基于指定绑定仓库创建一条仓库规范扫描任务。
+     */
+    @PostMapping("/bindings/{id}/scan-tasks")
+    @RequirePermission("gitlab:manage")
+    public ApiResponse<ExecutionTaskSummary> createBindingScanTask(@PathVariable Long id,
+                                                                   @Valid @RequestBody GitlabBindingScanTaskRequest request) {
+        return ApiResponse.success(gitlabManagementService.createBindingScanTask(id, request));
     }
 
     @GetMapping("/bindings/{id}/merge-requests")

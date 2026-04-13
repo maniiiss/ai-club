@@ -78,3 +78,121 @@ class HermesInternalToolExecuteRequest(BaseModel):
 
 class HermesInternalToolExecuteResponse(BaseModel):
     message: str = Field(default="", description="返回给 Hermes 的文本摘要")
+
+
+class RepositoryScanRulesetSummary(BaseModel):
+    """仓库规范扫描规则集摘要。"""
+
+    code: str
+    name: str
+    description: str
+
+
+class RepositoryScanPrepareRequest(BaseModel):
+    """仓库 clone 准备请求。"""
+
+    runKey: str
+    repoUrl: str
+    apiBaseUrl: str = ""
+    projectRef: str = ""
+    branch: str
+    authToken: str
+    rulesetCode: str
+    repoDisplayName: str
+
+    @field_validator("runKey", "repoUrl", "apiBaseUrl", "projectRef", "branch", "authToken", "rulesetCode", "repoDisplayName", mode="before")
+    @classmethod
+    def normalize_required_scan_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class RepositoryScanPrepareResponse(BaseModel):
+    runKey: str
+    repoPath: str
+    branch: str
+    commitSha: str
+    repoDisplayName: str
+
+
+class RepositoryScanSemgrepRequest(BaseModel):
+    """Semgrep 扫描请求。"""
+
+    runKey: str
+    rulesetCode: str
+
+    @field_validator("runKey", "rulesetCode", mode="before")
+    @classmethod
+    def normalize_semgrep_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class RepositoryScanRunKeyRequest(BaseModel):
+    runKey: str
+
+    @field_validator("runKey", mode="before")
+    @classmethod
+    def normalize_run_key(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class RepositoryScanSemgrepResponse(BaseModel):
+    scannedFileCount: int = 0
+    totalFindings: int = 0
+    highCount: int = 0
+    mediumCount: int = 0
+    lowCount: int = 0
+
+
+class RepositoryScanNormalizeResponse(BaseModel):
+    summaryText: str = ""
+    totalFindings: int = 0
+    highCount: int = 0
+    mediumCount: int = 0
+    lowCount: int = 0
+
+
+class RepositoryScanSummarizeRequest(BaseModel):
+    runKey: str
+    repoDisplayName: str
+
+    @field_validator("runKey", "repoDisplayName", mode="before")
+    @classmethod
+    def normalize_summary_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class RepositoryScanSummarizeResponse(BaseModel):
+    reportMarkdown: str = ""
+
+
+class RepositoryScanPackageRequest(BaseModel):
+    runKey: str
+    executionTaskId: int
+    runNo: int
+
+    @field_validator("runKey", mode="before")
+    @classmethod
+    def normalize_package_run_key(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class RepositoryScanArtifactSummary(BaseModel):
+    artifactType: str
+    title: str
+    objectKey: str
+    previewText: str = ""
+
+
+class RepositoryScanPackageResponse(BaseModel):
+    summaryText: str = ""
+    artifacts: list[RepositoryScanArtifactSummary] = Field(default_factory=list)

@@ -143,6 +143,18 @@ export const getExecutionRunDetail = async (id) => {
     const { data } = await http.get(`/api/execution-runs/${id}`);
     return data.data;
 };
+export const downloadExecutionArtifact = async (artifactId) => {
+    const response = await http.get(`/api/execution-artifacts/${artifactId}/download`, {
+        responseType: 'blob'
+    });
+    const disposition = String(response.headers['content-disposition'] || '');
+    const matched = disposition.match(/filename="?([^"]+)"?/);
+    const fileName = (matched === null || matched === void 0 ? void 0 : matched[1]) || `execution-artifact-${artifactId}`;
+    return {
+        blob: response.data,
+        fileName
+    };
+};
 export const createExecutionTask = async (payload) => {
     const { data } = await http.post('/api/execution-tasks', payload);
     return data.data;

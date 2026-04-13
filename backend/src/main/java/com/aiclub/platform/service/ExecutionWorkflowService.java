@@ -33,6 +33,7 @@ public class ExecutionWorkflowService {
     public static final String SCENARIO_DEVELOPMENT_IMPLEMENTATION = "DEVELOPMENT_IMPLEMENTATION";
     public static final String SCENARIO_TEST_DESIGN_OR_REVIEW = "TEST_DESIGN_OR_REVIEW";
     public static final String SCENARIO_AD_HOC_AGENT_RUN = "AD_HOC_AGENT_RUN";
+    public static final String SCENARIO_CODEBASE_COMPLIANCE_SCAN = "CODEBASE_COMPLIANCE_SCAN";
 
     public static final String STEP_PLAN = "PLAN";
     public static final String STEP_IMPLEMENT = "IMPLEMENT";
@@ -44,7 +45,8 @@ public class ExecutionWorkflowService {
             SCENARIO_REQUIREMENT_BREAKDOWN,
             SCENARIO_DEVELOPMENT_IMPLEMENTATION,
             SCENARIO_TEST_DESIGN_OR_REVIEW,
-            SCENARIO_AD_HOC_AGENT_RUN
+            SCENARIO_AD_HOC_AGENT_RUN,
+            SCENARIO_CODEBASE_COMPLIANCE_SCAN
     );
 
     private final AgentRepository agentRepository;
@@ -172,6 +174,7 @@ public class ExecutionWorkflowService {
             case SCENARIO_DEVELOPMENT_IMPLEMENTATION -> "开发执行";
             case SCENARIO_TEST_DESIGN_OR_REVIEW -> "测试设计/评审";
             case SCENARIO_AD_HOC_AGENT_RUN -> "兼容单次执行";
+            case SCENARIO_CODEBASE_COMPLIANCE_SCAN -> "仓库规范扫描";
             default -> throw new IllegalArgumentException("不支持的执行场景");
         };
     }
@@ -233,6 +236,7 @@ public class ExecutionWorkflowService {
             case SCENARIO_AD_HOC_AGENT_RUN -> List.of(
                     new StepTemplate(STEP_AD_HOC_RUN, "兼容执行")
             );
+            case SCENARIO_CODEBASE_COMPLIANCE_SCAN -> List.of();
             default -> throw new IllegalArgumentException("不支持的执行场景");
         };
     }

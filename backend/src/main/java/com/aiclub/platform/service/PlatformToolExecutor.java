@@ -5,6 +5,7 @@ import com.aiclub.platform.domain.model.ExecutionTaskEntity;
 import com.aiclub.platform.domain.model.IterationEntity;
 import com.aiclub.platform.domain.model.PlatformToolAuditEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
+import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.domain.model.TestPlanEntity;
 import com.aiclub.platform.domain.model.UserEntity;
@@ -17,6 +18,7 @@ import com.aiclub.platform.exception.ForbiddenException;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.ExecutionTaskRepository;
 import com.aiclub.platform.repository.IterationRepository;
+import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.aiclub.platform.repository.TaskRepository;
 import com.aiclub.platform.repository.TestPlanRepository;
@@ -50,10 +52,12 @@ public class PlatformToolExecutor {
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
     private final AgentRepository agentRepository;
+    private final ProjectGitlabBindingRepository projectGitlabBindingRepository;
     private final ExecutionTaskRepository executionTaskRepository;
     private final TestPlanRepository testPlanRepository;
     private final IterationRepository iterationRepository;
     private final ExecutionWorkflowService executionWorkflowService;
+    private final GitlabManagementService gitlabManagementService;
 
     public PlatformToolExecutor(PlatformToolRegistry platformToolRegistry,
                                 ToolExecutionAuditService toolExecutionAuditService,
@@ -62,10 +66,12 @@ public class PlatformToolExecutor {
                                 TaskRepository taskRepository,
                                 UserRepository userRepository,
                                 AgentRepository agentRepository,
+                                ProjectGitlabBindingRepository projectGitlabBindingRepository,
                                 ExecutionTaskRepository executionTaskRepository,
                                 TestPlanRepository testPlanRepository,
                                 IterationRepository iterationRepository,
-                                ExecutionWorkflowService executionWorkflowService) {
+                                ExecutionWorkflowService executionWorkflowService,
+                                GitlabManagementService gitlabManagementService) {
         this.platformToolRegistry = platformToolRegistry;
         this.toolExecutionAuditService = toolExecutionAuditService;
         this.projectDataPermissionService = projectDataPermissionService;
@@ -73,10 +79,12 @@ public class PlatformToolExecutor {
         this.taskRepository = taskRepository;
         this.userRepository = userRepository;
         this.agentRepository = agentRepository;
+        this.projectGitlabBindingRepository = projectGitlabBindingRepository;
         this.executionTaskRepository = executionTaskRepository;
         this.testPlanRepository = testPlanRepository;
         this.iterationRepository = iterationRepository;
         this.executionWorkflowService = executionWorkflowService;
+        this.gitlabManagementService = gitlabManagementService;
     }
 
     public PlatformToolResult execute(PlatformToolRequest request) {
@@ -97,11 +105,14 @@ public class PlatformToolExecutor {
                 case PlatformToolRegistry.TOOL_WORK_ITEM_GET_DETAIL -> getWorkItemDetail(request);
                 case PlatformToolRegistry.TOOL_AGENT_LIST_AVAILABLE -> listAvailableAgents(request);
                 case PlatformToolRegistry.TOOL_AGENT_GET_DETAIL -> getAgentDetail(request);
+                case PlatformToolRegistry.TOOL_GITLAB_BINDING_SEARCH -> searchGitlabBindings(request);
+                case PlatformToolRegistry.TOOL_REPO_SCAN_START -> startRepositoryScan(request);
+                case PlatformToolRegistry.TOOL_REPO_SCAN_SEARCH -> searchRepositoryScans(request);
                 case PlatformToolRegistry.TOOL_EXECUTION_TASK_SEARCH -> searchExecutionTasks(request);
                 case PlatformToolRegistry.TOOL_EXECUTION_TASK_GET_DETAIL -> getExecutionTaskDetail(request);
                 case PlatformToolRegistry.TOOL_TEST_PLAN_SEARCH -> searchTestPlans(request);
                 case PlatformToolRegistry.TOOL_TEST_PLAN_GET_DETAIL -> getTestPlanDetail(request);
-                default -> throw new IllegalArgumentException("第一版不自动执行写工具: " + request.toolCode());
+                default -> throw new IllegalArgumentException("平台工具暂不支持: " + request.toolCode());
             };
             toolExecutionAuditService.finishSuccess(audit, result);
             return result;
@@ -203,6 +214,70 @@ public class PlatformToolExecutor {
                 .orElseThrow(() -> new NoSuchElementException("Agent 不存在"));
         projectDataPermissionService.requireAgentVisible(agent);
         return result(request.toolCode(), "Agent 详情", "已读取 Agent “" + agent.getName() + "”", List.of(agentCandidate(agent)), Map.of("agentId", agent.getId()));
+    }
+
+    /**
+     * 按项目名、仓库路径或 GitLab 项目标识搜索绑定仓库。
+     */
+    private PlatformToolResult searchGitlabBindings(PlatformToolRequest request) {
+        String keyword = stringValue(request.payload(), "keyword");
+        Long projectId = nullableLongValue(request.payload(), "projectId");
+        List<PlatformToolCandidate> candidates = projectGitlabBindingRepository.findAll(Sort.by(Sort.Direction.ASC, "id")).stream()
+                .filter(binding -> projectId == null || Objects.equals(binding.getProject().getId(), projectId))
+                .filter(binding -> canSeeProject(binding.getProject()))
+                .filter(binding -> isBlank(keyword)
+                        || containsAny(binding.getProject().getName(), keyword)
+                        || containsAny(binding.getGitlabProjectPath(), keyword)
+                        || containsAny(binding.getGitlabProjectRef(), keyword)
+                        || containsAny(binding.getGitlabProjectName(), keyword))
+                .limit(8)
+                .map(this::gitlabBindingCandidate)
+                .toList();
+        return result(request.toolCode(), "搜索仓库绑定", "找到 " + candidates.size() + " 个相关仓库", candidates, Map.of("keyword", defaultString(keyword), "projectId", projectId));
+    }
+
+    /**
+     * 创建一条仓库规范扫描任务。
+     */
+    private PlatformToolResult startRepositoryScan(PlatformToolRequest request) {
+        Long bindingId = longValue(request.payload(), "bindingId");
+        String branch = stringValue(request.payload(), "branch");
+        String rulesetCode = stringValue(request.payload(), "rulesetCode");
+        var executionTask = gitlabManagementService.createBindingScanTask(
+                bindingId,
+                new com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest(
+                        branch.isBlank() ? "" : branch.trim(),
+                        rulesetCode.isBlank() ? "team-default" : rulesetCode.trim()
+                )
+        );
+        PlatformToolCandidate candidate = new PlatformToolCandidate(
+                "EXECUTION_TASK",
+                executionTask.id(),
+                executionTask.title(),
+                "状态：" + defaultString(executionTask.status()) + " / 场景：" + defaultString(executionTask.scenarioName()),
+                "/tasks/" + executionTask.id(),
+                Map.of("executionTaskId", executionTask.id(), "projectId", executionTask.projectId()),
+                List.of()
+        );
+        return result(request.toolCode(), "发起仓库扫描", "已创建仓库规范扫描任务", List.of(candidate), Map.of("bindingId", bindingId));
+    }
+
+    /**
+     * 查询指定绑定仓库最近的扫描任务。
+     * 第一版直接在输入载荷 JSON 中匹配 bindingId，便于快速复用现有执行中心模型。
+     */
+    private PlatformToolResult searchRepositoryScans(PlatformToolRequest request) {
+        Long bindingId = nullableLongValue(request.payload(), "bindingId");
+        String status = stringValue(request.payload(), "status");
+        List<PlatformToolCandidate> candidates = executionTaskRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt", "id")).stream()
+                .filter(executionTask -> ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN.equalsIgnoreCase(executionTask.getScenarioCode()))
+                .filter(executionTask -> canSeeProject(executionTask.getProject()))
+                .filter(executionTask -> isBlank(status) || defaultString(executionTask.getStatus()).equalsIgnoreCase(status))
+                .filter(executionTask -> bindingId == null || containsAny(executionTask.getInputPayload(), "\"bindingId\":" + bindingId))
+                .limit(8)
+                .map(this::executionTaskCandidate)
+                .toList();
+        return result(request.toolCode(), "搜索仓库扫描", "找到 " + candidates.size() + " 条扫描任务", candidates, Map.of("bindingId", bindingId, "status", defaultString(status)));
     }
 
     private PlatformToolResult searchExecutionTasks(PlatformToolRequest request) {
@@ -338,6 +413,24 @@ public class PlatformToolExecutor {
                         "agentName", defaultString(agent.getName()),
                         "projectId", agent.getProject() == null ? "" : agent.getProject().getId(),
                         "enabled", Boolean.TRUE.equals(agent.getEnabled())
+                ),
+                List.of()
+        );
+    }
+
+    private PlatformToolCandidate gitlabBindingCandidate(ProjectGitlabBindingEntity binding) {
+        return new PlatformToolCandidate(
+                "GITLAB_BINDING",
+                binding.getId(),
+                defaultString(binding.getGitlabProjectPath()).isBlank() ? defaultString(binding.getGitlabProjectRef()) : defaultString(binding.getGitlabProjectPath()),
+                "项目：" + binding.getProject().getName() + " / 默认分支：" + defaultString(binding.getDefaultTargetBranch()),
+                "/gitlab",
+                Map.of(
+                        "bindingId", binding.getId(),
+                        "projectId", binding.getProject().getId(),
+                        "projectName", defaultString(binding.getProject().getName()),
+                        "gitlabProjectPath", defaultString(binding.getGitlabProjectPath()),
+                        "gitlabProjectRef", defaultString(binding.getGitlabProjectRef())
                 ),
                 List.of()
         );

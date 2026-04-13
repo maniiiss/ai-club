@@ -62,7 +62,9 @@ public class GitlabApiService {
                 node.path("name").asText(""),
                 node.path("path_with_namespace").asText(projectRef),
                 node.path("web_url").asText(""),
-                node.path("default_branch").asText("")
+                node.path("default_branch").asText(""),
+                node.path("http_url_to_repo").asText(""),
+                node.path("ssh_url_to_repo").asText("")
         );
     }
 
@@ -438,7 +440,19 @@ public class GitlabApiService {
     public record GitlabUser(Long id, String username, String name) {
     }
 
-    public record GitlabProject(String id, String name, String pathWithNamespace, String webUrl, String defaultBranch) {
+    /**
+     * GitLab 项目精简信息。
+     * 这里同步返回 Clone 地址，方便仓库规范扫描任务直接复用。
+     */
+    public record GitlabProject(
+            String id,
+            String name,
+            String pathWithNamespace,
+            String webUrl,
+            String defaultBranch,
+            String httpCloneUrl,
+            String sshCloneUrl
+    ) {
     }
 
     /**

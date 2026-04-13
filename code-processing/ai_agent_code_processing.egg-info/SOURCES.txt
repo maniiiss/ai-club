@@ -12,7 +12,9 @@ app/models.py
 app/settings.py
 app/api/__init__.py
 app/api/routes.py
+app/rulesets/team-default.yml
 app/services/__init__.py
 app/services/hermes_internal_client.py
+app/services/repository_scan_service.py
 app/services/repository_service.py
 app/services/review_service.py

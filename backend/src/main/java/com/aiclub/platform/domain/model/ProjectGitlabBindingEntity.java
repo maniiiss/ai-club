@@ -47,6 +47,18 @@ public class ProjectGitlabBindingEntity {
     @Column(name = "gitlab_project_web_url", length = 255)
     private String gitlabProjectWebUrl;
 
+    /**
+     * GitLab 提供的 HTTP Clone 地址，供平台扫描任务直接 clone 仓库使用。
+     */
+    @Column(name = "gitlab_http_clone_url", length = 500)
+    private String gitlabHttpCloneUrl;
+
+    /**
+     * GitLab 提供的 SSH Clone 地址，当前首版主要用于展示和后续扩展。
+     */
+    @Column(name = "gitlab_ssh_clone_url", length = 500)
+    private String gitlabSshCloneUrl;
+
     @Column(name = "default_target_branch", length = 100)
     private String defaultTargetBranch;
 
@@ -149,6 +161,22 @@ public class ProjectGitlabBindingEntity {
 
     public String getDefaultTargetBranch() {
         return defaultTargetBranch;
+    }
+
+    public String getGitlabHttpCloneUrl() {
+        return gitlabHttpCloneUrl;
+    }
+
+    public void setGitlabHttpCloneUrl(String gitlabHttpCloneUrl) {
+        this.gitlabHttpCloneUrl = gitlabHttpCloneUrl;
+    }
+
+    public String getGitlabSshCloneUrl() {
+        return gitlabSshCloneUrl;
+    }
+
+    public void setGitlabSshCloneUrl(String gitlabSshCloneUrl) {
+        this.gitlabSshCloneUrl = gitlabSshCloneUrl;
     }
 
     public void setDefaultTargetBranch(String defaultTargetBranch) {

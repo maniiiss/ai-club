@@ -132,6 +132,11 @@
                             <el-icon><Plus /></el-icon>
                           </button>
                         </el-tooltip>
+                        <el-tooltip content="发起扫描" placement="top">
+                          <button class="management-list-row-button gitlab-action-button scan" type="button" aria-label="发起仓库规范扫描" @click="openBindingScanDialog(row)">
+                            <el-icon><Search /></el-icon>
+                          </button>
+                        </el-tooltip>
                         <el-tooltip content="编辑绑定" placement="top">
                           <button class="management-list-row-button gitlab-action-button" type="button" aria-label="编辑 GitLab 绑定" @click="openBindingEditDialog(row)">
                             <el-icon><EditPen /></el-icon>
@@ -211,6 +216,10 @@
                         <button class="mobile-entity-action-button" type="button" @click="openTagCreateDialog(row)">
                           <el-icon><Plus /></el-icon>
                           <span>创建 Tag</span>
+                        </button>
+                        <button class="mobile-entity-action-button info" type="button" @click="openBindingScanDialog(row)">
+                          <el-icon><Search /></el-icon>
+                          <span>发起扫描</span>
                         </button>
                         <button class="mobile-entity-action-button" type="button" @click="openBindingEditDialog(row)">
                           <el-icon><EditPen /></el-icon>
@@ -842,6 +851,59 @@
     </el-descriptions>
   </el-dialog>
 
+  <el-dialog v-model="scanDialogVisible" title="发起仓库规范扫描" width="680px" class="platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader title="发起仓库规范扫描" :subtitle="scanDialogSubtitle" :icon="Search" />
+    </template>
+    <el-form ref="scanFormRef" :model="scanForm" :rules="scanRules" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">扫描配置</div>
+          <div class="platform-form-section-subtitle">任务创建后会进入执行中心异步运行，并生成 Markdown、HTML、JSON、SARIF 报告。</div>
+        </div>
+        <el-form-item label="当前仓库">
+          <el-input :model-value="currentScanBinding ? `${currentScanBinding.projectName} / ${currentScanBinding.gitlabProjectPath || currentScanBinding.gitlabProjectRef}` : ''" disabled />
+        </el-form-item>
+        <el-form-item label="扫描分支" prop="branch">
+          <el-select
+            v-model="scanForm.branch"
+            filterable
+            remote
+            reserve-keyword
+            placeholder="请输入关键字搜索分支"
+            style="width: 100%"
+            :remote-method="handleScanBranchSearch"
+            :loading="scanBranchLoading"
+          >
+            <el-option
+              v-for="branch in scanBranchOptions"
+              :key="branch.name"
+              :label="branch.defaultBranch ? `${branch.name}（默认）` : branch.name"
+              :value="branch.name"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="规则集" prop="rulesetCode">
+          <el-select v-model="scanForm.rulesetCode" placeholder="请选择规则集" style="width: 100%">
+            <el-option
+              v-for="ruleset in scanRulesetOptions"
+              :key="ruleset.code"
+              :label="ruleset.name"
+              :value="ruleset.code"
+            />
+          </el-select>
+          <div class="form-tip">{{ scanRulesetOptions.find((item) => item.code === scanForm.rulesetCode)?.description || '请选择一个规则集用于扫描。' }}</div>
+        </el-form-item>
+      </section>
+    </el-form>
+    <template #footer>
+      <div class="platform-dialog-footer">
+        <el-button @click="scanDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="scanSubmitting" @click="handleScanSubmit">创建扫描任务</el-button>
+      </div>
+    </template>
+  </el-dialog>
+
   <el-dialog v-model="autoMergeDialogVisible" :title="autoMergeDialogTitle" width="760px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="autoMergeDialogTitle" :subtitle="autoMergeDialogSubtitle" :icon="Connection" />
@@ -1022,16 +1084,19 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Delete, DocumentCopy, EditPen, Filter, FolderOpened, Plus, RefreshRight, Search, Tickets, VideoPlay } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { listAgentOptions, listProjectOptions } from '@/api/platform'
 import {
   createGitlabAutoMergeConfig,
+  createGitlabBindingScanTask,
   createGitlabBinding,
   createGitlabTag,
   deleteGitlabAutoMergeConfig,
   deleteGitlabBinding,
   listGitlabBindingOptions,
   listGitlabBranches,
+  listRepositoryScanRulesets,
   pageGitlabAutoMergeConfigs,
   pageGitlabAutoMergeLogs,
   pageGitlabBindings,
@@ -1052,7 +1117,8 @@ import type {
   GitlabMergeRequestItem,
   GitlabTagCreateResultItem,
   ProjectGitlabBindingItem,
-  ProjectItem
+  ProjectItem,
+  RepositoryScanRulesetItem
 } from '@/types/platform'
 import { renderMarkdownToHtml } from '@/utils/markdown'
 import { useMobileViewport } from '@/utils/mobileViewport'
@@ -1062,8 +1128,11 @@ const DEFAULT_GITLAB_API_URL = 'http://192.168.110.138:30080/api/v4'
 interface BindingForm { projectId: number | null; apiBaseUrl: string; gitlabProjectRef: string; defaultTargetBranch: string; apiToken: string; enabled: boolean }
 /** Tag 表单仅负责收集名称、来源分支和备注。 */
 interface TagForm { tagName: string; branchName: string; message: string }
+/** 仓库规范扫描表单。 */
+interface ScanTaskForm { branch: string; rulesetCode: string }
 interface AutoMergeForm { name: string; executionMode: 'PROJECT_BOUND' | 'STANDALONE'; description: string; bindingId: number | null; apiBaseUrl: string; gitlabProjectRef: string; apiToken: string; sourceBranch: string; targetBranch: string; titleKeyword: string; schedulerEnabled: boolean; schedulerCron: string; enabled: boolean; autoMerge: boolean; squashOnMerge: boolean; removeSourceBranch: boolean; triggerPipelineAfterMerge: boolean; requirePipelineSuccess: boolean; reviewAgentId: number | null; aiReviewEnabled: boolean; aiReviewPrompt: string }
 
+const router = useRouter()
 const activeTab = ref('bindings')
 const { isMobileViewport } = useMobileViewport()
 const projectOptions = ref<ProjectItem[]>([])
@@ -1090,6 +1159,14 @@ const tagForm = reactive<TagForm>({ tagName: '', branchName: '', message: '' })
 const tagBranchOptions = ref<GitlabBranchItem[]>([])
 const tagBranchLoading = ref(false)
 const tagResult = ref<GitlabTagCreateResultItem | null>(null)
+const scanDialogVisible = ref(false)
+const scanSubmitting = ref(false)
+const currentScanBinding = ref<ProjectGitlabBindingItem | null>(null)
+const scanFormRef = ref<FormInstance>()
+const scanForm = reactive<ScanTaskForm>({ branch: '', rulesetCode: '' })
+const scanBranchOptions = ref<GitlabBranchItem[]>([])
+const scanBranchLoading = ref(false)
+const scanRulesetOptions = ref<RepositoryScanRulesetItem[]>([])
 const autoMergeLoading = ref(false)
 const autoMergeSubmitting = ref(false)
 const autoMergeDialogVisible = ref(false)
@@ -1120,6 +1197,7 @@ const runResultVisible = ref(false)
 const runResult = ref<GitlabAutoMergeRunResult | null>(null)
 const bindingRules: FormRules<BindingForm> = { projectId: [{ required: true, message: '请选择平台项目', trigger: 'change' }], apiBaseUrl: [{ required: true, message: '请输入 GitLab API 地址', trigger: 'blur' }], gitlabProjectRef: [{ required: true, message: '请输入 GitLab 项目标识', trigger: 'blur' }] }
 const tagRules: FormRules<TagForm> = { tagName: [{ required: true, message: '请输入 Tag 名称', trigger: 'blur' }], branchName: [{ required: true, message: '请选择来源分支', trigger: 'change' }] }
+const scanRules: FormRules<ScanTaskForm> = { branch: [{ required: true, message: '请选择扫描分支', trigger: 'change' }], rulesetCode: [{ required: true, message: '请选择规则集', trigger: 'change' }] }
 const autoMergeRules: FormRules<AutoMergeForm> = { name: [{ required: true, message: '请输入策略名称', trigger: 'blur' }], executionMode: [{ required: true, message: '请选择执行模式', trigger: 'change' }] }
 const bindingDialogTitle = computed(() => bindingIsEditing.value ? '编辑 GitLab 绑定' : '新增 GitLab 绑定')
 const bindingDialogSubtitle = computed(() =>
@@ -1128,6 +1206,7 @@ const bindingDialogSubtitle = computed(() =>
     : '配置平台项目与 GitLab 仓库的基础映射信息。'
 )
 const tagDialogSubtitle = computed(() => '基于当前仓库分支创建新的 GitLab Tag。')
+const scanDialogSubtitle = computed(() => '选择扫描分支和规则集后，系统会在执行中心创建一条仓库规范扫描任务。')
 
 watch(() => autoMergeForm.executionMode, (mode) => {
   if (mode === 'PROJECT_BOUND') {
@@ -1302,6 +1381,51 @@ const handleBindingDelete = async (id: number) => { try { await ElMessageBox.con
 const handleBindingTest = async (id: number) => { try { const result = await testGitlabBinding(id); ElMessage.success(`连接成功：${result.gitlabProjectPath || result.gitlabProjectRef}`); await refreshAll() } catch (error: any) { ElMessage.error(error?.response?.data?.message || '连接测试失败') } }
 const openTagCreateDialog = async (row: ProjectGitlabBindingItem) => { resetTagForm(); currentTagBinding.value = row; tagDialogVisible.value = true; await loadTagBranches() }
 const handleTagSubmit = async () => { const valid = await tagFormRef.value?.validate().catch(() => false); if (!valid || !currentTagBinding.value) return; tagSubmitting.value = true; try { const result = await createGitlabTag(currentTagBinding.value.id, { tagName: tagForm.tagName.trim(), branchName: tagForm.branchName.trim(), message: tagForm.message.trim() || undefined }); tagResult.value = result; tagDialogVisible.value = false; tagResultVisible.value = true; ElMessage.success(`Tag ${result.tagName} 已创建`) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '创建 Tag 失败') } finally { tagSubmitting.value = false } }
+const resetScanForm = () => { scanForm.branch = ''; scanForm.rulesetCode = 'team-default'; scanBranchOptions.value = []; scanFormRef.value?.clearValidate() }
+const loadScanRulesets = async () => { scanRulesetOptions.value = await listRepositoryScanRulesets(); if (!scanForm.rulesetCode && scanRulesetOptions.value.length) { scanForm.rulesetCode = scanRulesetOptions.value[0].code } }
+const loadScanBranches = async (keyword = '') => {
+  if (!currentScanBinding.value) return
+  scanBranchLoading.value = true
+  try {
+    scanBranchOptions.value = await listGitlabBranches(currentScanBinding.value.id, keyword || undefined)
+    if (!scanForm.branch) {
+      const defaultBranch = scanBranchOptions.value.find((item) => item.defaultBranch)?.name || currentScanBinding.value.defaultTargetBranch || scanBranchOptions.value[0]?.name || ''
+      scanForm.branch = defaultBranch
+    }
+  } finally {
+    scanBranchLoading.value = false
+  }
+}
+const handleScanBranchSearch = async (keyword: string) => { await loadScanBranches(keyword) }
+const openBindingScanDialog = async (row: ProjectGitlabBindingItem) => {
+  currentScanBinding.value = row
+  resetScanForm()
+  scanDialogVisible.value = true
+  scanForm.branch = row.defaultTargetBranch || ''
+  try {
+    await Promise.all([loadScanBranches(row.defaultTargetBranch || ''), loadScanRulesets()])
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载扫描配置失败')
+  }
+}
+const handleScanSubmit = async () => {
+  const valid = await scanFormRef.value?.validate().catch(() => false)
+  if (!valid || !currentScanBinding.value) return
+  scanSubmitting.value = true
+  try {
+    const executionTask = await createGitlabBindingScanTask(currentScanBinding.value.id, {
+      branch: scanForm.branch.trim(),
+      rulesetCode: scanForm.rulesetCode.trim()
+    })
+    scanDialogVisible.value = false
+    ElMessage.success('仓库规范扫描任务已创建')
+    await router.push({ name: 'execution-task-detail', params: { executionTaskId: executionTask.id } })
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '创建扫描任务失败')
+  } finally {
+    scanSubmitting.value = false
+  }
+}
 const openBindingMergeRequests = async (row: ProjectGitlabBindingItem) => { mergeRequestDrawerTitle.value = `绑定仓库 MR 预览 - ${row.projectName} / ${row.gitlabProjectPath || row.gitlabProjectRef}`; mergeRequestDrawerVisible.value = true; mergeRequestLoading.value = true; try { mergeRequestList.value = await previewBindingMergeRequests(row.id, row.defaultTargetBranch || undefined) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '加载 MR 失败') } finally { mergeRequestLoading.value = false } }
 
 const openAutoMergeCreateDialog = () => { autoMergeReadonlyMode.value = false; autoMergeIsEditing.value = false; resetAutoMergeForm(); autoMergeDialogVisible.value = true }
@@ -1515,6 +1639,10 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 .gitlab-action-button.connection:hover,
 .gitlab-action-button.preview:hover {
   color: #00658f;
+}
+
+.gitlab-action-button.scan:hover {
+  color: #0f766e;
 }
 
 .gitlab-action-button.run:hover {

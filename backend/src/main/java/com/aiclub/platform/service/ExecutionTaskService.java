@@ -403,6 +403,8 @@ public class ExecutionTaskService {
                 executionStep.getAgent() == null ? null : executionStep.getAgent().getId(),
                 executionStep.getAgent() == null ? null : executionStep.getAgent().getName(),
                 executionStep.getStatus(),
+                executionStep.getProgressPercent(),
+                executionStep.getLatestMessage(),
                 executionStep.getInputSnapshot(),
                 executionStep.getOutputSnapshot(),
                 executionStep.getErrorMessage(),
@@ -418,7 +420,7 @@ public class ExecutionTaskService {
                 executionArtifact.getStep() == null ? null : executionArtifact.getStep().getId(),
                 executionArtifact.getArtifactType(),
                 executionArtifact.getTitle(),
-                executionArtifact.getContentRef(),
+                buildArtifactDownloadUrl(executionArtifact),
                 executionArtifact.getContentText(),
                 executionArtifact.isWorkItemWritebackFlag()
         );
@@ -534,6 +536,16 @@ public class ExecutionTaskService {
         }
         String nickname = defaultString(user.getNickname()).trim();
         return nickname.isBlank() ? user.getUsername() : nickname;
+    }
+
+    /**
+     * 执行产物对前端统一暴露鉴权下载地址，避免直接泄露对象存储内部对象键。
+     */
+    private String buildArtifactDownloadUrl(ExecutionArtifactEntity executionArtifact) {
+        if (executionArtifact == null || !hasText(executionArtifact.getContentRef())) {
+            return null;
+        }
+        return "/api/execution-artifacts/" + executionArtifact.getId() + "/download";
     }
 
     private String formatTime(LocalDateTime time) {

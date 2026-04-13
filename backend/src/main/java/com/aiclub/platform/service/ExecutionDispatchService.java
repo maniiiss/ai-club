@@ -38,6 +38,7 @@ public class ExecutionDispatchService {
     private final ExecutionWorkflowService executionWorkflowService;
     private final AgentExecutionService agentExecutionService;
     private final ExecutionWritebackService executionWritebackService;
+    private final RepositoryScanExecutionService repositoryScanExecutionService;
 
     public ExecutionDispatchService(ExecutionTaskRepository executionTaskRepository,
                                     ExecutionRunRepository executionRunRepository,
@@ -45,7 +46,8 @@ public class ExecutionDispatchService {
                                     ExecutionArtifactRepository executionArtifactRepository,
                                     ExecutionWorkflowService executionWorkflowService,
                                     AgentExecutionService agentExecutionService,
-                                    ExecutionWritebackService executionWritebackService) {
+                                    ExecutionWritebackService executionWritebackService,
+                                    RepositoryScanExecutionService repositoryScanExecutionService) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
         this.executionStepRepository = executionStepRepository;
@@ -53,6 +55,7 @@ public class ExecutionDispatchService {
         this.executionWorkflowService = executionWorkflowService;
         this.agentExecutionService = agentExecutionService;
         this.executionWritebackService = executionWritebackService;
+        this.repositoryScanExecutionService = repositoryScanExecutionService;
     }
 
     /**
@@ -107,6 +110,9 @@ public class ExecutionDispatchService {
         int totalSteps = Math.max(workflowPlan.steps().size(), 1);
 
         try {
+            if (ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN.equalsIgnoreCase(runningTask.getScenarioCode())) {
+                return dispatchRepositoryScanTask(runningTask, executionRun, writebackArtifacts);
+            }
             for (ExecutionWorkflowService.ExecutionStepPlan stepPlan : workflowPlan.steps()) {
                 ExecutionTaskEntity latestTask = requireExecutionTask(executionTaskId);
                 if (latestTask.isCancelRequested()) {
@@ -158,6 +164,30 @@ public class ExecutionDispatchService {
         } catch (RuntimeException exception) {
             log.warn("执行任务处理失败: executionTaskId={}, message={}", executionTaskId, exception.getMessage(), exception);
             return finishInfrastructureFailure(requireExecutionTask(executionTaskId), executionRun, exception, writebackArtifacts);
+        }
+    }
+
+    /**
+     * 仓库规范扫描场景走专用执行器，避免复用 Agent 工作流导致步骤与产物模型失真。
+     */
+    private ExecutionRunEntity dispatchRepositoryScanTask(ExecutionTaskEntity executionTask,
+                                                          ExecutionRunEntity executionRun,
+                                                          List<ExecutionArtifactEntity> writebackArtifacts) {
+        try {
+            RepositoryScanExecutionService.RepositoryScanExecutionResult result =
+                    repositoryScanExecutionService.executeScanTask(executionTask, executionRun);
+            if (result.artifacts() != null) {
+                writebackArtifacts.addAll(result.artifacts());
+            }
+            executionRun.setOutputSummary(result.outputSummary());
+            executionRun.setUpdatedAt(LocalDateTime.now());
+            executionRunRepository.save(executionRun);
+            return finishSuccess(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
+        } catch (RepositoryScanExecutionService.RepositoryScanStepException exception) {
+            if (exception.artifacts() != null) {
+                writebackArtifacts.addAll(exception.artifacts());
+            }
+            return finishFailed(requireExecutionTask(executionTask.getId()), executionRun, exception.failedStep(), exception, writebackArtifacts);
         }
     }
 

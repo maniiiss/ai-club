@@ -12,7 +12,7 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - "${POSTGRES_DATA_DIR:-./.data/postgres}:/var/lib/postgresql/data"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiclub} -d ${POSTGRES_DB:-ai_agent_platform}"]
       interval: 10s
@@ -33,8 +33,15 @@ services:
       PLATFORM_BACKEND_INTERNAL_BASE_URL: ${PLATFORM_BACKEND_INTERNAL_BASE_URL:-http://localhost:8080}
       PLATFORM_INTERNAL_SERVICE_TOKEN: ${PLATFORM_INTERNAL_SERVICE_TOKEN:-git-ai-club-internal-service-token}
       PLATFORM_HERMES_MCP_SHARED_TOKEN: ${PLATFORM_HERMES_MCP_SHARED_TOKEN:-git-ai-club-hermes-mcp-token}
+      PLATFORM_MINIO_ENDPOINT: ${PLATFORM_MINIO_ENDPOINT:-http://host.docker.internal:19000}
+      PLATFORM_MINIO_ACCESS_KEY: ${PLATFORM_MINIO_ACCESS_KEY:-minioadmin}
+      PLATFORM_MINIO_SECRET_KEY: ${PLATFORM_MINIO_SECRET_KEY:-minioadmin}
+      PLATFORM_MINIO_BUCKET: ${PLATFORM_MINIO_BUCKET:-ai-club-assets}
+      PLATFORM_SCAN_WORKSPACE_ROOT: ${PLATFORM_SCAN_WORKSPACE_ROOT:-/tmp/git-ai-club-scans}
     ports:
       - "${CODE_PROCESSING_PORT:-9000}:9000"
+    volumes:
+      - "${PLATFORM_SCAN_HOST_PATH:-./.data/scans}:${PLATFORM_SCAN_WORKSPACE_ROOT:-/tmp/git-ai-club-scans}"
 
   redis:
     image: ${REDIS_IMAGE:-redis:7.4.8}
@@ -52,7 +59,7 @@ services:
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
-      - redis_data:/data
+      - "${REDIS_DATA_DIR:-./.data/redis}:/data"
     healthcheck:
       test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
       interval: 10s
@@ -72,7 +79,7 @@ services:
       - "${MINIO_PORT:-19000}:9000"
       - "${MINIO_CONSOLE_PORT:-19001}:9001"
     volumes:
-      - minio_data:/data
+      - "${MINIO_DATA_DIR:-./.data/minio}:/data"
 
   hindsight:
     image: ${HINDSIGHT_IMAGE:-ghcr.io/vectorize-io/hindsight:latest}
@@ -89,7 +96,7 @@ services:
       - "${HINDSIGHT_PORT:-18888}:8888"
       - "${HINDSIGHT_CONSOLE_PORT:-19999}:9999"
     volumes:
-      - hindsight_data:/home/hindsight/.pg0
+      - "${HINDSIGHT_DATA_DIR:-./.data/hindsight}:/home/hindsight/.pg0"
 
   hermes:
     image: ${HERMES_IMAGE:-ghcr.io/nousresearch/hermes-agent:latest}
@@ -157,7 +164,7 @@ services:
     ports:
       - "${HERMES_PORT:-18080}:18080"
     volumes:
-      - hermes_data:/opt/data
+      - "${HERMES_DATA_DIR:-./.data/hermes}:/opt/data"
 
   backend:
     build:
@@ -221,10 +228,3 @@ services:
         condition: service_started
     ports:
       - "${FRONTEND_PORT:-5173}:80"
-
-volumes:
-  postgres_data:
-  minio_data:
-  redis_data:
-  hermes_data:
-  hindsight_data:

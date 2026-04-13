@@ -13,7 +13,7 @@ services:
       TZ: ${APP_TZ:-Asia/Shanghai}
       PGTZ: ${APP_TZ:-Asia/Shanghai}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - "${POSTGRES_DATA_DIR:-/data/git-ai-club/postgres}:/var/lib/postgresql/data"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiclub} -d ${POSTGRES_DB:-ai_agent_platform}"]
       interval: 10s
@@ -35,7 +35,7 @@ services:
         redis-server --appendonly yes --port ${REDIS_PORT:-6379};
       fi"
     volumes:
-      - redis_data:/data
+      - "${REDIS_DATA_DIR:-/data/git-ai-club/redis}:/data"
     healthcheck:
       test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -p ${REDIS_PORT:-6379} -a \"$$REDIS_PASSWORD\" ping; else redis-cli -p ${REDIS_PORT:-6379} ping; fi"]
       interval: 10s
@@ -53,7 +53,7 @@ services:
       MINIO_ROOT_PASSWORD: ${PLATFORM_MINIO_SECRET_KEY:-minioadmin}
     command: server /data --address ":${MINIO_PORT:-19000}" --console-address ":${MINIO_CONSOLE_PORT:-19001}"
     volumes:
-      - minio_data:/data
+      - "${MINIO_DATA_DIR:-/data/git-ai-club/minio}:/data"
 
   hindsight:
     image: ${HINDSIGHT_IMAGE:-ghcr.io/vectorize-io/hindsight:latest}
@@ -72,7 +72,7 @@ services:
       HINDSIGHT_DASHBOARD_HOST: 0.0.0.0
       HINDSIGHT_DASHBOARD_PORT: ${HINDSIGHT_CONSOLE_PORT:-19999}
     volumes:
-      - hindsight_data:/home/hindsight/.pg0
+      - "${HINDSIGHT_DATA_DIR:-/data/git-ai-club/hindsight}:/home/hindsight/.pg0"
 
   hermes:
     image: ${HERMES_IMAGE:-ghcr.io/nousresearch/hermes-agent:latest}
@@ -120,7 +120,7 @@ services:
         exec hermes gateway
     command: []
     volumes:
-      - hermes_data:/opt/data
+      - "${HERMES_DATA_DIR:-/data/git-ai-club/hermes}:/opt/data"
 
   code-processing:
     build:
@@ -135,6 +135,11 @@ services:
       PLATFORM_BACKEND_INTERNAL_BASE_URL: ${PLATFORM_BACKEND_INTERNAL_BASE_URL:-http://127.0.0.1:8087}
       PLATFORM_INTERNAL_SERVICE_TOKEN: ${PLATFORM_INTERNAL_SERVICE_TOKEN:-git-ai-club-internal-service-token}
       PLATFORM_HERMES_MCP_SHARED_TOKEN: ${PLATFORM_HERMES_MCP_SHARED_TOKEN:-git-ai-club-hermes-mcp-token}
+      PLATFORM_MINIO_ENDPOINT: ${PLATFORM_MINIO_ENDPOINT:-http://127.0.0.1:19000}
+      PLATFORM_MINIO_ACCESS_KEY: ${PLATFORM_MINIO_ACCESS_KEY:-minioadmin}
+      PLATFORM_MINIO_SECRET_KEY: ${PLATFORM_MINIO_SECRET_KEY:-minioadmin}
+      PLATFORM_MINIO_BUCKET: ${PLATFORM_MINIO_BUCKET:-ai-club-assets}
+      PLATFORM_SCAN_WORKSPACE_ROOT: ${PLATFORM_SCAN_WORKSPACE_ROOT:-./.scan-workspace}
     command:
       - uvicorn
       - app.main:app
@@ -142,6 +147,8 @@ services:
       - 0.0.0.0
       - --port
       - "${CODE_PROCESSING_PORT:-9001}"
+    volumes:
+      - "${PLATFORM_SCAN_HOST_PATH:-/data/git-ai-club/scans}:${PLATFORM_SCAN_WORKSPACE_ROOT:-./.scan-workspace}"
 
   backend:
     build:
@@ -211,10 +218,3 @@ services:
     environment:
       NGINX_LISTEN_PORT: ${FRONTEND_PORT:-5173}
       BACKEND_PROXY_URL: http://127.0.0.1:${BACKEND_PORT:-8087}
-
-volumes:
-  postgres_data:
-  redis_data:
-  minio_data:
-  hermes_data:
-  hindsight_data:

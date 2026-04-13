@@ -1,6 +1,7 @@
 ﻿import { http } from './http'
 import type {
   ApiResponse,
+  ExecutionTaskItem,
   GitlabAutoMergeConfigItem,
   GitlabAutoMergeLogItem,
   GitlabAutoMergeRunResult,
@@ -10,7 +11,8 @@ import type {
   GitlabTagCreateResultItem,
   GitlabUserOauthBindingItem,
   PageResponse,
-  ProjectGitlabBindingItem
+  ProjectGitlabBindingItem,
+  RepositoryScanRulesetItem
 } from '@/types/platform'
 
 export interface GitlabBindingPayload {
@@ -104,6 +106,11 @@ export interface GitlabUserOauthCallbackPayload {
   state: string
 }
 
+export interface GitlabBindingScanTaskPayload {
+  branch: string
+  rulesetCode: string
+}
+
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
     Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
@@ -118,6 +125,11 @@ export const pageGitlabBindings = async (query: GitlabBindingQuery) => {
 
 export const listGitlabBindingOptions = async () => {
   const { data } = await http.get<ApiResponse<ProjectGitlabBindingItem[]>>('/api/gitlab/bindings/options')
+  return data.data
+}
+
+export const listRepositoryScanRulesets = async () => {
+  const { data } = await http.get<ApiResponse<RepositoryScanRulesetItem[]>>('/api/gitlab/scan-rulesets')
   return data.data
 }
 
@@ -137,6 +149,11 @@ export const deleteGitlabBinding = async (id: number) => {
 
 export const testGitlabBinding = async (id: number) => {
   const { data } = await http.post<ApiResponse<ProjectGitlabBindingItem>>(`/api/gitlab/bindings/${id}/test`)
+  return data.data
+}
+
+export const createGitlabBindingScanTask = async (id: number, payload: GitlabBindingScanTaskPayload) => {
+  const { data } = await http.post<ApiResponse<ExecutionTaskItem>>(`/api/gitlab/bindings/${id}/scan-tasks`, payload)
   return data.data
 }
 

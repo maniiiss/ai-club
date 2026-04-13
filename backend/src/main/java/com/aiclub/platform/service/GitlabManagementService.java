@@ -18,7 +18,11 @@ import com.aiclub.platform.dto.GitlabMergeRequestSummary;
 import com.aiclub.platform.dto.GitlabTagCreateResult;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
+import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
+import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest;
+import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
 import com.aiclub.platform.dto.request.GitlabCreateMergeRequestRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
 import com.aiclub.platform.dto.request.ProjectGitlabBindingRequest;
@@ -46,6 +50,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.NoSuchElementException;
 
@@ -75,6 +80,8 @@ public class GitlabManagementService {
     private final NotificationService notificationService;
     private final ProjectDataPermissionService projectDataPermissionService;
     private final GitlabUserOauthService gitlabUserOauthService;
+    private final ExecutionTaskService executionTaskService;
+    private final RepositoryScanClientService repositoryScanClientService;
     private final String defaultApiUrl;
 
     public GitlabManagementService(ProjectRepository projectRepository,
@@ -87,12 +94,14 @@ public class GitlabManagementService {
                                    TokenCipherService tokenCipherService,
                                    ModelConfigService modelConfigService,
                                    CodeReviewClientService codeReviewClientService,
-                                    AgentExecutionService agentExecutionService,
-                                    CicdManagementService cicdManagementService,
-                                    NotificationService notificationService,
-                                    ProjectDataPermissionService projectDataPermissionService,
-                                    GitlabUserOauthService gitlabUserOauthService,
-                                    @Value("${platform.gitlab.default-api-url}") String defaultApiUrl) {
+                                   AgentExecutionService agentExecutionService,
+                                   CicdManagementService cicdManagementService,
+                                   NotificationService notificationService,
+                                   ProjectDataPermissionService projectDataPermissionService,
+                                   GitlabUserOauthService gitlabUserOauthService,
+                                   ExecutionTaskService executionTaskService,
+                                   RepositoryScanClientService repositoryScanClientService,
+                                   @Value("${platform.gitlab.default-api-url}") String defaultApiUrl) {
         this.projectRepository = projectRepository;
         this.agentRepository = agentRepository;
         this.bindingRepository = bindingRepository;
@@ -108,6 +117,8 @@ public class GitlabManagementService {
         this.notificationService = notificationService;
         this.projectDataPermissionService = projectDataPermissionService;
         this.gitlabUserOauthService = gitlabUserOauthService;
+        this.executionTaskService = executionTaskService;
+        this.repositoryScanClientService = repositoryScanClientService;
         this.defaultApiUrl = defaultApiUrl;
     }
 
@@ -181,11 +192,13 @@ public class GitlabManagementService {
             entity.setGitlabProjectName(project.name());
             entity.setGitlabProjectPath(project.pathWithNamespace());
             entity.setGitlabProjectWebUrl(project.webUrl());
+            entity.setGitlabHttpCloneUrl(trimToNull(project.httpCloneUrl()));
+            entity.setGitlabSshCloneUrl(trimToNull(project.sshCloneUrl()));
             if (!hasText(entity.getDefaultTargetBranch()) && hasText(project.defaultBranch())) {
                 entity.setDefaultTargetBranch(project.defaultBranch());
             }
             entity.setLastTestStatus("SUCCESS");
-            entity.setLastTestMessage("连接成功，当前账号：" + user.username());
+            entity.setLastTestMessage("连接成功");
             entity.setLastTestedAt(LocalDateTime.now());
             return toBindingSummary(bindingRepository.save(entity));
         } catch (RuntimeException exception) {
@@ -206,6 +219,36 @@ public class GitlabManagementService {
                 .map(item -> gitlabApiService.fetchMergeRequest(entity.getApiBaseUrl(), token, projectRef, item.iid()))
                 .map(this::toMergeRequestSummary)
                 .toList();
+    }
+
+    /**
+     * 返回仓库规范扫描规则集列表，供仓库页和 Hermes 工具统一复用。
+     */
+    public List<RepositoryScanRulesetSummary> listScanRulesets() {
+        return repositoryScanClientService.listRulesets();
+    }
+
+    /**
+     * 基于 GitLab 绑定创建一条仓库规范扫描任务。
+     */
+    @Transactional
+    public ExecutionTaskSummary createBindingScanTask(Long bindingId, GitlabBindingScanTaskRequest request) {
+        ProjectGitlabBindingEntity binding = requireBinding(bindingId);
+        String branch = trimToNull(request.branch());
+        if (branch == null) {
+            branch = hasText(binding.getDefaultTargetBranch()) ? binding.getDefaultTargetBranch().trim() : "main";
+        }
+        String rulesetCode = requireValue(request.rulesetCode(), "规则集");
+        CreateExecutionTaskRequest taskRequest = new CreateExecutionTaskRequest(
+                ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN,
+                binding.getProject().getId(),
+                null,
+                buildScanTaskTitle(binding, branch),
+                "GITLAB_BINDING_SCAN",
+                List.of(),
+                buildScanInputPayload(binding, branch, rulesetCode)
+        );
+        return executionTaskService.createExecutionTask(taskRequest);
     }
 
     /**
@@ -917,6 +960,34 @@ public class GitlabManagementService {
 
     private ProjectGitlabBindingSummary toBindingSummary(ProjectGitlabBindingEntity entity) {
         return new ProjectGitlabBindingSummary(entity.getId(), entity.getProject().getId(), entity.getProject().getName(), entity.getApiBaseUrl(), entity.getGitlabProjectRef(), entity.getGitlabProjectId(), entity.getGitlabProjectName(), entity.getGitlabProjectPath(), entity.getGitlabProjectWebUrl(), entity.getDefaultTargetBranch(), hasText(entity.getTokenCiphertext()), defaultBoolean(entity.getEnabled(), true), entity.getLastTestStatus(), entity.getLastTestMessage(), formatTime(entity.getLastTestedAt()));
+    }
+
+    /**
+     * 统一拼接扫描任务标题，避免执行中心里出现难以辨认的默认标题。
+     */
+    private String buildScanTaskTitle(ProjectGitlabBindingEntity binding, String branch) {
+        return "仓库规范扫描 - "
+                + binding.getProject().getName()
+                + "/"
+                + defaultString(hasText(binding.getGitlabProjectPath()) ? binding.getGitlabProjectPath() : binding.getGitlabProjectRef())
+                + " ["
+                + defaultString(branch)
+                + "]";
+    }
+
+    /**
+     * 将扫描参数固化到执行任务输入载荷，调度阶段不再依赖前端上下文。
+     */
+    private java.util.Map<String, Object> buildScanInputPayload(ProjectGitlabBindingEntity binding,
+                                                                String branch,
+                                                                String rulesetCode) {
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+        payload.put("bindingId", binding.getId());
+        payload.put("branch", branch);
+        payload.put("rulesetCode", rulesetCode);
+        payload.put("repoPath", hasText(binding.getGitlabProjectPath()) ? binding.getGitlabProjectPath() : binding.getGitlabProjectRef());
+        payload.put("projectName", binding.getProject().getName());
+        return java.util.Map.copyOf(payload);
     }
 
     private GitlabAutoMergeConfigSummary toAutoMergeSummary(GitlabAutoMergeConfigEntity entity) {

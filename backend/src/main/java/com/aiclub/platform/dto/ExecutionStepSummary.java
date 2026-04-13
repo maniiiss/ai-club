@@ -9,6 +9,8 @@ public record ExecutionStepSummary(
         Long agentId,
         String agentName,
         String status,
+        Integer progressPercent,
+        String latestMessage,
         String inputSnapshot,
         String outputSnapshot,
         String errorMessage,

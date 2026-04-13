@@ -41,11 +41,12 @@
             <div class="management-list-filter-panel management-list-compact-input">
               <div class="management-list-filter-field">
                 <label>执行场景</label>
-                <el-select v-model="filters.scenarioCode" clearable placeholder="全部场景" style="width: 100%" :teleported="false">
-                  <el-option label="需求拆解" value="REQUIREMENT_BREAKDOWN" />
-                  <el-option label="开发执行" value="DEVELOPMENT_IMPLEMENTATION" />
-                  <el-option label="测试设计/评审" value="TEST_DESIGN_OR_REVIEW" />
-                </el-select>
+                  <el-select v-model="filters.scenarioCode" clearable placeholder="全部场景" style="width: 100%" :teleported="false">
+                    <el-option label="需求拆解" value="REQUIREMENT_BREAKDOWN" />
+                    <el-option label="开发执行" value="DEVELOPMENT_IMPLEMENTATION" />
+                    <el-option label="测试设计/评审" value="TEST_DESIGN_OR_REVIEW" />
+                    <el-option label="仓库规范扫描" value="CODEBASE_COMPLIANCE_SCAN" />
+                  </el-select>
               </div>
               <div class="management-list-filter-field">
                 <label>执行状态</label>
@@ -116,7 +117,7 @@
                       </span>
                       <span class="management-list-title-copy">
                         <span class="management-list-title">{{ row.title }}</span>
-                        <span class="management-list-subtitle">{{ row.latestSummary || '暂无执行摘要' }}</span>
+                        <span class="management-list-subtitle">{{ executionListSummary(row) }}</span>
                       </span>
                     </span>
                   </button>
@@ -163,23 +164,31 @@
                 </td>
                 <td class="execution-col-actions right" data-label="操作">
                   <div class="management-list-row-actions execution-row-actions">
-                    <button class="execution-action-button" type="button" @click.stop="openDetail(row)">详情</button>
-                    <button
-                      v-if="canCancelExecution && canCancel(row.status)"
-                      class="execution-action-button warning"
-                      type="button"
-                      @click.stop="handleCancel(row)"
-                    >
-                      取消
-                    </button>
-                    <button
-                      v-if="canRetryExecution && canRetry(row.status)"
-                      class="execution-action-button success"
-                      type="button"
-                      @click.stop="handleRetry(row)"
-                    >
-                      重试
-                    </button>
+                    <el-tooltip content="查看详情" placement="top">
+                      <button class="execution-action-button" type="button" aria-label="查看执行详情" @click.stop="openDetail(row)">
+                        <el-icon><View /></el-icon>
+                      </button>
+                    </el-tooltip>
+                    <el-tooltip v-if="canCancelExecution && canCancel(row.status)" content="取消执行" placement="top">
+                      <button
+                        class="execution-action-button warning"
+                        type="button"
+                        aria-label="取消执行"
+                        @click.stop="handleCancel(row)"
+                      >
+                        <el-icon><CloseBold /></el-icon>
+                      </button>
+                    </el-tooltip>
+                    <el-tooltip v-if="canRetryExecution && canRetry(row.status)" content="重新执行" placement="top">
+                      <button
+                        class="execution-action-button success"
+                        type="button"
+                        aria-label="重新执行"
+                        @click.stop="handleRetry(row)"
+                      >
+                        <el-icon><RefreshRight /></el-icon>
+                      </button>
+                    </el-tooltip>
                   </div>
                 </td>
               </tr>
@@ -203,7 +212,7 @@
                     </span>
                     <span class="management-list-title-copy">
                       <span class="management-list-title">{{ row.title }}</span>
-                      <span class="management-list-subtitle">{{ row.latestSummary || '暂无执行摘要' }}</span>
+                      <span class="management-list-subtitle">{{ executionListSummary(row) }}</span>
                     </span>
                   </span>
                 </button>
@@ -269,14 +278,18 @@
               </div>
 
               <footer class="execution-mobile-actions">
-                <button class="execution-mobile-action-button" type="button" @click="openDetail(row)">详情</button>
+                <button class="execution-mobile-action-button" type="button" @click="openDetail(row)">
+                  <el-icon><View /></el-icon>
+                  <span>详情</span>
+                </button>
                 <button
                   v-if="canCancelExecution && canCancel(row.status)"
                   class="execution-mobile-action-button warning"
                   type="button"
                   @click="handleCancel(row)"
                 >
-                  取消
+                  <el-icon><CloseBold /></el-icon>
+                  <span>取消</span>
                 </button>
                 <button
                   v-if="canRetryExecution && canRetry(row.status)"
@@ -284,7 +297,8 @@
                   type="button"
                   @click="handleRetry(row)"
                 >
-                  重试
+                  <el-icon><RefreshRight /></el-icon>
+                  <span>重试</span>
                 </button>
               </footer>
             </article>
@@ -322,7 +336,7 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowLeft, ArrowRight, Filter, Lightning, PieChart, RefreshRight, Search, Tickets, TrendCharts } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, CloseBold, Filter, Lightning, PieChart, RefreshRight, Search, Tickets, TrendCharts, View } from '@element-plus/icons-vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -448,6 +462,20 @@ const workItemLabel = (row: ExecutionTaskItem) => {
   const code = row.workItemCode || (row.workItemId ? `#${row.workItemId}` : '')
   const name = row.workItemName || ''
   return [code, name].filter(Boolean).join(' ')
+}
+
+/**
+ * 列表页只展示简短状态摘要，避免失败堆栈或 SQL 错误把表格撑开。
+ * 详细错误仍保留在执行详情页的步骤日志和产物中。
+ */
+const executionListSummary = (row: ExecutionTaskItem) => {
+  if (row.status === 'FAILED') {
+    return '执行失败，请进入详情查看错误信息'
+  }
+  if (row.status === 'CANCELED') {
+    return '执行已取消'
+  }
+  return row.latestSummary || '暂无执行摘要'
 }
 
 /**
@@ -739,7 +767,11 @@ onBeforeUnmount(() => {
 .execution-progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #14b8a6 0%, #0f766e 100%);
+  background: linear-gradient(
+    90deg,
+    rgba(var(--app-primary-container-rgb), 0.92) 0%,
+    rgba(var(--app-primary-rgb), 0.96) 100%
+  );
 }
 
 .execution-progress-meta {
@@ -804,31 +836,53 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   padding: 0 12px;
   border: 0;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.06);
-  color: #475569;
+  border-radius: 10px;
+  background: rgba(243, 244, 245, 0.92);
+  color: #516174;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
 }
 
 .execution-action-button.warning,
 .execution-mobile-action-button.warning {
-  background: rgba(245, 158, 11, 0.16);
-  color: #b45309;
+  color: var(--app-warning, #b45309);
 }
 
 .execution-action-button.success,
 .execution-mobile-action-button.success {
-  background: rgba(16, 185, 129, 0.14);
-  color: #047857;
+  color: var(--app-success);
 }
 
 .execution-action-button:hover,
 .execution-mobile-action-button:hover {
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--app-primary);
   transform: translateY(-1px);
+}
+
+.execution-action-button.warning:hover,
+.execution-mobile-action-button.warning:hover {
+  color: var(--app-warning, #b45309);
+}
+
+.execution-action-button.success:hover,
+.execution-mobile-action-button.success:hover {
+  color: var(--app-success);
+}
+
+.execution-action-button {
+  width: 28px;
+  padding: 0;
+}
+
+.execution-mobile-action-button {
+  min-height: 38px;
+  padding: 0 14px;
 }
 
 .execution-empty-cell {

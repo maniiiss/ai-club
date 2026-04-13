@@ -10,6 +10,10 @@ export const listGitlabBindingOptions = async () => {
     const { data } = await http.get('/api/gitlab/bindings/options');
     return data.data;
 };
+export const listRepositoryScanRulesets = async () => {
+    const { data } = await http.get('/api/gitlab/scan-rulesets');
+    return data.data;
+};
 export const createGitlabBinding = async (payload) => {
     const { data } = await http.post('/api/gitlab/bindings', payload);
     return data.data;
@@ -23,6 +27,10 @@ export const deleteGitlabBinding = async (id) => {
 };
 export const testGitlabBinding = async (id) => {
     const { data } = await http.post(`/api/gitlab/bindings/${id}/test`);
+    return data.data;
+};
+export const createGitlabBindingScanTask = async (id, payload) => {
+    const { data } = await http.post(`/api/gitlab/bindings/${id}/scan-tasks`, payload);
     return data.data;
 };
 export const previewBindingMergeRequests = async (id, targetBranch) => {

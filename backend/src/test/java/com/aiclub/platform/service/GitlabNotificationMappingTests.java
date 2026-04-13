@@ -67,6 +67,12 @@ class GitlabNotificationMappingTests {
     @Mock
     private GitlabUserOauthService gitlabUserOauthService;
 
+    @Mock
+    private ExecutionTaskService executionTaskService;
+
+    @Mock
+    private RepositoryScanClientService repositoryScanClientService;
+
     private GitlabManagementService gitlabManagementService;
 
     @BeforeEach
@@ -87,6 +93,8 @@ class GitlabNotificationMappingTests {
                 notificationService,
                 projectDataPermissionService,
                 gitlabUserOauthService,
+                executionTaskService,
+                repositoryScanClientService,
                 "http://gitlab.example.com/api/v4"
         );
     }
