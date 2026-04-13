@@ -11,3 +11,4 @@ APITOKEN.md
 .env
 .env.server
 .env.host
+/code-processing/.venv/
