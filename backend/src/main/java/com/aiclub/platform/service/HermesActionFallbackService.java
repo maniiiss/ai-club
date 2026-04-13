@@ -40,19 +40,14 @@ public class HermesActionFallbackService {
         if (request == null || request.question() == null || request.question().isBlank()) {
             return false;
         }
-        String normalizedQuestion = request.question().toLowerCase(Locale.ROOT);
-        boolean isCreateIntent = normalizedQuestion.contains("创建")
-                && (normalizedQuestion.contains("需求")
-                || normalizedQuestion.contains("任务")
-                || normalizedQuestion.contains("缺陷"));
-        if (isCreateIntent) {
-            return true;
-        }
         String normalizedContent = modelContent == null ? "" : modelContent.toLowerCase(Locale.ROOT);
         return normalizedContent.contains("session_token")
+                || normalizedContent.contains("system_session_token")
                 || normalizedContent.contains("session token")
                 || normalizedContent.contains("会话令牌")
                 || normalizedContent.contains("session terminated")
+                || normalizedContent.contains("当前会话已超时")
+                || normalizedContent.contains("当前会话已终止")
                 || normalizedContent.contains("平台工具")
                 || normalizedContent.contains("mcp");
     }

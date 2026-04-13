@@ -23,36 +23,62 @@ git-ai-club/
 
 ## 启动方式
 
-### 一键启动脚本
+### Windows 脚本入口
 
-- Windows: `powershell -ExecutionPolicy Bypass -File .\scripts\start-windows.ps1`
-- macOS: `bash ./scripts/start-macos.sh`
-- Linux: `bash ./scripts/start-linux.sh`
+1. 源码模式启动：
+   `powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1`
+   作用：`hermes / hindsight / postgres / redis / minio` 走 Docker，`code-processing / backend / frontend` 走源码启动。
+2. 源码模式停止：
+   `powershell -ExecutionPolicy Bypass -File .\scripts\stop-windows.ps1`
+   作用：先停源码服务，再停源码模式依赖容器。
+3. 源码服务重启：
+   `powershell -ExecutionPolicy Bypass -File .\scripts\restart-source.ps1`
+   作用：只重启 `code-processing / backend / frontend`，不重新拉起 Docker 中间件。
+4. 全量 Docker 启动：
+   `powershell -ExecutionPolicy Bypass -File .\scripts\start-docker.ps1`
+   作用：使用 `docker-compose.server.yml` 启动整套项目。
+5. 全量 Docker 关闭：
+   `powershell -ExecutionPolicy Bypass -File .\scripts\stop-docker.ps1`
+6. 全量 Docker 打包：
+   `powershell -ExecutionPolicy Bypass -File .\scripts\package.ps1`
 
-### 一键停止脚本
+### Linux 脚本入口
 
-- Windows: `powershell -ExecutionPolicy Bypass -File .\scripts\stop-windows.ps1`
-- macOS: `bash ./scripts/stop-macos.sh`
-- Linux: `bash ./scripts/stop-linux.sh`
+1. 源码模式启动：
+   `bash ./scripts/start-linux.sh`
+   作用：`hermes / hindsight / postgres / redis / minio` 走 Docker，`code-processing / backend / frontend` 走源码启动。
+2. 源码模式停止：
+   `bash ./scripts/stop-linux.sh`
+   作用：先停源码服务，再停源码模式依赖容器。
+3. 源码服务重启：
+   `bash ./scripts/restart-source-linux.sh`
+   作用：只重启 `code-processing / backend / frontend`，不重新拉起 Docker 中间件。
+4. 全量 Docker 启动：
+   `bash ./scripts/start-docker-linux.sh`
+   作用：使用 `docker-compose.server.yml` 启动整套项目。
+5. 全量 Docker 关闭：
+   `bash ./scripts/stop-docker-linux.sh`
+6. 全量 Docker 打包：
+   `bash ./scripts/package-linux.sh`
 
-脚本会自动完成以下动作：
+源码模式脚本会自动完成以下动作：
 
-1. 启动 `postgres`、`redis`、`minio` 容器
+1. 启动 `postgres`、`redis`、`minio`、`hindsight`、`hermes` 容器
 2. 安装前端依赖
 3. 检查并创建 `code-processing/.venv`
 4. 启动 `code-processing`、`backend`、`frontend`
 5. 将日志写入项目根目录 `.run-logs/`
 
-停止脚本会：
-
-1. 根据 `.run-logs/*.pid` 停止由一键启动脚本拉起的本地服务
-2. 执行 `docker compose stop postgres redis minio`
+全量 Docker 脚本默认使用 `docker-compose.server.yml` 和 `.env.server`。
+如果 `.env.server` 不存在，脚本会优先根据 `.env` 自动生成一份可用于容器互联的配置。
 
 默认访问地址：
 
 - Frontend: `http://localhost:5173`
 - Backend: `http://localhost:8080`
-- Code Processing: `http://localhost:9000/health`
+- Code Processing: `http://localhost:9000`
+- Hermes: `http://localhost:18080`
+- Hindsight: `http://localhost:18888`
 
 ### 1. 启动 PostgreSQL
 

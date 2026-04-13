@@ -65,27 +65,31 @@ public class HermesMcpSessionTokenService {
      */
     public HermesMcpSessionClaims parseToken(String token) {
         if (token == null || token.isBlank()) {
-            throw new UnauthorizedException("Hermes MCP 会话令牌缺失");
+            throw new UnauthorizedException(buildRetryHint("Hermes MCP 会话令牌缺失"));
         }
         try {
             String raw = stringRedisTemplate.opsForValue().get(buildRedisKey(token.trim()));
             if (raw == null || raw.isBlank()) {
-                throw new UnauthorizedException("Hermes MCP 会话令牌格式非法");
+                throw new UnauthorizedException(buildRetryHint("Hermes MCP 会话令牌格式非法"));
             }
             StoredHermesMcpSession storedSession = objectMapper.readValue(raw, StoredHermesMcpSession.class);
             Instant expiresAt = Instant.ofEpochMilli(storedSession.expiresAtEpochMillis());
             if (expiresAt.isBefore(Instant.now())) {
-                throw new UnauthorizedException("Hermes MCP 会话令牌已过期");
+                throw new UnauthorizedException("Hermes MCP 会话令牌已过期，请停止复用旧 token，并等待上层重新发起本轮会话。");
             }
             return new HermesMcpSessionClaims(
                     storedSession.userId(),
                     storedSession.scopeKey(),
                     storedSession.conversationId(),
-                    expiresAt
+                expiresAt
             );
         } catch (JsonProcessingException | IllegalArgumentException exception) {
-            throw new UnauthorizedException("Hermes MCP 会话令牌无法解析");
+            throw new UnauthorizedException(buildRetryHint("Hermes MCP 会话令牌无法解析"));
         }
+    }
+
+    private String buildRetryHint(String message) {
+        return message + "。请直接重试同一个工具调用，并把 `system_session_token` 精确设置为系统提示词里给出的 hcs_ 开头值；不要从用户输入提取 token。";
     }
 
     private String buildRedisKey(String token) {

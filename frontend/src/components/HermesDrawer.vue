@@ -558,6 +558,10 @@ const resolveAssistantFinalContent = (streamedContent: string, doneContent: stri
   if (!normalizedDone.trim()) {
     return normalizedStreamed
   }
+  const streamedHasUnclosedThink = /<think\b/i.test(normalizedStreamed) && !/<\/think>\s*$/i.test(normalizedStreamed.trim())
+  if (streamedHasUnclosedThink) {
+    return normalizedDone
+  }
   const streamedHasThink = /<think\b/i.test(normalizedStreamed)
   const doneHasThink = /<think\b/i.test(normalizedDone)
   if (streamedHasThink && !doneHasThink) {
@@ -638,16 +642,33 @@ const submitConversation = async (question: string, userContent: string, selecti
         }))
       },
       onDone: (payload: HermesStreamDoneEvent) => {
-        adoptScopeKey(payload.scopeKey)
-        currentRoleName.value = payload.roleName || currentRoleName.value
-        currentReferences.value = payload.references || []
-        currentSuggestions.value = payload.suggestions || []
-        currentActions.value = payload.actions || []
-        currentSelectionCards.value = payload.selectionCards || []
-        currentDebug.value = payload.debug || null
+        const hasExplicitTerminalState = Boolean(
+          payload.scopeKey ||
+          payload.content ||
+          payload.references?.length ||
+          payload.suggestions?.length ||
+          payload.actions?.length ||
+          payload.selectionCards?.length ||
+          payload.debug
+        )
+        if (hasExplicitTerminalState) {
+          adoptScopeKey(payload.scopeKey)
+          currentRoleName.value = payload.roleName || currentRoleName.value
+          currentReferences.value = payload.references || []
+          currentSuggestions.value = payload.suggestions || []
+          currentActions.value = payload.actions || []
+          currentSelectionCards.value = payload.selectionCards || []
+          currentDebug.value = payload.debug || null
+        }
+        const shouldPreferTerminalContent = Boolean(
+          payload.actions?.length ||
+          payload.selectionCards?.length
+        )
         updateMessage(assistantMessageId, (current) => ({
           ...current,
-          content: resolveAssistantFinalContent(current.content, payload.content),
+          content: shouldPreferTerminalContent
+            ? (payload.content || current.content)
+            : resolveAssistantFinalContent(current.content, payload.content),
           status: 'done'
         }))
         currentStreamStatus.value = null

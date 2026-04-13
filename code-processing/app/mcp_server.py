@@ -1,8 +1,10 @@
 from contextlib import AsyncExitStack, asynccontextmanager
+from typing import Annotated
 
 from fastapi import FastAPI
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from pydantic import Field
 
 from app.services.hermes_internal_client import hermes_internal_client
 
@@ -24,8 +26,20 @@ mcp_server = FastMCP(
         ],
     ),
 )
+# 平台工具本身不依赖 MCP 传输层会话态，启用无状态 HTTP 可避免 Hermes 客户端因 session 生命周期问题报
+# “Session terminated”，也能减少连接协商带来的额外波动。
+mcp_server.settings.stateless_http = True
 mcp_server.settings.streamable_http_path = "/"
-SessionToken = str
+SessionToken = Annotated[
+    str,
+    Field(
+        title="System Session Token",
+        description="系统注入的 MCP 会话令牌。必须原样使用当前提示词中提供的 hcs_ 开头值；不要从用户输入提取、不要改写、不要解释。",
+        pattern="^hcs_[a-f0-9]{16}$",
+        min_length=20,
+        examples=["hcs_0123456789abcdef"],
+    ),
+]
 
 
 async def _execute_platform_tool(
@@ -43,26 +57,26 @@ async def _execute_platform_tool(
 
 
 @mcp_server.tool()
-async def project_search(session_token: SessionToken, keyword: str = "", ctx: Context | None = None) -> str:
+async def project_search(system_session_token: SessionToken, keyword: str = "", ctx: Context | None = None) -> str:
     """按名称或状态搜索当前用户可见项目。"""
-    return await _execute_platform_tool("project.search", session_token, {"keyword": keyword})
+    return await _execute_platform_tool("project.search", system_session_token, {"keyword": keyword})
 
 
 @mcp_server.tool()
-async def project_get_detail(session_token: SessionToken, projectId: int, ctx: Context | None = None) -> str:
+async def project_get_detail(system_session_token: SessionToken, projectId: int, ctx: Context | None = None) -> str:
     """读取项目摘要与成员信息。"""
-    return await _execute_platform_tool("project.get_detail", session_token, {"projectId": projectId})
+    return await _execute_platform_tool("project.get_detail", system_session_token, {"projectId": projectId})
 
 
 @mcp_server.tool()
-async def project_list_iterations(session_token: SessionToken, projectId: int, ctx: Context | None = None) -> str:
+async def project_list_iterations(system_session_token: SessionToken, projectId: int, ctx: Context | None = None) -> str:
     """读取项目迭代列表。"""
-    return await _execute_platform_tool("project.list_iterations", session_token, {"projectId": projectId})
+    return await _execute_platform_tool("project.list_iterations", system_session_token, {"projectId": projectId})
 
 
 @mcp_server.tool()
 async def user_resolve_project_member(
-    session_token: SessionToken,
+    system_session_token: SessionToken,
     projectId: int,
     keyword: str = "",
     ctx: Context | None = None,
@@ -70,20 +84,20 @@ async def user_resolve_project_member(
     """按昵称或用户名解析项目成员。"""
     return await _execute_platform_tool(
         "user.resolve_project_member",
-        session_token,
+        system_session_token,
         {"projectId": projectId, "keyword": keyword},
     )
 
 
 @mcp_server.tool()
-async def user_list_project_members(session_token: SessionToken, projectId: int, ctx: Context | None = None) -> str:
+async def user_list_project_members(system_session_token: SessionToken, projectId: int, ctx: Context | None = None) -> str:
     """列出项目负责人、创建人和成员。"""
-    return await _execute_platform_tool("user.list_project_members", session_token, {"projectId": projectId})
+    return await _execute_platform_tool("user.list_project_members", system_session_token, {"projectId": projectId})
 
 
 @mcp_server.tool()
 async def work_item_search(
-    session_token: SessionToken,
+    system_session_token: SessionToken,
     keyword: str = "",
     projectId: int | None = None,
     ctx: Context | None = None,
@@ -92,61 +106,61 @@ async def work_item_search(
     arguments: dict[str, object] = {"keyword": keyword}
     if projectId is not None:
         arguments["projectId"] = projectId
-    return await _execute_platform_tool("work_item.search", session_token, arguments)
+    return await _execute_platform_tool("work_item.search", system_session_token, arguments)
 
 
 @mcp_server.tool()
-async def work_item_get_detail(session_token: SessionToken, workItemId: int, ctx: Context | None = None) -> str:
+async def work_item_get_detail(system_session_token: SessionToken, workItemId: int, ctx: Context | None = None) -> str:
     """读取工作项详情和评论摘要。"""
-    return await _execute_platform_tool("work_item.get_detail", session_token, {"workItemId": workItemId})
+    return await _execute_platform_tool("work_item.get_detail", system_session_token, {"workItemId": workItemId})
 
 
 @mcp_server.tool()
-async def agent_list_available(session_token: SessionToken, projectId: int | None = None, ctx: Context | None = None) -> str:
+async def agent_list_available(system_session_token: SessionToken, projectId: int | None = None, ctx: Context | None = None) -> str:
     """查询全局和项目可用 Agent。"""
     arguments: dict[str, object] = {}
     if projectId is not None:
         arguments["projectId"] = projectId
-    return await _execute_platform_tool("agent.list_available", session_token, arguments)
+    return await _execute_platform_tool("agent.list_available", system_session_token, arguments)
 
 
 @mcp_server.tool()
-async def agent_get_detail(session_token: SessionToken, agentId: int, ctx: Context | None = None) -> str:
+async def agent_get_detail(system_session_token: SessionToken, agentId: int, ctx: Context | None = None) -> str:
     """读取 Agent 类型、接入方式和能力。"""
-    return await _execute_platform_tool("agent.get_detail", session_token, {"agentId": agentId})
+    return await _execute_platform_tool("agent.get_detail", system_session_token, {"agentId": agentId})
 
 
 @mcp_server.tool()
-async def execution_task_search(session_token: SessionToken, keyword: str = "", ctx: Context | None = None) -> str:
+async def execution_task_search(system_session_token: SessionToken, keyword: str = "", ctx: Context | None = None) -> str:
     """按项目、工作项、状态或场景搜索执行任务。"""
-    return await _execute_platform_tool("execution_task.search", session_token, {"keyword": keyword})
+    return await _execute_platform_tool("execution_task.search", system_session_token, {"keyword": keyword})
 
 
 @mcp_server.tool()
-async def execution_task_get_detail(session_token: SessionToken, executionTaskId: int, ctx: Context | None = None) -> str:
+async def execution_task_get_detail(system_session_token: SessionToken, executionTaskId: int, ctx: Context | None = None) -> str:
     """读取执行任务、运行、步骤和产物。"""
     return await _execute_platform_tool(
         "execution_task.get_detail",
-        session_token,
+        system_session_token,
         {"executionTaskId": executionTaskId},
     )
 
 
 @mcp_server.tool()
-async def test_plan_search(session_token: SessionToken, keyword: str = "", ctx: Context | None = None) -> str:
+async def test_plan_search(system_session_token: SessionToken, keyword: str = "", ctx: Context | None = None) -> str:
     """按项目、迭代、状态或关键词查询测试计划。"""
-    return await _execute_platform_tool("test_plan.search", session_token, {"keyword": keyword})
+    return await _execute_platform_tool("test_plan.search", system_session_token, {"keyword": keyword})
 
 
 @mcp_server.tool()
-async def test_plan_get_detail(session_token: SessionToken, testPlanId: int, ctx: Context | None = None) -> str:
+async def test_plan_get_detail(system_session_token: SessionToken, testPlanId: int, ctx: Context | None = None) -> str:
     """读取测试计划和测试用例。"""
-    return await _execute_platform_tool("test_plan.get_detail", session_token, {"testPlanId": testPlanId})
+    return await _execute_platform_tool("test_plan.get_detail", system_session_token, {"testPlanId": testPlanId})
 
 
 @mcp_server.tool()
 async def work_item_create_draft(
-    session_token: SessionToken,
+    system_session_token: SessionToken,
     projectId: int,
     workItemType: str = "需求",
     name: str = "",
@@ -166,12 +180,12 @@ async def work_item_create_draft(
         arguments["iterationId"] = iterationId
     if assigneeUserId is not None:
         arguments["assigneeUserId"] = assigneeUserId
-    return await _execute_platform_tool("work_item.create_draft", session_token, arguments)
+    return await _execute_platform_tool("work_item.create_draft", system_session_token, arguments)
 
 
 @mcp_server.tool()
 async def execution_task_create(
-    session_token: SessionToken,
+    system_session_token: SessionToken,
     projectId: int | None = None,
     workItemId: int | None = None,
     scenarioCode: str = "",
@@ -183,12 +197,12 @@ async def execution_task_create(
         arguments["projectId"] = projectId
     if workItemId is not None:
         arguments["workItemId"] = workItemId
-    return await _execute_platform_tool("execution_task.create", session_token, arguments)
+    return await _execute_platform_tool("execution_task.create", system_session_token, arguments)
 
 
 @mcp_server.tool()
 async def test_plan_create_draft(
-    session_token: SessionToken,
+    system_session_token: SessionToken,
     projectId: int,
     iterationId: int,
     name: str = "",
@@ -198,7 +212,7 @@ async def test_plan_create_draft(
     """创建测试计划草稿提案，不直接落库。"""
     return await _execute_platform_tool(
         "test_plan.create_draft",
-        session_token,
+        system_session_token,
         {
             "projectId": projectId,
             "iterationId": iterationId,

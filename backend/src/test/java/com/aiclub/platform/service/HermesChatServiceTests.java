@@ -231,13 +231,8 @@ class HermesChatServiceTests {
         when(hermesContextAssembler.assemble(any(), eq(currentUser))).thenReturn(context);
         when(hermesConversationStateStore.load(eq("test:hermes:project:12:user:5:conversation:test-conversation"), eq("test-conversation")))
                 .thenReturn(Optional.of(existingState));
-        when(hermesMcpSessionTokenService.parseToken(eq("session-token")))
-                .thenReturn(new HermesMcpSessionTokenService.HermesMcpSessionClaims(
-                        5L,
-                        "test:hermes:project:12:user:5:conversation:test-conversation",
-                        "test-conversation",
-                        java.time.Instant.now().plusSeconds(300)
-                ));
+        when(hermesMcpSessionTokenService.issueToken(eq(currentUser), eq("test:hermes:project:12:user:5:conversation:test-conversation"), eq("test-conversation")))
+                .thenReturn("session-token");
         when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(selectedGrounding);
         when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), eq(selectedGrounding), eq("session-token")))
                 .thenReturn(prompt);
