@@ -75,6 +75,9 @@ class GitlabManagementGitlabActionsTests {
     @Mock
     private ProjectDataPermissionService projectDataPermissionService;
 
+    @Mock
+    private GitlabUserOauthService gitlabUserOauthService;
+
     private GitlabManagementService gitlabManagementService;
 
     @BeforeEach
@@ -94,6 +97,7 @@ class GitlabManagementGitlabActionsTests {
                 cicdManagementService,
                 notificationService,
                 projectDataPermissionService,
+                gitlabUserOauthService,
                 "http://gitlab.example.com/api/v4"
         );
     }
@@ -145,8 +149,21 @@ class GitlabManagementGitlabActionsTests {
     void shouldCreateMergeRequestFromSelectedBranches() {
         ProjectGitlabBindingEntity binding = buildBinding();
         when(bindingRepository.findById(1L)).thenReturn(Optional.of(binding));
-        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
-        when(gitlabApiService.createMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "feature/login", "main", "feat: 登录页联调", "补充联调说明"))
+        when(gitlabUserOauthService.requireCurrentUserAccess("http://gitlab.example.com/api/v4"))
+                .thenReturn(new GitlabUserOauthService.CurrentGitlabOauthAccess(
+                        GitlabApiService.GitlabAuthorization.bearerToken("user-access-token"),
+                        "Alice",
+                        "alice"
+                ));
+        when(gitlabApiService.createMergeRequest(
+                "http://gitlab.example.com/api/v4",
+                GitlabApiService.GitlabAuthorization.bearerToken("user-access-token"),
+                "group/demo-repo",
+                "feature/login",
+                "main",
+                "feat: 登录页联调",
+                "补充联调说明"
+        ))
                 .thenReturn(new GitlabApiService.GitlabCreatedMergeRequest(88L, "feat: 登录页联调", "feature/login", "main", "opened", "http://gitlab.example.com/group/demo-repo/-/merge_requests/88", "2026-04-10T11:22:33Z"));
 
         GitlabCreateMergeRequestResult result = gitlabManagementService.createBindingMergeRequest(
@@ -159,6 +176,8 @@ class GitlabManagementGitlabActionsTests {
         assertThat(result.sourceBranch()).isEqualTo("feature/login");
         assertThat(result.targetBranch()).isEqualTo("main");
         assertThat(result.webUrl()).isEqualTo("http://gitlab.example.com/group/demo-repo/-/merge_requests/88");
+        assertThat(result.actorName()).isEqualTo("Alice");
+        assertThat(result.actorUsername()).isEqualTo("alice");
     }
 
     /**
@@ -168,7 +187,6 @@ class GitlabManagementGitlabActionsTests {
     void shouldRejectMergeRequestWhenSourceAndTargetBranchAreSame() {
         ProjectGitlabBindingEntity binding = buildBinding();
         when(bindingRepository.findById(1L)).thenReturn(Optional.of(binding));
-        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
 
         assertThatThrownBy(() -> gitlabManagementService.createBindingMergeRequest(
                 1L,

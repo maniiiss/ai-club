@@ -21,6 +21,7 @@ import ToolConfigView from '@/views/ToolConfigView.vue'
 import OperationLogView from '@/views/OperationLogView.vue'
 import IterationView from '@/views/IterationView.vue'
 import ProfileView from '@/views/ProfileView.vue'
+import GitlabOauthCallbackView from '@/views/GitlabOauthCallbackView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const KnowledgeGraphView = () => import('@/views/KnowledgeGraphView.vue')
@@ -63,6 +64,7 @@ const router = createRouter({
         { path: 'cicd/jenkins-servers', name: 'cicd-servers', component: JenkinsServerView, meta: { title: 'Jenkins 服务', permission: 'cicd:view' } },
         { path: 'cicd/pipeline-bindings', name: 'cicd-pipelines', component: PipelineBindingView, meta: { title: '项目流水线', permission: 'cicd:view' } },
         { path: 'profile', name: 'profile', component: ProfileView, meta: { title: '个人中心' } },
+        { path: 'profile/gitlab-callback', name: 'profile-gitlab-callback', component: GitlabOauthCallbackView, meta: { title: 'GitLab 授权回调' } },
         { path: 'users', name: 'users', component: UserView, meta: { title: '用户管理', permission: 'system:user:view' } },
         { path: 'roles', name: 'roles', component: RoleView, meta: { title: '角色管理', permission: 'system:role:view' } },
         { path: 'permissions', name: 'permissions', component: PermissionView, meta: { title: '功能管理', permission: 'system:permission:view' } },

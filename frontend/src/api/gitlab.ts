@@ -8,6 +8,7 @@ import type {
   GitlabCreateMergeRequestResultItem,
   GitlabMergeRequestItem,
   GitlabTagCreateResultItem,
+  GitlabUserOauthBindingItem,
   PageResponse,
   ProjectGitlabBindingItem
 } from '@/types/platform'
@@ -88,6 +89,21 @@ export interface GitlabCreateMergeRequestPayload {
   description?: string
 }
 
+/**
+ * 当前用户发起 GitLab OAuth 授权时提交的参数。
+ */
+export interface GitlabUserOauthAuthorizePayload {
+  apiBaseUrl?: string
+}
+
+/**
+ * GitLab OAuth 回调页转发到后端的授权码和 state。
+ */
+export interface GitlabUserOauthCallbackPayload {
+  code: string
+  state: string
+}
+
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
     Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
@@ -146,6 +162,25 @@ export const createGitlabTag = async (id: number, payload: GitlabTagPayload) => 
 export const createGitlabMergeRequest = async (id: number, payload: GitlabCreateMergeRequestPayload) => {
   const { data } = await http.post<ApiResponse<GitlabCreateMergeRequestResultItem>>(`/api/gitlab/bindings/${id}/merge-requests`, payload)
   return data.data
+}
+
+export const getCurrentUserGitlabOauthBinding = async () => {
+  const { data } = await http.get<ApiResponse<GitlabUserOauthBindingItem>>('/api/gitlab/user-oauth-binding')
+  return data.data
+}
+
+export const createCurrentUserGitlabOauthAuthorizeUrl = async (payload: GitlabUserOauthAuthorizePayload = {}) => {
+  const { data } = await http.post<ApiResponse<{ authorizeUrl: string }>>('/api/gitlab/user-oauth-binding/authorize', payload)
+  return data.data
+}
+
+export const handleCurrentUserGitlabOauthCallback = async (payload: GitlabUserOauthCallbackPayload) => {
+  const { data } = await http.post<ApiResponse<GitlabUserOauthBindingItem>>('/api/gitlab/user-oauth-binding/callback', payload)
+  return data.data
+}
+
+export const deleteCurrentUserGitlabOauthBinding = async () => {
+  await http.delete<ApiResponse<null>>('/api/gitlab/user-oauth-binding')
 }
 
 export const pageGitlabAutoMergeConfigs = async (query: GitlabAutoMergeQuery) => {

@@ -133,6 +133,23 @@ public class AuthService {
     }
 
     /**
+     * 当其它业务流程直接修改了当前用户资料时，通过这里统一刷新会话快照。
+     */
+    @Transactional
+    public CurrentUserInfo refreshCurrentUserSessionSnapshot() {
+        AuthContext authContext = AuthContextHolder.get()
+                .orElseThrow(() -> new UnauthorizedException("Not logged in"));
+        UserEntity user = userRepository.findWithDetailsById(authContext.userId())
+                .orElseThrow(() -> new UnauthorizedException("User not found"));
+        if (!user.isEnabled()) {
+            throw new UnauthorizedException("Current account is disabled");
+        }
+        CurrentUserInfo currentUserInfo = toCurrentUserInfo(user);
+        refreshCurrentSession(authContext, currentUserInfo);
+        return currentUserInfo;
+    }
+
+    /**
      * 更新当前用户头像，并立即同步刷新登录会话中的头像信息。
      */
     @Transactional

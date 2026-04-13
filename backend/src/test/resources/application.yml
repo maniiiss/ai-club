@@ -19,6 +19,11 @@ platform:
     base-url: http://localhost:9000
   gitlab:
     default-api-url: http://localhost:30080/api/v4
+    oauth:
+      client-id: test-gitlab-client-id
+      client-secret: test-gitlab-client-secret
+      redirect-uri: http://localhost:5173/profile/gitlab-callback
+      state-expire-minutes: 10
   hermes:
     base-url: http://localhost:18080/v1
     api-key:

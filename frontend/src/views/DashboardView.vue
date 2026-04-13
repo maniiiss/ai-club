@@ -285,9 +285,9 @@
       <template #header>
         <PlatformDialogHeader title="GitLab 快速发起 MR" :subtitle="quickMergeDialogSubtitle" :icon="FolderOpened" />
       </template>
-      <el-form ref="quickMergeFormRef" :model="quickMergeForm" :rules="quickMergeRules" label-position="top" class="platform-form-layout">
-        <el-form-item label="项目" prop="bindingId">
-          <el-select v-model="quickMergeForm.bindingId" placeholder="请选择已绑定 GitLab 的项目仓库" style="width: 100%">
+        <el-form ref="quickMergeFormRef" :model="quickMergeForm" :rules="quickMergeRules" label-position="top" class="platform-form-layout">
+          <el-form-item label="项目" prop="bindingId">
+            <el-select v-model="quickMergeForm.bindingId" placeholder="请选择已绑定 GitLab 的项目仓库" style="width: 100%">
             <el-option
               v-for="binding in quickMergeBindingOptions"
               :key="binding.id"
@@ -297,6 +297,14 @@
           </el-select>
           <div class="form-tip">如同一项目绑定多个仓库，请按“项目 / 仓库路径”选择。</div>
         </el-form-item>
+        <div class="quick-merge-auth-card" :class="{ connected: !quickMergeSubmitDisabledReason }">
+          <div class="quick-merge-auth-title">GitLab 发起身份</div>
+          <div class="quick-merge-auth-text">{{ quickMergeActorDisplay }}</div>
+          <div v-if="quickMergeSubmitDisabledReason" class="quick-merge-auth-warning">{{ quickMergeSubmitDisabledReason }}</div>
+          <div class="quick-merge-auth-actions">
+            <el-button v-if="quickMergeSubmitDisabledReason" link type="primary" @click="router.push('/profile')">前往个人中心绑定</el-button>
+          </div>
+        </div>
         <el-form-item label="源分支" prop="sourceBranch">
           <el-select
             v-model="quickMergeForm.sourceBranch"
@@ -345,7 +353,7 @@
       <template #footer>
         <div class="platform-dialog-footer">
           <el-button @click="quickMergeDialogVisible = false">取消</el-button>
-          <el-button type="primary" :loading="quickMergeSubmitting" @click="handleQuickMergeSubmit">创建 MR</el-button>
+          <el-button type="primary" :loading="quickMergeSubmitting" :disabled="Boolean(quickMergeSubmitDisabledReason)" @click="handleQuickMergeSubmit">创建 MR</el-button>
         </div>
       </template>
     </el-dialog>
@@ -360,6 +368,9 @@
         <el-descriptions-item label="目标分支">{{ quickMergeResult.targetBranch }}</el-descriptions-item>
         <el-descriptions-item label="标题" :span="2">{{ quickMergeResult.title }}</el-descriptions-item>
         <el-descriptions-item label="创建时间">{{ formatDateTime(quickMergeResult.createdAt) }}</el-descriptions-item>
+        <el-descriptions-item label="发起账号">
+          {{ quickMergeResult.actorName || '-' }}<template v-if="quickMergeResult.actorUsername">（{{ quickMergeResult.actorUsername }}）</template>
+        </el-descriptions-item>
         <el-descriptions-item label="链接">
           <el-link v-if="quickMergeResult.webUrl" :href="quickMergeResult.webUrl" target="_blank" type="primary">打开 GitLab MR</el-link>
           <span v-else>-</span>
@@ -380,13 +391,19 @@ import DashboardQuickTaskWidget from '@/components/DashboardQuickTaskWidget.vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { pagePipelineBindings, triggerPipelineBuild } from '@/api/cicd'
 import { VueDraggable } from 'vue-draggable-plus'
-import { createGitlabMergeRequest, listGitlabBindingOptions, listGitlabBranches } from '@/api/gitlab'
+import {
+  createGitlabMergeRequest,
+  getCurrentUserGitlabOauthBinding,
+  listGitlabBindingOptions,
+  listGitlabBranches
+} from '@/api/gitlab'
 import { getDashboardOverview } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import type {
   DashboardOverview,
   GitlabBranchItem,
   GitlabCreateMergeRequestResultItem,
+  GitlabUserOauthBindingItem,
   ProjectGitlabBindingItem,
   ProjectPipelineBindingItem,
   TaskItem
@@ -470,13 +487,19 @@ const quickBuildBindings = ref<ProjectPipelineBindingItem[]>([])
 const quickBuildTriggeringId = ref<number | null>(null)
 const quickMergeFormRef = ref<FormInstance>()
 const quickMergeBindingOptions = ref<ProjectGitlabBindingItem[]>([])
+const quickMergeOauthBinding = ref<GitlabUserOauthBindingItem>(fallbackQuickMergeOauthBinding())
 const quickMergeSourceBranchOptions = ref<GitlabBranchItem[]>([])
 const quickMergeTargetBranchOptions = ref<GitlabBranchItem[]>([])
 const sourceBranchLoading = ref(false)
 const targetBranchLoading = ref(false)
 const quickMergeResult = ref<GitlabCreateMergeRequestResultItem | null>(null)
 const quickMergeForm = reactive<QuickMergeForm>({ bindingId: null, sourceBranch: '', targetBranch: '', title: '', description: '' })
-const quickMergeDialogSubtitle = computed(() => '在首页快速选择仓库分支并发起新的 GitLab MR。')
+const quickMergeDialogSubtitle = computed(() => {
+  if (quickMergeSubmitDisabledReason.value) {
+    return quickMergeSubmitDisabledReason.value
+  }
+  return quickMergeActorDisplay.value
+})
 const widgetMeasuredRowSpanMap = ref<Partial<Record<DashboardWidgetId, number>>>({})
 
 const quickMergeRules: FormRules<QuickMergeForm> = {
@@ -494,6 +517,33 @@ const canViewCicd = computed(() => authStore.hasPermission('cicd:view'))
 const canManageCicd = computed(() => authStore.hasPermission('cicd:manage'))
 const meNames = computed(() => [authStore.user?.nickname, authStore.user?.username].filter((value): value is string => Boolean(value && value.trim())).map((value) => value.trim()))
 const gitlabBindingCount = computed(() => quickMergeBindingOptions.value.length)
+const currentQuickMergeBinding = computed(() => quickMergeBindingOptions.value.find((item) => item.id === quickMergeForm.bindingId) || null)
+const quickMergeBindingSupportsOauth = computed(() => {
+  if (!currentQuickMergeBinding.value) {
+    return false
+  }
+  return currentQuickMergeBinding.value.apiBaseUrl === quickMergeOauthBinding.value.apiBaseUrl
+})
+const quickMergeActorDisplay = computed(() => {
+  if (!quickMergeOauthBinding.value.connected) {
+    return '当前尚未绑定 GitLab 用户身份'
+  }
+  const actorName = quickMergeOauthBinding.value.gitlabName || '-'
+  const actorUsername = quickMergeOauthBinding.value.gitlabUsername || '-'
+  return `将以 ${actorName}（${actorUsername}）身份发起`
+})
+const quickMergeSubmitDisabledReason = computed(() => {
+  if (!currentQuickMergeBinding.value) {
+    return '请先选择项目仓库'
+  }
+  if (!quickMergeBindingSupportsOauth.value) {
+    return '当前仓库实例暂不支持使用个人 GitLab 授权发起 MR'
+  }
+  if (!quickMergeOauthBinding.value.connected) {
+    return '当前用户尚未绑定 GitLab 账户，请先前往个人中心完成授权'
+  }
+  return ''
+})
 const quickBuildBindingCount = computed(() => quickBuildBindings.value.length)
 const dashboardLayoutUserId = computed(() => authStore.user?.id ?? null)
 
@@ -861,6 +911,18 @@ async function loadQuickMergeBindings() {
   }
 }
 
+/**
+ * 首页快速发起 MR 依赖当前登录用户的 GitLab OAuth 绑定状态。
+ */
+async function loadQuickMergeOauthBinding() {
+  try {
+    quickMergeOauthBinding.value = await getCurrentUserGitlabOauthBinding()
+  } catch (error: any) {
+    quickMergeOauthBinding.value = fallbackQuickMergeOauthBinding()
+    ElMessage.error(error?.response?.data?.message || '加载 GitLab 授权状态失败')
+  }
+}
+
 async function loadQuickMergeBranches(kind: 'source' | 'target', keyword = '') {
   if (!quickMergeForm.bindingId) return
   if (kind === 'source') {
@@ -895,7 +957,7 @@ function handleQuickMergeTargetSearch(keyword: string) {
 async function openQuickMergeDialog() {
   try {
     resetQuickMergeForm()
-    await loadQuickMergeBindings()
+    await Promise.all([loadQuickMergeBindings(), loadQuickMergeOauthBinding()])
     quickMergeDialogVisible.value = true
   } catch (error: any) {
     ElMessage.warning(error?.message || '暂无可用的 GitLab 绑定项目')
@@ -905,6 +967,10 @@ async function openQuickMergeDialog() {
 async function handleQuickMergeSubmit() {
   const valid = await quickMergeFormRef.value?.validate().catch(() => false)
   if (!valid || quickMergeForm.bindingId === null) {
+    return
+  }
+  if (quickMergeSubmitDisabledReason.value) {
+    ElMessage.warning(quickMergeSubmitDisabledReason.value)
     return
   }
   if (quickMergeForm.sourceBranch.trim() === quickMergeForm.targetBranch.trim()) {
@@ -1006,6 +1072,17 @@ function fallbackOverview(): DashboardOverview {
   }
 }
 
+function fallbackQuickMergeOauthBinding(): GitlabUserOauthBindingItem {
+  return {
+    connected: false,
+    apiBaseUrl: '',
+    gitlabUserId: null,
+    gitlabUsername: null,
+    gitlabName: null,
+    expiresAt: null
+  }
+}
+
 function normalizeOverview(data: DashboardOverview): DashboardOverview {
   const base = fallbackOverview()
   return {
@@ -1039,9 +1116,10 @@ onMounted(async () => {
   await loadOverview()
   if (canViewGitlab.value) {
     try {
-      await loadQuickMergeBindings()
+      await Promise.all([loadQuickMergeBindings(), loadQuickMergeOauthBinding()])
     } catch {
       quickMergeBindingOptions.value = []
+      quickMergeOauthBinding.value = fallbackQuickMergeOauthBinding()
     }
   }
   if (canViewCicd.value) {
@@ -1476,6 +1554,45 @@ onBeforeUnmount(() => {
 .quick-merge-button.solid {
   background: rgba(255, 255, 255, 0.96);
   color: var(--app-primary-dark-2);
+}
+
+.quick-merge-auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding: 14px 16px;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.1);
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.quick-merge-auth-card.connected {
+  border-color: rgba(34, 197, 94, 0.18);
+  background: rgba(240, 253, 244, 0.92);
+}
+
+.quick-merge-auth-title {
+  color: var(--app-text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.quick-merge-auth-text {
+  color: var(--app-text-soft);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.quick-merge-auth-warning {
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.quick-merge-auth-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .quick-build-kicker {

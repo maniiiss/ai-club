@@ -74,6 +74,7 @@ public class GitlabManagementService {
     private final CicdManagementService cicdManagementService;
     private final NotificationService notificationService;
     private final ProjectDataPermissionService projectDataPermissionService;
+    private final GitlabUserOauthService gitlabUserOauthService;
     private final String defaultApiUrl;
 
     public GitlabManagementService(ProjectRepository projectRepository,
@@ -86,11 +87,12 @@ public class GitlabManagementService {
                                    TokenCipherService tokenCipherService,
                                    ModelConfigService modelConfigService,
                                    CodeReviewClientService codeReviewClientService,
-                                   AgentExecutionService agentExecutionService,
-                                   CicdManagementService cicdManagementService,
-                                   NotificationService notificationService,
-                                   ProjectDataPermissionService projectDataPermissionService,
-                                   @Value("${platform.gitlab.default-api-url}") String defaultApiUrl) {
+                                    AgentExecutionService agentExecutionService,
+                                    CicdManagementService cicdManagementService,
+                                    NotificationService notificationService,
+                                    ProjectDataPermissionService projectDataPermissionService,
+                                    GitlabUserOauthService gitlabUserOauthService,
+                                    @Value("${platform.gitlab.default-api-url}") String defaultApiUrl) {
         this.projectRepository = projectRepository;
         this.agentRepository = agentRepository;
         this.bindingRepository = bindingRepository;
@@ -105,6 +107,7 @@ public class GitlabManagementService {
         this.cicdManagementService = cicdManagementService;
         this.notificationService = notificationService;
         this.projectDataPermissionService = projectDataPermissionService;
+        this.gitlabUserOauthService = gitlabUserOauthService;
         this.defaultApiUrl = defaultApiUrl;
     }
 
@@ -245,17 +248,19 @@ public class GitlabManagementService {
     @Transactional
     public GitlabCreateMergeRequestResult createBindingMergeRequest(Long id, GitlabCreateMergeRequestRequest request) {
         ProjectGitlabBindingEntity entity = requireBinding(id);
-        ResolvedGitlabConfig resolved = resolveBindingConfig(entity);
         String sourceBranch = requireValue(request.sourceBranch(), "源分支");
         String targetBranch = requireValue(request.targetBranch(), "目标分支");
         requireDifferentBranches(sourceBranch, targetBranch);
         String title = requireValue(request.title(), "MR 标题");
         String description = trimToNull(request.description());
+        GitlabUserOauthService.CurrentGitlabOauthAccess oauthAccess = gitlabUserOauthService.requireCurrentUserAccess(entity.getApiBaseUrl());
+        String projectRef = resolveBindingProjectRef(entity);
 
+        // 快速发起 MR 必须以当前登录用户的 GitLab 身份执行，避免再回退到项目级 token 冒充发起人。
         GitlabApiService.GitlabCreatedMergeRequest mergeRequest = gitlabApiService.createMergeRequest(
-                resolved.apiBaseUrl(),
-                resolved.token(),
-                resolved.projectRef(),
+                entity.getApiBaseUrl(),
+                oauthAccess.authorization(),
+                projectRef,
                 sourceBranch,
                 targetBranch,
                 title,
@@ -263,14 +268,16 @@ public class GitlabManagementService {
         );
         return new GitlabCreateMergeRequestResult(
                 entity.getProject().getName(),
-                resolved.projectRef(),
+                projectRef,
                 mergeRequest.iid(),
                 mergeRequest.title(),
                 mergeRequest.sourceBranch(),
                 mergeRequest.targetBranch(),
                 mergeRequest.state(),
                 mergeRequest.webUrl(),
-                hasText(mergeRequest.createdAt()) ? mergeRequest.createdAt() : formatTime(LocalDateTime.now())
+                hasText(mergeRequest.createdAt()) ? mergeRequest.createdAt() : formatTime(LocalDateTime.now()),
+                oauthAccess.gitlabName(),
+                oauthAccess.gitlabUsername()
         );
     }
 
@@ -1382,10 +1389,12 @@ public class GitlabManagementService {
         if (pipelineOutcome == null) {
             return mergeMessage;
         }
+        boolean multipleBindings = pipelineOutcome.bindingOutcomes() != null && pipelineOutcome.bindingOutcomes().size() > 1;
         return switch (pipelineOutcome.status()) {
-            case "SUCCESS" -> limitMessage(mergeMessage + "；已触发 Jenkins 流水线");
+            case "SUCCESS" -> limitMessage(mergeMessage + "；" + (multipleBindings ? defaultString(pipelineOutcome.message()) : "已触发 Jenkins 流水线"));
             case "SKIPPED" -> limitMessage(mergeMessage + "；未触发 Jenkins：" + defaultString(pipelineOutcome.message()));
             case "FAILED" -> limitMessage(mergeMessage + "；Jenkins 触发失败：" + defaultString(pipelineOutcome.message()));
+            case "PARTIAL" -> limitMessage(mergeMessage + "；Jenkins 部分触发：" + defaultString(pipelineOutcome.message()));
             default -> limitMessage(mergeMessage);
         };
     }
@@ -1397,17 +1406,35 @@ public class GitlabManagementService {
         StringBuilder builder = new StringBuilder();
         builder.append("## Jenkins 流水线触发结果\n\n");
         builder.append("- 状态：").append(formatPipelineTriggerStatusText(pipelineOutcome.status())).append("\n");
-        if (hasText(pipelineOutcome.jenkinsServerName())) {
-            builder.append("- Jenkins 服务：").append(pipelineOutcome.jenkinsServerName().trim()).append("\n");
-        }
-        if (hasText(pipelineOutcome.jobName())) {
-            builder.append("- Job：").append(pipelineOutcome.jobName().trim()).append("\n");
-        }
         if (hasText(pipelineOutcome.message())) {
-            builder.append("- 说明：").append(pipelineOutcome.message().trim()).append("\n");
+            builder.append("- 摘要：").append(pipelineOutcome.message().trim()).append("\n");
         }
-        if (hasText(pipelineOutcome.triggerUrl())) {
-            builder.append("- 链接：").append(pipelineOutcome.triggerUrl().trim()).append("\n");
+        if (pipelineOutcome.bindingOutcomes() == null || pipelineOutcome.bindingOutcomes().isEmpty()) {
+            return builder.toString();
+        }
+        builder.append("\n");
+        // 多条 Jenkins 绑定需要逐条输出状态，方便在合并日志中定位具体哪一条失败或被跳过。
+        for (int index = 0; index < pipelineOutcome.bindingOutcomes().size(); index++) {
+            CicdManagementService.PipelineBindingOutcome bindingOutcome = pipelineOutcome.bindingOutcomes().get(index);
+            if (pipelineOutcome.bindingOutcomes().size() > 1) {
+                builder.append("### 绑定 ").append(index + 1).append("\n\n");
+            }
+            builder.append("- 状态：").append(formatPipelineTriggerStatusText(bindingOutcome.status())).append("\n");
+            if (hasText(bindingOutcome.jenkinsServerName())) {
+                builder.append("- Jenkins 服务：").append(bindingOutcome.jenkinsServerName().trim()).append("\n");
+            }
+            if (hasText(bindingOutcome.jobName())) {
+                builder.append("- Job：").append(bindingOutcome.jobName().trim()).append("\n");
+            }
+            if (hasText(bindingOutcome.message())) {
+                builder.append("- 说明：").append(bindingOutcome.message().trim()).append("\n");
+            }
+            if (hasText(bindingOutcome.triggerUrl())) {
+                builder.append("- 链接：").append(bindingOutcome.triggerUrl().trim()).append("\n");
+            }
+            if (index < pipelineOutcome.bindingOutcomes().size() - 1) {
+                builder.append("\n");
+            }
         }
         return builder.toString();
     }
@@ -1418,6 +1445,9 @@ public class GitlabManagementService {
         }
         if ("FAILED".equalsIgnoreCase(status)) {
             return "触发失败";
+        }
+        if ("PARTIAL".equalsIgnoreCase(status)) {
+            return "部分成功";
         }
         if ("SKIPPED".equalsIgnoreCase(status)) {
             return "已跳过";

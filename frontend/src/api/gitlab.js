@@ -45,6 +45,21 @@ export const createGitlabMergeRequest = async (id, payload) => {
     const { data } = await http.post(`/api/gitlab/bindings/${id}/merge-requests`, payload);
     return data.data;
 };
+export const getCurrentUserGitlabOauthBinding = async () => {
+    const { data } = await http.get('/api/gitlab/user-oauth-binding');
+    return data.data;
+};
+export const createCurrentUserGitlabOauthAuthorizeUrl = async (payload = {}) => {
+    const { data } = await http.post('/api/gitlab/user-oauth-binding/authorize', payload);
+    return data.data;
+};
+export const handleCurrentUserGitlabOauthCallback = async (payload) => {
+    const { data } = await http.post('/api/gitlab/user-oauth-binding/callback', payload);
+    return data.data;
+};
+export const deleteCurrentUserGitlabOauthBinding = async () => {
+    await http.delete('/api/gitlab/user-oauth-binding');
+};
 export const pageGitlabAutoMergeConfigs = async (query) => {
     const { data } = await http.get('/api/gitlab/auto-merge-configs', {
         params: cleanParams(query)

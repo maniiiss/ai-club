@@ -249,22 +249,47 @@ public class CicdManagementService {
 
     @Transactional(noRollbackFor = RuntimeException.class)
     public PipelineTriggerOutcome tryTriggerProjectPipeline(Long projectId, String branchOverride, String sourceDescription) {
-        ProjectPipelineBindingEntity entity = projectPipelineBindingRepository.findByProject_Id(projectId).orElse(null);
-        if (entity == null) {
+        List<ProjectPipelineBindingEntity> bindings = projectPipelineBindingRepository.findByProject_IdOrderByIdAsc(projectId);
+        if (bindings.isEmpty()) {
             return PipelineTriggerOutcome.skipped("当前项目未配置 Jenkins 流水线绑定");
         }
-        if (!Boolean.TRUE.equals(entity.getEnabled())) {
-            return PipelineTriggerOutcome.skipped("项目流水线绑定未启用");
+
+        List<PipelineBindingOutcome> bindingOutcomes = new ArrayList<>();
+        // 同一项目下的多条 Jenkins 绑定需要逐条触发，并分别记录结果，避免只命中首条绑定。
+        for (ProjectPipelineBindingEntity entity : bindings) {
+            if (!Boolean.TRUE.equals(entity.getEnabled())) {
+                bindingOutcomes.add(PipelineBindingOutcome.skipped(
+                        "项目流水线绑定未启用",
+                        entity.getJobName(),
+                        entity.getJenkinsServer().getName()
+                ));
+                continue;
+            }
+            if (!Boolean.TRUE.equals(entity.getJenkinsServer().getEnabled())) {
+                bindingOutcomes.add(PipelineBindingOutcome.skipped(
+                        "关联的 Jenkins 服务未启用",
+                        entity.getJobName(),
+                        entity.getJenkinsServer().getName()
+                ));
+                continue;
+            }
+            try {
+                JenkinsBuildTriggerResult result = triggerPipelineBuild(entity, branchOverride, sourceDescription);
+                bindingOutcomes.add(PipelineBindingOutcome.success(
+                        result.message(),
+                        result.triggerUrl(),
+                        result.jobName(),
+                        result.jenkinsServerName()
+                ));
+            } catch (RuntimeException exception) {
+                bindingOutcomes.add(PipelineBindingOutcome.failed(
+                        limitMessage(exception.getMessage()),
+                        entity.getJobName(),
+                        entity.getJenkinsServer().getName()
+                ));
+            }
         }
-        if (!Boolean.TRUE.equals(entity.getJenkinsServer().getEnabled())) {
-            return PipelineTriggerOutcome.skipped("关联的 Jenkins 服务未启用");
-        }
-        try {
-            JenkinsBuildTriggerResult result = triggerPipelineBuild(entity, branchOverride, sourceDescription);
-            return PipelineTriggerOutcome.success(result.message(), result.triggerUrl(), result.jobName(), result.jenkinsServerName());
-        } catch (RuntimeException exception) {
-            return PipelineTriggerOutcome.failed(limitMessage(exception.getMessage()), entity.getJobName(), entity.getJenkinsServer().getName());
-        }
+        return buildProjectPipelineOutcome(bindingOutcomes);
     }
 
     private void fillJenkinsServerEntity(JenkinsServerEntity entity, JenkinsServerRequest request, boolean createMode) {
@@ -363,11 +388,6 @@ public class CicdManagementService {
     private void fillPipelineBindingEntity(ProjectPipelineBindingEntity entity, ProjectPipelineBindingRequest request, boolean createMode) {
         ProjectEntity project = requireProject(request.projectId());
         JenkinsServerEntity jenkinsServer = requireJenkinsServer(request.jenkinsServerId());
-        projectPipelineBindingRepository.findByProject_Id(project.getId())
-                .filter(existing -> !existing.getId().equals(entity.getId()))
-                .ifPresent(item -> {
-                    throw new IllegalArgumentException("当前项目已存在 Jenkins 流水线绑定，请直接编辑现有配置");
-                });
 
         String jobName = request.jobName().trim();
         String apiToken = tokenCipherService.decrypt(jenkinsServer.getTokenCiphertext());
@@ -387,6 +407,41 @@ public class CicdManagementService {
             entity.setLastTriggeredAt(toLocalDateTime(job.lastBuild().timestamp()));
             entity.setLastTriggerUrl(trimToNull(job.lastBuild().url()));
         }
+    }
+
+    /**
+     * 汇总同一项目下多条 Jenkins 绑定的触发结果，兼容全成功、全失败、全跳过和部分成功场景。
+     */
+    private PipelineTriggerOutcome buildProjectPipelineOutcome(List<PipelineBindingOutcome> bindingOutcomes) {
+        if (bindingOutcomes == null || bindingOutcomes.isEmpty()) {
+            return PipelineTriggerOutcome.skipped("当前项目未配置 Jenkins 流水线绑定");
+        }
+        if (bindingOutcomes.size() == 1) {
+            PipelineBindingOutcome bindingOutcome = bindingOutcomes.get(0);
+            return switch (bindingOutcome.status()) {
+                case "SUCCESS" -> PipelineTriggerOutcome.success(bindingOutcome.message(), bindingOutcomes);
+                case "FAILED" -> PipelineTriggerOutcome.failed(bindingOutcome.message(), bindingOutcomes);
+                default -> PipelineTriggerOutcome.skipped(bindingOutcome.message(), bindingOutcomes);
+            };
+        }
+
+        long successCount = bindingOutcomes.stream().filter(item -> "SUCCESS".equalsIgnoreCase(item.status())).count();
+        long failedCount = bindingOutcomes.stream().filter(item -> "FAILED".equalsIgnoreCase(item.status())).count();
+        long skippedCount = bindingOutcomes.size() - successCount - failedCount;
+
+        if (successCount == bindingOutcomes.size()) {
+            return PipelineTriggerOutcome.success("已触发 " + successCount + " 条 Jenkins 流水线", bindingOutcomes);
+        }
+        if (failedCount == bindingOutcomes.size()) {
+            return PipelineTriggerOutcome.failed("共 " + failedCount + " 条 Jenkins 流水线触发失败", bindingOutcomes);
+        }
+        if (skippedCount == bindingOutcomes.size()) {
+            return PipelineTriggerOutcome.skipped("共 " + skippedCount + " 条 Jenkins 流水线未触发", bindingOutcomes);
+        }
+        return PipelineTriggerOutcome.partial(
+                "共 " + bindingOutcomes.size() + " 条绑定，成功 " + successCount + " 条，失败 " + failedCount + " 条，跳过 " + skippedCount + " 条",
+                bindingOutcomes
+        );
     }
 
     private Map<String, String> parseBuildParameters(String buildParametersJson, String branchOverride, String defaultBranch) {
@@ -687,20 +742,73 @@ public class CicdManagementService {
     public record PipelineTriggerOutcome(
             String status,
             String message,
+            List<PipelineBindingOutcome> bindingOutcomes
+    ) {
+        /**
+         * 构建整体触发成功结果。
+         */
+        public static PipelineTriggerOutcome success(String message, List<PipelineBindingOutcome> bindingOutcomes) {
+            return new PipelineTriggerOutcome("SUCCESS", message, List.copyOf(bindingOutcomes));
+        }
+
+        /**
+         * 构建整体触发失败结果。
+         */
+        public static PipelineTriggerOutcome failed(String message, List<PipelineBindingOutcome> bindingOutcomes) {
+            return new PipelineTriggerOutcome("FAILED", message, List.copyOf(bindingOutcomes));
+        }
+
+        /**
+         * 构建整体触发跳过结果。
+         */
+        public static PipelineTriggerOutcome skipped(String message, List<PipelineBindingOutcome> bindingOutcomes) {
+            return new PipelineTriggerOutcome("SKIPPED", message, List.copyOf(bindingOutcomes));
+        }
+
+        /**
+         * 构建部分成功的聚合结果。
+         */
+        public static PipelineTriggerOutcome partial(String message, List<PipelineBindingOutcome> bindingOutcomes) {
+            return new PipelineTriggerOutcome("PARTIAL", message, List.copyOf(bindingOutcomes));
+        }
+
+        /**
+         * 构建没有任何绑定时的跳过结果。
+         */
+        public static PipelineTriggerOutcome skipped(String message) {
+            return skipped(message, List.of());
+        }
+    }
+
+    /**
+     * 单条 Jenkins 绑定的触发结果，用于多绑定场景逐条回显。
+     */
+    public record PipelineBindingOutcome(
+            String status,
+            String message,
             String triggerUrl,
             String jobName,
             String jenkinsServerName
     ) {
-        public static PipelineTriggerOutcome success(String message, String triggerUrl, String jobName, String jenkinsServerName) {
-            return new PipelineTriggerOutcome("SUCCESS", message, triggerUrl, jobName, jenkinsServerName);
+        /**
+         * 构建单条绑定的成功结果。
+         */
+        public static PipelineBindingOutcome success(String message, String triggerUrl, String jobName, String jenkinsServerName) {
+            return new PipelineBindingOutcome("SUCCESS", message, triggerUrl, jobName, jenkinsServerName);
         }
 
-        public static PipelineTriggerOutcome failed(String message, String jobName, String jenkinsServerName) {
-            return new PipelineTriggerOutcome("FAILED", message, null, jobName, jenkinsServerName);
+        /**
+         * 构建单条绑定的失败结果。
+         */
+        public static PipelineBindingOutcome failed(String message, String jobName, String jenkinsServerName) {
+            return new PipelineBindingOutcome("FAILED", message, null, jobName, jenkinsServerName);
         }
 
-        public static PipelineTriggerOutcome skipped(String message) {
-            return new PipelineTriggerOutcome("SKIPPED", message, null, null, null);
+        /**
+         * 构建单条绑定的跳过结果。
+         */
+        public static PipelineBindingOutcome skipped(String message, String jobName, String jenkinsServerName) {
+            return new PipelineBindingOutcome("SKIPPED", message, null, jobName, jenkinsServerName);
         }
     }
 }

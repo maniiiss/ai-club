@@ -746,6 +746,20 @@ export interface GitlabCreateMergeRequestResultItem {
   state: string
   webUrl: string | null
   createdAt: string
+  actorName: string | null
+  actorUsername: string | null
+}
+
+/**
+ * 当前登录用户在默认 GitLab 实例上的 OAuth 绑定状态。
+ */
+export interface GitlabUserOauthBindingItem {
+  connected: boolean
+  apiBaseUrl: string
+  gitlabUserId: number | null
+  gitlabUsername: string | null
+  gitlabName: string | null
+  expiresAt: string | null
 }
 
 export interface GitlabAutoMergeLogItem {

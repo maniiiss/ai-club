@@ -81,6 +81,51 @@
           </div>
         </section>
 
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">GitLab 账户绑定</div>
+            <div class="platform-form-section-subtitle">使用 GitLab OAuth 绑定当前平台账号，首页快速发起 MR 时会以你自己的 GitLab 身份提交。</div>
+          </div>
+
+          <div v-loading="gitlabOauthBindingLoading" class="profile-gitlab-binding-card">
+            <div class="profile-gitlab-binding-head">
+              <div>
+                <div class="profile-gitlab-binding-title">默认 GitLab 实例</div>
+                <div class="profile-gitlab-binding-url">{{ gitlabOauthBinding.apiBaseUrl || '-' }}</div>
+              </div>
+              <span class="profile-gitlab-binding-pill" :class="{ connected: gitlabOauthBinding.connected }">
+                {{ gitlabOauthBinding.connected ? '已绑定' : '未绑定' }}
+              </span>
+            </div>
+
+            <div class="profile-gitlab-binding-grid">
+              <div class="profile-gitlab-binding-item">
+                <span class="profile-gitlab-binding-label">账号名称</span>
+                <span class="profile-gitlab-binding-value">{{ gitlabOauthBinding.gitlabName || '-' }}</span>
+              </div>
+              <div class="profile-gitlab-binding-item">
+                <span class="profile-gitlab-binding-label">用户名</span>
+                <span class="profile-gitlab-binding-value">{{ gitlabOauthBinding.gitlabUsername || '-' }}</span>
+              </div>
+              <div class="profile-gitlab-binding-item profile-gitlab-binding-item-full">
+                <span class="profile-gitlab-binding-label">过期时间</span>
+                <span class="profile-gitlab-binding-value">{{ gitlabOauthBinding.expiresAt || '未返回过期时间' }}</span>
+              </div>
+            </div>
+
+            <div class="profile-gitlab-binding-note">
+              未绑定时，首页“快速发起 MR”会直接阻断并提示前往个人中心完成授权。
+            </div>
+
+            <div class="profile-actions">
+              <el-button type="primary" :loading="gitlabOauthAuthorizing" @click="handleGitlabOauthAuthorize">
+                {{ gitlabOauthBinding.connected ? '重新授权' : '授权绑定' }}
+              </el-button>
+              <el-button v-if="gitlabOauthBinding.connected" :loading="gitlabOauthUnbinding" @click="handleGitlabOauthUnbind">解绑</el-button>
+            </div>
+          </div>
+        </section>
+
         <section class="platform-form-section profile-theme-section">
           <div class="platform-form-section-head">
             <div class="platform-form-section-title">界面风格</div>
@@ -141,8 +186,10 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import { createCurrentUserGitlabOauthAuthorizeUrl, deleteCurrentUserGitlabOauthBinding, getCurrentUserGitlabOauthBinding } from '@/api/gitlab'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
+import type { GitlabUserOauthBindingItem } from '@/types/platform'
 import { resolveAssetUrl } from '@/utils/asset'
 
 const authStore = useAuthStore()
@@ -153,8 +200,20 @@ const avatarInputRef = ref<HTMLInputElement>()
 const profileSubmitting = ref(false)
 const passwordSubmitting = ref(false)
 const avatarUploading = ref(false)
+const gitlabOauthBindingLoading = ref(false)
+const gitlabOauthAuthorizing = ref(false)
+const gitlabOauthUnbinding = ref(false)
 const ALLOWED_AVATAR_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/gif'])
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024
+
+const gitlabOauthBinding = ref<GitlabUserOauthBindingItem>({
+  connected: false,
+  apiBaseUrl: '',
+  gitlabUserId: null,
+  gitlabUsername: null,
+  gitlabName: null,
+  expiresAt: null
+})
 
 const profileForm = reactive({
   nickname: '',
@@ -203,6 +262,25 @@ const syncFromUser = () => {
   profileForm.email = authStore.user?.email || ''
   profileForm.phone = authStore.user?.phone || ''
   profileForm.gitlabUsername = authStore.user?.gitlabUsername || ''
+}
+
+const loadGitlabOauthBinding = async () => {
+  gitlabOauthBindingLoading.value = true
+  try {
+    gitlabOauthBinding.value = await getCurrentUserGitlabOauthBinding()
+  } catch (error: any) {
+    gitlabOauthBinding.value = {
+      connected: false,
+      apiBaseUrl: '',
+      gitlabUserId: null,
+      gitlabUsername: null,
+      gitlabName: null,
+      expiresAt: null
+    }
+    ElMessage.error(error?.response?.data?.message || '加载 GitLab 绑定状态失败')
+  } finally {
+    gitlabOauthBindingLoading.value = false
+  }
 }
 
 const handleTriggerAvatarUpload = () => {
@@ -271,6 +349,33 @@ const handleSaveProfile = async () => {
   }
 }
 
+// 个人中心发起 GitLab OAuth 时直接跳转到 GitLab 授权页，避免在浏览器里丢失当前登录态。
+const handleGitlabOauthAuthorize = async () => {
+  gitlabOauthAuthorizing.value = true
+  try {
+    const result = await createCurrentUserGitlabOauthAuthorizeUrl({
+      apiBaseUrl: gitlabOauthBinding.value.apiBaseUrl || undefined
+    })
+    window.location.href = result.authorizeUrl
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '生成 GitLab 授权地址失败')
+    gitlabOauthAuthorizing.value = false
+  }
+}
+
+const handleGitlabOauthUnbind = async () => {
+  gitlabOauthUnbinding.value = true
+  try {
+    await deleteCurrentUserGitlabOauthBinding()
+    await loadGitlabOauthBinding()
+    ElMessage.success('GitLab 账户绑定已解绑')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '解绑 GitLab 账户失败')
+  } finally {
+    gitlabOauthUnbinding.value = false
+  }
+}
+
 const handleChangePassword = async () => {
   const valid = await passwordFormRef.value?.validate().catch(() => false)
   if (!valid) return
@@ -291,6 +396,7 @@ const handleChangePassword = async () => {
 
 onMounted(() => {
   syncFromUser()
+  void loadGitlabOauthBinding()
 })
 </script>
 
@@ -586,7 +692,94 @@ onMounted(() => {
 .profile-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 12px;
   margin-top: 8px;
+}
+
+.profile-gitlab-binding-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.profile-gitlab-binding-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.profile-gitlab-binding-title {
+  color: var(--app-text);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.profile-gitlab-binding-url {
+  margin-top: 6px;
+  color: var(--app-text-soft);
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.profile-gitlab-binding-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.profile-gitlab-binding-pill.connected {
+  background: rgba(34, 197, 94, 0.12);
+  color: #15803d;
+}
+
+.profile-gitlab-binding-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.profile-gitlab-binding-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.profile-gitlab-binding-item-full {
+  grid-column: 1 / -1;
+}
+
+.profile-gitlab-binding-label {
+  color: var(--app-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.profile-gitlab-binding-value {
+  color: var(--app-text);
+  font-size: 14px;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.profile-gitlab-binding-note {
+  color: var(--app-text-soft);
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 @media (max-width: 1100px) {
@@ -614,6 +807,14 @@ onMounted(() => {
   .profile-theme-summary {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .profile-gitlab-binding-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-gitlab-binding-item-full {
+    grid-column: auto;
   }
 
   .profile-theme-cache-note {

@@ -64,6 +64,9 @@ class GitlabNotificationMappingTests {
     @Mock
     private ProjectDataPermissionService projectDataPermissionService;
 
+    @Mock
+    private GitlabUserOauthService gitlabUserOauthService;
+
     private GitlabManagementService gitlabManagementService;
 
     @BeforeEach
@@ -83,6 +86,7 @@ class GitlabNotificationMappingTests {
                 cicdManagementService,
                 notificationService,
                 projectDataPermissionService,
+                gitlabUserOauthService,
                 "http://gitlab.example.com/api/v4"
         );
     }
