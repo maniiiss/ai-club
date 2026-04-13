@@ -12,6 +12,8 @@ package com.aiclub.platform.dto;
  * @param state Merge Request 当前状态
  * @param webUrl Merge Request 页面链接
  * @param createdAt 创建时间
+ * @param actorName 实际发起该 MR 的 GitLab 账号名称
+ * @param actorUsername 实际发起该 MR 的 GitLab 用户名
  */
 public record GitlabCreateMergeRequestResult(
         String projectName,
@@ -22,6 +24,8 @@ public record GitlabCreateMergeRequestResult(
         String targetBranch,
         String state,
         String webUrl,
-        String createdAt
+        String createdAt,
+        String actorName,
+        String actorUsername
 ) {
 }

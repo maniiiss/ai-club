@@ -9,13 +9,18 @@ import com.aiclub.platform.dto.GitlabBranchSummary;
 import com.aiclub.platform.dto.GitlabCreateMergeRequestResult;
 import com.aiclub.platform.dto.GitlabMergeRequestSummary;
 import com.aiclub.platform.dto.GitlabTagCreateResult;
+import com.aiclub.platform.dto.GitlabUserOauthAuthorizeResult;
+import com.aiclub.platform.dto.GitlabUserOauthBindingSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
 import com.aiclub.platform.dto.request.GitlabCreateMergeRequestRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
+import com.aiclub.platform.dto.request.GitlabUserOauthAuthorizeRequest;
+import com.aiclub.platform.dto.request.GitlabUserOauthCallbackRequest;
 import com.aiclub.platform.dto.request.ProjectGitlabBindingRequest;
 import com.aiclub.platform.service.GitlabManagementService;
+import com.aiclub.platform.service.GitlabUserOauthService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,9 +39,47 @@ import java.util.List;
 public class GitlabController {
 
     private final GitlabManagementService gitlabManagementService;
+    private final GitlabUserOauthService gitlabUserOauthService;
 
-    public GitlabController(GitlabManagementService gitlabManagementService) {
+    public GitlabController(GitlabManagementService gitlabManagementService,
+                            GitlabUserOauthService gitlabUserOauthService) {
         this.gitlabManagementService = gitlabManagementService;
+        this.gitlabUserOauthService = gitlabUserOauthService;
+    }
+
+    /**
+     * 返回当前登录用户在默认 GitLab 实例上的 OAuth 绑定状态。
+     */
+    @GetMapping("/user-oauth-binding")
+    public ApiResponse<GitlabUserOauthBindingSummary> getCurrentUserOauthBinding() {
+        return ApiResponse.success(gitlabUserOauthService.getCurrentUserBindingSummary());
+    }
+
+    /**
+     * 为当前登录用户生成 GitLab OAuth 授权地址。
+     */
+    @PostMapping("/user-oauth-binding/authorize")
+    public ApiResponse<GitlabUserOauthAuthorizeResult> createCurrentUserOauthAuthorizeUrl(
+            @Valid @RequestBody GitlabUserOauthAuthorizeRequest request) {
+        return ApiResponse.success(gitlabUserOauthService.createAuthorizeUrl(request));
+    }
+
+    /**
+     * 处理 GitLab OAuth 授权回调。
+     */
+    @PostMapping("/user-oauth-binding/callback")
+    public ApiResponse<GitlabUserOauthBindingSummary> handleCurrentUserOauthCallback(
+            @Valid @RequestBody GitlabUserOauthCallbackRequest request) {
+        return ApiResponse.success(gitlabUserOauthService.handleOauthCallback(request));
+    }
+
+    /**
+     * 解绑当前登录用户的 GitLab OAuth 绑定。
+     */
+    @DeleteMapping("/user-oauth-binding")
+    public ApiResponse<Void> deleteCurrentUserOauthBinding() {
+        gitlabUserOauthService.unbindCurrentUser();
+        return new ApiResponse<>(true, "Deleted successfully", null);
     }
 
     @GetMapping("/bindings")
