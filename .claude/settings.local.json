@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(./mvnw compile:*)",
-      "Bash(mvn compile:*)"
+      "Bash(mvn compile:*)",
+      "Bash(docker exec:*)",
+      "Bash(curl -s http://localhost:18888/health)"
     ]
   }
 }

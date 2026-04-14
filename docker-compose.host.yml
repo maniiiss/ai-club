@@ -75,7 +75,10 @@ services:
       - "${HINDSIGHT_DATA_DIR:-/data/git-ai-club/hindsight}:/home/hindsight/.pg0"
 
   hermes:
-    image: ${HERMES_IMAGE:-ghcr.io/nousresearch/hermes-agent:latest}
+    build:
+      context: ./docker/hermes
+      dockerfile: Dockerfile
+    image: ${HERMES_IMAGE:-git-ai-club-hermes:latest}
     container_name: git-ai-club-host-hermes
     restart: unless-stopped
     network_mode: host
@@ -88,6 +91,11 @@ services:
       LLM_MODEL: ${HERMES_LLM_MODEL:-gpt-4.1-mini}
       MINIMAX_CN_API_KEY: ${HERMES_LLM_API_KEY:-}
       MINIMAX_CN_BASE_URL: ${HERMES_LLM_BASE_URL:-https://api.minimaxi.com/v1}
+      HERMES_MEMORY_PROVIDER: hindsight
+      HERMES_MEMORY_HINDSIGHT_URL: http://127.0.0.1:${HINDSIGHT_PORT:-18888}
+      HINDSIGHT_API_URL: http://127.0.0.1:${HINDSIGHT_PORT:-18888}
+      HINDSIGHT_API_KEY: local
+      HINDSIGHT_LLM_API_KEY: ${HERMES_LLM_API_KEY:-}
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: ${HERMES_PORT:-18080}
@@ -104,6 +112,9 @@ services:
         model:
           provider: minimax-cn
           default: ${HERMES_LLM_MODEL:-MiniMax-M2.7}
+        memory:
+          provider: hindsight
+          hindsight_url: http://127.0.0.1:${HINDSIGHT_PORT:-18888}
         platform_toolsets:
           api_server:
             - git_ai_club

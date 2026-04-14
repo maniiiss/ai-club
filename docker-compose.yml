@@ -99,7 +99,10 @@ services:
       - "${HINDSIGHT_DATA_DIR:-./.data/hindsight}:/home/hindsight/.pg0"
 
   hermes:
-    image: ${HERMES_IMAGE:-ghcr.io/nousresearch/hermes-agent:latest}
+    build:
+      context: ./docker/hermes
+      dockerfile: Dockerfile
+    image: ${HERMES_IMAGE:-git-ai-club-hermes:latest}
     container_name: git-ai-club-hermes
     restart: unless-stopped
     depends_on:
@@ -112,6 +115,11 @@ services:
       HERMES_LLM_MODEL: ${HERMES_LLM_MODEL:-MiniMax-M2.5}
       HERMES_LLM_API_KEY: ${HERMES_LLM_API_KEY:-}
       HERMES_LLM_BASE_URL: ${HERMES_LLM_BASE_URL:-}
+      HERMES_MEMORY_PROVIDER: hindsight
+      HERMES_MEMORY_HINDSIGHT_URL: http://hindsight:8888
+      HINDSIGHT_API_URL: http://hindsight:8888
+      HINDSIGHT_API_KEY: local
+      HINDSIGHT_LLM_API_KEY: ${HERMES_LLM_API_KEY:-}
       CODE_PROCESSING_IP: ${CODE_PROCESSING_IP:-host.docker.internal}
       CODE_PROCESSING_PORT: ${CODE_PROCESSING_PORT:-9000}
       API_SERVER_ENABLED: "true"
@@ -145,6 +153,11 @@ services:
           fi
           if [ -n "$${HERMES_LLM_API_KEY:-}" ]; then
             echo "  api_key: $${HERMES_LLM_API_KEY}"
+          fi
+          echo "memory:"
+          echo "  provider: $${HERMES_MEMORY_PROVIDER:-hindsight}"
+          if [ -n "$${HERMES_MEMORY_HINDSIGHT_URL:-}" ]; then
+            echo "  hindsight_url: $${HERMES_MEMORY_HINDSIGHT_URL}"
           fi
           echo "platform_toolsets:"
           echo "  api_server:"
