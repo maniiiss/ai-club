@@ -2,208 +2,185 @@
   <el-drawer
     v-model="drawerVisible"
     :direction="isMobileViewport ? 'btt' : 'rtl'"
-    :size="isMobileViewport ? '100%' : '460px'"
+    :size="isMobileViewport ? '100%' : '880px'"
     :show-close="false"
     :class="['hermes-drawer', { 'is-mobile': isMobileViewport }]"
   >
     <template #header>
       <div class="hermes-head">
-        <div class="hermes-head-copy">
+        <div>
           <div class="hermes-title">Hermes 助手</div>
-          <div class="hermes-subtitle">{{ drawerSubtitle }}</div>
         </div>
         <button class="hermes-close-button" type="button" @click="drawerVisible = false">关闭</button>
       </div>
     </template>
 
     <div class="hermes-panel">
-      <div ref="messageScrollRef" class="hermes-body" @click="handleThinkSummaryClick">
-        <section v-if="isMobileViewport && !currentMessages.length" class="hermes-mobile-intro">
-          <div class="hermes-mobile-intro-title">问你想问</div>
-          <p class="hermes-mobile-intro-description">Hermes 会结合当前页面、项目和任务上下文继续回答你的问题。</p>
-        </section>
-
-        <section v-if="displayPrompts.length" class="hermes-quick-prompts">
-          <div class="hermes-section-title">你可以这样问</div>
-          <div class="hermes-chip-list">
-            <button
-              v-for="prompt in displayPrompts"
-              :key="prompt"
-              class="hermes-chip-button"
-              type="button"
-              :disabled="sending"
-              @click="handleSubmit(prompt)"
-            >
-              {{ prompt }}
-            </button>
-          </div>
-        </section>
-
-        <section v-if="currentMessages.length" class="hermes-message-section">
-          <div
-            v-for="message in currentMessages"
-            :key="message.id"
-            class="hermes-message-row"
-            :class="message.role === 'user' ? 'user' : 'assistant'"
-          >
-            <div class="hermes-message-label">
-              {{ message.role === 'user' ? '我' : 'Hermes' }}
-              <span v-if="message.role === 'assistant' && currentRoleName" class="hermes-role-tag">{{ currentRoleName }}</span>
+      <aside class="hermes-session-sidebar">
+        <div class="hermes-session-content">
+          <div class="hermes-session-toolbar">
+            <button class="hermes-primary-button" type="button" :disabled="sending" @click="handleCreateSession">新建会话</button>
+            <div class="hermes-session-tabs">
+              <button class="hermes-tab" :class="{ active: !archivedView }" type="button" :disabled="sending" @click="archivedView = false">当前</button>
+              <button class="hermes-tab" :class="{ active: archivedView }" type="button" :disabled="sending" @click="archivedView = true">已归档</button>
             </div>
-            <div class="hermes-message-bubble" :class="message.status">
-              <pre v-if="message.role === 'user'">{{ message.content || (message.status === 'streaming' ? '正在整理回答...' : '暂无内容') }}</pre>
+          </div>
+
+          <div class="hermes-session-list">
+            <div v-if="sessionLoading" class="hermes-muted-card">正在加载会话...</div>
+            <template v-else-if="sessionSummaries.length">
               <div
-                v-else
-                class="hermes-markdown-content"
-                v-html="renderAssistantMessage(message)"
-              ></div>
-            </div>
-          </div>
-        </section>
-
-        <section v-if="currentSelectionCards.length" class="hermes-selection-section">
-          <div class="hermes-section-title">需要你确认</div>
-          <div class="hermes-selection-list">
-            <article
-              v-for="(selectionCard, cardIndex) in currentSelectionCards"
-              :key="`${selectionCard.slot}-${cardIndex}-${selectionCard.title}`"
-              class="hermes-selection-card"
-            >
-              <div class="hermes-selection-card-copy">
-                <strong>{{ selectionCard.title }}</strong>
-                <span>{{ selectionCard.description }}</span>
-              </div>
-              <div class="hermes-selection-option-list">
-                <article
-                  v-for="(option, optionIndex) in selectionCard.options"
-                  :key="`${selectionCard.slot}-${option.entityType}-${option.entityId ?? optionIndex}`"
-                  class="hermes-selection-option-card"
+                v-for="session in sessionSummaries"
+                :key="session.id"
+                class="hermes-session-item"
+                :class="{ active: selectedSessionId === session.id }"
+              >
+                <button
+                  class="hermes-session-main"
+                  type="button"
+                  :disabled="sending"
+                  @click="handleSelectSession(session.id)"
                 >
-                  <div class="hermes-selection-option-copy">
+                  <strong>{{ session.title || '新会话' }}</strong>
+                </button>
+                <el-dropdown
+                  trigger="click"
+                  placement="bottom-end"
+                  @command="handleSessionCommandEvent(session, $event)"
+                >
+                  <button class="hermes-session-more-button" type="button" :disabled="sending">
+                    <el-icon class="hermes-session-more-icon"><MoreFilled /></el-icon>
+                  </button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="rename">重命名</el-dropdown-item>
+                      <el-dropdown-item v-if="session.archived" command="restore">恢复</el-dropdown-item>
+                      <el-dropdown-item v-else command="archive">归档</el-dropdown-item>
+                      <el-dropdown-item command="delete">删除</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </div>
+              <button v-if="canLoadMoreSessions" class="hermes-load-more-button" type="button" :disabled="loadingMoreSessions" @click="loadMoreSessions">
+                {{ loadingMoreSessions ? '加载中...' : '查看更多' }}
+              </button>
+            </template>
+            <div v-else class="hermes-muted-card">{{ archivedView ? '暂无已归档会话' : '暂无会话记录' }}</div>
+          </div>
+        </div>
+      </aside>
+
+      <section class="hermes-chat-shell">
+        <div ref="messageScrollRef" class="hermes-body" @click="handleThinkSummaryClick">
+          <section v-if="!currentSessionDetail" class="hermes-empty-state">
+            <div class="hermes-empty-kicker">云端会话</div>
+            <div class="hermes-empty-title">选择历史会话，或从当前页面新建</div>
+          </section>
+
+          <section v-if="displayPrompts.length" class="hermes-section">
+            <div class="hermes-section-title">你可以这样问</div>
+            <div class="hermes-chip-list">
+              <button v-for="prompt in displayPrompts" :key="prompt" class="hermes-chip-button" type="button" :disabled="footerDisabled" @click="handleSubmit(prompt)">
+                {{ prompt }}
+              </button>
+            </div>
+          </section>
+
+          <section v-if="detailLoading" class="hermes-muted-card">正在读取会话记录...</section>
+
+          <section v-if="currentMessages.length" class="hermes-message-section">
+            <div v-for="message in currentMessages" :key="message.id" class="hermes-message-row" :class="message.role">
+              <div class="hermes-message-label">
+                {{ message.role === 'user' ? '我' : 'Hermes' }}
+                <span v-if="message.role === 'assistant'" class="hermes-role-tag">{{ currentRoleName }}</span>
+              </div>
+              <div class="hermes-message-bubble" :class="message.status">
+                <pre v-if="message.role === 'user'">{{ message.content || '暂无内容' }}</pre>
+                <div v-else class="hermes-markdown-content" v-html="renderAssistantMessage(message)"></div>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="currentSessionDetail && !currentMessages.length && !detailLoading" class="hermes-empty-state compact">
+            <div class="hermes-empty-kicker">新会话</div>
+            <div class="hermes-empty-title">把当前上下文交给 Hermes</div>
+            <p>发送第一条问题后，会话记录会保存在云端，后续可以从左侧列表继续打开。</p>
+          </section>
+
+          <section v-if="currentSelectionCards.length" class="hermes-section">
+            <div class="hermes-section-title">需要你确认</div>
+            <article v-for="(selectionCard, cardIndex) in currentSelectionCards" :key="`${selectionCard.slot}-${cardIndex}`" class="hermes-card">
+              <strong>{{ selectionCard.title }}</strong>
+              <span>{{ selectionCard.description }}</span>
+              <div class="hermes-option-list">
+                <article v-for="(option, optionIndex) in selectionCard.options" :key="`${option.entityType}-${option.entityId ?? optionIndex}`" class="hermes-option-card">
+                  <div>
                     <strong>{{ option.title }}</strong>
                     <span>{{ option.subtitle }}</span>
                     <small v-if="option.matchReasons.length">{{ option.matchReasons.join(' / ') }}</small>
                   </div>
-                  <div class="hermes-selection-option-actions">
-                    <button
-                      v-if="option.route"
-                      class="hermes-tool-inline-button secondary"
-                      type="button"
-                      @click="handleOpenReference(option.route)"
-                    >
-                      查看
-                    </button>
-                    <button
-                      class="hermes-tool-inline-button"
-                      type="button"
-                      :disabled="sending || option.entityId == null"
-                      @click="handleSelectOption(selectionCard, option)"
-                    >
-                      选择此项
-                    </button>
+                  <div class="hermes-inline-actions">
+                    <button v-if="option.route" class="hermes-inline-button secondary" type="button" @click="handleOpenReference(option.route)">查看</button>
+                    <button class="hermes-inline-button" type="button" :disabled="footerDisabled || option.entityId == null" @click="handleSelectOption(selectionCard, option)">选择此项</button>
                   </div>
                 </article>
               </div>
             </article>
-          </div>
-        </section>
+          </section>
 
-        <section v-if="currentActions.length" class="hermes-action-section">
-          <div class="hermes-section-title">可执行动作</div>
-          <div class="hermes-action-list">
-            <article v-for="(action, index) in currentActions" :key="`${action.type}-${index}-${action.title}`" class="hermes-action-card">
-              <div class="hermes-action-card-copy">
+          <section v-if="currentActions.length" class="hermes-section">
+            <div class="hermes-section-title">可执行动作</div>
+            <article v-for="(action, index) in currentActions" :key="`${action.type}-${index}`" class="hermes-action-card">
+              <div>
                 <strong>{{ action.title }}</strong>
                 <span>{{ action.description }}</span>
               </div>
-              <button
-                class="hermes-action-button"
-                type="button"
-                :disabled="sending || executingActionKey === actionKey(action, index)"
-                @click="handleConfirmAction(action, index)"
-              >
+              <button class="hermes-inline-button" type="button" :disabled="footerDisabled || executingActionKey === actionKey(action, index)" @click="handleConfirmAction(action, index)">
                 {{ executingActionKey === actionKey(action, index) ? '执行中...' : '确认执行' }}
               </button>
             </article>
-          </div>
-        </section>
+          </section>
 
-        <section v-if="!currentMessages.length" class="hermes-empty-state">
-          <div class="hermes-empty-kicker">问你想问</div>
-          <div class="hermes-empty-title">把项目上下文交给 Hermes</div>
-          <p class="hermes-empty-description">
-            这里会结合当前页面、项目和任务的可见信息，帮你回顾进度、风险、决策和下一步建议。
-          </p>
-        </section>
+          <section v-if="currentReferences.length" class="hermes-section">
+            <div class="hermes-section-title">引用来源</div>
+            <div class="hermes-chip-list">
+              <button v-for="reference in currentReferences" :key="`${reference.type}-${reference.id ?? reference.title}`" class="hermes-reference-item" type="button" @click="handleOpenReference(reference.route)">
+                <span>{{ reference.type }}</span>
+                <strong>{{ reference.title }}</strong>
+              </button>
+            </div>
+          </section>
 
-        <section v-if="currentReferences.length" class="hermes-reference-section">
-          <div class="hermes-section-title">引用来源</div>
-          <div class="hermes-reference-list">
-            <button
-              v-for="reference in currentReferences"
-              :key="`${reference.type}-${reference.id ?? reference.title}`"
-              class="hermes-reference-item"
-              type="button"
-              @click="handleOpenReference(reference.route)"
-            >
-              <span class="hermes-reference-type">{{ reference.type }}</span>
-              <span class="hermes-reference-title">{{ reference.title }}</span>
-            </button>
-          </div>
-        </section>
-
-        <section v-if="isDebugMode && currentDebug" class="hermes-debug-section">
-          <div class="hermes-section-title">调试轨迹</div>
-          <pre class="hermes-debug-pre">{{ formatDebugInfo(currentDebug) }}</pre>
-        </section>
-      </div>
-
-      <div class="hermes-footer">
-        <el-input
-          v-model="draftQuestion"
-          type="textarea"
-          :rows="3"
-          resize="none"
-          :disabled="sending"
-          placeholder="问你想问"
-          @keydown.enter.exact.prevent="handleSubmit()"
-        />
-        <div class="hermes-footer-actions">
-          <span class="hermes-footer-tip">{{ sending ? currentStreamStatusText : 'Enter 发送，Shift+Enter 换行' }}</span>
-          <button class="hermes-send-button" type="button" :disabled="sending" @click="handleSubmit()">
-            {{ sending ? '回答中...' : '发送' }}
-          </button>
+          <section v-if="isDebugMode && currentDebug" class="hermes-section">
+            <div class="hermes-section-title">调试轨迹</div>
+            <pre class="hermes-debug-pre">{{ formatDebugInfo(currentDebug) }}</pre>
+          </section>
         </div>
-      </div>
+
+        <div class="hermes-footer">
+          <el-input v-model="draftQuestion" type="textarea" :rows="3" resize="none" :disabled="footerDisabled" :placeholder="footerPlaceholder" @keydown.enter.exact.prevent="handleSubmit()" />
+          <div class="hermes-footer-actions">
+            <span>{{ footerTip }}</span>
+            <button class="hermes-send-button" type="button" :disabled="footerDisabled" @click="handleSubmit()">{{ sending ? '回答中...' : '发送' }}</button>
+          </div>
+        </div>
+      </section>
     </div>
   </el-drawer>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { MoreFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { streamHermesChat } from '@/api/hermes'
+import { archiveHermesConversationSession, createHermesConversationSession, deleteHermesConversationSession, getHermesConversationDetail, pageHermesConversationSessions, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat } from '@/api/hermes'
 import { createGitlabBindingScanTask } from '@/api/gitlab'
 import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
+import { useAuthStore } from '@/stores/auth'
 import { renderHermesMarkdownToHtml } from '@/utils/hermesMarkdown'
 import { DEFAULT_REQUIREMENT_TEMPLATE } from '@/utils/requirementTemplate'
-import type {
-  HermesActionItem,
-  HermesChatRequestPayload,
-  HermesConversationSession,
-  HermesDebugInfoItem,
-  HermesMessageItem,
-  HermesReferenceItem,
-  HermesSelectionCardItem,
-  HermesSelectionOptionItem,
-  HermesSelectionPayload,
-  HermesStreamDeltaEvent,
-  HermesStreamDoneEvent,
-  HermesStreamErrorEvent,
-  HermesStreamMetaEvent,
-  HermesStreamStatusEvent
-} from '@/types/hermes'
+import type { CreateHermesConversationSessionPayload, HermesActionItem, HermesConversationDetailItem, HermesConversationSessionSummaryItem, HermesDebugInfoItem, HermesMessageItem, HermesReferenceItem, HermesSelectionCardItem, HermesSelectionOptionItem, HermesSelectionPayload, HermesSessionChatRequestPayload, HermesStreamDeltaEvent, HermesStreamDoneEvent, HermesStreamErrorEvent, HermesStreamMetaEvent, HermesStreamStatusEvent } from '@/types/hermes'
 
 interface HermesDrawerProps {
   routeName: string
@@ -217,147 +194,61 @@ interface HermesDrawerProps {
 const props = defineProps<HermesDrawerProps>()
 const drawerVisible = defineModel<boolean>({ default: false })
 const router = useRouter()
+const authStore = useAuthStore()
 const messageScrollRef = ref<HTMLDivElement>()
 const isMobileViewport = ref(false)
 const draftQuestion = ref('')
 const sending = ref(false)
-const currentRoleName = ref('协作成员')
+const sessionLoading = ref(false)
+const loadingMoreSessions = ref(false)
+const detailLoading = ref(false)
+const archivedView = ref(false)
+const sessionSummaries = ref<HermesConversationSessionSummaryItem[]>([])
+const sessionPage = ref(1)
+const sessionTotal = ref(0)
+const selectedSessionId = ref<number | null>(readSelectedSessionId())
+const currentSessionDetail = ref<HermesConversationDetailItem | null>(null)
+const currentRoleName = ref(resolveCurrentRoleName())
 const currentMessages = ref<HermesMessageItem[]>([])
 const currentReferences = ref<HermesReferenceItem[]>([])
 const currentSuggestions = ref<string[]>([])
 const currentActions = ref<HermesActionItem[]>([])
 const currentSelectionCards = ref<HermesSelectionCardItem[]>([])
 const currentDebug = ref<HermesDebugInfoItem | null>(null)
-const currentScopeKey = ref('')
-const scopeKeyByFingerprint = new Map<string, string>()
-const sessionCache = new Map<string, HermesConversationSession>()
-const conversationIdByFingerprint = new Map<string, string>()
 const activeStreamAbort = ref<(() => void) | null>(null)
 const thinkBlockOpenState = new Map<string, boolean>()
 const executingActionKey = ref('')
 const HERMES_DEBUG_STORAGE_KEY = 'git-ai-club:hermes:debug'
-const HERMES_CONVERSATION_VERSION = 'v3'
+const HERMES_SELECTED_SESSION_STORAGE_KEY = 'git-ai-club:hermes:selected-session'
+const SESSION_PAGE_SIZE = 20
 const isDebugMode = ref(false)
 const currentStreamStatus = ref<HermesStreamStatusEvent | null>(null)
 
-const scopeFingerprint = computed(() => (props.projectId ? `project:${props.projectId}` : 'global'))
-const drawerSubtitle = computed(() => {
-  if (props.taskId) {
-    return '任务执行上下文'
-  }
-  if (props.projectId) {
-    return '项目工作区上下文'
-  }
-  return '顶部全局入口'
+const displayPrompts = computed(() => currentSuggestions.value.length ? currentSuggestions.value : props.fallbackPrompts || [])
+const currentStreamStatusText = computed(() => {
+  const message = currentStreamStatus.value?.message || 'Hermes 正在整理回答'
+  return message + '...'
 })
-const displayPrompts = computed(() => {
-  if (currentSuggestions.value.length) {
-    return currentSuggestions.value
+const canLoadMoreSessions = computed(() => sessionSummaries.value.length < sessionTotal.value)
+const footerDisabled = computed(() => sending.value || detailLoading.value || Boolean(currentSessionDetail.value?.archived))
+const footerPlaceholder = computed(() => currentSessionDetail.value?.archived ? '归档会话需要恢复后继续提问' : '问你想问')
+const footerTip = computed(() => sending.value ? currentStreamStatusText.value : currentSessionDetail.value?.archived ? '归档会话仅支持查看，恢复后可继续发送' : 'Enter 发送，Shift+Enter 换行')
+
+watch(drawerVisible, (visible) => {
+  if (visible) {
+    void initializeDrawer()
   }
-  return props.fallbackPrompts || []
 })
-const currentStreamStatusText = computed(() => currentStreamStatus.value?.message || 'Hermes 正在整理回答...')
 
-/**
- * 顶部抽屉只在当前浏览器会话内缓存可见消息，刷新页面后自然丢失，不恢复完整 transcript。
- */
-const loadSessionForCurrentScope = () => {
-  const resolvedScopeKey = scopeKeyByFingerprint.get(scopeFingerprint.value) || `pending:${scopeFingerprint.value}`
-  currentScopeKey.value = resolvedScopeKey
-  const cachedSession = sessionCache.get(resolvedScopeKey)
-  currentMessages.value = cachedSession ? [...cachedSession.messages] : []
-  currentReferences.value = cachedSession ? [...cachedSession.references] : []
-  currentSuggestions.value = cachedSession ? [...cachedSession.suggestions] : []
-  currentActions.value = cachedSession ? [...(cachedSession.actions || [])] : []
-  currentSelectionCards.value = cachedSession ? [...(cachedSession.selectionCards || [])] : []
-  currentDebug.value = cachedSession?.debug || null
-  currentRoleName.value = cachedSession?.roleName || '协作成员'
-  void restoreThinkBlocksAndScroll(false)
-}
-
-const saveCurrentSession = () => {
-  if (!currentScopeKey.value) {
-    return
+watch(archivedView, () => {
+  if (drawerVisible.value) {
+    void loadSessionList(true)
   }
-  sessionCache.set(currentScopeKey.value, {
-    scopeKey: currentScopeKey.value,
-    messages: [...currentMessages.value],
-    references: [...currentReferences.value],
-    suggestions: [...currentSuggestions.value],
-    roleName: currentRoleName.value,
-    actions: [...currentActions.value],
-    selectionCards: [...currentSelectionCards.value],
-    debug: currentDebug.value
-  })
-}
+})
 
-const scrollToBottom = async () => {
-  await nextTick()
-  if (!messageScrollRef.value) {
-    return
-  }
-  messageScrollRef.value.scrollTop = messageScrollRef.value.scrollHeight
-}
-
-/**
- * 仅当用户仍停留在消息底部附近、且当前没有展开中的思考块时，才继续自动跟随流式输出滚动。
- * 否则用户正在阅读历史内容或思考过程，强制滚动会让人误以为思考面板被自动收起。
- */
-const shouldAutoScrollWithStream = () => {
-  if (!messageScrollRef.value) {
-    return true
-  }
-  const scrollContainer = messageScrollRef.value
-  const remainingDistance = scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight
-  const isNearBottom = remainingDistance <= 48
-  const hasExpandedThinkBlock = Boolean(
-    scrollContainer.querySelector('.hermes-think-block[open]')
-  ) || Array.from(thinkBlockOpenState.values()).some(Boolean)
-  return isNearBottom && !hasExpandedThinkBlock
-}
-
-/**
- * 流式输出会触发 `v-html` 整块重绘，这里在每次重绘后把用户刚刚展开的思考块状态恢复回来。
- */
-const restoreThinkBlockOpenState = () => {
-  if (!messageScrollRef.value) {
-    return
-  }
-  const thinkBlocks = messageScrollRef.value.querySelectorAll<HTMLDetailsElement>('.hermes-think-block[data-think-key]')
-  thinkBlocks.forEach((thinkBlock) => {
-    const thinkKey = thinkBlock.dataset.thinkKey
-    if (!thinkKey || !thinkBlockOpenState.has(thinkKey)) {
-      return
-    }
-    thinkBlock.open = Boolean(thinkBlockOpenState.get(thinkKey))
-  })
-}
-
-/**
- * 将思考块状态恢复和滚动到底部合并，避免流式渲染时出现先恢复、再被下一次 DOM 更新打断的闪动。
- */
-const restoreThinkBlocksAndScroll = async (shouldScroll = true) => {
-  await nextTick()
-  restoreThinkBlockOpenState()
-  if (shouldScroll && messageScrollRef.value) {
-    messageScrollRef.value.scrollTop = messageScrollRef.value.scrollHeight
-  }
-}
-
-const syncViewportMode = () => {
-  if (typeof window === 'undefined') {
-    return
-  }
-  isMobileViewport.value = window.innerWidth <= 900
-}
-
-watch(
-  () => scopeFingerprint.value,
-  () => {
-    loadSessionForCurrentScope()
-  },
-  { immediate: true }
-)
+watch(() => authStore.user?.roleNames, () => {
+  currentRoleName.value = resolveCurrentRoleName()
+})
 
 onMounted(() => {
   syncViewportMode()
@@ -371,45 +262,217 @@ onBeforeUnmount(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', syncViewportMode)
   }
-  if (activeStreamAbort.value) {
-    activeStreamAbort.value()
-    activeStreamAbort.value = null
-  }
+  activeStreamAbort.value?.()
+  activeStreamAbort.value = null
 })
 
 /**
- * 使用事件代理记录 `<details>` 的展开状态，避免用户展开后在流式增量到达时被立即收起。
+ * 初始化抽屉时只从后端恢复会话列表和选中会话详情，不再恢复浏览器内存里的消息缓存。
  */
-const handleThinkSummaryClick = (event: Event) => {
-  const clickTarget = event.target
-  if (!(clickTarget instanceof HTMLElement)) {
-    return
+const initializeDrawer = async () => {
+  await loadSessionList(true)
+  if (selectedSessionId.value) {
+    await loadSessionDetail(selectedSessionId.value)
   }
-  const summaryElement = clickTarget.closest('summary')
-  if (!(summaryElement instanceof HTMLElement)) {
-    return
-  }
-  const thinkBlock = summaryElement.parentElement
-  if (!(thinkBlock instanceof HTMLDetailsElement)) {
-    return
-  }
-  const thinkKey = thinkBlock.dataset.thinkKey
-  if (!thinkKey) {
-    return
-  }
+}
 
-  /**
-   * 这里直接记录“点击之后将要切换成的状态”，避免流式增量刚好在同一时刻到达时，
-   * 由于 `setTimeout(0)` 尚未执行，导致新一轮 DOM 重绘把刚展开的思考面板又恢复成关闭状态。
-   */
-  thinkBlockOpenState.set(thinkKey, !thinkBlock.open)
+/**
+ * 读取会话列表，支持当前会话和已归档会话两个视图。
+ */
+const loadSessionList = async (reset = false) => {
+  if (reset) {
+    sessionPage.value = 1
+    sessionLoading.value = true
+  } else {
+    loadingMoreSessions.value = true
+  }
+  try {
+    const pageData = await pageHermesConversationSessions({ page: reset ? 1 : sessionPage.value + 1, size: SESSION_PAGE_SIZE, archived: archivedView.value })
+    sessionPage.value = pageData.page
+    sessionTotal.value = pageData.total
+    sessionSummaries.value = reset ? pageData.records : mergeSessionSummaries(sessionSummaries.value, pageData.records)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载 Hermes 会话失败')
+  } finally {
+    sessionLoading.value = false
+    loadingMoreSessions.value = false
+  }
+}
+
+const loadMoreSessions = async () => {
+  if (canLoadMoreSessions.value && !loadingMoreSessions.value) {
+    await loadSessionList(false)
+  }
+}
+
+/**
+ * 读取并应用指定会话详情，确保刷新页面后也能从云端回显历史消息。
+ */
+const loadSessionDetail = async (sessionId: number) => {
+  detailLoading.value = true
+  try {
+    const detail = await getHermesConversationDetail(sessionId)
+    applySessionDetail(detail)
+    selectedSessionId.value = detail.id
+    persistSelectedSessionId(detail.id)
+    if (detail.archived !== archivedView.value) {
+      archivedView.value = detail.archived
+    }
+  } catch (error: any) {
+    clearSelectedSession()
+    ElMessage.error(error?.response?.data?.message || '加载 Hermes 会话详情失败')
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+const handleSelectSession = async (sessionId: number) => {
+  if (!sending.value) {
+    await loadSessionDetail(sessionId)
+  }
+}
+
+const handleCreateSession = async () => {
+  if (sending.value) {
+    return
+  }
+  // 不再立即创建会话，只是清空当前选中状态，等待用户发送消息时再创建
+  clearSelectedSession()
+}
+
+/**
+ * 创建新会话时固定保存当前页面上下文，后续继续聊天不再受页面切换影响。
+ */
+const createAndSelectSession = async () => {
+  try {
+    const createdSession = await createHermesConversationSession(buildCreateSessionPayload())
+    archivedView.value = false
+    sessionSummaries.value = mergeSessionSummaries([createdSession], sessionSummaries.value)
+    sessionTotal.value = Math.max(sessionTotal.value, sessionSummaries.value.length)
+    applySessionDetail({ ...createdSession, latestDisplayState: emptyLatestDisplayState(), messages: [] })
+    selectedSessionId.value = createdSession.id
+    persistSelectedSessionId(createdSession.id)
+    void loadSessionList(true)
+    return createdSession
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '创建 Hermes 会话失败')
+    return null
+  }
+}
+
+const handleRenameSession = async (sessionOverride?: HermesConversationSessionSummaryItem | HermesConversationDetailItem | null) => {
+  const targetSession = sessionOverride ?? currentSessionDetail.value
+  if (!targetSession) {
+    return
+  }
+  try {
+    const result = await ElMessageBox.prompt('请输入新的会话标题', '重命名会话', { inputValue: targetSession.title, inputPattern: /^.{1,100}$/, inputErrorMessage: '会话标题长度需要在 1-100 个字符之间' })
+    const nextTitle = String(result.value || '').trim()
+    if (!nextTitle) {
+      return
+    }
+    const renamed = await renameHermesConversationSession(targetSession.id, { title: nextTitle })
+    patchCurrentSessionSummary(renamed)
+    if (currentSessionDetail.value?.id === renamed.id) {
+      currentSessionDetail.value = { ...currentSessionDetail.value, ...renamed }
+    }
+    ElMessage.success('会话已重命名')
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || '重命名会话失败')
+    }
+  }
+}
+
+const handleArchiveSession = async (sessionOverride?: HermesConversationSessionSummaryItem | HermesConversationDetailItem | null) => {
+  const targetSession = sessionOverride ?? currentSessionDetail.value
+  if (!targetSession) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm('归档后会话会从当前列表隐藏，可在“已归档”中恢复。', '归档会话', { type: 'warning' })
+    await archiveHermesConversationSession(targetSession.id)
+    if (currentSessionDetail.value?.id === targetSession.id) {
+      clearSelectedSession()
+    }
+    await loadSessionList(true)
+    ElMessage.success('会话已归档')
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || '归档会话失败')
+    }
+  }
+}
+
+const handleRestoreSession = async (sessionOverride?: HermesConversationSessionSummaryItem | HermesConversationDetailItem | null) => {
+  const targetSession = sessionOverride ?? currentSessionDetail.value
+  if (!targetSession) {
+    return
+  }
+  try {
+    const restored = await restoreHermesConversationSession(targetSession.id)
+    archivedView.value = false
+    patchCurrentSessionSummary(restored)
+    await loadSessionList(true)
+    await loadSessionDetail(restored.id)
+    ElMessage.success('会话已恢复')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '恢复会话失败')
+  }
+}
+
+const handleDeleteSession = async (sessionOverride?: HermesConversationSessionSummaryItem | HermesConversationDetailItem | null) => {
+  const targetSession = sessionOverride ?? currentSessionDetail.value
+  if (!targetSession) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm('删除后会连同该会话的历史消息一起清空，且无法恢复。', '删除会话', { type: 'warning' })
+    await deleteHermesConversationSession(targetSession.id)
+    if (currentSessionDetail.value?.id === targetSession.id) {
+      clearSelectedSession()
+    }
+    await loadSessionList(true)
+    ElMessage.success('会话已删除')
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || '删除会话失败')
+    }
+  }
+}
+
+const handleSessionCommand = async (
+  session: HermesConversationSessionSummaryItem,
+  command: string
+) => {
+  if (command === 'rename') {
+    await handleRenameSession(session)
+    return
+  }
+  if (command === 'archive') {
+    await handleArchiveSession(session)
+    return
+  }
+  if (command === 'restore') {
+    await handleRestoreSession(session)
+    return
+  }
+  if (command === 'delete') {
+    await handleDeleteSession(session)
+  }
+}
+
+const handleSessionCommandEvent = async (
+  session: HermesConversationSessionSummaryItem,
+  command: string | number | object
+) => {
+  await handleSessionCommand(session, String(command))
 }
 
 const handleOpenReference = async (route: string) => {
-  if (!route) {
-    return
+  if (route) {
+    await router.push(route)
   }
-  await router.push(route)
 }
 
 const actionKey = (action: HermesActionItem, index: number) => `${action.type}:${index}:${action.title}`
@@ -425,13 +488,7 @@ const executeAction = async (action: { type: string; title: string; description:
     executingActionKey.value = key
     const params = action.params || {}
     if (action.type === 'CREATE_EXECUTION_TASK') {
-      const executionTask = await createExecutionTask({
-        scenarioCode: String(params.scenarioCode || ''),
-        projectId: Number(params.projectId),
-        workItemId: params.workItemId == null ? null : Number(params.workItemId),
-        triggerSource: String(params.triggerSource || 'HERMES'),
-        inputPayload: (params.inputPayload || {}) as Record<string, unknown>
-      })
+      const executionTask = await createExecutionTask({ scenarioCode: String(params.scenarioCode || ''), projectId: Number(params.projectId), workItemId: params.workItemId == null ? null : Number(params.workItemId), triggerSource: String(params.triggerSource || 'HERMES'), inputPayload: (params.inputPayload || {}) as Record<string, unknown> })
       ElMessage.success('执行任务已创建')
       drawerVisible.value = false
       await router.push({ name: 'execution-task-detail', params: { executionTaskId: executionTask.id } })
@@ -439,10 +496,7 @@ const executeAction = async (action: { type: string; title: string; description:
     }
     if (action.type === 'CREATE_REPOSITORY_SCAN_TASK') {
       const bindingId = Number(params.bindingId)
-      const executionTask = await createGitlabBindingScanTask(bindingId, {
-        branch: String(params.branch || ''),
-        rulesetCode: String(params.rulesetCode || '')
-      })
+      const executionTask = await createGitlabBindingScanTask(bindingId, { branch: String(params.branch || ''), rulesetCode: String(params.rulesetCode || '') })
       ElMessage.success('仓库扫描任务已创建')
       drawerVisible.value = false
       await router.push({ name: 'execution-task-detail', params: { executionTaskId: executionTask.id } })
@@ -452,25 +506,8 @@ const executeAction = async (action: { type: string; title: string; description:
       const workItemType = String(params.workItemType || '需求')
       const content = String(params.content || '')
       const name = String(params.name || (content.slice(0, 40) || `Hermes 创建的${workItemType}草稿`))
-      const requirementMarkdown = workItemType === '需求'
-        ? `${DEFAULT_REQUIREMENT_TEMPLATE}\n\n### 临时补充\n\n${content}`
-        : ''
-      await createTask({
-        name,
-        workItemType: workItemType as '需求' | '任务' | '缺陷',
-        status: '草稿',
-        priority: '中',
-        assignee: params.assigneeUserId ? '待确认' : '',
-        assigneeUserId: params.assigneeUserId == null ? null : Number(params.assigneeUserId),
-        collaboratorUserIds: [],
-        description: workItemType === '需求' ? requirementMarkdown : content,
-        requirementMarkdown,
-        prototypeUrl: '',
-        projectId: Number(params.projectId),
-        agentId: null,
-        iterationId: params.iterationId == null ? null : Number(params.iterationId),
-        requirementTaskId: null
-      })
+      const requirementMarkdown = workItemType === '需求' ? `${DEFAULT_REQUIREMENT_TEMPLATE}\n\n### 临时补充\n\n${content}` : ''
+      await createTask({ name, workItemType: workItemType as '需求' | '任务' | '缺陷', status: '草稿', priority: '中', assignee: params.assigneeUserId ? '待确认' : '', assigneeUserId: params.assigneeUserId == null ? null : Number(params.assigneeUserId), collaboratorUserIds: [], description: workItemType === '需求' ? requirementMarkdown : content, requirementMarkdown, prototypeUrl: '', projectId: Number(params.projectId), agentId: null, iterationId: params.iterationId == null ? null : Number(params.iterationId), requirementTaskId: null })
       ElMessage.success('工作项草稿已创建')
       drawerVisible.value = false
       if (params.projectId) {
@@ -479,14 +516,7 @@ const executeAction = async (action: { type: string; title: string; description:
       return
     }
     if (action.type === 'CREATE_TEST_PLAN_DRAFT') {
-      await createTestPlan({
-        name: String(params.name || 'Hermes 测试计划草稿'),
-        projectId: Number(params.projectId),
-        iterationId: Number(params.iterationId),
-        status: '草稿',
-        description: String(params.description || ''),
-        cases: []
-      })
+      await createTestPlan({ name: String(params.name || 'Hermes 测试计划草稿'), projectId: Number(params.projectId), iterationId: Number(params.iterationId), status: '草稿', description: String(params.description || ''), cases: [] })
       ElMessage.success('测试计划草稿已创建')
       drawerVisible.value = false
       await router.push({ name: 'tests' })
@@ -502,213 +532,80 @@ const executeAction = async (action: { type: string; title: string; description:
   }
 }
 
-const handleConfirmAction = async (action: HermesActionItem, index: number) => {
-  await executeAction(action, actionKey(action, index))
-}
+const handleConfirmAction = async (action: HermesActionItem, index: number) => executeAction(action, actionKey(action, index))
 
 const updateMessage = (messageId: string, updater: (current: HermesMessageItem) => HermesMessageItem) => {
   const shouldScroll = shouldAutoScrollWithStream()
   currentMessages.value = currentMessages.value.map((item) => (item.id === messageId ? updater(item) : item))
-  saveCurrentSession()
   void restoreThinkBlocksAndScroll(shouldScroll)
 }
 
-const resolveConversationId = () => {
-  const existing = conversationIdByFingerprint.get(scopeFingerprint.value)
-  if (existing) {
-    return existing
-  }
-  const storageKey = `git-ai-club:hermes:conversation:${HERMES_CONVERSATION_VERSION}:${scopeFingerprint.value}`
-  const saved = typeof window !== 'undefined' ? window.sessionStorage.getItem(storageKey) : ''
-  if (saved) {
-    conversationIdByFingerprint.set(scopeFingerprint.value, saved)
-    return saved
-  }
-  const nextId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `conversation-${Date.now()}`
-  conversationIdByFingerprint.set(scopeFingerprint.value, nextId)
-  if (typeof window !== 'undefined') {
-    window.sessionStorage.setItem(storageKey, nextId)
-  }
-  return nextId
-}
-
-/**
- * 后端返回真实 scopeKey 后，用它替换临时键，确保同项目范围内后续重开抽屉能续聊。
- */
-const adoptScopeKey = (scopeKey: string) => {
-  if (!scopeKey || currentScopeKey.value === scopeKey) {
-    return
-  }
-  scopeKeyByFingerprint.set(scopeFingerprint.value, scopeKey)
-  sessionCache.delete(scopeKey)
-  currentScopeKey.value = scopeKey
-  saveCurrentSession()
-}
-
-const buildPayload = (question: string, selection?: HermesSelectionPayload | null): HermesChatRequestPayload => ({
-  question,
-  routeName: props.routeName,
-  projectId: props.projectId ?? null,
-  taskId: props.taskId ?? null,
-  iterationId: props.iterationId ?? null,
-  planId: props.planId ?? null,
-  clientConversationId: resolveConversationId(),
-  selection: selection || null,
-  debug: isDebugMode.value
-})
+const buildPayload = (question: string, selection?: HermesSelectionPayload | null): HermesSessionChatRequestPayload => ({ question, selection: selection || null, debug: isDebugMode.value })
 
 /**
  * 流式阶段已经拿到的文本通常最完整地保留了 `<think>` 思考过程。
- * 如果完成事件返回的是去掉思考过程的“净化版答案”，这里优先保留流式阶段的原文，
- * 避免用户刚展开的思考面板在完成瞬间直接消失，看起来像被自动关闭。
  */
 const resolveAssistantFinalContent = (streamedContent: string, doneContent: string) => {
   const normalizedStreamed = streamedContent || ''
   const normalizedDone = doneContent || ''
-  if (!normalizedDone.trim()) {
-    return normalizedStreamed
-  }
+  if (!normalizedDone.trim()) return normalizedStreamed
   const streamedHasUnclosedThink = /<think\b/i.test(normalizedStreamed) && !/<\/think>\s*$/i.test(normalizedStreamed.trim())
-  if (streamedHasUnclosedThink) {
-    return normalizedDone
-  }
+  if (streamedHasUnclosedThink) return normalizedDone
   const streamedHasThink = /<think\b/i.test(normalizedStreamed)
   const doneHasThink = /<think\b/i.test(normalizedDone)
-  if (streamedHasThink && !doneHasThink) {
-    return normalizedStreamed
-  }
-  if (normalizedDone.length < normalizedStreamed.length && normalizedStreamed.includes(normalizedDone)) {
-    return normalizedStreamed
-  }
+  if (streamedHasThink && !doneHasThink) return normalizedStreamed
+  if (normalizedDone.length < normalizedStreamed.length && normalizedStreamed.includes(normalizedDone)) return normalizedStreamed
   return normalizedDone
 }
 
-/**
- * 为每条消息生成带稳定思考块键的 HTML，确保思考面板在流式渲染过程中可以保持用户手动展开的状态。
- */
-const renderAssistantMessage = (message: HermesMessageItem) =>
-  renderHermesMarkdownToHtml(message.content || (message.status === 'streaming' ? currentStreamStatusText.value : '暂无内容'), {
-    thinkBlockKeyPrefix: message.id,
-    /**
-     * 在 HTML 生成阶段直接补回 open 属性，避免流式增量导致 `<details>` 被重绘后出现“刚展开又关闭”的闪动。
-     */
-    isThinkBlockOpen: (thinkBlockKey: string) => Boolean(thinkBlockOpenState.get(thinkBlockKey))
-  })
-
+const renderAssistantMessage = (message: HermesMessageItem) => renderHermesMarkdownToHtml(message.content || (message.status === 'streaming' ? currentStreamStatusText.value : '暂无内容'), { thinkBlockKeyPrefix: message.id, isThinkBlockOpen: (thinkBlockKey: string) => Boolean(thinkBlockOpenState.get(thinkBlockKey)) })
 const formatDebugInfo = (debug: HermesDebugInfoItem | null) => JSON.stringify(debug || {}, null, 2)
 
 const submitConversation = async (question: string, userContent: string, selection?: HermesSelectionPayload | null) => {
   const normalizedQuestion = question.trim()
   const normalizedUserContent = userContent.trim() || normalizedQuestion
-  if (!normalizedQuestion) {
-    drawerVisible.value = true
-    return
-  }
-  if (sending.value) {
-    return
-  }
+  if (!normalizedQuestion || sending.value) return
+  const writableSessionId = await ensureWritableSession()
+  if (!writableSessionId) return
 
   drawerVisible.value = true
   sending.value = true
-  if (activeStreamAbort.value) {
-    activeStreamAbort.value()
-    activeStreamAbort.value = null
-  }
+  activeStreamAbort.value?.()
+  activeStreamAbort.value = null
   const userMessageId = `user-${Date.now()}`
   const assistantMessageId = `assistant-${Date.now()}`
   currentActions.value = []
   currentSelectionCards.value = []
   currentDebug.value = null
   currentStreamStatus.value = { stage: 'planning', message: 'Hermes 正在分析问题' }
-  currentMessages.value = [
-    ...currentMessages.value,
-    { id: userMessageId, role: 'user', content: normalizedUserContent, status: 'done' },
-    { id: assistantMessageId, role: 'assistant', content: '', status: 'streaming' }
-  ]
+  currentMessages.value = [...currentMessages.value, { id: userMessageId, role: 'user', content: normalizedUserContent, status: 'done' }, { id: assistantMessageId, role: 'assistant', content: '', status: 'streaming' }]
   draftQuestion.value = ''
-  saveCurrentSession()
   void restoreThinkBlocksAndScroll()
 
   try {
-    const streamController = await streamHermesChat(buildPayload(normalizedQuestion, selection), {
-      onStatus: (payload: HermesStreamStatusEvent) => {
-        currentStreamStatus.value = payload
-      },
-      onMeta: (payload: HermesStreamMetaEvent) => {
-        adoptScopeKey(payload.scopeKey)
-        currentRoleName.value = payload.roleName || '协作成员'
-        currentReferences.value = payload.references || []
-        currentSuggestions.value = payload.suggestions || []
-        currentActions.value = payload.actions || []
-        currentSelectionCards.value = payload.selectionCards || []
-        currentDebug.value = payload.debug || null
-        saveCurrentSession()
-      },
-      onDelta: (payload: HermesStreamDeltaEvent) => {
-        updateMessage(assistantMessageId, (current) => ({
-          ...current,
-          content: `${current.content}${payload.content || ''}`,
-          status: 'streaming'
-        }))
-      },
+    const streamController = await streamHermesSessionChat(writableSessionId, buildPayload(normalizedQuestion, selection), {
+      onStatus: (payload: HermesStreamStatusEvent) => { currentStreamStatus.value = payload },
+      onMeta: (payload: HermesStreamMetaEvent) => { applyStreamDisplayState(payload.roleName, payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug) },
+      onDelta: (payload: HermesStreamDeltaEvent) => updateMessage(assistantMessageId, (current) => ({ ...current, content: `${current.content}${payload.content || ''}`, status: 'streaming' })),
       onDone: (payload: HermesStreamDoneEvent) => {
-        const hasExplicitTerminalState = Boolean(
-          payload.scopeKey ||
-          payload.content ||
-          payload.references?.length ||
-          payload.suggestions?.length ||
-          payload.actions?.length ||
-          payload.selectionCards?.length ||
-          payload.debug
-        )
-        if (hasExplicitTerminalState) {
-          adoptScopeKey(payload.scopeKey)
-          currentRoleName.value = payload.roleName || currentRoleName.value
-          currentReferences.value = payload.references || []
-          currentSuggestions.value = payload.suggestions || []
-          currentActions.value = payload.actions || []
-          currentSelectionCards.value = payload.selectionCards || []
-          currentDebug.value = payload.debug || null
-        }
-        const shouldPreferTerminalContent = Boolean(
-          payload.actions?.length ||
-          payload.selectionCards?.length
-        )
-        updateMessage(assistantMessageId, (current) => ({
-          ...current,
-          content: shouldPreferTerminalContent
-            ? (payload.content || current.content)
-            : resolveAssistantFinalContent(current.content, payload.content),
-          status: 'done'
-        }))
-        currentStreamStatus.value = null
-        sending.value = false
-        activeStreamAbort.value = null
+        applyStreamDisplayState(payload.roleName, payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug)
+        const shouldPreferTerminalContent = Boolean(payload.actions?.length || payload.selectionCards?.length)
+        updateMessage(assistantMessageId, (current) => ({ ...current, content: shouldPreferTerminalContent ? (payload.content || current.content) : resolveAssistantFinalContent(current.content, payload.content), status: 'done' }))
+        finishStream()
+        void refreshCurrentSessionFromCloud()
       },
       onError: (payload: HermesStreamErrorEvent) => {
-        updateMessage(assistantMessageId, (current) => ({
-          ...current,
-          content: payload.message || current.content || 'Hermes 助手暂时不可用',
-          status: 'error'
-        }))
-        currentStreamStatus.value = null
-        sending.value = false
-        activeStreamAbort.value = null
+        updateMessage(assistantMessageId, (current) => ({ ...current, content: payload.message || current.content || 'Hermes 助手暂时不可用', status: 'error' }))
+        finishStream()
         ElMessage.error(payload.message || 'Hermes 助手暂时不可用')
+        void refreshCurrentSessionFromCloud()
       }
     })
     activeStreamAbort.value = streamController.abort
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Hermes 助手暂时不可用'
-    updateMessage(assistantMessageId, (current) => ({
-      ...current,
-      content: message,
-      status: 'error'
-    }))
-    currentStreamStatus.value = null
-    sending.value = false
+    updateMessage(assistantMessageId, (current) => ({ ...current, content: message, status: 'error' }))
+    finishStream()
     ElMessage.error(message)
   }
 }
@@ -719,52 +616,165 @@ const handleSubmit = async (questionOverride?: string) => {
 }
 
 const handleSelectOption = async (selectionCard: HermesSelectionCardItem, option: HermesSelectionOptionItem) => {
-  if (option.entityId == null) {
-    return
+  if (option.entityId == null) return
+  await submitConversation((selectionCard.resumeQuestion || draftQuestion.value || option.title).trim(), `我选择了：${option.title}`, { slot: selectionCard.slot || option.slot, entityType: option.entityType, entityId: Number(option.entityId), resumeQuestion: selectionCard.resumeQuestion || undefined })
+}
+
+/**
+ * 发送前确保存在可写入的当前会话；如果没有会话，就按当前页面上下文即时创建。
+ */
+const ensureWritableSession = async () => {
+  if (selectedSessionId.value && (!currentSessionDetail.value || currentSessionDetail.value.id !== selectedSessionId.value)) {
+    await loadSessionDetail(selectedSessionId.value)
   }
-  await submitConversation(
-    (selectionCard.resumeQuestion || draftQuestion.value || option.title).trim(),
-    `我选择了：${option.title}`,
-    {
-      slot: selectionCard.slot || option.slot,
-      entityType: option.entityType,
-      entityId: Number(option.entityId),
-      resumeQuestion: selectionCard.resumeQuestion || undefined
-    }
-  )
+  if (currentSessionDetail.value && !currentSessionDetail.value.archived) return currentSessionDetail.value.id
+  // 发送消息时才创建会话，不显示提示
+  const createdSession = await createAndSelectSession()
+  return createdSession?.id || null
 }
 
-const openDrawer = () => {
-  drawerVisible.value = true
+const refreshCurrentSessionFromCloud = async () => {
+  if (!selectedSessionId.value) return
+  await Promise.all([loadSessionDetail(selectedSessionId.value), loadSessionList(true)])
 }
 
+const openDrawer = () => { drawerVisible.value = true }
 const openWithQuestion = async (question: string) => {
   drawerVisible.value = true
-  if (!question.trim()) {
-    return
-  }
+  if (!question.trim()) return
   draftQuestion.value = question.trim()
   await nextTick()
   await handleSubmit(question.trim())
 }
 
-defineExpose({
-  openDrawer,
-  openWithQuestion
-})
+defineExpose({ openDrawer, openWithQuestion })
+
+function applyStreamDisplayState(roleName: string, references: HermesReferenceItem[], suggestions: string[], actions: HermesActionItem[], selectionCards: HermesSelectionCardItem[], debug: HermesDebugInfoItem | null) {
+  currentRoleName.value = roleName || resolveCurrentRoleName()
+  currentReferences.value = references || []
+  currentSuggestions.value = suggestions || []
+  currentActions.value = actions || []
+  currentSelectionCards.value = selectionCards || []
+  currentDebug.value = debug || null
+}
+
+function finishStream() {
+  currentStreamStatus.value = null
+  sending.value = false
+  activeStreamAbort.value = null
+}
+
+function handleThinkSummaryClick(event: Event) {
+  const summaryElement = event.target instanceof HTMLElement ? event.target.closest('summary') : null
+  const thinkBlock = summaryElement instanceof HTMLElement ? summaryElement.parentElement : null
+  if (thinkBlock instanceof HTMLDetailsElement && thinkBlock.dataset.thinkKey) {
+    thinkBlockOpenState.set(thinkBlock.dataset.thinkKey, !thinkBlock.open)
+  }
+}
+
+function shouldAutoScrollWithStream() {
+  if (!messageScrollRef.value) return true
+  const remainingDistance = messageScrollRef.value.scrollHeight - messageScrollRef.value.scrollTop - messageScrollRef.value.clientHeight
+  return remainingDistance <= 48 && !Array.from(thinkBlockOpenState.values()).some(Boolean)
+}
+
+async function restoreThinkBlocksAndScroll(shouldScroll = true) {
+  await nextTick()
+  if (messageScrollRef.value) {
+    messageScrollRef.value.querySelectorAll<HTMLDetailsElement>('.hermes-think-block[data-think-key]').forEach((thinkBlock) => {
+      const thinkKey = thinkBlock.dataset.thinkKey
+      if (thinkKey && thinkBlockOpenState.has(thinkKey)) thinkBlock.open = Boolean(thinkBlockOpenState.get(thinkKey))
+    })
+    if (shouldScroll) messageScrollRef.value.scrollTop = messageScrollRef.value.scrollHeight
+  }
+}
+
+function applySessionDetail(detail: HermesConversationDetailItem) {
+  currentSessionDetail.value = detail
+  currentMessages.value = detail.messages.map((message) => ({ id: `cloud-${message.id}`, role: message.role === 'user' ? 'user' : 'assistant', content: message.content || '', status: message.status === 'error' ? 'error' : 'done' }))
+  const latestDisplayState = detail.latestDisplayState || emptyLatestDisplayState()
+  currentReferences.value = latestDisplayState.references || []
+  currentSuggestions.value = latestDisplayState.suggestions || []
+  currentActions.value = latestDisplayState.actions || []
+  currentSelectionCards.value = latestDisplayState.selectionCards || []
+  currentDebug.value = latestDisplayState.debug || null
+  currentRoleName.value = resolveCurrentRoleName()
+  void restoreThinkBlocksAndScroll(false)
+}
+
+function clearSelectedSession() {
+  selectedSessionId.value = null
+  currentSessionDetail.value = null
+  currentMessages.value = []
+  currentReferences.value = []
+  currentSuggestions.value = []
+  currentActions.value = []
+  currentSelectionCards.value = []
+  currentDebug.value = null
+  persistSelectedSessionId(null)
+}
+
+function patchCurrentSessionSummary(summary: HermesConversationSessionSummaryItem) {
+  sessionSummaries.value = mergeSessionSummaries([summary], sessionSummaries.value)
+}
+
+function mergeSessionSummaries(base: HermesConversationSessionSummaryItem[], incoming: HermesConversationSessionSummaryItem[]) {
+  const seen = new Set<number>()
+  return [...base, ...incoming].filter((item) => seen.has(item.id) ? false : (seen.add(item.id), true))
+}
+
+function buildCreateSessionPayload(): CreateHermesConversationSessionPayload {
+  return { routeName: props.routeName, projectId: props.projectId ?? null, taskId: props.taskId ?? null, iterationId: props.iterationId ?? null, planId: props.planId ?? null }
+}
+
+function emptyLatestDisplayState() {
+  return { references: [], suggestions: [], actions: [], selectionCards: [], debug: null }
+}
+
+function formatSessionContext(session: Pick<HermesConversationSessionSummaryItem, 'routeName' | 'projectId' | 'taskId' | 'iterationId' | 'planId'>) {
+  if (session.taskId) return `任务 #${session.taskId}`
+  if (session.planId) return `测试计划 #${session.planId}`
+  if (session.iterationId) return `迭代 #${session.iterationId}`
+  if (session.projectId) return `项目 #${session.projectId}`
+  if (session.routeName === 'dashboard') return '首页看板'
+  return '全局入口'
+}
+
+function formatSessionTime(session: HermesConversationSessionSummaryItem) {
+  return session.lastMessageAt || session.updatedAt || session.createdAt || ''
+}
+
+function syncViewportMode() {
+  if (typeof window !== 'undefined') isMobileViewport.value = window.innerWidth <= 900
+}
+
+function resolveCurrentRoleName() {
+  return authStore.user?.roleNames?.[0] || '协作成员'
+}
+
+function readSelectedSessionId() {
+  if (typeof window === 'undefined') return null
+  const parsed = Number(window.sessionStorage.getItem(HERMES_SELECTED_SESSION_STORAGE_KEY))
+  return Number.isNaN(parsed) || parsed <= 0 ? null : parsed
+}
+
+function persistSelectedSessionId(sessionId: number | null) {
+  if (typeof window === 'undefined') return
+  if (!sessionId) window.sessionStorage.removeItem(HERMES_SELECTED_SESSION_STORAGE_KEY)
+  else window.sessionStorage.setItem(HERMES_SELECTED_SESSION_STORAGE_KEY, String(sessionId))
+}
 </script>
 
 <style scoped>
-.hermes-head {
+.hermes-head,
+.hermes-current-session-card,
+.hermes-footer-actions,
+.hermes-option-card,
+.hermes-action-card {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  width: 100%;
-}
-
-.hermes-head-copy {
-  min-width: 0;
+  gap: 12px;
 }
 
 .hermes-title {
@@ -772,57 +782,9 @@ defineExpose({
   font-family: var(--app-font-heading);
   font-size: 24px;
   font-weight: 900;
-  line-height: 1.05;
 }
 
-.hermes-subtitle {
-  margin-top: 4px;
-  color: #94a3b8;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.hermes-close-button,
-.hermes-chip-button,
-.hermes-reference-item,
-.hermes-send-button {
-  border: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  outline: none;
-  font: inherit;
-}
-
-.hermes-close-button {
-  min-height: 32px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: rgba(243, 244, 245, 0.96);
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.hermes-panel {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  background: #f3f4f5;
-}
-
-.hermes-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  padding: 10px 18px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
+.hermes-subtitle,
 .hermes-section-title {
   color: #64748b;
   font-size: 11px;
@@ -831,251 +793,266 @@ defineExpose({
   text-transform: uppercase;
 }
 
-.hermes-quick-prompts,
-.hermes-selection-section,
-.hermes-action-section,
-.hermes-reference-section,
-.hermes-debug-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.hermes-close-button,
+.hermes-primary-button,
+.hermes-tab,
+.hermes-session-item,
+.hermes-load-more-button,
+.hermes-ghost-button,
+.hermes-chip-button,
+.hermes-inline-button,
+.hermes-send-button,
+.hermes-reference-item {
+  border: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  font: inherit;
 }
 
-.hermes-chip-list,
-.hermes-selection-list,
-.hermes-action-list,
-.hermes-reference-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.hermes-selection-list,
-.hermes-action-list {
-  flex-direction: column;
-}
-
-.hermes-selection-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(248, 250, 252, 0.96);
-}
-
-.hermes-selection-card-copy,
-.hermes-selection-option-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.hermes-selection-card-copy strong,
-.hermes-selection-option-copy strong {
-  color: #0f172a;
-  font-size: 13px;
-}
-
-.hermes-selection-card-copy span,
-.hermes-selection-option-copy span {
-  color: #64748b;
+.hermes-close-button,
+.hermes-ghost-button,
+.hermes-tab,
+.hermes-chip-button,
+.hermes-reference-item,
+.hermes-load-more-button {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #334155;
   font-size: 12px;
-  line-height: 1.5;
+  font-weight: 800;
 }
 
-.hermes-selection-option-copy small {
-  color: #0f766e;
-  font-size: 11px;
-  line-height: 1.4;
+.hermes-primary-button,
+.hermes-send-button,
+.hermes-inline-button {
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: #191c1d;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
 }
 
-.hermes-selection-option-list {
+.hermes-primary-button.compact {
+  align-self: flex-start;
+}
+
+.hermes-panel {
+  display: grid;
+  grid-template-columns: 164px minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  background: #f3f4f5;
+}
+
+.hermes-session-sidebar {
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 0 7px;
+  border-right: 1px solid rgba(var(--app-outline-rgb), 0.12);
+  background: rgba(248, 250, 252, 0.95);
+  display: block;
+}
+
+.hermes-session-content {
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  transform: translateX(-8px);
+}
+
+.hermes-session-toolbar {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(var(--app-outline-rgb), 0.1);
 }
 
-.hermes-selection-option-card {
+.hermes-session-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.hermes-tab.active {
+  background: rgba(var(--app-primary-rgb), 0.12);
+  color: var(--app-primary);
+}
+
+.hermes-session-list,
+.hermes-body {
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.hermes-session-list {
+  flex: 1 1 auto;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 0;
+  align-items: stretch;
+}
+
+.hermes-session-item {
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
+}
+
+.hermes-session-item.active {
+  box-shadow: inset 0 0 0 2px rgba(var(--app-primary-rgb), 0.22);
+}
+
+.hermes-session-main,
+.hermes-session-more-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.hermes-session-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+}
+
+.hermes-session-main strong {
+  display: block;
+  overflow: hidden;
+  color: #0f172a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.hermes-session-more-button {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #94a3b8;
+}
+
+.hermes-session-more-button:hover {
+  background: rgba(226, 232, 240, 0.8);
+  color: #334155;
+}
+
+.hermes-session-more-icon {
+  font-size: 16px;
+  transform: rotate(90deg);
+}
+
+.hermes-muted-card {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.hermes-chat-shell {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.hermes-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 16px;
+  padding: 12px 18px 10px;
+}
+
+.hermes-current-session-card,
+.hermes-empty-state,
+.hermes-card,
+.hermes-action-card,
+.hermes-muted-card {
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.hermes-current-session-copy,
+.hermes-card,
+.hermes-section,
+.hermes-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.hermes-current-session-copy strong,
+.hermes-empty-title {
+  color: #0f172a;
+  font-family: var(--app-font-heading);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.hermes-current-session-actions,
+.hermes-inline-actions,
+.hermes-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hermes-ghost-button.primary,
+.hermes-inline-button {
+  background: #0f766e;
+  color: #fff;
+}
+
+.hermes-ghost-button.danger {
+  background: rgba(255, 218, 214, 0.86);
+  color: #93000a;
+}
+
+.hermes-empty-kicker {
+  color: #8b5e34;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hermes-empty-state p,
+.hermes-card span,
+.hermes-action-card span,
+.hermes-option-card span {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.hermes-option-card {
+  align-items: center;
   padding: 12px;
   border-radius: 14px;
   background: #eef2f7;
-}
-
-.hermes-selection-option-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.hermes-debug-pre {
-  margin: 0;
-  padding: 12px;
-  border-radius: 16px;
-  background: #0f172a;
-  color: #e2e8f0;
-  font-size: 11px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.hermes-tool-result-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(248, 250, 252, 0.96);
-}
-
-.hermes-tool-result-head {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.hermes-tool-result-head strong {
-  color: #0f172a;
-  font-size: 13px;
-}
-
-.hermes-tool-result-head span {
-  color: #64748b;
-  font-size: 12px;
-}
-
-.hermes-tool-candidate-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.hermes-tool-candidate-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 14px;
-  background: #fff;
-  border: 1px solid rgba(226, 232, 240, 0.9);
-}
-
-.hermes-tool-candidate-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.hermes-tool-candidate-copy strong {
-  color: #0f172a;
-  font-size: 13px;
-}
-
-.hermes-tool-candidate-copy span {
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.hermes-tool-candidate-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.hermes-tool-inline-button {
-  border: 0;
-  border-radius: 999px;
-  padding: 8px 12px;
-  background: #0f766e;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.hermes-tool-inline-button.secondary {
-  background: #e2e8f0;
-  color: #0f172a;
-}
-
-.hermes-tool-inline-button:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-.hermes-action-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid rgba(20, 184, 166, 0.28);
-  border-radius: 16px;
-  background: rgba(240, 253, 250, 0.92);
-}
-
-.hermes-action-card-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.hermes-action-card-copy strong {
-  color: #0f766e;
-  font-size: 13px;
-}
-
-.hermes-action-card-copy span {
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.hermes-action-button {
-  border: 0;
-  border-radius: 999px;
-  padding: 8px 12px;
-  background: #0f766e;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.hermes-action-button:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
-.hermes-chip-button {
-  min-height: 34px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.96);
-  color: var(--app-text);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.hermes-chip-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .hermes-message-section {
@@ -1113,10 +1090,7 @@ defineExpose({
 }
 
 .hermes-role-tag {
-  display: inline-flex;
-  align-items: center;
-  min-height: 20px;
-  padding: 0 8px;
+  padding: 4px 8px;
   border-radius: 999px;
   background: rgba(255, 220, 195, 0.72);
   color: #8b5e34;
@@ -1127,12 +1101,12 @@ defineExpose({
   max-width: 100%;
   padding: 14px 16px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.98);
+  background: #fff;
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
 }
 
 .hermes-message-row.user .hermes-message-bubble {
-  background: linear-gradient(135deg, rgba(var(--app-primary-container-rgb), 0.92) 0%, rgba(var(--app-primary-rgb), 0.92) 100%);
+  background: linear-gradient(135deg, rgba(var(--app-primary-container-rgb), 0.92), rgba(var(--app-primary-rgb), 0.92));
   color: #fff;
 }
 
@@ -1155,103 +1129,38 @@ defineExpose({
 }
 
 .hermes-markdown-content {
-  color: inherit;
   font-size: 13px;
   line-height: 1.85;
   word-break: break-word;
 }
 
-.hermes-markdown-content :deep(p),
-.hermes-markdown-content p {
+.hermes-markdown-content :deep(p) {
   margin: 0 0 10px;
 }
 
-.hermes-markdown-content :deep(p:last-child),
-.hermes-markdown-content p:last-child {
-  margin-bottom: 0;
-}
-
 .hermes-markdown-content :deep(ul),
-.hermes-markdown-content :deep(ol),
-.hermes-markdown-content ul,
-.hermes-markdown-content ol {
+.hermes-markdown-content :deep(ol) {
   margin: 0 0 10px;
   padding-left: 20px;
 }
 
-.hermes-markdown-content :deep(li),
-.hermes-markdown-content li {
-  margin: 4px 0;
-}
-
-.hermes-markdown-content :deep(blockquote),
-.hermes-markdown-content blockquote {
-  margin: 0 0 10px;
-  padding: 10px 12px;
-  border-left: 3px solid rgba(var(--app-primary-rgb), 0.38);
-  background: rgba(var(--app-primary-container-rgb), 0.1);
-  border-radius: 0 12px 12px 0;
-}
-
-.hermes-markdown-content :deep(pre),
-.hermes-markdown-content pre {
-  margin: 0 0 10px;
-  padding: 12px 14px;
+.hermes-markdown-content :deep(pre) {
+  padding: 12px;
   overflow: auto;
   border-radius: 14px;
   background: #141b22;
   color: #f8fafc;
 }
 
-.hermes-markdown-content :deep(code),
-.hermes-markdown-content code {
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: rgba(15, 23, 42, 0.08);
-  font-family: var(--app-font-mono, 'Consolas');
-  font-size: 12px;
-}
-
-.hermes-markdown-content :deep(pre code),
-.hermes-markdown-content pre code {
-  padding: 0;
-  background: transparent;
-  color: inherit;
-}
-
-.hermes-markdown-content :deep(h1),
-.hermes-markdown-content :deep(h2),
-.hermes-markdown-content :deep(h3),
-.hermes-markdown-content :deep(h4),
-.hermes-markdown-content h1,
-.hermes-markdown-content h2,
-.hermes-markdown-content h3,
-.hermes-markdown-content h4 {
-  margin: 0 0 10px;
-  color: inherit;
-  font-family: var(--app-font-heading);
-  line-height: 1.35;
-}
-
-.hermes-markdown-content :deep(a),
-.hermes-markdown-content a {
-  color: var(--app-primary);
-  text-decoration: underline;
-}
-
-.hermes-markdown-content :deep(.hermes-think-block),
-.hermes-markdown-content .hermes-think-block {
-  width: 100%;
+.hermes-markdown-content :deep(.hermes-think-block) {
   margin: 0 0 10px;
   border: 1px solid rgba(var(--app-outline-rgb), 0.12);
   border-radius: 16px;
   background: rgba(243, 244, 245, 0.78);
-  box-sizing: border-box;
   overflow: hidden;
 }
 
-.hermes-markdown-content :deep(.hermes-think-block summary),
-.hermes-markdown-content .hermes-think-block summary {
+.hermes-markdown-content :deep(.hermes-think-block summary) {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1264,16 +1173,14 @@ defineExpose({
   list-style: none;
 }
 
-.hermes-markdown-content :deep(.hermes-think-summary-main),
-.hermes-markdown-content .hermes-think-summary-main {
+.hermes-markdown-content :deep(.hermes-think-summary-main) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
 
-.hermes-markdown-content :deep(.hermes-think-status-icon),
-.hermes-markdown-content .hermes-think-status-icon {
+.hermes-markdown-content :deep(.hermes-think-status-icon) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1285,80 +1192,67 @@ defineExpose({
   font-weight: 900;
 }
 
-.hermes-markdown-content :deep(.hermes-think-status-icon.thinking),
-.hermes-markdown-content .hermes-think-status-icon.thinking {
+.hermes-markdown-content :deep(.hermes-think-status-icon.thinking) {
   color: rgba(var(--app-primary-rgb), 0.92);
   background: rgba(var(--app-primary-rgb), 0.12);
 }
 
-.hermes-markdown-content :deep(.hermes-think-status-icon.done),
-.hermes-markdown-content .hermes-think-status-icon.done {
+.hermes-markdown-content :deep(.hermes-think-status-icon.done) {
   color: #0f766e;
   background: rgba(15, 118, 110, 0.14);
 }
 
-.hermes-markdown-content :deep(.hermes-think-block.is-done),
-.hermes-markdown-content .hermes-think-block.is-done {
+.hermes-markdown-content :deep(.hermes-think-block.is-done) {
   border-color: rgba(15, 118, 110, 0.18);
   background: rgba(236, 253, 245, 0.88);
 }
 
-.hermes-markdown-content :deep(.hermes-think-block.is-done .hermes-think-summary-label),
-.hermes-markdown-content .hermes-think-block.is-done .hermes-think-summary-label {
+.hermes-markdown-content :deep(.hermes-think-block.is-done .hermes-think-summary-label) {
   color: #0f766e;
 }
 
-.hermes-markdown-content :deep(.hermes-think-summary-label),
-.hermes-markdown-content .hermes-think-summary-label {
+.hermes-markdown-content :deep(.hermes-think-summary-label) {
   letter-spacing: 0.02em;
 }
 
-.hermes-markdown-content :deep(.hermes-think-dots),
-.hermes-markdown-content .hermes-think-dots {
+.hermes-markdown-content :deep(.hermes-think-dots) {
   display: inline-flex;
   align-items: flex-end;
   gap: 1px;
   color: rgba(var(--app-primary-rgb), 0.86);
 }
 
-.hermes-markdown-content :deep(.hermes-think-dots span),
-.hermes-markdown-content .hermes-think-dots span {
+.hermes-markdown-content :deep(.hermes-think-dots span) {
   display: inline-block;
   min-width: 4px;
   animation: hermes-think-dot-bounce 1.1s ease-in-out infinite;
   transform-origin: center bottom;
 }
 
-.hermes-markdown-content :deep(.hermes-think-dots span:nth-child(2)),
-.hermes-markdown-content .hermes-think-dots span:nth-child(2) {
+.hermes-markdown-content :deep(.hermes-think-dots span:nth-child(2)) {
   animation-delay: 0.16s;
 }
 
-.hermes-markdown-content :deep(.hermes-think-dots span:nth-child(3)),
-.hermes-markdown-content .hermes-think-dots span:nth-child(3) {
+.hermes-markdown-content :deep(.hermes-think-dots span:nth-child(3)) {
   animation-delay: 0.32s;
 }
 
-.hermes-markdown-content :deep(.hermes-think-block summary::-webkit-details-marker),
-.hermes-markdown-content .hermes-think-block summary::-webkit-details-marker {
+.hermes-markdown-content :deep(.hermes-think-block summary::-webkit-details-marker) {
   display: none;
 }
 
-.hermes-markdown-content :deep(.hermes-think-block summary::after),
-.hermes-markdown-content .hermes-think-block summary::after {
+.hermes-markdown-content :deep(.hermes-think-block summary::after) {
   content: '展开';
   color: #64748b;
   font-size: 11px;
   font-weight: 700;
 }
 
-.hermes-markdown-content :deep(.hermes-think-block[open] summary::after),
-.hermes-markdown-content .hermes-think-block[open] summary::after {
+.hermes-markdown-content :deep(.hermes-think-block[open] summary::after) {
   content: '收起';
 }
 
-.hermes-markdown-content :deep(.hermes-think-content),
-.hermes-markdown-content .hermes-think-content {
+.hermes-markdown-content :deep(.hermes-think-content) {
   padding: 0 14px 14px;
   border-top: 1px solid rgba(var(--app-outline-rgb), 0.08);
 }
@@ -1376,165 +1270,28 @@ defineExpose({
   }
 }
 
-.hermes-markdown-content :deep(.hermes-table-wrap),
-.hermes-markdown-content .hermes-table-wrap {
-  width: 100%;
-  margin: 0 0 10px;
-  overflow-x: auto;
+.hermes-debug-pre {
+  margin: 0;
+  padding: 12px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: inset 0 0 0 1px rgba(var(--app-outline-rgb), 0.12);
-}
-
-.hermes-markdown-content :deep(table),
-.hermes-markdown-content table {
-  width: 100%;
-  min-width: 480px;
-  border-collapse: collapse;
-}
-
-.hermes-markdown-content :deep(th),
-.hermes-markdown-content :deep(td),
-.hermes-markdown-content th,
-.hermes-markdown-content td {
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(var(--app-outline-rgb), 0.08);
-  text-align: left;
-  vertical-align: top;
-  font-size: 12px;
-  line-height: 1.7;
-}
-
-.hermes-markdown-content :deep(th),
-.hermes-markdown-content th {
-  background: rgba(243, 244, 245, 0.9);
-  color: var(--app-text);
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.hermes-markdown-content :deep(tr:last-child td),
-.hermes-markdown-content tr:last-child td {
-  border-bottom: 0;
-}
-
-.hermes-empty-state {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 20px 18px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.98);
-}
-
-.hermes-empty-kicker {
-  color: #8b5e34;
+  background: #0f172a;
+  color: #e2e8f0;
   font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.hermes-empty-title {
-  color: var(--app-text);
-  font-family: var(--app-font-heading);
-  font-size: 26px;
-  font-weight: 900;
-  line-height: 1.1;
-}
-
-.hermes-empty-description {
-  margin: 0;
-  color: #64748b;
-  font-size: 13px;
-  line-height: 1.8;
-}
-
-.hermes-mobile-intro {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 16px 18px;
-  border-radius: 20px;
-  background: linear-gradient(135deg, rgba(var(--app-primary-container-rgb), 0.14) 0%, rgba(var(--app-primary-rgb), 0.08) 100%);
-}
-
-.hermes-mobile-intro-title {
-  color: var(--app-text);
-  font-family: var(--app-font-heading);
-  font-size: 20px;
-  font-weight: 900;
-  line-height: 1.1;
-}
-
-.hermes-mobile-intro-description {
-  margin: 0;
-  color: #64748b;
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.hermes-reference-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 0 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.96);
-  text-align: left;
-}
-
-.hermes-reference-type {
-  color: var(--app-primary);
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.hermes-reference-title {
-  color: var(--app-text);
-  font-size: 12px;
-  font-weight: 700;
+  white-space: pre-wrap;
 }
 
 .hermes-footer {
-  flex: 0 0 auto;
-  padding: 14px 18px calc(18px + env(safe-area-inset-bottom));
-  border-top: 1px solid rgba(var(--app-outline-rgb), 0.12);
-  background: rgba(255, 255, 255, 0.98);
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding: 14px 18px calc(18px + env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(var(--app-outline-rgb), 0.12);
+  background: #fff;
 }
 
-.hermes-footer-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.hermes-footer-tip {
+.hermes-footer-actions span {
   color: #94a3b8;
   font-size: 11px;
-  font-weight: 600;
-}
-
-.hermes-send-button {
-  min-height: 38px;
-  padding: 0 16px;
-  border-radius: 999px;
-  background: #191c1d;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.hermes-send-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 :deep(.hermes-drawer .el-drawer__header) {
@@ -1553,103 +1310,42 @@ defineExpose({
   box-shadow: inset 0 0 0 1px rgba(var(--app-outline-rgb), 0.12);
 }
 
+button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 @media (max-width: 900px) {
-  .hermes-head {
-    align-items: center;
+  .hermes-panel {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(180px, 32vh) minmax(0, 1fr);
   }
 
-  .hermes-title {
-    font-size: 22px;
-  }
-
-  .hermes-subtitle {
-    margin-top: 2px;
-    font-size: 10px;
-  }
-
-  .hermes-close-button {
-    min-height: 30px;
-    padding: 0 10px;
+  .hermes-session-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid rgba(var(--app-outline-rgb), 0.12);
   }
 
   .hermes-body {
-    padding: 14px 14px 8px;
+    padding: 12px 14px 8px;
   }
 
-  .hermes-footer {
-    padding: 12px 14px calc(16px + env(safe-area-inset-bottom));
-    gap: 8px;
-  }
-
-  .hermes-empty-title {
-    font-size: 22px;
-  }
-
-  .hermes-message-bubble {
-    padding: 12px 14px;
-    border-radius: 16px;
-  }
-
-  .hermes-message-bubble pre,
-  .hermes-markdown-content {
-    font-size: 12px;
-    line-height: 1.75;
-  }
-
-  .hermes-markdown-content :deep(.hermes-think-block summary),
-  .hermes-markdown-content .hermes-think-block summary,
-  .hermes-markdown-content :deep(th),
-  .hermes-markdown-content :deep(td),
-  .hermes-markdown-content th,
-  .hermes-markdown-content td {
-    font-size: 11px;
-  }
-
-  .hermes-chip-list,
-  .hermes-reference-list {
-    gap: 8px;
-  }
-
-  .hermes-chip-button,
-  .hermes-reference-item {
-    min-height: 32px;
-    padding: 0 10px;
-  }
-
-  .hermes-send-button {
-    min-height: 36px;
-    padding: 0 14px;
-  }
-
+  .hermes-option-card,
+  .hermes-action-card,
   .hermes-footer-actions {
-    align-items: flex-end;
+    align-items: stretch;
     flex-direction: column;
   }
 
   :deep(.hermes-drawer.is-mobile .el-drawer) {
     border-radius: 24px 24px 0 0;
     overflow: hidden;
-    background: rgba(248, 249, 250, 0.98);
-  }
-
-  :deep(.hermes-drawer.is-mobile .el-drawer__header) {
-    margin-bottom: 0;
-    padding: 12px 16px 6px;
-    border-bottom: 1px solid rgba(var(--app-outline-rgb), 0.08);
-    background: rgba(248, 249, 250, 0.96);
-    backdrop-filter: blur(18px);
   }
 
   :deep(.hermes-drawer.is-mobile .el-drawer__body) {
     display: flex;
     min-height: 0;
     padding: 0;
-  }
-
-  :deep(.hermes-drawer.is-mobile .el-textarea__inner) {
-    min-height: 88px !important;
-    border-radius: 16px;
-    background: #fff;
   }
 }
 </style>

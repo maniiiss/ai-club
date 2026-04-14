@@ -1,13 +1,19 @@
 import { AUTH_TOKEN_KEY } from '@/constants/auth'
-import { getResolvedApiBaseUrl } from './http'
+import { http, getResolvedApiBaseUrl } from './http'
+import type { ApiResponse, PageResponse } from '@/types/platform'
 import type {
-  HermesChatResponsePayload,
-  HermesChatRequestPayload,
+  CreateHermesConversationSessionPayload,
+  HermesConversationDetailItem,
+  HermesConversationSessionQuery,
+  HermesConversationSessionSummaryItem,
+  HermesSessionChatRequestPayload,
+  HermesSessionChatResponsePayload,
   HermesStreamDeltaEvent,
   HermesStreamDoneEvent,
   HermesStreamErrorEvent,
   HermesStreamMetaEvent,
-  HermesStreamStatusEvent
+  HermesStreamStatusEvent,
+  RenameHermesConversationSessionPayload
 } from '@/types/hermes'
 
 interface StreamHandlers {
@@ -18,35 +24,84 @@ interface StreamHandlers {
   onError?: (payload: HermesStreamErrorEvent) => void
 }
 
-/**
- * 普通问答接口，作为页面主用链路，避免 Hermes Responses API 与前端 SSE 兼容差异影响体验。
- */
-export const chatWithHermes = async (payload: HermesChatRequestPayload) => {
-  const token = localStorage.getItem(AUTH_TOKEN_KEY)
-  const response = await fetch(`${getResolvedApiBaseUrl()}/api/hermes/chat`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    },
-    body: JSON.stringify(payload)
-  })
+const cleanParams = <T extends object>(params: T) =>
+  Object.fromEntries(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
+  )
 
-  const body = await response.json().catch(() => null)
-  if (!response.ok || !body?.success) {
-    throw new Error(body?.message || 'Hermes 助手暂时不可用')
-  }
-  return body.data as HermesChatResponsePayload
+/**
+ * 创建一条新的 Hermes 云端会话。
+ */
+export const createHermesConversationSession = async (payload: CreateHermesConversationSessionPayload) => {
+  const { data } = await http.post<ApiResponse<HermesConversationSessionSummaryItem>>('/api/hermes/sessions', payload)
+  return data.data
+}
+
+/**
+ * 分页读取当前用户的 Hermes 会话列表。
+ */
+export const pageHermesConversationSessions = async (query: HermesConversationSessionQuery) => {
+  const { data } = await http.get<ApiResponse<PageResponse<HermesConversationSessionSummaryItem>>>('/api/hermes/sessions', {
+    params: cleanParams(query)
+  })
+  return data.data
+}
+
+/**
+ * 读取指定会话的详情与历史消息。
+ */
+export const getHermesConversationDetail = async (sessionId: number) => {
+  const { data } = await http.get<ApiResponse<HermesConversationDetailItem>>(`/api/hermes/sessions/${sessionId}`)
+  return data.data
+}
+
+/**
+ * 重命名指定会话。
+ */
+export const renameHermesConversationSession = async (sessionId: number, payload: RenameHermesConversationSessionPayload) => {
+  const { data } = await http.put<ApiResponse<HermesConversationSessionSummaryItem>>(`/api/hermes/sessions/${sessionId}`, payload)
+  return data.data
+}
+
+/**
+ * 归档指定会话。
+ */
+export const archiveHermesConversationSession = async (sessionId: number) => {
+  const { data } = await http.post<ApiResponse<HermesConversationSessionSummaryItem>>(`/api/hermes/sessions/${sessionId}/archive`)
+  return data.data
+}
+
+/**
+ * 恢复指定会话。
+ */
+export const restoreHermesConversationSession = async (sessionId: number) => {
+  const { data } = await http.post<ApiResponse<HermesConversationSessionSummaryItem>>(`/api/hermes/sessions/${sessionId}/restore`)
+  return data.data
+}
+
+/**
+ * 删除指定会话及其历史消息。
+ */
+export const deleteHermesConversationSession = async (sessionId: number) => {
+  await http.delete<ApiResponse<null>>(`/api/hermes/sessions/${sessionId}`)
+}
+
+/**
+ * 指定会话的普通问答接口，主要供测试或兜底消费使用。
+ */
+export const chatHermesSession = async (sessionId: number, payload: HermesSessionChatRequestPayload) => {
+  const { data } = await http.post<ApiResponse<HermesSessionChatResponsePayload>>(`/api/hermes/sessions/${sessionId}/chat`, payload)
+  return data.data
 }
 
 /**
  * 通过 fetch 读取后端转发的 SSE 流。
  * 这里不能直接复用 EventSource，因为平台需要带 Bearer Token 且请求方式为 POST。
  */
-export const streamHermesChat = async (payload: HermesChatRequestPayload, handlers: StreamHandlers) => {
+export const streamHermesSessionChat = async (sessionId: number, payload: HermesSessionChatRequestPayload, handlers: StreamHandlers) => {
   const token = localStorage.getItem(AUTH_TOKEN_KEY)
   const controller = new AbortController()
-  const response = await fetch(`${getResolvedApiBaseUrl()}/api/hermes/chat/stream`, {
+  const response = await fetch(`${getResolvedApiBaseUrl()}/api/hermes/sessions/${sessionId}/chat/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

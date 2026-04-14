@@ -315,7 +315,7 @@ public class CicdManagementService {
                 throw new IllegalArgumentException("关联的 Jenkins 服务未启用");
             }
             String apiToken = tokenCipherService.decrypt(entity.getJenkinsServer().getTokenCiphertext());
-            Map<String, String> parameters = parseBuildParameters(entity.getBuildParametersJson(), branchOverride, entity.getDefaultBranch());
+            Map<String, String> parameters = resolveBuildParameters(entity, apiToken, branchOverride);
             JenkinsApiService.JenkinsTriggerResult result = jenkinsApiService.triggerJob(
                     entity.getJenkinsServer().getBaseUrl(),
                     entity.getJenkinsServer().getUsername(),
@@ -349,6 +349,36 @@ public class CicdManagementService {
             notifyCurrentUserPipelineFailed(entity, exception.getMessage());
             throw exception;
         }
+    }
+
+    /**
+     * 只有在 Jenkins Job 明确声明了 branch/BRANCH 参数时才自动补充分支，
+     * 避免普通 Job 因被误走参数化触发路径而返回 500。
+     */
+    private Map<String, String> resolveBuildParameters(ProjectPipelineBindingEntity entity, String apiToken, String branchOverride) {
+        BuildParameterSnapshot snapshot = parseBuildParameters(entity.getBuildParametersJson());
+        String branch = trimToNull(branchOverride);
+        if (branch == null) {
+            branch = trimToNull(entity.getDefaultBranch());
+        }
+        if (branch == null || snapshot.containsExplicitBranchParameter()) {
+            return snapshot.parameters();
+        }
+
+        JenkinsApiService.JenkinsJob job = jenkinsApiService.fetchJob(
+                entity.getJenkinsServer().getBaseUrl(),
+                entity.getJenkinsServer().getUsername(),
+                apiToken,
+                entity.getJobName()
+        );
+        String branchParameterName = resolveBranchParameterName(job.parameterNames());
+        if (branchParameterName == null) {
+            return snapshot.parameters();
+        }
+
+        Map<String, String> parameters = new LinkedHashMap<>(snapshot.parameters());
+        parameters.put(branchParameterName, branch);
+        return parameters;
     }
 
     private void notifyCurrentUserPipelineQueued(ProjectPipelineBindingEntity entity) {
@@ -444,8 +474,9 @@ public class CicdManagementService {
         );
     }
 
-    private Map<String, String> parseBuildParameters(String buildParametersJson, String branchOverride, String defaultBranch) {
+    private BuildParameterSnapshot parseBuildParameters(String buildParametersJson) {
         Map<String, String> parameters = new LinkedHashMap<>();
+        boolean containsExplicitBranchParameter = false;
         String normalizedJson = trimToNull(buildParametersJson);
         if (normalizedJson != null) {
             try {
@@ -453,21 +484,21 @@ public class CicdManagementService {
                 if (!node.isObject()) {
                     throw new IllegalArgumentException("构建参数必须为 JSON 对象");
                 }
-                node.fields().forEachRemaining(entry -> parameters.put(entry.getKey(), entry.getValue().isNull() ? "" : entry.getValue().asText("")));
+                var fields = node.fields();
+                while (fields.hasNext()) {
+                    Map.Entry<String, JsonNode> entry = fields.next();
+                    parameters.put(entry.getKey(), entry.getValue().isNull() ? "" : entry.getValue().asText(""));
+                    if ("branch".equalsIgnoreCase(entry.getKey())) {
+                        containsExplicitBranchParameter = true;
+                    }
+                }
             } catch (IllegalArgumentException exception) {
                 throw exception;
             } catch (Exception exception) {
                 throw new IllegalArgumentException("构建参数 JSON 格式不正确");
             }
         }
-        String branch = trimToNull(branchOverride);
-        if (branch == null) {
-            branch = trimToNull(defaultBranch);
-        }
-        if (branch != null && !parameters.containsKey("branch") && !parameters.containsKey("BRANCH")) {
-            parameters.put("branch", branch);
-        }
-        return parameters;
+        return new BuildParameterSnapshot(Map.copyOf(parameters), containsExplicitBranchParameter);
     }
 
     private String normalizeBuildParametersJson(String value) {
@@ -737,6 +768,40 @@ public class CicdManagementService {
         }
         String value = message.trim();
         return value.length() > 500 ? value.substring(0, 500) : value;
+    }
+
+    /**
+     * 优先匹配常见的 branch / BRANCH 参数名，并兼容大小写不同的自定义命名。
+     */
+    private String resolveBranchParameterName(List<String> parameterNames) {
+        if (parameterNames == null || parameterNames.isEmpty()) {
+            return null;
+        }
+        for (String parameterName : parameterNames) {
+            if ("branch".equals(parameterName)) {
+                return parameterName;
+            }
+        }
+        for (String parameterName : parameterNames) {
+            if ("BRANCH".equals(parameterName)) {
+                return parameterName;
+            }
+        }
+        for (String parameterName : parameterNames) {
+            if ("branch".equalsIgnoreCase(parameterName)) {
+                return parameterName;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 构建参数快照，用于区分显式配置的参数和系统自动补充的默认分支。
+     */
+    private record BuildParameterSnapshot(
+            Map<String, String> parameters,
+            boolean containsExplicitBranchParameter
+    ) {
     }
 
     public record PipelineTriggerOutcome(

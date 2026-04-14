@@ -9,6 +9,7 @@ import com.aiclub.platform.dto.request.ProjectPipelineBindingRequest;
 import com.aiclub.platform.repository.ProjectPipelineBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -18,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -123,6 +125,65 @@ class CicdManagementServiceTests {
     }
 
     /**
+     * 验证默认分支不会被强行注入到未声明 branch 参数的 Jenkins Job 中，
+     * 避免普通 Job 被误判为参数化构建后触发 500。
+     */
+    @Test
+    void shouldNotInjectDefaultBranchForJobWithoutBranchParameter() {
+        ProjectEntity project = projectRepository.save(new ProjectEntity("默认分支回退项目", "钱七", "进行中", "验证普通 Job 不自动注入 branch 参数"));
+        JenkinsServerSummary server = createJenkinsServer();
+
+        mockFetchJob("plain-job");
+        ProjectPipelineBindingSummary binding = cicdManagementService.createPipelineBinding(new ProjectPipelineBindingRequest(
+                project.getId(),
+                server.id(),
+                "plain-job",
+                "main",
+                "",
+                true
+        ));
+        clearInvocations(jenkinsApiService);
+        mockFetchJob("plain-job");
+        when(jenkinsApiService.triggerJob(anyString(), anyString(), anyString(), eq("plain-job"), anyMap()))
+                .thenReturn(new JenkinsApiService.JenkinsTriggerResult("http://jenkins.example.com/queue/plain-job", "已提交 Jenkins 构建请求"));
+
+        cicdManagementService.triggerPipelineBuild(binding.id());
+
+        ArgumentCaptor<java.util.Map<String, String>> parameterCaptor = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(jenkinsApiService).triggerJob(anyString(), anyString(), anyString(), eq("plain-job"), parameterCaptor.capture());
+        assertThat(parameterCaptor.getValue()).isEmpty();
+    }
+
+    /**
+     * 验证当 Jenkins Job 显式声明了 BRANCH 参数时，平台会把默认分支注入到对应参数名中。
+     */
+    @Test
+    void shouldInjectDefaultBranchIntoDeclaredBranchParameter() {
+        ProjectEntity project = projectRepository.save(new ProjectEntity("参数化分支项目", "孙八", "进行中", "验证 branch 参数自动映射"));
+        JenkinsServerSummary server = createJenkinsServer();
+
+        mockFetchJob("branch-job", java.util.List.of("BRANCH"));
+        ProjectPipelineBindingSummary binding = cicdManagementService.createPipelineBinding(new ProjectPipelineBindingRequest(
+                project.getId(),
+                server.id(),
+                "branch-job",
+                "release",
+                "",
+                true
+        ));
+        clearInvocations(jenkinsApiService);
+        mockFetchJob("branch-job", java.util.List.of("BRANCH"));
+        when(jenkinsApiService.triggerJob(anyString(), anyString(), anyString(), eq("branch-job"), anyMap()))
+                .thenReturn(new JenkinsApiService.JenkinsTriggerResult("http://jenkins.example.com/queue/branch-job", "已提交 Jenkins 构建请求"));
+
+        cicdManagementService.triggerPipelineBuild(binding.id());
+
+        ArgumentCaptor<java.util.Map<String, String>> parameterCaptor = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(jenkinsApiService).triggerJob(anyString(), anyString(), anyString(), eq("branch-job"), parameterCaptor.capture());
+        assertThat(parameterCaptor.getValue()).containsExactlyEntriesOf(java.util.Map.of("BRANCH", "release"));
+    }
+
+    /**
      * 创建测试用 Jenkins 服务，复用真实的加密与持久化流程。
      */
     private JenkinsServerSummary createJenkinsServer() {
@@ -140,13 +201,21 @@ class CicdManagementServiceTests {
      * 模拟 Jenkins 查询 Job 详情，避免测试依赖外部 Jenkins 服务。
      */
     private void mockFetchJob(String jobName) {
+        mockFetchJob(jobName, java.util.List.of());
+    }
+
+    /**
+     * 模拟 Jenkins 查询 Job 详情，并按需返回参数定义。
+     */
+    private void mockFetchJob(String jobName, java.util.List<String> parameterNames) {
         when(jenkinsApiService.fetchJob(anyString(), anyString(), anyString(), eq(jobName)))
                 .thenReturn(new JenkinsApiService.JenkinsJob(
                         jobName,
                         jobName,
                         "http://jenkins.example.com/job/" + jobName,
                         "blue",
-                        null
+                        null,
+                        parameterNames
                 ));
     }
 }

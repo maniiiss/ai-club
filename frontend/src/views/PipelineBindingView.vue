@@ -281,7 +281,7 @@
           </el-form-item>
           <el-form-item label="默认分支">
             <el-input v-model="bindingForm.defaultBranch" placeholder="例如：main" />
-            <div class="form-tip">触发构建时，如参数 JSON 中未配置 branch / BRANCH，会自动补充分支参数。</div>
+            <div class="form-tip">触发构建时，如参数 JSON 中未配置 branch / BRANCH，且 Jenkins Job 已声明对应参数，系统会自动补充分支参数。</div>
           </el-form-item>
           <el-form-item label="构建参数 JSON">
             <el-input v-model="bindingForm.buildParametersJson" type="textarea" :rows="6" placeholder='例如：{"env":"test","branch":"main"}' />

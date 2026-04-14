@@ -31,6 +31,9 @@ platform:
     timeout-seconds: 180
     session-prefix: "test:hermes"
     max-context-messages: 4
+  internal:
+    allow-local-bypass: true
+    service-token: test-internal-service-token
   security:
     token-secret: test-token-secret
     session-key-prefix: "test:session:"

@@ -2,9 +2,9 @@ package com.aiclub.platform.operationlog;
 
 import com.aiclub.platform.controller.HermesController;
 import com.aiclub.platform.controller.UserController;
-import com.aiclub.platform.dto.request.HermesChatRequest;
 import com.aiclub.platform.service.AccessManagementService;
 import com.aiclub.platform.service.HermesChatService;
+import com.aiclub.platform.service.HermesConversationSessionService;
 import com.aiclub.platform.service.UserOperationLogService;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -29,13 +29,16 @@ class OperationLogInterceptorTests {
     @Test
     void shouldSkipHermesControllerWhenClassAnnotationMarksSkip() throws Exception {
         OperationLogInterceptor interceptor = new OperationLogInterceptor(mock(UserOperationLogService.class));
-        HermesController hermesController = new HermesController(mock(HermesChatService.class));
+        HermesController hermesController = new HermesController(
+                mock(HermesChatService.class),
+                mock(HermesConversationSessionService.class)
+        );
         HandlerMethod handlerMethod = new HandlerMethod(
                 hermesController,
-                HermesController.class.getMethod("chat", HermesChatRequest.class)
+                HermesController.class.getMethod("chat", Long.class, com.aiclub.platform.dto.request.HermesSessionChatRequest.class)
         );
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/hermes/chat");
-        request.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/hermes/chat");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/hermes/sessions/1/chat");
+        request.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/hermes/sessions/{sessionId}/chat");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         boolean proceed = interceptor.preHandle(request, response, handlerMethod);

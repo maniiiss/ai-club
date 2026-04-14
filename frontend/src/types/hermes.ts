@@ -9,18 +9,69 @@ export interface HermesSelectionPayload {
 }
 
 /**
- * Hermes 流式问答请求体。
+ * 创建 Hermes 云端会话时使用的请求体。
  */
-export interface HermesChatRequestPayload {
-  question: string
+export interface CreateHermesConversationSessionPayload {
   routeName: string
   projectId?: number | null
   taskId?: number | null
   iterationId?: number | null
   planId?: number | null
-  clientConversationId?: string
+}
+
+/**
+ * Hermes 会话列表查询条件。
+ */
+export interface HermesConversationSessionQuery {
+  page: number
+  size: number
+  archived?: boolean
+}
+
+/**
+ * 重命名 Hermes 会话时使用的请求体。
+ */
+export interface RenameHermesConversationSessionPayload {
+  title: string
+}
+
+/**
+ * 指定会话的问答请求体。
+ */
+export interface HermesSessionChatRequestPayload {
+  question: string
   selection?: HermesSelectionPayload | null
   debug?: boolean
+}
+
+/**
+ * Hermes 会话列表摘要项。
+ */
+export interface HermesConversationSessionSummaryItem {
+  id: number
+  title: string
+  titleCustomized: boolean
+  routeName: string
+  projectId: number | null
+  taskId: number | null
+  iterationId: number | null
+  planId: number | null
+  latestPreview: string
+  archived: boolean
+  createdAt: string | null
+  updatedAt: string | null
+  lastMessageAt: string | null
+}
+
+/**
+ * Hermes 会话详情中的单条消息项。
+ */
+export interface HermesConversationMessageItem {
+  id: number
+  role: 'user' | 'assistant' | string
+  content: string
+  status: 'done' | 'error' | string
+  createdAt: string | null
 }
 
 /**
@@ -84,9 +135,28 @@ export interface HermesDebugInfoItem {
 }
 
 /**
+ * 会话详情回显所需的最新展示态。
+ */
+export interface HermesLatestDisplayState {
+  references: HermesReferenceItem[]
+  suggestions: string[]
+  actions: HermesActionItem[]
+  selectionCards: HermesSelectionCardItem[]
+  debug: HermesDebugInfoItem | null
+}
+
+/**
+ * Hermes 云端会话详情。
+ */
+export interface HermesConversationDetailItem extends HermesConversationSessionSummaryItem {
+  latestDisplayState: HermesLatestDisplayState
+  messages: HermesConversationMessageItem[]
+}
+
+/**
  * Hermes 非流式问答返回体。
  */
-export interface HermesChatResponsePayload {
+export interface HermesSessionChatResponsePayload {
   scopeKey: string
   roleName: string
   content: string
@@ -98,7 +168,7 @@ export interface HermesChatResponsePayload {
 }
 
 /**
- * Hermes 抽屉内的消息项。
+ * Hermes 抽屉内的本地消息项。
  */
 export interface HermesMessageItem {
   id: string
@@ -155,18 +225,4 @@ export interface HermesStreamDoneEvent {
  */
 export interface HermesStreamErrorEvent {
   message: string
-}
-
-/**
- * 当前抽屉内缓存的一段会话可见状态。
- */
-export interface HermesConversationSession {
-  scopeKey: string
-  messages: HermesMessageItem[]
-  references: HermesReferenceItem[]
-  suggestions: string[]
-  roleName: string
-  actions: HermesActionItem[]
-  selectionCards: HermesSelectionCardItem[]
-  debug: HermesDebugInfoItem | null
 }

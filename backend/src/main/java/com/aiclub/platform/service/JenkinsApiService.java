@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -69,7 +70,7 @@ public class JenkinsApiService {
     public JenkinsJob fetchJob(String baseUrl, String username, String apiToken, String jobName) {
         String url = normalizeBaseUrl(baseUrl)
                 + buildJobPath(jobName)
-                + "/api/json?tree=name,fullName,url,color,lastBuild[number,url,result,timestamp]";
+                + "/api/json?tree=name,fullName,url,color,lastBuild[number,url,result,timestamp],property[parameterDefinitions[name]]";
         JsonNode node = readJson(sendRequest("GET", url, username, apiToken, Map.of("Accept", "application/json"), null).body());
         return toJob(node);
     }
@@ -118,11 +119,11 @@ public class JenkinsApiService {
         }
 
         boolean hasParameters = parameters != null && !parameters.isEmpty();
-        String endpoint = normalizeBaseUrl(baseUrl) + buildJobPath(jobName) + (hasParameters ? "/buildWithParameters" : "/build");
+        String endpoint = normalizeBaseUrl(baseUrl) + buildJobPath(jobName) + "/build";
         String body = null;
         if (hasParameters) {
             headers.put("Content-Type", "application/x-www-form-urlencoded");
-            body = toFormBody(parameters);
+            body = toJsonFormBody(parameters);
         }
         HttpResponse<String> response = sendRequest("POST", endpoint, username, apiToken, headers, body);
         String triggerUrl = response.headers().firstValue("Location").orElse("");
@@ -229,6 +230,25 @@ public class JenkinsApiService {
                 .orElse("");
     }
 
+    /**
+     * 使用 Jenkins 官方 Remote API 推荐的 json 参数格式触发构建，
+     * 兼容普通参数和部分对 buildWithParameters 支持不一致的 Job 类型。
+     */
+    private String toJsonFormBody(Map<String, String> parameters) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            List<Map<String, String>> parameterList = new ArrayList<>();
+            parameters.forEach((name, value) -> parameterList.add(Map.of(
+                    "name", name,
+                    "value", value == null ? "" : value
+            )));
+            payload.put("parameter", parameterList);
+            return toFormBody(Map.of("json", objectMapper.writeValueAsString(payload)));
+        } catch (Exception exception) {
+            throw new IllegalStateException("构造 Jenkins 构建参数失败", exception);
+        }
+    }
+
     private JsonNode readJson(String body) {
         try {
             if (!hasText(body)) {
@@ -251,13 +271,38 @@ public class JenkinsApiService {
                     lastBuildNode.path("timestamp").asLong(0L)
             );
         }
+        List<String> parameterNames = new ArrayList<>();
+        appendParameterNames(parameterNames, node.path("property"));
         return new JenkinsJob(
                 node.path("name").asText(""),
                 node.path("fullName").asText(node.path("name").asText("")),
                 node.path("url").asText(""),
                 node.path("color").asText(""),
-                build
+                build,
+                List.copyOf(parameterNames)
         );
+    }
+
+    /**
+     * Jenkins Job 的参数定义通常挂在 property 节点下，这里统一抽取成参数名列表，
+     * 供上层判断是否需要自动补充分支参数。
+     */
+    private void appendParameterNames(Collection<String> target, JsonNode propertyNode) {
+        if (target == null || propertyNode == null || !propertyNode.isArray()) {
+            return;
+        }
+        for (JsonNode item : propertyNode) {
+            JsonNode parameterDefinitionsNode = item.path("parameterDefinitions");
+            if (!parameterDefinitionsNode.isArray()) {
+                continue;
+            }
+            for (JsonNode parameterDefinitionNode : parameterDefinitionsNode) {
+                String parameterName = parameterDefinitionNode.path("name").asText("");
+                if (hasText(parameterName) && !target.contains(parameterName)) {
+                    target.add(parameterName);
+                }
+            }
+        }
     }
 
     private JenkinsBuildInfo toBuild(JsonNode node) {
@@ -298,7 +343,7 @@ public class JenkinsApiService {
     public record JenkinsServerInfo(String displayName, String primaryViewName, String version, int jobCount) {
     }
 
-    public record JenkinsJob(String name, String fullName, String url, String color, JenkinsBuild lastBuild) {
+    public record JenkinsJob(String name, String fullName, String url, String color, JenkinsBuild lastBuild, List<String> parameterNames) {
     }
 
     public record JenkinsBuild(int number, String url, String result, long timestamp) {

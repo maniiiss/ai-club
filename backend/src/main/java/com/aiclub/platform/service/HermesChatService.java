@@ -1,6 +1,7 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.HermesChatAuditEntity;
+import com.aiclub.platform.domain.model.HermesConversationSessionEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.HermesChatResponse;
@@ -17,6 +18,7 @@ import com.aiclub.platform.dto.HermesStreamError;
 import com.aiclub.platform.dto.HermesStreamMeta;
 import com.aiclub.platform.dto.HermesStreamStatus;
 import com.aiclub.platform.dto.request.HermesChatRequest;
+import com.aiclub.platform.dto.request.HermesSessionChatRequest;
 import com.aiclub.platform.repository.HermesChatAuditRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,8 +36,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 顶部 Hermes 助手的会话代理服务。
- * 新版固定采用 Hermes API Server + MCP 工具接入，不再在 backend 内部维护本地 tool loop。
+ * Hermes 会话代理服务。
+ * 新版固定采用“数据库会话记录 + Redis 热状态”的双层结构：
+ * 数据库负责回显历史记录，Redis 继续承载 Hermes 运行时隐藏记忆与工具链上下文。
  */
 @Service
 public class HermesChatService {
@@ -53,6 +56,7 @@ public class HermesChatService {
     private final HermesConversationStateStore hermesConversationStateStore;
     private final HermesMcpSessionTokenService hermesMcpSessionTokenService;
     private final HermesChatAuditRepository hermesChatAuditRepository;
+    private final HermesConversationSessionService hermesConversationSessionService;
     private final ObjectMapper objectMapper;
 
     public HermesChatService(AuthService authService,
@@ -66,6 +70,7 @@ public class HermesChatService {
                              HermesConversationStateStore hermesConversationStateStore,
                              HermesMcpSessionTokenService hermesMcpSessionTokenService,
                              HermesChatAuditRepository hermesChatAuditRepository,
+                             HermesConversationSessionService hermesConversationSessionService,
                              ObjectMapper objectMapper) {
         this.authService = authService;
         this.userRepository = userRepository;
@@ -78,17 +83,20 @@ public class HermesChatService {
         this.hermesConversationStateStore = hermesConversationStateStore;
         this.hermesMcpSessionTokenService = hermesMcpSessionTokenService;
         this.hermesChatAuditRepository = hermesChatAuditRepository;
+        this.hermesConversationSessionService = hermesConversationSessionService;
         this.objectMapper = objectMapper;
     }
 
     /**
-     * 流式聊天入口。
-     * backend 负责维护会话态和 SSE 包装，Hermes 本身负责工具调用与文本生成。
+     * 基于指定会话执行流式聊天。
      */
-    public StreamingResponseBody streamChat(HermesChatRequest request) {
+    public StreamingResponseBody streamChat(Long sessionId, HermesSessionChatRequest request) {
+        HermesConversationSessionEntity session = hermesConversationSessionService.requireOwnedSession(sessionId);
+        validateSessionAvailableForChat(session);
         CurrentUserInfo currentUser = authService.currentUser();
-        HermesContextAssembler.HermesConversationContext context = hermesContextAssembler.assemble(request, currentUser);
-        HermesChatRequest effectiveRequest = resolveEffectiveRequest(request);
+        HermesChatRequest boundRequest = buildBoundRequest(session, request);
+        HermesContextAssembler.HermesConversationContext context = hermesContextAssembler.assemble(boundRequest, currentUser);
+        HermesChatRequest effectiveRequest = resolveEffectiveRequest(boundRequest, session);
         String scopeKey = resolveScopeKey(currentUser.id(), context.projectId(), effectiveRequest.clientConversationId());
         HermesChatAuditEntity audit = createAudit(currentUser, effectiveRequest, context, scopeKey);
         PreparedConversation preparedConversation = prepareConversation(currentUser, context, effectiveRequest, scopeKey);
@@ -119,20 +127,40 @@ public class HermesChatService {
                         context
                 );
                 hermesConversationStateStore.save(finalizedConversation.state());
-                finishSuccess(outputStream, audit, gatewayResult, finalizedConversation);
+                HermesDebugInfo debugInfo = buildDebugInfo(finalizedConversation.state(), gatewayResult.responseId());
+                hermesConversationSessionService.recordSuccess(
+                        session,
+                        effectiveRequest,
+                        finalizedConversation.state(),
+                        finalizedConversation.content(),
+                        debugInfo
+                );
+                finishSuccess(outputStream, audit, gatewayResult, finalizedConversation, debugInfo);
             } catch (Exception exception) {
+                HermesConversationState latestState = loadLatestState(preparedConversation.state());
+                HermesDebugInfo debugInfo = buildDebugInfo(latestState, "");
+                hermesConversationSessionService.recordFailure(
+                        session,
+                        effectiveRequest,
+                        latestState,
+                        resolveErrorMessage(exception),
+                        debugInfo
+                );
                 finishFailure(outputStream, audit, exception);
             }
         };
     }
 
     /**
-     * 非流式聊天入口，主要供稳定消费和测试使用。
+     * 基于指定会话执行非流式聊天，主要供测试与稳定消费场景使用。
      */
-    public HermesChatResponse chat(HermesChatRequest request) {
+    public HermesChatResponse chat(Long sessionId, HermesSessionChatRequest request) {
+        HermesConversationSessionEntity session = hermesConversationSessionService.requireOwnedSession(sessionId);
+        validateSessionAvailableForChat(session);
         CurrentUserInfo currentUser = authService.currentUser();
-        HermesContextAssembler.HermesConversationContext context = hermesContextAssembler.assemble(request, currentUser);
-        HermesChatRequest effectiveRequest = resolveEffectiveRequest(request);
+        HermesChatRequest boundRequest = buildBoundRequest(session, request);
+        HermesContextAssembler.HermesConversationContext context = hermesContextAssembler.assemble(boundRequest, currentUser);
+        HermesChatRequest effectiveRequest = resolveEffectiveRequest(boundRequest, session);
         String scopeKey = resolveScopeKey(currentUser.id(), context.projectId(), effectiveRequest.clientConversationId());
         HermesChatAuditEntity audit = createAudit(currentUser, effectiveRequest, context, scopeKey);
         PreparedConversation preparedConversation = prepareConversation(currentUser, context, effectiveRequest, scopeKey);
@@ -151,6 +179,14 @@ public class HermesChatService {
                     context
             );
             hermesConversationStateStore.save(finalizedConversation.state());
+            HermesDebugInfo debugInfo = buildDebugInfo(finalizedConversation.state(), gatewayResult.responseId());
+            hermesConversationSessionService.recordSuccess(
+                    session,
+                    effectiveRequest,
+                    finalizedConversation.state(),
+                    finalizedConversation.content(),
+                    debugInfo
+            );
 
             audit.setStatus("SUCCESS");
             audit.setResponseSummary(abbreviate(finalizedConversation.content(), 1000));
@@ -166,15 +202,42 @@ public class HermesChatService {
                     finalizedConversation.state().suggestions(),
                     finalizedConversation.state().actions(),
                     finalizedConversation.state().selectionCards(),
-                    buildDebugInfo(finalizedConversation.state(), gatewayResult.responseId())
+                    debugInfo
             );
         } catch (Exception exception) {
+            HermesConversationState latestState = loadLatestState(preparedConversation.state());
+            HermesDebugInfo debugInfo = buildDebugInfo(latestState, "");
+            hermesConversationSessionService.recordFailure(
+                    session,
+                    effectiveRequest,
+                    latestState,
+                    resolveErrorMessage(exception),
+                    debugInfo
+            );
             audit.setStatus("FAILED");
             audit.setErrorMessage(abbreviate(resolveErrorMessage(exception), 1000));
             audit.setFinishedAt(LocalDateTime.now());
             hermesChatAuditRepository.save(audit);
             throw exception;
         }
+    }
+
+    /**
+     * 将已持久化会话绑定信息与本轮聊天输入合并成 Hermes 真实请求。
+     * 这里的关键点是：继续聊天时始终以会话创建时的上下文为准，而不是当前页面上下文。
+     */
+    private HermesChatRequest buildBoundRequest(HermesConversationSessionEntity session, HermesSessionChatRequest request) {
+        return new HermesChatRequest(
+                request.question(),
+                session.getRouteName(),
+                session.getProjectId(),
+                session.getTaskId(),
+                session.getIterationId(),
+                session.getPlanId(),
+                session.getClientConversationId(),
+                request.selection(),
+                request.debug()
+        );
     }
 
     /**
@@ -204,11 +267,11 @@ public class HermesChatService {
                 existingState == null ? List.of() : existingState.transcript(),
                 context.references(),
                 context.suggestions(),
-                List.of(),
-                List.of(),
+                existingState == null ? List.of() : existingState.actions(),
+                existingState == null ? List.of() : existingState.selectionCards(),
                 groundingState,
-                List.of(),
-                ""
+                existingState == null ? List.of() : existingState.toolExecutions(),
+                existingState == null ? "" : existingState.lastErrorMessage()
         );
         hermesConversationStateStore.save(preparedState);
 
@@ -227,7 +290,7 @@ public class HermesChatService {
     }
 
     /**
-     * 当前轮次完成后，把用户消息和助手最终回答写回 transcript。
+     * 当前轮次完成后，把用户消息和助手最终回答写回 Redis transcript。
      */
     private FinalizedConversation finalizeConversation(HermesConversationState latestState,
                                                        HermesConversationTurn currentUserTurn,
@@ -305,7 +368,7 @@ public class HermesChatService {
     }
 
     /**
-     * 会话令牌失效、用户切换或 scopeKey 变化时，重新签发新的 `_session_token`。
+     * 重新签发当前会话的 MCP 会话令牌。
      */
     private String resolveSessionToken(CurrentUserInfo currentUser,
                                        String scopeKey,
@@ -314,11 +377,17 @@ public class HermesChatService {
         return hermesMcpSessionTokenService.issueToken(currentUser, scopeKey, clientConversationId);
     }
 
+    /**
+     * 优先从 Redis 读取最新状态，保证工具调用写回后的结果能够参与当前轮次结束处理。
+     */
     private HermesConversationState loadLatestState(HermesConversationState preparedState) {
         return hermesConversationStateStore.load(preparedState.scopeKey(), preparedState.clientConversationId())
                 .orElse(preparedState);
     }
 
+    /**
+     * 裁剪 Redis transcript，避免上下文无限膨胀。
+     */
     private List<HermesConversationTurn> trimTranscript(List<HermesConversationTurn> transcript) {
         if (transcript == null || transcript.isEmpty()) {
             return List.of();
@@ -330,18 +399,24 @@ public class HermesChatService {
         return List.copyOf(transcript.subList(transcript.size() - maxMessageCount, transcript.size()));
     }
 
+    /**
+     * 构造流式首包 meta 事件。
+     */
     private HermesStreamMeta buildMetaEvent(HermesConversationState state) {
         return new HermesStreamMeta(
                 state.scopeKey(),
                 state.context() == null ? "" : defaultString(state.context().roleName()),
                 state.references(),
                 state.suggestions(),
-                List.of(),
-                List.of(),
+                state.actions(),
+                state.selectionCards(),
                 buildDebugInfo(state, "")
         );
     }
 
+    /**
+     * 组装前端调试模式需要的内部执行轨迹。
+     */
     private HermesDebugInfo buildDebugInfo(HermesConversationState state, String responseId) {
         List<Map<String, Object>> assistantTurns = List.of(Map.of(
                 "transport", "chat.completions",
@@ -362,6 +437,9 @@ public class HermesChatService {
         );
     }
 
+    /**
+     * 将 grounding 状态压平成调试输出友好的键值结构。
+     */
     private Map<String, Object> toMap(HermesGroundingState groundingState) {
         LinkedHashMap<String, Object> debug = new LinkedHashMap<>();
         if (groundingState == null) {
@@ -374,10 +452,14 @@ public class HermesChatService {
         return debug;
     }
 
+    /**
+     * 写出成功结束事件并更新审计日志。
+     */
     private void finishSuccess(OutputStream outputStream,
                                HermesChatAuditEntity audit,
                                HermesGatewayService.HermesGatewayResult gatewayResult,
-                               FinalizedConversation finalizedConversation) {
+                               FinalizedConversation finalizedConversation,
+                               HermesDebugInfo debugInfo) {
         audit.setStatus("SUCCESS");
         audit.setResponseSummary(abbreviate(finalizedConversation.content(), 1000));
         audit.setHermesResponseId(defaultString(gatewayResult.responseId()));
@@ -393,13 +475,16 @@ public class HermesChatService {
                     finalizedConversation.state().suggestions(),
                     finalizedConversation.state().actions(),
                     finalizedConversation.state().selectionCards(),
-                    buildDebugInfo(finalizedConversation.state(), gatewayResult.responseId())
+                    debugInfo
             ));
         } catch (IOException exception) {
             throw new IllegalStateException("Hermes 完成事件发送失败", exception);
         }
     }
 
+    /**
+     * 写出失败结束事件并更新审计日志。
+     */
     private void finishFailure(OutputStream outputStream, HermesChatAuditEntity audit, Exception exception) {
         audit.setStatus("FAILED");
         audit.setErrorMessage(abbreviate(resolveErrorMessage(exception), 1000));
@@ -413,10 +498,16 @@ public class HermesChatService {
         }
     }
 
+    /**
+     * 发送阶段性状态事件。
+     */
     private void emitStatus(OutputStream outputStream, String stage, String message) throws IOException {
         writeEvent(outputStream, "status", new HermesStreamStatus(stage, message));
     }
 
+    /**
+     * 将对象序列化为 SSE 事件写回前端。
+     */
     private void writeEvent(OutputStream outputStream, String eventName, Object payload) throws IOException {
         String json = objectMapper.writeValueAsString(payload);
         String ssePayload = "event:" + eventName + "\n" + "data:" + json + "\n\n";
@@ -424,6 +515,9 @@ public class HermesChatService {
         outputStream.flush();
     }
 
+    /**
+     * 为本轮问答创建一条轻量审计记录。
+     */
     private HermesChatAuditEntity createAudit(CurrentUserInfo currentUser,
                                               HermesChatRequest request,
                                               HermesContextAssembler.HermesConversationContext context,
@@ -445,8 +539,11 @@ public class HermesChatService {
         return hermesChatAuditRepository.save(entity);
     }
 
-    private HermesChatRequest resolveEffectiveRequest(HermesChatRequest request) {
-        String sanitizedConversationId = sanitizeConversationId(request.clientConversationId());
+    /**
+     * 对会话请求做统一清洗，重点保证 conversationId 永远沿用数据库中保存的稳定标识。
+     */
+    private HermesChatRequest resolveEffectiveRequest(HermesChatRequest request, HermesConversationSessionEntity session) {
+        String sanitizedConversationId = sanitizeConversationId(session.getClientConversationId());
         if (sanitizedConversationId == null || sanitizedConversationId.isBlank()) {
             sanitizedConversationId = "conversation-" + System.currentTimeMillis();
         }
@@ -463,6 +560,9 @@ public class HermesChatService {
         );
     }
 
+    /**
+     * 构造 Redis/MCP 复用的 scopeKey。
+     */
     private String resolveScopeKey(Long userId, Long projectId, String clientConversationId) {
         String conversationSuffix = sanitizeConversationId(clientConversationId);
         if (projectId != null) {
@@ -477,6 +577,9 @@ public class HermesChatService {
         return hermesProperties.getSessionPrefix() + ":global:user:" + userId;
     }
 
+    /**
+     * 统一清洗 conversationId 中的非法字符，避免 Redis key 污染。
+     */
     private String sanitizeConversationId(String clientConversationId) {
         if (clientConversationId == null || clientConversationId.isBlank()) {
             return null;
@@ -484,6 +587,9 @@ public class HermesChatService {
         return clientConversationId.trim().replaceAll("[^a-zA-Z0-9:_-]", "");
     }
 
+    /**
+     * 为异常场景统一生成对前端友好的错误消息。
+     */
     private String resolveErrorMessage(Exception exception) {
         if (exception == null || exception.getMessage() == null || exception.getMessage().isBlank()) {
             return "Hermes 助手暂时不可用";
@@ -491,6 +597,9 @@ public class HermesChatService {
         return exception.getMessage().trim();
     }
 
+    /**
+     * 安全裁剪字符串长度，避免审计字段超长。
+     */
     private String abbreviate(String value, int maxLength) {
         if (value == null || value.length() <= maxLength) {
             return value;
@@ -498,8 +607,20 @@ public class HermesChatService {
         return value.substring(0, maxLength);
     }
 
+    /**
+     * 将可能为空的字符串归一化为非空文本。
+     */
     private String defaultString(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    /**
+     * 已归档会话只允许查看历史，不允许继续写入新消息。
+     */
+    private void validateSessionAvailableForChat(HermesConversationSessionEntity session) {
+        if (session != null && session.isArchived()) {
+            throw new IllegalArgumentException("已归档会话不能继续发送消息，请先恢复会话");
+        }
     }
 
     /**
