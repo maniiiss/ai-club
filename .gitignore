@@ -12,3 +12,4 @@ APITOKEN.md
 .env.server
 .env.host
 /code-processing/.venv/
+.data

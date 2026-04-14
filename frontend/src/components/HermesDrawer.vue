@@ -184,6 +184,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { streamHermesChat } from '@/api/hermes'
+import { createGitlabBindingScanTask } from '@/api/gitlab'
 import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
 import { renderHermesMarkdownToHtml } from '@/utils/hermesMarkdown'
 import { DEFAULT_REQUIREMENT_TEMPLATE } from '@/utils/requirementTemplate'
@@ -432,6 +433,17 @@ const executeAction = async (action: { type: string; title: string; description:
         inputPayload: (params.inputPayload || {}) as Record<string, unknown>
       })
       ElMessage.success('执行任务已创建')
+      drawerVisible.value = false
+      await router.push({ name: 'execution-task-detail', params: { executionTaskId: executionTask.id } })
+      return
+    }
+    if (action.type === 'CREATE_REPOSITORY_SCAN_TASK') {
+      const bindingId = Number(params.bindingId)
+      const executionTask = await createGitlabBindingScanTask(bindingId, {
+        branch: String(params.branch || ''),
+        rulesetCode: String(params.rulesetCode || '')
+      })
+      ElMessage.success('仓库扫描任务已创建')
       drawerVisible.value = false
       await router.push({ name: 'execution-task-detail', params: { executionTaskId: executionTask.id } })
       return

@@ -21,6 +21,7 @@ public class HermesToolSchemaService {
 
     private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
     private static final Set<String> SUPPORTED_WRITE_TOOL_CODES = Set.of(
+            PlatformToolRegistry.TOOL_REPO_SCAN_START,
             PlatformToolRegistry.TOOL_WORK_ITEM_CREATE_DRAFT,
             PlatformToolRegistry.TOOL_EXECUTION_TASK_CREATE,
             PlatformToolRegistry.TOOL_TEST_PLAN_CREATE_DRAFT
@@ -91,7 +92,7 @@ public class HermesToolSchemaService {
                 property.put("description", entry.getValue());
             }
         }
-        parameters.putArray("required");
+        appendRequiredFields(parameters.putArray("required"), definition);
         parameters.put("additionalProperties", false);
         return new HermesCallableTool(
                 definition.code(),
@@ -149,5 +150,18 @@ public class HermesToolSchemaService {
             return "boolean";
         }
         return "string";
+    }
+
+    /**
+     * 目前仅对仓库扫描写工具显式声明规则集必填，避免模型在未确认规则集时直接发起扫描。
+     */
+    private void appendRequiredFields(com.fasterxml.jackson.databind.node.ArrayNode required,
+                                      PlatformToolDefinition definition) {
+        if (required == null || definition == null) {
+            return;
+        }
+        if (PlatformToolRegistry.TOOL_REPO_SCAN_START.equals(definition.code())) {
+            required.add("rulesetCode");
+        }
     }
 }

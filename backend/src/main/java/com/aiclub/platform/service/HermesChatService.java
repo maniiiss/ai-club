@@ -238,7 +238,10 @@ public class HermesChatService {
         String resolvedContent = assistantContent;
         if (hermesActionFallbackService.shouldFallback(request, assistantContent)) {
             log.info("Hermes fallback activated for question: {}", abbreviate(request == null ? "" : request.question(), 120));
-            HermesActionFallbackService.HermesFallbackResult fallbackResult = hermesActionFallbackService.tryCreateWorkItemDraft(latestState, request);
+            HermesActionFallbackService.HermesFallbackResult fallbackResult = hermesActionFallbackService.tryStartRepositoryScan(latestState, request);
+            if (fallbackResult == null) {
+                fallbackResult = hermesActionFallbackService.tryCreateWorkItemDraft(latestState, request);
+            }
             if (fallbackResult != null) {
                 log.info("Hermes fallback produced state: actions={}, selections={}",
                         fallbackResult.state().actions().size(),

@@ -36,6 +36,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 平台工具执行器。
@@ -44,6 +47,8 @@ import java.util.Objects;
 @Service
 @Transactional(readOnly = true)
 public class PlatformToolExecutor {
+
+    private static final Pattern GITLAB_PATH_PATTERN = Pattern.compile("([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){1,4})");
 
     private final PlatformToolRegistry platformToolRegistry;
     private final ToolExecutionAuditService toolExecutionAuditService;
@@ -106,6 +111,7 @@ public class PlatformToolExecutor {
                 case PlatformToolRegistry.TOOL_AGENT_LIST_AVAILABLE -> listAvailableAgents(request);
                 case PlatformToolRegistry.TOOL_AGENT_GET_DETAIL -> getAgentDetail(request);
                 case PlatformToolRegistry.TOOL_GITLAB_BINDING_SEARCH -> searchGitlabBindings(request);
+                case PlatformToolRegistry.TOOL_REPO_SCAN_LIST_RULESETS -> listRepositoryScanRulesets(request);
                 case PlatformToolRegistry.TOOL_REPO_SCAN_START -> startRepositoryScan(request);
                 case PlatformToolRegistry.TOOL_REPO_SCAN_SEARCH -> searchRepositoryScans(request);
                 case PlatformToolRegistry.TOOL_EXECUTION_TASK_SEARCH -> searchExecutionTasks(request);
@@ -189,7 +195,8 @@ public class PlatformToolExecutor {
                 .limit(5)
                 .map(task -> workItemCandidate(task, true))
                 .toList();
-        return result(request.toolCode(), "搜索工作项", "找到 " + candidates.size() + " 个相关工作项", candidates, Map.of("keyword", defaultString(keyword), "projectId", projectId));
+        return result(request.toolCode(), "搜索工作项", "找到 " + candidates.size() + " 个相关工作项", candidates,
+                metadata("keyword", defaultString(keyword), "projectId", projectId));
     }
 
     private PlatformToolResult getWorkItemDetail(PlatformToolRequest request) {
@@ -206,7 +213,8 @@ public class PlatformToolExecutor {
                 .limit(10)
                 .map(this::agentCandidate)
                 .toList();
-        return result(request.toolCode(), "可用 Agent 列表", "找到 " + candidates.size() + " 个可用 Agent", candidates, Map.of("projectId", projectId));
+        return result(request.toolCode(), "可用 Agent 列表", "找到 " + candidates.size() + " 个可用 Agent", candidates,
+                metadata("projectId", projectId));
     }
 
     private PlatformToolResult getAgentDetail(PlatformToolRequest request) {
@@ -222,18 +230,43 @@ public class PlatformToolExecutor {
     private PlatformToolResult searchGitlabBindings(PlatformToolRequest request) {
         String keyword = stringValue(request.payload(), "keyword");
         Long projectId = nullableLongValue(request.payload(), "projectId");
+        List<String> searchableKeywords = resolveGitlabBindingKeywords(keyword);
         List<PlatformToolCandidate> candidates = projectGitlabBindingRepository.findAll(Sort.by(Sort.Direction.ASC, "id")).stream()
                 .filter(binding -> projectId == null || Objects.equals(binding.getProject().getId(), projectId))
                 .filter(binding -> canSeeProject(binding.getProject()))
-                .filter(binding -> isBlank(keyword)
-                        || containsAny(binding.getProject().getName(), keyword)
-                        || containsAny(binding.getGitlabProjectPath(), keyword)
-                        || containsAny(binding.getGitlabProjectRef(), keyword)
-                        || containsAny(binding.getGitlabProjectName(), keyword))
+                .filter(binding -> searchableKeywords.isEmpty()
+                        || searchableKeywords.stream().anyMatch(candidateKeyword ->
+                        containsAny(binding.getProject().getName(), candidateKeyword)
+                                || containsAny(binding.getGitlabProjectPath(), candidateKeyword)
+                                || containsAny(binding.getGitlabProjectRef(), candidateKeyword)
+                                || containsAny(binding.getGitlabProjectName(), candidateKeyword)))
                 .limit(8)
                 .map(this::gitlabBindingCandidate)
                 .toList();
-        return result(request.toolCode(), "搜索仓库绑定", "找到 " + candidates.size() + " 个相关仓库", candidates, Map.of("keyword", defaultString(keyword), "projectId", projectId));
+        return result(request.toolCode(), "搜索仓库绑定", "找到 " + candidates.size() + " 个相关仓库", candidates,
+                metadata("keyword", defaultString(keyword), "projectId", projectId));
+    }
+
+    /**
+     * 返回仓库扫描可用规则集，供 Hermes 在发起扫描前先完成规则集确认。
+     */
+    private PlatformToolResult listRepositoryScanRulesets(PlatformToolRequest request) {
+        List<PlatformToolCandidate> candidates = gitlabManagementService.listScanRulesets().stream()
+                .map(ruleset -> new PlatformToolCandidate(
+                        "REPO_SCAN_RULESET",
+                        null,
+                        defaultString(ruleset.name()),
+                        defaultString(ruleset.description()),
+                        "",
+                        Map.of(
+                                "rulesetCode", defaultString(ruleset.code()),
+                                "rulesetName", defaultString(ruleset.name()),
+                                "description", defaultString(ruleset.description())
+                        ),
+                        List.of()
+                ))
+                .toList();
+        return result(request.toolCode(), "扫描规则集列表", "找到 " + candidates.size() + " 个可用规则集", candidates, Map.of());
     }
 
     /**
@@ -247,7 +280,7 @@ public class PlatformToolExecutor {
                 bindingId,
                 new com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest(
                         branch.isBlank() ? "" : branch.trim(),
-                        rulesetCode.isBlank() ? "team-default" : rulesetCode.trim()
+                        rulesetCode.isBlank() ? "" : rulesetCode.trim()
                 )
         );
         PlatformToolCandidate candidate = new PlatformToolCandidate(
@@ -277,7 +310,8 @@ public class PlatformToolExecutor {
                 .limit(8)
                 .map(this::executionTaskCandidate)
                 .toList();
-        return result(request.toolCode(), "搜索仓库扫描", "找到 " + candidates.size() + " 条扫描任务", candidates, Map.of("bindingId", bindingId, "status", defaultString(status)));
+        return result(request.toolCode(), "搜索仓库扫描", "找到 " + candidates.size() + " 条扫描任务", candidates,
+                metadata("bindingId", bindingId, "status", defaultString(status)));
     }
 
     private PlatformToolResult searchExecutionTasks(PlatformToolRequest request) {
@@ -295,7 +329,8 @@ public class PlatformToolExecutor {
                 .limit(5)
                 .map(this::executionTaskCandidate)
                 .toList();
-        return result(request.toolCode(), "搜索执行任务", "找到 " + candidates.size() + " 个执行任务", candidates, Map.of("keyword", defaultString(keyword), "status", defaultString(status), "projectId", projectId));
+        return result(request.toolCode(), "搜索执行任务", "找到 " + candidates.size() + " 个执行任务", candidates,
+                metadata("keyword", defaultString(keyword), "status", defaultString(status), "projectId", projectId));
     }
 
     private PlatformToolResult getExecutionTaskDetail(PlatformToolRequest request) {
@@ -321,7 +356,8 @@ public class PlatformToolExecutor {
                 .limit(5)
                 .map(this::testPlanCandidate)
                 .toList();
-        return result(request.toolCode(), "搜索测试计划", "找到 " + candidates.size() + " 个测试计划", candidates, Map.of("keyword", defaultString(keyword), "projectId", projectId, "iterationId", iterationId));
+        return result(request.toolCode(), "搜索测试计划", "找到 " + candidates.size() + " 个测试计划", candidates,
+                metadata("keyword", defaultString(keyword), "projectId", projectId, "iterationId", iterationId));
     }
 
     private PlatformToolResult getTestPlanDetail(PlatformToolRequest request) {
@@ -430,7 +466,8 @@ public class PlatformToolExecutor {
                         "projectId", binding.getProject().getId(),
                         "projectName", defaultString(binding.getProject().getName()),
                         "gitlabProjectPath", defaultString(binding.getGitlabProjectPath()),
-                        "gitlabProjectRef", defaultString(binding.getGitlabProjectRef())
+                        "gitlabProjectRef", defaultString(binding.getGitlabProjectRef()),
+                        "defaultTargetBranch", defaultString(binding.getDefaultTargetBranch())
                 ),
                 List.of()
         );
@@ -574,6 +611,61 @@ public class PlatformToolExecutor {
             return false;
         }
         return value.toLowerCase(Locale.ROOT).contains(keyword.toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * 仓库绑定搜索既要支持“纯仓库路径”，也要兼容“项目 + 仓库 + 动作”的整句自然语言。
+     */
+    private List<String> resolveGitlabBindingKeywords(String keyword) {
+        if (isBlank(keyword)) {
+            return List.of();
+        }
+        String normalized = keyword.trim();
+        Set<String> candidates = new LinkedHashSet<>();
+        candidates.add(normalized);
+
+        Matcher matcher = GITLAB_PATH_PATTERN.matcher(normalized);
+        while (matcher.find()) {
+            String repositoryPath = matcher.group(1);
+            if (repositoryPath == null || repositoryPath.isBlank()) {
+                continue;
+            }
+            String trimmedPath = repositoryPath.trim();
+            candidates.add(trimmedPath);
+            String[] pathSegments = trimmedPath.split("/");
+            if (pathSegments.length > 0) {
+                candidates.add(pathSegments[pathSegments.length - 1].trim());
+            }
+        }
+
+        String[] fragments = normalized.split("[\\s,，。；;：:()（）]+");
+        for (String fragment : fragments) {
+            if (fragment != null && fragment.trim().length() >= 3) {
+                candidates.add(fragment.trim());
+            }
+        }
+        return candidates.stream()
+                .filter(item -> item != null && !item.isBlank())
+                .toList();
+    }
+
+    /**
+     * 构造允许空值被自动跳过的 metadata，避免可选查询参数在 `Map.of` 中触发空指针。
+     */
+    private Map<String, Object> metadata(Object... keyValues) {
+        LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
+        if (keyValues == null) {
+            return Map.of();
+        }
+        for (int index = 0; index + 1 < keyValues.length; index += 2) {
+            Object key = keyValues[index];
+            Object value = keyValues[index + 1];
+            if (!(key instanceof String keyName) || keyName.isBlank() || value == null) {
+                continue;
+            }
+            metadata.put(keyName, value);
+        }
+        return metadata.isEmpty() ? Map.of() : Map.copyOf(metadata);
     }
 
     private boolean isBlank(String value) {

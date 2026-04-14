@@ -156,6 +156,10 @@ public class HermesToolOrchestrator {
         }
 
         if (!platformToolRegistry.requireDefinition(toolCode).readOnly()) {
+            String writeToolFailureMessage = resolveWriteToolFailureMessage(toolCode, toolCall.arguments(), groundingState);
+            if (!writeToolFailureMessage.isBlank()) {
+                return stopWithFailure(groundingState, writeToolFailureMessage, toolCall, toolCall.arguments());
+            }
             HermesActionSummary action = hermesActionPlannerService.createActionFromToolCall(
                     toolCode,
                     toolCall.arguments(),
@@ -263,10 +267,13 @@ public class HermesToolOrchestrator {
             }
         }
 
-        putIfAbsent(arguments, "projectId", context.projectId());
+        if (!PlatformToolRegistry.TOOL_GITLAB_BINDING_SEARCH.equals(toolCode)) {
+            putIfAbsent(arguments, "projectId", context.projectId());
+        }
         putIfAbsent(arguments, "iterationId", resolveGroundedEntityId(groundingState, "iteration", request.iterationId()));
         putIfAbsent(arguments, "workItemId", resolveGroundedEntityId(groundingState, "workItem", context.taskId()));
         putIfAbsent(arguments, "testPlanId", resolveGroundedEntityId(groundingState, "testPlan", request.planId()));
+        putIfAbsent(arguments, "bindingId", resolveGroundedEntityId(groundingState, "gitlabBinding", null));
         if (arguments.containsKey("keyword")) {
             arguments.put("keyword", defaultString(String.valueOf(arguments.get("keyword"))));
         }
@@ -437,11 +444,23 @@ public class HermesToolOrchestrator {
             score = Math.max(score, 55D);
             reasons.add("说明包含关键词");
         }
+        if ("gitlabBinding".equals(validatedToolCall.slot())
+                && !keyword.isBlank()
+                && (containsIgnoreCase(String.valueOf(candidatePayload.get("gitlabProjectPath")), keyword)
+                || containsIgnoreCase(String.valueOf(candidatePayload.get("gitlabProjectRef")), keyword))) {
+            score += 20D;
+            reasons.add("仓库路径命中关键词");
+        }
         Long currentProjectId = context.projectId() != null ? context.projectId() : resolveLong(validatedToolCall.arguments().get("projectId"));
         Long candidateProjectId = resolveLong(candidatePayload.get("projectId"));
         if (currentProjectId != null && Objects.equals(currentProjectId, candidateProjectId)) {
             score += 15D;
             reasons.add("位于当前项目范围");
+        }
+        if (PlatformToolRegistry.TOOL_REPO_SCAN_SEARCH.equals(validatedToolCall.toolCode())
+                && resolveLong(validatedToolCall.arguments().get("bindingId")) != null) {
+            score += 75D;
+            reasons.add("已限定仓库绑定范围");
         }
         HermesGroundingTarget recentTarget = groundingState == null ? null : groundingState.recentResolvedSlot(validatedToolCall.slot());
         if (recentTarget != null && Objects.equals(recentTarget.entityId(), candidate.id())) {
@@ -575,6 +594,12 @@ public class HermesToolOrchestrator {
         if (toolCode.startsWith("user.")) {
             return "member";
         }
+        if (toolCode.startsWith("gitlab_binding.")) {
+            return "gitlabBinding";
+        }
+        if (PlatformToolRegistry.TOOL_REPO_SCAN_SEARCH.equals(toolCode)) {
+            return "executionTask";
+        }
         if (toolCode.startsWith("execution_task.")) {
             return "executionTask";
         }
@@ -600,8 +625,42 @@ public class HermesToolOrchestrator {
             case "testPlan" -> resolveLong(arguments.get("testPlanId"));
             case "executionTask" -> resolveLong(arguments.get("executionTaskId"));
             case "member" -> resolveLong(arguments.get("memberId"));
+            case "gitlabBinding" -> resolveLong(arguments.get("bindingId"));
             default -> null;
         };
+    }
+
+    /**
+     * 写工具在进入动作规划前先做一次平台侧兜底校验，避免模型在缺关键参数时只能收到通用报错。
+     */
+    private String resolveWriteToolFailureMessage(String toolCode,
+                                                  Map<String, Object> arguments,
+                                                  HermesGroundingState groundingState) {
+        if (PlatformToolRegistry.TOOL_REPO_SCAN_START.equals(toolCode)) {
+            return resolveRepositoryScanWriteFailureMessage(arguments, groundingState);
+        }
+        return "";
+    }
+
+    /**
+     * 仓库扫描要求先确定仓库绑定，再明确规则集。
+     * 这里返回清晰的失败摘要，促使 Hermes 继续追问或先调用规则集列表工具。
+     */
+    private String resolveRepositoryScanWriteFailureMessage(Map<String, Object> arguments,
+                                                            HermesGroundingState groundingState) {
+        Long bindingId = resolveLong(arguments == null ? null : arguments.get("bindingId"));
+        if (bindingId == null) {
+            bindingId = resolveGroundedEntityId(groundingState, "gitlabBinding", null);
+        }
+        if (bindingId == null) {
+            return "发起仓库扫描前需要先确认目标仓库。你可以先搜索并选择一个 GitLab 仓库绑定。";
+        }
+        Object rulesetCodeValue = arguments == null ? null : arguments.get("rulesetCode");
+        String rulesetCode = rulesetCodeValue == null ? "" : defaultString(String.valueOf(rulesetCodeValue));
+        if (rulesetCode.isBlank()) {
+            return "发起仓库扫描前需要先确认规则集。你可以先让我列出可用规则集，或直接告诉我规则集名称。";
+        }
+        return "";
     }
 
     private String candidateCode(PlatformToolCandidate candidate) {

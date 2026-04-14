@@ -15,6 +15,7 @@ import java.util.Map;
 public class HermesActionPlannerService {
 
     public static final String ACTION_CREATE_EXECUTION_TASK = "CREATE_EXECUTION_TASK";
+    public static final String ACTION_CREATE_REPOSITORY_SCAN_TASK = "CREATE_REPOSITORY_SCAN_TASK";
 
     /**
      * 将 Hermes 发起的写工具调用转换为前端可执行的确认卡片。
@@ -25,11 +26,40 @@ public class HermesActionPlannerService {
                                                         String userQuestion) {
         Map<String, Object> safeArguments = arguments == null ? Map.of() : arguments;
         return switch (toolCode) {
+            case PlatformToolRegistry.TOOL_REPO_SCAN_START -> createRepositoryScanAction(safeArguments, groundingState);
             case PlatformToolRegistry.TOOL_EXECUTION_TASK_CREATE -> createExecutionAction(safeArguments, groundingState, userQuestion);
             case PlatformToolRegistry.TOOL_WORK_ITEM_CREATE_DRAFT -> createWorkItemAction(safeArguments, groundingState);
             case PlatformToolRegistry.TOOL_TEST_PLAN_CREATE_DRAFT -> createTestPlanAction(safeArguments, groundingState);
             default -> null;
         };
+    }
+
+    /**
+     * 生成仓库规范扫描任务创建动作卡片。
+     * 这里优先复用当前会话中已绑定的仓库对象，避免 Hermes 为了补齐 bindingId 再要求用户输入内部 ID。
+     */
+    private HermesActionSummary createRepositoryScanAction(Map<String, Object> arguments,
+                                                           HermesGroundingState groundingState) {
+        Long bindingId = resolveLong(arguments.get("bindingId"));
+        if (bindingId == null && groundingState != null && groundingState.boundSlot("gitlabBinding") != null) {
+            bindingId = groundingState.boundSlot("gitlabBinding").entityId();
+        }
+        String rulesetCode = defaultString(arguments.get("rulesetCode"), "");
+        if (bindingId == null || rulesetCode.isBlank()) {
+            return null;
+        }
+
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("bindingId", bindingId);
+        params.put("branch", defaultString(arguments.get("branch"), ""));
+        params.put("rulesetCode", rulesetCode);
+        return new HermesActionSummary(
+                ACTION_CREATE_REPOSITORY_SCAN_TASK,
+                "发起仓库扫描",
+                "确认后会基于当前仓库绑定创建一条仓库规范扫描任务。",
+                true,
+                params
+        );
     }
 
     /**

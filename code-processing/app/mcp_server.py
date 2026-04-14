@@ -131,6 +131,60 @@ async def agent_get_detail(system_session_token: SessionToken, agentId: int, ctx
 
 
 @mcp_server.tool()
+async def gitlab_binding_search(
+    system_session_token: SessionToken,
+    keyword: str = "",
+    projectId: int | None = None,
+    ctx: Context | None = None,
+) -> str:
+    """按项目名或仓库路径搜索 GitLab 绑定仓库。"""
+    arguments: dict[str, object] = {"keyword": keyword}
+    if projectId is not None:
+        arguments["projectId"] = projectId
+    return await _execute_platform_tool("gitlab_binding.search", system_session_token, arguments)
+
+
+@mcp_server.tool()
+async def repo_scan_list_rulesets(system_session_token: SessionToken, ctx: Context | None = None) -> str:
+    """列出可用于仓库规范扫描的规则集。"""
+    return await _execute_platform_tool("repo_scan.list_rulesets", system_session_token, {})
+
+
+@mcp_server.tool()
+async def repo_scan_start(
+    system_session_token: SessionToken,
+    bindingId: int,
+    rulesetCode: str,
+    branch: str = "",
+    ctx: Context | None = None,
+) -> str:
+    """发起仓库规范扫描提案；这是代码扫描唯一正确的写工具，不要用 execution_task_create 代替。"""
+    arguments: dict[str, object] = {
+        "bindingId": bindingId,
+        "rulesetCode": rulesetCode,
+    }
+    if branch.strip():
+        arguments["branch"] = branch.strip()
+    return await _execute_platform_tool("repo_scan.start", system_session_token, arguments)
+
+
+@mcp_server.tool()
+async def repo_scan_search(
+    system_session_token: SessionToken,
+    bindingId: int | None = None,
+    status: str = "",
+    ctx: Context | None = None,
+) -> str:
+    """查询最近的仓库规范扫描任务。"""
+    arguments: dict[str, object] = {}
+    if bindingId is not None:
+        arguments["bindingId"] = bindingId
+    if status.strip():
+        arguments["status"] = status.strip()
+    return await _execute_platform_tool("repo_scan.search", system_session_token, arguments)
+
+
+@mcp_server.tool()
 async def execution_task_search(system_session_token: SessionToken, keyword: str = "", ctx: Context | None = None) -> str:
     """按项目、工作项、状态或场景搜索执行任务。"""
     return await _execute_platform_tool("execution_task.search", system_session_token, {"keyword": keyword})
@@ -191,7 +245,7 @@ async def execution_task_create(
     scenarioCode: str = "",
     ctx: Context | None = None,
 ) -> str:
-    """创建执行任务提案，不直接触发真实执行。"""
+    """创建基于已有工作项的执行任务提案；不用于仓库代码扫描，代码扫描请改用 repo_scan_start。"""
     arguments: dict[str, object] = {"scenarioCode": scenarioCode}
     if projectId is not None:
         arguments["projectId"] = projectId

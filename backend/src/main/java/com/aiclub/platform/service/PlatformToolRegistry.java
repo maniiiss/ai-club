@@ -31,6 +31,7 @@ public class PlatformToolRegistry {
     public static final String TOOL_GITLAB_BINDING_SEARCH = "gitlab_binding.search";
     public static final String TOOL_REPO_SCAN_START = "repo_scan.start";
     public static final String TOOL_REPO_SCAN_SEARCH = "repo_scan.search";
+    public static final String TOOL_REPO_SCAN_LIST_RULESETS = "repo_scan.list_rulesets";
     public static final String TOOL_EXECUTION_TASK_SEARCH = "execution_task.search";
     public static final String TOOL_EXECUTION_TASK_GET_DETAIL = "execution_task.get_detail";
     public static final String TOOL_EXECUTION_TASK_CREATE = "execution_task.create";
@@ -123,6 +124,7 @@ public class PlatformToolRegistry {
         register(result, TOOL_AGENT_LIST_AVAILABLE, "可用 Agent 列表", "AGENT", "查询全局和项目可用 Agent", true, "LOW", "agent:view", false, Map.of("projectId", "项目ID"));
         register(result, TOOL_AGENT_GET_DETAIL, "Agent 详情", "AGENT", "读取 Agent 类型、接入方式和能力", true, "LOW", "agent:view", false, Map.of("agentId", "Agent ID"));
         register(result, TOOL_GITLAB_BINDING_SEARCH, "搜索仓库绑定", "GITLAB", "按项目名或仓库路径搜索 GitLab 绑定仓库", true, "LOW", "gitlab:view", false, Map.of("keyword", "仓库关键词"));
+        register(result, TOOL_REPO_SCAN_LIST_RULESETS, "扫描规则集列表", "GITLAB", "列出可用于仓库规范扫描的规则集", true, "LOW", "gitlab:view", false, Map.of());
         register(result, TOOL_REPO_SCAN_START, "发起仓库扫描", "GITLAB", "基于指定绑定仓库创建仓库规范扫描任务", false, "MEDIUM", "gitlab:manage", true, Map.of("bindingId", "绑定ID", "branch", "分支", "rulesetCode", "规则集"));
         register(result, TOOL_REPO_SCAN_SEARCH, "搜索仓库扫描", "GITLAB", "查询最近的仓库规范扫描任务", true, "LOW", "task:view", false, Map.of("bindingId", "绑定ID", "status", "任务状态"));
         register(result, TOOL_EXECUTION_TASK_SEARCH, "搜索执行任务", "EXECUTION", "按项目、工作项、状态或场景搜索执行任务", true, "LOW", "task:view", false, Map.of("keyword", "执行任务关键词"));

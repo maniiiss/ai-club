@@ -24,6 +24,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -202,6 +203,53 @@ class GitlabManagementGitlabActionsTests {
         ))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("源分支与目标分支不能相同");
+    }
+
+    /**
+     * 扫描分支留空时，应自动回退到绑定仓库的默认分支，而不是在控制层直接校验失败。
+     */
+    @Test
+    void shouldFallbackToBindingDefaultBranchWhenScanBranchIsBlank() {
+        ProjectGitlabBindingEntity binding = buildBinding();
+        when(bindingRepository.findById(1L)).thenReturn(Optional.of(binding));
+        when(executionTaskService.createExecutionTask(argThat(request ->
+                "main".equals(String.valueOf(request.inputPayload().get("branch")))
+                        && "team-default".equals(String.valueOf(request.inputPayload().get("rulesetCode")))
+        ))).thenReturn(new com.aiclub.platform.dto.ExecutionTaskSummary(
+                99L,
+                "演示项目 group/demo-repo 仓库规范扫描",
+                ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN,
+                "仓库规范扫描",
+                "MANUAL",
+                null,
+                11L,
+                "演示项目",
+                null,
+                null,
+                null,
+                "PENDING",
+                null,
+                null,
+                0,
+                null,
+                null,
+                "等待调度",
+                null,
+                null,
+                "2026-04-14 20:00:00",
+                "2026-04-14 20:00:00"
+        ));
+
+        var summary = gitlabManagementService.createBindingScanTask(
+                1L,
+                new com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest("", "team-default")
+        );
+
+        assertThat(summary.id()).isEqualTo(99L);
+        verify(executionTaskService).createExecutionTask(argThat(request ->
+                "main".equals(String.valueOf(request.inputPayload().get("branch")))
+                        && "team-default".equals(String.valueOf(request.inputPayload().get("rulesetCode")))
+        ));
     }
 
     /**
