@@ -18,6 +18,7 @@ import UserView from '@/views/UserView.vue';
 import RoleView from '@/views/RoleView.vue';
 import PermissionView from '@/views/PermissionView.vue';
 import ToolConfigView from '@/views/ToolConfigView.vue';
+import RepositoryScanRulesetView from '@/views/RepositoryScanRulesetView.vue';
 import OperationLogView from '@/views/OperationLogView.vue';
 import IterationView from '@/views/IterationView.vue';
 import ProfileView from '@/views/ProfileView.vue';
@@ -66,6 +67,7 @@ const router = createRouter({
                 { path: 'roles', name: 'roles', component: RoleView, meta: { title: '角色管理', permission: 'system:role:view' } },
                 { path: 'permissions', name: 'permissions', component: PermissionView, meta: { title: '功能管理', permission: 'system:permission:view' } },
                 { path: 'tools', name: 'tools', component: ToolConfigView, meta: { title: '工具配置', permission: 'system:tool:view' } },
+                { path: 'scan-rulesets', name: 'scan-rulesets', component: RepositoryScanRulesetView, meta: { title: '扫描规则集', permission: 'scan:ruleset:view' } },
                 { path: 'operation-logs', name: 'operation-logs', component: OperationLogView, meta: { title: '操作日志', permission: 'system:operation-log:view' } }
             ]
         }

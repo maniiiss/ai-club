@@ -33,13 +33,16 @@ public class HermesActionFallbackService {
     private final HermesInternalToolExecutionService hermesInternalToolExecutionService;
     private final HermesConversationStateStore hermesConversationStateStore;
     private final ObjectMapper objectMapper;
+    private final RepositoryScanRulesetService repositoryScanRulesetService;
 
     public HermesActionFallbackService(HermesInternalToolExecutionService hermesInternalToolExecutionService,
                                        HermesConversationStateStore hermesConversationStateStore,
-                                       ObjectMapper objectMapper) {
+                                       ObjectMapper objectMapper,
+                                       RepositoryScanRulesetService repositoryScanRulesetService) {
         this.hermesInternalToolExecutionService = hermesInternalToolExecutionService;
         this.hermesConversationStateStore = hermesConversationStateStore;
         this.objectMapper = objectMapper;
+        this.repositoryScanRulesetService = repositoryScanRulesetService;
     }
 
     /**
@@ -382,33 +385,10 @@ public class HermesActionFallbackService {
         String normalized = question.toLowerCase(Locale.ROOT);
         if (normalized.contains("默认规则集") || normalized.contains("默认扫描规则") || normalized.contains("默认")) {
             try {
-                var response = hermesInternalToolExecutionService.execute(new HermesInternalToolExecuteRequest(
-                        sessionToken,
-                        "repo_scan.list_rulesets",
-                        Map.of()
-                ));
-                JsonNode root = objectMapper.readTree(response.message());
-                JsonNode candidates = root.path("candidates");
-                if (candidates.isArray()) {
-                    for (JsonNode candidate : candidates) {
-                        JsonNode payload = candidate.path("payload");
-                        String rulesetCode = payload.path("rulesetCode").asText("").trim();
-                        String rulesetName = payload.path("rulesetName").asText("").trim();
-                        if (rulesetName.contains("默认") && !rulesetCode.isBlank()) {
-                            return rulesetCode;
-                        }
-                    }
-                    if (candidates.size() == 1) {
-                        String onlyRulesetCode = candidates.get(0).path("payload").path("rulesetCode").asText("").trim();
-                        if (!onlyRulesetCode.isBlank()) {
-                            return onlyRulesetCode;
-                        }
-                    }
-                }
+                return repositoryScanRulesetService.requireDefaultRuleset().getCode();
             } catch (Exception ignored) {
-                return "team-default";
+                return "";
             }
-            return "team-default";
         }
         return "";
     }

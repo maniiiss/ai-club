@@ -562,9 +562,14 @@ export interface ProjectGitlabBindingItem {
 }
 
 export interface RepositoryScanRulesetItem {
+  id?: number
   code: string
   name: string
   description: string
+  engineType: string
+  defaultSelected: boolean
+  enabled?: boolean
+  definitionContent?: string
 }
 
 export interface JenkinsServerItem {

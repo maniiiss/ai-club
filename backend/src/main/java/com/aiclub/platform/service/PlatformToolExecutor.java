@@ -63,6 +63,7 @@ public class PlatformToolExecutor {
     private final IterationRepository iterationRepository;
     private final ExecutionWorkflowService executionWorkflowService;
     private final GitlabManagementService gitlabManagementService;
+    private final RepositoryScanRulesetService repositoryScanRulesetService;
 
     public PlatformToolExecutor(PlatformToolRegistry platformToolRegistry,
                                 ToolExecutionAuditService toolExecutionAuditService,
@@ -76,7 +77,8 @@ public class PlatformToolExecutor {
                                 TestPlanRepository testPlanRepository,
                                 IterationRepository iterationRepository,
                                 ExecutionWorkflowService executionWorkflowService,
-                                GitlabManagementService gitlabManagementService) {
+                                GitlabManagementService gitlabManagementService,
+                                RepositoryScanRulesetService repositoryScanRulesetService) {
         this.platformToolRegistry = platformToolRegistry;
         this.toolExecutionAuditService = toolExecutionAuditService;
         this.projectDataPermissionService = projectDataPermissionService;
@@ -90,6 +92,7 @@ public class PlatformToolExecutor {
         this.iterationRepository = iterationRepository;
         this.executionWorkflowService = executionWorkflowService;
         this.gitlabManagementService = gitlabManagementService;
+        this.repositoryScanRulesetService = repositoryScanRulesetService;
     }
 
     public PlatformToolResult execute(PlatformToolRequest request) {
@@ -261,7 +264,9 @@ public class PlatformToolExecutor {
                         Map.of(
                                 "rulesetCode", defaultString(ruleset.code()),
                                 "rulesetName", defaultString(ruleset.name()),
-                                "description", defaultString(ruleset.description())
+                                "description", defaultString(ruleset.description()),
+                                "engineType", defaultString(ruleset.engineType()),
+                                "defaultSelected", ruleset.defaultSelected()
                         ),
                         List.of()
                 ))
@@ -276,6 +281,9 @@ public class PlatformToolExecutor {
         Long bindingId = longValue(request.payload(), "bindingId");
         String branch = stringValue(request.payload(), "branch");
         String rulesetCode = stringValue(request.payload(), "rulesetCode");
+        if (rulesetCode.isBlank()) {
+            rulesetCode = repositoryScanRulesetService.requireDefaultRuleset().getCode();
+        }
         var executionTask = gitlabManagementService.createBindingScanTask(
                 bindingId,
                 new com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest(

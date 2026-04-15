@@ -80,6 +80,27 @@ git-ai-club/
 - Hermes: `http://localhost:18080`
 - Hindsight: `http://localhost:18888`
 
+## Harness 验证
+
+为了让文档、脚本和多服务改动都能用统一方式验证，仓库提供了 harness 入口：
+
+- Windows：`powershell -ExecutionPolicy Bypass -File .\scripts\harness.ps1 -Target docs`
+- Windows：`powershell -ExecutionPolicy Bypass -File .\scripts\harness.ps1 -Target backend`
+- Windows：`powershell -ExecutionPolicy Bypass -File .\scripts\harness.ps1 -Target frontend`
+- Windows：`powershell -ExecutionPolicy Bypass -File .\scripts\harness.ps1 -Target all`
+- Linux：`bash ./scripts/harness-linux.sh docs`
+- Linux：`bash ./scripts/harness-linux.sh backend`
+- Linux：`bash ./scripts/harness-linux.sh frontend`
+- Linux：`bash ./scripts/harness-linux.sh all`
+
+`Target` 含义：
+
+- `docs`：校验 `AGENTS.md`、`README.md`、`docs/`、`scripts/` 的编码与乱码风险。
+- `backend`：校验 `backend/` 编码并执行 Maven 测试。
+- `frontend`：校验 `frontend/` 编码并执行前端构建。
+- `code-processing`：校验 `code-processing/` 编码并执行 Python 包安装检查。
+- `all`：对整个仓库执行完整 harness。
+
 ### 1. 启动 PostgreSQL
 
 ```bash

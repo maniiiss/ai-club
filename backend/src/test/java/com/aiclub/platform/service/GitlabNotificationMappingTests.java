@@ -73,6 +73,9 @@ class GitlabNotificationMappingTests {
     @Mock
     private RepositoryScanClientService repositoryScanClientService;
 
+    @Mock
+    private RepositoryScanRulesetService repositoryScanRulesetService;
+
     private GitlabManagementService gitlabManagementService;
 
     @BeforeEach
@@ -95,6 +98,7 @@ class GitlabNotificationMappingTests {
                 gitlabUserOauthService,
                 executionTaskService,
                 repositoryScanClientService,
+                repositoryScanRulesetService,
                 "http://gitlab.example.com/api/v4"
         );
     }

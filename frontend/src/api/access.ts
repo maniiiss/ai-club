@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { ApiResponse, DataPermissionScopeValue, PageResponse, PermissionItem, PlatformToolItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
+import type { ApiResponse, DataPermissionScopeValue, PageResponse, PermissionItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
 
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
@@ -79,6 +79,29 @@ export interface PlatformToolPayload {
   descriptionOverride?: string
   enabled: boolean
   allowAutoExecute: boolean
+}
+
+export interface RepositoryScanRulesetQuery {
+  page: number
+  size: number
+  keyword?: string
+  engineType?: string
+  enabled?: boolean | ''
+}
+
+export interface RepositoryScanRulesetPayload {
+  code: string
+  name: string
+  description: string
+  engineType: string
+  enabled: boolean
+  defaultSelected: boolean
+  definitionContent: string
+}
+
+export interface RepositoryScanRulesetValidationPayload {
+  engineType: string
+  definitionContent: string
 }
 
 export const pageUsers = async (query: UserQuery) => {
@@ -177,5 +200,32 @@ export const getPlatformToolDetail = async (toolCode: string) => {
 
 export const updatePlatformTool = async (toolCode: string, payload: PlatformToolPayload) => {
   const { data } = await http.put<ApiResponse<PlatformToolItem>>(`/api/platform-tools/${encodeURIComponent(toolCode)}`, payload)
+  return data.data
+}
+
+export const pageRepositoryScanRulesets = async (query: RepositoryScanRulesetQuery) => {
+  const { data } = await http.get<ApiResponse<PageResponse<RepositoryScanRulesetItem>>>('/api/repository-scan-rulesets', {
+    params: cleanParams(query)
+  })
+  return data.data
+}
+
+export const getRepositoryScanRulesetDetail = async (id: number) => {
+  const { data } = await http.get<ApiResponse<RepositoryScanRulesetItem>>(`/api/repository-scan-rulesets/${id}`)
+  return data.data
+}
+
+export const createRepositoryScanRuleset = async (payload: RepositoryScanRulesetPayload) => {
+  const { data } = await http.post<ApiResponse<RepositoryScanRulesetItem>>('/api/repository-scan-rulesets', payload)
+  return data.data
+}
+
+export const updateRepositoryScanRuleset = async (id: number, payload: RepositoryScanRulesetPayload) => {
+  const { data } = await http.put<ApiResponse<RepositoryScanRulesetItem>>(`/api/repository-scan-rulesets/${id}`, payload)
+  return data.data
+}
+
+export const validateRepositoryScanRuleset = async (payload: RepositoryScanRulesetValidationPayload) => {
+  const { data } = await http.post<ApiResponse<{ success: boolean; message: string }>>('/api/repository-scan-rulesets/validate', payload)
   return data.data
 }

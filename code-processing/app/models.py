@@ -86,6 +86,8 @@ class RepositoryScanRulesetSummary(BaseModel):
     code: str
     name: str
     description: str
+    engineType: str = "SEMGREP"
+    defaultSelected: bool = False
 
 
 class RepositoryScanPrepareRequest(BaseModel):
@@ -121,8 +123,11 @@ class RepositoryScanSemgrepRequest(BaseModel):
 
     runKey: str
     rulesetCode: str
+    rulesetName: str = ""
+    engineType: str = ""
+    rulesetContent: str = ""
 
-    @field_validator("runKey", "rulesetCode", mode="before")
+    @field_validator("runKey", "rulesetCode", "rulesetName", "engineType", "rulesetContent", mode="before")
     @classmethod
     def normalize_semgrep_text(cls, value: Any) -> str:
         if value is None:

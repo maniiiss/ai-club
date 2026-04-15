@@ -80,4 +80,26 @@ export const updatePlatformTool = async (toolCode, payload) => {
     const { data } = await http.put(`/api/platform-tools/${encodeURIComponent(toolCode)}`, payload);
     return data.data;
 };
+export const pageRepositoryScanRulesets = async (query) => {
+    const { data } = await http.get('/api/repository-scan-rulesets', {
+        params: cleanParams(query)
+    });
+    return data.data;
+};
+export const getRepositoryScanRulesetDetail = async (id) => {
+    const { data } = await http.get(`/api/repository-scan-rulesets/${id}`);
+    return data.data;
+};
+export const createRepositoryScanRuleset = async (payload) => {
+    const { data } = await http.post('/api/repository-scan-rulesets', payload);
+    return data.data;
+};
+export const updateRepositoryScanRuleset = async (id, payload) => {
+    const { data } = await http.put(`/api/repository-scan-rulesets/${id}`, payload);
+    return data.data;
+};
+export const validateRepositoryScanRuleset = async (payload) => {
+    const { data } = await http.post('/api/repository-scan-rulesets/validate', payload);
+    return data.data;
+};
 //# sourceMappingURL=access.js.map

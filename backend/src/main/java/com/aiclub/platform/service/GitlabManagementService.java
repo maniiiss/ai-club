@@ -7,6 +7,7 @@ import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
+import com.aiclub.platform.domain.model.RepositoryScanRulesetEntity;
 import com.aiclub.platform.dto.CodeReviewResult;
 import com.aiclub.platform.dto.GitlabAutoMergeConfigSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
@@ -82,6 +83,7 @@ public class GitlabManagementService {
     private final GitlabUserOauthService gitlabUserOauthService;
     private final ExecutionTaskService executionTaskService;
     private final RepositoryScanClientService repositoryScanClientService;
+    private final RepositoryScanRulesetService repositoryScanRulesetService;
     private final String defaultApiUrl;
 
     public GitlabManagementService(ProjectRepository projectRepository,
@@ -101,6 +103,7 @@ public class GitlabManagementService {
                                    GitlabUserOauthService gitlabUserOauthService,
                                    ExecutionTaskService executionTaskService,
                                    RepositoryScanClientService repositoryScanClientService,
+                                   RepositoryScanRulesetService repositoryScanRulesetService,
                                    @Value("${platform.gitlab.default-api-url}") String defaultApiUrl) {
         this.projectRepository = projectRepository;
         this.agentRepository = agentRepository;
@@ -119,6 +122,7 @@ public class GitlabManagementService {
         this.gitlabUserOauthService = gitlabUserOauthService;
         this.executionTaskService = executionTaskService;
         this.repositoryScanClientService = repositoryScanClientService;
+        this.repositoryScanRulesetService = repositoryScanRulesetService;
         this.defaultApiUrl = defaultApiUrl;
     }
 
@@ -225,7 +229,7 @@ public class GitlabManagementService {
      * 返回仓库规范扫描规则集列表，供仓库页和 Hermes 工具统一复用。
      */
     public List<RepositoryScanRulesetSummary> listScanRulesets() {
-        return repositoryScanClientService.listRulesets();
+        return repositoryScanRulesetService.listEnabledRulesets();
     }
 
     /**
@@ -238,7 +242,7 @@ public class GitlabManagementService {
         if (branch == null) {
             branch = hasText(binding.getDefaultTargetBranch()) ? binding.getDefaultTargetBranch().trim() : "main";
         }
-        String rulesetCode = requireValue(request.rulesetCode(), "规则集");
+        RepositoryScanRulesetEntity ruleset = resolveScanRuleset(request.rulesetCode());
         CreateExecutionTaskRequest taskRequest = new CreateExecutionTaskRequest(
                 ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN,
                 binding.getProject().getId(),
@@ -246,7 +250,7 @@ public class GitlabManagementService {
                 buildScanTaskTitle(binding, branch),
                 "GITLAB_BINDING_SCAN",
                 List.of(),
-                buildScanInputPayload(binding, branch, rulesetCode)
+                buildScanInputPayload(binding, branch, ruleset)
         );
         return executionTaskService.createExecutionTask(taskRequest);
     }
@@ -980,14 +984,30 @@ public class GitlabManagementService {
      */
     private java.util.Map<String, Object> buildScanInputPayload(ProjectGitlabBindingEntity binding,
                                                                 String branch,
-                                                                String rulesetCode) {
+                                                                RepositoryScanRulesetEntity ruleset) {
         LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
         payload.put("bindingId", binding.getId());
         payload.put("branch", branch);
-        payload.put("rulesetCode", rulesetCode);
+        payload.put("rulesetCode", ruleset.getCode());
+        payload.put("rulesetSnapshot", repositoryScanRulesetService.buildRulesetSnapshot(ruleset));
         payload.put("repoPath", hasText(binding.getGitlabProjectPath()) ? binding.getGitlabProjectPath() : binding.getGitlabProjectRef());
         payload.put("projectName", binding.getProject().getName());
         return java.util.Map.copyOf(payload);
+    }
+
+    /**
+     * 解析扫描任务要使用的规则集。
+     * 当前规则集为空时自动回退为系统默认规则集。
+     */
+    private RepositoryScanRulesetEntity resolveScanRuleset(String requestedRulesetCode) {
+        String rulesetCode = trimToNull(requestedRulesetCode);
+        RepositoryScanRulesetEntity ruleset = hasText(rulesetCode)
+                ? repositoryScanRulesetService.requireRulesetByCode(rulesetCode)
+                : repositoryScanRulesetService.requireDefaultRuleset();
+        if (!Boolean.TRUE.equals(ruleset.getEnabled())) {
+            throw new IllegalArgumentException("所选规则集未启用");
+        }
+        return ruleset;
     }
 
     private GitlabAutoMergeConfigSummary toAutoMergeSummary(GitlabAutoMergeConfigEntity entity) {

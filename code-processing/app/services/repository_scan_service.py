@@ -23,7 +23,6 @@ from app.models import (
     RepositoryScanPackageResponse,
     RepositoryScanPrepareRequest,
     RepositoryScanPrepareResponse,
-    RepositoryScanRulesetSummary,
     RepositoryScanSemgrepRequest,
     RepositoryScanSemgrepResponse,
     RepositoryScanSummarizeRequest,
@@ -42,18 +41,6 @@ class ScanWorkspace:
     repo_dir: Path
     out_dir: Path
     log_file: Path
-
-
-def list_repository_scan_rulesets() -> list[RepositoryScanRulesetSummary]:
-    """返回当前可用规则集列表。"""
-    return [
-        RepositoryScanRulesetSummary(
-            code="team-default",
-            name="团队默认规则集",
-            description="面向 Java、TypeScript、Python 的基础团队规范检查。",
-        )
-    ]
-
 
 def prepare_repository_scan(request: RepositoryScanPrepareRequest) -> RepositoryScanPrepareResponse:
     """创建工作目录并 clone 指定仓库分支。"""
@@ -88,9 +75,9 @@ def run_semgrep_scan(request: RepositoryScanSemgrepRequest) -> RepositoryScanSem
     workspace = _require_workspace(request.runKey)
     json_output = workspace.out_dir / "semgrep.json"
     sarif_output = workspace.out_dir / "semgrep.sarif"
-    config_path = _resolve_ruleset_path(request.rulesetCode)
+    config_path = _materialize_ruleset_file(workspace, request)
     semgrep_binary = _resolve_semgrep_binary()
-    _append_log(workspace, f"开始运行 Semgrep，规则集：{request.rulesetCode}")
+    _append_log(workspace, f"开始运行 Semgrep，规则集：{request.rulesetName or request.rulesetCode} / 引擎：{request.engineType}")
     _run_command(
         [semgrep_binary, "scan", str(workspace.repo_dir), "--config", str(config_path), "--json", "--output", str(json_output)],
         cwd=workspace.repo_dir,
@@ -427,10 +414,17 @@ def _sanitize_sensitive_text(value: str, auth_token: str) -> str:
     return sanitized.replace(quote(auth_token, safe=""), "***")
 
 
-def _resolve_ruleset_path(ruleset_code: str) -> Path:
-    if ruleset_code != "team-default":
-        raise ValueError(f"未知规则集: {ruleset_code}")
-    return Path(__file__).resolve().parent.parent / "rulesets" / "team-default.yml"
+def _materialize_ruleset_file(workspace: ScanWorkspace, request: RepositoryScanSemgrepRequest) -> Path:
+    """将 backend 传入的规则内容写入临时 YAML 文件供 Semgrep 使用。"""
+    engine_type = (request.engineType or "").strip().upper()
+    if engine_type != "SEMGREP":
+        raise ValueError(f"当前仅支持 SEMGREP 引擎，收到：{request.engineType}")
+    ruleset_content = (request.rulesetContent or "").strip()
+    if not ruleset_content:
+        raise ValueError("规则内容不能为空")
+    config_path = workspace.out_dir / f"ruleset-{request.rulesetCode or 'runtime'}.yml"
+    config_path.write_text(ruleset_content + ("\n" if not ruleset_content.endswith("\n") else ""), encoding="utf-8")
+    return config_path
 
 
 def _resolve_semgrep_binary() -> str:

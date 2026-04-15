@@ -2,6 +2,7 @@ package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
+import com.aiclub.platform.domain.model.RepositoryScanRulesetEntity;
 import com.aiclub.platform.dto.GitlabBranchSummary;
 import com.aiclub.platform.dto.GitlabCreateMergeRequestResult;
 import com.aiclub.platform.dto.GitlabTagCreateResult;
@@ -20,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -85,6 +87,9 @@ class GitlabManagementGitlabActionsTests {
     @Mock
     private RepositoryScanClientService repositoryScanClientService;
 
+    @Mock
+    private RepositoryScanRulesetService repositoryScanRulesetService;
+
     private GitlabManagementService gitlabManagementService;
 
     @BeforeEach
@@ -107,6 +112,7 @@ class GitlabManagementGitlabActionsTests {
                 gitlabUserOauthService,
                 executionTaskService,
                 repositoryScanClientService,
+                repositoryScanRulesetService,
                 "http://gitlab.example.com/api/v4"
         );
     }
@@ -211,10 +217,19 @@ class GitlabManagementGitlabActionsTests {
     @Test
     void shouldFallbackToBindingDefaultBranchWhenScanBranchIsBlank() {
         ProjectGitlabBindingEntity binding = buildBinding();
+        RepositoryScanRulesetEntity ruleset = buildRuleset();
         when(bindingRepository.findById(1L)).thenReturn(Optional.of(binding));
+        when(repositoryScanRulesetService.requireRulesetByCode("team-default")).thenReturn(ruleset);
+        when(repositoryScanRulesetService.buildRulesetSnapshot(ruleset)).thenReturn(Map.of(
+                "code", "team-default",
+                "name", "团队默认规则集",
+                "engineType", "SEMGREP",
+                "definitionContent", "rules:\n  - id: team.default\n"
+        ));
         when(executionTaskService.createExecutionTask(argThat(request ->
                 "main".equals(String.valueOf(request.inputPayload().get("branch")))
                         && "team-default".equals(String.valueOf(request.inputPayload().get("rulesetCode")))
+                        && request.inputPayload().containsKey("rulesetSnapshot")
         ))).thenReturn(new com.aiclub.platform.dto.ExecutionTaskSummary(
                 99L,
                 "演示项目 group/demo-repo 仓库规范扫描",
@@ -249,6 +264,7 @@ class GitlabManagementGitlabActionsTests {
         verify(executionTaskService).createExecutionTask(argThat(request ->
                 "main".equals(String.valueOf(request.inputPayload().get("branch")))
                         && "team-default".equals(String.valueOf(request.inputPayload().get("rulesetCode")))
+                        && request.inputPayload().containsKey("rulesetSnapshot")
         ));
     }
 
@@ -270,5 +286,21 @@ class GitlabManagementGitlabActionsTests {
         binding.setTokenCiphertext("cipher-token");
         binding.setEnabled(true);
         return binding;
+    }
+
+    /**
+     * 构造默认规则集样例，供扫描任务创建测试复用。
+     */
+    private RepositoryScanRulesetEntity buildRuleset() {
+        RepositoryScanRulesetEntity entity = new RepositoryScanRulesetEntity();
+        entity.setId(7L);
+        entity.setCode("team-default");
+        entity.setName("团队默认规则集");
+        entity.setDescription("默认规则");
+        entity.setEngineType("SEMGREP");
+        entity.setEnabled(true);
+        entity.setDefaultSelected(true);
+        entity.setDefinitionContent("rules:\n  - id: team.default\n");
+        return entity;
     }
 }

@@ -20,7 +20,7 @@ const primaryMenuItems = [
     { path: '/dashboard', label: '首页看板', shortLabel: '首页', permission: 'dashboard:view', icon: Odometer, matchNames: ['dashboard'] },
     { path: '/projects', label: '项目管理', shortLabel: '项目', permission: 'project:view', icon: FolderOpened, matchNames: ['projects', 'project-iterations', 'project-knowledge-graph'] },
     { path: '/agents', label: '智能体管理', shortLabel: '智能体', permission: 'agent:view', icon: Connection, matchNames: ['agents'] },
-    { path: '/tasks', label: '任务管理', shortLabel: '任务', permission: 'task:view', icon: Tickets, matchNames: ['tasks'] },
+    { path: '/tasks', label: '执行中心', shortLabel: '执行', permission: 'task:view', icon: Tickets, matchNames: ['tasks', 'execution-task-detail'] },
     { path: '/tests', label: '测试管理', shortLabel: '测试', permission: 'test:view', icon: Finished, matchNames: ['tests', 'test-plan-detail'] },
     { path: '/gitlab', label: '代码仓库', shortLabel: '仓库', permission: 'gitlab:view', icon: DocumentCopy, matchNames: ['gitlab'] }
 ];
@@ -34,7 +34,10 @@ const trailingMenuItems = [
 const systemMenuItems = [
     { path: '/users', label: '用户管理', shortLabel: '用户', permission: 'system:user:view', icon: UserFilled, matchNames: ['users'] },
     { path: '/roles', label: '角色管理', shortLabel: '角色', permission: 'system:role:view', icon: Management, matchNames: ['roles'] },
-    { path: '/permissions', label: '功能管理', shortLabel: '功能', permission: 'system:permission:view', icon: Setting, matchNames: ['permissions'] }
+    { path: '/permissions', label: '功能管理', shortLabel: '功能', permission: 'system:permission:view', icon: Setting, matchNames: ['permissions'] },
+    { path: '/tools', label: '工具配置', shortLabel: '工具', permission: 'system:tool:view', icon: Connection, matchNames: ['tools'] },
+    { path: '/scan-rulesets', label: '扫描规则集', shortLabel: '规则集', permission: 'scan:ruleset:view', icon: Search, matchNames: ['scan-rulesets'] },
+    { path: '/operation-logs', label: '操作日志', shortLabel: '日志', permission: 'system:operation-log:view', icon: DocumentCopy, matchNames: ['operation-logs'] }
 ];
 const pageTitle = computed(() => route.meta.title || 'AI代理工程管理平台');
 const visiblePrimaryMenus = computed(() => primaryMenuItems.filter((item) => authStore.hasPermission(item.permission)));
