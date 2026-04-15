@@ -146,16 +146,14 @@ set_dotenv_value() {
 }
 
 ensure_full_docker_env_file() {
-  if [[ -f "${FULL_DOCKER_ENV_FILE}" ]]; then
-    return 0
-  fi
-
-  if [[ -f "${DEFAULT_ENV_FILE}" ]]; then
-    # 优先复用开发环境中的真实配置，再修正为容器互联所需地址。
-    log '根据 .env 初始化 .env.server'
-    cp "${DEFAULT_ENV_FILE}" "${FULL_DOCKER_ENV_FILE}"
-  else
-    ensure_env_file "${FULL_DOCKER_ENV_FILE}" "${FULL_DOCKER_ENV_EXAMPLE_FILE}" '.env.server'
+  if [[ ! -f "${FULL_DOCKER_ENV_FILE}" ]]; then
+    if [[ -f "${DEFAULT_ENV_FILE}" ]]; then
+      # 优先复用开发环境中的真实配置，再修正为容器互联所需地址。
+      log '根据 .env 初始化 .env.server'
+      cp "${DEFAULT_ENV_FILE}" "${FULL_DOCKER_ENV_FILE}"
+    else
+      ensure_env_file "${FULL_DOCKER_ENV_FILE}" "${FULL_DOCKER_ENV_EXAMPLE_FILE}" '.env.server'
+    fi
   fi
 
   local backend_port
@@ -164,6 +162,33 @@ ensure_full_docker_env_file() {
   set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_INTERNAL_ALLOW_LOCAL_BYPASS' 'false'
   set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'VITE_API_BASE_URL' ''
   set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'VITE_API_PORT' "${backend_port}"
+
+  # 补齐全量 Docker 独有的数据目录配置，避免 .env.server 直接从 .env 复制后，
+  # 回落到 docker-compose.server.yml 中仅适合 Linux 服务器的 /data/... 默认路径。
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'POSTGRES_DATA_DIR' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'POSTGRES_DATA_DIR' './.data/postgres'
+  fi
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'REDIS_DATA_DIR' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'REDIS_DATA_DIR' './.data/redis'
+  fi
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'MINIO_DATA_DIR' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'MINIO_DATA_DIR' './.data/minio'
+  fi
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HERMES_PORT' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HERMES_PORT' '18080'
+  fi
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HERMES_DATA_DIR' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HERMES_DATA_DIR' './.data/hermes'
+  fi
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HINDSIGHT_PORT' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HINDSIGHT_PORT' '18888'
+  fi
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HINDSIGHT_CONSOLE_PORT' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HINDSIGHT_CONSOLE_PORT' '19999'
+  fi
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_SCAN_HOST_PATH' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_SCAN_HOST_PATH' './.data/scans'
+  fi
 
   ok "已准备全量 Docker 环境文件：${FULL_DOCKER_ENV_FILE}"
 }

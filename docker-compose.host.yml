@@ -2,7 +2,7 @@
 # 适用于 Docker bridge 端口转发在当前服务器上不稳定的场景，直接复用宿主机网络栈。
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:16}
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     container_name: git-ai-club-host-postgres
     restart: unless-stopped
     network_mode: host
@@ -10,15 +10,41 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-ai_agent_platform}
       POSTGRES_USER: ${POSTGRES_USER:-aiclub}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
+      # 将 Hindsight 独立数据库名传入 PostgreSQL 初始化脚本，避免回退到默认值。
+      HINDSIGHT_POSTGRES_DB: ${HINDSIGHT_POSTGRES_DB:-hindsight}
       TZ: ${APP_TZ:-Asia/Shanghai}
       PGTZ: ${APP_TZ:-Asia/Shanghai}
     volumes:
       - "${POSTGRES_DATA_DIR:-/data/git-ai-club/postgres}:/var/lib/postgresql/data"
+      # 初始化 Hindsight 专用数据库与 pgvector 扩展；仅在 PGDATA 首次初始化时执行。
+      - "./docker/postgres/init:/docker-entrypoint-initdb.d:ro"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiclub} -d ${POSTGRES_DB:-ai_agent_platform}"]
       interval: 10s
       timeout: 5s
       retries: 10
+
+  postgres-bootstrap:
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    container_name: git-ai-club-host-postgres-bootstrap
+    restart: "no"
+    network_mode: host
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_agent_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-aiclub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
+      HINDSIGHT_POSTGRES_DB: ${HINDSIGHT_POSTGRES_DB:-hindsight}
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    volumes:
+      - "./docker/postgres/init:/docker-entrypoint-initdb.d:ro"
+    # Host 网络模式下也补偿一次独立库和 vector 扩展，避免旧数据目录漏初始化。
+    entrypoint:
+      - /bin/sh
+      - /docker-entrypoint-initdb.d/10-init-hindsight-db.sh
 
   redis:
     image: ${REDIS_IMAGE:-redis:7-alpine}
@@ -60,6 +86,9 @@ services:
     container_name: git-ai-club-host-hindsight
     restart: unless-stopped
     network_mode: host
+    depends_on:
+      postgres-bootstrap:
+        condition: service_completed_successfully
     environment:
       TZ: ${APP_TZ:-Asia/Shanghai}
       HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_API_LLM_PROVIDER:-openai}
@@ -67,12 +96,13 @@ services:
       HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_API_LLM_API_KEY:-}
       HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_API_LLM_MODEL:-gpt-4o-mini}
       HINDSIGHT_API_EMBEDDINGS_PROVIDER: ${HINDSIGHT_API_EMBEDDINGS_PROVIDER:-local}
+      # Hindsight 固定连接独立数据库，避免与业务库 ai_agent_platform 混用。
+      HINDSIGHT_API_DATABASE_URL: postgresql://${POSTGRES_USER:-aiclub}:${POSTGRES_PASSWORD:-aiclub123}@127.0.0.1:${POSTGRES_PORT:-5432}/${HINDSIGHT_POSTGRES_DB:-hindsight}
+      HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvector}
       HINDSIGHT_API_HOST: 0.0.0.0
       HINDSIGHT_API_PORT: ${HINDSIGHT_PORT:-18888}
       HINDSIGHT_DASHBOARD_HOST: 0.0.0.0
       HINDSIGHT_DASHBOARD_PORT: ${HINDSIGHT_CONSOLE_PORT:-19999}
-    volumes:
-      - "${HINDSIGHT_DATA_DIR:-/data/git-ai-club/hindsight}:/home/hindsight/.pg0"
 
   hermes:
     build:
