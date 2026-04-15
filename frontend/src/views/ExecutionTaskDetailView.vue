@@ -11,7 +11,7 @@
           <h1>{{ taskDetail.title }}</h1>
         </div>
         <div class="execution-detail-actions">
-          <el-button v-if="canCancelExecution && canCancel(taskDetail.status)" type="warning" @click="handleCancel">取消</el-button>
+          <el-button v-if="canCancelExecution && canCancel(taskDetail.status)" type="success" @click="handleCancel">取消</el-button>
           <el-button v-if="canRetryExecution && canRetry(taskDetail.status)" type="success" @click="handleRetry">重试</el-button>
         </div>
       </div>

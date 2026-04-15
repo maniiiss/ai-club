@@ -78,6 +78,9 @@ class PlatformToolExecutorGitlabBindingSearchTests {
     @Mock
     private GitlabManagementService gitlabManagementService;
 
+    @Mock
+    private RepositoryScanRulesetService repositoryScanRulesetService;
+
     private PlatformToolExecutor platformToolExecutor;
 
     @BeforeEach
@@ -95,7 +98,8 @@ class PlatformToolExecutorGitlabBindingSearchTests {
                 testPlanRepository,
                 iterationRepository,
                 executionWorkflowService,
-                gitlabManagementService
+                gitlabManagementService,
+                repositoryScanRulesetService
         );
         AuthContextHolder.set(new AuthContext(
                 1L,

@@ -7,7 +7,6 @@ from app.models import (
     RepositoryScanPrepareRequest,
     RepositoryScanPrepareResponse,
     RepositoryScanRunKeyRequest,
-    RepositoryScanRulesetSummary,
     RepositoryScanSemgrepRequest,
     RepositoryScanSemgrepResponse,
     RepositoryScanSummarizeRequest,
@@ -20,7 +19,6 @@ from app.models import (
 from app.services.repository_service import build_summary
 from app.services.repository_scan_service import (
     cleanup_repository_scan,
-    list_repository_scan_rulesets,
     normalize_repository_scan,
     package_repository_scan,
     prepare_repository_scan,
@@ -50,12 +48,6 @@ def _require_internal_service_auth(request: Request) -> None:
     actual_header = request.headers.get("Authorization", "").strip()
     if actual_header != expected_header:
         raise HTTPException(status_code=401, detail="内部扫描接口鉴权失败")
-
-
-@repo_scan_router.get("/rulesets", response_model=list[RepositoryScanRulesetSummary])
-def list_rulesets(request: Request) -> list[RepositoryScanRulesetSummary]:
-    _require_internal_service_auth(request)
-    return list_repository_scan_rulesets()
 
 
 @repo_scan_router.post("/prepare", response_model=RepositoryScanPrepareResponse)

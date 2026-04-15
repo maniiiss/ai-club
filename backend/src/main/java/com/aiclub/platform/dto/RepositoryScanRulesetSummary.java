@@ -6,6 +6,8 @@ package com.aiclub.platform.dto;
 public record RepositoryScanRulesetSummary(
         String code,
         String name,
-        String description
+        String description,
+        String engineType,
+        boolean defaultSelected
 ) {
 }

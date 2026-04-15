@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -11,7 +12,7 @@ TARGET_EXTENSIONS = {
 IGNORE_DIRS = {
     ".git", ".idea", ".vscode", "node_modules", "dist", "target",
     "build", ".mypy_cache", ".pytest_cache", "__pycache__",
-    ".venv", "venv", "postgres_data"
+    ".venv", "venv", "postgres_data", ".data", ".run-logs"
 }
 SUSPICIOUS_FRAGMENTS = [
     "\u951f", "\ufffd", "\u935a", "\u9359", "\u951b", "\u9428", "\u93b4", "\u95c2", "\u7f01", "\u7ba0",
@@ -25,8 +26,39 @@ def should_scan(path: Path) -> bool:
     return path.suffix.lower() in TARGET_EXTENSIONS
 
 
-def iter_files() -> list[Path]:
-    return [p for p in ROOT.rglob("*") if p.is_file() and should_scan(p)]
+def resolve_targets(raw_targets: list[str]) -> list[Path]:
+    if not raw_targets:
+        return [ROOT]
+
+    targets: list[Path] = []
+    for raw_target in raw_targets:
+        candidate = Path(raw_target)
+        if not candidate.is_absolute():
+            candidate = ROOT / candidate
+        targets.append(candidate.resolve())
+    return targets
+
+
+def iter_files(targets: list[Path]) -> list[Path]:
+    files: list[Path] = []
+    visited: set[Path] = set()
+    for target in targets:
+        if not target.exists():
+            continue
+        if target.is_file():
+            if should_scan(target) and target not in visited:
+                files.append(target)
+                visited.add(target)
+            continue
+        for path in target.rglob("*"):
+            try:
+                if path.is_file() and should_scan(path) and path not in visited:
+                    files.append(path)
+                    visited.add(path)
+            except OSError:
+                # 本地数据卷或容器安装目录可能包含 Windows 无法 stat 的文件，编码检查应跳过这些运行态文件。
+                continue
+    return files
 
 
 def scan_file(path: Path) -> list[str]:
@@ -49,8 +81,9 @@ def scan_file(path: Path) -> list[str]:
 
 
 def main() -> int:
+    targets = resolve_targets(sys.argv[1:])
     bad: list[tuple[Path, list[str]]] = []
-    for path in iter_files():
+    for path in iter_files(targets):
         issues = scan_file(path)
         if issues:
             bad.append((path.relative_to(ROOT), issues))

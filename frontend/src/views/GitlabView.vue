@@ -888,11 +888,19 @@
             <el-option
               v-for="ruleset in scanRulesetOptions"
               :key="ruleset.code"
-              :label="ruleset.name"
+              :label="ruleset.defaultSelected ? `${ruleset.name}（默认）` : ruleset.name"
               :value="ruleset.code"
             />
           </el-select>
-          <div class="form-tip">{{ scanRulesetOptions.find((item) => item.code === scanForm.rulesetCode)?.description || '请选择一个规则集用于扫描。' }}</div>
+          <div class="form-tip">
+            {{
+              (() => {
+                const selected = scanRulesetOptions.find((item) => item.code === scanForm.rulesetCode)
+                if (!selected) return '请选择一个规则集用于扫描。'
+                return `${selected.description || '暂无描述'}${selected.engineType ? ` · 引擎 ${selected.engineType}` : ''}${selected.defaultSelected ? ' · 当前系统默认' : ''}`
+              })()
+            }}
+          </div>
         </el-form-item>
       </section>
     </el-form>
@@ -1381,8 +1389,14 @@ const handleBindingDelete = async (id: number) => { try { await ElMessageBox.con
 const handleBindingTest = async (id: number) => { try { const result = await testGitlabBinding(id); ElMessage.success(`连接成功：${result.gitlabProjectPath || result.gitlabProjectRef}`); await refreshAll() } catch (error: any) { ElMessage.error(error?.response?.data?.message || '连接测试失败') } }
 const openTagCreateDialog = async (row: ProjectGitlabBindingItem) => { resetTagForm(); currentTagBinding.value = row; tagDialogVisible.value = true; await loadTagBranches() }
 const handleTagSubmit = async () => { const valid = await tagFormRef.value?.validate().catch(() => false); if (!valid || !currentTagBinding.value) return; tagSubmitting.value = true; try { const result = await createGitlabTag(currentTagBinding.value.id, { tagName: tagForm.tagName.trim(), branchName: tagForm.branchName.trim(), message: tagForm.message.trim() || undefined }); tagResult.value = result; tagDialogVisible.value = false; tagResultVisible.value = true; ElMessage.success(`Tag ${result.tagName} 已创建`) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '创建 Tag 失败') } finally { tagSubmitting.value = false } }
-const resetScanForm = () => { scanForm.branch = ''; scanForm.rulesetCode = 'team-default'; scanBranchOptions.value = []; scanFormRef.value?.clearValidate() }
-const loadScanRulesets = async () => { scanRulesetOptions.value = await listRepositoryScanRulesets(); if (!scanForm.rulesetCode && scanRulesetOptions.value.length) { scanForm.rulesetCode = scanRulesetOptions.value[0].code } }
+const resetScanForm = () => { scanForm.branch = ''; scanForm.rulesetCode = ''; scanBranchOptions.value = []; scanFormRef.value?.clearValidate() }
+const loadScanRulesets = async () => {
+  scanRulesetOptions.value = await listRepositoryScanRulesets()
+  const defaultRuleset = scanRulesetOptions.value.find((item) => item.defaultSelected) || scanRulesetOptions.value[0]
+  if (!scanForm.rulesetCode && defaultRuleset) {
+    scanForm.rulesetCode = defaultRuleset.code
+  }
+}
 const loadScanBranches = async (keyword = '') => {
   if (!currentScanBinding.value) return
   scanBranchLoading.value = true

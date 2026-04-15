@@ -660,6 +660,7 @@ const systemMenuItems: MenuItem[] = [
   { path: '/roles', label: '角色管理', shortLabel: '角色', permission: 'system:role:view', icon: Management, matchNames: ['roles'] },
   { path: '/permissions', label: '功能管理', shortLabel: '功能', permission: 'system:permission:view', icon: Setting, matchNames: ['permissions'] },
   { path: '/tools', label: '工具配置', shortLabel: '工具', permission: 'system:tool:view', icon: Connection, matchNames: ['tools'] },
+  { path: '/scan-rulesets', label: '扫描规则集', shortLabel: '规则集', permission: 'scan:ruleset:view', icon: Search, matchNames: ['scan-rulesets'] },
   { path: '/operation-logs', label: '操作日志', shortLabel: '日志', permission: 'system:operation-log:view', icon: Document, matchNames: ['operation-logs'] }
 ]
 

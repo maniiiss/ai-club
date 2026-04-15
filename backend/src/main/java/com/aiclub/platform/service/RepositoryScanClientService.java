@@ -1,7 +1,5 @@
 package com.aiclub.platform.service;
 
-import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -16,7 +14,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
-
 /**
  * 仓库规范扫描客户端。
  * 负责调用 code-processing 内部扫描接口，串起 clone、Semgrep、总结和打包流程。
@@ -43,23 +40,16 @@ public class RepositoryScanClientService {
                 .build();
     }
 
-    /**
-     * 读取可选规则集列表。
-     */
-    public List<RepositoryScanRulesetSummary> listRulesets() {
-        HttpRequest request = baseRequest("/api/repo-scans/rulesets")
-                .GET()
-                .build();
-        return readList(send(request), new TypeReference<>() {
-        });
-    }
-
     public PrepareScanResponse prepareScan(PrepareScanRequest requestPayload) {
         return post("/api/repo-scans/prepare", requestPayload, PrepareScanResponse.class);
     }
 
-    public SemgrepResponse runSemgrep(String runKey, String rulesetCode) {
-        return post("/api/repo-scans/semgrep", new SemgrepRequest(runKey, rulesetCode), SemgrepResponse.class);
+    public SemgrepResponse runSemgrep(String runKey,
+                                      String rulesetCode,
+                                      String rulesetName,
+                                      String engineType,
+                                      String rulesetContent) {
+        return post("/api/repo-scans/semgrep", new SemgrepRequest(runKey, rulesetCode, rulesetName, engineType, rulesetContent), SemgrepResponse.class);
     }
 
     public NormalizeResponse normalizeScan(String runKey) {
@@ -96,14 +86,6 @@ public class RepositoryScanClientService {
             return objectMapper.readValue(send(request), responseType);
         } catch (IOException exception) {
             throw new IllegalStateException("调用代码扫描服务失败", exception);
-        }
-    }
-
-    private <T> List<T> readList(String body, TypeReference<List<T>> typeReference) {
-        try {
-            return objectMapper.readValue(body, typeReference);
-        } catch (IOException exception) {
-            throw new IllegalStateException("解析代码扫描服务响应失败", exception);
         }
     }
 
@@ -190,7 +172,10 @@ public class RepositoryScanClientService {
 
     private record SemgrepRequest(
             String runKey,
-            String rulesetCode
+            String rulesetCode,
+            String rulesetName,
+            String engineType,
+            String rulesetContent
     ) {
     }
 

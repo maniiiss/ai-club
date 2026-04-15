@@ -713,6 +713,31 @@ onBeforeUnmount(() => {
   width: 21%;
 }
 
+.execution-col-main,
+.execution-col-main :deep(.management-list-title-trigger),
+.execution-col-main :deep(.management-list-title-cell),
+.execution-col-main :deep(.management-list-title-copy) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.execution-col-main :deep(.management-list-title-trigger) {
+  overflow: hidden;
+}
+
+.execution-col-main :deep(.management-list-title-copy) {
+  overflow: hidden;
+}
+
+.execution-col-main :deep(.management-list-title),
+.execution-col-main :deep(.management-list-subtitle) {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .execution-col-scenario {
   width: 9%;
 }

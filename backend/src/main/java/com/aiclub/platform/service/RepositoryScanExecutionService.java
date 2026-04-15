@@ -5,6 +5,7 @@ import com.aiclub.platform.domain.model.ExecutionRunEntity;
 import com.aiclub.platform.domain.model.ExecutionStepEntity;
 import com.aiclub.platform.domain.model.ExecutionTaskEntity;
 import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
+import com.aiclub.platform.domain.model.RepositoryScanRulesetEntity;
 import com.aiclub.platform.repository.ExecutionArtifactRepository;
 import com.aiclub.platform.repository.ExecutionRunRepository;
 import com.aiclub.platform.repository.ExecutionStepRepository;
@@ -38,6 +39,7 @@ public class RepositoryScanExecutionService {
     private final ExecutionArtifactRepository executionArtifactRepository;
     private final ExecutionTaskRepository executionTaskRepository;
     private final RepositoryScanClientService repositoryScanClientService;
+    private final RepositoryScanRulesetService repositoryScanRulesetService;
     private final TokenCipherService tokenCipherService;
     private final GitlabApiService gitlabApiService;
     private final ObjectMapper objectMapper;
@@ -48,6 +50,7 @@ public class RepositoryScanExecutionService {
                                           ExecutionArtifactRepository executionArtifactRepository,
                                           ExecutionTaskRepository executionTaskRepository,
                                           RepositoryScanClientService repositoryScanClientService,
+                                          RepositoryScanRulesetService repositoryScanRulesetService,
                                           TokenCipherService tokenCipherService,
                                           GitlabApiService gitlabApiService,
                                           ObjectMapper objectMapper) {
@@ -57,6 +60,7 @@ public class RepositoryScanExecutionService {
         this.executionArtifactRepository = executionArtifactRepository;
         this.executionTaskRepository = executionTaskRepository;
         this.repositoryScanClientService = repositoryScanClientService;
+        this.repositoryScanRulesetService = repositoryScanRulesetService;
         this.tokenCipherService = tokenCipherService;
         this.gitlabApiService = gitlabApiService;
         this.objectMapper = objectMapper;
@@ -76,11 +80,11 @@ public class RepositoryScanExecutionService {
         String branch = hasText(payload.branch())
                 ? payload.branch().trim()
                 : (hasText(binding.getDefaultTargetBranch()) ? binding.getDefaultTargetBranch().trim() : "main");
-        String rulesetCode = hasText(payload.rulesetCode()) ? payload.rulesetCode().trim() : "team-default";
+        RulesetSnapshot rulesetSnapshot = resolveRulesetSnapshot(payload);
         try {
-            ResolvedRepositoryContext resolved = resolveRepository(executionTask, executionRun, binding, branch, rulesetCode);
-            RepositoryScanClientService.PrepareScanResponse prepare = cloneRepository(executionTask, executionRun, resolved, runKey, rulesetCode);
-            runSemgrep(executionTask, executionRun, runKey, rulesetCode);
+            ResolvedRepositoryContext resolved = resolveRepository(executionTask, executionRun, binding, branch, rulesetSnapshot);
+            RepositoryScanClientService.PrepareScanResponse prepare = cloneRepository(executionTask, executionRun, resolved, runKey, rulesetSnapshot);
+            runSemgrep(executionTask, executionRun, runKey, rulesetSnapshot);
             RepositoryScanClientService.NormalizeResponse normalize = normalizeFindings(executionTask, executionRun, runKey);
             summarizeReport(executionTask, executionRun, runKey, resolved.repoDisplayName());
             RepositoryScanClientService.PackageScanResponse packaged = publishReport(executionTask, executionRun, runKey);
@@ -106,7 +110,7 @@ public class RepositoryScanExecutionService {
                                                         ExecutionRunEntity executionRun,
                                                         ProjectGitlabBindingEntity binding,
                                                         String branch,
-                                                        String rulesetCode) {
+                                                        RulesetSnapshot rulesetSnapshot) {
         ExecutionStepEntity step = beginStep(executionRun, 1, "RESOLVE_REPO", "解析仓库信息", executionTask.getInputPayload());
         try {
             String token = tokenCipherService.decrypt(binding.getTokenCiphertext());
@@ -118,7 +122,7 @@ public class RepositoryScanExecutionService {
             String repoDisplayName = hasText(latestBinding.getGitlabProjectPath())
                     ? latestBinding.getGitlabProjectPath().trim()
                     : latestBinding.getGitlabProjectRef().trim();
-            completeStep(step, "已解析仓库：" + repoDisplayName + "，分支：" + branch + "，规则集：" + rulesetCode);
+            completeStep(step, "已解析仓库：" + repoDisplayName + "，分支：" + branch + "，规则集：" + rulesetSnapshot.name() + "（" + rulesetSnapshot.code() + "）");
             updateRunProgress(executionRun, 1);
             updateTaskSummary(executionTask, "执行中：解析仓库信息");
             return new ResolvedRepositoryContext(
@@ -138,7 +142,7 @@ public class RepositoryScanExecutionService {
                                                                             ExecutionRunEntity executionRun,
                                                                             ResolvedRepositoryContext resolved,
                                                                             String runKey,
-                                                                            String rulesetCode) {
+                                                                            RulesetSnapshot rulesetSnapshot) {
         ExecutionStepEntity step = beginStep(executionRun, 2, "CLONE_REPO", "克隆仓库", resolved.repoUrl());
         try {
             if (!hasText(resolved.repoUrl()) || !isHttpCloneUrl(resolved.repoUrl())) {
@@ -155,7 +159,7 @@ public class RepositoryScanExecutionService {
                             resolved.projectRef(),
                             resolved.branch(),
                             resolved.authToken(),
-                            rulesetCode,
+                            rulesetSnapshot.code(),
                             resolved.repoDisplayName()
                     )
             );
@@ -171,11 +175,17 @@ public class RepositoryScanExecutionService {
     private void runSemgrep(ExecutionTaskEntity executionTask,
                             ExecutionRunEntity executionRun,
                             String runKey,
-                            String rulesetCode) {
-        ExecutionStepEntity step = beginStep(executionRun, 3, "RUN_SEMGREP", "运行 Semgrep", rulesetCode);
+                            RulesetSnapshot rulesetSnapshot) {
+        ExecutionStepEntity step = beginStep(executionRun, 3, "RUN_SEMGREP", "运行 Semgrep", rulesetSnapshot.code());
         try {
-            RepositoryScanClientService.SemgrepResponse response = repositoryScanClientService.runSemgrep(runKey, rulesetCode);
-            completeStep(step, "扫描文件数：" + safeNumber(response.scannedFileCount()) + "，问题数：" + safeNumber(response.totalFindings()));
+            RepositoryScanClientService.SemgrepResponse response = repositoryScanClientService.runSemgrep(
+                    runKey,
+                    rulesetSnapshot.code(),
+                    rulesetSnapshot.name(),
+                    rulesetSnapshot.engineType(),
+                    rulesetSnapshot.definitionContent()
+            );
+            completeStep(step, "规则集：" + rulesetSnapshot.name() + "（" + rulesetSnapshot.code() + "），扫描文件数：" + safeNumber(response.scannedFileCount()) + "，问题数：" + safeNumber(response.totalFindings()));
             updateRunProgress(executionRun, 3);
             updateTaskSummary(executionTask, "执行中：运行 Semgrep");
         } catch (RuntimeException exception) {
@@ -341,14 +351,49 @@ public class RepositoryScanExecutionService {
     private ScanTaskPayload readPayload(String inputPayload) {
         try {
             JsonNode node = objectMapper.readTree(inputPayload);
+            JsonNode rulesetSnapshotNode = node.path("rulesetSnapshot");
             return new ScanTaskPayload(
                     node.path("bindingId").asLong(),
                     node.path("branch").asText(""),
-                    node.path("rulesetCode").asText("")
+                    node.path("rulesetCode").asText(""),
+                    readRulesetSnapshot(rulesetSnapshotNode)
             );
         } catch (Exception exception) {
             throw new IllegalStateException("扫描任务输入载荷解析失败", exception);
         }
+    }
+
+    /**
+     * 优先使用任务创建时固化的规则快照。
+     * 老任务未携带快照时，再按 rulesetCode 从数据库回填，保持兼容。
+     */
+    private RulesetSnapshot resolveRulesetSnapshot(ScanTaskPayload payload) {
+        if (payload.rulesetSnapshot() != null && hasText(payload.rulesetSnapshot().definitionContent())) {
+            return payload.rulesetSnapshot();
+        }
+        String rulesetCode = hasText(payload.rulesetCode()) ? payload.rulesetCode().trim() : repositoryScanRulesetService.requireDefaultRuleset().getCode();
+        RepositoryScanRulesetEntity ruleset = repositoryScanRulesetService.requireRulesetByCode(rulesetCode);
+        return new RulesetSnapshot(
+                defaultString(ruleset.getCode()),
+                defaultString(ruleset.getName()),
+                defaultString(ruleset.getEngineType()),
+                defaultString(ruleset.getDefinitionContent())
+        );
+    }
+
+    /**
+     * 从执行任务输入载荷中提取规则快照。
+     */
+    private RulesetSnapshot readRulesetSnapshot(JsonNode rulesetSnapshotNode) {
+        if (rulesetSnapshotNode == null || rulesetSnapshotNode.isMissingNode() || rulesetSnapshotNode.isNull()) {
+            return null;
+        }
+        return new RulesetSnapshot(
+                rulesetSnapshotNode.path("code").asText(""),
+                rulesetSnapshotNode.path("name").asText(""),
+                rulesetSnapshotNode.path("engineType").asText(""),
+                rulesetSnapshotNode.path("definitionContent").asText("")
+        );
     }
 
     private ProjectGitlabBindingEntity requireBinding(Long bindingId) {
@@ -389,7 +434,14 @@ public class RepositoryScanExecutionService {
         return normalized.length() > maxLength ? normalized.substring(0, maxLength) : normalized;
     }
 
-    private record ScanTaskPayload(Long bindingId, String branch, String rulesetCode) {
+    private record ScanTaskPayload(Long bindingId, String branch, String rulesetCode, RulesetSnapshot rulesetSnapshot) {
+    }
+
+    /**
+     * 规则快照对象。
+     * 用于把任务创建当时选中的规则定义稳定固化到执行链路中。
+     */
+    private record RulesetSnapshot(String code, String name, String engineType, String definitionContent) {
     }
 
     private record ResolvedRepositoryContext(
