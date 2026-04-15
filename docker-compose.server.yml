@@ -1,24 +1,49 @@
 # 服务器部署编排文件：面向 192.168.110.23 的一键构建与启动配置。
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:16}
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     container_name: git-ai-club-server-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ai_agent_platform}
       POSTGRES_USER: ${POSTGRES_USER:-aiclub}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
+      # 将 Hindsight 独立数据库名传入 PostgreSQL 初始化脚本，避免回退到默认值。
+      HINDSIGHT_POSTGRES_DB: ${HINDSIGHT_POSTGRES_DB:-hindsight}
       TZ: ${APP_TZ:-Asia/Shanghai}
       PGTZ: ${APP_TZ:-Asia/Shanghai}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - "${POSTGRES_DATA_DIR:-/data/git-ai-club/postgres}:/var/lib/postgresql/data"
+      # 初始化 Hindsight 专用数据库与 pgvector 扩展；仅在 PGDATA 首次初始化时执行。
+      - "./docker/postgres/init:/docker-entrypoint-initdb.d:ro"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiclub} -d ${POSTGRES_DB:-ai_agent_platform}"]
       interval: 10s
       timeout: 5s
       retries: 10
+
+  postgres-bootstrap:
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    container_name: git-ai-club-server-postgres-bootstrap
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_agent_platform}
+      POSTGRES_USER: ${POSTGRES_USER:-aiclub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
+      HINDSIGHT_POSTGRES_DB: ${HINDSIGHT_POSTGRES_DB:-hindsight}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+    volumes:
+      - "./docker/postgres/init:/docker-entrypoint-initdb.d:ro"
+    # 每次启动时都补偿一次独立库和 vector 扩展，兼容已有 PGDATA 不会重跑 initdb 脚本的场景。
+    entrypoint:
+      - /bin/sh
+      - /docker-entrypoint-initdb.d/10-init-hindsight-db.sh
 
   redis:
     image: ${REDIS_IMAGE:-redis:7-alpine}
@@ -62,6 +87,9 @@ services:
     image: ${HINDSIGHT_IMAGE:-ghcr.io/vectorize-io/hindsight:latest}
     container_name: git-ai-club-server-hindsight
     restart: unless-stopped
+    depends_on:
+      postgres-bootstrap:
+        condition: service_completed_successfully
     environment:
       TZ: ${APP_TZ:-Asia/Shanghai}
       HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_API_LLM_PROVIDER:-openai}
@@ -69,11 +97,17 @@ services:
       HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_API_LLM_API_KEY:-}
       HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_API_LLM_MODEL:-gpt-4o-mini}
       HINDSIGHT_API_EMBEDDINGS_PROVIDER: ${HINDSIGHT_API_EMBEDDINGS_PROVIDER:-local}
+      # Hindsight 固定连接独立数据库，避免与业务库 ai_agent_platform 混用。
+      HINDSIGHT_API_DATABASE_URL: postgresql://${POSTGRES_USER:-aiclub}:${POSTGRES_PASSWORD:-aiclub123}@postgres:5432/${HINDSIGHT_POSTGRES_DB:-hindsight}
+      HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvector}
+      # 在 bridge 网络内固定监听容器端口，避免服务只绑定到容器回环地址导致 Hermes 无法访问。
+      HINDSIGHT_API_HOST: 0.0.0.0
+      HINDSIGHT_API_PORT: 8888
+      HINDSIGHT_DASHBOARD_HOST: 0.0.0.0
+      HINDSIGHT_DASHBOARD_PORT: 9999
     ports:
       - "${HINDSIGHT_PORT:-18888}:8888"
       - "${HINDSIGHT_CONSOLE_PORT:-19999}:9999"
-    volumes:
-      - "${HINDSIGHT_DATA_DIR:-/data/git-ai-club/hindsight}:/home/hindsight/.pg0"
 
   hermes:
     build:
@@ -146,6 +180,36 @@ services:
           echo "      resources: false"
           echo "      prompts: false"
         } > /opt/data/config.yaml
+        # 等待 Hindsight API 真正就绪，避免 Hermes 启动后首次记忆同步时因冷启动而连接失败。
+        python - <<'PY'
+        import os
+        import sys
+        import time
+        import urllib.error
+        import urllib.request
+        
+        base_url = os.getenv("HERMES_MEMORY_HINDSIGHT_URL", "http://hindsight:8888").rstrip("/")
+        deadline = time.time() + 120
+        last_error = "未知错误"
+        
+        while time.time() < deadline:
+            try:
+                with urllib.request.urlopen(f"{base_url}/health", timeout=3) as response:
+                    if 200 <= response.status < 500:
+                        print(f"Hindsight 已就绪: {base_url}/health")
+                        sys.exit(0)
+            except urllib.error.HTTPError as exc:
+                if exc.code < 500:
+                    print(f"Hindsight 已响应（状态码 {exc.code}），继续启动 Hermes。")
+                    sys.exit(0)
+                last_error = f"HTTP {exc.code}"
+            except Exception as exc:
+                last_error = str(exc)
+            time.sleep(2)
+        
+        print(f"Hindsight 在 120 秒内仍未就绪，最后一次错误：{last_error}", file=sys.stderr)
+        sys.exit(1)
+        PY
         exec hermes gateway
     command: []
     ports:

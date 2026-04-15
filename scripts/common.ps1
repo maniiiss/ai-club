@@ -129,27 +129,48 @@ function Set-DotEnvValues([string]$Path, [hashtable]$Values) {
 
 function Ensure-FullDockerEnvFile {
     $context = Get-ScriptContext
-    if (Test-Path $context.FullDockerEnvFile) {
-        return
-    }
-
-    if (Test-Path $context.DefaultEnvFile) {
-        # 优先复用开发环境中的真实密钥和端口配置，再修正为容器内可访问的地址。
-        Write-Step '根据 .env 初始化 .env.server'
-        Copy-Item $context.DefaultEnvFile $context.FullDockerEnvFile -Force
-    } else {
-        Ensure-EnvFile -TargetPath $context.FullDockerEnvFile `
-            -TemplatePath $context.FullDockerEnvExampleFile `
-            -Description '.env.server'
+    if (-not (Test-Path $context.FullDockerEnvFile)) {
+        if (Test-Path $context.DefaultEnvFile) {
+            # 优先复用开发环境中的真实密钥和端口配置，再修正为容器内可访问的地址。
+            Write-Step '根据 .env 初始化 .env.server'
+            Copy-Item $context.DefaultEnvFile $context.FullDockerEnvFile -Force
+        } else {
+            Ensure-EnvFile -TargetPath $context.FullDockerEnvFile `
+                -TemplatePath $context.FullDockerEnvExampleFile `
+                -Description '.env.server'
+        }
     }
 
     $backendPort = Get-DotEnvValue -Path $context.FullDockerEnvFile -Name 'BACKEND_PORT' -DefaultValue '8080'
-    Set-DotEnvValues -Path $context.FullDockerEnvFile -Values @{
+    $normalizedValues = @{
         PLATFORM_BACKEND_INTERNAL_BASE_URL = "http://backend:$backendPort"
         PLATFORM_INTERNAL_ALLOW_LOCAL_BYPASS = 'false'
         VITE_API_BASE_URL = ''
         VITE_API_PORT = $backendPort
     }
+
+    # 补齐全量 Docker 独有的数据目录配置，避免 .env.server 直接从 .env 复制后回落到
+    # docker-compose.server.yml 里的 Linux 服务器默认路径，导致 Windows / Docker Desktop
+    # 下挂载到 /data/... 时出现权限问题。
+    $fullDockerDefaults = @{
+        POSTGRES_DATA_DIR = './.data/postgres'
+        REDIS_DATA_DIR = './.data/redis'
+        MINIO_DATA_DIR = './.data/minio'
+        HERMES_PORT = '18080'
+        HERMES_DATA_DIR = './.data/hermes'
+        HINDSIGHT_PORT = '18888'
+        HINDSIGHT_CONSOLE_PORT = '19999'
+        PLATFORM_SCAN_HOST_PATH = './.data/scans'
+    }
+
+    foreach ($entry in $fullDockerDefaults.GetEnumerator()) {
+        $currentValue = Get-DotEnvValue -Path $context.FullDockerEnvFile -Name $entry.Key -DefaultValue ''
+        if ([string]::IsNullOrWhiteSpace($currentValue)) {
+            $normalizedValues[$entry.Key] = $entry.Value
+        }
+    }
+
+    Set-DotEnvValues -Path $context.FullDockerEnvFile -Values $normalizedValues
 
     Write-Success "已准备全量 Docker 环境文件：$($context.FullDockerEnvFile)"
 }
