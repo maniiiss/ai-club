@@ -3,6 +3,8 @@ package com.aiclub.platform.service;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
 import com.aiclub.platform.domain.model.RepositoryScanRulesetEntity;
+import com.aiclub.platform.domain.model.AiModelConfigEntity;
+import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.dto.GitlabBranchSummary;
 import com.aiclub.platform.dto.GitlabCreateMergeRequestResult;
 import com.aiclub.platform.dto.GitlabTagCreateResult;
@@ -26,7 +28,9 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -257,7 +261,7 @@ class GitlabManagementGitlabActionsTests {
 
         var summary = gitlabManagementService.createBindingScanTask(
                 1L,
-                new com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest("", "team-default")
+                new com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest("", "team-default", null)
         );
 
         assertThat(summary.id()).isEqualTo(99L);
@@ -266,6 +270,66 @@ class GitlabManagementGitlabActionsTests {
                         && "team-default".equals(String.valueOf(request.inputPayload().get("rulesetCode")))
                         && request.inputPayload().containsKey("rulesetSnapshot")
         ));
+    }
+
+    /**
+     * 配置仓库扫描计划智能体时，应把智能体信息固化到扫描任务输入载荷中。
+     */
+    @Test
+    void shouldPersistPlanAgentIntoScanTaskPayload() {
+        ProjectGitlabBindingEntity binding = buildBinding();
+        RepositoryScanRulesetEntity ruleset = buildRuleset();
+        AgentEntity planAgent = buildRepositoryScanPlanAgent();
+        when(bindingRepository.findById(1L)).thenReturn(Optional.of(binding));
+        when(repositoryScanRulesetService.requireRulesetByCode("team-default")).thenReturn(ruleset);
+        when(repositoryScanRulesetService.buildRulesetSnapshot(ruleset)).thenReturn(Map.of(
+                "code", "team-default",
+                "name", "团队默认规则集",
+                "engineType", "SEMGREP",
+                "definitionContent", "rules:\n  - id: team.default\n"
+        ));
+        when(agentRepository.findById(6L)).thenReturn(Optional.of(planAgent));
+        when(executionTaskService.createExecutionTask(any())).thenReturn(new com.aiclub.platform.dto.ExecutionTaskSummary(
+                100L, "扫描任务", ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN, "仓库规范扫描",
+                "MANUAL", null, 11L, "演示项目", null, null, null, "PENDING",
+                null, null, 0, null, null, "等待调度", null, null,
+                "2026-04-15 10:00:00", "2026-04-15 10:00:00"
+        ));
+
+        gitlabManagementService.createBindingScanTask(
+                1L,
+                new com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest("main", "team-default", 6L)
+        );
+
+        verify(agentExecutionService).validateRepositoryScanPlanAgent(6L);
+        verify(executionTaskService).createExecutionTask(argThat(request ->
+                Long.valueOf(6L).equals(request.inputPayload().get("planAgentId"))
+                        && "扫描计划智能体".equals(String.valueOf(request.inputPayload().get("planAgentName")))
+        ));
+    }
+
+    /**
+     * 非仓库扫描计划智能体不允许绑定到扫描任务，避免后续 executable plan 输出结构失控。
+     */
+    @Test
+    void shouldRejectInvalidPlanAgentForScanTask() {
+        ProjectGitlabBindingEntity binding = buildBinding();
+        RepositoryScanRulesetEntity ruleset = buildRuleset();
+        AgentEntity invalidAgent = buildRepositoryScanPlanAgent();
+        invalidAgent.setBuiltinCode(AgentExecutionService.BUILTIN_CODE_REVIEW);
+        when(bindingRepository.findById(1L)).thenReturn(Optional.of(binding));
+        when(repositoryScanRulesetService.requireRulesetByCode("team-default")).thenReturn(ruleset);
+        when(agentRepository.findById(7L)).thenReturn(Optional.of(invalidAgent));
+        doThrow(new IllegalArgumentException("所选智能体不是可用的仓库扫描计划智能体"))
+                .when(agentExecutionService)
+                .validateRepositoryScanPlanAgent(7L);
+
+        assertThatThrownBy(() -> gitlabManagementService.createBindingScanTask(
+                1L,
+                new com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest("main", "team-default", 7L)
+        ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("所选智能体不是可用的仓库扫描计划智能体");
     }
 
     /**
@@ -301,6 +365,26 @@ class GitlabManagementGitlabActionsTests {
         entity.setEnabled(true);
         entity.setDefaultSelected(true);
         entity.setDefinitionContent("rules:\n  - id: team.default\n");
+        return entity;
+    }
+
+    /**
+     * 构造合法的仓库扫描计划智能体样例。
+     */
+    private AgentEntity buildRepositoryScanPlanAgent() {
+        AgentEntity entity = new AgentEntity();
+        entity.setId(6L);
+        entity.setName("扫描计划智能体");
+        entity.setType("规划");
+        entity.setCategory("技术设计");
+        entity.setStatus("在线");
+        entity.setEnabled(true);
+        entity.setAccessType(AgentExecutionService.ACCESS_BUILT_IN);
+        entity.setBuiltinCode(AgentExecutionService.BUILTIN_REPOSITORY_SCAN_PLAN);
+        entity.setCapability("根据扫描报告生成可执行计划");
+        AiModelConfigEntity modelConfig = new AiModelConfigEntity();
+        modelConfig.setId(3L);
+        entity.setAiModelConfig(modelConfig);
         return entity;
     }
 }

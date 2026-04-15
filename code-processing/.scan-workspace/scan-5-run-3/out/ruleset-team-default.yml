@@ -1,0 +1,33 @@
+rules:
+  - id: team.java.no-system-out
+    message: 请避免在业务代码中直接使用 System.out.println，建议改为统一日志组件。
+    severity: WARNING
+    languages: [java]
+    pattern: System.out.println(...)
+
+  - id: team.java.no-print-stack-trace
+    message: 请避免直接 printStackTrace，建议记录结构化日志并结合异常处理链路输出。
+    severity: WARNING
+    languages: [java]
+    pattern: $EX.printStackTrace(...)
+
+  - id: team.java.no-field-autowired
+    message: 请避免字段注入，建议使用构造器注入提升可测试性。
+    severity: WARNING
+    languages: [java]
+    patterns:
+      - pattern: |
+          @Autowired
+          private $TYPE $FIELD;
+
+  - id: team.ts.no-console-log
+    message: 请避免提交 console.log 调试代码，建议使用统一日志或删除调试输出。
+    severity: WARNING
+    languages: [javascript, typescript]
+    pattern: console.log(...)
+
+  - id: team.python.no-print-debug
+    message: 请避免提交 print 调试代码，建议使用 logging 或删除调试输出。
+    severity: WARNING
+    languages: [python]
+    pattern: print(...)

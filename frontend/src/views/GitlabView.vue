@@ -902,6 +902,26 @@
             }}
           </div>
         </el-form-item>
+        <el-form-item label="计划智能体">
+          <el-select v-model="scanForm.planAgentId" clearable placeholder="留空仅生成规则版计划与占位 executable plan" style="width: 100%">
+            <el-option
+              v-for="agent in scanPlanAgentOptions"
+              :key="agent.id"
+              :label="agent.name"
+              :value="agent.id"
+            />
+          </el-select>
+          <div class="form-tip">
+            {{
+              (() => {
+                if (!scanPlanAgentOptions.length) return '当前没有可用的仓库扫描计划智能体，扫描完成后只会生成规则版计划。'
+                const selected = scanPlanAgentOptions.find((item) => item.id === scanForm.planAgentId)
+                if (!selected) return '留空表示仅生成规则版计划与占位 executable plan。'
+                return `${selected.description || '使用该智能体对规则计划和扫描报告做进一步分析'} · 仅支持内置仓库扫描计划智能体`
+              })()
+            }}
+          </div>
+        </el-form-item>
       </section>
     </el-form>
     <template #footer>
@@ -1137,7 +1157,7 @@ interface BindingForm { projectId: number | null; apiBaseUrl: string; gitlabProj
 /** Tag 表单仅负责收集名称、来源分支和备注。 */
 interface TagForm { tagName: string; branchName: string; message: string }
 /** 仓库规范扫描表单。 */
-interface ScanTaskForm { branch: string; rulesetCode: string }
+interface ScanTaskForm { branch: string; rulesetCode: string; planAgentId: number | null }
 interface AutoMergeForm { name: string; executionMode: 'PROJECT_BOUND' | 'STANDALONE'; description: string; bindingId: number | null; apiBaseUrl: string; gitlabProjectRef: string; apiToken: string; sourceBranch: string; targetBranch: string; titleKeyword: string; schedulerEnabled: boolean; schedulerCron: string; enabled: boolean; autoMerge: boolean; squashOnMerge: boolean; removeSourceBranch: boolean; triggerPipelineAfterMerge: boolean; requirePipelineSuccess: boolean; reviewAgentId: number | null; aiReviewEnabled: boolean; aiReviewPrompt: string }
 
 const router = useRouter()
@@ -1146,6 +1166,7 @@ const { isMobileViewport } = useMobileViewport()
 const projectOptions = ref<ProjectItem[]>([])
 const bindingOptions = ref<ProjectGitlabBindingItem[]>([])
 const reviewAgentOptions = ref<AgentItem[]>([])
+const scanPlanAgentOptions = ref<AgentItem[]>([])
 const bindingLoading = ref(false)
 const bindingSubmitting = ref(false)
 const bindingDialogVisible = ref(false)
@@ -1171,7 +1192,7 @@ const scanDialogVisible = ref(false)
 const scanSubmitting = ref(false)
 const currentScanBinding = ref<ProjectGitlabBindingItem | null>(null)
 const scanFormRef = ref<FormInstance>()
-const scanForm = reactive<ScanTaskForm>({ branch: '', rulesetCode: '' })
+const scanForm = reactive<ScanTaskForm>({ branch: '', rulesetCode: '', planAgentId: null })
 const scanBranchOptions = ref<GitlabBranchItem[]>([])
 const scanBranchLoading = ref(false)
 const scanRulesetOptions = ref<RepositoryScanRulesetItem[]>([])
@@ -1289,6 +1310,7 @@ const loadBaseOptions = async () => {
   projectOptions.value = projects
   bindingOptions.value = bindings
   reviewAgentOptions.value = agents.filter(item => item.accessType === 'BUILT_IN' && item.builtinCode === 'CODE_REVIEW')
+  scanPlanAgentOptions.value = agents.filter(item => item.accessType === 'BUILT_IN' && item.builtinCode === 'REPOSITORY_SCAN_PLAN')
   if (!bindingForm.projectId && projectOptions.value.length > 0) bindingForm.projectId = projectOptions.value[0].id
   if (!autoMergeForm.bindingId && bindingOptions.value.length > 0) autoMergeForm.bindingId = bindingOptions.value[0].id
   if (!autoMergeForm.reviewAgentId && reviewAgentOptions.value.length > 0) autoMergeForm.reviewAgentId = reviewAgentOptions.value[0].id
@@ -1389,7 +1411,7 @@ const handleBindingDelete = async (id: number) => { try { await ElMessageBox.con
 const handleBindingTest = async (id: number) => { try { const result = await testGitlabBinding(id); ElMessage.success(`连接成功：${result.gitlabProjectPath || result.gitlabProjectRef}`); await refreshAll() } catch (error: any) { ElMessage.error(error?.response?.data?.message || '连接测试失败') } }
 const openTagCreateDialog = async (row: ProjectGitlabBindingItem) => { resetTagForm(); currentTagBinding.value = row; tagDialogVisible.value = true; await loadTagBranches() }
 const handleTagSubmit = async () => { const valid = await tagFormRef.value?.validate().catch(() => false); if (!valid || !currentTagBinding.value) return; tagSubmitting.value = true; try { const result = await createGitlabTag(currentTagBinding.value.id, { tagName: tagForm.tagName.trim(), branchName: tagForm.branchName.trim(), message: tagForm.message.trim() || undefined }); tagResult.value = result; tagDialogVisible.value = false; tagResultVisible.value = true; ElMessage.success(`Tag ${result.tagName} 已创建`) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '创建 Tag 失败') } finally { tagSubmitting.value = false } }
-const resetScanForm = () => { scanForm.branch = ''; scanForm.rulesetCode = ''; scanBranchOptions.value = []; scanFormRef.value?.clearValidate() }
+const resetScanForm = () => { scanForm.branch = ''; scanForm.rulesetCode = ''; scanForm.planAgentId = null; scanBranchOptions.value = []; scanFormRef.value?.clearValidate() }
 const loadScanRulesets = async () => {
   scanRulesetOptions.value = await listRepositoryScanRulesets()
   const defaultRuleset = scanRulesetOptions.value.find((item) => item.defaultSelected) || scanRulesetOptions.value[0]
@@ -1429,7 +1451,8 @@ const handleScanSubmit = async () => {
   try {
     const executionTask = await createGitlabBindingScanTask(currentScanBinding.value.id, {
       branch: scanForm.branch.trim(),
-      rulesetCode: scanForm.rulesetCode.trim()
+      rulesetCode: scanForm.rulesetCode.trim(),
+      planAgentId: scanForm.planAgentId
     })
     scanDialogVisible.value = false
     ElMessage.success('仓库规范扫描任务已创建')

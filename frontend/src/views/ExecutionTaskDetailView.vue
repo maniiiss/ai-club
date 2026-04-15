@@ -176,7 +176,8 @@ const timelineType = (status: string) => {
   return 'info'
 }
 
-const isMarkdownArtifact = (artifact: ExecutionArtifactItem) => artifact.artifactType === 'REPORT_MARKDOWN'
+const isMarkdownArtifact = (artifact: ExecutionArtifactItem) =>
+  ['REPORT_MARKDOWN', 'FIX_PLAN_MARKDOWN', 'FIX_SHARDS_MARKDOWN', 'EXEC_PLAN_MARKDOWN'].includes(artifact.artifactType)
 const renderArtifactMarkdown = (content?: string | null) => renderMarkdownToHtml(content || '')
 
 const handleArtifactDownload = async (artifact: ExecutionArtifactItem) => {

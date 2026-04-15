@@ -109,6 +109,7 @@ export interface GitlabUserOauthCallbackPayload {
 export interface GitlabBindingScanTaskPayload {
   branch: string
   rulesetCode: string
+  planAgentId?: number | null
 }
 
 const cleanParams = <T extends object>(params: T) =>

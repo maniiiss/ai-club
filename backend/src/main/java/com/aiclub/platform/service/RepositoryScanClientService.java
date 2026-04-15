@@ -56,12 +56,20 @@ public class RepositoryScanClientService {
         return post("/api/repo-scans/normalize", new RunKeyRequest(runKey), NormalizeResponse.class);
     }
 
+    public FixPlanResponse buildFixPlan(String runKey, String repoDisplayName) {
+        return post("/api/repo-scans/fix-plan", new FixPlanRequest(runKey, repoDisplayName), FixPlanResponse.class);
+    }
+
     public SummarizeResponse summarizeScan(String runKey, String repoDisplayName) {
         return post("/api/repo-scans/summarize", new SummarizeRequest(runKey, repoDisplayName), SummarizeResponse.class);
     }
 
     public PackageScanResponse packageScan(PackageScanRequest requestPayload) {
         return post("/api/repo-scans/package", requestPayload, PackageScanResponse.class);
+    }
+
+    public PackageScanResponse packageExecPlan(PackageScanRequest requestPayload) {
+        return post("/api/repo-scans/package-exec-plan", requestPayload, PackageScanResponse.class);
     }
 
     /**
@@ -190,6 +198,12 @@ public class RepositoryScanClientService {
     ) {
     }
 
+    private record FixPlanRequest(
+            String runKey,
+            String repoDisplayName
+    ) {
+    }
+
     public record SemgrepResponse(
             Integer scannedFileCount,
             Integer totalFindings,
@@ -208,6 +222,19 @@ public class RepositoryScanClientService {
     ) {
     }
 
+    public record FixPlanResponse(
+            String summaryText,
+            Integer totalFindings,
+            Integer autoExecutableFindingCount,
+            Integer manualReviewFindingCount,
+            Integer notAutoFixableFindingCount,
+            Integer shardCount,
+            String fixPlanMarkdown,
+            String fixShardsMarkdown,
+            String fixShardsJson
+    ) {
+    }
+
     public record SummarizeResponse(
             String reportMarkdown
     ) {
@@ -216,7 +243,11 @@ public class RepositoryScanClientService {
     public record PackageScanRequest(
             String runKey,
             Long executionTaskId,
-            Integer runNo
+            Integer runNo,
+            String execPlanMarkdown,
+            String execPlanJson,
+            String execPlanStatus,
+            String execPlanSummary
     ) {
     }
 

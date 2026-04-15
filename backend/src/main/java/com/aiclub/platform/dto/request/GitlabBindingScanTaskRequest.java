@@ -10,6 +10,11 @@ public record GitlabBindingScanTaskRequest(
         String branch,
         @jakarta.validation.constraints.NotBlank(message = "规则集不能为空")
         @Size(max = 100, message = "规则集长度不能超过 100")
-        String rulesetCode
+        String rulesetCode,
+        /**
+         * 可选的仓库扫描计划智能体。
+         * 留空时仅生成规则版计划和占位 executable plan。
+         */
+        Long planAgentId
 ) {
 }

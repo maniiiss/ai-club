@@ -243,6 +243,7 @@ public class GitlabManagementService {
             branch = hasText(binding.getDefaultTargetBranch()) ? binding.getDefaultTargetBranch().trim() : "main";
         }
         RepositoryScanRulesetEntity ruleset = resolveScanRuleset(request.rulesetCode());
+        AgentEntity planAgent = resolveRepositoryScanPlanAgent(request.planAgentId());
         CreateExecutionTaskRequest taskRequest = new CreateExecutionTaskRequest(
                 ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN,
                 binding.getProject().getId(),
@@ -250,7 +251,7 @@ public class GitlabManagementService {
                 buildScanTaskTitle(binding, branch),
                 "GITLAB_BINDING_SCAN",
                 List.of(),
-                buildScanInputPayload(binding, branch, ruleset)
+                buildScanInputPayload(binding, branch, ruleset, planAgent)
         );
         return executionTaskService.createExecutionTask(taskRequest);
     }
@@ -984,7 +985,8 @@ public class GitlabManagementService {
      */
     private java.util.Map<String, Object> buildScanInputPayload(ProjectGitlabBindingEntity binding,
                                                                 String branch,
-                                                                RepositoryScanRulesetEntity ruleset) {
+                                                                RepositoryScanRulesetEntity ruleset,
+                                                                AgentEntity planAgent) {
         LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
         payload.put("bindingId", binding.getId());
         payload.put("branch", branch);
@@ -992,7 +994,23 @@ public class GitlabManagementService {
         payload.put("rulesetSnapshot", repositoryScanRulesetService.buildRulesetSnapshot(ruleset));
         payload.put("repoPath", hasText(binding.getGitlabProjectPath()) ? binding.getGitlabProjectPath() : binding.getGitlabProjectRef());
         payload.put("projectName", binding.getProject().getName());
+        if (planAgent != null) {
+            payload.put("planAgentId", planAgent.getId());
+            payload.put("planAgentName", planAgent.getName());
+        }
         return java.util.Map.copyOf(payload);
+    }
+
+    /**
+     * 仓库扫描计划智能体为可选配置，只有内置计划智能体才允许写入扫描任务快照。
+     */
+    private AgentEntity resolveRepositoryScanPlanAgent(Long planAgentId) {
+        if (planAgentId == null) {
+            return null;
+        }
+        AgentEntity agent = requireAgent(planAgentId);
+        agentExecutionService.validateRepositoryScanPlanAgent(planAgentId);
+        return agent;
     }
 
     /**

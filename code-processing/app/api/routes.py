@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, Request
 
 from app.models import (
+    RepositoryScanFixPlanRequest,
+    RepositoryScanFixPlanResponse,
     RepositoryScanNormalizeResponse,
     RepositoryScanPackageRequest,
     RepositoryScanPackageResponse,
@@ -18,9 +20,11 @@ from app.models import (
 )
 from app.services.repository_service import build_summary
 from app.services.repository_scan_service import (
+    build_repository_scan_fix_plan,
     cleanup_repository_scan,
     normalize_repository_scan,
     package_repository_scan,
+    package_repository_scan_exec_plan,
     prepare_repository_scan,
     run_semgrep_scan,
     summarize_repository_scan,
@@ -87,6 +91,17 @@ def normalize_scan(request: Request, payload: RepositoryScanRunKeyRequest) -> Re
         raise HTTPException(status_code=400, detail=str(exception)) from exception
 
 
+@repo_scan_router.post("/fix-plan", response_model=RepositoryScanFixPlanResponse)
+def build_fix_plan(request: Request, payload: RepositoryScanFixPlanRequest) -> RepositoryScanFixPlanResponse:
+    _require_internal_service_auth(request)
+    try:
+        return build_repository_scan_fix_plan(payload)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+
+
 @repo_scan_router.post("/summarize", response_model=RepositoryScanSummarizeResponse)
 def summarize_scan(request: Request, payload: RepositoryScanSummarizeRequest) -> RepositoryScanSummarizeResponse:
     _require_internal_service_auth(request)
@@ -97,6 +112,12 @@ def summarize_scan(request: Request, payload: RepositoryScanSummarizeRequest) ->
 def package_scan(request: Request, payload: RepositoryScanPackageRequest) -> RepositoryScanPackageResponse:
     _require_internal_service_auth(request)
     return package_repository_scan(payload)
+
+
+@repo_scan_router.post("/package-exec-plan", response_model=RepositoryScanPackageResponse)
+def package_exec_plan(request: Request, payload: RepositoryScanPackageRequest) -> RepositoryScanPackageResponse:
+    _require_internal_service_auth(request)
+    return package_repository_scan_exec_plan(payload)
 
 
 @repo_scan_router.delete("/{run_key}")

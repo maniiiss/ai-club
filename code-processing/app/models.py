@@ -162,6 +162,34 @@ class RepositoryScanNormalizeResponse(BaseModel):
     lowCount: int = 0
 
 
+class RepositoryScanFixPlanRequest(BaseModel):
+    """仓库扫描修复计划生成请求。"""
+
+    runKey: str
+    repoDisplayName: str
+
+    @field_validator("runKey", "repoDisplayName", mode="before")
+    @classmethod
+    def normalize_fix_plan_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class RepositoryScanFixPlanResponse(BaseModel):
+    """仓库扫描修复计划生成结果。"""
+
+    summaryText: str = ""
+    totalFindings: int = 0
+    autoExecutableFindingCount: int = 0
+    manualReviewFindingCount: int = 0
+    notAutoFixableFindingCount: int = 0
+    shardCount: int = 0
+    fixPlanMarkdown: str = ""
+    fixShardsMarkdown: str = ""
+    fixShardsJson: str = ""
+
+
 class RepositoryScanSummarizeRequest(BaseModel):
     runKey: str
     repoDisplayName: str
@@ -182,8 +210,12 @@ class RepositoryScanPackageRequest(BaseModel):
     runKey: str
     executionTaskId: int
     runNo: int
+    execPlanMarkdown: str = ""
+    execPlanJson: str = ""
+    execPlanStatus: str = ""
+    execPlanSummary: str = ""
 
-    @field_validator("runKey", mode="before")
+    @field_validator("runKey", "execPlanMarkdown", "execPlanJson", "execPlanStatus", "execPlanSummary", mode="before")
     @classmethod
     def normalize_package_run_key(cls, value: Any) -> str:
         if value is None:

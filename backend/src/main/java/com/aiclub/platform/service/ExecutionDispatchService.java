@@ -182,6 +182,9 @@ public class ExecutionDispatchService {
             executionRun.setOutputSummary(result.outputSummary());
             executionRun.setUpdatedAt(LocalDateTime.now());
             executionRunRepository.save(executionRun);
+            if (result.canceled()) {
+                return finishCanceled(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
+            }
             return finishSuccess(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
         } catch (RepositoryScanExecutionService.RepositoryScanStepException exception) {
             if (exception.artifacts() != null) {

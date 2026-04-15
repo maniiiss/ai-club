@@ -503,7 +503,7 @@ interface AgentForm {
   status: string
   enabled: boolean
   accessType: 'BUILT_IN' | 'LLM_PROMPT' | 'HTTP_API' | 'AGENT_RUNTIME'
-  builtinCode: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | null
+  builtinCode: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | 'REPOSITORY_SCAN_PLAN' | null
   capability: string
   description: string
   aiModelConfigId: number | null
@@ -535,7 +535,8 @@ const accessTypeOptions = [
 const builtinOptions = [
   { label: '代码审查智能体', value: 'CODE_REVIEW' },
   { label: '测试建议智能体', value: 'TEST_SUGGESTION' },
-  { label: '需求拆解智能体', value: 'REQUIREMENT_BREAKDOWN' }
+  { label: '需求拆解智能体', value: 'REQUIREMENT_BREAKDOWN' },
+  { label: '仓库扫描计划智能体', value: 'REPOSITORY_SCAN_PLAN' }
 ] as const
 const runtimeTypeOptions = [
   { label: 'OpenClaw', value: 'OPENCLAW' }

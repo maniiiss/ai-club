@@ -43,6 +43,7 @@ public class AgentExecutionService {
     public static final String BUILTIN_CODE_REVIEW = "CODE_REVIEW";
     public static final String BUILTIN_TEST_SUGGESTION = "TEST_SUGGESTION";
     public static final String BUILTIN_REQUIREMENT_BREAKDOWN = "REQUIREMENT_BREAKDOWN";
+    public static final String BUILTIN_REPOSITORY_SCAN_PLAN = "REPOSITORY_SCAN_PLAN";
 
     private static final String HTTP_AUTH_NONE = "NONE";
     private static final String HTTP_AUTH_BEARER = "BEARER";
@@ -108,6 +109,13 @@ public class AgentExecutionService {
         return executeTextAgent(agent, input, variables);
     }
 
+    /**
+     * 供执行中心等编排服务读取智能体基础信息，用于步骤展示或输入快照组装。
+     */
+    public AgentEntity loadAgent(Long agentId) {
+        return requireAgent(agentId);
+    }
+
     public CodeReviewResult reviewMergeRequest(Long agentId,
                                                GitlabApiService.GitlabMergeRequest mergeRequest,
                                                GitlabApiService.GitlabMergeRequestChanges changes) {
@@ -126,6 +134,19 @@ public class AgentExecutionService {
         if (!ACCESS_BUILT_IN.equals(normalizeAccessType(agent.getAccessType()))
                 || !BUILTIN_CODE_REVIEW.equals(normalizeBuiltinCode(agent.getBuiltinCode()))) {
             throw new IllegalArgumentException("????? Code Review Agent");
+        }
+        requireAiModelConfigId(agent);
+    }
+
+    /**
+     * 校验仓库扫描计划智能体是否具备生成 executable plan 的能力。
+     */
+    public void validateRepositoryScanPlanAgent(Long agentId) {
+        AgentEntity agent = requireAgent(agentId);
+        validateEnabled(agent);
+        if (!ACCESS_BUILT_IN.equals(normalizeAccessType(agent.getAccessType()))
+                || !BUILTIN_REPOSITORY_SCAN_PLAN.equals(normalizeBuiltinCode(agent.getBuiltinCode()))) {
+            throw new IllegalArgumentException("所选智能体不是可用的仓库扫描计划智能体");
         }
         requireAiModelConfigId(agent);
     }
@@ -169,6 +190,18 @@ public class AgentExecutionService {
                     hasText(agent.getSystemPrompt()) ? agent.getSystemPrompt() : defaultRequirementBreakdownPrompt(),
                     """
                             请基于以下内容进行需求拆解，结果请使用 Markdown 格式。
+
+                            """ + defaultString(input)
+            );
+            case BUILTIN_REPOSITORY_SCAN_PLAN -> invokeModelAgent(
+                    agent,
+                    hasText(agent.getSystemPrompt()) ? agent.getSystemPrompt() : defaultRepositoryScanPlanPrompt(),
+                    """
+                            请基于以下仓库扫描上下文生成 AI 可执行计划。
+                            输出要求：
+                            1. 必须返回 JSON
+                            2. 不要输出 Markdown 代码块围栏
+                            3. shards 中只能引用输入里出现过的 shardId
 
                             """ + defaultString(input)
             );
@@ -560,7 +593,8 @@ public class AgentExecutionService {
         normalized = normalized.toUpperCase();
         if (!BUILTIN_CODE_REVIEW.equals(normalized)
                 && !BUILTIN_TEST_SUGGESTION.equals(normalized)
-                && !BUILTIN_REQUIREMENT_BREAKDOWN.equals(normalized)) {
+                && !BUILTIN_REQUIREMENT_BREAKDOWN.equals(normalized)
+                && !BUILTIN_REPOSITORY_SCAN_PLAN.equals(normalized)) {
             throw new IllegalArgumentException("?????? Agent ??");
         }
         return normalized;
@@ -622,6 +656,22 @@ public class AgentExecutionService {
                 3. ??????
                 4. ????
                 ?????????????????????
+                """;
+    }
+
+    /**
+     * 仓库扫描计划智能体默认提示词，要求直接输出结构化 JSON，便于执行中心做强校验和降级兜底。
+     */
+    private String defaultRepositoryScanPlanPrompt() {
+        return """
+                你是平台内置的仓库扫描计划智能体，负责根据扫描报告生成后续 code agent 可执行计划。
+                你必须直接返回 JSON，不要输出 Markdown 代码块或额外解释。
+                请严格遵守用户输入中给出的输出协议和字段要求。
+                通用约束：
+                1. 所有字段内容请使用中文
+                2. 不要编造输入中不存在的 shardId、路径或规则
+                3. 如果当前输入要求按分片分析，请只返回当前分片的分析结果
+                4. 如果当前输入要求返回最终 executable plan，请完整输出最终计划 JSON
                 """;
     }
 

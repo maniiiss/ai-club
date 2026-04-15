@@ -288,7 +288,8 @@ public class PlatformToolExecutor {
                 bindingId,
                 new com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest(
                         branch.isBlank() ? "" : branch.trim(),
-                        rulesetCode.isBlank() ? "" : rulesetCode.trim()
+                        rulesetCode.isBlank() ? "" : rulesetCode.trim(),
+                        null
                 )
         );
         PlatformToolCandidate candidate = new PlatformToolCandidate(
