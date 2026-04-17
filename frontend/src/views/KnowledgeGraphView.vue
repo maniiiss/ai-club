@@ -202,7 +202,7 @@ const layoutOptions: Array<{ label: string; value: LayoutMode }> = [
   { label: '网格', value: 'grid' }
 ]
 
-const nodeTypeOrder = ['PROJECT', 'ITERATION', 'REQUIREMENT', 'TASK', 'BUG', 'TEST_PLAN', 'TEST_CASE', 'USER', 'AGENT']
+const nodeTypeOrder = ['PROJECT', 'ITERATION', 'REQUIREMENT', 'TASK', 'BUG', 'TEST_PLAN', 'TEST_CASE', 'WIKI_SPACE', 'WIKI_DIRECTORY', 'WIKI_PAGE', 'USER', 'AGENT']
 
 const currentLayoutLabel = computed(() => layoutOptions.find((item) => item.value === layoutMode.value)?.label || layoutMode.value)
 
@@ -290,6 +290,9 @@ const nodeTypeLabel = (nodeType: string) => {
     BUG: '缺陷',
     TEST_PLAN: '测试计划',
     TEST_CASE: '测试用例',
+    WIKI_SPACE: 'Wiki 空间',
+    WIKI_DIRECTORY: 'Wiki 目录',
+    WIKI_PAGE: 'Wiki 页面',
     USER: '用户',
     AGENT: 'Agent'
   }
@@ -301,6 +304,9 @@ const nodeTagType = (nodeType: string) => {
   if (nodeType === 'ITERATION') return 'success'
   if (nodeType === 'REQUIREMENT') return 'warning'
   if (nodeType === 'BUG') return 'danger'
+  if (nodeType === 'WIKI_SPACE') return 'primary'
+  if (nodeType === 'WIKI_DIRECTORY') return 'warning'
+  if (nodeType === 'WIKI_PAGE') return 'warning'
   return 'info'
 }
 
@@ -313,6 +319,9 @@ const nodeColor = (nodeType: string) => {
     BUG: '#e25555',
     TEST_PLAN: '#f97316',
     TEST_CASE: '#f8b55a',
+    WIKI_SPACE: '#8b5cf6',
+    WIKI_DIRECTORY: '#d97706',
+    WIKI_PAGE: '#c0841a',
     USER: '#7c8ea3',
     AGENT: '#475569'
   }

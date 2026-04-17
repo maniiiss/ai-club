@@ -79,6 +79,12 @@ platform:
     session-prefix: ${PLATFORM_HERMES_SESSION_PREFIX:ai-club:hermes}
     max-context-messages: ${PLATFORM_HERMES_MAX_CONTEXT_MESSAGES:6}
     grounding-ttl-seconds: ${PLATFORM_HERMES_GROUNDING_TTL_SECONDS:86400}
+  hindsight:
+    base-url: ${HINDSIGHT_API_URL:http://localhost:18888}
+    api-key: ${HINDSIGHT_API_KEY:}
+    bank-prefix: ${HERMES_HINDSIGHT_BANK_ID:git-ai-club}
+    recall-budget: ${HERMES_HINDSIGHT_BUDGET:mid}
+    timeout-seconds: ${PLATFORM_HINDSIGHT_TIMEOUT_SECONDS:30}
   internal:
     allow-local-bypass: ${PLATFORM_INTERNAL_ALLOW_LOCAL_BYPASS:true}
     service-token: ${PLATFORM_INTERNAL_SERVICE_TOKEN:git-ai-club-internal-service-token}

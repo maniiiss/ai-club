@@ -9,6 +9,9 @@ import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.domain.model.TestCaseEntity;
 import com.aiclub.platform.domain.model.TestPlanEntity;
 import com.aiclub.platform.domain.model.UserEntity;
+import com.aiclub.platform.domain.model.WikiDirectoryEntity;
+import com.aiclub.platform.domain.model.WikiPageV2Entity;
+import com.aiclub.platform.domain.model.WikiSpaceEntity;
 import com.aiclub.platform.dto.KnowledgeGraphEdgeSummary;
 import com.aiclub.platform.dto.KnowledgeGraphNodeSummary;
 import com.aiclub.platform.dto.KnowledgeGraphSummary;
@@ -33,6 +36,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
@@ -50,6 +54,9 @@ public class KnowledgeGraphService {
     private static final String NODE_TEST_CASE = "TEST_CASE";
     private static final String NODE_USER = "USER";
     private static final String NODE_AGENT = "AGENT";
+    private static final String NODE_WIKI_SPACE = "WIKI_SPACE";
+    private static final String NODE_WIKI_DIRECTORY = "WIKI_DIRECTORY";
+    private static final String NODE_WIKI_PAGE = "WIKI_PAGE";
 
     private final ProjectRepository projectRepository;
     private final IterationRepository iterationRepository;
@@ -58,6 +65,7 @@ public class KnowledgeGraphService {
     private final AgentRepository agentRepository;
     private final KnowledgeGraphNodeRepository knowledgeGraphNodeRepository;
     private final KnowledgeGraphEdgeRepository knowledgeGraphEdgeRepository;
+    private final WikiSpaceService wikiSpaceService;
     private final ObjectMapper objectMapper;
 
     public KnowledgeGraphService(ProjectRepository projectRepository,
@@ -67,6 +75,7 @@ public class KnowledgeGraphService {
                                  AgentRepository agentRepository,
                                  KnowledgeGraphNodeRepository knowledgeGraphNodeRepository,
                                  KnowledgeGraphEdgeRepository knowledgeGraphEdgeRepository,
+                                 WikiSpaceService wikiSpaceService,
                                  ObjectMapper objectMapper) {
         this.projectRepository = projectRepository;
         this.iterationRepository = iterationRepository;
@@ -75,6 +84,7 @@ public class KnowledgeGraphService {
         this.agentRepository = agentRepository;
         this.knowledgeGraphNodeRepository = knowledgeGraphNodeRepository;
         this.knowledgeGraphEdgeRepository = knowledgeGraphEdgeRepository;
+        this.wikiSpaceService = wikiSpaceService;
         this.objectMapper = objectMapper;
     }
 
@@ -94,6 +104,7 @@ public class KnowledgeGraphService {
         List<TaskEntity> tasks = taskRepository.findAllByProject_IdOrderByUpdatedAtAscIdAsc(projectId);
         List<TestPlanEntity> testPlans = testPlanRepository.findAllByProject_IdOrderByUpdatedAtDescIdDesc(projectId);
         List<AgentEntity> projectAgents = agentRepository.findAllByProject_IdOrderByIdAsc(projectId);
+        WikiSpaceService.WikiProjectGraphProjection wikiProjection = wikiSpaceService.buildProjectGraphProjection(projectId);
 
         knowledgeGraphEdgeRepository.deleteAllByProjectId(projectId);
         knowledgeGraphNodeRepository.deleteAllByProjectId(projectId);
@@ -275,6 +286,100 @@ public class KnowledgeGraphService {
                 );
                 addEdge(pendingEdges, projectId, planNode, caseNode, "HAS_TEST_CASE");
             }
+        }
+
+        for (WikiSpaceEntity wikiSpace : wikiProjection.spaces()) {
+            KnowledgeGraphNodeEntity spaceNode = putNode(
+                    nodeMap,
+                    projectId,
+                    NODE_WIKI_SPACE,
+                    wikiSpace.getId(),
+                    wikiSpace.getName(),
+                    wikiSpace.getDescription(),
+                    metadataJson(Map.of(
+                            "readScope", defaultString(wikiSpace.getReadScope()),
+                            "updatedAt", stringValue(wikiSpace.getUpdatedAt())
+                    ))
+            );
+            addEdge(pendingEdges, projectId, projectNode, spaceNode, "HAS_WIKI_SPACE");
+        }
+
+        for (WikiDirectoryEntity directory : wikiProjection.directories()) {
+            KnowledgeGraphNodeEntity directoryNode = putNode(
+                    nodeMap,
+                    projectId,
+                    NODE_WIKI_DIRECTORY,
+                    directory.getId(),
+                    directory.getName(),
+                    "",
+                    metadataJson(Map.of(
+                            "slug", defaultString(directory.getSlug()),
+                            "boundProjectId", directory.getBoundProject() == null ? "" : stringValue(directory.getBoundProject().getId()),
+                            "updatedAt", stringValue(directory.getUpdatedAt())
+                    ))
+            );
+            KnowledgeGraphNodeEntity spaceNode = putNode(
+                    nodeMap,
+                    projectId,
+                    NODE_WIKI_SPACE,
+                    directory.getSpace().getId(),
+                    directory.getSpace().getName(),
+                    directory.getSpace().getDescription(),
+                    metadataJson(Map.of(
+                            "readScope", defaultString(directory.getSpace().getReadScope()),
+                            "updatedAt", stringValue(directory.getSpace().getUpdatedAt())
+                    ))
+            );
+            addEdge(pendingEdges, projectId, spaceNode, directoryNode, "HAS_WIKI_DIRECTORY");
+            if (directory.getBoundProject() != null && Objects.equals(directory.getBoundProject().getId(), projectId)) {
+                addEdge(pendingEdges, projectId, projectNode, directoryNode, "PROJECT_HAS_WIKI_DIRECTORY");
+            }
+            if (directory.getParentDirectory() != null) {
+                KnowledgeGraphNodeEntity parentDirectoryNode = putNode(
+                        nodeMap,
+                        projectId,
+                        NODE_WIKI_DIRECTORY,
+                        directory.getParentDirectory().getId(),
+                        directory.getParentDirectory().getName(),
+                        "",
+                        metadataJson(Map.of(
+                                "slug", defaultString(directory.getParentDirectory().getSlug()),
+                                "boundProjectId", directory.getParentDirectory().getBoundProject() == null ? "" : stringValue(directory.getParentDirectory().getBoundProject().getId()),
+                                "updatedAt", stringValue(directory.getParentDirectory().getUpdatedAt())
+                        ))
+                );
+                addEdge(pendingEdges, projectId, parentDirectoryNode, directoryNode, "WIKI_CHILD_OF");
+            }
+        }
+
+        for (WikiPageV2Entity wikiPage : wikiProjection.pages()) {
+            KnowledgeGraphNodeEntity pageNode = putNode(
+                    nodeMap,
+                    projectId,
+                    NODE_WIKI_PAGE,
+                    wikiPage.getId(),
+                    wikiPage.getTitle(),
+                    wikiPage.getContent(),
+                    metadataJson(Map.of(
+                            "slug", defaultString(wikiPage.getSlug()),
+                            "versionCount", wikiSpaceService.countPageVersions(wikiPage.getId()),
+                            "updatedAt", stringValue(wikiPage.getUpdatedAt())
+                    ))
+            );
+            KnowledgeGraphNodeEntity directoryNode = putNode(
+                    nodeMap,
+                    projectId,
+                    NODE_WIKI_DIRECTORY,
+                    wikiPage.getDirectory().getId(),
+                    wikiPage.getDirectory().getName(),
+                    "",
+                    metadataJson(Map.of(
+                            "slug", defaultString(wikiPage.getDirectory().getSlug()),
+                            "boundProjectId", wikiPage.getDirectory().getBoundProject() == null ? "" : stringValue(wikiPage.getDirectory().getBoundProject().getId()),
+                            "updatedAt", stringValue(wikiPage.getDirectory().getUpdatedAt())
+                    ))
+            );
+            addEdge(pendingEdges, projectId, directoryNode, pageNode, "HAS_WIKI_PAGE");
         }
 
         knowledgeGraphNodeRepository.saveAll(nodeMap.values());

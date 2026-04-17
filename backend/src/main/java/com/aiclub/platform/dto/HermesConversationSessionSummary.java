@@ -12,6 +12,8 @@ public record HermesConversationSessionSummary(
         Long taskId,
         Long iterationId,
         Long planId,
+        Long wikiSpaceId,
+        Long wikiPageId,
         String latestPreview,
         boolean archived,
         String createdAt,

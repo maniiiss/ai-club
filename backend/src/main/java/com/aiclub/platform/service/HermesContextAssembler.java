@@ -10,6 +10,9 @@ import com.aiclub.platform.dto.ProjectSummary;
 import com.aiclub.platform.dto.TaskAgentRunSummary;
 import com.aiclub.platform.dto.TaskCommentSummary;
 import com.aiclub.platform.dto.TaskSummary;
+import com.aiclub.platform.dto.WikiSpaceDetail;
+import com.aiclub.platform.dto.WikiSpacePageDetail;
+import com.aiclub.platform.dto.WikiSpacePageSummary;
 import com.aiclub.platform.dto.request.HermesChatRequest;
 import com.aiclub.platform.exception.ForbiddenException;
 import org.springframework.stereotype.Service;
@@ -28,15 +31,18 @@ public class HermesContextAssembler {
     private final NotificationService notificationService;
     private final TaskAgentRunService taskAgentRunService;
     private final HermesProperties hermesProperties;
+    private final WikiSpaceService wikiSpaceService;
 
     public HermesContextAssembler(PlatformStoreService platformStoreService,
                                   NotificationService notificationService,
                                   TaskAgentRunService taskAgentRunService,
-                                  HermesProperties hermesProperties) {
+                                  HermesProperties hermesProperties,
+                                  WikiSpaceService wikiSpaceService) {
         this.platformStoreService = platformStoreService;
         this.notificationService = notificationService;
         this.taskAgentRunService = taskAgentRunService;
         this.hermesProperties = hermesProperties;
+        this.wikiSpaceService = wikiSpaceService;
     }
 
     /**
@@ -45,6 +51,12 @@ public class HermesContextAssembler {
     public HermesConversationContext assemble(HermesChatRequest request, CurrentUserInfo currentUser) {
         String routeName = normalizeRouteName(request.routeName());
         try {
+            if (request.wikiSpaceId() != null && request.wikiPageId() != null) {
+                return buildWikiPageContext(routeName, request.wikiSpaceId(), request.wikiPageId(), currentUser);
+            }
+            if (request.wikiSpaceId() != null) {
+                return buildWikiSpaceContext(routeName, request.wikiSpaceId(), currentUser);
+            }
             if (request.taskId() != null) {
                 return buildTaskContext(routeName, request.taskId(), currentUser);
             }
@@ -90,6 +102,8 @@ public class HermesContextAssembler {
                 "dashboard",
                 null,
                 null,
+                null,
+                null,
                 resolveRoleName(currentUser),
                 references,
                 List.of("我今天最该推进什么", "哪些项目本周有延期风险", "最近有哪些需要我关注的异常"),
@@ -131,6 +145,8 @@ public class HermesContextAssembler {
         return new HermesConversationContext(
                 isProjectScene(routeName) ? routeName : "project",
                 project.id(),
+                null,
+                null,
                 null,
                 resolveRoleName(currentUser),
                 references,
@@ -178,6 +194,8 @@ public class HermesContextAssembler {
                 "tasks".equals(routeName) ? "tasks" : "task",
                 task.projectId(),
                 task.id(),
+                null,
+                null,
                 resolveRoleName(currentUser),
                 references,
                 List.of("这个任务为什么延期了", "这个任务上次讨论到哪了", "我接手这个任务应该先看什么"),
@@ -200,9 +218,92 @@ public class HermesContextAssembler {
                 "global",
                 null,
                 null,
+                null,
+                null,
                 resolveRoleName(currentUser),
                 List.of(new HermesReferenceSummary("GLOBAL", null, "全局工作台", "/dashboard")),
                 List.of("我今天最该推进什么", "帮我总结当前最值得关注的事项", "最近有哪些需要我关注的异常"),
+                context.toString()
+        );
+    }
+
+    /**
+     * Wiki 页面场景聚合当前空间、当前页面和相关页面，方便 Hermes 基于空间知识作答。
+     */
+    private HermesConversationContext buildWikiPageContext(String routeName, Long spaceId, Long wikiPageId, CurrentUserInfo currentUser) {
+        WikiSpaceDetail space = wikiSpaceService.getSpaceDetail(spaceId);
+        WikiSpacePageDetail page = wikiSpaceService.getPageDetail(spaceId, wikiPageId);
+        List<WikiSpacePageSummary> relatedPages = wikiSpaceService.relatedPages(spaceId, wikiPageId, hermesProperties.getMaxContextMessages());
+        List<HermesReferenceSummary> references = new ArrayList<>();
+        references.add(wikiSpaceReference(space.id(), space.name()));
+        references.add(wikiPageReference(page.id(), spaceId, page.title()));
+        for (WikiSpacePageSummary relatedPage : relatedPages.stream().limit(3).toList()) {
+            references.add(wikiPageReference(relatedPage.id(), spaceId, relatedPage.title()));
+        }
+        StringBuilder context = new StringBuilder();
+        context.append("## 当前场景\n")
+                .append("Wiki 空间页面\n\n")
+                .append("## 当前用户\n")
+                .append("昵称：").append(defaultDisplayName(currentUser)).append('\n')
+                .append("角色：").append(resolveRoleName(currentUser)).append("\n\n")
+                .append("## 当前空间\n")
+                .append("空间名称：").append(defaultString(space.name())).append('\n')
+                .append("读取范围：").append(defaultString(space.readScope())).append("\n\n")
+                .append("## 当前 Wiki 页面\n")
+                .append("标题：").append(defaultString(page.title())).append('\n')
+                .append("目录：").append(defaultString(page.directoryName())).append('\n')
+                .append("版本：v").append(page.currentVersionNumber()).append('\n')
+                .append("内容摘要：").append(abbreviate(page.content(), 1800)).append("\n\n")
+                .append("## 相关 Wiki 页面\n");
+        appendWikiPages(context, relatedPages);
+        return new HermesConversationContext(
+                "wiki-space-page".equals(routeName) ? routeName : "wiki-page",
+                null,
+                null,
+                spaceId,
+                wikiPageId,
+                resolveRoleName(currentUser),
+                references,
+                List.of("帮我总结当前 Wiki 页面", "这个页面和哪些知识有关", "基于 Wiki 内容下一步应该做什么"),
+                context.toString()
+        );
+    }
+
+    /**
+     * Wiki 空间场景聚合空间摘要和最近页面，方便 Hermes 从知识空间视角作答。
+     */
+    private HermesConversationContext buildWikiSpaceContext(String routeName, Long spaceId, CurrentUserInfo currentUser) {
+        WikiSpaceDetail space = wikiSpaceService.getSpaceDetail(spaceId);
+        List<WikiSpacePageSummary> recentPages = wikiSpaceService.searchPages("", spaceId, null).stream()
+                .limit(hermesProperties.getMaxContextMessages())
+                .toList();
+        List<HermesReferenceSummary> references = new ArrayList<>();
+        references.add(wikiSpaceReference(space.id(), space.name()));
+        for (WikiSpacePageSummary page : recentPages.stream().limit(3).toList()) {
+            references.add(wikiPageReference(page.id(), spaceId, page.title()));
+        }
+        StringBuilder context = new StringBuilder();
+        context.append("## 当前场景\n")
+                .append("Wiki 空间\n\n")
+                .append("## 当前用户\n")
+                .append("昵称：").append(defaultDisplayName(currentUser)).append('\n')
+                .append("角色：").append(resolveRoleName(currentUser)).append("\n\n")
+                .append("## 空间摘要\n")
+                .append("空间名称：").append(defaultString(space.name())).append('\n')
+                .append("空间说明：").append(defaultString(space.description())).append('\n')
+                .append("读取范围：").append(defaultString(space.readScope())).append('\n')
+                .append("页面数量：").append(space.pageCount()).append("\n\n")
+                .append("## 最近页面\n");
+        appendWikiPages(context, recentPages);
+        return new HermesConversationContext(
+                "wiki-space".equals(routeName) ? routeName : "wiki-space",
+                null,
+                null,
+                spaceId,
+                null,
+                resolveRoleName(currentUser),
+                references,
+                List.of("这个空间最近有哪些知识更新", "帮我梳理这个空间里的重点内容", "这个空间目前最值得关注的页面是什么"),
                 context.toString()
         );
     }
@@ -278,6 +379,20 @@ public class HermesContextAssembler {
         }
     }
 
+    private void appendWikiPages(StringBuilder builder, List<WikiSpacePageSummary> pages) {
+        if (pages == null || pages.isEmpty()) {
+            builder.append("- 暂无相关 Wiki 页面\n");
+            return;
+        }
+        for (WikiSpacePageSummary page : pages.stream().limit(hermesProperties.getMaxContextMessages()).toList()) {
+            builder.append("- ")
+                    .append(defaultString(page.title()))
+                    .append(" / 目录：").append(defaultString(page.directoryName()))
+                    .append(" / 版本：v").append(page.currentVersionNumber())
+                    .append('\n');
+        }
+    }
+
     private List<TaskSummary> trimTaskList(List<TaskSummary> tasks) {
         if (tasks == null) {
             return List.of();
@@ -309,6 +424,24 @@ public class HermesContextAssembler {
                 task.id(),
                 defaultString(task.name()),
                 "/projects/" + task.projectId() + "/iterations?openTaskId=" + task.id()
+        );
+    }
+
+    private HermesReferenceSummary wikiSpaceReference(Long spaceId, String title) {
+        return new HermesReferenceSummary(
+                "WIKI_SPACE",
+                spaceId,
+                defaultString(title),
+                "/wiki/spaces/" + spaceId
+        );
+    }
+
+    private HermesReferenceSummary wikiPageReference(Long pageId, Long spaceId, String title) {
+        return new HermesReferenceSummary(
+                "WIKI_PAGE",
+                pageId,
+                defaultString(title),
+                "/wiki/spaces/" + spaceId + "/pages/" + pageId
         );
     }
 
@@ -347,6 +480,14 @@ public class HermesContextAssembler {
         return value != null && !value.trim().isEmpty();
     }
 
+    private String abbreviate(String value, int maxLength) {
+        String normalized = defaultString(value);
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, Math.max(0, maxLength - 3)) + "...";
+    }
+
     /**
      * Hermes 需要的最小上下文载体，只保留问答真正需要的摘要信息。
      */
@@ -354,6 +495,8 @@ public class HermesContextAssembler {
             String sceneCode,
             Long projectId,
             Long taskId,
+            Long wikiSpaceId,
+            Long wikiPageId,
             String roleName,
             List<HermesReferenceSummary> references,
             List<String> suggestions,

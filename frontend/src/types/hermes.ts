@@ -17,6 +17,8 @@ export interface CreateHermesConversationSessionPayload {
   taskId?: number | null
   iterationId?: number | null
   planId?: number | null
+  wikiSpaceId?: number | null
+  wikiPageId?: number | null
 }
 
 /**
@@ -56,6 +58,8 @@ export interface HermesConversationSessionSummaryItem {
   taskId: number | null
   iterationId: number | null
   planId: number | null
+  wikiSpaceId: number | null
+  wikiPageId: number | null
   latestPreview: string
   archived: boolean
   createdAt: string | null

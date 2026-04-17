@@ -124,6 +124,11 @@
                       <el-icon><Connection /></el-icon>
                     </button>
                   </el-tooltip>
+                  <el-tooltip content="项目 Wiki" placement="top">
+                    <button class="project-action-button wiki" type="button" aria-label="打开项目 Wiki" @click="openWiki(row)">
+                      <el-icon><Document /></el-icon>
+                    </button>
+                  </el-tooltip>
                   <el-tooltip v-if="canManageProjects && row.canEdit" content="编辑" placement="top">
                     <button
                       class="project-action-button"
@@ -213,6 +218,10 @@
               <button class="project-mobile-action-button graph" type="button" @click="openKnowledgeGraph(row)">
                 <el-icon><Connection /></el-icon>
                 <span>知识图谱</span>
+              </button>
+              <button class="project-mobile-action-button wiki" type="button" @click="openWiki(row)">
+                <el-icon><Document /></el-icon>
+                <span>项目 Wiki</span>
               </button>
               <button
                 v-if="canManageProjects && row.canEdit"
@@ -389,7 +398,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Connection, Delete, EditPen, Filter, FolderOpened, Lightning, PieChart, Plus, RefreshRight, Search, Tickets, TrendCharts } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Connection, Delete, Document, EditPen, Filter, FolderOpened, Lightning, PieChart, Plus, RefreshRight, Search, Tickets, TrendCharts } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { listUserOptions } from '@/api/access'
 import ListUserDisplay from '@/components/ListUserDisplay.vue'
@@ -613,6 +622,10 @@ const openIterationBoard = (row: ProjectItem) => {
 
 const openKnowledgeGraph = (row: ProjectItem) => {
   router.push({ name: 'project-knowledge-graph', params: { projectId: row.id } })
+}
+
+const openWiki = (row: ProjectItem) => {
+  router.push({ name: 'wiki-home', query: { projectId: row.id } })
 }
 
 const openRepoDialog = async (row: ProjectItem) => {

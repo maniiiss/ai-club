@@ -18,6 +18,8 @@ public record HermesChatRequest(
         Long taskId,
         Long iterationId,
         Long planId,
+        Long wikiSpaceId,
+        Long wikiPageId,
         @Size(max = 120, message = "会话标识长度不能超过 120 个字符")
         String clientConversationId,
         /**

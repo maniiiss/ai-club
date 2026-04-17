@@ -110,6 +110,130 @@ export interface KnowledgeGraphItem {
   edges: KnowledgeGraphEdgeItem[]
 }
 
+export interface WikiSpaceItem {
+  /** 空间ID。 */
+  id: number
+  /** 空间名称。 */
+  name: string
+  /** 空间说明。 */
+  description: string
+  /** 读取范围。 */
+  readScope: 'MEMBERS_ONLY' | 'ALL_LOGGED_IN' | string
+  /** 当前用户在空间中的角色。 */
+  currentUserRole: 'ADMIN' | 'EDITOR' | 'VIEWER' | string
+  /** 目录数量。 */
+  directoryCount: number
+  /** 页面数量。 */
+  pageCount: number
+  /** 绑定项目数量。 */
+  boundProjectCount: number
+  /** 当前用户是否可管理空间。 */
+  canManage: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WikiSpaceDetailItem extends WikiSpaceItem {
+  /** 创建者名称。 */
+  creatorName: string
+}
+
+export interface WikiSpaceMemberItem {
+  /** 成员用户ID。 */
+  userId: number
+  /** 用户名。 */
+  username: string
+  /** 昵称。 */
+  nickname: string
+  /** 头像地址。 */
+  avatarUrl: string
+  /** 空间角色。 */
+  memberRole: 'ADMIN' | 'EDITOR' | 'VIEWER' | string
+}
+
+export interface WikiDirectorySummaryItem {
+  id: number
+  spaceId: number
+  parentDirectoryId: number | null
+  name: string
+  slug: string
+  content: string
+  sortOrder: number
+  boundProjectId: number | null
+  boundProjectName: string
+  createdByName: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WikiSpacePageSummaryItem {
+  id: number
+  spaceId: number
+  spaceName: string
+  directoryId: number
+  directoryName: string
+  boundProjectId: number | null
+  boundProjectName: string
+  title: string
+  slug: string
+  currentVersionNumber: number
+  syncStatus: 'PENDING' | 'SYNCED' | 'FAILED' | string
+  authorName: string
+  canEdit: boolean
+  updatedAt: string
+}
+
+export interface WikiDirectoryTreeNodeItem {
+  id: number
+  parentDirectoryId: number | null
+  name: string
+  slug: string
+  content: string
+  boundProjectId: number | null
+  boundProjectName: string
+  children: WikiDirectoryTreeNodeItem[]
+  pages: WikiSpacePageSummaryItem[]
+}
+
+export interface WikiSpacePageDetailItem {
+  id: number
+  spaceId: number
+  spaceName: string
+  directoryId: number
+  directoryName: string
+  boundProjectId: number | null
+  boundProjectName: string
+  title: string
+  slug: string
+  content: string
+  currentVersionNumber: number
+  syncStatus: 'PENDING' | 'SYNCED' | 'FAILED' | string
+  lastSyncedAt: string
+  lastSyncError: string
+  authorName: string
+  canEdit: boolean
+  relatedPages: WikiSpacePageSummaryItem[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WikiSpacePageVersionItem {
+  id: number
+  pageId: number
+  versionNumber: number
+  title: string
+  content: string
+  authorName: string
+  changeSummary: string
+  createdAt: string
+}
+
+export interface WikiSpaceSearchResultItem {
+  page: WikiSpacePageSummaryItem
+  score: number | null
+  snippet: string
+}
+
 export interface AgentItem {
   id: number
   name: string

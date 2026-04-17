@@ -64,6 +64,14 @@ public class HermesConversationSessionEntity {
     @Column(name = "plan_id")
     private Long planId;
 
+    /** 会话绑定的 Wiki 空间ID。 */
+    @Column(name = "wiki_space_id")
+    private Long wikiSpaceId;
+
+    /** 会话绑定的 Wiki 页面ID。 */
+    @Column(name = "wiki_page_id")
+    private Long wikiPageId;
+
     /** 用于列表展示的最近一条回答摘要。 */
     @Column(name = "latest_preview", nullable = false, length = 500)
     private String latestPreview = "";
@@ -253,6 +261,34 @@ public class HermesConversationSessionEntity {
      */
     public void setPlanId(Long planId) {
         this.planId = planId;
+    }
+
+    /**
+     * 获取绑定的 Wiki 空间ID。
+     */
+    public Long getWikiSpaceId() {
+        return wikiSpaceId;
+    }
+
+    /**
+     * 设置绑定的 Wiki 空间ID。
+     */
+    public void setWikiSpaceId(Long wikiSpaceId) {
+        this.wikiSpaceId = wikiSpaceId;
+    }
+
+    /**
+     * 获取绑定的 Wiki 页面ID。
+     */
+    public Long getWikiPageId() {
+        return wikiPageId;
+    }
+
+    /**
+     * 设置绑定的 Wiki 页面ID。
+     */
+    public void setWikiPageId(Long wikiPageId) {
+        this.wikiPageId = wikiPageId;
     }
 
     /**

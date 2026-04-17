@@ -42,6 +42,8 @@ public class PlatformToolRegistry {
     public static final String TOOL_TEST_PLAN_GET_DETAIL = "test_plan.get_detail";
     public static final String TOOL_TEST_PLAN_CREATE_DRAFT = "test_plan.create_draft";
     public static final String TOOL_TEST_CASE_APPEND = "test_case.append";
+    public static final String TOOL_WIKI_SPACE_SEARCH = "wiki_space.search";
+    public static final String TOOL_WIKI_PAGE_GET_DETAIL = "wiki_page.get_detail";
 
     private final PlatformToolConfigRepository platformToolConfigRepository;
     private final Map<String, PlatformToolDefinition> definitions;
@@ -186,6 +188,32 @@ public class PlatformToolRegistry {
         register(result, TOOL_TEST_CASE_APPEND, "追加测试用例", "TEST", "向测试计划追加测试用例", false, "MEDIUM", "test:manage", true,
                 schema("testPlanId", "测试计划ID", "cases", "测试用例"),
                 pendingActionOutputSchema("APPEND_TEST_CASES", "确认后向测试计划追加测试用例", "追加测试用例所需的测试计划标识与用例列表"));
+        register(result, TOOL_PROJECT_SEARCH, "搜索项目", "PROJECT", "按名称或状态搜索当前用户可见项目", true, "LOW", "project:view", false, Map.of("keyword", "项目关键词"));
+        register(result, TOOL_PROJECT_GET_DETAIL, "项目详情", "PROJECT", "读取项目摘要与成员信息", true, "LOW", "project:view", false, Map.of("projectId", "项目ID"));
+        register(result, TOOL_PROJECT_LIST_ITERATIONS, "项目迭代列表", "PROJECT", "读取项目迭代列表", true, "LOW", "project:view", false, Map.of("projectId", "项目ID"));
+        register(result, TOOL_USER_RESOLVE_PROJECT_MEMBER, "解析项目成员", "USER", "按昵称或用户名解析项目成员", true, "LOW", "project:view", false, Map.of("projectId", "项目ID", "keyword", "成员关键词"));
+        register(result, TOOL_USER_LIST_PROJECT_MEMBERS, "项目成员列表", "USER", "列出项目负责人、创建人和成员", true, "LOW", "project:view", false, Map.of("projectId", "项目ID"));
+        register(result, TOOL_WORK_ITEM_SEARCH, "搜索工作项", "WORK_ITEM", "按标题、编号或说明搜索需求/任务/缺陷", true, "LOW", "task:view", false, Map.of("keyword", "工作项关键词", "projectId", "项目ID"));
+        register(result, TOOL_WORK_ITEM_GET_DETAIL, "工作项详情", "WORK_ITEM", "读取工作项详情和评论摘要", true, "LOW", "task:view", false, Map.of("workItemId", "工作项ID"));
+        register(result, TOOL_WORK_ITEM_CREATE_DRAFT, "创建工作项草稿", "WORK_ITEM", "创建需求/任务/缺陷草稿", false, "MEDIUM", "task:manage", true, Map.of("projectId", "项目ID", "name", "标题", "content", "内容"));
+        register(result, TOOL_WORK_ITEM_ASSIGN, "指派工作项", "WORK_ITEM", "修改工作项负责人或协作人", false, "MEDIUM", "task:manage", true, Map.of("workItemId", "工作项ID", "assigneeUserId", "负责人ID"));
+        register(result, TOOL_AGENT_LIST_AVAILABLE, "可用 Agent 列表", "AGENT", "查询全局和项目可用 Agent", true, "LOW", "agent:view", false, Map.of("projectId", "项目ID"));
+        register(result, TOOL_AGENT_GET_DETAIL, "Agent 详情", "AGENT", "读取 Agent 类型、接入方式和能力", true, "LOW", "agent:view", false, Map.of("agentId", "Agent ID"));
+        register(result, TOOL_GITLAB_BINDING_SEARCH, "搜索仓库绑定", "GITLAB", "按项目名或仓库路径搜索 GitLab 绑定仓库", true, "LOW", "gitlab:view", false, Map.of("keyword", "仓库关键词"));
+        register(result, TOOL_REPO_SCAN_LIST_RULESETS, "扫描规则集列表", "GITLAB", "列出可用于仓库规范扫描的规则集", true, "LOW", "gitlab:view", false, Map.of());
+        register(result, TOOL_REPO_SCAN_START, "发起仓库扫描", "GITLAB", "基于指定绑定仓库创建仓库规范扫描任务", false, "MEDIUM", "gitlab:manage", true, Map.of("bindingId", "绑定ID", "branch", "分支", "rulesetCode", "规则集"));
+        register(result, TOOL_REPO_SCAN_SEARCH, "搜索仓库扫描", "GITLAB", "查询最近的仓库规范扫描任务", true, "LOW", "task:view", false, Map.of("bindingId", "绑定ID", "status", "任务状态"));
+        register(result, TOOL_EXECUTION_TASK_SEARCH, "搜索执行任务", "EXECUTION", "按项目、工作项、状态或场景搜索执行任务", true, "LOW", "task:view", false, Map.of("keyword", "执行任务关键词"));
+        register(result, TOOL_EXECUTION_TASK_GET_DETAIL, "执行任务详情", "EXECUTION", "读取执行任务、运行、步骤和产物", true, "LOW", "task:view", false, Map.of("executionTaskId", "执行任务ID"));
+        register(result, TOOL_EXECUTION_TASK_CREATE, "创建执行任务", "EXECUTION", "基于工作项创建执行中心任务", false, "MEDIUM", "task:execution:create", true, Map.of("workItemId", "工作项ID", "scenarioCode", "执行场景"));
+        register(result, TOOL_EXECUTION_TASK_RETRY, "重试执行任务", "EXECUTION", "重试执行中心任务", false, "MEDIUM", "task:execution:retry", true, Map.of("executionTaskId", "执行任务ID"));
+        register(result, TOOL_EXECUTION_TASK_CANCEL, "取消执行任务", "EXECUTION", "取消执行中心任务", false, "MEDIUM", "task:execution:cancel", true, Map.of("executionTaskId", "执行任务ID"));
+        register(result, TOOL_TEST_PLAN_SEARCH, "搜索测试计划", "TEST", "按项目、迭代、状态或关键词查询测试计划", true, "LOW", "test:view", false, Map.of("keyword", "测试计划关键词"));
+        register(result, TOOL_TEST_PLAN_GET_DETAIL, "测试计划详情", "TEST", "读取测试计划和测试用例", true, "LOW", "test:view", false, Map.of("testPlanId", "测试计划ID"));
+        register(result, TOOL_TEST_PLAN_CREATE_DRAFT, "创建测试计划草稿", "TEST", "创建测试计划草稿", false, "MEDIUM", "test:manage", true, Map.of("projectId", "项目ID", "iterationId", "迭代ID", "name", "名称"));
+        register(result, TOOL_TEST_CASE_APPEND, "追加测试用例", "TEST", "向测试计划追加测试用例", false, "MEDIUM", "test:manage", true, Map.of("testPlanId", "测试计划ID", "cases", "测试用例"));
+        register(result, TOOL_WIKI_SPACE_SEARCH, "搜索 Wiki", "WIKI", "按空间、项目关联和问题语义搜索 Wiki 页面", true, "LOW", "wiki:view", false, Map.of("spaceId", "空间ID", "projectId", "项目ID", "query", "搜索问题或关键词"));
+        register(result, TOOL_WIKI_PAGE_GET_DETAIL, "Wiki 页面详情", "WIKI", "读取指定空间页面标题、正文摘要和版本信息", true, "LOW", "wiki:view", false, Map.of("spaceId", "空间ID", "pageId", "Wiki 页面ID"));
         return result;
     }
 

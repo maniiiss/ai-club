@@ -12,7 +12,9 @@ public record HermesConversationRequestSnapshot(
         Long projectId,
         Long taskId,
         Long iterationId,
-        Long planId
+        Long planId,
+        Long wikiSpaceId,
+        Long wikiPageId
 ) {
     public HermesConversationRequestSnapshot {
         question = question == null ? "" : question.trim();
@@ -24,7 +26,7 @@ public record HermesConversationRequestSnapshot(
      */
     public static HermesConversationRequestSnapshot fromRequest(HermesChatRequest request) {
         if (request == null) {
-            return new HermesConversationRequestSnapshot("", "", null, null, null, null);
+            return new HermesConversationRequestSnapshot("", "", null, null, null, null, null, null);
         }
         return new HermesConversationRequestSnapshot(
                 request.question(),
@@ -32,7 +34,9 @@ public record HermesConversationRequestSnapshot(
                 request.projectId(),
                 request.taskId(),
                 request.iterationId(),
-                request.planId()
+                request.planId(),
+                request.wikiSpaceId(),
+                request.wikiPageId()
         );
     }
 
@@ -47,6 +51,8 @@ public record HermesConversationRequestSnapshot(
                 taskId,
                 iterationId,
                 planId,
+                wikiSpaceId,
+                wikiPageId,
                 clientConversationId,
                 null,
                 Boolean.FALSE

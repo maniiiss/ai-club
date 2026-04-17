@@ -12,6 +12,8 @@ public record HermesConversationContextSnapshot(
         String sceneCode,
         Long projectId,
         Long taskId,
+        Long wikiSpaceId,
+        Long wikiPageId,
         String roleName,
         List<HermesReferenceSummary> references,
         List<String> suggestions,
@@ -31,12 +33,14 @@ public record HermesConversationContextSnapshot(
      */
     public static HermesConversationContextSnapshot fromContext(HermesContextAssembler.HermesConversationContext context) {
         if (context == null) {
-            return new HermesConversationContextSnapshot("", null, null, "", List.of(), List.of(), "");
+            return new HermesConversationContextSnapshot("", null, null, null, null, "", List.of(), List.of(), "");
         }
         return new HermesConversationContextSnapshot(
                 context.sceneCode(),
                 context.projectId(),
                 context.taskId(),
+                context.wikiSpaceId(),
+                context.wikiPageId(),
                 context.roleName(),
                 context.references(),
                 context.suggestions(),
@@ -52,6 +56,8 @@ public record HermesConversationContextSnapshot(
                 sceneCode,
                 projectId,
                 taskId,
+                wikiSpaceId,
+                wikiPageId,
                 roleName,
                 references,
                 suggestions,

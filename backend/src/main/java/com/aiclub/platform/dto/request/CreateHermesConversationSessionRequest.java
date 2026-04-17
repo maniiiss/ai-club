@@ -13,6 +13,8 @@ public record CreateHermesConversationSessionRequest(
         Long projectId,
         Long taskId,
         Long iterationId,
-        Long planId
+        Long planId,
+        Long wikiSpaceId,
+        Long wikiPageId
 ) {
 }

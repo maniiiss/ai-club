@@ -20,7 +20,16 @@ import type {
   TaskCommentItem,
   TaskRequirementAiResultItem,
   TaskItem,
-  UploadedFileItem
+  UploadedFileItem,
+  WikiDirectorySummaryItem,
+  WikiDirectoryTreeNodeItem,
+  WikiSpaceDetailItem,
+  WikiSpaceItem,
+  WikiSpaceMemberItem,
+  WikiSpacePageDetailItem,
+  WikiSpacePageSummaryItem,
+  WikiSpacePageVersionItem,
+  WikiSpaceSearchResultItem
 } from '@/types/platform'
 
 export interface ProjectPayload {
@@ -128,6 +137,31 @@ export interface TestPlanPayload {
   status: string
   description: string
   cases: TestCasePayload[]
+}
+
+export interface WikiSpacePayload {
+  name: string
+  description: string
+  readScope: 'MEMBERS_ONLY' | 'ALL_LOGGED_IN'
+}
+
+export interface WikiSpaceMemberPayloadItem {
+  userId: number
+  memberRole: 'ADMIN' | 'EDITOR' | 'VIEWER'
+}
+
+export interface WikiDirectoryPayload {
+  name: string
+  content: string
+  parentDirectoryId?: number | null
+  boundProjectId?: number | null
+}
+
+export interface WikiSpacePagePayload {
+  directoryId: number
+  title: string
+  content: string
+  changeSummary?: string
 }
 
 export interface ProjectQuery {
@@ -476,6 +510,130 @@ export const getProjectKnowledgeGraph = async (projectId: number, refresh = fals
 
 export const rebuildProjectKnowledgeGraph = async (projectId: number) => {
   const { data } = await http.post<ApiResponse<KnowledgeGraphItem>>(`/api/projects/${projectId}/knowledge-graph/rebuild`)
+  return data.data
+}
+
+export const listWikiSpaces = async (query?: { keyword?: string; mineOnly?: boolean; publicOnly?: boolean; projectId?: number | null }) => {
+  const { data } = await http.get<ApiResponse<WikiSpaceItem[]>>('/api/wiki/spaces', {
+    params: cleanParams(query || {})
+  })
+  return data.data
+}
+
+export const createWikiSpace = async (payload: WikiSpacePayload) => {
+  const { data } = await http.post<ApiResponse<WikiSpaceDetailItem>>('/api/wiki/spaces', payload)
+  return data.data
+}
+
+export const getWikiSpaceDetail = async (spaceId: number) => {
+  const { data } = await http.get<ApiResponse<WikiSpaceDetailItem>>(`/api/wiki/spaces/${spaceId}`)
+  return data.data
+}
+
+export const updateWikiSpace = async (spaceId: number, payload: WikiSpacePayload) => {
+  const { data } = await http.put<ApiResponse<WikiSpaceDetailItem>>(`/api/wiki/spaces/${spaceId}`, payload)
+  return data.data
+}
+
+export const deleteWikiSpace = async (spaceId: number) => {
+  await http.delete<ApiResponse<null>>(`/api/wiki/spaces/${spaceId}`)
+}
+
+export const listWikiSpaceMembers = async (spaceId: number) => {
+  const { data } = await http.get<ApiResponse<WikiSpaceMemberItem[]>>(`/api/wiki/spaces/${spaceId}/members`)
+  return data.data
+}
+
+export const replaceWikiSpaceMembers = async (spaceId: number, members: WikiSpaceMemberPayloadItem[]) => {
+  const { data } = await http.put<ApiResponse<WikiSpaceMemberItem[]>>(`/api/wiki/spaces/${spaceId}/members`, { members })
+  return data.data
+}
+
+export const getWikiDirectoryTree = async (spaceId: number) => {
+  const { data } = await http.get<ApiResponse<WikiDirectoryTreeNodeItem[]>>(`/api/wiki/spaces/${spaceId}/directories/tree`)
+  return data.data
+}
+
+export const createWikiDirectory = async (spaceId: number, payload: WikiDirectoryPayload) => {
+  const { data } = await http.post<ApiResponse<WikiDirectorySummaryItem>>(`/api/wiki/spaces/${spaceId}/directories`, payload)
+  return data.data
+}
+
+export const updateWikiDirectory = async (spaceId: number, directoryId: number, payload: WikiDirectoryPayload) => {
+  const { data } = await http.put<ApiResponse<WikiDirectorySummaryItem>>(`/api/wiki/spaces/${spaceId}/directories/${directoryId}`, payload)
+  return data.data
+}
+
+export const deleteWikiDirectory = async (spaceId: number, directoryId: number) => {
+  await http.delete<ApiResponse<null>>(`/api/wiki/spaces/${spaceId}/directories/${directoryId}`)
+}
+
+export const getWikiSpacePage = async (spaceId: number, pageId: number) => {
+  const { data } = await http.get<ApiResponse<WikiSpacePageDetailItem>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}`)
+  return data.data
+}
+
+export const getWikiSpacePageBySlug = async (spaceId: number, slug: string) => {
+  const { data } = await http.get<ApiResponse<WikiSpacePageDetailItem>>(`/api/wiki/spaces/${spaceId}/pages/by-slug/${encodeURIComponent(slug)}`)
+  return data.data
+}
+
+export const createWikiSpacePage = async (spaceId: number, payload: WikiSpacePagePayload) => {
+  const { data } = await http.post<ApiResponse<WikiSpacePageDetailItem>>(`/api/wiki/spaces/${spaceId}/pages`, payload)
+  return data.data
+}
+
+export const updateWikiSpacePage = async (spaceId: number, pageId: number, payload: WikiSpacePagePayload) => {
+  const { data } = await http.put<ApiResponse<WikiSpacePageDetailItem>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}`, payload)
+  return data.data
+}
+
+export const deleteWikiSpacePage = async (spaceId: number, pageId: number) => {
+  await http.delete<ApiResponse<null>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}`)
+}
+
+export const listWikiSpacePageVersions = async (spaceId: number, pageId: number) => {
+  const { data } = await http.get<ApiResponse<WikiSpacePageVersionItem[]>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}/versions`)
+  return data.data
+}
+
+export const getWikiSpacePageVersion = async (spaceId: number, pageId: number, versionNumber: number) => {
+  const { data } = await http.get<ApiResponse<WikiSpacePageVersionItem>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}/versions/${versionNumber}`)
+  return data.data
+}
+
+export const restoreWikiSpacePageVersion = async (spaceId: number, pageId: number, versionNumber: number) => {
+  const { data } = await http.post<ApiResponse<WikiSpacePageDetailItem>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}/restore/${versionNumber}`)
+  return data.data
+}
+
+export const searchWikiPages = async (query?: { keyword?: string; spaceId?: number | null; projectId?: number | null }) => {
+  const { data } = await http.get<ApiResponse<WikiSpacePageSummaryItem[]>>('/api/wiki/search', {
+    params: cleanParams(query || {})
+  })
+  return data.data
+}
+
+export const semanticSearchWikiPages = async (query?: { query?: string; spaceId?: number | null; projectId?: number | null }) => {
+  const { data } = await http.get<ApiResponse<WikiSpaceSearchResultItem[]>>('/api/wiki/semantic-search', {
+    params: cleanParams(query || {})
+  })
+  return data.data
+}
+
+export const listWikiRelatedPages = async (spaceId: number, pageId: number) => {
+  const { data } = await http.get<ApiResponse<WikiSpacePageSummaryItem[]>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}/related`)
+  return data.data
+}
+
+export const uploadWikiImage = async (spaceId: number, file: File) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const { data } = await http.post<ApiResponse<UploadedFileItem>>(`/api/wiki/spaces/${spaceId}/images`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
   return data.data
 }
 

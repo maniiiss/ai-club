@@ -14,6 +14,9 @@ import com.aiclub.platform.dto.PlatformToolCandidate;
 import com.aiclub.platform.dto.PlatformToolDefinition;
 import com.aiclub.platform.dto.PlatformToolRequest;
 import com.aiclub.platform.dto.PlatformToolResult;
+import com.aiclub.platform.dto.WikiSpacePageDetail;
+import com.aiclub.platform.dto.WikiSpacePageSummary;
+import com.aiclub.platform.dto.WikiSpaceSearchResult;
 import com.aiclub.platform.exception.ForbiddenException;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.ExecutionTaskRepository;
@@ -64,6 +67,7 @@ public class PlatformToolExecutor {
     private final ExecutionWorkflowService executionWorkflowService;
     private final GitlabManagementService gitlabManagementService;
     private final RepositoryScanRulesetService repositoryScanRulesetService;
+    private final WikiSpaceService wikiSpaceService;
 
     public PlatformToolExecutor(PlatformToolRegistry platformToolRegistry,
                                 ToolExecutionAuditService toolExecutionAuditService,
@@ -78,7 +82,8 @@ public class PlatformToolExecutor {
                                 IterationRepository iterationRepository,
                                 ExecutionWorkflowService executionWorkflowService,
                                 GitlabManagementService gitlabManagementService,
-                                RepositoryScanRulesetService repositoryScanRulesetService) {
+                                RepositoryScanRulesetService repositoryScanRulesetService,
+                                WikiSpaceService wikiSpaceService) {
         this.platformToolRegistry = platformToolRegistry;
         this.toolExecutionAuditService = toolExecutionAuditService;
         this.projectDataPermissionService = projectDataPermissionService;
@@ -93,6 +98,7 @@ public class PlatformToolExecutor {
         this.executionWorkflowService = executionWorkflowService;
         this.gitlabManagementService = gitlabManagementService;
         this.repositoryScanRulesetService = repositoryScanRulesetService;
+        this.wikiSpaceService = wikiSpaceService;
     }
 
     public PlatformToolResult execute(PlatformToolRequest request) {
@@ -121,6 +127,8 @@ public class PlatformToolExecutor {
                 case PlatformToolRegistry.TOOL_EXECUTION_TASK_GET_DETAIL -> getExecutionTaskDetail(request);
                 case PlatformToolRegistry.TOOL_TEST_PLAN_SEARCH -> searchTestPlans(request);
                 case PlatformToolRegistry.TOOL_TEST_PLAN_GET_DETAIL -> getTestPlanDetail(request);
+                case PlatformToolRegistry.TOOL_WIKI_SPACE_SEARCH -> searchWikiPages(request);
+                case PlatformToolRegistry.TOOL_WIKI_PAGE_GET_DETAIL -> getWikiPageDetail(request);
                 default -> throw new IllegalArgumentException("平台工具暂不支持: " + request.toolCode());
             };
             toolExecutionAuditService.finishSuccess(audit, result);
@@ -378,6 +386,48 @@ public class PlatformToolExecutor {
         return result(request.toolCode(), "测试计划详情", "已读取测试计划 “" + testPlan.getName() + "”", List.of(testPlanCandidate(testPlan)), Map.of("testPlanId", testPlan.getId()));
     }
 
+    private PlatformToolResult searchWikiPages(PlatformToolRequest request) {
+        Long projectId = nullableLongValue(request.payload(), "projectId");
+        Long spaceId = nullableLongValue(request.payload(), "spaceId");
+        String query = stringValue(request.payload(), "query");
+        List<WikiSpaceSearchResult> semanticResults = wikiSpaceService.semanticSearchPages(query, spaceId, projectId);
+        List<PlatformToolCandidate> candidates = semanticResults.stream()
+                .map(WikiSpaceSearchResult::page)
+                .limit(8)
+                .map(this::wikiPageCandidate)
+                .toList();
+        if (candidates.isEmpty()) {
+            candidates = wikiSpaceService.searchPages(query, spaceId, projectId).stream()
+                    .limit(8)
+                    .map(this::wikiPageCandidate)
+                    .toList();
+        }
+        return result(request.toolCode(), "搜索 Wiki", "找到 " + candidates.size() + " 个相关 Wiki 页面", candidates,
+                metadata("spaceId", spaceId, "projectId", projectId, "query", defaultString(query)));
+    }
+
+    private PlatformToolResult getWikiPageDetail(PlatformToolRequest request) {
+        Long spaceId = longValue(request.payload(), "spaceId");
+        Long pageId = longValue(request.payload(), "pageId");
+        WikiSpacePageDetail page = wikiSpaceService.getPageDetail(spaceId, pageId);
+        PlatformToolCandidate candidate = new PlatformToolCandidate(
+                "WIKI_PAGE",
+                page.id(),
+                page.title(),
+                "版本：v" + page.currentVersionNumber() + " / 空间：" + defaultString(page.spaceName()),
+                "/wiki/spaces/" + spaceId + "/pages/" + page.id(),
+                Map.of(
+                        "spaceId", spaceId,
+                        "pageId", page.id(),
+                        "slug", defaultString(page.slug()),
+                        "title", defaultString(page.title()),
+                        "content", abbreviate(defaultString(page.content()), 2000)
+                ),
+                List.of()
+        );
+        return result(request.toolCode(), "Wiki 页面详情", "已读取 Wiki 页面 “" + page.title() + "”", List.of(candidate), Map.of("pageId", page.id()));
+    }
+
     private PlatformToolCandidate projectCandidate(ProjectEntity project) {
         return new PlatformToolCandidate(
                 "PROJECT",
@@ -512,6 +562,25 @@ public class PlatformToolExecutor {
                         "testPlanName", defaultString(testPlan.getName()),
                         "status", defaultString(testPlan.getStatus()),
                         "iterationId", testPlan.getIteration() == null ? "" : testPlan.getIteration().getId()
+                ),
+                List.of()
+        );
+    }
+
+    private PlatformToolCandidate wikiPageCandidate(WikiSpacePageSummary page) {
+        return new PlatformToolCandidate(
+                "WIKI_PAGE",
+                page.id(),
+                page.title(),
+                "空间：" + defaultString(page.spaceName()) + " / 版本：v" + page.currentVersionNumber(),
+                "/wiki/spaces/" + page.spaceId() + "/pages/" + page.id(),
+                Map.of(
+                        "spaceId", page.spaceId(),
+                        "pageId", page.id(),
+                        "slug", defaultString(page.slug()),
+                        "title", defaultString(page.title()),
+                        "directoryId", page.directoryId(),
+                        "boundProjectId", page.boundProjectId() == null ? "" : page.boundProjectId()
                 ),
                 List.of()
         );
@@ -683,6 +752,14 @@ public class PlatformToolExecutor {
 
     private String defaultString(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private String abbreviate(String value, int maxLength) {
+        String normalized = defaultString(value);
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, Math.max(0, maxLength - 3)) + "...";
     }
 
     private String displayName(UserEntity user) {

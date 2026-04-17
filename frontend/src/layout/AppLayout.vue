@@ -58,6 +58,73 @@
             <span v-else class="menu-short-label">{{ item.shortLabel }}</span>
           </button>
 
+          <div v-if="visibleProjectWorkspaceMenus.length && !effectiveSidebarCollapsed" class="system-menu-group">
+            <button
+              class="sidebar-menu-button"
+              :class="{ active: isProjectWorkspaceActive }"
+              type="button"
+              @click="projectWorkspaceExpanded = !projectWorkspaceExpanded"
+            >
+              <span class="menu-active-bar" aria-hidden="true"></span>
+              <el-icon class="menu-icon"><Document /></el-icon>
+              <span class="menu-label">当前项目</span>
+              <el-icon class="menu-arrow">
+                <ArrowDown v-if="projectWorkspaceExpanded" />
+                <ArrowRight v-else />
+              </el-icon>
+            </button>
+
+            <div v-show="projectWorkspaceExpanded" class="system-submenu">
+              <button
+                v-for="item in visibleProjectWorkspaceMenus"
+                :key="item.path"
+                class="system-submenu-button"
+                :class="{ active: isMenuActive(item) }"
+                type="button"
+                @click="handleNavigate(item.path)"
+              >
+                <el-icon><component :is="item.icon" /></el-icon>
+                <span>{{ item.label }}</span>
+              </button>
+            </div>
+          </div>
+
+          <el-popover
+            v-if="visibleProjectWorkspaceMenus.length && effectiveSidebarCollapsed"
+            trigger="click"
+            placement="right-start"
+            :show-arrow="false"
+            :width="220"
+            popper-class="sidebar-system-popper"
+          >
+            <template #reference>
+              <button
+                class="sidebar-menu-button compact"
+                :class="{ active: isProjectWorkspaceActive }"
+                title="当前项目"
+                type="button"
+              >
+                <span class="menu-active-bar" aria-hidden="true"></span>
+                <el-icon class="menu-icon"><Document /></el-icon>
+                <span class="menu-short-label">项目</span>
+              </button>
+            </template>
+
+            <div class="system-popover-menu">
+              <button
+                v-for="item in visibleProjectWorkspaceMenus"
+                :key="item.path"
+                class="system-popover-button"
+                :class="{ active: isMenuActive(item) }"
+                type="button"
+                @click="handleNavigate(item.path)"
+              >
+                <el-icon><component :is="item.icon" /></el-icon>
+                <span>{{ item.label }}</span>
+              </button>
+            </div>
+          </el-popover>
+
           <div v-if="visibleIntegrationMenus.length && !effectiveSidebarCollapsed" class="system-menu-group">
             <button
               class="sidebar-menu-button"
@@ -395,6 +462,8 @@
     :task-id="hermesTaskId"
     :iteration-id="hermesIterationId"
     :plan-id="hermesPlanId"
+    :wiki-space-id="hermesWikiSpaceId"
+    :wiki-page-id="hermesWikiPageId"
     :fallback-prompts="hermesQuickPrompts"
   />
 
@@ -598,6 +667,7 @@ const authStore = useAuthStore()
 const notificationStore = useNotificationStore()
 const systemMenuExpanded = ref(false)
 const integrationMenuExpanded = ref(false)
+const projectWorkspaceExpanded = ref(false)
 const isMobileViewport = ref(false)
 const mobileMoreDrawerVisible = ref(false)
 const hermesDrawerVisible = ref(false)
@@ -640,6 +710,7 @@ const feedbackRules: FormRules<typeof feedbackForm> = {
 const primaryMenuItems: MenuItem[] = [
   { path: '/dashboard', label: '首页看板', shortLabel: '首页', permission: 'dashboard:view', icon: Odometer, matchNames: ['dashboard'] },
   { path: '/projects', label: '项目管理', shortLabel: '项目', permission: 'project:view', icon: FolderOpened, matchNames: ['projects', 'project-iterations', 'project-knowledge-graph'] },
+  { path: '/wiki', label: 'Wiki 中心', shortLabel: 'Wiki', permission: 'wiki:view', icon: Document, matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page'] },
   { path: '/agents', label: '智能体管理', shortLabel: '智能体', permission: 'agent:view', icon: Connection, matchNames: ['agents'] },
   { path: '/tasks', label: '执行中心', shortLabel: '执行', permission: 'task:view', icon: Tickets, matchNames: ['tasks', 'execution-task-detail'] },
   { path: '/tests', label: '测试管理', shortLabel: '测试', permission: 'test:view', icon: Finished, matchNames: ['tests', 'test-plan-detail'] },
@@ -698,12 +769,59 @@ const hermesPlanId = computed(() => {
   const planId = Number(route.params.planId)
   return Number.isNaN(planId) || planId <= 0 ? null : planId
 })
+const hermesWikiPageId = computed(() => {
+  const wikiPageId = Number(route.params.pageId || route.query.wikiPageId)
+  return Number.isNaN(wikiPageId) || wikiPageId <= 0 ? null : wikiPageId
+})
+const hermesWikiSpaceId = computed(() => {
+  const wikiSpaceId = Number(route.params.spaceId)
+  return Number.isNaN(wikiSpaceId) || wikiSpaceId <= 0 ? null : wikiSpaceId
+})
+const currentProjectId = computed(() => {
+  const projectId = Number(route.params.projectId)
+  return Number.isNaN(projectId) || projectId <= 0 ? null : projectId
+})
+const projectWorkspaceMenus = computed<MenuItem[]>(() => {
+  if (!currentProjectId.value) {
+    return []
+  }
+  return [
+    {
+      path: `/projects/${currentProjectId.value}/iterations`,
+      label: '迭代管理',
+      shortLabel: '迭代',
+      permission: 'project:view',
+      icon: Tickets,
+      matchNames: ['project-iterations']
+    },
+    {
+      path: `/wiki?projectId=${currentProjectId.value}`,
+      label: '关联 Wiki',
+      shortLabel: 'Wiki',
+      permission: 'wiki:view',
+      icon: Document,
+      matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page']
+    },
+    {
+      path: `/projects/${currentProjectId.value}/knowledge-graph`,
+      label: '知识图谱',
+      shortLabel: '图谱',
+      permission: 'project:view',
+      icon: Connection,
+      matchNames: ['project-knowledge-graph']
+    }
+  ]
+})
+const visibleProjectWorkspaceMenus = computed(() => projectWorkspaceMenus.value.filter((item) => authStore.hasPermission(item.permission)))
 const hermesQuickPrompts = computed(() => {
   const quickPromptMap: Record<string, string[]> = {
     dashboard: ['我今天最该推进什么', '哪些项目本周有延期风险', '最近有哪些需要我关注的异常'],
     projects: ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个项目本周最值得关注的风险是什么'],
     'project-iterations': ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个任务为什么延期了'],
     'project-knowledge-graph': ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个项目本周最值得关注的风险是什么'],
+    'wiki-home': ['有哪些空间与当前项目相关', '帮我找某个项目关联的知识目录', '当前最值得看的空间是哪个'],
+    'wiki-space': ['这个空间最近有哪些知识更新', '帮我梳理这个空间里的重点内容', '这个空间目前最值得关注的页面是什么'],
+    'wiki-space-page': ['帮我总结当前 Wiki 页面', '这个页面和哪些知识有关', '基于 Wiki 内容下一步应该做什么'],
     tasks: ['最近有哪些执行任务失败了', '哪些智能体任务还在运行', '帮我总结执行中心的风险'],
     'execution-task-detail': ['这次执行失败的原因是什么', '帮我总结当前执行结果', '这次执行下一步该做什么']
   }
@@ -720,6 +838,7 @@ const mobileBottomNavItems = computed(() =>
     .filter((item): item is MenuItem => Boolean(item))
 )
 const mobileWorkspaceMoreItems = computed(() => [
+  ...visibleProjectWorkspaceMenus.value,
   ...visiblePrimaryMenus.value.filter((item) => !mobilePrimaryMenuPaths.includes(item.path)),
   ...visibleIntegrationMenus.value,
   ...visibleTrailingMenus.value
@@ -731,6 +850,7 @@ const isMobileMoreActive = computed(() =>
   || mobileSystemMoreItems.value.some((item) => isMenuActive(item))
 )
 
+const isProjectWorkspaceActive = computed(() => visibleProjectWorkspaceMenus.value.some((item) => isMenuActive(item)))
 const isIntegrationSectionActive = computed(() => visibleIntegrationMenus.value.some((item) => isMenuActive(item)))
 const isSystemSectionActive = computed(() => visibleSystemMenus.value.some((item) => isMenuActive(item)))
 
@@ -1031,14 +1151,19 @@ watch(
   [
     () => route.fullPath,
     () => effectiveSidebarCollapsed.value,
+    () => visibleProjectWorkspaceMenus.value.length,
     () => visibleIntegrationMenus.value.length,
     () => visibleSystemMenus.value.length
   ],
   () => {
     if (effectiveSidebarCollapsed.value) {
+      projectWorkspaceExpanded.value = false
       integrationMenuExpanded.value = false
       systemMenuExpanded.value = false
       return
+    }
+    if (isProjectWorkspaceActive.value) {
+      projectWorkspaceExpanded.value = true
     }
     if (isIntegrationSectionActive.value) {
       integrationMenuExpanded.value = true

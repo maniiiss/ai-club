@@ -92,6 +92,8 @@ public class HermesConversationSessionService {
             existingSession.setTaskId(request.taskId());
             existingSession.setIterationId(request.iterationId());
             existingSession.setPlanId(request.planId());
+            existingSession.setWikiSpaceId(request.wikiSpaceId());
+            existingSession.setWikiPageId(request.wikiPageId());
             HermesConversationSessionEntity updated = hermesConversationSessionRepository.save(existingSession);
             return toSummary(updated);
         }
@@ -107,6 +109,8 @@ public class HermesConversationSessionService {
         entity.setTaskId(request.taskId());
         entity.setIterationId(request.iterationId());
         entity.setPlanId(request.planId());
+        entity.setWikiSpaceId(request.wikiSpaceId());
+        entity.setWikiPageId(request.wikiPageId());
         entity.setLatestPreview("");
         entity.setLatestDisplayStateJson(writeLatestDisplayState(HermesLatestDisplayState.empty()));
         HermesConversationSessionEntity saved = hermesConversationSessionRepository.save(entity);
@@ -254,6 +258,8 @@ public class HermesConversationSessionService {
                 entity.getTaskId(),
                 entity.getIterationId(),
                 entity.getPlanId(),
+                entity.getWikiSpaceId(),
+                entity.getWikiPageId(),
                 defaultString(entity.getLatestPreview()),
                 entity.isArchived(),
                 formatTime(entity.getCreatedAt()),
@@ -275,6 +281,8 @@ public class HermesConversationSessionService {
                 entity.getTaskId(),
                 entity.getIterationId(),
                 entity.getPlanId(),
+                entity.getWikiSpaceId(),
+                entity.getWikiPageId(),
                 defaultString(entity.getLatestPreview()),
                 entity.isArchived(),
                 formatTime(entity.getCreatedAt()),

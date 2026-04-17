@@ -142,9 +142,17 @@
           </section>
 
           <section v-if="currentReferences.length" class="hermes-section">
+            <div v-if="wikiReferences.length" class="hermes-section-title">相关 Wiki 页面</div>
+            <div v-if="wikiReferences.length" class="hermes-chip-list">
+              <button v-for="reference in wikiReferences" :key="`wiki-${reference.id ?? reference.title}`" class="hermes-reference-item" type="button" @click="handleOpenReference(reference.route)">
+                <span>{{ reference.type }}</span>
+                <strong>{{ reference.title }}</strong>
+              </button>
+            </div>
+
             <div class="hermes-section-title">引用来源</div>
             <div class="hermes-chip-list">
-              <button v-for="reference in currentReferences" :key="`${reference.type}-${reference.id ?? reference.title}`" class="hermes-reference-item" type="button" @click="handleOpenReference(reference.route)">
+              <button v-for="reference in nonWikiReferences" :key="`${reference.type}-${reference.id ?? reference.title}`" class="hermes-reference-item" type="button" @click="handleOpenReference(reference.route)">
                 <span>{{ reference.type }}</span>
                 <strong>{{ reference.title }}</strong>
               </button>
@@ -188,6 +196,8 @@ interface HermesDrawerProps {
   taskId?: number | null
   iterationId?: number | null
   planId?: number | null
+  wikiSpaceId?: number | null
+  wikiPageId?: number | null
   fallbackPrompts?: string[]
 }
 
@@ -225,6 +235,8 @@ const isDebugMode = ref(false)
 const currentStreamStatus = ref<HermesStreamStatusEvent | null>(null)
 
 const displayPrompts = computed(() => currentSuggestions.value.length ? currentSuggestions.value : props.fallbackPrompts || [])
+const wikiReferences = computed(() => currentReferences.value.filter((item) => item.type === 'WIKI_PAGE'))
+const nonWikiReferences = computed(() => currentReferences.value.filter((item) => item.type !== 'WIKI_PAGE'))
 const currentStreamStatusText = computed(() => {
   const message = currentStreamStatus.value?.message || 'Hermes 正在整理回答'
   return message + '...'
@@ -724,17 +736,28 @@ function mergeSessionSummaries(base: HermesConversationSessionSummaryItem[], inc
 }
 
 function buildCreateSessionPayload(): CreateHermesConversationSessionPayload {
-  return { routeName: props.routeName, projectId: props.projectId ?? null, taskId: props.taskId ?? null, iterationId: props.iterationId ?? null, planId: props.planId ?? null }
+  return {
+    routeName: props.routeName,
+    projectId: props.projectId ?? null,
+    taskId: props.taskId ?? null,
+    iterationId: props.iterationId ?? null,
+    planId: props.planId ?? null,
+    wikiSpaceId: props.wikiSpaceId ?? null,
+    wikiPageId: props.wikiPageId ?? null
+  }
 }
 
 function emptyLatestDisplayState() {
   return { references: [], suggestions: [], actions: [], selectionCards: [], debug: null }
 }
 
-function formatSessionContext(session: Pick<HermesConversationSessionSummaryItem, 'routeName' | 'projectId' | 'taskId' | 'iterationId' | 'planId'>) {
+function formatSessionContext(session: Pick<HermesConversationSessionSummaryItem, 'routeName' | 'projectId' | 'taskId' | 'iterationId' | 'planId' | 'wikiSpaceId' | 'wikiPageId'>) {
   if (session.taskId) return `任务 #${session.taskId}`
   if (session.planId) return `测试计划 #${session.planId}`
   if (session.iterationId) return `迭代 #${session.iterationId}`
+  if (session.wikiSpaceId && session.wikiPageId) return `Wiki 页面 #${session.wikiPageId}`
+  if (session.wikiSpaceId) return `Wiki 空间 #${session.wikiSpaceId}`
+  if (session.wikiPageId) return `Wiki #${session.wikiPageId}`
   if (session.projectId) return `项目 #${session.projectId}`
   if (session.routeName === 'dashboard') return '首页看板'
   return '全局入口'

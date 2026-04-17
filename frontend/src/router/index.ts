@@ -23,6 +23,8 @@ import OperationLogView from '@/views/OperationLogView.vue'
 import IterationView from '@/views/IterationView.vue'
 import ProfileView from '@/views/ProfileView.vue'
 import GitlabOauthCallbackView from '@/views/GitlabOauthCallbackView.vue'
+import WikiHomeView from '@/views/WikiHomeView.vue'
+import WikiSpaceView from '@/views/WikiSpaceView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const KnowledgeGraphView = () => import('@/views/KnowledgeGraphView.vue')
@@ -52,6 +54,9 @@ const router = createRouter({
       children: [
         { path: 'dashboard', name: 'dashboard', component: DashboardView, meta: { title: '首页看板', permission: 'dashboard:view' } },
         { path: 'projects', name: 'projects', component: ProjectView, meta: { title: '项目管理', permission: 'project:view' } },
+        { path: 'wiki', name: 'wiki-home', component: WikiHomeView, meta: { title: 'Wiki 中心', permission: 'wiki:view' } },
+        { path: 'wiki/spaces/:spaceId', name: 'wiki-space', component: WikiSpaceView, meta: { title: 'Wiki 空间', permission: 'wiki:view' } },
+        { path: 'wiki/spaces/:spaceId/pages/:pageId', name: 'wiki-space-page', component: WikiSpaceView, meta: { title: 'Wiki 页面', permission: 'wiki:view' } },
         { path: 'projects/:projectId/iterations', name: 'project-iterations', component: IterationView, meta: { title: '迭代管理', permission: 'project:view' } },
         { path: 'projects/:projectId/knowledge-graph', name: 'project-knowledge-graph', component: KnowledgeGraphView, meta: { title: '知识图谱', permission: 'project:view' } },
         { path: 'agents', name: 'agents', component: AgentView, meta: { title: '智能体管理', permission: 'agent:view' } },

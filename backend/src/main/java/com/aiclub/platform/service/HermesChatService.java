@@ -234,6 +234,8 @@ public class HermesChatService {
                 session.getTaskId(),
                 session.getIterationId(),
                 session.getPlanId(),
+                session.getWikiSpaceId(),
+                session.getWikiPageId(),
                 session.getClientConversationId(),
                 request.selection(),
                 request.debug()
@@ -554,6 +556,8 @@ public class HermesChatService {
                 request.taskId(),
                 request.iterationId(),
                 request.planId(),
+                request.wikiSpaceId(),
+                request.wikiPageId(),
                 sanitizedConversationId,
                 request.selection(),
                 request.debug()
