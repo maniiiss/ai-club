@@ -35,6 +35,11 @@ import java.util.NoSuchElementException;
 @Transactional(readOnly = true)
 public class ModelConfigService {
 
+    public static final String MODEL_TYPE_CHAT = "CHAT";
+    public static final String MODEL_TYPE_EMBEDDING = "EMBEDDING";
+    public static final String PROVIDER_OPENAI = "OPENAI";
+    public static final String PROVIDER_ANTHROPIC = "ANTHROPIC";
+
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final Duration MODEL_REQUEST_TIMEOUT = Duration.ofSeconds(120);
 
@@ -52,15 +57,22 @@ public class ModelConfigService {
         this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     }
 
-    public PageResponse<AiModelConfigSummary> pageConfigs(int page, int size, String keyword, String provider, Boolean enabled) {
+    public PageResponse<AiModelConfigSummary> pageConfigs(int page, int size, String keyword, String provider, String modelType, Boolean enabled) {
         Pageable pageable = PageRequest.of(Math.max(page - 1, 0), Math.max(1, Math.min(size, 100)), Sort.by(Sort.Direction.ASC, "id"));
-        Page<AiModelConfigSummary> pageData = aiModelConfigRepository.findAll(buildSpecification(keyword, provider, enabled), pageable)
+        Page<AiModelConfigSummary> pageData = aiModelConfigRepository.findAll(buildSpecification(keyword, provider, modelType, enabled), pageable)
                 .map(this::toSummary);
         return PageResponse.from(pageData);
     }
 
     public List<AiModelConfigSummary> listEnabledOptions() {
-        return aiModelConfigRepository.findAllByEnabledTrueOrderByIdAsc().stream().map(this::toSummary).toList();
+        return listEnabledOptions(MODEL_TYPE_CHAT);
+    }
+
+    public List<AiModelConfigSummary> listEnabledOptions(String modelType) {
+        String normalizedModelType = hasText(modelType) ? normalizeModelType(modelType) : MODEL_TYPE_CHAT;
+        return aiModelConfigRepository.findAllByEnabledTrueAndModelTypeOrderByIdAsc(normalizedModelType).stream()
+                .map(this::toSummary)
+                .toList();
     }
 
     public AiModelConfigSummary getConfig(Long id) {
@@ -90,13 +102,13 @@ public class ModelConfigService {
         ResolvedModelConfig config = resolveModelConfig(id);
         LocalDateTime testedAt = LocalDateTime.now();
         try {
-            String content = invokeTestPrompt(config);
-            String message = hasText(content)
-                    ? "连接成功，模型已返回内容：" + abbreviate(content, 200)
-                    : "连接成功，模型接口调用正常。";
+            String message = isEmbeddingModelType(config.modelType())
+                    ? invokeEmbeddingTest(config)
+                    : invokeChatTest(config);
             return new ModelTestResult(
                     config.id(),
                     config.name(),
+                    config.modelType(),
                     config.provider(),
                     config.modelName(),
                     true,
@@ -107,6 +119,7 @@ public class ModelConfigService {
             return new ModelTestResult(
                     config.id(),
                     config.name(),
+                    config.modelType(),
                     config.provider(),
                     config.modelName(),
                     false,
@@ -121,6 +134,7 @@ public class ModelConfigService {
         return new ResolvedModelConfig(
                 entity.getId(),
                 entity.getName(),
+                entity.getModelType(),
                 entity.getProvider(),
                 entity.getApiBaseUrl(),
                 entity.getModelName(),
@@ -133,13 +147,17 @@ public class ModelConfigService {
     }
 
     public String invokePrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, Integer maxTokens) {
+        String modelType = normalizeModelType(config.modelType());
+        if (!MODEL_TYPE_CHAT.equals(modelType)) {
+            throw new IllegalArgumentException("Embedding 模型不支持文本生成调用，请选择对话模型");
+        }
         String provider = normalizeProvider(config.provider());
         int safeMaxTokens = maxTokens == null ? 2048 : Math.max(64, Math.min(maxTokens, 8192));
         try {
-            if ("OPENAI".equals(provider)) {
+            if (PROVIDER_OPENAI.equals(provider)) {
                 return invokeOpenAiPrompt(config, systemPrompt, userPrompt, safeMaxTokens);
             }
-            if ("ANTHROPIC".equals(provider)) {
+            if (PROVIDER_ANTHROPIC.equals(provider)) {
                 return invokeAnthropicPrompt(config, systemPrompt, userPrompt, safeMaxTokens);
             }
             throw new IllegalArgumentException("仅支持 OPENAI 和 ANTHROPIC");
@@ -153,9 +171,13 @@ public class ModelConfigService {
     }
 
     private void fillEntity(AiModelConfigEntity entity, AiModelConfigRequest request, boolean createMode) {
+        String modelType = normalizeModelType(request.modelType());
+        String provider = normalizeProvider(request.provider());
+        validateProviderForModelType(provider, modelType);
         entity.setName(request.name().trim());
-        entity.setProvider(normalizeProvider(request.provider()));
-        entity.setApiBaseUrl(resolveApiBaseUrl(request.provider(), request.apiBaseUrl()));
+        entity.setModelType(modelType);
+        entity.setProvider(provider);
+        entity.setApiBaseUrl(resolveApiBaseUrl(provider, modelType, request.apiBaseUrl()));
         entity.setModelName(request.modelName().trim());
         entity.setDescription(request.description() == null ? "" : request.description().trim());
         entity.setEnabled(request.enabled() == null || request.enabled());
@@ -169,7 +191,7 @@ public class ModelConfigService {
         }
     }
 
-    private Specification<AiModelConfigEntity> buildSpecification(String keyword, String provider, Boolean enabled) {
+    private Specification<AiModelConfigEntity> buildSpecification(String keyword, String provider, String modelType, Boolean enabled) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (hasText(keyword)) {
@@ -183,6 +205,9 @@ public class ModelConfigService {
             if (hasText(provider)) {
                 predicates.add(cb.equal(root.get("provider"), normalizeProvider(provider)));
             }
+            if (hasText(modelType)) {
+                predicates.add(cb.equal(root.get("modelType"), normalizeModelType(modelType)));
+            }
             if (enabled != null) {
                 predicates.add(cb.equal(root.get("enabled"), enabled));
             }
@@ -194,6 +219,7 @@ public class ModelConfigService {
         return new AiModelConfigSummary(
                 entity.getId(),
                 entity.getName(),
+                normalizeModelType(entity.getModelType()),
                 entity.getProvider(),
                 entity.getApiBaseUrl(),
                 entity.getModelName(),
@@ -203,16 +229,46 @@ public class ModelConfigService {
         );
     }
 
-    private String invokeTestPrompt(ResolvedModelConfig config) {
+    private String invokeChatTest(ResolvedModelConfig config) {
+        String content = invokeChatTestPrompt(config);
+        return hasText(content)
+                ? "连接成功，模型已返回内容：" + abbreviate(content, 200)
+                : "连接成功，模型接口调用正常。";
+    }
+
+    private String invokeEmbeddingTest(ResolvedModelConfig config) {
+        int vectorDimension = invokeEmbeddingVectorDimension(config);
+        return "连接成功，已生成 " + vectorDimension + " 维向量。";
+    }
+
+    private String invokeChatTestPrompt(ResolvedModelConfig config) {
         String provider = normalizeProvider(config.provider());
         try {
-            if ("OPENAI".equals(provider)) {
+            if (PROVIDER_OPENAI.equals(provider)) {
                 return invokeOpenAi(config);
             }
-            if ("ANTHROPIC".equals(provider)) {
+            if (PROVIDER_ANTHROPIC.equals(provider)) {
                 return invokeAnthropic(config);
             }
             throw new IllegalArgumentException("仅支持 OPENAI 和 ANTHROPIC");
+        } catch (IllegalArgumentException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IllegalStateException("模型测试失败：" + limitMessage(exception.getMessage()), exception);
+        }
+    }
+
+    private int invokeEmbeddingVectorDimension(ResolvedModelConfig config) {
+        String modelType = normalizeModelType(config.modelType());
+        String provider = normalizeProvider(config.provider());
+        validateProviderForModelType(provider, modelType);
+        if (!PROVIDER_OPENAI.equals(provider)) {
+            throw new IllegalArgumentException("Embedding 模型仅支持 OPENAI 兼容提供商");
+        }
+        try {
+            return invokeOpenAiEmbedding(config);
         } catch (IllegalArgumentException exception) {
             throw exception;
         } catch (RuntimeException exception) {
@@ -237,6 +293,19 @@ public class ModelConfigService {
             return invokeOpenAiChatCompletions(baseUrl, config);
         }
         throw new IllegalStateException("OpenAI 接口调用失败：" + extractHttpError(response));
+    }
+
+    private int invokeOpenAiEmbedding(ResolvedModelConfig config) throws IOException, InterruptedException {
+        String baseUrl = trimSlash(config.apiBaseUrl());
+        JsonNode payload = objectMapper.createObjectNode()
+                .put("model", config.modelName())
+                .put("input", "Embedding health check");
+
+        HttpResponse<String> response = sendJsonPost(baseUrl + "/embeddings", config.apiKey(), payload);
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("OpenAI Embeddings 调用失败：" + extractHttpError(response));
+        }
+        return extractOpenAiEmbeddingDimension(objectMapper.readTree(response.body()));
     }
 
     private String invokeOpenAiPrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, int maxTokens) throws IOException, InterruptedException {
@@ -382,6 +451,17 @@ public class ModelConfigService {
         return body.toString();
     }
 
+    private int extractOpenAiEmbeddingDimension(JsonNode body) {
+        JsonNode data = body.path("data");
+        if (data.isArray() && !data.isEmpty()) {
+            JsonNode embedding = data.get(0).path("embedding");
+            if (embedding.isArray() && !embedding.isEmpty()) {
+                return embedding.size();
+            }
+        }
+        throw new IllegalStateException("Embedding 接口未返回有效向量");
+    }
+
     private HttpResponse<String> sendJsonPost(String url, String apiKey, JsonNode payload) throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -428,19 +508,37 @@ public class ModelConfigService {
                 .orElseThrow(() -> new NoSuchElementException("模型配置不存在: " + id));
     }
 
+    private String normalizeModelType(String modelType) {
+        if (!hasText(modelType)) {
+            return MODEL_TYPE_CHAT;
+        }
+        String value = modelType.trim().toUpperCase();
+        if (!MODEL_TYPE_CHAT.equals(value) && !MODEL_TYPE_EMBEDDING.equals(value)) {
+            throw new IllegalArgumentException("模型类型仅支持 CHAT 和 EMBEDDING");
+        }
+        return value;
+    }
+
     private String normalizeProvider(String provider) {
         String value = provider == null ? "" : provider.trim().toUpperCase();
-        if (!"OPENAI".equals(value) && !"ANTHROPIC".equals(value)) {
+        if (!PROVIDER_OPENAI.equals(value) && !PROVIDER_ANTHROPIC.equals(value)) {
             throw new IllegalArgumentException("仅支持 OPENAI 和 ANTHROPIC");
         }
         return value;
     }
 
-    private String resolveApiBaseUrl(String provider, String apiBaseUrl) {
+    private void validateProviderForModelType(String provider, String modelType) {
+        if (MODEL_TYPE_EMBEDDING.equals(modelType) && !PROVIDER_OPENAI.equals(provider)) {
+            throw new IllegalArgumentException("Embedding 模型仅支持 OPENAI 兼容提供商");
+        }
+    }
+
+    private String resolveApiBaseUrl(String provider, String modelType, String apiBaseUrl) {
         if (hasText(apiBaseUrl)) {
             return trimSlash(apiBaseUrl.trim());
         }
-        return "ANTHROPIC".equals(normalizeProvider(provider))
+        return PROVIDER_ANTHROPIC.equals(normalizeProvider(provider))
+                && MODEL_TYPE_CHAT.equals(normalizeModelType(modelType))
                 ? "https://api.anthropic.com/v1"
                 : "https://api.openai.com/v1";
     }
@@ -487,6 +585,13 @@ public class ModelConfigService {
         return value != null && !value.trim().isEmpty();
     }
 
-    public record ResolvedModelConfig(Long id, String name, String provider, String apiBaseUrl, String modelName, String apiKey) {
+    private boolean isEmbeddingModelType(String modelType) {
+        return MODEL_TYPE_EMBEDDING.equals(normalizeModelType(modelType));
+    }
+
+    /**
+     * 下游统一使用该载荷读取模型连接信息，modelType 用于保护文本生成链路不误用 Embedding 模型。
+     */
+    public record ResolvedModelConfig(Long id, String name, String modelType, String provider, String apiBaseUrl, String modelName, String apiKey) {
     }
 }

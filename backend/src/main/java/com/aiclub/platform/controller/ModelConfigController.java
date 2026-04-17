@@ -37,14 +37,15 @@ public class ModelConfigController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String provider,
+            @RequestParam(required = false) String modelType,
             @RequestParam(required = false) Boolean enabled
     ) {
-        return ApiResponse.success(modelConfigService.pageConfigs(page, size, keyword, provider, enabled));
+        return ApiResponse.success(modelConfigService.pageConfigs(page, size, keyword, provider, modelType, enabled));
     }
 
     @GetMapping("/options")
-    public ApiResponse<List<AiModelConfigSummary>> options() {
-        return ApiResponse.success(modelConfigService.listEnabledOptions());
+    public ApiResponse<List<AiModelConfigSummary>> options(@RequestParam(required = false) String modelType) {
+        return ApiResponse.success(modelConfigService.listEnabledOptions(modelType));
     }
 
     @GetMapping("/{id}")

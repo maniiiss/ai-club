@@ -304,13 +304,19 @@ public class TaskRequirementAiService {
 
     private AiModelConfigEntity resolveModelConfig(Long modelConfigId) {
         if (modelConfigId != null) {
-            return aiModelConfigRepository.findById(modelConfigId)
-                    .filter(AiModelConfigEntity::getEnabled)
+            AiModelConfigEntity modelConfig = aiModelConfigRepository.findById(modelConfigId)
                     .orElseThrow(() -> new NoSuchElementException("模型配置不存在或未启用: " + modelConfigId));
+            if (!Boolean.TRUE.equals(modelConfig.getEnabled())) {
+                throw new NoSuchElementException("模型配置不存在或未启用: " + modelConfigId);
+            }
+            if (!isChatModelConfig(modelConfig)) {
+                throw new IllegalArgumentException("需求 AI 助手仅支持对话模型配置");
+            }
+            return modelConfig;
         }
-        return aiModelConfigRepository.findAllByEnabledTrueOrderByIdAsc().stream()
+        return aiModelConfigRepository.findAllByEnabledTrueAndModelTypeOrderByIdAsc(ModelConfigService.MODEL_TYPE_CHAT).stream()
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("没有可用的已启用模型配置"));
+                .orElseThrow(() -> new IllegalArgumentException("没有可用的已启用对话模型配置"));
     }
 
     private String normalizeAction(String action) {
@@ -455,6 +461,13 @@ public class TaskRequirementAiService {
                 userPrompt,
                 maxTokens
         );
+    }
+
+    /**
+     * 需求 AI 目前只支持文本生成链路，这里显式过滤掉 Embedding 模型，避免默认取值误入。
+     */
+    private boolean isChatModelConfig(AiModelConfigEntity modelConfig) {
+        return ModelConfigService.MODEL_TYPE_CHAT.equalsIgnoreCase(defaultString(modelConfig.getModelType()));
     }
 
     private String cleanMarkdownOutput(String raw) {

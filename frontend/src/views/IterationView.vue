@@ -838,22 +838,15 @@
 
             <div class="work-item-field-block work-item-field-schedule">
               <div class="work-item-editor-label">计划时间</div>
-              <div class="work-item-inline-pair schedule">
+              <div class="work-item-inline-pair single">
                 <el-form-item class="work-item-form-item-plain">
                   <el-date-picker
-                    v-model="workItemForm.planStartDate"
-                    type="date"
+                    v-model="workItemPlanDateRange"
+                    type="daterange"
                     value-format="YYYY-MM-DD"
-                    placeholder="开始日期"
-                    style="width: 100%"
-                  />
-                </el-form-item>
-                <el-form-item class="work-item-form-item-plain">
-                  <el-date-picker
-                    v-model="workItemForm.planEndDate"
-                    type="date"
-                    value-format="YYYY-MM-DD"
-                    placeholder="结束日期"
+                    start-placeholder="开始日期"
+                    end-placeholder="结束日期"
+                    range-separator="至"
                     style="width: 100%"
                   />
                 </el-form-item>
@@ -1351,6 +1344,26 @@ const normalizeWorkItemWorkHoursInput = () => {
 
 const workItemStatusDisplay = computed(() => currentDialogWorkItem.value ? formatTaskStatusLabel(currentDialogWorkItem.value) : workItemForm.status || '草稿')
 const workItemStatusTone = computed(() => workItemTone(workItemForm.status))
+/**
+ * 工作项编辑器改成一个时间范围选择器，但提交时仍沿用后端既有的开始/结束日期字段。
+ */
+const workItemPlanDateRange = computed<[string, string] | []>({
+  get() {
+    return workItemForm.planStartDate && workItemForm.planEndDate
+      ? [workItemForm.planStartDate, workItemForm.planEndDate]
+      : []
+  },
+  set(value) {
+    if (!value || value.length !== 2) {
+      workItemForm.planStartDate = null
+      workItemForm.planEndDate = null
+      return
+    }
+    const [planStartDate, planEndDate] = value
+    workItemForm.planStartDate = planStartDate || null
+    workItemForm.planEndDate = planEndDate || null
+  }
+})
 // 让编辑器直接撑满抽屉剩余空间，避免底部删除信息区后出现视觉留白。
 // 工作项抽屉中的 Markdown 编辑器不再拉满剩余空间，避免顶部出现大片空白。
 const workItemEditorHeight = computed(() => 'clamp(460px, 58vh, 720px)')

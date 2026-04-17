@@ -865,7 +865,7 @@ public class PlatformStoreService {
         String accessType = normalizeAgentAccessType(request.accessType());
         entity.setAccessType(accessType);
         entity.setBuiltinCode(accessType.equals(AgentExecutionService.ACCESS_BUILT_IN) ? trimToNull(request.builtinCode()) : null);
-        entity.setAiModelConfig(request.aiModelConfigId() == null ? null : requireAiModelConfig(request.aiModelConfigId()));
+        entity.setAiModelConfig(request.aiModelConfigId() == null ? null : requireChatModelConfig(request.aiModelConfigId()));
         entity.setSystemPrompt(trimToNull(request.systemPrompt()));
         entity.setUserPromptTemplate(accessType.equals(AgentExecutionService.ACCESS_LLM_PROMPT) ? trimToNull(request.userPromptTemplate()) : null);
 
@@ -939,7 +939,7 @@ public class PlatformStoreService {
         entity.setAccessType(accessType);
         entity.setBuiltinCode(AgentExecutionService.ACCESS_BUILT_IN.equals(accessType) ? trimToNull(request.builtinCode()) : null);
         entity.setAiModelConfig((AgentExecutionService.ACCESS_BUILT_IN.equals(accessType) || AgentExecutionService.ACCESS_LLM_PROMPT.equals(accessType))
-                && request.aiModelConfigId() != null ? requireAiModelConfig(request.aiModelConfigId()) : null);
+                && request.aiModelConfigId() != null ? requireChatModelConfig(request.aiModelConfigId()) : null);
         entity.setSystemPrompt(trimToNull(request.systemPrompt()));
         entity.setUserPromptTemplate((AgentExecutionService.ACCESS_LLM_PROMPT.equals(accessType) || AgentExecutionService.ACCESS_AGENT_RUNTIME.equals(accessType))
                 ? trimToNull(request.userPromptTemplate()) : null);
@@ -1199,9 +1199,16 @@ public class PlatformStoreService {
         return agent;
     }
 
-    private AiModelConfigEntity requireAiModelConfig(Long id) {
-        return aiModelConfigRepository.findById(id)
+    /**
+     * Agent 文本生成链路只允许绑定对话模型，避免 Embedding 模型被误用到执行阶段。
+     */
+    private AiModelConfigEntity requireChatModelConfig(Long id) {
+        AiModelConfigEntity modelConfig = aiModelConfigRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("模型配置不存在: " + id));
+        if (!ModelConfigService.MODEL_TYPE_CHAT.equalsIgnoreCase(defaultString(modelConfig.getModelType()).trim())) {
+            throw new IllegalArgumentException("当前 Agent 仅支持绑定对话模型配置");
+        }
+        return modelConfig;
     }
 
     private UserEntity requireUser(Long id) {

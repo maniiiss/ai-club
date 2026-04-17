@@ -9,4 +9,6 @@ import java.util.List;
 public interface AiModelConfigRepository extends JpaRepository<AiModelConfigEntity, Long>, JpaSpecificationExecutor<AiModelConfigEntity> {
 
     List<AiModelConfigEntity> findAllByEnabledTrueOrderByIdAsc();
+
+    List<AiModelConfigEntity> findAllByEnabledTrueAndModelTypeOrderByIdAsc(String modelType);
 }

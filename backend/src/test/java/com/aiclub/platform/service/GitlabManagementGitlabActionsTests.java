@@ -8,6 +8,7 @@ import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.dto.GitlabBranchSummary;
 import com.aiclub.platform.dto.GitlabCreateMergeRequestResult;
 import com.aiclub.platform.dto.GitlabTagCreateResult;
+import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
 import com.aiclub.platform.dto.request.GitlabCreateMergeRequestRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
 import com.aiclub.platform.repository.AgentRepository;
@@ -330,6 +331,46 @@ class GitlabManagementGitlabActionsTests {
         ))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("所选智能体不是可用的仓库扫描计划智能体");
+    }
+
+    /**
+     * GitLab AI Review 绑定模型时必须是对话模型，避免 Embedding 模型误入评审链路。
+     */
+    @Test
+    void shouldRejectEmbeddingModelForGitlabAiReview() {
+        AiModelConfigEntity embeddingModel = new AiModelConfigEntity();
+        embeddingModel.setId(9L);
+        embeddingModel.setName("向量模型");
+        embeddingModel.setModelType(ModelConfigService.MODEL_TYPE_EMBEDDING);
+        embeddingModel.setProvider(ModelConfigService.PROVIDER_OPENAI);
+        when(aiModelConfigRepository.findById(9L)).thenReturn(Optional.of(embeddingModel));
+
+        assertThatThrownBy(() -> gitlabManagementService.createAutoMergeConfig(new GitlabAutoMergeConfigRequest(
+                "AI Review 配置",
+                "STANDALONE",
+                "验证 AI Review 模型类型限制",
+                null,
+                "http://gitlab.example.com/api/v4",
+                "group/demo-repo",
+                "gitlab-token",
+                "feature/test",
+                "main",
+                "feat:",
+                true,
+                true,
+                false,
+                true,
+                false,
+                true,
+                false,
+                null,
+                null,
+                9L,
+                true,
+                "请审查当前 MR"
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("AI Review 仅支持绑定对话模型配置");
     }
 
     /**

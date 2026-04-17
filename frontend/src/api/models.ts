@@ -1,8 +1,9 @@
 import { http } from './http'
-import type { AiModelConfigItem, ApiResponse, ModelTestResult, PageResponse } from '@/types/platform'
+import type { AiModelConfigItem, AiModelType, ApiResponse, ModelTestResult, PageResponse } from '@/types/platform'
 
 export interface AiModelConfigPayload {
   name: string
+  modelType: AiModelType
   provider: 'OPENAI' | 'ANTHROPIC'
   apiBaseUrl: string
   modelName: string
@@ -15,6 +16,7 @@ export interface AiModelConfigQuery {
   page: number
   size: number
   keyword?: string
+  modelType?: AiModelType
   provider?: 'OPENAI' | 'ANTHROPIC'
   enabled?: boolean
 }
@@ -31,8 +33,10 @@ export const pageModelConfigs = async (query: AiModelConfigQuery) => {
   return data.data
 }
 
-export const listModelConfigOptions = async () => {
-  const { data } = await http.get<ApiResponse<AiModelConfigItem[]>>('/api/model-configs/options')
+export const listModelConfigOptions = async (modelType: AiModelType | undefined = 'CHAT') => {
+  const { data } = await http.get<ApiResponse<AiModelConfigItem[]>>('/api/model-configs/options', {
+    params: cleanParams({ modelType })
+  })
   return data.data
 }
 

@@ -791,9 +791,12 @@ export interface GitlabAutoMergeLogItem {
   executedAt: string
 }
 
+export type AiModelType = 'CHAT' | 'EMBEDDING'
+
 export interface AiModelConfigItem {
   id: number
   name: string
+  modelType: AiModelType
   provider: 'OPENAI' | 'ANTHROPIC'
   apiBaseUrl: string
   modelName: string
@@ -805,6 +808,7 @@ export interface AiModelConfigItem {
 export interface ModelTestResult {
   id: number
   name: string
+  modelType: AiModelType
   provider: 'OPENAI' | 'ANTHROPIC'
   modelName: string
   success: boolean

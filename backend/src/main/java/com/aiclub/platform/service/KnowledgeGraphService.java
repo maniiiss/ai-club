@@ -339,7 +339,7 @@ public class KnowledgeGraphService {
 
     private ProjectEntity requireProject(Long projectId) {
         return projectRepository.findById(projectId)
-                .orElseThrow(() -> new NoSuchElementException("椤圭洰涓嶅瓨鍦? " + projectId));
+                .orElseThrow(() -> new NoSuchElementException("项目不存在: " + projectId));
     }
 
     private KnowledgeGraphNodeEntity userNode(Map<String, KnowledgeGraphNodeEntity> nodeMap,

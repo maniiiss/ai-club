@@ -8,7 +8,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 
-import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -98,11 +98,59 @@ public class HermesToolSchemaService {
                 definition.code(),
                 functionName(definition.code()),
                 definition.name(),
-                definition.description(),
+                buildToolDescription(definition),
                 definition.readOnly(),
                 definition.requiresConfirm(),
                 objectMapper.valueToTree(parameters)
         );
+    }
+
+    /**
+     * 统一把基础说明、入参、出参和写工具确认语义收敛到同一段描述中，方便模型一次看全。
+     */
+    private String buildToolDescription(PlatformToolDefinition definition) {
+        if (definition == null) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(defaultString(definition.description()));
+        Set<String> requiredFields = requiredFields(definition);
+        appendInputSection(builder, definition.inputSchema(), requiredFields);
+        appendFieldSection(builder, "出参", definition.outputSchema(), false, Set.of());
+        if (!definition.readOnly()) {
+            builder.append("\n\n说明：调用写工具后，平台返回待确认动作卡片，不会直接执行真实写操作。");
+        }
+        return builder.toString().trim();
+    }
+
+    private void appendInputSection(StringBuilder builder,
+                                    Map<String, String> schema,
+                                    Set<String> requiredFields) {
+        if (schema == null || schema.isEmpty()) {
+            builder.append("\n\n入参：\n- 无业务入参。");
+            return;
+        }
+        appendFieldSection(builder, "入参", schema, true, requiredFields);
+    }
+
+    private void appendFieldSection(StringBuilder builder,
+                                    String title,
+                                    Map<String, String> schema,
+                                    boolean withType,
+                                    Set<String> requiredFields) {
+        if (schema == null || schema.isEmpty()) {
+            return;
+        }
+        builder.append("\n\n").append(title).append("：");
+        for (Map.Entry<String, String> entry : schema.entrySet()) {
+            builder.append("\n- ").append(entry.getKey());
+            if (withType) {
+                builder.append(" (").append(inferJsonType(entry.getKey())).append(")");
+            }
+            if (requiredFields.contains(entry.getKey())) {
+                builder.append(" [必填]");
+            }
+            builder.append("：").append(defaultString(entry.getValue()));
+        }
     }
 
     /**
@@ -143,7 +191,10 @@ public class HermesToolSchemaService {
             return "string";
         }
         String normalized = fieldName.toLowerCase();
-        if (normalized.endsWith("id") || normalized.endsWith("ids")) {
+        if ("cases".equals(normalized) || normalized.endsWith("ids")) {
+            return "array";
+        }
+        if (normalized.endsWith("id")) {
             return "integer";
         }
         if (normalized.contains("enabled") || normalized.startsWith("is")) {
@@ -160,8 +211,23 @@ public class HermesToolSchemaService {
         if (required == null || definition == null) {
             return;
         }
+        for (String field : requiredFields(definition)) {
+            required.add(field);
+        }
+    }
+
+    private Set<String> requiredFields(PlatformToolDefinition definition) {
+        LinkedHashSet<String> required = new LinkedHashSet<>();
+        if (definition == null) {
+            return required;
+        }
         if (PlatformToolRegistry.TOOL_REPO_SCAN_START.equals(definition.code())) {
             required.add("rulesetCode");
         }
+        return required;
+    }
+
+    private String defaultString(String value) {
+        return value == null ? "" : value.trim();
     }
 }

@@ -1079,17 +1079,38 @@
     </el-table>
   </el-drawer>
 
-  <el-dialog v-model="logDetailVisible" title="合并日志详情" width="860px">
-    <el-descriptions v-if="currentLogDetail" :column="2" border>
-      <el-descriptions-item label="执行时间">{{ currentLogDetail.executedAt || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="策略">{{ currentLogDetail.configName || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="结果">
-        <el-tag :type="logResultType(currentLogDetail.result)">{{ currentLogDetail.result }}</el-tag>
-      </el-descriptions-item>
-      <el-descriptions-item label="发起人">{{ getLogInitiatorDisplay(currentLogDetail) }}</el-descriptions-item>
-      <el-descriptions-item label="原因">{{ currentLogDetail.reason || '-' }}</el-descriptions-item>
-    </el-descriptions>
-    <div v-if="currentLogDetail" class="log-detail-markdown" v-html="logDetailHtml"></div>
+  <el-dialog v-model="logDetailVisible" title="合并日志详情" width="860px" class="platform-form-dialog gitlab-log-detail-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader
+        title="合并日志详情"
+        subtitle="查看自动合并执行结果、触发信息和完整日志内容。"
+        :icon="DocumentCopy"
+      />
+    </template>
+    <div v-if="currentLogDetail" class="gitlab-log-detail-shell">
+      <section class="platform-form-section gitlab-log-detail-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">执行概览</div>
+          <div class="platform-form-section-subtitle">快速查看本次自动合并执行的时间、结果和触发上下文。</div>
+        </div>
+        <el-descriptions :column="2" border class="gitlab-log-detail-summary">
+          <el-descriptions-item label="执行时间">{{ currentLogDetail.executedAt || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="策略">{{ currentLogDetail.configName || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="结果">
+            <el-tag :type="logResultType(currentLogDetail.result)">{{ currentLogDetail.result }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="发起人">{{ getLogInitiatorDisplay(currentLogDetail) }}</el-descriptions-item>
+          <el-descriptions-item label="原因">{{ currentLogDetail.reason || '-' }}</el-descriptions-item>
+        </el-descriptions>
+      </section>
+      <section class="platform-form-section gitlab-log-detail-section gitlab-log-detail-content">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">日志内容</div>
+          <div class="platform-form-section-subtitle">完整展示 AI 审核、自动合并决策和执行细节。</div>
+        </div>
+        <div class="log-detail-markdown" v-html="logDetailHtml"></div>
+      </section>
+    </div>
   </el-dialog>
 
   <el-dialog v-model="runResultVisible" title="自动合并执行结果" width="760px">
@@ -1904,7 +1925,40 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 .filter-form { margin-bottom: 18px; flex-wrap: wrap; }
 .pagination-wrap { justify-content: flex-end; margin-top: 20px; }
 .form-tip { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.6; margin-top: 6px; }
-.log-detail-markdown { margin-top: 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 16px; background: var(--el-fill-color-blank); line-height: 1.8; }
+.gitlab-log-detail-shell {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gitlab-log-detail-section {
+  padding: 16px;
+}
+
+.gitlab-log-detail-summary {
+  margin-top: 8px;
+}
+
+.gitlab-log-detail-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.log-detail-markdown {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  margin-top: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--el-fill-color-blank);
+  line-height: 1.8;
+}
 .log-detail-markdown :deep(h1),
 .log-detail-markdown :deep(h2),
 .log-detail-markdown :deep(h3) { margin: 0 0 12px; }
@@ -1913,6 +1967,17 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 .log-detail-markdown :deep(ol) { padding-left: 20px; margin: 0 0 12px; }
 .log-detail-markdown :deep(pre) { overflow: auto; padding: 12px; border-radius: 6px; background: var(--el-fill-color-light); }
 .log-detail-markdown :deep(code) { font-family: var(--app-font-mono); }
+
+:deep(.el-dialog.gitlab-log-detail-dialog) {
+  --platform-dialog-max-height: min(75vh, calc(100vh - 48px));
+  max-height: var(--platform-dialog-max-height);
+}
+
+:deep(.gitlab-log-detail-dialog .el-dialog__body) {
+  overflow: hidden;
+  padding-top: 10px;
+  padding-bottom: 18px;
+}
 
 @media (max-width: 1100px) {
   .gitlab-page-header {

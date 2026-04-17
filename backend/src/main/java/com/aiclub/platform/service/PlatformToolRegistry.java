@@ -5,6 +5,7 @@ import com.aiclub.platform.dto.PlatformToolDefinition;
 import com.aiclub.platform.repository.PlatformToolConfigRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -105,37 +106,86 @@ public class PlatformToolRegistry {
                         definition.riskLevel(),
                         definition.permissionCode(),
                         definition.requiresConfirm(),
-                        definition.inputSchema()
+                        definition.inputSchema(),
+                        definition.outputSchema()
                 ))
                 .orElse(definition);
     }
 
     private Map<String, PlatformToolDefinition> buildDefinitions() {
         LinkedHashMap<String, PlatformToolDefinition> result = new LinkedHashMap<>();
-        register(result, TOOL_PROJECT_SEARCH, "搜索项目", "PROJECT", "按名称或状态搜索当前用户可见项目", true, "LOW", "project:view", false, Map.of("keyword", "项目关键词"));
-        register(result, TOOL_PROJECT_GET_DETAIL, "项目详情", "PROJECT", "读取项目摘要与成员信息", true, "LOW", "project:view", false, Map.of("projectId", "项目ID"));
-        register(result, TOOL_PROJECT_LIST_ITERATIONS, "项目迭代列表", "PROJECT", "读取项目迭代列表", true, "LOW", "project:view", false, Map.of("projectId", "项目ID"));
-        register(result, TOOL_USER_RESOLVE_PROJECT_MEMBER, "解析项目成员", "USER", "按昵称或用户名解析项目成员", true, "LOW", "project:view", false, Map.of("projectId", "项目ID", "keyword", "成员关键词"));
-        register(result, TOOL_USER_LIST_PROJECT_MEMBERS, "项目成员列表", "USER", "列出项目负责人、创建人和成员", true, "LOW", "project:view", false, Map.of("projectId", "项目ID"));
-        register(result, TOOL_WORK_ITEM_SEARCH, "搜索工作项", "WORK_ITEM", "按标题、编号或说明搜索需求/任务/缺陷", true, "LOW", "task:view", false, Map.of("keyword", "工作项关键词", "projectId", "项目ID"));
-        register(result, TOOL_WORK_ITEM_GET_DETAIL, "工作项详情", "WORK_ITEM", "读取工作项详情和评论摘要", true, "LOW", "task:view", false, Map.of("workItemId", "工作项ID"));
-        register(result, TOOL_WORK_ITEM_CREATE_DRAFT, "创建工作项草稿", "WORK_ITEM", "创建需求/任务/缺陷草稿", false, "MEDIUM", "task:manage", true, Map.of("projectId", "项目ID", "name", "标题", "content", "内容"));
-        register(result, TOOL_WORK_ITEM_ASSIGN, "指派工作项", "WORK_ITEM", "修改工作项负责人或协作人", false, "MEDIUM", "task:manage", true, Map.of("workItemId", "工作项ID", "assigneeUserId", "负责人ID"));
-        register(result, TOOL_AGENT_LIST_AVAILABLE, "可用 Agent 列表", "AGENT", "查询全局和项目可用 Agent", true, "LOW", "agent:view", false, Map.of("projectId", "项目ID"));
-        register(result, TOOL_AGENT_GET_DETAIL, "Agent 详情", "AGENT", "读取 Agent 类型、接入方式和能力", true, "LOW", "agent:view", false, Map.of("agentId", "Agent ID"));
-        register(result, TOOL_GITLAB_BINDING_SEARCH, "搜索仓库绑定", "GITLAB", "按项目名或仓库路径搜索 GitLab 绑定仓库", true, "LOW", "gitlab:view", false, Map.of("keyword", "仓库关键词"));
-        register(result, TOOL_REPO_SCAN_LIST_RULESETS, "扫描规则集列表", "GITLAB", "列出可用于仓库规范扫描的规则集", true, "LOW", "gitlab:view", false, Map.of());
-        register(result, TOOL_REPO_SCAN_START, "发起仓库扫描", "GITLAB", "基于指定绑定仓库创建仓库规范扫描任务", false, "MEDIUM", "gitlab:manage", true, Map.of("bindingId", "绑定ID", "branch", "分支", "rulesetCode", "规则集"));
-        register(result, TOOL_REPO_SCAN_SEARCH, "搜索仓库扫描", "GITLAB", "查询最近的仓库规范扫描任务", true, "LOW", "task:view", false, Map.of("bindingId", "绑定ID", "status", "任务状态"));
-        register(result, TOOL_EXECUTION_TASK_SEARCH, "搜索执行任务", "EXECUTION", "按项目、工作项、状态或场景搜索执行任务", true, "LOW", "task:view", false, Map.of("keyword", "执行任务关键词"));
-        register(result, TOOL_EXECUTION_TASK_GET_DETAIL, "执行任务详情", "EXECUTION", "读取执行任务、运行、步骤和产物", true, "LOW", "task:view", false, Map.of("executionTaskId", "执行任务ID"));
-        register(result, TOOL_EXECUTION_TASK_CREATE, "创建执行任务", "EXECUTION", "基于工作项创建执行中心任务", false, "MEDIUM", "task:execution:create", true, Map.of("workItemId", "工作项ID", "scenarioCode", "执行场景"));
-        register(result, TOOL_EXECUTION_TASK_RETRY, "重试执行任务", "EXECUTION", "重试执行中心任务", false, "MEDIUM", "task:execution:retry", true, Map.of("executionTaskId", "执行任务ID"));
-        register(result, TOOL_EXECUTION_TASK_CANCEL, "取消执行任务", "EXECUTION", "取消执行中心任务", false, "MEDIUM", "task:execution:cancel", true, Map.of("executionTaskId", "执行任务ID"));
-        register(result, TOOL_TEST_PLAN_SEARCH, "搜索测试计划", "TEST", "按项目、迭代、状态或关键词查询测试计划", true, "LOW", "test:view", false, Map.of("keyword", "测试计划关键词"));
-        register(result, TOOL_TEST_PLAN_GET_DETAIL, "测试计划详情", "TEST", "读取测试计划和测试用例", true, "LOW", "test:view", false, Map.of("testPlanId", "测试计划ID"));
-        register(result, TOOL_TEST_PLAN_CREATE_DRAFT, "创建测试计划草稿", "TEST", "创建测试计划草稿", false, "MEDIUM", "test:manage", true, Map.of("projectId", "项目ID", "iterationId", "迭代ID", "name", "名称"));
-        register(result, TOOL_TEST_CASE_APPEND, "追加测试用例", "TEST", "向测试计划追加测试用例", false, "MEDIUM", "test:manage", true, Map.of("testPlanId", "测试计划ID", "cases", "测试用例"));
+        register(result, TOOL_PROJECT_SEARCH, "搜索项目", "PROJECT", "按名称或状态搜索当前用户可见项目", true, "LOW", "project:view", false,
+                schema("keyword", "项目关键词"),
+                projectOutputSchema());
+        register(result, TOOL_PROJECT_GET_DETAIL, "项目详情", "PROJECT", "读取项目摘要与成员信息", true, "LOW", "project:view", false,
+                schema("projectId", "项目ID"),
+                projectOutputSchema());
+        register(result, TOOL_PROJECT_LIST_ITERATIONS, "项目迭代列表", "PROJECT", "读取项目迭代列表", true, "LOW", "project:view", false,
+                schema("projectId", "项目ID"),
+                iterationOutputSchema());
+        register(result, TOOL_USER_RESOLVE_PROJECT_MEMBER, "解析项目成员", "USER", "按昵称或用户名解析项目成员", true, "LOW", "project:view", false,
+                schema("projectId", "项目ID", "keyword", "成员关键词"),
+                projectMemberOutputSchema());
+        register(result, TOOL_USER_LIST_PROJECT_MEMBERS, "项目成员列表", "USER", "列出项目负责人、创建人和成员", true, "LOW", "project:view", false,
+                schema("projectId", "项目ID"),
+                projectMemberOutputSchema());
+        register(result, TOOL_WORK_ITEM_SEARCH, "搜索工作项", "WORK_ITEM", "按标题、编号或说明搜索需求/任务/缺陷", true, "LOW", "task:view", false,
+                schema("keyword", "工作项关键词", "projectId", "项目ID"),
+                workItemOutputSchema());
+        register(result, TOOL_WORK_ITEM_GET_DETAIL, "工作项详情", "WORK_ITEM", "读取工作项详情和评论摘要", true, "LOW", "task:view", false,
+                schema("workItemId", "工作项ID"),
+                workItemOutputSchema());
+        register(result, TOOL_WORK_ITEM_CREATE_DRAFT, "创建工作项草稿", "WORK_ITEM", "创建需求/任务/缺陷草稿", false, "MEDIUM", "task:manage", true,
+                schema("projectId", "项目ID", "name", "标题", "content", "内容"),
+                pendingActionOutputSchema("CREATE_WORK_ITEM_DRAFT", "确认后创建工作项草稿", "创建草稿所需的项目、标题、正文与负责人参数"));
+        register(result, TOOL_WORK_ITEM_ASSIGN, "指派工作项", "WORK_ITEM", "修改工作项负责人或协作人", false, "MEDIUM", "task:manage", true,
+                schema("workItemId", "工作项ID", "assigneeUserId", "负责人ID"),
+                pendingActionOutputSchema("ASSIGN_WORK_ITEM", "确认后变更工作项负责人", "变更负责人所需的工作项与成员参数"));
+        register(result, TOOL_AGENT_LIST_AVAILABLE, "可用 Agent 列表", "AGENT", "查询全局和项目可用 Agent", true, "LOW", "agent:view", false,
+                schema("projectId", "项目ID"),
+                agentOutputSchema());
+        register(result, TOOL_AGENT_GET_DETAIL, "Agent 详情", "AGENT", "读取 Agent 类型、接入方式和能力", true, "LOW", "agent:view", false,
+                schema("agentId", "Agent ID"),
+                agentOutputSchema());
+        register(result, TOOL_GITLAB_BINDING_SEARCH, "搜索仓库绑定", "GITLAB", "按项目名或仓库路径搜索 GitLab 绑定仓库", true, "LOW", "gitlab:view", false,
+                schema("keyword", "仓库关键词"),
+                gitlabBindingOutputSchema());
+        register(result, TOOL_REPO_SCAN_LIST_RULESETS, "扫描规则集列表", "GITLAB", "列出可用于仓库规范扫描的规则集", true, "LOW", "gitlab:view", false,
+                Map.of(),
+                repoScanRulesetOutputSchema());
+        register(result, TOOL_REPO_SCAN_START, "发起仓库扫描", "GITLAB", "基于指定绑定仓库创建仓库规范扫描任务", false, "MEDIUM", "gitlab:manage", true,
+                schema("bindingId", "绑定ID", "branch", "分支", "rulesetCode", "规则集"),
+                pendingActionOutputSchema("CREATE_REPOSITORY_SCAN_TASK", "确认后创建仓库规范扫描任务", "扫描提案所需的绑定仓库、规则集与分支参数"));
+        register(result, TOOL_REPO_SCAN_SEARCH, "搜索仓库扫描", "GITLAB", "查询最近的仓库规范扫描任务", true, "LOW", "task:view", false,
+                schema("bindingId", "绑定ID", "status", "任务状态"),
+                executionTaskOutputSchema());
+        register(result, TOOL_EXECUTION_TASK_SEARCH, "搜索执行任务", "EXECUTION", "按项目、工作项、状态或场景搜索执行任务", true, "LOW", "task:view", false,
+                schema("keyword", "执行任务关键词"),
+                executionTaskOutputSchema());
+        register(result, TOOL_EXECUTION_TASK_GET_DETAIL, "执行任务详情", "EXECUTION", "读取执行任务、运行、步骤和产物", true, "LOW", "task:view", false,
+                schema("executionTaskId", "执行任务ID"),
+                executionTaskOutputSchema());
+        register(result, TOOL_EXECUTION_TASK_CREATE, "创建执行任务", "EXECUTION", "基于工作项创建执行中心任务", false, "MEDIUM", "task:execution:create", true,
+                schema("workItemId", "工作项ID", "scenarioCode", "执行场景"),
+                pendingActionOutputSchema("CREATE_EXECUTION_TASK", "确认后创建执行中心任务", "执行任务提案所需的项目、工作项、场景与上下文参数"));
+        register(result, TOOL_EXECUTION_TASK_RETRY, "重试执行任务", "EXECUTION", "重试执行中心任务", false, "MEDIUM", "task:execution:retry", true,
+                schema("executionTaskId", "执行任务ID"),
+                pendingActionOutputSchema("RETRY_EXECUTION_TASK", "确认后重试执行任务", "重试动作所需的执行任务标识"));
+        register(result, TOOL_EXECUTION_TASK_CANCEL, "取消执行任务", "EXECUTION", "取消执行中心任务", false, "MEDIUM", "task:execution:cancel", true,
+                schema("executionTaskId", "执行任务ID"),
+                pendingActionOutputSchema("CANCEL_EXECUTION_TASK", "确认后取消执行任务", "取消动作所需的执行任务标识"));
+        register(result, TOOL_TEST_PLAN_SEARCH, "搜索测试计划", "TEST", "按项目、迭代、状态或关键词查询测试计划", true, "LOW", "test:view", false,
+                schema("keyword", "测试计划关键词"),
+                testPlanOutputSchema());
+        register(result, TOOL_TEST_PLAN_GET_DETAIL, "测试计划详情", "TEST", "读取测试计划和测试用例", true, "LOW", "test:view", false,
+                schema("testPlanId", "测试计划ID"),
+                testPlanOutputSchema());
+        register(result, TOOL_TEST_PLAN_CREATE_DRAFT, "创建测试计划草稿", "TEST", "创建测试计划草稿", false, "MEDIUM", "test:manage", true,
+                schema("projectId", "项目ID", "iterationId", "迭代ID", "name", "名称"),
+                pendingActionOutputSchema("CREATE_TEST_PLAN_DRAFT", "确认后创建测试计划草稿", "测试计划草稿所需的项目、迭代与名称参数"));
+        register(result, TOOL_TEST_CASE_APPEND, "追加测试用例", "TEST", "向测试计划追加测试用例", false, "MEDIUM", "test:manage", true,
+                schema("testPlanId", "测试计划ID", "cases", "测试用例"),
+                pendingActionOutputSchema("APPEND_TEST_CASES", "确认后向测试计划追加测试用例", "追加测试用例所需的测试计划标识与用例列表"));
         return result;
     }
 
@@ -148,8 +198,183 @@ public class PlatformToolRegistry {
                           String riskLevel,
                           String permissionCode,
                           boolean requiresConfirm,
-                          Map<String, String> inputSchema) {
-        result.put(code, new PlatformToolDefinition(code, name, moduleCode, description, readOnly, riskLevel, permissionCode, requiresConfirm, inputSchema));
+                          Map<String, String> inputSchema,
+                          Map<String, String> outputSchema) {
+        result.put(code, new PlatformToolDefinition(code, name, moduleCode, description, readOnly, riskLevel, permissionCode, requiresConfirm, inputSchema, outputSchema));
+    }
+
+    /**
+     * 使用保序 Map 维护工具 schema 字段顺序，便于在描述中稳定展示。
+     */
+    private Map<String, String> schema(String... keyValues) {
+        LinkedHashMap<String, String> result = new LinkedHashMap<>();
+        if (keyValues == null) {
+            return Map.of();
+        }
+        for (int index = 0; index + 1 < keyValues.length; index += 2) {
+            String key = keyValues[index];
+            String value = keyValues[index + 1];
+            if (!hasText(key) || !hasText(value)) {
+                continue;
+            }
+            result.put(key, value);
+        }
+        return result.isEmpty() ? Map.of() : Collections.unmodifiableMap(result);
+    }
+
+    private Map<String, String> projectOutputSchema() {
+        return schema(
+                "summary", "本次项目检索/读取结果摘要",
+                "candidates[]", "项目候选列表",
+                "candidates[].id", "项目ID",
+                "candidates[].title", "项目名称",
+                "candidates[].subtitle", "项目状态与负责人摘要",
+                "candidates[].route", "前端项目入口路由",
+                "candidates[].payload.projectId", "项目ID",
+                "candidates[].payload.projectName", "项目名称",
+                "candidates[].payload.status", "项目状态",
+                "candidates[].payload.owner", "项目负责人",
+                "metadata", "回显本次查询上下文"
+        );
+    }
+
+    private Map<String, String> iterationOutputSchema() {
+        return schema(
+                "summary", "本次项目迭代查询摘要",
+                "candidates[]", "迭代候选列表",
+                "candidates[].id", "迭代ID",
+                "candidates[].title", "迭代名称",
+                "candidates[].subtitle", "迭代状态与目标摘要",
+                "candidates[].route", "前端迭代入口路由",
+                "candidates[].payload.projectId", "所属项目ID",
+                "candidates[].payload.status", "迭代状态",
+                "metadata.projectId", "查询使用的项目ID"
+        );
+    }
+
+    private Map<String, String> projectMemberOutputSchema() {
+        return schema(
+                "summary", "本次项目成员查询摘要",
+                "candidates[]", "成员候选列表",
+                "candidates[].id", "用户ID",
+                "candidates[].title", "成员显示名",
+                "candidates[].subtitle", "用户名摘要",
+                "candidates[].payload.projectId", "所属项目ID",
+                "candidates[].payload.userId", "用户ID",
+                "candidates[].payload.username", "用户名",
+                "candidates[].payload.nickname", "昵称",
+                "metadata", "回显项目ID与搜索关键词"
+        );
+    }
+
+    private Map<String, String> workItemOutputSchema() {
+        return schema(
+                "summary", "本次工作项查询摘要",
+                "candidates[]", "工作项候选列表",
+                "candidates[].id", "工作项ID",
+                "candidates[].title", "工作项编号与标题",
+                "candidates[].subtitle", "工作项类型、状态与所属项目摘要",
+                "candidates[].route", "前端工作项入口路由",
+                "candidates[].payload.projectId", "所属项目ID",
+                "candidates[].payload.workItemId", "工作项ID",
+                "candidates[].payload.workItemCode", "工作项编号",
+                "candidates[].payload.workItemName", "工作项标题",
+                "candidates[].payload.workItemType", "工作项类型",
+                "candidates[].payload.status", "工作项状态",
+                "candidates[].actions[]", "可基于该工作项继续发起的建议动作",
+                "metadata", "回显查询条件"
+        );
+    }
+
+    private Map<String, String> agentOutputSchema() {
+        return schema(
+                "summary", "本次 Agent 查询摘要",
+                "candidates[]", "Agent 候选列表",
+                "candidates[].id", "Agent ID",
+                "candidates[].title", "Agent 名称",
+                "candidates[].subtitle", "Agent 类型、接入方式与状态摘要",
+                "candidates[].payload.agentId", "Agent ID",
+                "candidates[].payload.agentName", "Agent 名称",
+                "candidates[].payload.projectId", "所属项目ID，空表示全局 Agent",
+                "candidates[].payload.enabled", "是否启用",
+                "metadata.projectId", "查询使用的项目ID"
+        );
+    }
+
+    private Map<String, String> gitlabBindingOutputSchema() {
+        return schema(
+                "summary", "本次仓库绑定查询摘要",
+                "candidates[]", "绑定仓库候选列表",
+                "candidates[].id", "绑定ID",
+                "candidates[].title", "仓库路径或仓库标识",
+                "candidates[].subtitle", "所属项目与默认分支摘要",
+                "candidates[].route", "GitLab 管理入口路由",
+                "candidates[].payload.bindingId", "绑定ID",
+                "candidates[].payload.projectId", "所属项目ID",
+                "candidates[].payload.projectName", "所属项目名称",
+                "candidates[].payload.gitlabProjectPath", "GitLab 仓库路径",
+                "candidates[].payload.defaultTargetBranch", "默认目标分支",
+                "metadata", "回显查询条件"
+        );
+    }
+
+    private Map<String, String> repoScanRulesetOutputSchema() {
+        return schema(
+                "summary", "可用仓库扫描规则集摘要",
+                "candidates[]", "规则集候选列表",
+                "candidates[].title", "规则集名称",
+                "candidates[].subtitle", "规则集说明",
+                "candidates[].payload.rulesetCode", "规则集编码",
+                "candidates[].payload.rulesetName", "规则集名称",
+                "candidates[].payload.engineType", "扫描引擎类型",
+                "candidates[].payload.defaultSelected", "是否默认选中"
+        );
+    }
+
+    private Map<String, String> executionTaskOutputSchema() {
+        return schema(
+                "summary", "本次执行任务查询摘要",
+                "candidates[]", "执行任务候选列表",
+                "candidates[].id", "执行任务ID",
+                "candidates[].title", "执行任务标题",
+                "candidates[].subtitle", "执行场景与状态摘要",
+                "candidates[].route", "执行任务详情入口路由",
+                "candidates[].payload.executionTaskId", "执行任务ID",
+                "candidates[].payload.projectId", "所属项目ID",
+                "candidates[].payload.title", "执行任务标题",
+                "candidates[].payload.status", "执行任务状态",
+                "metadata", "回显查询条件"
+        );
+    }
+
+    private Map<String, String> testPlanOutputSchema() {
+        return schema(
+                "summary", "本次测试计划查询摘要",
+                "candidates[]", "测试计划候选列表",
+                "candidates[].id", "测试计划ID",
+                "candidates[].title", "测试计划名称",
+                "candidates[].subtitle", "测试计划状态、所属项目与用例数摘要",
+                "candidates[].route", "测试计划详情入口路由",
+                "candidates[].payload.testPlanId", "测试计划ID",
+                "candidates[].payload.projectId", "所属项目ID",
+                "candidates[].payload.testPlanName", "测试计划名称",
+                "candidates[].payload.status", "测试计划状态",
+                "candidates[].payload.iterationId", "所属迭代ID",
+                "metadata", "回显查询条件"
+        );
+    }
+
+    /**
+     * 写工具当前统一返回“待确认动作卡片”，而不是直接落库后的实体详情。
+     */
+    private Map<String, String> pendingActionOutputSchema(String actionType, String titleMeaning, String paramsMeaning) {
+        return schema(
+                "type", "待确认动作类型，当前工具对应值通常为 " + actionType,
+                "title", titleMeaning,
+                "description", "给前端确认卡片展示的动作说明",
+                "requiresConfirm", "是否需要用户确认后再真正执行",
+                "params", paramsMeaning
+        );
     }
 
     private boolean hasText(String value) {

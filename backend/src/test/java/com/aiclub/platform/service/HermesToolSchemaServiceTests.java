@@ -42,7 +42,8 @@ class HermesToolSchemaServiceTests {
                         "LOW",
                         "gitlab:view",
                         false,
-                        Map.of()
+                        Map.of(),
+                        Map.of("summary", "规则集摘要", "candidates[]", "规则集候选列表")
                 )
         ));
 
@@ -50,6 +51,10 @@ class HermesToolSchemaServiceTests {
 
         assertThat(tools).extracting(HermesCallableTool::toolCode)
                 .contains(PlatformToolRegistry.TOOL_REPO_SCAN_LIST_RULESETS);
+        assertThat(tools.get(0).description())
+                .contains("入参")
+                .contains("出参")
+                .contains("candidates[]");
     }
 
     /**
@@ -68,7 +73,8 @@ class HermesToolSchemaServiceTests {
                         "MEDIUM",
                         "gitlab:manage",
                         true,
-                        Map.of("bindingId", "绑定ID", "branch", "分支", "rulesetCode", "规则集")
+                        Map.of("bindingId", "绑定ID", "branch", "分支", "rulesetCode", "规则集"),
+                        Map.of("type", "待确认动作类型", "params", "动作参数")
                 )
         ));
 
@@ -80,6 +86,9 @@ class HermesToolSchemaServiceTests {
                 .map(JsonNode::asText)
                 .toList();
         assertThat(requiredFields).contains("rulesetCode");
+        assertThat(tools.get(0).description())
+                .contains("rulesetCode (string) [必填]")
+                .contains("待确认动作卡片");
     }
 
     private CurrentUserInfo currentUser() {

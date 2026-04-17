@@ -7,6 +7,11 @@ public record AiModelConfigRequest(
         @NotBlank(message = "模型名称不能为空")
         @Size(max = 120, message = "模型名称长度不能超过120")
         String name,
+        /**
+         * 模型用途类型，区分对话模型与 Embedding 模型，旧调用未传时默认回退为 CHAT。
+         */
+        @Size(max = 30, message = "模型类型长度不能超过30")
+        String modelType,
         @NotBlank(message = "提供商不能为空")
         @Size(max = 30, message = "提供商长度不能超过30")
         String provider,

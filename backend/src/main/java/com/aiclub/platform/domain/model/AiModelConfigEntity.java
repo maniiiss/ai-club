@@ -25,6 +25,12 @@ public class AiModelConfigEntity {
     @Column(nullable = false, length = 30)
     private String provider;
 
+    /**
+     * 模型用途类型，用于区分对话模型和 Embedding 模型，避免下游误绑到文本生成链路。
+     */
+    @Column(name = "model_type", nullable = false, length = 30)
+    private String modelType = "CHAT";
+
     @Column(name = "api_base_url", nullable = false, length = 255)
     private String apiBaseUrl;
 
@@ -84,6 +90,14 @@ public class AiModelConfigEntity {
 
     public String getApiBaseUrl() {
         return apiBaseUrl;
+    }
+
+    public String getModelType() {
+        return modelType;
+    }
+
+    public void setModelType(String modelType) {
+        this.modelType = modelType;
     }
 
     public void setApiBaseUrl(String apiBaseUrl) {

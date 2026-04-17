@@ -549,7 +549,7 @@ public class GitlabManagementService {
         entity.setAiReviewEnabled(defaultBoolean(request.aiReviewEnabled(), false));
         entity.setAiReviewPrompt(defaultString(request.aiReviewPrompt()));
         entity.setReviewAgent(request.reviewAgentId() == null ? null : requireAgent(request.reviewAgentId()));
-        entity.setAiModelConfig(request.aiModelConfigId() == null ? null : requireAiModelConfig(request.aiModelConfigId()));
+        entity.setAiModelConfig(request.aiModelConfigId() == null ? null : requireChatModelConfig(request.aiModelConfigId()));
         if (Boolean.TRUE.equals(entity.getSchedulerEnabled()) && !hasText(entity.getSchedulerCron())) {
             throw new IllegalArgumentException("????????? Cron ???");
         }
@@ -650,6 +650,7 @@ public class GitlabManagementService {
         if (entity.getAiModelConfig() == null) {
             throw new IllegalArgumentException("AI ????? Code Review Agent");
         }
+        ensureChatModelConfig(entity.getAiModelConfig());
         ModelConfigService.ResolvedModelConfig modelConfig = modelConfigService.resolveModelConfig(entity.getAiModelConfig().getId());
         return codeReviewClientService.reviewMergeRequest(modelConfig, buildReviewPrompt(entity), mergeRequest, changes);
     }
@@ -1377,8 +1378,20 @@ public class GitlabManagementService {
         return config;
     }
 
-    private AiModelConfigEntity requireAiModelConfig(Long id) {
-        return aiModelConfigRepository.findById(id).orElseThrow(() -> new NoSuchElementException("模型配置不存在: " + id));
+    /**
+     * GitLab AI Review 当前只支持文本生成模型，这里显式阻止 Embedding 模型被绑定。
+     */
+    private AiModelConfigEntity requireChatModelConfig(Long id) {
+        AiModelConfigEntity modelConfig = aiModelConfigRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("模型配置不存在: " + id));
+        ensureChatModelConfig(modelConfig);
+        return modelConfig;
+    }
+
+    private void ensureChatModelConfig(AiModelConfigEntity modelConfig) {
+        if (!ModelConfigService.MODEL_TYPE_CHAT.equalsIgnoreCase(defaultString(modelConfig.getModelType()))) {
+            throw new IllegalArgumentException("AI Review 仅支持绑定对话模型配置");
+        }
     }
 
     private String resolveApiBaseUrl(String value) {
