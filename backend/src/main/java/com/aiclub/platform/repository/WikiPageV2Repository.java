@@ -1,0 +1,41 @@
+package com.aiclub.platform.repository;
+
+import com.aiclub.platform.domain.model.WikiPageV2Entity;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * 空间化 Wiki 页面仓储。
+ */
+public interface WikiPageV2Repository extends JpaRepository<WikiPageV2Entity, Long> {
+
+    /** 读取空间内指定页面。 */
+    Optional<WikiPageV2Entity> findBySpace_IdAndId(Long spaceId, Long id);
+
+    /** 按 slug 读取空间页面。 */
+    Optional<WikiPageV2Entity> findBySpace_IdAndSlugIgnoreCase(Long spaceId, String slug);
+
+    /** 判断空间内 slug 是否存在。 */
+    boolean existsBySpace_IdAndSlugIgnoreCase(Long spaceId, String slug);
+
+    /** 判断空间内 slug 除指定页面外是否存在。 */
+    boolean existsBySpace_IdAndSlugIgnoreCaseAndIdNot(Long spaceId, String slug, Long id);
+
+    /** 读取目录下页面列表。 */
+    List<WikiPageV2Entity> findAllByDirectory_IdOrderByUpdatedAtDescIdDesc(Long directoryId);
+
+    /** 判断目录下是否还有页面。 */
+    boolean existsByDirectory_Id(Long directoryId);
+
+    /** 读取空间内全部页面。 */
+    List<WikiPageV2Entity> findAllBySpace_IdOrderByUpdatedAtDescIdDesc(Long spaceId);
+
+    /** 读取空间内最近更新页面。 */
+    List<WikiPageV2Entity> findAllBySpace_IdOrderByUpdatedAtDescIdDesc(Long spaceId, Pageable pageable);
+
+    /** 批量读取页面。 */
+    List<WikiPageV2Entity> findAllByIdIn(List<Long> ids);
+}

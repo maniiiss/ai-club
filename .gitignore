@@ -12,4 +12,5 @@ APITOKEN.md
 .env.server
 .env.host
 /code-processing/.venv/
+/code-processing/.scan-workspace
 .data

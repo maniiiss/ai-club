@@ -103,6 +103,7 @@ services:
       HINDSIGHT_API_PORT: ${HINDSIGHT_PORT:-18888}
       HINDSIGHT_DASHBOARD_HOST: 0.0.0.0
       HINDSIGHT_DASHBOARD_PORT: ${HINDSIGHT_CONSOLE_PORT:-19999}
+      HF_ENDPOINT: https://hf-mirror.com
 
   hermes:
     build:

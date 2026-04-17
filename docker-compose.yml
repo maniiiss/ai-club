@@ -123,6 +123,7 @@ services:
       # Hindsight 固定连接独立数据库，避免与业务库 ai_agent_platform 混用。
       HINDSIGHT_API_DATABASE_URL: postgresql://${POSTGRES_USER:-aiclub}:${POSTGRES_PASSWORD:-aiclub123}@postgres:5432/${HINDSIGHT_POSTGRES_DB:-hindsight}
       HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvector}
+      HF_ENDPOINT: https://hf-mirror.com
     ports:
       - "${HINDSIGHT_PORT:-18888}:8888"
       - "${HINDSIGHT_CONSOLE_PORT:-19999}:9999"

@@ -105,6 +105,7 @@ services:
       HINDSIGHT_API_PORT: 8888
       HINDSIGHT_DASHBOARD_HOST: 0.0.0.0
       HINDSIGHT_DASHBOARD_PORT: 9999
+      HF_ENDPOINT: https://hf-mirror.com
     ports:
       - "${HINDSIGHT_PORT:-18888}:8888"
       - "${HINDSIGHT_CONSOLE_PORT:-19999}:9999"
