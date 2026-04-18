@@ -18,12 +18,14 @@ import com.aiclub.platform.dto.HermesStreamError;
 import com.aiclub.platform.dto.HermesStreamMeta;
 import com.aiclub.platform.dto.HermesStreamStatus;
 import com.aiclub.platform.dto.request.HermesChatRequest;
+import com.aiclub.platform.dto.request.HermesMultipartChatCommand;
 import com.aiclub.platform.dto.request.HermesSessionChatRequest;
 import com.aiclub.platform.repository.HermesChatAuditRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
@@ -57,8 +59,10 @@ public class HermesChatService {
     private final HermesMcpSessionTokenService hermesMcpSessionTokenService;
     private final HermesChatAuditRepository hermesChatAuditRepository;
     private final HermesConversationSessionService hermesConversationSessionService;
+    private final HermesAttachmentService hermesAttachmentService;
     private final ObjectMapper objectMapper;
 
+    @Autowired
     public HermesChatService(AuthService authService,
                              UserRepository userRepository,
                              HermesProperties hermesProperties,
@@ -71,6 +75,7 @@ public class HermesChatService {
                              HermesMcpSessionTokenService hermesMcpSessionTokenService,
                              HermesChatAuditRepository hermesChatAuditRepository,
                              HermesConversationSessionService hermesConversationSessionService,
+                             HermesAttachmentService hermesAttachmentService,
                              ObjectMapper objectMapper) {
         this.authService = authService;
         this.userRepository = userRepository;
@@ -84,13 +89,52 @@ public class HermesChatService {
         this.hermesMcpSessionTokenService = hermesMcpSessionTokenService;
         this.hermesChatAuditRepository = hermesChatAuditRepository;
         this.hermesConversationSessionService = hermesConversationSessionService;
+        this.hermesAttachmentService = hermesAttachmentService;
         this.objectMapper = objectMapper;
+    }
+
+    /**
+     * 兼容旧测试构造方式。
+     */
+    public HermesChatService(AuthService authService,
+                             UserRepository userRepository,
+                             HermesProperties hermesProperties,
+                             HermesContextAssembler hermesContextAssembler,
+                             HermesPromptBuilder hermesPromptBuilder,
+                             HermesGatewayService hermesGatewayService,
+                             HermesToolOrchestrator hermesToolOrchestrator,
+                             HermesActionFallbackService hermesActionFallbackService,
+                             HermesConversationStateStore hermesConversationStateStore,
+                             HermesMcpSessionTokenService hermesMcpSessionTokenService,
+                             HermesChatAuditRepository hermesChatAuditRepository,
+                             HermesConversationSessionService hermesConversationSessionService,
+                             ObjectMapper objectMapper) {
+        this(authService, userRepository, hermesProperties, hermesContextAssembler, hermesPromptBuilder, hermesGatewayService,
+                hermesToolOrchestrator, hermesActionFallbackService, hermesConversationStateStore, hermesMcpSessionTokenService,
+                hermesChatAuditRepository, hermesConversationSessionService, null, objectMapper);
     }
 
     /**
      * 基于指定会话执行流式聊天。
      */
     public StreamingResponseBody streamChat(Long sessionId, HermesSessionChatRequest request) {
+        return streamChatInternal(sessionId, request, List.of());
+    }
+
+    /**
+     * 基于指定会话执行带附件的流式聊天。
+     */
+    public StreamingResponseBody streamChat(Long sessionId, HermesMultipartChatCommand command) {
+        return streamChatInternal(
+                sessionId,
+                new HermesSessionChatRequest(command.question(), command.selection(), command.debug()),
+                uploadAndConvert(command.files())
+        );
+    }
+
+    private StreamingResponseBody streamChatInternal(Long sessionId,
+                                                     HermesSessionChatRequest request,
+                                                     List<HermesAttachmentService.PreparedAttachment> attachments) {
         HermesConversationSessionEntity session = hermesConversationSessionService.requireOwnedSession(sessionId);
         validateSessionAvailableForChat(session);
         CurrentUserInfo currentUser = authService.currentUser();
@@ -133,9 +177,10 @@ public class HermesChatService {
                         effectiveRequest,
                         finalizedConversation.state(),
                         finalizedConversation.content(),
-                        debugInfo
+                        debugInfo,
+                        attachments
                 );
-                finishSuccess(outputStream, audit, gatewayResult, finalizedConversation, debugInfo);
+                finishSuccess(outputStream, audit, gatewayResult, finalizedConversation, debugInfo, attachments);
             } catch (Exception exception) {
                 HermesConversationState latestState = loadLatestState(preparedConversation.state());
                 HermesDebugInfo debugInfo = buildDebugInfo(latestState, "");
@@ -144,7 +189,8 @@ public class HermesChatService {
                         effectiveRequest,
                         latestState,
                         resolveErrorMessage(exception),
-                        debugInfo
+                        debugInfo,
+                        attachments
                 );
                 finishFailure(outputStream, audit, exception);
             }
@@ -155,6 +201,23 @@ public class HermesChatService {
      * 基于指定会话执行非流式聊天，主要供测试与稳定消费场景使用。
      */
     public HermesChatResponse chat(Long sessionId, HermesSessionChatRequest request) {
+        return chatInternal(sessionId, request, List.of());
+    }
+
+    /**
+     * 基于指定会话执行带附件的非流式聊天。
+     */
+    public HermesChatResponse chat(Long sessionId, HermesMultipartChatCommand command) {
+        return chatInternal(
+                sessionId,
+                new HermesSessionChatRequest(command.question(), command.selection(), command.debug()),
+                uploadAndConvert(command.files())
+        );
+    }
+
+    private HermesChatResponse chatInternal(Long sessionId,
+                                            HermesSessionChatRequest request,
+                                            List<HermesAttachmentService.PreparedAttachment> attachments) {
         HermesConversationSessionEntity session = hermesConversationSessionService.requireOwnedSession(sessionId);
         validateSessionAvailableForChat(session);
         CurrentUserInfo currentUser = authService.currentUser();
@@ -185,7 +248,8 @@ public class HermesChatService {
                     effectiveRequest,
                     finalizedConversation.state(),
                     finalizedConversation.content(),
-                    debugInfo
+                    debugInfo,
+                    attachments
             );
 
             audit.setStatus("SUCCESS");
@@ -202,7 +266,8 @@ public class HermesChatService {
                     finalizedConversation.state().suggestions(),
                     finalizedConversation.state().actions(),
                     finalizedConversation.state().selectionCards(),
-                    debugInfo
+                    debugInfo,
+                    toAttachmentSummaries(attachments)
             );
         } catch (Exception exception) {
             HermesConversationState latestState = loadLatestState(preparedConversation.state());
@@ -212,7 +277,8 @@ public class HermesChatService {
                     effectiveRequest,
                     latestState,
                     resolveErrorMessage(exception),
-                    debugInfo
+                    debugInfo,
+                    attachments
             );
             audit.setStatus("FAILED");
             audit.setErrorMessage(abbreviate(resolveErrorMessage(exception), 1000));
@@ -412,7 +478,8 @@ public class HermesChatService {
                 state.suggestions(),
                 state.actions(),
                 state.selectionCards(),
-                buildDebugInfo(state, "")
+                buildDebugInfo(state, ""),
+                List.of()
         );
     }
 
@@ -461,7 +528,8 @@ public class HermesChatService {
                                HermesChatAuditEntity audit,
                                HermesGatewayService.HermesGatewayResult gatewayResult,
                                FinalizedConversation finalizedConversation,
-                               HermesDebugInfo debugInfo) {
+                               HermesDebugInfo debugInfo,
+                               List<HermesAttachmentService.PreparedAttachment> attachments) {
         audit.setStatus("SUCCESS");
         audit.setResponseSummary(abbreviate(finalizedConversation.content(), 1000));
         audit.setHermesResponseId(defaultString(gatewayResult.responseId()));
@@ -477,7 +545,8 @@ public class HermesChatService {
                     finalizedConversation.state().suggestions(),
                     finalizedConversation.state().actions(),
                     finalizedConversation.state().selectionCards(),
-                    debugInfo
+                    debugInfo,
+                    toAttachmentSummaries(attachments)
             ));
         } catch (IOException exception) {
             throw new IllegalStateException("Hermes 完成事件发送失败", exception);
@@ -515,6 +584,33 @@ public class HermesChatService {
         String ssePayload = "event:" + eventName + "\n" + "data:" + json + "\n\n";
         outputStream.write(ssePayload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         outputStream.flush();
+    }
+
+    private List<com.aiclub.platform.dto.HermesAttachmentSummary> toAttachmentSummaries(List<HermesAttachmentService.PreparedAttachment> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return List.of();
+        }
+        return attachments.stream()
+                .map(attachment -> new com.aiclub.platform.dto.HermesAttachmentSummary(
+                        null,
+                        attachment.asset().getId(),
+                        attachment.asset().getFileName(),
+                        attachment.asset().getContentType(),
+                        attachment.asset().getFileSize(),
+                        attachment.asset().getSourceFormat(),
+                        attachment.converted().suggestedTitle(),
+                        attachment.converted().truncated(),
+                        attachment.converted().warnings(),
+                        null
+                ))
+                .toList();
+    }
+
+    private List<HermesAttachmentService.PreparedAttachment> uploadAndConvert(List<org.springframework.web.multipart.MultipartFile> files) {
+        if (hermesAttachmentService == null || files == null || files.isEmpty()) {
+            return List.of();
+        }
+        return hermesAttachmentService.uploadAndConvert(files);
     }
 
     /**

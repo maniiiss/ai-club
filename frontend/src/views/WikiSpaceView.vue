@@ -27,6 +27,7 @@
             <div class="wiki-tree-actions">
               <button v-if="canEditSpace" class="wiki-side-text-button" type="button" @click="openDirectoryDialog(null)">新建目录</button>
               <button v-if="canEditSpace" class="wiki-side-text-button" type="button" @click="openPageDialog(null)">新建页面</button>
+              <button v-if="canEditSpace" class="wiki-side-text-button" type="button" @click="openImportDialog">导入文档</button>
             </div>
           </div>
 
@@ -66,6 +67,7 @@
               <div class="wiki-article-actions">
                 <button class="wiki-header-action" type="button" @click="openMemberDrawer">成员</button>
                 <button v-if="currentPage" class="wiki-header-action" type="button" @click="openVersionDrawer">版本历史</button>
+                <button v-if="currentPage?.importSource" class="wiki-header-action" type="button" @click="downloadCurrentSource">下载原文</button>
                 <button v-if="canEditSpace && currentPage" class="wiki-header-action" type="button" @click="openPageDialog(currentPage)">编辑页面</button>
                 <button v-if="canEditSpace && currentDirectory" class="wiki-header-action" type="button" @click="openDirectoryDialog(currentDirectory.id)">编辑目录</button>
                 <button v-if="canEditSpace && currentPage" class="wiki-header-action danger" type="button" @click="handleDeletePage">删除页面</button>
@@ -78,6 +80,7 @@
                 <span>最近更新 {{ currentPage.updatedAt }}</span>
                 <span>版本 v{{ currentPage.currentVersionNumber }}</span>
                 <el-tag :type="syncTagType(currentPage.syncStatus)" size="small">{{ syncStatusLabel(currentPage.syncStatus) }}</el-tag>
+                <span v-if="currentPage.importSource">来源 {{ currentPage.importSource.fileName }}</span>
               </template>
               <template v-else-if="currentDirectory">
                 <span>目录节点</span>
@@ -175,6 +178,38 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="importDialogVisible" title="导入文档" width="720px" destroy-on-close>
+      <div class="wiki-import-shell">
+        <el-upload
+          drag
+          action=""
+          :auto-upload="false"
+          :show-file-list="false"
+          :on-change="handleImportFileChange"
+          accept=".pdf,.docx,.pptx,.xlsx"
+        >
+          <div class="wiki-import-dropzone">
+            <p>拖拽或点击上传 PDF / DOCX / PPTX / XLSX 文档</p>
+            <small>系统会先转为 Markdown 预览，再创建新的 Wiki 页面。</small>
+          </div>
+        </el-upload>
+        <div v-if="importPreview" class="wiki-import-preview">
+          <div class="wiki-import-meta">
+            <span>建议标题：{{ importPreview.suggestedTitle || importPreview.fileName }}</span>
+            <span>格式：{{ importPreview.sourceFormat }}</span>
+            <span v-if="importPreview.truncated">内容已截断</span>
+          </div>
+          <div v-if="importPreview.warnings.length" class="wiki-import-warnings">
+            {{ importPreview.warnings.join('；') }}
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">取消</el-button>
+        <el-button type="primary" :disabled="!importPreview" @click="applyImportPreview">导入为新页面</el-button>
+      </template>
+    </el-dialog>
+
     <el-drawer v-model="memberDrawerVisible" size="520px" title="空间成员管理">
       <div class="wiki-member-editor">
         <div v-for="(item, index) in memberForm" :key="`${item.userId}-${index}`" class="wiki-member-editor-row">
@@ -221,6 +256,7 @@ import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import { listUserOptions } from '@/api/access'
 import {
   createWikiDirectory,
+  importWikiSpacePage,
   createWikiSpacePage,
   deleteWikiDirectory,
   deleteWikiSpacePage,
@@ -231,11 +267,13 @@ import {
   listWikiRelatedPages,
   listWikiSpaceMembers,
   listWikiSpacePageVersions,
+  previewWikiImport,
   replaceWikiSpaceMembers,
   restoreWikiSpacePageVersion,
   updateWikiDirectory,
   updateWikiSpace,
   updateWikiSpacePage,
+  uploadDocumentAsset,
   uploadWikiImage,
   type WikiDirectoryPayload,
   type WikiSpaceMemberPayloadItem,
@@ -244,6 +282,7 @@ import {
 } from '@/api/platform'
 import type {
   ProjectItem,
+  DocumentMarkdownResultItem,
   UserOptionItem,
   WikiDirectoryTreeNodeItem,
   WikiSpaceDetailItem,
@@ -307,6 +346,7 @@ const userOptions = ref<UserOptionItem[]>([])
 const spaceDialogVisible = ref(false)
 const directoryDialogVisible = ref(false)
 const pageDialogVisible = ref(false)
+const importDialogVisible = ref(false)
 const memberDrawerVisible = ref(false)
 const versionDrawerVisible = ref(false)
 
@@ -334,6 +374,7 @@ const pageForm = reactive<PageForm>({
   changeSummary: ''
 })
 const memberForm = ref<WikiSpaceMemberPayloadItem[]>([])
+const importPreview = ref<DocumentMarkdownResultItem | null>(null)
 
 const spaceRules: FormRules<SpaceForm> = {
   name: [{ required: true, message: '请输入空间名称', trigger: 'blur' }]
@@ -607,6 +648,43 @@ function openPageDialog(page: WikiSpacePageDetailItem | null) {
   pageDialogVisible.value = true
 }
 
+function openImportDialog() {
+  importPreview.value = null
+  importDialogVisible.value = true
+}
+
+async function handleImportFileChange(fileEvent: any) {
+  const rawFile = fileEvent?.raw as File | undefined
+  if (!rawFile) {
+    return
+  }
+  submitting.value = true
+  try {
+    const asset = await uploadDocumentAsset(rawFile, `wiki-spaces/space-${spaceId.value}`)
+    importPreview.value = await previewWikiImport(spaceId.value, asset.id)
+    ElMessage.success('导入预览已生成')
+  } catch (error: any) {
+    importPreview.value = null
+    ElMessage.error(error?.response?.data?.message || '生成导入预览失败')
+  } finally {
+    submitting.value = false
+  }
+}
+
+function applyImportPreview() {
+  if (!importPreview.value) {
+    return
+  }
+  const firstDirectory = directorySelectRows.value[0]
+  editingPage.value = null
+  pageForm.directoryId = firstDirectory?.id ?? null
+  pageForm.title = importPreview.value.suggestedTitle || importPreview.value.fileName
+  pageForm.content = importPreview.value.markdown
+  pageForm.changeSummary = ''
+  importDialogVisible.value = false
+  pageDialogVisible.value = true
+}
+
 async function handleSubmitPage() {
   const valid = await pageFormRef.value?.validate().catch(() => false)
   if (!valid || pageForm.directoryId == null) return
@@ -620,9 +698,16 @@ async function handleSubmitPage() {
     }
     const saved = editingPage.value
       ? await updateWikiSpacePage(spaceId.value, editingPage.value.id, payload)
-      : await createWikiSpacePage(spaceId.value, payload)
+      : importPreview.value
+        ? await importWikiSpacePage(spaceId.value, {
+            assetId: importPreview.value.assetId,
+            directoryId: pageForm.directoryId,
+            title: pageForm.title
+          })
+        : await createWikiSpacePage(spaceId.value, payload)
     ElMessage.success('页面已保存')
     pageDialogVisible.value = false
+    importPreview.value = null
     await loadDirectoryTree()
     openPage(saved.id)
   } catch (error: any) {
@@ -718,6 +803,13 @@ async function handleSubmitMembers() {
 async function handleUploadImage(file: File) {
   const uploaded = await uploadWikiImage(spaceId.value, file)
   return uploaded.url
+}
+
+function downloadCurrentSource() {
+  if (!currentPage.value?.importSource) {
+    return
+  }
+  window.open(`/api/wiki/spaces/${spaceId.value}/pages/${currentPage.value.id}/source/download`, '_blank')
 }
 
 function goBack() {

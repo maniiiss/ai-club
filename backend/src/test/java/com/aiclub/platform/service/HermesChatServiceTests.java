@@ -131,7 +131,7 @@ class HermesChatServiceTests {
         assertThat(finalState.transcript().get(1).content()).isEqualTo("完整回答内容");
         assertThat(response.scopeKey()).isEqualTo("test:hermes:project:12:user:5:conversation:conversation-1");
         assertThat(response.content()).isEqualTo("完整回答内容");
-        verify(hermesConversationSessionService).recordSuccess(eq(session), any(HermesChatRequest.class), eq(finalState), eq("完整回答内容"), any());
+        verify(hermesConversationSessionService).recordSuccess(eq(session), any(HermesChatRequest.class), eq(finalState), eq("完整回答内容"), any(), eq(List.of()));
     }
 
     /**

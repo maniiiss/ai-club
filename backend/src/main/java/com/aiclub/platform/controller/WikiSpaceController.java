@@ -12,6 +12,8 @@ import com.aiclub.platform.dto.WikiSpacePageSummary;
 import com.aiclub.platform.dto.WikiSpacePageVersionSummary;
 import com.aiclub.platform.dto.WikiSpaceSearchResult;
 import com.aiclub.platform.dto.WikiSpaceSummary;
+import com.aiclub.platform.dto.DocumentMarkdownResult;
+import com.aiclub.platform.dto.request.CreateWikiImportPageRequest;
 import com.aiclub.platform.dto.request.CreateWikiDirectoryRequest;
 import com.aiclub.platform.dto.request.CreateWikiSpacePageRequest;
 import com.aiclub.platform.dto.request.CreateWikiSpaceRequest;
@@ -19,6 +21,9 @@ import com.aiclub.platform.dto.request.ReplaceWikiSpaceMembersRequest;
 import com.aiclub.platform.dto.request.UpdateWikiDirectoryRequest;
 import com.aiclub.platform.dto.request.UpdateWikiSpacePageRequest;
 import com.aiclub.platform.dto.request.UpdateWikiSpaceRequest;
+import com.aiclub.platform.dto.request.WikiImportPreviewRequest;
+import com.aiclub.platform.service.DocumentAssetService;
+import com.aiclub.platform.service.DocumentAssetStorageService;
 import com.aiclub.platform.service.TaskCommentImageStorageService;
 import com.aiclub.platform.service.WikiSpaceService;
 import jakarta.validation.Valid;
@@ -34,7 +39,13 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.time.Duration;
 import java.util.List;
+import java.util.NoSuchElementException;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 
 /**
  * 空间化 Wiki 控制器，提供空间、目录、页面、版本和搜索能力。
@@ -45,11 +56,14 @@ public class WikiSpaceController {
 
     private final WikiSpaceService wikiSpaceService;
     private final TaskCommentImageStorageService taskCommentImageStorageService;
+    private final DocumentAssetService documentAssetService;
 
     public WikiSpaceController(WikiSpaceService wikiSpaceService,
-                               TaskCommentImageStorageService taskCommentImageStorageService) {
+                               TaskCommentImageStorageService taskCommentImageStorageService,
+                               DocumentAssetService documentAssetService) {
         this.wikiSpaceService = wikiSpaceService;
         this.taskCommentImageStorageService = taskCommentImageStorageService;
+        this.documentAssetService = documentAssetService;
     }
 
     /**
@@ -190,6 +204,26 @@ public class WikiSpaceController {
     }
 
     /**
+     * 预览导入文档转换后的 Markdown 内容。
+     */
+    @PostMapping("/spaces/{spaceId}/imports/preview")
+    @RequirePermission("wiki:view")
+    public ApiResponse<DocumentMarkdownResult> previewImport(@PathVariable Long spaceId,
+                                                             @Valid @RequestBody WikiImportPreviewRequest request) {
+        return ApiResponse.success(wikiSpaceService.previewImport(spaceId, request));
+    }
+
+    /**
+     * 从文档资产创建 Wiki 页面。
+     */
+    @PostMapping("/spaces/{spaceId}/pages/import")
+    @RequirePermission("wiki:view")
+    public ApiResponse<WikiSpacePageDetail> importPage(@PathVariable Long spaceId,
+                                                       @Valid @RequestBody CreateWikiImportPageRequest request) {
+        return ApiResponse.success(wikiSpaceService.importPage(spaceId, request));
+    }
+
+    /**
      * 更新页面。
      */
     @PutMapping("/spaces/{spaceId}/pages/{pageId}")
@@ -271,6 +305,30 @@ public class WikiSpaceController {
     @RequirePermission("wiki:view")
     public ApiResponse<List<WikiSpacePageSummary>> relatedPages(@PathVariable Long spaceId, @PathVariable Long pageId) {
         return ApiResponse.success(wikiSpaceService.relatedPages(spaceId, pageId, 8));
+    }
+
+    /**
+     * 下载页面来源文档。
+     */
+    @GetMapping("/spaces/{spaceId}/pages/{pageId}/source/download")
+    @RequirePermission("wiki:view")
+    public ResponseEntity<byte[]> downloadPageSource(@PathVariable Long spaceId, @PathVariable Long pageId) {
+        WikiSpacePageDetail page = wikiSpaceService.getPageDetail(spaceId, pageId);
+        if (page.importSource() == null || page.importSource().assetId() == null) {
+            throw new NoSuchElementException("当前页面没有来源文档");
+        }
+        var asset = documentAssetService.requireAccessibleAsset(page.importSource().assetId());
+        var content = documentAssetService.loadContent(asset);
+        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        try {
+            mediaType = MediaType.parseMediaType(content.contentType());
+        } catch (Exception ignored) {
+        }
+        return ResponseEntity.ok()
+                .contentType(mediaType)
+                .cacheControl(CacheControl.maxAge(Duration.ofMinutes(5)).cachePrivate())
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + asset.getFileName() + "\"")
+                .body(content.bytes());
     }
 
     /**

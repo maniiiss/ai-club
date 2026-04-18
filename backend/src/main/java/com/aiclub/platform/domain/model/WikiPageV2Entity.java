@@ -69,6 +69,11 @@ public class WikiPageV2Entity {
     @JoinColumn(name = "author_user_id")
     private UserEntity authorUser;
 
+    /** 页面来源文档资产，用于导入页追溯原始文件。 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "source_document_asset_id")
+    private DocumentAssetEntity sourceDocumentAsset;
+
     /** 创建时间。 */
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
@@ -185,6 +190,14 @@ public class WikiPageV2Entity {
 
     public void setAuthorUser(UserEntity authorUser) {
         this.authorUser = authorUser;
+    }
+
+    public DocumentAssetEntity getSourceDocumentAsset() {
+        return sourceDocumentAsset;
+    }
+
+    public void setSourceDocumentAsset(DocumentAssetEntity sourceDocumentAsset) {
+        this.sourceDocumentAsset = sourceDocumentAsset;
     }
 
     public LocalDateTime getCreatedAt() {

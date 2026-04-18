@@ -224,6 +224,9 @@ public class HermesToolSchemaService {
         if (PlatformToolRegistry.TOOL_REPO_SCAN_START.equals(definition.code())) {
             required.add("rulesetCode");
         }
+        if (PlatformToolRegistry.TOOL_DOCUMENT_CONVERT_MARKDOWN.equals(definition.code())) {
+            required.add("assetId");
+        }
         return required;
     }
 

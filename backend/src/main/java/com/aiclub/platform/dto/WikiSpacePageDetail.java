@@ -22,6 +22,7 @@ public record WikiSpacePageDetail(
         String lastSyncError,
         String authorName,
         boolean canEdit,
+        WikiImportSourceSummary importSource,
         List<WikiSpacePageSummary> relatedPages,
         String createdAt,
         String updatedAt

@@ -97,6 +97,18 @@
               <div class="hermes-message-bubble" :class="message.status">
                 <pre v-if="message.role === 'user'">{{ message.content || '暂无内容' }}</pre>
                 <div v-else class="hermes-markdown-content" v-html="renderAssistantMessage(message)"></div>
+                <div v-if="message.attachments?.length" class="hermes-chip-list">
+                  <button
+                    v-for="attachment in message.attachments"
+                    :key="`${attachment.assetId}-${attachment.fileName}`"
+                    class="hermes-reference-item"
+                    type="button"
+                    @click="handleDownloadAttachment(attachment)"
+                  >
+                    <span>{{ attachment.sourceFormat }}</span>
+                    <strong>{{ attachment.fileName }}</strong>
+                  </button>
+                </div>
               </div>
             </div>
           </section>
@@ -166,6 +178,17 @@
         </div>
 
         <div class="hermes-footer">
+          <div class="hermes-attachment-bar">
+            <input ref="fileInputRef" type="file" multiple accept=".pdf,.docx,.pptx,.xlsx" style="display: none" @change="handleFileInputChange" />
+            <button class="hermes-inline-button secondary" type="button" :disabled="footerDisabled" @click="openFilePicker">添加附件</button>
+            <span class="hermes-footer-tip">每次最多 3 个文档</span>
+          </div>
+          <div v-if="pendingFiles.length" class="hermes-chip-list">
+            <button v-for="file in pendingFiles" :key="`${file.name}-${file.size}`" class="hermes-reference-item" type="button" @click="removePendingFile(file)">
+              <span>{{ file.name }}</span>
+              <strong>移除</strong>
+            </button>
+          </div>
           <el-input v-model="draftQuestion" type="textarea" :rows="3" resize="none" :disabled="footerDisabled" :placeholder="footerPlaceholder" @keydown.enter.exact.prevent="handleSubmit()" />
           <div class="hermes-footer-actions">
             <span>{{ footerTip }}</span>
@@ -182,13 +205,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { archiveHermesConversationSession, createHermesConversationSession, deleteHermesConversationSession, getHermesConversationDetail, pageHermesConversationSessions, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat } from '@/api/hermes'
+import { archiveHermesConversationSession, createHermesConversationSession, deleteHermesConversationSession, getHermesConversationDetail, pageHermesConversationSessions, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat, streamHermesSessionChatWithFiles } from '@/api/hermes'
 import { createGitlabBindingScanTask } from '@/api/gitlab'
 import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import { renderHermesMarkdownToHtml } from '@/utils/hermesMarkdown'
 import { DEFAULT_REQUIREMENT_TEMPLATE } from '@/utils/requirementTemplate'
-import type { CreateHermesConversationSessionPayload, HermesActionItem, HermesConversationDetailItem, HermesConversationSessionSummaryItem, HermesDebugInfoItem, HermesMessageItem, HermesReferenceItem, HermesSelectionCardItem, HermesSelectionOptionItem, HermesSelectionPayload, HermesSessionChatRequestPayload, HermesStreamDeltaEvent, HermesStreamDoneEvent, HermesStreamErrorEvent, HermesStreamMetaEvent, HermesStreamStatusEvent } from '@/types/hermes'
+import type { CreateHermesConversationSessionPayload, HermesActionItem, HermesAttachmentItem, HermesConversationDetailItem, HermesConversationSessionSummaryItem, HermesDebugInfoItem, HermesMessageItem, HermesReferenceItem, HermesSelectionCardItem, HermesSelectionOptionItem, HermesSelectionPayload, HermesSessionChatRequestPayload, HermesStreamDeltaEvent, HermesStreamDoneEvent, HermesStreamErrorEvent, HermesStreamMetaEvent, HermesStreamStatusEvent } from '@/types/hermes'
 
 interface HermesDrawerProps {
   routeName: string
@@ -206,8 +229,10 @@ const drawerVisible = defineModel<boolean>({ default: false })
 const router = useRouter()
 const authStore = useAuthStore()
 const messageScrollRef = ref<HTMLDivElement>()
+const fileInputRef = ref<HTMLInputElement>()
 const isMobileViewport = ref(false)
 const draftQuestion = ref('')
+const pendingFiles = ref<File[]>([])
 const sending = ref(false)
 const sessionLoading = ref(false)
 const loadingMoreSessions = ref(false)
@@ -590,24 +615,50 @@ const submitConversation = async (question: string, userContent: string, selecti
   currentSelectionCards.value = []
   currentDebug.value = null
   currentStreamStatus.value = { stage: 'planning', message: 'Hermes 正在分析问题' }
-  currentMessages.value = [...currentMessages.value, { id: userMessageId, role: 'user', content: normalizedUserContent, status: 'done' }, { id: assistantMessageId, role: 'assistant', content: '', status: 'streaming' }]
+  currentMessages.value = [
+    ...currentMessages.value,
+    { id: userMessageId, role: 'user', content: normalizedUserContent, status: 'done', attachments: pendingFiles.value.map(toAttachmentSummary) },
+    { id: assistantMessageId, role: 'assistant', content: '', status: 'streaming', attachments: [] }
+  ]
   draftQuestion.value = ''
   void restoreThinkBlocksAndScroll()
 
   try {
-    const streamController = await streamHermesSessionChat(writableSessionId, buildPayload(normalizedQuestion, selection), {
+    const payload = buildPayload(normalizedQuestion, selection)
+    const streamController = pendingFiles.value.length
+      ? await streamHermesSessionChatWithFiles(writableSessionId, payload, pendingFiles.value, {
+          onStatus: (streamPayload: HermesStreamStatusEvent) => { currentStreamStatus.value = streamPayload },
+          onMeta: (streamPayload: HermesStreamMetaEvent) => { applyStreamDisplayState(streamPayload.roleName, streamPayload.references, streamPayload.suggestions, streamPayload.actions, streamPayload.selectionCards, streamPayload.debug) },
+          onDelta: (streamPayload: HermesStreamDeltaEvent) => updateMessage(assistantMessageId, (current) => ({ ...current, content: `${current.content}${streamPayload.content || ''}`, status: 'streaming' })),
+          onDone: (streamPayload: HermesStreamDoneEvent) => {
+            applyStreamDisplayState(streamPayload.roleName, streamPayload.references, streamPayload.suggestions, streamPayload.actions, streamPayload.selectionCards, streamPayload.debug)
+            const shouldPreferTerminalContent = Boolean(streamPayload.actions?.length || streamPayload.selectionCards?.length)
+        updateMessage(assistantMessageId, (current) => ({ ...current, content: shouldPreferTerminalContent ? (streamPayload.content || current.content) : resolveAssistantFinalContent(current.content, streamPayload.content), status: 'done', attachments: current.attachments || [] }))
+            pendingFiles.value = []
+            finishStream()
+            void refreshCurrentSessionFromCloud()
+          },
+          onError: (streamPayload: HermesStreamErrorEvent) => {
+            updateMessage(assistantMessageId, (current) => ({ ...current, content: streamPayload.message || current.content || 'Hermes 助手暂时不可用', status: 'error', attachments: current.attachments || [] }))
+            finishStream()
+            ElMessage.error(streamPayload.message || 'Hermes 助手暂时不可用')
+            void refreshCurrentSessionFromCloud()
+          }
+        })
+      : await streamHermesSessionChat(writableSessionId, payload, {
       onStatus: (payload: HermesStreamStatusEvent) => { currentStreamStatus.value = payload },
       onMeta: (payload: HermesStreamMetaEvent) => { applyStreamDisplayState(payload.roleName, payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug) },
-      onDelta: (payload: HermesStreamDeltaEvent) => updateMessage(assistantMessageId, (current) => ({ ...current, content: `${current.content}${payload.content || ''}`, status: 'streaming' })),
+      onDelta: (payload: HermesStreamDeltaEvent) => updateMessage(assistantMessageId, (current) => ({ ...current, content: `${current.content}${payload.content || ''}`, status: 'streaming', attachments: current.attachments || [] })),
       onDone: (payload: HermesStreamDoneEvent) => {
         applyStreamDisplayState(payload.roleName, payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug)
         const shouldPreferTerminalContent = Boolean(payload.actions?.length || payload.selectionCards?.length)
-        updateMessage(assistantMessageId, (current) => ({ ...current, content: shouldPreferTerminalContent ? (payload.content || current.content) : resolveAssistantFinalContent(current.content, payload.content), status: 'done' }))
+        updateMessage(assistantMessageId, (current) => ({ ...current, content: shouldPreferTerminalContent ? (payload.content || current.content) : resolveAssistantFinalContent(current.content, payload.content), status: 'done', attachments: current.attachments || [] }))
+        pendingFiles.value = []
         finishStream()
         void refreshCurrentSessionFromCloud()
       },
       onError: (payload: HermesStreamErrorEvent) => {
-        updateMessage(assistantMessageId, (current) => ({ ...current, content: payload.message || current.content || 'Hermes 助手暂时不可用', status: 'error' }))
+        updateMessage(assistantMessageId, (current) => ({ ...current, content: payload.message || current.content || 'Hermes 助手暂时不可用', status: 'error', attachments: current.attachments || [] }))
         finishStream()
         ElMessage.error(payload.message || 'Hermes 助手暂时不可用')
         void refreshCurrentSessionFromCloud()
@@ -616,7 +667,7 @@ const submitConversation = async (question: string, userContent: string, selecti
     activeStreamAbort.value = streamController.abort
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Hermes 助手暂时不可用'
-    updateMessage(assistantMessageId, (current) => ({ ...current, content: message, status: 'error' }))
+    updateMessage(assistantMessageId, (current) => ({ ...current, content: message, status: 'error', attachments: current.attachments || [] }))
     finishStream()
     ElMessage.error(message)
   }
@@ -703,7 +754,7 @@ async function restoreThinkBlocksAndScroll(shouldScroll = true) {
 
 function applySessionDetail(detail: HermesConversationDetailItem) {
   currentSessionDetail.value = detail
-  currentMessages.value = detail.messages.map((message) => ({ id: `cloud-${message.id}`, role: message.role === 'user' ? 'user' : 'assistant', content: message.content || '', status: message.status === 'error' ? 'error' : 'done' }))
+  currentMessages.value = detail.messages.map((message) => ({ id: `cloud-${message.id}`, role: message.role === 'user' ? 'user' : 'assistant', content: message.content || '', status: message.status === 'error' ? 'error' : 'done', attachments: message.attachments || [] }))
   const latestDisplayState = detail.latestDisplayState || emptyLatestDisplayState()
   currentReferences.value = latestDisplayState.references || []
   currentSuggestions.value = latestDisplayState.suggestions || []
@@ -724,6 +775,47 @@ function clearSelectedSession() {
   currentSelectionCards.value = []
   currentDebug.value = null
   persistSelectedSessionId(null)
+}
+
+function openFilePicker() {
+  fileInputRef.value?.click()
+}
+
+function handleFileInputChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  pendingFiles.value = files.slice(0, 3)
+  if (files.length > 3) {
+    ElMessage.warning('Hermes 第一版每次最多上传 3 个文档')
+  }
+  input.value = ''
+}
+
+function removePendingFile(target: File) {
+  pendingFiles.value = pendingFiles.value.filter((file) => file !== target)
+}
+
+function handleDownloadAttachment(attachment: HermesAttachmentItem) {
+  if (!selectedSessionId.value || attachment.id == null) {
+    return
+  }
+  window.open(`/api/hermes/sessions/${selectedSessionId.value}/attachments/${attachment.id}/download`, '_blank')
+}
+
+function toAttachmentSummary(file: File): HermesAttachmentItem {
+  const extension = file.name.split('.').pop()?.toUpperCase() || ''
+  return {
+    id: null,
+    assetId: 0,
+    fileName: file.name,
+    contentType: file.type,
+    fileSize: file.size,
+    sourceFormat: extension,
+    suggestedTitle: '',
+    truncated: false,
+    warnings: [],
+    createdAt: null
+  }
 }
 
 function patchCurrentSessionSummary(summary: HermesConversationSessionSummaryItem) {

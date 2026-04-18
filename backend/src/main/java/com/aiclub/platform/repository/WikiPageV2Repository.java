@@ -3,6 +3,7 @@ package com.aiclub.platform.repository;
 import com.aiclub.platform.domain.model.WikiPageV2Entity;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
 import java.util.Optional;
@@ -38,4 +39,14 @@ public interface WikiPageV2Repository extends JpaRepository<WikiPageV2Entity, Lo
 
     /** 批量读取页面。 */
     List<WikiPageV2Entity> findAllByIdIn(List<Long> ids);
+
+    /** 按空间读取页面详情，并联表抓取来源文档资产，供下载原文件时复用。 */
+    @Query("""
+            select page
+            from WikiPageV2Entity page
+            left join fetch page.sourceDocumentAsset
+            where page.space.id = :spaceId
+              and page.id = :id
+            """)
+    Optional<WikiPageV2Entity> findDetailBySpace_IdAndId(Long spaceId, Long id);
 }

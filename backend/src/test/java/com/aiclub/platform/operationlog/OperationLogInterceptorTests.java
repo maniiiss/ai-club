@@ -3,9 +3,12 @@ package com.aiclub.platform.operationlog;
 import com.aiclub.platform.controller.HermesController;
 import com.aiclub.platform.controller.UserController;
 import com.aiclub.platform.service.AccessManagementService;
+import com.aiclub.platform.service.DocumentAssetService;
+import com.aiclub.platform.service.HermesAttachmentService;
 import com.aiclub.platform.service.HermesChatService;
 import com.aiclub.platform.service.HermesConversationSessionService;
 import com.aiclub.platform.service.UserOperationLogService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -31,7 +34,10 @@ class OperationLogInterceptorTests {
         OperationLogInterceptor interceptor = new OperationLogInterceptor(mock(UserOperationLogService.class));
         HermesController hermesController = new HermesController(
                 mock(HermesChatService.class),
-                mock(HermesConversationSessionService.class)
+                mock(HermesConversationSessionService.class),
+                mock(HermesAttachmentService.class),
+                mock(DocumentAssetService.class),
+                new ObjectMapper()
         );
         HandlerMethod handlerMethod = new HandlerMethod(
                 hermesController,

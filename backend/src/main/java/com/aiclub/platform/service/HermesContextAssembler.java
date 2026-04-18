@@ -502,5 +502,17 @@ public class HermesContextAssembler {
             List<String> suggestions,
             String contextMarkdown
     ) {
+        /**
+         * 兼容旧测试构造方式。
+         */
+        public HermesConversationContext(String sceneCode,
+                                         Long projectId,
+                                         Long taskId,
+                                         String roleName,
+                                         List<HermesReferenceSummary> references,
+                                         List<String> suggestions,
+                                         String contextMarkdown) {
+            this(sceneCode, projectId, taskId, null, null, roleName, references, suggestions, contextMarkdown);
+        }
     }
 }

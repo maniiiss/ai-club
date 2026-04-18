@@ -8,11 +8,17 @@ import com.aiclub.platform.dto.HermesConversationDetail;
 import com.aiclub.platform.dto.HermesConversationSessionSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.request.CreateHermesConversationSessionRequest;
+import com.aiclub.platform.dto.request.HermesMultipartChatCommand;
 import com.aiclub.platform.dto.request.HermesSessionChatRequest;
+import com.aiclub.platform.dto.request.HermesSelectionFormRequest;
 import com.aiclub.platform.dto.request.RenameHermesConversationSessionRequest;
+import com.aiclub.platform.service.DocumentAssetService;
+import com.aiclub.platform.service.HermesAttachmentService;
 import com.aiclub.platform.service.HermesChatService;
 import com.aiclub.platform.service.HermesConversationSessionService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -26,7 +32,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
+
+import java.util.List;
 
 /**
  * Hermes 平台内置助手的专用控制器。
@@ -38,11 +47,21 @@ public class HermesController {
 
     private final HermesChatService hermesChatService;
     private final HermesConversationSessionService hermesConversationSessionService;
+    private final HermesAttachmentService hermesAttachmentService;
+    private final DocumentAssetService documentAssetService;
+    private final ObjectMapper objectMapper;
 
+    @Autowired
     public HermesController(HermesChatService hermesChatService,
-                            HermesConversationSessionService hermesConversationSessionService) {
+                            HermesConversationSessionService hermesConversationSessionService,
+                            HermesAttachmentService hermesAttachmentService,
+                            DocumentAssetService documentAssetService,
+                            ObjectMapper objectMapper) {
         this.hermesChatService = hermesChatService;
         this.hermesConversationSessionService = hermesConversationSessionService;
+        this.hermesAttachmentService = hermesAttachmentService;
+        this.documentAssetService = documentAssetService;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -135,6 +154,19 @@ public class HermesController {
     }
 
     /**
+     * 指定会话的带附件非流式问答入口。
+     */
+    @PostMapping(value = "/sessions/{sessionId}/chat", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RequirePermission("hermes:chat")
+    public ApiResponse<HermesChatResponse> chatWithFiles(@PathVariable Long sessionId,
+                                                         @RequestParam("question") String question,
+                                                         @RequestParam(value = "selectionJson", required = false) String selectionJson,
+                                                         @RequestParam(value = "debug", required = false) Boolean debug,
+                                                         @RequestParam(value = "files", required = false) List<MultipartFile> files) {
+        return ApiResponse.success(hermesChatService.chat(sessionId, buildMultipartCommand(question, selectionJson, debug, files)));
+    }
+
+    /**
      * 指定会话的统一流式问答入口。
      */
     @PostMapping(value = "/sessions/{sessionId}/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -146,5 +178,73 @@ public class HermesController {
                 .header(HttpHeaders.CONNECTION, "keep-alive")
                 .contentType(MediaType.TEXT_EVENT_STREAM)
                 .body(hermesChatService.streamChat(sessionId, request));
+    }
+
+    /**
+     * 指定会话的带附件流式问答入口。
+     */
+    @PostMapping(value = "/sessions/{sessionId}/chat/stream", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @RequirePermission("hermes:chat")
+    public ResponseEntity<StreamingResponseBody> streamChatWithFiles(@PathVariable Long sessionId,
+                                                                     @RequestParam("question") String question,
+                                                                     @RequestParam(value = "selectionJson", required = false) String selectionJson,
+                                                                     @RequestParam(value = "debug", required = false) Boolean debug,
+                                                                     @RequestParam(value = "files", required = false) List<MultipartFile> files) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "no-cache")
+                .header(HttpHeaders.CONNECTION, "keep-alive")
+                .contentType(MediaType.TEXT_EVENT_STREAM)
+                .body(hermesChatService.streamChat(sessionId, buildMultipartCommand(question, selectionJson, debug, files)));
+    }
+
+    /**
+     * 下载当前会话中的原始附件文件。
+     */
+    @GetMapping("/sessions/{sessionId}/attachments/{attachmentId}/download")
+    @RequirePermission("hermes:chat")
+    public ResponseEntity<byte[]> downloadAttachment(@PathVariable Long sessionId, @PathVariable Long attachmentId) {
+        var attachment = hermesAttachmentService.requireOwnedAttachment(sessionId, attachmentId);
+        var content = documentAssetService.loadContent(attachment.getDocumentAsset());
+        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        try {
+            mediaType = MediaType.parseMediaType(content.contentType());
+        } catch (Exception ignored) {
+        }
+        return ResponseEntity.ok()
+                .contentType(mediaType)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + attachment.getDocumentAsset().getFileName() + "\"")
+                .body(content.bytes());
+    }
+
+    /**
+     * 将 multipart 表单参数组装成统一的内部聊天命令。
+     */
+    private HermesMultipartChatCommand buildMultipartCommand(String question,
+                                                             String selectionJson,
+                                                             Boolean debug,
+                                                             List<MultipartFile> files) {
+        return new HermesMultipartChatCommand(
+                question == null ? "" : question.trim(),
+                parseSelection(selectionJson),
+                debug,
+                files
+        );
+    }
+
+    private com.aiclub.platform.dto.request.HermesSelectionRequest parseSelection(String selectionJson) {
+        if (selectionJson == null || selectionJson.isBlank()) {
+            return null;
+        }
+        try {
+            HermesSelectionFormRequest form = objectMapper.readValue(selectionJson, HermesSelectionFormRequest.class);
+            return new com.aiclub.platform.dto.request.HermesSelectionRequest(
+                    form.slot(),
+                    form.entityType(),
+                    form.entityId(),
+                    form.resumeQuestion()
+            );
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("Hermes 选择信息格式不正确");
+        }
     }
 }

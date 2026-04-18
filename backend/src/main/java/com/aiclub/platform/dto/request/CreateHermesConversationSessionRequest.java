@@ -17,4 +17,14 @@ public record CreateHermesConversationSessionRequest(
         Long wikiSpaceId,
         Long wikiPageId
 ) {
+    /**
+     * 兼容旧调用方：未提供 Wiki 绑定信息时自动置空。
+     */
+    public CreateHermesConversationSessionRequest(String routeName,
+                                                  Long projectId,
+                                                  Long taskId,
+                                                  Long iterationId,
+                                                  Long planId) {
+        this(routeName, projectId, taskId, iterationId, planId, null, null);
+    }
 }

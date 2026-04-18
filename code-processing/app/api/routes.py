@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from app.models import (
+    DocumentConvertResponse,
     RepositoryScanFixPlanRequest,
     RepositoryScanFixPlanResponse,
     RepositoryScanNormalizeResponse,
@@ -19,6 +20,7 @@ from app.models import (
     ScanSummary,
 )
 from app.services.repository_service import build_summary
+from app.services.document_service import convert_document_to_markdown
 from app.services.repository_scan_service import (
     build_repository_scan_fix_plan,
     cleanup_repository_scan,
@@ -34,6 +36,7 @@ from app.settings import settings
 
 router = APIRouter(prefix="/api/code", tags=["code-processing"])
 repo_scan_router = APIRouter(prefix="/api/repo-scans", tags=["repository-scan"])
+document_router = APIRouter(prefix="/api/documents", tags=["documents"])
 
 
 @router.post("/summary", response_model=ScanSummary)
@@ -52,6 +55,24 @@ def _require_internal_service_auth(request: Request) -> None:
     actual_header = request.headers.get("Authorization", "").strip()
     if actual_header != expected_header:
         raise HTTPException(status_code=401, detail="内部扫描接口鉴权失败")
+
+
+@document_router.post("/convert", response_model=DocumentConvertResponse)
+async def convert_document(
+    request: Request,
+    file: UploadFile = File(...),
+    scene: str = Form(default=""),
+    maxChars: int | None = Form(default=None),
+) -> DocumentConvertResponse:
+    """把 Office/PDF 文档转换成 Markdown，供 backend 内部链路复用。"""
+    _require_internal_service_auth(request)
+    try:
+        content = await file.read()
+        return convert_document_to_markdown(file.filename or "", content, scene, maxChars)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
 
 
 @repo_scan_router.post("/prepare", response_model=RepositoryScanPrepareResponse)

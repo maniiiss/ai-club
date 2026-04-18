@@ -47,19 +47,7 @@ public class HindsightClientService {
                                    String content,
                                    List<String> tags,
                                    Map<String, Object> metadata) {
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("document_id", documentId);
-        payload.put("text", content == null ? "" : content);
-        payload.put("content", content == null ? "" : content);
-        payload.put("title", title == null ? "" : title);
-        payload.put("upsert", true);
-        payload.put("source", "wiki");
-        ArrayNode tagArray = payload.putArray("tags");
-        for (String tag : tags == null ? List.<String>of() : tags) {
-            tagArray.add(tag);
-        }
-        payload.set("metadata", objectMapper.valueToTree(metadata == null ? Map.of() : metadata));
-        sendJsonRequest("POST", memoriesUrl(projectId, "retain"), payload);
+        sendJsonRequest("POST", memoriesUrl(projectId), buildRetainPayload(documentId, title, content, tags, metadata));
     }
 
     /**
@@ -74,7 +62,7 @@ public class HindsightClientService {
         tags.add("wiki");
         tags.add("project:" + projectId);
         try {
-            HttpResponse<String> response = sendJsonRequest("POST", memoriesUrl(projectId, "recall"), payload);
+            HttpResponse<String> response = sendJsonRequest("POST", recallUrl(projectId), payload);
             JsonNode root = objectMapper.readTree(response.body());
             List<WikiRecallHit> hits = new ArrayList<>();
             collectRecallHits(root, hits);
@@ -100,19 +88,7 @@ public class HindsightClientService {
                                         String content,
                                         List<String> tags,
                                         Map<String, Object> metadata) {
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("document_id", documentId);
-        payload.put("text", content == null ? "" : content);
-        payload.put("content", content == null ? "" : content);
-        payload.put("title", title == null ? "" : title);
-        payload.put("upsert", true);
-        payload.put("source", "wiki");
-        ArrayNode tagArray = payload.putArray("tags");
-        for (String tag : tags == null ? List.<String>of() : tags) {
-            tagArray.add(tag);
-        }
-        payload.set("metadata", objectMapper.valueToTree(metadata == null ? Map.of() : metadata));
-        sendJsonRequest("POST", spaceMemoriesUrl(spaceId, "retain"), payload);
+        sendJsonRequest("POST", spaceMemoriesUrl(spaceId), buildRetainPayload(documentId, title, content, tags, metadata));
     }
 
     /**
@@ -127,7 +103,7 @@ public class HindsightClientService {
         tags.add("wiki");
         tags.add("space:" + spaceId);
         try {
-            HttpResponse<String> response = sendJsonRequest("POST", spaceMemoriesUrl(spaceId, "recall"), payload);
+            HttpResponse<String> response = sendJsonRequest("POST", spaceRecallUrl(spaceId), payload);
             JsonNode root = objectMapper.readTree(response.body());
             List<WikiRecallHit> hits = new ArrayList<>();
             collectRecallHits(root, hits);
@@ -144,20 +120,28 @@ public class HindsightClientService {
         sendJsonRequest("DELETE", spaceDocumentsUrl(spaceId, documentId), null);
     }
 
-    private String memoriesUrl(Long projectId, String action) {
-        return properties.getBaseUrl() + "/v1/default/banks/" + encode(properties.wikiBankId(projectId)) + "/memories/" + action;
+    private String memoriesUrl(Long projectId) {
+        return properties.getBaseUrl() + "/v1/default/banks/" + encode(properties.wikiBankId(projectId)) + "/memories";
     }
 
     private String documentsUrl(Long projectId, String documentId) {
         return properties.getBaseUrl() + "/v1/default/banks/" + encode(properties.wikiBankId(projectId)) + "/documents/" + encode(documentId);
     }
 
-    private String spaceMemoriesUrl(Long spaceId, String action) {
-        return properties.getBaseUrl() + "/v1/default/banks/" + encode(properties.wikiSpaceBankId(spaceId)) + "/memories/" + action;
+    private String recallUrl(Long projectId) {
+        return memoriesUrl(projectId) + "/recall";
+    }
+
+    private String spaceMemoriesUrl(Long spaceId) {
+        return properties.getBaseUrl() + "/v1/default/banks/" + encode(properties.wikiSpaceBankId(spaceId)) + "/memories";
     }
 
     private String spaceDocumentsUrl(Long spaceId, String documentId) {
         return properties.getBaseUrl() + "/v1/default/banks/" + encode(properties.wikiSpaceBankId(spaceId)) + "/documents/" + encode(documentId);
+    }
+
+    private String spaceRecallUrl(Long spaceId) {
+        return spaceMemoriesUrl(spaceId) + "/recall";
     }
 
     private HttpResponse<String> sendJsonRequest(String method, String url, JsonNode payload) {
@@ -186,6 +170,37 @@ public class HindsightClientService {
             }
             throw new IllegalStateException("Hindsight 请求失败：" + limitMessage(exception.getMessage()), exception);
         }
+    }
+
+    /**
+     * 按 Hindsight 0.5.0 的 RetainRequest 结构组装请求体。
+     */
+    private ObjectNode buildRetainPayload(String documentId,
+                                          String title,
+                                          String content,
+                                          List<String> tags,
+                                          Map<String, Object> metadata) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("async", false);
+        ArrayNode items = payload.putArray("items");
+        ObjectNode item = items.addObject();
+        item.put("content", content == null ? "" : content);
+        item.put("context", "wiki");
+        item.put("document_id", documentId == null ? "" : documentId);
+        ArrayNode tagArray = item.putArray("tags");
+        for (String tag : tags == null ? List.<String>of() : tags) {
+            tagArray.add(tag);
+        }
+        ObjectNode metadataNode = item.putObject("metadata");
+        metadataNode.put("title", title == null ? "" : title);
+        metadataNode.put("source", "wiki");
+        for (Map.Entry<String, Object> entry : (metadata == null ? Map.<String, Object>of() : metadata).entrySet()) {
+            if (entry.getKey() == null || entry.getKey().isBlank() || entry.getValue() == null) {
+                continue;
+            }
+            metadataNode.put(entry.getKey(), String.valueOf(entry.getValue()));
+        }
+        return payload;
     }
 
     /**

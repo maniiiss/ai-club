@@ -80,6 +80,16 @@ class HermesInternalToolExecuteResponse(BaseModel):
     message: str = Field(default="", description="返回给 Hermes 的文本摘要")
 
 
+class DocumentConvertResponse(BaseModel):
+    """文档转 Markdown 响应。"""
+
+    suggestedTitle: str = ""
+    markdown: str = ""
+    sourceFormat: str = ""
+    truncated: bool = False
+    warnings: list[str] = Field(default_factory=list)
+
+
 class RepositoryScanRulesetSummary(BaseModel):
     """仓库规范扫描规则集摘要。"""
 

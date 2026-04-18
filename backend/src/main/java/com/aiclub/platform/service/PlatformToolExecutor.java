@@ -12,6 +12,7 @@ import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.PlatformToolAction;
 import com.aiclub.platform.dto.PlatformToolCandidate;
 import com.aiclub.platform.dto.PlatformToolDefinition;
+import com.aiclub.platform.dto.DocumentMarkdownResult;
 import com.aiclub.platform.dto.PlatformToolRequest;
 import com.aiclub.platform.dto.PlatformToolResult;
 import com.aiclub.platform.dto.WikiSpacePageDetail;
@@ -68,6 +69,7 @@ public class PlatformToolExecutor {
     private final GitlabManagementService gitlabManagementService;
     private final RepositoryScanRulesetService repositoryScanRulesetService;
     private final WikiSpaceService wikiSpaceService;
+    private final DocumentMarkdownService documentMarkdownService;
 
     public PlatformToolExecutor(PlatformToolRegistry platformToolRegistry,
                                 ToolExecutionAuditService toolExecutionAuditService,
@@ -83,7 +85,8 @@ public class PlatformToolExecutor {
                                 ExecutionWorkflowService executionWorkflowService,
                                 GitlabManagementService gitlabManagementService,
                                 RepositoryScanRulesetService repositoryScanRulesetService,
-                                WikiSpaceService wikiSpaceService) {
+                                WikiSpaceService wikiSpaceService,
+                                DocumentMarkdownService documentMarkdownService) {
         this.platformToolRegistry = platformToolRegistry;
         this.toolExecutionAuditService = toolExecutionAuditService;
         this.projectDataPermissionService = projectDataPermissionService;
@@ -99,6 +102,7 @@ public class PlatformToolExecutor {
         this.gitlabManagementService = gitlabManagementService;
         this.repositoryScanRulesetService = repositoryScanRulesetService;
         this.wikiSpaceService = wikiSpaceService;
+        this.documentMarkdownService = documentMarkdownService;
     }
 
     public PlatformToolResult execute(PlatformToolRequest request) {
@@ -127,6 +131,7 @@ public class PlatformToolExecutor {
                 case PlatformToolRegistry.TOOL_EXECUTION_TASK_GET_DETAIL -> getExecutionTaskDetail(request);
                 case PlatformToolRegistry.TOOL_TEST_PLAN_SEARCH -> searchTestPlans(request);
                 case PlatformToolRegistry.TOOL_TEST_PLAN_GET_DETAIL -> getTestPlanDetail(request);
+                case PlatformToolRegistry.TOOL_DOCUMENT_CONVERT_MARKDOWN -> convertDocumentToMarkdown(request);
                 case PlatformToolRegistry.TOOL_WIKI_SPACE_SEARCH -> searchWikiPages(request);
                 case PlatformToolRegistry.TOOL_WIKI_PAGE_GET_DETAIL -> getWikiPageDetail(request);
                 default -> throw new IllegalArgumentException("平台工具暂不支持: " + request.toolCode());
@@ -384,6 +389,40 @@ public class PlatformToolExecutor {
             throw new ForbiddenException("无权访问当前测试计划");
         }
         return result(request.toolCode(), "测试计划详情", "已读取测试计划 “" + testPlan.getName() + "”", List.of(testPlanCandidate(testPlan)), Map.of("testPlanId", testPlan.getId()));
+    }
+
+    /**
+     * 按文档资产把原始文件转换为 Markdown。
+     */
+    private PlatformToolResult convertDocumentToMarkdown(PlatformToolRequest request) {
+        Long assetId = longValue(request.payload(), "assetId");
+        String scene = stringValue(request.payload(), "scene");
+        Integer maxChars = nullableIntegerValue(request.payload(), "maxChars");
+        DocumentMarkdownResult converted = documentMarkdownService.convert(assetId, scene, maxChars);
+        PlatformToolCandidate candidate = new PlatformToolCandidate(
+                "DOCUMENT_MARKDOWN",
+                converted.assetId(),
+                defaultString(converted.suggestedTitle()).isBlank() ? defaultString(converted.fileName()) : defaultString(converted.suggestedTitle()),
+                "格式：" + defaultString(converted.sourceFormat()) + (converted.truncated() ? " / 已截断" : ""),
+                "",
+                Map.of(
+                        "assetId", converted.assetId(),
+                        "fileName", defaultString(converted.fileName()),
+                        "suggestedTitle", defaultString(converted.suggestedTitle()),
+                        "sourceFormat", defaultString(converted.sourceFormat()),
+                        "markdown", defaultString(converted.markdown()),
+                        "truncated", converted.truncated(),
+                        "warnings", converted.warnings()
+                ),
+                List.of()
+        );
+        return result(
+                request.toolCode(),
+                "文档转 Markdown",
+                "已把文档 “" + defaultString(converted.fileName()) + "” 转为 Markdown",
+                List.of(candidate),
+                metadata("assetId", converted.assetId(), "scene", defaultString(scene), "maxChars", maxChars)
+        );
     }
 
     private PlatformToolResult searchWikiPages(PlatformToolRequest request) {
@@ -682,6 +721,17 @@ public class PlatformToolExecutor {
     private String stringValue(Map<String, Object> payload, String key) {
         Object value = payload == null ? null : payload.get(key);
         return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private Integer nullableIntegerValue(Map<String, Object> payload, String key) {
+        Object value = payload == null ? null : payload.get(key);
+        if (value == null || String.valueOf(value).isBlank()) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return Integer.parseInt(String.valueOf(value));
     }
 
     private boolean containsAny(String value, String keyword) {

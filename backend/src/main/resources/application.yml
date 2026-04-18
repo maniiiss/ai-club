@@ -49,8 +49,8 @@ spring:
     clean-disabled: true
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 12MB
+      max-file-size: 20MB
+      max-request-size: 64MB
   mvc:
     async:
       request-timeout: 300000
@@ -94,6 +94,7 @@ platform:
     session-key-prefix: ${PLATFORM_SECURITY_SESSION_KEY_PREFIX:ai-club:login:token:}
   upload:
     max-image-size: 5MB
+    max-document-size: 20MB
     minio:
       endpoint: ${PLATFORM_MINIO_ENDPOINT:http://localhost:19000}
       access-key: ${PLATFORM_MINIO_ACCESS_KEY:minioadmin}

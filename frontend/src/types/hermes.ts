@@ -76,6 +76,20 @@ export interface HermesConversationMessageItem {
   content: string
   status: 'done' | 'error' | string
   createdAt: string | null
+  attachments: HermesAttachmentItem[]
+}
+
+export interface HermesAttachmentItem {
+  id: number | null
+  assetId: number
+  fileName: string
+  contentType: string
+  fileSize: number
+  sourceFormat: string
+  suggestedTitle: string
+  truncated: boolean
+  warnings: string[]
+  createdAt: string | null
 }
 
 /**
@@ -169,6 +183,7 @@ export interface HermesSessionChatResponsePayload {
   actions: HermesActionItem[]
   selectionCards: HermesSelectionCardItem[]
   debug: HermesDebugInfoItem | null
+  attachments: HermesAttachmentItem[]
 }
 
 /**
@@ -179,6 +194,7 @@ export interface HermesMessageItem {
   role: 'user' | 'assistant'
   content: string
   status: 'done' | 'streaming' | 'error'
+  attachments: HermesAttachmentItem[]
   actions?: HermesActionItem[]
 }
 
@@ -193,6 +209,7 @@ export interface HermesStreamMetaEvent {
   actions: HermesActionItem[]
   selectionCards: HermesSelectionCardItem[]
   debug: HermesDebugInfoItem | null
+  attachments: HermesAttachmentItem[]
 }
 
 /**
@@ -222,6 +239,7 @@ export interface HermesStreamDoneEvent {
   actions: HermesActionItem[]
   selectionCards: HermesSelectionCardItem[]
   debug: HermesDebugInfoItem | null
+  attachments: HermesAttachmentItem[]
 }
 
 /**

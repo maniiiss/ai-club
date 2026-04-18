@@ -3,6 +3,7 @@ import { http, getResolvedApiBaseUrl } from './http'
 import type { ApiResponse, PageResponse } from '@/types/platform'
 import type {
   CreateHermesConversationSessionPayload,
+  HermesAttachmentItem,
   HermesConversationDetailItem,
   HermesConversationSessionQuery,
   HermesConversationSessionSummaryItem,
@@ -193,7 +194,140 @@ export const streamHermesSessionChat = async (sessionId: number, payload: Hermes
             suggestions: [],
             actions: [],
             selectionCards: [],
-            debug: null
+            debug: null,
+            attachments: []
+          })
+        }
+        break
+      }
+      buffer += decoder.decode(value, { stream: true })
+      let boundaryIndex = buffer.indexOf('\n\n')
+      while (boundaryIndex >= 0) {
+        const eventChunk = buffer.slice(0, boundaryIndex)
+        buffer = buffer.slice(boundaryIndex + 2)
+        if (eventChunk.trim()) {
+          consumeChunk(eventChunk)
+        }
+        boundaryIndex = buffer.indexOf('\n\n')
+      }
+    }
+  })().catch((error: unknown) => {
+    handlers.onError?.({
+      message: error instanceof Error ? error.message : 'Hermes 流式连接已中断'
+    })
+  })
+
+  return {
+    abort: () => controller.abort()
+  }
+}
+
+export const streamHermesSessionChatWithFiles = async (
+  sessionId: number,
+  payload: HermesSessionChatRequestPayload,
+  files: File[],
+  handlers: StreamHandlers
+) => {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY)
+  const controller = new AbortController()
+  const formData = new FormData()
+  formData.append('question', payload.question)
+  if (payload.selection) {
+    formData.append('selectionJson', JSON.stringify(payload.selection))
+  }
+  if (payload.debug != null) {
+    formData.append('debug', String(payload.debug))
+  }
+  files.forEach((file) => formData.append('files', file))
+
+  const response = await fetch(`${getResolvedApiBaseUrl()}/api/hermes/sessions/${sessionId}/chat/stream`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: formData,
+    signal: controller.signal
+  })
+
+  if (!response.ok) {
+    let message = 'Hermes 助手暂时不可用'
+    try {
+      const errorBody = await response.json()
+      message = errorBody?.message || message
+    } catch {
+      // 忽略解析失败，保留默认提示。
+    }
+    throw new Error(message)
+  }
+
+  if (!response.body) {
+    throw new Error('Hermes 流式响应为空')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let didReceiveTerminalEvent = false
+  let didReceiveAnyEvent = false
+
+  const consumeChunk = (chunk: string) => {
+    const normalized = chunk.replace(/\r/g, '')
+    const lines = normalized.split('\n')
+    let eventName = ''
+    const dataLines: string[] = []
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        eventName = line.slice('event:'.length).trim()
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice('data:'.length).trim())
+      }
+    }
+    const data = dataLines.join('\n')
+    if (!eventName || !data) {
+      return
+    }
+    didReceiveAnyEvent = true
+    if (eventName === 'meta') {
+      handlers.onMeta?.(JSON.parse(data))
+      return
+    }
+    if (eventName === 'status') {
+      handlers.onStatus?.(JSON.parse(data))
+      return
+    }
+    if (eventName === 'delta') {
+      handlers.onDelta?.(JSON.parse(data))
+      return
+    }
+    if (eventName === 'done') {
+      didReceiveTerminalEvent = true
+      handlers.onDone?.(JSON.parse(data))
+      return
+    }
+    if (eventName === 'error') {
+      didReceiveTerminalEvent = true
+      handlers.onError?.(JSON.parse(data))
+    }
+  }
+
+  ;(async () => {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) {
+        if (buffer.trim()) {
+          consumeChunk(buffer)
+        }
+        if (!didReceiveTerminalEvent && didReceiveAnyEvent) {
+          handlers.onDone?.({
+            scopeKey: '',
+            roleName: '',
+            content: '',
+            references: [],
+            suggestions: [],
+            actions: [],
+            selectionCards: [],
+            debug: null,
+            attachments: [] as HermesAttachmentItem[]
           })
         }
         break

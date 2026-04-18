@@ -13,12 +13,14 @@ import com.aiclub.platform.dto.HermesConversationState;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.request.CreateHermesConversationSessionRequest;
 import com.aiclub.platform.dto.request.HermesChatRequest;
+import com.aiclub.platform.service.HermesAttachmentService.PreparedAttachment;
 import com.aiclub.platform.dto.request.RenameHermesConversationSessionRequest;
 import com.aiclub.platform.repository.HermesConversationMessageRepository;
 import com.aiclub.platform.repository.HermesConversationSessionRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -55,18 +57,33 @@ public class HermesConversationSessionService {
     private final UserRepository userRepository;
     private final HermesConversationSessionRepository hermesConversationSessionRepository;
     private final HermesConversationMessageRepository hermesConversationMessageRepository;
+    private final HermesAttachmentService hermesAttachmentService;
     private final ObjectMapper objectMapper;
 
+    @Autowired
     public HermesConversationSessionService(AuthService authService,
                                            UserRepository userRepository,
                                            HermesConversationSessionRepository hermesConversationSessionRepository,
                                            HermesConversationMessageRepository hermesConversationMessageRepository,
+                                           HermesAttachmentService hermesAttachmentService,
                                            ObjectMapper objectMapper) {
         this.authService = authService;
         this.userRepository = userRepository;
         this.hermesConversationSessionRepository = hermesConversationSessionRepository;
         this.hermesConversationMessageRepository = hermesConversationMessageRepository;
+        this.hermesAttachmentService = hermesAttachmentService;
         this.objectMapper = objectMapper;
+    }
+
+    /**
+     * 兼容旧测试构造方式。
+     */
+    public HermesConversationSessionService(AuthService authService,
+                                           UserRepository userRepository,
+                                           HermesConversationSessionRepository hermesConversationSessionRepository,
+                                           HermesConversationMessageRepository hermesConversationMessageRepository,
+                                           ObjectMapper objectMapper) {
+        this(authService, userRepository, hermesConversationSessionRepository, hermesConversationMessageRepository, null, objectMapper);
     }
 
     /**
@@ -201,13 +218,17 @@ public class HermesConversationSessionService {
                                                   HermesChatRequest request,
                                                   HermesConversationState finalState,
                                                   String assistantContent,
-                                                  HermesDebugInfo debugInfo) {
+                                                  HermesDebugInfo debugInfo,
+                                                  List<PreparedAttachment> attachments) {
         if (session.isArchived()) {
             throw new IllegalArgumentException("已归档会话不能继续发送消息，请先恢复会话");
         }
 
         boolean shouldAutoTitle = !session.isTitleCustomized() && isDefaultTitle(session.getTitle());
-        persistMessage(session, "user", buildDisplayedUserMessage(request), "DONE");
+        HermesConversationMessageEntity userMessage = persistMessage(session, "user", buildDisplayedUserMessage(request), "DONE");
+        if (hermesAttachmentService != null) {
+            hermesAttachmentService.bindToUserMessage(userMessage, attachments);
+        }
         persistMessage(session, "assistant", defaultString(assistantContent), "DONE");
 
         if (shouldAutoTitle && hasText(request.question())) {
@@ -222,6 +243,18 @@ public class HermesConversationSessionService {
     }
 
     /**
+     * 兼容旧调用方：未提供附件时按空列表处理。
+     */
+    @Transactional
+    public HermesConversationDetail recordSuccess(HermesConversationSessionEntity session,
+                                                  HermesChatRequest request,
+                                                  HermesConversationState finalState,
+                                                  String assistantContent,
+                                                  HermesDebugInfo debugInfo) {
+        return recordSuccess(session, request, finalState, assistantContent, debugInfo, List.of());
+    }
+
+    /**
      * 聊天失败后，仍然保留本轮用户消息与错误回答，保证历史记录可回显。
      */
     @Transactional
@@ -229,12 +262,16 @@ public class HermesConversationSessionService {
                                                   HermesChatRequest request,
                                                   HermesConversationState latestState,
                                                   String errorMessage,
-                                                  HermesDebugInfo debugInfo) {
+                                                  HermesDebugInfo debugInfo,
+                                                  List<PreparedAttachment> attachments) {
         if (session.isArchived()) {
             throw new IllegalArgumentException("已归档会话不能继续发送消息，请先恢复会话");
         }
 
-        persistMessage(session, "user", buildDisplayedUserMessage(request), "DONE");
+        HermesConversationMessageEntity userMessage = persistMessage(session, "user", buildDisplayedUserMessage(request), "DONE");
+        if (hermesAttachmentService != null) {
+            hermesAttachmentService.bindToUserMessage(userMessage, attachments);
+        }
         persistMessage(session, "assistant", defaultString(errorMessage), "ERROR");
         session.setLatestPreview(resolveLatestPreview(errorMessage, request.question()));
         if (latestState != null || debugInfo != null) {
@@ -243,6 +280,18 @@ public class HermesConversationSessionService {
         session.setLastMessageAt(LocalDateTime.now());
         HermesConversationSessionEntity saved = hermesConversationSessionRepository.save(session);
         return buildDetail(saved);
+    }
+
+    /**
+     * 兼容旧调用方：未提供附件时按空列表处理。
+     */
+    @Transactional
+    public HermesConversationDetail recordFailure(HermesConversationSessionEntity session,
+                                                  HermesChatRequest request,
+                                                  HermesConversationState latestState,
+                                                  String errorMessage,
+                                                  HermesDebugInfo debugInfo) {
+        return recordFailure(session, request, latestState, errorMessage, debugInfo, List.of());
     }
 
     /**
@@ -297,10 +346,15 @@ public class HermesConversationSessionService {
      * 基于已校验通过的会话实体直接组装详情，避免流式线程切换后重复读取登录态。
      */
     private HermesConversationDetail buildDetail(HermesConversationSessionEntity session) {
-        List<HermesConversationMessageItem> messages = hermesConversationMessageRepository
-                .findBySession_IdOrderByCreatedAtAscIdAsc(session.getId())
+        List<HermesConversationMessageEntity> entities = hermesConversationMessageRepository
+                .findBySession_IdOrderByCreatedAtAscIdAsc(session.getId());
+        List<Long> messageIds = entities.stream().map(HermesConversationMessageEntity::getId).toList();
+        var attachmentsByMessageId = hermesAttachmentService == null
+                ? java.util.Map.<Long, java.util.List<com.aiclub.platform.dto.HermesAttachmentSummary>>of()
+                : hermesAttachmentService.loadMessageAttachments(messageIds);
+        List<HermesConversationMessageItem> messages = entities
                 .stream()
-                .map(this::toMessageItem)
+                .map(entity -> toMessageItem(entity, attachmentsByMessageId.get(entity.getId())))
                 .toList();
         return toDetail(session, messages);
     }
@@ -308,13 +362,15 @@ public class HermesConversationSessionService {
     /**
      * 将消息实体转换为详情中的消息项。
      */
-    private HermesConversationMessageItem toMessageItem(HermesConversationMessageEntity entity) {
+    private HermesConversationMessageItem toMessageItem(HermesConversationMessageEntity entity,
+                                                        List<com.aiclub.platform.dto.HermesAttachmentSummary> attachments) {
         return new HermesConversationMessageItem(
                 entity.getId(),
                 defaultString(entity.getRole()),
                 defaultString(entity.getContent()),
                 normalizeMessageStatus(entity.getStatus()),
-                formatTime(entity.getCreatedAt())
+                formatTime(entity.getCreatedAt()),
+                attachments
         );
     }
 
@@ -400,13 +456,13 @@ public class HermesConversationSessionService {
     /**
      * 将一条消息持久化到数据库，供详情页直接回放。
      */
-    private void persistMessage(HermesConversationSessionEntity session, String role, String content, String status) {
+    private HermesConversationMessageEntity persistMessage(HermesConversationSessionEntity session, String role, String content, String status) {
         HermesConversationMessageEntity entity = new HermesConversationMessageEntity();
         entity.setSession(session);
         entity.setRole(defaultString(role));
         entity.setContent(defaultString(content));
         entity.setStatus(normalizePersistedMessageStatus(status));
-        hermesConversationMessageRepository.save(entity);
+        return hermesConversationMessageRepository.save(entity);
     }
 
     /**

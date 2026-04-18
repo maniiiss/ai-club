@@ -81,6 +81,12 @@ class PlatformToolExecutorGitlabBindingSearchTests {
     @Mock
     private RepositoryScanRulesetService repositoryScanRulesetService;
 
+    @Mock
+    private WikiSpaceService wikiSpaceService;
+
+    @Mock
+    private DocumentMarkdownService documentMarkdownService;
+
     private PlatformToolExecutor platformToolExecutor;
 
     @BeforeEach
@@ -99,7 +105,9 @@ class PlatformToolExecutorGitlabBindingSearchTests {
                 iterationRepository,
                 executionWorkflowService,
                 gitlabManagementService,
-                repositoryScanRulesetService
+                repositoryScanRulesetService,
+                wikiSpaceService,
+                documentMarkdownService
         );
         AuthContextHolder.set(new AuthContext(
                 1L,

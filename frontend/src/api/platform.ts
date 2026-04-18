@@ -21,6 +21,8 @@ import type {
   TaskRequirementAiResultItem,
   TaskItem,
   UploadedFileItem,
+  DocumentAssetItem,
+  DocumentMarkdownResultItem,
   WikiDirectorySummaryItem,
   WikiDirectoryTreeNodeItem,
   WikiSpaceDetailItem,
@@ -162,6 +164,12 @@ export interface WikiSpacePagePayload {
   title: string
   content: string
   changeSummary?: string
+}
+
+export interface WikiImportPagePayload {
+  assetId: number
+  directoryId: number
+  title: string
 }
 
 export interface ProjectQuery {
@@ -634,6 +642,30 @@ export const uploadWikiImage = async (spaceId: number, file: File) => {
       'Content-Type': 'multipart/form-data'
     }
   })
+  return data.data
+}
+
+export const uploadDocumentAsset = async (file: File, directory?: string) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  if (directory) {
+    formData.append('directory', directory)
+  }
+  const { data } = await http.post<ApiResponse<DocumentAssetItem>>('/api/document-assets', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+  return data.data
+}
+
+export const previewWikiImport = async (spaceId: number, assetId: number) => {
+  const { data } = await http.post<ApiResponse<DocumentMarkdownResultItem>>(`/api/wiki/spaces/${spaceId}/imports/preview`, { assetId })
+  return data.data
+}
+
+export const importWikiSpacePage = async (spaceId: number, payload: WikiImportPagePayload) => {
+  const { data } = await http.post<ApiResponse<WikiSpacePageDetailItem>>(`/api/wiki/spaces/${spaceId}/pages/import`, payload)
   return data.data
 }
 

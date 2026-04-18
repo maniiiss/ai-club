@@ -212,9 +212,39 @@ export interface WikiSpacePageDetailItem {
   lastSyncError: string
   authorName: string
   canEdit: boolean
+  importSource: WikiImportSourceItem | null
   relatedPages: WikiSpacePageSummaryItem[]
   createdAt: string
   updatedAt: string
+}
+
+export interface WikiImportSourceItem {
+  assetId: number
+  fileName: string
+  contentType: string
+  fileSize: number
+  sourceFormat: string
+  truncated: boolean
+  warnings: string[]
+}
+
+export interface DocumentAssetItem {
+  id: number
+  fileName: string
+  contentType: string
+  fileSize: number
+  sourceFormat: string
+  bindingStatus: string
+}
+
+export interface DocumentMarkdownResultItem {
+  assetId: number
+  fileName: string
+  suggestedTitle: string
+  sourceFormat: string
+  markdown: string
+  truncated: boolean
+  warnings: string[]
 }
 
 export interface WikiSpacePageVersionItem {

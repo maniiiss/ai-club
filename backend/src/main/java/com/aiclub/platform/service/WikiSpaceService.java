@@ -1,6 +1,7 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.ProjectEntity;
+import com.aiclub.platform.domain.model.DocumentAssetEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.domain.model.WikiDirectoryEntity;
 import com.aiclub.platform.domain.model.WikiPageSyncTaskV2Entity;
@@ -17,13 +18,17 @@ import com.aiclub.platform.dto.WikiSpacePageSummary;
 import com.aiclub.platform.dto.WikiSpacePageVersionSummary;
 import com.aiclub.platform.dto.WikiSpaceSearchResult;
 import com.aiclub.platform.dto.WikiSpaceSummary;
+import com.aiclub.platform.dto.DocumentMarkdownResult;
+import com.aiclub.platform.dto.WikiImportSourceSummary;
 import com.aiclub.platform.dto.request.CreateWikiDirectoryRequest;
+import com.aiclub.platform.dto.request.CreateWikiImportPageRequest;
 import com.aiclub.platform.dto.request.CreateWikiSpacePageRequest;
 import com.aiclub.platform.dto.request.CreateWikiSpaceRequest;
 import com.aiclub.platform.dto.request.ReplaceWikiSpaceMembersRequest;
 import com.aiclub.platform.dto.request.UpdateWikiDirectoryRequest;
 import com.aiclub.platform.dto.request.UpdateWikiSpacePageRequest;
 import com.aiclub.platform.dto.request.UpdateWikiSpaceRequest;
+import com.aiclub.platform.dto.request.WikiImportPreviewRequest;
 import com.aiclub.platform.dto.request.WikiSpaceMemberItemRequest;
 import com.aiclub.platform.exception.ForbiddenException;
 import com.aiclub.platform.exception.UnauthorizedException;
@@ -118,6 +123,8 @@ public class WikiSpaceService {
     private final ProjectRepository projectRepository;
     private final ProjectDataPermissionService projectDataPermissionService;
     private final HindsightClientService hindsightClientService;
+    private final DocumentAssetService documentAssetService;
+    private final DocumentMarkdownService documentMarkdownService;
 
     public WikiSpaceService(WikiSpaceRepository wikiSpaceRepository,
                             WikiSpaceMemberRepository wikiSpaceMemberRepository,
@@ -128,7 +135,9 @@ public class WikiSpaceService {
                             UserRepository userRepository,
                             ProjectRepository projectRepository,
                             ProjectDataPermissionService projectDataPermissionService,
-                            HindsightClientService hindsightClientService) {
+                            HindsightClientService hindsightClientService,
+                            DocumentAssetService documentAssetService,
+                            DocumentMarkdownService documentMarkdownService) {
         this.wikiSpaceRepository = wikiSpaceRepository;
         this.wikiSpaceMemberRepository = wikiSpaceMemberRepository;
         this.wikiDirectoryRepository = wikiDirectoryRepository;
@@ -139,6 +148,8 @@ public class WikiSpaceService {
         this.projectRepository = projectRepository;
         this.projectDataPermissionService = projectDataPermissionService;
         this.hindsightClientService = hindsightClientService;
+        this.documentAssetService = documentAssetService;
+        this.documentMarkdownService = documentMarkdownService;
     }
 
     /**
@@ -370,6 +381,45 @@ public class WikiSpaceService {
         entity.setSyncStatus(SYNC_STATUS_PENDING);
         WikiPageV2Entity saved = wikiPageV2Repository.save(entity);
         createPageVersion(saved, 1, userContext.user(), "创建页面");
+        enqueueRetainTask(saved);
+        return toPageDetail(saved, userContext, List.of());
+    }
+
+    /**
+     * 预览指定文档资产导入后的 Wiki 内容。
+     */
+    public DocumentMarkdownResult previewImport(Long spaceId, WikiImportPreviewRequest request) {
+        UserContext userContext = requireCurrentUserContext();
+        WikiSpaceEntity space = requireSpace(spaceId);
+        requireSpaceVisible(space, userContext);
+        return documentMarkdownService.convert(request.assetId(), DocumentMarkdownService.SCENE_WIKI_IMPORT, 200000);
+    }
+
+    /**
+     * 从文档资产创建新的 Wiki 页面，并绑定来源文档。
+     */
+    @Transactional
+    public WikiSpacePageDetail importPage(Long spaceId, CreateWikiImportPageRequest request) {
+        UserContext userContext = requireCurrentUserContext();
+        WikiSpaceEntity space = requireSpace(spaceId);
+        requireSpaceEditable(space, userContext);
+        WikiDirectoryEntity directory = requireDirectory(spaceId, request.directoryId());
+        DocumentAssetEntity asset = documentAssetService.requireAccessibleAsset(request.assetId());
+        DocumentMarkdownResult converted = documentMarkdownService.convert(asset.getId(), DocumentMarkdownService.SCENE_WIKI_IMPORT, 200000);
+
+        WikiPageV2Entity entity = new WikiPageV2Entity();
+        entity.setSpace(space);
+        entity.setDirectory(directory);
+        entity.setTitle(defaultString(request.title()));
+        entity.setSlug(generateUniquePageSlug(spaceId, request.title(), null));
+        entity.setContent(defaultString(converted.markdown()));
+        entity.setAuthorUser(userContext.user());
+        entity.setSourceDocumentAsset(documentAssetService.bindAsset(asset, DocumentAssetService.BIZ_TYPE_WIKI_PAGE, null));
+        entity.setCurrentVersionNumber(1);
+        entity.setSyncStatus(SYNC_STATUS_PENDING);
+        WikiPageV2Entity saved = wikiPageV2Repository.save(entity);
+        documentAssetService.bindAsset(asset, DocumentAssetService.BIZ_TYPE_WIKI_PAGE, saved.getId());
+        createPageVersion(saved, 1, userContext.user(), "导入文档创建页面");
         enqueueRetainTask(saved);
         return toPageDetail(saved, userContext, List.of());
     }
@@ -680,7 +730,8 @@ public class WikiSpaceService {
     }
 
     private WikiPageV2Entity requirePage(Long spaceId, Long pageId) {
-        return wikiPageV2Repository.findBySpace_IdAndId(spaceId, pageId)
+        return wikiPageV2Repository.findDetailBySpace_IdAndId(spaceId, pageId)
+                .or(() -> wikiPageV2Repository.findBySpace_IdAndId(spaceId, pageId))
                 .orElseThrow(() -> new NoSuchElementException("Wiki 页面不存在"));
     }
 
@@ -929,9 +980,27 @@ public class WikiSpaceService {
                 defaultString(page.getLastSyncError()),
                 displayName(page.getAuthorUser()),
                 canEditSpace(page.getSpace(), userContext),
+                buildImportSource(page),
                 relatedPages,
                 formatTime(page.getCreatedAt()),
                 formatTime(page.getUpdatedAt())
+        );
+    }
+
+    private WikiImportSourceSummary buildImportSource(WikiPageV2Entity page) {
+        if (page == null || page.getSourceDocumentAsset() == null) {
+            return null;
+        }
+        DocumentAssetEntity asset = page.getSourceDocumentAsset();
+        DocumentMarkdownResult converted = documentMarkdownService.convert(asset.getId(), DocumentMarkdownService.SCENE_WIKI_IMPORT, 200000);
+        return new WikiImportSourceSummary(
+                asset.getId(),
+                defaultString(asset.getFileName()),
+                defaultString(asset.getContentType()),
+                asset.getFileSize(),
+                defaultString(asset.getSourceFormat()),
+                converted.truncated(),
+                converted.warnings()
         );
     }
 

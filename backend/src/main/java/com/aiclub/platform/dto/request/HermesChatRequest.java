@@ -32,4 +32,18 @@ public record HermesChatRequest(
          */
         Boolean debug
 ) {
+    /**
+     * 兼容旧调用方：未提供 Wiki 绑定信息时自动置空。
+     */
+    public HermesChatRequest(String question,
+                             String routeName,
+                             Long projectId,
+                             Long taskId,
+                             Long iterationId,
+                             Long planId,
+                             String clientConversationId,
+                             HermesSelectionRequest selection,
+                             Boolean debug) {
+        this(question, routeName, projectId, taskId, iterationId, planId, null, null, clientConversationId, selection, debug);
+    }
 }

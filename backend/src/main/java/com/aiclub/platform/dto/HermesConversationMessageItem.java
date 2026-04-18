@@ -8,6 +8,10 @@ public record HermesConversationMessageItem(
         String role,
         String content,
         String status,
-        String createdAt
+        String createdAt,
+        java.util.List<HermesAttachmentSummary> attachments
 ) {
+    public HermesConversationMessageItem {
+        attachments = attachments == null ? java.util.List.of() : java.util.List.copyOf(attachments);
+    }
 }

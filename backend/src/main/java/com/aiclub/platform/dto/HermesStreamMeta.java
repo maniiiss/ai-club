@@ -12,6 +12,10 @@ public record HermesStreamMeta(
         List<String> suggestions,
         List<HermesActionSummary> actions,
         List<HermesSelectionCard> selectionCards,
-        HermesDebugInfo debug
+        HermesDebugInfo debug,
+        List<HermesAttachmentSummary> attachments
 ) {
+    public HermesStreamMeta {
+        attachments = attachments == null ? List.of() : List.copyOf(attachments);
+    }
 }
