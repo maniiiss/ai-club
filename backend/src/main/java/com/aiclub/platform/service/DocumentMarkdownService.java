@@ -31,6 +31,13 @@ public class DocumentMarkdownService {
      * 按资产 ID 读取并转换文档。
      */
     public DocumentMarkdownResult convert(Long assetId, String scene, Integer maxChars) {
+        return convert(assetId, scene, maxChars, null);
+    }
+
+    /**
+     * 按资产 ID 读取并转换文档，可选指定 Wiki 导入图片的业务目录。
+     */
+    public DocumentMarkdownResult convert(Long assetId, String scene, Integer maxChars, String imageDirectory) {
         DocumentAssetEntity asset = documentAssetService.requireAccessibleAsset(assetId);
         DocumentAssetStorageService.StoredDocumentContent content = documentAssetService.loadContent(asset);
         DocumentMarkdownClientService.ConvertDocumentResponse converted = documentMarkdownClientService.convert(
@@ -38,7 +45,8 @@ public class DocumentMarkdownService {
                 asset.getFileName(),
                 asset.getContentType(),
                 scene,
-                maxChars
+                maxChars,
+                imageDirectory
         );
         return new DocumentMarkdownResult(
                 asset.getId(),

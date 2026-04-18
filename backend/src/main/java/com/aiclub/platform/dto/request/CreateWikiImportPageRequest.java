@@ -16,6 +16,8 @@ public record CreateWikiImportPageRequest(
         Long parentPageId,
         @NotBlank(message = "页面标题不能为空")
         @Size(max = 200, message = "页面标题长度不能超过200")
-        String title
+        String title,
+        /** 预览后允许用户继续调整 Markdown，这里保存最终导入的页面正文。 */
+        String content
 ) {
 }

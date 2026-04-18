@@ -277,6 +277,7 @@ const canLoadMoreSessions = computed(() => sessionSummaries.value.length < sessi
 const footerDisabled = computed(() => sending.value || detailLoading.value || Boolean(currentSessionDetail.value?.archived))
 const footerPlaceholder = computed(() => currentSessionDetail.value?.archived ? '归档会话需要恢复后继续提问' : '问你想问')
 const footerTip = computed(() => sending.value ? currentStreamStatusText.value : currentSessionDetail.value?.archived ? '归档会话仅支持查看，恢复后可继续发送' : 'Enter 发送，Shift+Enter 换行')
+const currentContextKey = computed(() => JSON.stringify(buildCurrentRouteContext()))
 
 watch(drawerVisible, (visible) => {
   if (visible) {
@@ -287,6 +288,12 @@ watch(drawerVisible, (visible) => {
 watch(archivedView, () => {
   if (drawerVisible.value) {
     void loadSessionList(true)
+  }
+})
+
+watch(currentContextKey, () => {
+  if (drawerVisible.value && !archivedView.value && !sending.value) {
+    void reconcileSelectedSessionForCurrentContext()
   }
 })
 
@@ -320,9 +327,7 @@ onBeforeUnmount(() => {
  */
 const initializeDrawer = async () => {
   await loadSessionList(true)
-  if (selectedSessionId.value) {
-    await loadSessionDetail(selectedSessionId.value)
-  }
+  await reconcileSelectedSessionForCurrentContext()
 }
 
 /**
@@ -939,7 +944,55 @@ function mergeSessionSummaries(base: HermesConversationSessionSummaryItem[], inc
   return [...base, ...incoming].filter((item) => seen.has(item.id) ? false : (seen.add(item.id), true))
 }
 
-function buildCreateSessionPayload(): CreateHermesConversationSessionPayload {
+interface HermesRouteContextSnapshot {
+  routeName: string
+  projectId: number | null
+  taskId: number | null
+  iterationId: number | null
+  planId: number | null
+  wikiSpaceId: number | null
+  wikiPageId: number | null
+}
+
+/**
+ * Hermes 会话会把页面锚点固化到服务端，因此打开抽屉时需要优先恢复与当前路由一致的会话，
+ * 避免沿用其他页面留下的旧会话，导致“当前 Wiki 页面”被误判成全局搜索。
+ */
+async function reconcileSelectedSessionForCurrentContext() {
+  const preferredSessionId = resolvePreferredSessionIdForCurrentContext()
+  if (!preferredSessionId) {
+    clearSelectedSession()
+    return
+  }
+  if (currentSessionDetail.value?.id === preferredSessionId && isSessionAlignedWithCurrentContext(currentSessionDetail.value)) {
+    selectedSessionId.value = preferredSessionId
+    persistSelectedSessionId(preferredSessionId)
+    return
+  }
+  await loadSessionDetail(preferredSessionId)
+}
+
+function resolvePreferredSessionIdForCurrentContext() {
+  const currentSelectedSummary = sessionSummaries.value.find((item) => item.id === selectedSessionId.value)
+  if (currentSelectedSummary && isSessionAlignedWithCurrentContext(currentSelectedSummary)) {
+    return currentSelectedSummary.id
+  }
+  const matchedSession = sessionSummaries.value.find((item) => isSessionAlignedWithCurrentContext(item))
+  return matchedSession?.id ?? null
+}
+
+function isSessionAlignedWithCurrentContext(session: Pick<HermesConversationSessionSummaryItem, 'routeName' | 'projectId' | 'taskId' | 'iterationId' | 'planId' | 'wikiSpaceId' | 'wikiPageId'>) {
+  const currentContext = buildCurrentRouteContext()
+  return session.routeName === currentContext.routeName
+    && (session.projectId ?? null) === currentContext.projectId
+    && (session.taskId ?? null) === currentContext.taskId
+    && (session.iterationId ?? null) === currentContext.iterationId
+    && (session.planId ?? null) === currentContext.planId
+    && (session.wikiSpaceId ?? null) === currentContext.wikiSpaceId
+    && (session.wikiPageId ?? null) === currentContext.wikiPageId
+}
+
+function buildCurrentRouteContext(): HermesRouteContextSnapshot {
   return {
     routeName: props.routeName,
     projectId: props.projectId ?? null,
@@ -949,6 +1002,10 @@ function buildCreateSessionPayload(): CreateHermesConversationSessionPayload {
     wikiSpaceId: props.wikiSpaceId ?? null,
     wikiPageId: props.wikiPageId ?? null
   }
+}
+
+function buildCreateSessionPayload(): CreateHermesConversationSessionPayload {
+  return buildCurrentRouteContext()
 }
 
 function emptyLatestDisplayState() {

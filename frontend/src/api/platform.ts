@@ -174,6 +174,7 @@ export interface WikiImportPagePayload {
   directoryId: number
   parentPageId?: number | null
   title: string
+  content?: string
 }
 
 export interface ProjectQuery {

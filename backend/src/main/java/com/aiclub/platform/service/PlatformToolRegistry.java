@@ -192,6 +192,12 @@ public class PlatformToolRegistry {
         register(result, TOOL_DOCUMENT_CONVERT_MARKDOWN, "文档转 Markdown", "DOCUMENT", "读取指定文档资产并转换为 Markdown，供 Wiki 导入、Hermes 附件理解和智能体工具调用复用", true, "LOW", "", false,
                 schema("assetId", "文档资产ID", "scene", "转换场景，例如 WIKI_IMPORT 或 HERMES_ATTACHMENT", "maxChars", "最大保留字符数"),
                 documentMarkdownOutputSchema());
+        register(result, TOOL_WIKI_SPACE_SEARCH, "搜索 Wiki 页面", "WIKI", "按关键词、空间或项目搜索当前用户可见的 Wiki 页面，必要时会结合语义召回返回相关页面", true, "LOW", "wiki:view", false,
+                schema("query", "Wiki 查询语句", "spaceId", "Wiki 空间ID，可选", "projectId", "绑定项目ID，可选"),
+                wikiPageSearchOutputSchema());
+        register(result, TOOL_WIKI_PAGE_GET_DETAIL, "Wiki 页面详情", "WIKI", "读取指定 Wiki 页面正文、标题、slug 和所属空间信息，供 Hermes 总结、问答和引用", true, "LOW", "wiki:view", false,
+                schema("spaceId", "Wiki 空间ID", "pageId", "Wiki 页面ID"),
+                wikiPageDetailOutputSchema());
         return result;
     }
 
@@ -385,6 +391,41 @@ public class PlatformToolRegistry {
                 "candidates[].payload.truncated", "是否发生截断",
                 "candidates[].payload.warnings", "转换警告列表",
                 "metadata", "回显转换场景与最大字符数"
+        );
+    }
+
+    private Map<String, String> wikiPageSearchOutputSchema() {
+        return schema(
+                "summary", "本次 Wiki 搜索摘要",
+                "candidates[]", "Wiki 页面候选列表",
+                "candidates[].id", "Wiki 页面ID",
+                "candidates[].title", "Wiki 页面标题",
+                "candidates[].subtitle", "所属空间、目录与版本摘要",
+                "candidates[].route", "Wiki 页面前端路由",
+                "candidates[].payload.spaceId", "所属 Wiki 空间ID",
+                "candidates[].payload.pageId", "Wiki 页面ID",
+                "candidates[].payload.slug", "页面 slug",
+                "candidates[].payload.title", "页面标题",
+                "candidates[].payload.directoryId", "所属目录ID",
+                "candidates[].payload.boundProjectId", "绑定项目ID",
+                "metadata", "回显查询语句与过滤范围"
+        );
+    }
+
+    private Map<String, String> wikiPageDetailOutputSchema() {
+        return schema(
+                "summary", "本次 Wiki 页面详情摘要",
+                "candidates[]", "详情结果候选列表，第一版固定返回一个结果",
+                "candidates[].id", "Wiki 页面ID",
+                "candidates[].title", "Wiki 页面标题",
+                "candidates[].subtitle", "页面版本与所属空间摘要",
+                "candidates[].route", "Wiki 页面前端路由",
+                "candidates[].payload.spaceId", "所属 Wiki 空间ID",
+                "candidates[].payload.pageId", "Wiki 页面ID",
+                "candidates[].payload.slug", "页面 slug",
+                "candidates[].payload.title", "页面标题",
+                "candidates[].payload.content", "页面正文内容摘要",
+                "metadata.pageId", "读取的页面ID"
         );
     }
 

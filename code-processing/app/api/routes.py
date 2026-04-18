@@ -63,12 +63,13 @@ async def convert_document(
     file: UploadFile = File(...),
     scene: str = Form(default=""),
     maxChars: int | None = Form(default=None),
+    imageDirectory: str | None = Form(default=None),
 ) -> DocumentConvertResponse:
     """把 Office/PDF 文档转换成 Markdown，供 backend 内部链路复用。"""
     _require_internal_service_auth(request)
     try:
         content = await file.read()
-        return convert_document_to_markdown(file.filename or "", content, scene, maxChars)
+        return convert_document_to_markdown(file.filename or "", content, scene, maxChars, imageDirectory)
     except ValueError as exception:
         raise HTTPException(status_code=400, detail=str(exception)) from exception
     except RuntimeError as exception:

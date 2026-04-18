@@ -92,6 +92,45 @@ public class HermesToolOrchestrator {
             ));
         }
 
+        HermesReferenceSummary wikiSpaceReference = findReference(context.references(), "WIKI_SPACE");
+        if (context.wikiSpaceId() != null) {
+            HermesGroundingTarget wikiSpaceTarget = new HermesGroundingTarget(
+                    "wikiSpace",
+                    "WIKI_SPACE",
+                    context.wikiSpaceId(),
+                    wikiSpaceReference == null ? "当前 Wiki 空间 #" + context.wikiSpaceId() : defaultString(wikiSpaceReference.title()),
+                    wikiSpaceReference == null ? "/wiki/spaces/" + context.wikiSpaceId() : defaultString(wikiSpaceReference.route()),
+                    context.projectId(),
+                    "CONTEXT",
+                    Map.of("spaceId", context.wikiSpaceId())
+            );
+            state = state.withBoundSlot("wikiSpace", wikiSpaceTarget)
+                    .withRecentResolvedSlot("wikiSpace", wikiSpaceTarget);
+        }
+
+        HermesReferenceSummary wikiPageReference = findReference(context.references(), "WIKI_PAGE");
+        if (context.wikiPageId() != null) {
+            LinkedHashMap<String, Object> wikiPagePayload = new LinkedHashMap<>();
+            if (context.wikiSpaceId() != null) {
+                wikiPagePayload.put("spaceId", context.wikiSpaceId());
+            }
+            wikiPagePayload.put("pageId", context.wikiPageId());
+            HermesGroundingTarget wikiPageTarget = new HermesGroundingTarget(
+                    "wikiPage",
+                    "WIKI_PAGE",
+                    context.wikiPageId(),
+                    wikiPageReference == null ? "当前 Wiki 页面 #" + context.wikiPageId() : defaultString(wikiPageReference.title()),
+                    wikiPageReference == null
+                            ? (context.wikiSpaceId() == null ? "" : "/wiki/spaces/" + context.wikiSpaceId() + "/pages/" + context.wikiPageId())
+                            : defaultString(wikiPageReference.route()),
+                    context.projectId(),
+                    "CONTEXT",
+                    Map.copyOf(wikiPagePayload)
+            );
+            state = state.withBoundSlot("wikiPage", wikiPageTarget)
+                    .withRecentResolvedSlot("wikiPage", wikiPageTarget);
+        }
+
         if (request.iterationId() != null) {
             LinkedHashMap<String, Object> iterationPayload = new LinkedHashMap<>();
             if (context.projectId() != null) {
@@ -253,6 +292,17 @@ public class HermesToolOrchestrator {
                                                    HermesChatRequest request,
                                                    HermesGroundingState groundingState) {
         String toolCode = defaultString(toolCall.toolCode());
+        if (shouldResolveCurrentWikiPageDirectly(toolCode, context, request, toolCall.arguments())) {
+            LinkedHashMap<String, Object> anchoredArguments = new LinkedHashMap<>();
+            anchoredArguments.put("spaceId", context.wikiSpaceId());
+            anchoredArguments.put("pageId", context.wikiPageId());
+            return new ValidatedToolCall(
+                    PlatformToolRegistry.TOOL_WIKI_PAGE_GET_DETAIL,
+                    "wikiPage",
+                    context.projectId(),
+                    Map.copyOf(anchoredArguments)
+            );
+        }
         var definition = platformToolRegistry.requireDefinition(toolCode);
         if (!definition.readOnly()) {
             return null;
@@ -274,8 +324,19 @@ public class HermesToolOrchestrator {
         putIfAbsent(arguments, "workItemId", resolveGroundedEntityId(groundingState, "workItem", context.taskId()));
         putIfAbsent(arguments, "testPlanId", resolveGroundedEntityId(groundingState, "testPlan", request.planId()));
         putIfAbsent(arguments, "bindingId", resolveGroundedEntityId(groundingState, "gitlabBinding", null));
+        putIfAbsent(arguments, "spaceId", resolveGroundedEntityId(groundingState, "wikiSpace", context.wikiSpaceId()));
+        putIfAbsent(arguments, "pageId", resolveGroundedEntityId(groundingState, "wikiPage", context.wikiPageId()));
         if (arguments.containsKey("keyword")) {
             arguments.put("keyword", defaultString(String.valueOf(arguments.get("keyword"))));
+        }
+        if (arguments.containsKey("query")) {
+            String normalizedQuery = defaultString(String.valueOf(arguments.get("query")));
+            if (PlatformToolRegistry.TOOL_WIKI_SPACE_SEARCH.equals(toolCode)
+                    && isCurrentWikiPageReference(normalizedQuery)
+                    && hasText(currentWikiPageTitle(context))) {
+                normalizedQuery = currentWikiPageTitle(context);
+            }
+            arguments.put("query", normalizedQuery);
         }
 
         Long projectId = resolveLong(arguments.get("projectId"));
@@ -421,7 +482,7 @@ public class HermesToolOrchestrator {
         Map<String, Object> candidatePayload = candidate.payload() == null ? Map.of() : candidate.payload();
         List<String> reasons = new ArrayList<>();
         double score = 0D;
-        String keyword = defaultString(String.valueOf(validatedToolCall.arguments().getOrDefault("keyword", "")));
+        String keyword = resolvedSearchText(validatedToolCall.arguments());
         Long directEntityId = resolveDirectEntityId(validatedToolCall.slot(), validatedToolCall.arguments());
         if (directEntityId != null && Objects.equals(candidate.id(), directEntityId)) {
             score = Math.max(score, 100D);
@@ -456,6 +517,19 @@ public class HermesToolOrchestrator {
         if (currentProjectId != null && Objects.equals(currentProjectId, candidateProjectId)) {
             score += 15D;
             reasons.add("位于当前项目范围");
+        }
+        Long currentWikiSpaceId = context.wikiSpaceId() != null ? context.wikiSpaceId() : resolveLong(validatedToolCall.arguments().get("spaceId"));
+        Long candidateWikiSpaceId = resolveLong(candidatePayload.get("spaceId"));
+        if (currentWikiSpaceId != null && Objects.equals(currentWikiSpaceId, candidateWikiSpaceId)) {
+            score += 12D;
+            reasons.add("位于当前 Wiki 空间范围");
+        }
+        if ("wikiPage".equals(validatedToolCall.slot())
+                && context.wikiPageId() != null
+                && Objects.equals(context.wikiPageId(), candidate.id())
+                && isCurrentWikiPageReference(keyword)) {
+            score = Math.max(score, 100D);
+            reasons.add("命中当前页面锚点");
         }
         if (PlatformToolRegistry.TOOL_REPO_SCAN_SEARCH.equals(validatedToolCall.toolCode())
                 && resolveLong(validatedToolCall.arguments().get("bindingId")) != null) {
@@ -606,6 +680,9 @@ public class HermesToolOrchestrator {
         if (toolCode.startsWith("test_plan.")) {
             return "testPlan";
         }
+        if (toolCode.startsWith("wiki_page.") || toolCode.startsWith("wiki_space.")) {
+            return "wikiPage";
+        }
         return "";
     }
 
@@ -626,6 +703,8 @@ public class HermesToolOrchestrator {
             case "executionTask" -> resolveLong(arguments.get("executionTaskId"));
             case "member" -> resolveLong(arguments.get("memberId"));
             case "gitlabBinding" -> resolveLong(arguments.get("bindingId"));
+            case "wikiPage" -> resolveLong(arguments.get("pageId"));
+            case "wikiSpace" -> resolveLong(arguments.get("spaceId"));
             default -> null;
         };
     }
@@ -710,6 +789,53 @@ public class HermesToolOrchestrator {
         return List.of();
     }
 
+    private boolean shouldResolveCurrentWikiPageDirectly(String toolCode,
+                                                         HermesContextAssembler.HermesConversationContext context,
+                                                         HermesChatRequest request,
+                                                         Map<String, Object> rawArguments) {
+        if (!PlatformToolRegistry.TOOL_WIKI_SPACE_SEARCH.equals(toolCode)) {
+            return false;
+        }
+        if (context == null || context.wikiSpaceId() == null || context.wikiPageId() == null) {
+            return false;
+        }
+        String query = rawArguments == null ? "" : defaultString(String.valueOf(rawArguments.getOrDefault("query", "")));
+        if (isCurrentWikiPageReference(query)) {
+            return true;
+        }
+        return request != null && isCurrentWikiPageReference(request.question());
+    }
+
+    private String resolvedSearchText(Map<String, Object> arguments) {
+        if (arguments == null || arguments.isEmpty()) {
+            return "";
+        }
+        String keyword = defaultString(String.valueOf(arguments.getOrDefault("keyword", "")));
+        if (hasText(keyword)) {
+            return keyword;
+        }
+        return defaultString(String.valueOf(arguments.getOrDefault("query", "")));
+    }
+
+    private String currentWikiPageTitle(HermesContextAssembler.HermesConversationContext context) {
+        HermesReferenceSummary reference = findReference(context == null ? List.of() : context.references(), "WIKI_PAGE");
+        return reference == null ? "" : defaultString(reference.title());
+    }
+
+    private boolean isCurrentWikiPageReference(String query) {
+        String normalized = defaultString(query).toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        return normalized.contains("当前页面")
+                || normalized.contains("当前页")
+                || normalized.contains("本页")
+                || normalized.contains("这个页面")
+                || normalized.contains("这篇页面")
+                || normalized.contains("当前wiki页面")
+                || normalized.contains("当前wiki页");
+    }
+
     private void putIfAbsent(Map<String, Object> payload, String key, Object value) {
         if (payload == null || key == null || key.isBlank() || value == null) {
             return;
@@ -736,6 +862,10 @@ public class HermesToolOrchestrator {
 
     private String defaultString(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     private record ValidatedToolCall(String toolCode,

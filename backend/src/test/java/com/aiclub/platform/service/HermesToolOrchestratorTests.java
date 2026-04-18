@@ -7,6 +7,7 @@ import com.aiclub.platform.dto.HermesToolCallRequest;
 import com.aiclub.platform.dto.HermesToolExecutionOutcome;
 import com.aiclub.platform.dto.PlatformToolCandidate;
 import com.aiclub.platform.dto.PlatformToolDefinition;
+import com.aiclub.platform.dto.PlatformToolRequest;
 import com.aiclub.platform.dto.PlatformToolResult;
 import com.aiclub.platform.dto.request.HermesChatRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,6 +40,107 @@ class HermesToolOrchestratorTests {
 
     @Mock
     private HermesActionPlannerService hermesActionPlannerService;
+
+    /**
+     * 当前路由已经锚定 Wiki 页面时，如果模型仍用“当前页面”去搜索，平台应直接改走 Wiki 页面详情工具。
+     */
+    @Test
+    void shouldAnchorCurrentWikiPageWhenSearchingCurrentPage() {
+        HermesToolOrchestrator orchestrator = new HermesToolOrchestrator(
+                platformToolExecutor,
+                platformToolRegistry,
+                hermesActionPlannerService,
+                new ObjectMapper()
+        );
+
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "wiki-space-page",
+                null,
+                null,
+                5L,
+                7L,
+                "知识管理员",
+                List.of(
+                        new HermesReferenceSummary("WIKI_SPACE", 5L, "产品文档空间", "/wiki/spaces/5"),
+                        new HermesReferenceSummary("WIKI_PAGE", 7L, "P1mini安装说明书（完整版）", "/wiki/spaces/5/pages/7")
+                ),
+                List.of("帮我总结当前 Wiki 页面"),
+                "Wiki 页面上下文"
+        );
+        HermesChatRequest request = new HermesChatRequest(
+                "帮我总结当前页面",
+                "wiki-space-page",
+                null,
+                null,
+                null,
+                null,
+                5L,
+                7L,
+                "conversation-wiki-1",
+                null,
+                null
+        );
+        PlatformToolDefinition wikiSearch = new PlatformToolDefinition(
+                PlatformToolRegistry.TOOL_WIKI_SPACE_SEARCH,
+                "搜索 Wiki 页面",
+                "WIKI",
+                "按关键词、空间或项目搜索当前用户可见的 Wiki 页面",
+                true,
+                "LOW",
+                "wiki:view",
+                false,
+                Map.of("query", "Wiki 查询语句", "spaceId", "Wiki 空间ID", "projectId", "绑定项目ID")
+        );
+        PlatformToolResult detailResult = new PlatformToolResult(
+                PlatformToolRegistry.TOOL_WIKI_PAGE_GET_DETAIL,
+                "Wiki 页面详情",
+                "已读取 Wiki 页面 “P1mini安装说明书（完整版）”",
+                List.of(
+                        new PlatformToolCandidate(
+                                "WIKI_PAGE",
+                                7L,
+                                "P1mini安装说明书（完整版）",
+                                "版本：v1 / 空间：产品文档空间",
+                                "/wiki/spaces/5/pages/7",
+                                Map.of("spaceId", 5L, "pageId", 7L, "title", "P1mini安装说明书（完整版）", "content", "正文内容摘要"),
+                                List.of()
+                        )
+                ),
+                List.of(),
+                Map.of()
+        );
+
+        when(platformToolRegistry.isEnabled(PlatformToolRegistry.TOOL_WIKI_SPACE_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.isAllowAutoExecute(PlatformToolRegistry.TOOL_WIKI_SPACE_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.requireDefinition(PlatformToolRegistry.TOOL_WIKI_SPACE_SEARCH)).thenReturn(wikiSearch);
+        when(platformToolExecutor.execute(argThat((PlatformToolRequest toolRequest) ->
+                Objects.equals(toolRequest.toolCode(), PlatformToolRegistry.TOOL_WIKI_PAGE_GET_DETAIL)
+                        && Objects.equals(toolRequest.payload().get("spaceId"), 5L)
+                        && Objects.equals(toolRequest.payload().get("pageId"), 7L)
+        ))).thenReturn(detailResult);
+
+        HermesToolExecutionOutcome outcome = orchestrator.executeToolCall(
+                new HermesToolCallRequest(
+                        "call-wiki-1",
+                        PlatformToolRegistry.TOOL_WIKI_SPACE_SEARCH,
+                        "wiki_space__search",
+                        Map.of("query", "当前页面")
+                ),
+                "scope-wiki-1",
+                context,
+                request,
+                HermesGroundingState.empty()
+        );
+
+        assertThat(outcome.stopLoop()).isFalse();
+        assertThat(outcome.selectionCards()).isEmpty();
+        assertThat(outcome.groundingState().boundSlot("wikiPage")).isNotNull();
+        assertThat(outcome.groundingState().boundSlot("wikiPage").entityId()).isEqualTo(7L);
+        assertThat(outcome.toolResults()).hasSize(1);
+        assertThat(outcome.toolResults().get(0).toolCode()).isEqualTo(PlatformToolRegistry.TOOL_WIKI_PAGE_GET_DETAIL);
+        assertThat(outcome.toolResults().get(0).candidates().get(0).payload())
+                .containsEntry("pageId", 7L);
+    }
 
     /**
      * 当搜索结果形成高分唯一命中时，应自动绑定 workItem grounding，并继续 loop。

@@ -20,6 +20,11 @@ import com.aiclub.platform.dto.request.HermesSelectionRequest;
 import com.aiclub.platform.dto.request.HermesSessionChatRequest;
 import com.aiclub.platform.repository.HermesChatAuditRepository;
 import com.aiclub.platform.repository.UserRepository;
+import com.aiclub.platform.service.hermes.prompt.ExecutionTaskQueryHermesPromptSkill;
+import com.aiclub.platform.service.hermes.prompt.HermesPromptResourceLoader;
+import com.aiclub.platform.service.hermes.prompt.RepoScanHermesPromptSkill;
+import com.aiclub.platform.service.hermes.prompt.WikiQaHermesPromptSkill;
+import com.aiclub.platform.service.hermes.prompt.WorkItemCreateHermesPromptSkill;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -432,11 +438,78 @@ class HermesChatServiceTests {
         assertThat(finalState.transcript().get(0).content()).contains("统一认证中台");
     }
 
+    /**
+     * 使用真实 PromptBuilder 时，传给 Hermes 网关的 system prompt 应包含命中的 Skill 片段。
+     */
+    @Test
+    void shouldPassMatchedSkillPromptToGateway() {
+        HermesPromptResourceLoader resourceLoader = new HermesPromptResourceLoader();
+        HermesPromptBuilder realPromptBuilder = new HermesPromptBuilder(
+                resourceLoader,
+                List.of(
+                        new WikiQaHermesPromptSkill(resourceLoader),
+                        new WorkItemCreateHermesPromptSkill(resourceLoader),
+                        new RepoScanHermesPromptSkill(resourceLoader),
+                        new ExecutionTaskQueryHermesPromptSkill(resourceLoader)
+                )
+        );
+        HermesChatService hermesChatService = createService(realPromptBuilder, null);
+
+        CurrentUserInfo currentUser = buildCurrentUser();
+        UserEntity userEntity = new UserEntity();
+        userEntity.setId(5L);
+        userEntity.setUsername("pm-user");
+        userEntity.setNickname("项目经理");
+        HermesConversationSessionEntity session = buildSessionEntity();
+        session.setRouteName("wiki-space-page");
+        session.setProjectId(null);
+        session.setWikiSpaceId(8L);
+        session.setWikiPageId(15L);
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "wiki-space-page",
+                null,
+                null,
+                8L,
+                15L,
+                "知识管理员",
+                List.of(new HermesReferenceSummary("WIKI_PAGE", 15L, "登录说明", "/wiki/spaces/8/pages/15")),
+                List.of("帮我总结当前 Wiki 页面"),
+                "Wiki 页面上下文"
+        );
+
+        when(hermesConversationSessionService.requireOwnedSession(10L)).thenReturn(session);
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
+        when(hermesContextAssembler.assemble(any(), eq(currentUser))).thenReturn(context);
+        when(hermesConversationStateStore.load(any(), any())).thenReturn(Optional.empty());
+        when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(HermesGroundingState.empty());
+        when(hermesMcpSessionTokenService.issueToken(any(), any(), any())).thenReturn("session-token");
+        when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
+        when(hermesGatewayService.createChatCompletion(any(), any()))
+                .thenReturn(new HermesGatewayService.HermesGatewayResult("resp-6", "这是当前页面的总结"));
+        when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        hermesChatService.chat(10L, new HermesSessionChatRequest("帮我总结当前页", null, null));
+
+        ArgumentCaptor<HermesPromptBuilder.HermesPrompt> promptCaptor = ArgumentCaptor.forClass(HermesPromptBuilder.HermesPrompt.class);
+        verify(hermesGatewayService).createChatCompletion(promptCaptor.capture(), any());
+        verify(hermesPromptBuilder, never()).buildConversationPrompt(any(), any(), any(), any(), any());
+        assertThat(promptCaptor.getValue().systemPrompt())
+                .contains("## 当前已启用 Skills")
+                .contains("### Skill: wiki-qa")
+                .contains("不要直接声称平台不支持访问 Wiki");
+    }
+
     private HermesChatService createService() {
-        return createService(null);
+        return createService(hermesPromptBuilder, null);
     }
 
     private HermesChatService createService(HermesAttachmentService attachmentService) {
+        return createService(hermesPromptBuilder, attachmentService);
+    }
+
+    private HermesChatService createService(HermesPromptBuilder promptBuilder, HermesAttachmentService attachmentService) {
         return new HermesChatService(
                 authService,
                 userRepository,
@@ -450,7 +523,7 @@ class HermesChatServiceTests {
                         86400
                 ),
                 hermesContextAssembler,
-                hermesPromptBuilder,
+                promptBuilder,
                 hermesGatewayService,
                 hermesToolOrchestrator,
                 hermesActionFallbackService,

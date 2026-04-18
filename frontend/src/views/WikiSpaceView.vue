@@ -155,7 +155,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="directoryDialogVisible" :title="editingDirectory ? '编辑页面' : '添加目录'" width="920px" destroy-on-close>
+    <el-dialog v-model="directoryDialogVisible" :title="editingDirectory ? '编辑页面' : '添加目录'" width="1120px" destroy-on-close>
       <el-form ref="directoryFormRef" :model="directoryForm" :rules="directoryRules" label-position="top">
         <div class="wiki-form-grid">
           <el-form-item label="页面标题" prop="name">
@@ -163,7 +163,7 @@
           </el-form-item>
         </div>
         <el-form-item label="正文">
-          <MarkdownEditor v-model="directoryForm.content" height="520px" :upload-image="handleUploadImage" />
+          <MarkdownEditor v-model="directoryForm.content" height="640px" :upload-image="handleUploadImage" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -172,7 +172,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="pageDialogVisible" :title="editingPage ? '编辑页面' : '新建页面'" width="920px" destroy-on-close>
+    <el-dialog v-model="pageDialogVisible" :title="editingPage ? '编辑页面' : '新建页面'" width="1120px" destroy-on-close>
       <el-form ref="pageFormRef" :model="pageForm" :rules="pageRules" label-position="top">
         <div class="wiki-form-grid">
           <el-form-item label="页面标题" prop="title">
@@ -188,7 +188,7 @@
           </el-form-item>
         </div>
         <el-form-item label="正文">
-          <MarkdownEditor v-model="pageForm.content" height="520px" :upload-image="handleUploadImage" />
+          <MarkdownEditor v-model="pageForm.content" height="640px" :upload-image="handleUploadImage" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -198,12 +198,17 @@
     </el-dialog>
 
     <el-dialog v-model="importDialogVisible" title="导入文档" width="720px" destroy-on-close>
-      <div class="wiki-import-shell">
+      <div
+        v-loading="importLoading"
+        element-loading-text="正在上传并转换文档，请稍候..."
+        class="wiki-import-shell"
+      >
         <el-upload
           drag
           action=""
           :auto-upload="false"
           :show-file-list="false"
+          :disabled="importLoading"
           :on-change="handleImportFileChange"
           accept=".pdf,.docx,.pptx,.xlsx"
         >
@@ -224,8 +229,8 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="importDialogVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="!importPreview" @click="applyImportPreview">导入为新页面</el-button>
+        <el-button :disabled="importLoading" @click="importDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="importLoading" :disabled="!importPreview" @click="applyImportPreview">导入为新页面</el-button>
       </template>
     </el-dialog>
 
@@ -359,6 +364,7 @@ const loading = ref(false)
 const treeLoading = ref(false)
 const pageLoading = ref(false)
 const versionLoading = ref(false)
+const importLoading = ref(false)
 const submitting = ref(false)
 const spaceDetail = ref<WikiSpaceDetailItem | null>(null)
 const directoryNodes = ref<WikiDirectoryTreeNodeItem[]>([])
@@ -824,6 +830,7 @@ function openCreatePageDialog(preset?: { directoryId?: number | null; parentPage
 
 function openImportDialog() {
   importPreview.value = null
+  importLoading.value = false
   importDialogVisible.value = true
 }
 
@@ -832,7 +839,7 @@ async function handleImportFileChange(fileEvent: any) {
   if (!rawFile) {
     return
   }
-  submitting.value = true
+  importLoading.value = true
   try {
     const asset = await uploadDocumentAsset(rawFile, `wiki-spaces/space-${spaceId.value}`)
     importPreview.value = await previewWikiImport(spaceId.value, asset.id)
@@ -841,7 +848,7 @@ async function handleImportFileChange(fileEvent: any) {
     importPreview.value = null
     ElMessage.error(error?.response?.data?.message || '生成导入预览失败')
   } finally {
-    submitting.value = false
+    importLoading.value = false
   }
 }
 
@@ -878,7 +885,8 @@ async function handleSubmitPage() {
             assetId: importPreview.value.assetId,
             directoryId: pageForm.directoryId,
             parentPageId: pageForm.parentPageId,
-            title: pageForm.title
+            title: pageForm.title,
+            content: pageForm.content
           })
         : await createWikiSpacePage(spaceId.value, payload)
     ElMessage.success('页面已保存')

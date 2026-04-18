@@ -292,6 +292,44 @@ async def test_plan_get_detail(system_session_token: SessionToken, testPlanId: i
 
 
 @mcp_server.tool(description=_build_tool_description(
+    "按关键词、空间或项目搜索当前用户可见的 Wiki 页面。",
+    [("query", "Wiki 查询语句，可为空"), ("spaceId", "Wiki 空间ID，可为空"), ("projectId", "绑定项目ID，可为空")],
+))
+async def wiki_space_search(
+    system_session_token: SessionToken,
+    query: str = "",
+    spaceId: int | None = None,
+    projectId: int | None = None,
+    ctx: Context | None = None,
+) -> str:
+    """按关键词、空间或项目搜索当前用户可见的 Wiki 页面。"""
+    arguments: dict[str, object] = {"query": query}
+    if spaceId is not None:
+        arguments["spaceId"] = spaceId
+    if projectId is not None:
+        arguments["projectId"] = projectId
+    return await _execute_platform_tool("wiki_space.search", system_session_token, arguments)
+
+
+@mcp_server.tool(description=_build_tool_description(
+    "读取指定 Wiki 页面正文、标题、slug 和所属空间信息。",
+    [("spaceId", "Wiki 空间ID"), ("pageId", "Wiki 页面ID")],
+))
+async def wiki_page_get_detail(
+    system_session_token: SessionToken,
+    spaceId: int,
+    pageId: int,
+    ctx: Context | None = None,
+) -> str:
+    """读取指定 Wiki 页面正文、标题、slug 和所属空间信息。"""
+    return await _execute_platform_tool(
+        "wiki_page.get_detail",
+        system_session_token,
+        {"spaceId": spaceId, "pageId": pageId},
+    )
+
+
+@mcp_server.tool(description=_build_tool_description(
     "创建工作项草稿提案，不直接落库。",
     [
         ("projectId", "项目ID"),

@@ -246,14 +246,18 @@ public class HermesContextAssembler {
                 .append("## 当前用户\n")
                 .append("昵称：").append(defaultDisplayName(currentUser)).append('\n')
                 .append("角色：").append(resolveRoleName(currentUser)).append("\n\n")
+                .append("## Wiki 问答提示\n")
+                .append("当前页面正文摘要已经随上下文提供；如果用户继续追问细节、引用原文或要求跨页对比，应继续查询相关 Wiki 页面或读取页面详情。\n\n")
                 .append("## 当前空间\n")
                 .append("空间名称：").append(defaultString(space.name())).append('\n')
+                .append("空间ID：").append(space.id()).append('\n')
                 .append("读取范围：").append(defaultString(space.readScope())).append("\n\n")
                 .append("## 当前 Wiki 页面\n")
+                .append("页面ID：").append(page.id()).append('\n')
                 .append("标题：").append(defaultString(page.title())).append('\n')
                 .append("目录：").append(defaultString(page.directoryName())).append('\n')
                 .append("版本：v").append(page.currentVersionNumber()).append('\n')
-                .append("内容摘要：").append(abbreviate(page.content(), 1800)).append("\n\n")
+                .append("正文摘要：").append(abbreviate(page.content(), 2400)).append("\n\n")
                 .append("## 相关 Wiki 页面\n");
         appendWikiPages(context, relatedPages);
         return new HermesConversationContext(
@@ -288,6 +292,8 @@ public class HermesContextAssembler {
                 .append("## 当前用户\n")
                 .append("昵称：").append(defaultDisplayName(currentUser)).append('\n')
                 .append("角色：").append(resolveRoleName(currentUser)).append("\n\n")
+                .append("## Wiki 问答提示\n")
+                .append("当前空间已附带最近页面列表；如果用户需要具体页面内容、摘要或比对结果，应继续读取对应 Wiki 页面详情。\n\n")
                 .append("## 空间摘要\n")
                 .append("空间名称：").append(defaultString(space.name())).append('\n')
                 .append("空间说明：").append(defaultString(space.description())).append('\n')

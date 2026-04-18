@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.services.document_service import ExtractedPdfImage
 from app.services.document_service import convert_document_to_markdown
 
 
@@ -33,13 +34,87 @@ class DocumentServiceTests(unittest.TestCase):
             convert_document_to_markdown("demo.txt", b"fake", "WIKI_IMPORT", 100)
 
     @patch("app.services.document_service.MarkItDown")
-    def test_should_truncate_when_exceeds_limit(self, markitdown_cls):
-        markitdown_cls.return_value.convert_stream.return_value = _FakeMarkItDownResult("A" * 20, "")
+    @patch("app.services.document_service._upload_public_image")
+    @patch("app.services.document_service._validate_image_payload")
+    @patch("app.services.document_service._decode_data_uri_image")
+    def test_should_replace_data_uri_image_with_public_url(
+        self,
+        decode_data_uri_image,
+        validate_image_payload,
+        upload_public_image,
+        markitdown_cls,
+    ):
+        markitdown_cls.return_value.convert_stream.return_value = _FakeMarkItDownResult(
+            "![导入图片](data:image/png;base64,ZmFrZS1pbWFnZQ==)",
+            "带图文档",
+        )
+        decode_data_uri_image.return_value = (b"fake-image", "image/png")
+        upload_public_image.return_value = "http://localhost:8080/comment-images?key=wiki-image"
 
+        result = convert_document_to_markdown(
+            "demo.docx",
+            b"fake",
+            "WIKI_IMPORT",
+            200000,
+            "wiki-spaces/space-1/imports/asset-1",
+        )
+
+        self.assertIn("http://localhost:8080/comment-images?key=wiki-image", result.markdown)
+        self.assertNotIn("data:image/png;base64", result.markdown)
+        decode_data_uri_image.assert_called_once()
+        validate_image_payload.assert_called_once()
+        upload_public_image.assert_called_once()
+
+    @patch("app.services.document_service.MarkItDown")
+    @patch("app.services.document_service._upload_public_image")
+    @patch("app.services.document_service._extract_pdf_images")
+    @patch("app.services.document_service._extract_pdf_page_markdown_segments")
+    def test_should_insert_pdf_images_back_to_page_sections_and_warn_for_skipped_items(
+        self,
+        extract_pdf_page_markdown_segments,
+        extract_pdf_images,
+        upload_public_image,
+        markitdown_cls,
+    ):
+        markitdown_cls.return_value.convert_stream.return_value = _FakeMarkItDownResult("# PDF 标题\n\n正文", "PDF 标题")
+        extract_pdf_page_markdown_segments.return_value = [
+            "# 第 1 页\n\n第一页正文",
+            "# 第 2 页\n\n第二页正文",
+        ]
+        extract_pdf_images.return_value = [
+            ExtractedPdfImage(1, 1, b"image-1", "image/png", 300, 200),
+            ExtractedPdfImage(1, 2, b"image-1", "image/png", 300, 200),
+            ExtractedPdfImage(2, 1, b"tiny-image", "image/png", 12, 12),
+        ]
+        upload_public_image.return_value = "http://localhost:8080/comment-images?key=pdf-image"
+
+        result = convert_document_to_markdown(
+            "demo.pdf",
+            b"fake",
+            "WIKI_IMPORT",
+            200000,
+            "wiki-spaces/space-1/imports/asset-2",
+        )
+
+        self.assertIn("# 第 1 页\n\n第一页正文\n\n### 第 1 页图片 1", result.markdown)
+        self.assertIn("# 第 2 页\n\n第二页正文", result.markdown)
+        self.assertLess(result.markdown.index("### 第 1 页图片 1"), result.markdown.index("# 第 2 页"))
+        self.assertIn("第 1 页图片 1", result.markdown)
+        self.assertIn("http://localhost:8080/comment-images?key=pdf-image", result.markdown)
+        self.assertTrue(any("重复图片" in item for item in result.warnings))
+        self.assertTrue(any("过小图片" in item for item in result.warnings))
+        upload_public_image.assert_called_once()
+
+    @patch("app.services.document_service.MarkItDown")
+    def test_should_truncate_without_breaking_image_line_when_line_boundary_available(self, markitdown_cls):
+        markitdown_cls.return_value.convert_stream.return_value = _FakeMarkItDownResult(
+            "# 标题\n![图片](http://example.com/very/long/image/url)\n正文",
+            "",
+        )
         result = convert_document_to_markdown("demo.pdf", b"fake", "HERMES_ATTACHMENT", 10)
 
         self.assertTrue(result.truncated)
-        self.assertEqual("A" * 10, result.markdown)
+        self.assertEqual("# 标题", result.markdown)
         self.assertTrue(result.warnings)
 
     @patch("app.services.document_service.MarkItDown")

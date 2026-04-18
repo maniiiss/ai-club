@@ -2,6 +2,7 @@ package com.aiclub.platform.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -29,16 +30,29 @@ public class DocumentMarkdownClientService {
     private final String baseUrl;
     private final InternalServiceAuthenticator internalServiceAuthenticator;
 
+    @Autowired
     public DocumentMarkdownClientService(ObjectMapper objectMapper,
                                          InternalServiceAuthenticator internalServiceAuthenticator,
                                          @Value("${platform.code-processing.base-url}") String baseUrl) {
+        this(
+                objectMapper,
+                internalServiceAuthenticator,
+                baseUrl,
+                HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .build()
+        );
+    }
+
+    DocumentMarkdownClientService(ObjectMapper objectMapper,
+                                  InternalServiceAuthenticator internalServiceAuthenticator,
+                                  String baseUrl,
+                                  HttpClient httpClient) {
         this.objectMapper = objectMapper;
         this.internalServiceAuthenticator = internalServiceAuthenticator;
         this.baseUrl = trimSlash(baseUrl);
-        this.httpClient = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_1_1)
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.httpClient = httpClient;
     }
 
     /**
@@ -48,10 +62,11 @@ public class DocumentMarkdownClientService {
                                            String fileName,
                                            String contentType,
                                            String scene,
-                                           Integer maxChars) {
+                                           Integer maxChars,
+                                           String imageDirectory) {
         try {
             String boundary = "----AiClubBoundary" + UUID.randomUUID().toString().replace("-", "");
-            byte[] body = buildMultipartBody(boundary, bytes, fileName, contentType, scene, maxChars);
+            byte[] body = buildMultipartBody(boundary, bytes, fileName, contentType, scene, maxChars, imageDirectory);
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/api/documents/convert"))
                     .timeout(Duration.ofSeconds(120))
@@ -84,16 +99,20 @@ public class DocumentMarkdownClientService {
         }
     }
 
-    private byte[] buildMultipartBody(String boundary,
-                                      byte[] bytes,
-                                      String fileName,
-                                      String contentType,
-                                      String scene,
-                                      Integer maxChars) throws IOException {
+    byte[] buildMultipartBody(String boundary,
+                              byte[] bytes,
+                              String fileName,
+                              String contentType,
+                              String scene,
+                              Integer maxChars,
+                              String imageDirectory) throws IOException {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         writeTextPart(outputStream, boundary, "scene", scene == null ? "" : scene.trim());
         if (maxChars != null) {
             writeTextPart(outputStream, boundary, "maxChars", String.valueOf(maxChars));
+        }
+        if (imageDirectory != null && !imageDirectory.isBlank()) {
+            writeTextPart(outputStream, boundary, "imageDirectory", imageDirectory.trim());
         }
         outputStream.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
         outputStream.write(("Content-Disposition: form-data; name=\"file\"; filename=\"" + defaultFileName(fileName) + "\"\r\n").getBytes(StandardCharsets.UTF_8));

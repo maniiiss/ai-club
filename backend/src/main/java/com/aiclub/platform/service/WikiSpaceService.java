@@ -412,7 +412,12 @@ public class WikiSpaceService {
         UserContext userContext = requireCurrentUserContext();
         WikiSpaceEntity space = requireSpace(spaceId);
         requireSpaceVisible(space, userContext);
-        return documentMarkdownService.convert(request.assetId(), DocumentMarkdownService.SCENE_WIKI_IMPORT, 200000);
+        return documentMarkdownService.convert(
+                request.assetId(),
+                DocumentMarkdownService.SCENE_WIKI_IMPORT,
+                200000,
+                buildImportImageDirectory(spaceId, request.assetId())
+        );
     }
 
     /**
@@ -426,7 +431,16 @@ public class WikiSpaceService {
         WikiDirectoryEntity directory = requireDirectory(spaceId, request.directoryId());
         WikiPageV2Entity parentPage = resolveParentPage(spaceId, directory, request.parentPageId());
         DocumentAssetEntity asset = documentAssetService.requireAccessibleAsset(request.assetId());
-        DocumentMarkdownResult converted = documentMarkdownService.convert(asset.getId(), DocumentMarkdownService.SCENE_WIKI_IMPORT, 200000);
+        String finalContent = defaultString(request.content());
+        if (!StringUtils.hasText(finalContent)) {
+            DocumentMarkdownResult converted = documentMarkdownService.convert(
+                    asset.getId(),
+                    DocumentMarkdownService.SCENE_WIKI_IMPORT,
+                    200000,
+                    buildImportImageDirectory(spaceId, asset.getId())
+            );
+            finalContent = defaultString(converted.markdown());
+        }
 
         WikiPageV2Entity entity = new WikiPageV2Entity();
         entity.setSpace(space);
@@ -434,7 +448,7 @@ public class WikiSpaceService {
         entity.setParentPage(parentPage);
         entity.setTitle(defaultString(request.title()));
         entity.setSlug(generateUniquePageSlug(spaceId, request.title(), null));
-        entity.setContent(defaultString(converted.markdown()));
+        entity.setContent(finalContent);
         entity.setAuthorUser(userContext.user());
         entity.setSourceDocumentAsset(documentAssetService.bindAsset(asset, DocumentAssetService.BIZ_TYPE_WIKI_PAGE, null));
         entity.setCurrentVersionNumber(1);
@@ -1039,16 +1053,22 @@ public class WikiSpaceService {
             return null;
         }
         DocumentAssetEntity asset = page.getSourceDocumentAsset();
-        DocumentMarkdownResult converted = documentMarkdownService.convert(asset.getId(), DocumentMarkdownService.SCENE_WIKI_IMPORT, 200000);
         return new WikiImportSourceSummary(
                 asset.getId(),
                 defaultString(asset.getFileName()),
                 defaultString(asset.getContentType()),
                 asset.getFileSize(),
                 defaultString(asset.getSourceFormat()),
-                converted.truncated(),
-                converted.warnings()
+                false,
+                List.of()
         );
+    }
+
+    /**
+     * Wiki 导入图片按空间和资产隔离目录，便于后续按前缀清理临时图片。
+     */
+    private String buildImportImageDirectory(Long spaceId, Long assetId) {
+        return "wiki-spaces/space-" + spaceId + "/imports/asset-" + assetId;
     }
 
     private WikiSpacePageVersionSummary toPageVersionSummary(WikiPageVersionV2Entity version) {
