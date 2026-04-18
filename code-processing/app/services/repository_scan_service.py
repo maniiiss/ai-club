@@ -121,19 +121,22 @@ def run_semgrep_scan(request: RepositoryScanSemgrepRequest) -> RepositoryScanSem
     config_path = _materialize_ruleset_file(workspace, request)
     semgrep_binary = _resolve_semgrep_binary()
     _append_log(workspace, f"开始运行 Semgrep，规则集：{request.rulesetName or request.rulesetCode} / 引擎：{request.engineType}")
-    _run_command(
+    _run_semgrep_command(
         [semgrep_binary, "scan", str(workspace.repo_dir), "--config", str(config_path), "--json", "--output", str(json_output)],
         cwd=workspace.repo_dir,
         workspace=workspace,
+        output_path=json_output,
         error_message="执行 Semgrep JSON 扫描失败",
     )
-    _run_command(
+    _run_semgrep_command(
         [semgrep_binary, "scan", str(workspace.repo_dir), "--config", str(config_path), "--sarif", "--output", str(sarif_output)],
         cwd=workspace.repo_dir,
         workspace=workspace,
+        output_path=sarif_output,
         error_message="执行 Semgrep SARIF 扫描失败",
     )
-    payload = json.loads(json_output.read_text(encoding="utf-8"))
+    payload = _load_semgrep_artifact(json_output, "Semgrep JSON")
+    _append_semgrep_error_summary(workspace, payload)
     total_findings = len(payload.get("results", []))
     high_count, medium_count, low_count = _count_result_levels(payload.get("results", []))
     scanned_file_count = sum(1 for path in workspace.repo_dir.rglob("*") if path.is_file())
@@ -408,8 +411,7 @@ def package_repository_scan_exec_plan(request: RepositoryScanPackageRequest) -> 
 def cleanup_repository_scan(run_key: str) -> None:
     """删除扫描工作目录。"""
     workspace = _workspace_for(run_key)
-    if workspace.root.exists():
-        shutil.rmtree(workspace.root, ignore_errors=True)
+    _remove_directory_with_retry(workspace.root, None, f"cleanup:{run_key}")
 
 
 def _workspace_for(run_key: str) -> ScanWorkspace:
@@ -605,6 +607,41 @@ def _resolve_semgrep_binary() -> str:
     raise RuntimeError("当前运行环境未找到 semgrep 可执行文件，请先安装 code-processing 依赖")
 
 
+def _run_semgrep_command(command: list[str], cwd: Path, workspace: ScanWorkspace, output_path: Path, error_message: str) -> None:
+    """执行 Semgrep 并校验产物，避免有效输出因退出码 1 被误判成失败。"""
+    completed = subprocess.run(
+        command,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONUTF8": "1"},
+    )
+    stdout = (completed.stdout or "").strip()
+    stderr = (completed.stderr or "").strip()
+    if stdout:
+        _append_log(workspace, stdout)
+    if stderr:
+        _append_log(workspace, stderr)
+    artifact_payload = _try_load_semgrep_artifact(output_path)
+    if completed.returncode == 0:
+        return
+    if artifact_payload is not None and _semgrep_cli_reports_success(stdout, stderr):
+        # 业务目标是尽量保留已产出的扫描结果；当 CLI 明确显示扫描完成，且 JSON/SARIF 产物可解析时，
+        # 即使退出码异常也继续后续流程，并在日志中补充 warnings/errors 计数供排查。
+        _append_log(
+            workspace,
+            f"{error_message}：Semgrep 退出码 {completed.returncode}，但命令行显示扫描已完成且已生成有效输出文件 {output_path.name}，按成功处理。",
+        )
+        _append_semgrep_error_summary(workspace, artifact_payload)
+        return
+    detail = stderr or stdout or "未知错误"
+    if artifact_payload is None:
+        detail = f"{detail}；未生成有效输出文件：{output_path.name}"
+    raise RuntimeError(f"{error_message}（退出码 {completed.returncode}）：{detail}")
+
+
 def _run_command(command: list[str], cwd: Path, workspace: ScanWorkspace, error_message: str, allow_failure: bool = False) -> str:
     completed = subprocess.run(
         command,
@@ -627,6 +664,62 @@ def _run_command(command: list[str], cwd: Path, workspace: ScanWorkspace, error_
         _append_log(workspace, f"{error_message}，已忽略：{stderr or stdout or '未知错误'}")
         return ""
     return stdout
+
+
+def _has_valid_json_artifact(path: Path) -> bool:
+    """判断扫描产物是否已经成功落盘并可被后续流程解析。"""
+    return _try_load_semgrep_artifact(path) is not None
+
+
+def _load_json_artifact(path: Path, artifact_label: str) -> dict[str, object]:
+    """统一读取 JSON 产物，便于把缺失或损坏的文件转成明确错误。"""
+    if not path.exists():
+        raise RuntimeError(f"{artifact_label} 结果文件不存在：{path.name}")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exception:
+        raise RuntimeError(f"{artifact_label} 结果文件读取失败：{path.name}：{exception}") from exception
+    except json.JSONDecodeError as exception:
+        raise RuntimeError(f"{artifact_label} 结果文件解析失败：{path.name}：{exception.msg}") from exception
+
+
+def _load_semgrep_artifact(path: Path, artifact_label: str) -> dict[str, object]:
+    """读取并校验 Semgrep 产物结构，避免把任意 JSON 文件误当成有效扫描结果。"""
+    payload = _load_json_artifact(path, artifact_label)
+    if not _is_semgrep_artifact_payload(path, payload):
+        raise RuntimeError(f"{artifact_label} 结果文件结构无效：{path.name}")
+    return payload
+
+
+def _try_load_semgrep_artifact(path: Path) -> dict[str, object] | None:
+    """在非阻断判断里尝试解析 Semgrep 产物，失败时返回 None。"""
+    try:
+        return _load_semgrep_artifact(path, path.name)
+    except RuntimeError:
+        return None
+
+
+def _is_semgrep_artifact_payload(path: Path, payload: dict[str, object]) -> bool:
+    """按输出格式校验必需字段，降低误判为“有效产物”的概率。"""
+    suffix = path.suffix.lower()
+    if suffix == ".sarif":
+        return isinstance(payload.get("runs"), list) and payload.get("version") is not None
+    return isinstance(payload.get("results"), list) and isinstance(payload.get("errors"), list)
+
+
+def _semgrep_cli_reports_success(stdout: str, stderr: str) -> bool:
+    """Semgrep 某些异常场景会非零退出，但终端摘要仍明确写明扫描完成。"""
+    combined = "\n".join(part for part in [stdout, stderr] if part)
+    return "Scan completed successfully." in combined
+
+
+def _append_semgrep_error_summary(workspace: ScanWorkspace, payload: dict[str, object]) -> None:
+    """把 Semgrep 原始 errors 数量记录到扫描日志，便于后续判断结果是否为部分成功。"""
+    errors = payload.get("errors")
+    if not isinstance(errors, list):
+        return
+    if errors:
+        _append_log(workspace, f"Semgrep 原始结果包含 {len(errors)} 条 errors 记录，结果可能为部分成功，请结合原始 JSON 排查。")
 
 
 def _append_log(workspace: ScanWorkspace, message: str) -> None:
@@ -945,8 +1038,48 @@ def _promote_directory_with_retry(source_dir: Path,
         ) from fallback_error
 
 
+def _remove_directory_with_retry(target_dir: Path,
+                                 workspace: ScanWorkspace | None,
+                                 operation_label: str) -> None:
+    """Windows 下目录删除也可能被短暂占用，这里补充重试，避免扫描结束后残留工作目录。"""
+    if not target_dir.exists():
+        return
+
+    retry_delays = [0.2, 0.5, 1.0]
+    last_error: Exception | None = None
+
+    def _raise_remove_error(_function, _path, exc_info):
+        raise exc_info[1]
+
+    for attempt_index, delay_seconds in enumerate([0.0, *retry_delays], start=1):
+        try:
+            if attempt_index > 1:
+                time.sleep(delay_seconds)
+            shutil.rmtree(target_dir, onerror=_raise_remove_error)
+            if not target_dir.exists():
+                return
+            raise PermissionError(13, f"目录删除后仍存在：{target_dir}")
+        except FileNotFoundError:
+            return
+        except Exception as exception:  # noqa: BLE001 - 这里需要兜住 Windows 目录占用等系统异常
+            last_error = exception
+            if not _is_retryable_directory_operation_error(exception):
+                raise
+            _append_optional_log(
+                workspace,
+                f"目录清理重试 {attempt_index}/{len(retry_delays) + 1} 失败：{operation_label} / {target_dir.name} / {exception}",
+            )
+
+    raise RuntimeError(f"目录清理失败：{operation_label}；最后一次错误：{last_error}")
+
+
 def _is_retryable_directory_move_error(exception: Exception) -> bool:
     """共享冲突、权限瞬时占用和目录忙碌都允许走目录提升重试。"""
+    return _is_retryable_directory_operation_error(exception)
+
+
+def _is_retryable_directory_operation_error(exception: Exception) -> bool:
+    """共享冲突、权限瞬时占用和目录忙碌都允许走目录操作重试。"""
     if isinstance(exception, PermissionError):
         return True
     if not isinstance(exception, OSError):

@@ -1,6 +1,10 @@
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from app.models import (
+    ClaudePlanningRequest,
+    ClaudePlanningResponse,
+    CodexExecutionRequest,
+    CodexExecutionResponse,
     DocumentConvertResponse,
     RepositoryScanFixPlanRequest,
     RepositoryScanFixPlanResponse,
@@ -18,7 +22,10 @@ from app.models import (
     ReviewResponse,
     ScanRequest,
     ScanSummary,
+    ExecutionSessionAcceptedResponse,
 )
+from app.services.claude_planning_service import execute_claude_plan, start_claude_plan
+from app.services.codex_execution_service import execute_codex_execution, start_codex_execution
 from app.services.repository_service import build_summary
 from app.services.document_service import convert_document_to_markdown
 from app.services.repository_scan_service import (
@@ -47,6 +54,54 @@ def get_summary(request: ScanRequest) -> ScanSummary:
 @router.post("/review", response_model=ReviewResponse)
 def review(request: ReviewRequest) -> ReviewResponse:
     return review_code(request)
+
+
+@router.post("/codex-executions", response_model=CodexExecutionResponse)
+def codex_execution(request_http: Request, payload: CodexExecutionRequest) -> CodexExecutionResponse:
+    """供 backend 的 HTTP_API Agent 调用本机 Codex/测试桥。"""
+    _require_internal_service_auth(request_http)
+    try:
+        return execute_codex_execution(payload)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+
+
+@router.post("/codex-executions/start", response_model=ExecutionSessionAcceptedResponse)
+def codex_execution_start(request_http: Request, payload: CodexExecutionRequest) -> ExecutionSessionAcceptedResponse:
+    """供 backend 启动异步 Codex/测试执行会话。"""
+    _require_internal_service_auth(request_http)
+    try:
+        return start_codex_execution(payload)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+
+
+@router.post("/claude-plans", response_model=ClaudePlanningResponse)
+def claude_plan(request_http: Request, payload: ClaudePlanningRequest) -> ClaudePlanningResponse:
+    """供 backend 的 HTTP_API Agent 调用本机 Claude Code 规划桥。"""
+    _require_internal_service_auth(request_http)
+    try:
+        return execute_claude_plan(payload)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+
+
+@router.post("/claude-plans/start", response_model=ExecutionSessionAcceptedResponse)
+def claude_plan_start(request_http: Request, payload: ClaudePlanningRequest) -> ExecutionSessionAcceptedResponse:
+    """供 backend 启动异步 Claude Code 规划会话。"""
+    _require_internal_service_auth(request_http)
+    try:
+        return start_claude_plan(payload)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
 
 
 def _require_internal_service_auth(request: Request) -> None:

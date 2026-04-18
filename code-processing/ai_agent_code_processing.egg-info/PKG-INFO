@@ -6,24 +6,29 @@ Requires-Python: >=3.10
 Description-Content-Type: text/markdown
 Requires-Dist: fastapi>=0.111.0
 Requires-Dist: httpx>=0.27.0
+Requires-Dist: markitdown[docx,pdf,pptx,xlsx]>=0.1.1
 Requires-Dist: mcp>=1.0.0
 Requires-Dist: markdown>=3.6
 Requires-Dist: minio>=7.2.7
+Requires-Dist: pillow>=12.0.0
+Requires-Dist: pypdfium2>=5.7.0
 Requires-Dist: pydantic>=2.7.0
 Requires-Dist: semgrep>=1.75.0
 Requires-Dist: uvicorn[standard]>=0.30.1
 
 # code-processing
 
-?????????????????
+代码处理服务，基于 FastAPI 构建，提供代码扫描和 MR 审查功能。
 
-- ????
-- ??????
-- ??????
-- Diff ??
-- Prompt ?????
+主要功能：
 
-## ??
+- 代码扫描
+- MR 审查
+- 代码分析
+- Diff 解析
+- Prompt 生成与处理
+
+## 启动
 
 ```bash
 python -m venv .venv
@@ -31,3 +36,9 @@ python -m venv .venv
 pip install -e .
 uvicorn app.main:app --reload --port 9000
 ```
+
+默认启动地址：`http://localhost:9000`
+
+## API 文档
+
+启动后访问：`http://localhost:9000/docs`

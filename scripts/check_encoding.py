@@ -12,7 +12,7 @@ TARGET_EXTENSIONS = {
 IGNORE_DIRS = {
     ".git", ".idea", ".vscode", "node_modules", "dist", "target",
     "build", ".mypy_cache", ".pytest_cache", "__pycache__",
-    ".venv", "venv", "postgres_data", ".data", ".run-logs"
+    ".venv", "venv", "postgres_data", ".data", ".run-logs", ".scan-workspace"
 }
 SUSPICIOUS_FRAGMENTS = [
     "\u951f", "\ufffd", "\u935a", "\u9359", "\u951b", "\u9428", "\u93b4", "\u95c2", "\u7f01", "\u7ba0",

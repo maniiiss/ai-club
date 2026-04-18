@@ -14,6 +14,12 @@ class Settings:
     minio_secret_key: str
     minio_bucket: str
     scan_workspace_root: str
+    execution_workspace_root: str
+    codex_cli_path: str
+    codex_model_provider: str
+    codex_reasoning_effort: str
+    claude_cli_path: str
+    claude_model: str
 
 
 def _trim_trailing_slash(value: str) -> str:
@@ -21,6 +27,12 @@ def _trim_trailing_slash(value: str) -> str:
     while normalized.endswith("/"):
         normalized = normalized[:-1]
     return normalized
+
+
+scan_workspace_root = (os.getenv("PLATFORM_SCAN_WORKSPACE_ROOT", "./.scan-workspace") or "").strip()
+execution_workspace_root = (
+    os.getenv("PLATFORM_EXECUTION_WORKSPACE_ROOT", os.path.join(scan_workspace_root, "development-executions")) or ""
+).strip()
 
 
 settings = Settings(
@@ -33,5 +45,11 @@ settings = Settings(
     minio_access_key=(os.getenv("PLATFORM_MINIO_ACCESS_KEY", "minioadmin") or "").strip(),
     minio_secret_key=(os.getenv("PLATFORM_MINIO_SECRET_KEY", "minioadmin") or "").strip(),
     minio_bucket=(os.getenv("PLATFORM_MINIO_BUCKET", "ai-club-assets") or "").strip(),
-    scan_workspace_root=(os.getenv("PLATFORM_SCAN_WORKSPACE_ROOT", "./.scan-workspace") or "").strip(),
+    scan_workspace_root=scan_workspace_root,
+    execution_workspace_root=execution_workspace_root,
+    codex_cli_path=(os.getenv("PLATFORM_CODEX_CLI_PATH", "") or "").strip(),
+    codex_model_provider=(os.getenv("PLATFORM_CODEX_MODEL_PROVIDER", "codex") or "").strip() or "codex",
+    codex_reasoning_effort=(os.getenv("PLATFORM_CODEX_REASONING_EFFORT", "low") or "").strip() or "low",
+    claude_cli_path=(os.getenv("PLATFORM_CLAUDE_CLI_PATH", "") or "").strip(),
+    claude_model=(os.getenv("PLATFORM_CLAUDE_MODEL", "") or "").strip(),
 )

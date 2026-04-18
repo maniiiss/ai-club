@@ -9,6 +9,7 @@ import com.aiclub.platform.repository.ExecutionArtifactRepository;
 import com.aiclub.platform.repository.ExecutionRunRepository;
 import com.aiclub.platform.repository.ExecutionStepRepository;
 import com.aiclub.platform.repository.ExecutionTaskRepository;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -17,10 +18,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 
 /**
  * 执行调度服务。
@@ -38,7 +43,13 @@ public class ExecutionDispatchService {
     private final ExecutionWorkflowService executionWorkflowService;
     private final AgentExecutionService agentExecutionService;
     private final ExecutionWritebackService executionWritebackService;
+    private final NotificationService notificationService;
     private final RepositoryScanExecutionService repositoryScanExecutionService;
+    private final DevelopmentExecutionService developmentExecutionService;
+    private final ExecutionEventService executionEventService;
+    private final ExecutionAsyncSessionService executionAsyncSessionService;
+    private final Executor executionTaskExecutor;
+    private final Set<Long> dispatchingTaskIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     public ExecutionDispatchService(ExecutionTaskRepository executionTaskRepository,
                                     ExecutionRunRepository executionRunRepository,
@@ -47,7 +58,12 @@ public class ExecutionDispatchService {
                                     ExecutionWorkflowService executionWorkflowService,
                                     AgentExecutionService agentExecutionService,
                                     ExecutionWritebackService executionWritebackService,
-                                    RepositoryScanExecutionService repositoryScanExecutionService) {
+                                    NotificationService notificationService,
+                                    RepositoryScanExecutionService repositoryScanExecutionService,
+                                    DevelopmentExecutionService developmentExecutionService,
+                                    ExecutionEventService executionEventService,
+                                    ExecutionAsyncSessionService executionAsyncSessionService,
+                                    @Qualifier("executionTaskExecutor") Executor executionTaskExecutor) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
         this.executionStepRepository = executionStepRepository;
@@ -55,7 +71,12 @@ public class ExecutionDispatchService {
         this.executionWorkflowService = executionWorkflowService;
         this.agentExecutionService = agentExecutionService;
         this.executionWritebackService = executionWritebackService;
+        this.notificationService = notificationService;
         this.repositoryScanExecutionService = repositoryScanExecutionService;
+        this.developmentExecutionService = developmentExecutionService;
+        this.executionEventService = executionEventService;
+        this.executionAsyncSessionService = executionAsyncSessionService;
+        this.executionTaskExecutor = executionTaskExecutor;
     }
 
     /**
@@ -67,11 +88,18 @@ public class ExecutionDispatchService {
                 .map(ExecutionTaskEntity::getId)
                 .toList();
         for (Long pendingTaskId : pendingTaskIds) {
-            try {
-                dispatchTaskNow(pendingTaskId);
-            } catch (Exception exception) {
-                log.warn("执行任务调度失败: executionTaskId={}, message={}", pendingTaskId, exception.getMessage(), exception);
+            if (!dispatchingTaskIds.add(pendingTaskId)) {
+                continue;
             }
+            executionTaskExecutor.execute(() -> {
+                try {
+                    dispatchTaskNow(pendingTaskId);
+                } catch (Exception exception) {
+                    log.warn("执行任务调度失败: executionTaskId={}, message={}", pendingTaskId, exception.getMessage(), exception);
+                } finally {
+                    dispatchingTaskIds.remove(pendingTaskId);
+                }
+            });
         }
     }
 
@@ -113,6 +141,9 @@ public class ExecutionDispatchService {
             if (ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN.equalsIgnoreCase(runningTask.getScenarioCode())) {
                 return dispatchRepositoryScanTask(runningTask, executionRun, writebackArtifacts);
             }
+            if (shouldUseDevelopmentExecution(runningTask, workflowPlan)) {
+                return dispatchDevelopmentTask(runningTask, executionRun, workflowPlan, writebackArtifacts);
+            }
             for (ExecutionWorkflowService.ExecutionStepPlan stepPlan : workflowPlan.steps()) {
                 ExecutionTaskEntity latestTask = requireExecutionTask(executionTaskId);
                 if (latestTask.isCancelRequested()) {
@@ -126,6 +157,8 @@ public class ExecutionDispatchService {
                 stepEntity.setStepName(stepPlan.stepName());
                 stepEntity.setAgent(stepPlan.agent());
                 stepEntity.setStatus("RUNNING");
+                stepEntity.setProgressPercent(0);
+                stepEntity.setLatestMessage("执行中");
                 stepEntity.setStartedAt(LocalDateTime.now());
                 stepEntity.setInputSnapshot(executionWorkflowService.buildStepInput(latestTask, workItem, executionRun, stepPlan, completedSteps));
                 stepEntity = executionStepRepository.save(stepEntity);
@@ -138,17 +171,56 @@ public class ExecutionDispatchService {
 
                 latestTask.setLatestSummary("执行中：" + stepPlan.stepName());
                 executionTaskRepository.save(latestTask);
+                executionEventService.recordStepStarted(latestTask, executionRun, stepEntity, "执行中：" + stepPlan.stepName());
 
                 Map<String, String> runtimeVariables = buildRuntimeVariables(latestTask, executionRun, stepEntity, workItem);
                 try {
-                    String output = agentExecutionService.runAgent(stepPlan.agent().getId(), stepEntity.getInputSnapshot(), runtimeVariables);
+                    String output;
+                    if (agentExecutionService.supportsAsyncExecution(stepPlan.agent(), stepEntity.getStepCode())) {
+                        int maxRuntimeSeconds = executionAsyncSessionService.maxRuntimeSeconds(stepEntity.getStepCode());
+                        AgentExecutionService.AsyncExecutionStartResult startResult = agentExecutionService.startAsyncExecution(
+                                stepPlan.agent(),
+                                stepEntity.getInputSnapshot(),
+                                runtimeVariables,
+                                executionAsyncSessionService.submitTimeoutSeconds(),
+                                maxRuntimeSeconds
+                        );
+                        executionAsyncSessionService.bindRunnerSession(
+                                latestTask,
+                                executionRun,
+                                stepEntity,
+                                startResult.sessionId(),
+                                startResult.runnerType()
+                        );
+                        stepEntity = executionAsyncSessionService.awaitTerminalStep(
+                                stepEntity.getId(),
+                                maxRuntimeSeconds
+                        );
+                        if ("CANCELED".equalsIgnoreCase(stepEntity.getStatus())) {
+                            return finishCanceled(latestTask, executionRun, writebackArtifacts);
+                        }
+                        if (!"SUCCESS".equalsIgnoreCase(stepEntity.getStatus())) {
+                            throw new IllegalStateException(defaultString(stepEntity.getErrorMessage()).isBlank()
+                                    ? "异步步骤执行失败"
+                                    : stepEntity.getErrorMessage());
+                        }
+                        output = defaultString(stepEntity.getOutputSnapshot());
+                    } else {
+                        output = agentExecutionService.runAgent(stepPlan.agent().getId(), stepEntity.getInputSnapshot(), runtimeVariables);
+                    }
                     stepEntity.setStatus("SUCCESS");
                     stepEntity.setOutputSnapshot(output);
+                    stepEntity.setLatestMessage(abbreviate(output, 1000));
+                    stepEntity.setProgressPercent(100);
                     stepEntity.setFinishedAt(LocalDateTime.now());
                     executionStepRepository.save(stepEntity);
+                    executionEventService.recordSummary(latestTask, executionRun, stepEntity, abbreviate(output, 1000));
 
                     ExecutionArtifactEntity artifact = createArtifact(executionRun, stepEntity, "STEP_OUTPUT", stepPlan.stepName() + " 输出", output);
-                    writebackArtifacts.add(executionArtifactRepository.save(artifact));
+                    ExecutionArtifactEntity savedArtifact = executionArtifactRepository.save(artifact);
+                    writebackArtifacts.add(savedArtifact);
+                    executionEventService.recordArtifactReady(latestTask, executionRun, stepEntity, savedArtifact.getId(), savedArtifact.getTitle());
+                    executionEventService.recordStepFinished(latestTask, executionRun, stepEntity, stepEntity.getLatestMessage());
 
                     executionRun.setProgressPercent(stepPlan.stepNo() * 100 / totalSteps);
                     executionRun.setOutputSummary(abbreviate(output, 4000));
@@ -165,6 +237,22 @@ public class ExecutionDispatchService {
             log.warn("执行任务处理失败: executionTaskId={}, message={}", executionTaskId, exception.getMessage(), exception);
             return finishInfrastructureFailure(requireExecutionTask(executionTaskId), executionRun, exception, writebackArtifacts);
         }
+    }
+
+    /**
+     * 多仓开发执行存在仓库级展开、失败后仍需补报告等特殊编排，交给专用执行器处理；
+     * 历史三步开发任务继续走通用串行流程，保证兼容性。
+     */
+    private boolean shouldUseDevelopmentExecution(ExecutionTaskEntity executionTask,
+                                                  ExecutionWorkflowService.WorkflowPlan workflowPlan) {
+        if (!ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(executionTask.getScenarioCode())) {
+            return false;
+        }
+        boolean hasTestStep = workflowPlan.steps().stream()
+                .anyMatch(step -> ExecutionWorkflowService.STEP_TEST.equalsIgnoreCase(step.stepCode()));
+        boolean hasReportStep = workflowPlan.steps().stream()
+                .anyMatch(step -> ExecutionWorkflowService.STEP_REPORT.equalsIgnoreCase(step.stepCode()));
+        return hasTestStep && hasReportStep;
     }
 
     /**
@@ -191,6 +279,45 @@ public class ExecutionDispatchService {
                 writebackArtifacts.addAll(exception.artifacts());
             }
             return finishFailed(requireExecutionTask(executionTask.getId()), executionRun, exception.failedStep(), exception, writebackArtifacts);
+        }
+    }
+
+    /**
+     * 新版开发执行需要按仓库循环真实开发/测试，并在失败后补一份统一报告。
+     */
+    private ExecutionRunEntity dispatchDevelopmentTask(ExecutionTaskEntity executionTask,
+                                                       ExecutionRunEntity executionRun,
+                                                       ExecutionWorkflowService.WorkflowPlan workflowPlan,
+                                                       List<ExecutionArtifactEntity> writebackArtifacts) {
+        try {
+            DevelopmentExecutionService.DevelopmentExecutionResult result =
+                    developmentExecutionService.executeDevelopmentTask(executionTask, executionRun, workflowPlan);
+            if (result.artifacts() != null) {
+                writebackArtifacts.addAll(result.artifacts());
+            }
+            executionRun.setOutputSummary(result.outputSummary());
+            executionRun.setUpdatedAt(LocalDateTime.now());
+            executionRunRepository.save(executionRun);
+            if (result.canceled()) {
+                return finishCanceled(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
+            }
+            return finishSuccess(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
+        } catch (DevelopmentExecutionService.DevelopmentExecutionStepException exception) {
+            if (exception.artifacts() != null) {
+                writebackArtifacts.addAll(exception.artifacts());
+            }
+            if (exception.outputSummary() != null) {
+                executionRun.setOutputSummary(exception.outputSummary());
+                executionRun.setUpdatedAt(LocalDateTime.now());
+                executionRunRepository.save(executionRun);
+            }
+            return finishFailed(
+                    requireExecutionTask(executionTask.getId()),
+                    executionRun,
+                    exception.failedStep(),
+                    exception,
+                    writebackArtifacts
+            );
         }
     }
 
@@ -223,7 +350,9 @@ public class ExecutionDispatchService {
                 "最终摘要",
                 defaultString(executionRun.getOutputSummary())
         );
-        artifacts.add(executionArtifactRepository.save(artifact));
+        ExecutionArtifactEntity savedArtifact = executionArtifactRepository.save(artifact);
+        artifacts.add(savedArtifact);
+        executionEventService.recordArtifactReady(executionTask, executionRun, null, savedArtifact.getId(), savedArtifact.getTitle());
 
         executionTask.setStatus("SUCCESS");
         executionTask.setCancelRequested(false);
@@ -232,6 +361,7 @@ public class ExecutionDispatchService {
         executionTaskRepository.save(executionTask);
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
+        notifyRequesterWhenDevelopmentExecutionSucceeds(executionTask, executionRun);
         return executionRun;
     }
 
@@ -242,9 +372,11 @@ public class ExecutionDispatchService {
                                               RuntimeException exception,
                                               List<ExecutionArtifactEntity> artifacts) {
         failedStep.setStatus("FAILED");
+        failedStep.setLatestMessage(abbreviate(resolveMessage(exception, "执行步骤失败"), 1000));
         failedStep.setErrorMessage(abbreviate(resolveMessage(exception, "执行步骤失败"), 4000));
         failedStep.setFinishedAt(LocalDateTime.now());
         executionStepRepository.save(failedStep);
+        executionEventService.recordSummary(executionTask, executionRun, failedStep, failedStep.getLatestMessage());
 
         executionRun.setStatus("FAILED");
         executionRun.setErrorMessage(abbreviate(resolveMessage(exception, "执行失败"), 4000));
@@ -259,7 +391,10 @@ public class ExecutionDispatchService {
                 failedStep.getStepName() + " 错误摘要",
                 executionRun.getErrorMessage()
         );
-        artifacts.add(executionArtifactRepository.save(artifact));
+        ExecutionArtifactEntity savedArtifact = executionArtifactRepository.save(artifact);
+        artifacts.add(savedArtifact);
+        executionEventService.recordArtifactReady(executionTask, executionRun, failedStep, savedArtifact.getId(), savedArtifact.getTitle());
+        executionEventService.recordStepFinished(executionTask, executionRun, failedStep, executionRun.getErrorMessage());
 
         executionTask.setStatus("FAILED");
         executionTask.setCancelRequested(false);
@@ -289,7 +424,9 @@ public class ExecutionDispatchService {
                 "基础设施错误",
                 executionRun.getErrorMessage()
         );
-        artifacts.add(executionArtifactRepository.save(artifact));
+        ExecutionArtifactEntity savedArtifact = executionArtifactRepository.save(artifact);
+        artifacts.add(savedArtifact);
+        executionEventService.recordArtifactReady(executionTask, executionRun, null, savedArtifact.getId(), savedArtifact.getTitle());
 
         executionTask.setStatus("FAILED");
         executionTask.setCancelRequested(false);
@@ -317,7 +454,9 @@ public class ExecutionDispatchService {
                 "取消摘要",
                 "执行任务已取消，未继续后续步骤。"
         );
-        artifacts.add(executionArtifactRepository.save(artifact));
+        ExecutionArtifactEntity savedArtifact = executionArtifactRepository.save(artifact);
+        artifacts.add(savedArtifact);
+        executionEventService.recordArtifactReady(executionTask, executionRun, null, savedArtifact.getId(), savedArtifact.getTitle());
 
         executionTask.setStatus("CANCELED");
         executionTask.setCancelRequested(false);
@@ -362,24 +501,25 @@ public class ExecutionDispatchService {
         variables.put("scenario_code", defaultString(executionTask.getScenarioCode()));
         variables.put("project_id", String.valueOf(executionTask.getProject().getId()));
         variables.put("project_name", defaultString(executionTask.getProject().getName()));
+        // 即便创建人为空，也补齐空串，避免 HTTP_API 模板里的 {{user_id_json}} / {{user_name_json}} 残留后把请求体拼坏。
+        variables.put("user_id", executionTask.getCreatedByUser() == null ? "" : String.valueOf(executionTask.getCreatedByUser().getId()));
+        variables.put("user_name", executionTask.getCreatedByUser() == null
+                ? ""
+                : (defaultString(executionTask.getCreatedByUser().getNickname()).isBlank()
+                ? defaultString(executionTask.getCreatedByUser().getUsername())
+                : executionTask.getCreatedByUser().getNickname().trim()));
         if (workItem != null) {
             variables.put("task_id", String.valueOf(workItem.getId()));
             variables.put("task_name", defaultString(workItem.getName()));
             variables.put("work_item_code", defaultString(workItem.getWorkItemCode()));
             variables.put("work_item_type", defaultString(workItem.getWorkItemType()));
         }
-        if (executionTask.getCreatedByUser() != null) {
-            variables.put("user_id", String.valueOf(executionTask.getCreatedByUser().getId()));
-            variables.put("user_name", defaultString(executionTask.getCreatedByUser().getNickname()).isBlank()
-                    ? defaultString(executionTask.getCreatedByUser().getUsername())
-                    : executionTask.getCreatedByUser().getNickname().trim());
-        }
         variables.put("session_key", "execution:" + executionTask.getId() + ":run:" + executionRun.getId());
         return variables;
     }
 
     private ExecutionTaskEntity requireExecutionTask(Long executionTaskId) {
-        return executionTaskRepository.findById(executionTaskId)
+        return executionTaskRepository.findWithExecutionContextById(executionTaskId)
                 .orElseThrow(() -> new NoSuchElementException("执行任务不存在: " + executionTaskId));
     }
 
@@ -396,6 +536,47 @@ public class ExecutionDispatchService {
         }
         String normalized = value.trim();
         return normalized.length() > maxLength ? normalized.substring(0, maxLength) : normalized;
+    }
+
+    /**
+     * 开发执行成功后主动提醒发起人，避免用户必须盯着执行详情页轮询结果。
+     */
+    private void notifyRequesterWhenDevelopmentExecutionSucceeds(ExecutionTaskEntity executionTask,
+                                                                 ExecutionRunEntity executionRun) {
+        if (executionTask.getCreatedByUser() == null
+                || !ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(executionTask.getScenarioCode())) {
+            return;
+        }
+        String projectName = executionTask.getProject() == null ? "" : defaultString(executionTask.getProject().getName()).trim();
+        String workItemText = executionTask.getWorkItem() == null
+                ? ""
+                : defaultString(executionTask.getWorkItem().getWorkItemCode()).trim()
+                + (defaultString(executionTask.getWorkItem().getName()).isBlank()
+                ? ""
+                : " " + defaultString(executionTask.getWorkItem().getName()).trim());
+        StringBuilder content = new StringBuilder();
+        if (!projectName.isBlank()) {
+            content.append("项目“").append(projectName).append("”的开发执行已全部通过。");
+        } else {
+            content.append("开发执行已全部通过。");
+        }
+        if (!workItemText.isBlank()) {
+            content.append("关联工作项：").append(workItemText).append("。");
+        }
+        if (!defaultString(executionRun.getOutputSummary()).isBlank()) {
+            content.append("结果摘要：").append(abbreviate(executionRun.getOutputSummary(), 180)).append("。");
+        }
+        content.append("可前往执行详情查看产物，并在右上角直接提交 MR。");
+        notificationService.sendToUser(
+                executionTask.getCreatedByUser().getId(),
+                NotificationService.TYPE_TASK,
+                NotificationService.LEVEL_SUCCESS,
+                "开发执行已完成：" + defaultString(executionTask.getTitle()).trim(),
+                content.toString(),
+                "/tasks/" + executionTask.getId(),
+                "DEVELOPMENT_EXECUTION_COMPLETED",
+                executionTask.getId()
+        );
     }
 
     private String defaultString(String value) {

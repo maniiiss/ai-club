@@ -76,13 +76,10 @@ public class RepositoryScanClientService {
      * 清理临时工作目录，失败只记录日志，不影响主流程结果。
      */
     public void cleanupScan(String runKey) {
-        try {
-            HttpRequest request = baseRequest("/api/repo-scans/" + runKey)
-                    .DELETE()
-                    .build();
-            send(request);
-        } catch (RuntimeException ignored) {
-        }
+        HttpRequest request = baseRequest("/api/repo-scans/" + runKey)
+                .DELETE()
+                .build();
+        send(request);
     }
 
     private <T> T post(String path, Object payload, Class<T> responseType) {

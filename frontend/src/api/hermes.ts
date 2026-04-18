@@ -25,6 +25,19 @@ interface StreamHandlers {
   onError?: (payload: HermesStreamErrorEvent) => void
 }
 
+/**
+ * 手动点击“停止”会触发 fetch/reader 的取消，这类错误不应该继续冒泡成业务报错提示。
+ */
+const isAbortLikeError = (error: unknown, signal: AbortSignal) => {
+  if (signal.aborted) {
+    return true
+  }
+  if (!(error instanceof Error)) {
+    return false
+  }
+  return error.name === 'AbortError' || /aborted|abort/i.test(error.message)
+}
+
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
     Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
@@ -212,6 +225,9 @@ export const streamHermesSessionChat = async (sessionId: number, payload: Hermes
       }
     }
   })().catch((error: unknown) => {
+    if (isAbortLikeError(error, controller.signal)) {
+      return
+    }
     handlers.onError?.({
       message: error instanceof Error ? error.message : 'Hermes 流式连接已中断'
     })
@@ -344,6 +360,9 @@ export const streamHermesSessionChatWithFiles = async (
       }
     }
   })().catch((error: unknown) => {
+    if (isAbortLikeError(error, controller.signal)) {
+      return
+    }
     handlers.onError?.({
       message: error instanceof Error ? error.message : 'Hermes 流式连接已中断'
     })

@@ -440,6 +440,13 @@ export interface ExecutionStepItem {
   status: string
   progressPercent: number
   latestMessage: string
+  currentCommand: string | null
+  lastEventId: number | null
+  lastEventAt: string | null
+  lastHeartbeatAt: string | null
+  tailLogText: string | null
+  tailLogLineCount: number | null
+  hasLiveStream: boolean
   inputSnapshot: string
   outputSnapshot: string | null
   errorMessage: string | null
@@ -464,8 +471,26 @@ export interface ExecutionRunItem {
 }
 
 export interface ExecutionRunDetailItem extends ExecutionRunItem {
+  lastEventId: number | null
+  lastEventAt: string | null
+  hasLiveStream: boolean
   steps: ExecutionStepItem[]
   artifacts: ExecutionArtifactItem[]
+}
+
+export interface ExecutionStreamEvent {
+  id: number
+  runId: number
+  stepId: number | null
+  stepNo: number | null
+  eventType: string
+  streamKind: string | null
+  text: string | null
+  currentCommand: string | null
+  progressPercent: number | null
+  summary: string | null
+  artifactId: number | null
+  createdAt: string | null
 }
 
 export interface ExecutionTaskItem {

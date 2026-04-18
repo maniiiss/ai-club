@@ -12,6 +12,8 @@ public interface ExecutionArtifactRepository extends JpaRepository<ExecutionArti
 
     List<ExecutionArtifactEntity> findAllByRun_IdOrderByCreatedAtAscIdAsc(Long runId);
 
+    Optional<ExecutionArtifactEntity> findFirstByRun_IdAndArtifactTypeAndTitle(Long runId, String artifactType, String title);
+
     /**
      * 下载执行产物时需要同时读取运行、任务和项目，避免在控制器里触发懒加载异常。
      */

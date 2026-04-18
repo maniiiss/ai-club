@@ -36,6 +36,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 
 /**
  * 仓库规范扫描执行服务。
@@ -55,6 +56,7 @@ public class RepositoryScanExecutionService {
     private final RepositoryScanClientService repositoryScanClientService;
     private final RepositoryScanRulesetService repositoryScanRulesetService;
     private final AgentExecutionService agentExecutionService;
+    private final ExecutionEventService executionEventService;
     private final TokenCipherService tokenCipherService;
     private final GitlabApiService gitlabApiService;
     private final ObjectMapper objectMapper;
@@ -68,6 +70,7 @@ public class RepositoryScanExecutionService {
                                           RepositoryScanClientService repositoryScanClientService,
                                           RepositoryScanRulesetService repositoryScanRulesetService,
                                           AgentExecutionService agentExecutionService,
+                                          ExecutionEventService executionEventService,
                                           TokenCipherService tokenCipherService,
                                           GitlabApiService gitlabApiService,
                                           ObjectMapper objectMapper,
@@ -80,6 +83,7 @@ public class RepositoryScanExecutionService {
         this.repositoryScanClientService = repositoryScanClientService;
         this.repositoryScanRulesetService = repositoryScanRulesetService;
         this.agentExecutionService = agentExecutionService;
+        this.executionEventService = executionEventService;
         this.tokenCipherService = tokenCipherService;
         this.gitlabApiService = gitlabApiService;
         this.objectMapper = objectMapper;
@@ -135,13 +139,37 @@ public class RepositoryScanExecutionService {
             executionRunRepository.save(executionRun);
             return new RepositoryScanExecutionResult(summaryText, artifacts, executablePlanResult.canceled());
         } finally {
+            cleanupScanWorkspace(executionTask.getId(), runKey);
+        }
+    }
+
+    /**
+     * code-processing 端已经带目录删除重试，但 Windows 下偶发的文件句柄释放会更慢；
+     * backend 这里再补几次 cleanup 调用，避免任务结束后工作目录长期残留。
+     */
+    private void cleanupScanWorkspace(Long executionTaskId, String runKey) {
+        List<Long> retryDelaysMillis = List.of(0L, 1500L, 4000L);
+        RuntimeException lastException = null;
+        for (int index = 0; index < retryDelaysMillis.size(); index++) {
+            long delayMillis = retryDelaysMillis.get(index);
+            if (delayMillis > 0) {
+                sleepQuietly(delayMillis);
+            }
             try {
                 repositoryScanClientService.cleanupScan(runKey);
+                if (index > 0) {
+                    log.info("仓库扫描工作目录清理重试成功: executionTaskId={}, runKey={}, attempt={}",
+                            executionTaskId, runKey, index + 1);
+                }
+                return;
             } catch (RuntimeException exception) {
-                log.warn("清理仓库扫描工作目录失败: executionTaskId={}, runKey={}, message={}",
-                        executionTask.getId(), runKey, exception.getMessage(), exception);
+                lastException = exception;
+                log.warn("清理仓库扫描工作目录失败，准备重试: executionTaskId={}, runKey={}, attempt={}, message={}",
+                        executionTaskId, runKey, index + 1, exception.getMessage());
             }
         }
+        log.warn("清理仓库扫描工作目录最终失败: executionTaskId={}, runKey={}, message={}",
+                executionTaskId, runKey, lastException == null ? "" : lastException.getMessage(), lastException);
     }
 
     private ResolvedRepositoryContext resolveRepository(ExecutionTaskEntity executionTask,
@@ -189,16 +217,22 @@ public class RepositoryScanExecutionService {
             if (!hasText(resolved.authToken())) {
                 throw new IllegalStateException("仓库绑定 Token 为空，无法克隆仓库");
             }
-            RepositoryScanClientService.PrepareScanResponse response = repositoryScanClientService.prepareScan(
-                    new RepositoryScanClientService.PrepareScanRequest(
-                            runKey,
-                            resolved.repoUrl(),
-                            resolved.apiBaseUrl(),
-                            resolved.projectRef(),
-                            resolved.branch(),
-                            resolved.authToken(),
-                            rulesetSnapshot.code(),
-                            resolved.repoDisplayName()
+            RepositoryScanClientService.PrepareScanResponse response = runSynchronousStepWithProgress(
+                    executionTask,
+                    executionRun,
+                    step,
+                    "正在克隆仓库并准备扫描工作区",
+                    () -> repositoryScanClientService.prepareScan(
+                            new RepositoryScanClientService.PrepareScanRequest(
+                                    runKey,
+                                    resolved.repoUrl(),
+                                    resolved.apiBaseUrl(),
+                                    resolved.projectRef(),
+                                    resolved.branch(),
+                                    resolved.authToken(),
+                                    rulesetSnapshot.code(),
+                                    resolved.repoDisplayName()
+                            )
                     )
             );
             completeStep(step, "仓库已克隆，提交：" + defaultString(response.commitSha()));
@@ -216,12 +250,18 @@ public class RepositoryScanExecutionService {
                             RulesetSnapshot rulesetSnapshot) {
         ExecutionStepEntity step = beginStep(executionRun, 3, "RUN_SEMGREP", "运行 Semgrep", rulesetSnapshot.code());
         try {
-            RepositoryScanClientService.SemgrepResponse response = repositoryScanClientService.runSemgrep(
-                    runKey,
-                    rulesetSnapshot.code(),
-                    rulesetSnapshot.name(),
-                    rulesetSnapshot.engineType(),
-                    rulesetSnapshot.definitionContent()
+            RepositoryScanClientService.SemgrepResponse response = runSynchronousStepWithProgress(
+                    executionTask,
+                    executionRun,
+                    step,
+                    "正在运行 Semgrep，请等待扫描结果",
+                    () -> repositoryScanClientService.runSemgrep(
+                            runKey,
+                            rulesetSnapshot.code(),
+                            rulesetSnapshot.name(),
+                            rulesetSnapshot.engineType(),
+                            rulesetSnapshot.definitionContent()
+                    )
             );
             completeStep(step, "规则集：" + rulesetSnapshot.name() + "（" + rulesetSnapshot.code() + "），扫描文件数：" + safeNumber(response.scannedFileCount()) + "，问题数：" + safeNumber(response.totalFindings()));
             updateRunProgress(executionRun, 3);
@@ -236,8 +276,22 @@ public class RepositoryScanExecutionService {
                                                                             String runKey) {
         ExecutionStepEntity step = beginStep(executionRun, 4, "BUILD_FINDING_INDEX", "整理问题索引", runKey);
         try {
-            RepositoryScanClientService.NormalizeResponse response = repositoryScanClientService.normalizeScan(runKey);
+            RepositoryScanClientService.NormalizeResponse response = runSynchronousStepWithProgress(
+                    executionTask,
+                    executionRun,
+                    step,
+                    "正在整理问题索引并归并扫描结果",
+                    () -> repositoryScanClientService.normalizeScan(runKey)
+            );
             completeStep(step, defaultString(response.summaryText()));
+            saveVisibleScanArtifact(
+                    executionTask.getId(),
+                    executionRun.getId(),
+                    step.getId(),
+                    "FINDING_INDEX_JSON",
+                    "问题索引",
+                    buildFindingIndexPreview(response)
+            );
             updateRunProgress(executionRun, 4);
             updateTaskSummary(executionTask, "执行中：整理问题索引");
             return response;
@@ -252,8 +306,22 @@ public class RepositoryScanExecutionService {
                                                                           String repoDisplayName) {
         ExecutionStepEntity step = beginStep(executionRun, 6, "GENERATE_REPORT_SUMMARY", "生成扫描报告", repoDisplayName);
         try {
-            RepositoryScanClientService.SummarizeResponse response = repositoryScanClientService.summarizeScan(runKey, repoDisplayName);
+            RepositoryScanClientService.SummarizeResponse response = runSynchronousStepWithProgress(
+                    executionTask,
+                    executionRun,
+                    step,
+                    "正在汇总扫描结果并生成报告摘要",
+                    () -> repositoryScanClientService.summarizeScan(runKey, repoDisplayName)
+            );
             completeStep(step, "已生成扫描报告摘要");
+            saveVisibleScanArtifact(
+                    executionTask.getId(),
+                    executionRun.getId(),
+                    step.getId(),
+                    "REPORT_MARKDOWN",
+                    "扫描报告 Markdown",
+                    response.reportMarkdown()
+            );
             updateRunProgress(executionRun, 6);
             updateTaskSummary(executionTask, "执行中：生成扫描报告");
             return response;
@@ -268,7 +336,13 @@ public class RepositoryScanExecutionService {
                                                                      String repoDisplayName) {
         ExecutionStepEntity step = beginStep(executionRun, 5, "BUILD_FIX_PLAN", "生成修复计划", repoDisplayName);
         try {
-            RepositoryScanClientService.FixPlanResponse response = repositoryScanClientService.buildFixPlan(runKey, repoDisplayName);
+            RepositoryScanClientService.FixPlanResponse response = runSynchronousStepWithProgress(
+                    executionTask,
+                    executionRun,
+                    step,
+                    "正在分析问题模式并生成修复计划",
+                    () -> repositoryScanClientService.buildFixPlan(runKey, repoDisplayName)
+            );
             completeStep(
                     step,
                     "已生成修复计划：问题 "
@@ -278,6 +352,30 @@ public class RepositoryScanExecutionService {
                             + " 个，分片 "
                             + safeNumber(response.shardCount())
                             + " 个"
+            );
+            saveVisibleScanArtifact(
+                    executionTask.getId(),
+                    executionRun.getId(),
+                    step.getId(),
+                    "FIX_PLAN_MARKDOWN",
+                    "修复计划 Markdown",
+                    response.fixPlanMarkdown()
+            );
+            saveVisibleScanArtifact(
+                    executionTask.getId(),
+                    executionRun.getId(),
+                    step.getId(),
+                    "FIX_SHARDS_MARKDOWN",
+                    "修复分片 Markdown",
+                    response.fixShardsMarkdown()
+            );
+            saveVisibleScanArtifact(
+                    executionTask.getId(),
+                    executionRun.getId(),
+                    step.getId(),
+                    "FIX_SHARDS_JSON",
+                    "修复分片 JSON",
+                    response.fixShardsJson()
             );
             updateRunProgress(executionRun, 5);
             updateTaskSummary(executionTask, "执行中：生成修复计划");
@@ -391,15 +489,21 @@ public class RepositoryScanExecutionService {
                                                                               String runKey) {
         ExecutionStepEntity step = beginStep(executionRun, 7, "PUBLISH_REPORT", "发布扫描报告", runKey);
         try {
-            RepositoryScanClientService.PackageScanResponse response = repositoryScanClientService.packageScan(
-                    new RepositoryScanClientService.PackageScanRequest(
-                            runKey,
-                            executionTask.getId(),
-                            executionRun.getRunNo(),
-                            "",
-                            "",
-                            "",
-                            ""
+            RepositoryScanClientService.PackageScanResponse response = runSynchronousStepWithProgress(
+                    executionTask,
+                    executionRun,
+                    step,
+                    "正在打包并上传扫描产物",
+                    () -> repositoryScanClientService.packageScan(
+                            new RepositoryScanClientService.PackageScanRequest(
+                                    runKey,
+                                    executionTask.getId(),
+                                    executionRun.getRunNo(),
+                                    "",
+                                    "",
+                                    "",
+                                    ""
+                            )
                     )
             );
             int artifactCount = response.artifacts() == null ? 0 : response.artifacts().size();
@@ -409,6 +513,54 @@ public class RepositoryScanExecutionService {
             return response;
         } catch (RuntimeException exception) {
             throw failStep(step, exception, List.of());
+        }
+    }
+
+    /**
+     * 仓库扫描的一期仍有多段同步 HTTP 调用；为了避免这些阻塞步骤在前端表现为“长时间无流式响应”，
+     * 这里把实际调用放进后台线程，并在等待期间持续补 progress 事件，让详情页能看到活跃更新。
+     */
+    private <T> T runSynchronousStepWithProgress(ExecutionTaskEntity executionTask,
+                                                 ExecutionRunEntity executionRun,
+                                                 ExecutionStepEntity step,
+                                                 String runningMessage,
+                                                 Supplier<T> supplier) {
+        ThreadFactory threadFactory = runnable -> {
+            Thread thread = new Thread(runnable, "repo-scan-step-" + executionTask.getId() + "-" + step.getStepNo());
+            thread.setDaemon(true);
+            return thread;
+        };
+        ExecutorService executorService = Executors.newSingleThreadExecutor(threadFactory);
+        Future<T> future = executorService.submit(supplier::get);
+        int pollCount = 0;
+        try {
+            while (true) {
+                try {
+                    return future.get(3, TimeUnit.SECONDS);
+                } catch (TimeoutException ignored) {
+                    pollCount += 1;
+                    int progressPercent = Math.min(90, 10 + pollCount * 8);
+                    executionEventService.recordProgress(
+                            executionTask,
+                            executionRun,
+                            step,
+                            progressPercent,
+                            defaultString(runningMessage)
+                    );
+                } catch (ExecutionException exception) {
+                    Throwable cause = exception.getCause();
+                    if (cause instanceof RuntimeException runtimeException) {
+                        throw runtimeException;
+                    }
+                    throw new IllegalStateException(resolveMessage(cause), cause);
+                }
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            future.cancel(true);
+            throw new IllegalStateException("仓库扫描步骤执行被中断", exception);
+        } finally {
+            executorService.shutdownNow();
         }
     }
 
@@ -424,21 +576,109 @@ public class RepositoryScanExecutionService {
         List<ExecutionArtifactEntity> savedArtifacts = requiresNewTransactionTemplate.execute(status -> {
             ExecutionRunEntity managedRun = executionRunRepository.findById(executionRun.getId())
                     .orElseThrow(() -> new NoSuchElementException("执行运行不存在: " + executionRun.getId()));
+            ExecutionTaskEntity managedTask = executionTaskRepository.findById(managedRun.getExecutionTask().getId())
+                    .orElseThrow(() -> new NoSuchElementException("执行任务不存在: " + managedRun.getExecutionTask().getId()));
             List<ExecutionArtifactEntity> result = new ArrayList<>();
             for (RepositoryScanClientService.PackageArtifactResponse item : packaged.artifacts()) {
-                ExecutionArtifactEntity artifact = new ExecutionArtifactEntity();
-                artifact.setRun(managedRun);
-                artifact.setArtifactType(defaultString(item.artifactType()));
-                artifact.setTitle(defaultString(item.title()));
+                String artifactType = defaultString(item.artifactType());
+                String title = defaultString(item.title());
+                ExecutionArtifactEntity artifact = executionArtifactRepository.findFirstByRun_IdAndArtifactTypeAndTitle(
+                                managedRun.getId(),
+                                artifactType,
+                                title
+                        )
+                        .orElseGet(() -> {
+                            ExecutionArtifactEntity entity = new ExecutionArtifactEntity();
+                            entity.setRun(managedRun);
+                            entity.setArtifactType(artifactType);
+                            entity.setTitle(title);
+                            entity.setWorkItemWritebackFlag(false);
+                            return entity;
+                        });
                 artifact.setContentRef(defaultString(item.objectKey()));
-                artifact.setContentText(defaultString(item.previewText()));
-                artifact.setWorkItemWritebackFlag(false);
-                result.add(executionArtifactRepository.save(artifact));
+                if (!hasText(artifact.getContentText())) {
+                    artifact.setContentText(defaultString(item.previewText()));
+                }
+                ExecutionArtifactEntity savedArtifact = executionArtifactRepository.save(artifact);
+                executionEventService.recordArtifactReady(
+                        managedTask,
+                        managedRun,
+                        savedArtifact.getStep(),
+                        savedArtifact.getId(),
+                        savedArtifact.getTitle()
+                );
+                result.add(savedArtifact);
             }
             return result;
         });
         if (savedArtifacts != null) {
             artifacts.addAll(savedArtifacts);
+        }
+    }
+
+    /**
+     * 在扫描步骤刚完成时先沉淀“阶段产物”，让执行详情页能立刻看到可阅读内容；
+     * 最终的 package 阶段只负责补齐 MinIO 引用和下载能力，不再承担第一次展示产物的职责。
+     */
+    private void saveVisibleScanArtifact(Long executionTaskId,
+                                         Long executionRunId,
+                                         Long stepId,
+                                         String artifactType,
+                                         String title,
+                                         String contentText) {
+        if (!hasText(artifactType) || !hasText(title) || !hasText(contentText)) {
+            return;
+        }
+        requiresNewTransactionTemplate.executeWithoutResult(status -> {
+            ExecutionTaskEntity managedTask = executionTaskRepository.findById(executionTaskId)
+                    .orElseThrow(() -> new NoSuchElementException("执行任务不存在: " + executionTaskId));
+            ExecutionRunEntity managedRun = executionRunRepository.findById(executionRunId)
+                    .orElseThrow(() -> new NoSuchElementException("执行运行不存在: " + executionRunId));
+            ExecutionStepEntity managedStep = executionStepRepository.findById(stepId)
+                    .orElseThrow(() -> new NoSuchElementException("执行步骤不存在: " + stepId));
+            ExecutionArtifactEntity artifact = executionArtifactRepository.findFirstByRun_IdAndArtifactTypeAndTitle(
+                            executionRunId,
+                            defaultString(artifactType),
+                            defaultString(title)
+                    )
+                    .orElseGet(() -> {
+                        ExecutionArtifactEntity entity = new ExecutionArtifactEntity();
+                        entity.setRun(managedRun);
+                        entity.setStep(managedStep);
+                        entity.setArtifactType(defaultString(artifactType));
+                        entity.setTitle(defaultString(title));
+                        entity.setWorkItemWritebackFlag(false);
+                        return entity;
+                    });
+            if (artifact.getStep() == null) {
+                artifact.setStep(managedStep);
+            }
+            artifact.setContentText(defaultString(contentText));
+            ExecutionArtifactEntity savedArtifact = executionArtifactRepository.save(artifact);
+            executionEventService.recordArtifactReady(
+                    managedTask,
+                    managedRun,
+                    managedStep,
+                    savedArtifact.getId(),
+                    savedArtifact.getTitle()
+            );
+        });
+    }
+
+    private String buildFindingIndexPreview(RepositoryScanClientService.NormalizeResponse response) {
+        Map<String, Object> preview = new LinkedHashMap<>();
+        preview.put("summaryText", defaultString(response.summaryText()));
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("totalFindings", response.totalFindings() == null ? 0 : response.totalFindings());
+        summary.put("high", response.highCount() == null ? 0 : response.highCount());
+        summary.put("medium", response.mediumCount() == null ? 0 : response.mediumCount());
+        summary.put("low", response.lowCount() == null ? 0 : response.lowCount());
+        preview.put("summary", summary);
+        preview.put("note", "完整问题索引文件将在扫描报告打包后提供下载。");
+        try {
+            return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(preview);
+        } catch (Exception ignored) {
+            return defaultString(response.summaryText());
         }
     }
 
@@ -474,6 +714,7 @@ public class RepositoryScanExecutionService {
 
             managedTask.setLatestSummary("基础扫描报告已发布，AI 正在准备分片分析");
             executionTaskRepository.save(managedTask);
+            executionEventService.recordStepStarted(managedTask, managedRun, savedStep, savedStep.getLatestMessage());
             return savedStep.getId();
         });
     }
@@ -498,6 +739,7 @@ public class RepositoryScanExecutionService {
             ExecutionTaskEntity task = run.getExecutionTask();
             task.setLatestSummary(defaultString(latestMessage));
             executionTaskRepository.save(task);
+            executionEventService.recordProgress(task, run, step, step.getProgressPercent(), latestMessage);
         });
     }
 
@@ -516,6 +758,7 @@ public class RepositoryScanExecutionService {
             step.setOutputSnapshot(result == null ? "" : defaultString(result.stepOutput()));
             step.setFinishedAt(LocalDateTime.now());
             executionStepRepository.save(step);
+            executionEventService.recordStepFinished(step.getRun().getExecutionTask(), step.getRun(), step, step.getLatestMessage());
         });
     }
 
@@ -545,6 +788,7 @@ public class RepositoryScanExecutionService {
         executionRun.setCurrentStepNo(stepNo);
         executionRun.setUpdatedAt(LocalDateTime.now());
         executionRunRepository.save(executionRun);
+        executionEventService.recordStepStarted(executionRun.getExecutionTask(), executionRun, savedStep, "开始执行：" + stepName);
         return savedStep;
     }
 
@@ -555,6 +799,8 @@ public class RepositoryScanExecutionService {
         step.setOutputSnapshot(defaultString(outputSnapshot));
         step.setFinishedAt(LocalDateTime.now());
         executionStepRepository.save(step);
+        executionEventService.recordSummary(step.getRun().getExecutionTask(), step.getRun(), step, step.getLatestMessage());
+        executionEventService.recordStepFinished(step.getRun().getExecutionTask(), step.getRun(), step, step.getLatestMessage());
     }
 
     private void completeCanceledStep(ExecutionStepEntity step, String outputSnapshot) {
@@ -564,6 +810,8 @@ public class RepositoryScanExecutionService {
         step.setOutputSnapshot(defaultString(outputSnapshot));
         step.setFinishedAt(LocalDateTime.now());
         executionStepRepository.save(step);
+        executionEventService.recordSummary(step.getRun().getExecutionTask(), step.getRun(), step, step.getLatestMessage());
+        executionEventService.recordStepFinished(step.getRun().getExecutionTask(), step.getRun(), step, step.getLatestMessage());
     }
 
     private void completeOrCancelStep(ExecutionStepEntity step, ExecutablePlanResult result) {
@@ -582,6 +830,8 @@ public class RepositoryScanExecutionService {
         step.setErrorMessage(resolveMessage(exception));
         step.setFinishedAt(LocalDateTime.now());
         ExecutionStepEntity savedStep = executionStepRepository.save(step);
+        executionEventService.recordSummary(savedStep.getRun().getExecutionTask(), savedStep.getRun(), savedStep, message);
+        executionEventService.recordStepFinished(savedStep.getRun().getExecutionTask(), savedStep.getRun(), savedStep, message);
         return new RepositoryScanStepException(savedStep, resolveMessage(exception), artifacts);
     }
 
@@ -1385,6 +1635,14 @@ public class RepositoryScanExecutionService {
     private boolean isCancelRequested(Long executionTaskId) {
         Boolean cancelRequested = executionTaskRepository.findCancelRequestedFlagById(executionTaskId);
         return Boolean.TRUE.equals(cancelRequested);
+    }
+
+    private void sleepQuietly(long millis) {
+        try {
+            TimeUnit.MILLISECONDS.sleep(millis);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private int safeNumber(Integer value) {

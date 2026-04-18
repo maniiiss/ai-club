@@ -37,7 +37,9 @@ public class ExecutionWorkflowService {
 
     public static final String STEP_PLAN = "PLAN";
     public static final String STEP_IMPLEMENT = "IMPLEMENT";
+    public static final String STEP_TEST = "TEST";
     public static final String STEP_TEST_DESIGN = "TEST_DESIGN";
+    public static final String STEP_REPORT = "REPORT";
     public static final String STEP_REVIEW = "REVIEW";
     public static final String STEP_AD_HOC_RUN = "AD_HOC_RUN";
 
@@ -64,16 +66,38 @@ public class ExecutionWorkflowService {
     public WorkflowPlan buildWorkflow(String scenarioCode,
                                       Long projectId,
                                       List<ExecutionAgentBindingRequest> requestedBindings) {
+        return buildWorkflow(scenarioCode, projectId, requestedBindings, List.of());
+    }
+
+    /**
+     * 根据场景与仓库列表生成执行步骤；开发执行场景支持多仓动态展开。
+     */
+    public WorkflowPlan buildWorkflow(String scenarioCode,
+                                      Long projectId,
+                                      List<ExecutionAgentBindingRequest> requestedBindings,
+                                      List<DevelopmentRepositorySelection> developmentRepositories) {
         String normalizedScenarioCode = normalizeScenarioCode(scenarioCode);
         Map<String, Long> requestedBindingMap = toBindingMap(requestedBindings);
         List<AgentEntity> availableAgents = listAvailableAgents(projectId);
-        List<StepTemplate> templates = buildTemplates(normalizedScenarioCode);
+        List<StepTemplate> templates = SCENARIO_DEVELOPMENT_IMPLEMENTATION.equals(normalizedScenarioCode)
+                && developmentRepositories != null
+                && !developmentRepositories.isEmpty()
+                ? buildDevelopmentTemplates(developmentRepositories)
+                : buildTemplates(normalizedScenarioCode);
         List<ExecutionStepPlan> steps = new ArrayList<>();
 
         for (int index = 0; index < templates.size(); index++) {
             StepTemplate template = templates.get(index);
             AgentEntity agent = resolveStepAgent(template, requestedBindingMap.get(template.stepCode()), availableAgents);
-            steps.add(new ExecutionStepPlan(index + 1, template.stepCode(), template.stepName(), agent));
+            steps.add(new ExecutionStepPlan(
+                    index + 1,
+                    template.stepCode(),
+                    template.stepName(),
+                    agent,
+                    template.repositoryBindingId(),
+                    template.repositoryTargetBranch(),
+                    template.repositoryDisplayName()
+            ));
         }
 
         return new WorkflowPlan(normalizedScenarioCode, scenarioName(normalizedScenarioCode), steps);
@@ -87,16 +111,44 @@ public class ExecutionWorkflowService {
                                         String storedBindingPayload) {
         String normalizedScenarioCode = normalizeScenarioCode(scenarioCode);
         List<StoredAgentBinding> bindings = readStoredBindings(storedBindingPayload);
-        Map<String, Long> bindingMap = new LinkedHashMap<>();
-        bindings.forEach(binding -> bindingMap.put(binding.stepCode(), binding.agentId()));
         List<AgentEntity> availableAgents = listAvailableAgents(projectId);
+        if (shouldRestoreConcreteBindings(bindings)) {
+            List<StoredAgentBinding> sortedBindings = new ArrayList<>(bindings);
+            sortedBindings.sort(Comparator.comparing(binding -> binding.stepNo() == null ? Integer.MAX_VALUE : binding.stepNo()));
+            List<ExecutionStepPlan> steps = new ArrayList<>();
+            for (int index = 0; index < sortedBindings.size(); index++) {
+                StoredAgentBinding binding = sortedBindings.get(index);
+                AgentEntity agent = resolveStoredAgent(binding, availableAgents);
+                steps.add(new ExecutionStepPlan(
+                        binding.stepNo() == null ? index + 1 : binding.stepNo(),
+                        defaultString(binding.stepCode()),
+                        hasText(binding.stepName()) ? binding.stepName().trim() : defaultString(binding.stepCode()),
+                        agent,
+                        binding.repositoryBindingId(),
+                        trimToNull(binding.repositoryTargetBranch()),
+                        trimToNull(binding.repositoryDisplayName())
+                ));
+            }
+            return new WorkflowPlan(normalizedScenarioCode, scenarioName(normalizedScenarioCode), steps);
+        }
+
+        Map<String, Long> bindingMap = new LinkedHashMap<>();
+        bindings.forEach(binding -> bindingMap.put(defaultString(binding.stepCode()).trim().toUpperCase(Locale.ROOT), binding.agentId()));
         List<StepTemplate> templates = buildTemplates(normalizedScenarioCode);
         List<ExecutionStepPlan> steps = new ArrayList<>();
 
         for (int index = 0; index < templates.size(); index++) {
             StepTemplate template = templates.get(index);
             AgentEntity agent = resolveStepAgent(template, bindingMap.get(template.stepCode()), availableAgents);
-            steps.add(new ExecutionStepPlan(index + 1, template.stepCode(), template.stepName(), agent));
+            steps.add(new ExecutionStepPlan(
+                    index + 1,
+                    template.stepCode(),
+                    template.stepName(),
+                    agent,
+                    template.repositoryBindingId(),
+                    template.repositoryTargetBranch(),
+                    template.repositoryDisplayName()
+            ));
         }
 
         return new WorkflowPlan(normalizedScenarioCode, scenarioName(normalizedScenarioCode), steps);
@@ -107,7 +159,15 @@ public class ExecutionWorkflowService {
      */
     public String serializeBindings(WorkflowPlan workflowPlan) {
         List<StoredAgentBinding> bindings = workflowPlan.steps().stream()
-                .map(step -> new StoredAgentBinding(step.stepCode(), step.agent().getId()))
+                .map(step -> new StoredAgentBinding(
+                        step.stepNo(),
+                        step.stepCode(),
+                        step.stepName(),
+                        step.agent().getId(),
+                        step.repositoryBindingId(),
+                        step.repositoryTargetBranch(),
+                        step.repositoryDisplayName()
+                ))
                 .toList();
         try {
             return objectMapper.writeValueAsString(bindings);
@@ -139,6 +199,12 @@ public class ExecutionWorkflowService {
                     .append("优先级：").append(defaultString(workItem.getPriority())).append('\n')
                     .append("负责人：").append(defaultString(workItem.getAssignee())).append('\n')
                     .append("说明：").append(defaultString(workItem.getDescription())).append("\n\n");
+        }
+
+        if (hasText(currentStep.repositoryDisplayName()) || hasText(currentStep.repositoryTargetBranch())) {
+            builder.append("## 当前仓库\n")
+                    .append("仓库：").append(defaultString(currentStep.repositoryDisplayName())).append('\n')
+                    .append("目标分支：").append(defaultString(currentStep.repositoryTargetBranch())).append("\n\n");
         }
 
         String inputText = extractPrimaryInputText(executionTask.getInputPayload());
@@ -186,7 +252,9 @@ public class ExecutionWorkflowService {
                     ? "请把当前需求拆解为可执行项，并输出结构化 Markdown 方案。"
                     : "请先梳理当前工作项的执行路径、关键风险和依赖，输出结构化 Markdown 计划。";
             case STEP_IMPLEMENT -> "请基于工作项上下文和上游计划，给出可执行的开发实现方案、代码改造建议或关键实现片段。";
+            case STEP_TEST -> "请根据当前仓库的实现结果执行真实验证，并返回结构化 JSON 测试结果。";
             case STEP_TEST_DESIGN -> "请基于工作项上下文和现有方案，输出测试点、测试案例设计和验收建议。";
+            case STEP_REPORT -> "请基于规划、开发与测试结果输出交付报告，明确结论、风险、遗留项与未覆盖验证。";
             case STEP_REVIEW -> "请从质量、风险、边界情况和可交付性角度评审前序输出，结果使用 Markdown。";
             case STEP_AD_HOC_RUN -> "请直接根据补充说明处理当前任务，结果使用 Markdown。";
             default -> "请根据当前上下文完成该步骤。";
@@ -219,26 +287,69 @@ public class ExecutionWorkflowService {
         }
     }
 
+    private boolean shouldRestoreConcreteBindings(List<StoredAgentBinding> bindings) {
+        return bindings != null && bindings.stream().anyMatch(binding ->
+                binding.stepNo() != null
+                        || hasText(binding.stepName())
+                        || binding.repositoryBindingId() != null
+                        || hasText(binding.repositoryTargetBranch())
+                        || hasText(binding.repositoryDisplayName())
+        );
+    }
+
     private List<StepTemplate> buildTemplates(String scenarioCode) {
         return switch (normalizeScenarioCode(scenarioCode)) {
             case SCENARIO_REQUIREMENT_BREAKDOWN -> List.of(
-                    new StepTemplate(STEP_PLAN, "需求拆解")
+                    new StepTemplate(STEP_PLAN, "需求拆解", null, null, null)
             );
             case SCENARIO_DEVELOPMENT_IMPLEMENTATION -> List.of(
-                    new StepTemplate(STEP_PLAN, "执行规划"),
-                    new StepTemplate(STEP_IMPLEMENT, "开发实现"),
-                    new StepTemplate(STEP_REVIEW, "质量评审")
+                    new StepTemplate(STEP_PLAN, "执行规划", null, null, null),
+                    new StepTemplate(STEP_IMPLEMENT, "开发实现", null, null, null),
+                    new StepTemplate(STEP_REVIEW, "质量评审", null, null, null)
             );
             case SCENARIO_TEST_DESIGN_OR_REVIEW -> List.of(
-                    new StepTemplate(STEP_TEST_DESIGN, "测试设计"),
-                    new StepTemplate(STEP_REVIEW, "测试评审")
+                    new StepTemplate(STEP_TEST_DESIGN, "测试设计", null, null, null),
+                    new StepTemplate(STEP_REVIEW, "测试评审", null, null, null)
             );
             case SCENARIO_AD_HOC_AGENT_RUN -> List.of(
-                    new StepTemplate(STEP_AD_HOC_RUN, "兼容执行")
+                    new StepTemplate(STEP_AD_HOC_RUN, "兼容执行", null, null, null)
             );
             case SCENARIO_CODEBASE_COMPLIANCE_SCAN -> List.of();
             default -> throw new IllegalArgumentException("不支持的执行场景");
         };
+    }
+
+    /**
+     * 多仓开发执行需要把每个仓库展开成独立的实现与测试步骤，便于详情页定位失败仓库。
+     */
+    private List<StepTemplate> buildDevelopmentTemplates(List<DevelopmentRepositorySelection> developmentRepositories) {
+        List<StepTemplate> templates = new ArrayList<>();
+        templates.add(new StepTemplate(STEP_PLAN, "执行规划", null, null, null));
+        for (DevelopmentRepositorySelection repository : developmentRepositories) {
+            templates.add(new StepTemplate(
+                    STEP_IMPLEMENT,
+                    "开发实现 · " + defaultString(repository.repositoryDisplayName()),
+                    repository.bindingId(),
+                    repository.targetBranch(),
+                    repository.repositoryDisplayName()
+            ));
+            templates.add(new StepTemplate(
+                    STEP_TEST,
+                    "执行测试 · " + defaultString(repository.repositoryDisplayName()),
+                    repository.bindingId(),
+                    repository.targetBranch(),
+                    repository.repositoryDisplayName()
+            ));
+        }
+        templates.add(new StepTemplate(STEP_REPORT, "交付报告", null, null, null));
+        return templates;
+    }
+
+    private AgentEntity resolveStoredAgent(StoredAgentBinding binding, List<AgentEntity> availableAgents) {
+        return availableAgents.stream()
+                .filter(agent -> Objects.equals(agent.getId(), binding.agentId()))
+                .findFirst()
+                .orElseThrow(() -> new NoSuchElementException("步骤 Agent 不存在或当前项目不可用: " + binding.agentId()));
     }
 
     private AgentEntity resolveStepAgent(StepTemplate template,
@@ -264,11 +375,23 @@ public class ExecutionWorkflowService {
                     "REQUIREMENT_BREAKDOWN".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
                             || containsAny(agent, "planner", "规划", "需求"));
             case STEP_IMPLEMENT -> findFirstByPredicate(candidates, agent ->
-                    containsAny(agent, "coder", "code", "开发", "实现")
-                            && !"CODE_REVIEW".equalsIgnoreCase(defaultString(agent.getBuiltinCode())));
+                    isExecutableAgent(agent)
+                            && containsAny(agent, "coder", "code", "开发", "实现"));
+            case STEP_TEST -> findFirstByPredicate(candidates, agent ->
+                    isExecutableAgent(agent)
+                            && containsAny(agent, "test", "qa", "测试", "quality"))
+                    .or(() -> findFirstByPredicate(candidates, agent ->
+                            isExecutableAgent(agent)
+                                    && containsAny(agent, "coder", "code", "开发", "实现")))
+                    .or(() -> findFirstByPredicate(candidates, this::isExecutableAgent));
             case STEP_TEST_DESIGN -> findFirstByPredicate(candidates, agent ->
                     "TEST_SUGGESTION".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
                             || containsAny(agent, "test", "测试", "quality"));
+            case STEP_REPORT -> findFirstByPredicate(candidates, agent ->
+                    containsAny(agent, "report", "总结", "交付", "review", "评审"))
+                    .or(() -> findFirstByPredicate(candidates, agent ->
+                            "REQUIREMENT_BREAKDOWN".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
+                                    || containsAny(agent, "planner", "规划", "需求")));
             case STEP_REVIEW -> findFirstByPredicate(candidates, agent ->
                     "CODE_REVIEW".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
                             || containsAny(agent, "review", "评审", "reviewer"));
@@ -283,6 +406,11 @@ public class ExecutionWorkflowService {
                 .filter(predicate)
                 .findFirst()
                 .or(() -> availableAgents.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(availableAgents.get(0)));
+    }
+
+    private boolean isExecutableAgent(AgentEntity agent) {
+        String accessType = defaultString(agent.getAccessType()).trim().toUpperCase(Locale.ROOT);
+        return "HTTP_API".equals(accessType) || "AGENT_RUNTIME".equals(accessType);
     }
 
     private boolean containsAny(AgentEntity agent, String... keywords) {
@@ -338,14 +466,49 @@ public class ExecutionWorkflowService {
         return normalized;
     }
 
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
+    private String trimToNull(String value) {
+        if (!hasText(value)) {
+            return null;
+        }
+        return value.trim();
+    }
+
     private String defaultString(String value) {
         return value == null ? "" : value;
     }
 
-    private record StepTemplate(String stepCode, String stepName) {
+    private record StepTemplate(
+            String stepCode,
+            String stepName,
+            Long repositoryBindingId,
+            String repositoryTargetBranch,
+            String repositoryDisplayName
+    ) {
     }
 
-    private record StoredAgentBinding(String stepCode, Long agentId) {
+    private record StoredAgentBinding(
+            Integer stepNo,
+            String stepCode,
+            String stepName,
+            Long agentId,
+            Long repositoryBindingId,
+            String repositoryTargetBranch,
+            String repositoryDisplayName
+    ) {
+    }
+
+    /**
+     * 创建时由执行任务服务整理好的仓库选择信息，统一用于动态展开多仓步骤。
+     */
+    public record DevelopmentRepositorySelection(
+            Long bindingId,
+            String targetBranch,
+            String repositoryDisplayName
+    ) {
     }
 
     /**
@@ -360,12 +523,16 @@ public class ExecutionWorkflowService {
 
     /**
      * 已解析好的单步执行计划。
+     * 多仓开发执行会把仓库绑定、目标分支和展示名称固化到每一个实现/测试步骤里。
      */
     public record ExecutionStepPlan(
             Integer stepNo,
             String stepCode,
             String stepName,
-            AgentEntity agent
+            AgentEntity agent,
+            Long repositoryBindingId,
+            String repositoryTargetBranch,
+            String repositoryDisplayName
     ) {
     }
 }

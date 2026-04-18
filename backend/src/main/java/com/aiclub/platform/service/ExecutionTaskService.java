@@ -6,6 +6,7 @@ import com.aiclub.platform.domain.model.ExecutionRunEntity;
 import com.aiclub.platform.domain.model.ExecutionStepEntity;
 import com.aiclub.platform.domain.model.ExecutionTaskEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
+import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.ExecutionArtifactSummary;
@@ -24,6 +25,7 @@ import com.aiclub.platform.repository.ExecutionRunRepository;
 import com.aiclub.platform.repository.ExecutionStepRepository;
 import com.aiclub.platform.repository.ExecutionTaskRepository;
 import com.aiclub.platform.repository.ProjectRepository;
+import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
 import com.aiclub.platform.repository.TaskRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.security.AuthContextHolder;
@@ -38,14 +40,17 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 /**
  * 执行中心任务服务。
@@ -62,11 +67,13 @@ public class ExecutionTaskService {
     private final ExecutionStepRepository executionStepRepository;
     private final ExecutionArtifactRepository executionArtifactRepository;
     private final ProjectRepository projectRepository;
+    private final ProjectGitlabBindingRepository projectGitlabBindingRepository;
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
     private final ProjectDataPermissionService projectDataPermissionService;
     private final ExecutionWorkflowService executionWorkflowService;
     private final ExecutionDispatchService executionDispatchService;
+    private final ExecutionEventService executionEventService;
     private final ObjectMapper objectMapper;
 
     public ExecutionTaskService(ExecutionTaskRepository executionTaskRepository,
@@ -74,22 +81,26 @@ public class ExecutionTaskService {
                                 ExecutionStepRepository executionStepRepository,
                                 ExecutionArtifactRepository executionArtifactRepository,
                                 ProjectRepository projectRepository,
+                                ProjectGitlabBindingRepository projectGitlabBindingRepository,
                                 TaskRepository taskRepository,
                                 UserRepository userRepository,
                                 ProjectDataPermissionService projectDataPermissionService,
                                 ExecutionWorkflowService executionWorkflowService,
                                 ExecutionDispatchService executionDispatchService,
+                                ExecutionEventService executionEventService,
                                 ObjectMapper objectMapper) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
         this.executionStepRepository = executionStepRepository;
         this.executionArtifactRepository = executionArtifactRepository;
         this.projectRepository = projectRepository;
+        this.projectGitlabBindingRepository = projectGitlabBindingRepository;
         this.taskRepository = taskRepository;
         this.userRepository = userRepository;
         this.projectDataPermissionService = projectDataPermissionService;
         this.executionWorkflowService = executionWorkflowService;
         this.executionDispatchService = executionDispatchService;
+        this.executionEventService = executionEventService;
         this.objectMapper = objectMapper;
     }
 
@@ -127,6 +138,11 @@ public class ExecutionTaskService {
         return toRunDetail(requireExecutionRun(executionRunId));
     }
 
+    public StreamingResponseBody streamExecutionRunEvents(Long executionRunId, Long afterId) {
+        ExecutionRunEntity executionRun = requireExecutionRun(executionRunId);
+        return executionEventService.streamRunEvents(executionRun.getId(), afterId);
+    }
+
     /**
      * 创建新的执行中心任务，并将步骤 Agent 绑定在创建时一次性固化。
      */
@@ -135,11 +151,16 @@ public class ExecutionTaskService {
         ProjectEntity project = requireProject(request.projectId());
         TaskEntity workItem = request.workItemId() == null ? null : requireWorkItem(project.getId(), request.workItemId());
         UserEntity currentUser = requireCurrentUser();
+        Map<String, Object> normalizedPayload = defaultPayload(request.inputPayload());
+        List<ExecutionWorkflowService.DevelopmentRepositorySelection> developmentRepositories =
+                resolveDevelopmentRepositories(request.scenarioCode(), project, normalizedPayload);
         ExecutionWorkflowService.WorkflowPlan workflowPlan = executionWorkflowService.buildWorkflow(
                 request.scenarioCode(),
                 project.getId(),
-                request.agentBindings()
+                request.agentBindings(),
+                developmentRepositories
         );
+        validateDevelopmentExecutionAgents(workflowPlan);
 
         ExecutionTaskEntity entity = new ExecutionTaskEntity();
         entity.setSourceType(workItem == null ? "MANUAL" : "WORK_ITEM");
@@ -153,7 +174,7 @@ public class ExecutionTaskService {
         entity.setStatus("PENDING");
         entity.setCancelRequested(false);
         entity.setLatestSummary("等待调度");
-        entity.setInputPayload(serializePayload(defaultPayload(request.inputPayload())));
+        entity.setInputPayload(serializePayload(normalizedPayload));
         entity.setAgentBindingPayload(executionWorkflowService.serializeBindings(workflowPlan));
         return toTaskSummary(executionTaskRepository.save(entity));
     }
@@ -374,6 +395,13 @@ public class ExecutionTaskService {
         List<ExecutionArtifactSummary> artifacts = executionArtifactRepository.findAllByRun_IdOrderByCreatedAtAscIdAsc(executionRun.getId()).stream()
                 .map(this::toArtifactSummary)
                 .toList();
+        Long lastEventId = executionEventService.latestRunEventId(executionRun.getId());
+        boolean hasLiveStream = steps.stream().anyMatch(ExecutionStepSummary::hasLiveStream);
+        String lastEventAt = steps.stream()
+                .map(ExecutionStepSummary::lastEventAt)
+                .filter(this::hasText)
+                .reduce((first, second) -> second)
+                .orElse(null);
         return new ExecutionRunDetail(
                 executionRun.getId(),
                 executionRun.getExecutionTask().getId(),
@@ -385,6 +413,9 @@ public class ExecutionTaskService {
                 executionRun.getInputSnapshot(),
                 executionRun.getOutputSummary(),
                 executionRun.getErrorMessage(),
+                lastEventId,
+                lastEventAt,
+                hasLiveStream,
                 formatTime(executionRun.getStartedAt()),
                 formatTime(executionRun.getFinishedAt()),
                 formatTime(executionRun.getCreatedAt()),
@@ -405,6 +436,13 @@ public class ExecutionTaskService {
                 executionStep.getStatus(),
                 executionStep.getProgressPercent(),
                 executionStep.getLatestMessage(),
+                trimToNull(executionStep.getCurrentCommand()),
+                executionStep.getLastEventId(),
+                formatTime(executionStep.getLastEventAt()),
+                formatTime(executionStep.getLastHeartbeatAt()),
+                executionStep.getTailLogText(),
+                executionStep.getTailLogLineCount(),
+                executionStep.isHasLiveStream(),
                 executionStep.getInputSnapshot(),
                 executionStep.getOutputSnapshot(),
                 executionStep.getErrorMessage(),
@@ -505,6 +543,116 @@ public class ExecutionTaskService {
         return inputPayload == null ? new LinkedHashMap<>() : new LinkedHashMap<>(inputPayload);
     }
 
+    /**
+     * 多仓开发执行在创建阶段就完成仓库列表校验与标准化，避免调度时才暴露基础数据缺失问题。
+     */
+    private List<ExecutionWorkflowService.DevelopmentRepositorySelection> resolveDevelopmentRepositories(String scenarioCode,
+                                                                                                        ProjectEntity project,
+                                                                                                        Map<String, Object> inputPayload) {
+        if (!ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(defaultString(scenarioCode))) {
+            return List.of();
+        }
+        String inputText = trimToNull(asText(inputPayload.get("inputText")));
+        if (inputText == null) {
+            inputPayload.remove("inputText");
+        } else {
+            inputPayload.put("inputText", inputText);
+        }
+
+        Object repositoriesValue = inputPayload.get("repositories");
+        if (!(repositoriesValue instanceof List<?> repositories) || repositories.isEmpty()) {
+            throw new IllegalArgumentException("开发执行至少需要选择一个 GitLab 仓库");
+        }
+
+        List<Map<String, Object>> normalizedRepositories = new ArrayList<>();
+        List<ExecutionWorkflowService.DevelopmentRepositorySelection> result = new ArrayList<>();
+        Set<Long> uniqueBindingIds = new LinkedHashSet<>();
+        for (Object item : repositories) {
+            if (!(item instanceof Map<?, ?> repositoryItem)) {
+                throw new IllegalArgumentException("开发执行仓库参数格式不正确");
+            }
+            Long bindingId = parseBindingId(repositoryItem.get("bindingId"));
+            if (bindingId == null) {
+                throw new IllegalArgumentException("开发执行仓库必须填写 bindingId");
+            }
+            if (!uniqueBindingIds.add(bindingId)) {
+                throw new IllegalArgumentException("开发执行仓库不允许重复选择同一个 GitLab 绑定");
+            }
+            String targetBranch = trimToNull(asText(repositoryItem.get("targetBranch")));
+            if (targetBranch == null) {
+                throw new IllegalArgumentException("开发执行仓库必须填写目标分支");
+            }
+            ProjectGitlabBindingEntity binding = requireDevelopmentBinding(project.getId(), bindingId);
+            normalizedRepositories.add(Map.of(
+                    "bindingId", bindingId,
+                    "targetBranch", targetBranch
+            ));
+            result.add(new ExecutionWorkflowService.DevelopmentRepositorySelection(
+                    bindingId,
+                    targetBranch,
+                    resolveBindingDisplayName(binding)
+            ));
+        }
+        inputPayload.put("repositories", normalizedRepositories);
+        return result;
+    }
+
+    private void validateDevelopmentExecutionAgents(ExecutionWorkflowService.WorkflowPlan workflowPlan) {
+        if (!ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(workflowPlan.scenarioCode())) {
+            return;
+        }
+        for (ExecutionWorkflowService.ExecutionStepPlan step : workflowPlan.steps()) {
+            if (!ExecutionWorkflowService.STEP_IMPLEMENT.equals(step.stepCode())
+                    && !ExecutionWorkflowService.STEP_TEST.equals(step.stepCode())) {
+                continue;
+            }
+            String accessType = defaultString(step.agent().getAccessType()).trim().toUpperCase();
+            if (!"HTTP_API".equals(accessType) && !"AGENT_RUNTIME".equals(accessType)) {
+                throw new IllegalArgumentException(step.stepName() + " 必须绑定可真实执行的 HTTP_API 或 AGENT_RUNTIME 智能体");
+            }
+        }
+    }
+
+    private ProjectGitlabBindingEntity requireDevelopmentBinding(Long projectId, Long bindingId) {
+        ProjectGitlabBindingEntity binding = projectGitlabBindingRepository.findById(bindingId)
+                .orElseThrow(() -> new NoSuchElementException("GitLab 绑定不存在: " + bindingId));
+        projectDataPermissionService.requireGitlabBindingVisible(binding);
+        if (!binding.getProject().getId().equals(projectId)) {
+            throw new IllegalArgumentException("GitLab 绑定必须属于当前项目");
+        }
+        if (!Boolean.TRUE.equals(binding.getEnabled())) {
+            throw new IllegalArgumentException("所选 GitLab 绑定已停用，无法用于开发执行");
+        }
+        return binding;
+    }
+
+    private Long parseBindingId(Object rawValue) {
+        if (rawValue instanceof Number number) {
+            return number.longValue();
+        }
+        if (rawValue instanceof String value && hasText(value)) {
+            try {
+                return Long.parseLong(value.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private String resolveBindingDisplayName(ProjectGitlabBindingEntity binding) {
+        String path = trimToNull(binding.getGitlabProjectPath());
+        if (path != null) {
+            return path;
+        }
+        String ref = trimToNull(binding.getGitlabProjectRef());
+        return ref == null ? "GitLab 绑定 #" + binding.getId() : ref;
+    }
+
+    private String asText(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
     private String serializePayload(Map<String, Object> payload) {
         try {
             return objectMapper.writeValueAsString(payload);
@@ -554,6 +702,10 @@ public class ExecutionTaskService {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private String trimToNull(String value) {
+        return hasText(value) ? value.trim() : null;
     }
 
     private String defaultString(String value) {

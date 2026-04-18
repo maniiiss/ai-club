@@ -192,7 +192,8 @@
           <el-input v-model="draftQuestion" type="textarea" :rows="3" resize="none" :disabled="footerDisabled" :placeholder="footerPlaceholder" @keydown.enter.exact.prevent="handleSubmit()" />
           <div class="hermes-footer-actions">
             <span>{{ footerTip }}</span>
-            <button class="hermes-send-button" type="button" :disabled="footerDisabled" @click="handleSubmit()">{{ sending ? '回答中...' : '发送' }}</button>
+            <button v-if="sending" class="hermes-ghost-button danger" type="button" :disabled="!activeStreamAbort" @click="handleStopStream">停止</button>
+            <button v-else class="hermes-send-button" type="button" :disabled="footerDisabled" @click="handleSubmit()">发送</button>
           </div>
         </div>
       </section>
@@ -251,6 +252,8 @@ const currentActions = ref<HermesActionItem[]>([])
 const currentSelectionCards = ref<HermesSelectionCardItem[]>([])
 const currentDebug = ref<HermesDebugInfoItem | null>(null)
 const activeStreamAbort = ref<(() => void) | null>(null)
+const currentStreamingAssistantMessageId = ref<string | null>(null)
+const stopRequested = ref(false)
 const thinkBlockOpenState = new Map<string, boolean>()
 const executingActionKey = ref('')
 const HERMES_DEBUG_STORAGE_KEY = 'git-ai-club:hermes:debug'
@@ -633,10 +636,12 @@ const submitConversation = async (question: string, userContent: string, selecti
 
   drawerVisible.value = true
   sending.value = true
+  stopRequested.value = false
   activeStreamAbort.value?.()
   activeStreamAbort.value = null
   const userMessageId = `user-${Date.now()}`
   const assistantMessageId = `assistant-${Date.now()}`
+  currentStreamingAssistantMessageId.value = assistantMessageId
   currentActions.value = []
   currentSelectionCards.value = []
   currentDebug.value = null
@@ -658,6 +663,10 @@ const submitConversation = async (question: string, userContent: string, selecti
           onMeta: (streamPayload: HermesStreamMetaEvent) => { applyStreamDisplayState(streamPayload.roleName, streamPayload.references, streamPayload.suggestions, streamPayload.actions, streamPayload.selectionCards, streamPayload.debug) },
           onDelta: (streamPayload: HermesStreamDeltaEvent) => queueStreamDelta(assistantMessageId, streamPayload.content || ''),
           onDone: (streamPayload: HermesStreamDoneEvent) => {
+            if (stopRequested.value) {
+              finishStream({ preserveStopRequested: true })
+              return
+            }
             flushPendingStreamDeltas(true)
             applyStreamDisplayState(streamPayload.roleName, streamPayload.references, streamPayload.suggestions, streamPayload.actions, streamPayload.selectionCards, streamPayload.debug)
             const shouldPreferTerminalContent = Boolean(streamPayload.actions?.length || streamPayload.selectionCards?.length)
@@ -667,6 +676,10 @@ const submitConversation = async (question: string, userContent: string, selecti
             void refreshCurrentSessionFromCloud()
           },
           onError: (streamPayload: HermesStreamErrorEvent) => {
+            if (stopRequested.value) {
+              finishStream({ preserveStopRequested: true })
+              return
+            }
             flushPendingStreamDeltas(true)
             updateMessage(assistantMessageId, (current) => ({ ...current, content: streamPayload.message || current.content || 'Hermes 助手暂时不可用', status: 'error', attachments: current.attachments || [] }))
             finishStream()
@@ -679,6 +692,10 @@ const submitConversation = async (question: string, userContent: string, selecti
       onMeta: (payload: HermesStreamMetaEvent) => { applyStreamDisplayState(payload.roleName, payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug) },
       onDelta: (payload: HermesStreamDeltaEvent) => queueStreamDelta(assistantMessageId, payload.content || ''),
       onDone: (payload: HermesStreamDoneEvent) => {
+        if (stopRequested.value) {
+          finishStream({ preserveStopRequested: true })
+          return
+        }
         flushPendingStreamDeltas(true)
         applyStreamDisplayState(payload.roleName, payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug)
         const shouldPreferTerminalContent = Boolean(payload.actions?.length || payload.selectionCards?.length)
@@ -688,6 +705,10 @@ const submitConversation = async (question: string, userContent: string, selecti
         void refreshCurrentSessionFromCloud()
       },
       onError: (payload: HermesStreamErrorEvent) => {
+        if (stopRequested.value) {
+          finishStream({ preserveStopRequested: true })
+          return
+        }
         flushPendingStreamDeltas(true)
         updateMessage(assistantMessageId, (current) => ({ ...current, content: payload.message || current.content || 'Hermes 助手暂时不可用', status: 'error', attachments: current.attachments || [] }))
         finishStream()
@@ -743,6 +764,24 @@ const openWithQuestion = async (question: string) => {
 
 defineExpose({ openDrawer, openWithQuestion })
 
+function handleStopStream() {
+  if (!sending.value) {
+    return
+  }
+  stopRequested.value = true
+  flushPendingStreamDeltas(true)
+  if (currentStreamingAssistantMessageId.value) {
+    updateMessage(currentStreamingAssistantMessageId.value, (current) => ({
+      ...current,
+      content: current.content?.trim() ? current.content : '已停止生成',
+      status: 'done',
+      attachments: current.attachments || []
+    }))
+  }
+  activeStreamAbort.value?.()
+  finishStream({ preserveStopRequested: true })
+}
+
 function applyStreamDisplayState(roleName: string, references: HermesReferenceItem[], suggestions: string[], actions: HermesActionItem[], selectionCards: HermesSelectionCardItem[], debug: HermesDebugInfoItem | null) {
   currentRoleName.value = roleName || resolveCurrentRoleName()
   currentReferences.value = references || []
@@ -752,11 +791,15 @@ function applyStreamDisplayState(roleName: string, references: HermesReferenceIt
   currentDebug.value = debug || null
 }
 
-function finishStream() {
+function finishStream(options: { preserveStopRequested?: boolean } = {}) {
   flushPendingStreamDeltas(true)
   currentStreamStatus.value = null
   sending.value = false
   activeStreamAbort.value = null
+  currentStreamingAssistantMessageId.value = null
+  if (!options.preserveStopRequested) {
+    stopRequested.value = false
+  }
 }
 
 function handleThinkSummaryClick(event: Event) {
@@ -1108,6 +1151,14 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-weight: 800;
 }
 
+.hermes-tab {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
 .hermes-primary-button,
 .hermes-send-button,
 .hermes-inline-button {
@@ -1126,29 +1177,33 @@ function persistSelectedSessionId(sessionId: number | null) {
 .hermes-panel {
   display: grid;
   grid-template-columns: 164px minmax(0, 1fr);
+  flex: 1 1 auto;
   height: 100%;
   min-height: 0;
+  overflow: hidden;
   background: #f3f4f5;
 }
 
 .hermes-session-sidebar {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   box-sizing: border-box;
   padding: 0 7px;
   border-right: 1px solid rgba(var(--app-outline-rgb), 0.12);
   background: rgba(248, 250, 252, 0.95);
-  display: block;
 }
 
 .hermes-session-content {
   width: 100%;
+  height: 100%;
   min-height: 0;
   margin: 0;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
-  transform: translateX(-8px);
 }
 
 .hermes-session-toolbar {
@@ -1162,9 +1217,11 @@ function persistSelectedSessionId(sessionId: number | null) {
 }
 
 .hermes-session-tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   gap: 8px;
+  width: 100%;
 }
 
 .hermes-tab.active {
@@ -1184,8 +1241,9 @@ function persistSelectedSessionId(sessionId: number | null) {
   gap: 10px;
   width: 100%;
   box-sizing: border-box;
-  padding: 8px 0;
+  padding: 8px 14px 8px 0;
   align-items: stretch;
+  scrollbar-gutter: stable;
 }
 
 .hermes-session-item {
@@ -1256,6 +1314,7 @@ function persistSelectedSessionId(sessionId: number | null) {
 .hermes-chat-shell {
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -1440,6 +1499,9 @@ function persistSelectedSessionId(sessionId: number | null) {
 }
 
 .hermes-message-bubble {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   max-width: 100%;
   padding: 14px 16px;
   border-radius: 18px;
@@ -1478,8 +1540,39 @@ function persistSelectedSessionId(sessionId: number | null) {
   word-break: break-word;
 }
 
+.hermes-markdown-content :deep(h1),
+.hermes-markdown-content :deep(h2),
+.hermes-markdown-content :deep(h3),
+.hermes-markdown-content :deep(h4) {
+  margin: 0 0 12px;
+  color: #0f172a;
+  font-family: var(--app-font-heading);
+  line-height: 1.45;
+}
+
+.hermes-markdown-content :deep(h1) { font-size: 20px; }
+.hermes-markdown-content :deep(h2) { font-size: 18px; }
+.hermes-markdown-content :deep(h3) { font-size: 16px; }
+.hermes-markdown-content :deep(h4) { font-size: 15px; }
+
 .hermes-markdown-content :deep(p) {
   margin: 0 0 10px;
+}
+
+.hermes-markdown-content :deep(h1:last-child),
+.hermes-markdown-content :deep(h2:last-child),
+.hermes-markdown-content :deep(h3:last-child),
+.hermes-markdown-content :deep(h4:last-child),
+.hermes-markdown-content :deep(p:last-child),
+.hermes-markdown-content :deep(ul:last-child),
+.hermes-markdown-content :deep(ol:last-child),
+.hermes-markdown-content :deep(blockquote:last-child),
+.hermes-markdown-content :deep(pre:last-child),
+.hermes-markdown-content :deep(hr:last-child),
+.hermes-markdown-content :deep(img:last-child),
+.hermes-markdown-content :deep(.hermes-table-wrap:last-child),
+.hermes-message-bubble > :last-child {
+  margin-bottom: 0;
 }
 
 .hermes-markdown-content :deep(ul),
@@ -1488,12 +1581,127 @@ function persistSelectedSessionId(sessionId: number | null) {
   padding-left: 20px;
 }
 
+.hermes-markdown-content :deep(ul ul),
+.hermes-markdown-content :deep(ul ol),
+.hermes-markdown-content :deep(ol ul),
+.hermes-markdown-content :deep(ol ol) {
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+
+.hermes-markdown-content :deep(li + li) {
+  margin-top: 4px;
+}
+
+.hermes-markdown-content :deep(a) {
+  color: var(--app-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.hermes-markdown-content :deep(blockquote) {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-left: 4px solid rgba(var(--app-primary-rgb), 0.28);
+  border-radius: 0 12px 12px 0;
+  background: rgba(var(--app-primary-rgb), 0.06);
+  color: #475569;
+}
+
+.hermes-markdown-content :deep(blockquote p:last-child) {
+  margin-bottom: 0;
+}
+
+.hermes-markdown-content :deep(code) {
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: rgba(var(--app-primary-rgb), 0.08);
+  color: #0f172a;
+  font-family: var(--app-font-mono);
+  font-size: 12px;
+}
+
 .hermes-markdown-content :deep(pre) {
+  margin: 0 0 10px;
   padding: 12px;
   overflow: auto;
   border-radius: 14px;
   background: #141b22;
   color: #f8fafc;
+}
+
+.hermes-markdown-content :deep(pre code) {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+}
+
+.hermes-markdown-content :deep(hr) {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid rgba(var(--app-outline-rgb), 0.12);
+}
+
+.hermes-markdown-content :deep(img) {
+  display: block;
+  max-width: 100%;
+  margin: 0 0 10px;
+  border-radius: 12px;
+}
+
+.hermes-markdown-content :deep(.hermes-table-wrap) {
+  margin: 0 0 10px;
+  overflow: auto;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.12);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.hermes-markdown-content :deep(.hermes-table-wrap table) {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+}
+
+.hermes-markdown-content :deep(.hermes-table-wrap th),
+.hermes-markdown-content :deep(.hermes-table-wrap td) {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(var(--app-outline-rgb), 0.08);
+  text-align: left;
+  vertical-align: top;
+}
+
+.hermes-markdown-content :deep(.hermes-table-wrap th) {
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.hermes-markdown-content :deep(.hermes-table-wrap tbody tr:nth-child(even)) {
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.hermes-markdown-content :deep(.hermes-table-wrap tbody tr:last-child td) {
+  border-bottom: 0;
+}
+
+.hermes-markdown-content :deep(.task-list-item) {
+  list-style: none;
+  margin-left: -20px;
+}
+
+.hermes-markdown-content :deep(.task-list-item-label) {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.hermes-markdown-content :deep(.task-list-item-checkbox) {
+  margin-top: 4px;
+  accent-color: var(--app-primary);
+  pointer-events: none;
 }
 
 .hermes-markdown-content :deep(.hermes-think-block) {
@@ -1644,7 +1852,10 @@ function persistSelectedSessionId(sessionId: number | null) {
 }
 
 :deep(.hermes-drawer .el-drawer__body) {
+  display: flex;
+  min-height: 0;
   padding: 0;
+  overflow: hidden;
 }
 
 :deep(.hermes-drawer .el-textarea__inner) {

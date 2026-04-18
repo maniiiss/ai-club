@@ -53,7 +53,8 @@ spring:
       max-request-size: 64MB
   mvc:
     async:
-      request-timeout: 300000
+      # 执行中心 run 级 SSE 可能需要覆盖完整的长时实现步骤，5 分钟会让连接被动断开后频繁重连。
+      request-timeout: 3900000
 
 management:
   endpoints:

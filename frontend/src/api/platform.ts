@@ -1,12 +1,15 @@
-import { http } from './http'
+import { AUTH_TOKEN_KEY } from '@/constants/auth'
+import { http, getResolvedApiBaseUrl } from './http'
 import type {
   AgentItem,
   AgentTestResult,
   ApiResponse,
   DashboardOverview,
   DashboardQuickTaskItem,
+  ExecutionArtifactItem,
   ExecutionRunDetailItem,
   ExecutionRunItem,
+  ExecutionStreamEvent,
   ExecutionTaskDetailItem,
   ExecutionTaskItem,
   IterationBoardItem,
@@ -33,6 +36,12 @@ import type {
   WikiSpacePageVersionItem,
   WikiSpaceSearchResultItem
 } from '@/types/platform'
+
+interface ExecutionRunStreamHandlers {
+  onEvent?: (event: ExecutionStreamEvent) => void
+  onDone?: () => void
+  onError?: (error: Error) => void
+}
 
 export interface ProjectPayload {
   name: string
@@ -421,7 +430,9 @@ export const pageExecutionTasks = async (query: ExecutionTaskQuery) => {
 }
 
 export const getExecutionTaskDetail = async (id: number) => {
-  const { data } = await http.get<ApiResponse<ExecutionTaskDetailItem>>(`/api/execution-tasks/${id}`)
+  const { data } = await http.get<ApiResponse<ExecutionTaskDetailItem>>(`/api/execution-tasks/${id}`, {
+    params: { _ts: Date.now() }
+  })
   return data.data
 }
 
@@ -431,8 +442,107 @@ export const listExecutionTaskRuns = async (id: number) => {
 }
 
 export const getExecutionRunDetail = async (id: number) => {
-  const { data } = await http.get<ApiResponse<ExecutionRunDetailItem>>(`/api/execution-runs/${id}`)
+  const { data } = await http.get<ApiResponse<ExecutionRunDetailItem>>(`/api/execution-runs/${id}`, {
+    params: { _ts: Date.now() }
+  })
   return data.data
+}
+
+export const getExecutionArtifactDetail = async (id: number) => {
+  const { data } = await http.get<ApiResponse<ExecutionArtifactItem>>(`/api/execution-artifacts/${id}`, {
+    params: { _ts: Date.now() }
+  })
+  return data.data
+}
+
+/**
+ * 执行详情页需要携带登录态并支持 afterId 断线续传，因此采用 fetch 手动消费 SSE。
+ */
+export const streamExecutionRunEvents = async (
+  runId: number,
+  afterId: number | null,
+  handlers: ExecutionRunStreamHandlers
+) => {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY)
+  const controller = new AbortController()
+  const params = afterId && afterId > 0 ? `?afterId=${afterId}` : ''
+  const response = await fetch(`${getResolvedApiBaseUrl()}/api/execution-runs/${runId}/events/stream${params}`, {
+    method: 'GET',
+    headers: {
+      Accept: 'text/event-stream',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    signal: controller.signal
+  })
+
+  if (!response.ok) {
+    let message = '执行流连接失败'
+    try {
+      const errorBody = await response.json()
+      message = errorBody?.message || message
+    } catch {
+      // 保留默认提示即可。
+    }
+    throw new Error(message)
+  }
+
+  if (!response.body) {
+    throw new Error('执行流响应为空')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+
+  const consumeChunk = (chunk: string) => {
+    const normalized = chunk.replace(/\r/g, '')
+    const lines = normalized.split('\n')
+    let eventName = ''
+    let payloadText = ''
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        eventName = line.slice('event:'.length).trim()
+      } else if (line.startsWith('data:')) {
+        payloadText += line.slice('data:'.length).trim()
+      }
+    }
+    if (eventName !== 'execution-step-event' || !payloadText) {
+      return
+    }
+    handlers.onEvent?.(JSON.parse(payloadText) as ExecutionStreamEvent)
+  }
+
+  ;(async () => {
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) {
+        if (buffer.trim()) {
+          consumeChunk(buffer)
+        }
+        handlers.onDone?.()
+        break
+      }
+      buffer += decoder.decode(value, { stream: true })
+      let boundaryIndex = buffer.indexOf('\n\n')
+      while (boundaryIndex >= 0) {
+        const eventChunk = buffer.slice(0, boundaryIndex)
+        buffer = buffer.slice(boundaryIndex + 2)
+        if (eventChunk.trim() && !eventChunk.trim().startsWith(':')) {
+          consumeChunk(eventChunk)
+        }
+        boundaryIndex = buffer.indexOf('\n\n')
+      }
+    }
+  })().catch((error: unknown) => {
+    if (controller.signal.aborted) {
+      return
+    }
+    handlers.onError?.(error instanceof Error ? error : new Error('执行流连接已中断'))
+  })
+
+  return {
+    abort: () => controller.abort()
+  }
 }
 
 export const downloadExecutionArtifact = async (artifactId: number) => {

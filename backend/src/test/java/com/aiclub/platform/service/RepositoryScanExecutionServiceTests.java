@@ -2,6 +2,7 @@ package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
+import com.aiclub.platform.domain.model.ExecutionArtifactEntity;
 import com.aiclub.platform.domain.model.ExecutionRunEntity;
 import com.aiclub.platform.domain.model.ExecutionStepEntity;
 import com.aiclub.platform.domain.model.ExecutionTaskEntity;
@@ -23,12 +24,18 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -63,6 +70,9 @@ class RepositoryScanExecutionServiceTests {
     private AgentExecutionService agentExecutionService;
 
     @Mock
+    private ExecutionEventService executionEventService;
+
+    @Mock
     private TokenCipherService tokenCipherService;
 
     @Mock
@@ -84,6 +94,7 @@ class RepositoryScanExecutionServiceTests {
                 repositoryScanClientService,
                 repositoryScanRulesetService,
                 agentExecutionService,
+                executionEventService,
                 tokenCipherService,
                 gitlabApiService,
                 new ObjectMapper(),
@@ -254,6 +265,116 @@ class RepositoryScanExecutionServiceTests {
     }
 
     /**
+     * 仓库扫描的同步步骤在等待 code-processing 返回期间，应持续补 progress 事件，
+     * 避免执行详情页长时间只停留在静态 RUNNING 态。
+     */
+    @Test
+    void shouldEmitProgressEventsWhileBlockingRepositoryScanStepIsRunning() {
+        ExecutionTaskEntity executionTask = buildExecutionTask("""
+                {
+                  "bindingId": 1,
+                  "branch": "main",
+                  "rulesetCode": "team-default",
+                  "rulesetSnapshot": {
+                    "code": "team-default",
+                    "name": "团队默认规则集",
+                    "engineType": "SEMGREP",
+                    "definitionContent": "rules:\\n  - id: team.default\\n"
+                  }
+                }
+                """);
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        mockCommonScanDependencies();
+        when(repositoryScanClientService.runSemgrep(eq("scan-99-run-1"), eq("team-default"), eq("团队默认规则集"), eq("SEMGREP"), eq("rules:\n  - id: team.default\n")))
+                .thenAnswer(invocation -> {
+                    Thread.sleep(3200L);
+                    return new RepositoryScanClientService.SemgrepResponse(12, 3, 0, 3, 0);
+                });
+        when(repositoryScanClientService.packageExecPlan(argThat(request -> "SKIPPED".equals(request.execPlanStatus()))))
+                .thenReturn(new RepositoryScanClientService.PackageScanResponse("仓库扫描完成，共发现 3 个问题。", List.of()));
+
+        RepositoryScanExecutionService.RepositoryScanExecutionResult result = repositoryScanExecutionService.executeScanTask(executionTask, executionRun);
+
+        assertThat(result.outputSummary()).contains("占位 executable plan");
+        verify(executionEventService, atLeastOnce()).recordProgress(
+                any(ExecutionTaskEntity.class),
+                any(ExecutionRunEntity.class),
+                argThat(step -> step != null && Integer.valueOf(3).equals(step.getStepNo())),
+                any(Integer.class),
+                contains("正在运行 Semgrep")
+        );
+    }
+
+    /**
+     * cleanup 接口偶发失败时，backend 应自动重试，避免扫描工作目录在 code-processing 端长期残留。
+     */
+    @Test
+    void shouldRetryCleanupWhenFirstAttemptFails() {
+        ExecutionTaskEntity executionTask = buildExecutionTask("""
+                {
+                  "bindingId": 1,
+                  "branch": "main",
+                  "rulesetCode": "team-default",
+                  "rulesetSnapshot": {
+                    "code": "team-default",
+                    "name": "团队默认规则集",
+                    "engineType": "SEMGREP",
+                    "definitionContent": "rules:\\n  - id: team.default\\n"
+                  }
+                }
+                """);
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        mockCommonScanDependencies();
+        when(repositoryScanClientService.packageExecPlan(argThat(request -> "SKIPPED".equals(request.execPlanStatus()))))
+                .thenReturn(new RepositoryScanClientService.PackageScanResponse("仓库扫描完成，共发现 3 个问题。", List.of()));
+        AtomicInteger cleanupAttempts = new AtomicInteger();
+        doAnswer(invocation -> {
+            if (cleanupAttempts.incrementAndGet() < 3) {
+                throw new IllegalStateException("目录仍被占用");
+            }
+            return null;
+        }).when(repositoryScanClientService).cleanupScan("scan-99-run-1");
+
+        repositoryScanExecutionService.executeScanTask(executionTask, executionRun);
+
+        assertThat(cleanupAttempts.get()).isEqualTo(3);
+        verify(repositoryScanClientService, times(3)).cleanupScan("scan-99-run-1");
+    }
+
+    /**
+     * 仓库扫描不应该等到最终 package 才第一次出现产物；
+     * finding index、修复计划、扫描报告这类中间结果在对应步骤完成后就应该可见。
+     */
+    @Test
+    void shouldEmitVisibleStageArtifactsBeforeFinalPackaging() {
+        ExecutionTaskEntity executionTask = buildExecutionTask("""
+                {
+                  "bindingId": 1,
+                  "branch": "main",
+                  "rulesetCode": "team-default",
+                  "rulesetSnapshot": {
+                    "code": "team-default",
+                    "name": "团队默认规则集",
+                    "engineType": "SEMGREP",
+                    "definitionContent": "rules:\\n  - id: team.default\\n"
+                  }
+                }
+                """);
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        mockCommonScanDependencies();
+        when(repositoryScanClientService.packageExecPlan(argThat(request -> "SKIPPED".equals(request.execPlanStatus()))))
+                .thenReturn(new RepositoryScanClientService.PackageScanResponse("仓库扫描完成，共发现 3 个问题。", List.of()));
+
+        repositoryScanExecutionService.executeScanTask(executionTask, executionRun);
+
+        verify(executionEventService).recordArtifactReady(any(ExecutionTaskEntity.class), any(ExecutionRunEntity.class), any(ExecutionStepEntity.class), any(), eq("问题索引"));
+        verify(executionEventService).recordArtifactReady(any(ExecutionTaskEntity.class), any(ExecutionRunEntity.class), any(ExecutionStepEntity.class), any(), eq("修复计划 Markdown"));
+        verify(executionEventService).recordArtifactReady(any(ExecutionTaskEntity.class), any(ExecutionRunEntity.class), any(ExecutionStepEntity.class), any(), eq("修复分片 Markdown"));
+        verify(executionEventService).recordArtifactReady(any(ExecutionTaskEntity.class), any(ExecutionRunEntity.class), any(ExecutionStepEntity.class), any(), eq("修复分片 JSON"));
+        verify(executionEventService).recordArtifactReady(any(ExecutionTaskEntity.class), any(ExecutionRunEntity.class), any(ExecutionStepEntity.class), any(), eq("扫描报告 Markdown"));
+    }
+
+    /**
      * 统一准备扫描前 6 步的基础依赖桩，方便聚焦 AI executable plan 分支行为。
      */
     private void mockCommonScanDependencies() {
@@ -289,9 +410,18 @@ class RepositoryScanExecutionServiceTests {
         when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(executionTaskRepository.findById(99L)).thenReturn(Optional.of(managedTask));
         when(executionTaskRepository.findCancelRequestedFlagById(99L)).thenReturn(false);
+        lenient().when(executionArtifactRepository.findFirstByRun_IdAndArtifactTypeAndTitle(any(), any(), any()))
+                .thenReturn(Optional.empty());
+        lenient().when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            if (artifact.getId() == null) {
+                artifact.setId(9000L + Math.abs(defaultArtifactKey(artifact).hashCode() % 1000));
+            }
+            return artifact;
+        });
         when(repositoryScanClientService.prepareScan(any(RepositoryScanClientService.PrepareScanRequest.class)))
                 .thenReturn(new RepositoryScanClientService.PrepareScanResponse("scan-99-run-1", "/tmp/repo", "main", "abcdef", "group/demo-repo"));
-        when(repositoryScanClientService.runSemgrep(eq("scan-99-run-1"), eq("team-default"), eq("团队默认规则集"), eq("SEMGREP"), eq("rules:\n  - id: team.default\n")))
+        lenient().when(repositoryScanClientService.runSemgrep(eq("scan-99-run-1"), eq("team-default"), eq("团队默认规则集"), eq("SEMGREP"), eq("rules:\n  - id: team.default\n")))
                 .thenReturn(new RepositoryScanClientService.SemgrepResponse(12, 3, 0, 3, 0));
         when(repositoryScanClientService.normalizeScan("scan-99-run-1"))
                 .thenReturn(new RepositoryScanClientService.NormalizeResponse("扫描完成，共发现 3 个问题，其中高风险 0 个。", 3, 0, 3, 0));
@@ -314,6 +444,10 @@ class RepositoryScanExecutionServiceTests {
                 .thenReturn(new RepositoryScanClientService.SummarizeResponse("# 扫描报告"));
         when(repositoryScanClientService.packageScan(argThat(request -> request.execPlanStatus().isBlank())))
                 .thenReturn(new RepositoryScanClientService.PackageScanResponse("仓库扫描完成，共发现 3 个问题。", List.of()));
+    }
+
+    private String defaultArtifactKey(ExecutionArtifactEntity artifact) {
+        return (artifact.getArtifactType() == null ? "" : artifact.getArtifactType()) + "::" + (artifact.getTitle() == null ? "" : artifact.getTitle());
     }
 
     /**

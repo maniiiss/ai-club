@@ -71,10 +71,10 @@ You are reviewing a Merge Request for auto-merge.
 Please respond in Chinese and return valid JSON only. Do not output markdown code fences or any extra commentary.
 Use this exact JSON shape:
 {{
-  "approved": true,
+  "approved": false,
   "summary": "One-sentence conclusion about whether auto-merge is safe",
   "issues": ["Issue 1", "Issue 2"],
-  "reviewMarkdown": "# ????\n- ???????????/???\n- ???...\n\n## ????\n- ...\n\n## ??\n- ..."
+  "reviewMarkdown": "# 代码审查\n- 审查结论：建议暂不合并\n- 摘要：存在高风险问题，建议暂不自动合并\n\n## 发现的问题\n- service 层缺少空值判断，可能导致运行时异常\n\n## 修改建议\n- 补充空值校验与对应测试用例"
 }}
 
 Rules:
@@ -230,22 +230,23 @@ def _normalize_issues(value: Any) -> list[str]:
 
 
 def _build_fallback_markdown(approved: bool, summary: str, issues: list[str]) -> str:
-    decision_text = "??????" if approved else "???????"
+    decision_text = "建议合并" if approved else "建议暂不合并"
+    summary_text = summary or "未提供摘要"
     lines = [
-        "# ????",
-        f"- ?????????{decision_text}",
-        f"- ???{summary}",
+        "# 代码审查",
+        f"- 审查结论：{decision_text}",
+        f"- 摘要：{summary_text}",
         "",
-        "## ????",
+        "## 发现的问题",
     ]
     if issues:
         lines.extend(f"- {issue}" for issue in issues)
     else:
-        lines.append("- ???????")
+        lines.append("- 未识别到明确问题")
     lines.extend([
         "",
-        "## ??",
-        "- ??????????????????",
+        "## 修改建议",
+        "- 请结合上述问题补充修复或说明，再重新发起审查。",
     ])
     return "\n".join(lines)
 

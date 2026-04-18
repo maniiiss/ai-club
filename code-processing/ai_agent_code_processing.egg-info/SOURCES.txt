@@ -14,7 +14,16 @@ app/api/__init__.py
 app/api/routes.py
 app/rulesets/team-default.yml
 app/services/__init__.py
+app/services/codex_execution_service.py
+app/services/document_service.py
 app/services/hermes_internal_client.py
 app/services/repository_scan_service.py
 app/services/repository_service.py
 app/services/review_service.py
+tests/test_codex_execution_service.py
+tests/test_document_service.py
+tests/test_repository_scan_directory_promotion.py
+tests/test_repository_scan_fix_plan.py
+tests/test_repository_scan_package_exec_plan.py
+tests/test_repository_scan_semgrep.py
+tests/test_review_service.py

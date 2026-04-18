@@ -79,6 +79,66 @@ public class ExecutionStepEntity {
     private String latestMessage = "";
 
     /**
+     * 当前步骤绑定的 runner 会话标识。
+     * 流式 CLI runner 会通过该字段把事件回调到具体步骤。
+     */
+    @Column(name = "runner_session_id", length = 120)
+    private String runnerSessionId;
+
+    /**
+     * 执行 runner 类型，例如 CLI。
+     */
+    @Column(name = "runner_type", nullable = false, length = 40)
+    private String runnerType = "";
+
+    /**
+     * 当前正在执行的命令。
+     * 前端首屏优先展示该摘要，而不是直接渲染完整日志。
+     */
+    @Column(name = "current_command", nullable = false, length = 1000)
+    private String currentCommand = "";
+
+    /**
+     * 最近一次写入的事件序号。
+     * SSE 重连与详情页首屏恢复都依赖这个游标。
+     */
+    @Column(name = "last_event_id")
+    private Long lastEventId;
+
+    /**
+     * 最近收到任意事件的时间。
+     */
+    @Column(name = "last_event_at")
+    private LocalDateTime lastEventAt;
+
+    /**
+     * 最近收到心跳事件的时间。
+     * watchdog 会基于该字段判定流式 runner 是否失联。
+     */
+    @Column(name = "last_heartbeat_at")
+    private LocalDateTime lastHeartbeatAt;
+
+    /**
+     * 尾日志快照。
+     * 固定保留最近窗口，避免把整份 stdout/stderr 塞进 outputSnapshot。
+     */
+    @Column(name = "tail_log_text", columnDefinition = "TEXT")
+    private String tailLogText;
+
+    /**
+     * 当前尾日志窗口中的行数。
+     */
+    @Column(name = "tail_log_line_count", nullable = false)
+    private Integer tailLogLineCount = 0;
+
+    /**
+     * 是否有 live stream 能力。
+     * 历史任务或同步快照步骤保持 false，前端据此决定是否展示心跳/尾日志提示。
+     */
+    @Column(name = "has_live_stream", nullable = false)
+    private boolean hasLiveStream;
+
+    /**
      * 步骤输入快照。
      */
     @Column(name = "input_snapshot", nullable = false, columnDefinition = "TEXT")
@@ -258,5 +318,77 @@ public class ExecutionStepEntity {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getRunnerSessionId() {
+        return runnerSessionId;
+    }
+
+    public void setRunnerSessionId(String runnerSessionId) {
+        this.runnerSessionId = runnerSessionId;
+    }
+
+    public String getRunnerType() {
+        return runnerType;
+    }
+
+    public void setRunnerType(String runnerType) {
+        this.runnerType = runnerType;
+    }
+
+    public String getCurrentCommand() {
+        return currentCommand;
+    }
+
+    public void setCurrentCommand(String currentCommand) {
+        this.currentCommand = currentCommand;
+    }
+
+    public Long getLastEventId() {
+        return lastEventId;
+    }
+
+    public void setLastEventId(Long lastEventId) {
+        this.lastEventId = lastEventId;
+    }
+
+    public LocalDateTime getLastEventAt() {
+        return lastEventAt;
+    }
+
+    public void setLastEventAt(LocalDateTime lastEventAt) {
+        this.lastEventAt = lastEventAt;
+    }
+
+    public LocalDateTime getLastHeartbeatAt() {
+        return lastHeartbeatAt;
+    }
+
+    public void setLastHeartbeatAt(LocalDateTime lastHeartbeatAt) {
+        this.lastHeartbeatAt = lastHeartbeatAt;
+    }
+
+    public String getTailLogText() {
+        return tailLogText;
+    }
+
+    public void setTailLogText(String tailLogText) {
+        this.tailLogText = tailLogText;
+    }
+
+    public Integer getTailLogLineCount() {
+        return tailLogLineCount;
+    }
+
+    public void setTailLogLineCount(Integer tailLogLineCount) {
+        this.tailLogLineCount = tailLogLineCount;
+    }
+
+    public boolean isHasLiveStream() {
+        return hasLiveStream;
+    }
+
+    public void setHasLiveStream(boolean hasLiveStream) {
+        this.hasLiveStream = hasLiveStream;
     }
 }

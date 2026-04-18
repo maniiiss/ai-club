@@ -47,6 +47,8 @@ public class AgentExecutionService {
 
     private static final String HTTP_AUTH_NONE = "NONE";
     private static final String HTTP_AUTH_BEARER = "BEARER";
+    private static final String CODE_PROCESSING_CODEX_PATH = "/api/code/codex-executions";
+    private static final String CODE_PROCESSING_CLAUDE_PATH = "/api/code/claude-plans";
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final AgentRepository agentRepository;
@@ -66,7 +68,12 @@ public class AgentExecutionService {
         this.modelConfigService = modelConfigService;
         this.codeReviewClientService = codeReviewClientService;
         this.objectMapper = objectMapper;
-        this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+        // 本地 code-processing 运行在 Uvicorn/FastAPI 上，对 Java HttpClient 的 HTTP/2 升级握手兼容性较差；
+        // 固定使用 HTTP/1.1，避免请求在到达应用层前就被 Uvicorn 以“Invalid HTTP request received”拒绝。
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
     }
 
     public AgentTestResult testAgent(Long agentId, String input) {
@@ -116,6 +123,75 @@ public class AgentExecutionService {
         return requireAgent(agentId);
     }
 
+    /**
+     * 一期仅把 code-processing 的 Claude/Codex CLI bridge 识别为可异步流式执行的 HTTP_API Agent。
+     */
+    public boolean supportsAsyncExecution(AgentEntity agent, String stepCode) {
+        if (agent == null) {
+            return false;
+        }
+        if (!ACCESS_HTTP_API.equals(normalizeAccessType(agent.getAccessType()))) {
+            return false;
+        }
+        String endpointUrl = trimToNull(agent.getEndpointUrl());
+        if (endpointUrl == null) {
+            return false;
+        }
+        String normalized = trimTrailingSlash(endpointUrl);
+        return normalized.endsWith(CODE_PROCESSING_CODEX_PATH) || normalized.endsWith(CODE_PROCESSING_CLAUDE_PATH);
+    }
+
+    /**
+     * 异步启动 runner 会话，仅等待 accepted 响应。
+     */
+    public AsyncExecutionStartResult startAsyncExecution(AgentEntity agent,
+                                                         String input,
+                                                         Map<String, String> variables,
+                                                         int submitTimeoutSeconds,
+                                                         int maxRuntimeSeconds) {
+        validateEnabled(agent);
+        if (!supportsAsyncExecution(agent, variables == null ? null : variables.get("step_code"))) {
+            throw new IllegalArgumentException("当前 Agent 不支持异步流式执行");
+        }
+        String endpointUrl = trimToNull(agent.getEndpointUrl());
+        String asyncStartUrl = trimTrailingSlash(endpointUrl) + "/start";
+        String httpMethod = normalizeHttpMethod(agent.getHttpMethod());
+        String requestBody = buildAsyncHttpRequestBody(agent, input, variables, maxRuntimeSeconds);
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(asyncStartUrl))
+                    .timeout(Duration.ofSeconds(Math.max(submitTimeoutSeconds, 5)));
+            applyHttpHeaders(builder, agent, httpMethod);
+            if ("GET".equals(httpMethod)) {
+                builder.GET();
+            } else {
+                builder.method(httpMethod, HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8));
+            }
+            HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("异步执行会话启动失败，HTTP "
+                        + response.statusCode() + "：" + abbreviate(response.body(), 1000));
+            }
+            JsonNode body = objectMapper.readTree(defaultString(response.body()));
+            String sessionId = trimToNull(body.path("sessionId").asText(""));
+            if (sessionId == null) {
+                throw new IllegalStateException("异步执行会话启动成功但缺少 sessionId");
+            }
+            return new AsyncExecutionStartResult(
+                    sessionId,
+                    body.path("accepted").asBoolean(true),
+                    trimToNull(body.path("runnerType").asText("")),
+                    trimToNull(body.path("workspaceRoot").asText("")),
+                    trimToNull(body.path("startedAt").asText(""))
+            );
+        } catch (IOException exception) {
+            throw new IllegalStateException("异步执行会话启动失败", exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("异步执行会话启动被中断", exception);
+        }
+    }
+
     public CodeReviewResult reviewMergeRequest(Long agentId,
                                                GitlabApiService.GitlabMergeRequest mergeRequest,
                                                GitlabApiService.GitlabMergeRequestChanges changes) {
@@ -123,7 +199,7 @@ public class AgentExecutionService {
         validateEnabled(agent);
         if (!ACCESS_BUILT_IN.equals(normalizeAccessType(agent.getAccessType()))
                 || !BUILTIN_CODE_REVIEW.equals(normalizeBuiltinCode(agent.getBuiltinCode()))) {
-            throw new IllegalArgumentException("? Agent ????? GitLab AI ????? Code Review Agent");
+            throw new IllegalArgumentException("当前 Agent 不是可用的 GitLab AI 代码审查 Agent");
         }
         return executeBuiltinCodeReview(agent, mergeRequest, changes);
     }
@@ -133,7 +209,7 @@ public class AgentExecutionService {
         validateEnabled(agent);
         if (!ACCESS_BUILT_IN.equals(normalizeAccessType(agent.getAccessType()))
                 || !BUILTIN_CODE_REVIEW.equals(normalizeBuiltinCode(agent.getBuiltinCode()))) {
-            throw new IllegalArgumentException("????? Code Review Agent");
+            throw new IllegalArgumentException("所选智能体不是可用的代码审查 Agent");
         }
         requireAiModelConfigId(agent);
     }
@@ -156,7 +232,7 @@ public class AgentExecutionService {
         return switch (normalizeAccessType(agent.getAccessType())) {
             case ACCESS_BUILT_IN -> executeBuiltInTextAgent(agent, input);
             case ACCESS_LLM_PROMPT -> executeLlmPromptAgent(agent, input, variables);
-            case ACCESS_HTTP_API -> executeHttpApiAgent(agent, input);
+            case ACCESS_HTTP_API -> executeHttpApiAgent(agent, input, variables);
             case ACCESS_AGENT_RUNTIME -> executeRuntimeAgent(agent, input, variables);
             default -> throw new IllegalArgumentException("???? Agent ????");
         };
@@ -205,7 +281,7 @@ public class AgentExecutionService {
 
                             """ + defaultString(input)
             );
-            default -> throw new IllegalArgumentException("?????? Agent ??");
+            default -> throw new IllegalArgumentException("错误的Agent配置");
         };
     }
 
@@ -230,10 +306,14 @@ public class AgentExecutionService {
         ).trim();
     }
 
+    /**
+     * 将普通文本输入包装成一份伪造的 MR 变更，复用统一的代码审查链路，
+     * 这样执行中心在测试内置代码审查智能体时也能直接得到 Markdown 结果。
+     */
     private String executeBuiltinCodeReviewAsMarkdown(AgentEntity agent, String input) {
         GitlabApiService.GitlabMergeRequest mergeRequest = new GitlabApiService.GitlabMergeRequest(
                 0L,
-                "Agent ?? Code Review",
+                "Agent 内置代码审查",
                 "opened",
                 "feature/test",
                 "main",
@@ -250,7 +330,7 @@ public class AgentExecutionService {
         GitlabApiService.GitlabMergeRequestChanges changes = new GitlabApiService.GitlabMergeRequestChanges(
                 0L,
                 mergeRequest.title(),
-                "Agent ?????? Code Review ??",
+                "Agent 内置代码审查测试输入",
                 List.of(new GitlabApiService.GitlabChange(
                         "sample.txt",
                         "sample.txt",
@@ -283,13 +363,13 @@ public class AgentExecutionService {
         return modelConfigService.invokePrompt(modelConfigId, systemPrompt, userPrompt);
     }
 
-    private String executeHttpApiAgent(AgentEntity agent, String input) {
+    private String executeHttpApiAgent(AgentEntity agent, String input, Map<String, String> variables) {
         String endpointUrl = trimToNull(agent.getEndpointUrl());
         if (endpointUrl == null) {
             throw new IllegalArgumentException("HTTP API Agent ????????");
         }
         String httpMethod = normalizeHttpMethod(agent.getHttpMethod());
-        String requestBody = buildHttpRequestBody(agent, input);
+        String requestBody = buildHttpRequestBody(agent, input, variables);
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(endpointUrl))
@@ -406,14 +486,36 @@ public class AgentExecutionService {
         }
     }
 
-    private String buildHttpRequestBody(AgentEntity agent, String input) {
+    private String buildHttpRequestBody(AgentEntity agent, String input, Map<String, String> variables) {
         String requestTemplate = trimToNull(agent.getHttpRequestTemplate());
         if (requestTemplate == null) {
             ObjectNode payload = objectMapper.createObjectNode();
             payload.put("input", defaultString(input));
             return payload.toString();
         }
-        return renderTemplate(requestTemplate, buildTemplateVariables(input, agent.getSystemPrompt()));
+        return renderTemplate(requestTemplate, buildTemplateVariables(input, agent.getSystemPrompt(), variables));
+    }
+
+    /**
+     * 异步 CLI bridge 仍沿用原有 HTTP 模板，但这里会强制补齐 step 级运行时预算，
+     * 避免旧 Agent 配置里的 300 秒默认值继续把 runner 卡死。
+     */
+    private String buildAsyncHttpRequestBody(AgentEntity agent,
+                                             String input,
+                                             Map<String, String> variables,
+                                             int maxRuntimeSeconds) {
+        String requestBody = buildHttpRequestBody(agent, input, variables);
+        try {
+            JsonNode root = hasText(requestBody) ? objectMapper.readTree(requestBody) : objectMapper.createObjectNode();
+            if (!root.isObject()) {
+                throw new IllegalArgumentException("异步执行请求体必须是 JSON 对象");
+            }
+            ObjectNode payload = ((ObjectNode) root).deepCopy();
+            payload.put("timeoutSeconds", Math.max(maxRuntimeSeconds, 30));
+            return payload.toString();
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("异步执行请求体不是合法 JSON", exception);
+        }
     }
 
     private void applyRuntimeAuth(HttpRequest.Builder builder, AgentEntity agent) {
@@ -446,7 +548,10 @@ public class AgentExecutionService {
         variables.put("system_prompt_json", toJsonString(defaultString(systemPrompt)));
         if (extraVariables != null) {
             for (Map.Entry<String, String> entry : extraVariables.entrySet()) {
-                variables.put(entry.getKey(), defaultString(entry.getValue()));
+                String value = defaultString(entry.getValue());
+                variables.put(entry.getKey(), value);
+                // 额外运行时变量同时提供 JSON 安全版本，避免 HTTP 模板内嵌 token/URL 时把请求体拼坏。
+                variables.put(entry.getKey() + "_json", toJsonString(value));
             }
         }
         return variables;
@@ -620,17 +725,17 @@ public class AgentExecutionService {
 
     private String defaultCodeReviewPrompt() {
         return """
-                ?????????????? Merge Request ????????????????
-                ?????
-                1. ?????? bug ??????????????
-                2. ???????????????????????SQL/???????
-                3. ?????????????????
-                4. ??????????????????????????????
+                你是平台内置的 Merge Request 代码审查智能体，请基于代码变更识别高风险问题并给出中文结论。
+                审查重点：
+                1. 优先关注会导致线上故障、数据破坏、安全漏洞、性能退化或兼容性问题的缺陷
+                2. 重点检查关键业务逻辑、边界条件、异常处理、并发、SQL 与缓存一致性等高风险场景
+                3. 如果证据不足，请明确指出缺失上下文与潜在风险，不要臆测不存在的问题
+                4. 结论需要能够直接支持“是否允许合并”的决策
 
-                ???? JSON??????
+                请只返回 JSON，格式如下：
                 {"approved": true/false, "summary": "...", "issues": ["..."]}
 
-                ??????????approved ??? false?
+                只要存在高风险问题，approved 必须为 false。
                 """;
     }
 
@@ -724,5 +829,14 @@ public class AgentExecutionService {
         } catch (Exception exception) {
             return "\"\"";
         }
+    }
+
+    public record AsyncExecutionStartResult(
+            String sessionId,
+            boolean accepted,
+            String runnerType,
+            String workspaceRoot,
+            String startedAt
+    ) {
     }
 }

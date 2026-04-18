@@ -1,7 +1,9 @@
 package com.aiclub.platform.controller;
 
 import com.aiclub.platform.annotation.RequirePermission;
+import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.domain.model.ExecutionArtifactEntity;
+import com.aiclub.platform.dto.ExecutionArtifactSummary;
 import com.aiclub.platform.repository.ExecutionArtifactRepository;
 import com.aiclub.platform.service.ExecutionArtifactStorageService;
 import com.aiclub.platform.service.ProjectDataPermissionService;
@@ -35,6 +37,28 @@ public class ExecutionArtifactController {
         this.executionArtifactRepository = executionArtifactRepository;
         this.projectDataPermissionService = projectDataPermissionService;
         this.executionArtifactStorageService = executionArtifactStorageService;
+    }
+
+    /**
+     * 读取指定执行产物的元数据与预览内容。
+     * 执行详情页收到 `artifact_ready` 后会直接调用该接口补齐卡片，不必等待整页快照刷新。
+     */
+    @GetMapping("/{id}")
+    @RequirePermission("task:view")
+    public ApiResponse<ExecutionArtifactSummary> detail(@PathVariable Long id) {
+        ExecutionArtifactEntity artifact = executionArtifactRepository.findDetailById(id)
+                .orElseThrow(() -> new NoSuchElementException("执行产物不存在: " + id));
+        projectDataPermissionService.requireProjectVisible(artifact.getRun().getExecutionTask().getProject());
+        return ApiResponse.success(new ExecutionArtifactSummary(
+                artifact.getId(),
+                artifact.getRun().getId(),
+                artifact.getStep() == null ? null : artifact.getStep().getId(),
+                artifact.getArtifactType(),
+                artifact.getTitle(),
+                artifact.getContentRef(),
+                artifact.getContentText(),
+                artifact.isWorkItemWritebackFlag()
+        ));
     }
 
     /**

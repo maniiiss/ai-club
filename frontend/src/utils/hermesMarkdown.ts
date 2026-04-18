@@ -9,30 +9,34 @@ const escapeHtml = (value: string) =>
 const renderInline = (value: string) => {
   const placeholders: string[] = []
   let text = escapeHtml(value)
-
-  text = text.replace(/`([^`]+)`/g, (_, code: string) => {
-    const token = `__CODE_${placeholders.length}__`
-    placeholders.push(`<code>${escapeHtml(code)}</code>`)
+  const pushPlaceholder = (html: string) => {
+    const token = `@@INLINE_PLACEHOLDER_${placeholders.length}@@`
+    placeholders.push(html)
     return token
-  })
+  }
 
-  text = text.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (_, alt: string, url: string) => {
-    const token = `__IMG_${placeholders.length}__`
-    placeholders.push(`<img src="${url}" alt="${escapeHtml(alt)}" />`)
-    return token
-  })
-
-  text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-  text = text.replace(/\*([^*]+)\*/g, '<em>$1</em>')
-  text = text.replace(/~~([^~]+)~~/g, '<s>$1</s>')
+  text = text.replace(/`([^`\n]+)`/g, (_, code: string) => pushPlaceholder(`<code>${code}</code>`))
+  text = text.replace(
+    /!\[([^\]]*)\]\(((?:https?:\/\/|data:image\/|\/|\.\.?\/|#)[^\s)]+)\)/g,
+    (_, alt: string, url: string) => pushPlaceholder(`<img src="${url}" alt="${alt}" />`)
+  )
+  text = text.replace(
+    /\[([^\]]+)\]\(((?:https?:\/\/|mailto:|tel:|\/|\.\.?\/|#)[^\s)]+)\)/g,
+    (_, label: string, url: string) => pushPlaceholder(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`)
+  )
+  text = text.replace(
+    /(^|[\s(])((?:https?:\/\/|mailto:|tel:)[^\s<]+[^<.,:;"')\]\s])/g,
+    (_, prefix: string, url: string) => `${prefix}${pushPlaceholder(`<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)}`
+  )
+  text = text.replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, '<strong>$2</strong>')
+  text = text.replace(/(\*|_)(?=\S)([\s\S]*?\S)\1/g, '<em>$2</em>')
+  text = text.replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<s>$1</s>')
 
   placeholders.forEach((placeholder, index) => {
-    text = text.replace(`__CODE_${index}__`, placeholder)
-    text = text.replace(`__IMG_${index}__`, placeholder)
+    text = text.replace(`@@INLINE_PLACEHOLDER_${index}@@`, placeholder)
   })
 
-  return text
+  return text.replace(/\n/g, '<br />')
 }
 
 /**
@@ -132,6 +136,15 @@ const isTableDividerLine = (line: string) => {
   return cells.every((cell) => /^:?-{3,}:?$/.test(cell))
 }
 
+const isHorizontalRuleLine = (line: string) =>
+  /^\s{0,3}(?:(?:-\s*){3,}|(?:_\s*){3,}|(?:\*\s*){3,})$/.test(line)
+
+/**
+ * Hermes 常输出 GitHub 风格任务清单，这里补成只读复选框，避免在消息区退化成普通无序列表。
+ */
+const renderTaskListItem = (content: string, checked: boolean) =>
+  `<li class="task-list-item"><label class="task-list-item-label"><input class="task-list-item-checkbox" type="checkbox" disabled${checked ? ' checked' : ''} /><span>${renderInline(content)}</span></label></li>`
+
 interface RenderHermesMarkdownOptions {
   /** 内层递归渲染思考内容时关闭 think 解析，避免重复包裹。 */
   enableThink?: boolean
@@ -193,7 +206,7 @@ const renderHermesMarkdownToHtmlInternal = (
 
   const flushParagraph = () => {
     if (!paragraph.length) return
-    html.push(`<p>${renderInline(paragraph.join('<br />'))}</p>`)
+    html.push(`<p>${renderInline(paragraph.join('\n'))}</p>`)
     paragraph = []
   }
 
@@ -244,6 +257,13 @@ const renderHermesMarkdownToHtmlInternal = (
       continue
     }
 
+    if (isHorizontalRuleLine(line)) {
+      flushParagraph()
+      closeList()
+      html.push('<hr />')
+      continue
+    }
+
     const headingMatch = line.match(/^(#{1,6})\s+(.*)$/)
     if (headingMatch) {
       flushParagraph()
@@ -253,11 +273,33 @@ const renderHermesMarkdownToHtmlInternal = (
       continue
     }
 
-    const blockquoteMatch = line.match(/^\s*>\s+(.*)$/)
+    const blockquoteMatch = line.match(/^\s*>\s?(.*)$/)
     if (blockquoteMatch) {
       flushParagraph()
       closeList()
-      html.push(`<blockquote>${renderInline(blockquoteMatch[1].trim())}</blockquote>`)
+      const quoteLines = [blockquoteMatch[1].trim()]
+      while (index + 1 < lines.length) {
+        const nextQuoteLine = lines[index + 1].replace(/\t/g, '    ')
+        const nextQuoteMatch = nextQuoteLine.match(/^\s*>\s?(.*)$/)
+        if (!nextQuoteMatch) {
+          break
+        }
+        quoteLines.push(nextQuoteMatch[1].trim())
+        index += 1
+      }
+      html.push(`<blockquote><p>${renderInline(quoteLines.join('\n'))}</p></blockquote>`)
+      continue
+    }
+
+    const taskListMatch = line.match(/^\s*[-*]\s+\[([ xX])\]\s+(.*)$/)
+    if (taskListMatch) {
+      flushParagraph()
+      if (listType !== 'ul') {
+        closeList()
+        html.push('<ul>')
+        listType = 'ul'
+      }
+      html.push(renderTaskListItem(taskListMatch[2].trim(), taskListMatch[1].toLowerCase() === 'x'))
       continue
     }
 

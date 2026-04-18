@@ -1,6 +1,8 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+ASYNC_EXECUTION_TIMEOUT_LIMIT_SECONDS = 7200
 
 
 class ScanRequest(BaseModel):
@@ -243,3 +245,148 @@ class RepositoryScanArtifactSummary(BaseModel):
 class RepositoryScanPackageResponse(BaseModel):
     summaryText: str = ""
     artifacts: list[RepositoryScanArtifactSummary] = Field(default_factory=list)
+
+
+class CodexExecutionRepository(BaseModel):
+    """开发执行桥接所需的单仓库上下文。"""
+
+    bindingId: str = ""
+    displayName: str = ""
+    projectRef: str = ""
+    projectPath: str = ""
+    repoUrl: str
+    targetBranch: str
+    apiBaseUrl: str = ""
+    authToken: str
+
+    @field_validator("bindingId", "displayName", "projectRef", "projectPath", "repoUrl", "targetBranch", "apiBaseUrl", "authToken", mode="before")
+    @classmethod
+    def normalize_repository_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class CodexExecutionContext(BaseModel):
+    """执行任务与步骤的运行时上下文。"""
+
+    taskId: str = ""
+    runId: str = ""
+    stepId: str = ""
+    stepCode: str = ""
+    stepName: str = ""
+    projectId: str = ""
+    projectName: str = ""
+    sessionKey: str = ""
+    userId: str = ""
+    userName: str = ""
+
+    @field_validator("taskId", "runId", "stepId", "stepCode", "stepName", "projectId", "projectName", "sessionKey", "userId", "userName", mode="before")
+    @classmethod
+    def normalize_context_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class CodexExecutionRequest(BaseModel):
+    """供 backend HTTP_API Agent 调用的 Codex 执行桥请求。"""
+
+    mode: Literal["IMPLEMENT", "TEST"]
+    input: str = ""
+    repository: CodexExecutionRepository
+    execution: CodexExecutionContext
+    testCommands: list[str] = Field(default_factory=list)
+    # 同一请求模型同时服务同步兜底接口和异步 start 接口；
+    # 这里放宽上限给异步 runner 使用，同步接口会在 service 内再次收敛到 300 秒。
+    timeoutSeconds: int = Field(default=270, ge=30, le=ASYNC_EXECUTION_TIMEOUT_LIMIT_SECONDS)
+
+    @field_validator("input", mode="before")
+    @classmethod
+    def normalize_input_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value)
+
+    @field_validator("testCommands", mode="before")
+    @classmethod
+    def normalize_test_commands(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        text = str(value).strip()
+        return [text] if text else []
+
+
+class CodexExecutionResponse(BaseModel):
+    """Codex 执行桥响应，output 字段供平台直接提取步骤结果。"""
+
+    output: str
+    workspaceRoot: str = ""
+    repoPath: str = ""
+    logPreview: str = ""
+
+
+class ExecutionSessionAcceptedResponse(BaseModel):
+    """异步执行会话 accepted 响应。"""
+
+    sessionId: str
+    accepted: bool = True
+    runnerType: str = "CLI"
+    workspaceRoot: str = ""
+    startedAt: str = ""
+
+
+class ClaudePlanningRepository(BaseModel):
+    """Claude Code 规划桥接所需的单仓库上下文。"""
+
+    bindingId: str = ""
+    displayName: str = ""
+    projectRef: str = ""
+    projectPath: str = ""
+    repoUrl: str
+    targetBranch: str
+    apiBaseUrl: str = ""
+    authToken: str
+
+    @field_validator("bindingId", "displayName", "projectRef", "projectPath", "repoUrl", "targetBranch", "apiBaseUrl", "authToken", mode="before")
+    @classmethod
+    def normalize_repository_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class ClaudePlanningRequest(BaseModel):
+    """供 backend HTTP_API Agent 调用的 Claude Code 执行规划桥请求。"""
+
+    input: str = ""
+    repositories: list[ClaudePlanningRepository] = Field(default_factory=list)
+    execution: CodexExecutionContext
+    # Claude 规划 start 接口也需要接受 step profile 计算出的更长预算；
+    # 同步执行路径仍在 service 层保留 300 秒上限，兼容旧调用。
+    timeoutSeconds: int = Field(default=270, ge=30, le=ASYNC_EXECUTION_TIMEOUT_LIMIT_SECONDS)
+
+    @field_validator("input", mode="before")
+    @classmethod
+    def normalize_input_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value)
+
+    @field_validator("repositories")
+    @classmethod
+    def validate_repositories(cls, value: list[ClaudePlanningRepository]) -> list[ClaudePlanningRepository]:
+        if not value:
+            raise ValueError("Claude 规划至少需要一个仓库上下文")
+        return value
+
+
+class ClaudePlanningResponse(BaseModel):
+    """Claude 规划桥响应，output 字段供平台直接提取 Markdown 规划结果。"""
+
+    output: str
+    workspaceRoot: str = ""
+    repoPaths: list[str] = Field(default_factory=list)
+    logPreview: str = ""
