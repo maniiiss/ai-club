@@ -31,6 +31,9 @@ public interface WikiPageV2Repository extends JpaRepository<WikiPageV2Entity, Lo
     /** 判断目录下是否还有页面。 */
     boolean existsByDirectory_Id(Long directoryId);
 
+    /** 判断页面下是否还有子页面。 */
+    boolean existsByParentPage_Id(Long parentPageId);
+
     /** 读取空间内全部页面。 */
     List<WikiPageV2Entity> findAllBySpace_IdOrderByUpdatedAtDescIdDesc(Long spaceId);
 

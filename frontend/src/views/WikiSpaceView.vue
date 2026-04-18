@@ -3,7 +3,10 @@
     <section class="wiki-shell">
       <aside class="wiki-sidebar" v-loading="treeLoading">
         <div class="wiki-sidebar-head">
-          <button class="wiki-back-link" type="button" @click="goBack">返回 Wiki 中心</button>
+          <button class="wiki-back-link" type="button" @click="goBack">
+            <el-icon><ArrowLeft /></el-icon>
+            <span>返回 Wiki 中心</span>
+          </button>
           <button v-if="spaceDetail?.canManage" class="wiki-side-icon-button" type="button" @click="openSpaceDialog">编辑</button>
         </div>
 
@@ -12,68 +15,80 @@
           <h1>{{ spaceDetail?.name || 'Wiki 空间' }}</h1>
           <p>{{ spaceDetail?.description || '这个空间还没有写说明。' }}</p>
           <div class="wiki-space-card-meta">
-            <span>我的角色：{{ roleLabel(spaceDetail?.currentUserRole || '') || '访客' }}</span>
-            <span>目录：{{ spaceDetail?.directoryCount ?? 0 }}</span>
-            <span>页面：{{ spaceDetail?.pageCount ?? 0 }}</span>
+            <span>绑定项目：{{ spaceDetail?.boundProjectName || '未绑定' }}</span>
+            <span>成员默认：{{ memberDefaultSourceLabel(spaceDetail?.memberDefaultSource) }}</span>
           </div>
         </div>
 
         <div class="wiki-tree-shell">
-          <div class="wiki-tree-head">
-            <div class="wiki-tree-title">
-              <span>页面树</span>
-              <el-tag type="info">{{ directoryNodes.length }}</el-tag>
-            </div>
-            <div class="wiki-tree-actions">
-              <button v-if="canEditSpace" class="wiki-side-text-button" type="button" @click="openDirectoryDialog(null)">新建目录</button>
-              <button v-if="canEditSpace" class="wiki-side-text-button" type="button" @click="openPageDialog(null)">新建页面</button>
-              <button v-if="canEditSpace" class="wiki-side-text-button" type="button" @click="openImportDialog">导入文档</button>
-            </div>
+          <div v-if="canEditSpace" class="wiki-tree-toolbar">
+            <button class="wiki-side-text-button wiki-tree-create-button" type="button" @click="openDirectoryDialog(null)">添加目录</button>
           </div>
-
           <div v-if="directoryNodes.length" class="wiki-directory-tree">
-            <template v-for="row in flatRows" :key="`${row.type}-${row.id}`">
-              <button
-                v-if="row.type === 'directory'"
-                class="wiki-tree-row directory"
-                :style="{ paddingLeft: `${14 + row.depth * 16}px` }"
-                type="button"
-                @click="openDirectoryDialog(row.id)"
-              >
-                <span class="tree-row-title">{{ row.label }}</span>
-                <el-tag v-if="row.boundProjectName" size="small">{{ row.boundProjectName }}</el-tag>
-              </button>
-              <button
-                v-else
-                class="wiki-tree-row page"
-                :class="{ active: currentPage?.id === row.id }"
-                :style="{ paddingLeft: `${28 + row.depth * 16}px` }"
-                type="button"
-                @click="openPage(row.id)"
-              >
-                <span class="tree-row-title">{{ row.label }}</span>
-              </button>
-            </template>
+            <div
+              v-for="row in visibleRows"
+              :key="row.key"
+              class="wiki-tree-row"
+              :class="[
+                row.type,
+                {
+                  active: row.type === 'page' ? currentPage?.id === row.id : currentDirectory?.id === row.id && !currentPage,
+                  'branch-active': isRowInSelectedBranch(row)
+                }
+              ]"
+              :style="{ paddingLeft: `${12 + row.depth * 18}px` }"
+            >
+              <div class="wiki-tree-main">
+                <button
+                  class="wiki-tree-toggle"
+                  :class="{ placeholder: !row.hasChildren }"
+                  type="button"
+                  :aria-label="isRowExpanded(row.key) ? '收起节点' : '展开节点'"
+                  @click.stop="row.hasChildren && toggleRow(row.key)"
+                >
+                  <el-icon v-if="row.hasChildren" class="wiki-tree-toggle-icon">
+                    <ArrowDown v-if="isRowExpanded(row.key)" />
+                    <ArrowRight v-else />
+                  </el-icon>
+                </button>
+                <button
+                  class="wiki-tree-link"
+                  type="button"
+                  @click="row.type === 'page' ? openPage(row.id) : selectDirectory(row.id)"
+                >
+                  <span class="tree-row-title">{{ row.label }}</span>
+                </button>
+              </div>
+            </div>
           </div>
-          <el-empty v-else description="当前空间还没有目录" />
+          <el-empty v-else description="当前空间还没有页面" />
         </div>
       </aside>
 
       <main class="wiki-workbench" v-loading="pageLoading">
-        <template v-if="currentPage || currentDirectory">
+        <section v-if="currentPage || currentDirectory" :key="currentNodeKey" class="wiki-content-shell">
           <header class="wiki-article-head">
             <div class="wiki-article-topline">
               <div class="wiki-breadcrumb">{{ currentBreadcrumb }}</div>
               <div class="wiki-article-actions">
-                <button class="wiki-header-action" type="button" @click="openMemberDrawer">成员</button>
+                <button v-if="showMemberAction" class="wiki-header-action" type="button" @click="openMemberDrawer">成员</button>
                 <button v-if="currentPage" class="wiki-header-action" type="button" @click="openVersionDrawer">版本历史</button>
                 <button v-if="currentPage?.importSource" class="wiki-header-action" type="button" @click="downloadCurrentSource">下载原文</button>
+                <button v-if="canEditSpace" class="wiki-header-action" type="button" @click="openImportDialog">导入文档</button>
+                <button
+                  v-if="canEditSpace"
+                  class="wiki-header-action"
+                  type="button"
+                  @click="openCreatePageDialog(currentPage ? { directoryId: currentPage.directoryId, parentPageId: currentPage.id } : { directoryId: currentDirectory?.id, parentPageId: null })"
+                >
+                  新建页面
+                </button>
                 <button v-if="canEditSpace && currentPage" class="wiki-header-action" type="button" @click="openPageDialog(currentPage)">编辑页面</button>
-                <button v-if="canEditSpace && currentDirectory" class="wiki-header-action" type="button" @click="openDirectoryDialog(currentDirectory.id)">编辑目录</button>
+                <button v-if="canEditSpace && currentDirectory" class="wiki-header-action" type="button" @click="openDirectoryDialog(currentDirectory.id)">编辑页面</button>
                 <button v-if="canEditSpace && currentPage" class="wiki-header-action danger" type="button" @click="handleDeletePage">删除页面</button>
               </div>
             </div>
-            <h2>{{ currentPage?.title || currentDirectory?.name }}</h2>
+            <h2>{{ currentNodeTitle }}</h2>
             <div class="wiki-page-meta">
               <template v-if="currentPage">
                 <span>由 {{ currentPage.authorName || '-' }} 创建</span>
@@ -83,7 +98,7 @@
                 <span v-if="currentPage.importSource">来源 {{ currentPage.importSource.fileName }}</span>
               </template>
               <template v-else-if="currentDirectory">
-                <span>目录节点</span>
+                <span>页面节点</span>
                 <span v-if="currentDirectory.boundProjectName">关联项目 {{ currentDirectory.boundProjectName }}</span>
                 <span>Slug {{ currentDirectory.slug }}</span>
               </template>
@@ -92,21 +107,22 @@
 
           <section class="wiki-article-body">
             <MdPreview
-              editor-id="wiki-space-preview"
+              :key="currentNodeKey"
+              :editor-id="`wiki-space-preview-${currentNodeKey}`"
               language="zh-CN"
               preview-theme="github"
-              :model-value="currentPage?.content || currentDirectory?.content || '暂无内容'"
+              :model-value="currentNodeContent"
             />
           </section>
-        </template>
+        </section>
 
         <section v-else class="wiki-empty-panel">
-          <el-empty description="从左侧选择一个页面，或先创建目录和页面" />
+          <el-empty description="从左侧选择一个页面，或先创建页面" />
         </section>
       </main>
     </section>
 
-    <el-dialog v-model="spaceDialogVisible" title="编辑空间" width="640px" destroy-on-close>
+    <el-dialog v-model="spaceDialogVisible" title="编辑空间" width="720px" destroy-on-close>
       <el-form ref="spaceFormRef" :model="spaceForm" :rules="spaceRules" label-position="top">
         <el-form-item label="空间名称" prop="name">
           <el-input v-model="spaceForm.name" maxlength="120" show-word-limit />
@@ -114,11 +130,23 @@
         <el-form-item label="空间说明">
           <el-input v-model="spaceForm.description" type="textarea" :rows="4" maxlength="500" show-word-limit />
         </el-form-item>
+        <el-form-item label="绑定项目">
+          <el-select v-model="spaceForm.boundProjectId" clearable filterable placeholder="不绑定项目" style="width: 100%">
+            <el-option v-for="project in projectOptions" :key="project.id" :label="project.name" :value="project.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="读取范围">
           <el-select v-model="spaceForm.readScope" style="width: 100%">
             <el-option label="仅成员可读" value="MEMBERS_ONLY" />
             <el-option label="所有登录用户可读" value="ALL_LOGGED_IN" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="成员默认配置">
+          <el-radio-group v-model="spaceForm.memberDefaultSource">
+            <el-radio value="MANUAL">手动配置成员</el-radio>
+            <el-radio value="PROJECT_MEMBERS" :disabled="!spaceForm.boundProjectId">使用项目成员作为默认成员</el-radio>
+          </el-radio-group>
+          <div class="wiki-space-form-hint">开启后会把绑定项目中的负责人、创建人和成员作为默认空间成员带入，当前操作者保留管理员权限。</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -127,27 +155,18 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="directoryDialogVisible" :title="editingDirectory ? '编辑目录' : '新建目录'" width="640px" destroy-on-close>
+    <el-dialog v-model="directoryDialogVisible" :title="editingDirectory ? '编辑页面' : '添加目录'" width="920px" destroy-on-close>
       <el-form ref="directoryFormRef" :model="directoryForm" :rules="directoryRules" label-position="top">
-        <el-form-item label="目录名称" prop="name">
-          <el-input v-model="directoryForm.name" maxlength="120" show-word-limit />
-        </el-form-item>
-        <el-form-item label="目录正文">
-          <MarkdownEditor v-model="directoryForm.content" height="280px" :upload-image="handleUploadImage" />
-        </el-form-item>
-        <el-form-item label="父目录">
-          <el-select v-model="directoryForm.parentDirectoryId" clearable placeholder="根目录" style="width: 100%">
-            <el-option v-for="row in directorySelectRows" :key="row.id" :label="`${'  '.repeat(row.depth)}${row.label}`" :value="row.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="绑定项目">
-          <el-select v-model="directoryForm.boundProjectId" clearable filterable placeholder="不绑定项目" style="width: 100%">
-            <el-option v-for="project in projectOptions" :key="project.id" :label="project.name" :value="project.id" />
-          </el-select>
+        <div class="wiki-form-grid">
+          <el-form-item label="页面标题" prop="name">
+            <el-input v-model="directoryForm.name" maxlength="120" show-word-limit />
+          </el-form-item>
+        </div>
+        <el-form-item label="正文">
+          <MarkdownEditor v-model="directoryForm.content" height="520px" :upload-image="handleUploadImage" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button v-if="editingDirectory" type="danger" plain @click="handleDeleteDirectory">删除</el-button>
         <el-button @click="directoryDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="handleSubmitDirectory">保存</el-button>
       </template>
@@ -159,9 +178,9 @@
           <el-form-item label="页面标题" prop="title">
             <el-input v-model="pageForm.title" maxlength="200" show-word-limit />
           </el-form-item>
-          <el-form-item label="所属目录" prop="directoryId">
-            <el-select v-model="pageForm.directoryId" style="width: 100%">
-              <el-option v-for="row in directorySelectRows" :key="row.id" :label="`${'  '.repeat(row.depth)}${row.label}`" :value="row.id" />
+          <el-form-item label="上级页面">
+            <el-select v-model="pageForm.parentPageId" clearable placeholder="作为目录下一级页面" style="width: 100%">
+              <el-option v-for="row in pageSelectRows" :key="row.id" :label="`${'  '.repeat(row.depth)}${row.label}`" :value="row.id" />
             </el-select>
           </el-form-item>
           <el-form-item v-if="editingPage" label="变更说明">
@@ -250,6 +269,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import { ArrowDown, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MdPreview } from 'md-editor-v3'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
@@ -258,7 +278,6 @@ import {
   createWikiDirectory,
   importWikiSpacePage,
   createWikiSpacePage,
-  deleteWikiDirectory,
   deleteWikiSpacePage,
   getWikiDirectoryTree,
   getWikiSpaceDetail,
@@ -281,13 +300,14 @@ import {
   type WikiSpacePayload
 } from '@/api/platform'
 import type {
-  ProjectItem,
   DocumentMarkdownResultItem,
+  ProjectItem,
   UserOptionItem,
   WikiDirectoryTreeNodeItem,
   WikiSpaceDetailItem,
   WikiSpaceMemberItem,
   WikiSpacePageDetailItem,
+  WikiSpacePageSummaryItem,
   WikiSpacePageVersionItem
 } from '@/types/platform'
 
@@ -296,10 +316,13 @@ interface FlatRow {
   type: 'directory' | 'page'
   depth: number
   label: string
+  key: string
+  directoryId: number
   content?: string
   slug?: string
   boundProjectName?: string
   version?: number
+  hasChildren?: boolean
 }
 
 interface DirectoryForm {
@@ -311,6 +334,7 @@ interface DirectoryForm {
 
 interface PageForm {
   directoryId: number | null
+  parentPageId: number | null
   title: string
   content: string
   changeSummary: string
@@ -320,6 +344,8 @@ interface SpaceForm {
   name: string
   description: string
   readScope: 'MEMBERS_ONLY' | 'ALL_LOGGED_IN'
+  boundProjectId: number | null
+  memberDefaultSource: 'MANUAL' | 'PROJECT_MEMBERS'
 }
 
 const route = useRoute()
@@ -359,7 +385,9 @@ const pageFormRef = ref<FormInstance>()
 const spaceForm = reactive<SpaceForm>({
   name: '',
   description: '',
-  readScope: 'MEMBERS_ONLY'
+  readScope: 'MEMBERS_ONLY',
+  boundProjectId: null,
+  memberDefaultSource: 'MANUAL'
 })
 const directoryForm = reactive<DirectoryForm>({
   name: '',
@@ -369,12 +397,16 @@ const directoryForm = reactive<DirectoryForm>({
 })
 const pageForm = reactive<PageForm>({
   directoryId: null,
+  parentPageId: null,
   title: '',
   content: '',
   changeSummary: ''
 })
 const memberForm = ref<WikiSpaceMemberPayloadItem[]>([])
 const importPreview = ref<DocumentMarkdownResultItem | null>(null)
+const expandedRowKeys = ref<string[]>([])
+const knownExpandableRowKeys = ref<string[]>([])
+const pageLoadSequence = ref(0)
 
 const spaceRules: FormRules<SpaceForm> = {
   name: [{ required: true, message: '请输入空间名称', trigger: 'blur' }]
@@ -391,9 +423,46 @@ const canEditSpace = computed(() => {
   const role = spaceDetail.value?.currentUserRole
   return role === 'ADMIN' || role === 'EDITOR'
 })
+const showMemberAction = computed(() => currentDirectory.value?.parentDirectoryId == null)
 
 const flatRows = computed(() => flattenTree(directoryNodes.value))
-const directorySelectRows = computed(() => flatRows.value.filter((item) => item.type === 'directory' && item.id !== editingDirectory.value?.id))
+const visibleRows = computed(() => flattenTree(directoryNodes.value, 0, true))
+const pageSelectRows = computed(() => {
+  if (pageForm.directoryId == null) {
+    return []
+  }
+  const excludedIds = new Set<number>()
+  if (editingPage.value) {
+    excludedIds.add(editingPage.value.id)
+    for (const descendantId of collectDescendantPageIds(directoryNodes.value, editingPage.value.id)) {
+      excludedIds.add(descendantId)
+    }
+  }
+  return flatRows.value.filter(
+    (item) => item.type === 'page' && item.directoryId === pageForm.directoryId && !excludedIds.has(item.id)
+  )
+})
+const treeNodeCount = computed(() => flatRows.value.length)
+const selectedBranchRowKeys = computed(() => {
+  if (currentPage.value) {
+    return new Set(collectPageDescendantRowKeys(directoryNodes.value, currentPage.value.id))
+  }
+  if (currentDirectory.value) {
+    return new Set(collectDirectoryDescendantRowKeys(directoryNodes.value, currentDirectory.value.id))
+  }
+  return new Set<string>()
+})
+const currentNodeKey = computed(() => {
+  if (currentPage.value) {
+    return `page-${currentPage.value.id}`
+  }
+  if (currentDirectory.value) {
+    return `directory-${currentDirectory.value.id}`
+  }
+  return 'empty'
+})
+const currentNodeTitle = computed(() => currentPage.value?.title || currentDirectory.value?.name || 'Wiki 页面')
+const currentNodeContent = computed(() => currentPage.value?.content || currentDirectory.value?.content || '暂无内容')
 const currentBreadcrumb = computed(() => {
   if (!currentPage.value) {
     if (currentDirectory.value) {
@@ -402,14 +471,36 @@ const currentBreadcrumb = computed(() => {
     }
     return spaceDetail.value?.name || 'Wiki 空间'
   }
-  const directoryPath = resolveDirectoryPath(directoryNodes.value, currentPage.value.directoryId)
-  return [spaceDetail.value?.name || 'Wiki 空间', ...directoryPath, currentPage.value.title].filter(Boolean).join(' / ')
+  const pagePath = resolvePagePath(directoryNodes.value, currentPage.value.id)
+  return [spaceDetail.value?.name || 'Wiki 空间', ...pagePath].filter(Boolean).join(' / ')
 })
 
 watch(
   () => route.params.pageId,
   () => {
     void loadCurrentPage()
+  }
+)
+
+watch(
+  () => pageForm.directoryId,
+  () => {
+    if (pageForm.parentPageId == null) {
+      return
+    }
+    const exists = pageSelectRows.value.some((item) => item.id === pageForm.parentPageId)
+    if (!exists) {
+      pageForm.parentPageId = null
+    }
+  }
+)
+
+watch(
+  () => spaceForm.boundProjectId,
+  (value) => {
+    if (!value && spaceForm.memberDefaultSource === 'PROJECT_MEMBERS') {
+      spaceForm.memberDefaultSource = 'MANUAL'
+    }
   }
 )
 
@@ -420,7 +511,7 @@ onMounted(async () => {
 async function reloadAll() {
   loading.value = true
   try {
-    await Promise.all([loadSpaceDetail(), loadDirectoryTree(), loadProjects(), loadMembers()])
+    await Promise.all([loadSpaceDetail(), loadDirectoryTree(), loadMembers(), loadProjects()])
     await loadCurrentPage()
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '加载 Wiki 空间失败')
@@ -437,16 +528,12 @@ async function loadDirectoryTree() {
   treeLoading.value = true
   try {
     directoryNodes.value = await getWikiDirectoryTree(spaceId.value)
+    syncExpandedRows(directoryNodes.value)
+    if (currentDirectory.value) {
+      currentDirectory.value = findDirectoryNode(directoryNodes.value, currentDirectory.value.id)
+    }
   } finally {
     treeLoading.value = false
-  }
-}
-
-async function loadProjects() {
-  try {
-    projectOptions.value = await listProjectOptions()
-  } catch {
-    projectOptions.value = []
   }
 }
 
@@ -458,9 +545,24 @@ async function loadMembers() {
   }
 }
 
+async function loadProjects() {
+  try {
+    projectOptions.value = await listProjectOptions()
+  } catch {
+    projectOptions.value = []
+  }
+}
+
 async function loadCurrentPage() {
+  const requestSequence = ++pageLoadSequence.value
   if (!pageId.value) {
+    if (requestSequence !== pageLoadSequence.value) {
+      return
+    }
     currentPage.value = null
+    if (currentDirectory.value) {
+      return
+    }
     const firstPage = flatRows.value.find((item) => item.type === 'page')
     if (firstPage) {
       openPage(firstPage.id)
@@ -469,38 +571,74 @@ async function loadCurrentPage() {
   }
   pageLoading.value = true
   try {
-    currentPage.value = await getWikiSpacePage(spaceId.value, pageId.value)
-    currentPage.value.relatedPages = await listWikiRelatedPages(spaceId.value, pageId.value)
+    currentDirectory.value = null
+    const detail = await getWikiSpacePage(spaceId.value, pageId.value)
+    const relatedPages = await listWikiRelatedPages(spaceId.value, pageId.value)
+    if (requestSequence !== pageLoadSequence.value) {
+      return
+    }
+    detail.relatedPages = relatedPages
+    currentPage.value = detail
+    expandPageAncestors(directoryNodes.value, pageId.value)
   } catch (error: any) {
+    if (requestSequence !== pageLoadSequence.value) {
+      return
+    }
     currentPage.value = null
     ElMessage.error(error?.response?.data?.message || '读取 Wiki 页面失败')
   } finally {
-    pageLoading.value = false
+    if (requestSequence === pageLoadSequence.value) {
+      pageLoading.value = false
+    }
   }
 }
 
-function flattenTree(nodes: WikiDirectoryTreeNodeItem[], depth = 0): FlatRow[] {
+function flattenTree(nodes: WikiDirectoryTreeNodeItem[], depth = 0, onlyVisible = false): FlatRow[] {
   const rows: FlatRow[] = []
   for (const node of nodes) {
+    const directoryKey = `directory-${node.id}`
+    const expanded = isRowExpanded(directoryKey)
+    const hasChildren = (node.pages?.length || 0) > 0 || (node.children?.length || 0) > 0
     rows.push({
       id: node.id,
       type: 'directory',
       depth,
+      key: directoryKey,
+      directoryId: node.id,
       label: node.name,
       content: node.content,
       slug: node.slug,
-      boundProjectName: node.boundProjectName || ''
+      boundProjectName: node.boundProjectName || '',
+      hasChildren
     })
-    for (const page of node.pages || []) {
-      rows.push({
-        id: page.id,
-        type: 'page',
-        depth: depth + 1,
-        label: page.title,
-        version: page.currentVersionNumber
-      })
+    if (onlyVisible && hasChildren && !expanded) {
+      continue
     }
-    rows.push(...flattenTree(node.children || [], depth + 1))
+    rows.push(...flattenPageRows(node.pages || [], depth + 1, onlyVisible, node.id))
+    rows.push(...flattenTree(node.children || [], depth + 1, onlyVisible))
+  }
+  return rows
+}
+
+function flattenPageRows(pages: WikiSpacePageSummaryItem[], depth: number, onlyVisible: boolean, directoryId: number): FlatRow[] {
+  const rows: FlatRow[] = []
+  for (const page of pages) {
+    const pageKey = `page-${page.id}`
+    const hasChildren = (page.children?.length || 0) > 0
+    rows.push({
+      id: page.id,
+      type: 'page',
+      depth,
+      key: pageKey,
+      directoryId,
+      label: page.title,
+      version: page.currentVersionNumber,
+      hasChildren
+    })
+    if (onlyVisible && hasChildren && !isRowExpanded(pageKey)) {
+      continue
+    }
+    rows.push(...flattenPageRows(page.children || [], depth + 1, onlyVisible, directoryId))
   }
   return rows
 }
@@ -519,6 +657,35 @@ function resolveDirectoryPath(nodes: WikiDirectoryTreeNodeItem[], directoryId: n
   return []
 }
 
+function resolvePagePath(nodes: WikiDirectoryTreeNodeItem[], targetPageId: number, directoryPath: string[] = []): string[] {
+  for (const node of nodes) {
+    const currentDirectoryPath = [...directoryPath, node.name]
+    const pagePath = resolvePagePathFromPages(node.pages || [], targetPageId, currentDirectoryPath)
+    if (pagePath.length) {
+      return pagePath
+    }
+    const childPath = resolvePagePath(node.children || [], targetPageId, currentDirectoryPath)
+    if (childPath.length) {
+      return childPath
+    }
+  }
+  return []
+}
+
+function resolvePagePathFromPages(pages: WikiSpacePageSummaryItem[], targetPageId: number, path: string[]): string[] {
+  for (const page of pages) {
+    const currentPath = [...path, page.title]
+    if (page.id === targetPageId) {
+      return currentPath
+    }
+    const childPath = resolvePagePathFromPages(page.children || [], targetPageId, currentPath)
+    if (childPath.length) {
+      return childPath
+    }
+  }
+  return []
+}
+
 function openPage(targetPageId: number) {
   currentDirectory.value = null
   router.push({ name: 'wiki-space-page', params: { spaceId: spaceId.value, pageId: targetPageId } })
@@ -527,6 +694,7 @@ function openPage(targetPageId: number) {
 function selectDirectory(directoryId: number) {
   currentDirectory.value = findDirectoryNode(directoryNodes.value, directoryId)
   currentPage.value = null
+  expandRow(`directory-${directoryId}`)
   router.push({ name: 'wiki-space', params: { spaceId: spaceId.value } })
 }
 
@@ -535,6 +703,8 @@ function openSpaceDialog() {
   spaceForm.name = spaceDetail.value.name
   spaceForm.description = spaceDetail.value.description
   spaceForm.readScope = spaceDetail.value.readScope as SpaceForm['readScope']
+  spaceForm.boundProjectId = spaceDetail.value.boundProjectId ?? null
+  spaceForm.memberDefaultSource = (spaceDetail.value.memberDefaultSource as SpaceForm['memberDefaultSource']) || 'MANUAL'
   spaceDialogVisible.value = true
 }
 
@@ -546,10 +716,14 @@ async function handleSubmitSpace() {
     const payload: WikiSpacePayload = {
       name: spaceForm.name,
       description: spaceForm.description,
-      readScope: spaceForm.readScope
+      readScope: spaceForm.readScope,
+      boundProjectId: spaceForm.boundProjectId,
+      memberDefaultSource: spaceForm.memberDefaultSource
     }
     spaceDetail.value = await updateWikiSpace(spaceId.value, payload)
     ElMessage.success('空间信息已更新')
+    await loadDirectoryTree()
+    await loadCurrentPage()
     spaceDialogVisible.value = false
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '更新空间失败')
@@ -601,13 +775,17 @@ async function handleSubmitDirectory() {
     }
     if (editingDirectory.value) {
       await updateWikiDirectory(spaceId.value, editingDirectory.value.id, payload)
-      ElMessage.success('目录已更新')
+      ElMessage.success('页面已更新')
     } else {
-      await createWikiDirectory(spaceId.value, payload)
-      ElMessage.success('目录已创建')
+      const createdDirectory = await createWikiDirectory(spaceId.value, payload)
+      ElMessage.success('目录已添加')
+      await loadDirectoryTree()
+      selectDirectory(createdDirectory.id)
     }
     directoryDialogVisible.value = false
-    await loadDirectoryTree()
+    if (editingDirectory.value) {
+      await loadDirectoryTree()
+    }
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '保存目录失败')
   } finally {
@@ -615,36 +793,32 @@ async function handleSubmitDirectory() {
   }
 }
 
-async function handleDeleteDirectory() {
-  if (!editingDirectory.value) return
-  try {
-    await ElMessageBox.confirm(`删除目录「${editingDirectory.value.label}」前，请确认里面没有子目录和页面。`, '提示', { type: 'warning' })
-    await deleteWikiDirectory(spaceId.value, editingDirectory.value.id)
-    ElMessage.success('目录已删除')
-    directoryDialogVisible.value = false
-    await loadDirectoryTree()
-  } catch (error: any) {
-    if (error !== 'cancel') {
-      ElMessage.error(error?.response?.data?.message || '删除目录失败')
-    }
-  }
-}
-
 function openPageDialog(page: WikiSpacePageDetailItem | null) {
   if (page) {
     editingPage.value = page
     pageForm.directoryId = page.directoryId
+    pageForm.parentPageId = page.parentPageId
     pageForm.title = page.title
     pageForm.content = page.content
     pageForm.changeSummary = ''
   } else {
     editingPage.value = null
-    const firstDirectory = directorySelectRows.value[0]
-    pageForm.directoryId = firstDirectory?.id ?? null
+    pageForm.directoryId = resolveDefaultDirectoryId()
+    pageForm.parentPageId = null
     pageForm.title = ''
     pageForm.content = ''
     pageForm.changeSummary = ''
   }
+  pageDialogVisible.value = true
+}
+
+function openCreatePageDialog(preset?: { directoryId?: number | null; parentPageId?: number | null }) {
+  editingPage.value = null
+  pageForm.directoryId = preset?.directoryId ?? resolveDefaultDirectoryId()
+  pageForm.parentPageId = preset?.parentPageId ?? null
+  pageForm.title = ''
+  pageForm.content = ''
+  pageForm.changeSummary = ''
   pageDialogVisible.value = true
 }
 
@@ -675,9 +849,9 @@ function applyImportPreview() {
   if (!importPreview.value) {
     return
   }
-  const firstDirectory = directorySelectRows.value[0]
   editingPage.value = null
-  pageForm.directoryId = firstDirectory?.id ?? null
+  pageForm.directoryId = resolveDefaultDirectoryId()
+  pageForm.parentPageId = null
   pageForm.title = importPreview.value.suggestedTitle || importPreview.value.fileName
   pageForm.content = importPreview.value.markdown
   pageForm.changeSummary = ''
@@ -692,6 +866,7 @@ async function handleSubmitPage() {
   try {
     const payload: WikiSpacePagePayload = {
       directoryId: pageForm.directoryId,
+      parentPageId: pageForm.parentPageId,
       title: pageForm.title,
       content: pageForm.content,
       changeSummary: pageForm.changeSummary
@@ -702,6 +877,7 @@ async function handleSubmitPage() {
         ? await importWikiSpacePage(spaceId.value, {
             assetId: importPreview.value.assetId,
             directoryId: pageForm.directoryId,
+            parentPageId: pageForm.parentPageId,
             title: pageForm.title
           })
         : await createWikiSpacePage(spaceId.value, payload)
@@ -827,6 +1003,10 @@ function readScopeLabel(scope?: string | null) {
   return scope === 'ALL_LOGGED_IN' ? '所有登录用户可读' : '仅空间成员可读'
 }
 
+function memberDefaultSourceLabel(source?: string | null) {
+  return source === 'PROJECT_MEMBERS' ? '项目成员' : '手动配置'
+}
+
 function syncStatusLabel(status: string) {
   if (status === 'SYNCED') return '已同步'
   if (status === 'FAILED') return '同步失败'
@@ -842,12 +1022,223 @@ function syncTagType(status: string) {
 function userLabel(user: UserOptionItem) {
   return user.nickname?.trim() ? `${user.nickname}（${user.username}）` : user.username
 }
+
+function isRowInSelectedBranch(row: FlatRow) {
+  return selectedBranchRowKeys.value.has(row.key)
+}
+
+function resolveDefaultDirectoryId() {
+  if (currentDirectory.value) {
+    return currentDirectory.value.id
+  }
+  if (currentPage.value) {
+    return currentPage.value.directoryId
+  }
+  return flatRows.value.find((item) => item.type === 'directory')?.id ?? null
+}
+
+function isRowExpanded(rowKey: string) {
+  return expandedRowKeys.value.includes(rowKey)
+}
+
+function toggleRow(rowKey: string) {
+  const next = new Set(expandedRowKeys.value)
+  if (next.has(rowKey)) {
+    next.delete(rowKey)
+  } else {
+    next.add(rowKey)
+  }
+  expandedRowKeys.value = [...next]
+}
+
+function expandRow(rowKey: string) {
+  if (isRowExpanded(rowKey)) {
+    return
+  }
+  expandedRowKeys.value = [...expandedRowKeys.value, rowKey]
+}
+
+function syncExpandedRows(nodes: WikiDirectoryTreeNodeItem[]) {
+  const nextExpandableRows = collectExpandableRowKeys(nodes)
+  if (!knownExpandableRowKeys.value.length) {
+    expandedRowKeys.value = nextExpandableRows
+    knownExpandableRowKeys.value = nextExpandableRows
+    return
+  }
+  const currentKeys = new Set(expandedRowKeys.value.filter((key) => nextExpandableRows.includes(key)))
+  const knownKeys = new Set(knownExpandableRowKeys.value)
+  for (const key of nextExpandableRows) {
+    if (!knownKeys.has(key)) {
+      currentKeys.add(key)
+    }
+  }
+  expandedRowKeys.value = [...currentKeys]
+  knownExpandableRowKeys.value = nextExpandableRows
+}
+
+function collectExpandableRowKeys(nodes: WikiDirectoryTreeNodeItem[]): string[] {
+  const keys: string[] = []
+  for (const node of nodes) {
+    if ((node.pages?.length || 0) > 0 || (node.children?.length || 0) > 0) {
+      keys.push(`directory-${node.id}`)
+    }
+    keys.push(...collectExpandablePageKeys(node.pages || []))
+    keys.push(...collectExpandableRowKeys(node.children || []))
+  }
+  return keys
+}
+
+function collectExpandablePageKeys(pages: WikiSpacePageSummaryItem[]): string[] {
+  const keys: string[] = []
+  for (const page of pages) {
+    if ((page.children?.length || 0) > 0) {
+      keys.push(`page-${page.id}`)
+      keys.push(...collectExpandablePageKeys(page.children))
+    }
+  }
+  return keys
+}
+
+function expandPageAncestors(nodes: WikiDirectoryTreeNodeItem[], targetPageId: number) {
+  const ancestors = resolvePageAncestorKeys(nodes, targetPageId)
+  if (!ancestors.length) {
+    return
+  }
+  const next = new Set(expandedRowKeys.value)
+  for (const key of ancestors) {
+    next.add(key)
+  }
+  expandedRowKeys.value = [...next]
+}
+
+function resolvePageAncestorKeys(nodes: WikiDirectoryTreeNodeItem[], targetPageId: number): string[] {
+  for (const node of nodes) {
+    const pageAncestors = resolvePageAncestorKeysFromPages(node.pages || [], targetPageId, [`directory-${node.id}`])
+    if (pageAncestors.length) {
+      return pageAncestors
+    }
+    const childAncestors = resolvePageAncestorKeys(node.children || [], targetPageId)
+    if (childAncestors.length) {
+      return [`directory-${node.id}`, ...childAncestors]
+    }
+  }
+  return []
+}
+
+function resolvePageAncestorKeysFromPages(pages: WikiSpacePageSummaryItem[], targetPageId: number, ancestors: string[]): string[] {
+  for (const page of pages) {
+    if (page.id === targetPageId) {
+      return ancestors
+    }
+    const childAncestors = resolvePageAncestorKeysFromPages(page.children || [], targetPageId, [...ancestors, `page-${page.id}`])
+    if (childAncestors.length) {
+      return childAncestors
+    }
+  }
+  return []
+}
+
+function collectDescendantPageIds(nodes: WikiDirectoryTreeNodeItem[], pageId: number): number[] {
+  for (const node of nodes) {
+    const descendants = collectDescendantPageIdsFromPages(node.pages || [], pageId)
+    if (descendants.length) {
+      return descendants
+    }
+    const childDescendants = collectDescendantPageIds(node.children || [], pageId)
+    if (childDescendants.length) {
+      return childDescendants
+    }
+  }
+  return []
+}
+
+function collectDescendantPageIdsFromPages(pages: WikiSpacePageSummaryItem[], pageId: number): number[] {
+  for (const page of pages) {
+    if (page.id === pageId) {
+      return flattenChildPageIds(page.children || [])
+    }
+    const childDescendants = collectDescendantPageIdsFromPages(page.children || [], pageId)
+    if (childDescendants.length) {
+      return childDescendants
+    }
+  }
+  return []
+}
+
+function flattenChildPageIds(pages: WikiSpacePageSummaryItem[]): number[] {
+  const ids: number[] = []
+  for (const page of pages) {
+    ids.push(page.id)
+    ids.push(...flattenChildPageIds(page.children || []))
+  }
+  return ids
+}
+
+function collectDirectoryDescendantRowKeys(nodes: WikiDirectoryTreeNodeItem[], directoryId: number): string[] {
+  for (const node of nodes) {
+    if (node.id === directoryId) {
+      return collectDirectoryChildRowKeys(node)
+    }
+    const childKeys = collectDirectoryDescendantRowKeys(node.children || [], directoryId)
+    if (childKeys.length) {
+      return childKeys
+    }
+  }
+  return []
+}
+
+function collectDirectoryChildRowKeys(node: WikiDirectoryTreeNodeItem): string[] {
+  const keys: string[] = []
+  for (const childDirectory of node.children || []) {
+    keys.push(`directory-${childDirectory.id}`)
+    keys.push(...collectDirectoryChildRowKeys(childDirectory))
+  }
+  keys.push(...collectPageRowKeys(node.pages || []))
+  return keys
+}
+
+function collectPageDescendantRowKeys(nodes: WikiDirectoryTreeNodeItem[], pageId: number): string[] {
+  for (const node of nodes) {
+    const pageKeys = collectPageDescendantRowKeysFromPages(node.pages || [], pageId)
+    if (pageKeys.length) {
+      return pageKeys
+    }
+    const childKeys = collectPageDescendantRowKeys(node.children || [], pageId)
+    if (childKeys.length) {
+      return childKeys
+    }
+  }
+  return []
+}
+
+function collectPageDescendantRowKeysFromPages(pages: WikiSpacePageSummaryItem[], pageId: number): string[] {
+  for (const page of pages) {
+    if (page.id === pageId) {
+      return collectPageRowKeys(page.children || [])
+    }
+    const childKeys = collectPageDescendantRowKeysFromPages(page.children || [], pageId)
+    if (childKeys.length) {
+      return childKeys
+    }
+  }
+  return []
+}
+
+function collectPageRowKeys(pages: WikiSpacePageSummaryItem[]): string[] {
+  const keys: string[] = []
+  for (const page of pages) {
+    keys.push(`page-${page.id}`)
+    keys.push(...collectPageRowKeys(page.children || []))
+  }
+  return keys
+}
 </script>
 
 <style scoped>
 .wiki-space-page {
   height: 100%;
-  min-height: calc(100vh - 168px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .wiki-shell {
@@ -855,7 +1246,8 @@ function userLabel(user: UserOptionItem) {
   grid-template-columns: 248px minmax(0, 1fr);
   gap: 14px;
   height: 100%;
-  min-height: inherit;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .wiki-sidebar,
@@ -870,8 +1262,9 @@ function userLabel(user: UserOptionItem) {
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-height: inherit;
+  min-height: 0;
   padding: 12px;
+  overflow: hidden;
 }
 
 .wiki-sidebar-head {
@@ -895,9 +1288,21 @@ function userLabel(user: UserOptionItem) {
 }
 
 .wiki-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 0;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.wiki-back-link .el-icon {
+  font-size: 15px;
+}
+
+.wiki-back-link:hover {
+  color: var(--app-primary);
 }
 
 .wiki-side-icon-button,
@@ -955,11 +1360,28 @@ function userLabel(user: UserOptionItem) {
   font-size: 12px;
 }
 
+.wiki-space-form-hint {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .wiki-tree-shell {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
+}
+
+.wiki-tree-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 10px;
+}
+
+.wiki-tree-create-button {
+  min-width: 84px;
 }
 
 .wiki-tree-head {
@@ -1001,22 +1423,102 @@ function userLabel(user: UserOptionItem) {
 
 .wiki-tree-row {
   width: 100%;
-  border: 0;
   background: rgba(248, 250, 252, 0.9);
   border-radius: 8px;
-  padding: 10px 12px;
   display: flex;
   justify-content: space-between;
   gap: 10px;
   align-items: center;
-  text-align: left;
-  cursor: pointer;
   color: #334155;
+  padding: 8px 10px;
 }
 
-.wiki-tree-row.page.active {
-  background: #172033;
-  color: #fff;
+.wiki-tree-row.active {
+  background: linear-gradient(135deg, rgba(var(--app-primary-rgb), 0.92) 0%, rgba(var(--app-primary-container-rgb), 0.82) 100%);
+  color: #fffdf9;
+  box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.08);
+}
+
+.wiki-tree-row.branch-active {
+  background: rgba(var(--app-primary-container-rgb), 0.12);
+  color: var(--app-text);
+  box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.08);
+}
+
+.wiki-tree-row.branch-active::before {
+  content: '';
+  width: 3px;
+  align-self: stretch;
+  border-radius: 999px;
+  background: rgba(var(--app-primary-rgb), 0.45);
+}
+
+.wiki-tree-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.wiki-tree-toggle,
+.wiki-tree-link {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.wiki-tree-toggle {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.82);
+  color: #475569;
+  cursor: pointer;
+  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.wiki-tree-toggle.placeholder {
+  background: transparent;
+  color: transparent;
+  cursor: default;
+}
+
+.wiki-tree-toggle:not(.placeholder):hover {
+  background: rgba(var(--app-primary-container-rgb), 0.18);
+  color: var(--app-primary);
+  transform: scale(1.05);
+}
+
+.wiki-tree-row.active .wiki-tree-toggle:not(.placeholder) {
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.wiki-tree-row.branch-active .wiki-tree-toggle:not(.placeholder) {
+  background: rgba(var(--app-primary-container-rgb), 0.16);
+  color: var(--app-primary);
+}
+
+.wiki-tree-toggle-icon {
+  font-size: 12px;
+}
+
+.wiki-tree-link {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
 }
 
 .tree-row-title {
@@ -1028,8 +1530,17 @@ function userLabel(user: UserOptionItem) {
 .wiki-workbench {
   display: flex;
   flex-direction: column;
-  min-height: inherit;
+  min-height: 0;
   padding: 16px 18px 18px;
+  overflow: hidden;
+}
+
+.wiki-content-shell {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .wiki-article-head {
@@ -1077,6 +1588,7 @@ function userLabel(user: UserOptionItem) {
   flex: 1 1 auto;
   min-height: 0;
   padding-top: 18px;
+  overflow: auto;
 }
 
 .wiki-member-editor,

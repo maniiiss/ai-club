@@ -86,6 +86,12 @@ public class WikiSpaceService {
     /** 空间查看者。 */
     public static final String ROLE_VIEWER = "VIEWER";
 
+    /** 空间成员默认由手工维护。 */
+    public static final String MEMBER_SOURCE_MANUAL = "MANUAL";
+
+    /** 空间成员默认带入绑定项目参与人。 */
+    public static final String MEMBER_SOURCE_PROJECT_MEMBERS = "PROJECT_MEMBERS";
+
     /** 页面待同步。 */
     private static final String SYNC_STATUS_PENDING = "PENDING";
 
@@ -181,22 +187,23 @@ public class WikiSpaceService {
     }
 
     /**
-     * 创建空间，并自动把创建者设为 ADMIN。
+     * 创建空间，并自动把创建者设为 ADMIN 和默认目录。
      */
     @Transactional
     public WikiSpaceDetail createSpace(CreateWikiSpaceRequest request) {
         UserContext userContext = requireCurrentUserContext();
+        ProjectEntity boundProject = request.boundProjectId() == null ? null : requireVisibleProject(request.boundProjectId());
+        String memberDefaultSource = normalizeMemberDefaultSource(request.memberDefaultSource(), boundProject);
         WikiSpaceEntity entity = new WikiSpaceEntity();
         entity.setName(defaultString(request.name()));
         entity.setDescription(defaultString(request.description()));
         entity.setReadScope(normalizeReadScope(request.readScope()));
+        entity.setBoundProject(boundProject);
+        entity.setMemberDefaultSource(memberDefaultSource);
         entity.setCreatorUser(userContext.user());
         WikiSpaceEntity saved = wikiSpaceRepository.save(entity);
-        WikiSpaceMemberEntity creatorMember = new WikiSpaceMemberEntity();
-        creatorMember.setSpace(saved);
-        creatorMember.setUser(userContext.user());
-        creatorMember.setMemberRole(ROLE_ADMIN);
-        wikiSpaceMemberRepository.save(creatorMember);
+        applyDefaultMembers(saved, userContext.user(), boundProject, memberDefaultSource, true);
+        ensureDefaultDirectory(saved, userContext.user());
         return toSpaceDetail(saved, userContext);
     }
 
@@ -208,10 +215,21 @@ public class WikiSpaceService {
         UserContext userContext = requireCurrentUserContext();
         WikiSpaceEntity space = requireSpace(spaceId);
         requireSpaceManageable(space, userContext);
+        Long oldBoundProjectId = space.getBoundProject() == null ? null : space.getBoundProject().getId();
+        String oldMemberDefaultSource = normalizeMemberDefaultSource(space.getMemberDefaultSource(), space.getBoundProject());
+        ProjectEntity boundProject = request.boundProjectId() == null ? null : requireVisibleProject(request.boundProjectId());
+        String memberDefaultSource = normalizeMemberDefaultSource(request.memberDefaultSource(), boundProject);
         space.setName(defaultString(request.name()));
         space.setDescription(defaultString(request.description()));
         space.setReadScope(normalizeReadScope(request.readScope()));
+        space.setBoundProject(boundProject);
+        space.setMemberDefaultSource(memberDefaultSource);
         WikiSpaceEntity saved = wikiSpaceRepository.save(space);
+        boolean projectChanged = !Objects.equals(oldBoundProjectId, boundProject == null ? null : boundProject.getId());
+        boolean memberSourceChanged = !Objects.equals(oldMemberDefaultSource, memberDefaultSource);
+        if (MEMBER_SOURCE_PROJECT_MEMBERS.equals(memberDefaultSource) && (projectChanged || memberSourceChanged)) {
+            applyDefaultMembers(saved, userContext.user(), boundProject, memberDefaultSource, false);
+        }
         return toSpaceDetail(saved, userContext);
     }
 
@@ -263,7 +281,7 @@ public class WikiSpaceService {
     }
 
     /**
-     * 读取空间目录树，目录下直接挂页面列表。
+     * 读取空间目录树，目录下支持页面多级嵌套。
      */
     public List<WikiDirectoryTreeNode> getDirectoryTree(Long spaceId) {
         UserContext userContext = requireCurrentUserContext();
@@ -369,10 +387,12 @@ public class WikiSpaceService {
         WikiSpaceEntity space = requireSpace(spaceId);
         requireSpaceEditable(space, userContext);
         WikiDirectoryEntity directory = requireDirectory(spaceId, request.directoryId());
+        WikiPageV2Entity parentPage = resolveParentPage(spaceId, directory, request.parentPageId());
 
         WikiPageV2Entity entity = new WikiPageV2Entity();
         entity.setSpace(space);
         entity.setDirectory(directory);
+        entity.setParentPage(parentPage);
         entity.setTitle(defaultString(request.title()));
         entity.setSlug(generateUniquePageSlug(spaceId, request.title(), null));
         entity.setContent(defaultString(request.content()));
@@ -404,12 +424,14 @@ public class WikiSpaceService {
         WikiSpaceEntity space = requireSpace(spaceId);
         requireSpaceEditable(space, userContext);
         WikiDirectoryEntity directory = requireDirectory(spaceId, request.directoryId());
+        WikiPageV2Entity parentPage = resolveParentPage(spaceId, directory, request.parentPageId());
         DocumentAssetEntity asset = documentAssetService.requireAccessibleAsset(request.assetId());
         DocumentMarkdownResult converted = documentMarkdownService.convert(asset.getId(), DocumentMarkdownService.SCENE_WIKI_IMPORT, 200000);
 
         WikiPageV2Entity entity = new WikiPageV2Entity();
         entity.setSpace(space);
         entity.setDirectory(directory);
+        entity.setParentPage(parentPage);
         entity.setTitle(defaultString(request.title()));
         entity.setSlug(generateUniquePageSlug(spaceId, request.title(), null));
         entity.setContent(defaultString(converted.markdown()));
@@ -434,8 +456,14 @@ public class WikiSpaceService {
         requireSpaceEditable(space, userContext);
         WikiPageV2Entity page = requirePage(spaceId, pageId);
         WikiDirectoryEntity directory = requireDirectory(spaceId, request.directoryId());
+        WikiPageV2Entity parentPage = resolveParentPage(spaceId, directory, request.parentPageId());
+        ensureNoPageCycle(page, parentPage);
+        if (!Objects.equals(page.getDirectory().getId(), directory.getId()) && wikiPageV2Repository.existsByParentPage_Id(pageId)) {
+            throw new IllegalArgumentException("当前页面存在子页面，请先调整子页面后再移动目录");
+        }
 
         page.setDirectory(directory);
+        page.setParentPage(parentPage);
         page.setTitle(defaultString(request.title()));
         page.setSlug(generateUniquePageSlug(spaceId, request.title(), pageId));
         page.setContent(defaultString(request.content()));
@@ -457,6 +485,9 @@ public class WikiSpaceService {
         WikiSpaceEntity space = requireSpace(spaceId);
         requireSpaceEditable(space, userContext);
         WikiPageV2Entity page = requirePage(spaceId, pageId);
+        if (wikiPageV2Repository.existsByParentPage_Id(pageId)) {
+            throw new IllegalArgumentException("当前页面存在子页面，请先删除或移动子页面");
+        }
         enqueueDeleteTask(page);
         wikiPageV2Repository.delete(page);
     }
@@ -823,6 +854,10 @@ public class WikiSpaceService {
     }
 
     private boolean spaceContainsProject(Long spaceId, Long projectId) {
+        WikiSpaceEntity space = requireSpace(spaceId);
+        if (space.getBoundProject() != null && Objects.equals(space.getBoundProject().getId(), projectId)) {
+            return true;
+        }
         return wikiDirectoryRepository.findAllBySpace_IdOrderBySortOrderAscIdAsc(spaceId).stream()
                 .anyMatch(directory -> Objects.equals(resolveEffectiveBoundProjectId(directory), projectId));
     }
@@ -856,10 +891,7 @@ public class WikiSpaceService {
                         resolveEffectiveBoundProjectId(directory),
                         resolveEffectiveBoundProjectName(directory),
                         buildDirectoryNodes(directory.getId(), childrenByParent, pagesByDirectory, userContext),
-                        pagesByDirectory.getOrDefault(directory.getId(), List.of()).stream()
-                                .sorted(Comparator.comparing(WikiPageV2Entity::getUpdatedAt).reversed())
-                                .map(page -> toPageSummary(page, userContext))
-                                .toList()
+                        buildPageTree(pagesByDirectory.getOrDefault(directory.getId(), List.of()), userContext)
                 ))
                 .toList();
     }
@@ -879,6 +911,9 @@ public class WikiSpaceService {
                 space.getName(),
                 space.getDescription(),
                 space.getReadScope(),
+                space.getBoundProject() == null ? null : space.getBoundProject().getId(),
+                space.getBoundProject() == null ? "" : defaultString(space.getBoundProject().getName()),
+                normalizeMemberDefaultSource(space.getMemberDefaultSource(), space.getBoundProject()),
                 defaultString(memberRole(space.getId(), userContext.userId())),
                 directories.size(),
                 pageCount,
@@ -904,6 +939,9 @@ public class WikiSpaceService {
                 space.getName(),
                 space.getDescription(),
                 space.getReadScope(),
+                space.getBoundProject() == null ? null : space.getBoundProject().getId(),
+                space.getBoundProject() == null ? "" : defaultString(space.getBoundProject().getName()),
+                normalizeMemberDefaultSource(space.getMemberDefaultSource(), space.getBoundProject()),
                 defaultString(memberRole(space.getId(), userContext.userId())),
                 displayName(space.getCreatorUser()),
                 directories.size(),
@@ -944,12 +982,19 @@ public class WikiSpaceService {
     }
 
     private WikiSpacePageSummary toPageSummary(WikiPageV2Entity page, UserContext userContext) {
+        return toPageSummary(page, userContext, List.of());
+    }
+
+    private WikiSpacePageSummary toPageSummary(WikiPageV2Entity page,
+                                               UserContext userContext,
+                                               List<WikiSpacePageSummary> children) {
         return new WikiSpacePageSummary(
                 page.getId(),
                 page.getSpace().getId(),
                 page.getSpace().getName(),
                 page.getDirectory().getId(),
                 page.getDirectory().getName(),
+                page.getParentPage() == null ? null : page.getParentPage().getId(),
                 resolveEffectiveBoundProjectId(page.getDirectory()),
                 resolveEffectiveBoundProjectName(page.getDirectory()),
                 page.getTitle(),
@@ -958,7 +1003,8 @@ public class WikiSpaceService {
                 page.getSyncStatus(),
                 displayName(page.getAuthorUser()),
                 canEditSpace(page.getSpace(), userContext),
-                formatTime(page.getUpdatedAt())
+                formatTime(page.getUpdatedAt()),
+                children
         );
     }
 
@@ -969,6 +1015,7 @@ public class WikiSpaceService {
                 page.getSpace().getName(),
                 page.getDirectory().getId(),
                 page.getDirectory().getName(),
+                page.getParentPage() == null ? null : page.getParentPage().getId(),
                 resolveEffectiveBoundProjectId(page.getDirectory()),
                 resolveEffectiveBoundProjectName(page.getDirectory()),
                 page.getTitle(),
@@ -1024,6 +1071,16 @@ public class WikiSpaceService {
                 throw new IllegalArgumentException("父目录不能选择自己或自己的子目录");
             }
             cursor = cursor.getParentDirectory();
+        }
+    }
+
+    private void ensureNoPageCycle(WikiPageV2Entity page, WikiPageV2Entity parentPage) {
+        WikiPageV2Entity cursor = parentPage;
+        while (cursor != null) {
+            if (Objects.equals(cursor.getId(), page.getId())) {
+                throw new IllegalArgumentException("父页面不能选择自己或自己的子页面");
+            }
+            cursor = cursor.getParentPage();
         }
     }
 
@@ -1101,6 +1158,9 @@ public class WikiSpaceService {
         metadata.put("spaceId", page.getSpace().getId());
         metadata.put("pageId", page.getId());
         metadata.put("directoryId", page.getDirectory().getId());
+        if (page.getParentPage() != null) {
+            metadata.put("parentPageId", page.getParentPage().getId());
+        }
         metadata.put("slug", page.getSlug());
         metadata.put("title", page.getTitle());
         Long boundProjectId = resolveEffectiveBoundProjectId(page.getDirectory());
@@ -1128,7 +1188,9 @@ public class WikiSpaceService {
             }
             cursor = cursor.getParentDirectory();
         }
-        return null;
+        return directory != null && directory.getSpace() != null && directory.getSpace().getBoundProject() != null
+                ? directory.getSpace().getBoundProject().getId()
+                : null;
     }
 
     private String resolveEffectiveBoundProjectName(WikiDirectoryEntity directory) {
@@ -1139,7 +1201,9 @@ public class WikiSpaceService {
             }
             cursor = cursor.getParentDirectory();
         }
-        return "";
+        return directory != null && directory.getSpace() != null && directory.getSpace().getBoundProject() != null
+                ? defaultString(directory.getSpace().getBoundProject().getName())
+                : "";
     }
 
     private List<WikiSpacePageSummary> safeRelatedPages(WikiPageV2Entity page, int limit) {
@@ -1161,6 +1225,61 @@ public class WikiSpaceService {
             index++;
         }
         return candidate;
+    }
+
+    private WikiDirectoryEntity ensureDefaultDirectory(WikiSpaceEntity space, UserEntity creatorUser) {
+        List<WikiDirectoryEntity> existingDirectories = wikiDirectoryRepository.findAllBySpace_IdOrderBySortOrderAscIdAsc(space.getId());
+        if (!existingDirectories.isEmpty()) {
+            return existingDirectories.get(0);
+        }
+        WikiDirectoryEntity directory = new WikiDirectoryEntity();
+        directory.setSpace(space);
+        directory.setName("默认目录");
+        directory.setSlug(generateUniqueDirectorySlug(space.getId(), null, "默认目录", null));
+        directory.setContent("");
+        directory.setSortOrder(1);
+        directory.setCreatedByUser(creatorUser);
+        return wikiDirectoryRepository.save(directory);
+    }
+
+    private WikiPageV2Entity resolveParentPage(Long spaceId, WikiDirectoryEntity directory, Long parentPageId) {
+        if (parentPageId == null) {
+            return null;
+        }
+        WikiPageV2Entity parentPage = requirePage(spaceId, parentPageId);
+        if (!Objects.equals(parentPage.getDirectory().getId(), directory.getId())) {
+            throw new IllegalArgumentException("父页面必须与当前页面处于同一目录");
+        }
+        return parentPage;
+    }
+
+    private List<WikiSpacePageSummary> buildPageTree(List<WikiPageV2Entity> pages, UserContext userContext) {
+        if (pages.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, List<WikiPageV2Entity>> childrenByParentPage = new LinkedHashMap<>();
+        Set<Long> pageIds = new LinkedHashSet<>();
+        for (WikiPageV2Entity page : pages) {
+            pageIds.add(page.getId());
+        }
+        for (WikiPageV2Entity page : pages) {
+            Long parentPageId = page.getParentPage() == null ? null : page.getParentPage().getId();
+            if (parentPageId != null && !pageIds.contains(parentPageId)) {
+                parentPageId = null;
+            }
+            childrenByParentPage.computeIfAbsent(parentPageId, ignored -> new ArrayList<>()).add(page);
+        }
+        return buildPageNodes(null, childrenByParentPage, userContext);
+    }
+
+    private List<WikiSpacePageSummary> buildPageNodes(Long parentPageId,
+                                                      Map<Long, List<WikiPageV2Entity>> childrenByParentPage,
+                                                      UserContext userContext) {
+        return childrenByParentPage.getOrDefault(parentPageId, List.of()).stream()
+                .sorted(Comparator.comparing(WikiPageV2Entity::getUpdatedAt).reversed()
+                        .thenComparing(WikiPageV2Entity::getId, Comparator.reverseOrder()))
+                .map(page -> toPageSummary(page, userContext, buildPageNodes(page.getId(), childrenByParentPage, userContext)))
+                .toList();
     }
 
     private String generateUniquePageSlug(Long spaceId, String title, Long currentPageId) {
@@ -1208,6 +1327,111 @@ public class WikiSpaceService {
         return switch (value) {
             case ROLE_ADMIN, ROLE_EDITOR, ROLE_VIEWER -> value;
             default -> throw new IllegalArgumentException("不支持的空间成员角色: " + memberRole);
+        };
+    }
+
+    /**
+     * 规范化空间成员默认来源。
+     */
+    private String normalizeMemberDefaultSource(String memberDefaultSource, ProjectEntity boundProject) {
+        String value = defaultString(memberDefaultSource).toUpperCase(Locale.ROOT);
+        if (value.isBlank()) {
+            value = MEMBER_SOURCE_MANUAL;
+        }
+        return switch (value) {
+            case MEMBER_SOURCE_MANUAL -> MEMBER_SOURCE_MANUAL;
+            case MEMBER_SOURCE_PROJECT_MEMBERS -> {
+                if (boundProject == null) {
+                    throw new IllegalArgumentException("选择项目成员默认配置前，请先绑定项目");
+                }
+                yield MEMBER_SOURCE_PROJECT_MEMBERS;
+            }
+            default -> throw new IllegalArgumentException("不支持的空间成员默认来源: " + memberDefaultSource);
+        };
+    }
+
+    /**
+     * 按空间成员默认来源初始化或重置空间成员。
+     */
+    @Transactional
+    private void applyDefaultMembers(WikiSpaceEntity space,
+                                     UserEntity operator,
+                                     ProjectEntity boundProject,
+                                     String memberDefaultSource,
+                                     boolean initializeCreatorOnly) {
+        if (space == null || operator == null) {
+            return;
+        }
+        wikiSpaceMemberRepository.deleteAllBySpace_Id(space.getId());
+        if (MEMBER_SOURCE_PROJECT_MEMBERS.equals(memberDefaultSource) && boundProject != null) {
+            saveProjectDefaultMembers(space, boundProject, operator);
+            return;
+        }
+        if (initializeCreatorOnly) {
+            saveSpaceMember(space, operator, ROLE_ADMIN);
+            return;
+        }
+        saveSpaceMember(space, operator, ROLE_ADMIN);
+    }
+
+    /**
+     * 将项目负责人、创建人和成员带入空间成员，并保留当前操作者管理员权限。
+     */
+    private void saveProjectDefaultMembers(WikiSpaceEntity space, ProjectEntity project, UserEntity operator) {
+        LinkedHashMap<Long, UserEntity> userById = new LinkedHashMap<>();
+        LinkedHashMap<Long, String> roleByUserId = new LinkedHashMap<>();
+        addProjectDefaultMember(userById, roleByUserId, project.getOwnerUser(), ROLE_EDITOR);
+        addProjectDefaultMember(userById, roleByUserId, project.getCreatorUser(), ROLE_EDITOR);
+        for (UserEntity member : project.getMembers()) {
+            addProjectDefaultMember(userById, roleByUserId, member, ROLE_VIEWER);
+        }
+        addProjectDefaultMember(userById, roleByUserId, operator, ROLE_ADMIN);
+        for (Map.Entry<Long, UserEntity> entry : userById.entrySet()) {
+            saveSpaceMember(space, entry.getValue(), roleByUserId.get(entry.getKey()));
+        }
+    }
+
+    /**
+     * 记录项目默认成员，并按 ADMIN > EDITOR > VIEWER 的优先级合并角色。
+     */
+    private void addProjectDefaultMember(Map<Long, UserEntity> userById,
+                                         Map<Long, String> roleByUserId,
+                                         UserEntity user,
+                                         String memberRole) {
+        if (user == null || user.getId() == null) {
+            return;
+        }
+        userById.putIfAbsent(user.getId(), user);
+        roleByUserId.merge(user.getId(), normalizeMemberRole(memberRole), this::mergeMemberRole);
+    }
+
+    /**
+     * 保存单个空间成员，复用统一的成员角色规范。
+     */
+    private void saveSpaceMember(WikiSpaceEntity space, UserEntity user, String memberRole) {
+        WikiSpaceMemberEntity member = new WikiSpaceMemberEntity();
+        member.setSpace(space);
+        member.setUser(user);
+        member.setMemberRole(normalizeMemberRole(memberRole));
+        wikiSpaceMemberRepository.save(member);
+    }
+
+    /**
+     * 合并默认成员角色，优先保留权限更高的角色。
+     */
+    private String mergeMemberRole(String left, String right) {
+        return memberRolePriority(left) >= memberRolePriority(right) ? left : right;
+    }
+
+    /**
+     * 角色优先级用于解决同一用户在项目负责人、创建人和普通成员中的角色冲突。
+     */
+    private int memberRolePriority(String role) {
+        return switch (normalizeMemberRole(role)) {
+            case ROLE_ADMIN -> 3;
+            case ROLE_EDITOR -> 2;
+            case ROLE_VIEWER -> 1;
+            default -> 0;
         };
     }
 

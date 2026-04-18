@@ -36,6 +36,11 @@ public class WikiPageV2Entity {
     @JoinColumn(name = "directory_id", nullable = false)
     private WikiDirectoryEntity directory;
 
+    /** 父页面，用于构建页面树。 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_page_id")
+    private WikiPageV2Entity parentPage;
+
     /** 页面标题。 */
     @Column(nullable = false, length = 200)
     private String title = "";
@@ -126,6 +131,14 @@ public class WikiPageV2Entity {
 
     public void setDirectory(WikiDirectoryEntity directory) {
         this.directory = directory;
+    }
+
+    public WikiPageV2Entity getParentPage() {
+        return parentPage;
+    }
+
+    public void setParentPage(WikiPageV2Entity parentPage) {
+        this.parentPage = parentPage;
     }
 
     public String getTitle() {

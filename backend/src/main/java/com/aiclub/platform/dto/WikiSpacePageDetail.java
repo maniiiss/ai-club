@@ -11,6 +11,7 @@ public record WikiSpacePageDetail(
         String spaceName,
         Long directoryId,
         String directoryName,
+        Long parentPageId,
         Long boundProjectId,
         String boundProjectName,
         String title,

@@ -1,8 +1,11 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.HermesChatAuditEntity;
+import com.aiclub.platform.domain.model.DocumentAssetEntity;
+import com.aiclub.platform.domain.model.HermesConversationAttachmentEntity;
 import com.aiclub.platform.domain.model.HermesConversationSessionEntity;
 import com.aiclub.platform.domain.model.UserEntity;
+import com.aiclub.platform.dto.DocumentMarkdownResult;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.HermesConversationContextSnapshot;
 import com.aiclub.platform.dto.HermesConversationRequestSnapshot;
@@ -12,6 +15,7 @@ import com.aiclub.platform.dto.HermesGroundingState;
 import com.aiclub.platform.dto.HermesGroundingTarget;
 import com.aiclub.platform.dto.HermesReferenceSummary;
 import com.aiclub.platform.dto.request.HermesChatRequest;
+import com.aiclub.platform.dto.request.HermesMultipartChatCommand;
 import com.aiclub.platform.dto.request.HermesSelectionRequest;
 import com.aiclub.platform.dto.request.HermesSessionChatRequest;
 import com.aiclub.platform.repository.HermesChatAuditRepository;
@@ -22,6 +26,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -72,6 +77,9 @@ class HermesChatServiceTests {
 
     @Mock
     private HermesConversationSessionService hermesConversationSessionService;
+
+    @Mock
+    private HermesAttachmentService hermesAttachmentService;
 
     /**
      * 项目会话应生成带持久化 conversationId 的 scopeKey，并在回答后把 transcript 写回 Redis。
@@ -270,7 +278,165 @@ class HermesChatServiceTests {
         assertThat(assembledRequest.clientConversationId()).isEqualTo("conversation-1");
     }
 
+    /**
+     * 本轮携带附件提问时，应把转换后的 Markdown 正文注入 Hermes transcript，避免模型只看到文件名。
+     */
+    @Test
+    void shouldInjectPreparedAttachmentMarkdownIntoTranscript() {
+        HermesChatService hermesChatService = createService(hermesAttachmentService);
+
+        CurrentUserInfo currentUser = buildCurrentUser();
+        UserEntity userEntity = new UserEntity();
+        userEntity.setId(5L);
+        userEntity.setUsername("pm-user");
+        userEntity.setNickname("项目经理");
+        HermesConversationSessionEntity session = buildSessionEntity();
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "project",
+                12L,
+                null,
+                "项目经理",
+                List.of(),
+                List.of(),
+                "项目上下文"
+        );
+        HermesPromptBuilder.HermesPrompt prompt = new HermesPromptBuilder.HermesPrompt("system", "user");
+        DocumentAssetEntity asset = buildDocumentAsset(201L, "设计说明.docx");
+        HermesAttachmentService.PreparedAttachment attachment = new HermesAttachmentService.PreparedAttachment(
+                asset,
+                new DocumentMarkdownResult(
+                        201L,
+                        "设计说明.docx",
+                        "登录设计说明",
+                        "DOCX",
+                        "# 登录设计\n\n系统需要支持短信验证码与密码双因子登录。",
+                        false,
+                        List.of()
+                )
+        );
+
+        when(hermesConversationSessionService.requireOwnedSession(10L)).thenReturn(session);
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
+        when(hermesContextAssembler.assemble(any(), eq(currentUser))).thenReturn(context);
+        when(hermesConversationStateStore.load(any(), any())).thenReturn(Optional.empty());
+        when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(HermesGroundingState.empty());
+        when(hermesMcpSessionTokenService.issueToken(any(), any(), any())).thenReturn("session-token");
+        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token")))
+                .thenReturn(prompt);
+        when(hermesAttachmentService.uploadAndConvert(any())).thenReturn(List.of(attachment));
+        when(hermesAttachmentService.buildPreparedAttachmentContextMarkdown(List.of(attachment))).thenReturn("""
+                ## 本轮上传附件
+                ### 附件 1
+                以下是从该附件提取出的 Markdown 正文，请优先基于这些内容回答：
+                ```markdown
+                # 登录设计
+
+                系统需要支持短信验证码与密码双因子登录。
+                ```
+                """.trim());
+        when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
+        when(hermesGatewayService.createChatCompletion(eq(prompt), any()))
+                .thenReturn(new HermesGatewayService.HermesGatewayResult("resp-4", "这份文档主要描述登录设计"));
+        when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        hermesChatService.chat(10L, new HermesMultipartChatCommand(
+                "解释一下这份文档的内容",
+                null,
+                null,
+                List.of(new MockMultipartFile(
+                        "files",
+                        "设计说明.docx",
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "fake".getBytes()
+                ))
+        ));
+
+        ArgumentCaptor<HermesConversationState> stateCaptor = ArgumentCaptor.forClass(HermesConversationState.class);
+        verify(hermesConversationStateStore, atLeast(2)).save(stateCaptor.capture());
+        HermesConversationState finalState = stateCaptor.getAllValues().get(stateCaptor.getAllValues().size() - 1);
+
+        assertThat(finalState.transcript().get(0).content()).contains("解释一下这份文档的内容");
+        assertThat(finalState.transcript().get(0).content()).contains("以下是从该附件提取出的 Markdown 正文");
+        assertThat(finalState.transcript().get(0).content()).contains("# 登录设计");
+        assertThat(finalState.transcript().get(0).content()).contains("短信验证码与密码双因子登录");
+        verify(hermesConversationSessionService).recordSuccess(eq(session), any(HermesChatRequest.class), eq(finalState), eq("这份文档主要描述登录设计"), any(), eq(List.of(attachment)));
+    }
+
+    /**
+     * 无新附件追问时，应继续沿用最近一轮附件的 Markdown 内容，保证“继续解释文档”能够成立。
+     */
+    @Test
+    void shouldReuseRecentAttachmentMarkdownForFollowUpQuestion() {
+        HermesChatService hermesChatService = createService(hermesAttachmentService);
+
+        CurrentUserInfo currentUser = buildCurrentUser();
+        UserEntity userEntity = new UserEntity();
+        userEntity.setId(5L);
+        userEntity.setUsername("pm-user");
+        userEntity.setNickname("项目经理");
+        HermesConversationSessionEntity session = buildSessionEntity();
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "project",
+                12L,
+                null,
+                "项目经理",
+                List.of(),
+                List.of(),
+                "项目上下文"
+        );
+        HermesPromptBuilder.HermesPrompt prompt = new HermesPromptBuilder.HermesPrompt("system", "user");
+        HermesConversationAttachmentEntity recentAttachment = new HermesConversationAttachmentEntity();
+        recentAttachment.setDocumentAsset(buildDocumentAsset(202L, "方案.pdf"));
+        recentAttachment.setSuggestedTitle("认证升级方案");
+        recentAttachment.setMarkdown("## 方案摘要\n\n需要新增统一认证中台，并兼容旧版登录流程。");
+        recentAttachment.setTruncated(false);
+        recentAttachment.setWarningsJson("[]");
+
+        when(hermesConversationSessionService.requireOwnedSession(10L)).thenReturn(session);
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
+        when(hermesContextAssembler.assemble(any(), eq(currentUser))).thenReturn(context);
+        when(hermesConversationStateStore.load(any(), any())).thenReturn(Optional.empty());
+        when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(HermesGroundingState.empty());
+        when(hermesMcpSessionTokenService.issueToken(any(), any(), any())).thenReturn("session-token");
+        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token")))
+                .thenReturn(prompt);
+        when(hermesAttachmentService.findRecentAttachments(10L)).thenReturn(List.of(recentAttachment));
+        when(hermesAttachmentService.buildAttachmentContextMarkdown(List.of(recentAttachment))).thenReturn("""
+                ## 最近一轮可用附件
+                ### 附件 1
+                以下是从该附件提取出的 Markdown 正文，请优先基于这些内容回答：
+                ```markdown
+                ## 方案摘要
+
+                需要新增统一认证中台，并兼容旧版登录流程。
+                ```
+                """.trim());
+        when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
+        when(hermesGatewayService.createChatCompletion(eq(prompt), any()))
+                .thenReturn(new HermesGatewayService.HermesGatewayResult("resp-5", "我继续基于上一个附件做解释"));
+        when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        hermesChatService.chat(10L, new HermesSessionChatRequest("继续解释这份文档", null, null));
+
+        ArgumentCaptor<HermesConversationState> stateCaptor = ArgumentCaptor.forClass(HermesConversationState.class);
+        verify(hermesConversationStateStore, atLeast(2)).save(stateCaptor.capture());
+        HermesConversationState finalState = stateCaptor.getAllValues().get(stateCaptor.getAllValues().size() - 1);
+
+        assertThat(finalState.transcript().get(0).content()).contains("继续解释这份文档");
+        assertThat(finalState.transcript().get(0).content()).contains("最近一轮可用附件");
+        assertThat(finalState.transcript().get(0).content()).contains("## 方案摘要");
+        assertThat(finalState.transcript().get(0).content()).contains("统一认证中台");
+    }
+
     private HermesChatService createService() {
+        return createService(null);
+    }
+
+    private HermesChatService createService(HermesAttachmentService attachmentService) {
         return new HermesChatService(
                 authService,
                 userRepository,
@@ -292,6 +458,7 @@ class HermesChatServiceTests {
                 hermesMcpSessionTokenService,
                 hermesChatAuditRepository,
                 hermesConversationSessionService,
+                attachmentService,
                 new ObjectMapper()
         );
     }
@@ -322,5 +489,15 @@ class HermesChatServiceTests {
                 List.of("项目经理"),
                 List.of("hermes:chat", "project:view", "task:view", "task:manage")
         );
+    }
+
+    private DocumentAssetEntity buildDocumentAsset(Long assetId, String fileName) {
+        DocumentAssetEntity asset = new DocumentAssetEntity();
+        asset.setId(assetId);
+        asset.setFileName(fileName);
+        asset.setContentType("application/octet-stream");
+        asset.setFileSize(2048L);
+        asset.setSourceFormat(fileName.endsWith(".pdf") ? "PDF" : "DOCX");
+        return asset;
     }
 }

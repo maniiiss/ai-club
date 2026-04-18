@@ -58,7 +58,7 @@
       </div>
     </section>
 
-    <section class="wiki-space-grid" v-loading="loading">
+    <section class="wiki-space-grid" :class="{ 'wiki-space-grid-empty': !loading && !spaces.length }" v-loading="loading">
       <article v-for="space in spaces" :key="space.id" class="wiki-space-card">
         <div class="wiki-space-card-head">
           <div>
@@ -70,6 +70,8 @@
 
         <div class="wiki-space-meta">
           <span>我的角色：{{ roleLabel(space.currentUserRole) || '访客' }}</span>
+          <span>绑定项目：{{ space.boundProjectName || '未绑定' }}</span>
+          <span>成员默认：{{ memberDefaultSourceLabel(space.memberDefaultSource) }}</span>
           <span>目录：{{ space.directoryCount }}</span>
           <span>页面：{{ space.pageCount }}</span>
           <span>项目关联：{{ space.boundProjectCount }}</span>
@@ -85,7 +87,7 @@
       <el-empty v-if="!loading && !spaces.length" description="当前没有可访问的 Wiki 空间" />
     </section>
 
-    <el-dialog v-model="spaceDialogVisible" :title="editingSpace ? '编辑 Wiki 空间' : '创建 Wiki 空间'" width="640px" destroy-on-close>
+    <el-dialog v-model="spaceDialogVisible" :title="editingSpace ? '编辑 Wiki 空间' : '创建 Wiki 空间'" width="720px" destroy-on-close>
       <el-form ref="spaceFormRef" :model="spaceForm" :rules="spaceRules" label-position="top">
         <el-form-item label="空间名称" prop="name">
           <el-input v-model="spaceForm.name" maxlength="120" show-word-limit />
@@ -93,11 +95,23 @@
         <el-form-item label="空间说明">
           <el-input v-model="spaceForm.description" type="textarea" :rows="4" maxlength="500" show-word-limit />
         </el-form-item>
+        <el-form-item label="绑定项目">
+          <el-select v-model="spaceForm.boundProjectId" clearable filterable placeholder="不绑定项目" style="width: 100%">
+            <el-option v-for="item in projectOptions" :key="item.id" :label="item.name" :value="item.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="读取范围">
           <el-select v-model="spaceForm.readScope" style="width: 100%">
             <el-option label="仅成员可读" value="MEMBERS_ONLY" />
             <el-option label="所有登录用户可读" value="ALL_LOGGED_IN" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="成员默认配置">
+          <el-radio-group v-model="spaceForm.memberDefaultSource">
+            <el-radio value="MANUAL">手动配置成员</el-radio>
+            <el-radio value="PROJECT_MEMBERS" :disabled="!spaceForm.boundProjectId">使用项目成员作为默认成员</el-radio>
+          </el-radio-group>
+          <div class="wiki-space-form-hint">开启后会自动带入项目负责人、项目创建人和项目成员，当前操作者会保留管理员权限。</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -129,6 +143,8 @@ interface WikiSpaceForm {
   name: string
   description: string
   readScope: 'MEMBERS_ONLY' | 'ALL_LOGGED_IN'
+  boundProjectId: number | null
+  memberDefaultSource: 'MANUAL' | 'PROJECT_MEMBERS'
 }
 
 const route = useRoute()
@@ -154,7 +170,9 @@ const filters = reactive({
 const spaceForm = reactive<WikiSpaceForm>({
   name: '',
   description: '',
-  readScope: 'MEMBERS_ONLY'
+  readScope: 'MEMBERS_ONLY',
+  boundProjectId: null,
+  memberDefaultSource: 'MANUAL'
 })
 
 const spaceRules: FormRules<WikiSpaceForm> = {
@@ -169,6 +187,15 @@ watch(
     void loadSpaces()
   },
   { immediate: true }
+)
+
+watch(
+  () => spaceForm.boundProjectId,
+  (value) => {
+    if (!value && spaceForm.memberDefaultSource === 'PROJECT_MEMBERS') {
+      spaceForm.memberDefaultSource = 'MANUAL'
+    }
+  }
 )
 
 onMounted(async () => {
@@ -229,6 +256,8 @@ function openCreateSpaceDialog() {
   spaceForm.name = ''
   spaceForm.description = ''
   spaceForm.readScope = 'MEMBERS_ONLY'
+  spaceForm.boundProjectId = null
+  spaceForm.memberDefaultSource = 'MANUAL'
   spaceDialogVisible.value = true
 }
 
@@ -237,6 +266,8 @@ function openEditSpaceDialog(space: WikiSpaceItem) {
   spaceForm.name = space.name
   spaceForm.description = space.description
   spaceForm.readScope = space.readScope as WikiSpaceForm['readScope']
+  spaceForm.boundProjectId = space.boundProjectId ?? null
+  spaceForm.memberDefaultSource = (space.memberDefaultSource as WikiSpaceForm['memberDefaultSource']) || 'MANUAL'
   spaceDialogVisible.value = true
 }
 
@@ -248,7 +279,9 @@ async function handleSubmitSpace() {
     const payload: WikiSpacePayload = {
       name: spaceForm.name,
       description: spaceForm.description,
-      readScope: spaceForm.readScope
+      readScope: spaceForm.readScope,
+      boundProjectId: spaceForm.boundProjectId,
+      memberDefaultSource: spaceForm.memberDefaultSource
     }
     if (editingSpace.value) {
       await updateWikiSpace(editingSpace.value.id, payload)
@@ -288,6 +321,10 @@ function roleLabel(role: string) {
 
 function readScopeLabel(scope: string) {
   return scope === 'ALL_LOGGED_IN' ? '全员可读' : '仅成员可读'
+}
+
+function memberDefaultSourceLabel(source: string) {
+  return source === 'PROJECT_MEMBERS' ? '项目成员' : '手动配置'
 }
 </script>
 
@@ -342,6 +379,13 @@ function readScopeLabel(scope: string) {
   gap: 14px;
 }
 
+.wiki-space-grid-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 300px);
+}
+
 .wiki-space-card {
   padding: 18px;
 }
@@ -373,6 +417,13 @@ function readScopeLabel(scope: string) {
   color: #475569;
   font-size: 13px;
   margin: 14px 0 18px;
+}
+
+.wiki-space-form-hint {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .wiki-space-actions {

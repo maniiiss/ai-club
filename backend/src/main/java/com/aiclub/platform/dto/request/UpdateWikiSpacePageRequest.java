@@ -10,6 +10,8 @@ import jakarta.validation.constraints.Size;
 public record UpdateWikiSpacePageRequest(
         @NotNull(message = "目录不能为空")
         Long directoryId,
+        /** 父页面 ID，空表示移动为目录下一级页面。 */
+        Long parentPageId,
         @NotBlank(message = "页面标题不能为空")
         @Size(max = 200, message = "页面标题长度不能超过200")
         String title,

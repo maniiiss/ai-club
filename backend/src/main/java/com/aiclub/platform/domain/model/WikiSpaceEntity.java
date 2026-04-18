@@ -38,6 +38,15 @@ public class WikiSpaceEntity {
     @Column(name = "read_scope", nullable = false, length = 20)
     private String readScope = "MEMBERS_ONLY";
 
+    /** 空间级默认绑定项目，目录未单独指定时可向下继承。 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "bound_project_id")
+    private ProjectEntity boundProject;
+
+    /** 空间成员默认来源：MANUAL 或 PROJECT_MEMBERS。 */
+    @Column(name = "member_default_source", nullable = false, length = 30)
+    private String memberDefaultSource = "MANUAL";
+
     /** 空间创建者。 */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "creator_user_id")
@@ -103,6 +112,22 @@ public class WikiSpaceEntity {
 
     public void setReadScope(String readScope) {
         this.readScope = readScope;
+    }
+
+    public ProjectEntity getBoundProject() {
+        return boundProject;
+    }
+
+    public void setBoundProject(ProjectEntity boundProject) {
+        this.boundProject = boundProject;
+    }
+
+    public String getMemberDefaultSource() {
+        return memberDefaultSource;
+    }
+
+    public void setMemberDefaultSource(String memberDefaultSource) {
+        this.memberDefaultSource = memberDefaultSource;
     }
 
     public UserEntity getCreatorUser() {

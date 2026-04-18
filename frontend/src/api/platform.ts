@@ -145,6 +145,8 @@ export interface WikiSpacePayload {
   name: string
   description: string
   readScope: 'MEMBERS_ONLY' | 'ALL_LOGGED_IN'
+  boundProjectId?: number | null
+  memberDefaultSource?: 'MANUAL' | 'PROJECT_MEMBERS'
 }
 
 export interface WikiSpaceMemberPayloadItem {
@@ -161,6 +163,7 @@ export interface WikiDirectoryPayload {
 
 export interface WikiSpacePagePayload {
   directoryId: number
+  parentPageId?: number | null
   title: string
   content: string
   changeSummary?: string
@@ -169,6 +172,7 @@ export interface WikiSpacePagePayload {
 export interface WikiImportPagePayload {
   assetId: number
   directoryId: number
+  parentPageId?: number | null
   title: string
 }
 

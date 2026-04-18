@@ -13,6 +13,9 @@ public record CreateWikiSpaceRequest(
         @Size(max = 500, message = "Wiki 空间说明长度不能超过500")
         String description,
         @Size(max = 20, message = "读取范围长度不能超过20")
-        String readScope
+        String readScope,
+        Long boundProjectId,
+        @Size(max = 30, message = "成员默认来源长度不能超过30")
+        String memberDefaultSource
 ) {
 }

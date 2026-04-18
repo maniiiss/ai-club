@@ -71,7 +71,7 @@
       </aside>
 
       <section class="hermes-chat-shell">
-        <div ref="messageScrollRef" class="hermes-body" @click="handleThinkSummaryClick">
+        <div ref="messageScrollRef" class="hermes-body" @click="handleThinkSummaryClick" @scroll="handleMessageScroll">
           <section v-if="!currentSessionDetail" class="hermes-empty-state">
             <div class="hermes-empty-kicker">云端会话</div>
             <div class="hermes-empty-title">选择历史会话，或从当前页面新建</div>
@@ -181,13 +181,13 @@
           <div class="hermes-attachment-bar">
             <input ref="fileInputRef" type="file" multiple accept=".pdf,.docx,.pptx,.xlsx" style="display: none" @change="handleFileInputChange" />
             <button class="hermes-inline-button secondary" type="button" :disabled="footerDisabled" @click="openFilePicker">添加附件</button>
-            <span class="hermes-footer-tip">每次最多 3 个文档</span>
+            <span class="hermes-attachment-tip">每次最多 3 个文档</span>
           </div>
-          <div v-if="pendingFiles.length" class="hermes-chip-list">
-            <button v-for="file in pendingFiles" :key="`${file.name}-${file.size}`" class="hermes-reference-item" type="button" @click="removePendingFile(file)">
-              <span>{{ file.name }}</span>
-              <strong>移除</strong>
-            </button>
+          <div v-if="pendingFiles.length" class="hermes-pending-file-list">
+            <div v-for="file in pendingFiles" :key="`${file.name}-${file.size}`" class="hermes-pending-file-chip">
+              <span class="hermes-pending-file-name">{{ file.name }}</span>
+              <button class="hermes-pending-file-remove-button" type="button" :disabled="footerDisabled" @click="removePendingFile(file)">移除</button>
+            </div>
           </div>
           <el-input v-model="draftQuestion" type="textarea" :rows="3" resize="none" :disabled="footerDisabled" :placeholder="footerPlaceholder" @keydown.enter.exact.prevent="handleSubmit()" />
           <div class="hermes-footer-actions">
@@ -258,6 +258,13 @@ const HERMES_SELECTED_SESSION_STORAGE_KEY = 'git-ai-club:hermes:selected-session
 const SESSION_PAGE_SIZE = 20
 const isDebugMode = ref(false)
 const currentStreamStatus = ref<HermesStreamStatusEvent | null>(null)
+const isPinnedToBottom = ref(true)
+const pendingStreamDeltaMap = new Map<string, string>()
+const STREAM_DRAIN_INTERVAL_MS = 20
+const STREAM_DRAIN_CHARS_PER_TICK = 18
+const STREAM_PUNCTUATION_PAUSE_MS = 36
+const STREAM_LINE_BREAK_PAUSE_MS = 52
+let pendingStreamDrainTimer: ReturnType<typeof setTimeout> | null = null
 
 const displayPrompts = computed(() => currentSuggestions.value.length ? currentSuggestions.value : props.fallbackPrompts || [])
 const wikiReferences = computed(() => currentReferences.value.filter((item) => item.type === 'WIKI_PAGE'))
@@ -296,7 +303,12 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  flushPendingStreamDeltas(true)
   if (typeof window !== 'undefined') {
+    if (pendingStreamDrainTimer != null) {
+      window.clearTimeout(pendingStreamDrainTimer)
+      pendingStreamDrainTimer = null
+    }
     window.removeEventListener('resize', syncViewportMode)
   }
   activeStreamAbort.value?.()
@@ -577,6 +589,15 @@ const updateMessage = (messageId: string, updater: (current: HermesMessageItem) 
   void restoreThinkBlocksAndScroll(shouldScroll)
 }
 
+/**
+ * 把网络返回的流式分片先放进缓冲区，再按统一节奏吐字，体感会更接近 ChatGPT。
+ */
+const queueStreamDelta = (messageId: string, delta: string) => {
+  if (!delta) return
+  pendingStreamDeltaMap.set(messageId, `${pendingStreamDeltaMap.get(messageId) || ''}${delta}`)
+  ensurePendingStreamDrainLoop()
+}
+
 const buildPayload = (question: string, selection?: HermesSelectionPayload | null): HermesSessionChatRequestPayload => ({ question, selection: selection || null, debug: isDebugMode.value })
 
 /**
@@ -620,6 +641,7 @@ const submitConversation = async (question: string, userContent: string, selecti
     { id: userMessageId, role: 'user', content: normalizedUserContent, status: 'done', attachments: pendingFiles.value.map(toAttachmentSummary) },
     { id: assistantMessageId, role: 'assistant', content: '', status: 'streaming', attachments: [] }
   ]
+  isPinnedToBottom.value = true
   draftQuestion.value = ''
   void restoreThinkBlocksAndScroll()
 
@@ -629,8 +651,9 @@ const submitConversation = async (question: string, userContent: string, selecti
       ? await streamHermesSessionChatWithFiles(writableSessionId, payload, pendingFiles.value, {
           onStatus: (streamPayload: HermesStreamStatusEvent) => { currentStreamStatus.value = streamPayload },
           onMeta: (streamPayload: HermesStreamMetaEvent) => { applyStreamDisplayState(streamPayload.roleName, streamPayload.references, streamPayload.suggestions, streamPayload.actions, streamPayload.selectionCards, streamPayload.debug) },
-          onDelta: (streamPayload: HermesStreamDeltaEvent) => updateMessage(assistantMessageId, (current) => ({ ...current, content: `${current.content}${streamPayload.content || ''}`, status: 'streaming' })),
+          onDelta: (streamPayload: HermesStreamDeltaEvent) => queueStreamDelta(assistantMessageId, streamPayload.content || ''),
           onDone: (streamPayload: HermesStreamDoneEvent) => {
+            flushPendingStreamDeltas(true)
             applyStreamDisplayState(streamPayload.roleName, streamPayload.references, streamPayload.suggestions, streamPayload.actions, streamPayload.selectionCards, streamPayload.debug)
             const shouldPreferTerminalContent = Boolean(streamPayload.actions?.length || streamPayload.selectionCards?.length)
         updateMessage(assistantMessageId, (current) => ({ ...current, content: shouldPreferTerminalContent ? (streamPayload.content || current.content) : resolveAssistantFinalContent(current.content, streamPayload.content), status: 'done', attachments: current.attachments || [] }))
@@ -639,6 +662,7 @@ const submitConversation = async (question: string, userContent: string, selecti
             void refreshCurrentSessionFromCloud()
           },
           onError: (streamPayload: HermesStreamErrorEvent) => {
+            flushPendingStreamDeltas(true)
             updateMessage(assistantMessageId, (current) => ({ ...current, content: streamPayload.message || current.content || 'Hermes 助手暂时不可用', status: 'error', attachments: current.attachments || [] }))
             finishStream()
             ElMessage.error(streamPayload.message || 'Hermes 助手暂时不可用')
@@ -648,8 +672,9 @@ const submitConversation = async (question: string, userContent: string, selecti
       : await streamHermesSessionChat(writableSessionId, payload, {
       onStatus: (payload: HermesStreamStatusEvent) => { currentStreamStatus.value = payload },
       onMeta: (payload: HermesStreamMetaEvent) => { applyStreamDisplayState(payload.roleName, payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug) },
-      onDelta: (payload: HermesStreamDeltaEvent) => updateMessage(assistantMessageId, (current) => ({ ...current, content: `${current.content}${payload.content || ''}`, status: 'streaming', attachments: current.attachments || [] })),
+      onDelta: (payload: HermesStreamDeltaEvent) => queueStreamDelta(assistantMessageId, payload.content || ''),
       onDone: (payload: HermesStreamDoneEvent) => {
+        flushPendingStreamDeltas(true)
         applyStreamDisplayState(payload.roleName, payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug)
         const shouldPreferTerminalContent = Boolean(payload.actions?.length || payload.selectionCards?.length)
         updateMessage(assistantMessageId, (current) => ({ ...current, content: shouldPreferTerminalContent ? (payload.content || current.content) : resolveAssistantFinalContent(current.content, payload.content), status: 'done', attachments: current.attachments || [] }))
@@ -658,6 +683,7 @@ const submitConversation = async (question: string, userContent: string, selecti
         void refreshCurrentSessionFromCloud()
       },
       onError: (payload: HermesStreamErrorEvent) => {
+        flushPendingStreamDeltas(true)
         updateMessage(assistantMessageId, (current) => ({ ...current, content: payload.message || current.content || 'Hermes 助手暂时不可用', status: 'error', attachments: current.attachments || [] }))
         finishStream()
         ElMessage.error(payload.message || 'Hermes 助手暂时不可用')
@@ -722,6 +748,7 @@ function applyStreamDisplayState(roleName: string, references: HermesReferenceIt
 }
 
 function finishStream() {
+  flushPendingStreamDeltas(true)
   currentStreamStatus.value = null
   sending.value = false
   activeStreamAbort.value = null
@@ -735,10 +762,92 @@ function handleThinkSummaryClick(event: Event) {
   }
 }
 
+function handleMessageScroll() {
+  isPinnedToBottom.value = resolveRemainingScrollDistance() <= 72
+}
+
 function shouldAutoScrollWithStream() {
   if (!messageScrollRef.value) return true
-  const remainingDistance = messageScrollRef.value.scrollHeight - messageScrollRef.value.scrollTop - messageScrollRef.value.clientHeight
-  return remainingDistance <= 48 && !Array.from(thinkBlockOpenState.values()).some(Boolean)
+  return isPinnedToBottom.value
+}
+
+function resolveRemainingScrollDistance() {
+  if (!messageScrollRef.value) return 0
+  return messageScrollRef.value.scrollHeight - messageScrollRef.value.scrollTop - messageScrollRef.value.clientHeight
+}
+
+function schedulePendingStreamDrain(delay = STREAM_DRAIN_INTERVAL_MS) {
+  if (!pendingStreamDeltaMap.size || pendingStreamDrainTimer != null) return
+  pendingStreamDrainTimer = setTimeout(() => {
+    pendingStreamDrainTimer = null
+    const extraDelay = flushPendingStreamDeltas()
+    if (!pendingStreamDeltaMap.size) return
+    schedulePendingStreamDrain(extraDelay > 0 ? extraDelay : STREAM_DRAIN_INTERVAL_MS)
+  }, delay)
+}
+
+function ensurePendingStreamDrainLoop() {
+  schedulePendingStreamDrain()
+}
+
+/**
+ * 根据换行、标点和长度做平滑分段，让流式输出既连贯又不会一坨一坨地跳。
+ */
+function takeStreamDisplayChunk(content: string) {
+  if (!content) return ''
+  const newlineIndex = content.indexOf('\n')
+  if (newlineIndex >= 0 && newlineIndex < 10) {
+    return content.slice(0, newlineIndex + 1)
+  }
+  const punctuationMatch = content.match(/^.{1,24}?[，。！？；：,.!?;:]/u)
+  if (punctuationMatch?.[0]) {
+    return punctuationMatch[0]
+  }
+  return content.slice(0, Math.min(content.length, STREAM_DRAIN_CHARS_PER_TICK))
+}
+
+function resolveChunkPause(chunk: string) {
+  if (!chunk) return 0
+  if (/\n\s*$/.test(chunk)) return STREAM_LINE_BREAK_PAUSE_MS
+  if (/[，。！？；：,.!?;:]\s*$/u.test(chunk)) return STREAM_PUNCTUATION_PAUSE_MS
+  return 0
+}
+
+function flushPendingStreamDeltas(flushAll = false) {
+  if (pendingStreamDrainTimer != null) {
+    clearTimeout(pendingStreamDrainTimer)
+    pendingStreamDrainTimer = null
+  }
+  if (!pendingStreamDeltaMap.size) return 0
+  const shouldScroll = shouldAutoScrollWithStream()
+  const pendingChunks = new Map<string, string>()
+  let extraDelay = 0
+  pendingStreamDeltaMap.forEach((content, messageId) => {
+    if (!content) return
+    if (flushAll) {
+      pendingChunks.set(messageId, content)
+      return
+    }
+    const chunk = takeStreamDisplayChunk(content)
+    if (!chunk) return
+    pendingChunks.set(messageId, chunk)
+    extraDelay = Math.max(extraDelay, resolveChunkPause(chunk))
+    const rest = content.slice(chunk.length)
+    if (rest) {
+      pendingStreamDeltaMap.set(messageId, rest)
+    } else {
+      pendingStreamDeltaMap.delete(messageId)
+    }
+  })
+  if (flushAll) pendingStreamDeltaMap.clear()
+  if (!pendingChunks.size) return 0
+  currentMessages.value = currentMessages.value.map((item) => {
+    const pendingChunk = pendingChunks.get(item.id)
+    if (!pendingChunk) return item
+    return { ...item, content: `${item.content}${pendingChunk}`, status: 'streaming', attachments: item.attachments || [] }
+  })
+  void restoreThinkBlocksAndScroll(shouldScroll)
+  return extraDelay
 }
 
 async function restoreThinkBlocksAndScroll(shouldScroll = true) {
@@ -748,7 +857,10 @@ async function restoreThinkBlocksAndScroll(shouldScroll = true) {
       const thinkKey = thinkBlock.dataset.thinkKey
       if (thinkKey && thinkBlockOpenState.has(thinkKey)) thinkBlock.open = Boolean(thinkBlockOpenState.get(thinkKey))
     })
-    if (shouldScroll) messageScrollRef.value.scrollTop = messageScrollRef.value.scrollHeight
+    if (shouldScroll) {
+      messageScrollRef.value.scrollTop = messageScrollRef.value.scrollHeight
+      isPinnedToBottom.value = true
+    }
   }
 }
 
@@ -1134,6 +1246,64 @@ function persistSelectedSessionId(sessionId: number | null) {
   gap: 8px;
 }
 
+.hermes-attachment-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.hermes-attachment-tip {
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.hermes-pending-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hermes-pending-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 10px 8px 12px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #334155;
+}
+
+.hermes-pending-file-name {
+  overflow: hidden;
+  max-width: 220px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hermes-pending-file-remove-button {
+  flex: 0 0 auto;
+  border: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 2px 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.hermes-pending-file-remove-button:hover {
+  color: #64748b;
+}
+
 .hermes-ghost-button.primary,
 .hermes-inline-button {
   background: #0f766e;
@@ -1218,6 +1388,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   border-radius: 18px;
   background: #fff;
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
 }
 
 .hermes-message-row.user .hermes-message-bubble {
@@ -1227,6 +1398,7 @@ function persistSelectedSessionId(sessionId: number | null) {
 
 .hermes-message-bubble.streaming {
   border: 1px dashed rgba(var(--app-primary-rgb), 0.26);
+  box-shadow: 0 10px 22px rgba(var(--app-primary-rgb), 0.08);
 }
 
 .hermes-message-bubble.error {

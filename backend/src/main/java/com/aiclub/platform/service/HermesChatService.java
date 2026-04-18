@@ -143,7 +143,8 @@ public class HermesChatService {
         HermesChatRequest effectiveRequest = resolveEffectiveRequest(boundRequest, session);
         String scopeKey = resolveScopeKey(currentUser.id(), context.projectId(), effectiveRequest.clientConversationId());
         HermesChatAuditEntity audit = createAudit(currentUser, effectiveRequest, context, scopeKey);
-        PreparedConversation preparedConversation = prepareConversation(currentUser, context, effectiveRequest, scopeKey);
+        String attachmentContextMarkdown = resolveAttachmentContextMarkdown(session, attachments);
+        PreparedConversation preparedConversation = prepareConversation(currentUser, context, effectiveRequest, scopeKey, attachmentContextMarkdown);
 
         return outputStream -> {
             try {
@@ -226,7 +227,8 @@ public class HermesChatService {
         HermesChatRequest effectiveRequest = resolveEffectiveRequest(boundRequest, session);
         String scopeKey = resolveScopeKey(currentUser.id(), context.projectId(), effectiveRequest.clientConversationId());
         HermesChatAuditEntity audit = createAudit(currentUser, effectiveRequest, context, scopeKey);
-        PreparedConversation preparedConversation = prepareConversation(currentUser, context, effectiveRequest, scopeKey);
+        String attachmentContextMarkdown = resolveAttachmentContextMarkdown(session, attachments);
+        PreparedConversation preparedConversation = prepareConversation(currentUser, context, effectiveRequest, scopeKey, attachmentContextMarkdown);
 
         try {
             HermesGatewayService.HermesGatewayResult gatewayResult = hermesGatewayService.createChatCompletion(
@@ -315,7 +317,8 @@ public class HermesChatService {
     private PreparedConversation prepareConversation(CurrentUserInfo currentUser,
                                                      HermesContextAssembler.HermesConversationContext context,
                                                      HermesChatRequest request,
-                                                     String scopeKey) {
+                                                     String scopeKey,
+                                                     String attachmentContextMarkdown) {
         HermesConversationState existingState = hermesConversationStateStore.load(scopeKey, request.clientConversationId())
                 .orElse(null);
         HermesGroundingState groundingState = hermesToolOrchestrator.seedGroundingState(
@@ -343,7 +346,7 @@ public class HermesChatService {
         );
         hermesConversationStateStore.save(preparedState);
 
-        HermesConversationTurn currentUserTurn = buildCurrentUserTurn(request, groundingState);
+        HermesConversationTurn currentUserTurn = buildCurrentUserTurn(request, groundingState, attachmentContextMarkdown);
         HermesPromptBuilder.HermesPrompt prompt = hermesPromptBuilder.buildConversationPrompt(
                 currentUser,
                 context,
@@ -409,30 +412,62 @@ public class HermesChatService {
      * 构造当前轮次发送给 Hermes 的用户消息。
      * 当本轮来自候选卡片选择时，使用结构化恢复消息替代原始问题，帮助模型理解“你选的是哪个对象”。
      */
-    private HermesConversationTurn buildCurrentUserTurn(HermesChatRequest request, HermesGroundingState groundingState) {
+    private HermesConversationTurn buildCurrentUserTurn(HermesChatRequest request,
+                                                        HermesGroundingState groundingState,
+                                                        String attachmentContextMarkdown) {
+        String content;
         if (request.selection() == null) {
-            return HermesConversationTurn.user(request.question());
+            content = defaultString(request.question());
+        } else {
+            HermesGroundingTarget selectedTarget = groundingState == null ? null : groundingState.boundSlot(request.selection().slot());
+            if (selectedTarget == null) {
+                content = defaultString(request.question());
+            } else {
+                content = """
+                        用户刚刚在平台候选卡片中完成了对象确认。
+                        已确认槽位：%s
+                        已确认对象类型：%s
+                        已确认对象标题：%s
+                        已确认对象 ID：%s
+                        请基于这个已确认对象继续处理原始问题：
+                        %s
+                        """.formatted(
+                        defaultString(request.selection().slot()),
+                        defaultString(selectedTarget.entityType()),
+                        defaultString(selectedTarget.title()),
+                        selectedTarget.entityId() == null ? "" : selectedTarget.entityId(),
+                        defaultString(request.question())
+                );
+            }
         }
-        HermesGroundingTarget selectedTarget = groundingState == null ? null : groundingState.boundSlot(request.selection().slot());
-        if (selectedTarget == null) {
-            return HermesConversationTurn.user(request.question());
+        if (hasText(attachmentContextMarkdown)) {
+            content = """
+                    %s
+
+                    以下是当前问题应重点参考的文档提取结果。
+                    如果用户是在询问“解释文档内容”“总结附件重点”一类问题，请优先依据下面这些 Markdown 正文回答，而不是只根据文件名猜测：
+
+                    %s
+                    """.formatted(content, attachmentContextMarkdown).trim();
         }
-        String content = """
-                用户刚刚在平台候选卡片中完成了对象确认。
-                已确认槽位：%s
-                已确认对象类型：%s
-                已确认对象标题：%s
-                已确认对象 ID：%s
-                请基于这个已确认对象继续处理原始问题：
-                %s
-                """.formatted(
-                defaultString(request.selection().slot()),
-                defaultString(selectedTarget.entityType()),
-                defaultString(selectedTarget.title()),
-                selectedTarget.entityId() == null ? "" : selectedTarget.entityId(),
-                defaultString(request.question())
-        );
         return HermesConversationTurn.user(content);
+    }
+
+    /**
+     * 解析本轮应注入模型的附件上下文。
+     * 优先使用本轮新上传的附件；如果用户是在追问，则回退到最近一条用户消息关联的附件内容。
+     */
+    private String resolveAttachmentContextMarkdown(HermesConversationSessionEntity session,
+                                                    List<HermesAttachmentService.PreparedAttachment> attachments) {
+        if (hermesAttachmentService == null || session == null) {
+            return "";
+        }
+        if (attachments != null && !attachments.isEmpty()) {
+            return hermesAttachmentService.buildPreparedAttachmentContextMarkdown(attachments);
+        }
+        return hermesAttachmentService.buildAttachmentContextMarkdown(
+                hermesAttachmentService.findRecentAttachments(session.getId())
+        );
     }
 
     /**
@@ -712,6 +747,10 @@ public class HermesChatService {
      */
     private String defaultString(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     /**

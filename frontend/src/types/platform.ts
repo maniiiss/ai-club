@@ -119,6 +119,12 @@ export interface WikiSpaceItem {
   description: string
   /** 读取范围。 */
   readScope: 'MEMBERS_ONLY' | 'ALL_LOGGED_IN' | string
+  /** 空间绑定项目ID。 */
+  boundProjectId: number | null
+  /** 空间绑定项目名称。 */
+  boundProjectName: string
+  /** 空间成员默认来源。 */
+  memberDefaultSource: 'MANUAL' | 'PROJECT_MEMBERS' | string
   /** 当前用户在空间中的角色。 */
   currentUserRole: 'ADMIN' | 'EDITOR' | 'VIEWER' | string
   /** 目录数量。 */
@@ -172,6 +178,7 @@ export interface WikiSpacePageSummaryItem {
   spaceName: string
   directoryId: number
   directoryName: string
+  parentPageId: number | null
   boundProjectId: number | null
   boundProjectName: string
   title: string
@@ -181,6 +188,7 @@ export interface WikiSpacePageSummaryItem {
   authorName: string
   canEdit: boolean
   updatedAt: string
+  children: WikiSpacePageSummaryItem[]
 }
 
 export interface WikiDirectoryTreeNodeItem {
@@ -201,6 +209,7 @@ export interface WikiSpacePageDetailItem {
   spaceName: string
   directoryId: number
   directoryName: string
+  parentPageId: number | null
   boundProjectId: number | null
   boundProjectName: string
   title: string

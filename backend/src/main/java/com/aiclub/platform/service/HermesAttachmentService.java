@@ -146,17 +146,44 @@ public class HermesAttachmentService {
         if (attachments == null || attachments.isEmpty()) {
             return "";
         }
-        StringBuilder builder = new StringBuilder("## 最近可用附件\n");
+        StringBuilder builder = new StringBuilder("## 最近一轮可用附件\n");
+        int index = 1;
         for (HermesConversationAttachmentEntity attachment : attachments) {
-            DocumentAssetEntity asset = attachment.getDocumentAsset();
-            builder.append("- assetId：").append(asset.getId())
-                    .append(" / 文件：").append(defaultString(asset.getFileName()))
-                    .append(" / 格式：").append(defaultString(asset.getSourceFormat()))
-                    .append(" / 大小：").append(asset.getFileSize()).append(" 字节");
-            if (attachment.isTruncated()) {
-                builder.append(" / 已截断");
+            appendAttachmentMarkdown(
+                    builder,
+                    index++,
+                    attachment.getDocumentAsset(),
+                    attachment.getSuggestedTitle(),
+                    attachment.getMarkdown(),
+                    attachment.isTruncated(),
+                    readWarnings(attachment.getWarningsJson())
+            );
+        }
+        return builder.toString().trim();
+    }
+
+    /**
+     * 将本轮新上传附件拼成注入模型的上下文说明。
+     */
+    public String buildPreparedAttachmentContextMarkdown(List<PreparedAttachment> attachments) {
+        if (attachments == null || attachments.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder("## 本轮上传附件\n");
+        int index = 1;
+        for (PreparedAttachment attachment : attachments) {
+            if (attachment == null) {
+                continue;
             }
-            builder.append('\n');
+            appendAttachmentMarkdown(
+                    builder,
+                    index++,
+                    attachment.asset(),
+                    attachment.converted() == null ? "" : attachment.converted().suggestedTitle(),
+                    attachment.converted() == null ? "" : attachment.converted().markdown(),
+                    attachment.converted() != null && attachment.converted().truncated(),
+                    attachment.converted() == null ? List.of() : attachment.converted().warnings()
+            );
         }
         return builder.toString().trim();
     }
@@ -198,6 +225,49 @@ public class HermesAttachmentService {
 
     private String defaultString(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    /**
+     * 统一输出附件元信息和提取后的 Markdown，确保 Hermes 能直接消费文档正文。
+     */
+    private void appendAttachmentMarkdown(StringBuilder builder,
+                                          int index,
+                                          DocumentAssetEntity asset,
+                                          String suggestedTitle,
+                                          String markdown,
+                                          boolean truncated,
+                                          List<String> warnings) {
+        if (asset == null) {
+            return;
+        }
+        builder.append("### 附件 ").append(index).append('\n')
+                .append("- assetId：").append(asset.getId())
+                .append(" / 文件：").append(defaultString(asset.getFileName()))
+                .append(" / 格式：").append(defaultString(asset.getSourceFormat()))
+                .append(" / 大小：").append(asset.getFileSize()).append(" 字节")
+                .append('\n');
+        if (hasText(suggestedTitle)) {
+            builder.append("- 建议标题：").append(defaultString(suggestedTitle)).append('\n');
+        }
+        if (truncated) {
+            builder.append("- 转换说明：文档内容因长度限制已截断\n");
+        }
+        if (warnings != null && !warnings.isEmpty()) {
+            builder.append("- 转换警告：").append(String.join("；", warnings)).append('\n');
+        }
+        String normalizedMarkdown = defaultString(markdown);
+        if (normalizedMarkdown.isBlank()) {
+            builder.append("- 提取结果：未提取到有效 Markdown 内容\n\n");
+            return;
+        }
+        builder.append("以下是从该附件提取出的 Markdown 正文，请优先基于这些内容回答：\n")
+                .append("```markdown\n")
+                .append(normalizedMarkdown)
+                .append("\n```\n\n");
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     /**

@@ -293,7 +293,10 @@
       </div>
     </el-aside>
 
-    <el-container class="layout-main-shell" :class="{ 'mobile-main-shell': isMobileViewport && !isIterationWorkspaceRoute }">
+    <el-container
+      class="layout-main-shell"
+      :class="{ 'mobile-main-shell': isMobileViewport && !isIterationWorkspaceRoute, 'wiki-space-main-shell': isWikiSpaceRoute }"
+    >
       <el-header v-if="!isIterationWorkspaceRoute" class="layout-header">
         <div class="header-search-group">
           <h1 class="header-page-title">{{ pageTitle }}</h1>
@@ -356,7 +359,15 @@
 
       </el-header>
 
-      <el-main class="layout-main" :class="{ 'dashboard-main': isDashboardRoute, 'iteration-main': isIterationWorkspaceRoute, 'mobile-main': isMobileViewport && !isIterationWorkspaceRoute }">
+      <el-main
+        class="layout-main"
+        :class="{
+          'dashboard-main': isDashboardRoute,
+          'iteration-main': isIterationWorkspaceRoute,
+          'wiki-space-main': isWikiSpaceRoute,
+          'mobile-main': isMobileViewport && !isIterationWorkspaceRoute
+        }"
+      >
         <RouterView />
       </el-main>
     </el-container>
@@ -747,6 +758,7 @@ const visibleTrailingMenus = computed(() => trailingMenuItems.filter((item) => a
 const visibleSystemMenus = computed(() => systemMenuItems.filter((item) => authStore.hasPermission(item.permission)))
 const isDashboardRoute = computed(() => route.name === 'dashboard')
 const isIterationWorkspaceRoute = computed(() => route.name === 'project-iterations')
+const isWikiSpaceRoute = computed(() => route.name === 'wiki-space' || route.name === 'wiki-space-page')
 const effectiveSidebarCollapsed = computed(() => isMobileViewport.value || appStore.sidebarCollapsed)
 const asideWidth = computed(() => (effectiveSidebarCollapsed.value ? '80px' : '256px'))
 const userInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
@@ -1504,6 +1516,11 @@ watch(
   height: 100vh;
 }
 
+.layout-main-shell.wiki-space-main-shell {
+  height: 100%;
+  min-height: 0;
+}
+
 .layout-header {
   display: flex;
   align-items: center;
@@ -1700,6 +1717,13 @@ watch(
 .layout-main.iteration-main {
   height: 100%;
   padding: 0 !important;
+  overflow: hidden;
+}
+
+.layout-main.wiki-space-main {
+  height: 100%;
+  min-height: 0;
+  padding: 16px 0 24px;
   overflow: hidden;
 }
 
