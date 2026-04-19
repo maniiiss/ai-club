@@ -289,7 +289,7 @@ export interface AgentItem {
   systemPrompt: string | null
   userPromptTemplate: string | null
   endpointUrl: string | null
-  runtimeType: 'OPENCLAW' | string | null
+  runtimeType: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | string | null
   runtimeAgentRef: string | null
   runtimeSessionKeyTemplate: string | null
   httpMethod: string | null
@@ -512,6 +512,8 @@ export interface ExecutionTaskItem {
   currentStepNo: number | null
   currentStepName: string | null
   latestSummary: string
+  planConfirmationRequired: boolean
+  planConfirmationPending: boolean
   createdByUserId: number | null
   createdByName: string | null
   createdAt: string
@@ -540,6 +542,9 @@ export interface ExecutionTaskDetailItem {
   updatedAt: string
   currentRunId: number | null
   inputPayload: string
+  planConfirmationRequired: boolean
+  planConfirmationPending: boolean
+  canCurrentUserConfirmPlan: boolean
   runs: ExecutionRunItem[]
 }
 

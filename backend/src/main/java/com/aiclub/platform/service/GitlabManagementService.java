@@ -250,6 +250,7 @@ public class GitlabManagementService {
                 null,
                 buildScanTaskTitle(binding, branch),
                 "GITLAB_BINDING_SCAN",
+                false,
                 List.of(),
                 buildScanInputPayload(binding, branch, ruleset, planAgent)
         );

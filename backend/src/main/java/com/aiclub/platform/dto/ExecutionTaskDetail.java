@@ -24,6 +24,9 @@ public record ExecutionTaskDetail(
         String updatedAt,
         Long currentRunId,
         String inputPayload,
+        boolean planConfirmationRequired,
+        boolean planConfirmationPending,
+        boolean canCurrentUserConfirmPlan,
         List<ExecutionRunSummary> runs
 ) {
 }

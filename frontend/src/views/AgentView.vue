@@ -372,16 +372,20 @@
                 <el-option v-for="item in runtimeTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
             </el-form-item>
-            <el-form-item label="Gateway 地址" prop="endpointUrl">
-              <el-input v-model="form.endpointUrl" placeholder="例如：http://127.0.0.1:8081" />
+            <el-form-item v-if="isOpenclawRuntime" label="Gateway 地址" prop="endpointUrl">
+              <el-input v-model="form.endpointUrl" placeholder="例如：http://127.0.0.1:8000（code-processing 服务地址）" />
             </el-form-item>
-            <el-form-item label="智能体标识" prop="runtimeAgentRef">
-              <el-input v-model="form.runtimeAgentRef" placeholder="例如：planner-agent" />
+            <el-form-item v-if="isOpenclawRuntime" label="智能体标识" prop="runtimeAgentRef">
+              <el-input
+                v-model="form.runtimeAgentRef"
+                :disabled="form.runtimeType !== 'OPENCLAW'"
+                :placeholder="form.runtimeType === 'OPENCLAW' ? '例如：planner-agent' : 'CLI Runner 模式下无需填写'"
+              />
             </el-form-item>
-            <el-form-item label="会话 Key 模板">
+            <el-form-item v-if="isOpenclawRuntime" label="会话 Key 模板">
               <el-input v-model="form.runtimeSessionKeyTemplate" placeholder="例如：task:{{task_id}}:user:{{user_id}}" />
             </el-form-item>
-            <el-form-item label="认证方式">
+            <el-form-item v-if="isOpenclawRuntime" label="认证方式">
               <el-select v-model="form.httpAuthType" style="width: 100%">
                 <el-option label="无" value="NONE" />
                 <el-option label="Bearer Token" value="BEARER" />
@@ -390,18 +394,18 @@
             <el-form-item label="超时时间(秒)">
               <el-input-number v-model="form.timeoutSeconds" :min="5" :max="300" style="width: 100%" />
             </el-form-item>
-            <el-form-item label="Bearer Token" class="span-2">
+            <el-form-item v-if="isOpenclawRuntime" label="Bearer Token" class="span-2">
               <el-input v-model="form.httpAuthToken" type="password" show-password placeholder="编辑时留空则沿用已有 Token" />
             </el-form-item>
             <el-form-item label="系统提示词" class="span-2">
-              <el-input v-model="form.systemPrompt" type="textarea" :rows="5" placeholder="运行时级系统提示词，可为空" />
+              <el-input v-model="form.systemPrompt" type="textarea" :rows="5" placeholder="运行时级系统提示词，可为空；CLI Runner 与 OpenClaw 都会复用" />
             </el-form-item>
             <el-form-item label="运行输入模板" class="span-2">
               <el-input
                 v-model="form.userPromptTemplate"
                 type="textarea"
                 :rows="8"
-                placeholder="支持 {{input}}、{{task_id}}、{{task_name}}、{{project_name}}、{{user_id}} 等变量"
+                placeholder="支持 {{input}}、{{task_id}}、{{task_name}}、{{project_name}}、{{user_id}} 等变量；CLI Runner 会先渲染后再提交到 code-processing"
               />
             </el-form-item>
             </div>
@@ -511,7 +515,7 @@ interface AgentForm {
   systemPrompt: string
   userPromptTemplate: string
   endpointUrl: string
-  runtimeType: 'OPENCLAW' | null
+  runtimeType: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | null
   runtimeAgentRef: string
   runtimeSessionKeyTemplate: string
   httpMethod: 'POST' | 'PUT' | 'GET'
@@ -539,7 +543,9 @@ const builtinOptions = [
   { label: '仓库扫描计划智能体', value: 'REPOSITORY_SCAN_PLAN' }
 ] as const
 const runtimeTypeOptions = [
-  { label: 'OpenClaw', value: 'OPENCLAW' }
+  { label: 'OpenClaw', value: 'OPENCLAW' },
+  { label: 'Codex CLI Runner', value: 'CODEX_CLI' },
+  { label: 'Claude Code CLI Runner', value: 'CLAUDE_CODE_CLI' }
 ] as const
 
 const loading = ref(false)
@@ -613,6 +619,9 @@ const accessTypeLabel = (value?: string | null) => accessTypeOptions.find(item =
 const runtimeTypeLabel = (value?: string | null) => runtimeTypeOptions.find(item => item.value === value)?.label || value || '-'
 const agentAccessIcon = (accessType?: string | null) =>
   accessType === 'AGENT_RUNTIME' ? Connection : accessType === 'HTTP_API' ? Link : accessType === 'LLM_PROMPT' ? Cpu : Promotion
+const isOpenclawRuntime = computed(() =>
+  form.accessType === 'AGENT_RUNTIME' && form.runtimeType === 'OPENCLAW'
+)
 
 const agentStatusClass = (status?: string | null) =>
   status === '在线' ? 'is-online' : status === '空闲' ? 'is-idle' : 'is-offline'
@@ -622,7 +631,10 @@ const agentStatusTone = (status?: string | null) =>
 
 const agentRuntimeLabel = (row: AgentItem) => {
   if (row.accessType === 'AGENT_RUNTIME') {
-    return `${runtimeTypeLabel(row.runtimeType)} / ${row.runtimeAgentRef || '-'}`
+    if (row.runtimeType === 'OPENCLAW') {
+      return `${runtimeTypeLabel(row.runtimeType)} / ${row.runtimeAgentRef || '-'}`
+    }
+    return runtimeTypeLabel(row.runtimeType)
   }
   if (row.accessType === 'HTTP_API') {
     return row.endpointUrl || '-'
@@ -781,14 +793,14 @@ const buildPayload = () => ({
   projectId: form.projectId,
   systemPrompt: form.systemPrompt,
   userPromptTemplate: form.accessType === 'LLM_PROMPT' || form.accessType === 'AGENT_RUNTIME' ? form.userPromptTemplate : '',
-  endpointUrl: form.accessType === 'HTTP_API' || form.accessType === 'AGENT_RUNTIME' ? form.endpointUrl : '',
+  endpointUrl: form.accessType === 'HTTP_API' ? form.endpointUrl : isOpenclawRuntime.value ? form.endpointUrl : '',
   runtimeType: form.accessType === 'AGENT_RUNTIME' ? form.runtimeType : null,
-  runtimeAgentRef: form.accessType === 'AGENT_RUNTIME' ? form.runtimeAgentRef : '',
-  runtimeSessionKeyTemplate: form.accessType === 'AGENT_RUNTIME' ? form.runtimeSessionKeyTemplate : '',
+  runtimeAgentRef: isOpenclawRuntime.value ? form.runtimeAgentRef : '',
+  runtimeSessionKeyTemplate: isOpenclawRuntime.value ? form.runtimeSessionKeyTemplate : '',
   httpMethod: form.accessType === 'HTTP_API' ? form.httpMethod : '',
   httpHeaders: form.accessType === 'HTTP_API' ? form.httpHeaders : '',
-  httpAuthType: form.accessType === 'HTTP_API' || form.accessType === 'AGENT_RUNTIME' ? form.httpAuthType : null,
-  httpAuthToken: form.accessType === 'HTTP_API' || form.accessType === 'AGENT_RUNTIME' ? form.httpAuthToken : '',
+  httpAuthType: form.accessType === 'HTTP_API' ? form.httpAuthType : isOpenclawRuntime.value ? form.httpAuthType : null,
+  httpAuthToken: form.accessType === 'HTTP_API' ? form.httpAuthToken : isOpenclawRuntime.value ? form.httpAuthToken : '',
   httpRequestTemplate: form.accessType === 'HTTP_API' ? form.httpRequestTemplate : '',
   httpResponsePath: form.accessType === 'HTTP_API' ? form.httpResponsePath : '',
   timeoutSeconds: form.accessType === 'HTTP_API' || form.accessType === 'AGENT_RUNTIME' ? form.timeoutSeconds : 60
@@ -824,11 +836,11 @@ const validateBusinessRules = () => {
       ElMessage.warning('请选择 Runtime 类型')
       return false
     }
-    if (!form.endpointUrl.trim()) {
+    if (isOpenclawRuntime.value && !form.endpointUrl.trim()) {
       ElMessage.warning('请输入 Gateway 地址')
       return false
     }
-    if (!form.runtimeAgentRef.trim()) {
+    if (isOpenclawRuntime.value && !form.runtimeAgentRef.trim()) {
       ElMessage.warning('请输入运行时智能体标识')
       return false
     }

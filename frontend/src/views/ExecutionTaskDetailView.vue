@@ -7,7 +7,6 @@
       </button>
       <div class="execution-detail-heading">
         <div>
-          <p class="execution-eyebrow">{{ taskDetail.scenarioName }}</p>
           <h1>{{ taskDetail.title }}</h1>
         </div>
         <div class="execution-detail-actions">
@@ -18,26 +17,23 @@
       </div>
 
       <div class="execution-detail-meta">
+        <span>{{ taskDetail.scenarioName }}</span>
         <button v-if="taskDetail.workItemId" type="button" @click="openWorkItem">
           工作项：{{ taskDetail.workItemCode || '#' + taskDetail.workItemId }} {{ taskDetail.workItemName }}
         </button>
         <span>项目：{{ taskDetail.projectName }}</span>
-        <span>发起人：{{ taskDetail.createdByName || '-' }}</span>
-        <span>创建时间：{{ taskDetail.createdAt }}</span>
-      </div>
-
-      <div v-if="developmentRepositories.length" class="execution-detail-repo-strip">
-        <span class="execution-detail-repo-label">涉及仓库</span>
         <a
           v-for="repository in developmentRepositories"
-          :key="`${repository.bindingId}-${repository.order}`"
+          :key="`meta-${repository.bindingId}-${repository.order}`"
           class="execution-detail-repo-chip"
           :href="repository.webUrl || undefined"
           target="_blank"
           rel="noreferrer"
         >
-          {{ repository.order }}. {{ repository.displayName }} @ {{ repository.targetBranch || '-' }}
+          涉及仓库：{{ repository.order }}. {{ repository.displayName }} @ {{ repository.targetBranch || '-' }}
         </a>
+        <span>发起人：{{ taskDetail.createdByName || '-' }}</span>
+        <span>创建时间：{{ taskDetail.createdAt }}</span>
       </div>
     </section>
 
@@ -65,6 +61,49 @@
           </div>
         </template>
         <el-empty v-else description="执行运行尚未创建，请稍后刷新" />
+      </section>
+
+      <section v-if="showPlanConfirmationSection" class="execution-plan-confirm-card">
+        <div class="execution-panel-head">
+          <div>
+            <h2>规划确认</h2>
+            <p>开发执行已生成规划报告，发起人确认后才会继续后续开发、测试与交付报告。</p>
+          </div>
+        </div>
+        <div class="execution-plan-confirm-body">
+          <div v-if="canEditPlanConfirmation" class="execution-plan-confirm-tip">
+            当前版本将作为后续 IMPLEMENT / TEST / REPORT 的统一规划输入。你可以先保存修改，再确认继续执行。
+          </div>
+          <div v-else class="execution-plan-confirm-tip muted">
+            当前任务需要由发起人确认后继续执行，你可以先阅读已生成的规划内容。
+          </div>
+
+          <MarkdownEditor
+            v-if="canEditPlanConfirmation"
+            v-model="planMarkdownDraft"
+            :height="380"
+            placeholder="请确认并补充执行规划"
+          />
+          <div v-else class="execution-artifact-markdown">
+            <MdPreview
+              editor-id="execution-plan-confirm-preview"
+              language="zh-CN"
+              preview-theme="github"
+              :model-value="currentPlanMarkdown || '-'"
+            />
+          </div>
+
+          <div v-if="canEditPlanConfirmation" class="execution-plan-confirm-actions">
+            <el-button :loading="planMarkdownSaving" @click="handleSavePlanMarkdown">保存规划</el-button>
+            <el-button
+              type="primary"
+              :loading="planMarkdownConfirming"
+              @click="handleConfirmPlan"
+            >
+              确认继续执行
+            </el-button>
+          </div>
+        </div>
       </section>
 
       <section v-if="runDetail" class="execution-detail-grid">
@@ -309,6 +348,7 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { MdPreview } from 'md-editor-v3'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import {
   createGitlabMergeRequest,
   getCurrentUserGitlabOauthBinding,
@@ -317,12 +357,14 @@ import {
 } from '@/api/gitlab'
 import {
   cancelExecutionTask,
+  confirmExecutionPlan,
   downloadExecutionArtifact,
   getExecutionArtifactDetail,
   getExecutionRunDetail,
   getExecutionTaskDetail,
   retryExecutionTask,
-  streamExecutionRunEvents
+  streamExecutionRunEvents,
+  updateExecutionPlanMarkdown
 } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import type {
@@ -354,10 +396,14 @@ const expandedArtifactPreviewMap = ref<Record<string, boolean>>({})
 const quickMergeDialogVisible = ref(false)
 const quickMergeResultVisible = ref(false)
 const quickMergeSubmitting = ref(false)
+const planMarkdownDraft = ref('')
+const planMarkdownSaving = ref(false)
+const planMarkdownConfirming = ref(false)
 const quickMergeFormRef = ref<FormInstance>()
 const quickMergeOauthBinding = ref<GitlabUserOauthBindingItem>(fallbackQuickMergeOauthBinding())
 const quickMergeSourceBranchOptions = ref<GitlabBranchItem[]>([])
 const quickMergeTargetBranchOptions = ref<GitlabBranchItem[]>([])
+const hasText = (value: string | null | undefined) => String(value || '').trim().length > 0
 const sourceBranchLoading = ref(false)
 const targetBranchLoading = ref(false)
 const quickMergeResult = ref<GitlabCreateMergeRequestResultItem | null>(null)
@@ -408,6 +454,9 @@ const quickMergeRules: FormRules<QuickMergeForm> = {
   title: [{ required: true, message: '请输入 MR 标题', trigger: 'blur' }]
 }
 const runCardDescription = computed(() =>
+  taskDetail.value?.planConfirmationPending
+    ? '当前运行已完成执行规划，正在等待发起人进入执行详情查看、编辑并确认后再继续。'
+    :
   taskDetail.value?.scenarioCode === 'DEVELOPMENT_IMPLEMENTATION'
     ? '当前运行会先加载快照，再通过事件流持续刷新；规划、开发、测试和报告都会沉淀为执行产物。'
     : '当前运行会先加载快照，再通过事件流持续刷新，最终结果会沉淀为产物并回写工作项评论。'
@@ -513,12 +562,43 @@ const canSubmitMergeRequest = computed(() =>
       && developmentQuickMergeRepositories.value.length
   )
 )
+const showPlanConfirmationSection = computed(() =>
+  Boolean(
+    taskDetail.value?.scenarioCode === 'DEVELOPMENT_IMPLEMENTATION'
+      && taskDetail.value?.planConfirmationPending
+  )
+)
+const canEditPlanConfirmation = computed(() =>
+  Boolean(showPlanConfirmationSection.value && taskDetail.value?.canCurrentUserConfirmPlan)
+)
+const currentPlanMarkdown = computed(() => {
+  const artifactText = runDetail.value?.artifacts.find((artifact) => artifact.artifactType === 'PLAN_MARKDOWN')?.contentText
+  if (hasText(artifactText)) {
+    return String(artifactText).trim()
+  }
+  const stepText = runDetail.value?.steps.find((step) => step.stepCode === 'PLAN')?.outputSnapshot
+  return hasText(stepText) ? String(stepText).trim() : ''
+})
+
+watch(
+  currentPlanMarkdown,
+  (value) => {
+    if (!showPlanConfirmationSection.value) {
+      return
+    }
+    planMarkdownDraft.value = value
+  },
+  { immediate: true }
+)
 
 const displayArtifacts = computed<DisplayArtifactItem[]>(() => {
   const artifacts = runDetail.value?.artifacts || []
   const normalArtifacts: DisplayArtifactItem[] = []
   const logArtifacts: ExecutionArtifactItem[] = []
   for (const artifact of artifacts) {
+    if (shouldHideArtifactFromDisplay(artifact, artifacts)) {
+      continue
+    }
     if (isLogArtifact(artifact)) {
       logArtifacts.push(artifact)
       continue
@@ -531,12 +611,13 @@ const displayArtifacts = computed<DisplayArtifactItem[]>(() => {
   return normalArtifacts
 })
 
-const canCancel = (status: string) => ['PENDING', 'RUNNING'].includes(status)
+const canCancel = (status: string) => ['PENDING', 'RUNNING', 'WAITING_CONFIRMATION'].includes(status)
 const canRetry = (status: string) => ['SUCCESS', 'FAILED', 'CANCELED'].includes(status)
 
 const statusLabel = (status: string) => {
   const labelMap: Record<string, string> = {
     PENDING: '待执行',
+    WAITING_CONFIRMATION: '待确认',
     RUNNING: '执行中',
     SUCCESS: '成功',
     FAILED: '失败',
@@ -549,6 +630,7 @@ const statusTagType = (status: string) => {
   if (status === 'SUCCESS') return 'success'
   if (status === 'FAILED') return 'danger'
   if (status === 'CANCELED') return 'info'
+  if (status === 'WAITING_CONFIRMATION') return 'warning'
   if (status === 'RUNNING') return 'warning'
   return 'primary'
 }
@@ -562,15 +644,31 @@ const progressStatus = (status: string) => {
 const timelineType = (status: string) => {
   if (status === 'SUCCESS') return 'success'
   if (status === 'FAILED') return 'danger'
+  if (status === 'WAITING_CONFIRMATION') return 'warning'
   if (status === 'RUNNING') return 'warning'
   return 'info'
 }
 
 const isMarkdownArtifact = (artifact: ExecutionArtifactItem) =>
-  ['PLAN_MARKDOWN', 'REPORT_MARKDOWN', 'FIX_PLAN_MARKDOWN', 'FIX_SHARDS_MARKDOWN', 'EXEC_PLAN_MARKDOWN'].includes(artifact.artifactType)
+  ['PLAN_MARKDOWN', 'REPORT_MARKDOWN', 'FIX_PLAN_MARKDOWN', 'FIX_SHARDS_MARKDOWN', 'EXEC_PLAN_MARKDOWN', 'IMPLEMENT_RESULT_MARKDOWN', 'TEST_RESULT_MARKDOWN'].includes(artifact.artifactType)
 
 const isLogArtifact = (artifact: ExecutionArtifactItem) =>
   ['STEP_RAW_LOG', 'STEP_STDOUT_LOG', 'STEP_STDERR_LOG'].includes(artifact.artifactType) || artifact.artifactType.endsWith('_LOG')
+
+/**
+ * 新版本会同时沉淀 Markdown 与 JSON 结果：
+ * Markdown 给人看，JSON 继续给页面内的自动带值等逻辑复用。
+ * 详情页这里优先展示 Markdown，避免用户看到重复卡片。
+ */
+const shouldHideArtifactFromDisplay = (artifact: ExecutionArtifactItem, artifacts: ExecutionArtifactItem[]) => {
+  if (artifact.artifactType === 'IMPLEMENT_RESULT_JSON') {
+    return artifacts.some((item) => item.stepId === artifact.stepId && item.artifactType === 'IMPLEMENT_RESULT_MARKDOWN')
+  }
+  if (artifact.artifactType === 'TEST_RESULT_JSON') {
+    return artifacts.some((item) => item.stepId === artifact.stepId && item.artifactType === 'TEST_RESULT_MARKDOWN')
+  }
+  return false
+}
 
 const findArtifactStep = (artifact: ExecutionArtifactItem) =>
   runDetail.value?.steps.find((step) => step.id === artifact.stepId) || null
@@ -616,7 +714,55 @@ const isDisplayArtifactLog = (artifact: DisplayArtifactItem) => artifact.kind ==
 const isDisplayArtifactMarkdown = (artifact: DisplayArtifactItem) =>
   artifact.kind === 'artifact' && isMarkdownArtifact(artifact.artifact)
 
-const displayArtifactTitle = (artifact: DisplayArtifactItem) => (artifact.kind === 'artifact' ? artifact.artifact.title : '日志')
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const ARTIFACT_STEP_PREFIX_CLEANUP_PATTERN = /^(生成|整理|汇总|构建|创建|执行|开始|产出|发布|打包并上传|打包)\s*/
+
+const buildArtifactStepTitlePrefixes = (stepName: string) => {
+  const prefixes: string[] = []
+  let current = String(stepName || '').trim()
+  while (current) {
+    if (!prefixes.includes(current)) {
+      prefixes.push(current)
+    }
+    const next = current.replace(ARTIFACT_STEP_PREFIX_CLEANUP_PATTERN, '').trim()
+    if (!next || next === current) {
+      break
+    }
+    current = next
+  }
+  return prefixes.sort((left, right) => right.length - left.length)
+}
+
+/**
+ * 产物卡片头部已经用胶囊展示了步骤名/仓库，这里只保留真正有区分度的产物类型，
+ * 避免出现“开发实现 • repo / 开发实现 JSON • repo”、
+ * “生成修复计划 / 修复计划 Markdown”这类重复信息。
+ */
+const displayArtifactTitle = (artifact: DisplayArtifactItem) => {
+  if (artifact.kind !== 'artifact') {
+    return '日志'
+  }
+  const rawTitle = String(artifact.artifact.title || '').trim()
+  const stepLabel = String(artifactStepLabel(artifact.artifact) || '').trim()
+  if (!rawTitle || !stepLabel) {
+    return rawTitle || '未命名产物'
+  }
+  const stepSegments = stepLabel.split(/\s*[·•]\s*/).map((item) => item.trim()).filter(Boolean)
+  const stepName = stepSegments[0] || ''
+  const repositoryName = stepSegments.slice(1).join(' • ')
+  let conciseTitle = rawTitle
+  for (const prefix of buildArtifactStepTitlePrefixes(stepName)) {
+    if (new RegExp(`^${escapeRegExp(prefix)}(?:\\s+|\\s*[·•:\\-]\\s*)?`, 'i').test(conciseTitle)) {
+      conciseTitle = conciseTitle.replace(new RegExp(`^${escapeRegExp(prefix)}(?:\\s+|\\s*[·•:\\-]\\s*)?`, 'i'), '').trim()
+      break
+    }
+  }
+  if (repositoryName) {
+    conciseTitle = conciseTitle.replace(new RegExp(`\\s*[·•-]\\s*${escapeRegExp(repositoryName)}$`, 'i'), '').trim()
+  }
+  conciseTitle = conciseTitle.replace(/^[·•:\-]\s*/, '').trim()
+  return conciseTitle || rawTitle
+}
 
 const displayArtifactText = (artifact: DisplayArtifactItem) => (artifact.kind === 'artifact' ? artifact.artifact.contentText : '')
 
@@ -667,8 +813,6 @@ const previewLongText = (text: string | null | undefined, maxChars = 6000) => {
   return `${normalized.slice(0, maxChars)}\n\n... 内容较长，已截断预览，请下载完整产物查看。`
 }
 
-const hasText = (value: string | null | undefined) => String(value || '').trim().length > 0
-
 const pickLatestTime = (...values: Array<string | null | undefined>) =>
   values
     .map((value) => String(value || '').trim())
@@ -705,6 +849,7 @@ const statusRank = (status: string | null | undefined) => {
     case 'PENDING':
       return 0
     case 'RUNNING':
+    case 'WAITING_CONFIRMATION':
       return 1
     case 'SUCCESS':
     case 'FAILED':
@@ -1395,6 +1540,51 @@ const openWorkItem = async () => {
   })
 }
 
+const handleSavePlanMarkdown = async () => {
+  if (!taskDetail.value) {
+    return
+  }
+  const planMarkdown = planMarkdownDraft.value.trim()
+  if (!planMarkdown) {
+    ElMessage.warning('执行规划不能为空')
+    return
+  }
+  planMarkdownSaving.value = true
+  try {
+    await updateExecutionPlanMarkdown(taskDetail.value.id, { planMarkdown })
+    ElMessage.success('执行规划已保存')
+    await loadTaskDetail()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '保存执行规划失败')
+  } finally {
+    planMarkdownSaving.value = false
+  }
+}
+
+const handleConfirmPlan = async () => {
+  if (!taskDetail.value) {
+    return
+  }
+  const planMarkdown = planMarkdownDraft.value.trim()
+  if (!planMarkdown) {
+    ElMessage.warning('执行规划不能为空')
+    return
+  }
+  try {
+    await ElMessageBox.confirm('确认按当前执行规划继续执行吗？确认后将开始后续开发、测试与交付步骤。', '提示', { type: 'warning' })
+    planMarkdownConfirming.value = true
+    await confirmExecutionPlan(taskDetail.value.id, { planMarkdown })
+    ElMessage.success('已确认执行规划，任务继续执行')
+    await loadTaskDetail()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || '确认执行规划失败')
+    }
+  } finally {
+    planMarkdownConfirming.value = false
+  }
+}
+
 const handleCancel = async () => {
   if (!taskDetail.value) {
     return
@@ -1508,7 +1698,7 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 8px;
+  margin-top: 2px;
 }
 
 .execution-detail-heading h1 {
@@ -1517,20 +1707,6 @@ onBeforeUnmount(() => {
   font-size: 21px;
   font-weight: 900;
   line-height: 1.15;
-}
-
-.execution-detail-heading p,
-.execution-eyebrow {
-  color: #64748b;
-}
-
-.execution-eyebrow {
-  margin: 0 0 2px;
-  color: #0f766e;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
 
 .execution-detail-actions,
@@ -1542,22 +1718,7 @@ onBeforeUnmount(() => {
 }
 
 .execution-detail-meta {
-  margin-top: 8px;
-}
-
-.execution-detail-repo-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.execution-detail-repo-label {
-  display: inline-flex;
-  align-items: center;
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 800;
+  margin-top: 2px;
 }
 
 .execution-detail-meta span,
@@ -1586,6 +1747,39 @@ onBeforeUnmount(() => {
 
 .execution-run-card {
   padding: 10px 14px 12px;
+}
+
+.execution-plan-confirm-card {
+  padding: 14px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}
+
+.execution-plan-confirm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.execution-plan-confirm-tip {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.1);
+  color: #92400e;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.execution-plan-confirm-tip.muted {
+  background: rgba(148, 163, 184, 0.12);
+  color: #475569;
+}
+
+.execution-plan-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .execution-run-head,
@@ -1634,7 +1828,7 @@ onBeforeUnmount(() => {
   padding: 14px;
   min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .execution-panel-head {
@@ -1650,10 +1844,28 @@ onBeforeUnmount(() => {
   padding-right: 4px;
 }
 
+.execution-panel-body :deep(.el-timeline-item__wrapper) {
+  top: 0;
+}
+
 .execution-step-log {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.execution-step-log-head {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.execution-step-log-head strong {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.execution-step-log-head :deep(.el-tag) {
+  flex: 0 0 auto;
 }
 
 .execution-step-log-agent,

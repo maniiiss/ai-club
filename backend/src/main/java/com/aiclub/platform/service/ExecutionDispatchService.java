@@ -35,6 +35,7 @@ import java.util.concurrent.Executor;
 public class ExecutionDispatchService {
 
     private static final Logger log = LoggerFactory.getLogger(ExecutionDispatchService.class);
+    private static final String STATUS_WAITING_CONFIRMATION = "WAITING_CONFIRMATION";
 
     private final ExecutionTaskRepository executionTaskRepository;
     private final ExecutionRunRepository executionRunRepository;
@@ -88,19 +89,23 @@ public class ExecutionDispatchService {
                 .map(ExecutionTaskEntity::getId)
                 .toList();
         for (Long pendingTaskId : pendingTaskIds) {
-            if (!dispatchingTaskIds.add(pendingTaskId)) {
-                continue;
-            }
-            executionTaskExecutor.execute(() -> {
-                try {
-                    dispatchTaskNow(pendingTaskId);
-                } catch (Exception exception) {
-                    log.warn("执行任务调度失败: executionTaskId={}, message={}", pendingTaskId, exception.getMessage(), exception);
-                } finally {
-                    dispatchingTaskIds.remove(pendingTaskId);
-                }
-            });
+            dispatchTaskAsync(pendingTaskId);
         }
+    }
+
+    public void dispatchTaskAsync(Long executionTaskId) {
+        if (executionTaskId == null || !dispatchingTaskIds.add(executionTaskId)) {
+            return;
+        }
+        executionTaskExecutor.execute(() -> {
+            try {
+                dispatchTaskNow(executionTaskId);
+            } catch (Exception exception) {
+                log.warn("执行任务调度失败: executionTaskId={}, message={}", executionTaskId, exception.getMessage(), exception);
+            } finally {
+                dispatchingTaskIds.remove(executionTaskId);
+            }
+        });
     }
 
     /**
@@ -119,12 +124,18 @@ public class ExecutionDispatchService {
             return executionTask.getCurrentRun();
         }
 
-        ExecutionRunEntity executionRun = createRun(executionTask);
+        boolean resumeWaitingRun = shouldResumeWaitingDevelopmentRun(executionTask);
+        ExecutionRunEntity executionRun = resumeWaitingRun ? executionTask.getCurrentRun() : createRun(executionTask);
         ExecutionTaskEntity runningTask = requireExecutionTask(executionTaskId);
         runningTask.setStatus("RUNNING");
         runningTask.setCurrentRun(executionRun);
-        runningTask.setLatestSummary("执行已入队，开始运行");
+        runningTask.setLatestSummary(resumeWaitingRun ? "执行规划已确认，继续执行" : "执行已入队，开始运行");
         executionTaskRepository.save(runningTask);
+        if (resumeWaitingRun && executionRun != null) {
+            executionRun.setStatus("RUNNING");
+            executionRun.setUpdatedAt(LocalDateTime.now());
+            executionRunRepository.save(executionRun);
+        }
 
         TaskEntity workItem = runningTask.getWorkItem();
         ExecutionWorkflowService.WorkflowPlan workflowPlan = executionWorkflowService.restoreWorkflow(
@@ -298,6 +309,10 @@ public class ExecutionDispatchService {
             executionRun.setOutputSummary(result.outputSummary());
             executionRun.setUpdatedAt(LocalDateTime.now());
             executionRunRepository.save(executionRun);
+            if (result.awaitingConfirmation()) {
+                notifyRequesterWhenDevelopmentExecutionNeedsPlanConfirmation(executionTask);
+                return executionRun;
+            }
             if (result.canceled()) {
                 return finishCanceled(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
             }
@@ -523,6 +538,13 @@ public class ExecutionDispatchService {
                 .orElseThrow(() -> new NoSuchElementException("执行任务不存在: " + executionTaskId));
     }
 
+    private boolean shouldResumeWaitingDevelopmentRun(ExecutionTaskEntity executionTask) {
+        return executionTask != null
+                && ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(executionTask.getScenarioCode())
+                && executionTask.getCurrentRun() != null
+                && STATUS_WAITING_CONFIRMATION.equalsIgnoreCase(defaultString(executionTask.getCurrentRun().getStatus()));
+    }
+
     private String resolveMessage(RuntimeException exception, String fallbackMessage) {
         if (exception == null || exception.getMessage() == null || exception.getMessage().isBlank()) {
             return fallbackMessage;
@@ -575,6 +597,26 @@ public class ExecutionDispatchService {
                 content.toString(),
                 "/tasks/" + executionTask.getId(),
                 "DEVELOPMENT_EXECUTION_COMPLETED",
+                executionTask.getId()
+        );
+    }
+
+    /**
+     * 规划确认模式下，PLAN 完成后立刻提醒发起人进入执行详情查看、编辑并确认继续。
+     */
+    private void notifyRequesterWhenDevelopmentExecutionNeedsPlanConfirmation(ExecutionTaskEntity executionTask) {
+        if (executionTask.getCreatedByUser() == null
+                || !ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(executionTask.getScenarioCode())) {
+            return;
+        }
+        notificationService.sendToUser(
+                executionTask.getCreatedByUser().getId(),
+                NotificationService.TYPE_TASK,
+                NotificationService.LEVEL_INFO,
+                "开发执行待确认：" + defaultString(executionTask.getTitle()).trim(),
+                "执行规划已生成，请前往执行详情查看、编辑并确认继续。",
+                "/tasks/" + executionTask.getId(),
+                "DEVELOPMENT_EXECUTION_PLAN_CONFIRM_REQUIRED",
                 executionTask.getId()
         );
     }

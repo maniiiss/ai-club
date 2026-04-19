@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -48,17 +49,15 @@ class AgentExecutionServiceTests {
     @Mock
     private CodeReviewClientService codeReviewClientService;
 
+    @Mock
+    private InternalServiceAuthenticator internalServiceAuthenticator;
+
     private AgentExecutionService agentExecutionService;
 
     @BeforeEach
     void setUp() {
-        agentExecutionService = new AgentExecutionService(
-                agentRepository,
-                tokenCipherService,
-                modelConfigService,
-                codeReviewClientService,
-                new ObjectMapper()
-        );
+        lenient().when(internalServiceAuthenticator.authorizationHeaderValue()).thenReturn("Bearer internal-token");
+        agentExecutionService = buildService("http://127.0.0.1:9000");
     }
 
     /**
@@ -338,6 +337,109 @@ class AgentExecutionServiceTests {
     }
 
     /**
+     * 新版 CLI Runtime 应通过统一 /api/code/cli-executions 入口下发 runnerType 与 mode，
+     * 避免 backend 再感知 Claude / Codex 的私有桥接路径差异。
+     */
+    @Test
+    void shouldExecuteCliRuntimeThroughUnifiedEndpoint() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        StringBuilder capturedBody = new StringBuilder();
+        StringBuilder capturedAuthorization = new StringBuilder();
+        server.createContext("/api/code/cli-executions", exchange -> {
+            byte[] requestBytes = exchange.getRequestBody().readAllBytes();
+            capturedBody.append(new String(requestBytes, StandardCharsets.UTF_8));
+            capturedAuthorization.append(exchange.getRequestHeaders().getFirst("Authorization"));
+            byte[] responseBytes = "{\"output\":\"# 总体结论\\n执行完成\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, responseBytes.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(responseBytes);
+            }
+        });
+        server.start();
+        try {
+            agentExecutionService = buildService("http://127.0.0.1:" + server.getAddress().getPort());
+            AgentEntity agent = buildCliRuntimeAgent(16L, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI,
+                    null);
+            when(agentRepository.findById(16L)).thenReturn(Optional.of(agent));
+
+            String output = agentExecutionService.runAgent(
+                    16L,
+                    "请生成执行规划",
+                    Map.of(
+                            "step_code", "PLAN",
+                            "step_id", "15",
+                            "execution_task_id", "99",
+                            "execution_run_id", "1001",
+                            "project_id", "11",
+                            "project_name", "执行中心项目",
+                            "development_repositories_json",
+                            """
+                                    [{"displayName":"group/frontend","repoUrl":"http://gitlab/group/frontend.git","targetBranch":"main"}]
+                                    """.trim()
+                    )
+            );
+
+            assertThat(output).contains("总体结论");
+            assertThat(capturedBody.toString()).contains("\"runnerType\":\"CLAUDE_CODE_CLI\"");
+            assertThat(capturedBody.toString()).contains("\"mode\":\"PLAN\"");
+            assertThat(capturedBody.toString()).contains("\"repositories\":[");
+            assertThat(capturedAuthorization.toString()).isEqualTo("Bearer internal-token");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
+     * AGENT_RUNTIME + CLI Runner 也应被识别为可异步执行能力，
+     * 并把 stepCode 映射为统一的 CLI mode 后发往 /start 接口。
+     */
+    @Test
+    void shouldStartAsyncCliRuntimeThroughUnifiedEndpoint() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        StringBuilder capturedBody = new StringBuilder();
+        server.createContext("/api/code/cli-executions/start", exchange -> {
+            byte[] requestBytes = exchange.getRequestBody().readAllBytes();
+            capturedBody.append(new String(requestBytes, StandardCharsets.UTF_8));
+            byte[] responseBytes = """
+                    {"sessionId":"cli-session-1","accepted":true,"runnerType":"CLI","workspaceRoot":"C:/workspace","startedAt":"2026-04-18T12:00:00Z"}
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, responseBytes.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(responseBytes);
+            }
+        });
+        server.start();
+        try {
+            agentExecutionService = buildService("http://127.0.0.1:" + server.getAddress().getPort());
+            AgentEntity agent = buildCliRuntimeAgent(17L, AgentExecutionService.RUNTIME_CODEX_CLI,
+                    null);
+
+            assertThat(agentExecutionService.supportsAsyncExecution(agent, "AD_HOC_RUN")).isTrue();
+            AgentExecutionService.AsyncExecutionStartResult result = agentExecutionService.startAsyncExecution(
+                    agent,
+                    "请执行一次兼容单次运行",
+                    Map.of(
+                            "step_code", "AD_HOC_RUN",
+                            "step_id", "16",
+                            "execution_task_id", "99",
+                            "execution_run_id", "1001"
+                    ),
+                    15,
+                    600
+            );
+
+            assertThat(result.sessionId()).isEqualTo("cli-session-1");
+            assertThat(capturedBody.toString()).contains("\"runnerType\":\"CODEX_CLI\"");
+            assertThat(capturedBody.toString()).contains("\"mode\":\"AD_HOC\"");
+            assertThat(capturedBody.toString()).contains("\"timeoutSeconds\":600");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
      * 构造可执行的仓库扫描计划智能体样例。
      */
     private AgentEntity buildRepositoryScanPlanAgent() {
@@ -375,5 +477,32 @@ class AgentExecutionServiceTests {
         modelConfig.setId(6L);
         agent.setAiModelConfig(modelConfig);
         return agent;
+    }
+
+    private AgentEntity buildCliRuntimeAgent(Long id, String runtimeType, String endpointBaseUrl) {
+        AgentEntity agent = new AgentEntity();
+        agent.setId(id);
+        agent.setName("CLI Runtime Agent");
+        agent.setType("执行");
+        agent.setCategory("开发执行");
+        agent.setStatus("在线");
+        agent.setEnabled(true);
+        agent.setAccessType(AgentExecutionService.ACCESS_AGENT_RUNTIME);
+        agent.setRuntimeType(runtimeType);
+        agent.setEndpointUrl(endpointBaseUrl);
+        agent.setTimeoutSeconds(120);
+        return agent;
+    }
+
+    private AgentExecutionService buildService(String codeProcessingBaseUrl) {
+        return new AgentExecutionService(
+                agentRepository,
+                tokenCipherService,
+                modelConfigService,
+                codeReviewClientService,
+                new ObjectMapper(),
+                internalServiceAuthenticator,
+                codeProcessingBaseUrl
+        );
     }
 }

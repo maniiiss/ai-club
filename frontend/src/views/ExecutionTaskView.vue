@@ -52,6 +52,7 @@
                 <label>执行状态</label>
                 <el-select v-model="filters.status" clearable placeholder="全部状态" style="width: 100%" :teleported="false">
                   <el-option label="待执行" value="PENDING" />
+                  <el-option label="待确认" value="WAITING_CONFIRMATION" />
                   <el-option label="执行中" value="RUNNING" />
                   <el-option label="成功" value="SUCCESS" />
                   <el-option label="失败" value="FAILED" />
@@ -396,7 +397,7 @@ const canRetryExecution = computed(() => authStore.hasPermission('task:execution
  */
 const summaryCards = computed<ExecutionSummaryCard[]>(() => {
   const currentPageTasks = executionTasks.value
-  const pendingOrRunningCount = currentPageTasks.filter((item) => ['PENDING', 'RUNNING'].includes(item.status)).length
+  const pendingOrRunningCount = currentPageTasks.filter((item) => ['PENDING', 'RUNNING', 'WAITING_CONFIRMATION'].includes(item.status)).length
   const successCount = currentPageTasks.filter((item) => item.status === 'SUCCESS').length
   const averageProgress = currentPageTasks.length
     ? Math.round(currentPageTasks.reduce((sum, item) => sum + progressPercent(item), 0) / currentPageTasks.length)
@@ -410,12 +411,13 @@ const summaryCards = computed<ExecutionSummaryCard[]>(() => {
   ]
 })
 
-const canCancel = (status: string) => ['PENDING', 'RUNNING'].includes(status)
+const canCancel = (status: string) => ['PENDING', 'RUNNING', 'WAITING_CONFIRMATION'].includes(status)
 const canRetry = (status: string) => ['SUCCESS', 'FAILED', 'CANCELED'].includes(status)
 
 const statusLabel = (status: string) => {
   const labelMap: Record<string, string> = {
     PENDING: '待执行',
+    WAITING_CONFIRMATION: '待确认',
     RUNNING: '执行中',
     SUCCESS: '成功',
     FAILED: '失败',
@@ -427,6 +429,7 @@ const statusLabel = (status: string) => {
 const statusTone = (status: string) => {
   const toneMap: Record<string, string> = {
     PENDING: 'pending',
+    WAITING_CONFIRMATION: 'waiting',
     RUNNING: 'running',
     SUCCESS: 'success',
     FAILED: 'failed',
@@ -469,6 +472,9 @@ const workItemLabel = (row: ExecutionTaskItem) => {
  * 详细错误仍保留在执行详情页的步骤日志和产物中。
  */
 const executionListSummary = (row: ExecutionTaskItem) => {
+  if (row.status === 'WAITING_CONFIRMATION') {
+    return row.latestSummary || '执行规划已完成，等待发起人确认'
+  }
   if (row.status === 'FAILED') {
     return '执行失败，请进入详情查看错误信息'
   }
@@ -827,6 +833,11 @@ onBeforeUnmount(() => {
 
 .execution-status-pill.pending {
   background: rgba(251, 191, 36, 0.18);
+  color: #b45309;
+}
+
+.execution-status-pill.waiting {
+  background: rgba(245, 158, 11, 0.16);
   color: #b45309;
 }
 

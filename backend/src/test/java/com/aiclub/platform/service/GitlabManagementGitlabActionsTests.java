@@ -254,6 +254,8 @@ class GitlabManagementGitlabActionsTests {
                 null,
                 null,
                 "等待调度",
+                false,
+                false,
                 null,
                 null,
                 "2026-04-14 20:00:00",
@@ -293,7 +295,7 @@ class GitlabManagementGitlabActionsTests {
         when(executionTaskService.createExecutionTask(any())).thenReturn(new com.aiclub.platform.dto.ExecutionTaskSummary(
                 100L, "扫描任务", ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN, "仓库规范扫描",
                 "MANUAL", null, 11L, "演示项目", null, null, null, "PENDING",
-                null, null, 0, null, null, "等待调度", null, null,
+                null, null, 0, null, null, "等待调度", false, false, null, null,
                 "2026-04-15 10:00:00", "2026-04-15 10:00:00"
         ));
 

@@ -22,6 +22,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
@@ -130,7 +132,7 @@ class ExecutionDispatchServiceTests {
                 .thenAnswer(invocation -> {
                     // 这里直接访问 workItem 名称，模拟开发执行器真实读取工作项上下文。
                     assertThat(invocation.<ExecutionTaskEntity>getArgument(0).getWorkItem().getName()).isEqualTo("修复执行中心懒加载");
-                    return new DevelopmentExecutionService.DevelopmentExecutionResult("开发执行已完成", List.of(), false);
+                    return new DevelopmentExecutionService.DevelopmentExecutionResult("开发执行已完成", List.of(), false, false);
                 });
         when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -202,6 +204,284 @@ class ExecutionDispatchServiceTests {
     }
 
     /**
+     * 规划确认模式下，PLAN 完成后调度层不应直接 finishSuccess，而应保留当前 run 并提醒发起人进入详情确认。
+     */
+    @Test
+    void shouldPauseDevelopmentExecutionAfterPlanWhenAwaitingConfirmation() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setCreatedByUser(buildUser(88L, "确认人"));
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION,
+                "开发执行",
+                List.of(
+                        new ExecutionWorkflowService.ExecutionStepPlan(1, "PLAN", "执行规划", buildAgent(11L), null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(2, "IMPLEMENT", "开发实现 · demo/repo", buildAgent(12L), 1L, "main", "demo/repo"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(3, "TEST", "执行测试 · demo/repo", buildAgent(13L), 1L, "main", "demo/repo"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(4, "REPORT", "交付报告", buildAgent(14L), null, null, null)
+                )
+        );
+
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionRunRepository.countByExecutionTask_Id(99L)).thenReturn(0L);
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> {
+            ExecutionRunEntity run = invocation.getArgument(0);
+            if (run.getId() == null) {
+                run.setId(304L);
+            }
+            return run;
+        });
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionWorkflowService.restoreWorkflow(
+                eq(ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION),
+                eq(7L),
+                eq("[]")
+        )).thenReturn(workflowPlan);
+        when(developmentExecutionService.executeDevelopmentTask(eq(executionTask), any(ExecutionRunEntity.class), eq(workflowPlan)))
+                .thenReturn(new DevelopmentExecutionService.DevelopmentExecutionResult(
+                        "执行规划已生成，等待发起人确认",
+                        List.of(),
+                        false,
+                        true
+                ));
+
+        ExecutionRunEntity result = executionDispatchService.dispatchTaskNow(99L);
+
+        assertThat(result.getStatus()).isEqualTo("RUNNING");
+        verify(notificationService).sendToUser(
+                eq(88L),
+                eq(NotificationService.TYPE_TASK),
+                eq(NotificationService.LEVEL_INFO),
+                eq("开发执行待确认：开发执行任务"),
+                eq("执行规划已生成，请前往执行详情查看、编辑并确认继续。"),
+                eq("/tasks/99"),
+                eq("DEVELOPMENT_EXECUTION_PLAN_CONFIRMATION_REQUIRED"),
+                eq(99L)
+        );
+        verify(executionWritebackService, never()).writeBackToWorkItem(any(), any(), any());
+    }
+
+    /**
+     * 发起人确认后，任务会重新回到 PENDING 并复用原 run 继续执行；
+     * 调度层此时不能再 createRun，否则会把确认前后的轨迹拆成两次运行。
+     */
+    @Test
+    void shouldResumeExistingWaitingConfirmationRunWithoutCreatingNewRun() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity waitingRun = new ExecutionRunEntity();
+        waitingRun.setId(305L);
+        waitingRun.setExecutionTask(executionTask);
+        waitingRun.setRunNo(1);
+        waitingRun.setStatus("WAITING_CONFIRMATION");
+        executionTask.setCurrentRun(waitingRun);
+        executionTask.setStatus("PENDING");
+
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION,
+                "开发执行",
+                List.of(
+                        new ExecutionWorkflowService.ExecutionStepPlan(1, "PLAN", "执行规划", buildAgent(11L), null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(2, "IMPLEMENT", "开发实现 · demo/repo", buildAgent(12L), 1L, "main", "demo/repo"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(3, "TEST", "执行测试 · demo/repo", buildAgent(13L), 1L, "main", "demo/repo"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(4, "REPORT", "交付报告", buildAgent(14L), null, null, null)
+                )
+        );
+
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionWorkflowService.restoreWorkflow(
+                eq(ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION),
+                eq(7L),
+                eq("[]")
+        )).thenReturn(workflowPlan);
+        when(developmentExecutionService.executeDevelopmentTask(eq(executionTask), eq(waitingRun), eq(workflowPlan)))
+                .thenReturn(new DevelopmentExecutionService.DevelopmentExecutionResult("恢复后执行完成", List.of(), false, false));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            if (artifact.getId() == null) {
+                artifact.setId(905L);
+            }
+            return artifact;
+        });
+
+        ExecutionRunEntity result = executionDispatchService.dispatchTaskNow(99L);
+
+        assertThat(result.getId()).isEqualTo(305L);
+        verify(executionRunRepository, never()).countByExecutionTask_Id(99L);
+        verify(developmentExecutionService).executeDevelopmentTask(eq(executionTask), eq(waitingRun), eq(workflowPlan));
+    }
+
+    /**
+     * 通用串行链路下的 AD_HOC_RUN 若绑定 CLI Runtime，但当前步骤不走异步流式，
+     * 仍应通过 runAgent 直接执行，保证兼容单次运行场景不被新版 runtime 分流逻辑打断。
+     */
+    @Test
+    void shouldRunCliRuntimeAdHocStepSynchronouslyInGenericWorkflow() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_AD_HOC_AGENT_RUN);
+        executionTask.setTitle("兼容单次运行任务");
+        AgentEntity cliAgent = buildCliRuntimeAgent(21L, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_AD_HOC_AGENT_RUN,
+                "兼容单次执行",
+                List.of(new ExecutionWorkflowService.ExecutionStepPlan(
+                        1,
+                        ExecutionWorkflowService.STEP_AD_HOC_RUN,
+                        "兼容执行",
+                        cliAgent,
+                        null,
+                        null,
+                        null
+                ))
+        );
+
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionRunRepository.countByExecutionTask_Id(99L)).thenReturn(0L);
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> {
+            ExecutionRunEntity run = invocation.getArgument(0);
+            if (run.getId() == null) {
+                run.setId(401L);
+            }
+            return run;
+        });
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> {
+            ExecutionStepEntity step = invocation.getArgument(0);
+            if (step.getId() == null) {
+                step.setId(501L);
+            }
+            return step;
+        });
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            if (artifact.getId() == null) {
+                artifact.setId(951L);
+            }
+            return artifact;
+        });
+        when(executionWorkflowService.restoreWorkflow(
+                eq(ExecutionWorkflowService.SCENARIO_AD_HOC_AGENT_RUN),
+                eq(7L),
+                eq("[]")
+        )).thenReturn(workflowPlan);
+        when(executionWorkflowService.buildStepInput(any(), any(), any(), any(), any()))
+                .thenReturn("请执行一次兼容单次运行");
+        when(agentExecutionService.supportsAsyncExecution(cliAgent, ExecutionWorkflowService.STEP_AD_HOC_RUN))
+                .thenReturn(false);
+        when(agentExecutionService.runAgent(
+                eq(21L),
+                eq("请执行一次兼容单次运行"),
+                any()
+        )).thenReturn("""
+                ## 执行结果
+
+                已完成兼容单次运行
+                """);
+
+        ExecutionRunEntity result = executionDispatchService.dispatchTaskNow(99L);
+
+        assertThat(result.getStatus()).isEqualTo("SUCCESS");
+        assertThat(result.getOutputSummary()).contains("已完成兼容单次运行");
+        verify(agentExecutionService).runAgent(eq(21L), eq("请执行一次兼容单次运行"), any());
+        verify(agentExecutionService, never()).startAsyncExecution(any(), any(), any(), anyInt(), anyInt());
+        verify(executionAsyncSessionService, never()).bindRunnerSession(any(), any(), any(), any(), any());
+    }
+
+    /**
+     * 当 AD_HOC_RUN 绑定 CLI Runtime 且支持异步流式执行时，
+     * 调度层应绑定 runner session 并等待统一回调收口，而不是退回旧同步执行路径。
+     */
+    @Test
+    void shouldRunCliRuntimeAdHocStepAsynchronouslyInGenericWorkflow() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_AD_HOC_AGENT_RUN);
+        executionTask.setTitle("兼容单次运行任务");
+        AgentEntity cliAgent = buildCliRuntimeAgent(22L, AgentExecutionService.RUNTIME_CODEX_CLI);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_AD_HOC_AGENT_RUN,
+                "兼容单次执行",
+                List.of(new ExecutionWorkflowService.ExecutionStepPlan(
+                        1,
+                        ExecutionWorkflowService.STEP_AD_HOC_RUN,
+                        "兼容执行",
+                        cliAgent,
+                        null,
+                        null,
+                        null
+                ))
+        );
+
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionRunRepository.countByExecutionTask_Id(99L)).thenReturn(0L);
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> {
+            ExecutionRunEntity run = invocation.getArgument(0);
+            if (run.getId() == null) {
+                run.setId(402L);
+            }
+            return run;
+        });
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> {
+            ExecutionStepEntity step = invocation.getArgument(0);
+            if (step.getId() == null) {
+                step.setId(502L);
+            }
+            return step;
+        });
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            if (artifact.getId() == null) {
+                artifact.setId(952L);
+            }
+            return artifact;
+        });
+        when(executionWorkflowService.restoreWorkflow(
+                eq(ExecutionWorkflowService.SCENARIO_AD_HOC_AGENT_RUN),
+                eq(7L),
+                eq("[]")
+        )).thenReturn(workflowPlan);
+        when(executionWorkflowService.buildStepInput(any(), any(), any(), any(), any()))
+                .thenReturn("请异步执行一次兼容单次运行");
+        when(agentExecutionService.supportsAsyncExecution(cliAgent, ExecutionWorkflowService.STEP_AD_HOC_RUN))
+                .thenReturn(true);
+        when(executionAsyncSessionService.submitTimeoutSeconds()).thenReturn(15);
+        when(executionAsyncSessionService.maxRuntimeSeconds(ExecutionWorkflowService.STEP_AD_HOC_RUN)).thenReturn(600);
+        when(agentExecutionService.startAsyncExecution(
+                eq(cliAgent),
+                any(),
+                any(),
+                eq(15),
+                eq(600)
+        )).thenReturn(new AgentExecutionService.AsyncExecutionStartResult(
+                "ad-hoc-session-1",
+                true,
+                "CLI",
+                "C:/workspace",
+                "2026-04-19T10:00:00Z"
+        ));
+        when(executionAsyncSessionService.awaitTerminalStep(anyLong(), eq(600))).thenAnswer(invocation -> {
+            ExecutionStepEntity terminalStep = new ExecutionStepEntity();
+            terminalStep.setId(invocation.getArgument(0));
+            terminalStep.setStatus("SUCCESS");
+            terminalStep.setOutputSnapshot("""
+                    ## 执行结果
+
+                    已通过异步 CLI runtime 完成兼容单次运行
+                    """);
+            return terminalStep;
+        });
+
+        ExecutionRunEntity result = executionDispatchService.dispatchTaskNow(99L);
+
+        assertThat(result.getStatus()).isEqualTo("SUCCESS");
+        assertThat(result.getOutputSummary()).contains("异步 CLI runtime");
+        verify(agentExecutionService).startAsyncExecution(eq(cliAgent), eq("请异步执行一次兼容单次运行"), any(), eq(15), eq(600));
+        verify(executionAsyncSessionService).bindRunnerSession(eq(executionTask), any(), any(), eq("ad-hoc-session-1"), eq("CLI"));
+        verify(executionAsyncSessionService).awaitTerminalStep(anyLong(), eq(600));
+        verify(agentExecutionService, never()).runAgent(eq(22L), any(), any());
+    }
+
+    /**
      * 取消态同样会生成 run 级摘要，若不发事件，前端只能等下次刷新才看得到取消产物。
      */
     @Test
@@ -255,6 +535,14 @@ class ExecutionDispatchServiceTests {
         agent.setStatus("在线");
         agent.setEnabled(true);
         agent.setAccessType(AgentExecutionService.ACCESS_HTTP_API);
+        return agent;
+    }
+
+    private AgentEntity buildCliRuntimeAgent(Long id, String runtimeType) {
+        AgentEntity agent = buildAgent(id);
+        agent.setAccessType(AgentExecutionService.ACCESS_AGENT_RUNTIME);
+        agent.setRuntimeType(runtimeType);
+        agent.setEndpointUrl("http://127.0.0.1:8090");
         return agent;
     }
 

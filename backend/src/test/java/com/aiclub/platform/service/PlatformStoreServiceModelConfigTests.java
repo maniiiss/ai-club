@@ -1,6 +1,8 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
+import com.aiclub.platform.dto.AgentSummary;
 import com.aiclub.platform.dto.request.AgentRequest;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.AgentRepository;
@@ -18,7 +20,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -128,5 +132,57 @@ class PlatformStoreServiceModelConfigTests {
 
         verify(aiModelConfigRepository).findById(9L);
         verifyNoInteractions(agentRepository);
+    }
+
+    /**
+     * 统一 CLI Runner 已改为复用平台级 code-processing 地址与内部服务鉴权，
+     * 因此新建 Codex / Claude CLI Runtime 时不应再强制要求 Agent 级 Gateway 与 Bearer Token。
+     */
+    @Test
+    void shouldCreateCliRuntimeAgentWithoutGatewayAndBearerToken() {
+        when(agentRepository.save(any(AgentEntity.class))).thenAnswer(invocation -> {
+            AgentEntity entity = invocation.getArgument(0);
+            entity.setId(21L);
+            return entity;
+        });
+
+        AgentRequest request = new AgentRequest(
+                "Claude CLI Agent",
+                "开发",
+                "开发",
+                "在线",
+                true,
+                AgentExecutionService.ACCESS_AGENT_RUNTIME,
+                null,
+                "执行中心 CLI Runner",
+                "验证 CLI Runtime 精简配置",
+                null,
+                "系统提示词",
+                "请处理：{{input}}",
+                null,
+                AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                120,
+                null
+        );
+
+        AgentSummary summary = platformStoreService.createAgent(request);
+
+        assertThat(summary.id()).isEqualTo(21L);
+        assertThat(summary.accessType()).isEqualTo(AgentExecutionService.ACCESS_AGENT_RUNTIME);
+        assertThat(summary.runtimeType()).isEqualTo(AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI);
+        assertThat(summary.endpointUrl()).isNull();
+        assertThat(summary.runtimeAgentRef()).isNull();
+        assertThat(summary.runtimeSessionKeyTemplate()).isNull();
+        assertThat(summary.httpAuthType()).isNull();
+        assertThat(summary.httpAuthTokenConfigured()).isFalse();
+        verify(agentRepository).save(any(AgentEntity.class));
     }
 }

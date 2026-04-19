@@ -7,12 +7,15 @@ import com.aiclub.platform.dto.ExecutionRunSummary;
 import com.aiclub.platform.dto.ExecutionTaskDetail;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.PageResponse;
+import com.aiclub.platform.dto.request.ConfirmExecutionPlanRequest;
 import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
+import com.aiclub.platform.dto.request.UpdateExecutionPlanMarkdownRequest;
 import com.aiclub.platform.service.ExecutionTaskService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -76,5 +79,21 @@ public class ExecutionTaskController {
     @OperationLog(actionCode = "EXECUTION_TASK_RETRY", actionName = "重试执行任务", bizIdParam = "id")
     public ApiResponse<ExecutionTaskSummary> retry(@PathVariable Long id) {
         return ApiResponse.success(executionTaskService.retryExecutionTask(id));
+    }
+
+    @PutMapping("/{id}/plan-markdown")
+    @RequirePermission("task:view")
+    @OperationLog(actionCode = "EXECUTION_TASK_UPDATE_PLAN", actionName = "更新执行规划", bizIdParam = "id")
+    public ApiResponse<ExecutionTaskDetail> updatePlanMarkdown(@PathVariable Long id,
+                                                               @Valid @RequestBody UpdateExecutionPlanMarkdownRequest request) {
+        return ApiResponse.success(executionTaskService.updateExecutionPlanMarkdown(id, request));
+    }
+
+    @PostMapping("/{id}/confirm-plan")
+    @RequirePermission("task:view")
+    @OperationLog(actionCode = "EXECUTION_TASK_CONFIRM_PLAN", actionName = "确认执行规划", bizIdParam = "id")
+    public ApiResponse<ExecutionTaskDetail> confirmPlan(@PathVariable Long id,
+                                                        @Valid @RequestBody ConfirmExecutionPlanRequest request) {
+        return ApiResponse.success(executionTaskService.confirmExecutionPlan(id, request));
     }
 }

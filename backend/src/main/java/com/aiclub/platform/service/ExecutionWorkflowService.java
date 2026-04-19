@@ -372,14 +372,17 @@ public class ExecutionWorkflowService {
 
         return switch (stepCode) {
             case STEP_PLAN -> findFirstByPredicate(candidates, agent ->
-                    "REQUIREMENT_BREAKDOWN".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
+                    isCliRuntime(agent, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI)
+                            || "REQUIREMENT_BREAKDOWN".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
                             || containsAny(agent, "planner", "规划", "需求"));
             case STEP_IMPLEMENT -> findFirstByPredicate(candidates, agent ->
-                    isExecutableAgent(agent)
-                            && containsAny(agent, "coder", "code", "开发", "实现"));
+                    isCliRuntime(agent, AgentExecutionService.RUNTIME_CODEX_CLI)
+                            || isCliRuntime(agent, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI)
+                            || (isExecutableAgent(agent) && containsAny(agent, "coder", "code", "开发", "实现")));
             case STEP_TEST -> findFirstByPredicate(candidates, agent ->
-                    isExecutableAgent(agent)
-                            && containsAny(agent, "test", "qa", "测试", "quality"))
+                    isCliRuntime(agent, AgentExecutionService.RUNTIME_CODEX_CLI)
+                            || isCliRuntime(agent, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI)
+                            || (isExecutableAgent(agent) && containsAny(agent, "test", "qa", "测试", "quality")))
                     .or(() -> findFirstByPredicate(candidates, agent ->
                             isExecutableAgent(agent)
                                     && containsAny(agent, "coder", "code", "开发", "实现")))
@@ -411,6 +414,12 @@ public class ExecutionWorkflowService {
     private boolean isExecutableAgent(AgentEntity agent) {
         String accessType = defaultString(agent.getAccessType()).trim().toUpperCase(Locale.ROOT);
         return "HTTP_API".equals(accessType) || "AGENT_RUNTIME".equals(accessType);
+    }
+
+    private boolean isCliRuntime(AgentEntity agent, String runtimeType) {
+        return agent != null
+                && AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(defaultString(agent.getAccessType()))
+                && runtimeType.equalsIgnoreCase(defaultString(agent.getRuntimeType()));
     }
 
     private boolean containsAny(AgentEntity agent, String... keywords) {

@@ -91,6 +91,16 @@
           />
         </el-form-item>
 
+        <el-form-item v-if="isDevelopmentScenario" label="规划确认">
+          <div class="execution-plan-confirm-field">
+            <el-switch v-model="form.planConfirmationRequired" />
+            <div class="execution-plan-confirm-copy">
+              <strong>规划完成后需我确认再继续</strong>
+              <span>开启后只会先生成执行规划，并通过站内消息提醒你进入执行详情查看、编辑和确认。</span>
+            </div>
+          </div>
+        </el-form-item>
+
         <section class="execution-step-section">
           <div class="execution-step-head">
             <div class="execution-step-title">步骤 Agent 绑定</div>
@@ -147,6 +157,7 @@ interface StepOption {
 interface ExecutionCreateForm {
   scenarioCode: string
   inputText: string
+  planConfirmationRequired: boolean
   stepAgentMap: Record<string, number | undefined>
   repositories: DevelopmentRepositoryFormItem[]
 }
@@ -179,7 +190,7 @@ const stepOptionsMap: Record<string, StepOption[]> = {
     { stepCode: 'PLAN', stepName: '需求拆解', description: '拆分需求、梳理目标与执行项。' }
   ],
   DEVELOPMENT_IMPLEMENTATION: [
-    { stepCode: 'PLAN', stepName: '执行规划', description: '由 Claude Code 扫描所选仓库并生成执行规划。' },
+    { stepCode: 'PLAN', stepName: '执行规划', description: '由所选 CLI Runner 或规划智能体扫描所选仓库并生成执行规划。' },
     { stepCode: 'IMPLEMENT', stepName: '开发实现', description: '由可真实执行的 Runtime / API Agent 完成代码开发。' },
     { stepCode: 'TEST', stepName: '执行测试', description: '由可真实执行的 Runtime / API Agent 完成仓库级验证。' },
     { stepCode: 'REPORT', stepName: '交付报告', description: '汇总多仓执行结果、失败位置与遗留风险。' }
@@ -193,6 +204,7 @@ const stepOptionsMap: Record<string, StepOption[]> = {
 const form = reactive<ExecutionCreateForm>({
   scenarioCode: 'REQUIREMENT_BREAKDOWN',
   inputText: '',
+  planConfirmationRequired: false,
   stepAgentMap: {},
   repositories: []
 })
@@ -248,10 +260,14 @@ const findRecommendedAgent = (...predicates: Array<(agent: AgentItem, haystack: 
   return undefined
 }
 
+const isRuntimeType = (agent: AgentItem, runtimeType: string) =>
+  agent.accessType === 'AGENT_RUNTIME' && agent.runtimeType === runtimeType
+
 const recommendAgentId = (scenarioCode: string, stepCode: string) => {
   const normalizedStepCode = stepCode.toUpperCase()
   if (normalizedStepCode === 'PLAN' && scenarioCode === 'DEVELOPMENT_IMPLEMENTATION') {
     const planAgentId = findRecommendedAgent(
+      (agent, _haystack) => isRuntimeType(agent, 'CLAUDE_CODE_CLI'),
       (agent, haystack) => agent.accessType === 'HTTP_API' && /claude/.test(haystack) && /plan|planning|规划/.test(haystack),
       (agent, haystack) => agent.accessType === 'HTTP_API' && /执行规划|开发执行规划/.test(haystack),
       (agent, haystack) => /claude/.test(haystack) && /plan|planning|规划/.test(haystack),
@@ -272,10 +288,12 @@ const recommendAgentId = (scenarioCode: string, stepCode: string) => {
   }
   const match = findRecommendedAgent(
     (agent, haystack) => normalizedStepCode === 'IMPLEMENT'
-      ? isExecutableAgent(agent) && /coder|code|开发|实现/.test(haystack) && agent.builtinCode !== 'CODE_REVIEW'
+      ? (isRuntimeType(agent, 'CODEX_CLI') || isRuntimeType(agent, 'CLAUDE_CODE_CLI')
+        || (isExecutableAgent(agent) && /coder|code|开发|实现/.test(haystack) && agent.builtinCode !== 'CODE_REVIEW'))
       : false,
     (agent, haystack) => normalizedStepCode === 'TEST'
-      ? isExecutableAgent(agent) && /test|qa|测试|quality/.test(haystack)
+      ? (isRuntimeType(agent, 'CODEX_CLI') || isRuntimeType(agent, 'CLAUDE_CODE_CLI')
+        || (isExecutableAgent(agent) && /test|qa|测试|quality/.test(haystack)))
       : false,
     (agent, haystack) => normalizedStepCode === 'TEST_DESIGN'
       ? agent.builtinCode === 'TEST_SUGGESTION' || /test|测试|quality/.test(haystack)
@@ -360,6 +378,7 @@ const removeRepository = (bindingId: number) => {
 const resetForm = () => {
   form.scenarioCode = props.workItem?.workItemType === '需求' ? 'REQUIREMENT_BREAKDOWN' : 'DEVELOPMENT_IMPLEMENTATION'
   form.inputText = ''
+  form.planConfirmationRequired = false
   form.stepAgentMap = {}
   form.repositories = []
   formRef.value?.clearValidate()
@@ -381,6 +400,7 @@ watch(
   () => {
     resetStepAgentMapByScenario()
     if (!isDevelopmentScenario.value) {
+      form.planConfirmationRequired = false
       form.repositories = []
     }
   }
@@ -444,6 +464,7 @@ const handleSubmit = async () => {
       projectId: props.workItem.projectId,
       workItemId: props.workItem.id,
       triggerSource: 'PAGE',
+      planConfirmationRequired: isDevelopmentScenario.value ? form.planConfirmationRequired : false,
       agentBindings: currentStepOptions.value
         .map((step) => ({
           stepCode: step.stepCode,
@@ -470,6 +491,26 @@ const handleSubmit = async () => {
   gap: 8px;
   margin-bottom: 16px;
   color: #64748b;
+  font-size: 13px;
+}
+
+.execution-plan-confirm-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.execution-plan-confirm-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.execution-plan-confirm-copy strong {
+  color: #0f172a;
   font-size: 13px;
 }
 

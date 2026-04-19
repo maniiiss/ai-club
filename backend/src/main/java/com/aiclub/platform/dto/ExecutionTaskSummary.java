@@ -19,6 +19,8 @@ public record ExecutionTaskSummary(
         Integer currentStepNo,
         String currentStepName,
         String latestSummary,
+        boolean planConfirmationRequired,
+        boolean planConfirmationPending,
         Long createdByUserId,
         String createdByName,
         String createdAt,

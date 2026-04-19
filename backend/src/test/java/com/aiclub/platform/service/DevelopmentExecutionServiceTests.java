@@ -121,7 +121,7 @@ class DevelopmentExecutionServiceTests {
         });
         when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(executionTaskRepository.findCancelRequestedFlagById(99L)).thenReturn(false);
+        lenient().when(executionTaskRepository.findCancelRequestedFlagById(99L)).thenReturn(false);
         lenient().when(executionAsyncSessionService.submitTimeoutSeconds()).thenReturn(15);
         lenient().when(executionAsyncSessionService.maxRuntimeSeconds(any(String.class))).thenAnswer(invocation -> {
             String stepCode = invocation.getArgument(0, String.class);
@@ -182,6 +182,35 @@ class DevelopmentExecutionServiceTests {
                         && String.valueOf(variables.get("development_repositories_json")).contains("\"projectPath\":\"group/backend\"")
                         && String.valueOf(variables.get("development_repositories_json")).contains("\"targetBranch\":\"release/1.0\""))
         );
+    }
+
+    /**
+     * 规划确认模式只会自动执行 PLAN；规划产出后任务应停在待确认态，等待发起人进入详情页确认继续。
+     */
+    @Test
+    void shouldPauseAfterPlanWhenPlanConfirmationIsRequired() {
+        ExecutionTaskEntity executionTask = buildExecutionTask(true);
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = buildWorkflowPlan();
+
+        when(agentExecutionService.runAgent(eq(11L), any(String.class), any(Map.class)))
+                .thenReturn("# 执行规划\n\n- 先改 frontend\n- 再改 backend");
+
+        DevelopmentExecutionService.DevelopmentExecutionResult result =
+                developmentExecutionService.executeDevelopmentTask(executionTask, executionRun, workflowPlan);
+
+        assertThat(result.awaitingConfirmation()).isTrue();
+        assertThat(result.canceled()).isFalse();
+        assertThat(executionTask.getStatus()).isEqualTo("WAITING_CONFIRMATION");
+        assertThat(executionRun.getStatus()).isEqualTo("WAITING_CONFIRMATION");
+        assertThat(savedSteps)
+                .extracting(ExecutionStepEntity::getStepName, ExecutionStepEntity::getStatus)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("执行规划", "SUCCESS"));
+        assertThat(savedArtifacts)
+                .extracting(ExecutionArtifactEntity::getArtifactType)
+                .containsExactly("PLAN_MARKDOWN");
+        verify(agentExecutionService, org.mockito.Mockito.never()).runAgent(eq(12L), any(String.class), any(Map.class));
+        verify(agentExecutionService, org.mockito.Mockito.never()).runAgent(eq(13L), any(String.class), any(Map.class));
     }
 
     /**
@@ -297,6 +326,61 @@ class DevelopmentExecutionServiceTests {
     }
 
     /**
+     * 发起人确认后恢复执行时，IMPLEMENT 读取的应是用户最后保存的规划正文，
+     * 而不是重新再跑一次 PLAN 或继续使用确认前的旧版本。
+     */
+    @Test
+    void shouldReuseSavedPlanMarkdownWhenResumingAfterConfirmation() {
+        ExecutionTaskEntity executionTask = buildExecutionTask(true);
+        executionTask.setStatus("RUNNING");
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        executionRun.setStatus("RUNNING");
+        executionRun.setCurrentStepNo(1);
+
+        ExecutionStepEntity savedPlanStep = new ExecutionStepEntity();
+        savedPlanStep.setId(8100L);
+        savedPlanStep.setRun(executionRun);
+        savedPlanStep.setStepNo(1);
+        savedPlanStep.setStepCode("PLAN");
+        savedPlanStep.setStepName("执行规划");
+        savedPlanStep.setStatus("SUCCESS");
+        savedPlanStep.setOutputSnapshot("""
+                # 人工修改后的规划
+
+                - frontend 先加确认开关
+                - backend 再补待确认状态
+                """);
+        savedSteps.add(savedPlanStep);
+
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = buildWorkflowPlan();
+        when(agentExecutionService.runAgent(
+                eq(12L),
+                argThat(input -> input.contains("人工修改后的规划") && !input.contains("## 输出要求\n- 使用 Markdown")),
+                any(Map.class)))
+                .thenReturn("""
+                        {
+                          "status": "FAILED",
+                          "summary": "frontend 仓库开发失败",
+                          "changedFiles": [],
+                          "commandsExecuted": [],
+                          "log": "实现阶段主动中止"
+                        }
+                        """);
+        when(agentExecutionService.runAgent(eq(14L), any(String.class), any(Map.class)))
+                .thenReturn("""
+                        # 交付报告
+
+                        frontend 仓库在开发实现阶段失败，backend 仓库未执行。
+                        """);
+
+        assertThatThrownBy(() -> developmentExecutionService.executeDevelopmentTask(executionTask, executionRun, workflowPlan))
+                .isInstanceOf(DevelopmentExecutionService.DevelopmentExecutionStepException.class)
+                .hasMessageContaining("frontend 仓库开发失败");
+
+        verify(agentExecutionService, org.mockito.Mockito.never()).runAgent(eq(11L), any(String.class), any(Map.class));
+    }
+
+    /**
      * 任一仓库测试失败后也要停止后续仓库，并把平台选出的 harness 命令透传给测试执行器。
      */
     @Test
@@ -362,7 +446,7 @@ class DevelopmentExecutionServiceTests {
                 );
         assertThat(savedArtifacts)
                 .extracting(ExecutionArtifactEntity::getArtifactType)
-                .containsExactly("PLAN_MARKDOWN", "IMPLEMENT_RESULT_JSON", "IMPLEMENT_LOG", "REPORT_MARKDOWN");
+                .containsExactly("PLAN_MARKDOWN", "IMPLEMENT_RESULT_MARKDOWN", "IMPLEMENT_RESULT_JSON", "IMPLEMENT_LOG", "REPORT_MARKDOWN");
         verify(agentExecutionService).runAgent(
                 eq(13L),
                 any(String.class),
@@ -482,6 +566,10 @@ class DevelopmentExecutionServiceTests {
     }
 
     private ExecutionTaskEntity buildExecutionTask() {
+        return buildExecutionTask(false);
+    }
+
+    private ExecutionTaskEntity buildExecutionTask(boolean planConfirmationRequired) {
         ProjectEntity project = new ProjectEntity("执行中心演示项目", "张三", "进行中", "用于多仓开发执行测试");
         project.setId(11L);
         ExecutionTaskEntity executionTask = new ExecutionTaskEntity();
@@ -492,12 +580,13 @@ class DevelopmentExecutionServiceTests {
         executionTask.setInputPayload("""
                 {
                   "inputText": "请完成联调需求",
+                  "planConfirmationRequired": %s,
                   "repositories": [
                     {"bindingId": 1, "targetBranch": "release/1.0"},
                     {"bindingId": 2, "targetBranch": "main"}
                   ]
                 }
-                """);
+                """.formatted(planConfirmationRequired));
         return executionTask;
     }
 

@@ -3,6 +3,9 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from app.models import (
     ClaudePlanningRequest,
     ClaudePlanningResponse,
+    CliExecutionRequest,
+    CliExecutionResponse,
+    CliExecutionRepository,
     CodexExecutionRequest,
     CodexExecutionResponse,
     DocumentConvertResponse,
@@ -24,8 +27,7 @@ from app.models import (
     ScanSummary,
     ExecutionSessionAcceptedResponse,
 )
-from app.services.claude_planning_service import execute_claude_plan, start_claude_plan
-from app.services.codex_execution_service import execute_codex_execution, start_codex_execution
+from app.services.cli_execution_service import execute_cli_execution, start_cli_execution
 from app.services.repository_service import build_summary
 from app.services.document_service import convert_document_to_markdown
 from app.services.repository_scan_service import (
@@ -61,7 +63,32 @@ def codex_execution(request_http: Request, payload: CodexExecutionRequest) -> Co
     """供 backend 的 HTTP_API Agent 调用本机 Codex/测试桥。"""
     _require_internal_service_auth(request_http)
     try:
-        return execute_codex_execution(payload)
+        response = execute_cli_execution(CliExecutionRequest(
+            runnerType="CODEX_CLI",
+            mode=payload.mode,
+            input=payload.input,
+            repositories=[
+                CliExecutionRepository(
+                    bindingId=payload.repository.bindingId,
+                    displayName=payload.repository.displayName,
+                    projectRef=payload.repository.projectRef,
+                    projectPath=payload.repository.projectPath,
+                    repoUrl=payload.repository.repoUrl,
+                    targetBranch=payload.repository.targetBranch,
+                    apiBaseUrl=payload.repository.apiBaseUrl,
+                    authToken=payload.repository.authToken,
+                )
+            ],
+            execution=payload.execution,
+            testCommands=payload.testCommands,
+            timeoutSeconds=payload.timeoutSeconds,
+        ))
+        return CodexExecutionResponse(
+            output=response.output,
+            workspaceRoot=response.workspaceRoot,
+            repoPath=response.repoPath,
+            logPreview=response.logPreview,
+        )
     except ValueError as exception:
         raise HTTPException(status_code=400, detail=str(exception)) from exception
     except RuntimeError as exception:
@@ -73,7 +100,50 @@ def codex_execution_start(request_http: Request, payload: CodexExecutionRequest)
     """供 backend 启动异步 Codex/测试执行会话。"""
     _require_internal_service_auth(request_http)
     try:
-        return start_codex_execution(payload)
+        return start_cli_execution(CliExecutionRequest(
+            runnerType="CODEX_CLI",
+            mode=payload.mode,
+            input=payload.input,
+            repositories=[
+                CliExecutionRepository(
+                    bindingId=payload.repository.bindingId,
+                    displayName=payload.repository.displayName,
+                    projectRef=payload.repository.projectRef,
+                    projectPath=payload.repository.projectPath,
+                    repoUrl=payload.repository.repoUrl,
+                    targetBranch=payload.repository.targetBranch,
+                    apiBaseUrl=payload.repository.apiBaseUrl,
+                    authToken=payload.repository.authToken,
+                )
+            ],
+            execution=payload.execution,
+            testCommands=payload.testCommands,
+            timeoutSeconds=payload.timeoutSeconds,
+        ))
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+
+
+@router.post("/cli-executions", response_model=CliExecutionResponse)
+def cli_execution(request_http: Request, payload: CliExecutionRequest) -> CliExecutionResponse:
+    """供 backend 的 AGENT_RUNTIME 统一调用本机 CLI Runner。"""
+    _require_internal_service_auth(request_http)
+    try:
+        return execute_cli_execution(payload)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+
+
+@router.post("/cli-executions/start", response_model=ExecutionSessionAcceptedResponse)
+def cli_execution_start(request_http: Request, payload: CliExecutionRequest) -> ExecutionSessionAcceptedResponse:
+    """供 backend 启动异步 CLI Runner 会话。"""
+    _require_internal_service_auth(request_http)
+    try:
+        return start_cli_execution(payload)
     except ValueError as exception:
         raise HTTPException(status_code=400, detail=str(exception)) from exception
     except RuntimeError as exception:
@@ -85,7 +155,32 @@ def claude_plan(request_http: Request, payload: ClaudePlanningRequest) -> Claude
     """供 backend 的 HTTP_API Agent 调用本机 Claude Code 规划桥。"""
     _require_internal_service_auth(request_http)
     try:
-        return execute_claude_plan(payload)
+        response = execute_cli_execution(CliExecutionRequest(
+            runnerType="CLAUDE_CODE_CLI",
+            mode="PLAN",
+            input=payload.input,
+            repositories=[
+                CliExecutionRepository(
+                    bindingId=repository.bindingId,
+                    displayName=repository.displayName,
+                    projectRef=repository.projectRef,
+                    projectPath=repository.projectPath,
+                    repoUrl=repository.repoUrl,
+                    targetBranch=repository.targetBranch,
+                    apiBaseUrl=repository.apiBaseUrl,
+                    authToken=repository.authToken,
+                )
+                for repository in payload.repositories
+            ],
+            execution=payload.execution,
+            timeoutSeconds=payload.timeoutSeconds,
+        ))
+        return ClaudePlanningResponse(
+            output=response.output,
+            workspaceRoot=response.workspaceRoot,
+            repoPaths=response.repoPaths,
+            logPreview=response.logPreview,
+        )
     except ValueError as exception:
         raise HTTPException(status_code=400, detail=str(exception)) from exception
     except RuntimeError as exception:
@@ -97,7 +192,26 @@ def claude_plan_start(request_http: Request, payload: ClaudePlanningRequest) -> 
     """供 backend 启动异步 Claude Code 规划会话。"""
     _require_internal_service_auth(request_http)
     try:
-        return start_claude_plan(payload)
+        return start_cli_execution(CliExecutionRequest(
+            runnerType="CLAUDE_CODE_CLI",
+            mode="PLAN",
+            input=payload.input,
+            repositories=[
+                CliExecutionRepository(
+                    bindingId=repository.bindingId,
+                    displayName=repository.displayName,
+                    projectRef=repository.projectRef,
+                    projectPath=repository.projectPath,
+                    repoUrl=repository.repoUrl,
+                    targetBranch=repository.targetBranch,
+                    apiBaseUrl=repository.apiBaseUrl,
+                    authToken=repository.authToken,
+                )
+                for repository in payload.repositories
+            ],
+            execution=payload.execution,
+            timeoutSeconds=payload.timeoutSeconds,
+        ))
     except ValueError as exception:
         raise HTTPException(status_code=400, detail=str(exception)) from exception
     except RuntimeError as exception:

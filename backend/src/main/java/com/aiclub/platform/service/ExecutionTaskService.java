@@ -17,8 +17,11 @@ import com.aiclub.platform.dto.ExecutionTaskDetail;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.TaskAgentRunSummary;
+import com.aiclub.platform.dto.request.ConfirmExecutionPlanRequest;
 import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
 import com.aiclub.platform.dto.request.ExecutionAgentBindingRequest;
+import com.aiclub.platform.dto.request.UpdateExecutionPlanMarkdownRequest;
+import com.aiclub.platform.exception.ForbiddenException;
 import com.aiclub.platform.exception.UnauthorizedException;
 import com.aiclub.platform.repository.ExecutionArtifactRepository;
 import com.aiclub.platform.repository.ExecutionRunRepository;
@@ -40,6 +43,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.time.LocalDateTime;
@@ -61,6 +66,9 @@ import java.util.Set;
 public class ExecutionTaskService {
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final String STATUS_WAITING_CONFIRMATION = "WAITING_CONFIRMATION";
+    private static final String PLAN_ARTIFACT_TYPE = "PLAN_MARKDOWN";
+    private static final String PLAN_ARTIFACT_TITLE = "执行规划 Markdown";
 
     private final ExecutionTaskRepository executionTaskRepository;
     private final ExecutionRunRepository executionRunRepository;
@@ -152,6 +160,13 @@ public class ExecutionTaskService {
         TaskEntity workItem = request.workItemId() == null ? null : requireWorkItem(project.getId(), request.workItemId());
         UserEntity currentUser = requireCurrentUser();
         Map<String, Object> normalizedPayload = defaultPayload(request.inputPayload());
+        String normalizedTriggerSource = normalizeTriggerSource(request.triggerSource());
+        boolean planConfirmationRequired = normalizePlanConfirmationRequired(
+                request.scenarioCode(),
+                normalizedTriggerSource,
+                request.planConfirmationRequired()
+        );
+        normalizedPayload.put("planConfirmationRequired", planConfirmationRequired);
         List<ExecutionWorkflowService.DevelopmentRepositorySelection> developmentRepositories =
                 resolveDevelopmentRepositories(request.scenarioCode(), project, normalizedPayload);
         ExecutionWorkflowService.WorkflowPlan workflowPlan = executionWorkflowService.buildWorkflow(
@@ -165,7 +180,7 @@ public class ExecutionTaskService {
         ExecutionTaskEntity entity = new ExecutionTaskEntity();
         entity.setSourceType(workItem == null ? "MANUAL" : "WORK_ITEM");
         entity.setSourceId(workItem == null ? null : workItem.getId());
-        entity.setTriggerSource(normalizeTriggerSource(request.triggerSource()));
+        entity.setTriggerSource(normalizedTriggerSource);
         entity.setScenarioCode(workflowPlan.scenarioCode());
         entity.setTitle(resolveExecutionTaskTitle(request.title(), workflowPlan.scenarioName(), workItem));
         entity.setProject(project);
@@ -185,12 +200,16 @@ public class ExecutionTaskService {
      */
     @Transactional
     public ExecutionTaskSummary cancelExecutionTask(Long executionTaskId) {
-        ExecutionTaskEntity executionTask = requireExecutionTask(executionTaskId);
+        ExecutionTaskEntity executionTask = requireExecutionTaskWithContext(executionTaskId);
         if ("PENDING".equals(executionTask.getStatus())) {
             executionTask.setStatus("CANCELED");
             executionTask.setCancelRequested(false);
             executionTask.setLatestSummary("执行已取消");
             return toTaskSummary(executionTaskRepository.save(executionTask));
+        }
+        if (STATUS_WAITING_CONFIRMATION.equals(executionTask.getStatus())) {
+            cancelWaitingConfirmationTask(executionTask);
+            return toTaskSummary(executionTask);
         }
         if ("RUNNING".equals(executionTask.getStatus())) {
             executionTask.setCancelRequested(true);
@@ -206,7 +225,7 @@ public class ExecutionTaskService {
      */
     @Transactional
     public ExecutionTaskSummary retryExecutionTask(Long executionTaskId) {
-        ExecutionTaskEntity executionTask = requireExecutionTask(executionTaskId);
+        ExecutionTaskEntity executionTask = requireExecutionTaskWithContext(executionTaskId);
         if ("RUNNING".equals(executionTask.getStatus()) || "PENDING".equals(executionTask.getStatus())) {
             throw new IllegalArgumentException("当前执行任务仍在处理中，暂不可重试");
         }
@@ -232,12 +251,42 @@ public class ExecutionTaskService {
                 workItem.getId(),
                 workItem.getName() + " - 单次执行",
                 "LEGACY_TASK_AGENT_RUN",
+                false,
                 List.of(new ExecutionAgentBindingRequest(ExecutionWorkflowService.STEP_AD_HOC_RUN, workItem.getAgent().getId())),
                 Map.of("inputText", defaultString(inputText).trim())
         );
         ExecutionTaskSummary executionTaskSummary = createExecutionTask(request);
         ExecutionRunEntity executionRun = executionDispatchService.dispatchTaskNow(executionTaskSummary.id());
         return toLegacyRunSummary(executionRun);
+    }
+
+    /**
+     * 规划确认页允许发起人对 PLAN 产物做最终润色，后续 IMPLEMENT / TEST / REPORT 都会以这份内容为准。
+     */
+    @Transactional
+    public ExecutionTaskDetail updateExecutionPlanMarkdown(Long executionTaskId,
+                                                           UpdateExecutionPlanMarkdownRequest request) {
+        ExecutionTaskEntity executionTask = requireExecutionTaskWithContext(executionTaskId);
+        requirePlanConfirmationEditor(executionTask);
+        overwritePlanMarkdown(executionTask, request.planMarkdown());
+        return toTaskDetail(requireExecutionTaskWithContext(executionTaskId));
+    }
+
+    /**
+     * 发起人确认规划后，把任务重新置回待调度态，并在事务提交后续跑原 run。
+     */
+    @Transactional
+    public ExecutionTaskDetail confirmExecutionPlan(Long executionTaskId,
+                                                    ConfirmExecutionPlanRequest request) {
+        ExecutionTaskEntity executionTask = requireExecutionTaskWithContext(executionTaskId);
+        requirePlanConfirmationEditor(executionTask);
+        overwritePlanMarkdown(executionTask, request.planMarkdown());
+        executionTask.setStatus("PENDING");
+        executionTask.setCancelRequested(false);
+        executionTask.setLatestSummary("执行规划已确认，等待继续执行");
+        executionTaskRepository.save(executionTask);
+        scheduleDispatchAfterCommit(executionTask.getId());
+        return toTaskDetail(requireExecutionTaskWithContext(executionTaskId));
     }
 
     public List<TaskAgentRunSummary> listRecentWorkItemRuns(Long workItemId) {
@@ -314,6 +363,8 @@ public class ExecutionTaskService {
     private ExecutionTaskSummary toTaskSummary(ExecutionTaskEntity executionTask) {
         ExecutionRunEntity currentRun = executionTask.getCurrentRun();
         String currentStepName = currentRun == null ? null : resolveStepName(currentRun, currentRun.getCurrentStepNo());
+        boolean planConfirmationRequired = isPlanConfirmationRequired(executionTask.getInputPayload());
+        boolean planConfirmationPending = STATUS_WAITING_CONFIRMATION.equalsIgnoreCase(executionTask.getStatus());
         return new ExecutionTaskSummary(
                 executionTask.getId(),
                 executionTask.getTitle(),
@@ -333,6 +384,8 @@ public class ExecutionTaskService {
                 currentRun == null ? null : currentRun.getCurrentStepNo(),
                 currentStepName,
                 executionTask.getLatestSummary(),
+                planConfirmationRequired,
+                planConfirmationPending,
                 executionTask.getCreatedByUser() == null ? null : executionTask.getCreatedByUser().getId(),
                 displayName(executionTask.getCreatedByUser()),
                 formatTime(executionTask.getCreatedAt()),
@@ -344,6 +397,8 @@ public class ExecutionTaskService {
         List<ExecutionRunSummary> runs = executionRunRepository.findAllByExecutionTask_IdOrderByRunNoDescIdDesc(executionTask.getId()).stream()
                 .map(this::toRunSummary)
                 .toList();
+        boolean planConfirmationRequired = isPlanConfirmationRequired(executionTask.getInputPayload());
+        boolean planConfirmationPending = STATUS_WAITING_CONFIRMATION.equalsIgnoreCase(executionTask.getStatus());
         return new ExecutionTaskDetail(
                 executionTask.getId(),
                 executionTask.getTitle(),
@@ -366,6 +421,9 @@ public class ExecutionTaskService {
                 formatTime(executionTask.getUpdatedAt()),
                 executionTask.getCurrentRun() == null ? null : executionTask.getCurrentRun().getId(),
                 executionTask.getInputPayload(),
+                planConfirmationRequired,
+                planConfirmationPending,
+                planConfirmationPending && canCurrentUserConfirmPlan(executionTask),
                 runs
         );
     }
@@ -524,6 +582,13 @@ public class ExecutionTaskService {
         return executionTask;
     }
 
+    private ExecutionTaskEntity requireExecutionTaskWithContext(Long executionTaskId) {
+        ExecutionTaskEntity executionTask = executionTaskRepository.findWithExecutionContextById(executionTaskId)
+                .orElseThrow(() -> new NoSuchElementException("执行任务不存在: " + executionTaskId));
+        projectDataPermissionService.requireProjectVisible(executionTask.getProject());
+        return executionTask;
+    }
+
     private ExecutionRunEntity requireExecutionRun(Long executionRunId) {
         ExecutionRunEntity executionRun = executionRunRepository.findById(executionRunId)
                 .orElseThrow(() -> new NoSuchElementException("执行运行不存在: " + executionRunId));
@@ -537,6 +602,91 @@ public class ExecutionTaskService {
                 .orElseThrow(() -> new UnauthorizedException("Not logged in"));
         return userRepository.findById(userId)
                 .orElseThrow(() -> new NoSuchElementException("用户不存在: " + userId));
+    }
+
+    private void requirePlanConfirmationEditor(ExecutionTaskEntity executionTask) {
+        if (!ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(executionTask.getScenarioCode())
+                || !isPlanConfirmationRequired(executionTask.getInputPayload())) {
+            throw new IllegalArgumentException("当前执行任务未开启规划确认流程");
+        }
+        if (!STATUS_WAITING_CONFIRMATION.equalsIgnoreCase(executionTask.getStatus())) {
+            throw new IllegalStateException("当前执行任务不处于待确认状态");
+        }
+        if (!canCurrentUserConfirmPlan(executionTask)) {
+            throw new ForbiddenException("只有执行任务发起人可以编辑并确认执行规划");
+        }
+        if (executionTask.getCurrentRun() == null) {
+            throw new IllegalStateException("当前执行任务缺少待确认运行记录");
+        }
+    }
+
+    /**
+     * 待确认态的开发执行还没有最终收口，这里只允许发起人修改 PLAN 步骤产物，
+     * 避免后续 IMPLEMENT / TEST 仍然读取旧版规划。
+     */
+    private void overwritePlanMarkdown(ExecutionTaskEntity executionTask, String rawPlanMarkdown) {
+        ExecutionRunEntity currentRun = executionTask.getCurrentRun();
+        if (currentRun == null) {
+            throw new IllegalStateException("当前执行任务缺少运行记录");
+        }
+        String planMarkdown = rawPlanMarkdown == null ? "" : rawPlanMarkdown.strip();
+        if (!hasText(planMarkdown)) {
+            throw new IllegalArgumentException("执行规划不能为空");
+        }
+
+        ExecutionStepEntity planStep = executionStepRepository.findByRun_IdAndStepNo(currentRun.getId(), 1)
+                .orElseThrow(() -> new IllegalStateException("当前执行任务缺少执行规划步骤"));
+        planStep.setOutputSnapshot(planMarkdown);
+        executionStepRepository.save(planStep);
+
+        executionArtifactRepository.findFirstByRun_IdAndArtifactTypeAndTitle(currentRun.getId(), PLAN_ARTIFACT_TYPE, PLAN_ARTIFACT_TITLE)
+                .ifPresent(artifact -> {
+                    artifact.setContentText(planMarkdown);
+                    executionArtifactRepository.save(artifact);
+                });
+
+        currentRun.setOutputSummary("执行规划已生成，等待发起人确认");
+        executionRunRepository.save(currentRun);
+
+        executionTask.setLatestSummary("执行规划已完成，等待发起人确认");
+        executionTaskRepository.save(executionTask);
+    }
+
+    private void cancelWaitingConfirmationTask(ExecutionTaskEntity executionTask) {
+        ExecutionRunEntity currentRun = executionTask.getCurrentRun();
+        if (currentRun != null) {
+            currentRun.setStatus("CANCELED");
+            currentRun.setFinishedAt(LocalDateTime.now());
+            currentRun.setUpdatedAt(LocalDateTime.now());
+            currentRun.setOutputSummary("执行任务已取消，未继续后续步骤。");
+            executionRunRepository.save(currentRun);
+
+            ExecutionArtifactEntity artifact = new ExecutionArtifactEntity();
+            artifact.setRun(currentRun);
+            artifact.setArtifactType("FINAL_SUMMARY");
+            artifact.setTitle("取消摘要");
+            artifact.setContentText("执行任务已取消，未继续后续步骤。");
+            artifact.setWorkItemWritebackFlag(false);
+            ExecutionArtifactEntity savedArtifact = executionArtifactRepository.save(artifact);
+            executionEventService.recordArtifactReady(executionTask, currentRun, null, savedArtifact.getId(), savedArtifact.getTitle());
+        }
+        executionTask.setStatus("CANCELED");
+        executionTask.setCancelRequested(false);
+        executionTask.setLatestSummary("执行已取消");
+        executionTaskRepository.save(executionTask);
+    }
+
+    private void scheduleDispatchAfterCommit(Long executionTaskId) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            executionDispatchService.dispatchTaskAsync(executionTaskId);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                executionDispatchService.dispatchTaskAsync(executionTaskId);
+            }
+        });
     }
 
     private Map<String, Object> defaultPayload(Map<String, Object> inputPayload) {
@@ -671,11 +821,41 @@ public class ExecutionTaskService {
         return workItem.getName() + " - " + scenarioName;
     }
 
+    private boolean normalizePlanConfirmationRequired(String scenarioCode,
+                                                      String triggerSource,
+                                                      Boolean requestedPlanConfirmationRequired) {
+        if (!ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(defaultString(scenarioCode))) {
+            return false;
+        }
+        if (!"PAGE".equalsIgnoreCase(defaultString(triggerSource))) {
+            return false;
+        }
+        return Boolean.TRUE.equals(requestedPlanConfirmationRequired);
+    }
+
     private String normalizeTriggerSource(String triggerSource) {
         if (!hasText(triggerSource)) {
             return "PAGE";
         }
         return triggerSource.trim().toUpperCase();
+    }
+
+    private boolean isPlanConfirmationRequired(String inputPayload) {
+        if (!hasText(inputPayload)) {
+            return false;
+        }
+        try {
+            return objectMapper.readTree(inputPayload).path("planConfirmationRequired").asBoolean(false);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private boolean canCurrentUserConfirmPlan(ExecutionTaskEntity executionTask) {
+        Long currentUserId = AuthContextHolder.get().map(authContext -> authContext.userId()).orElse(null);
+        return currentUserId != null
+                && executionTask.getCreatedByUser() != null
+                && currentUserId.equals(executionTask.getCreatedByUser().getId());
     }
 
     private String displayName(UserEntity user) {

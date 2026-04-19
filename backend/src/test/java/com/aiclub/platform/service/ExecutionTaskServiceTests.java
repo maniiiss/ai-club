@@ -1,11 +1,18 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.AgentEntity;
+import com.aiclub.platform.domain.model.ExecutionArtifactEntity;
+import com.aiclub.platform.domain.model.ExecutionRunEntity;
+import com.aiclub.platform.domain.model.ExecutionStepEntity;
 import com.aiclub.platform.domain.model.ExecutionTaskEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
 import com.aiclub.platform.domain.model.UserEntity;
+import com.aiclub.platform.dto.ExecutionTaskDetail;
+import com.aiclub.platform.dto.ExecutionTaskSummary;
+import com.aiclub.platform.dto.request.ConfirmExecutionPlanRequest;
 import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
+import com.aiclub.platform.dto.request.UpdateExecutionPlanMarkdownRequest;
 import com.aiclub.platform.repository.ExecutionArtifactRepository;
 import com.aiclub.platform.repository.ExecutionRunRepository;
 import com.aiclub.platform.repository.ExecutionStepRepository;
@@ -29,10 +36,15 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -99,12 +111,12 @@ class ExecutionTaskServiceTests {
         AuthContextHolder.set(new AuthContext(1001L, "alice", "Alice", Set.of(), Set.of()));
 
         ProjectEntity project = buildProject();
-        when(projectRepository.findById(11L)).thenReturn(Optional.of(project));
+        lenient().when(projectRepository.findById(11L)).thenReturn(Optional.of(project));
         UserEntity currentUser = new UserEntity();
         currentUser.setId(1001L);
         currentUser.setUsername("alice");
         currentUser.setNickname("Alice");
-        when(userRepository.findById(1001L)).thenReturn(Optional.of(currentUser));
+        lenient().when(userRepository.findById(1001L)).thenReturn(Optional.of(currentUser));
     }
 
     @AfterEach
@@ -123,6 +135,7 @@ class ExecutionTaskServiceTests {
                 null,
                 null,
                 "PAGE",
+                false,
                 List.of(),
                 Map.of("inputText", "请联动前后端", "repositories", List.of())
         )))
@@ -144,6 +157,7 @@ class ExecutionTaskServiceTests {
                 null,
                 null,
                 "PAGE",
+                false,
                 List.of(),
                 Map.of("repositories", List.of(
                         Map.of("bindingId", 1L, "targetBranch", "release/1.0"),
@@ -165,6 +179,7 @@ class ExecutionTaskServiceTests {
                 null,
                 null,
                 "PAGE",
+                false,
                 List.of(),
                 Map.of("repositories", List.of(Map.of("bindingId", 1L, "targetBranch", "   ")))
         )))
@@ -201,11 +216,109 @@ class ExecutionTaskServiceTests {
                 null,
                 null,
                 "PAGE",
+                false,
                 List.of(),
                 Map.of("repositories", List.of(Map.of("bindingId", 1L, "targetBranch", "main")))
         )))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("开发实现 · group/frontend 必须绑定可真实执行的 HTTP_API 或 AGENT_RUNTIME 智能体");
+    }
+
+    /**
+     * 页面发起的开发执行若开启规划确认，创建结果和持久化载荷都应带出明确标记，
+     * 便于后续调度在 PLAN 后暂停，并让详情页知道当前任务要走确认闭环。
+     */
+    @Test
+    void shouldPersistPlanConfirmationRequiredForPageDevelopmentTask() {
+        ProjectGitlabBindingEntity binding = buildBinding(1L, "group/frontend", "main", true);
+        when(projectGitlabBindingRepository.findById(1L)).thenReturn(Optional.of(binding));
+        when(executionWorkflowService.buildWorkflow(
+                eq(ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION),
+                eq(11L),
+                anyList(),
+                anyList()
+        )).thenReturn(new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION,
+                "开发执行",
+                List.of(
+                        new ExecutionWorkflowService.ExecutionStepPlan(1, "PLAN", "执行规划", buildAgent(11L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(2, "IMPLEMENT", "开发实现 · group/frontend", buildAgent(12L, AgentExecutionService.ACCESS_AGENT_RUNTIME), 1L, "main", "group/frontend"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(3, "TEST", "执行测试 · group/frontend", buildAgent(13L, AgentExecutionService.ACCESS_HTTP_API), 1L, "main", "group/frontend"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(4, "REPORT", "交付报告", buildAgent(14L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null)
+                )
+        ));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> {
+            ExecutionTaskEntity entity = invocation.getArgument(0);
+            entity.setId(501L);
+            return entity;
+        });
+
+        ExecutionTaskSummary summary = executionTaskService.createExecutionTask(new CreateExecutionTaskRequest(
+                ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION,
+                11L,
+                null,
+                null,
+                "PAGE",
+                true,
+                List.of(),
+                Map.of("repositories", List.of(Map.of("bindingId", 1L, "targetBranch", "main")))
+        ));
+
+        assertThat(summary.planConfirmationRequired()).isTrue();
+        assertThat(summary.planConfirmationPending()).isFalse();
+        verify(executionTaskRepository).save(argThat(task ->
+                String.valueOf(task.getInputPayload()).contains("\"planConfirmationRequired\":true")
+        ));
+    }
+
+    /**
+     * 规划确认闭环只允许发起人操作；其他可见用户虽然能打开详情页，也只能只读查看。
+     */
+    @Test
+    void shouldRejectUpdatingPlanMarkdownWhenCurrentUserIsNotRequester() {
+        ExecutionTaskEntity executionTask = buildWaitingConfirmationTask(2002L);
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+
+        assertThatThrownBy(() -> executionTaskService.updateExecutionPlanMarkdown(
+                99L,
+                new UpdateExecutionPlanMarkdownRequest("# 新规划")
+        ))
+                .isInstanceOf(com.aiclub.platform.exception.ForbiddenException.class)
+                .hasMessage("只有执行任务发起人可以编辑并确认执行规划");
+    }
+
+    /**
+     * 保存与确认都必须覆写 PLAN 步骤输出和 Markdown 产物，
+     * 确认后任务重新回到待调度态，并在当前线程无事务代理时直接触发继续调度。
+     */
+    @Test
+    void shouldOverwritePlanMarkdownAndScheduleResumeWhenConfirmingPlan() {
+        ExecutionTaskEntity executionTask = buildWaitingConfirmationTask(1001L);
+        ExecutionRunEntity executionRun = executionTask.getCurrentRun();
+        ExecutionStepEntity planStep = buildPlanStep(executionRun, "# 旧规划");
+        ExecutionArtifactEntity planArtifact = buildPlanArtifact(executionRun, planStep, "# 旧规划");
+
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionStepRepository.findByRun_IdAndStepNo(301L, 1)).thenReturn(Optional.of(planStep));
+        when(executionStepRepository.findAllByRun_IdOrderByStepNoAscIdAsc(301L)).thenReturn(List.of(planStep));
+        when(executionArtifactRepository.findFirstByRun_IdAndArtifactTypeAndTitle(301L, "PLAN_MARKDOWN", "执行规划 Markdown"))
+                .thenReturn(Optional.of(planArtifact));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionRunRepository.findAllByExecutionTask_IdOrderByRunNoDescIdDesc(99L)).thenReturn(List.of(executionRun));
+
+        ExecutionTaskDetail detail = executionTaskService.confirmExecutionPlan(
+                99L,
+                new ConfirmExecutionPlanRequest("# 新规划\n\n- 先改前端\n- 再改后端")
+        );
+
+        assertThat(planStep.getOutputSnapshot()).isEqualTo("# 新规划\n\n- 先改前端\n- 再改后端");
+        assertThat(planArtifact.getContentText()).isEqualTo("# 新规划\n\n- 先改前端\n- 再改后端");
+        assertThat(executionTask.getStatus()).isEqualTo("PENDING");
+        assertThat(detail.planConfirmationPending()).isFalse();
+        verify(executionDispatchService).dispatchTaskAsync(99L);
     }
 
     private ProjectEntity buildProject() {
@@ -236,5 +349,63 @@ class ExecutionTaskServiceTests {
         agent.setAccessType(accessType);
         agent.setCapability("执行");
         return agent;
+    }
+
+    private ExecutionTaskEntity buildWaitingConfirmationTask(Long requesterUserId) {
+        UserEntity requester = new UserEntity();
+        requester.setId(requesterUserId);
+        requester.setUsername("requester-" + requesterUserId);
+        requester.setNickname("Requester-" + requesterUserId);
+
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(301L);
+        executionRun.setRunNo(1);
+        executionRun.setStatus("WAITING_CONFIRMATION");
+        executionRun.setCurrentStepNo(1);
+
+        ExecutionTaskEntity executionTask = new ExecutionTaskEntity();
+        executionTask.setId(99L);
+        executionTask.setTitle("待确认开发执行");
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION);
+        executionTask.setProject(buildProject());
+        executionTask.setCreatedByUser(requester);
+        executionTask.setStatus("WAITING_CONFIRMATION");
+        executionTask.setCurrentRun(executionRun);
+        executionTask.setInputPayload("""
+                {
+                  "inputText": "请确认规划后继续",
+                  "planConfirmationRequired": true,
+                  "repositories": [
+                    {"bindingId": 1, "targetBranch": "main"}
+                  ]
+                }
+                """);
+        executionRun.setExecutionTask(executionTask);
+        return executionTask;
+    }
+
+    private ExecutionStepEntity buildPlanStep(ExecutionRunEntity executionRun, String outputSnapshot) {
+        ExecutionStepEntity step = new ExecutionStepEntity();
+        step.setId(401L);
+        step.setRun(executionRun);
+        step.setStepNo(1);
+        step.setStepCode("PLAN");
+        step.setStepName("执行规划");
+        step.setStatus("SUCCESS");
+        step.setOutputSnapshot(outputSnapshot);
+        return step;
+    }
+
+    private ExecutionArtifactEntity buildPlanArtifact(ExecutionRunEntity executionRun,
+                                                      ExecutionStepEntity executionStep,
+                                                      String contentText) {
+        ExecutionArtifactEntity artifact = new ExecutionArtifactEntity();
+        artifact.setId(501L);
+        artifact.setRun(executionRun);
+        artifact.setStep(executionStep);
+        artifact.setArtifactType("PLAN_MARKDOWN");
+        artifact.setTitle("执行规划 Markdown");
+        artifact.setContentText(contentText);
+        return artifact;
     }
 }

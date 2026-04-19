@@ -328,6 +328,26 @@ class CodexExecutionResponse(BaseModel):
     logPreview: str = ""
 
 
+class CliExecutionRepository(BaseModel):
+    """统一 CLI Runner 使用的仓库上下文。"""
+
+    bindingId: str = ""
+    displayName: str = ""
+    projectRef: str = ""
+    projectPath: str = ""
+    repoUrl: str = ""
+    targetBranch: str = ""
+    apiBaseUrl: str = ""
+    authToken: str = ""
+
+    @field_validator("bindingId", "displayName", "projectRef", "projectPath", "repoUrl", "targetBranch", "apiBaseUrl", "authToken", mode="before")
+    @classmethod
+    def normalize_repository_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
 class ExecutionSessionAcceptedResponse(BaseModel):
     """异步执行会话 accepted 响应。"""
 
@@ -336,6 +356,46 @@ class ExecutionSessionAcceptedResponse(BaseModel):
     runnerType: str = "CLI"
     workspaceRoot: str = ""
     startedAt: str = ""
+
+
+class CliExecutionRequest(BaseModel):
+    """统一 CLI Runner 执行请求。"""
+
+    runnerType: Literal["CODEX_CLI", "CLAUDE_CODE_CLI"]
+    mode: Literal["PLAN", "IMPLEMENT", "TEST", "AD_HOC"]
+    systemPrompt: str = ""
+    input: str = ""
+    repositories: list[CliExecutionRepository] = Field(default_factory=list)
+    execution: CodexExecutionContext
+    testCommands: list[str] = Field(default_factory=list)
+    timeoutSeconds: int = Field(default=270, ge=30, le=ASYNC_EXECUTION_TIMEOUT_LIMIT_SECONDS)
+
+    @field_validator("systemPrompt", "input", mode="before")
+    @classmethod
+    def normalize_input_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value)
+
+    @field_validator("testCommands", mode="before")
+    @classmethod
+    def normalize_test_commands(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        text = str(value).strip()
+        return [text] if text else []
+
+
+class CliExecutionResponse(BaseModel):
+    """统一 CLI Runner 响应，output 继续供 backend 统一提取。"""
+
+    output: str
+    workspaceRoot: str = ""
+    repoPath: str = ""
+    repoPaths: list[str] = Field(default_factory=list)
+    logPreview: str = ""
 
 
 class ClaudePlanningRepository(BaseModel):

@@ -66,7 +66,7 @@ export interface AgentPayload {
   systemPrompt?: string
   userPromptTemplate?: string
   endpointUrl?: string
-  runtimeType?: 'OPENCLAW' | null
+  runtimeType?: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | null
   runtimeAgentRef?: string
   runtimeSessionKeyTemplate?: string
   httpMethod?: string
@@ -234,8 +234,17 @@ export interface CreateExecutionTaskPayload {
   workItemId?: number | null
   title?: string
   triggerSource?: string
+  planConfirmationRequired?: boolean
   agentBindings?: ExecutionAgentBindingPayload[]
   inputPayload?: Record<string, unknown>
+}
+
+export interface UpdateExecutionPlanMarkdownPayload {
+  planMarkdown: string
+}
+
+export interface ConfirmExecutionPlanPayload {
+  planMarkdown: string
 }
 
 export interface WorkItemQuery {
@@ -560,6 +569,16 @@ export const downloadExecutionArtifact = async (artifactId: number) => {
 
 export const createExecutionTask = async (payload: CreateExecutionTaskPayload) => {
   const { data } = await http.post<ApiResponse<ExecutionTaskItem>>('/api/execution-tasks', payload)
+  return data.data
+}
+
+export const updateExecutionPlanMarkdown = async (id: number, payload: UpdateExecutionPlanMarkdownPayload) => {
+  const { data } = await http.put<ApiResponse<ExecutionTaskDetailItem>>(`/api/execution-tasks/${id}/plan-markdown`, payload)
+  return data.data
+}
+
+export const confirmExecutionPlan = async (id: number, payload: ConfirmExecutionPlanPayload) => {
+  const { data } = await http.post<ApiResponse<ExecutionTaskDetailItem>>(`/api/execution-tasks/${id}/confirm-plan`, payload)
   return data.data
 }
 

@@ -125,11 +125,18 @@ export const useNotificationStore = defineStore('notifications', () => {
         items.value = [payload.notification, ...items.value.filter((item) => item.id !== payload.notification.id)].slice(0, 50)
         unreadCount.value = payload.unreadCount
         total.value += 1
+        const actionUrl = payload.notification.actionUrl
         ElNotification({
           title: payload.notification.title,
           message: payload.notification.content,
           position: 'bottom-right',
-          duration: 5000
+          duration: 5000,
+          onClick: () => {
+            if (!actionUrl || typeof window === 'undefined') {
+              return
+            }
+            window.location.assign(actionUrl)
+          }
         })
       } catch {
         // ignore malformed push events

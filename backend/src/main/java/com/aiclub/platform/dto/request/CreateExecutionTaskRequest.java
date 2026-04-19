@@ -22,6 +22,11 @@ public record CreateExecutionTaskRequest(
         String title,
         @Size(max = 40, message = "触发来源长度不能超过 40")
         String triggerSource,
+        /**
+         * 是否要求在开发执行规划完成后，由发起人进入执行详情页确认后再继续。
+         * 第一版只对页面发起的开发执行场景生效，其他入口会被平台自动忽略。
+         */
+        Boolean planConfirmationRequired,
         @Valid
         List<ExecutionAgentBindingRequest> agentBindings,
         Map<String, Object> inputPayload

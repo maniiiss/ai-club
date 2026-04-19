@@ -945,17 +945,28 @@ public class PlatformStoreService {
                 ? trimToNull(request.userPromptTemplate()) : null);
 
         if (AgentExecutionService.ACCESS_AGENT_RUNTIME.equals(accessType)) {
-            entity.setEndpointUrl(trimToNull(request.endpointUrl()));
-            entity.setRuntimeType(normalizeConfiguredRuntimeType(request.runtimeType()));
-            entity.setRuntimeAgentRef(trimToNull(request.runtimeAgentRef()));
-            entity.setRuntimeSessionKeyTemplate(trimToNull(request.runtimeSessionKeyTemplate()));
+            String runtimeType = normalizeConfiguredRuntimeType(request.runtimeType());
+            entity.setRuntimeType(runtimeType);
             entity.setHttpMethod("POST");
             entity.setHttpHeaders(null);
-            entity.setHttpAuthType(normalizeHttpAuthType(request.httpAuthType()));
-            updateAgentAuthToken(entity, request.httpAuthToken(), createMode);
             entity.setHttpRequestTemplate(null);
             entity.setHttpResponsePath(null);
             entity.setTimeoutSeconds(resolveConfiguredTimeoutSeconds(request.timeoutSeconds()));
+            if (AgentExecutionService.RUNTIME_OPENCLAW.equals(runtimeType)) {
+                entity.setEndpointUrl(trimToNull(request.endpointUrl()));
+                entity.setRuntimeAgentRef(trimToNull(request.runtimeAgentRef()));
+                entity.setRuntimeSessionKeyTemplate(trimToNull(request.runtimeSessionKeyTemplate()));
+                entity.setHttpAuthType(normalizeHttpAuthType(request.httpAuthType()));
+                updateAgentAuthToken(entity, request.httpAuthToken(), createMode);
+            } else {
+                // CLI Runtime 统一走平台级 code-processing 地址和内部服务 Token，
+                // Agent 级别不再保留 gateway / session key / bearer token 之类的重复配置。
+                entity.setEndpointUrl(null);
+                entity.setRuntimeAgentRef(null);
+                entity.setRuntimeSessionKeyTemplate(null);
+                entity.setHttpAuthType(null);
+                entity.setHttpAuthTokenCiphertext(null);
+            }
         } else if (AgentExecutionService.ACCESS_HTTP_API.equals(accessType)) {
             entity.setRuntimeType(null);
             entity.setRuntimeAgentRef(null);
@@ -996,14 +1007,16 @@ public class PlatformStoreService {
             throw new IllegalArgumentException("HTTP API Agent 必须填写接口地址");
         }
         if (AgentExecutionService.ACCESS_AGENT_RUNTIME.equals(accessType)) {
-            if (!hasText(entity.getEndpointUrl())) {
-                throw new IllegalArgumentException("Agent Runtime 必须填写 Gateway 地址");
-            }
             if (!hasText(entity.getRuntimeType())) {
                 throw new IllegalArgumentException("Agent Runtime 必须选择 Runtime 类型");
             }
-            if (!hasText(entity.getRuntimeAgentRef())) {
-                throw new IllegalArgumentException("Agent Runtime 必须填写 Runtime Agent 标识");
+            if (AgentExecutionService.RUNTIME_OPENCLAW.equals(entity.getRuntimeType())
+                    && !hasText(entity.getEndpointUrl())) {
+                throw new IllegalArgumentException("OpenClaw Runtime 必须填写 Gateway 地址");
+            }
+            if (AgentExecutionService.RUNTIME_OPENCLAW.equals(entity.getRuntimeType())
+                    && !hasText(entity.getRuntimeAgentRef())) {
+                throw new IllegalArgumentException("OpenClaw Runtime 必须填写 Runtime Agent 标识");
             }
         }
     }
@@ -1025,8 +1038,10 @@ public class PlatformStoreService {
             return null;
         }
         value = value.toUpperCase();
-        if (!"OPENCLAW".equals(value)) {
-            throw new IllegalArgumentException("当前仅支持 OPENCLAW Runtime");
+        if (!AgentExecutionService.RUNTIME_OPENCLAW.equals(value)
+                && !AgentExecutionService.RUNTIME_CODEX_CLI.equals(value)
+                && !AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equals(value)) {
+            throw new IllegalArgumentException("当前仅支持 OPENCLAW、CODEX_CLI、CLAUDE_CODE_CLI Runtime");
         }
         return value;
     }

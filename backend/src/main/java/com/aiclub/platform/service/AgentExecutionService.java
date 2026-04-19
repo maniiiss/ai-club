@@ -7,6 +7,7 @@ import com.aiclub.platform.repository.AgentRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,8 @@ public class AgentExecutionService {
     public static final String ACCESS_AGENT_RUNTIME = "AGENT_RUNTIME";
 
     public static final String RUNTIME_OPENCLAW = "OPENCLAW";
+    public static final String RUNTIME_CODEX_CLI = "CODEX_CLI";
+    public static final String RUNTIME_CLAUDE_CODE_CLI = "CLAUDE_CODE_CLI";
 
     public static final String BUILTIN_CODE_REVIEW = "CODE_REVIEW";
     public static final String BUILTIN_TEST_SUGGESTION = "TEST_SUGGESTION";
@@ -47,6 +50,7 @@ public class AgentExecutionService {
 
     private static final String HTTP_AUTH_NONE = "NONE";
     private static final String HTTP_AUTH_BEARER = "BEARER";
+    private static final String CODE_PROCESSING_CLI_PATH = "/api/code/cli-executions";
     private static final String CODE_PROCESSING_CODEX_PATH = "/api/code/codex-executions";
     private static final String CODE_PROCESSING_CLAUDE_PATH = "/api/code/claude-plans";
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -55,19 +59,25 @@ public class AgentExecutionService {
     private final TokenCipherService tokenCipherService;
     private final ModelConfigService modelConfigService;
     private final CodeReviewClientService codeReviewClientService;
+    private final InternalServiceAuthenticator internalServiceAuthenticator;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final String codeProcessingBaseUrl;
 
     public AgentExecutionService(AgentRepository agentRepository,
                                  TokenCipherService tokenCipherService,
                                  ModelConfigService modelConfigService,
                                  CodeReviewClientService codeReviewClientService,
-                                 ObjectMapper objectMapper) {
+                                 ObjectMapper objectMapper,
+                                 InternalServiceAuthenticator internalServiceAuthenticator,
+                                 @Value("${platform.code-processing.base-url}") String codeProcessingBaseUrl) {
         this.agentRepository = agentRepository;
         this.tokenCipherService = tokenCipherService;
         this.modelConfigService = modelConfigService;
         this.codeReviewClientService = codeReviewClientService;
+        this.internalServiceAuthenticator = internalServiceAuthenticator;
         this.objectMapper = objectMapper;
+        this.codeProcessingBaseUrl = trimToNull(codeProcessingBaseUrl);
         // 本地 code-processing 运行在 Uvicorn/FastAPI 上，对 Java HttpClient 的 HTTP/2 升级握手兼容性较差；
         // 固定使用 HTTP/1.1，避免请求在到达应用层前就被 Uvicorn 以“Invalid HTTP request received”拒绝。
         this.httpClient = HttpClient.newBuilder()
@@ -123,22 +133,23 @@ public class AgentExecutionService {
         return requireAgent(agentId);
     }
 
-    /**
-     * 一期仅把 code-processing 的 Claude/Codex CLI bridge 识别为可异步流式执行的 HTTP_API Agent。
-     */
     public boolean supportsAsyncExecution(AgentEntity agent, String stepCode) {
         if (agent == null) {
             return false;
         }
-        if (!ACCESS_HTTP_API.equals(normalizeAccessType(agent.getAccessType()))) {
+        String accessType = normalizeAccessType(agent.getAccessType());
+        if (ACCESS_HTTP_API.equals(accessType)) {
+            String endpointUrl = trimToNull(agent.getEndpointUrl());
+            if (endpointUrl == null) {
+                return false;
+            }
+            String normalized = trimTrailingSlash(endpointUrl);
+            return normalized.endsWith(CODE_PROCESSING_CODEX_PATH) || normalized.endsWith(CODE_PROCESSING_CLAUDE_PATH);
+        }
+        if (!ACCESS_AGENT_RUNTIME.equals(accessType)) {
             return false;
         }
-        String endpointUrl = trimToNull(agent.getEndpointUrl());
-        if (endpointUrl == null) {
-            return false;
-        }
-        String normalized = trimTrailingSlash(endpointUrl);
-        return normalized.endsWith(CODE_PROCESSING_CODEX_PATH) || normalized.endsWith(CODE_PROCESSING_CLAUDE_PATH);
+        return isCliRuntime(agent) && resolveCliMode(stepCode) != null;
     }
 
     /**
@@ -153,15 +164,29 @@ public class AgentExecutionService {
         if (!supportsAsyncExecution(agent, variables == null ? null : variables.get("step_code"))) {
             throw new IllegalArgumentException("当前 Agent 不支持异步流式执行");
         }
-        String endpointUrl = trimToNull(agent.getEndpointUrl());
-        String asyncStartUrl = trimTrailingSlash(endpointUrl) + "/start";
-        String httpMethod = normalizeHttpMethod(agent.getHttpMethod());
-        String requestBody = buildAsyncHttpRequestBody(agent, input, variables, maxRuntimeSeconds);
+        String accessType = normalizeAccessType(agent.getAccessType());
+        String asyncStartUrl;
+        String httpMethod;
+        String requestBody;
+        if (ACCESS_HTTP_API.equals(accessType)) {
+            String endpointUrl = trimToNull(agent.getEndpointUrl());
+            asyncStartUrl = trimTrailingSlash(endpointUrl) + "/start";
+            httpMethod = normalizeHttpMethod(agent.getHttpMethod());
+            requestBody = buildAsyncHttpRequestBody(agent, input, variables, maxRuntimeSeconds);
+        } else {
+            asyncStartUrl = trimTrailingSlash(requireRuntimeGateway(agent)) + CODE_PROCESSING_CLI_PATH + "/start";
+            httpMethod = "POST";
+            requestBody = buildCliRuntimeRequestBody(agent, input, variables, maxRuntimeSeconds);
+        }
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(asyncStartUrl))
                     .timeout(Duration.ofSeconds(Math.max(submitTimeoutSeconds, 5)));
-            applyHttpHeaders(builder, agent, httpMethod);
+            if (ACCESS_HTTP_API.equals(accessType)) {
+                applyHttpHeaders(builder, agent, httpMethod);
+            } else {
+                applyCliRuntimeHeaders(builder, agent);
+            }
             if ("GET".equals(httpMethod)) {
                 builder.GET();
             } else {
@@ -401,8 +426,36 @@ public class AgentExecutionService {
         String runtimeType = normalizeRuntimeType(agent.getRuntimeType());
         return switch (runtimeType) {
             case RUNTIME_OPENCLAW -> executeOpenclawRuntime(agent, input, variables);
+            case RUNTIME_CODEX_CLI, RUNTIME_CLAUDE_CODE_CLI -> executeCliRuntime(agent, input, variables);
             default -> throw new IllegalArgumentException("Unsupported agent runtime type: " + runtimeType);
         };
+    }
+
+    /**
+     * CLI Runner 统一走 code-processing 的统一入口，执行中心仍只消费既有 Markdown / JSON 结果协议。
+     */
+    private String executeCliRuntime(AgentEntity agent, String input, Map<String, String> variables) {
+        String endpointUrl = requireRuntimeGateway(agent);
+        String requestBody = buildCliRuntimeRequestBody(agent, input, variables, resolveTimeoutSeconds(agent));
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(trimTrailingSlash(endpointUrl) + CODE_PROCESSING_CLI_PATH))
+                    .timeout(Duration.ofSeconds(resolveTimeoutSeconds(agent)));
+            applyCliRuntimeHeaders(builder, agent);
+            HttpResponse<String> response = httpClient.send(
+                    builder.POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8)).build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            );
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("CLI Runtime HTTP " + response.statusCode() + ": " + abbreviate(response.body(), 1000));
+            }
+            return extractHttpResponse(agent, response.body());
+        } catch (IOException exception) {
+            throw new IllegalStateException("CLI Runtime request failed", exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("CLI Runtime request interrupted", exception);
+        }
     }
 
     private String executeOpenclawRuntime(AgentEntity agent, String input, Map<String, String> variables) {
@@ -528,7 +581,123 @@ public class AgentExecutionService {
         }
     }
 
+    private void applyCliRuntimeHeaders(HttpRequest.Builder builder, AgentEntity agent) {
+        builder.header("Accept", "application/json");
+        builder.header("Content-Type", "application/json");
+        // 统一 CLI Runner 只调用平台内 code-processing 服务，鉴权固定复用平台级内部服务 Token，
+        // 避免每个 Agent 还要重复维护一份 Bearer 配置。
+        builder.header("Authorization", internalServiceAuthenticator.authorizationHeaderValue());
+    }
+
+    private String buildCliRuntimeRequestBody(AgentEntity agent,
+                                              String input,
+                                              Map<String, String> variables,
+                                              int timeoutSeconds) {
+        String runtimeType = normalizeRuntimeType(agent.getRuntimeType());
+        String cliMode = resolveCliMode(variables == null ? null : variables.get("step_code"));
+        if (cliMode == null) {
+            throw new IllegalArgumentException("当前步骤不支持 CLI Runtime 执行");
+        }
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("runnerType", runtimeType);
+        payload.put("mode", cliMode);
+        payload.put("systemPrompt", defaultString(agent.getSystemPrompt()));
+        payload.put("input", hasText(agent.getUserPromptTemplate())
+                ? renderTemplate(agent.getUserPromptTemplate(), buildTemplateVariables(input, agent.getSystemPrompt(), variables))
+                : defaultString(input));
+        payload.put("timeoutSeconds", Math.max(timeoutSeconds, 30));
+
+        ObjectNode executionNode = payload.putObject("execution");
+        putText(executionNode, "taskId", variables == null ? null : variables.get("execution_task_id"));
+        putText(executionNode, "runId", variables == null ? null : variables.get("execution_run_id"));
+        putText(executionNode, "stepId", variables == null ? null : variables.get("step_id"));
+        putText(executionNode, "stepCode", variables == null ? null : variables.get("step_code"));
+        putText(executionNode, "stepName", variables == null ? null : variables.get("step_name"));
+        putText(executionNode, "projectId", variables == null ? null : variables.get("project_id"));
+        putText(executionNode, "projectName", variables == null ? null : variables.get("project_name"));
+        putText(executionNode, "sessionKey", buildRuntimeSessionKey(agent, variables == null ? Map.of() : variables));
+        putText(executionNode, "userId", variables == null ? null : variables.get("user_id"));
+        putText(executionNode, "userName", variables == null ? null : variables.get("user_name"));
+
+        if (variables != null && hasText(variables.get("development_repositories_json"))) {
+            try {
+                payload.set("repositories", objectMapper.readTree(variables.get("development_repositories_json")));
+            } catch (IOException exception) {
+                throw new IllegalArgumentException("development_repositories_json 不是合法 JSON", exception);
+            }
+        } else if (variables != null && hasText(variables.get("repo_http_clone_url"))) {
+            payload.putArray("repositories").add(buildRepositoryNode(variables));
+        }
+
+        if (variables != null && hasText(variables.get("test_commands_json"))) {
+            try {
+                payload.set("testCommands", objectMapper.readTree(variables.get("test_commands_json")));
+            } catch (IOException exception) {
+                throw new IllegalArgumentException("test_commands_json 不是合法 JSON", exception);
+            }
+        }
+        return payload.toString();
+    }
+
+    private ObjectNode buildRepositoryNode(Map<String, String> variables) {
+        ObjectNode repositoryNode = objectMapper.createObjectNode();
+        putText(repositoryNode, "bindingId", variables.get("repo_binding_id"));
+        putText(repositoryNode, "displayName", variables.get("repo_display_name"));
+        putText(repositoryNode, "projectRef", variables.get("repo_project_ref"));
+        putText(repositoryNode, "projectPath", variables.get("repo_project_path"));
+        putText(repositoryNode, "repoUrl", variables.get("repo_http_clone_url"));
+        putText(repositoryNode, "targetBranch", variables.get("repo_target_branch"));
+        putText(repositoryNode, "apiBaseUrl", variables.get("repo_api_base_url"));
+        putText(repositoryNode, "authToken", variables.get("repo_access_token"));
+        return repositoryNode;
+    }
+
+    private void putText(ObjectNode node, String fieldName, String value) {
+        node.put(fieldName, defaultString(value));
+    }
+
+    private String resolveCliMode(String stepCode) {
+        String normalized = trimToNull(stepCode);
+        if (normalized == null) {
+            return null;
+        }
+        normalized = normalized.toUpperCase();
+        return switch (normalized) {
+            case "PLAN" -> "PLAN";
+            case "IMPLEMENT" -> "IMPLEMENT";
+            case "TEST" -> "TEST";
+            case "AD_HOC_RUN" -> "AD_HOC";
+            default -> null;
+        };
+    }
+
+    private boolean isCliRuntime(AgentEntity agent) {
+        if (agent == null || !ACCESS_AGENT_RUNTIME.equals(normalizeAccessType(agent.getAccessType()))) {
+            return false;
+        }
+        String runtimeType = trimToNull(agent.getRuntimeType());
+        if (runtimeType == null) {
+            return false;
+        }
+        String normalized = runtimeType.toUpperCase();
+        return RUNTIME_CODEX_CLI.equals(normalized) || RUNTIME_CLAUDE_CODE_CLI.equals(normalized);
+    }
+
+    private String requireRuntimeGateway(AgentEntity agent) {
+        if (codeProcessingBaseUrl != null) {
+            return codeProcessingBaseUrl;
+        }
+        String endpointUrl = trimToNull(agent.getEndpointUrl());
+        if (endpointUrl != null) {
+            return endpointUrl;
+        }
+        throw new IllegalArgumentException("CLI Runtime 未配置 code-processing 服务地址");
+    }
+
     private String buildRuntimeSessionKey(AgentEntity agent, Map<String, String> variables) {
+        if (isCliRuntime(agent)) {
+            return trimToNull(variables.get("session_key"));
+        }
         String template = trimToNull(agent.getRuntimeSessionKeyTemplate());
         if (template == null) {
             return trimToNull(variables.get("session_key"));
@@ -684,7 +853,9 @@ public class AgentExecutionService {
             throw new IllegalArgumentException("Agent runtime type is required");
         }
         normalized = normalized.toUpperCase();
-        if (!RUNTIME_OPENCLAW.equals(normalized)) {
+        if (!RUNTIME_OPENCLAW.equals(normalized)
+                && !RUNTIME_CODEX_CLI.equals(normalized)
+                && !RUNTIME_CLAUDE_CODE_CLI.equals(normalized)) {
             throw new IllegalArgumentException("Unsupported runtime type: " + normalized);
         }
         return normalized;

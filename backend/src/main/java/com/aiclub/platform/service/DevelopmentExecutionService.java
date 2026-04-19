@@ -32,6 +32,10 @@ import java.util.Set;
 public class DevelopmentExecutionService {
 
     private static final int IMPLEMENT_PLAN_CONTEXT_MAX_LENGTH = 4000;
+    private static final String STATUS_WAITING_CONFIRMATION = "WAITING_CONFIRMATION";
+    private static final String PLAN_ARTIFACT_TYPE = "PLAN_MARKDOWN";
+    private static final String PLAN_ARTIFACT_TITLE = "执行规划 Markdown";
+    private static final String PLAN_CONFIRMATION_SUMMARY = "执行规划已生成，等待发起人确认";
 
     private final ProjectGitlabBindingRepository projectGitlabBindingRepository;
     private final ExecutionStepRepository executionStepRepository;
@@ -94,12 +98,23 @@ public class DevelopmentExecutionService {
         List<ResolvedRepositoryContext> skippedRepositories = new ArrayList<>();
 
         ExecutionWorkflowService.ExecutionStepPlan planStep = workflowPlan.steps().get(pointer++);
-        String planInput = buildPlanInput(executionTask, workItem, repositories, payload.inputText());
-        try {
-            planMarkdown = executePlanStep(executionTask, executionRun, workItem, planStep, repositories, planInput, totalSteps, artifacts);
-        } catch (RuntimeException exception) {
-            failureContext = markFailure(executionTask, executionRun, planStep, totalSteps, planInput, exception);
-            skippedRepositories.addAll(repositories);
+        ExecutionStepEntity existingPlanStep = executionStepRepository.findByRun_IdAndStepNo(executionRun.getId(), planStep.stepNo())
+                .orElse(null);
+        boolean reuseExistingPlan = hasSuccessfulPlanStep(existingPlanStep, planStep);
+        if (reuseExistingPlan) {
+            planMarkdown = resolvePersistedPlanMarkdown(executionRun, existingPlanStep);
+        } else {
+            String planInput = buildPlanInput(executionTask, workItem, repositories, payload.inputText());
+            try {
+                planMarkdown = executePlanStep(executionTask, executionRun, workItem, planStep, repositories, planInput, totalSteps, artifacts);
+            } catch (RuntimeException exception) {
+                failureContext = markFailure(executionTask, executionRun, planStep, totalSteps, planInput, exception);
+                skippedRepositories.addAll(repositories);
+            }
+            if (failureContext == null && payload.planConfirmationRequired()) {
+                pauseForPlanConfirmation(executionTask, executionRun, planStep, totalSteps);
+                return new DevelopmentExecutionResult(PLAN_CONFIRMATION_SUMMARY, artifacts, false, true);
+            }
         }
 
         for (int index = 0; index < repositories.size(); index++) {
@@ -113,7 +128,7 @@ public class DevelopmentExecutionService {
                 continue;
             }
             if (isCancelRequested(executionTask.getId())) {
-                return new DevelopmentExecutionResult("执行任务已取消，未继续后续仓库。", artifacts, true);
+                return new DevelopmentExecutionResult("执行任务已取消，未继续后续仓库。", artifacts, true, false);
             }
 
             RepositoryExecutionState state = new RepositoryExecutionState(repository, index + 1, repositories.size());
@@ -144,7 +159,7 @@ public class DevelopmentExecutionService {
         }
 
         if (isCancelRequested(executionTask.getId())) {
-            return new DevelopmentExecutionResult("执行任务已取消，未继续后续仓库。", artifacts, true);
+            return new DevelopmentExecutionResult("执行任务已取消，未继续后续仓库。", artifacts, true, false);
         }
 
         ExecutionWorkflowService.ExecutionStepPlan reportStep = workflowPlan.steps().get(workflowPlan.steps().size() - 1);
@@ -171,7 +186,7 @@ public class DevelopmentExecutionService {
         if (failureContext != null) {
             throw new DevelopmentExecutionStepException(failureContext.failedStep(), failureContext.exception(), artifacts, summary);
         }
-        return new DevelopmentExecutionResult(summary, artifacts, false);
+        return new DevelopmentExecutionResult(summary, artifacts, false, false);
     }
 
     private String executePlanStep(ExecutionTaskEntity executionTask,
@@ -206,7 +221,8 @@ public class DevelopmentExecutionService {
         ImplementationStepResult result = parseImplementationResult(output);
         validateImplementationResult(result);
         completeStep(executionTask, executionRun, stepPlan, totalSteps, step, output, defaultSuccessMessage(result.summary(), repository.repositoryDisplayName(), "开发实现"));
-        artifacts.add(saveArtifact(executionTask, executionRun, step, "IMPLEMENT_RESULT_JSON", "开发实现 JSON · " + repository.repositoryDisplayName(), prettyJson(output)));
+        artifacts.add(saveArtifact(executionTask, executionRun, step, "IMPLEMENT_RESULT_MARKDOWN", "实现结果 · " + repository.repositoryDisplayName(), buildImplementationResultMarkdown(result)));
+        artifacts.add(saveArtifact(executionTask, executionRun, step, "IMPLEMENT_RESULT_JSON", "实现结果 JSON · " + repository.repositoryDisplayName(), prettyJson(output)));
         artifacts.add(saveArtifact(executionTask, executionRun, step, "IMPLEMENT_LOG", "开发实现日志 · " + repository.repositoryDisplayName(), defaultString(result.log())));
         return result;
     }
@@ -227,6 +243,7 @@ public class DevelopmentExecutionService {
         TestStepResult result = parseTestResult(output);
         validateTestResult(result);
         completeStep(executionTask, executionRun, stepPlan, totalSteps, step, output, defaultSuccessMessage(result.summary(), repository.repositoryDisplayName(), "执行测试"));
+        artifacts.add(saveArtifact(executionTask, executionRun, step, "TEST_RESULT_MARKDOWN", "测试结果 · " + repository.repositoryDisplayName(), buildTestResultMarkdown(result)));
         artifacts.add(saveArtifact(executionTask, executionRun, step, "TEST_RESULT_JSON", "测试结果 JSON · " + repository.repositoryDisplayName(), prettyJson(output)));
         artifacts.add(saveArtifact(executionTask, executionRun, step, "TEST_LOG", "测试日志 · " + repository.repositoryDisplayName(), buildTestLog(result)));
         return result;
@@ -245,6 +262,54 @@ public class DevelopmentExecutionService {
         completeStep(executionTask, executionRun, stepPlan, totalSteps, step, output, "交付报告已生成");
         artifacts.add(saveArtifact(executionTask, executionRun, step, "REPORT_MARKDOWN", "交付报告 Markdown", output));
         return extractReportSummary(output);
+    }
+
+    private boolean hasSuccessfulPlanStep(ExecutionStepEntity existingPlanStep,
+                                          ExecutionWorkflowService.ExecutionStepPlan planStep) {
+        return existingPlanStep != null
+                && "SUCCESS".equalsIgnoreCase(existingPlanStep.getStatus())
+                && planStep.stepNo().equals(existingPlanStep.getStepNo())
+                && ExecutionWorkflowService.STEP_PLAN.equalsIgnoreCase(existingPlanStep.getStepCode());
+    }
+
+    /**
+     * 规划确认后恢复执行时，后续 IMPLEMENT / REPORT 必须读取用户最终保存的规划正文，
+     * 不能退回到第一次 PLAN 运行时的临时内存副本。
+     */
+    private String resolvePersistedPlanMarkdown(ExecutionRunEntity executionRun,
+                                               ExecutionStepEntity existingPlanStep) {
+        if (existingPlanStep != null && hasText(existingPlanStep.getOutputSnapshot())) {
+            return existingPlanStep.getOutputSnapshot();
+        }
+        return executionArtifactRepository.findFirstByRun_IdAndArtifactTypeAndTitle(
+                        executionRun.getId(),
+                        PLAN_ARTIFACT_TYPE,
+                        PLAN_ARTIFACT_TITLE
+                )
+                .map(ExecutionArtifactEntity::getContentText)
+                .filter(this::hasText)
+                .orElse("");
+    }
+
+    /**
+     * 规划确认模式只允许 PLAN 自动执行；规划完成后把任务和运行一起置为待确认，
+     * 后端不再继续 IMPLEMENT / TEST / REPORT，直到发起人进入详情页确认。
+     */
+    private void pauseForPlanConfirmation(ExecutionTaskEntity executionTask,
+                                          ExecutionRunEntity executionRun,
+                                          ExecutionWorkflowService.ExecutionStepPlan planStep,
+                                          int totalSteps) {
+        executionRun.setStatus(STATUS_WAITING_CONFIRMATION);
+        executionRun.setCurrentStepNo(planStep.stepNo());
+        executionRun.setProgressPercent(planStep.stepNo() * 100 / Math.max(totalSteps, 1));
+        executionRun.setOutputSummary(PLAN_CONFIRMATION_SUMMARY);
+        executionRun.setUpdatedAt(LocalDateTime.now());
+        executionRunRepository.save(executionRun);
+
+        executionTask.setStatus(STATUS_WAITING_CONFIRMATION);
+        executionTask.setCurrentRun(executionRun);
+        executionTask.setLatestSummary("执行规划已完成，等待发起人确认");
+        executionTaskRepository.save(executionTask);
     }
 
     private FailureContext markFailure(ExecutionTaskEntity executionTask,
@@ -743,7 +808,11 @@ public class DevelopmentExecutionService {
                         repositoryNode.path("targetBranch").asText("")
                 ));
             }
-            return new DevelopmentTaskPayload(node.path("inputText").asText(""), repositories);
+            return new DevelopmentTaskPayload(
+                    node.path("inputText").asText(""),
+                    node.path("planConfirmationRequired").asBoolean(false),
+                    repositories
+            );
         } catch (Exception exception) {
             throw new IllegalStateException("开发执行输入载荷解析失败", exception);
         }
@@ -970,6 +1039,81 @@ public class DevelopmentExecutionService {
         return builder.toString().trim();
     }
 
+    /**
+     * 开发实现结果除了保留 JSON 供平台后续逻辑消费，也额外生成一份 Markdown，
+     * 让执行中心详情页能够直接按结构化摘要阅读。
+     */
+    private String buildImplementationResultMarkdown(ImplementationStepResult result) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("# 开发实现结果\n\n")
+                .append("- 执行状态：").append(defaultString(result.status())).append('\n')
+                .append("- 结果摘要：").append(defaultString(result.summary())).append('\n');
+        if (hasText(result.workBranch())) {
+            builder.append("- 工作分支：`").append(result.workBranch().trim()).append("`\n");
+        }
+        if (hasText(result.commitSha())) {
+            builder.append("- 提交 SHA：`").append(result.commitSha().trim()).append("`\n");
+        }
+        if (hasText(result.mergeRequestUrl())) {
+            String url = result.mergeRequestUrl().trim();
+            builder.append("- 合并请求：[打开 MR](").append(url).append(")\n");
+        }
+        builder.append('\n');
+        appendMarkdownListSection(builder, "## ", "变更文件", result.changedFiles(), "本次未声明变更文件");
+        appendMarkdownListSection(builder, "## ", "执行命令", result.commandsExecuted(), "本次未记录执行命令");
+        appendMarkdownCodeSection(builder, "## ", "执行日志", result.log(), "暂无执行日志");
+        return builder.toString().trim();
+    }
+
+    /**
+     * 测试产物改为 Markdown 展示后，可以在详情页直接看到每条命令的退出码与输出摘要，
+     * 无需先下载 JSON 再手工展开。
+     */
+    private String buildTestResultMarkdown(TestStepResult result) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("# 执行测试结果\n\n")
+                .append("- 执行状态：").append(defaultString(result.status())).append('\n')
+                .append("- 结果摘要：").append(defaultString(result.summary())).append("\n\n");
+        if (result.commandResults().isEmpty()) {
+            builder.append("## 命令结果\n\n- 本次未返回命令执行记录\n");
+            return builder.toString().trim();
+        }
+        builder.append("## 命令结果\n\n");
+        for (int index = 0; index < result.commandResults().size(); index++) {
+            TestCommandResult commandResult = result.commandResults().get(index);
+            builder.append("### 命令 ").append(index + 1).append('\n')
+                    .append("- 命令：`").append(defaultString(commandResult.command()).trim()).append("`\n")
+                    .append("- 执行目录：`").append(defaultString(commandResult.cwd()).trim()).append("`\n")
+                    .append("- 退出码：").append(commandResult.exitCode() == null ? "-" : commandResult.exitCode()).append("\n\n");
+            appendMarkdownCodeSection(builder, "#### ", "标准输出", commandResult.stdout(), "无");
+            appendMarkdownCodeSection(builder, "#### ", "标准错误", commandResult.stderr(), "无");
+        }
+        return builder.toString().trim();
+    }
+
+    private void appendMarkdownListSection(StringBuilder builder, String headingPrefix, String title, List<String> items, String emptyText) {
+        builder.append(headingPrefix).append(title).append("\n\n");
+        if (items == null || items.isEmpty()) {
+            builder.append("- ").append(emptyText).append("\n\n");
+            return;
+        }
+        for (String item : items) {
+            builder.append("- ").append(defaultString(item).trim()).append('\n');
+        }
+        builder.append('\n');
+    }
+
+    private void appendMarkdownCodeSection(StringBuilder builder, String headingPrefix, String title, String content, String emptyText) {
+        builder.append(headingPrefix).append(title).append("\n\n");
+        if (!hasText(content)) {
+            builder.append(emptyText).append("\n\n");
+            return;
+        }
+        builder.append("```text\n")
+                .append(content.trim())
+                .append("\n```\n\n");
+    }
+
     private String buildCommandMarkdown(List<String> commands) {
         StringBuilder builder = new StringBuilder();
         for (String command : commands) {
@@ -1066,7 +1210,10 @@ public class DevelopmentExecutionService {
         return value == null ? "" : value;
     }
 
-    public record DevelopmentExecutionResult(String outputSummary, List<ExecutionArtifactEntity> artifacts, boolean canceled) {
+    public record DevelopmentExecutionResult(String outputSummary,
+                                             List<ExecutionArtifactEntity> artifacts,
+                                             boolean canceled,
+                                             boolean awaitingConfirmation) {
     }
 
     public static class DevelopmentExecutionStepException extends RuntimeException {
@@ -1098,7 +1245,9 @@ public class DevelopmentExecutionService {
         }
     }
 
-    private record DevelopmentTaskPayload(String inputText, List<RepositoryRequest> repositories) {
+    private record DevelopmentTaskPayload(String inputText,
+                                          boolean planConfirmationRequired,
+                                          List<RepositoryRequest> repositories) {
     }
 
     private record RepositoryRequest(Long bindingId, String targetBranch) {
