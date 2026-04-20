@@ -189,7 +189,6 @@ class AgentExecutionServiceTests {
             agent.setId(13L);
             agent.setName("HTTP Agent");
             agent.setType("开发");
-            agent.setCategory("执行");
             agent.setStatus("在线");
             agent.setEnabled(true);
             agent.setAccessType(AgentExecutionService.ACCESS_HTTP_API);
@@ -243,7 +242,6 @@ class AgentExecutionServiceTests {
             agent.setId(14L);
             agent.setName("Claude 规划 Agent");
             agent.setType("规划");
-            agent.setCategory("开发执行");
             agent.setStatus("在线");
             agent.setEnabled(true);
             agent.setAccessType(AgentExecutionService.ACCESS_HTTP_API);
@@ -306,7 +304,6 @@ class AgentExecutionServiceTests {
             agent.setId(15L);
             agent.setName("Codex 异步 Agent");
             agent.setType("执行");
-            agent.setCategory("开发执行");
             agent.setStatus("在线");
             agent.setEnabled(true);
             agent.setAccessType(AgentExecutionService.ACCESS_HTTP_API);
@@ -447,7 +444,6 @@ class AgentExecutionServiceTests {
         agent.setId(11L);
         agent.setName("扫描计划智能体");
         agent.setType("规划");
-        agent.setCategory("技术设计");
         agent.setStatus("在线");
         agent.setEnabled(true);
         agent.setAccessType(AgentExecutionService.ACCESS_BUILT_IN);
@@ -467,7 +463,6 @@ class AgentExecutionServiceTests {
         agent.setId(12L);
         agent.setName("代码审查智能体");
         agent.setType("审查");
-        agent.setCategory("代码质量");
         agent.setStatus("在线");
         agent.setEnabled(true);
         agent.setAccessType(AgentExecutionService.ACCESS_BUILT_IN);
@@ -484,7 +479,6 @@ class AgentExecutionServiceTests {
         agent.setId(id);
         agent.setName("CLI Runtime Agent");
         agent.setType("执行");
-        agent.setCategory("开发执行");
         agent.setStatus("在线");
         agent.setEnabled(true);
         agent.setAccessType(AgentExecutionService.ACCESS_AGENT_RUNTIME);

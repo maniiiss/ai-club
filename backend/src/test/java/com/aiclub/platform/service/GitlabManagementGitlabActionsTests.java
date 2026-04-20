@@ -419,7 +419,6 @@ class GitlabManagementGitlabActionsTests {
         entity.setId(6L);
         entity.setName("扫描计划智能体");
         entity.setType("规划");
-        entity.setCategory("技术设计");
         entity.setStatus("在线");
         entity.setEnabled(true);
         entity.setAccessType(AgentExecutionService.ACCESS_BUILT_IN);

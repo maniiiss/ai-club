@@ -501,7 +501,6 @@ class RepositoryScanExecutionServiceTests {
         agent.setId(6L);
         agent.setName("扫描计划智能体");
         agent.setType("规划");
-        agent.setCategory("技术设计");
         agent.setStatus("在线");
         agent.setEnabled(true);
         agent.setAccessType(AgentExecutionService.ACCESS_BUILT_IN);

@@ -55,7 +55,6 @@ export interface ProjectPayload {
 export interface AgentPayload {
   name: string
   type: string
-  category: string
   status: string
   enabled: boolean
   accessType: 'BUILT_IN' | 'LLM_PROMPT' | 'HTTP_API' | 'AGENT_RUNTIME'
@@ -200,7 +199,6 @@ export interface AgentQuery {
   status?: string
   type?: string
   accessType?: 'BUILT_IN' | 'LLM_PROMPT' | 'HTTP_API' | 'AGENT_RUNTIME'
-  category?: string
   projectId?: number
 }
 

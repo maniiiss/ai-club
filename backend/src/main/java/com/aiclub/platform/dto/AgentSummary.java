@@ -4,7 +4,6 @@ public record AgentSummary(
         Long id,
         String name,
         String type,
-        String category,
         String status,
         Boolean enabled,
         String accessType,

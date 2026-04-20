@@ -476,7 +476,6 @@ public class KnowledgeGraphService {
                 agent.getDescription(),
                 metadataJson(Map.of(
                         "type", defaultString(agent.getType()),
-                        "category", defaultString(agent.getCategory()),
                         "status", defaultString(agent.getStatus()),
                         "enabled", Boolean.TRUE.equals(agent.getEnabled())
                 ))

@@ -153,7 +153,6 @@ class ExecutionWorkflowServiceTests {
         agent.setId(id);
         agent.setName(name);
         agent.setType(name);
-        agent.setCategory("执行");
         agent.setStatus("在线");
         agent.setEnabled(true);
         agent.setAccessType(accessType);

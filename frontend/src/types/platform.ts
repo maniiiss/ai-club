@@ -277,7 +277,6 @@ export interface AgentItem {
   id: number
   name: string
   type: string
-  category: string
   status: string
   enabled: boolean
   accessType: 'BUILT_IN' | 'LLM_PROMPT' | 'HTTP_API' | 'AGENT_RUNTIME'

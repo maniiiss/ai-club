@@ -343,7 +343,6 @@ class ExecutionTaskServiceTests {
         agent.setId(id);
         agent.setName("测试智能体-" + id);
         agent.setType("执行");
-        agent.setCategory("执行");
         agent.setStatus("在线");
         agent.setEnabled(true);
         agent.setAccessType(accessType);

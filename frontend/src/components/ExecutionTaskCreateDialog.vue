@@ -234,7 +234,7 @@ const resetStepAgentMapByScenario = () => {
   form.stepAgentMap = nextMap
 }
 
-const buildAgentLabel = (agent: AgentItem) => `${agent.name} / ${agent.category} / ${agent.accessType}`
+const buildAgentLabel = (agent: AgentItem) => `${agent.name} / ${agent.type} / ${agent.accessType}`
 const isExecutableAgent = (agent?: AgentItem | null) => agent ? ['HTTP_API', 'AGENT_RUNTIME'].includes(agent.accessType) : false
 const resolveBinding = (bindingId: number) => availableGitlabBindings.value.find((binding) => binding.id === bindingId)
 const buildBindingLabel = (binding?: ProjectGitlabBindingItem | null) =>
@@ -252,7 +252,7 @@ const buildBindingHint = (binding?: ProjectGitlabBindingItem | null) => {
  */
 const findRecommendedAgent = (...predicates: Array<(agent: AgentItem, haystack: string) => boolean>) => {
   for (const predicate of predicates) {
-    const matched = agentOptions.value.find((agent) => predicate(agent, `${agent.name} ${agent.category} ${agent.type} ${agent.capability}`.toLowerCase()))
+    const matched = agentOptions.value.find((agent) => predicate(agent, `${agent.name} ${agent.type} ${agent.capability}`.toLowerCase()))
     if (matched?.id) {
       return matched.id
     }

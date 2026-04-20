@@ -48,10 +48,9 @@ public class AgentController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String accessType,
-            @RequestParam(required = false) String category,
             @RequestParam(required = false) Long projectId
     ) {
-        return ApiResponse.success(platformStoreService.pageAgents(page, size, keyword, status, type, accessType, category, projectId));
+        return ApiResponse.success(platformStoreService.pageAgents(page, size, keyword, status, type, accessType, projectId));
     }
 
     @GetMapping("/options")

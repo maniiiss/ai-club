@@ -10,9 +10,6 @@ public record AgentRequest(
         @NotBlank(message = "Agent type is required")
         @Size(max = 50, message = "Agent type must be at most 50 characters")
         String type,
-        @NotBlank(message = "Agent category is required")
-        @Size(max = 30, message = "Agent category must be at most 30 characters")
-        String category,
         @NotBlank(message = "Agent status is required")
         @Size(max = 30, message = "Agent status must be at most 30 characters")
         String status,

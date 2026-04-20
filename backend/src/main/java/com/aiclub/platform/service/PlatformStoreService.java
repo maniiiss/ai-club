@@ -352,27 +352,27 @@ public class PlatformStoreService {
     }
 
     public PageResponse<AgentSummary> pageAgents(int page, int size, String keyword, String status,
-                                                 String type, String accessType, String category, Long projectId) {
+                                                 String type, String accessType, Long projectId) {
         ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.requireCurrentScope();
         if (projectId != null) {
             requireProject(projectId);
         }
         Pageable pageable = buildPageable(page, size, Sort.by(Sort.Direction.ASC, "id"));
-        Page<AgentSummary> pageData = agentRepository.findAll(agentSpecification(keyword, status, type, accessType, category, projectId, scope), pageable)
+        Page<AgentSummary> pageData = agentRepository.findAll(agentSpecification(keyword, status, type, accessType, projectId, scope), pageable)
                 .map(this::toAgentSummary);
         return PageResponse.from(pageData);
     }
 
     public List<AgentSummary> listAllAgents() {
         ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.requireCurrentScope();
-        return agentRepository.findAll(agentSpecification(null, null, null, null, null, null, scope), Sort.by(Sort.Direction.ASC, "id")).stream()
+        return agentRepository.findAll(agentSpecification(null, null, null, null, null, scope), Sort.by(Sort.Direction.ASC, "id")).stream()
                 .map(this::toAgentSummary)
                 .toList();
     }
 
     public List<AgentSummary> listEnabledAgents() {
         ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.requireCurrentScope();
-        return agentRepository.findAll(agentSpecification(null, null, null, null, null, null, scope)
+        return agentRepository.findAll(agentSpecification(null, null, null, null, null, scope)
                         .and((root, query, cb) -> cb.isTrue(root.get("enabled"))),
                 Sort.by(Sort.Direction.ASC, "id")).stream()
                 .map(this::toAgentSummary)
@@ -408,7 +408,6 @@ public class PlatformStoreService {
         AgentEntity entity = new AgentEntity(
                 request.name(),
                 request.type(),
-                request.category(),
                 request.status(),
                 defaultString(request.capability()),
                 project
@@ -710,7 +709,7 @@ public class PlatformStoreService {
     }
 
     private Specification<AgentEntity> agentSpecification(String keyword, String status, String type,
-                                                          String accessType, String category, Long projectId,
+                                                          String accessType, Long projectId,
                                                           ProjectDataPermissionService.ProjectDataScope scope) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -730,9 +729,6 @@ public class PlatformStoreService {
             }
             if (hasText(accessType)) {
                 predicates.add(cb.equal(root.get("accessType"), accessType.trim().toUpperCase()));
-            }
-            if (hasText(category)) {
-                predicates.add(cb.equal(root.get("category"), category.trim()));
             }
             if (projectId != null) {
                 predicates.add(cb.equal(root.get("project").get("id"), projectId));
@@ -852,63 +848,6 @@ public class PlatformStoreService {
         entity.setSortOrder(request.sortOrder() == null ? 0 : request.sortOrder());
     }
 
-    private void fillAgentEntity(AgentEntity entity, AgentRequest request, ProjectEntity project, boolean createMode) {
-        entity.setName(request.name().trim());
-        entity.setType(request.type().trim());
-        entity.setCategory(request.category().trim());
-        entity.setStatus(request.status().trim());
-        entity.setCapability(defaultString(request.capability()));
-        entity.setDescription(defaultString(request.description()));
-        entity.setEnabled(request.enabled() == null || request.enabled());
-        entity.setProject(project);
-
-        String accessType = normalizeAgentAccessType(request.accessType());
-        entity.setAccessType(accessType);
-        entity.setBuiltinCode(accessType.equals(AgentExecutionService.ACCESS_BUILT_IN) ? trimToNull(request.builtinCode()) : null);
-        entity.setAiModelConfig(request.aiModelConfigId() == null ? null : requireChatModelConfig(request.aiModelConfigId()));
-        entity.setSystemPrompt(trimToNull(request.systemPrompt()));
-        entity.setUserPromptTemplate(accessType.equals(AgentExecutionService.ACCESS_LLM_PROMPT) ? trimToNull(request.userPromptTemplate()) : null);
-
-        if (AgentExecutionService.ACCESS_HTTP_API.equals(accessType)) {
-            entity.setEndpointUrl(trimToNull(request.endpointUrl()));
-            entity.setHttpMethod(normalizeHttpMethod(request.httpMethod()));
-            entity.setHttpHeaders(trimToNull(request.httpHeaders()));
-            entity.setHttpAuthType(normalizeHttpAuthType(request.httpAuthType()));
-            if (hasText(request.httpAuthToken())) {
-                entity.setHttpAuthTokenCiphertext(tokenCipherService.encrypt(request.httpAuthToken().trim()));
-            } else if (createMode) {
-                entity.setHttpAuthTokenCiphertext(null);
-            }
-            entity.setHttpRequestTemplate(trimToNull(request.httpRequestTemplate()));
-            entity.setHttpResponsePath(trimToNull(request.httpResponsePath()));
-            entity.setTimeoutSeconds(request.timeoutSeconds() == null ? 60 : Math.max(5, Math.min(request.timeoutSeconds(), 300)));
-        } else {
-            entity.setEndpointUrl(null);
-            entity.setHttpMethod(null);
-            entity.setHttpHeaders(null);
-            entity.setHttpAuthType(null);
-            entity.setHttpAuthTokenCiphertext(null);
-            entity.setHttpRequestTemplate(null);
-            entity.setHttpResponsePath(null);
-            entity.setTimeoutSeconds(60);
-        }
-
-        if (AgentExecutionService.ACCESS_BUILT_IN.equals(accessType) || AgentExecutionService.ACCESS_LLM_PROMPT.equals(accessType)) {
-            if (entity.getAiModelConfig() == null) {
-                throw new IllegalArgumentException("当前 Agent 需要绑定模型配置");
-            }
-        }
-        if (AgentExecutionService.ACCESS_BUILT_IN.equals(accessType) && !hasText(entity.getBuiltinCode())) {
-            throw new IllegalArgumentException("当前 Agent 需要绑定模型配置");
-        }
-        if (AgentExecutionService.ACCESS_LLM_PROMPT.equals(accessType) && !hasText(entity.getUserPromptTemplate())) {
-            throw new IllegalArgumentException("提示词 Agent 必须填写用户提示词模板");
-        }
-        if (AgentExecutionService.ACCESS_HTTP_API.equals(accessType) && !hasText(entity.getEndpointUrl())) {
-            throw new IllegalArgumentException("HTTP API Agent 必须填写接口地址");
-        }
-    }
-
     private void validateAgentProject(Long projectId, AgentEntity agent) {
         if (agent != null && agent.getProject() != null && !projectId.equals(agent.getProject().getId())) {
             throw new IllegalArgumentException("所选 Agent 不属于当前项目");
@@ -928,7 +867,6 @@ public class PlatformStoreService {
     private void applyAgentRequest(AgentEntity entity, AgentRequest request, ProjectEntity project, boolean createMode) {
         entity.setName(request.name().trim());
         entity.setType(request.type().trim());
-        entity.setCategory(request.category().trim());
         entity.setStatus(request.status().trim());
         entity.setCapability(defaultString(request.capability()));
         entity.setDescription(defaultString(request.description()));
@@ -1447,7 +1385,6 @@ public class PlatformStoreService {
                 entity.getId(),
                 entity.getName(),
                 entity.getType(),
-                entity.getCategory(),
                 entity.getStatus(),
                 Boolean.TRUE.equals(entity.getEnabled()),
                 entity.getAccessType(),

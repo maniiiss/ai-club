@@ -425,7 +425,6 @@ public class ExecutionWorkflowService {
     private boolean containsAny(AgentEntity agent, String... keywords) {
         String haystack = (
                 defaultString(agent.getName()) + " "
-                        + defaultString(agent.getCategory()) + " "
                         + defaultString(agent.getType()) + " "
                         + defaultString(agent.getCapability())
         ).toLowerCase(Locale.ROOT);

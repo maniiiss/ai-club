@@ -31,9 +31,6 @@ public class AgentEntity {
     private String builtinCode;
 
     @Column(nullable = false, length = 30)
-    private String category;
-
-    @Column(nullable = false, length = 30)
     private String status;
 
     @Column(nullable = false)
@@ -95,10 +92,9 @@ public class AgentEntity {
     public AgentEntity() {
     }
 
-    public AgentEntity(String name, String type, String category, String status, String capability, ProjectEntity project) {
+    public AgentEntity(String name, String type, String status, String capability, ProjectEntity project) {
         this.name = name;
         this.type = type;
-        this.category = category;
         this.status = status;
         this.capability = capability;
         this.project = project;
@@ -142,14 +138,6 @@ public class AgentEntity {
 
     public void setBuiltinCode(String builtinCode) {
         this.builtinCode = builtinCode;
-    }
-
-    public String getCategory() {
-        return category;
-    }
-
-    public void setCategory(String category) {
-        this.category = category;
     }
 
     public String getStatus() {

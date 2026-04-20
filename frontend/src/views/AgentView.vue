@@ -34,12 +34,6 @@
               </el-select>
             </div>
             <div class="atelier-filter-field">
-              <label>分类</label>
-              <el-select v-model="filters.category" clearable placeholder="分类" style="width: 100%" :teleported="false">
-                <el-option v-for="item in categoryOptions" :key="item" :label="item" :value="item" />
-              </el-select>
-            </div>
-            <div class="atelier-filter-field">
               <label>状态</label>
               <el-select v-model="filters.status" clearable placeholder="状态" style="width: 100%" :teleported="false">
                 <el-option v-for="item in statusOptions" :key="item" :label="item" :value="item" />
@@ -73,7 +67,7 @@
             <div class="atelier-data-head-item agent-col-project">所属项目</div>
             <div class="atelier-data-head-item agent-col-access center">接入方式</div>
             <div class="atelier-data-head-item agent-col-runtime">运行时</div>
-            <div class="atelier-data-head-item agent-col-category">分类 / 类型</div>
+            <div class="atelier-data-head-item agent-col-category">类型</div>
             <div class="atelier-data-head-item agent-col-status center">状态</div>
             <div class="atelier-data-head-item agent-col-enabled center">启用</div>
             <div class="atelier-data-head-item agent-col-actions right">操作</div>
@@ -104,8 +98,8 @@
             <div class="atelier-data-cell agent-col-runtime" data-label="运行时">
               <span class="management-list-empty">{{ agentRuntimeLabel(row) }}</span>
             </div>
-            <div class="atelier-data-cell agent-col-category" data-label="分类 / 类型">
-              <span class="management-list-empty">{{ row.category }} / {{ row.type }}</span>
+            <div class="atelier-data-cell agent-col-category" data-label="类型">
+              <span class="management-list-empty">{{ row.type || '-' }}</span>
             </div>
             <div class="atelier-data-cell agent-col-status center" data-label="状态">
               <span class="management-list-pill" :class="agentStatusTone(row.status)">{{ row.status || '未知' }}</span>
@@ -171,9 +165,9 @@
                     </div>
                   </div>
                   <div class="mobile-entity-field">
-                    <span class="mobile-entity-field-label">分类</span>
+                    <span class="mobile-entity-field-label">类型</span>
                     <div class="mobile-entity-field-content">
-                      <span class="mobile-entity-empty-text">{{ row.category }} / {{ row.type }}</span>
+                      <span class="mobile-entity-empty-text">{{ row.type || '-' }}</span>
                     </div>
                   </div>
                   <div class="mobile-entity-field">
@@ -273,11 +267,6 @@
           <el-form-item label="所属项目">
             <el-select v-model="form.projectId" clearable placeholder="为空表示全局智能体" style="width: 100%">
               <el-option v-for="item in projectOptions" :key="item.id" :label="item.name" :value="item.id" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="分类" prop="category">
-            <el-select v-model="form.category" placeholder="请选择分类" style="width: 100%">
-              <el-option v-for="item in categoryOptions" :key="item" :label="item" :value="item" />
             </el-select>
           </el-form-item>
           <el-form-item label="类型" prop="type">
@@ -503,7 +492,6 @@ import { useMobileViewport } from '@/utils/mobileViewport'
 interface AgentForm {
   name: string
   type: string
-  category: string
   status: string
   enabled: boolean
   accessType: 'BUILT_IN' | 'LLM_PROMPT' | 'HTTP_API' | 'AGENT_RUNTIME'
@@ -527,7 +515,6 @@ interface AgentForm {
   timeoutSeconds: number
 }
 
-const categoryOptions = ['需求设计', 'UI设计', '技术设计', '开发', '测试', '部署']
 const typeOptions = ['规划', '开发', '评审', '测试', '运维']
 const statusOptions = ['在线', '空闲', '离线']
 const accessTypeOptions = [
@@ -571,7 +558,6 @@ const filters = reactive({
   keyword: '',
   status: '',
   type: '',
-  category: '',
   accessType: undefined as AgentForm['accessType'] | undefined,
   projectId: undefined as number | undefined
 })
@@ -581,7 +567,6 @@ const router = useRouter()
 const defaultForm = (): AgentForm => ({
   name: '',
   type: '开发',
-  category: '开发',
   status: '在线',
   enabled: true,
   accessType: 'BUILT_IN',
@@ -610,7 +595,6 @@ const form = reactive<AgentForm>(defaultForm())
 const rules: FormRules<AgentForm> = {
   name: [{ required: true, message: '请输入智能体名称', trigger: 'blur' }],
   type: [{ required: true, message: '请选择类型', trigger: 'change' }],
-  category: [{ required: true, message: '请选择分类', trigger: 'change' }],
   status: [{ required: true, message: '请选择状态', trigger: 'change' }],
   accessType: [{ required: true, message: '请选择接入方式', trigger: 'change' }]
 }
@@ -681,7 +665,6 @@ const loadAgents = async () => {
       status: filters.status,
       type: filters.type,
       accessType: filters.accessType,
-      category: filters.category,
       projectId: filters.projectId
     })
     agentList.value = pageData.records
@@ -701,7 +684,6 @@ const handleReset = async () => {
   filters.keyword = ''
   filters.status = ''
   filters.type = ''
-  filters.category = ''
   filters.accessType = undefined
   filters.projectId = undefined
   pagination.page = 1
@@ -738,7 +720,6 @@ const fillForm = (row: AgentItem) => {
   Object.assign(form, {
     name: row.name,
     type: row.type,
-    category: row.category,
     status: row.status,
     enabled: row.enabled,
     accessType: row.accessType,
@@ -782,7 +763,6 @@ const goToProject = async (projectId: number) => {
 const buildPayload = () => ({
   name: form.name,
   type: form.type,
-  category: form.category,
   status: form.status,
   enabled: form.enabled,
   accessType: form.accessType,

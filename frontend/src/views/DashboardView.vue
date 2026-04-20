@@ -218,7 +218,7 @@
                     <article v-for="agent in onlineAgents" :key="agent.id" class="info-list-item">
                       <div class="info-list-main">
                         <div class="info-list-title">{{ agent.name }}</div>
-                        <div class="info-list-subtitle">{{ agent.projectName || agent.category || agent.type || '智能体' }}</div>
+                        <div class="info-list-subtitle">{{ agent.projectName || agent.type || '智能体' }}</div>
                       </div>
                       <span class="info-list-chip success">{{ agent.enabled ? '在线' : '停用' }}</span>
                     </article>

@@ -284,7 +284,7 @@ class ProjectDataPermissionIntegrationTests {
         assertThat(platformStoreService.pageTasks(1, 20, null, null, null, null, null).records())
                 .extracting(TaskSummary::name)
                 .containsExactly("可见任务E");
-        assertThat(platformStoreService.pageAgents(1, 20, null, null, null, null, null, null).records())
+        assertThat(platformStoreService.pageAgents(1, 20, null, null, null, null, null).records())
                 .extracting(com.aiclub.platform.dto.AgentSummary::name)
                 .containsExactlyInAnyOrder("全局智能体E", "可见智能体E");
 
@@ -576,7 +576,7 @@ class ProjectDataPermissionIntegrationTests {
     }
 
     private AgentEntity createProjectAgent(String name, ProjectEntity project) {
-        AgentEntity agent = new AgentEntity(name, "开发", "开发", "在线", name + " 的能力", project);
+        AgentEntity agent = new AgentEntity(name, "开发", "在线", name + " 的能力", project);
         agent.setEnabled(true);
         agent.setDescription(name + " 的描述");
         return agent;

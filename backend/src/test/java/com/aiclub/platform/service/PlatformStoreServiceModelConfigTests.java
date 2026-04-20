@@ -102,7 +102,6 @@ class PlatformStoreServiceModelConfigTests {
         AgentRequest request = new AgentRequest(
                 "代码审查 Agent",
                 "开发",
-                "开发",
                 "在线",
                 true,
                 AgentExecutionService.ACCESS_BUILT_IN,
@@ -148,7 +147,6 @@ class PlatformStoreServiceModelConfigTests {
 
         AgentRequest request = new AgentRequest(
                 "Claude CLI Agent",
-                "开发",
                 "开发",
                 "在线",
                 true,
