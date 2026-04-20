@@ -358,6 +358,47 @@ class DevelopmentExecutionServiceTests {
     }
 
     /**
+     * 如果用户在 IMPLEMENT 完成后、TEST 开始前点击取消，执行器应立刻停住，
+     * 不能继续同仓库测试或后续报告。
+     */
+    @Test
+    void shouldStopBeforeTestWhenCancelIsRequestedAfterImplementation() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = buildWorkflowPlan();
+
+        when(executionTaskRepository.findCancelRequestedFlagById(99L)).thenReturn(false, false, true);
+        when(agentExecutionService.runAgent(eq(11L), any(String.class), any(Map.class)))
+                .thenReturn("# 执行规划\n先做 frontend。");
+        when(agentExecutionService.runAgent(eq(12L), any(String.class), any(Map.class)))
+                .thenReturn("""
+                        {
+                          "status": "SUCCESS",
+                          "summary": "frontend 仓库已完成开发",
+                          "changedFiles": ["frontend/src/views/ExecutionTaskDetailView.vue"],
+                          "commandsExecuted": ["git status"],
+                          "log": "实现完成",
+                          "workBranch": "feature/frontend-cancel"
+                        }
+                        """);
+
+        DevelopmentExecutionService.DevelopmentExecutionResult result =
+                developmentExecutionService.executeDevelopmentTask(executionTask, executionRun, workflowPlan);
+
+        assertThat(result.canceled()).isTrue();
+        assertThat(result.outputSummary()).contains("执行任务已取消");
+        assertThat(savedSteps)
+                .extracting(ExecutionStepEntity::getStepName, ExecutionStepEntity::getStatus)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("仓库结构化", "SUCCESS"),
+                        org.assertj.core.groups.Tuple.tuple("执行规划", "SUCCESS"),
+                        org.assertj.core.groups.Tuple.tuple("开发实现 · group/frontend", "SUCCESS")
+                );
+        verify(agentExecutionService, org.mockito.Mockito.never()).runAgent(eq(13L), any(String.class), any(Map.class));
+        verify(agentExecutionService, org.mockito.Mockito.never()).runAgent(eq(14L), any(String.class), any(Map.class));
+    }
+
+    /**
      * IMPLEMENT 输入只应携带与当前仓库相关的规划摘要，避免整份长规划把执行上下文撑爆。
      */
     @Test
@@ -672,6 +713,55 @@ class DevelopmentExecutionServiceTests {
                 .collect(Collectors.toList());
         assertThat(implementationSteps).hasSize(1);
         assertThat(implementationSteps.get(0).getStatus()).isEqualTo("FAILED");
+    }
+
+    /**
+     * 当前异步 IMPLEMENT 已被取消时，编排层应返回 canceled 结果，而不是误判成失败。
+     */
+    @Test
+    void shouldReturnCanceledResultWhenAsyncImplementationStepIsCanceled() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = buildWorkflowPlan();
+
+        when(agentExecutionService.runAgent(eq(11L), any(String.class), any(Map.class)))
+                .thenReturn("# 执行规划\n先做 frontend，再做 backend。");
+        when(agentExecutionService.supportsAsyncExecution(any(AgentEntity.class), eq("IMPLEMENT"))).thenReturn(true);
+        when(agentExecutionService.supportsAsyncExecution(any(AgentEntity.class), eq("PLAN"))).thenReturn(false);
+        when(agentExecutionService.startAsyncExecution(any(AgentEntity.class), any(String.class), any(Map.class), eq(15), eq(3600)))
+                .thenReturn(new AgentExecutionService.AsyncExecutionStartResult("session-implement-canceled", true, "CLI", "C:/workspace", "2026-04-18T12:00:00Z"));
+        doAnswer(invocation -> {
+            ExecutionStepEntity step = invocation.getArgument(2);
+            step.setRunnerSessionId("session-implement-canceled");
+            step.setRunnerType("CLI");
+            step.setHasLiveStream(true);
+            return null;
+        }).when(executionAsyncSessionService).bindRunnerSession(any(), any(), any(), eq("session-implement-canceled"), eq("CLI"));
+        when(executionAsyncSessionService.awaitTerminalStep(any(Long.class), eq(3600))).thenAnswer(invocation -> {
+            Long stepId = invocation.getArgument(0);
+            ExecutionStepEntity step = savedSteps.stream()
+                    .filter(item -> Objects.equals(item.getId(), stepId))
+                    .findFirst()
+                    .orElseThrow();
+            step.setStatus("CANCELED");
+            step.setLatestMessage("执行任务已取消，当前步骤正在停止");
+            step.setErrorMessage("执行任务已取消，当前步骤正在停止");
+            return step;
+        });
+
+        DevelopmentExecutionService.DevelopmentExecutionResult result =
+                developmentExecutionService.executeDevelopmentTask(executionTask, executionRun, workflowPlan);
+
+        assertThat(result.canceled()).isTrue();
+        assertThat(savedSteps)
+                .extracting(ExecutionStepEntity::getStepName, ExecutionStepEntity::getStatus)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("仓库结构化", "SUCCESS"),
+                        org.assertj.core.groups.Tuple.tuple("执行规划", "SUCCESS"),
+                        org.assertj.core.groups.Tuple.tuple("开发实现 · group/frontend", "CANCELED")
+                );
+        verify(agentExecutionService, org.mockito.Mockito.never()).runAgent(eq(13L), any(String.class), any(Map.class));
+        verify(agentExecutionService, org.mockito.Mockito.never()).runAgent(eq(14L), any(String.class), any(Map.class));
     }
 
     private ExecutionTaskEntity buildExecutionTask() {

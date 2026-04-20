@@ -66,6 +66,9 @@ public class ExecutionAsyncSessionService {
     @Transactional
     public void recordRunnerEvents(String sessionId, ExecutionSessionEventsRequest request) {
         ExecutionStepEntity step = requireStepBySessionId(sessionId);
+        if (isTerminal(step.getStatus())) {
+            return;
+        }
         ExecutionRunEntity run = step.getRun();
         ExecutionTaskEntity task = run.getExecutionTask();
         List<ExecutionSessionEventRequest> events = request == null ? List.of() : request.events();
@@ -79,6 +82,9 @@ public class ExecutionAsyncSessionService {
     @Transactional
     public void completeRunnerSession(String sessionId, ExecutionSessionCompleteRequest request) {
         ExecutionStepEntity step = requireStepBySessionId(sessionId);
+        if (isTerminal(step.getStatus())) {
+            return;
+        }
         ExecutionRunEntity run = step.getRun();
         ExecutionTaskEntity task = run.getExecutionTask();
 
@@ -125,6 +131,49 @@ public class ExecutionAsyncSessionService {
             }
         }
         executionEventService.recordStepFinished(task, run, step, !outputSummary.isBlank() ? outputSummary : errorMessage);
+    }
+
+    /**
+     * 用户主动取消时，如果当前步骤仍在 live runner 中执行，则直接把它收敛到取消态，
+     * 让等待线程尽快感知到终态，而不是继续阻塞到 runner 自己结束。
+     */
+    @Transactional
+    public boolean cancelLiveStep(ExecutionTaskEntity task,
+                                  ExecutionRunEntity run,
+                                  ExecutionStepEntity step,
+                                  String message) {
+        if (task == null || run == null || step == null || isTerminal(step.getStatus())) {
+            return false;
+        }
+        if (!step.isHasLiveStream() || !hasText(step.getRunnerSessionId())) {
+            return false;
+        }
+        String normalizedMessage = limit(hasText(message) ? message : "执行任务已取消", 1000);
+        LocalDateTime now = LocalDateTime.now();
+
+        step.setStatus("CANCELED");
+        step.setFinishedAt(now);
+        step.setLatestMessage(normalizedMessage);
+        step.setErrorMessage(limit(normalizedMessage, 4000));
+        step.setProgressPercent(Math.max(step.getProgressPercent() == null ? 0 : step.getProgressPercent(), 1));
+
+        run.setStatus("CANCELED");
+        run.setOutputSummary(limit(normalizedMessage, 4000));
+        run.setErrorMessage(limit(normalizedMessage, 4000));
+        run.setFinishedAt(now);
+        run.setUpdatedAt(now);
+
+        task.setStatus("CANCELED");
+        task.setCurrentRun(run);
+        task.setLatestSummary(normalizedMessage);
+        task.setUpdatedAt(now);
+
+        executionStepRepository.save(step);
+        executionRunRepository.save(run);
+        executionTaskRepository.save(task);
+        executionEventService.recordSummary(task, run, step, normalizedMessage);
+        executionEventService.recordStepFinished(task, run, step, normalizedMessage);
+        return true;
     }
 
     /**
@@ -230,6 +279,10 @@ public class ExecutionAsyncSessionService {
 
     private String defaultString(String value) {
         return value == null ? "" : value;
+    }
+
+    private boolean hasText(String value) {
+        return !defaultString(value).trim().isEmpty();
     }
 
     private String trimToNull(String value) {

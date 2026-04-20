@@ -213,6 +213,11 @@ public class ExecutionTaskService {
         }
         if ("RUNNING".equals(executionTask.getStatus())) {
             executionTask.setCancelRequested(true);
+            executionTask.setLatestSummary("已请求取消，正在尝试停止当前步骤");
+            executionTaskRepository.save(executionTask);
+            if (executionDispatchService.requestCancelRunningTask(executionTaskId)) {
+                return toTaskSummary(requireExecutionTaskWithContext(executionTaskId));
+            }
             executionTask.setLatestSummary("已请求取消，当前步骤结束后停止");
             return toTaskSummary(executionTaskRepository.save(executionTask));
         }

@@ -322,6 +322,30 @@ class ExecutionTaskServiceTests {
         verify(executionDispatchService).dispatchTaskAsync(99L);
     }
 
+    /**
+     * 运行中的执行任务若当前步骤已经进入 live runner，取消时应直接触发停止，
+     * 避免页面长时间停留在“运行中”而看不到任何取消结果。
+     */
+    @Test
+    void shouldRequestStoppingCurrentLiveStepWhenCancelingRunningTask() {
+        ExecutionTaskEntity executionTask = buildWaitingConfirmationTask(1001L);
+        executionTask.setStatus("RUNNING");
+        executionTask.setLatestSummary("执行中：开发实现");
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionDispatchService.requestCancelRunningTask(99L)).thenAnswer(invocation -> {
+            executionTask.setStatus("CANCELED");
+            executionTask.setLatestSummary("执行任务已取消，当前步骤正在停止");
+            return true;
+        });
+
+        ExecutionTaskSummary summary = executionTaskService.cancelExecutionTask(99L);
+
+        assertThat(summary.status()).isEqualTo("CANCELED");
+        assertThat(summary.latestSummary()).contains("当前步骤正在停止");
+        verify(executionDispatchService).requestCancelRunningTask(99L);
+    }
+
     private ProjectEntity buildProject() {
         ProjectEntity project = new ProjectEntity("执行中心演示项目", "张三", "进行中", "用于执行任务服务测试");
         project.setId(11L);

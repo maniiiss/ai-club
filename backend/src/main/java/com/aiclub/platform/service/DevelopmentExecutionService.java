@@ -122,11 +122,16 @@ public class DevelopmentExecutionService {
                         totalSteps
                 );
                 repositories = applyStructuringResult(repositories, structuringResult);
+            } catch (DevelopmentExecutionCanceledException exception) {
+                return canceledResult(artifacts);
             } catch (RuntimeException exception) {
                 String structuringInput = buildStructuringInput(executionTask, workItem, repositories, payload.inputText());
                 failureContext = markFailure(executionTask, executionRun, structuringStep, totalSteps, structuringInput, exception);
                 skippedRepositories.addAll(repositories);
             }
+        }
+        if (failureContext == null && isCancelRequested(executionTask.getId())) {
+            return canceledResult(artifacts);
         }
 
         ExecutionWorkflowService.ExecutionStepPlan planStep = workflowPlan.steps().get(pointer++);
@@ -139,6 +144,8 @@ public class DevelopmentExecutionService {
             String planInput = buildPlanInput(executionTask, workItem, repositories, payload.inputText(), structuringResult);
             try {
                 planMarkdown = executePlanStep(executionTask, executionRun, workItem, planStep, repositories, planInput, totalSteps, artifacts, structuringResult);
+            } catch (DevelopmentExecutionCanceledException exception) {
+                return canceledResult(artifacts);
             } catch (RuntimeException exception) {
                 failureContext = markFailure(executionTask, executionRun, planStep, totalSteps, planInput, exception);
                 skippedRepositories.addAll(repositories);
@@ -171,10 +178,15 @@ public class DevelopmentExecutionService {
                         executionTask, executionRun, workItem, implementStep, repository, state.index(), state.total(), implementInput, totalSteps, artifacts
                 );
                 state.setImplementationResult(implementationResult);
+            } catch (DevelopmentExecutionCanceledException exception) {
+                return canceledResult(artifacts);
             } catch (RuntimeException exception) {
                 failureContext = markFailure(executionTask, executionRun, implementStep, totalSteps, implementInput, exception);
                 skippedRepositories.addAll(repositories.subList(index + 1, repositories.size()));
                 break;
+            }
+            if (isCancelRequested(executionTask.getId())) {
+                return canceledResult(artifacts);
             }
 
             String testInput = buildTestInput(executionTask, workItem, repository, state, payload.inputText(), structuringResult);
@@ -183,6 +195,8 @@ public class DevelopmentExecutionService {
                         executionTask, executionRun, workItem, testStep, repository, state, testInput, totalSteps, artifacts
                 );
                 state.setTestResult(testResult);
+            } catch (DevelopmentExecutionCanceledException exception) {
+                return canceledResult(artifacts);
             } catch (RuntimeException exception) {
                 failureContext = markFailure(executionTask, executionRun, testStep, totalSteps, testInput, exception);
                 skippedRepositories.addAll(repositories.subList(index + 1, repositories.size()));
@@ -191,7 +205,7 @@ public class DevelopmentExecutionService {
         }
 
         if (isCancelRequested(executionTask.getId())) {
-            return new DevelopmentExecutionResult("执行任务已取消，未继续后续仓库。", artifacts, true, false);
+            return canceledResult(artifacts);
         }
 
         ExecutionWorkflowService.ExecutionStepPlan reportStep = workflowPlan.steps().get(workflowPlan.steps().size() - 1);
@@ -199,6 +213,8 @@ public class DevelopmentExecutionService {
         String reportSummary = "";
         try {
             reportSummary = executeReportStep(executionTask, executionRun, workItem, reportStep, reportInput, totalSteps, artifacts);
+        } catch (DevelopmentExecutionCanceledException exception) {
+            return canceledResult(artifacts);
         } catch (RuntimeException exception) {
             FailureContext reportFailure = markFailure(executionTask, executionRun, reportStep, totalSteps, reportInput, exception);
             if (failureContext == null) {
@@ -312,6 +328,9 @@ public class DevelopmentExecutionService {
                 step.getId(),
                 executionAsyncSessionService.maxRuntimeSeconds(stepPlan.stepCode())
         );
+        if ("CANCELED".equalsIgnoreCase(completedStep.getStatus())) {
+            throw new DevelopmentExecutionCanceledException(resolveCanceledMessage(completedStep));
+        }
         if (!"SUCCESS".equalsIgnoreCase(completedStep.getStatus())) {
             throw new IllegalStateException(defaultString(completedStep.getErrorMessage()).isBlank()
                     ? "仓库结构化失败"
@@ -590,12 +609,32 @@ public class DevelopmentExecutionService {
                 step.getId(),
                 maxRuntimeSeconds
         );
+        if ("CANCELED".equalsIgnoreCase(completedStep.getStatus())) {
+            throw new DevelopmentExecutionCanceledException(resolveCanceledMessage(completedStep));
+        }
         if (!"SUCCESS".equalsIgnoreCase(completedStep.getStatus())) {
             throw new IllegalStateException(defaultString(completedStep.getErrorMessage()).isBlank()
                     ? "异步步骤执行失败"
                     : completedStep.getErrorMessage());
         }
         return defaultString(completedStep.getOutputSnapshot());
+    }
+
+    private DevelopmentExecutionResult canceledResult(List<ExecutionArtifactEntity> artifacts) {
+        return new DevelopmentExecutionResult("执行任务已取消，未继续后续步骤。", artifacts, true, false);
+    }
+
+    private String resolveCanceledMessage(ExecutionStepEntity step) {
+        if (step == null) {
+            return "执行任务已取消";
+        }
+        if (hasText(step.getLatestMessage())) {
+            return step.getLatestMessage();
+        }
+        if (hasText(step.getErrorMessage())) {
+            return step.getErrorMessage();
+        }
+        return "执行任务已取消";
     }
 
     /**
@@ -1630,6 +1669,13 @@ public class DevelopmentExecutionService {
 
         public String outputSummary() {
             return outputSummary;
+        }
+    }
+
+    private static final class DevelopmentExecutionCanceledException extends RuntimeException {
+
+        private DevelopmentExecutionCanceledException(String message) {
+            super(message);
         }
     }
 

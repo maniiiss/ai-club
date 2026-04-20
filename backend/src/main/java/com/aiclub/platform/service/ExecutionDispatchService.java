@@ -109,6 +109,33 @@ public class ExecutionDispatchService {
     }
 
     /**
+     * 取消执行任务时，如果当前步骤已经进入 live runner，会先把该步骤直接收敛为取消态，
+     * 这样调度线程不需要再等 runner 自然结束或超时。
+     */
+    @Transactional
+    public boolean requestCancelRunningTask(Long executionTaskId) {
+        ExecutionTaskEntity executionTask = requireExecutionTask(executionTaskId);
+        ExecutionRunEntity executionRun = executionTask.getCurrentRun();
+        if (executionRun == null || executionRun.getCurrentStepNo() == null) {
+            return false;
+        }
+        ExecutionStepEntity currentStep = executionStepRepository.findByRun_IdAndStepNo(
+                        executionRun.getId(),
+                        executionRun.getCurrentStepNo()
+                )
+                .orElse(null);
+        if (currentStep == null) {
+            return false;
+        }
+        return executionAsyncSessionService.cancelLiveStep(
+                executionTask,
+                executionRun,
+                currentStep,
+                "执行任务已取消，当前步骤正在停止"
+        );
+    }
+
+    /**
      * 立即执行一个待调度任务。
      * 该能力供旧兼容接口和测试场景复用。
      */
@@ -616,7 +643,7 @@ public class ExecutionDispatchService {
                 "开发执行待确认：" + defaultString(executionTask.getTitle()).trim(),
                 "执行规划已生成，请前往执行详情查看、编辑并确认继续。",
                 "/tasks/" + executionTask.getId(),
-                "DEVELOPMENT_EXECUTION_PLAN_CONFIRM_REQUIRED",
+                "DEVELOPMENT_EXECUTION_PLAN_CONFIRMATION_REQUIRED",
                 executionTask.getId()
         );
     }

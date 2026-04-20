@@ -261,6 +261,46 @@ class ExecutionDispatchServiceTests {
     }
 
     /**
+     * 取消入口命中当前 live step 时，应委托异步会话服务立即把它收敛到取消态。
+     */
+    @Test
+    void shouldCancelCurrentLiveStepWhenRequestingRunningTaskCancel() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(306L);
+        executionRun.setExecutionTask(executionTask);
+        executionRun.setCurrentStepNo(3);
+        executionTask.setCurrentRun(executionRun);
+
+        ExecutionStepEntity currentStep = new ExecutionStepEntity();
+        currentStep.setId(601L);
+        currentStep.setRun(executionRun);
+        currentStep.setStepNo(3);
+        currentStep.setStatus("RUNNING");
+        currentStep.setHasLiveStream(true);
+        currentStep.setRunnerSessionId("session-306");
+
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionStepRepository.findByRun_IdAndStepNo(306L, 3)).thenReturn(Optional.of(currentStep));
+        when(executionAsyncSessionService.cancelLiveStep(
+                executionTask,
+                executionRun,
+                currentStep,
+                "执行任务已取消，当前步骤正在停止"
+        )).thenReturn(true);
+
+        boolean canceled = executionDispatchService.requestCancelRunningTask(99L);
+
+        assertThat(canceled).isTrue();
+        verify(executionAsyncSessionService).cancelLiveStep(
+                executionTask,
+                executionRun,
+                currentStep,
+                "执行任务已取消，当前步骤正在停止"
+        );
+    }
+
+    /**
      * 发起人确认后，任务会重新回到 PENDING 并复用原 run 继续执行；
      * 调度层此时不能再 createRun，否则会把确认前后的轨迹拆成两次运行。
      */
