@@ -911,10 +911,31 @@ def _clone_repository(request: CodexExecutionRequest, workspace: DevelopmentExec
             if stderr:
                 _append_log(workspace, stderr)
             if completed.returncode == 0:
+                resolved_commit = _checkout_commit_if_needed(workspace.repo_dir, request.repository.commitSha, workspace)
+                if resolved_commit:
+                    _append_log(workspace, f"仓库已固定到提交：{resolved_commit}")
                 _append_log(workspace, f"仓库 clone 成功：{_safe_repo_url(candidate)}")
                 return
             errors.append(f"{strategy}: {stderr or stdout or '未知错误'}")
     raise RuntimeError("克隆仓库失败：" + "；".join(errors[-3:]))
+
+
+def _checkout_commit_if_needed(repo_dir: Path, commit_sha: str, workspace: DevelopmentExecutionWorkspace) -> str:
+    normalized = (commit_sha or "").strip()
+    if not normalized:
+        return ""
+    current_head = _current_head_commit_from_repo(repo_dir)
+    if current_head == normalized:
+        return current_head
+    _append_log(workspace, f"开始固定仓库提交：{normalized}")
+    if _run_git_workspace_command(repo_dir, ["git", "checkout", normalized], workspace, allow_failure=True):
+        return _current_head_commit_from_repo(repo_dir)
+    _append_log(workspace, f"本地未命中提交 {normalized}，尝试从 origin 定向拉取")
+    if not _run_git_workspace_command(repo_dir, ["git", "fetch", "--depth", "1", "origin", normalized], workspace, allow_failure=True):
+        raise RuntimeError(f"无法切换到指定提交：{normalized}")
+    if not _run_git_workspace_command(repo_dir, ["git", "checkout", normalized], workspace, allow_failure=True):
+        raise RuntimeError(f"无法切换到指定提交：{normalized}")
+    return _current_head_commit_from_repo(repo_dir)
 
 
 def _prepare_local_branch(request: CodexExecutionRequest, workspace: DevelopmentExecutionWorkspace) -> None:
@@ -959,6 +980,32 @@ def _run_command(
     return stdout
 
 
+def _run_git_workspace_command(
+    cwd: Path,
+    command: list[str],
+    workspace: DevelopmentExecutionWorkspace,
+    allow_failure: bool = False,
+) -> bool:
+    completed = subprocess.run(
+        command,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
+    )
+    stdout = (completed.stdout or "").strip()
+    stderr = (completed.stderr or "").strip()
+    if stdout:
+        _append_log(workspace, stdout)
+    if stderr:
+        _append_log(workspace, stderr)
+    if completed.returncode != 0 and not allow_failure:
+        raise RuntimeError(stderr or stdout or f"命令执行失败：{' '.join(command)}")
+    return completed.returncode == 0
+
+
 def _collect_changed_files(workspace: DevelopmentExecutionWorkspace) -> list[str]:
     if not workspace.repo_dir.exists():
         return []
@@ -990,13 +1037,18 @@ def _collect_changed_files(workspace: DevelopmentExecutionWorkspace) -> list[str
 def _current_head_commit(workspace: DevelopmentExecutionWorkspace) -> str:
     if not workspace.repo_dir.exists():
         return ""
+    return _current_head_commit_from_repo(workspace.repo_dir)
+
+
+def _current_head_commit_from_repo(repo_dir: Path) -> str:
     completed = subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        cwd=workspace.repo_dir,
+        cwd=repo_dir,
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
+        env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
     )
     if completed.returncode != 0:
         return ""

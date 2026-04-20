@@ -634,7 +634,9 @@ public class ExecutionTaskService {
             throw new IllegalArgumentException("执行规划不能为空");
         }
 
-        ExecutionStepEntity planStep = executionStepRepository.findByRun_IdAndStepNo(currentRun.getId(), 1)
+        ExecutionStepEntity planStep = executionStepRepository.findAllByRun_IdOrderByStepNoAscIdAsc(currentRun.getId()).stream()
+                .filter(step -> ExecutionWorkflowService.STEP_PLAN.equalsIgnoreCase(defaultString(step.getStepCode())))
+                .findFirst()
                 .orElseThrow(() -> new IllegalStateException("当前执行任务缺少执行规划步骤"));
         planStep.setOutputSnapshot(planMarkdown);
         executionStepRepository.save(planStep);

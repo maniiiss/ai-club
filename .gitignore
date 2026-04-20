@@ -14,3 +14,4 @@ APITOKEN.md
 /code-processing/.venv/
 /code-processing/.scan-workspace
 .data
+.gitnexus

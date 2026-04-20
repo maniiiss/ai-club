@@ -114,6 +114,7 @@ def _to_codex_request(request: CliExecutionRequest) -> CodexExecutionRequest:
             projectPath=repository.projectPath,
             repoUrl=repository.repoUrl,
             targetBranch=repository.targetBranch,
+            commitSha=repository.commitSha,
             apiBaseUrl=repository.apiBaseUrl,
             authToken=repository.authToken,
         ),
@@ -132,6 +133,7 @@ def _to_claude_request(request: CliExecutionRequest) -> ClaudePlanningRequest:
             projectPath=repository.projectPath,
             repoUrl=repository.repoUrl,
             targetBranch=repository.targetBranch,
+            commitSha=repository.commitSha,
             apiBaseUrl=repository.apiBaseUrl,
             authToken=repository.authToken,
         )
@@ -728,6 +730,7 @@ def _to_claude_repository(repository: CliExecutionRepository) -> ClaudePlanningR
         projectPath=repository.projectPath,
         repoUrl=repository.repoUrl,
         targetBranch=repository.targetBranch,
+        commitSha=repository.commitSha,
         apiBaseUrl=repository.apiBaseUrl,
         authToken=repository.authToken,
     )

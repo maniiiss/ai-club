@@ -203,10 +203,11 @@ class ExecutionTaskServiceTests {
                 ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION,
                 "开发执行",
                 List.of(
-                        new ExecutionWorkflowService.ExecutionStepPlan(1, "PLAN", "执行规划", buildAgent(11L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null),
-                        new ExecutionWorkflowService.ExecutionStepPlan(2, "IMPLEMENT", "开发实现 · group/frontend", buildAgent(12L, AgentExecutionService.ACCESS_BUILT_IN), 1L, "main", "group/frontend"),
-                        new ExecutionWorkflowService.ExecutionStepPlan(3, "TEST", "执行测试 · group/frontend", buildAgent(13L, AgentExecutionService.ACCESS_HTTP_API), 1L, "main", "group/frontend"),
-                        new ExecutionWorkflowService.ExecutionStepPlan(4, "REPORT", "交付报告", buildAgent(14L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null)
+                        new ExecutionWorkflowService.ExecutionStepPlan(1, "REPO_STRUCTURING", "仓库结构化", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(2, "PLAN", "执行规划", buildAgent(11L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(3, "IMPLEMENT", "开发实现 · group/frontend", buildAgent(12L, AgentExecutionService.ACCESS_BUILT_IN), 1L, "main", "group/frontend"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(4, "TEST", "执行测试 · group/frontend", buildAgent(13L, AgentExecutionService.ACCESS_HTTP_API), 1L, "main", "group/frontend"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(5, "REPORT", "交付报告", buildAgent(14L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null)
                 )
         ));
 
@@ -241,10 +242,11 @@ class ExecutionTaskServiceTests {
                 ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION,
                 "开发执行",
                 List.of(
-                        new ExecutionWorkflowService.ExecutionStepPlan(1, "PLAN", "执行规划", buildAgent(11L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null),
-                        new ExecutionWorkflowService.ExecutionStepPlan(2, "IMPLEMENT", "开发实现 · group/frontend", buildAgent(12L, AgentExecutionService.ACCESS_AGENT_RUNTIME), 1L, "main", "group/frontend"),
-                        new ExecutionWorkflowService.ExecutionStepPlan(3, "TEST", "执行测试 · group/frontend", buildAgent(13L, AgentExecutionService.ACCESS_HTTP_API), 1L, "main", "group/frontend"),
-                        new ExecutionWorkflowService.ExecutionStepPlan(4, "REPORT", "交付报告", buildAgent(14L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null)
+                        new ExecutionWorkflowService.ExecutionStepPlan(1, "REPO_STRUCTURING", "仓库结构化", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(2, "PLAN", "执行规划", buildAgent(11L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(3, "IMPLEMENT", "开发实现 · group/frontend", buildAgent(12L, AgentExecutionService.ACCESS_AGENT_RUNTIME), 1L, "main", "group/frontend"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(4, "TEST", "执行测试 · group/frontend", buildAgent(13L, AgentExecutionService.ACCESS_HTTP_API), 1L, "main", "group/frontend"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(5, "REPORT", "交付报告", buildAgent(14L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null)
                 )
         ));
         when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> {
@@ -299,7 +301,6 @@ class ExecutionTaskServiceTests {
         ExecutionArtifactEntity planArtifact = buildPlanArtifact(executionRun, planStep, "# 旧规划");
 
         when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
-        when(executionStepRepository.findByRun_IdAndStepNo(301L, 1)).thenReturn(Optional.of(planStep));
         when(executionStepRepository.findAllByRun_IdOrderByStepNoAscIdAsc(301L)).thenReturn(List.of(planStep));
         when(executionArtifactRepository.findFirstByRun_IdAndArtifactTypeAndTitle(301L, "PLAN_MARKDOWN", "执行规划 Markdown"))
                 .thenReturn(Optional.of(planArtifact));
@@ -360,7 +361,7 @@ class ExecutionTaskServiceTests {
         executionRun.setId(301L);
         executionRun.setRunNo(1);
         executionRun.setStatus("WAITING_CONFIRMATION");
-        executionRun.setCurrentStepNo(1);
+        executionRun.setCurrentStepNo(2);
 
         ExecutionTaskEntity executionTask = new ExecutionTaskEntity();
         executionTask.setId(99L);
@@ -387,7 +388,7 @@ class ExecutionTaskServiceTests {
         ExecutionStepEntity step = new ExecutionStepEntity();
         step.setId(401L);
         step.setRun(executionRun);
-        step.setStepNo(1);
+        step.setStepNo(2);
         step.setStepCode("PLAN");
         step.setStepName("执行规划");
         step.setStatus("SUCCESS");

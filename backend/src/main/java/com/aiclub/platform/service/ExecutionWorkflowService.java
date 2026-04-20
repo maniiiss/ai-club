@@ -36,6 +36,7 @@ public class ExecutionWorkflowService {
     public static final String SCENARIO_CODEBASE_COMPLIANCE_SCAN = "CODEBASE_COMPLIANCE_SCAN";
 
     public static final String STEP_PLAN = "PLAN";
+    public static final String STEP_REPO_STRUCTURING = "REPO_STRUCTURING";
     public static final String STEP_IMPLEMENT = "IMPLEMENT";
     public static final String STEP_TEST = "TEST";
     public static final String STEP_TEST_DESIGN = "TEST_DESIGN";
@@ -163,7 +164,7 @@ public class ExecutionWorkflowService {
                         step.stepNo(),
                         step.stepCode(),
                         step.stepName(),
-                        step.agent().getId(),
+                        step.agent() == null ? null : step.agent().getId(),
                         step.repositoryBindingId(),
                         step.repositoryTargetBranch(),
                         step.repositoryDisplayName()
@@ -251,6 +252,7 @@ public class ExecutionWorkflowService {
             case STEP_PLAN -> SCENARIO_REQUIREMENT_BREAKDOWN.equals(normalizedScenarioCode)
                     ? "请把当前需求拆解为可执行项，并输出结构化 Markdown 方案。"
                     : "请先梳理当前工作项的执行路径、关键风险和依赖，输出结构化 Markdown 计划。";
+            case STEP_REPO_STRUCTURING -> "请先准备仓库代码快照并生成结构化代码理解结果，供后续规划、开发和测试步骤复用。";
             case STEP_IMPLEMENT -> "请基于工作项上下文和上游计划，给出可执行的开发实现方案、代码改造建议或关键实现片段。";
             case STEP_TEST -> "请根据当前仓库的实现结果执行真实验证，并返回结构化 JSON 测试结果。";
             case STEP_TEST_DESIGN -> "请基于工作项上下文和现有方案，输出测试点、测试案例设计和验收建议。";
@@ -324,6 +326,7 @@ public class ExecutionWorkflowService {
      */
     private List<StepTemplate> buildDevelopmentTemplates(List<DevelopmentRepositorySelection> developmentRepositories) {
         List<StepTemplate> templates = new ArrayList<>();
+        templates.add(new StepTemplate(STEP_REPO_STRUCTURING, "仓库结构化", null, null, null));
         templates.add(new StepTemplate(STEP_PLAN, "执行规划", null, null, null));
         for (DevelopmentRepositorySelection repository : developmentRepositories) {
             templates.add(new StepTemplate(
@@ -346,6 +349,13 @@ public class ExecutionWorkflowService {
     }
 
     private AgentEntity resolveStoredAgent(StoredAgentBinding binding, List<AgentEntity> availableAgents) {
+        if (binding == null) {
+            return null;
+        }
+        if (STEP_REPO_STRUCTURING.equalsIgnoreCase(defaultString(binding.stepCode()))
+                && binding.agentId() == null) {
+            return null;
+        }
         return availableAgents.stream()
                 .filter(agent -> Objects.equals(agent.getId(), binding.agentId()))
                 .findFirst()
@@ -355,6 +365,9 @@ public class ExecutionWorkflowService {
     private AgentEntity resolveStepAgent(StepTemplate template,
                                          Long explicitAgentId,
                                          List<AgentEntity> availableAgents) {
+        if (STEP_REPO_STRUCTURING.equalsIgnoreCase(defaultString(template.stepCode()))) {
+            return null;
+        }
         if (explicitAgentId != null) {
             return availableAgents.stream()
                     .filter(agent -> Objects.equals(agent.getId(), explicitAgentId))

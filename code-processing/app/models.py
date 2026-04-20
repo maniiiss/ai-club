@@ -247,6 +247,59 @@ class RepositoryScanPackageResponse(BaseModel):
     artifacts: list[RepositoryScanArtifactSummary] = Field(default_factory=list)
 
 
+class RepositoryStructuringRepository(BaseModel):
+    """仓库结构化所需的单仓库上下文。"""
+
+    bindingId: str = ""
+    displayName: str = ""
+    projectRef: str = ""
+    projectPath: str = ""
+    repoUrl: str
+    targetBranch: str
+    commitSha: str = ""
+    apiBaseUrl: str = ""
+    authToken: str
+
+    @field_validator("bindingId", "displayName", "projectRef", "projectPath", "repoUrl", "targetBranch", "commitSha", "apiBaseUrl", "authToken", mode="before")
+    @classmethod
+    def normalize_repository_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class RepositoryStructuringRequest(BaseModel):
+    """供 backend 调用的仓库结构化 bridge 请求。"""
+
+    input: str = ""
+    repositories: list[RepositoryStructuringRepository] = Field(default_factory=list)
+    execution: "CodexExecutionContext"
+    timeoutSeconds: int = Field(default=900, ge=30, le=ASYNC_EXECUTION_TIMEOUT_LIMIT_SECONDS)
+
+    @field_validator("input", mode="before")
+    @classmethod
+    def normalize_input_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value)
+
+    @field_validator("repositories")
+    @classmethod
+    def validate_repositories(cls, value: list[RepositoryStructuringRepository]) -> list[RepositoryStructuringRepository]:
+        if not value:
+            raise ValueError("仓库结构化至少需要一个仓库上下文")
+        return value
+
+
+class RepositoryStructuringResponse(BaseModel):
+    """仓库结构化 bridge 响应。"""
+
+    output: str
+    workspaceRoot: str = ""
+    repoPaths: list[str] = Field(default_factory=list)
+    logPreview: str = ""
+
+
 class CodexExecutionRepository(BaseModel):
     """开发执行桥接所需的单仓库上下文。"""
 
@@ -256,10 +309,11 @@ class CodexExecutionRepository(BaseModel):
     projectPath: str = ""
     repoUrl: str
     targetBranch: str
+    commitSha: str = ""
     apiBaseUrl: str = ""
     authToken: str
 
-    @field_validator("bindingId", "displayName", "projectRef", "projectPath", "repoUrl", "targetBranch", "apiBaseUrl", "authToken", mode="before")
+    @field_validator("bindingId", "displayName", "projectRef", "projectPath", "repoUrl", "targetBranch", "commitSha", "apiBaseUrl", "authToken", mode="before")
     @classmethod
     def normalize_repository_text(cls, value: Any) -> str:
         if value is None:
@@ -337,10 +391,11 @@ class CliExecutionRepository(BaseModel):
     projectPath: str = ""
     repoUrl: str = ""
     targetBranch: str = ""
+    commitSha: str = ""
     apiBaseUrl: str = ""
     authToken: str = ""
 
-    @field_validator("bindingId", "displayName", "projectRef", "projectPath", "repoUrl", "targetBranch", "apiBaseUrl", "authToken", mode="before")
+    @field_validator("bindingId", "displayName", "projectRef", "projectPath", "repoUrl", "targetBranch", "commitSha", "apiBaseUrl", "authToken", mode="before")
     @classmethod
     def normalize_repository_text(cls, value: Any) -> str:
         if value is None:
@@ -407,10 +462,11 @@ class ClaudePlanningRepository(BaseModel):
     projectPath: str = ""
     repoUrl: str
     targetBranch: str
+    commitSha: str = ""
     apiBaseUrl: str = ""
     authToken: str
 
-    @field_validator("bindingId", "displayName", "projectRef", "projectPath", "repoUrl", "targetBranch", "apiBaseUrl", "authToken", mode="before")
+    @field_validator("bindingId", "displayName", "projectRef", "projectPath", "repoUrl", "targetBranch", "commitSha", "apiBaseUrl", "authToken", mode="before")
     @classmethod
     def normalize_repository_text(cls, value: Any) -> str:
         if value is None:

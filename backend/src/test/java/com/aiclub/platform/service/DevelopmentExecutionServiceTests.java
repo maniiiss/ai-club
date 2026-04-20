@@ -67,6 +67,9 @@ class DevelopmentExecutionServiceTests {
     private ExecutionAsyncSessionService executionAsyncSessionService;
 
     @Mock
+    private RepositoryStructuringClientService repositoryStructuringClientService;
+
+    @Mock
     private TokenCipherService tokenCipherService;
 
     @Mock
@@ -88,6 +91,7 @@ class DevelopmentExecutionServiceTests {
                 agentExecutionService,
                 executionEventService,
                 executionAsyncSessionService,
+                repositoryStructuringClientService,
                 tokenCipherService,
                 gitlabApiService,
                 new ObjectMapper()
@@ -125,6 +129,9 @@ class DevelopmentExecutionServiceTests {
         lenient().when(executionAsyncSessionService.submitTimeoutSeconds()).thenReturn(15);
         lenient().when(executionAsyncSessionService.maxRuntimeSeconds(any(String.class))).thenAnswer(invocation -> {
             String stepCode = invocation.getArgument(0, String.class);
+            if ("REPO_STRUCTURING".equalsIgnoreCase(stepCode)) {
+                return 900;
+            }
             if ("IMPLEMENT".equalsIgnoreCase(stepCode)) {
                 return 3600;
             }
@@ -132,6 +139,33 @@ class DevelopmentExecutionServiceTests {
                 return 2400;
             }
             return 600;
+        });
+        lenient().when(repositoryStructuringClientService.startStructuring(any())).thenReturn(
+                new RepositoryStructuringClientService.StructuringSessionAcceptedResponse(
+                        "session-structuring",
+                        true,
+                        "CLI",
+                        "C:/workspace/structuring",
+                        "2026-04-18T12:00:00Z"
+                )
+        );
+        lenient().doAnswer(invocation -> {
+            ExecutionStepEntity step = invocation.getArgument(2);
+            step.setRunnerSessionId(invocation.getArgument(3, String.class));
+            step.setRunnerType(invocation.getArgument(4, String.class));
+            step.setHasLiveStream(true);
+            return null;
+        }).when(executionAsyncSessionService).bindRunnerSession(any(), any(), any(), any(String.class), any(String.class));
+        lenient().when(executionAsyncSessionService.awaitTerminalStep(any(Long.class), eq(900))).thenAnswer(invocation -> {
+            Long stepId = invocation.getArgument(0, Long.class);
+            ExecutionStepEntity step = savedSteps.stream()
+                    .filter(item -> Objects.equals(item.getId(), stepId))
+                    .findFirst()
+                    .orElseThrow();
+            step.setStatus("SUCCESS");
+            step.setOutputSnapshot(defaultStructuringOutput());
+            step.setLatestMessage("仓库结构化已完成");
+            return step;
         });
         lenient().when(tokenCipherService.decrypt("cipher-1")).thenReturn("token-1");
         lenient().when(tokenCipherService.decrypt("cipher-2")).thenReturn("token-2");
@@ -179,9 +213,69 @@ class DevelopmentExecutionServiceTests {
                         && "".equals(String.valueOf(variables.get("user_id")))
                         && "".equals(String.valueOf(variables.get("user_name")))
                         && String.valueOf(variables.get("development_repositories_json")).contains("\"displayName\":\"group/frontend\"")
+                        && String.valueOf(variables.get("development_repositories_json")).contains("\"commitSha\":\"frontend-sha\"")
                         && String.valueOf(variables.get("development_repositories_json")).contains("\"projectPath\":\"group/backend\"")
-                        && String.valueOf(variables.get("development_repositories_json")).contains("\"targetBranch\":\"release/1.0\""))
+                        && String.valueOf(variables.get("development_repositories_json")).contains("\"targetBranch\":\"release/1.0\"")
+                        && String.valueOf(variables.get("repository_structuring_json")).contains("\"crossRepoContextMarkdown\""))
         );
+    }
+
+    /**
+     * 仓库结构化允许降级继续，但后续 PLAN / IMPLEMENT 输入必须看到降级提示、固定提交和 Harness 提示，
+     * 避免模型把 GitNexus 结果当成完全可信的最终事实。
+     */
+    @Test
+    void shouldContinueWhenStructuringIsDegradedAndExposeWarningToLaterSteps() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = buildWorkflowPlan();
+
+        when(executionAsyncSessionService.awaitTerminalStep(any(Long.class), eq(900))).thenAnswer(invocation -> {
+            Long stepId = invocation.getArgument(0, Long.class);
+            ExecutionStepEntity step = savedSteps.stream()
+                    .filter(item -> Objects.equals(item.getId(), stepId))
+                    .findFirst()
+                    .orElseThrow();
+            step.setStatus("SUCCESS");
+            step.setOutputSnapshot(degradedStructuringOutput());
+            step.setLatestMessage("仓库结构化存在降级结果");
+            return step;
+        });
+        when(agentExecutionService.runAgent(
+                eq(11L),
+                argThat(input -> input.contains("仓库结构化存在降级结果")
+                        && input.contains("结构化状态：存在降级")),
+                any(Map.class)))
+                .thenReturn("# 总体结论\n先处理 frontend，再处理 backend。");
+        when(agentExecutionService.runAgent(
+                eq(12L),
+                argThat(input -> input.contains("状态：已降级")
+                        && input.contains("固定提交：frontend-sha")
+                        && input.contains("python scripts/check_encoding.py")
+                        && input.contains("需人工复核")),
+                any(Map.class)))
+                .thenReturn("""
+                        {
+                          "status": "FAILED",
+                          "summary": "frontend 仓库开发失败",
+                          "changedFiles": [],
+                          "commandsExecuted": [],
+                          "log": "结构化降级后仍主动停止",
+                          "workBranch": null,
+                          "commitSha": null,
+                          "mergeRequestUrl": null
+                        }
+                        """);
+        when(agentExecutionService.runAgent(eq(14L), any(String.class), any(Map.class)))
+                .thenReturn("""
+                        # 交付报告
+
+                        frontend 仓库在开发实现阶段失败，backend 仓库未执行。
+                        """);
+
+        assertThatThrownBy(() -> developmentExecutionService.executeDevelopmentTask(executionTask, executionRun, workflowPlan))
+                .isInstanceOf(DevelopmentExecutionService.DevelopmentExecutionStepException.class)
+                .hasMessageContaining("frontend 仓库开发失败");
     }
 
     /**
@@ -205,7 +299,10 @@ class DevelopmentExecutionServiceTests {
         assertThat(executionRun.getStatus()).isEqualTo("WAITING_CONFIRMATION");
         assertThat(savedSteps)
                 .extracting(ExecutionStepEntity::getStepName, ExecutionStepEntity::getStatus)
-                .containsExactly(org.assertj.core.groups.Tuple.tuple("执行规划", "SUCCESS"));
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("仓库结构化", "SUCCESS"),
+                        org.assertj.core.groups.Tuple.tuple("执行规划", "SUCCESS")
+                );
         assertThat(savedArtifacts)
                 .extracting(ExecutionArtifactEntity::getArtifactType)
                 .containsExactly("PLAN_MARKDOWN");
@@ -248,6 +345,7 @@ class DevelopmentExecutionServiceTests {
         assertThat(savedSteps)
                 .extracting(ExecutionStepEntity::getStepName, ExecutionStepEntity::getStatus)
                 .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("仓库结构化", "SUCCESS"),
                         org.assertj.core.groups.Tuple.tuple("执行规划", "SUCCESS"),
                         org.assertj.core.groups.Tuple.tuple("开发实现 · group/frontend", "FAILED"),
                         org.assertj.core.groups.Tuple.tuple("交付报告", "SUCCESS")
@@ -335,12 +433,22 @@ class DevelopmentExecutionServiceTests {
         executionTask.setStatus("RUNNING");
         ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
         executionRun.setStatus("RUNNING");
-        executionRun.setCurrentStepNo(1);
+        executionRun.setCurrentStepNo(2);
+
+        ExecutionStepEntity savedStructuringStep = new ExecutionStepEntity();
+        savedStructuringStep.setId(8099L);
+        savedStructuringStep.setRun(executionRun);
+        savedStructuringStep.setStepNo(1);
+        savedStructuringStep.setStepCode("REPO_STRUCTURING");
+        savedStructuringStep.setStepName("仓库结构化");
+        savedStructuringStep.setStatus("SUCCESS");
+        savedStructuringStep.setOutputSnapshot(defaultStructuringOutput());
+        savedSteps.add(savedStructuringStep);
 
         ExecutionStepEntity savedPlanStep = new ExecutionStepEntity();
         savedPlanStep.setId(8100L);
         savedPlanStep.setRun(executionRun);
-        savedPlanStep.setStepNo(1);
+        savedPlanStep.setStepNo(2);
         savedPlanStep.setStepCode("PLAN");
         savedPlanStep.setStepName("执行规划");
         savedPlanStep.setStatus("SUCCESS");
@@ -439,6 +547,7 @@ class DevelopmentExecutionServiceTests {
         assertThat(savedSteps)
                 .extracting(ExecutionStepEntity::getStepName, ExecutionStepEntity::getStatus)
                 .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("仓库结构化", "SUCCESS"),
                         org.assertj.core.groups.Tuple.tuple("执行规划", "SUCCESS"),
                         org.assertj.core.groups.Tuple.tuple("开发实现 · group/frontend", "SUCCESS"),
                         org.assertj.core.groups.Tuple.tuple("执行测试 · group/frontend", "FAILED"),
@@ -603,12 +712,13 @@ class DevelopmentExecutionServiceTests {
                 ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION,
                 "开发执行",
                 List.of(
-                        new ExecutionWorkflowService.ExecutionStepPlan(1, "PLAN", "执行规划", buildAgent(11L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null),
-                        new ExecutionWorkflowService.ExecutionStepPlan(2, "IMPLEMENT", "开发实现 · group/frontend", buildAgent(12L, AgentExecutionService.ACCESS_AGENT_RUNTIME), 1L, "release/1.0", "group/frontend"),
-                        new ExecutionWorkflowService.ExecutionStepPlan(3, "TEST", "执行测试 · group/frontend", buildAgent(13L, AgentExecutionService.ACCESS_HTTP_API), 1L, "release/1.0", "group/frontend"),
-                        new ExecutionWorkflowService.ExecutionStepPlan(4, "IMPLEMENT", "开发实现 · group/backend", buildAgent(12L, AgentExecutionService.ACCESS_AGENT_RUNTIME), 2L, "main", "group/backend"),
-                        new ExecutionWorkflowService.ExecutionStepPlan(5, "TEST", "执行测试 · group/backend", buildAgent(13L, AgentExecutionService.ACCESS_HTTP_API), 2L, "main", "group/backend"),
-                        new ExecutionWorkflowService.ExecutionStepPlan(6, "REPORT", "交付报告", buildAgent(14L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null)
+                        new ExecutionWorkflowService.ExecutionStepPlan(1, "REPO_STRUCTURING", "仓库结构化", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(2, "PLAN", "执行规划", buildAgent(11L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(3, "IMPLEMENT", "开发实现 · group/frontend", buildAgent(12L, AgentExecutionService.ACCESS_AGENT_RUNTIME), 1L, "release/1.0", "group/frontend"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(4, "TEST", "执行测试 · group/frontend", buildAgent(13L, AgentExecutionService.ACCESS_HTTP_API), 1L, "release/1.0", "group/frontend"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(5, "IMPLEMENT", "开发实现 · group/backend", buildAgent(12L, AgentExecutionService.ACCESS_AGENT_RUNTIME), 2L, "main", "group/backend"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(6, "TEST", "执行测试 · group/backend", buildAgent(13L, AgentExecutionService.ACCESS_HTTP_API), 2L, "main", "group/backend"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(7, "REPORT", "交付报告", buildAgent(14L, AgentExecutionService.ACCESS_BUILT_IN), null, null, null)
                 )
         );
     }
@@ -628,6 +738,108 @@ class DevelopmentExecutionServiceTests {
         binding.setTokenCiphertext(tokenCiphertext);
         binding.setEnabled(true);
         return binding;
+    }
+
+    private String defaultStructuringOutput() {
+        return """
+                {
+                  "status": "SUCCESS",
+                  "summary": "仓库结构化已完成，共 2 个仓库",
+                  "degraded": false,
+                  "crossRepoContextMarkdown": "# 跨仓上下文\\n\\n- 仓库数量：2\\n- 降级仓库数：0",
+                  "crossRepoContextJson": {
+                    "degraded": false,
+                    "repositoryCount": 2
+                  },
+                  "repositories": [
+                    {
+                      "repoBindingId": 1,
+                      "repoDisplayName": "group/frontend",
+                      "targetBranch": "release/1.0",
+                      "commitSha": "frontend-sha",
+                      "degraded": false,
+                      "degradationSummary": "",
+                      "queryResult": {
+                        "definitions": [
+                          {"id": "frontend-symbol", "name": "ApprovalPage", "filePath": "frontend/src/App.vue"}
+                        ]
+                      },
+                      "topSymbolContexts": [],
+                      "harnessHints": [
+                        "python scripts/check_encoding.py",
+                        "cd frontend && npm run build"
+                      ],
+                      "structureMarkdown": "# 仓库结构化摘要：group/frontend\\n\\n- 目标分支：release/1.0\\n- 固定提交：frontend-sha"
+                    },
+                    {
+                      "repoBindingId": 2,
+                      "repoDisplayName": "group/backend",
+                      "targetBranch": "main",
+                      "commitSha": "backend-sha",
+                      "degraded": false,
+                      "degradationSummary": "",
+                      "queryResult": {
+                        "definitions": [
+                          {"id": "backend-symbol", "name": "ApprovalController", "filePath": "backend/src/main/App.java"}
+                        ]
+                      },
+                      "topSymbolContexts": [],
+                      "harnessHints": [
+                        "python scripts/check_encoding.py",
+                        "cd backend && mvn -s maven-settings-central.xml test"
+                      ],
+                      "structureMarkdown": "# 仓库结构化摘要：group/backend\\n\\n- 目标分支：main\\n- 固定提交：backend-sha"
+                    }
+                  ]
+                }
+                """;
+    }
+
+    private String degradedStructuringOutput() {
+        return """
+                {
+                  "status": "SUCCESS",
+                  "summary": "仓库结构化存在降级结果",
+                  "degraded": true,
+                  "crossRepoContextMarkdown": "# 跨仓上下文\\n\\n- 仓库数量：2\\n- 降级仓库数：1\\n\\n## 共享风险\\n- 部分仓库的 GitNexus 结果需人工复核。",
+                  "crossRepoContextJson": {
+                    "degraded": true,
+                    "repositoryCount": 2
+                  },
+                  "repositories": [
+                    {
+                      "repoBindingId": 1,
+                      "repoDisplayName": "group/frontend",
+                      "targetBranch": "release/1.0",
+                      "commitSha": "frontend-sha",
+                      "degraded": true,
+                      "degradationSummary": "GitNexus context 不完整，需人工复核",
+                      "queryResult": {},
+                      "topSymbolContexts": [],
+                      "harnessHints": [
+                        "python scripts/check_encoding.py",
+                        "cd frontend && npm run build"
+                      ],
+                      "structureMarkdown": "# 仓库结构化摘要：group/frontend\\n\\n- 目标分支：release/1.0\\n- 固定提交：frontend-sha\\n- 结构化状态：降级"
+                    },
+                    {
+                      "repoBindingId": 2,
+                      "repoDisplayName": "group/backend",
+                      "targetBranch": "main",
+                      "commitSha": "backend-sha",
+                      "degraded": false,
+                      "degradationSummary": "",
+                      "queryResult": {},
+                      "topSymbolContexts": [],
+                      "harnessHints": [
+                        "python scripts/check_encoding.py",
+                        "cd backend && mvn -s maven-settings-central.xml test"
+                      ],
+                      "structureMarkdown": "# 仓库结构化摘要：group/backend\\n\\n- 目标分支：main\\n- 固定提交：backend-sha"
+                    }
+                  ]
+                }
+                """;
     }
 
     private AgentEntity buildAgent(Long id, String accessType) {

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.models import CliExecutionRepository, CliExecutionRequest, CliExecutionResponse, CodexExecutionContext
-from app.services.cli_execution_service import execute_cli_execution, start_cli_execution
+from app.services.cli_execution_service import _to_claude_request, _to_codex_request, execute_cli_execution, start_cli_execution
 
 
 class CliExecutionServiceTests(unittest.TestCase):
@@ -58,6 +58,20 @@ class CliExecutionServiceTests(unittest.TestCase):
         self.assertEqual('{"status":"SUCCESS"}', response.output)
         self.assertEqual(["C:/workspace/repo"], response.repoPaths)
         execute_mock.assert_called_once()
+
+    def test_should_propagate_commit_sha_when_mapping_runner_requests(self):
+        request = self._build_request("CODEX_CLI", "IMPLEMENT").model_copy(update={
+            "repositories": [
+                request_repository.model_copy(update={"commitSha": "fixed-sha"})
+                for request_repository in self._build_request("CODEX_CLI", "IMPLEMENT").repositories
+            ]
+        })
+
+        codex_request = _to_codex_request(request)
+        claude_request = _to_claude_request(request.model_copy(update={"mode": "PLAN"}))
+
+        self.assertEqual("fixed-sha", codex_request.repository.commitSha)
+        self.assertEqual("fixed-sha", claude_request.repositories[0].commitSha)
 
     def test_should_delegate_claude_plan_to_existing_planning_service(self):
         request = self._build_request("CLAUDE_CODE_CLI", "PLAN")

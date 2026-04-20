@@ -298,13 +298,15 @@ public class ExecutionEventService {
                                                          String eventType,
                                                          String streamKind,
                                                          ObjectNode payload) {
-        Long nextSequence = executionStepEventRepository.findFirstByRun_IdOrderBySequenceNoDesc(run.getId())
+        ExecutionRunEntity lockedRun = executionRunRepository.findByIdForUpdate(run.getId())
+                .orElseThrow(() -> new IllegalStateException("执行运行不存在: " + run.getId()));
+        Long nextSequence = executionStepEventRepository.findFirstByRun_IdOrderBySequenceNoDesc(lockedRun.getId())
                 .map(item -> item.getSequenceNo() + 1)
                 .orElse(1L);
         LocalDateTime now = LocalDateTime.now();
 
         ExecutionStepEventEntity entity = new ExecutionStepEventEntity();
-        entity.setRun(run);
+        entity.setRun(lockedRun);
         entity.setStep(step);
         entity.setSequenceNo(nextSequence);
         entity.setEventType(defaultString(eventType));
@@ -319,8 +321,8 @@ public class ExecutionEventService {
             executionStepRepository.save(step);
         }
 
-        run.setUpdatedAt(now);
-        executionRunRepository.save(run);
+        lockedRun.setUpdatedAt(now);
+        executionRunRepository.save(lockedRun);
 
         if (task != null) {
             task.setUpdatedAt(now);

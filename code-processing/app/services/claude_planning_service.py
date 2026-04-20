@@ -267,10 +267,70 @@ def _clone_repository(repository: ClaudePlanningRepository,
             if stderr:
                 _append_log(workspace, stderr)
             if completed.returncode == 0:
+                resolved_commit = _checkout_commit_if_needed(repo_dir, repository.commitSha, workspace)
+                if resolved_commit:
+                    _append_log(workspace, f"仓库已固定到提交：{resolved_commit}")
                 _append_log(workspace, f"仓库 clone 成功：{repository.displayName or repository.projectPath or repository.projectRef or repo_dir.name}")
                 return repo_dir
             errors.append(f"{strategy}: {stderr or stdout or '未知错误'}")
     raise RuntimeError("克隆仓库失败：" + "；".join(errors[-3:]))
+
+
+def _checkout_commit_if_needed(repo_dir: Path, commit_sha: str, workspace: ClaudePlanningWorkspace) -> str:
+    normalized = (commit_sha or "").strip()
+    if not normalized:
+        return ""
+    current_head = _current_head_commit(repo_dir)
+    if current_head == normalized:
+        return current_head
+    _append_log(workspace, f"开始固定仓库提交：{normalized}")
+    if _run_git_command(repo_dir, ["git", "checkout", normalized], workspace, allow_failure=True):
+        return _current_head_commit(repo_dir)
+    _append_log(workspace, f"本地未命中提交 {normalized}，尝试从 origin 定向拉取")
+    if not _run_git_command(repo_dir, ["git", "fetch", "--depth", "1", "origin", normalized], workspace, allow_failure=True):
+        raise RuntimeError(f"无法切换到指定提交：{normalized}")
+    if not _run_git_command(repo_dir, ["git", "checkout", normalized], workspace, allow_failure=True):
+        raise RuntimeError(f"无法切换到指定提交：{normalized}")
+    return _current_head_commit(repo_dir)
+
+
+def _run_git_command(repo_dir: Path,
+                     command: list[str],
+                     workspace: ClaudePlanningWorkspace,
+                     allow_failure: bool = False) -> bool:
+    completed = subprocess.run(
+        command,
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
+    )
+    stdout = (completed.stdout or "").strip()
+    stderr = (completed.stderr or "").strip()
+    if stdout:
+        _append_log(workspace, stdout)
+    if stderr:
+        _append_log(workspace, stderr)
+    if completed.returncode != 0 and not allow_failure:
+        raise RuntimeError(stderr or stdout or f"命令执行失败：{' '.join(command)}")
+    return completed.returncode == 0
+
+
+def _current_head_commit(repo_dir: Path) -> str:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
+    )
+    if completed.returncode != 0:
+        return ""
+    return (completed.stdout or "").strip()
 
 
 def _run_claude_cli(request: ClaudePlanningRequest,
@@ -378,6 +438,7 @@ def _build_planning_prompt(request: ClaudePlanningRequest, repo_paths: list[Path
                 [
                     f"{index}. 仓库：{repository.displayName or repository.projectPath or repository.projectRef or repo_path.name}",
                     f"   - 目标分支：{repository.targetBranch}",
+                    f"   - 固定提交：{repository.commitSha or '按目标分支最新提交'}",
                     f"   - 本地目录：{repo_path}",
                     f"   - GitLab 标识：{repository.projectPath or repository.projectRef or repository.bindingId}",
                 ]

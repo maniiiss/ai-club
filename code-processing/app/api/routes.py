@@ -26,8 +26,11 @@ from app.models import (
     ScanRequest,
     ScanSummary,
     ExecutionSessionAcceptedResponse,
+    RepositoryStructuringRequest,
+    RepositoryStructuringResponse,
 )
 from app.services.cli_execution_service import execute_cli_execution, start_cli_execution
+from app.services.repo_structuring_service import execute_repo_structuring, start_repo_structuring
 from app.services.repository_service import build_summary
 from app.services.document_service import convert_document_to_markdown
 from app.services.repository_scan_service import (
@@ -212,6 +215,30 @@ def claude_plan_start(request_http: Request, payload: ClaudePlanningRequest) -> 
             execution=payload.execution,
             timeoutSeconds=payload.timeoutSeconds,
         ))
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+
+
+@router.post("/repo-structuring", response_model=RepositoryStructuringResponse)
+def repo_structuring(request_http: Request, payload: RepositoryStructuringRequest) -> RepositoryStructuringResponse:
+    """供 backend 调用仓库结构化 bridge。"""
+    _require_internal_service_auth(request_http)
+    try:
+        return execute_repo_structuring(payload)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+
+
+@router.post("/repo-structuring/start", response_model=ExecutionSessionAcceptedResponse)
+def repo_structuring_start(request_http: Request, payload: RepositoryStructuringRequest) -> ExecutionSessionAcceptedResponse:
+    """供 backend 异步启动仓库结构化会话。"""
+    _require_internal_service_auth(request_http)
+    try:
+        return start_repo_structuring(payload)
     except ValueError as exception:
         raise HTTPException(status_code=400, detail=str(exception)) from exception
     except RuntimeError as exception:

@@ -11,6 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.models import CodexExecutionContext, CodexExecutionRepository, CodexExecutionRequest
 from app.services.codex_execution_service import (
     DevelopmentExecutionWorkspace,
+    _checkout_commit_if_needed,
+    _clone_repository,
     _schema_text_for_mode,
     execute_codex_execution,
     start_codex_execution,
@@ -86,6 +88,66 @@ class CodexExecutionServiceTests(unittest.TestCase):
         self.assertEqual("codex/execution-101-3-1", payload["workBranch"])
         self.assertEqual(["npm run lint"], payload["commandsExecuted"])
         self.assertIn("执行日志", payload["log"])
+
+    def test_should_checkout_requested_commit_after_clone(self):
+        request = self._build_request("IMPLEMENT").model_copy(update={
+            "repository": self._build_request("IMPLEMENT").repository.model_copy(update={"commitSha": "fixed-sha"})
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            commands: list[list[str]] = []
+
+            def subprocess_side_effect(command, **kwargs):
+                commands.append(command)
+                if "clone" in command:
+                    workspace.repo_dir.mkdir(parents=True, exist_ok=True)
+                    return SimpleNamespace(stdout="", stderr="", returncode=0)
+                if command[:3] == ["git", "rev-parse", "HEAD"]:
+                    rev_parse_count = len([item for item in commands if item[:3] == ["git", "rev-parse", "HEAD"]])
+                    return SimpleNamespace(stdout="head-sha" if rev_parse_count == 1 else "fixed-sha", stderr="", returncode=0)
+                if command[:2] == ["git", "checkout"]:
+                    return SimpleNamespace(stdout="", stderr="", returncode=0)
+                raise AssertionError(f"Unexpected command: {command}")
+
+            with patch("app.services.codex_execution_service.subprocess.run", side_effect=subprocess_side_effect):
+                _clone_repository(request, workspace)
+
+        self.assertIn(["git", "checkout", "fixed-sha"], commands)
+
+    def test_should_fetch_commit_when_requested_commit_is_missing_from_shallow_clone(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_dir = Path(temp_dir)
+            workspace = DevelopmentExecutionWorkspace(
+                root=repo_dir,
+                repo_dir=repo_dir,
+                out_dir=repo_dir / "out",
+                log_file=repo_dir / "execution.log",
+            )
+            commands: list[list[str]] = []
+
+            def subprocess_side_effect(command, **kwargs):
+                commands.append(command)
+                if command[:3] == ["git", "rev-parse", "HEAD"]:
+                    rev_parse_count = len([item for item in commands if item[:3] == ["git", "rev-parse", "HEAD"]])
+                    return SimpleNamespace(stdout="head-sha" if rev_parse_count == 1 else "fixed-sha", stderr="", returncode=0)
+                if command[:2] == ["git", "checkout"] and len([item for item in commands if item[:2] == ["git", "checkout"]]) == 1:
+                    return SimpleNamespace(stdout="", stderr="missing object", returncode=1)
+                if command[:4] == ["git", "fetch", "--depth", "1"]:
+                    return SimpleNamespace(stdout="fetched", stderr="", returncode=0)
+                if command[:2] == ["git", "checkout"]:
+                    return SimpleNamespace(stdout="", stderr="", returncode=0)
+                raise AssertionError(f"Unexpected command: {command}")
+
+            with patch("app.services.codex_execution_service.subprocess.run", side_effect=subprocess_side_effect):
+                resolved = _checkout_commit_if_needed(repo_dir, "fixed-sha", workspace)
+
+        self.assertEqual("fixed-sha", resolved)
+        self.assertIn(["git", "fetch", "--depth", "1", "origin", "fixed-sha"], commands)
 
     def test_should_skip_missing_encoding_script_for_external_repo(self):
         request = self._build_request("TEST", ["python scripts/check_encoding.py"])

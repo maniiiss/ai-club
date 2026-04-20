@@ -31,6 +31,7 @@ class BackendEventBatcher:
         self._session_id = session_id
         self._events: list[dict[str, object]] = []
         self._last_flush = monotonic()
+        self._lock = threading.Lock()
 
     def emit(
         self,
@@ -43,31 +44,36 @@ class BackendEventBatcher:
         summary: str = "",
         artifact_id: int | None = None,
     ) -> None:
-        self._events.append(
-            {
-                "eventType": event_type,
-                "streamKind": stream_kind,
-                "text": text,
-                "currentCommand": current_command,
-                "progressPercent": progress_percent,
-                "summary": summary,
-                "artifactId": artifact_id,
-            }
-        )
-        if self._should_flush():
+        should_flush = False
+        with self._lock:
+            self._events.append(
+                {
+                    "eventType": event_type,
+                    "streamKind": stream_kind,
+                    "text": text,
+                    "currentCommand": current_command,
+                    "progressPercent": progress_percent,
+                    "summary": summary,
+                    "artifactId": artifact_id,
+                }
+            )
+            should_flush = self._should_flush_locked()
+        if should_flush:
             self.flush()
 
     def flush(self) -> None:
-        if not self._events:
-            return
+        with self._lock:
+            if not self._events:
+                return
+            events = list(self._events)
+            self._events = []
+            self._last_flush = monotonic()
         _post_backend_json(
             f"/internal/execution-sessions/{self._session_id}/events",
-            {"events": self._events},
+            {"events": events},
         )
-        self._events = []
-        self._last_flush = monotonic()
 
-    def _should_flush(self) -> bool:
+    def _should_flush_locked(self) -> bool:
         approx_size = sum(len(json.dumps(item, ensure_ascii=False)) for item in self._events)
         return len(self._events) >= 8 or approx_size >= 4096 or monotonic() - self._last_flush >= 1
 

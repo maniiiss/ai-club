@@ -35,6 +35,7 @@ public class DevelopmentExecutionService {
     private static final String STATUS_WAITING_CONFIRMATION = "WAITING_CONFIRMATION";
     private static final String PLAN_ARTIFACT_TYPE = "PLAN_MARKDOWN";
     private static final String PLAN_ARTIFACT_TITLE = "执行规划 Markdown";
+    private static final String STRUCTURING_SUCCESS_MESSAGE = "仓库结构化已完成";
     private static final String PLAN_CONFIRMATION_SUMMARY = "执行规划已生成，等待发起人确认";
 
     private final ProjectGitlabBindingRepository projectGitlabBindingRepository;
@@ -45,6 +46,7 @@ public class DevelopmentExecutionService {
     private final AgentExecutionService agentExecutionService;
     private final ExecutionEventService executionEventService;
     private final ExecutionAsyncSessionService executionAsyncSessionService;
+    private final RepositoryStructuringClientService repositoryStructuringClientService;
     private final TokenCipherService tokenCipherService;
     private final GitlabApiService gitlabApiService;
     private final ObjectMapper objectMapper;
@@ -57,6 +59,7 @@ public class DevelopmentExecutionService {
                                        AgentExecutionService agentExecutionService,
                                        ExecutionEventService executionEventService,
                                        ExecutionAsyncSessionService executionAsyncSessionService,
+                                       RepositoryStructuringClientService repositoryStructuringClientService,
                                        TokenCipherService tokenCipherService,
                                        GitlabApiService gitlabApiService,
                                        ObjectMapper objectMapper) {
@@ -68,6 +71,7 @@ public class DevelopmentExecutionService {
         this.agentExecutionService = agentExecutionService;
         this.executionEventService = executionEventService;
         this.executionAsyncSessionService = executionAsyncSessionService;
+        this.repositoryStructuringClientService = repositoryStructuringClientService;
         this.tokenCipherService = tokenCipherService;
         this.gitlabApiService = gitlabApiService;
         this.objectMapper = objectMapper;
@@ -84,7 +88,7 @@ public class DevelopmentExecutionService {
         if (repositories.isEmpty()) {
             throw new IllegalStateException("开发执行至少需要一个仓库上下文");
         }
-        if (workflowPlan.steps().size() != 1 + repositories.size() * 2 + 1) {
+        if (workflowPlan.steps().size() != 2 + repositories.size() * 2 + 1) {
             throw new IllegalStateException("开发执行步骤快照与仓库数量不匹配");
         }
 
@@ -93,20 +97,48 @@ public class DevelopmentExecutionService {
         int totalSteps = workflowPlan.steps().size();
         int pointer = 0;
         String planMarkdown = "";
+        StructuringStepResult structuringResult = StructuringStepResult.empty();
         FailureContext failureContext = null;
         List<RepositoryExecutionState> repositoryStates = new ArrayList<>();
         List<ResolvedRepositoryContext> skippedRepositories = new ArrayList<>();
 
+        ExecutionWorkflowService.ExecutionStepPlan structuringStep = workflowPlan.steps().get(pointer++);
+        ExecutionStepEntity existingStructuringStep = executionStepRepository.findByRun_IdAndStepNo(executionRun.getId(), structuringStep.stepNo())
+                .orElse(null);
+        boolean reuseStructuring = hasSuccessfulStep(existingStructuringStep, structuringStep);
+        if (reuseStructuring) {
+            structuringResult = resolvePersistedStructuringResult(existingStructuringStep);
+            repositories = applyStructuringResult(repositories, structuringResult);
+        } else {
+            try {
+                String structuringInput = buildStructuringInput(executionTask, workItem, repositories, payload.inputText());
+                structuringResult = executeStructuringStep(
+                        executionTask,
+                        executionRun,
+                        workItem,
+                        structuringStep,
+                        repositories,
+                        structuringInput,
+                        totalSteps
+                );
+                repositories = applyStructuringResult(repositories, structuringResult);
+            } catch (RuntimeException exception) {
+                String structuringInput = buildStructuringInput(executionTask, workItem, repositories, payload.inputText());
+                failureContext = markFailure(executionTask, executionRun, structuringStep, totalSteps, structuringInput, exception);
+                skippedRepositories.addAll(repositories);
+            }
+        }
+
         ExecutionWorkflowService.ExecutionStepPlan planStep = workflowPlan.steps().get(pointer++);
         ExecutionStepEntity existingPlanStep = executionStepRepository.findByRun_IdAndStepNo(executionRun.getId(), planStep.stepNo())
                 .orElse(null);
-        boolean reuseExistingPlan = hasSuccessfulPlanStep(existingPlanStep, planStep);
+        boolean reuseExistingPlan = hasSuccessfulStep(existingPlanStep, planStep);
         if (reuseExistingPlan) {
             planMarkdown = resolvePersistedPlanMarkdown(executionRun, existingPlanStep);
-        } else {
-            String planInput = buildPlanInput(executionTask, workItem, repositories, payload.inputText());
+        } else if (failureContext == null) {
+            String planInput = buildPlanInput(executionTask, workItem, repositories, payload.inputText(), structuringResult);
             try {
-                planMarkdown = executePlanStep(executionTask, executionRun, workItem, planStep, repositories, planInput, totalSteps, artifacts);
+                planMarkdown = executePlanStep(executionTask, executionRun, workItem, planStep, repositories, planInput, totalSteps, artifacts, structuringResult);
             } catch (RuntimeException exception) {
                 failureContext = markFailure(executionTask, executionRun, planStep, totalSteps, planInput, exception);
                 skippedRepositories.addAll(repositories);
@@ -133,7 +165,7 @@ public class DevelopmentExecutionService {
 
             RepositoryExecutionState state = new RepositoryExecutionState(repository, index + 1, repositories.size());
             repositoryStates.add(state);
-            String implementInput = buildImplementInput(executionTask, workItem, repository, state.index(), state.total(), payload.inputText(), planMarkdown);
+            String implementInput = buildImplementInput(executionTask, workItem, repository, state.index(), state.total(), payload.inputText(), planMarkdown, structuringResult);
             try {
                 ImplementationStepResult implementationResult = executeImplementStep(
                         executionTask, executionRun, workItem, implementStep, repository, state.index(), state.total(), implementInput, totalSteps, artifacts
@@ -145,7 +177,7 @@ public class DevelopmentExecutionService {
                 break;
             }
 
-            String testInput = buildTestInput(executionTask, workItem, repository, state, payload.inputText());
+            String testInput = buildTestInput(executionTask, workItem, repository, state, payload.inputText(), structuringResult);
             try {
                 TestStepResult testResult = executeTestStep(
                         executionTask, executionRun, workItem, testStep, repository, state, testInput, totalSteps, artifacts
@@ -163,7 +195,7 @@ public class DevelopmentExecutionService {
         }
 
         ExecutionWorkflowService.ExecutionStepPlan reportStep = workflowPlan.steps().get(workflowPlan.steps().size() - 1);
-        String reportInput = buildReportInput(executionTask, workItem, repositories, repositoryStates, skippedRepositories, payload.inputText(), planMarkdown, failureContext);
+        String reportInput = buildReportInput(executionTask, workItem, repositories, repositoryStates, skippedRepositories, payload.inputText(), planMarkdown, structuringResult, failureContext);
         String reportSummary = "";
         try {
             reportSummary = executeReportStep(executionTask, executionRun, workItem, reportStep, reportInput, totalSteps, artifacts);
@@ -196,9 +228,10 @@ public class DevelopmentExecutionService {
                                    List<ResolvedRepositoryContext> repositories,
                                    String input,
                                    int totalSteps,
-                                   List<ExecutionArtifactEntity> artifacts) {
+                                   List<ExecutionArtifactEntity> artifacts,
+                                   StructuringStepResult structuringResult) {
         ExecutionStepEntity step = beginStep(executionTask, executionRun, stepPlan, totalSteps, input);
-        Map<String, String> variables = buildPlanRuntimeVariables(executionTask, executionRun, step, workItem, repositories);
+        Map<String, String> variables = buildPlanRuntimeVariables(executionTask, executionRun, step, workItem, repositories, structuringResult);
         String output = executeStepAgent(stepPlan, executionTask, executionRun, step, input, variables);
         completeStep(executionTask, executionRun, stepPlan, totalSteps, step, output, "执行规划已完成");
         artifacts.add(saveArtifact(executionTask, executionRun, step, "PLAN_MARKDOWN", "执行规划 Markdown", output));
@@ -264,12 +297,133 @@ public class DevelopmentExecutionService {
         return extractReportSummary(output);
     }
 
-    private boolean hasSuccessfulPlanStep(ExecutionStepEntity existingPlanStep,
-                                          ExecutionWorkflowService.ExecutionStepPlan planStep) {
-        return existingPlanStep != null
-                && "SUCCESS".equalsIgnoreCase(existingPlanStep.getStatus())
-                && planStep.stepNo().equals(existingPlanStep.getStepNo())
-                && ExecutionWorkflowService.STEP_PLAN.equalsIgnoreCase(existingPlanStep.getStepCode());
+    private StructuringStepResult executeStructuringStep(ExecutionTaskEntity executionTask,
+                                                         ExecutionRunEntity executionRun,
+                                                         TaskEntity workItem,
+                                                         ExecutionWorkflowService.ExecutionStepPlan stepPlan,
+                                                         List<ResolvedRepositoryContext> repositories,
+                                                         String input,
+                                                         int totalSteps) {
+        ExecutionStepEntity step = beginStep(executionTask, executionRun, stepPlan, totalSteps, input);
+        RepositoryStructuringClientService.StructuringSessionAcceptedResponse startResult =
+                repositoryStructuringClientService.startStructuring(buildStructuringRequest(executionTask, executionRun, step, repositories, input));
+        executionAsyncSessionService.bindRunnerSession(executionTask, executionRun, step, startResult.sessionId(), startResult.runnerType());
+        ExecutionStepEntity completedStep = executionAsyncSessionService.awaitTerminalStep(
+                step.getId(),
+                executionAsyncSessionService.maxRuntimeSeconds(stepPlan.stepCode())
+        );
+        if (!"SUCCESS".equalsIgnoreCase(completedStep.getStatus())) {
+            throw new IllegalStateException(defaultString(completedStep.getErrorMessage()).isBlank()
+                    ? "仓库结构化失败"
+                    : completedStep.getErrorMessage());
+        }
+        StructuringStepResult result = parseStructuringResult(defaultString(completedStep.getOutputSnapshot()));
+        completeStep(
+                executionTask,
+                executionRun,
+                stepPlan,
+                totalSteps,
+                completedStep,
+                defaultString(completedStep.getOutputSnapshot()),
+                hasText(result.summary()) ? result.summary() : STRUCTURING_SUCCESS_MESSAGE
+        );
+        return result;
+    }
+
+    private RepositoryStructuringClientService.RepositoryStructuringRequest buildStructuringRequest(ExecutionTaskEntity executionTask,
+                                                                                                    ExecutionRunEntity executionRun,
+                                                                                                    ExecutionStepEntity step,
+                                                                                                    List<ResolvedRepositoryContext> repositories,
+                                                                                                    String input) {
+        List<RepositoryStructuringClientService.StructuringRepository> repositoryPayload = repositories.stream()
+                .map(repository -> new RepositoryStructuringClientService.StructuringRepository(
+                        String.valueOf(repository.bindingId()),
+                        defaultString(repository.repositoryDisplayName()),
+                        defaultString(repository.projectRef()),
+                        defaultString(repository.projectPath()),
+                        defaultString(repository.cloneUrl()),
+                        defaultString(repository.targetBranch()),
+                        trimToNull(repository.commitSha()),
+                        defaultString(repository.apiBaseUrl()),
+                        defaultString(repository.accessToken())
+                ))
+                .toList();
+        return new RepositoryStructuringClientService.RepositoryStructuringRequest(
+                defaultString(input),
+                repositoryPayload,
+                new RepositoryStructuringClientService.StructuringExecutionContext(
+                        String.valueOf(executionTask.getId()),
+                        String.valueOf(executionRun.getId()),
+                        String.valueOf(step.getId()),
+                        defaultString(step.getStepCode()),
+                        defaultString(step.getStepName()),
+                        String.valueOf(executionTask.getProject().getId()),
+                        defaultString(executionTask.getProject().getName()),
+                        "execution:" + executionTask.getId() + ":run:" + executionRun.getId() + ":step:" + step.getId(),
+                        executionTask.getCreatedByUser() == null ? "" : String.valueOf(executionTask.getCreatedByUser().getId()),
+                        resolveUserName(executionTask)
+                ),
+                executionAsyncSessionService.maxRuntimeSeconds(step.getStepCode())
+        );
+    }
+
+    private boolean hasSuccessfulStep(ExecutionStepEntity existingStep,
+                                      ExecutionWorkflowService.ExecutionStepPlan stepPlan) {
+        return existingStep != null
+                && "SUCCESS".equalsIgnoreCase(existingStep.getStatus())
+                && stepPlan.stepNo().equals(existingStep.getStepNo())
+                && defaultString(stepPlan.stepCode()).equalsIgnoreCase(existingStep.getStepCode());
+    }
+
+    private StructuringStepResult resolvePersistedStructuringResult(ExecutionStepEntity existingStructuringStep) {
+        if (existingStructuringStep == null || !hasText(existingStructuringStep.getOutputSnapshot())) {
+            return StructuringStepResult.empty();
+        }
+        return parseStructuringResult(existingStructuringStep.getOutputSnapshot());
+    }
+
+    /**
+     * 结构化步骤只补充仓库快照与代码理解上下文，不改动仓库绑定、目标分支等业务字段。
+     */
+    private List<ResolvedRepositoryContext> applyStructuringResult(List<ResolvedRepositoryContext> repositories,
+                                                                  StructuringStepResult structuringResult) {
+        if (repositories == null || repositories.isEmpty() || structuringResult == null || structuringResult.repositories().isEmpty()) {
+            return repositories;
+        }
+        Map<Long, RepositoryStructuringSummary> resultMap = new LinkedHashMap<>();
+        for (RepositoryStructuringSummary item : structuringResult.repositories()) {
+            if (item.bindingId() != null) {
+                resultMap.put(item.bindingId(), item);
+            }
+        }
+        List<ResolvedRepositoryContext> resolved = new ArrayList<>();
+        for (ResolvedRepositoryContext repository : repositories) {
+            RepositoryStructuringSummary item = resultMap.get(repository.bindingId());
+            if (item == null) {
+                resolved.add(repository);
+                continue;
+            }
+            resolved.add(new ResolvedRepositoryContext(
+                    repository.bindingId(),
+                    repository.targetBranch(),
+                    repository.repositoryDisplayName(),
+                    repository.projectRef(),
+                    repository.projectPath(),
+                    repository.cloneUrl(),
+                    repository.webUrl(),
+                    repository.apiBaseUrl(),
+                    repository.accessToken(),
+                    hasText(item.commitSha()) ? item.commitSha() : repository.commitSha(),
+                    hasText(item.structureMarkdown()) ? item.structureMarkdown() : repository.structureMarkdown(),
+                    hasText(item.structureJson()) ? item.structureJson() : repository.structureJson(),
+                    hasText(structuringResult.crossRepoContextMarkdown()) ? structuringResult.crossRepoContextMarkdown() : repository.crossRepoContextMarkdown(),
+                    hasText(structuringResult.crossRepoContextJson()) ? structuringResult.crossRepoContextJson() : repository.crossRepoContextJson(),
+                    item.degraded(),
+                    hasText(item.degradationSummary()) ? item.degradationSummary() : repository.structuringMessage(),
+                    item.harnessHints().isEmpty() ? repository.harnessHints() : item.harnessHints()
+            ));
+        }
+        return resolved;
     }
 
     /**
@@ -486,8 +640,19 @@ public class DevelopmentExecutionService {
             variables.put("repo_web_url", defaultString(repository.webUrl()));
             variables.put("repo_api_base_url", defaultString(repository.apiBaseUrl()));
             variables.put("repo_access_token", defaultString(repository.accessToken()));
+            variables.put("repo_commit_sha", defaultString(repository.commitSha()));
             variables.put("repo_index", String.valueOf(repositoryIndex));
             variables.put("repo_total", String.valueOf(repositoryTotal));
+            variables.put("repo_structure_markdown", defaultString(repository.structureMarkdown()));
+            variables.put("repo_structure_json", defaultString(repository.structureJson()));
+            variables.put("repo_cross_repo_context_markdown", defaultString(repository.crossRepoContextMarkdown()));
+            variables.put("repo_cross_repo_context_json", defaultString(repository.crossRepoContextJson()));
+            variables.put("repo_structuring_degraded", String.valueOf(repository.structuringDegraded()));
+            variables.put("repo_structuring_message", defaultString(repository.structuringMessage()));
+            if (repository.harnessHints() != null && !repository.harnessHints().isEmpty()) {
+                variables.put("repo_harness_hints_markdown", buildCommandMarkdown(repository.harnessHints()));
+                variables.put("repo_harness_hints_json", toJson(repository.harnessHints()));
+            }
         }
         if (commands != null && !commands.isEmpty()) {
             variables.put("test_commands_markdown", buildCommandMarkdown(commands));
@@ -503,7 +668,8 @@ public class DevelopmentExecutionService {
                                                           ExecutionRunEntity executionRun,
                                                           ExecutionStepEntity executionStep,
                                                           TaskEntity workItem,
-                                                          List<ResolvedRepositoryContext> repositories) {
+                                                          List<ResolvedRepositoryContext> repositories,
+                                                          StructuringStepResult structuringResult) {
         Map<String, String> variables = buildRuntimeVariables(
                 executionTask,
                 executionRun,
@@ -517,28 +683,41 @@ public class DevelopmentExecutionService {
         List<Map<String, Object>> repositoryPayload = new ArrayList<>();
         if (repositories != null) {
             for (ResolvedRepositoryContext repository : repositories) {
-                repositoryPayload.add(Map.of(
-                        "bindingId", repository.bindingId(),
-                        "displayName", defaultString(repository.repositoryDisplayName()),
-                        "projectRef", defaultString(repository.projectRef()),
-                        "projectPath", defaultString(repository.projectPath()),
-                        "repoUrl", defaultString(repository.cloneUrl()),
-                        "webUrl", defaultString(repository.webUrl()),
-                        "targetBranch", defaultString(repository.targetBranch()),
-                        "apiBaseUrl", defaultString(repository.apiBaseUrl()),
-                        "authToken", defaultString(repository.accessToken())
-                ));
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("bindingId", repository.bindingId());
+                item.put("displayName", defaultString(repository.repositoryDisplayName()));
+                item.put("projectRef", defaultString(repository.projectRef()));
+                item.put("projectPath", defaultString(repository.projectPath()));
+                item.put("repoUrl", defaultString(repository.cloneUrl()));
+                item.put("webUrl", defaultString(repository.webUrl()));
+                item.put("targetBranch", defaultString(repository.targetBranch()));
+                item.put("commitSha", defaultString(repository.commitSha()));
+                item.put("apiBaseUrl", defaultString(repository.apiBaseUrl()));
+                item.put("authToken", defaultString(repository.accessToken()));
+                item.put("structureMarkdown", defaultString(repository.structureMarkdown()));
+                item.put("structureJson", defaultString(repository.structureJson()));
+                item.put("crossRepoContextMarkdown", defaultString(repository.crossRepoContextMarkdown()));
+                item.put("crossRepoContextJson", defaultString(repository.crossRepoContextJson()));
+                item.put("structuringDegraded", repository.structuringDegraded());
+                item.put("structuringMessage", defaultString(repository.structuringMessage()));
+                item.put("harnessHints", repository.harnessHints() == null ? List.of() : repository.harnessHints());
+                repositoryPayload.add(item);
             }
         }
         variables.put("development_repositories_json", toJson(repositoryPayload));
         variables.put("development_repository_count", String.valueOf(repositoryPayload.size()));
+        variables.put("repository_structuring_json", structuringResult == null ? "" : defaultString(structuringResult.rawOutput()));
+        variables.put("cross_repo_context_markdown", structuringResult == null ? "" : defaultString(structuringResult.crossRepoContextMarkdown()));
+        variables.put("cross_repo_context_json", structuringResult == null ? "" : defaultString(structuringResult.crossRepoContextJson()));
+        variables.put("structuring_degraded", String.valueOf(structuringResult != null && structuringResult.degraded()));
+        variables.put("structuring_summary", structuringResult == null ? "" : defaultString(structuringResult.summary()));
         return variables;
     }
 
-    private String buildPlanInput(ExecutionTaskEntity executionTask,
-                                  TaskEntity workItem,
-                                  List<ResolvedRepositoryContext> repositories,
-                                  String inputText) {
+    private String buildStructuringInput(ExecutionTaskEntity executionTask,
+                                         TaskEntity workItem,
+                                         List<ResolvedRepositoryContext> repositories,
+                                         String inputText) {
         StringBuilder builder = new StringBuilder();
         appendTaskContext(builder, executionTask, workItem);
         if (hasText(inputText)) {
@@ -546,7 +725,7 @@ public class DevelopmentExecutionService {
                     .append(inputText.trim())
                     .append("\n\n");
         }
-        builder.append("## 涉及仓库\n");
+        builder.append("## 待结构化仓库\n");
         for (int index = 0; index < repositories.size(); index++) {
             ResolvedRepositoryContext repository = repositories.get(index);
             builder.append(index + 1)
@@ -557,11 +736,48 @@ public class DevelopmentExecutionService {
                     .append('\n');
         }
         builder.append("\n## 输出要求\n")
+                .append("- 拉取仓库并固定 commit SHA\n")
+                .append("- 优先使用 GitNexus 生成模块、符号与影响范围摘要\n")
+                .append("- 为每个仓库输出结构化 JSON 与 Markdown 摘要\n")
+                .append("- GitNexus 不可用时允许降级，但要明确说明降级原因\n");
+        return builder.toString().trim();
+    }
+
+    private String buildPlanInput(ExecutionTaskEntity executionTask,
+                                  TaskEntity workItem,
+                                  List<ResolvedRepositoryContext> repositories,
+                                  String inputText,
+                                  StructuringStepResult structuringResult) {
+        StringBuilder builder = new StringBuilder();
+        appendTaskContext(builder, executionTask, workItem);
+        if (hasText(inputText)) {
+            builder.append("## 用户补充说明\n")
+                    .append(inputText.trim())
+                    .append("\n\n");
+        }
+        appendStructuringContext(builder, repositories, structuringResult, true);
+        builder.append("## 涉及仓库\n");
+        for (int index = 0; index < repositories.size(); index++) {
+            ResolvedRepositoryContext repository = repositories.get(index);
+            builder.append(index + 1)
+                    .append(". ")
+                    .append(defaultString(repository.repositoryDisplayName()))
+                    .append(" / 目标分支：")
+                    .append(defaultString(repository.targetBranch()));
+            if (hasText(repository.commitSha())) {
+                builder.append(" / 固定提交：").append(repository.commitSha().trim());
+            }
+            builder.append('\n');
+        }
+        builder.append("\n## 输出要求\n")
                 .append("- 使用 Markdown\n")
                 .append("- 先给出总体实施路径和仓库执行顺序\n")
                 .append("- 每个仓库都要指出候选改动目录、文件或模块，以及预期改动类型\n")
                 .append("- 明确跨仓依赖、风险、待人工确认项和后续 IMPLEMENT / TEST 的关注点\n")
                 .append("- 如果暂时无法确定修改位置，也要写出已检查过的目录和当前不确定点\n");
+        if (structuringResult != null && structuringResult.degraded()) {
+            builder.append("- 仓库结构化存在降级结果，请明确标记哪些判断仍需人工复核\n");
+        }
         return builder.toString().trim();
     }
 
@@ -571,7 +787,8 @@ public class DevelopmentExecutionService {
                                        int repositoryIndex,
                                        int repositoryTotal,
                                        String inputText,
-                                       String planMarkdown) {
+                                       String planMarkdown,
+                                       StructuringStepResult structuringResult) {
         String implementPlanContext = buildImplementPlanContext(planMarkdown, repository);
         StringBuilder builder = new StringBuilder();
         appendTaskContext(builder, executionTask, workItem);
@@ -580,16 +797,24 @@ public class DevelopmentExecutionService {
                 .append("仓库序号：").append(repositoryIndex).append(" / ").append(repositoryTotal).append('\n')
                 .append("目标分支：").append(defaultString(repository.targetBranch())).append('\n')
                 .append("项目标识：").append(defaultString(repository.projectRef())).append('\n')
-                .append("Clone 地址：").append(defaultString(repository.cloneUrl())).append("\n\n");
+                .append("Clone 地址：").append(defaultString(repository.cloneUrl())).append('\n');
+        if (hasText(repository.commitSha())) {
+            builder.append("固定提交：").append(repository.commitSha().trim()).append('\n');
+        }
+        builder.append('\n');
         if (hasText(inputText)) {
             builder.append("## 用户补充说明\n")
                     .append(inputText.trim())
                     .append("\n\n");
         }
+        appendRepositoryStructuringContext(builder, repository, structuringResult);
         if (hasText(implementPlanContext)) {
             builder.append("## 执行规划摘要\n")
                     .append(implementPlanContext.trim())
-                    .append("\n\n");
+                    .append('\n');
+        }
+        if (builder.length() > 0 && builder.charAt(builder.length() - 1) != '\n') {
+            builder.append('\n');
         }
         builder.append("## 输出要求\n")
                 .append("请返回 JSON，不要输出 Markdown 代码块围栏。字段必须包含：\n")
@@ -694,21 +919,30 @@ public class DevelopmentExecutionService {
                                   TaskEntity workItem,
                                   ResolvedRepositoryContext repository,
                                   RepositoryExecutionState repositoryState,
-                                  String inputText) {
+                                  String inputText,
+                                  StructuringStepResult structuringResult) {
         List<String> commands = buildHarnessCommands(repositoryState.requireImplementationResult().changedFiles());
         StringBuilder builder = new StringBuilder();
         appendTaskContext(builder, executionTask, workItem);
         builder.append("## 当前仓库\n")
                 .append("仓库：").append(defaultString(repository.repositoryDisplayName())).append('\n')
-                .append("目标分支：").append(defaultString(repository.targetBranch())).append("\n\n");
+                .append("目标分支：").append(defaultString(repository.targetBranch())).append('\n');
+        if (hasText(repository.commitSha())) {
+            builder.append("固定提交：").append(repository.commitSha().trim()).append('\n');
+        }
+        builder.append('\n');
         if (hasText(inputText)) {
             builder.append("## 用户补充说明\n")
                     .append(inputText.trim())
                     .append("\n\n");
         }
+        appendRepositoryStructuringContext(builder, repository, structuringResult);
         builder.append("## 开发实现结果\n")
                 .append(prettyJson(repositoryState.implementationRawOutput()))
                 .append("\n\n")
+                .append("## 仓库结构化给出的 Harness 提示\n")
+                .append(buildCommandMarkdown(repository.harnessHints()))
+                .append("\n")
                 .append("## 平台建议执行的 Harness 命令\n")
                 .append(buildCommandMarkdown(commands))
                 .append("\n")
@@ -727,6 +961,7 @@ public class DevelopmentExecutionService {
                                     List<ResolvedRepositoryContext> skippedRepositories,
                                     String inputText,
                                     String planMarkdown,
+                                    StructuringStepResult structuringResult,
                                     FailureContext failureContext) {
         StringBuilder builder = new StringBuilder();
         appendTaskContext(builder, executionTask, workItem);
@@ -740,6 +975,7 @@ public class DevelopmentExecutionService {
                     .append(planMarkdown.trim())
                     .append("\n\n");
         }
+        appendStructuringContext(builder, repositories, structuringResult, false);
         builder.append("## 仓库执行结果\n");
         for (RepositoryExecutionState state : repositoryStates) {
             builder.append("### ")
@@ -781,6 +1017,129 @@ public class DevelopmentExecutionService {
                 .append("- 明确失败仓库、失败步骤和剩余风险\n")
                 .append("- 明确注明：第一版未执行源码模式跨服务联调\n");
         return builder.toString().trim();
+    }
+
+    private void appendStructuringContext(StringBuilder builder,
+                                          List<ResolvedRepositoryContext> repositories,
+                                          StructuringStepResult structuringResult,
+                                          boolean includePerRepositoryMarkdown) {
+        if ((repositories == null || repositories.isEmpty())
+                && (structuringResult == null || !hasText(structuringResult.crossRepoContextMarkdown()))) {
+            return;
+        }
+        builder.append("## 仓库结构化结果\n");
+        if (structuringResult != null && hasText(structuringResult.summary())) {
+            builder.append("- 结构化摘要：").append(structuringResult.summary().trim()).append('\n');
+        }
+        if (structuringResult != null && structuringResult.degraded()) {
+            builder.append("- 结构化状态：存在降级，请对 GitNexus 结论保留人工复核\n");
+        } else {
+            builder.append("- 结构化状态：已生成可复用的代码上下文\n");
+        }
+        if (repositories != null) {
+            for (ResolvedRepositoryContext repository : repositories) {
+                builder.append("- ")
+                        .append(defaultString(repository.repositoryDisplayName()))
+                        .append(" / 目标分支：")
+                        .append(defaultString(repository.targetBranch()));
+                if (hasText(repository.commitSha())) {
+                    builder.append(" / 固定提交：").append(repository.commitSha().trim());
+                }
+                if (repository.structuringDegraded()) {
+                    builder.append(" / 降级：").append(defaultString(repository.structuringMessage()));
+                }
+                builder.append('\n');
+            }
+        }
+        builder.append('\n');
+        if (structuringResult != null && hasText(structuringResult.crossRepoContextMarkdown())) {
+            builder.append("### 跨仓上下文\n")
+                    .append(structuringResult.crossRepoContextMarkdown().trim())
+                    .append("\n\n");
+        }
+        if (includePerRepositoryMarkdown && repositories != null) {
+            for (ResolvedRepositoryContext repository : repositories) {
+                if (!hasText(repository.structureMarkdown())) {
+                    continue;
+                }
+                builder.append("### 仓库结构化 · ")
+                        .append(defaultString(repository.repositoryDisplayName()))
+                        .append('\n')
+                        .append(repository.structureMarkdown().trim())
+                        .append("\n\n");
+            }
+        }
+    }
+
+    private void appendRepositoryStructuringContext(StringBuilder builder,
+                                                    ResolvedRepositoryContext repository,
+                                                    StructuringStepResult structuringResult) {
+        if (repository == null) {
+            return;
+        }
+        builder.append("## 仓库结构化摘要\n");
+        if (repository.structuringDegraded()) {
+            builder.append("- 状态：已降级，需人工复核\n")
+                    .append("- 原因：").append(defaultString(repository.structuringMessage())).append('\n');
+        } else {
+            builder.append("- 状态：结构化成功\n");
+        }
+        if (hasText(repository.commitSha())) {
+            builder.append("- 固定提交：").append(repository.commitSha().trim()).append('\n');
+        }
+        if (repository.harnessHints() != null && !repository.harnessHints().isEmpty()) {
+            builder.append("- Harness 提示：\n")
+                    .append(buildCommandMarkdown(repository.harnessHints()))
+                    .append('\n');
+        }
+        if (hasText(repository.structureMarkdown())) {
+            builder.append('\n')
+                    .append(repository.structureMarkdown().trim())
+                    .append("\n\n");
+        } else if (structuringResult != null && structuringResult.degraded()) {
+            builder.append("- 未生成该仓库的细粒度结构摘要，请结合真实代码二次确认\n\n");
+        } else {
+            builder.append('\n');
+        }
+        if (hasText(repository.crossRepoContextMarkdown())) {
+            builder.append("### 跨仓提示\n")
+                    .append(repository.crossRepoContextMarkdown().trim())
+                    .append("\n\n");
+        }
+    }
+
+    private StructuringStepResult parseStructuringResult(String rawOutput) {
+        String normalized = trimToNull(rawOutput);
+        if (normalized == null) {
+            return StructuringStepResult.empty();
+        }
+        try {
+            JsonNode root = objectMapper.readTree(normalized);
+            List<RepositoryStructuringSummary> repositories = new ArrayList<>();
+            for (JsonNode repositoryNode : root.path("repositories")) {
+                repositories.add(new RepositoryStructuringSummary(
+                        asLong(repositoryNode.path("repoBindingId")),
+                        repositoryNode.path("repoDisplayName").asText(""),
+                        repositoryNode.path("targetBranch").asText(""),
+                        repositoryNode.path("commitSha").asText(""),
+                        repositoryNode.path("degraded").asBoolean(false),
+                        repositoryNode.path("degradationSummary").asText(""),
+                        repositoryNode.path("structureMarkdown").asText(""),
+                        prettyJson(repositoryNode.toString()),
+                        readStringList(repositoryNode.path("harnessHints"))
+                ));
+            }
+            return new StructuringStepResult(
+                    root.path("summary").asText(""),
+                    root.path("degraded").asBoolean(false),
+                    root.path("crossRepoContextMarkdown").asText(""),
+                    root.path("crossRepoContextJson").isMissingNode() ? "" : prettyJson(root.path("crossRepoContextJson").toString()),
+                    repositories,
+                    normalized
+            );
+        } catch (Exception exception) {
+            throw new IllegalStateException("仓库结构化步骤未返回合法 JSON", exception);
+        }
     }
 
     private void appendTaskContext(StringBuilder builder, ExecutionTaskEntity executionTask, TaskEntity workItem) {
@@ -833,7 +1192,15 @@ public class DevelopmentExecutionService {
                     defaultString(resolveCloneUrl(refreshedBinding)),
                     defaultString(refreshedBinding.getGitlabProjectWebUrl()),
                     defaultString(refreshedBinding.getApiBaseUrl()),
-                    token
+                    token,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    false,
+                    "",
+                    List.of()
             ));
         }
         return result;
@@ -1115,6 +1482,9 @@ public class DevelopmentExecutionService {
     }
 
     private String buildCommandMarkdown(List<String> commands) {
+        if (commands == null || commands.isEmpty()) {
+            return "- 暂无";
+        }
         StringBuilder builder = new StringBuilder();
         for (String command : commands) {
             builder.append("- ").append(defaultString(command)).append('\n');
@@ -1193,6 +1563,24 @@ public class DevelopmentExecutionService {
         }
     }
 
+    private Long asLong(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        if (node.isNumber()) {
+            return node.longValue();
+        }
+        String text = trimToNull(node.asText(""));
+        if (text == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(text);
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
     private String limitMessage(String value) {
         String normalized = defaultString(value).trim();
         return normalized.length() <= 1000 ? normalized : normalized.substring(0, 1000);
@@ -1265,7 +1653,41 @@ public class DevelopmentExecutionService {
             String cloneUrl,
             String webUrl,
             String apiBaseUrl,
-            String accessToken
+            String accessToken,
+            String commitSha,
+            String structureMarkdown,
+            String structureJson,
+            String crossRepoContextMarkdown,
+            String crossRepoContextJson,
+            boolean structuringDegraded,
+            String structuringMessage,
+            List<String> harnessHints
+    ) {
+    }
+
+    private record StructuringStepResult(
+            String summary,
+            boolean degraded,
+            String crossRepoContextMarkdown,
+            String crossRepoContextJson,
+            List<RepositoryStructuringSummary> repositories,
+            String rawOutput
+    ) {
+        private static StructuringStepResult empty() {
+            return new StructuringStepResult("", false, "", "", List.of(), "");
+        }
+    }
+
+    private record RepositoryStructuringSummary(
+            Long bindingId,
+            String repositoryDisplayName,
+            String targetBranch,
+            String commitSha,
+            boolean degraded,
+            String degradationSummary,
+            String structureMarkdown,
+            String structureJson,
+            List<String> harnessHints
     ) {
     }
 

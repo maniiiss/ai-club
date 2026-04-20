@@ -6,6 +6,7 @@ import com.aiclub.platform.domain.model.ExecutionStepEntity;
 import com.aiclub.platform.domain.model.ExecutionTaskEntity;
 import com.aiclub.platform.dto.request.ExecutionSessionArtifactRequest;
 import com.aiclub.platform.dto.request.ExecutionSessionCompleteRequest;
+import com.aiclub.platform.dto.request.ExecutionSessionEventRequest;
 import com.aiclub.platform.dto.request.ExecutionSessionEventsRequest;
 import com.aiclub.platform.repository.ExecutionArtifactRepository;
 import com.aiclub.platform.repository.ExecutionRunRepository;
@@ -67,7 +68,12 @@ public class ExecutionAsyncSessionService {
         ExecutionStepEntity step = requireStepBySessionId(sessionId);
         ExecutionRunEntity run = step.getRun();
         ExecutionTaskEntity task = run.getExecutionTask();
-        executionEventService.recordRunnerEvents(task, run, step, request == null ? List.of() : request.events());
+        List<ExecutionSessionEventRequest> events = request == null ? List.of() : request.events();
+        if (!events.isEmpty()) {
+            step.setLastHeartbeatAt(LocalDateTime.now());
+            executionStepRepository.save(step);
+        }
+        executionEventService.recordRunnerEvents(task, run, step, events);
     }
 
     @Transactional
@@ -165,6 +171,7 @@ public class ExecutionAsyncSessionService {
     public int maxRuntimeSeconds(String stepCode) {
         String normalized = defaultString(stepCode).trim().toUpperCase();
         return switch (normalized) {
+            case "REPO_STRUCTURING" -> 900;
             case "IMPLEMENT" -> 3600;
             case "TEST" -> 2400;
             case "PLAN", "REPORT", "REVIEW", "TEST_DESIGN", "AD_HOC_RUN" -> 600;

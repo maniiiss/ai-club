@@ -647,6 +647,7 @@ public class AgentExecutionService {
         putText(repositoryNode, "projectPath", variables.get("repo_project_path"));
         putText(repositoryNode, "repoUrl", variables.get("repo_http_clone_url"));
         putText(repositoryNode, "targetBranch", variables.get("repo_target_branch"));
+        putText(repositoryNode, "commitSha", variables.get("repo_commit_sha"));
         putText(repositoryNode, "apiBaseUrl", variables.get("repo_api_base_url"));
         putText(repositoryNode, "authToken", variables.get("repo_access_token"));
         return repositoryNode;

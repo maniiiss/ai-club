@@ -13,6 +13,7 @@ from app.models import ClaudePlanningRepository, ClaudePlanningRequest, CodexExe
 from app.services.claude_planning_service import (
     ClaudePlanningWorkspace,
     _build_planning_prompt,
+    _checkout_commit_if_needed,
     _clone_repository,
     _extract_search_terms,
     _run_claude_cli,
@@ -194,6 +195,7 @@ class ClaudePlanningServiceTests(unittest.TestCase):
                 projectPath="group/frontend",
                 repoUrl="http://gitlab.example.com/group/frontend.git",
                 targetBranch="release/1.0",
+                commitSha="fixed-sha",
                 apiBaseUrl="http://gitlab.example.com/api/v4",
                 authToken="token-1",
             )
@@ -226,7 +228,82 @@ class ClaudePlanningServiceTests(unittest.TestCase):
         called_args = run_mock.call_args.kwargs
         self.assertIn("input", called_args)
         self.assertIn("group/frontend", called_args["input"])
+        self.assertIn("固定提交：fixed-sha", called_args["input"])
         self.assertNotIn(called_args["input"], run_mock.call_args.args[0])
+
+    def test_should_checkout_requested_commit_after_clone(self):
+        repository = ClaudePlanningRepository(
+            bindingId="1",
+            displayName="group/frontend",
+            projectRef="group/frontend",
+            projectPath="group/frontend",
+            repoUrl="http://gitlab.example.com/group/frontend.git",
+            targetBranch="release/1.0",
+            commitSha="fixed-sha",
+            apiBaseUrl="http://gitlab.example.com/api/v4",
+            authToken="token-secret",
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = ClaudePlanningWorkspace(
+                root=Path(temp_dir),
+                repos_dir=Path(temp_dir) / "repos",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "planning.log",
+            )
+            workspace.repos_dir.mkdir(parents=True, exist_ok=True)
+            commands: list[list[str]] = []
+
+            def subprocess_side_effect(command, **kwargs):
+                commands.append(command)
+                command_key = tuple(command[:3])
+                repo_dir = Path(command[-1]) if "clone" in command else workspace.repos_dir / "01-group-frontend"
+                if "clone" in command:
+                    repo_dir.mkdir(parents=True, exist_ok=True)
+                    return SimpleNamespace(stdout="", stderr="", returncode=0)
+                if command_key == ("git", "rev-parse", "HEAD"):
+                    return SimpleNamespace(
+                        stdout="head-sha" if len([item for item in commands if item[:3] == ["git", "rev-parse", "HEAD"]]) == 1 else "fixed-sha",
+                        stderr="",
+                        returncode=0,
+                    )
+                if command[:2] == ["git", "checkout"]:
+                    return SimpleNamespace(stdout="", stderr="", returncode=0)
+                raise AssertionError(f"Unexpected command: {command}")
+
+            with patch("app.services.claude_planning_service.subprocess.run", side_effect=subprocess_side_effect):
+                repo_dir = _clone_repository(repository, workspace, 1)
+                self.assertTrue(repo_dir.exists())
+                self.assertIn(["git", "checkout", "fixed-sha"], commands)
+
+    def test_should_fetch_commit_when_requested_commit_is_missing_from_shallow_clone(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_dir = Path(temp_dir)
+            workspace = ClaudePlanningWorkspace(
+                root=repo_dir,
+                repos_dir=repo_dir / "repos",
+                out_dir=repo_dir / "out",
+                log_file=repo_dir / "planning.log",
+            )
+            commands: list[list[str]] = []
+
+            def subprocess_side_effect(command, **kwargs):
+                commands.append(command)
+                if command[:3] == ["git", "rev-parse", "HEAD"]:
+                    rev_parse_count = len([item for item in commands if item[:3] == ["git", "rev-parse", "HEAD"]])
+                    return SimpleNamespace(stdout="head-sha" if rev_parse_count == 1 else "fixed-sha", stderr="", returncode=0)
+                if command[:2] == ["git", "checkout"] and command[-1] == "fixed-sha" and len(commands) == 2:
+                    return SimpleNamespace(stdout="", stderr="missing object", returncode=1)
+                if command[:4] == ["git", "fetch", "--depth", "1"]:
+                    return SimpleNamespace(stdout="fetched", stderr="", returncode=0)
+                if command[:2] == ["git", "checkout"] and command[-1] == "fixed-sha":
+                    return SimpleNamespace(stdout="", stderr="", returncode=0)
+                raise AssertionError(f"Unexpected command: {command}")
+
+            with patch("app.services.claude_planning_service.subprocess.run", side_effect=subprocess_side_effect):
+                resolved = _checkout_commit_if_needed(repo_dir, "fixed-sha", workspace)
+
+        self.assertEqual("fixed-sha", resolved)
+        self.assertIn(["git", "fetch", "--depth", "1", "origin", "fixed-sha"], commands)
 
     def test_should_extract_identifiers_and_labels_from_work_item_input(self):
         terms = _extract_search_terms("""
