@@ -11,6 +11,7 @@ import com.aiclub.platform.dto.GitlabTagCreateResult;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
 import com.aiclub.platform.dto.request.GitlabCreateMergeRequestRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
@@ -118,6 +119,7 @@ class GitlabManagementGitlabActionsTests {
                 executionTaskService,
                 repositoryScanClientService,
                 repositoryScanRulesetService,
+                new ObjectMapper(),
                 "http://gitlab.example.com/api/v4"
         );
     }

@@ -120,6 +120,7 @@ def _to_codex_request(request: CliExecutionRequest) -> CodexExecutionRequest:
         ),
         execution=request.execution,
         testCommands=request.testCommands,
+        testPlan=request.testPlan,
         timeoutSeconds=request.timeoutSeconds,
     )
 
@@ -194,7 +195,10 @@ def _execute_claude_implementation_sync(request: CliExecutionRequest) -> CliExec
     payload = codex_service._normalize_implementation_payload(raw_output, changed_files, work_branch, base_commit, current_commit)
     if exit_code != 0:
         payload["status"] = "FAILED"
-        payload["summary"] = codex_service._normalize_text(raw_output.get("summary")) or "Claude Code 执行失败"
+        if bool(raw_output.get("jsonParseDegraded")):
+            payload["summary"] = "Claude Code 执行失败，且未返回结构化 JSON，已降级展示原始输出"
+        else:
+            payload["summary"] = codex_service._normalize_text(raw_output.get("summary")) or "Claude Code 执行失败"
     payload["log"] = _build_workspace_log(workspace.log_file, stdout, stderr, "Claude Code")
     return CliExecutionResponse(
         output=json.dumps(payload, ensure_ascii=False),
@@ -244,13 +248,22 @@ def _launch_background_job(name: str, target: Callable[[], None]) -> None:
     Thread(target=target, name=name, daemon=True).start()
 
 
+def _resolve_step_title(raw_step_name: str, fallback: str) -> str:
+    normalized = (raw_step_name or "").strip()
+    return normalized or fallback
+
+
 def _run_markdown_session(session_id: str, request: CliExecutionRequest, workspace: CliMarkdownWorkspace) -> None:
     batcher = BackendEventBatcher(session_id)
-    summary = f"开始执行 {request.runnerType} {request.mode}"
+    fallback_title = "执行规划" if request.mode == "PLAN" else request.mode
+    step_title = _resolve_step_title(request.execution.stepName, fallback_title)
+    summary = f"开始执行：{step_title}"
     batcher.emit("step_started", summary=summary)
     batcher.emit("step_summary_updated", summary=summary)
     batcher.emit("progress_changed", progress_percent=1, summary=summary)
     batcher.flush()
+    # 规划类步骤在 clone 仓库和等待 CLI 首次输出时可能长时间没有日志，必须用会话级心跳避免 backend watchdog 误判失联。
+    batcher.start_heartbeat(summary=lambda: f"执行中：{step_title}")
 
     try:
         _recreate_markdown_workspace(workspace)
@@ -286,6 +299,8 @@ def _run_markdown_session(session_id: str, request: CliExecutionRequest, workspa
             error_message=failure_summary,
             artifacts=_upload_markdown_log_artifacts(session_id, request, workspace),
         )
+    finally:
+        batcher.close()
 
 
 def _run_claude_implementation_session(
@@ -295,12 +310,15 @@ def _run_claude_implementation_session(
     workspace,
 ) -> None:
     batcher = BackendEventBatcher(session_id)
+    step_title = _resolve_step_title(request.execution.stepName, "开发实现")
     repo_label = codex_request.repository.displayName or codex_request.repository.projectPath or codex_request.repository.repoUrl
-    summary = f"开始开发实现：{repo_label}"
+    summary = f"开始执行：{step_title}"
     batcher.emit("step_started", summary=summary)
     batcher.emit("step_summary_updated", summary=summary)
     batcher.emit("progress_changed", progress_percent=1, summary=summary)
     batcher.flush()
+    # 开发实现前置的 clone/checkout 也可能没有持续输出，统一由会话级心跳保活。
+    batcher.start_heartbeat(summary=lambda: f"执行中：{step_title}")
 
     try:
         codex_service._recreate_workspace(workspace)
@@ -325,7 +343,10 @@ def _run_claude_implementation_session(
         payload["stderrPreview"] = tail_text(stderr, 2000)
         if exit_code != 0:
             payload["status"] = "FAILED"
-            payload["summary"] = codex_service._normalize_text(raw_output.get("summary")) or "Claude Code 执行失败"
+            if bool(raw_output.get("jsonParseDegraded")):
+                payload["summary"] = "Claude Code 执行失败，且未返回结构化 JSON，已降级展示原始输出"
+            else:
+                payload["summary"] = codex_service._normalize_text(raw_output.get("summary")) or "Claude Code 执行失败"
         status = codex_service._normalize_status(payload.get("status"), default="SUCCESS")
         summary = codex_service._normalize_text(payload.get("summary")) or ("Claude Code 已完成仓库开发实现" if status == "SUCCESS" else "Claude Code 执行失败")
         batcher.emit("step_summary_updated", summary=summary)
@@ -354,6 +375,8 @@ def _run_claude_implementation_session(
             error_message=failure_summary,
             artifacts=_upload_workspace_log_artifacts(session_id, request, workspace, "claude"),
         )
+    finally:
+        batcher.close()
 
 
 def _run_codex_markdown_cli(request: CliExecutionRequest, workspace: CliMarkdownWorkspace, repo_paths: list[Path]) -> str:
@@ -542,7 +565,7 @@ def _extract_json_object_or_empty(text: str) -> dict[str, object]:
     normalized = (text or "").strip()
     if not normalized:
         return {}
-    return codex_service._extract_json_object(normalized)
+    return codex_service._json_payload_or_degraded(normalized)
 
 
 def _build_claude_markdown_command(request: CliExecutionRequest, claude_cli: Path, repo_paths: list[Path]) -> list[str]:

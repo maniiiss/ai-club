@@ -87,42 +87,53 @@ def _launch_background_job(name: str, target) -> None:
     Thread(target=target, name=name, daemon=True).start()
 
 
+def _resolve_step_title(raw_step_name: str, fallback: str) -> str:
+    normalized = (raw_step_name or "").strip()
+    return normalized or fallback
+
+
 def _run_claude_plan_session(
     session_id: str,
     request: ClaudePlanningRequest,
     workspace: ClaudePlanningWorkspace,
 ) -> None:
     batcher = BackendEventBatcher(session_id)
-    summary = f"开始执行 Claude 规划：{len(request.repositories)} 个仓库"
+    step_title = _resolve_step_title(request.execution.stepName, "执行规划")
+    summary = f"开始执行：{step_title}"
     batcher.emit("step_started", summary=summary)
     batcher.emit("step_summary_updated", summary=summary)
     batcher.emit("progress_changed", progress_percent=1, summary=summary)
     batcher.flush()
+    # 规划步骤在 clone、预扫描和等待 Claude 首次输出时可能长时间静默，需要主动心跳避免 backend watchdog 误判。
+    batcher.start_heartbeat(summary=lambda: f"执行中：{step_title}")
 
     try:
-        output, output_summary, error_message = _execute_claude_plan_streaming(request, workspace, batcher)
-        status = "SUCCESS"
-    except Exception as exception:
-        output = ""
-        status = "FAILED"
-        output_summary = str(exception).strip() or "Claude Code 执行规划失败"
-        error_message = output_summary
-        _append_log(workspace, f"Claude Code 执行规划失败：{output_summary}")
+        try:
+            output, output_summary, error_message = _execute_claude_plan_streaming(request, workspace, batcher)
+            status = "SUCCESS"
+        except Exception as exception:
+            output = ""
+            status = "FAILED"
+            output_summary = str(exception).strip() or "Claude Code 执行规划失败"
+            error_message = output_summary
+            _append_log(workspace, f"Claude Code 执行规划失败：{output_summary}")
 
-    batcher.emit(
-        "step_finished",
-        summary=output_summary,
-        progress_percent=100 if status == "SUCCESS" else None,
-    )
-    batcher.flush()
-    complete_session(
-        session_id,
-        status=status,
-        output_snapshot=output.strip(),
-        output_summary=output_summary,
-        error_message=error_message,
-        artifacts=_upload_claude_log_artifacts(session_id, request, workspace),
-    )
+        batcher.emit(
+            "step_finished",
+            summary=output_summary,
+            progress_percent=100 if status == "SUCCESS" else None,
+        )
+        batcher.flush()
+        complete_session(
+            session_id,
+            status=status,
+            output_snapshot=output.strip(),
+            output_summary=output_summary,
+            error_message=error_message,
+            artifacts=_upload_claude_log_artifacts(session_id, request, workspace),
+        )
+    finally:
+        batcher.close()
 
 
 def _execute_claude_plan_streaming(
@@ -135,8 +146,12 @@ def _execute_claude_plan_streaming(
     total_repositories = max(len(request.repositories), 1)
     for index, repository in enumerate(request.repositories, start=1):
         repo_label = repository.displayName or repository.projectPath or repository.projectRef or f"仓库 {index}"
-        batcher.emit("step_summary_updated", summary=f"正在准备仓库：{repo_label}")
-        batcher.emit("progress_changed", progress_percent=max(index * 15 // total_repositories, 1), summary=f"正在 clone：{repo_label}")
+        batcher.emit("step_summary_updated", summary=f"正在准备规划上下文：{repo_label}")
+        batcher.emit(
+            "progress_changed",
+            progress_percent=max(index * 15 // total_repositories, 1),
+            summary=f"正在准备规划上下文：{repo_label}",
+        )
         batcher.flush()
         repo_dir = _clone_repository(repository, workspace, index)
         repo_paths.append(repo_dir)
@@ -340,7 +355,6 @@ def _run_claude_cli(request: ClaudePlanningRequest,
     command = [
         *_build_claude_command_prefix(claude_cli),
         "-p",
-        "--bare",
         "--permission-mode",
         "plan",
         "--output-format",
@@ -392,7 +406,6 @@ def _run_claude_cli_streaming(
     command = [
         *_build_claude_command_prefix(claude_cli),
         "-p",
-        "--bare",
         "--permission-mode",
         "plan",
         "--output-format",

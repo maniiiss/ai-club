@@ -134,6 +134,25 @@ public class ExecutionAsyncSessionService {
     }
 
     /**
+     * sidecar 进程需要低频轮询当前会话状态，以便在用户取消时主动回收子进程树，
+     * 避免浏览器、服务进程继续悬挂在宿主机上。
+     */
+    @Transactional(readOnly = true)
+    public RunnerSessionState readRunnerSessionState(String sessionId) {
+        ExecutionStepEntity step = requireStepBySessionId(sessionId);
+        ExecutionRunEntity run = step.getRun();
+        ExecutionTaskEntity task = run.getExecutionTask();
+        boolean cancelRequested = Boolean.TRUE.equals(executionTaskRepository.findCancelRequestedFlagById(task.getId()));
+        return new RunnerSessionState(
+                defaultString(step.getRunnerSessionId()),
+                defaultString(step.getStatus()),
+                defaultString(run.getStatus()),
+                cancelRequested,
+                isTerminal(step.getStatus())
+        );
+    }
+
+    /**
      * 用户主动取消时，如果当前步骤仍在 live runner 中执行，则直接把它收敛到取消态，
      * 让等待线程尽快感知到终态，而不是继续阻塞到 runner 自己结束。
      */
@@ -296,5 +315,14 @@ public class ExecutionAsyncSessionService {
             return normalized;
         }
         return normalized.substring(0, maxLength);
+    }
+
+    public record RunnerSessionState(
+            String sessionId,
+            String stepStatus,
+            String runStatus,
+            boolean cancelRequested,
+            boolean terminal
+    ) {
     }
 }

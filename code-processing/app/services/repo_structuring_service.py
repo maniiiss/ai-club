@@ -69,40 +69,51 @@ def _launch_background_job(name: str, target) -> None:
     Thread(target=target, name=name, daemon=True).start()
 
 
+def _resolve_step_title(raw_step_name: str, fallback: str) -> str:
+    normalized = (raw_step_name or "").strip()
+    return normalized or fallback
+
+
 def _run_repo_structuring_session(session_id: str, request: RepositoryStructuringRequest, workspace: StructuringWorkspace) -> None:
     batcher = BackendEventBatcher(session_id)
-    summary = f"开始仓库结构化：{len(request.repositories)} 个仓库"
+    step_title = _resolve_step_title(request.execution.stepName, "仓库结构化")
+    summary = f"开始执行：{step_title}"
     batcher.emit("step_started", summary=summary)
     batcher.emit("step_summary_updated", summary=summary)
     batcher.emit("progress_changed", progress_percent=1, summary=summary)
     batcher.flush()
+    # 结构化阶段包含 clone、GitNexus analyze 等长耗时静默操作，使用会话级心跳兜底保活。
+    batcher.start_heartbeat(summary=lambda: f"执行中：{step_title}")
 
     try:
-        result = _execute_repo_structuring(request, workspace, batcher)
-        output_summary = str(result.payload.get("summary") or "仓库结构化已完成")
-        status = "SUCCESS"
-        error_message = ""
-    except Exception as exception:
-        result = StructuringExecutionResult(
-            payload={"status": "FAILED", "summary": str(exception).strip() or "仓库结构化失败"},
-            repo_paths=[],
-            artifact_files=[],
-        )
-        output_summary = str(result.payload.get("summary") or "仓库结构化失败")
-        status = "FAILED"
-        error_message = output_summary
-        _append_log(workspace, f"仓库结构化失败：{output_summary}")
+        try:
+            result = _execute_repo_structuring(request, workspace, batcher)
+            output_summary = str(result.payload.get("summary") or "仓库结构化已完成")
+            status = "SUCCESS"
+            error_message = ""
+        except Exception as exception:
+            result = StructuringExecutionResult(
+                payload={"status": "FAILED", "summary": str(exception).strip() or "仓库结构化失败"},
+                repo_paths=[],
+                artifact_files=[],
+            )
+            output_summary = str(result.payload.get("summary") or "仓库结构化失败")
+            status = "FAILED"
+            error_message = output_summary
+            _append_log(workspace, f"仓库结构化失败：{output_summary}")
 
-    batcher.emit("step_finished", summary=output_summary, progress_percent=100 if status == "SUCCESS" else None)
-    batcher.flush()
-    complete_session(
-        session_id,
-        status=status,
-        output_snapshot=json.dumps(result.payload, ensure_ascii=False),
-        output_summary=output_summary,
-        error_message=error_message,
-        artifacts=_upload_structuring_artifacts(session_id, request, workspace, result.artifact_files),
-    )
+        batcher.emit("step_finished", summary=output_summary, progress_percent=100 if status == "SUCCESS" else None)
+        batcher.flush()
+        complete_session(
+            session_id,
+            status=status,
+            output_snapshot=json.dumps(result.payload, ensure_ascii=False),
+            output_summary=output_summary,
+            error_message=error_message,
+            artifacts=_upload_structuring_artifacts(session_id, request, workspace, result.artifact_files),
+        )
+    finally:
+        batcher.close()
 
 
 def _execute_repo_structuring(

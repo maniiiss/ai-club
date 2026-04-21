@@ -6,7 +6,13 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.models import CliExecutionRepository, CliExecutionRequest, CliExecutionResponse, CodexExecutionContext
-from app.services.cli_execution_service import _to_claude_request, _to_codex_request, execute_cli_execution, start_cli_execution
+from app.services.cli_execution_service import (
+    _extract_json_object_or_empty,
+    _to_claude_request,
+    _to_codex_request,
+    execute_cli_execution,
+    start_cli_execution,
+)
 
 
 class CliExecutionServiceTests(unittest.TestCase):
@@ -149,6 +155,14 @@ class CliExecutionServiceTests(unittest.TestCase):
         self.assertEqual("SUCCESS", payload["status"])
         self.assertEqual("Claude 已完成开发", payload["summary"])
         self.assertEqual(str(repo_dir), response.repoPath)
+
+    def test_should_degrade_claude_non_json_stdout_without_codex_error_wording(self):
+        payload = _extract_json_object_or_empty("Claude Code 执行完成，但未返回 JSON")
+
+        self.assertTrue(payload["jsonParseDegraded"])
+        self.assertIn("输出未返回合法 JSON", payload["jsonParseError"])
+        self.assertNotIn("Codex 未返回合法 JSON", payload["jsonParseError"])
+        self.assertIn("Claude Code 执行完成", payload["rawOutput"])
 
     def test_should_start_claude_adhoc_session_with_unified_runner(self):
         request = self._build_request("CLAUDE_CODE_CLI", "AD_HOC").model_copy(update={

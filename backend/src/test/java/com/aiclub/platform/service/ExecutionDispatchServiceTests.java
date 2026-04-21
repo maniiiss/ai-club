@@ -254,7 +254,7 @@ class ExecutionDispatchServiceTests {
                 eq("开发执行待确认：开发执行任务"),
                 eq("执行规划已生成，请前往执行详情查看、编辑并确认继续。"),
                 eq("/tasks/99"),
-                eq("DEVELOPMENT_EXECUTION_PLAN_CONFIRMATION_REQUIRED"),
+                eq("DEVELOPMENT_EXECUTION_PLAN_CONFIRM"),
                 eq(99L)
         );
         verify(executionWritebackService, never()).writeBackToWorkItem(any(), any(), any());

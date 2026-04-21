@@ -482,6 +482,7 @@ export interface ExecutionStreamEvent {
   runId: number
   stepId: number | null
   stepNo: number | null
+  stepName: string | null
   eventType: string
   streamKind: string | null
   text: string | null
@@ -751,6 +752,7 @@ export interface ProjectGitlabBindingItem {
   lastTestStatus: string | null
   lastTestMessage: string | null
   lastTestedAt: string | null
+  testProfileJson: string | null
 }
 
 export interface RepositoryScanRulesetItem {

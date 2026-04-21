@@ -13,6 +13,8 @@ from app.services.codex_execution_service import (
     DevelopmentExecutionWorkspace,
     _checkout_commit_if_needed,
     _clone_repository,
+    _json_payload_or_degraded,
+    _normalize_implementation_payload,
     _schema_text_for_mode,
     execute_codex_execution,
     start_codex_execution,
@@ -88,6 +90,23 @@ class CodexExecutionServiceTests(unittest.TestCase):
         self.assertEqual("codex/execution-101-3-1", payload["workBranch"])
         self.assertEqual(["npm run lint"], payload["commandsExecuted"])
         self.assertIn("执行日志", payload["log"])
+
+    def test_should_degrade_non_json_implementation_output_to_raw_preview(self):
+        raw_output = _json_payload_or_degraded("模型执行完成，但没有输出 JSON")
+        payload = _normalize_implementation_payload(
+            raw_output,
+            changed_files=["src/App.vue"],
+            work_branch="codex/execution-101-3-1",
+            base_commit="base-sha",
+            current_commit="head-sha",
+        )
+
+        self.assertEqual("SUCCESS", payload["status"])
+        self.assertTrue(payload["jsonParseDegraded"])
+        self.assertIn("未返回结构化 JSON", payload["summary"])
+        self.assertIn("模型执行完成", payload["rawOutput"])
+        self.assertIn("模型执行完成", payload["log"])
+        self.assertEqual(["src/App.vue"], payload["changedFiles"])
 
     def test_should_checkout_requested_commit_after_clone(self):
         request = self._build_request("IMPLEMENT").model_copy(update={
@@ -165,9 +184,10 @@ class CodexExecutionServiceTests(unittest.TestCase):
                 response = execute_codex_execution(request)
 
         payload = json.loads(response.output)
+        command_results = payload["suiteResults"][0]["commandResults"]
         self.assertEqual("SUCCESS", payload["status"])
-        self.assertIn("已跳过", payload["commandResults"][0]["stdout"])
-        self.assertIn("不适用命令", payload["summary"])
+        self.assertIn("已跳过", command_results[0]["stdout"])
+        self.assertIn("不适用命令", payload["suiteResults"][0]["summary"])
 
     def test_should_promote_frontend_build_to_repo_root_and_bootstrap_pnpm(self):
         request = self._build_request("TEST", ["cd frontend && npm run build"])
@@ -194,6 +214,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
                 response = execute_codex_execution(request)
 
         payload = json.loads(response.output)
+        command_results = payload["suiteResults"][0]["commandResults"]
         self.assertEqual("SUCCESS", payload["status"])
         self.assertEqual(
             [
@@ -204,7 +225,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             ["pnpm install --frozen-lockfile --prefer-offline", "pnpm run build"],
-            [item["command"] for item in payload["commandResults"]],
+            [item["command"] for item in command_results],
         )
 
     def test_should_return_failed_test_payload_when_adapted_command_exits_non_zero(self):
@@ -233,9 +254,10 @@ class CodexExecutionServiceTests(unittest.TestCase):
                 response = execute_codex_execution(request)
 
         payload = json.loads(response.output)
+        command_results = payload["suiteResults"][0]["commandResults"]
         self.assertEqual("FAILED", payload["status"])
-        self.assertEqual(1, payload["commandResults"][0]["exitCode"])
-        self.assertIn("npm run build", payload["summary"])
+        self.assertEqual(1, command_results[0]["exitCode"])
+        self.assertIn("npm run build", payload["suiteResults"][0]["summary"])
 
     def test_should_require_all_implementation_schema_fields_for_strict_json_schema(self):
         schema = json.loads(_schema_text_for_mode("IMPLEMENT"))
@@ -356,7 +378,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
                 ),
             ]
 
-            with patch("app.services.execution_streaming_support._post_backend_json", side_effect=lambda path, payload: captured_calls.append((path, payload))):
+            with patch("app.services.execution_streaming_support._post_backend_json", side_effect=lambda path, payload, **kwargs: captured_calls.append((path, payload))):
                 result = run_streaming_process(
                     command,
                     cwd=workspace_dir,
@@ -390,7 +412,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
             batcher = BackendEventBatcher("session-timeout")
             command = [sys.executable, "-c", "import time; time.sleep(2)"]
 
-            with patch("app.services.execution_streaming_support._post_backend_json", side_effect=lambda path, payload: captured_calls.append((path, payload))):
+            with patch("app.services.execution_streaming_support._post_backend_json", side_effect=lambda path, payload, **kwargs: captured_calls.append((path, payload))):
                 result = run_streaming_process(
                     command,
                     cwd=workspace_dir,

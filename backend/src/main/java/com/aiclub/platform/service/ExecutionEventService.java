@@ -348,6 +348,7 @@ public class ExecutionEventService {
                 entity.getRun() == null ? null : entity.getRun().getId(),
                 entity.getStep() == null ? null : entity.getStep().getId(),
                 entity.getStep() == null ? null : entity.getStep().getStepNo(),
+                entity.getStep() == null ? null : entity.getStep().getStepName(),
                 entity.getEventType(),
                 entity.getStreamKind(),
                 textValue(payload, "text"),

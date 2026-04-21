@@ -636,6 +636,13 @@ public class AgentExecutionService {
                 throw new IllegalArgumentException("test_commands_json 不是合法 JSON", exception);
             }
         }
+        if (variables != null && hasText(variables.get("test_plan_json"))) {
+            try {
+                payload.set("testPlan", objectMapper.readTree(variables.get("test_plan_json")));
+            } catch (IOException exception) {
+                throw new IllegalArgumentException("test_plan_json 不是合法 JSON", exception);
+            }
+        }
         return payload.toString();
     }
 

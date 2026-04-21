@@ -286,15 +286,42 @@ public class DevelopmentExecutionService {
                                            int totalSteps,
                                            List<ExecutionArtifactEntity> artifacts) {
         List<String> commands = buildHarnessCommands(repositoryState.requireImplementationResult().changedFiles());
+        TestExecutionPlan testPlan = buildTestPlan(repository, commands);
         ExecutionStepEntity step = beginStep(executionTask, executionRun, stepPlan, totalSteps, input);
         Map<String, String> variables = buildRuntimeVariables(executionTask, executionRun, step, workItem, repository, repositoryState.index(), repositoryState.total(), commands);
+        variables.put("test_plan_json", prettyJson(toJson(testPlan)));
+        variables.put("test_plan_markdown", buildTestPlanMarkdown(testPlan));
+        artifacts.add(saveArtifact(
+                executionTask,
+                executionRun,
+                step,
+                "TEST_PLAN_JSON",
+                "测试计划 JSON · " + repository.repositoryDisplayName(),
+                prettyJson(toJson(testPlan))
+        ));
         String output = executeStepAgent(stepPlan, executionTask, executionRun, step, input, variables);
         TestStepResult result = parseTestResult(output);
-        validateTestResult(result);
-        completeStep(executionTask, executionRun, stepPlan, totalSteps, step, output, defaultSuccessMessage(result.summary(), repository.repositoryDisplayName(), "执行测试"));
+        artifacts.add(saveArtifact(
+                executionTask,
+                executionRun,
+                step,
+                "TEST_SUITE_RESULT_MARKDOWN",
+                "测试 Suite 结果 · " + repository.repositoryDisplayName(),
+                buildSuiteResultMarkdown(result)
+        ));
+        artifacts.add(saveArtifact(
+                executionTask,
+                executionRun,
+                step,
+                "TEST_SUITE_RESULT_JSON",
+                "测试 Suite 结果 JSON · " + repository.repositoryDisplayName(),
+                prettyJson(toJson(result.suiteResults()))
+        ));
         artifacts.add(saveArtifact(executionTask, executionRun, step, "TEST_RESULT_MARKDOWN", "测试结果 · " + repository.repositoryDisplayName(), buildTestResultMarkdown(result)));
         artifacts.add(saveArtifact(executionTask, executionRun, step, "TEST_RESULT_JSON", "测试结果 JSON · " + repository.repositoryDisplayName(), prettyJson(output)));
         artifacts.add(saveArtifact(executionTask, executionRun, step, "TEST_LOG", "测试日志 · " + repository.repositoryDisplayName(), buildTestLog(result)));
+        validateTestResult(result);
+        completeStep(executionTask, executionRun, stepPlan, totalSteps, step, output, defaultSuccessMessage(result.summary(), repository.repositoryDisplayName(), "执行测试"));
         return result;
     }
 
@@ -432,6 +459,7 @@ public class DevelopmentExecutionService {
                     repository.webUrl(),
                     repository.apiBaseUrl(),
                     repository.accessToken(),
+                    repository.testProfileJson(),
                     hasText(item.commitSha()) ? item.commitSha() : repository.commitSha(),
                     hasText(item.structureMarkdown()) ? item.structureMarkdown() : repository.structureMarkdown(),
                     hasText(item.structureJson()) ? item.structureJson() : repository.structureJson(),
@@ -961,6 +989,7 @@ public class DevelopmentExecutionService {
                                   String inputText,
                                   StructuringStepResult structuringResult) {
         List<String> commands = buildHarnessCommands(repositoryState.requireImplementationResult().changedFiles());
+        TestExecutionPlan testPlan = buildTestPlan(repository, commands);
         StringBuilder builder = new StringBuilder();
         appendTaskContext(builder, executionTask, workItem);
         builder.append("## 当前仓库\n")
@@ -985,11 +1014,15 @@ public class DevelopmentExecutionService {
                 .append("## 平台建议执行的 Harness 命令\n")
                 .append(buildCommandMarkdown(commands))
                 .append("\n")
+                .append("## 平台生成的测试计划\n")
+                .append(buildTestPlanMarkdown(testPlan))
+                .append("\n")
                 .append("## 输出要求\n")
                 .append("请返回 JSON，不要输出 Markdown 代码块围栏。字段必须包含：\n")
                 .append("- status\n")
                 .append("- summary\n")
-                .append("- commandResults[]，每项必须包含 command/cwd/exitCode/stdout/stderr\n");
+                .append("- suiteResults[]，每项必须包含 suiteId/type/status/summary/checks/artifacts/commandResults\n")
+                .append("- rawArtifacts[]，用于补充 sidecar 生成的截图、trace 和日志文件摘要\n");
         return builder.toString().trim();
     }
 
@@ -1232,6 +1265,7 @@ public class DevelopmentExecutionService {
                     defaultString(refreshedBinding.getGitlabProjectWebUrl()),
                     defaultString(refreshedBinding.getApiBaseUrl()),
                     token,
+                    defaultString(refreshedBinding.getTestProfileJson()),
                     "",
                     "",
                     "",
@@ -1298,6 +1332,199 @@ public class DevelopmentExecutionService {
         return "GitLab 绑定 #" + binding.getId();
     }
 
+    /**
+     * TEST 计划由 backend 统一生成，code-processing 只负责按 suite 类型执行。
+     */
+    private TestExecutionPlan buildTestPlan(ResolvedRepositoryContext repository, List<String> commands) {
+        List<TestSuitePlan> suites = new ArrayList<>();
+        suites.add(buildCommandSuite(commands));
+        TestProfileConfig profile = parseTestProfile(repository.testProfileJson());
+        if (profile == null) {
+            return new TestExecutionPlan(suites);
+        }
+        String repoKind = defaultString(profile.repoKind()).trim().toUpperCase();
+        if ("FRONTEND".equals(repoKind) || "MIXED".equals(repoKind)) {
+            suites.add(buildPlaywrightSuite(profile));
+        }
+        if ("BACKEND".equals(repoKind) || "MIXED".equals(repoKind)) {
+            suites.add(buildServiceSuite(profile));
+        }
+        return new TestExecutionPlan(suites);
+    }
+
+    private TestSuitePlan buildCommandSuite(List<String> commands) {
+        if (commands == null || commands.isEmpty()) {
+            return new TestSuitePlan(
+                    "command",
+                    "COMMAND",
+                    "SKIPPED",
+                    "当前仓库未命中额外 Harness 命令",
+                    "",
+                    List.of(),
+                    "",
+                    "",
+                    "",
+                    List.of(),
+                    "",
+                    "",
+                    List.of()
+            );
+        }
+        return new TestSuitePlan(
+                "command",
+                "COMMAND",
+                "PENDING",
+                "等待执行命令型 Harness",
+                "",
+                commands,
+                "",
+                "",
+                "",
+                List.of(),
+                "",
+                "",
+                List.of()
+        );
+    }
+
+    private TestSuitePlan buildPlaywrightSuite(TestProfileConfig profile) {
+        return new TestSuitePlan(
+                "playwright-smoke",
+                "PLAYWRIGHT_SMOKE",
+                "PENDING",
+                "等待执行浏览器烟测",
+                trimToNull(profile.workingDir()),
+                List.of(),
+                trimToNull(profile.packageManager()),
+                trimToNull(profile.startCommand()),
+                trimToNull(profile.baseUrl()),
+                normalizeSmokePaths(profile.smokePaths()),
+                trimToNull(profile.readySelector()),
+                "",
+                List.of()
+        );
+    }
+
+    private TestSuitePlan buildServiceSuite(TestProfileConfig profile) {
+        boolean missingChecks = !hasText(profile.healthPath()) && (profile.httpChecks() == null || profile.httpChecks().isEmpty());
+        if (!hasText(profile.startCommand()) || missingChecks) {
+            return new TestSuitePlan(
+                    "service-smoke",
+                    "SERVICE_SMOKE",
+                    "SKIPPED",
+                    !hasText(profile.startCommand()) ? "缺少 startCommand，已跳过服务烟测" : "缺少 healthPath/httpChecks，已跳过服务烟测",
+                    trimToNull(profile.workingDir()),
+                    List.of(),
+                    trimToNull(profile.packageManager()),
+                    trimToNull(profile.startCommand()),
+                    trimToNull(profile.baseUrl()),
+                    List.of(),
+                    "",
+                    trimToNull(profile.healthPath()),
+                    profile.httpChecks() == null ? List.of() : profile.httpChecks()
+            );
+        }
+        return new TestSuitePlan(
+                "service-smoke",
+                "SERVICE_SMOKE",
+                "PENDING",
+                "等待执行服务集成烟测",
+                trimToNull(profile.workingDir()),
+                List.of(),
+                trimToNull(profile.packageManager()),
+                trimToNull(profile.startCommand()),
+                trimToNull(profile.baseUrl()),
+                List.of(),
+                "",
+                trimToNull(profile.healthPath()),
+                profile.httpChecks() == null ? List.of() : profile.httpChecks()
+        );
+    }
+
+    /**
+     * 测试模板当前以 JSON 文本保存在仓库绑定上；这里做宽松解析，避免历史空值直接阻断旧绑定执行。
+     */
+    private TestProfileConfig parseTestProfile(String rawJson) {
+        if (!hasText(rawJson)) {
+            return null;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(rawJson);
+            List<TestHttpCheckPlan> httpChecks = new ArrayList<>();
+            for (JsonNode item : root.path("httpChecks")) {
+                httpChecks.add(new TestHttpCheckPlan(
+                        item.path("name").asText(""),
+                        item.path("method").asText("GET"),
+                        item.path("path").asText(""),
+                        item.hasNonNull("expectedStatus") ? item.get("expectedStatus").asInt() : 200
+                ));
+            }
+            return new TestProfileConfig(
+                    root.path("repoKind").asText(""),
+                    root.path("workingDir").asText(""),
+                    root.path("packageManager").asText(""),
+                    root.path("startCommand").asText(""),
+                    root.path("baseUrl").asText(""),
+                    readStringList(root.path("smokePaths")),
+                    root.path("readySelector").asText(""),
+                    root.path("healthPath").asText(""),
+                    httpChecks
+            );
+        } catch (Exception exception) {
+            throw new IllegalStateException("仓库绑定中的 testProfileJson 不是合法 JSON", exception);
+        }
+    }
+
+    private List<String> normalizeSmokePaths(List<String> smokePaths) {
+        List<String> normalized = new ArrayList<>();
+        if (smokePaths != null) {
+            for (String item : smokePaths) {
+                String path = trimToNull(item);
+                if (path != null) {
+                    normalized.add(path);
+                }
+            }
+        }
+        if (normalized.isEmpty()) {
+            normalized.add("/");
+        }
+        return normalized;
+    }
+
+    private String buildTestPlanMarkdown(TestExecutionPlan plan) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("# 测试计划\n\n");
+        if (plan == null || plan.suites() == null || plan.suites().isEmpty()) {
+            builder.append("- 暂无 suite 计划\n");
+            return builder.toString().trim();
+        }
+        for (TestSuitePlan suite : plan.suites()) {
+            builder.append("## ").append(defaultString(suite.type())).append(" / ").append(defaultString(suite.suiteId())).append("\n\n")
+                    .append("- 计划状态：").append(defaultString(suite.status())).append('\n')
+                    .append("- 计划摘要：").append(defaultString(suite.summary())).append('\n');
+            if (hasText(suite.workingDir())) {
+                builder.append("- 工作目录：`").append(suite.workingDir().trim()).append("`\n");
+            }
+            if (suite.commands() != null && !suite.commands().isEmpty()) {
+                builder.append("- 命令数：").append(suite.commands().size()).append('\n');
+            }
+            if (hasText(suite.startCommand())) {
+                builder.append("- 启动命令：`").append(suite.startCommand().trim()).append("`\n");
+            }
+            if (suite.smokePaths() != null && !suite.smokePaths().isEmpty()) {
+                builder.append("- 烟测页面：").append(String.join("、", suite.smokePaths())).append('\n');
+            }
+            if (hasText(suite.healthPath())) {
+                builder.append("- 健康检查：`").append(suite.healthPath().trim()).append("`\n");
+            }
+            if (suite.httpChecks() != null && !suite.httpChecks().isEmpty()) {
+                builder.append("- HTTP 检查数：").append(suite.httpChecks().size()).append('\n');
+            }
+            builder.append('\n');
+        }
+        return builder.toString().trim();
+    }
+
     private List<String> buildHarnessCommands(List<String> changedFiles) {
         Set<String> commands = new LinkedHashSet<>();
         commands.add("python scripts/check_encoding.py");
@@ -1314,6 +1541,17 @@ public class DevelopmentExecutionService {
             }
         }
         return new ArrayList<>(commands);
+    }
+
+    private List<String> readStringList(JsonNode node) {
+        List<String> result = new ArrayList<>();
+        if (node == null || !node.isArray()) {
+            return result;
+        }
+        for (JsonNode item : node) {
+            result.add(item.asText(""));
+        }
+        return result;
     }
 
     /**
@@ -1364,19 +1602,37 @@ public class DevelopmentExecutionService {
     private ImplementationStepResult parseImplementationResult(String rawOutput) {
         try {
             JsonNode node = objectMapper.readTree(rawOutput);
+            String summary = node.path("summary").asText("");
+            if (!hasText(summary) && node.path("jsonParseDegraded").asBoolean(false)) {
+                summary = "开发实现未返回结构化 JSON，已降级展示原始输出";
+            }
+            String log = node.path("log").asText("");
+            if (!hasText(log) && node.path("jsonParseDegraded").asBoolean(false)) {
+                log = node.path("rawOutput").asText("");
+            }
             return new ImplementationStepResult(
                     node.path("status").asText("SUCCESS"),
-                    node.path("summary").asText(""),
+                    summary,
                     readStringList(node.path("changedFiles")),
                     readStringList(node.path("commandsExecuted")),
-                    node.path("log").asText(""),
+                    log,
                     trimToNull(node.path("workBranch").asText("")),
                     trimToNull(node.path("commitSha").asText("")),
                     trimToNull(node.path("mergeRequestUrl").asText("")),
                     rawOutput
             );
         } catch (Exception exception) {
-            throw new IllegalStateException("开发实现步骤未返回合法 JSON", exception);
+            return new ImplementationStepResult(
+                    "SUCCESS",
+                    "开发实现未返回结构化 JSON，已降级展示原始输出",
+                    List.of(),
+                    List.of(),
+                    buildNonStructuredOutputLog("开发实现", rawOutput, exception),
+                    null,
+                    null,
+                    null,
+                    rawOutput
+            );
         }
     }
 
@@ -1389,60 +1645,240 @@ public class DevelopmentExecutionService {
     private TestStepResult parseTestResult(String rawOutput) {
         try {
             JsonNode node = objectMapper.readTree(rawOutput);
-            List<TestCommandResult> commandResults = new ArrayList<>();
-            for (JsonNode item : node.path("commandResults")) {
-                commandResults.add(new TestCommandResult(
-                        item.path("command").asText(""),
-                        item.path("cwd").asText(""),
-                        item.hasNonNull("exitCode") ? item.get("exitCode").asInt() : null,
-                        item.path("stdout").asText(""),
-                        item.path("stderr").asText("")
+            List<TestSuiteResult> suiteResults = new ArrayList<>();
+            if (node.has("suiteResults") && node.path("suiteResults").isArray()) {
+                for (JsonNode suiteNode : node.path("suiteResults")) {
+                    suiteResults.add(parseSuiteResult(suiteNode));
+                }
+            } else {
+                suiteResults.add(new TestSuiteResult(
+                        "command",
+                        "COMMAND",
+                        node.path("status").asText("SUCCESS"),
+                        node.path("summary").asText(""),
+                        List.of(),
+                        List.of(),
+                        readCommandResults(node.path("commandResults"))
                 ));
             }
-            return new TestStepResult(node.path("status").asText("SUCCESS"), node.path("summary").asText(""), commandResults, rawOutput);
+            List<TestRawArtifact> rawArtifacts = new ArrayList<>();
+            for (JsonNode item : node.path("rawArtifacts")) {
+                rawArtifacts.add(new TestRawArtifact(
+                        item.path("artifactType").asText(""),
+                        item.path("title").asText(""),
+                        item.path("fileName").asText("")
+                ));
+            }
+            String status = node.path("status").asText("");
+            if (!hasText(status)) {
+                status = resolveTestStatus(suiteResults);
+            }
+            String summary = node.path("summary").asText("");
+            if (!hasText(summary)) {
+                summary = buildTestSummary(suiteResults);
+            }
+            return new TestStepResult(status, summary, suiteResults, rawArtifacts, rawOutput);
         } catch (Exception exception) {
-            throw new IllegalStateException("执行测试步骤未返回合法 JSON", exception);
+            return new TestStepResult(
+                    "SUCCESS",
+                    "执行测试未返回结构化 JSON，已降级展示原始输出",
+                    List.of(),
+                    List.of(),
+                    buildNonStructuredOutputLog("执行测试", rawOutput, exception)
+            );
         }
+    }
+
+    private String buildNonStructuredOutputLog(String stepName, String rawOutput, Exception exception) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(stepName).append("返回内容无法按结构化 JSON 解析，平台已按原始输出降级展示。\n");
+        if (exception != null && hasText(exception.getMessage())) {
+            builder.append("解析错误：").append(exception.getMessage().trim()).append("\n");
+        }
+        if (hasText(rawOutput)) {
+            builder.append("\n[原始输出]\n").append(rawOutput.trim());
+        } else {
+            builder.append("\n[原始输出]\n<空>");
+        }
+        return builder.toString();
+    }
+
+    private TestSuiteResult parseSuiteResult(JsonNode suiteNode) {
+        List<TestCheckResult> checks = new ArrayList<>();
+        for (JsonNode item : suiteNode.path("checks")) {
+            checks.add(new TestCheckResult(
+                    item.path("name").asText(""),
+                    item.path("status").asText(""),
+                    item.path("detail").asText("")
+            ));
+        }
+        List<TestArtifactResult> artifacts = new ArrayList<>();
+        for (JsonNode item : suiteNode.path("artifacts")) {
+            artifacts.add(new TestArtifactResult(
+                    item.path("artifactType").asText(""),
+                    item.path("title").asText(""),
+                    item.path("fileName").asText("")
+            ));
+        }
+        return new TestSuiteResult(
+                suiteNode.path("suiteId").asText(""),
+                suiteNode.path("type").asText(""),
+                suiteNode.path("status").asText("SUCCESS"),
+                suiteNode.path("summary").asText(""),
+                checks,
+                artifacts,
+                readCommandResults(suiteNode.path("commandResults"))
+        );
+    }
+
+    private List<TestCommandResult> readCommandResults(JsonNode node) {
+        List<TestCommandResult> commandResults = new ArrayList<>();
+        if (node == null || !node.isArray()) {
+            return commandResults;
+        }
+        for (JsonNode item : node) {
+            commandResults.add(new TestCommandResult(
+                    item.path("command").asText(""),
+                    item.path("cwd").asText(""),
+                    item.hasNonNull("exitCode") ? item.get("exitCode").asInt() : null,
+                    item.path("stdout").asText(""),
+                    item.path("stderr").asText("")
+            ));
+        }
+        return commandResults;
+    }
+
+    private String resolveTestStatus(List<TestSuiteResult> suiteResults) {
+        for (TestSuiteResult suiteResult : suiteResults) {
+            if ("FAILED".equalsIgnoreCase(defaultString(suiteResult.status()))) {
+                return "FAILED";
+            }
+        }
+        return "SUCCESS";
+    }
+
+    private String buildTestSummary(List<TestSuiteResult> suiteResults) {
+        if (suiteResults == null || suiteResults.isEmpty()) {
+            return "当前未返回测试 suite 执行记录";
+        }
+        long skippedCount = suiteResults.stream().filter(item -> "SKIPPED".equalsIgnoreCase(defaultString(item.status()))).count();
+        long executedCount = suiteResults.stream().filter(item -> !"SKIPPED".equalsIgnoreCase(defaultString(item.status()))).count();
+        return "测试 suite 执行完成，实际执行 " + executedCount + " 个，跳过 " + skippedCount + " 个";
     }
 
     private void validateTestResult(TestStepResult result) {
         if (!"SUCCESS".equalsIgnoreCase(defaultString(result.status()))) {
             throw new IllegalStateException(hasText(result.summary()) ? result.summary().trim() : "执行测试失败");
         }
-        for (TestCommandResult commandResult : result.commandResults()) {
-            if (commandResult.exitCode() != null && commandResult.exitCode() != 0) {
-                throw new IllegalStateException(hasText(result.summary())
-                        ? result.summary().trim()
-                        : defaultString(commandResult.command()) + " 执行失败");
+        for (TestSuiteResult suiteResult : result.suiteResults()) {
+            if ("FAILED".equalsIgnoreCase(defaultString(suiteResult.status()))) {
+                throw new IllegalStateException(hasText(suiteResult.summary()) ? suiteResult.summary().trim() : defaultString(suiteResult.type()) + " 执行失败");
+            }
+            for (TestCommandResult commandResult : suiteResult.commandResults()) {
+                if (commandResult.exitCode() != null && commandResult.exitCode() != 0) {
+                    throw new IllegalStateException(hasText(suiteResult.summary())
+                            ? suiteResult.summary().trim()
+                            : defaultString(commandResult.command()) + " 执行失败");
+                }
             }
         }
-    }
-
-    private List<String> readStringList(JsonNode node) {
-        List<String> result = new ArrayList<>();
-        if (node == null || !node.isArray()) {
-            return result;
-        }
-        for (JsonNode item : node) {
-            result.add(item.asText(""));
-        }
-        return result;
     }
 
     private String buildTestLog(TestStepResult result) {
         StringBuilder builder = new StringBuilder();
-        for (TestCommandResult commandResult : result.commandResults()) {
-            builder.append("$ ").append(defaultString(commandResult.command())).append('\n')
-                    .append("cwd: ").append(defaultString(commandResult.cwd())).append('\n')
-                    .append("exitCode: ").append(commandResult.exitCode() == null ? "-" : commandResult.exitCode()).append("\n\n");
-            if (hasText(commandResult.stdout())) {
-                builder.append("[stdout]\n").append(commandResult.stdout().trim()).append("\n\n");
-            }
-            if (hasText(commandResult.stderr())) {
-                builder.append("[stderr]\n").append(commandResult.stderr().trim()).append("\n\n");
+        for (TestSuiteResult suiteResult : result.suiteResults()) {
+            builder.append("## ").append(defaultString(suiteResult.type())).append(" / ").append(defaultString(suiteResult.suiteId())).append('\n')
+                    .append("status: ").append(defaultString(suiteResult.status())).append('\n')
+                    .append("summary: ").append(defaultString(suiteResult.summary())).append("\n\n");
+            for (TestCommandResult commandResult : suiteResult.commandResults()) {
+                builder.append("$ ").append(defaultString(commandResult.command())).append('\n')
+                        .append("cwd: ").append(defaultString(commandResult.cwd())).append('\n')
+                        .append("exitCode: ").append(commandResult.exitCode() == null ? "-" : commandResult.exitCode()).append("\n\n");
+                if (hasText(commandResult.stdout())) {
+                    builder.append("[stdout]\n").append(commandResult.stdout().trim()).append("\n\n");
+                }
+                if (hasText(commandResult.stderr())) {
+                    builder.append("[stderr]\n").append(commandResult.stderr().trim()).append("\n\n");
+                }
             }
         }
+        if (builder.length() == 0 && hasText(result.rawOutput())) {
+            builder.append(result.rawOutput().trim());
+        }
         return builder.toString().trim();
+    }
+
+    private void appendSuiteChecks(StringBuilder builder, TestSuiteResult suiteResult) {
+        builder.append("#### 检查项\n\n");
+        if (suiteResult.checks() == null || suiteResult.checks().isEmpty()) {
+            builder.append("- 无\n\n");
+            return;
+        }
+        for (TestCheckResult check : suiteResult.checks()) {
+            builder.append("- ")
+                    .append(defaultString(check.name()))
+                    .append("：")
+                    .append(defaultString(check.status()));
+            if (hasText(check.detail())) {
+                builder.append("（").append(check.detail().trim()).append('）');
+            }
+            builder.append('\n');
+        }
+        builder.append('\n');
+    }
+
+    private void appendSuiteArtifacts(StringBuilder builder, TestSuiteResult suiteResult) {
+        builder.append("#### 产物\n\n");
+        if (suiteResult.artifacts() == null || suiteResult.artifacts().isEmpty()) {
+            builder.append("- 无\n\n");
+            return;
+        }
+        for (TestArtifactResult artifact : suiteResult.artifacts()) {
+            builder.append("- ")
+                    .append(defaultString(artifact.artifactType()))
+                    .append("：")
+                    .append(defaultString(artifact.title()));
+            if (hasText(artifact.fileName())) {
+                builder.append("（").append(artifact.fileName().trim()).append('）');
+            }
+            builder.append('\n');
+        }
+        builder.append('\n');
+    }
+
+    private void appendSuiteCommands(StringBuilder builder, TestSuiteResult suiteResult) {
+        builder.append("#### 命令结果\n\n");
+        if (suiteResult.commandResults() == null || suiteResult.commandResults().isEmpty()) {
+            builder.append("- 本 suite 未返回命令执行记录\n\n");
+            return;
+        }
+        for (int index = 0; index < suiteResult.commandResults().size(); index++) {
+            TestCommandResult commandResult = suiteResult.commandResults().get(index);
+            builder.append("##### 命令 ").append(index + 1).append('\n')
+                    .append("- 命令：`").append(defaultString(commandResult.command()).trim()).append("`\n")
+                    .append("- 执行目录：`").append(defaultString(commandResult.cwd()).trim()).append("`\n")
+                    .append("- 退出码：").append(commandResult.exitCode() == null ? "-" : commandResult.exitCode()).append("\n\n");
+            appendMarkdownCodeSection(builder, "###### ", "标准输出", commandResult.stdout(), "无");
+            appendMarkdownCodeSection(builder, "###### ", "标准错误", commandResult.stderr(), "无");
+        }
+    }
+
+    private void appendRawArtifacts(StringBuilder builder, List<TestRawArtifact> rawArtifacts) {
+        builder.append("## Sidecar 原始产物\n\n");
+        if (rawArtifacts == null || rawArtifacts.isEmpty()) {
+            builder.append("- 无\n");
+            return;
+        }
+        for (TestRawArtifact item : rawArtifacts) {
+            builder.append("- ")
+                    .append(defaultString(item.artifactType()))
+                    .append("：")
+                    .append(defaultString(item.title()));
+            if (hasText(item.fileName())) {
+                builder.append("（").append(item.fileName().trim()).append('）');
+            }
+            builder.append('\n');
+        }
     }
 
     /**
@@ -1480,19 +1916,39 @@ public class DevelopmentExecutionService {
         builder.append("# 执行测试结果\n\n")
                 .append("- 执行状态：").append(defaultString(result.status())).append('\n')
                 .append("- 结果摘要：").append(defaultString(result.summary())).append("\n\n");
-        if (result.commandResults().isEmpty()) {
-            builder.append("## 命令结果\n\n- 本次未返回命令执行记录\n");
+        if (result.suiteResults().isEmpty()) {
+            builder.append("## Suite 结果\n\n- 本次未返回 suite 执行记录\n");
+            appendMarkdownCodeSection(builder, "## ", "原始输出", result.rawOutput(), "暂无原始输出");
             return builder.toString().trim();
         }
-        builder.append("## 命令结果\n\n");
-        for (int index = 0; index < result.commandResults().size(); index++) {
-            TestCommandResult commandResult = result.commandResults().get(index);
-            builder.append("### 命令 ").append(index + 1).append('\n')
-                    .append("- 命令：`").append(defaultString(commandResult.command()).trim()).append("`\n")
-                    .append("- 执行目录：`").append(defaultString(commandResult.cwd()).trim()).append("`\n")
-                    .append("- 退出码：").append(commandResult.exitCode() == null ? "-" : commandResult.exitCode()).append("\n\n");
-            appendMarkdownCodeSection(builder, "#### ", "标准输出", commandResult.stdout(), "无");
-            appendMarkdownCodeSection(builder, "#### ", "标准错误", commandResult.stderr(), "无");
+        builder.append("## Suite 结果\n\n");
+        for (TestSuiteResult suiteResult : result.suiteResults()) {
+            builder.append("### ").append(defaultString(suiteResult.type())).append(" / ").append(defaultString(suiteResult.suiteId())).append('\n')
+                    .append("- 执行状态：").append(defaultString(suiteResult.status())).append('\n')
+                    .append("- 结果摘要：").append(defaultString(suiteResult.summary())).append("\n\n");
+            appendSuiteChecks(builder, suiteResult);
+            appendSuiteArtifacts(builder, suiteResult);
+            appendSuiteCommands(builder, suiteResult);
+        }
+        appendRawArtifacts(builder, result.rawArtifacts());
+        return builder.toString().trim();
+    }
+
+    private String buildSuiteResultMarkdown(TestStepResult result) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("# 测试 Suite 结果\n\n");
+        if (result.suiteResults().isEmpty()) {
+            builder.append("- 本次未返回 suite 执行记录\n");
+            appendMarkdownCodeSection(builder, "## ", "原始输出", result.rawOutput(), "暂无原始输出");
+            return builder.toString().trim();
+        }
+        for (TestSuiteResult suiteResult : result.suiteResults()) {
+            builder.append("## ").append(defaultString(suiteResult.type())).append(" / ").append(defaultString(suiteResult.suiteId())).append("\n\n")
+                    .append("- 执行状态：").append(defaultString(suiteResult.status())).append('\n')
+                    .append("- 结果摘要：").append(defaultString(suiteResult.summary())).append("\n\n");
+            appendSuiteChecks(builder, suiteResult);
+            appendSuiteArtifacts(builder, suiteResult);
+            appendSuiteCommands(builder, suiteResult);
         }
         return builder.toString().trim();
     }
@@ -1700,6 +2156,7 @@ public class DevelopmentExecutionService {
             String webUrl,
             String apiBaseUrl,
             String accessToken,
+            String testProfileJson,
             String commitSha,
             String structureMarkdown,
             String structureJson,
@@ -1807,10 +2264,78 @@ public class DevelopmentExecutionService {
     ) {
     }
 
-    private record TestStepResult(String status, String summary, List<TestCommandResult> commandResults, String rawOutput) {
+    /**
+     * TEST 步骤升级为 suite 驱动后，结果需要同时保留 suite 明细、sidecar 产物摘要和兼容聚合原文。
+     */
+    private record TestStepResult(
+            String status,
+            String summary,
+            List<TestSuiteResult> suiteResults,
+            List<TestRawArtifact> rawArtifacts,
+            String rawOutput
+    ) {
+    }
+
+    private record TestExecutionPlan(List<TestSuitePlan> suites) {
+    }
+
+    /**
+     * backend 只负责生成 suite 计划，不直接执行 sidecar；空字段交由 code-processing 在运行时补默认值。
+     */
+    private record TestSuitePlan(
+            String suiteId,
+            String type,
+            String status,
+            String summary,
+            String workingDir,
+            List<String> commands,
+            String packageManager,
+            String startCommand,
+            String baseUrl,
+            List<String> smokePaths,
+            String readySelector,
+            String healthPath,
+            List<TestHttpCheckPlan> httpChecks
+    ) {
+    }
+
+    private record TestProfileConfig(
+            String repoKind,
+            String workingDir,
+            String packageManager,
+            String startCommand,
+            String baseUrl,
+            List<String> smokePaths,
+            String readySelector,
+            String healthPath,
+            List<TestHttpCheckPlan> httpChecks
+    ) {
+    }
+
+    private record TestSuiteResult(
+            String suiteId,
+            String type,
+            String status,
+            String summary,
+            List<TestCheckResult> checks,
+            List<TestArtifactResult> artifacts,
+            List<TestCommandResult> commandResults
+    ) {
     }
 
     private record TestCommandResult(String command, String cwd, Integer exitCode, String stdout, String stderr) {
+    }
+
+    private record TestCheckResult(String name, String status, String detail) {
+    }
+
+    private record TestArtifactResult(String artifactType, String title, String fileName) {
+    }
+
+    private record TestRawArtifact(String artifactType, String title, String fileName) {
+    }
+
+    private record TestHttpCheckPlan(String name, String method, String path, Integer expectedStatus) {
     }
 
     private record FailureContext(ExecutionStepEntity failedStep, RuntimeException originalException, String reportFailureMessage) {

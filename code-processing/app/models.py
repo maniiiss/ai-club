@@ -343,6 +343,63 @@ class CodexExecutionContext(BaseModel):
         return str(value).strip()
 
 
+class HttpCheckPlan(BaseModel):
+    """服务烟测中的单条 HTTP 校验声明。"""
+
+    name: str = ""
+    method: str = "GET"
+    path: str = ""
+    expectedStatus: int = 200
+
+    @field_validator("name", "method", "path", mode="before")
+    @classmethod
+    def normalize_http_check_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class TestSuitePlan(BaseModel):
+    """开发执行 TEST 步骤中的单个 suite 计划。"""
+
+    suiteId: str = ""
+    type: str = ""
+    status: str = "PENDING"
+    summary: str = ""
+    workingDir: str = ""
+    commands: list[str] = Field(default_factory=list)
+    packageManager: str = ""
+    startCommand: str = ""
+    baseUrl: str = ""
+    smokePaths: list[str] = Field(default_factory=list)
+    readySelector: str = ""
+    healthPath: str = ""
+    httpChecks: list[HttpCheckPlan] = Field(default_factory=list)
+
+    @field_validator("suiteId", "type", "status", "summary", "workingDir", "packageManager", "startCommand", "baseUrl", "readySelector", "healthPath", mode="before")
+    @classmethod
+    def normalize_suite_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    @field_validator("commands", "smokePaths", mode="before")
+    @classmethod
+    def normalize_string_list(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        text = str(value).strip()
+        return [text] if text else []
+
+
+class TestExecutionPlan(BaseModel):
+    """TEST sidecar 的计划入口，兼容 backend 生成的多 suite JSON。"""
+
+    suites: list[TestSuitePlan] = Field(default_factory=list)
+
+
 class CodexExecutionRequest(BaseModel):
     """供 backend HTTP_API Agent 调用的 Codex 执行桥请求。"""
 
@@ -351,6 +408,7 @@ class CodexExecutionRequest(BaseModel):
     repository: CodexExecutionRepository
     execution: CodexExecutionContext
     testCommands: list[str] = Field(default_factory=list)
+    testPlan: TestExecutionPlan | None = None
     # 同一请求模型同时服务同步兜底接口和异步 start 接口；
     # 这里放宽上限给异步 runner 使用，同步接口会在 service 内再次收敛到 300 秒。
     timeoutSeconds: int = Field(default=270, ge=30, le=ASYNC_EXECUTION_TIMEOUT_LIMIT_SECONDS)
@@ -423,6 +481,7 @@ class CliExecutionRequest(BaseModel):
     repositories: list[CliExecutionRepository] = Field(default_factory=list)
     execution: CodexExecutionContext
     testCommands: list[str] = Field(default_factory=list)
+    testPlan: TestExecutionPlan | None = None
     timeoutSeconds: int = Field(default=270, ge=30, le=ASYNC_EXECUTION_TIMEOUT_LIMIT_SECONDS)
 
     @field_validator("systemPrompt", "input", mode="before")
