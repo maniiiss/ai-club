@@ -23,6 +23,7 @@ from app.services.execution_streaming_support import (
 from app.settings import settings
 
 SYNC_TIMEOUT_LIMIT_SECONDS = 300
+TERMINAL_RESULT_STATUSES = {"SUCCESS", "FAILED", "CANCELED"}
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,32 @@ def _clamp_sync_request_timeout(request: CodexExecutionRequest) -> CodexExecutio
     if timeout_seconds == request.timeoutSeconds:
         return request
     return request.model_copy(update={"timeoutSeconds": timeout_seconds})
+
+
+def _build_codex_cli_config_args() -> list[str]:
+    """
+    provider 未显式配置时，交给本机 Codex CLI 自己解析默认/自定义 provider，
+    避免平台把固定的 "codex" 覆盖到用户本地配置上。
+    """
+    command: list[str] = []
+    if settings.codex_model_provider:
+        command.extend(["-c", f'model_provider="{settings.codex_model_provider}"'])
+    if settings.codex_reasoning_effort:
+        command.extend(["-c", f'model_reasoning_effort="{settings.codex_reasoning_effort}"'])
+    return command
+
+
+def _format_process_command_for_log(
+    command: list[str] | str,
+    *,
+    omit_trailing_prompt: bool = False,
+) -> str:
+    if isinstance(command, str):
+        return command.strip()
+    display_args = [str(item) for item in command]
+    if omit_trailing_prompt and display_args:
+        display_args = display_args[:-1] + ["<提示词已省略>"]
+    return subprocess.list2cmdline(display_args).strip()
 
 
 def _launch_background_job(name: str, target: Callable[[], None]) -> None:
@@ -173,6 +200,7 @@ def _execute_implementation_streaming(
             payload["summary"] = _normalize_text(raw_output.get("summary")) or "Codex 执行失败"
         status = _normalize_status(payload.get("status"), default="SUCCESS")
         summary = _normalize_text(payload.get("summary")) or ("Codex 已完成仓库开发实现" if status == "SUCCESS" else "Codex 执行失败")
+        _emit_cli_result_event(batcher, "Codex CLI", payload)
         batcher.emit("step_summary_updated", summary=summary)
         batcher.emit("progress_changed", progress_percent=100 if status == "SUCCESS" else 90, summary=summary)
         batcher.flush()
@@ -582,10 +610,7 @@ def _run_codex_cli(
     command = [
         str(codex_cli),
         "exec",
-        "-c",
-        f'model_provider="{settings.codex_model_provider}"',
-        "-c",
-        f'model_reasoning_effort="{settings.codex_reasoning_effort}"',
+        *_build_codex_cli_config_args(),
         "-C",
         str(workspace.repo_dir),
         "--skip-git-repo-check",
@@ -597,7 +622,8 @@ def _run_codex_cli(
         str(output_path),
         prompt,
     ]
-    _append_log(workspace, f"调用 Codex CLI：{codex_cli}")
+    display_command = _format_process_command_for_log(command, omit_trailing_prompt=True)
+    _append_log(workspace, f"调用 Codex CLI：{display_command}")
     completed = subprocess.run(
         command,
         cwd=workspace.repo_dir,
@@ -637,10 +663,7 @@ def _run_codex_cli_streaming(
     command = [
         str(codex_cli),
         "exec",
-        "-c",
-        f'model_provider="{settings.codex_model_provider}"',
-        "-c",
-        f'model_reasoning_effort="{settings.codex_reasoning_effort}"',
+        *_build_codex_cli_config_args(),
         "-C",
         str(workspace.repo_dir),
         "--skip-git-repo-check",
@@ -652,13 +675,15 @@ def _run_codex_cli_streaming(
         str(output_path),
         prompt,
     ]
-    _append_log(workspace, f"调用 Codex CLI：{codex_cli}")
+    display_command = _format_process_command_for_log(command, omit_trailing_prompt=True)
+    _append_log(workspace, f"调用 Codex CLI：{display_command}")
     result = run_streaming_process(
         command,
         cwd=workspace.repo_dir,
         timeout_seconds=request.timeoutSeconds,
         batcher=batcher,
         command_label="Codex CLI",
+        display_command=display_command,
         workspace_log_file=workspace.log_file,
         stdout_file=stdout_log,
         stderr_file=stderr_log,
@@ -679,9 +704,12 @@ def _normalize_implementation_payload(
     base_commit: str,
     current_commit: str,
 ) -> dict[str, object]:
+    raw_status = _normalize_status(raw_output.get("status"), default="SUCCESS")
+    normalized_summary = _normalize_text(raw_output.get("summary"))
+    status = _normalize_terminal_status(raw_status, default="SUCCESS")
     payload = {
-        "status": _normalize_status(raw_output.get("status"), default="SUCCESS"),
-        "summary": _normalize_text(raw_output.get("summary")),
+        "status": status,
+        "summary": _build_terminal_status_summary(raw_status, normalized_summary),
         "changedFiles": changed_files,
         "commandsExecuted": _normalize_string_list(raw_output.get("commandsExecuted")),
         "log": _normalize_text(raw_output.get("log")),
@@ -699,6 +727,46 @@ def _normalize_implementation_payload(
     if not payload["summary"]:
         payload["summary"] = "Codex 已完成仓库开发实现"
     return payload
+
+
+def _emit_cli_result_event(
+    batcher: BackendEventBatcher,
+    runner_name: str,
+    payload: dict[str, object],
+) -> None:
+    preview = _build_cli_result_preview(payload)
+    if not preview:
+        return
+    batcher.emit(
+        "command_result",
+        current_command=runner_name,
+        summary=f"{runner_name} 已返回最终结果",
+        text=preview,
+    )
+    batcher.flush()
+
+
+def _build_cli_result_preview(payload: dict[str, object]) -> str:
+    if not payload:
+        return ""
+    preview: dict[str, object] = {}
+    for field in (
+        "status",
+        "summary",
+        "changedFiles",
+        "commandsExecuted",
+        "workBranch",
+        "commitSha",
+        "mergeRequestUrl",
+        "commandResults",
+    ):
+        value = payload.get(field)
+        if value in (None, "", [], {}):
+            continue
+        preview[field] = value
+    if not preview:
+        return ""
+    return json.dumps(preview, ensure_ascii=False, indent=2)
 
 
 def _build_implementation_log(workspace: DevelopmentExecutionWorkspace, codex_stdout: str, codex_stderr: str) -> str:
@@ -726,7 +794,9 @@ def _build_codex_prompt(request: CodexExecutionRequest) -> str:
 5. JSON 字段必须包含：status、summary、changedFiles、commandsExecuted、log、workBranch、commitSha、mergeRequestUrl。
 6. `workBranch`、`commitSha`、`mergeRequestUrl` 暂时没有值时必须返回 null，不要省略字段。
 7. changedFiles 只填写仓库相对路径；commandsExecuted 只记录你实际执行过的重要命令。
-8. 如果无法完成，请返回 status=FAILED，并在 summary/log 中写清阻塞原因。
+8. `status` 只能返回 `SUCCESS` 或 `FAILED`，绝对不要返回 `IN_PROGRESS`、`RUNNING`、`STARTED` 等中间状态。
+9. 必须等本次仓库开发真正完成后，再输出唯一一次最终 JSON；不要先输出阶段性 JSON。
+10. 如果无法完成，请返回 status=FAILED，并在 summary/log 中写清阻塞原因。
 
 补充上下文如下：
 {request.input}
@@ -739,7 +809,7 @@ def _schema_text_for_mode(mode: str) -> str:
             {
                 "type": "object",
                 "properties": {
-                    "status": {"type": "string"},
+                    "status": {"type": "string", "enum": ["SUCCESS", "FAILED"]},
                     "summary": {"type": "string"},
                     "commandResults": {
                         "type": "array",
@@ -767,7 +837,7 @@ def _schema_text_for_mode(mode: str) -> str:
         {
             "type": "object",
             "properties": {
-                "status": {"type": "string"},
+                "status": {"type": "string", "enum": ["SUCCESS", "FAILED"]},
                 "summary": {"type": "string"},
                 "changedFiles": {"type": "array", "items": {"type": "string"}},
                 "commandsExecuted": {"type": "array", "items": {"type": "string"}},
@@ -1139,6 +1209,24 @@ def _extract_json_object(text: str) -> dict[str, object]:
 def _normalize_status(value: object, default: str) -> str:
     text = _normalize_text(value).upper()
     return text or default
+
+
+def _normalize_terminal_status(value: object, default: str) -> str:
+    normalized = _normalize_status(value, default)
+    return normalized if normalized in TERMINAL_RESULT_STATUSES else "FAILED"
+
+
+def _build_terminal_status_summary(raw_status: str, summary: str) -> str:
+    normalized_status = _normalize_status(raw_status, "SUCCESS")
+    if normalized_status in TERMINAL_RESULT_STATUSES:
+        return summary
+    message = (
+        f"开发执行返回了非终态状态 {normalized_status}，"
+        "当前桥接只接受 SUCCESS/FAILED/CANCELED 作为最终结果，请仅在本步真正结束后输出最终 JSON"
+    )
+    if summary:
+        return f"{message}。模型原始摘要：{summary}"
+    return message
 
 
 def _normalize_text(value: object) -> str:

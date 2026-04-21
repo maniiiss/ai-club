@@ -87,6 +87,12 @@ def _launch_background_job(name: str, target) -> None:
     Thread(target=target, name=name, daemon=True).start()
 
 
+def _format_command_for_log(command: list[str] | str) -> str:
+    if isinstance(command, str):
+        return command.strip()
+    return subprocess.list2cmdline([str(item) for item in command]).strip()
+
+
 def _run_claude_plan_session(
     session_id: str,
     request: ClaudePlanningRequest,
@@ -356,8 +362,9 @@ def _run_claude_cli(request: ClaudePlanningRequest,
     for repo_path in repo_paths:
         command.extend(["--add-dir", str(repo_path)])
     prompt = _build_planning_prompt(request, repo_paths)
+    display_command = _format_command_for_log(command)
 
-    _append_log(workspace, f"调用 Claude CLI：{claude_cli}")
+    _append_log(workspace, f"调用 Claude CLI：{display_command}")
     # Windows 下通过 claude.ps1 间接启动 CLI 时，多行 prompt 作为命令行参数容易在 PowerShell 包装层丢失；
     # 这里统一改为通过 stdin 传入，保证 `claude -p` 在各平台都能稳定收到完整规划输入。
     completed = subprocess.run(
@@ -410,7 +417,8 @@ def _run_claude_cli_streaming(
     prompt = _build_planning_prompt(request, repo_paths)
     stdout_log = workspace.out_dir / "claude-stdout.log"
     stderr_log = workspace.out_dir / "claude-stderr.log"
-    _append_log(workspace, f"调用 Claude CLI：{claude_cli}")
+    display_command = _format_command_for_log(command)
+    _append_log(workspace, f"调用 Claude CLI：{display_command}")
     result = run_streaming_process(
         command,
         cwd=workspace.root,
@@ -418,6 +426,7 @@ def _run_claude_cli_streaming(
         timeout_seconds=request.timeoutSeconds,
         batcher=batcher,
         command_label="Claude CLI",
+        display_command=display_command,
         workspace_log_file=workspace.log_file,
         stdout_file=stdout_log,
         stderr_file=stderr_log,

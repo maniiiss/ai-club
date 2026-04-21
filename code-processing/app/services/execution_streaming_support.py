@@ -1,3 +1,4 @@
+import codecs
 import json
 import mimetypes
 import os
@@ -113,6 +114,7 @@ def run_streaming_process(
     timeout_seconds: int,
     batcher: BackendEventBatcher,
     command_label: str,
+    display_command: str | None = None,
     workspace_log_file: Path,
     stdout_file: Path | None = None,
     stderr_file: Path | None = None,
@@ -127,18 +129,15 @@ def run_streaming_process(
         stdin=subprocess.PIPE if stdin_text is not None else None,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
         shell=shell,
         env=env or os.environ.copy(),
-        bufsize=1,
     )
     if stdin_text is not None and process.stdin is not None:
-        process.stdin.write(stdin_text)
+        process.stdin.write(stdin_text.encode("utf-8"))
         process.stdin.close()
 
-    batcher.emit("command_started", current_command=command_label, summary=command_label)
+    current_command = (display_command or command_label).strip() or command_label
+    batcher.emit("command_started", current_command=current_command, summary=command_label)
     batcher.flush()
 
     queue: Queue[tuple[str, str]] = Queue()
@@ -174,15 +173,15 @@ def run_streaming_process(
 
         now = monotonic()
         if stdout_buffer and (_buffer_size(stdout_buffer) >= 4096 or now - last_flush >= 1):
-            batcher.emit("stdout_chunk", stream_kind="stdout", text="\n".join(stdout_buffer), current_command=command_label)
+            batcher.emit("stdout_chunk", stream_kind="stdout", text="".join(stdout_buffer), current_command=command_label)
             stdout_buffer = []
             last_flush = now
         if stderr_buffer and (_buffer_size(stderr_buffer) >= 4096 or now - last_flush >= 1):
-            batcher.emit("stderr_chunk", stream_kind="stderr", text="\n".join(stderr_buffer), current_command=command_label)
+            batcher.emit("stderr_chunk", stream_kind="stderr", text="".join(stderr_buffer), current_command=command_label)
             stderr_buffer = []
             last_flush = now
         if now - last_heartbeat >= 5:
-            batcher.emit("heartbeat", summary=f"执行中：{command_label}", current_command=command_label)
+            batcher.emit("heartbeat", summary=f"执行中：{command_label}", current_command=current_command)
             batcher.flush()
             last_heartbeat = now
 
@@ -190,14 +189,14 @@ def run_streaming_process(
             break
 
     if stdout_buffer:
-        batcher.emit("stdout_chunk", stream_kind="stdout", text="\n".join(stdout_buffer), current_command=command_label)
+        batcher.emit("stdout_chunk", stream_kind="stdout", text="".join(stdout_buffer), current_command=command_label)
     if stderr_buffer:
-        batcher.emit("stderr_chunk", stream_kind="stderr", text="\n".join(stderr_buffer), current_command=command_label)
+        batcher.emit("stderr_chunk", stream_kind="stderr", text="".join(stderr_buffer), current_command=command_label)
     batcher.flush()
 
     exit_code = process.wait()
-    stdout = "\n".join(stdout_collected).strip()
-    stderr = "\n".join(stderr_collected).strip()
+    stdout = "".join(stdout_collected).strip()
+    stderr = "".join(stderr_collected).strip()
     if stdout_file is not None and stdout and not stdout_file.exists():
         stdout_file.parent.mkdir(parents=True, exist_ok=True)
         stdout_file.write_text(stdout + "\n", encoding="utf-8")
@@ -209,6 +208,13 @@ def run_streaming_process(
         stderr = f"{stderr}\n{timeout_message}".strip()
         _append_workspace_log(workspace_log_file, timeout_message)
         exit_code = -1
+    finish_summary = (
+        f"{command_label} 超时结束（退出码 {exit_code}）"
+        if timed_out
+        else f"{command_label} 已结束（退出码 {exit_code}）"
+    )
+    batcher.emit("command_finished", current_command=current_command, summary=finish_summary)
+    batcher.flush()
     return StreamingProcessResult(stdout=stdout, stderr=stderr, exit_code=exit_code, timed_out=timed_out)
 
 
@@ -267,27 +273,102 @@ def _start_stream_reader(
     workspace_log_file: Path,
 ) -> None:
     def _reader() -> None:
+        target_handle = None
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        line_buffer: list[str] = []
+        pending_cr = [False]
         try:
+            if target_file is not None:
+                target_file.parent.mkdir(parents=True, exist_ok=True)
+                target_handle = target_file.open("a", encoding="utf-8")
             if stream is None:
                 return
-            for line in iter(stream.readline, ""):
-                text = line.rstrip("\n")
+            # Codex / Claude 新版本经常输出“已 flush 但暂时不换行”的片段，
+            # 如果继续用 readline() 会等到 EOF 才上报，前端就只剩首尾日志。
+            while True:
+                chunk = stream.read1(1024) if hasattr(stream, "read1") else stream.read(1024)
+                if not chunk:
+                    final_text = decoder.decode(b"", final=True)
+                    if final_text:
+                        _consume_stream_text(
+                            final_text,
+                            stream_kind=stream_kind,
+                            queue=queue,
+                            target_handle=target_handle,
+                            workspace_log_file=workspace_log_file,
+                            line_buffer=line_buffer,
+                            pending_cr=pending_cr,
+                        )
+                    break
+                text = decoder.decode(chunk)
                 if not text:
                     continue
-                if target_file is not None:
-                    target_file.parent.mkdir(parents=True, exist_ok=True)
-                    with target_file.open("a", encoding="utf-8") as handle:
-                        handle.write(text + "\n")
-                _append_workspace_log(workspace_log_file, f"[{stream_kind}] {text}")
-                queue.put((stream_kind, text))
+                _consume_stream_text(
+                    text,
+                    stream_kind=stream_kind,
+                    queue=queue,
+                    target_handle=target_handle,
+                    workspace_log_file=workspace_log_file,
+                    line_buffer=line_buffer,
+                    pending_cr=pending_cr,
+                )
         finally:
             try:
+                _flush_stream_line(stream_kind, line_buffer, workspace_log_file)
+                if target_handle is not None:
+                    target_handle.close()
                 if stream is not None:
                     stream.close()
             finally:
                 done_event.set()
 
     threading.Thread(target=_reader, daemon=True).start()
+
+
+def _consume_stream_text(
+    text: str,
+    *,
+    stream_kind: str,
+    queue: Queue[tuple[str, str]],
+    target_handle,
+    workspace_log_file: Path,
+    line_buffer: list[str],
+    pending_cr: list[bool],
+) -> None:
+    normalized_parts: list[str] = []
+    for char in text:
+        if pending_cr[0]:
+            pending_cr[0] = False
+            if char == "\n":
+                continue
+        if char == "\r":
+            _flush_stream_line(stream_kind, line_buffer, workspace_log_file)
+            normalized_parts.append("\n")
+            pending_cr[0] = True
+            continue
+        if char == "\n":
+            _flush_stream_line(stream_kind, line_buffer, workspace_log_file)
+            normalized_parts.append("\n")
+            continue
+        line_buffer.append(char)
+        normalized_parts.append(char)
+
+    normalized_text = "".join(normalized_parts)
+    if not normalized_text:
+        return
+    if target_handle is not None:
+        target_handle.write(normalized_text)
+        target_handle.flush()
+    queue.put((stream_kind, normalized_text))
+
+
+def _flush_stream_line(stream_kind: str, line_buffer: list[str], workspace_log_file: Path) -> None:
+    if not line_buffer:
+        return
+    text = "".join(line_buffer).strip()
+    line_buffer.clear()
+    if text:
+        _append_workspace_log(workspace_log_file, f"[{stream_kind}] {text}")
 
 
 def _append_workspace_log(path: Path, message: str) -> None:

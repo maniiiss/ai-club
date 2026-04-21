@@ -44,7 +44,7 @@ public class NotificationMessageEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content = "";
 
-    @Column(name = "biz_type", length = 40)
+    @Column(name = "biz_type", length = 80)
     private String bizType;
 
     @Column(name = "biz_id")

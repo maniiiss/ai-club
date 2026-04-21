@@ -328,6 +328,7 @@ def _run_claude_implementation_session(
             payload["summary"] = codex_service._normalize_text(raw_output.get("summary")) or "Claude Code 执行失败"
         status = codex_service._normalize_status(payload.get("status"), default="SUCCESS")
         summary = codex_service._normalize_text(payload.get("summary")) or ("Claude Code 已完成仓库开发实现" if status == "SUCCESS" else "Claude Code 执行失败")
+        codex_service._emit_cli_result_event(batcher, "Claude CLI", payload)
         batcher.emit("step_summary_updated", summary=summary)
         batcher.emit("progress_changed", progress_percent=100 if status == "SUCCESS" else 90, summary=summary)
         batcher.emit("step_finished", summary=summary, progress_percent=100 if status == "SUCCESS" else None)
@@ -361,10 +362,7 @@ def _run_codex_markdown_cli(request: CliExecutionRequest, workspace: CliMarkdown
     command = [
         str(codex_cli),
         "exec",
-        "-c",
-        f'model_provider="{settings.codex_model_provider}"',
-        "-c",
-        f'model_reasoning_effort="{settings.codex_reasoning_effort}"',
+        *codex_service._build_codex_cli_config_args(),
         "-C",
         str(workspace.root),
         "--skip-git-repo-check",
@@ -372,7 +370,8 @@ def _run_codex_markdown_cli(request: CliExecutionRequest, workspace: CliMarkdown
         "--dangerously-bypass-approvals-and-sandbox",
         _build_codex_markdown_prompt(request, repo_paths),
     ]
-    _append_markdown_log(workspace, f"调用 Codex CLI：{codex_cli}")
+    display_command = codex_service._format_process_command_for_log(command, omit_trailing_prompt=True)
+    _append_markdown_log(workspace, f"调用 Codex CLI：{display_command}")
     completed = subprocess.run(
         command,
         cwd=workspace.root,
@@ -406,10 +405,7 @@ def _run_codex_markdown_cli_streaming(
     command = [
         str(codex_cli),
         "exec",
-        "-c",
-        f'model_provider="{settings.codex_model_provider}"',
-        "-c",
-        f'model_reasoning_effort="{settings.codex_reasoning_effort}"',
+        *codex_service._build_codex_cli_config_args(),
         "-C",
         str(workspace.root),
         "--skip-git-repo-check",
@@ -417,13 +413,15 @@ def _run_codex_markdown_cli_streaming(
         "--dangerously-bypass-approvals-and-sandbox",
         _build_codex_markdown_prompt(request, repo_paths),
     ]
-    _append_markdown_log(workspace, f"调用 Codex CLI：{codex_cli}")
+    display_command = codex_service._format_process_command_for_log(command, omit_trailing_prompt=True)
+    _append_markdown_log(workspace, f"调用 Codex CLI：{display_command}")
     result = run_streaming_process(
         command,
         cwd=workspace.root,
         timeout_seconds=request.timeoutSeconds,
         batcher=batcher,
         command_label="Codex CLI",
+        display_command=display_command,
         workspace_log_file=workspace.log_file,
         stdout_file=stdout_log,
         stderr_file=stderr_log,
@@ -438,7 +436,8 @@ def _run_claude_markdown_cli(request: CliExecutionRequest, workspace: CliMarkdow
     claude_cli = claude_service._discover_claude_cli_path()
     command = _build_claude_markdown_command(request, claude_cli, repo_paths)
     prompt = _build_claude_markdown_prompt(request, repo_paths)
-    _append_markdown_log(workspace, f"调用 Claude CLI：{claude_cli}")
+    display_command = codex_service._format_process_command_for_log(command)
+    _append_markdown_log(workspace, f"调用 Claude CLI：{display_command}")
     completed = subprocess.run(
         command,
         cwd=workspace.root,
@@ -472,7 +471,8 @@ def _run_claude_markdown_cli_streaming(
     stderr_log = workspace.out_dir / "claude-stderr.log"
     command = _build_claude_markdown_command(request, claude_cli, repo_paths)
     prompt = _build_claude_markdown_prompt(request, repo_paths)
-    _append_markdown_log(workspace, f"调用 Claude CLI：{claude_cli}")
+    display_command = codex_service._format_process_command_for_log(command)
+    _append_markdown_log(workspace, f"调用 Claude CLI：{display_command}")
     result = run_streaming_process(
         command,
         cwd=workspace.root,
@@ -480,6 +480,7 @@ def _run_claude_markdown_cli_streaming(
         timeout_seconds=request.timeoutSeconds,
         batcher=batcher,
         command_label="Claude CLI",
+        display_command=display_command,
         workspace_log_file=workspace.log_file,
         stdout_file=stdout_log,
         stderr_file=stderr_log,
@@ -494,7 +495,8 @@ def _run_claude_json_cli(request: CliExecutionRequest, workspace) -> tuple[dict[
     claude_cli = claude_service._discover_claude_cli_path()
     command = _build_claude_json_command(claude_cli)
     prompt = _build_claude_implementation_prompt(request)
-    codex_service._append_log(workspace, f"调用 Claude CLI：{claude_cli}")
+    display_command = codex_service._format_process_command_for_log(command)
+    codex_service._append_log(workspace, f"调用 Claude CLI：{display_command}")
     completed = subprocess.run(
         command,
         cwd=workspace.repo_dir,
@@ -522,7 +524,8 @@ def _run_claude_json_cli_streaming(request: CliExecutionRequest, workspace, batc
     stderr_log = workspace.out_dir / "claude-stderr.log"
     command = _build_claude_json_command(claude_cli)
     prompt = _build_claude_implementation_prompt(request)
-    codex_service._append_log(workspace, f"调用 Claude CLI：{claude_cli}")
+    display_command = codex_service._format_process_command_for_log(command)
+    codex_service._append_log(workspace, f"调用 Claude CLI：{display_command}")
     result = run_streaming_process(
         command,
         cwd=workspace.repo_dir,
@@ -530,6 +533,7 @@ def _run_claude_json_cli_streaming(request: CliExecutionRequest, workspace, batc
         timeout_seconds=request.timeoutSeconds,
         batcher=batcher,
         command_label="Claude CLI",
+        display_command=display_command,
         workspace_log_file=workspace.log_file,
         stdout_file=stdout_log,
         stderr_file=stderr_log,
@@ -679,7 +683,9 @@ def _build_claude_implementation_prompt(request: CliExecutionRequest) -> str:
 5. JSON 字段必须包含：status、summary、changedFiles、commandsExecuted、log、workBranch、commitSha、mergeRequestUrl。
 6. `workBranch`、`commitSha`、`mergeRequestUrl` 暂时没有值时必须返回 null，不要省略字段。
 7. changedFiles 只填写仓库相对路径；commandsExecuted 只记录你实际执行过的重要命令。
-8. 如果无法完成，请返回 status=FAILED，并在 summary/log 中写清阻塞原因。
+8. `status` 只能返回 `SUCCESS` 或 `FAILED`，绝对不要返回 `IN_PROGRESS`、`RUNNING`、`STARTED` 等中间状态。
+9. 必须等本次仓库开发真正完成后，再输出唯一一次最终 JSON；不要先输出阶段性 JSON。
+10. 如果无法完成，请返回 status=FAILED，并在 summary/log 中写清阻塞原因。
 
 补充上下文如下：
 {request.input}

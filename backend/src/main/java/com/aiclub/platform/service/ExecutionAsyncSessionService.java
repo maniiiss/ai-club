@@ -223,7 +223,9 @@ public class ExecutionAsyncSessionService {
             case "REPO_STRUCTURING" -> 900;
             case "IMPLEMENT" -> 3600;
             case "TEST" -> 2400;
-            case "PLAN", "REPORT", "REVIEW", "TEST_DESIGN", "AD_HOC_RUN" -> 600;
+            // 多仓执行规划需要先完成 clone、结构化理解和跨仓梳理，10 分钟在真实仓库下容易不够。
+            case "PLAN" -> 1800;
+            case "REPORT", "REVIEW", "TEST_DESIGN", "AD_HOC_RUN" -> 600;
             default -> 600;
         };
     }

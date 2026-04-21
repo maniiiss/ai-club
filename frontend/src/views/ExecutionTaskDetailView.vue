@@ -182,14 +182,14 @@
                     :model-value="displayArtifactText(artifact) || '-'"
                   />
                 </div>
-                <template v-else-if="isDisplayArtifactLog(artifact)">
+                <template v-else-if="isDisplayArtifactCollapsibleGroup(artifact)">
                   <div class="execution-artifact-log-toggle">
-                    <div class="execution-artifact-log-hint">日志预览默认收起，展开后仅展示尾部内容，完整日志请下载。</div>
+                    <div class="execution-artifact-log-hint">{{ displayArtifactGroupHint(artifact) }}</div>
                     <button
                       type="button"
                       class="execution-artifact-toggle-button"
-                      :aria-label="isDisplayArtifactExpanded(artifact) ? '收起日志预览' : '展开日志预览'"
-                      :title="isDisplayArtifactExpanded(artifact) ? '收起日志预览' : '展开日志预览'"
+                      :aria-label="isDisplayArtifactExpanded(artifact) ? `收起${displayArtifactTitle(artifact)}预览` : `展开${displayArtifactTitle(artifact)}预览`"
+                      :title="isDisplayArtifactExpanded(artifact) ? `收起${displayArtifactTitle(artifact)}预览` : `展开${displayArtifactTitle(artifact)}预览`"
                       @click="toggleDisplayArtifactPreview(artifact)"
                     >
                       <el-icon>
@@ -199,32 +199,66 @@
                     </button>
                   </div>
                   <div v-if="isDisplayArtifactExpanded(artifact)" class="execution-artifact-log-group">
-                    <section
-                      v-for="logArtifact in artifact.items"
-                      :key="logArtifact.id"
-                      class="execution-artifact-log-entry"
-                    >
-                      <div class="execution-artifact-log-entry-head">
-                        <div class="execution-artifact-log-entry-title">
-                          <span v-if="artifactStepLabel(logArtifact)" class="execution-artifact-step-name">
-                            {{ artifactStepLabel(logArtifact) }}
-                          </span>
-                          <strong>{{ logArtifact.title }}</strong>
+                    <template v-if="isDisplayArtifactLog(artifact)">
+                      <section
+                        v-for="logArtifact in artifact.items"
+                        :key="logArtifact.id"
+                        class="execution-artifact-log-entry"
+                      >
+                        <div class="execution-artifact-log-entry-head">
+                          <div class="execution-artifact-log-entry-title">
+                            <span v-if="artifactStepLabel(logArtifact)" class="execution-artifact-step-name">
+                              {{ artifactStepLabel(logArtifact) }}
+                            </span>
+                            <strong>{{ logArtifact.title }}</strong>
+                          </div>
+                          <el-link
+                            v-if="logArtifact.contentRef"
+                            type="primary"
+                            @click.prevent="handleArtifactDownload(logArtifact)"
+                          >
+                            下载产物
+                          </el-link>
                         </div>
-                        <el-link
-                          v-if="logArtifact.contentRef"
-                          type="primary"
-                          @click.prevent="handleArtifactDownload(logArtifact)"
-                        >
-                          下载产物
-                        </el-link>
-                      </div>
-                      <pre>{{ previewLongText(logArtifact.contentText || '-', 3000) }}</pre>
-                    </section>
+                        <pre>{{ previewLongText(logArtifact.contentText || '-', 3000) }}</pre>
+                      </section>
+                    </template>
+                    <template v-else>
+                      <section
+                        v-for="structuringArtifact in artifact.items"
+                        :key="structuringArtifact.id"
+                        class="execution-artifact-log-entry"
+                      >
+                        <div class="execution-artifact-log-entry-head">
+                          <div class="execution-artifact-log-entry-title">
+                            <span v-if="artifactStepLabel(structuringArtifact)" class="execution-artifact-step-name">
+                              {{ artifactStepLabel(structuringArtifact) }}
+                            </span>
+                            <strong>{{ structuringArtifact.title }}</strong>
+                          </div>
+                          <el-link
+                            v-if="structuringArtifact.contentRef"
+                            type="primary"
+                            @click.prevent="handleArtifactDownload(structuringArtifact)"
+                          >
+                            下载产物
+                          </el-link>
+                        </div>
+                        <div v-if="isMarkdownArtifact(structuringArtifact)" class="execution-artifact-markdown">
+                          <MdPreview
+                            :editor-id="`execution-artifact-preview-${structuringArtifact.id}`"
+                            language="zh-CN"
+                            preview-theme="github"
+                            :model-value="structuringArtifact.contentText || '-'"
+                          />
+                        </div>
+                        <pre v-else>{{ previewLongText(structuringArtifact.contentText || '-') }}</pre>
+                      </section>
+                    </template>
                   </div>
                 </template>
                 <pre v-else>{{ previewLongText(displayArtifactText(artifact) || '-') }}</pre>
-                <div v-if="!isDisplayArtifactLog(artifact)" class="execution-artifact-foot">
+                <div v-if="!isDisplayArtifactCollapsibleGroup(artifact)" class="execution-artifact-foot">
                   <span v-if="displayArtifactWriteback(artifact)">已回写工作项</span>
                   <el-link v-if="displayArtifactContentRef(artifact)" type="primary" @click.prevent="handleDisplayArtifactDownload(artifact)">下载产物</el-link>
                 </div>
@@ -411,6 +445,7 @@ const quickMergeResult = ref<GitlabCreateMergeRequestResultItem | null>(null)
 type DisplayArtifactItem =
   | { key: string; kind: 'artifact'; artifact: ExecutionArtifactItem }
   | { key: string; kind: 'log-group'; items: ExecutionArtifactItem[] }
+  | { key: string; kind: 'structuring-group'; items: ExecutionArtifactItem[] }
 
 interface QuickMergeForm {
   bindingId: number | null
@@ -591,10 +626,16 @@ watch(
   { immediate: true }
 )
 
+/**
+ * 执行产物里把“日志”和“仓库结构化”都收敛成折叠组，
+ * 避免多仓场景下首屏被大量预览内容撑满，用户先看结果概览，再按需展开细节。
+ */
 const displayArtifacts = computed<DisplayArtifactItem[]>(() => {
   const artifacts = runDetail.value?.artifacts || []
   const normalArtifacts: DisplayArtifactItem[] = []
   const logArtifacts: ExecutionArtifactItem[] = []
+  const structuringArtifacts: ExecutionArtifactItem[] = []
+  let structuringInsertIndex: number | null = null
   for (const artifact of artifacts) {
     if (shouldHideArtifactFromDisplay(artifact, artifacts)) {
       continue
@@ -603,7 +644,21 @@ const displayArtifacts = computed<DisplayArtifactItem[]>(() => {
       logArtifacts.push(artifact)
       continue
     }
+    if (isStructuringArtifact(artifact)) {
+      if (structuringInsertIndex == null) {
+        structuringInsertIndex = normalArtifacts.length
+      }
+      structuringArtifacts.push(artifact)
+      continue
+    }
     normalArtifacts.push({ key: `artifact-${artifact.id}`, kind: 'artifact', artifact })
+  }
+  if (structuringArtifacts.length) {
+    normalArtifacts.splice(structuringInsertIndex ?? normalArtifacts.length, 0, {
+      key: 'structuring-group',
+      kind: 'structuring-group',
+      items: structuringArtifacts
+    })
   }
   if (logArtifacts.length) {
     normalArtifacts.push({ key: 'log-group', kind: 'log-group', items: logArtifacts })
@@ -654,6 +709,9 @@ const isMarkdownArtifact = (artifact: ExecutionArtifactItem) =>
 
 const isLogArtifact = (artifact: ExecutionArtifactItem) =>
   ['STEP_RAW_LOG', 'STEP_STDOUT_LOG', 'STEP_STDERR_LOG'].includes(artifact.artifactType) || artifact.artifactType.endsWith('_LOG')
+
+const isStructuringArtifact = (artifact: ExecutionArtifactItem) =>
+  artifact.artifactType.startsWith('REPO_STRUCTURE_') || artifact.artifactType.startsWith('CROSS_REPO_CONTEXT_')
 
 /**
  * 新版本会同时沉淀 Markdown 与 JSON 结果：
@@ -709,7 +767,12 @@ const isInstallationArtifact = (artifact: ExecutionArtifactItem) => {
   return ['安装', 'install', '依赖', '部署环境', '环境准备', 'setup'].some((keyword) => stepName.includes(keyword.toLowerCase()))
 }
 
+const isDisplayArtifactCollapsibleGroup = (artifact: DisplayArtifactItem) =>
+  artifact.kind === 'log-group' || artifact.kind === 'structuring-group'
+
 const isDisplayArtifactLog = (artifact: DisplayArtifactItem) => artifact.kind === 'log-group'
+
+const isDisplayArtifactStructuring = (artifact: DisplayArtifactItem) => artifact.kind === 'structuring-group'
 
 const isDisplayArtifactMarkdown = (artifact: DisplayArtifactItem) =>
   artifact.kind === 'artifact' && isMarkdownArtifact(artifact.artifact)
@@ -739,8 +802,11 @@ const buildArtifactStepTitlePrefixes = (stepName: string) => {
  * “生成修复计划 / 修复计划 Markdown”这类重复信息。
  */
 const displayArtifactTitle = (artifact: DisplayArtifactItem) => {
-  if (artifact.kind !== 'artifact') {
+  if (artifact.kind === 'log-group') {
     return '日志'
+  }
+  if (artifact.kind === 'structuring-group') {
+    return '仓库结构化'
   }
   const rawTitle = String(artifact.artifact.title || '').trim()
   const stepLabel = String(artifactStepLabel(artifact.artifact) || '').trim()
@@ -767,7 +833,16 @@ const displayArtifactTitle = (artifact: DisplayArtifactItem) => {
 const displayArtifactText = (artifact: DisplayArtifactItem) => (artifact.kind === 'artifact' ? artifact.artifact.contentText : '')
 
 const displayArtifactStepLabel = (artifact: DisplayArtifactItem) =>
-  artifact.kind === 'artifact' ? artifactStepLabel(artifact.artifact) : '已合并多个日志产物'
+  artifact.kind === 'artifact'
+    ? artifactStepLabel(artifact.artifact)
+    : isDisplayArtifactLog(artifact)
+      ? '已合并多个日志产物'
+      : '已合并多个仓库结构化产物'
+
+const displayArtifactGroupHint = (artifact: DisplayArtifactItem) =>
+  isDisplayArtifactStructuring(artifact)
+    ? '仓库结构化默认收起，展开后可查看单仓结构摘要与跨仓上下文，完整产物请下载。'
+    : '日志预览默认收起，展开后仅展示尾部内容，完整日志请下载。'
 
 const displayArtifactWriteback = (artifact: DisplayArtifactItem) =>
   artifact.kind === 'artifact' ? artifact.artifact.workItemWriteback : false
@@ -782,7 +857,7 @@ const displayArtifactExpandKey = (artifact: DisplayArtifactItem) =>
   artifact.kind === 'artifact' ? `artifact-${artifact.artifact.id}` : artifact.key
 
 const isDisplayArtifactExpanded = (artifact: DisplayArtifactItem) =>
-  !isDisplayArtifactLog(artifact) || Boolean(expandedArtifactPreviewMap.value[displayArtifactExpandKey(artifact)])
+  !isDisplayArtifactCollapsibleGroup(artifact) || Boolean(expandedArtifactPreviewMap.value[displayArtifactExpandKey(artifact)])
 
 const toggleArtifactPreview = (artifactId: number) => {
   expandedArtifactPreviewMap.value = {
@@ -1232,11 +1307,50 @@ const appendTailLog = (existingText: string | null | undefined, incomingText: st
     .split('\n')
     .filter((line) => line.trim())
   const nextLines = nextText.split('\n').filter((line) => line.trim())
-  const merged = [...existingLines, ...nextLines]
+  const merged = [...existingLines]
+  for (const line of nextLines) {
+    if (merged[merged.length - 1] === line) {
+      continue
+    }
+    merged.push(line)
+  }
   while (merged.length > 200) {
     merged.shift()
   }
   return merged.join('\n')
+}
+
+/**
+ * 最近尾日志希望在 runner 真正输出 stdout/stderr 之前也能持续滚动，
+ * 因此把关键流式状态事件一起折叠成可读日志行展示给用户。
+ */
+const buildTailLogChunkFromEvent = (event: ExecutionStreamEvent) => {
+  const normalizedSummary = String(event.summary || '').trim()
+  const normalizedCommand = String(event.currentCommand || '').trim()
+  const normalizedText = String(event.text || '').trim()
+  if (event.eventType === 'stdout_chunk' || event.eventType === 'stderr_chunk') {
+    return event.text || null
+  }
+  if (event.eventType === 'command_started' && normalizedCommand) {
+    return `[命令开始] ${normalizedCommand}`
+  }
+  if (event.eventType === 'command_finished' && normalizedSummary) {
+    return normalizedCommand
+      ? `[命令完成] ${normalizedSummary}\n${normalizedCommand}`
+      : `[命令完成] ${normalizedSummary}`
+  }
+  if (event.eventType === 'command_result') {
+    if (normalizedText) {
+      return `[CLI返回]\n${normalizedText}`
+    }
+    if (normalizedSummary) {
+      return `[CLI返回] ${normalizedSummary}`
+    }
+  }
+  if (['step_started', 'step_summary_updated', 'step_finished'].includes(event.eventType) && normalizedSummary) {
+    return `[系统] ${normalizedSummary}`
+  }
+  return null
 }
 
 const inferStepNameFromEvent = (event: ExecutionStreamEvent) => {
@@ -1280,8 +1394,8 @@ const ensureStepFromStreamEvent = (event: ExecutionStreamEvent) => {
     lastEventId: event.id || null,
     lastEventAt: event.createdAt || null,
     lastHeartbeatAt: event.eventType === 'heartbeat' ? event.createdAt || null : null,
-    tailLogText: event.text || null,
-    tailLogLineCount: event.text ? event.text.split('\n').filter((line) => line.trim()).length : null,
+    tailLogText: buildTailLogChunkFromEvent(event),
+    tailLogLineCount: buildTailLogChunkFromEvent(event)?.split('\n').filter((line) => line.trim()).length || null,
     hasLiveStream: true,
     inputSnapshot: '',
     outputSnapshot: null,
@@ -1390,8 +1504,9 @@ const applyExecutionStreamEvent = (event: ExecutionStreamEvent) => {
   if (event.eventType === 'heartbeat') {
     step.lastHeartbeatAt = event.createdAt || step.lastHeartbeatAt
   }
-  if (event.eventType === 'stdout_chunk' || event.eventType === 'stderr_chunk') {
-    step.tailLogText = appendTailLog(step.tailLogText, event.text)
+  const tailLogChunk = buildTailLogChunkFromEvent(event)
+  if (tailLogChunk) {
+    step.tailLogText = appendTailLog(step.tailLogText, tailLogChunk)
     step.tailLogLineCount = step.tailLogText ? step.tailLogText.split('\n').length : 0
   }
   if (event.eventType === 'step_started') {

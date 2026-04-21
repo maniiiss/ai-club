@@ -165,4 +165,14 @@ class ExecutionAsyncSessionServiceTests {
         assertThat(task.getStatus()).isEqualTo("CANCELED");
         verify(executionEventService, never()).recordStepFinished(task, run, step, "迟到回调");
     }
+
+    /**
+     * 开发执行的 PLAN 会串行处理多仓 clone 与跨仓规划，预算需要明显高于普通 Markdown 类步骤，
+     * 避免 Claude 规划尚未结束就被平台等待线程提前判超时。
+     */
+    @Test
+    void shouldGivePlanStepMoreRuntimeBudgetThanDefaultMarkdownSteps() {
+        assertThat(executionAsyncSessionService.maxRuntimeSeconds("PLAN")).isEqualTo(1800);
+        assertThat(executionAsyncSessionService.maxRuntimeSeconds("REPORT")).isEqualTo(600);
+    }
 }

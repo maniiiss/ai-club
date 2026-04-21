@@ -45,6 +45,9 @@ class TaskNotificationIntegrationTests {
     private TaskRepository taskRepository;
 
     @Autowired
+    private NotificationService notificationService;
+
+    @Autowired
     private NotificationMessageRepository notificationMessageRepository;
 
     @Autowired
@@ -166,6 +169,34 @@ class TaskNotificationIntegrationTests {
         TaskEntity secondOverdueTask = taskRepository.findById(created.id()).orElseThrow();
         assertThat(secondOverdueTask.getOverdueNotifiedAt()).isNotNull();
         assertThat(findNotificationsByBizType(TaskNotificationService.BIZ_TYPE_TASK_OVERDUE)).hasSize(2);
+    }
+
+    /**
+     * 执行中心的规划确认通知使用较长的 bizType 语义码，
+     * 这里直接落库验证长度扩容已经生效，避免 mock 测试通过但数据库写入失败。
+     */
+    @Test
+    void shouldPersistLongExecutionNotificationBizType() {
+        UserEntity recipient = createUser("task-notify-long-biz-type", "长编码接收人");
+
+        notificationService.sendToUser(
+                recipient.getId(),
+                NotificationService.TYPE_TASK,
+                NotificationService.LEVEL_INFO,
+                "开发执行待确认：示例任务",
+                "执行规划已生成，请前往执行详情查看、编辑并确认继续。",
+                "/tasks/999",
+                "DEVELOPMENT_EXECUTION_PLAN_CONFIRMATION_REQUIRED",
+                999L
+        );
+
+        assertThat(findNotificationsByBizType("DEVELOPMENT_EXECUTION_PLAN_CONFIRMATION_REQUIRED"))
+                .hasSize(1)
+                .allSatisfy(item -> {
+                    assertThat(item.getRecipientUser().getId()).isEqualTo(recipient.getId());
+                    assertThat(item.getBizType()).isEqualTo("DEVELOPMENT_EXECUTION_PLAN_CONFIRMATION_REQUIRED");
+                    assertThat(item.getActionUrl()).isEqualTo("/tasks/999");
+                });
     }
 
     /**
