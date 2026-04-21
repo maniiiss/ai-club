@@ -428,6 +428,46 @@ class CodexExecutionServiceTests(unittest.TestCase):
         events = [event for _, payload in captured_calls for event in payload["events"]]
         self.assertIn("command_started", [event["eventType"] for event in events])
 
+    def test_should_stream_partial_stdout_before_newline(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace_dir = Path(temp_dir)
+            workspace_log = workspace_dir / "workspace.log"
+            captured_calls: list[tuple[str, dict[str, object]]] = []
+            batcher = BackendEventBatcher("session-partial")
+            command = [
+                sys.executable,
+                "-c",
+                (
+                    "import sys,time;"
+                    "sys.stdout.write('progress 1 ');sys.stdout.flush();"
+                    "time.sleep(1.2);"
+                    "sys.stdout.write('progress 2 ');sys.stdout.flush();"
+                    "time.sleep(1.2);"
+                    "sys.stdout.write('done');sys.stdout.flush()"
+                ),
+            ]
+
+            with patch(
+                "app.services.execution_streaming_support._post_backend_json",
+                side_effect=lambda path, payload, **kwargs: captured_calls.append((path, payload)),
+            ):
+                result = run_streaming_process(
+                    command,
+                    cwd=workspace_dir,
+                    timeout_seconds=20,
+                    batcher=batcher,
+                    command_label="partial-command",
+                    workspace_log_file=workspace_log,
+                )
+
+        self.assertEqual(0, result.exit_code)
+        self.assertEqual("progress 1 progress 2 done", result.stdout)
+        events = [event for _, payload in captured_calls for event in payload["events"]]
+        stdout_events = [event for event in events if event["eventType"] == "stdout_chunk"]
+        self.assertGreaterEqual(len(stdout_events), 2)
+        self.assertIn("progress 1", stdout_events[0]["text"])
+        self.assertEqual("command_finished", events[-1]["eventType"])
+
 
 if __name__ == "__main__":
     unittest.main()
