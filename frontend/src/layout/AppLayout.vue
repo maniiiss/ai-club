@@ -1036,6 +1036,7 @@ const NOTIFICATION_BIZ_TYPE_LABELS: Record<string, string> = {
   GITLAB_BRANCH_BEHIND: '分支落后提醒',
   GITLAB_AUTO_MERGE_LOG: '合并请求',
   DEVELOPMENT_EXECUTION_COMPLETED: '开发执行完成',
+  DEVELOPMENT_EXECUTION_PLAN_CONFIRM: '开发执行待确认',
   SYSTEM_ANNOUNCEMENT: '系统公告'
 }
 
@@ -1074,6 +1075,7 @@ const resolveNotificationContextTone = (item: NotificationItem) => {
   if (bizKey === 'CHANGE_REQUEST') return 'warning'
   if (bizKey === 'TASK_UNASSIGNED' || bizKey === 'TASK_OVERDUE' || bizKey === 'GITLAB_BRANCH_BEHIND') return 'warning'
   if (bizKey === 'TASK_COMMENT') return 'info'
+  if (bizKey === 'DEVELOPMENT_EXECUTION_PLAN_CONFIRM') return 'warning'
   if (bizKey === 'DEVELOPMENT_EXECUTION_COMPLETED') return 'secondary'
   if (bizKey === 'TASK_ASSIGNED' || bizKey === 'TASK_STATUS_CHANGED' || bizKey === 'TASK_COLLABORATOR_ADDED') return 'secondary'
   if (bizKey === 'GITLAB_MERGED' || bizKey === 'GITLAB_AI_REJECTED' || bizKey === 'GITLAB_AUTO_MERGE_LOG') return 'tertiary'

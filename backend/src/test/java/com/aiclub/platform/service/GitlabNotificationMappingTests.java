@@ -1,6 +1,7 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
@@ -99,6 +100,7 @@ class GitlabNotificationMappingTests {
                 executionTaskService,
                 repositoryScanClientService,
                 repositoryScanRulesetService,
+                new ObjectMapper(),
                 "http://gitlab.example.com/api/v4"
         );
     }

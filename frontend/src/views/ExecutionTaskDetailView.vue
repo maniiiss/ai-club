@@ -120,8 +120,8 @@
               :timestamp="step.startedAt || '-'"
             >
               <div class="execution-step-log">
-                <div class="execution-step-log-head">
-                  <strong>{{ step.stepNo }}. {{ step.stepName }}</strong>
+                  <div class="execution-step-log-head">
+                    <strong>{{ step.stepNo }}. {{ displayStepName(step) }}</strong>
                   <el-tag size="small" :type="statusTagType(step.status)">{{ statusLabel(step.status) }}</el-tag>
                 </div>
                 <div class="execution-step-log-agent">Agent：{{ step.agentName || '-' }}</div>
@@ -174,7 +174,35 @@
                     <strong>{{ displayArtifactTitle(artifact) }}</strong>
                   </div>
                 </div>
-                <div v-if="isDisplayArtifactMarkdown(artifact)" class="execution-artifact-markdown">
+                <template v-if="isDisplayArtifactStructuredExecution(artifact)">
+                  <div class="execution-artifact-log-toggle">
+                    <div class="execution-artifact-log-hint">仓库结构化执行产物默认收起，展开后展示预览，完整内容可下载。</div>
+                    <button
+                      type="button"
+                      class="execution-artifact-toggle-button"
+                      :aria-label="isDisplayArtifactExpanded(artifact) ? '收起执行产物预览' : '展开执行产物预览'"
+                      :title="isDisplayArtifactExpanded(artifact) ? '收起执行产物预览' : '展开执行产物预览'"
+                      @click="toggleDisplayArtifactPreview(artifact)"
+                    >
+                      <el-icon>
+                        <ArrowDown v-if="isDisplayArtifactExpanded(artifact)" />
+                        <ArrowRight v-else />
+                      </el-icon>
+                    </button>
+                  </div>
+                  <div v-if="isDisplayArtifactExpanded(artifact)">
+                    <div v-if="isDisplayArtifactMarkdown(artifact)" class="execution-artifact-markdown">
+                      <MdPreview
+                        :editor-id="`execution-artifact-preview-${artifact.key}`"
+                        language="zh-CN"
+                        preview-theme="github"
+                        :model-value="displayArtifactText(artifact) || '-'"
+                      />
+                    </div>
+                    <pre v-else>{{ previewLongText(displayArtifactText(artifact) || '-') }}</pre>
+                  </div>
+                </template>
+                <div v-else-if="isDisplayArtifactMarkdown(artifact)" class="execution-artifact-markdown">
                   <MdPreview
                     :editor-id="`execution-artifact-preview-${artifact.key}`"
                     language="zh-CN"
@@ -182,14 +210,23 @@
                     :model-value="displayArtifactText(artifact) || '-'"
                   />
                 </div>
-                <template v-else-if="isDisplayArtifactCollapsibleGroup(artifact)">
+                <div v-else-if="isDisplayArtifactImage(artifact)" class="execution-artifact-image-shell">
+                  <img
+                    v-if="displayArtifactImageUrl(artifact)"
+                    :src="displayArtifactImageUrl(artifact)"
+                    :alt="displayArtifactTitle(artifact)"
+                    class="execution-artifact-image"
+                  />
+                  <div v-else class="execution-artifact-image-placeholder">截图预览加载中，请稍候...</div>
+                </div>
+                <template v-else-if="isDisplayArtifactLog(artifact)">
                   <div class="execution-artifact-log-toggle">
-                    <div class="execution-artifact-log-hint">{{ displayArtifactGroupHint(artifact) }}</div>
+                    <div class="execution-artifact-log-hint">日志预览默认收起，展开后仅展示尾部内容，完整日志请下载。</div>
                     <button
                       type="button"
                       class="execution-artifact-toggle-button"
-                      :aria-label="isDisplayArtifactExpanded(artifact) ? `收起${displayArtifactTitle(artifact)}预览` : `展开${displayArtifactTitle(artifact)}预览`"
-                      :title="isDisplayArtifactExpanded(artifact) ? `收起${displayArtifactTitle(artifact)}预览` : `展开${displayArtifactTitle(artifact)}预览`"
+                      :aria-label="isDisplayArtifactExpanded(artifact) ? '收起日志预览' : '展开日志预览'"
+                      :title="isDisplayArtifactExpanded(artifact) ? '收起日志预览' : '展开日志预览'"
                       @click="toggleDisplayArtifactPreview(artifact)"
                     >
                       <el-icon>
@@ -199,66 +236,32 @@
                     </button>
                   </div>
                   <div v-if="isDisplayArtifactExpanded(artifact)" class="execution-artifact-log-group">
-                    <template v-if="isDisplayArtifactLog(artifact)">
-                      <section
-                        v-for="logArtifact in artifact.items"
-                        :key="logArtifact.id"
-                        class="execution-artifact-log-entry"
-                      >
-                        <div class="execution-artifact-log-entry-head">
-                          <div class="execution-artifact-log-entry-title">
-                            <span v-if="artifactStepLabel(logArtifact)" class="execution-artifact-step-name">
-                              {{ artifactStepLabel(logArtifact) }}
-                            </span>
-                            <strong>{{ logArtifact.title }}</strong>
-                          </div>
-                          <el-link
-                            v-if="logArtifact.contentRef"
-                            type="primary"
-                            @click.prevent="handleArtifactDownload(logArtifact)"
-                          >
-                            下载产物
-                          </el-link>
+                    <section
+                      v-for="logArtifact in artifact.items"
+                      :key="logArtifact.id"
+                      class="execution-artifact-log-entry"
+                    >
+                      <div class="execution-artifact-log-entry-head">
+                        <div class="execution-artifact-log-entry-title">
+                          <span v-if="artifactStepLabel(logArtifact)" class="execution-artifact-step-name">
+                            {{ artifactStepLabel(logArtifact) }}
+                          </span>
+                          <strong>{{ logArtifact.title }}</strong>
                         </div>
-                        <pre>{{ previewLongText(logArtifact.contentText || '-', 3000) }}</pre>
-                      </section>
-                    </template>
-                    <template v-else>
-                      <section
-                        v-for="structuringArtifact in artifact.items"
-                        :key="structuringArtifact.id"
-                        class="execution-artifact-log-entry"
-                      >
-                        <div class="execution-artifact-log-entry-head">
-                          <div class="execution-artifact-log-entry-title">
-                            <span v-if="artifactStepLabel(structuringArtifact)" class="execution-artifact-step-name">
-                              {{ artifactStepLabel(structuringArtifact) }}
-                            </span>
-                            <strong>{{ structuringArtifact.title }}</strong>
-                          </div>
-                          <el-link
-                            v-if="structuringArtifact.contentRef"
-                            type="primary"
-                            @click.prevent="handleArtifactDownload(structuringArtifact)"
-                          >
-                            下载产物
-                          </el-link>
-                        </div>
-                        <div v-if="isMarkdownArtifact(structuringArtifact)" class="execution-artifact-markdown">
-                          <MdPreview
-                            :editor-id="`execution-artifact-preview-${structuringArtifact.id}`"
-                            language="zh-CN"
-                            preview-theme="github"
-                            :model-value="structuringArtifact.contentText || '-'"
-                          />
-                        </div>
-                        <pre v-else>{{ previewLongText(structuringArtifact.contentText || '-') }}</pre>
-                      </section>
-                    </template>
+                        <el-link
+                          v-if="logArtifact.contentRef"
+                          type="primary"
+                          @click.prevent="handleArtifactDownload(logArtifact)"
+                        >
+                          下载产物
+                        </el-link>
+                      </div>
+                      <pre>{{ previewLongText(logArtifact.contentText || '-', 3000) }}</pre>
+                    </section>
                   </div>
                 </template>
                 <pre v-else>{{ previewLongText(displayArtifactText(artifact) || '-') }}</pre>
-                <div v-if="!isDisplayArtifactCollapsibleGroup(artifact)" class="execution-artifact-foot">
+                <div v-if="!isDisplayArtifactLog(artifact)" class="execution-artifact-foot">
                   <span v-if="displayArtifactWriteback(artifact)">已回写工作项</span>
                   <el-link v-if="displayArtifactContentRef(artifact)" type="primary" @click.prevent="handleDisplayArtifactDownload(artifact)">下载产物</el-link>
                 </div>
@@ -427,6 +430,8 @@ const snapshotRefreshTimer = ref<number | null>(null)
 const streamLastEventId = ref<number>(0)
 const artifactHydrationRetryTimers = new Map<number, number>()
 const expandedArtifactPreviewMap = ref<Record<string, boolean>>({})
+const artifactImagePreviewUrls = ref<Record<number, string>>({})
+const artifactImagePreviewLoadingMap = ref<Record<number, boolean>>({})
 const quickMergeDialogVisible = ref(false)
 const quickMergeResultVisible = ref(false)
 const quickMergeSubmitting = ref(false)
@@ -445,7 +450,6 @@ const quickMergeResult = ref<GitlabCreateMergeRequestResultItem | null>(null)
 type DisplayArtifactItem =
   | { key: string; kind: 'artifact'; artifact: ExecutionArtifactItem }
   | { key: string; kind: 'log-group'; items: ExecutionArtifactItem[] }
-  | { key: string; kind: 'structuring-group'; items: ExecutionArtifactItem[] }
 
 interface QuickMergeForm {
   bindingId: number | null
@@ -626,16 +630,10 @@ watch(
   { immediate: true }
 )
 
-/**
- * 执行产物里把“日志”和“仓库结构化”都收敛成折叠组，
- * 避免多仓场景下首屏被大量预览内容撑满，用户先看结果概览，再按需展开细节。
- */
 const displayArtifacts = computed<DisplayArtifactItem[]>(() => {
   const artifacts = runDetail.value?.artifacts || []
   const normalArtifacts: DisplayArtifactItem[] = []
   const logArtifacts: ExecutionArtifactItem[] = []
-  const structuringArtifacts: ExecutionArtifactItem[] = []
-  let structuringInsertIndex: number | null = null
   for (const artifact of artifacts) {
     if (shouldHideArtifactFromDisplay(artifact, artifacts)) {
       continue
@@ -644,27 +642,61 @@ const displayArtifacts = computed<DisplayArtifactItem[]>(() => {
       logArtifacts.push(artifact)
       continue
     }
-    if (isStructuringArtifact(artifact)) {
-      if (structuringInsertIndex == null) {
-        structuringInsertIndex = normalArtifacts.length
-      }
-      structuringArtifacts.push(artifact)
-      continue
-    }
     normalArtifacts.push({ key: `artifact-${artifact.id}`, kind: 'artifact', artifact })
-  }
-  if (structuringArtifacts.length) {
-    normalArtifacts.splice(structuringInsertIndex ?? normalArtifacts.length, 0, {
-      key: 'structuring-group',
-      kind: 'structuring-group',
-      items: structuringArtifacts
-    })
   }
   if (logArtifacts.length) {
     normalArtifacts.push({ key: 'log-group', kind: 'log-group', items: logArtifacts })
   }
   return normalArtifacts
 })
+
+const revokeArtifactImagePreview = (artifactId: number) => {
+  const currentUrl = artifactImagePreviewUrls.value[artifactId]
+  if (currentUrl) {
+    window.URL.revokeObjectURL(currentUrl)
+  }
+  const nextUrls = { ...artifactImagePreviewUrls.value }
+  delete nextUrls[artifactId]
+  artifactImagePreviewUrls.value = nextUrls
+}
+
+const ensureArtifactImagePreview = async (artifact: ExecutionArtifactItem) => {
+  if (!isImageArtifact(artifact) || artifactImagePreviewUrls.value[artifact.id] || artifactImagePreviewLoadingMap.value[artifact.id]) {
+    return
+  }
+  artifactImagePreviewLoadingMap.value = { ...artifactImagePreviewLoadingMap.value, [artifact.id]: true }
+  try {
+    const { blob } = await downloadExecutionArtifact(artifact.id)
+    artifactImagePreviewUrls.value = {
+      ...artifactImagePreviewUrls.value,
+      [artifact.id]: window.URL.createObjectURL(blob)
+    }
+  } catch (error) {
+    console.error('加载截图预览失败', error)
+  } finally {
+    const nextLoading = { ...artifactImagePreviewLoadingMap.value }
+    delete nextLoading[artifact.id]
+    artifactImagePreviewLoadingMap.value = nextLoading
+  }
+}
+
+watch(
+  () =>
+    displayArtifacts.value
+      .filter((item): item is Extract<DisplayArtifactItem, { kind: 'artifact' }> => item.kind === 'artifact' && isImageArtifact(item.artifact))
+      .map((item) => item.artifact),
+  (artifacts) => {
+    const activeIds = new Set(artifacts.map((item) => item.id))
+    Object.keys(artifactImagePreviewUrls.value)
+      .map((value) => Number(value))
+      .filter((artifactId) => !activeIds.has(artifactId))
+      .forEach((artifactId) => revokeArtifactImagePreview(artifactId))
+    artifacts.forEach((artifact) => {
+      void ensureArtifactImagePreview(artifact)
+    })
+  },
+  { immediate: true }
+)
 
 const canCancel = (status: string) => ['PENDING', 'RUNNING', 'WAITING_CONFIRMATION'].includes(status)
 const canRetry = (status: string) => ['SUCCESS', 'FAILED', 'CANCELED'].includes(status)
@@ -707,11 +739,13 @@ const timelineType = (status: string) => {
 const isMarkdownArtifact = (artifact: ExecutionArtifactItem) =>
   ['PLAN_MARKDOWN', 'REPORT_MARKDOWN', 'FIX_PLAN_MARKDOWN', 'FIX_SHARDS_MARKDOWN', 'EXEC_PLAN_MARKDOWN', 'IMPLEMENT_RESULT_MARKDOWN', 'TEST_RESULT_MARKDOWN'].includes(artifact.artifactType)
 
+const isImageArtifact = (artifact: ExecutionArtifactItem) => artifact.artifactType === 'PLAYWRIGHT_SCREENSHOT'
+
+const isStructuredExecutionArtifact = (artifact: ExecutionArtifactItem) =>
+  ['IMPLEMENT_RESULT_MARKDOWN', 'IMPLEMENT_RESULT_JSON', 'TEST_RESULT_MARKDOWN', 'TEST_RESULT_JSON'].includes(artifact.artifactType)
+
 const isLogArtifact = (artifact: ExecutionArtifactItem) =>
   ['STEP_RAW_LOG', 'STEP_STDOUT_LOG', 'STEP_STDERR_LOG'].includes(artifact.artifactType) || artifact.artifactType.endsWith('_LOG')
-
-const isStructuringArtifact = (artifact: ExecutionArtifactItem) =>
-  artifact.artifactType.startsWith('REPO_STRUCTURE_') || artifact.artifactType.startsWith('CROSS_REPO_CONTEXT_')
 
 /**
  * 新版本会同时沉淀 Markdown 与 JSON 结果：
@@ -731,7 +765,10 @@ const shouldHideArtifactFromDisplay = (artifact: ExecutionArtifactItem, artifact
 const findArtifactStep = (artifact: ExecutionArtifactItem) =>
   runDetail.value?.steps.find((step) => step.id === artifact.stepId) || null
 
-const artifactStepLabel = (artifact: ExecutionArtifactItem) => findArtifactStep(artifact)?.stepName || ''
+const artifactStepLabel = (artifact: ExecutionArtifactItem) => {
+  const step = findArtifactStep(artifact)
+  return step ? displayStepName(step) : ''
+}
 
 const extractRepositoryDisplayNameFromStepName = (stepName: string | null | undefined) => {
   const normalized = String(stepName || '').trim()
@@ -767,15 +804,18 @@ const isInstallationArtifact = (artifact: ExecutionArtifactItem) => {
   return ['安装', 'install', '依赖', '部署环境', '环境准备', 'setup'].some((keyword) => stepName.includes(keyword.toLowerCase()))
 }
 
-const isDisplayArtifactCollapsibleGroup = (artifact: DisplayArtifactItem) =>
-  artifact.kind === 'log-group' || artifact.kind === 'structuring-group'
-
 const isDisplayArtifactLog = (artifact: DisplayArtifactItem) => artifact.kind === 'log-group'
-
-const isDisplayArtifactStructuring = (artifact: DisplayArtifactItem) => artifact.kind === 'structuring-group'
 
 const isDisplayArtifactMarkdown = (artifact: DisplayArtifactItem) =>
   artifact.kind === 'artifact' && isMarkdownArtifact(artifact.artifact)
+
+const isDisplayArtifactImage = (artifact: DisplayArtifactItem) =>
+  artifact.kind === 'artifact' && isImageArtifact(artifact.artifact)
+
+const isDisplayArtifactStructuredExecution = (artifact: DisplayArtifactItem) =>
+  artifact.kind === 'artifact'
+  && taskDetail.value?.scenarioCode === 'DEVELOPMENT_IMPLEMENTATION'
+  && isStructuredExecutionArtifact(artifact.artifact)
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const ARTIFACT_STEP_PREFIX_CLEANUP_PATTERN = /^(生成|整理|汇总|构建|创建|执行|开始|产出|发布|打包并上传|打包)\s*/
@@ -802,11 +842,8 @@ const buildArtifactStepTitlePrefixes = (stepName: string) => {
  * “生成修复计划 / 修复计划 Markdown”这类重复信息。
  */
 const displayArtifactTitle = (artifact: DisplayArtifactItem) => {
-  if (artifact.kind === 'log-group') {
+  if (artifact.kind !== 'artifact') {
     return '日志'
-  }
-  if (artifact.kind === 'structuring-group') {
-    return '仓库结构化'
   }
   const rawTitle = String(artifact.artifact.title || '').trim()
   const stepLabel = String(artifactStepLabel(artifact.artifact) || '').trim()
@@ -833,22 +870,16 @@ const displayArtifactTitle = (artifact: DisplayArtifactItem) => {
 const displayArtifactText = (artifact: DisplayArtifactItem) => (artifact.kind === 'artifact' ? artifact.artifact.contentText : '')
 
 const displayArtifactStepLabel = (artifact: DisplayArtifactItem) =>
-  artifact.kind === 'artifact'
-    ? artifactStepLabel(artifact.artifact)
-    : isDisplayArtifactLog(artifact)
-      ? '已合并多个日志产物'
-      : '已合并多个仓库结构化产物'
-
-const displayArtifactGroupHint = (artifact: DisplayArtifactItem) =>
-  isDisplayArtifactStructuring(artifact)
-    ? '仓库结构化默认收起，展开后可查看单仓结构摘要与跨仓上下文，完整产物请下载。'
-    : '日志预览默认收起，展开后仅展示尾部内容，完整日志请下载。'
+  artifact.kind === 'artifact' ? artifactStepLabel(artifact.artifact) : '已合并多个日志产物'
 
 const displayArtifactWriteback = (artifact: DisplayArtifactItem) =>
   artifact.kind === 'artifact' ? artifact.artifact.workItemWriteback : false
 
 const displayArtifactContentRef = (artifact: DisplayArtifactItem) =>
   artifact.kind === 'artifact' ? artifact.artifact.contentRef : null
+
+const displayArtifactImageUrl = (artifact: DisplayArtifactItem) =>
+  artifact.kind === 'artifact' ? artifactImagePreviewUrls.value[artifact.artifact.id] || '' : ''
 
 const isInstallationDisplayArtifact = (artifact: DisplayArtifactItem) =>
   artifact.kind === 'artifact' ? isInstallationArtifact(artifact.artifact) : false
@@ -857,7 +888,8 @@ const displayArtifactExpandKey = (artifact: DisplayArtifactItem) =>
   artifact.kind === 'artifact' ? `artifact-${artifact.artifact.id}` : artifact.key
 
 const isDisplayArtifactExpanded = (artifact: DisplayArtifactItem) =>
-  !isDisplayArtifactCollapsibleGroup(artifact) || Boolean(expandedArtifactPreviewMap.value[displayArtifactExpandKey(artifact)])
+  (!isDisplayArtifactLog(artifact) && !isDisplayArtifactStructuredExecution(artifact))
+  || Boolean(expandedArtifactPreviewMap.value[displayArtifactExpandKey(artifact)])
 
 const toggleArtifactPreview = (artifactId: number) => {
   expandedArtifactPreviewMap.value = {
@@ -903,6 +935,42 @@ const pickPreferredText = (...values: Array<string | null | undefined>) => {
   }
   return null
 }
+
+const isGenericStepName = (value: string | null | undefined, stepNo?: number | null) => {
+  const normalized = String(value || '').trim()
+  if (!normalized) {
+    return true
+  }
+  if (normalized === '执行步骤') {
+    return true
+  }
+  if (/^步骤\s*\d+$/.test(normalized)) {
+    return true
+  }
+  return stepNo != null && normalized === `步骤 ${stepNo}`
+}
+
+/**
+ * SSE 可能先于 run 快照到达。事件里如果只有“步骤 2”这类占位名，
+ * 合并时必须保留后端快照中的真实步骤名，例如“执行规划”。
+ */
+const pickPreferredStepName = (
+  nextName: string | null | undefined,
+  currentName: string | null | undefined,
+  stepNo?: number | null
+) => {
+  const next = pickPreferredText(nextName)
+  const current = pickPreferredText(currentName)
+  if (next && !isGenericStepName(next, stepNo)) {
+    return next
+  }
+  if (current && !isGenericStepName(current, stepNo)) {
+    return current
+  }
+  return next || current || (stepNo != null ? `步骤 ${stepNo}` : '执行步骤')
+}
+
+const displayStepName = (step: ExecutionStepItem) => pickPreferredStepName(step.stepName, null, step.stepNo)
 
 const pickPreferredArtifactText = (currentText: string | null | undefined, nextText: string | null | undefined) => {
   if (!hasText(nextText)) {
@@ -1001,11 +1069,12 @@ const mergeStepItem = (currentStep: ExecutionStepItem | null | undefined, nextSt
   if (!currentStep) {
     return nextStep
   }
-  return {
-    ...currentStep,
-    ...nextStep,
-    status: pickPreferredStatus(currentStep.status, nextStep.status),
-    progressPercent: Math.max(currentStep.progressPercent || 0, nextStep.progressPercent || 0),
+    return {
+      ...currentStep,
+      ...nextStep,
+      stepName: pickPreferredStepName(nextStep.stepName, currentStep.stepName, nextStep.stepNo ?? currentStep.stepNo),
+      status: pickPreferredStatus(currentStep.status, nextStep.status),
+      progressPercent: Math.max(currentStep.progressPercent || 0, nextStep.progressPercent || 0),
     latestMessage: pickPreferredText(nextStep.latestMessage, currentStep.latestMessage) || '等待执行',
     currentCommand: pickPreferredText(nextStep.currentCommand, currentStep.currentCommand),
     lastEventId: Math.max(currentStep.lastEventId || 0, nextStep.lastEventId || 0) || null,
@@ -1054,10 +1123,14 @@ const mergeRunDetailSnapshot = (
   return {
     ...currentDetail,
     ...nextDetail,
-    status: pickPreferredStatus(currentDetail.status, nextDetail.status),
-    progressPercent: Math.max(currentDetail.progressPercent || 0, nextDetail.progressPercent || 0),
-    currentStepNo: nextDetail.currentStepNo ?? currentDetail.currentStepNo ?? null,
-    currentStepName: pickPreferredText(nextDetail.currentStepName, currentDetail.currentStepName),
+      status: pickPreferredStatus(currentDetail.status, nextDetail.status),
+      progressPercent: Math.max(currentDetail.progressPercent || 0, nextDetail.progressPercent || 0),
+      currentStepNo: nextDetail.currentStepNo ?? currentDetail.currentStepNo ?? null,
+      currentStepName: pickPreferredStepName(
+        nextDetail.currentStepName,
+        currentDetail.currentStepName,
+        nextDetail.currentStepNo ?? currentDetail.currentStepNo
+      ),
     outputSummary: pickPreferredText(nextDetail.outputSummary, currentDetail.outputSummary),
     errorMessage: pickPreferredText(nextDetail.errorMessage, currentDetail.errorMessage),
     lastEventId: Math.max(currentDetail.lastEventId || 0, nextDetail.lastEventId || 0) || null,
@@ -1307,53 +1380,21 @@ const appendTailLog = (existingText: string | null | undefined, incomingText: st
     .split('\n')
     .filter((line) => line.trim())
   const nextLines = nextText.split('\n').filter((line) => line.trim())
-  const merged = [...existingLines]
-  for (const line of nextLines) {
-    if (merged[merged.length - 1] === line) {
-      continue
-    }
-    merged.push(line)
-  }
+  const merged = [...existingLines, ...nextLines]
   while (merged.length > 200) {
     merged.shift()
   }
   return merged.join('\n')
 }
 
-/**
- * 最近尾日志希望在 runner 真正输出 stdout/stderr 之前也能持续滚动，
- * 因此把关键流式状态事件一起折叠成可读日志行展示给用户。
- */
-const buildTailLogChunkFromEvent = (event: ExecutionStreamEvent) => {
-  const normalizedSummary = String(event.summary || '').trim()
-  const normalizedCommand = String(event.currentCommand || '').trim()
-  const normalizedText = String(event.text || '').trim()
-  if (event.eventType === 'stdout_chunk' || event.eventType === 'stderr_chunk') {
-    return event.text || null
-  }
-  if (event.eventType === 'command_started' && normalizedCommand) {
-    return `[命令开始] ${normalizedCommand}`
-  }
-  if (event.eventType === 'command_finished' && normalizedSummary) {
-    return normalizedCommand
-      ? `[命令完成] ${normalizedSummary}\n${normalizedCommand}`
-      : `[命令完成] ${normalizedSummary}`
-  }
-  if (event.eventType === 'command_result') {
-    if (normalizedText) {
-      return `[CLI返回]\n${normalizedText}`
-    }
-    if (normalizedSummary) {
-      return `[CLI返回] ${normalizedSummary}`
-    }
-  }
-  if (['step_started', 'step_summary_updated', 'step_finished'].includes(event.eventType) && normalizedSummary) {
-    return `[系统] ${normalizedSummary}`
-  }
-  return null
-}
-
 const inferStepNameFromEvent = (event: ExecutionStreamEvent) => {
+  if (hasText(event.stepName) && !isGenericStepName(event.stepName, event.stepNo)) {
+    return String(event.stepName).trim()
+  }
+  const existingStepName = runDetail.value?.steps.find((item) => item.id === event.stepId || item.stepNo === event.stepNo)?.stepName
+  if (hasText(existingStepName) && !isGenericStepName(existingStepName, event.stepNo)) {
+    return String(existingStepName).trim()
+  }
   const summary = String(event.summary || '').trim()
   if (summary.startsWith('开始执行：')) {
     return summary.slice('开始执行：'.length).trim()
@@ -1363,6 +1404,10 @@ const inferStepNameFromEvent = (event: ExecutionStreamEvent) => {
   }
   if (summary.startsWith('执行中：')) {
     return summary.slice('执行中：'.length).trim()
+  }
+  const startedMatch = summary.match(/^开始(.+?)(?:[:：].*)?$/)
+  if (startedMatch?.[1]?.trim()) {
+    return startedMatch[1].trim()
   }
   return event.stepNo != null ? `步骤 ${event.stepNo}` : '执行步骤'
 }
@@ -1379,12 +1424,12 @@ const ensureStepFromStreamEvent = (event: ExecutionStreamEvent) => {
   if (existingStep) {
     return existingStep
   }
-  const placeholderStep: ExecutionStepItem = {
-    id: event.stepId ?? -event.stepNo,
-    runId: runDetail.value.id,
-    stepNo: event.stepNo,
-    stepCode: `STEP_${event.stepNo}`,
-    stepName: inferStepNameFromEvent(event),
+    const placeholderStep: ExecutionStepItem = {
+      id: event.stepId ?? -event.stepNo,
+      runId: runDetail.value.id,
+      stepNo: event.stepNo,
+      stepCode: `STEP_${event.stepNo}`,
+      stepName: pickPreferredStepName(inferStepNameFromEvent(event), null, event.stepNo),
     agentId: null,
     agentName: null,
     status: event.eventType === 'step_finished' ? 'SUCCESS' : 'RUNNING',
@@ -1394,8 +1439,8 @@ const ensureStepFromStreamEvent = (event: ExecutionStreamEvent) => {
     lastEventId: event.id || null,
     lastEventAt: event.createdAt || null,
     lastHeartbeatAt: event.eventType === 'heartbeat' ? event.createdAt || null : null,
-    tailLogText: buildTailLogChunkFromEvent(event),
-    tailLogLineCount: buildTailLogChunkFromEvent(event)?.split('\n').filter((line) => line.trim()).length || null,
+    tailLogText: event.text || null,
+    tailLogLineCount: event.text ? event.text.split('\n').filter((line) => line.trim()).length : null,
     hasLiveStream: true,
     inputSnapshot: '',
     outputSnapshot: null,
@@ -1504,15 +1549,14 @@ const applyExecutionStreamEvent = (event: ExecutionStreamEvent) => {
   if (event.eventType === 'heartbeat') {
     step.lastHeartbeatAt = event.createdAt || step.lastHeartbeatAt
   }
-  const tailLogChunk = buildTailLogChunkFromEvent(event)
-  if (tailLogChunk) {
-    step.tailLogText = appendTailLog(step.tailLogText, tailLogChunk)
+  if (event.eventType === 'stdout_chunk' || event.eventType === 'stderr_chunk') {
+    step.tailLogText = appendTailLog(step.tailLogText, event.text)
     step.tailLogLineCount = step.tailLogText ? step.tailLogText.split('\n').length : 0
   }
   if (event.eventType === 'step_started') {
     step.status = 'RUNNING'
     step.startedAt = step.startedAt || event.createdAt || null
-    step.stepName = inferStepNameFromEvent(event)
+    step.stepName = pickPreferredStepName(inferStepNameFromEvent(event), step.stepName, step.stepNo)
     runDetail.value.currentStepNo = step.stepNo
     runDetail.value.currentStepName = step.stepName
   }
@@ -1742,6 +1786,9 @@ onBeforeUnmount(() => {
     for (const timer of artifactHydrationRetryTimers.values()) {
       window.clearTimeout(timer)
     }
+    Object.values(artifactImagePreviewUrls.value).forEach((url) => {
+      window.URL.revokeObjectURL(url)
+    })
   }
   artifactHydrationRetryTimers.clear()
 })
@@ -2156,6 +2203,29 @@ pre {
 .execution-artifact-markdown :deep(.md-editor-preview) {
   padding: 0;
   color: #0f172a;
+}
+
+.execution-artifact-image-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.execution-artifact-image {
+  display: block;
+  max-width: 100%;
+  max-height: 520px;
+  border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+}
+
+.execution-artifact-image-placeholder {
+  font-size: 13px;
+  color: #64748b;
 }
 
 .execution-artifact-foot {

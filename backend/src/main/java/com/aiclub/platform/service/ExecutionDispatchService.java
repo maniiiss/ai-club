@@ -36,6 +36,9 @@ public class ExecutionDispatchService {
 
     private static final Logger log = LoggerFactory.getLogger(ExecutionDispatchService.class);
     private static final String STATUS_WAITING_CONFIRMATION = "WAITING_CONFIRMATION";
+    private static final String BIZ_TYPE_DEVELOPMENT_EXECUTION_COMPLETED = "DEVELOPMENT_EXECUTION_COMPLETED";
+    // notification_message.biz_type 长度为 40，规划确认通知使用短业务码避免收尾事务因字段过长失败。
+    private static final String BIZ_TYPE_DEVELOPMENT_EXECUTION_PLAN_CONFIRM = "DEVELOPMENT_EXECUTION_PLAN_CONFIRM";
 
     private final ExecutionTaskRepository executionTaskRepository;
     private final ExecutionRunRepository executionRunRepository;
@@ -623,7 +626,7 @@ public class ExecutionDispatchService {
                 "开发执行已完成：" + defaultString(executionTask.getTitle()).trim(),
                 content.toString(),
                 "/tasks/" + executionTask.getId(),
-                "DEVELOPMENT_EXECUTION_COMPLETED",
+                BIZ_TYPE_DEVELOPMENT_EXECUTION_COMPLETED,
                 executionTask.getId()
         );
     }
@@ -643,7 +646,7 @@ public class ExecutionDispatchService {
                 "开发执行待确认：" + defaultString(executionTask.getTitle()).trim(),
                 "执行规划已生成，请前往执行详情查看、编辑并确认继续。",
                 "/tasks/" + executionTask.getId(),
-                "DEVELOPMENT_EXECUTION_PLAN_CONFIRMATION_REQUIRED",
+                BIZ_TYPE_DEVELOPMENT_EXECUTION_PLAN_CONFIRM,
                 executionTask.getId()
         );
     }

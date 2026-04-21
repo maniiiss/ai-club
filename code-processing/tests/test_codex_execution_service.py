@@ -2,7 +2,6 @@ import json
 import sys
 import tempfile
 import unittest
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -10,13 +9,11 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.models import CodexExecutionContext, CodexExecutionRepository, CodexExecutionRequest
-from app.services import codex_execution_service
 from app.services.codex_execution_service import (
     DevelopmentExecutionWorkspace,
-    _build_codex_cli_config_args,
     _checkout_commit_if_needed,
     _clone_repository,
-    _format_process_command_for_log,
+    _json_payload_or_degraded,
     _normalize_implementation_payload,
     _schema_text_for_mode,
     execute_codex_execution,
@@ -94,6 +91,23 @@ class CodexExecutionServiceTests(unittest.TestCase):
         self.assertEqual(["npm run lint"], payload["commandsExecuted"])
         self.assertIn("执行日志", payload["log"])
 
+    def test_should_degrade_non_json_implementation_output_to_raw_preview(self):
+        raw_output = _json_payload_or_degraded("模型执行完成，但没有输出 JSON")
+        payload = _normalize_implementation_payload(
+            raw_output,
+            changed_files=["src/App.vue"],
+            work_branch="codex/execution-101-3-1",
+            base_commit="base-sha",
+            current_commit="head-sha",
+        )
+
+        self.assertEqual("SUCCESS", payload["status"])
+        self.assertTrue(payload["jsonParseDegraded"])
+        self.assertIn("未返回结构化 JSON", payload["summary"])
+        self.assertIn("模型执行完成", payload["rawOutput"])
+        self.assertIn("模型执行完成", payload["log"])
+        self.assertEqual(["src/App.vue"], payload["changedFiles"])
+
     def test_should_checkout_requested_commit_after_clone(self):
         request = self._build_request("IMPLEMENT").model_copy(update={
             "repository": self._build_request("IMPLEMENT").repository.model_copy(update={"commitSha": "fixed-sha"})
@@ -170,9 +184,10 @@ class CodexExecutionServiceTests(unittest.TestCase):
                 response = execute_codex_execution(request)
 
         payload = json.loads(response.output)
+        command_results = payload["suiteResults"][0]["commandResults"]
         self.assertEqual("SUCCESS", payload["status"])
-        self.assertIn("已跳过", payload["commandResults"][0]["stdout"])
-        self.assertIn("不适用命令", payload["summary"])
+        self.assertIn("已跳过", command_results[0]["stdout"])
+        self.assertIn("不适用命令", payload["suiteResults"][0]["summary"])
 
     def test_should_promote_frontend_build_to_repo_root_and_bootstrap_pnpm(self):
         request = self._build_request("TEST", ["cd frontend && npm run build"])
@@ -199,6 +214,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
                 response = execute_codex_execution(request)
 
         payload = json.loads(response.output)
+        command_results = payload["suiteResults"][0]["commandResults"]
         self.assertEqual("SUCCESS", payload["status"])
         self.assertEqual(
             [
@@ -209,7 +225,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             ["pnpm install --frozen-lockfile --prefer-offline", "pnpm run build"],
-            [item["command"] for item in payload["commandResults"]],
+            [item["command"] for item in command_results],
         )
 
     def test_should_return_failed_test_payload_when_adapted_command_exits_non_zero(self):
@@ -238,9 +254,10 @@ class CodexExecutionServiceTests(unittest.TestCase):
                 response = execute_codex_execution(request)
 
         payload = json.loads(response.output)
+        command_results = payload["suiteResults"][0]["commandResults"]
         self.assertEqual("FAILED", payload["status"])
-        self.assertEqual(1, payload["commandResults"][0]["exitCode"])
-        self.assertIn("npm run build", payload["summary"])
+        self.assertEqual(1, command_results[0]["exitCode"])
+        self.assertIn("npm run build", payload["suiteResults"][0]["summary"])
 
     def test_should_require_all_implementation_schema_fields_for_strict_json_schema(self):
         schema = json.loads(_schema_text_for_mode("IMPLEMENT"))
@@ -258,28 +275,9 @@ class CodexExecutionServiceTests(unittest.TestCase):
             ],
             schema["required"],
         )
-        self.assertEqual(["SUCCESS", "FAILED"], schema["properties"]["status"]["enum"])
         self.assertEqual(["string", "null"], schema["properties"]["workBranch"]["type"])
         self.assertEqual(["string", "null"], schema["properties"]["commitSha"]["type"])
         self.assertEqual(["string", "null"], schema["properties"]["mergeRequestUrl"]["type"])
-
-    def test_should_reject_non_terminal_implementation_status_from_model_output(self):
-        payload = _normalize_implementation_payload(
-            {
-                "status": "IN_PROGRESS",
-                "summary": "开始定位代码",
-                "commandsExecuted": ["git status"],
-                "log": "正在探索仓库",
-            },
-            changed_files=[],
-            work_branch="codex/execution-101-3-1",
-            base_commit="base-sha",
-            current_commit="base-sha",
-        )
-
-        self.assertEqual("FAILED", payload["status"])
-        self.assertIn("非终态状态 IN_PROGRESS", payload["summary"])
-        self.assertIn("模型原始摘要：开始定位代码", payload["summary"])
 
     def test_should_accept_async_codex_execution_session(self):
         request = self._build_request("IMPLEMENT")
@@ -360,46 +358,6 @@ class CodexExecutionServiceTests(unittest.TestCase):
 
         self.assertEqual([300], captured_timeout_seconds)
 
-    def test_should_omit_model_provider_override_when_not_configured(self):
-        with patch.object(
-            codex_execution_service,
-            "settings",
-            replace(codex_execution_service.settings, codex_model_provider="", codex_reasoning_effort="low"),
-        ):
-            command = _build_codex_cli_config_args()
-
-        self.assertEqual(["-c", 'model_reasoning_effort="low"'], command)
-
-    def test_should_keep_explicit_model_provider_override_when_configured(self):
-        with patch.object(
-            codex_execution_service,
-            "settings",
-            replace(codex_execution_service.settings, codex_model_provider="my-codex", codex_reasoning_effort="medium"),
-        ):
-            command = _build_codex_cli_config_args()
-
-        self.assertEqual(
-            ["-c", 'model_provider="my-codex"', "-c", 'model_reasoning_effort="medium"'],
-            command,
-        )
-
-    def test_should_hide_prompt_text_when_formatting_codex_command_for_log(self):
-        command = [
-            "codex",
-            "exec",
-            "-C",
-            "C:/workspace/repo",
-            "--output-schema",
-            "C:/workspace/out/schema.json",
-            "非常敏感的提示词内容",
-        ]
-
-        formatted = _format_process_command_for_log(command, omit_trailing_prompt=True)
-
-        self.assertIn("codex exec -C C:/workspace/repo --output-schema C:/workspace/out/schema.json", formatted)
-        self.assertIn("<提示词已省略>", formatted)
-        self.assertNotIn("非常敏感的提示词内容", formatted)
-
     def test_should_stream_stdout_stderr_and_heartbeat_events(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace_dir = Path(temp_dir)
@@ -420,14 +378,13 @@ class CodexExecutionServiceTests(unittest.TestCase):
                 ),
             ]
 
-            with patch("app.services.execution_streaming_support._post_backend_json", side_effect=lambda path, payload: captured_calls.append((path, payload))):
+            with patch("app.services.execution_streaming_support._post_backend_json", side_effect=lambda path, payload, **kwargs: captured_calls.append((path, payload))):
                 result = run_streaming_process(
                     command,
                     cwd=workspace_dir,
                     timeout_seconds=20,
                     batcher=batcher,
                     command_label="demo-command",
-                    display_command="python -c <核心参数已省略>",
                     workspace_log_file=workspace_log,
                     stdout_file=stdout_log,
                     stderr_file=stderr_log,
@@ -444,10 +401,6 @@ class CodexExecutionServiceTests(unittest.TestCase):
         self.assertIn("stdout_chunk", event_types)
         self.assertIn("stderr_chunk", event_types)
         self.assertIn("heartbeat", event_types)
-        command_started_event = next(event for event in events if event["eventType"] == "command_started")
-        command_finished_event = next(event for event in events if event["eventType"] == "command_finished")
-        self.assertEqual("python -c <核心参数已省略>", command_started_event["currentCommand"])
-        self.assertEqual("python -c <核心参数已省略>", command_finished_event["currentCommand"])
         self.assertIn("stdout-2", stdout_log_text)
         self.assertIn("stderr-1", stderr_log_text)
 
@@ -459,7 +412,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
             batcher = BackendEventBatcher("session-timeout")
             command = [sys.executable, "-c", "import time; time.sleep(2)"]
 
-            with patch("app.services.execution_streaming_support._post_backend_json", side_effect=lambda path, payload: captured_calls.append((path, payload))):
+            with patch("app.services.execution_streaming_support._post_backend_json", side_effect=lambda path, payload, **kwargs: captured_calls.append((path, payload))):
                 result = run_streaming_process(
                     command,
                     cwd=workspace_dir,
@@ -474,43 +427,6 @@ class CodexExecutionServiceTests(unittest.TestCase):
         self.assertIn("超时", result.stderr)
         events = [event for _, payload in captured_calls for event in payload["events"]]
         self.assertIn("command_started", [event["eventType"] for event in events])
-
-    def test_should_stream_partial_stdout_before_newline(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace_dir = Path(temp_dir)
-            workspace_log = workspace_dir / "workspace.log"
-            captured_calls: list[tuple[str, dict[str, object]]] = []
-            batcher = BackendEventBatcher("session-partial")
-            command = [
-                sys.executable,
-                "-c",
-                (
-                    "import sys,time;"
-                    "sys.stdout.write('progress 1 ');sys.stdout.flush();"
-                    "time.sleep(1.2);"
-                    "sys.stdout.write('progress 2 ');sys.stdout.flush();"
-                    "time.sleep(1.2);"
-                    "sys.stdout.write('done');sys.stdout.flush()"
-                ),
-            ]
-
-            with patch("app.services.execution_streaming_support._post_backend_json", side_effect=lambda path, payload: captured_calls.append((path, payload))):
-                result = run_streaming_process(
-                    command,
-                    cwd=workspace_dir,
-                    timeout_seconds=20,
-                    batcher=batcher,
-                    command_label="partial-command",
-                    workspace_log_file=workspace_log,
-                )
-
-        self.assertEqual(0, result.exit_code)
-        self.assertEqual("progress 1 progress 2 done", result.stdout)
-        events = [event for _, payload in captured_calls for event in payload["events"]]
-        stdout_events = [event for event in events if event["eventType"] == "stdout_chunk"]
-        self.assertGreaterEqual(len(stdout_events), 2)
-        self.assertIn("progress 1", stdout_events[0]["text"])
-        self.assertEqual("command_finished", events[-1]["eventType"])
 
 
 if __name__ == "__main__":

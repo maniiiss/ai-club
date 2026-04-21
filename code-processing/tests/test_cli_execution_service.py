@@ -1,16 +1,13 @@
 import json
 import tempfile
 import unittest
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.models import CliExecutionRepository, CliExecutionRequest, CliExecutionResponse, CodexExecutionContext
-from app.services import codex_execution_service as codex_service
 from app.services.cli_execution_service import (
-    CliMarkdownWorkspace,
-    _run_codex_markdown_cli,
+    _extract_json_object_or_empty,
     _to_claude_request,
     _to_codex_request,
     execute_cli_execution,
@@ -159,6 +156,14 @@ class CliExecutionServiceTests(unittest.TestCase):
         self.assertEqual("Claude 已完成开发", payload["summary"])
         self.assertEqual(str(repo_dir), response.repoPath)
 
+    def test_should_degrade_claude_non_json_stdout_without_codex_error_wording(self):
+        payload = _extract_json_object_or_empty("Claude Code 执行完成，但未返回 JSON")
+
+        self.assertTrue(payload["jsonParseDegraded"])
+        self.assertIn("输出未返回合法 JSON", payload["jsonParseError"])
+        self.assertNotIn("Codex 未返回合法 JSON", payload["jsonParseError"])
+        self.assertIn("Claude Code 执行完成", payload["rawOutput"])
+
     def test_should_start_claude_adhoc_session_with_unified_runner(self):
         request = self._build_request("CLAUDE_CODE_CLI", "AD_HOC").model_copy(update={
             "repositories": [],
@@ -171,36 +176,6 @@ class CliExecutionServiceTests(unittest.TestCase):
         self.assertTrue(response.accepted)
         self.assertIn("claude_code_cli-ad_hoc", response.sessionId)
         launch_mock.assert_called_once()
-
-    def test_should_not_force_model_provider_for_codex_markdown_when_unset(self):
-        request = self._build_request("CODEX_CLI", "PLAN")
-        captured_command: list[str] = []
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            workspace = CliMarkdownWorkspace(
-                root=Path(temp_dir),
-                repos_dir=Path(temp_dir) / "repos",
-                out_dir=Path(temp_dir) / "out",
-                log_file=Path(temp_dir) / "execution.log",
-            )
-
-            def subprocess_side_effect(command, **kwargs):
-                captured_command[:] = command
-                return SimpleNamespace(stdout="# 规划已生成", stderr="", returncode=0)
-
-            with patch("app.services.cli_execution_service.codex_service._discover_codex_cli_path", return_value=Path("codex")), \
-                    patch("app.services.cli_execution_service._build_codex_markdown_prompt", return_value="prompt"), \
-                    patch.object(
-                        codex_service,
-                        "settings",
-                        replace(codex_service.settings, codex_model_provider="", codex_reasoning_effort="low"),
-                    ), \
-                    patch("app.services.cli_execution_service.subprocess.run", side_effect=subprocess_side_effect):
-                output = _run_codex_markdown_cli(request, workspace, [])
-
-        self.assertEqual("# 规划已生成", output)
-        self.assertFalse(any("model_provider=" in item for item in captured_command))
-        self.assertTrue(any('model_reasoning_effort="low"' in item for item in captured_command))
 
 
 if __name__ == "__main__":

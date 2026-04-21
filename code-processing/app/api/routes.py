@@ -84,6 +84,7 @@ def codex_execution(request_http: Request, payload: CodexExecutionRequest) -> Co
             ],
             execution=payload.execution,
             testCommands=payload.testCommands,
+            testPlan=payload.testPlan,
             timeoutSeconds=payload.timeoutSeconds,
         ))
         return CodexExecutionResponse(
@@ -121,6 +122,7 @@ def codex_execution_start(request_http: Request, payload: CodexExecutionRequest)
             ],
             execution=payload.execution,
             testCommands=payload.testCommands,
+            testPlan=payload.testPlan,
             timeoutSeconds=payload.timeoutSeconds,
         ))
     except ValueError as exception:

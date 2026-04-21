@@ -75,6 +75,7 @@ class ExecutionEventServiceTests {
         ExecutionStepEntity step = new ExecutionStepEntity();
         step.setId(88L);
         step.setRun(lockedRun);
+        step.setStepName("执行规划");
         step.setProgressPercent(20);
 
         ExecutionStepEventEntity lastEvent = new ExecutionStepEventEntity();
@@ -88,12 +89,13 @@ class ExecutionEventServiceTests {
         when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ObjectNode payload = new ObjectMapper().createObjectNode().put("summary", "runner event");
-        executionEventService.appendEvent(task, originalRun, step, "step_summary_updated", "system", payload);
+        var event = executionEventService.appendEvent(task, originalRun, step, "step_summary_updated", "system", payload);
 
         InOrder inOrder = inOrder(executionRunRepository, executionStepEventRepository);
         inOrder.verify(executionRunRepository).findByIdForUpdate(44L);
         inOrder.verify(executionStepEventRepository).findFirstByRun_IdOrderBySequenceNoDesc(44L);
         verify(executionStepEventRepository).save(any(ExecutionStepEventEntity.class));
         assertThat(step.getLastEventId()).isEqualTo(13L);
+        assertThat(event.stepName()).isEqualTo("执行规划");
     }
 }

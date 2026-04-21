@@ -754,7 +754,7 @@
 </div>
 </div>
 
-  <el-dialog v-model="bindingDialogVisible" :title="bindingDialogTitle" width="640px" class="platform-form-dialog" align-center>
+  <el-dialog v-model="bindingDialogVisible" :title="bindingDialogTitle" width="760px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="bindingDialogTitle" :subtitle="bindingDialogSubtitle" :icon="FolderOpened" />
     </template>
@@ -774,6 +774,89 @@
         <el-form-item label="默认目标分支"><el-input v-model="bindingForm.defaultTargetBranch" /></el-form-item>
         <el-form-item label="APIToken"><el-input v-model="bindingForm.apiToken" type="password" show-password :placeholder="bindingIsEditing ? '留空则保留原 Token' : '请输入 APIToken'" /></el-form-item>
         <el-form-item label="启用"><el-switch v-model="bindingForm.enabled" /></el-form-item>
+      </section>
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">测试模板</div>
+          <div class="platform-form-section-subtitle">为开发执行的 TEST 步骤声明浏览器烟测或服务烟测规则；留空则仅执行命令型 Harness。</div>
+        </div>
+        <el-form-item label="仓库类型">
+          <el-select v-model="bindingForm.repoKind" clearable placeholder="不配置则仅执行 COMMAND suite" style="width: 100%">
+            <el-option label="前端仓库" value="FRONTEND" />
+            <el-option label="后端仓库" value="BACKEND" />
+            <el-option label="混合仓库" value="MIXED" />
+          </el-select>
+          <div class="form-tip">只在需要 sidecar 烟测时填写，系统会按仓库类型补充 Playwright 或服务健康检查。</div>
+        </el-form-item>
+        <el-form-item label="测试工作目录">
+          <el-input v-model="bindingForm.workingDir" placeholder="例如 frontend 或 backend；留空表示仓库根目录" />
+        </el-form-item>
+        <el-form-item label="启动命令">
+          <el-input
+            v-model="bindingForm.startCommand"
+            placeholder="例如 npm run dev、pnpm preview、mvn spring-boot:run"
+          />
+          <div class="form-tip">前端与后端 sidecar 共用这条启动命令；命令型 Harness 仍沿用现有平台推荐逻辑。</div>
+        </el-form-item>
+        <el-row v-if="showFrontendTestProfile || showBackendTestProfile" :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="基础访问地址">
+              <el-input v-model="bindingForm.baseUrl" placeholder="留空时由运行时自动分配本地端口并拼装地址" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="包管理器">
+              <el-select v-model="bindingForm.packageManager" clearable placeholder="可选，默认按锁文件推断" style="width: 100%">
+                <el-option label="npm" value="npm" />
+                <el-option label="pnpm" value="pnpm" />
+                <el-option label="yarn" value="yarn" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <template v-if="showFrontendTestProfile">
+          <el-form-item label="烟测页面路径">
+            <el-input
+              v-model="bindingForm.smokePathsText"
+              type="textarea"
+              :rows="4"
+              placeholder="每行一个路径，例如：&#10;/&#10;/login&#10;/dashboard"
+            />
+            <div class="form-tip">留空时默认访问 `/`。建议只放少量关键页面，避免 TEST 步骤耗时过长。</div>
+          </el-form-item>
+          <el-form-item label="页面就绪选择器">
+            <el-input v-model="bindingForm.readySelector" placeholder="例如 #app、[data-testid=&quot;dashboard-ready&quot;]" />
+          </el-form-item>
+        </template>
+
+        <template v-if="showBackendTestProfile">
+          <el-form-item label="健康检查路径">
+            <el-input v-model="bindingForm.healthPath" placeholder="例如 /actuator/health 或 /health" />
+          </el-form-item>
+          <div class="platform-form-inline-head">
+            <div>
+              <div class="platform-form-inline-title">HTTP Smoke 列表</div>
+              <div class="platform-form-inline-subtitle">逐条声明需要校验的方法、路径与期望状态码。</div>
+            </div>
+            <el-button type="primary" link @click="addBindingHttpCheck">新增检查</el-button>
+          </div>
+          <div v-if="bindingForm.httpChecks.length" class="binding-http-check-list">
+            <div v-for="(item, index) in bindingForm.httpChecks" :key="`http-check-${index}`" class="binding-http-check-row">
+              <el-input v-model="item.name" placeholder="检查名称" />
+              <el-select v-model="item.method" placeholder="方法">
+                <el-option label="GET" value="GET" />
+                <el-option label="POST" value="POST" />
+                <el-option label="PUT" value="PUT" />
+                <el-option label="DELETE" value="DELETE" />
+              </el-select>
+              <el-input v-model="item.path" placeholder="路径，例如 /api/ping" />
+              <el-input-number v-model="item.expectedStatus" :min="100" :max="599" :step="1" controls-position="right" />
+              <el-button text type="danger" @click="removeBindingHttpCheck(index)">删除</el-button>
+            </div>
+          </div>
+          <div v-else class="form-tip">还没有配置 HTTP 检查。仅填写健康检查路径也可以跑最小服务烟测。</div>
+        </template>
       </section>
     </el-form>
     <template #footer>
@@ -1174,7 +1257,26 @@ import { useMobileViewport } from '@/utils/mobileViewport'
 
 const DEFAULT_GITLAB_API_URL = 'http://192.168.110.138:30080/api/v4'
 
-interface BindingForm { projectId: number | null; apiBaseUrl: string; gitlabProjectRef: string; defaultTargetBranch: string; apiToken: string; enabled: boolean }
+type BindingRepoKind = '' | 'FRONTEND' | 'BACKEND' | 'MIXED'
+
+interface BindingHttpCheckForm { name: string; method: string; path: string; expectedStatus: number }
+interface BindingForm {
+  projectId: number | null
+  apiBaseUrl: string
+  gitlabProjectRef: string
+  defaultTargetBranch: string
+  apiToken: string
+  enabled: boolean
+  repoKind: BindingRepoKind
+  workingDir: string
+  packageManager: string
+  startCommand: string
+  baseUrl: string
+  smokePathsText: string
+  readySelector: string
+  healthPath: string
+  httpChecks: BindingHttpCheckForm[]
+}
 /** Tag 表单仅负责收集名称、来源分支和备注。 */
 interface TagForm { tagName: string; branchName: string; message: string }
 /** 仓库规范扫描表单。 */
@@ -1199,7 +1301,23 @@ const bindingPagination = reactive({ page: 1, size: 10, total: 0 })
 const bindingTotalPages = computed(() => Math.max(1, Math.ceil(bindingPagination.total / bindingPagination.size) || 1))
 const bindingFilters = reactive({ keyword: '', projectId: undefined as number | undefined })
 const bindingFilterPopoverVisible = ref(false)
-const bindingForm = reactive<BindingForm>({ projectId: null, apiBaseUrl: DEFAULT_GITLAB_API_URL, gitlabProjectRef: '', defaultTargetBranch: '', apiToken: '', enabled: true })
+const bindingForm = reactive<BindingForm>({
+  projectId: null,
+  apiBaseUrl: DEFAULT_GITLAB_API_URL,
+  gitlabProjectRef: '',
+  defaultTargetBranch: '',
+  apiToken: '',
+  enabled: true,
+  repoKind: '',
+  workingDir: '',
+  packageManager: '',
+  startCommand: '',
+  baseUrl: '',
+  smokePathsText: '/',
+  readySelector: '',
+  healthPath: '',
+  httpChecks: []
+})
 const tagDialogVisible = ref(false)
 const tagSubmitting = ref(false)
 const tagResultVisible = ref(false)
@@ -1252,11 +1370,106 @@ const autoMergeRules: FormRules<AutoMergeForm> = { name: [{ required: true, mess
 const bindingDialogTitle = computed(() => bindingIsEditing.value ? '编辑 GitLab 绑定' : '新增 GitLab 绑定')
 const bindingDialogSubtitle = computed(() =>
   bindingIsEditing.value
-    ? '调整平台项目与 GitLab 仓库的映射关系。'
-    : '配置平台项目与 GitLab 仓库的基础映射信息。'
+    ? '调整平台项目与 GitLab 仓库的映射关系，并维护测试模板。'
+    : '配置平台项目与 GitLab 仓库的基础映射信息，并可补充测试模板。'
 )
 const tagDialogSubtitle = computed(() => '基于当前仓库分支创建新的 GitLab Tag。')
 const scanDialogSubtitle = computed(() => '选择扫描分支和规则集后，系统会在执行中心创建一条仓库规范扫描任务。')
+const showFrontendTestProfile = computed(() => ['FRONTEND', 'MIXED'].includes(bindingForm.repoKind))
+const showBackendTestProfile = computed(() => ['BACKEND', 'MIXED'].includes(bindingForm.repoKind))
+
+const createBindingHttpCheck = (): BindingHttpCheckForm => ({
+  name: '',
+  method: 'GET',
+  path: '',
+  expectedStatus: 200
+})
+
+const resetBindingTestProfile = () => {
+  bindingForm.repoKind = ''
+  bindingForm.workingDir = ''
+  bindingForm.packageManager = ''
+  bindingForm.startCommand = ''
+  bindingForm.baseUrl = ''
+  bindingForm.smokePathsText = '/'
+  bindingForm.readySelector = ''
+  bindingForm.healthPath = ''
+  bindingForm.httpChecks = []
+}
+
+const applyBindingTestProfile = (rawJson?: string | null) => {
+  resetBindingTestProfile()
+  if (!rawJson) {
+    return
+  }
+  try {
+    const parsed = JSON.parse(rawJson) as Record<string, any>
+    bindingForm.repoKind = ['FRONTEND', 'BACKEND', 'MIXED'].includes(String(parsed.repoKind || '').toUpperCase())
+      ? (String(parsed.repoKind || '').toUpperCase() as BindingRepoKind)
+      : ''
+    bindingForm.workingDir = String(parsed.workingDir || '').trim()
+    bindingForm.packageManager = String(parsed.packageManager || '').trim()
+    bindingForm.startCommand = String(parsed.startCommand || '').trim()
+    bindingForm.baseUrl = String(parsed.baseUrl || '').trim()
+    const smokePaths = Array.isArray(parsed.smokePaths)
+      ? parsed.smokePaths.map((item) => String(item || '').trim()).filter(Boolean)
+      : []
+    bindingForm.smokePathsText = smokePaths.length ? smokePaths.join('\n') : '/'
+    bindingForm.readySelector = String(parsed.readySelector || '').trim()
+    bindingForm.healthPath = String(parsed.healthPath || '').trim()
+    bindingForm.httpChecks = Array.isArray(parsed.httpChecks)
+      ? parsed.httpChecks.map((item) => ({
+          name: String(item?.name || '').trim(),
+          method: String(item?.method || 'GET').trim().toUpperCase() || 'GET',
+          path: String(item?.path || '').trim(),
+          expectedStatus: Number(item?.expectedStatus || 200) || 200
+        }))
+      : []
+  } catch (error) {
+    ElMessage.warning('当前绑定的测试模板无法解析，已回退为空白表单')
+  }
+}
+
+const buildBindingTestProfileJson = () => {
+  if (!bindingForm.repoKind) {
+    return undefined
+  }
+  const smokePaths = bindingForm.smokePathsText
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+  const httpChecks = bindingForm.httpChecks
+    .map((item) => ({
+      name: item.name.trim(),
+      method: item.method.trim().toUpperCase() || 'GET',
+      path: item.path.trim(),
+      expectedStatus: Number(item.expectedStatus) || 200
+    }))
+    .filter((item) => item.name || item.path)
+  return JSON.stringify(
+    {
+      repoKind: bindingForm.repoKind,
+      workingDir: bindingForm.workingDir.trim(),
+      packageManager: bindingForm.packageManager.trim(),
+      startCommand: bindingForm.startCommand.trim(),
+      baseUrl: bindingForm.baseUrl.trim(),
+      smokePaths,
+      readySelector: bindingForm.readySelector.trim(),
+      healthPath: bindingForm.healthPath.trim(),
+      httpChecks
+    },
+    null,
+    2
+  )
+}
+
+const addBindingHttpCheck = () => {
+  bindingForm.httpChecks = [...bindingForm.httpChecks, createBindingHttpCheck()]
+}
+
+const removeBindingHttpCheck = (index: number) => {
+  bindingForm.httpChecks = bindingForm.httpChecks.filter((_, itemIndex) => itemIndex !== index)
+}
 
 watch(() => autoMergeForm.executionMode, (mode) => {
   if (mode === 'PROJECT_BOUND') {
@@ -1322,7 +1535,17 @@ const autoMergeDialogSubtitle = computed(() => {
   return '配置自动合并策略、调度规则和 Agent 能力。'
 })
 
-const resetBindingForm = () => { currentBindingId.value = null; bindingForm.projectId = projectOptions.value[0]?.id ?? null; bindingForm.apiBaseUrl = DEFAULT_GITLAB_API_URL; bindingForm.gitlabProjectRef = ''; bindingForm.defaultTargetBranch = ''; bindingForm.apiToken = ''; bindingForm.enabled = true; bindingFormRef.value?.clearValidate() }
+const resetBindingForm = () => {
+  currentBindingId.value = null
+  bindingForm.projectId = projectOptions.value[0]?.id ?? null
+  bindingForm.apiBaseUrl = DEFAULT_GITLAB_API_URL
+  bindingForm.gitlabProjectRef = ''
+  bindingForm.defaultTargetBranch = ''
+  bindingForm.apiToken = ''
+  bindingForm.enabled = true
+  resetBindingTestProfile()
+  bindingFormRef.value?.clearValidate()
+}
 const resetTagForm = () => { currentTagBinding.value = null; tagForm.tagName = ''; tagForm.branchName = ''; tagForm.message = ''; tagBranchOptions.value = []; tagFormRef.value?.clearValidate() }
 const resetAutoMergeForm = () => { currentAutoMergeId.value = null; autoMergeForm.name = ''; autoMergeForm.executionMode = 'PROJECT_BOUND'; autoMergeForm.description = ''; autoMergeForm.bindingId = bindingOptions.value[0]?.id ?? null; autoMergeForm.apiBaseUrl = DEFAULT_GITLAB_API_URL; autoMergeForm.gitlabProjectRef = ''; autoMergeForm.apiToken = ''; autoMergeForm.sourceBranch = ''; autoMergeForm.targetBranch = ''; autoMergeForm.titleKeyword = ''; autoMergeForm.schedulerEnabled = false; autoMergeForm.schedulerCron = '0 */5 * * * *'; autoMergeForm.enabled = true; autoMergeForm.autoMerge = true; autoMergeForm.squashOnMerge = false; autoMergeForm.removeSourceBranch = true; autoMergeForm.triggerPipelineAfterMerge = false; autoMergeForm.requirePipelineSuccess = true; autoMergeForm.reviewAgentId = reviewAgentOptions.value[0]?.id ?? null; autoMergeForm.aiReviewEnabled = false; autoMergeForm.aiReviewPrompt = ''; cronTemplate.value = ''; autoMergeFormRef.value?.clearValidate() }
 
@@ -1425,9 +1648,56 @@ const handleTagBranchSearch = (keyword: string) => {
   void loadTagBranches(keyword)
 }
 
-const openBindingCreateDialog = () => { bindingIsEditing.value = false; resetBindingForm(); bindingDialogVisible.value = true }
-const openBindingEditDialog = (row: ProjectGitlabBindingItem) => { bindingIsEditing.value = true; currentBindingId.value = row.id; bindingForm.projectId = row.projectId; bindingForm.apiBaseUrl = row.apiBaseUrl; bindingForm.gitlabProjectRef = row.gitlabProjectPath || row.gitlabProjectRef; bindingForm.defaultTargetBranch = row.defaultTargetBranch || ''; bindingForm.apiToken = ''; bindingForm.enabled = row.enabled; bindingDialogVisible.value = true }
-const handleBindingSubmit = async () => { const valid = await bindingFormRef.value?.validate().catch(() => false); if (!valid || bindingForm.projectId === null) return; if (!bindingIsEditing.value && !bindingForm.apiToken.trim()) { ElMessage.warning('新增绑定时必须填写 APIToken'); return } bindingSubmitting.value = true; try { const payload = { ...bindingForm, projectId: bindingForm.projectId }; if (bindingIsEditing.value && currentBindingId.value !== null) { await updateGitlabBinding(currentBindingId.value, payload); ElMessage.success('GitLab 绑定已更新') } else { await createGitlabBinding(payload); ElMessage.success('GitLab 绑定已创建') } bindingDialogVisible.value = false; await refreshAll() } catch (error: any) { ElMessage.error(error?.response?.data?.message || '保存失败') } finally { bindingSubmitting.value = false } }
+const openBindingCreateDialog = () => {
+  bindingIsEditing.value = false
+  resetBindingForm()
+  bindingDialogVisible.value = true
+}
+const openBindingEditDialog = (row: ProjectGitlabBindingItem) => {
+  bindingIsEditing.value = true
+  currentBindingId.value = row.id
+  bindingForm.projectId = row.projectId
+  bindingForm.apiBaseUrl = row.apiBaseUrl
+  bindingForm.gitlabProjectRef = row.gitlabProjectPath || row.gitlabProjectRef
+  bindingForm.defaultTargetBranch = row.defaultTargetBranch || ''
+  bindingForm.apiToken = ''
+  bindingForm.enabled = row.enabled
+  applyBindingTestProfile(row.testProfileJson)
+  bindingDialogVisible.value = true
+}
+const handleBindingSubmit = async () => {
+  const valid = await bindingFormRef.value?.validate().catch(() => false)
+  if (!valid || bindingForm.projectId === null) return
+  if (!bindingIsEditing.value && !bindingForm.apiToken.trim()) {
+    ElMessage.warning('新增绑定时必须填写 APIToken')
+    return
+  }
+  bindingSubmitting.value = true
+  try {
+    const payload = {
+      projectId: bindingForm.projectId,
+      apiBaseUrl: bindingForm.apiBaseUrl.trim(),
+      gitlabProjectRef: bindingForm.gitlabProjectRef.trim(),
+      defaultTargetBranch: bindingForm.defaultTargetBranch.trim(),
+      apiToken: bindingForm.apiToken,
+      enabled: bindingForm.enabled,
+      testProfileJson: buildBindingTestProfileJson()
+    }
+    if (bindingIsEditing.value && currentBindingId.value !== null) {
+      await updateGitlabBinding(currentBindingId.value, payload)
+      ElMessage.success('GitLab 绑定已更新')
+    } else {
+      await createGitlabBinding(payload)
+      ElMessage.success('GitLab 绑定已创建')
+    }
+    bindingDialogVisible.value = false
+    await refreshAll()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '保存失败')
+  } finally {
+    bindingSubmitting.value = false
+  }
+}
 const handleBindingDelete = async (id: number) => { try { await ElMessageBox.confirm('删除绑定后，关联的自动合并策略也会受影响，是否继续？', '提示', { type: 'warning' }); await deleteGitlabBinding(id); ElMessage.success('绑定已删除'); await refreshAll() } catch (error: any) { if (error !== 'cancel') ElMessage.error(error?.response?.data?.message || '删除失败') } }
 const handleBindingTest = async (id: number) => { try { const result = await testGitlabBinding(id); ElMessage.success(`连接成功：${result.gitlabProjectPath || result.gitlabProjectRef}`); await refreshAll() } catch (error: any) { ElMessage.error(error?.response?.data?.message || '连接测试失败') } }
 const openTagCreateDialog = async (row: ProjectGitlabBindingItem) => { resetTagForm(); currentTagBinding.value = row; tagDialogVisible.value = true; await loadTagBranches() }
@@ -1979,6 +2249,39 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
   padding-bottom: 18px;
 }
 
+.platform-form-inline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.platform-form-inline-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.platform-form-inline-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.binding-http-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.binding-http-check-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.1fr) 110px minmax(180px, 1.6fr) 120px auto;
+  gap: 12px;
+  align-items: center;
+}
+
 @media (max-width: 1100px) {
   .gitlab-page-header {
     flex-direction: column;
@@ -2008,6 +2311,10 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 
 @media (max-width: 680px) {
   .gitlab-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .binding-http-check-row {
     grid-template-columns: 1fr;
   }
 }

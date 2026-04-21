@@ -22,6 +22,7 @@ export interface GitlabBindingPayload {
   defaultTargetBranch: string
   apiToken: string
   enabled: boolean
+  testProfileJson?: string
 }
 
 export interface GitlabBindingQuery {

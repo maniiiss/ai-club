@@ -558,20 +558,33 @@ class DevelopmentExecutionServiceTests {
                         String.valueOf(variables.get("test_commands_json")).contains("python scripts/check_encoding.py")
                                 && String.valueOf(variables.get("test_commands_json")).contains("cd backend && mvn -s maven-settings-central.xml test")
                                 && String.valueOf(variables.get("test_commands_json")).contains("cd frontend && npm run build")
+                                && String.valueOf(variables.get("test_plan_json")).contains("\"COMMAND\"")
+                                && String.valueOf(variables.get("test_plan_json")).contains("\"PLAYWRIGHT_SMOKE\"")
                 )))
                 .thenReturn("""
                         {
                           "status": "FAILED",
                           "summary": "frontend 仓库测试失败",
-                          "commandResults": [
+                          "suiteResults": [
                             {
-                              "command": "cd frontend && npm run build",
-                              "cwd": ".",
-                              "exitCode": 1,
-                              "stdout": "",
-                              "stderr": "build failed"
+                              "suiteId": "command",
+                              "type": "COMMAND",
+                              "status": "FAILED",
+                              "summary": "frontend 仓库测试失败",
+                              "checks": [],
+                              "artifacts": [],
+                              "commandResults": [
+                                {
+                                  "command": "cd frontend && npm run build",
+                                  "cwd": ".",
+                                  "exitCode": 1,
+                                  "stdout": "",
+                                  "stderr": "build failed"
+                                }
+                              ]
                             }
-                          ]
+                          ],
+                          "rawArtifacts": []
                         }
                         """);
         when(agentExecutionService.runAgent(eq(14L), any(String.class), any(Map.class)))
@@ -596,12 +609,107 @@ class DevelopmentExecutionServiceTests {
                 );
         assertThat(savedArtifacts)
                 .extracting(ExecutionArtifactEntity::getArtifactType)
-                .containsExactly("PLAN_MARKDOWN", "IMPLEMENT_RESULT_MARKDOWN", "IMPLEMENT_RESULT_JSON", "IMPLEMENT_LOG", "REPORT_MARKDOWN");
+                .containsExactly(
+                        "PLAN_MARKDOWN",
+                        "IMPLEMENT_RESULT_MARKDOWN",
+                        "IMPLEMENT_RESULT_JSON",
+                        "IMPLEMENT_LOG",
+                        "TEST_PLAN_JSON",
+                        "TEST_SUITE_RESULT_MARKDOWN",
+                        "TEST_SUITE_RESULT_JSON",
+                        "TEST_RESULT_MARKDOWN",
+                        "TEST_RESULT_JSON",
+                        "TEST_LOG",
+                        "REPORT_MARKDOWN"
+                );
         verify(agentExecutionService).runAgent(
                 eq(13L),
                 any(String.class),
                 argThat(variables -> "1".equals(String.valueOf(variables.get("repo_index"))) && "2".equals(String.valueOf(variables.get("repo_total"))))
         );
+    }
+
+    /**
+     * 开发/测试 Runner 即使没有按约定返回 JSON，也应保留原始输出并继续展示降级摘要，
+     * 避免把“结构化解析失败”误判为开发执行失败。
+     */
+    @Test
+    void shouldDegradeNonJsonImplementAndTestOutputWithoutFailingExecution() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = buildWorkflowPlan();
+
+        when(agentExecutionService.runAgent(eq(11L), any(String.class), any(Map.class)))
+                .thenReturn("# 执行规划\n先做 frontend，再做 backend。");
+        when(agentExecutionService.runAgent(eq(12L), any(String.class), any(Map.class)))
+                .thenReturn(
+                        "前端开发已完成，但 Runner 没有输出 JSON",
+                        """
+                                {
+                                  "status": "SUCCESS",
+                                  "summary": "backend 仓库已完成开发",
+                                  "changedFiles": ["backend/src/main/App.java"],
+                                  "commandsExecuted": ["git diff"],
+                                  "log": "实现完成",
+                                  "workBranch": "codex/execution-99-1001-2",
+                                  "commitSha": null,
+                                  "mergeRequestUrl": null
+                                }
+                                """
+                );
+        when(agentExecutionService.runAgent(eq(13L), any(String.class), any(Map.class)))
+                .thenReturn(
+                        "前端测试已执行通过，但 Runner 没有输出 JSON",
+                        """
+                                {
+                                  "status": "SUCCESS",
+                                  "summary": "backend 测试通过",
+                                  "suiteResults": [
+                                    {
+                                      "suiteId": "command",
+                                      "type": "COMMAND",
+                                      "status": "SUCCESS",
+                                      "summary": "命令型 Harness 已通过",
+                                      "checks": [],
+                                      "artifacts": [],
+                                      "commandResults": []
+                                    }
+                                  ],
+                                  "rawArtifacts": []
+                                }
+                                """
+                );
+        when(agentExecutionService.runAgent(eq(14L), any(String.class), any(Map.class)))
+                .thenReturn("""
+                        # 交付报告
+
+                        两个仓库均已完成，frontend 结果使用原始输出降级展示。
+                        """);
+
+        DevelopmentExecutionService.DevelopmentExecutionResult result =
+                developmentExecutionService.executeDevelopmentTask(executionTask, executionRun, workflowPlan);
+
+        assertThat(result.canceled()).isFalse();
+        assertThat(result.awaitingConfirmation()).isFalse();
+        String implementationMarkdown = savedArtifacts.stream()
+                .filter(artifact -> "IMPLEMENT_RESULT_MARKDOWN".equals(artifact.getArtifactType()))
+                .filter(artifact -> artifact.getTitle().contains("group/frontend"))
+                .findFirst()
+                .orElseThrow()
+                .getContentText();
+        String testMarkdown = savedArtifacts.stream()
+                .filter(artifact -> "TEST_RESULT_MARKDOWN".equals(artifact.getArtifactType()))
+                .filter(artifact -> artifact.getTitle().contains("group/frontend"))
+                .findFirst()
+                .orElseThrow()
+                .getContentText();
+        assertThat(implementationMarkdown)
+                .contains("未返回结构化 JSON")
+                .contains("前端开发已完成");
+        assertThat(testMarkdown)
+                .contains("未返回结构化 JSON")
+                .contains("前端测试已执行通过")
+                .contains("原始输出");
     }
 
     /**
@@ -628,19 +736,58 @@ class DevelopmentExecutionServiceTests {
                           "mergeRequestUrl": null
                         }
                         """);
-        when(agentExecutionService.runAgent(
-                eq(13L),
-                any(String.class),
-                argThat(variables ->
-                        String.valueOf(variables.get("test_commands_json")).contains("python scripts/check_encoding.py")
-                                && String.valueOf(variables.get("test_commands_json")).contains("cd frontend && npm run build")
-                                && !String.valueOf(variables.get("test_commands_json")).contains("mvn -s maven-settings-central.xml test")
-                )))
+        when(agentExecutionService.runAgent(eq(13L), any(String.class), any(Map.class)))
                 .thenReturn("""
                         {
                           "status": "SUCCESS",
                           "summary": "测试通过",
-                          "commandResults": []
+                          "suiteResults": [
+                            {
+                              "suiteId": "command",
+                              "type": "COMMAND",
+                              "status": "SUCCESS",
+                              "summary": "命令型 Harness 已通过",
+                              "checks": [],
+                              "artifacts": [],
+                              "commandResults": []
+                            },
+                            {
+                              "suiteId": "playwright-smoke",
+                              "type": "PLAYWRIGHT_SMOKE",
+                              "status": "SUCCESS",
+                              "summary": "浏览器烟测已通过",
+                              "checks": [],
+                              "artifacts": [],
+                              "commandResults": []
+                            }
+                          ],
+                          "rawArtifacts": []
+                        }
+                        """, """
+                        {
+                          "status": "SUCCESS",
+                          "summary": "后端服务烟测通过",
+                          "suiteResults": [
+                            {
+                              "suiteId": "command",
+                              "type": "COMMAND",
+                              "status": "SUCCESS",
+                              "summary": "命令型 Harness 已通过",
+                              "checks": [],
+                              "artifacts": [],
+                              "commandResults": []
+                            },
+                            {
+                              "suiteId": "service-smoke",
+                              "type": "SERVICE_SMOKE",
+                              "status": "SUCCESS",
+                              "summary": "服务烟测已通过",
+                              "checks": [],
+                              "artifacts": [],
+                              "commandResults": []
+                            }
+                          ],
+                          "rawArtifacts": []
                         }
                         """);
         when(agentExecutionService.runAgent(eq(14L), any(String.class), any(Map.class)))
@@ -827,6 +974,38 @@ class DevelopmentExecutionServiceTests {
         binding.setDefaultTargetBranch("main");
         binding.setTokenCiphertext(tokenCiphertext);
         binding.setEnabled(true);
+        /**
+         * 测试模板跟随仓库类型初始化，确保开发执行单测能覆盖 PLAYWRIGHT_SMOKE / SERVICE_SMOKE 计划生成。
+         */
+        if (path.contains("frontend")) {
+            binding.setTestProfileJson("""
+                    {
+                      "repoKind": "FRONTEND",
+                      "workingDir": "frontend",
+                      "packageManager": "npm",
+                      "startCommand": "npm run dev",
+                      "smokePaths": ["/"],
+                      "readySelector": "#app"
+                    }
+                    """);
+        } else {
+            binding.setTestProfileJson("""
+                    {
+                      "repoKind": "BACKEND",
+                      "workingDir": "backend",
+                      "startCommand": "mvn spring-boot:run",
+                      "healthPath": "/actuator/health",
+                      "httpChecks": [
+                        {
+                          "name": "health",
+                          "method": "GET",
+                          "path": "/actuator/health",
+                          "expectedStatus": 200
+                        }
+                      ]
+                    }
+                    """);
+        }
         return binding;
     }
 

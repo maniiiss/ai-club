@@ -12,6 +12,7 @@ public record ProjectGitlabBindingRequest(
         String gitlabProjectRef,
         @Size(max = 100, message = "默认目标分支长度不能超过100")
         String defaultTargetBranch,
+        String testProfileJson,
         @Size(max = 500, message = "Token 长度不能超过500")
         String apiToken,
         Boolean enabled

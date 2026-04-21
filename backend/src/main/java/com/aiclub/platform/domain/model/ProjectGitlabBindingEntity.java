@@ -62,6 +62,13 @@ public class ProjectGitlabBindingEntity {
     @Column(name = "default_target_branch", length = 100)
     private String defaultTargetBranch;
 
+    /**
+     * 项目级测试模板配置。
+     * 首版直接保存 JSON 文本，避免仓库绑定表单与执行侧模型发生强耦合。
+     */
+    @Column(name = "test_profile_json", columnDefinition = "TEXT")
+    private String testProfileJson;
+
     @Column(name = "token_ciphertext", nullable = false, columnDefinition = "TEXT")
     private String tokenCiphertext;
 
@@ -181,6 +188,14 @@ public class ProjectGitlabBindingEntity {
 
     public void setDefaultTargetBranch(String defaultTargetBranch) {
         this.defaultTargetBranch = defaultTargetBranch;
+    }
+
+    public String getTestProfileJson() {
+        return testProfileJson;
+    }
+
+    public void setTestProfileJson(String testProfileJson) {
+        this.testProfileJson = testProfileJson;
     }
 
     public String getTokenCiphertext() {

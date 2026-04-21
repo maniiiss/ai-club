@@ -38,6 +38,9 @@ class GitlabManagementServiceTests {
                 "http://gitlab.example.com/api/v4",
                 "group-a/repository-one",
                 "main",
+                """
+                        {"repoKind":"FRONTEND","smokePaths":["/"]}
+                        """,
                 "token-one",
                 true
         ));
@@ -46,6 +49,9 @@ class GitlabManagementServiceTests {
                 "http://gitlab.example.com/api/v4",
                 "group-a/repository-two",
                 "develop",
+                """
+                        {"repoKind":"BACKEND","healthPath":"/actuator/health"}
+                        """,
                 "token-two",
                 true
         ));
@@ -56,6 +62,8 @@ class GitlabManagementServiceTests {
         assertThat(projectGitlabBindingRepository.findByProject_IdOrderByIdAsc(project.getId()))
                 .extracting(item -> item.getGitlabProjectRef())
                 .containsExactly("group-a/repository-one", "group-a/repository-two");
+        assertThat(firstBinding.testProfileJson()).contains("\"repoKind\":\"FRONTEND\"");
+        assertThat(secondBinding.testProfileJson()).contains("\"repoKind\":\"BACKEND\"");
     }
 
     /**
@@ -70,6 +78,7 @@ class GitlabManagementServiceTests {
                 "http://gitlab.example.com/api/v4",
                 "group-a/repository-one",
                 "main",
+                null,
                 "token-one",
                 true
         ));
@@ -79,6 +88,7 @@ class GitlabManagementServiceTests {
                 "http://gitlab.example.com/api/v4",
                 "group-a/repository-one",
                 "main",
+                null,
                 "token-two",
                 true
         )))

@@ -1,5 +1,6 @@
 package com.aiclub.platform.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aiclub.platform.common.DataPermissionScopeType;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.AgentEntity;
@@ -84,6 +85,7 @@ public class GitlabManagementService {
     private final ExecutionTaskService executionTaskService;
     private final RepositoryScanClientService repositoryScanClientService;
     private final RepositoryScanRulesetService repositoryScanRulesetService;
+    private final ObjectMapper objectMapper;
     private final String defaultApiUrl;
 
     public GitlabManagementService(ProjectRepository projectRepository,
@@ -104,6 +106,7 @@ public class GitlabManagementService {
                                    ExecutionTaskService executionTaskService,
                                    RepositoryScanClientService repositoryScanClientService,
                                    RepositoryScanRulesetService repositoryScanRulesetService,
+                                   ObjectMapper objectMapper,
                                    @Value("${platform.gitlab.default-api-url}") String defaultApiUrl) {
         this.projectRepository = projectRepository;
         this.agentRepository = agentRepository;
@@ -123,6 +126,7 @@ public class GitlabManagementService {
         this.executionTaskService = executionTaskService;
         this.repositoryScanClientService = repositoryScanClientService;
         this.repositoryScanRulesetService = repositoryScanRulesetService;
+        this.objectMapper = objectMapper;
         this.defaultApiUrl = defaultApiUrl;
     }
 
@@ -155,6 +159,7 @@ public class GitlabManagementService {
         entity.setApiBaseUrl(apiBaseUrl);
         entity.setGitlabProjectRef(projectRef);
         entity.setDefaultTargetBranch(trimToNull(request.defaultTargetBranch()));
+        entity.setTestProfileJson(normalizeJsonText(request.testProfileJson()));
         entity.setTokenCiphertext(tokenCipherService.encrypt(requireToken(request.apiToken())));
         entity.setEnabled(defaultBoolean(request.enabled(), true));
         return toBindingSummary(bindingRepository.save(entity));
@@ -171,6 +176,7 @@ public class GitlabManagementService {
         entity.setApiBaseUrl(apiBaseUrl);
         entity.setGitlabProjectRef(projectRef);
         entity.setDefaultTargetBranch(trimToNull(request.defaultTargetBranch()));
+        entity.setTestProfileJson(normalizeJsonText(request.testProfileJson()));
         entity.setEnabled(defaultBoolean(request.enabled(), true));
         if (hasText(request.apiToken())) {
             entity.setTokenCiphertext(tokenCipherService.encrypt(request.apiToken().trim()));
@@ -966,7 +972,39 @@ public class GitlabManagementService {
     }
 
     private ProjectGitlabBindingSummary toBindingSummary(ProjectGitlabBindingEntity entity) {
-        return new ProjectGitlabBindingSummary(entity.getId(), entity.getProject().getId(), entity.getProject().getName(), entity.getApiBaseUrl(), entity.getGitlabProjectRef(), entity.getGitlabProjectId(), entity.getGitlabProjectName(), entity.getGitlabProjectPath(), entity.getGitlabProjectWebUrl(), entity.getDefaultTargetBranch(), hasText(entity.getTokenCiphertext()), defaultBoolean(entity.getEnabled(), true), entity.getLastTestStatus(), entity.getLastTestMessage(), formatTime(entity.getLastTestedAt()));
+        return new ProjectGitlabBindingSummary(
+                entity.getId(),
+                entity.getProject().getId(),
+                entity.getProject().getName(),
+                entity.getApiBaseUrl(),
+                entity.getGitlabProjectRef(),
+                entity.getGitlabProjectId(),
+                entity.getGitlabProjectName(),
+                entity.getGitlabProjectPath(),
+                entity.getGitlabProjectWebUrl(),
+                entity.getDefaultTargetBranch(),
+                entity.getTestProfileJson(),
+                hasText(entity.getTokenCiphertext()),
+                defaultBoolean(entity.getEnabled(), true),
+                entity.getLastTestStatus(),
+                entity.getLastTestMessage(),
+                formatTime(entity.getLastTestedAt())
+        );
+    }
+
+    /**
+     * 测试模板以 JSON 文本存储；这里在保存前做一次结构校验，避免把脏字符串落库后拖垮执行阶段。
+     */
+    private String normalizeJsonText(String jsonText) {
+        String normalized = trimToNull(jsonText);
+        if (normalized == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(objectMapper.readTree(normalized));
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("测试模板配置不是合法 JSON", exception);
+        }
     }
 
     /**

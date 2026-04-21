@@ -45,6 +45,14 @@ public class NotificationService {
     public static final String LEVEL_WARNING = "WARNING";
     public static final String LEVEL_ERROR = "ERROR";
 
+    private static final int TYPE_MAX_LENGTH = 30;
+    private static final int LEVEL_MAX_LENGTH = 20;
+    private static final int SENDER_NAME_MAX_LENGTH = 100;
+    private static final int TITLE_MAX_LENGTH = 200;
+    private static final int CONTENT_MAX_LENGTH = 5000;
+    private static final int BIZ_TYPE_MAX_LENGTH = 40;
+    private static final int ACTION_URL_MAX_LENGTH = 300;
+
     private final NotificationMessageRepository notificationMessageRepository;
     private final UserRepository userRepository;
     private final NotificationPushService notificationPushService;
@@ -154,13 +162,14 @@ public class NotificationService {
         NotificationMessageEntity entity = new NotificationMessageEntity();
         entity.setRecipientUser(recipient);
         entity.setSenderUser(senderUser);
-        entity.setSenderName(defaultString(senderName));
-        entity.setType(normalizeType(type));
-        entity.setLevel(normalizeLevel(level));
-        entity.setTitle(limit(title, 200));
-        entity.setContent(limit(content, 5000));
-        entity.setActionUrl(trimToNull(actionUrl));
-        entity.setBizType(trimToNull(bizType));
+        // 通知调用点很多，统一在服务入口按数据库列长度收口，避免单个长业务类型拖垮执行任务收尾事务。
+        entity.setSenderName(limit(senderName, SENDER_NAME_MAX_LENGTH));
+        entity.setType(limit(normalizeType(type), TYPE_MAX_LENGTH));
+        entity.setLevel(limit(normalizeLevel(level), LEVEL_MAX_LENGTH));
+        entity.setTitle(limit(title, TITLE_MAX_LENGTH));
+        entity.setContent(limit(content, CONTENT_MAX_LENGTH));
+        entity.setActionUrl(limitToNull(actionUrl, ACTION_URL_MAX_LENGTH));
+        entity.setBizType(limitToNull(bizType, BIZ_TYPE_MAX_LENGTH));
         entity.setBizId(bizId);
         NotificationMessageEntity saved = notificationMessageRepository.save(entity);
         long unreadCount = notificationMessageRepository.countByRecipientUser_IdAndReadFlagFalse(recipient.getId());
@@ -252,6 +261,14 @@ public class NotificationService {
 
     private String limit(String value, int maxLength) {
         String normalized = defaultString(value);
+        return normalized.length() > maxLength ? normalized.substring(0, maxLength) : normalized;
+    }
+
+    private String limitToNull(String value, int maxLength) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            return null;
+        }
         return normalized.length() > maxLength ? normalized.substring(0, maxLength) : normalized;
     }
 }
