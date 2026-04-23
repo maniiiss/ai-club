@@ -269,9 +269,10 @@ public class DevelopmentExecutionService {
         String output = executeStepAgent(stepPlan, executionTask, executionRun, step, input, variables);
         ImplementationStepResult result = parseImplementationResult(output);
         validateImplementationResult(result);
-        completeStep(executionTask, executionRun, stepPlan, totalSteps, step, output, defaultSuccessMessage(result.summary(), repository.repositoryDisplayName(), "开发实现"));
-        artifacts.add(saveArtifact(executionTask, executionRun, step, "IMPLEMENT_RESULT_MARKDOWN", "实现结果 · " + repository.repositoryDisplayName(), buildImplementationResultMarkdown(result)));
-        artifacts.add(saveArtifact(executionTask, executionRun, step, "IMPLEMENT_RESULT_JSON", "实现结果 JSON · " + repository.repositoryDisplayName(), prettyJson(output)));
+        String displayMarkdown = buildImplementationDisplayMarkdown(result);
+        completeStep(executionTask, executionRun, stepPlan, totalSteps, step, displayMarkdown, defaultSuccessMessage(result.summary(), repository.repositoryDisplayName(), "开发实现"));
+        artifacts.add(saveArtifact(executionTask, executionRun, step, "IMPLEMENT_RESULT_MARKDOWN", "实现结果 · " + repository.repositoryDisplayName(), displayMarkdown));
+        artifacts.add(saveArtifact(executionTask, executionRun, step, "IMPLEMENT_RESULT_JSON", "实现结果 JSON · " + repository.repositoryDisplayName(), prettyJson(toJson(result))));
         artifacts.add(saveArtifact(executionTask, executionRun, step, "IMPLEMENT_LOG", "开发实现日志 · " + repository.repositoryDisplayName(), defaultString(result.log())));
         return result;
     }
@@ -884,15 +885,12 @@ public class DevelopmentExecutionService {
             builder.append('\n');
         }
         builder.append("## 输出要求\n")
-                .append("请返回 JSON，不要输出 Markdown 代码块围栏。字段必须包含：\n")
-                .append("- status\n")
-                .append("- summary\n")
-                .append("- changedFiles\n")
-                .append("- commandsExecuted\n")
-                .append("- log\n")
-                .append("- workBranch（可选）\n")
-                .append("- commitSha（可选）\n")
-                .append("- mergeRequestUrl（可选）\n");
+                .append("请直接返回 Markdown 说明，不要返回 JSON，也不要把 JSON 放进代码块。\n")
+                .append("- 先写执行状态（SUCCESS 或 FAILED）和结果摘要\n")
+                .append("- 按文件或模块说明改了哪里、为什么改\n")
+                .append("- 列出实际执行过的验证命令；未执行验证也要说明原因\n")
+                .append("- 写清风险、阻塞项或后续建议\n")
+                .append("- 平台会自动基于工作区 git 状态整理 changedFiles、workBranch、commitSha，无需你手写结构化字段\n");
         return builder.toString().trim();
     }
 
@@ -1604,34 +1602,47 @@ public class DevelopmentExecutionService {
             JsonNode node = objectMapper.readTree(rawOutput);
             String summary = node.path("summary").asText("");
             if (!hasText(summary) && node.path("jsonParseDegraded").asBoolean(false)) {
-                summary = "开发实现未返回结构化 JSON，已降级展示原始输出";
+                summary = extractImplementationMarkdownSummary(node.path("rawOutput").asText(""));
+            }
+            if (!hasText(summary)) {
+                summary = extractImplementationMarkdownSummary(node.path("displayMarkdown").asText(""));
             }
             String log = node.path("log").asText("");
             if (!hasText(log) && node.path("jsonParseDegraded").asBoolean(false)) {
                 log = node.path("rawOutput").asText("");
             }
+            String displayMarkdown = trimToNull(node.path("displayMarkdown").asText(""));
+            if (!hasText(displayMarkdown)) {
+                displayMarkdown = trimToNull(node.path("markdownOutput").asText(""));
+            }
+            if (!hasText(displayMarkdown) && node.path("jsonParseDegraded").asBoolean(false)) {
+                displayMarkdown = trimToNull(node.path("rawOutput").asText(""));
+            }
             return new ImplementationStepResult(
                     node.path("status").asText("SUCCESS"),
-                    summary,
+                    hasText(summary) ? summary : "开发实现已完成",
                     readStringList(node.path("changedFiles")),
                     readStringList(node.path("commandsExecuted")),
                     log,
                     trimToNull(node.path("workBranch").asText("")),
                     trimToNull(node.path("commitSha").asText("")),
                     trimToNull(node.path("mergeRequestUrl").asText("")),
-                    rawOutput
+                    rawOutput,
+                    displayMarkdown
             );
         } catch (Exception exception) {
+            String markdownSummary = extractImplementationMarkdownSummary(rawOutput);
             return new ImplementationStepResult(
-                    "SUCCESS",
-                    "开发实现未返回结构化 JSON，已降级展示原始输出",
+                    inferImplementationStatusFromMarkdown(rawOutput),
+                    hasText(markdownSummary) ? markdownSummary : "开发实现已完成",
                     List.of(),
                     List.of(),
-                    buildNonStructuredOutputLog("开发实现", rawOutput, exception),
+                    defaultString(rawOutput),
                     null,
                     null,
                     null,
-                    rawOutput
+                    rawOutput,
+                    trimToNull(rawOutput)
             );
         }
     }
@@ -1882,6 +1893,17 @@ public class DevelopmentExecutionService {
     }
 
     /**
+     * IMPLEMENT 阶段优先展示 runner 原始 Markdown，只有历史链路未提供 Markdown 时，
+     * 才回退到平台根据结构化字段补出的摘要模板。
+     */
+    private String buildImplementationDisplayMarkdown(ImplementationStepResult result) {
+        if (hasText(result.displayMarkdown())) {
+            return result.displayMarkdown().trim();
+        }
+        return buildImplementationResultMarkdown(result);
+    }
+
+    /**
      * 开发实现结果除了保留 JSON 供平台后续逻辑消费，也额外生成一份 Markdown，
      * 让执行中心详情页能够直接按结构化摘要阅读。
      */
@@ -1905,6 +1927,71 @@ public class DevelopmentExecutionService {
         appendMarkdownListSection(builder, "## ", "执行命令", result.commandsExecuted(), "本次未记录执行命令");
         appendMarkdownCodeSection(builder, "## ", "执行日志", result.log(), "暂无执行日志");
         return builder.toString().trim();
+    }
+
+    private String extractImplementationMarkdownSummary(String markdown) {
+        for (String line : defaultString(markdown).split("\\R")) {
+            String normalized = normalizeImplementationMarkdownLine(line);
+            if (!hasText(normalized)) {
+                continue;
+            }
+            String lower = normalized.toLowerCase();
+            if (lower.startsWith("status") || normalized.startsWith("状态") || normalized.startsWith("执行状态")) {
+                continue;
+            }
+            if (normalized.contains("摘要") && (normalized.contains("：") || normalized.contains(":"))) {
+                return tailAfterColon(normalized);
+            }
+            if ("开发实现结果".equals(normalized) || "结果概览".equals(normalized) || "总体结论".equals(normalized)) {
+                continue;
+            }
+            return normalized;
+        }
+        return "";
+    }
+
+    private String inferImplementationStatusFromMarkdown(String markdown) {
+        for (String line : defaultString(markdown).split("\\R")) {
+            String normalized = normalizeImplementationMarkdownLine(line);
+            if (!hasText(normalized)) {
+                continue;
+            }
+            String lower = normalized.toLowerCase();
+            boolean statusLine = lower.contains("status") || normalized.contains("状态") || normalized.contains("执行状态") || normalized.contains("执行结果");
+            if (!statusLine) {
+                continue;
+            }
+            if (lower.contains("failed") || normalized.contains("失败") || normalized.contains("未完成") || normalized.contains("无法完成") || normalized.contains("阻塞")) {
+                return "FAILED";
+            }
+            if (lower.contains("success") || normalized.contains("成功") || normalized.contains("已完成") || normalized.contains("完成")) {
+                return "SUCCESS";
+            }
+        }
+        return "SUCCESS";
+    }
+
+    private String normalizeImplementationMarkdownLine(String line) {
+        String normalized = defaultString(line).trim();
+        if (normalized.isBlank() || normalized.startsWith("```")) {
+            return "";
+        }
+        normalized = normalized.replaceFirst("^[#>*\\-\\d\\.\\)\\s]+", "").trim();
+        normalized = normalized.replace("`", "").trim();
+        return normalized;
+    }
+
+    private String tailAfterColon(String value) {
+        String normalized = defaultString(value).trim();
+        int chineseColonIndex = normalized.indexOf('：');
+        if (chineseColonIndex >= 0) {
+            return normalized.substring(chineseColonIndex + 1).trim();
+        }
+        int colonIndex = normalized.indexOf(':');
+        if (colonIndex >= 0) {
+            return normalized.substring(colonIndex + 1).trim();
+        }
+        return normalized;
     }
 
     /**
@@ -2260,7 +2347,8 @@ public class DevelopmentExecutionService {
             String workBranch,
             String commitSha,
             String mergeRequestUrl,
-            String rawOutput
+            String rawOutput,
+            String displayMarkdown
     ) {
     }
 

@@ -270,10 +270,7 @@ def _execute_implementation_streaming(
 
         if exit_code != 0:
             payload["status"] = "FAILED"
-            if bool(raw_output.get("jsonParseDegraded")):
-                payload["summary"] = "Codex 执行失败，且未返回结构化 JSON，已降级展示原始输出"
-            else:
-                payload["summary"] = _normalize_text(raw_output.get("summary")) or "Codex 执行失败"
+            payload["summary"] = _normalize_text(raw_output.get("summary")) or "Codex 执行失败"
         status = _normalize_status(payload.get("status"), default="SUCCESS")
         summary = _normalize_text(payload.get("summary")) or ("Codex 已完成仓库开发实现" if status == "SUCCESS" else "Codex 执行失败")
         _emit_cli_result_event(batcher, "Codex CLI", payload)
@@ -333,10 +330,7 @@ def _execute_implementation(request: CodexExecutionRequest, workspace: Developme
         payload = _normalize_implementation_payload(raw_output, changed_files, work_branch, base_commit, current_commit)
         if exit_code != 0:
             payload["status"] = "FAILED"
-            if bool(raw_output.get("jsonParseDegraded")):
-                payload["summary"] = "Codex 执行失败，且未返回结构化 JSON，已降级展示原始输出"
-            else:
-                payload["summary"] = _normalize_text(raw_output.get("summary")) or "Codex 执行失败"
+            payload["summary"] = _normalize_text(raw_output.get("summary")) or "Codex 执行失败"
         payload["log"] = _build_implementation_log(workspace, codex_stdout, codex_stderr)
         return payload
     except Exception as exception:
@@ -1250,10 +1244,13 @@ def _infer_frontend_start_command(project_dir: Path, package_manager: str) -> st
     scripts = payload.get("scripts") if isinstance(payload, dict) else {}
     if not isinstance(scripts, dict):
         return ""
-    if scripts.get("preview"):
-        return _node_script_command(package_manager, "preview")
+    # 业务意图：烟测默认优先选 dev。
+    # preview 在不少仓库里会先触发完整 build，再启动静态预览服务，
+    # 大仓场景容易把“应用就绪等待窗口”耗尽，导致前端尚未监听端口就被误判失败。
     if scripts.get("dev"):
         return _node_script_command(package_manager, "dev")
+    if scripts.get("preview"):
+        return _node_script_command(package_manager, "preview")
     return ""
 
 
@@ -1537,9 +1534,7 @@ def _run_codex_cli(
     workspace: DevelopmentExecutionWorkspace,
 ) -> tuple[dict[str, object], str, str, int]:
     codex_cli = _discover_codex_cli_path()
-    schema_path = workspace.out_dir / "codex-output-schema.json"
-    output_path = workspace.out_dir / "codex-output.json"
-    schema_path.write_text(_schema_text_for_mode(request.mode), encoding="utf-8")
+    output_path = workspace.out_dir / "codex-output.md"
     prompt = _build_codex_prompt(request)
     command = [
         str(codex_cli),
@@ -1550,8 +1545,6 @@ def _run_codex_cli(
         "--skip-git-repo-check",
         "--ephemeral",
         "--dangerously-bypass-approvals-and-sandbox",
-        "--output-schema",
-        str(schema_path),
         "-o",
         str(output_path),
         prompt,
@@ -1574,14 +1567,12 @@ def _run_codex_cli(
         _append_log(workspace, stdout)
     if stderr:
         _append_log(workspace, stderr)
-    raw_output = {}
+    markdown_output = ""
     if output_path.exists():
-        output_text = output_path.read_text(encoding="utf-8").strip()
-        if output_text:
-            raw_output = _json_payload_or_degraded(output_text)
-    if not raw_output and stdout:
-        raw_output = _json_payload_or_degraded(stdout)
-    _append_json_degradation_log_if_needed(workspace, raw_output)
+        markdown_output = output_path.read_text(encoding="utf-8").strip()
+    if not markdown_output:
+        markdown_output = stdout or stderr
+    raw_output = _implementation_raw_output_from_markdown(markdown_output, completed.returncode)
     return raw_output, stdout, stderr, completed.returncode
 
 
@@ -1591,11 +1582,9 @@ def _run_codex_cli_streaming(
     batcher: BackendEventBatcher,
 ) -> tuple[dict[str, object], str, str, int]:
     codex_cli = _discover_codex_cli_path()
-    schema_path = workspace.out_dir / "codex-output-schema.json"
-    output_path = workspace.out_dir / "codex-output.json"
+    output_path = workspace.out_dir / "codex-output.md"
     stdout_log = workspace.out_dir / "codex-stdout.log"
     stderr_log = workspace.out_dir / "codex-stderr.log"
-    schema_path.write_text(_schema_text_for_mode(request.mode), encoding="utf-8")
     prompt = _build_codex_prompt(request)
     command = [
         str(codex_cli),
@@ -1606,8 +1595,6 @@ def _run_codex_cli_streaming(
         "--skip-git-repo-check",
         "--ephemeral",
         "--dangerously-bypass-approvals-and-sandbox",
-        "--output-schema",
-        str(schema_path),
         "-o",
         str(output_path),
         prompt,
@@ -1626,14 +1613,12 @@ def _run_codex_cli_streaming(
         stderr_file=stderr_log,
         env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
     )
-    raw_output: dict[str, object] = {}
+    markdown_output = ""
     if output_path.exists():
-        output_text = output_path.read_text(encoding="utf-8").strip()
-        if output_text:
-            raw_output = _json_payload_or_degraded(output_text)
-    if not raw_output and result.stdout:
-        raw_output = _json_payload_or_degraded(result.stdout)
-    _append_json_degradation_log_if_needed(workspace, raw_output)
+        markdown_output = output_path.read_text(encoding="utf-8").strip()
+    if not markdown_output:
+        markdown_output = result.stdout or result.stderr
+    raw_output = _implementation_raw_output_from_markdown(markdown_output, result.exit_code)
     return raw_output, result.stdout, result.stderr, result.exit_code
 
 
@@ -1654,13 +1639,18 @@ def _normalize_implementation_payload(
         "commandsExecuted": _normalize_string_list(raw_output.get("commandsExecuted")),
         "log": _normalize_text(raw_output.get("log")),
     }
+    display_markdown = _normalize_text(raw_output.get("displayMarkdown")) or _normalize_text(raw_output.get("markdownOutput"))
+    if display_markdown:
+        payload["displayMarkdown"] = display_markdown
     if bool(raw_output.get("jsonParseDegraded")):
         payload["jsonParseDegraded"] = True
         payload["jsonParseError"] = _normalize_text(raw_output.get("jsonParseError"))
         payload["rawOutput"] = _normalize_text(raw_output.get("rawOutput"))
-        payload["summary"] = "开发实现已完成，但未返回结构化 JSON，已降级展示原始输出"
+        payload["summary"] = _extract_markdown_summary(payload["rawOutput"]) or "开发实现已完成，已展示原始输出"
         if not payload["log"]:
             payload["log"] = _normalize_text(raw_output.get("rawOutput"))
+        if not payload.get("displayMarkdown") and payload["rawOutput"]:
+            payload["displayMarkdown"] = payload["rawOutput"]
     if work_branch:
         payload["workBranch"] = work_branch
     commit_sha = _normalize_text(raw_output.get("commitSha"))
@@ -1734,16 +1724,14 @@ def _build_codex_prompt(request: CodexExecutionRequest) -> str:
 请在当前仓库中直接完成“开发实现”步骤，不要只给建议。
 
 执行要求：
-1. 真实修改当前仓库中的代码或配置；如判断无需修改，也要在 summary 和 log 中明确说明依据。
+1. 真实修改当前仓库中的代码或配置；如判断无需修改，也要在结果说明中明确写出依据。
 2. 遵循仓库内已有的 AGENTS.md、README、测试规范和编码约束。
 3. 可运行最小必要的命令辅助开发，但不要 push 远端。
-4. 返回严格 JSON，不要输出 Markdown 代码块围栏，也不要附加额外说明。
-5. JSON 字段必须包含：status、summary、changedFiles、commandsExecuted、log、workBranch、commitSha、mergeRequestUrl。
-6. `workBranch`、`commitSha`、`mergeRequestUrl` 暂时没有值时必须返回 null，不要省略字段。
-7. changedFiles 只填写仓库相对路径；commandsExecuted 只记录你实际执行过的重要命令。
-8. `status` 只能返回 `SUCCESS` 或 `FAILED`，绝对不要返回 `IN_PROGRESS`、`RUNNING`、`STARTED` 等中间状态。
-9. 必须等本次仓库开发真正完成后，再输出唯一一次最终 JSON；不要先输出阶段性 JSON。
-10. 如果无法完成，请返回 status=FAILED，并在 summary/log 中写清阻塞原因。
+4. 最终结果直接返回 Markdown，不要返回 JSON，也不要把 JSON 放进 Markdown 代码块。
+5. Markdown 建议包含：执行状态（SUCCESS 或 FAILED）、结果摘要、改动说明、验证情况、风险与后续建议。
+6. 改动说明请按文件或模块说明“改了哪里、为什么改”，不用再拼 changedFiles/workBranch/commitSha JSON 字段。
+7. 必须等本次仓库开发真正完成后，再输出唯一一次最终 Markdown；不要先输出阶段性最终结果。
+8. 如果无法完成，请在 Markdown 中把执行状态写为 FAILED，并说明阻塞原因。
 
 补充上下文如下：
 {request.input}
@@ -2196,6 +2184,90 @@ def _append_json_degradation_log_if_needed(workspace: DevelopmentExecutionWorksp
         _append_log(workspace, _tail_text(raw_text, 12000))
 
 
+def _implementation_raw_output_from_markdown(markdown_output: str, exit_code: int) -> dict[str, object]:
+    """
+    IMPLEMENT 阶段不再要求模型输出 JSON；平台内部需要的结构化字段由 sidecar
+    基于 Markdown 说明、CLI 退出码和后续 git 状态统一组装，避免用户看到 JSON 降级提示。
+    """
+    normalized = _normalize_text(markdown_output)
+    status = _infer_implementation_status_from_markdown(normalized, exit_code)
+    summary = _extract_markdown_summary(normalized) or ("开发实现已完成" if status == "SUCCESS" else "开发实现失败")
+    payload: dict[str, object] = {
+        "status": status,
+        "summary": summary,
+        "commandsExecuted": _extract_markdown_commands(normalized),
+        "log": normalized,
+        "displayMarkdown": normalized,
+    }
+    if normalized:
+        payload["rawOutput"] = normalized
+    return payload
+
+
+def _infer_implementation_status_from_markdown(markdown_output: str, exit_code: int) -> str:
+    if exit_code != 0:
+        return "FAILED"
+    for line in markdown_output.splitlines()[:30]:
+        normalized = _normalize_markdown_line(line)
+        if not normalized:
+            continue
+        lower = normalized.lower()
+        is_status_line = "status" in lower or "状态" in normalized or "执行结果" in normalized or "执行状态" in normalized
+        if not is_status_line:
+            continue
+        if "failed" in lower or "失败" in normalized or "未完成" in normalized or "无法完成" in normalized or "阻塞" in normalized:
+            return "FAILED"
+        if "success" in lower or "成功" in normalized or "已完成" in normalized or "完成" in normalized:
+            return "SUCCESS"
+    return "SUCCESS"
+
+
+def _extract_markdown_summary(markdown_output: str) -> str:
+    for line in markdown_output.splitlines():
+        normalized = _normalize_markdown_line(line)
+        if not normalized:
+            continue
+        lowered = normalized.lower()
+        if lowered.startswith("status") or normalized.startswith("状态") or normalized.startswith("执行状态"):
+            continue
+        if "摘要" in normalized and ("：" in normalized or ":" in normalized):
+            return _tail_after_colon(normalized)
+        if normalized in {"开发实现结果", "结果概览", "总体结论"}:
+            continue
+        return normalized
+    return ""
+
+
+def _extract_markdown_commands(markdown_output: str) -> list[str]:
+    commands: list[str] = []
+    for line in markdown_output.splitlines():
+        normalized = _normalize_markdown_line(line)
+        if not normalized:
+            continue
+        if normalized.startswith("$ "):
+            commands.append(normalized[2:].strip())
+            continue
+        if normalized.startswith("命令：") or normalized.startswith("命令:"):
+            commands.append(_tail_after_colon(normalized))
+    return list(dict.fromkeys(command for command in commands if command))
+
+
+def _normalize_markdown_line(line: str) -> str:
+    normalized = (line or "").strip()
+    if not normalized or normalized.startswith("```"):
+        return ""
+    normalized = re.sub(r"^[#>\-\*\d\.\)\s]+", "", normalized).strip()
+    return normalized.strip("`").strip()
+
+
+def _tail_after_colon(value: str) -> str:
+    if "：" in value:
+        return value.split("：", 1)[1].strip()
+    if ":" in value:
+        return value.split(":", 1)[1].strip()
+    return value.strip()
+
+
 def _normalize_status(value: object, default: str) -> str:
     text = _normalize_text(value).upper()
     return text or default
@@ -2212,7 +2284,7 @@ def _build_terminal_status_summary(raw_status: str, summary: str) -> str:
         return summary
     message = (
         f"开发执行返回了非终态状态 {normalized_status}，"
-        "当前桥接只接受 SUCCESS/FAILED/CANCELED 作为最终结果，请仅在本步真正结束后输出最终 JSON"
+        "当前桥接只接受 SUCCESS/FAILED/CANCELED 作为最终结果，请仅在本步真正结束后输出最终结果"
     )
     if summary:
         return f"{message}。模型原始摘要：{summary}"

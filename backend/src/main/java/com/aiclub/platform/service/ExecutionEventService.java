@@ -37,6 +37,8 @@ public class ExecutionEventService {
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final int MAX_TAIL_LINES = 200;
     private static final int MAX_TAIL_CHARS = 64 * 1024;
+    private static final long STREAM_POLL_INTERVAL_MILLIS = 250L;
+    private static final int STREAM_PING_IDLE_ROUNDS = 40;
 
     private final ExecutionStepEventRepository executionStepEventRepository;
     private final ExecutionStepRepository executionStepRepository;
@@ -276,7 +278,9 @@ public class ExecutionEventService {
                     idleRounds = 0;
                 } else {
                     idleRounds += 1;
-                    if (idleRounds % 10 == 0) {
+                    // 执行详情页依赖这里的轮询把数据库中的增量事件尽快推到浏览器，
+                    // 轮询间隔过大时，runner 已经写入的尾日志也会看起来像“结束后才一起出现”。
+                    if (idleRounds % STREAM_PING_IDLE_ROUNDS == 0) {
                         writeComment(outputStream, "ping");
                     }
                 }
@@ -287,7 +291,7 @@ public class ExecutionEventService {
                         break;
                     }
                 }
-                sleepQuietly(1000L);
+                sleepQuietly(STREAM_POLL_INTERVAL_MILLIS);
             }
         };
     }

@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from app.models import CliExecutionRepository, CliExecutionRequest, CliExecutionResponse, CodexExecutionContext
 from app.services.cli_execution_service import (
-    _extract_json_object_or_empty,
+    _build_claude_implementation_prompt,
     _to_claude_request,
     _to_codex_request,
     execute_cli_execution,
@@ -142,10 +142,11 @@ class CliExecutionServiceTests(unittest.TestCase):
                         "changedFiles": ["src/App.vue"],
                         "commandsExecuted": ["npm run build"],
                         "log": "实现完成",
+                        "displayMarkdown": "# 结果概览\n\nClaude 已完成开发",
                     }), \
-                    patch("app.services.cli_execution_service._run_claude_json_cli", return_value=(
+                    patch("app.services.cli_execution_service._run_claude_implementation_cli", return_value=(
                         {"status": "SUCCESS", "summary": "Claude 已完成开发"},
-                        '{"status":"SUCCESS"}',
+                        "# 结果概览\n\nClaude 已完成开发",
                         "",
                         0,
                     )):
@@ -154,15 +155,15 @@ class CliExecutionServiceTests(unittest.TestCase):
         payload = json.loads(response.output)
         self.assertEqual("SUCCESS", payload["status"])
         self.assertEqual("Claude 已完成开发", payload["summary"])
+        self.assertIn("# 结果概览", payload["displayMarkdown"])
         self.assertEqual(str(repo_dir), response.repoPath)
 
-    def test_should_degrade_claude_non_json_stdout_without_codex_error_wording(self):
-        payload = _extract_json_object_or_empty("Claude Code 执行完成，但未返回 JSON")
+    def test_should_build_claude_implementation_prompt_as_markdown(self):
+        prompt = _build_claude_implementation_prompt(self._build_request("CLAUDE_CODE_CLI", "IMPLEMENT"))
 
-        self.assertTrue(payload["jsonParseDegraded"])
-        self.assertIn("输出未返回合法 JSON", payload["jsonParseError"])
-        self.assertNotIn("Codex 未返回合法 JSON", payload["jsonParseError"])
-        self.assertIn("Claude Code 执行完成", payload["rawOutput"])
+        self.assertIn("最终结果直接返回 Markdown", prompt)
+        self.assertIn("不要返回 JSON", prompt)
+        self.assertNotIn("返回严格 JSON", prompt)
 
     def test_should_start_claude_adhoc_session_with_unified_runner(self):
         request = self._build_request("CLAUDE_CODE_CLI", "AD_HOC").model_copy(update={

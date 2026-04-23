@@ -1,6 +1,7 @@
 import json
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,11 +12,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.models import CodexExecutionContext, CodexExecutionRepository, CodexExecutionRequest
 from app.services.codex_execution_service import (
     DevelopmentExecutionWorkspace,
+    _build_codex_prompt,
     _checkout_commit_if_needed,
     _clone_repository,
-    _json_payload_or_degraded,
+    _infer_frontend_start_command,
+    _implementation_raw_output_from_markdown,
     _normalize_implementation_payload,
-    _schema_text_for_mode,
     execute_codex_execution,
     start_codex_execution,
 )
@@ -73,6 +75,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
                             "summary": "已完成实现",
                             "commandsExecuted": ["npm run lint"],
                             "log": "模型日志",
+                            "displayMarkdown": "# 结果概览\n\n已完成实现",
                         },
                         "stdout",
                         "",
@@ -89,10 +92,22 @@ class CodexExecutionServiceTests(unittest.TestCase):
         self.assertEqual(["frontend/src/App.vue"], payload["changedFiles"])
         self.assertEqual("codex/execution-101-3-1", payload["workBranch"])
         self.assertEqual(["npm run lint"], payload["commandsExecuted"])
+        self.assertIn("# 结果概览", payload["displayMarkdown"])
         self.assertIn("执行日志", payload["log"])
 
-    def test_should_degrade_non_json_implementation_output_to_raw_preview(self):
-        raw_output = _json_payload_or_degraded("模型执行完成，但没有输出 JSON")
+    def test_should_build_internal_payload_from_markdown_implementation_output(self):
+        raw_output = _implementation_raw_output_from_markdown(
+            """
+            # 结果概览
+
+            - 执行状态：SUCCESS
+            - 结果摘要：模型执行完成
+
+            ## 改动说明
+            - 已修改 src/App.vue
+            """,
+            0,
+        )
         payload = _normalize_implementation_payload(
             raw_output,
             changed_files=["src/App.vue"],
@@ -102,10 +117,9 @@ class CodexExecutionServiceTests(unittest.TestCase):
         )
 
         self.assertEqual("SUCCESS", payload["status"])
-        self.assertTrue(payload["jsonParseDegraded"])
-        self.assertIn("未返回结构化 JSON", payload["summary"])
-        self.assertIn("模型执行完成", payload["rawOutput"])
-        self.assertIn("模型执行完成", payload["log"])
+        self.assertEqual("模型执行完成", payload["summary"])
+        self.assertIn("模型执行完成", payload["displayMarkdown"])
+        self.assertIn("已修改 src/App.vue", payload["log"])
         self.assertEqual(["src/App.vue"], payload["changedFiles"])
 
     def test_should_checkout_requested_commit_after_clone(self):
@@ -259,25 +273,53 @@ class CodexExecutionServiceTests(unittest.TestCase):
         self.assertEqual(1, command_results[0]["exitCode"])
         self.assertIn("npm run build", payload["suiteResults"][0]["summary"])
 
-    def test_should_require_all_implementation_schema_fields_for_strict_json_schema(self):
-        schema = json.loads(_schema_text_for_mode("IMPLEMENT"))
+    def test_should_prefer_dev_script_for_frontend_smoke_startup(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = Path(temp_dir)
+            (project_dir / "package.json").write_text(
+                json.dumps(
+                    {
+                        "name": "demo-frontend",
+                        "scripts": {
+                            "dev": "vite",
+                            "preview": "npm run build && vite preview",
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
 
-        self.assertEqual(
-            [
-                "status",
-                "summary",
-                "changedFiles",
-                "commandsExecuted",
-                "log",
-                "workBranch",
-                "commitSha",
-                "mergeRequestUrl",
-            ],
-            schema["required"],
-        )
-        self.assertEqual(["string", "null"], schema["properties"]["workBranch"]["type"])
-        self.assertEqual(["string", "null"], schema["properties"]["commitSha"]["type"])
-        self.assertEqual(["string", "null"], schema["properties"]["mergeRequestUrl"]["type"])
+            command = _infer_frontend_start_command(project_dir, "pnpm")
+
+        self.assertEqual("pnpm dev", command)
+
+    def test_should_fallback_to_preview_when_frontend_has_no_dev_script(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = Path(temp_dir)
+            (project_dir / "package.json").write_text(
+                json.dumps(
+                    {
+                        "name": "demo-frontend",
+                        "scripts": {
+                            "preview": "vite preview",
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            command = _infer_frontend_start_command(project_dir, "pnpm")
+
+        self.assertEqual("pnpm preview", command)
+
+    def test_should_ask_codex_implementation_to_return_markdown_not_json(self):
+        prompt = _build_codex_prompt(self._build_request("IMPLEMENT"))
+
+        self.assertIn("最终结果直接返回 Markdown", prompt)
+        self.assertIn("不要返回 JSON", prompt)
+        self.assertNotIn("返回严格 JSON", prompt)
 
     def test_should_accept_async_codex_execution_session(self):
         request = self._build_request("IMPLEMENT")
@@ -378,7 +420,10 @@ class CodexExecutionServiceTests(unittest.TestCase):
                 ),
             ]
 
-            with patch("app.services.execution_streaming_support._post_backend_json", side_effect=lambda path, payload, **kwargs: captured_calls.append((path, payload))):
+            with patch(
+                "app.services.execution_streaming_support._post_backend_json",
+                side_effect=lambda path, payload, **kwargs: (captured_calls.append((path, payload)) or True),
+            ):
                 result = run_streaming_process(
                     command,
                     cwd=workspace_dir,
@@ -412,7 +457,10 @@ class CodexExecutionServiceTests(unittest.TestCase):
             batcher = BackendEventBatcher("session-timeout")
             command = [sys.executable, "-c", "import time; time.sleep(2)"]
 
-            with patch("app.services.execution_streaming_support._post_backend_json", side_effect=lambda path, payload, **kwargs: captured_calls.append((path, payload))):
+            with patch(
+                "app.services.execution_streaming_support._post_backend_json",
+                side_effect=lambda path, payload, **kwargs: (captured_calls.append((path, payload)) or True),
+            ):
                 result = run_streaming_process(
                     command,
                     cwd=workspace_dir,
@@ -432,7 +480,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace_dir = Path(temp_dir)
             workspace_log = workspace_dir / "workspace.log"
-            captured_calls: list[tuple[str, dict[str, object]]] = []
+            captured_calls: list[tuple[float, str, dict[str, object]]] = []
             batcher = BackendEventBatcher("session-partial")
             command = [
                 sys.executable,
@@ -440,16 +488,20 @@ class CodexExecutionServiceTests(unittest.TestCase):
                 (
                     "import sys,time;"
                     "sys.stdout.write('progress 1 ');sys.stdout.flush();"
-                    "time.sleep(1.2);"
+                    "time.sleep(0.35);"
                     "sys.stdout.write('progress 2 ');sys.stdout.flush();"
-                    "time.sleep(1.2);"
-                    "sys.stdout.write('done');sys.stdout.flush()"
+                    "time.sleep(0.35);"
+                    "sys.stdout.write('done');sys.stdout.flush();"
+                    "time.sleep(0.6);"
                 ),
             ]
 
+            start = time.monotonic()
             with patch(
                 "app.services.execution_streaming_support._post_backend_json",
-                side_effect=lambda path, payload, **kwargs: captured_calls.append((path, payload)),
+                side_effect=lambda path, payload, **kwargs: (
+                    captured_calls.append((time.monotonic() - start, path, payload)) or True
+                ),
             ):
                 result = run_streaming_process(
                     command,
@@ -462,10 +514,25 @@ class CodexExecutionServiceTests(unittest.TestCase):
 
         self.assertEqual(0, result.exit_code)
         self.assertEqual("progress 1 progress 2 done", result.stdout)
-        events = [event for _, payload in captured_calls for event in payload["events"]]
+        events = [event for _, _, payload in captured_calls for event in payload["events"]]
         stdout_events = [event for event in events if event["eventType"] == "stdout_chunk"]
         self.assertGreaterEqual(len(stdout_events), 2)
         self.assertIn("progress 1", stdout_events[0]["text"])
+        # 业务意图：最后一段没有换行的尾日志，也要在命令真正结束前先推到 backend，
+        # 否则执行详情页会表现成“步骤结束时才一次性出现尾日志”。
+        tail_event_time = next(
+            event_time
+            for event_time, _, payload in captured_calls
+            for event in payload["events"]
+            if event["eventType"] == "stdout_chunk" and "done" in str(event.get("text") or "")
+        )
+        finished_event_time = next(
+            event_time
+            for event_time, _, payload in captured_calls
+            for event in payload["events"]
+            if event["eventType"] == "command_finished"
+        )
+        self.assertGreaterEqual(finished_event_time - tail_event_time, 0.2)
         self.assertEqual("command_finished", events[-1]["eventType"])
 
 

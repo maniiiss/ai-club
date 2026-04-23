@@ -18,6 +18,9 @@ from minio import Minio
 
 from app.settings import settings
 
+STREAM_OUTPUT_FLUSH_INTERVAL_SECONDS = 0.25
+STREAM_OUTPUT_FLUSH_BYTES = 4096
+
 
 @dataclass(frozen=True)
 class StreamingProcessResult:
@@ -251,12 +254,22 @@ def run_streaming_process(
             pass
 
         now = monotonic()
-        if stdout_buffer and (_buffer_size(stdout_buffer) >= 4096 or now - last_flush >= 1):
+        # 标准输出/错误是执行详情页“尾日志”实时感知的唯一来源。
+        # 这里必须尽快把增量片段推到 backend，避免最后几百毫秒输出卡到进程退出后才显示。
+        if stdout_buffer and (
+            _buffer_size(stdout_buffer) >= STREAM_OUTPUT_FLUSH_BYTES
+            or now - last_flush >= STREAM_OUTPUT_FLUSH_INTERVAL_SECONDS
+        ):
             batcher.emit("stdout_chunk", stream_kind="stdout", text="".join(stdout_buffer), current_command=current_command)
+            batcher.flush()
             stdout_buffer = []
             last_flush = now
-        if stderr_buffer and (_buffer_size(stderr_buffer) >= 4096 or now - last_flush >= 1):
+        if stderr_buffer and (
+            _buffer_size(stderr_buffer) >= STREAM_OUTPUT_FLUSH_BYTES
+            or now - last_flush >= STREAM_OUTPUT_FLUSH_INTERVAL_SECONDS
+        ):
             batcher.emit("stderr_chunk", stream_kind="stderr", text="".join(stderr_buffer), current_command=current_command)
+            batcher.flush()
             stderr_buffer = []
             last_flush = now
         if now - last_heartbeat >= 5:
@@ -269,9 +282,10 @@ def run_streaming_process(
 
     if stdout_buffer:
         batcher.emit("stdout_chunk", stream_kind="stdout", text="".join(stdout_buffer), current_command=current_command)
+        batcher.flush()
     if stderr_buffer:
         batcher.emit("stderr_chunk", stream_kind="stderr", text="".join(stderr_buffer), current_command=current_command)
-    batcher.flush()
+        batcher.flush()
 
     exit_code = process.wait()
     stdout = "".join(stdout_collected).strip()

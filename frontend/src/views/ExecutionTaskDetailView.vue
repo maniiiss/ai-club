@@ -174,7 +174,56 @@
                     <strong>{{ displayArtifactTitle(artifact) }}</strong>
                   </div>
                 </div>
-                <template v-if="isDisplayArtifactStructuredExecution(artifact)">
+                <template v-if="isDisplayArtifactStructuringGroup(artifact)">
+                  <div class="execution-artifact-log-toggle">
+                    <div class="execution-artifact-log-hint">仓库结构化产物默认收起，展开后展示预览，完整内容可下载。</div>
+                    <button
+                      type="button"
+                      class="execution-artifact-toggle-button"
+                      :aria-label="isDisplayArtifactExpanded(artifact) ? '收起仓库结构化预览' : '展开仓库结构化预览'"
+                      :title="isDisplayArtifactExpanded(artifact) ? '收起仓库结构化预览' : '展开仓库结构化预览'"
+                      @click="toggleDisplayArtifactPreview(artifact)"
+                    >
+                      <el-icon>
+                        <ArrowDown v-if="isDisplayArtifactExpanded(artifact)" />
+                        <ArrowRight v-else />
+                      </el-icon>
+                    </button>
+                  </div>
+                  <div v-if="isDisplayArtifactExpanded(artifact)" class="execution-artifact-log-group">
+                    <section
+                      v-for="structuringArtifact in artifact.items"
+                      :key="structuringArtifact.id"
+                      class="execution-artifact-log-entry"
+                    >
+                      <div class="execution-artifact-log-entry-head">
+                        <div class="execution-artifact-log-entry-title">
+                          <span v-if="artifactStepLabel(structuringArtifact)" class="execution-artifact-step-name">
+                            {{ artifactStepLabel(structuringArtifact) }}
+                          </span>
+                          <strong>{{ structuringArtifact.title }}</strong>
+                        </div>
+                        <el-link
+                          v-if="structuringArtifact.contentRef"
+                          type="primary"
+                          @click.prevent="handleArtifactDownload(structuringArtifact)"
+                        >
+                          下载产物
+                        </el-link>
+                      </div>
+                      <div v-if="isMarkdownArtifact(structuringArtifact)" class="execution-artifact-markdown">
+                        <MdPreview
+                          :editor-id="`execution-artifact-preview-${structuringArtifact.id}`"
+                          language="zh-CN"
+                          preview-theme="github"
+                          :model-value="structuringArtifact.contentText || '-'"
+                        />
+                      </div>
+                      <pre v-else>{{ previewLongText(structuringArtifact.contentText || '-', 3000) }}</pre>
+                    </section>
+                  </div>
+                </template>
+                <template v-else-if="isDisplayArtifactStructuredExecution(artifact)">
                   <div class="execution-artifact-log-toggle">
                     <div class="execution-artifact-log-hint">仓库结构化执行产物默认收起，展开后展示预览，完整内容可下载。</div>
                     <button
@@ -261,7 +310,7 @@
                   </div>
                 </template>
                 <pre v-else>{{ previewLongText(displayArtifactText(artifact) || '-') }}</pre>
-                <div v-if="!isDisplayArtifactLog(artifact)" class="execution-artifact-foot">
+                <div v-if="artifact.kind === 'artifact'" class="execution-artifact-foot">
                   <span v-if="displayArtifactWriteback(artifact)">已回写工作项</span>
                   <el-link v-if="displayArtifactContentRef(artifact)" type="primary" @click.prevent="handleDisplayArtifactDownload(artifact)">下载产物</el-link>
                 </div>
@@ -449,6 +498,7 @@ const quickMergeResult = ref<GitlabCreateMergeRequestResultItem | null>(null)
 
 type DisplayArtifactItem =
   | { key: string; kind: 'artifact'; artifact: ExecutionArtifactItem }
+  | { key: string; kind: 'structuring-group'; items: ExecutionArtifactItem[] }
   | { key: string; kind: 'log-group'; items: ExecutionArtifactItem[] }
 
 interface QuickMergeForm {
@@ -633,6 +683,7 @@ watch(
 const displayArtifacts = computed<DisplayArtifactItem[]>(() => {
   const artifacts = runDetail.value?.artifacts || []
   const normalArtifacts: DisplayArtifactItem[] = []
+  const structuringArtifacts: ExecutionArtifactItem[] = []
   const logArtifacts: ExecutionArtifactItem[] = []
   for (const artifact of artifacts) {
     if (shouldHideArtifactFromDisplay(artifact, artifacts)) {
@@ -642,7 +693,18 @@ const displayArtifacts = computed<DisplayArtifactItem[]>(() => {
       logArtifacts.push(artifact)
       continue
     }
+    /**
+     * 仓库结构化步骤会一次产出每仓 Markdown/JSON 以及跨仓上下文。
+     * 这里把它们折叠成一个分组，避免执行结果区被大段结构化摘要铺满。
+     */
+    if (isStructuringArtifact(artifact)) {
+      structuringArtifacts.push(artifact)
+      continue
+    }
     normalArtifacts.push({ key: `artifact-${artifact.id}`, kind: 'artifact', artifact })
+  }
+  if (structuringArtifacts.length) {
+    normalArtifacts.push({ key: 'structuring-group', kind: 'structuring-group', items: structuringArtifacts })
   }
   if (logArtifacts.length) {
     normalArtifacts.push({ key: 'log-group', kind: 'log-group', items: logArtifacts })
@@ -737,12 +799,29 @@ const timelineType = (status: string) => {
 }
 
 const isMarkdownArtifact = (artifact: ExecutionArtifactItem) =>
-  ['PLAN_MARKDOWN', 'REPORT_MARKDOWN', 'FIX_PLAN_MARKDOWN', 'FIX_SHARDS_MARKDOWN', 'EXEC_PLAN_MARKDOWN', 'IMPLEMENT_RESULT_MARKDOWN', 'TEST_RESULT_MARKDOWN'].includes(artifact.artifactType)
+  [
+    'PLAN_MARKDOWN',
+    'REPORT_MARKDOWN',
+    'FIX_PLAN_MARKDOWN',
+    'FIX_SHARDS_MARKDOWN',
+    'EXEC_PLAN_MARKDOWN',
+    'IMPLEMENT_RESULT_MARKDOWN',
+    'TEST_RESULT_MARKDOWN',
+    'REPO_STRUCTURE_MARKDOWN',
+    'CROSS_REPO_CONTEXT_MARKDOWN'
+  ].includes(artifact.artifactType)
 
 const isImageArtifact = (artifact: ExecutionArtifactItem) => artifact.artifactType === 'PLAYWRIGHT_SCREENSHOT'
 
+const isStructuringArtifact = (artifact: ExecutionArtifactItem) =>
+  ['REPO_STRUCTURE_MARKDOWN', 'REPO_STRUCTURE_JSON', 'CROSS_REPO_CONTEXT_MARKDOWN'].includes(artifact.artifactType)
+
+/**
+ * 实现结果是开发执行详情里的主阅读内容，需要默认展开；
+ * 这里只保留测试结果的折叠态，避免把整块测试回显直接铺满页面。
+ */
 const isStructuredExecutionArtifact = (artifact: ExecutionArtifactItem) =>
-  ['IMPLEMENT_RESULT_MARKDOWN', 'IMPLEMENT_RESULT_JSON', 'TEST_RESULT_MARKDOWN', 'TEST_RESULT_JSON'].includes(artifact.artifactType)
+  ['TEST_RESULT_MARKDOWN', 'TEST_RESULT_JSON'].includes(artifact.artifactType)
 
 const isLogArtifact = (artifact: ExecutionArtifactItem) =>
   ['STEP_RAW_LOG', 'STEP_STDOUT_LOG', 'STEP_STDERR_LOG'].includes(artifact.artifactType) || artifact.artifactType.endsWith('_LOG')
@@ -804,6 +883,8 @@ const isInstallationArtifact = (artifact: ExecutionArtifactItem) => {
   return ['安装', 'install', '依赖', '部署环境', '环境准备', 'setup'].some((keyword) => stepName.includes(keyword.toLowerCase()))
 }
 
+const isDisplayArtifactStructuringGroup = (artifact: DisplayArtifactItem) => artifact.kind === 'structuring-group'
+
 const isDisplayArtifactLog = (artifact: DisplayArtifactItem) => artifact.kind === 'log-group'
 
 const isDisplayArtifactMarkdown = (artifact: DisplayArtifactItem) =>
@@ -842,7 +923,10 @@ const buildArtifactStepTitlePrefixes = (stepName: string) => {
  * “生成修复计划 / 修复计划 Markdown”这类重复信息。
  */
 const displayArtifactTitle = (artifact: DisplayArtifactItem) => {
-  if (artifact.kind !== 'artifact') {
+  if (artifact.kind === 'structuring-group') {
+    return '仓库结构化'
+  }
+  if (artifact.kind === 'log-group') {
     return '日志'
   }
   const rawTitle = String(artifact.artifact.title || '').trim()
@@ -870,7 +954,11 @@ const displayArtifactTitle = (artifact: DisplayArtifactItem) => {
 const displayArtifactText = (artifact: DisplayArtifactItem) => (artifact.kind === 'artifact' ? artifact.artifact.contentText : '')
 
 const displayArtifactStepLabel = (artifact: DisplayArtifactItem) =>
-  artifact.kind === 'artifact' ? artifactStepLabel(artifact.artifact) : '已合并多个日志产物'
+  artifact.kind === 'artifact'
+    ? artifactStepLabel(artifact.artifact)
+    : artifact.kind === 'structuring-group'
+      ? '已合并多个仓库结构化产物'
+      : '已合并多个日志产物'
 
 const displayArtifactWriteback = (artifact: DisplayArtifactItem) =>
   artifact.kind === 'artifact' ? artifact.artifact.workItemWriteback : false
@@ -887,8 +975,24 @@ const isInstallationDisplayArtifact = (artifact: DisplayArtifactItem) =>
 const displayArtifactExpandKey = (artifact: DisplayArtifactItem) =>
   artifact.kind === 'artifact' ? `artifact-${artifact.artifact.id}` : artifact.key
 
+/**
+ * 测试结果在成功时默认折叠，失败时默认展开，方便用户第一时间看到失败细节。
+ */
+const shouldCollapseStructuredExecutionArtifact = (artifact: DisplayArtifactItem) => {
+  if (!isDisplayArtifactStructuredExecution(artifact) || artifact.kind !== 'artifact') {
+    return false
+  }
+  const step = findArtifactStep(artifact.artifact)
+  return step?.status === 'SUCCESS'
+}
+
+const shouldCollapseDisplayArtifactPreview = (artifact: DisplayArtifactItem) =>
+  isDisplayArtifactStructuringGroup(artifact)
+  || isDisplayArtifactLog(artifact)
+  || shouldCollapseStructuredExecutionArtifact(artifact)
+
 const isDisplayArtifactExpanded = (artifact: DisplayArtifactItem) =>
-  (!isDisplayArtifactLog(artifact) && !isDisplayArtifactStructuredExecution(artifact))
+  !shouldCollapseDisplayArtifactPreview(artifact)
   || Boolean(expandedArtifactPreviewMap.value[displayArtifactExpandKey(artifact)])
 
 const toggleArtifactPreview = (artifactId: number) => {

@@ -212,7 +212,10 @@ GitNexus query completed in 123ms
         batcher = BackendEventBatcher("session-1")
         emitted_events: list[dict[str, object]] = []
 
-        with patch("app.services.execution_streaming_support._post_backend_json", side_effect=lambda _, payload: emitted_events.extend(payload["events"])):
+        with patch(
+            "app.services.execution_streaming_support._post_backend_json",
+            side_effect=lambda _, payload, **kwargs: (emitted_events.extend(payload["events"]) or True),
+        ):
             result = _run_with_periodic_heartbeat(
                 batcher,
                 "正在结构化仓库：group/demo",

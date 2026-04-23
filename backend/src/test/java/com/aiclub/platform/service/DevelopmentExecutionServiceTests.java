@@ -438,6 +438,7 @@ class DevelopmentExecutionServiceTests {
                 eq(12L),
                 argThat(input -> input.contains("## 执行规划摘要")
                         && input.contains("## 仓库 1：group/frontend")
+                        && input.contains("请直接返回 Markdown")
                         && !input.contains("超长尾部噪音超长尾部噪音超长尾部噪音超长尾部噪音超长尾部噪音超长尾部噪音超长尾部噪音超长尾部噪音超长尾部噪音超长尾部噪音")
                         && input.length() < 5000),
                 any(Map.class)))
@@ -504,7 +505,9 @@ class DevelopmentExecutionServiceTests {
         ExecutionWorkflowService.WorkflowPlan workflowPlan = buildWorkflowPlan();
         when(agentExecutionService.runAgent(
                 eq(12L),
-                argThat(input -> input.contains("人工修改后的规划") && !input.contains("## 输出要求\n- 使用 Markdown")),
+                argThat(input -> input.contains("人工修改后的规划")
+                        && input.contains("请直接返回 Markdown")
+                        && input.contains("不要返回 JSON")),
                 any(Map.class)))
                 .thenReturn("""
                         {
@@ -630,11 +633,11 @@ class DevelopmentExecutionServiceTests {
     }
 
     /**
-     * 开发/测试 Runner 即使没有按约定返回 JSON，也应保留原始输出并继续展示降级摘要，
-     * 避免把“结构化解析失败”误判为开发执行失败。
+     * IMPLEMENT 现已允许 runner 直接返回 Markdown；编排层仍需保留原文展示，
+     * 同时不影响后续 TEST / REPORT 继续执行。
      */
     @Test
-    void shouldDegradeNonJsonImplementAndTestOutputWithoutFailingExecution() {
+    void shouldAcceptMarkdownImplementOutputWithoutFailingExecution() {
         ExecutionTaskEntity executionTask = buildExecutionTask();
         ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
         ExecutionWorkflowService.WorkflowPlan workflowPlan = buildWorkflowPlan();
@@ -697,6 +700,17 @@ class DevelopmentExecutionServiceTests {
                 .findFirst()
                 .orElseThrow()
                 .getContentText();
+        String implementationJson = savedArtifacts.stream()
+                .filter(artifact -> "IMPLEMENT_RESULT_JSON".equals(artifact.getArtifactType()))
+                .filter(artifact -> artifact.getTitle().contains("group/frontend"))
+                .findFirst()
+                .orElseThrow()
+                .getContentText();
+        String implementationSnapshot = savedSteps.stream()
+                .filter(step -> "开发实现 · group/frontend".equals(step.getStepName()))
+                .findFirst()
+                .orElseThrow()
+                .getOutputSnapshot();
         String testMarkdown = savedArtifacts.stream()
                 .filter(artifact -> "TEST_RESULT_MARKDOWN".equals(artifact.getArtifactType()))
                 .filter(artifact -> artifact.getTitle().contains("group/frontend"))
@@ -704,8 +718,14 @@ class DevelopmentExecutionServiceTests {
                 .orElseThrow()
                 .getContentText();
         assertThat(implementationMarkdown)
-                .contains("未返回结构化 JSON")
-                .contains("前端开发已完成");
+                .contains("前端开发已完成")
+                .doesNotContain("未返回结构化 JSON");
+        assertThat(implementationSnapshot)
+                .contains("前端开发已完成")
+                .doesNotContain("{");
+        assertThat(implementationJson)
+                .contains("\"status\"")
+                .contains("\"changedFiles\"");
         assertThat(testMarkdown)
                 .contains("未返回结构化 JSON")
                 .contains("前端测试已执行通过")

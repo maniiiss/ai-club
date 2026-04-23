@@ -188,17 +188,14 @@ def _execute_claude_implementation_sync(request: CliExecutionRequest) -> CliExec
     codex_service._clone_repository(codex_request, workspace)
     codex_service._prepare_local_branch(codex_request, workspace)
     base_commit = codex_service._current_head_commit(workspace)
-    raw_output, stdout, stderr, exit_code = _run_claude_json_cli(request, workspace)
+    raw_output, stdout, stderr, exit_code = _run_claude_implementation_cli(request, workspace)
     changed_files = codex_service._collect_changed_files(workspace)
     current_commit = codex_service._current_head_commit(workspace)
     work_branch = codex_service._current_branch(workspace)
     payload = codex_service._normalize_implementation_payload(raw_output, changed_files, work_branch, base_commit, current_commit)
     if exit_code != 0:
         payload["status"] = "FAILED"
-        if bool(raw_output.get("jsonParseDegraded")):
-            payload["summary"] = "Claude Code 执行失败，且未返回结构化 JSON，已降级展示原始输出"
-        else:
-            payload["summary"] = codex_service._normalize_text(raw_output.get("summary")) or "Claude Code 执行失败"
+        payload["summary"] = codex_service._normalize_text(raw_output.get("summary")) or "Claude Code 执行失败"
     payload["log"] = _build_workspace_log(workspace.log_file, stdout, stderr, "Claude Code")
     return CliExecutionResponse(
         output=json.dumps(payload, ensure_ascii=False),
@@ -333,7 +330,7 @@ def _run_claude_implementation_session(
         batcher.emit("step_summary_updated", summary="工作分支准备完成，开始调用 Claude CLI")
         batcher.emit("progress_changed", progress_percent=25, summary="开始调用 Claude CLI")
         batcher.flush()
-        raw_output, stdout, stderr, exit_code = _run_claude_json_cli_streaming(request, workspace, batcher)
+        raw_output, stdout, stderr, exit_code = _run_claude_implementation_cli_streaming(request, workspace, batcher)
         changed_files = codex_service._collect_changed_files(workspace)
         current_commit = codex_service._current_head_commit(workspace)
         work_branch = codex_service._current_branch(workspace)
@@ -343,10 +340,7 @@ def _run_claude_implementation_session(
         payload["stderrPreview"] = tail_text(stderr, 2000)
         if exit_code != 0:
             payload["status"] = "FAILED"
-            if bool(raw_output.get("jsonParseDegraded")):
-                payload["summary"] = "Claude Code 执行失败，且未返回结构化 JSON，已降级展示原始输出"
-            else:
-                payload["summary"] = codex_service._normalize_text(raw_output.get("summary")) or "Claude Code 执行失败"
+            payload["summary"] = codex_service._normalize_text(raw_output.get("summary")) or "Claude Code 执行失败"
         status = codex_service._normalize_status(payload.get("status"), default="SUCCESS")
         summary = codex_service._normalize_text(payload.get("summary")) or ("Claude Code 已完成仓库开发实现" if status == "SUCCESS" else "Claude Code 执行失败")
         codex_service._emit_cli_result_event(batcher, "Claude CLI", payload)
@@ -514,9 +508,9 @@ def _run_claude_markdown_cli_streaming(
     return result.stdout
 
 
-def _run_claude_json_cli(request: CliExecutionRequest, workspace) -> tuple[dict[str, object], str, str, int]:
+def _run_claude_implementation_cli(request: CliExecutionRequest, workspace) -> tuple[dict[str, object], str, str, int]:
     claude_cli = claude_service._discover_claude_cli_path()
-    command = _build_claude_json_command(claude_cli)
+    command = _build_claude_implementation_command(claude_cli)
     prompt = _build_claude_implementation_prompt(request)
     display_command = codex_service._format_process_command_for_log(command)
     codex_service._append_log(workspace, f"调用 Claude CLI：{display_command}")
@@ -537,15 +531,15 @@ def _run_claude_json_cli(request: CliExecutionRequest, workspace) -> tuple[dict[
         codex_service._append_log(workspace, stdout)
     if stderr:
         codex_service._append_log(workspace, stderr)
-    raw_output = _extract_json_object_or_empty(stdout)
+    raw_output = codex_service._implementation_raw_output_from_markdown(stdout or stderr, completed.returncode)
     return raw_output, stdout, stderr, completed.returncode
 
 
-def _run_claude_json_cli_streaming(request: CliExecutionRequest, workspace, batcher: BackendEventBatcher) -> tuple[dict[str, object], str, str, int]:
+def _run_claude_implementation_cli_streaming(request: CliExecutionRequest, workspace, batcher: BackendEventBatcher) -> tuple[dict[str, object], str, str, int]:
     claude_cli = claude_service._discover_claude_cli_path()
     stdout_log = workspace.out_dir / "claude-stdout.log"
     stderr_log = workspace.out_dir / "claude-stderr.log"
-    command = _build_claude_json_command(claude_cli)
+    command = _build_claude_implementation_command(claude_cli)
     prompt = _build_claude_implementation_prompt(request)
     display_command = codex_service._format_process_command_for_log(command)
     codex_service._append_log(workspace, f"调用 Claude CLI：{display_command}")
@@ -562,7 +556,7 @@ def _run_claude_json_cli_streaming(request: CliExecutionRequest, workspace, batc
         stderr_file=stderr_log,
         env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
     )
-    return _extract_json_object_or_empty(result.stdout), result.stdout, result.stderr, result.exit_code
+    return codex_service._implementation_raw_output_from_markdown(result.stdout or result.stderr, result.exit_code), result.stdout, result.stderr, result.exit_code
 
 
 def _extract_json_object_or_empty(text: str) -> dict[str, object]:
@@ -591,7 +585,7 @@ def _build_claude_markdown_command(request: CliExecutionRequest, claude_cli: Pat
     return command
 
 
-def _build_claude_json_command(claude_cli: Path) -> list[str]:
+def _build_claude_implementation_command(claude_cli: Path) -> list[str]:
     command = [
         *claude_service._build_claude_command_prefix(claude_cli),
         "-p",
@@ -699,16 +693,14 @@ def _build_claude_implementation_prompt(request: CliExecutionRequest) -> str:
 {request.systemPrompt or '无'}
 
 执行要求：
-1. 真实修改当前仓库中的代码或配置；如判断无需修改，也要在 summary 和 log 中明确说明依据。
+1. 真实修改当前仓库中的代码或配置；如判断无需修改，也要在结果说明中明确写出依据。
 2. 遵循仓库内已有的 AGENTS.md、README、测试规范和编码约束。
 3. 可运行最小必要的命令辅助开发，但不要 push 远端。
-4. 返回严格 JSON，不要输出 Markdown 代码块围栏，也不要附加额外说明。
-5. JSON 字段必须包含：status、summary、changedFiles、commandsExecuted、log、workBranch、commitSha、mergeRequestUrl。
-6. `workBranch`、`commitSha`、`mergeRequestUrl` 暂时没有值时必须返回 null，不要省略字段。
-7. changedFiles 只填写仓库相对路径；commandsExecuted 只记录你实际执行过的重要命令。
-8. `status` 只能返回 `SUCCESS` 或 `FAILED`，绝对不要返回 `IN_PROGRESS`、`RUNNING`、`STARTED` 等中间状态。
-9. 必须等本次仓库开发真正完成后，再输出唯一一次最终 JSON；不要先输出阶段性 JSON。
-10. 如果无法完成，请返回 status=FAILED，并在 summary/log 中写清阻塞原因。
+4. 最终结果直接返回 Markdown，不要返回 JSON，也不要把 JSON 放进 Markdown 代码块。
+5. Markdown 建议包含：执行状态（SUCCESS 或 FAILED）、结果摘要、改动说明、验证情况、风险与后续建议。
+6. 改动说明请按文件或模块说明“改了哪里、为什么改”，不用再拼 changedFiles/workBranch/commitSha JSON 字段。
+7. 必须等本次仓库开发真正完成后，再输出唯一一次最终 Markdown；不要先输出阶段性最终结果。
+8. 如果无法完成，请在 Markdown 中把执行状态写为 FAILED，并说明阻塞原因。
 
 补充上下文如下：
 {request.input}
