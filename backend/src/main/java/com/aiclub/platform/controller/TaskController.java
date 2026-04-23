@@ -3,19 +3,24 @@ package com.aiclub.platform.controller;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.PageResponse;
+import com.aiclub.platform.dto.TaskPrdAnalyzeResult;
+import com.aiclub.platform.dto.TaskPrdDetail;
 import com.aiclub.platform.dto.TaskAgentRunSummary;
 import com.aiclub.platform.dto.TaskCommentSummary;
 import com.aiclub.platform.dto.TaskRequirementAiResult;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.UploadedFileSummary;
+import com.aiclub.platform.dto.request.ApplyTaskPrdSuggestionRequest;
 import com.aiclub.platform.dto.request.TaskAgentRunRequest;
 import com.aiclub.platform.dto.request.TaskCommentRequest;
+import com.aiclub.platform.dto.request.TaskPrdAnalyzeRequest;
 import com.aiclub.platform.dto.request.TaskRequirementAiRequest;
 import com.aiclub.platform.dto.request.TaskRequest;
 import com.aiclub.platform.service.PlatformStoreService;
 import com.aiclub.platform.service.TaskCommentImageStorageService;
 import com.aiclub.platform.service.TaskRequirementAiService;
 import com.aiclub.platform.service.TaskAgentRunService;
+import com.aiclub.platform.service.TaskPrdService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,15 +44,18 @@ public class TaskController {
     private final TaskAgentRunService taskAgentRunService;
     private final TaskCommentImageStorageService taskCommentImageStorageService;
     private final TaskRequirementAiService taskRequirementAiService;
+    private final TaskPrdService taskPrdService;
 
     public TaskController(PlatformStoreService platformStoreService,
                           TaskAgentRunService taskAgentRunService,
                           TaskCommentImageStorageService taskCommentImageStorageService,
-                          TaskRequirementAiService taskRequirementAiService) {
+                          TaskRequirementAiService taskRequirementAiService,
+                          TaskPrdService taskPrdService) {
         this.platformStoreService = platformStoreService;
         this.taskAgentRunService = taskAgentRunService;
         this.taskCommentImageStorageService = taskCommentImageStorageService;
         this.taskRequirementAiService = taskRequirementAiService;
+        this.taskPrdService = taskPrdService;
     }
 
     @GetMapping
@@ -68,6 +76,32 @@ public class TaskController {
     @RequirePermission("task:view")
     public ApiResponse<TaskSummary> detail(@PathVariable Long id) {
         return ApiResponse.success(platformStoreService.getTask(id));
+    }
+
+    @GetMapping("/{id}/prd")
+    @RequirePermission("task:view")
+    public ApiResponse<TaskPrdDetail> prdDetail(@PathVariable Long id) {
+        return ApiResponse.success(taskPrdService.getTaskPrd(id));
+    }
+
+    @PostMapping("/{id}/prd/initialize")
+    @RequirePermission("task:manage")
+    public ApiResponse<TaskPrdDetail> initializePrd(@PathVariable Long id) {
+        return ApiResponse.success(taskPrdService.initialize(id));
+    }
+
+    @PostMapping("/{id}/prd/analyze")
+    @RequirePermission("task:view")
+    public ApiResponse<TaskPrdAnalyzeResult> analyzePrd(@PathVariable Long id,
+                                                        @Valid @RequestBody TaskPrdAnalyzeRequest request) {
+        return ApiResponse.success(taskPrdService.analyze(id, request));
+    }
+
+    @PostMapping("/{id}/prd/apply-suggestion")
+    @RequirePermission("task:manage")
+    public ApiResponse<TaskPrdDetail> applyPrdSuggestion(@PathVariable Long id,
+                                                         @Valid @RequestBody ApplyTaskPrdSuggestionRequest request) {
+        return ApiResponse.success(taskPrdService.applySuggestion(id, request));
     }
 
     @GetMapping("/{id}/comments")

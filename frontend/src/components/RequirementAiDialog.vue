@@ -29,6 +29,23 @@
           <el-button :loading="runningAction === 'STANDARDIZE'" @click="runAction('STANDARDIZE')">标准化需求</el-button>
           <el-button :loading="runningAction === 'BREAKDOWN'" @click="runAction('BREAKDOWN')">拆解子任务</el-button>
           <el-button :loading="runningAction === 'TEST_CASES'" @click="runAction('TEST_CASES')">生成测试用例</el-button>
+          <el-button
+            v-if="prdReady"
+            :loading="runningAction === 'GAP_CHECK'"
+            @click="runPrdAction('GAP_CHECK')"
+          >
+            检查 PRD 缺口
+          </el-button>
+          <el-button
+            v-if="prdReady"
+            type="primary"
+            plain
+            :loading="runningAction === 'SUGGEST_UPDATE'"
+            @click="runPrdAction('SUGGEST_UPDATE')"
+          >
+            生成 PRD 建议
+          </el-button>
+          <el-button v-if="prdReady" plain @click="openPrdPage">打开 PRD</el-button>
         </el-space>
       </div>
 
@@ -45,12 +62,77 @@
               <el-button @click="postAsComment">发到评论</el-button>
               <el-button v-if="canManage && !isRequirementTask" @click="appendToDescription">追加到描述</el-button>
               <el-button v-if="canManage && result.action === 'STANDARDIZE'" type="primary" @click="replaceDescription">替换描述</el-button>
+              <el-button
+                v-if="canManage && result.action === 'SUGGEST_UPDATE' && result.suggestionMarkdown"
+                type="primary"
+                :loading="applyingPrdSuggestion"
+                @click="applyPrdSuggestion"
+              >
+                写入 PRD
+              </el-button>
             </el-space>
           </div>
           <div class="requirement-ai-markdown" v-html="renderMarkdownToHtml(result?.markdown)"></div>
         </div>
 
         <div class="requirement-ai-side">
+          <div v-if="result && (result.action === 'GAP_CHECK' || result.action === 'SUGGEST_UPDATE')" class="requirement-ai-panel">
+            <div class="requirement-ai-section-head compact">
+              <div>
+                <div class="requirement-ai-section-title">PRD 上下文</div>
+                <div class="requirement-ai-section-subtitle">
+                  {{ prdDetail?.prdWikiPageTitle || '当前尚未绑定 PRD 页面' }}
+                </div>
+              </div>
+            </div>
+
+            <div class="requirement-ai-meta-card">
+              <div class="requirement-ai-meta-row">
+                <span>状态</span>
+                <strong>{{ prdStatusText }}</strong>
+              </div>
+              <div class="requirement-ai-meta-row">
+                <span>模块</span>
+                <strong>{{ prdDetail?.moduleName || props.task?.moduleName || '未分类' }}</strong>
+              </div>
+              <div v-if="prdDetail?.prdWikiPageUpdatedAt" class="requirement-ai-meta-row">
+                <span>最近更新</span>
+                <strong>{{ prdDetail.prdWikiPageUpdatedAt }}</strong>
+              </div>
+              <p v-if="prdDetail?.statusMessage" class="requirement-ai-meta-tip">{{ prdDetail.statusMessage }}</p>
+            </div>
+
+            <div v-if="result.gaps?.length" class="requirement-ai-reference-block">
+              <div class="requirement-ai-reference-title">缺口列表</div>
+              <ul class="requirement-ai-reference-list">
+                <li v-for="(item, index) in result.gaps" :key="`gap-${index}`">{{ item }}</li>
+              </ul>
+            </div>
+
+            <div v-if="result.questions?.length" class="requirement-ai-reference-block">
+              <div class="requirement-ai-reference-title">待确认问题</div>
+              <ul class="requirement-ai-reference-list">
+                <li v-for="(item, index) in result.questions" :key="`question-${index}`">{{ item }}</li>
+              </ul>
+            </div>
+
+            <div v-if="result.references?.length" class="requirement-ai-reference-block">
+              <div class="requirement-ai-reference-title">召回参考</div>
+              <div class="requirement-ai-reference-cards">
+                <button
+                  v-for="item in result.references"
+                  :key="`${item.spaceId}-${item.pageId}`"
+                  class="requirement-ai-reference-card"
+                  type="button"
+                  @click="openReferencePage(item.spaceId, item.pageId)"
+                >
+                  <div class="requirement-ai-reference-card-title">{{ item.title }}</div>
+                  <div class="requirement-ai-reference-card-meta">{{ item.directoryName }}<span v-if="item.score != null"> · {{ item.score.toFixed(2) }}</span></div>
+                  <div class="requirement-ai-reference-card-snippet">{{ item.snippet }}</div>
+                </button>
+              </div>
+            </div>
+          </div>
           <div v-if="result?.action === 'BREAKDOWN'" class="requirement-ai-panel">
             <div class="requirement-ai-section-head compact">
               <div>
@@ -221,11 +303,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import {
+  analyzeTaskPrd,
+  applyTaskPrdSuggestion,
   createTask,
   createTaskComment,
   createTestPlan,
   generateTaskRequirementAi,
+  getTaskPrdDetail,
   getTestPlanDetail,
   pageTestPlans,
   updateTask,
@@ -237,6 +323,8 @@ import { renderMarkdownToHtml } from '@/utils/markdown'
 import type {
   AiModelConfigItem,
   TaskItem,
+  TaskPrdAnalyzeResultItem,
+  TaskPrdDetailItem,
   TaskRequirementAiResultItem,
   TaskRequirementAiSuggestionItem,
   TaskRequirementAiTestCaseSuggestionItem,
@@ -258,6 +346,21 @@ const taskCategoryOptions = ['需求设计', 'UI设计', '技术设计', '开发
 const taskPriorityOptions = ['高', '中', '低']
 const caseTypeOptions = ['功能测试', '接口测试', '回归测试', '异常测试', '兼容性测试', '性能测试']
 const casePriorityOptions = ['P0', 'P1', 'P2', 'P3']
+const router = useRouter()
+
+interface RequirementAiDialogResult {
+  action: string
+  title: string
+  markdown: string
+  modelConfigId: number | null
+  modelConfigName: string | null
+  taskSuggestions: TaskRequirementAiSuggestionItem[]
+  testCaseSuggestions: TaskRequirementAiTestCaseSuggestionItem[]
+  suggestionMarkdown: string
+  gaps: string[]
+  questions: string[]
+  references: TaskPrdAnalyzeResultItem['references']
+}
 
 const modelOptions = ref<AiModelConfigItem[]>([])
 const selectedModelConfigId = ref<number | undefined>()
@@ -265,9 +368,12 @@ const runningAction = ref<string | null>(null)
 const creatingTasks = ref(false)
 const importingTestCases = ref(false)
 const creatingTestPlan = ref(false)
+const prdLoading = ref(false)
+const applyingPrdSuggestion = ref(false)
 const selectedPlanId = ref<number | undefined>()
 const testPlanOptions = ref<TestPlanItem[]>([])
-const result = ref<TaskRequirementAiResultItem | null>(null)
+const result = ref<RequirementAiDialogResult | null>(null)
+const prdDetail = ref<TaskPrdDetailItem | null>(null)
 const editableTaskSuggestions = ref<TaskRequirementAiSuggestionItem[]>([])
 const editableTestCaseSuggestions = ref<TaskRequirementAiTestCaseSuggestionItem[]>([])
 const taskSuggestionDrawerVisible = ref(false)
@@ -280,6 +386,14 @@ const currentTaskSuggestion = computed(() => {
   return editableTaskSuggestions.value[currentTaskSuggestionIndex.value] || null
 })
 const isRequirementTask = computed(() => props.task?.workItemType === '需求')
+const prdReady = computed(() => prdDetail.value?.status === 'READY' && !!prdDetail.value?.prdWikiPageId && !!prdDetail.value?.wikiSpaceId)
+const prdStatusText = computed(() => {
+  if (!prdDetail.value) return '未初始化'
+  if (prdDetail.value.status === 'READY') return '已就绪'
+  if (prdDetail.value.status === 'PENDING') return '初始化中'
+  if (prdDetail.value.status === 'FAILED') return '初始化失败'
+  return '未初始化'
+})
 
 const loadModelOptions = async () => {
   modelOptions.value = await listModelConfigOptions()
@@ -325,23 +439,93 @@ const cloneTestCaseSuggestions = (suggestions: TaskRequirementAiTestCaseSuggesti
     }))
   }))
 
+const normalizeRequirementAiResult = (payload: TaskRequirementAiResultItem): RequirementAiDialogResult => ({
+  action: payload.action,
+  title: payload.title,
+  markdown: payload.markdown,
+  modelConfigId: payload.modelConfigId,
+  modelConfigName: payload.modelConfigName,
+  taskSuggestions: cloneTaskSuggestions(payload.taskSuggestions),
+  testCaseSuggestions: cloneTestCaseSuggestions(payload.testCaseSuggestions),
+  suggestionMarkdown: '',
+  gaps: [],
+  questions: [],
+  references: []
+})
+
+const normalizePrdAnalyzeResult = (payload: TaskPrdAnalyzeResultItem): RequirementAiDialogResult => ({
+  action: payload.action,
+  title: payload.title,
+  markdown: payload.markdown,
+  modelConfigId: payload.modelConfigId,
+  modelConfigName: payload.modelConfigName,
+  taskSuggestions: [],
+  testCaseSuggestions: [],
+  suggestionMarkdown: payload.suggestionMarkdown,
+  gaps: [...payload.gaps],
+  questions: [...payload.questions],
+  references: [...payload.references]
+})
+
+const loadPrdDetail = async () => {
+  if (!props.task || props.task.workItemType !== '需求') {
+    prdDetail.value = null
+    return
+  }
+  prdLoading.value = true
+  try {
+    prdDetail.value = await getTaskPrdDetail(props.task.id)
+  } catch (error: any) {
+    prdDetail.value = null
+    ElMessage.error(error?.response?.data?.message || '读取 PRD 详情失败')
+  } finally {
+    prdLoading.value = false
+  }
+}
+
 const runAction = async (action: string) => {
   if (!props.task) {
     return
   }
   runningAction.value = action
   try {
-    result.value = await generateTaskRequirementAi(props.task.id, {
+    const response = await generateTaskRequirementAi(props.task.id, {
       action,
       modelConfigId: selectedModelConfigId.value
     })
-    editableTaskSuggestions.value = cloneTaskSuggestions(result.value.taskSuggestions)
-    editableTestCaseSuggestions.value = cloneTestCaseSuggestions(result.value.testCaseSuggestions)
+    result.value = normalizeRequirementAiResult(response)
+    editableTaskSuggestions.value = cloneTaskSuggestions(response.taskSuggestions)
+    editableTestCaseSuggestions.value = cloneTestCaseSuggestions(response.testCaseSuggestions)
     if (action === 'TEST_CASES') {
       await loadTestPlanOptions()
     }
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || 'AI 生成失败')
+  } finally {
+    runningAction.value = null
+  }
+}
+
+const runPrdAction = async (action: 'GAP_CHECK' | 'SUGGEST_UPDATE') => {
+  if (!props.task) {
+    return
+  }
+  if (!prdReady.value) {
+    ElMessage.warning(prdDetail.value?.statusMessage || '请先初始化 PRD')
+    return
+  }
+  runningAction.value = action
+  try {
+    const response = await analyzeTaskPrd(props.task.id, {
+      action,
+      modelConfigId: selectedModelConfigId.value
+    })
+    result.value = normalizePrdAnalyzeResult(response)
+    editableTaskSuggestions.value = []
+    editableTestCaseSuggestions.value = []
+    await loadPrdDetail()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || 'PRD 分析失败')
   } finally {
     runningAction.value = null
   }
@@ -367,6 +551,7 @@ const buildTaskUpdatePayload = (nextDescription: string, nextRequirementMarkdown
     description: nextDescription,
     requirementMarkdown: isRequirementTask.value ? nextRequirementMarkdown || nextDescription : '',
     prototypeUrl: isRequirementTask.value ? props.task.prototypeUrl : '',
+    moduleName: isRequirementTask.value ? (props.task.moduleName || '') : '',
     projectId: props.task.projectId,
     agentId: props.task.agentId,
     iterationId: props.task.iterationId,
@@ -420,6 +605,39 @@ const postAsComment = async () => {
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '发布评论失败')
   }
+}
+
+const applyPrdSuggestion = async () => {
+  if (!props.task || !props.canManage || !result.value?.suggestionMarkdown) {
+    return
+  }
+  applyingPrdSuggestion.value = true
+  try {
+    await applyTaskPrdSuggestion(props.task.id, {
+      suggestionMarkdown: result.value.suggestionMarkdown,
+      changeSummary: '应用 AI PRD 建议'
+    })
+    ElMessage.success('PRD 建议已写入')
+    await loadPrdDetail()
+    emit('changed')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '写入 PRD 失败')
+  } finally {
+    applyingPrdSuggestion.value = false
+  }
+}
+
+const openPrdPage = async () => {
+  if (!prdDetail.value?.wikiSpaceId || !prdDetail.value?.prdWikiPageId) {
+    return
+  }
+  await router.push({ name: 'wiki-space-page', params: { spaceId: prdDetail.value.wikiSpaceId, pageId: prdDetail.value.prdWikiPageId } })
+  emit('update:modelValue', false)
+}
+
+const openReferencePage = async (spaceId: number, pageId: number) => {
+  await router.push({ name: 'wiki-space-page', params: { spaceId, pageId } })
+  emit('update:modelValue', false)
 }
 
 const removeTaskSuggestion = (index: number) => {
@@ -574,6 +792,7 @@ watch(
       creatingTasks.value = false
       importingTestCases.value = false
       creatingTestPlan.value = false
+      applyingPrdSuggestion.value = false
     }
   }
 )
@@ -587,11 +806,15 @@ watch(
     selectedPlanId.value = undefined
     taskSuggestionDrawerVisible.value = false
     currentTaskSuggestionIndex.value = null
+    void loadPrdDetail()
   }
 )
 
 onMounted(async () => {
   await loadModelOptions()
+  if (props.task?.workItemType === '需求') {
+    await loadPrdDetail()
+  }
 })
 </script>
 
@@ -774,6 +997,82 @@ onMounted(async () => {
   flex-direction: column;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.requirement-ai-meta-card {
+  padding: 12px 14px;
+  border: 1px solid #dbe6ef;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.requirement-ai-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.requirement-ai-meta-tip {
+  margin: 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
+}
+
+.requirement-ai-reference-block {
+  margin-top: 14px;
+}
+
+.requirement-ai-reference-title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+
+.requirement-ai-reference-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--el-text-color-regular);
+  line-height: 1.7;
+}
+
+.requirement-ai-reference-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.requirement-ai-reference-card {
+  border: 1px solid #dbe5ee;
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.requirement-ai-reference-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.requirement-ai-reference-card-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.requirement-ai-reference-card-snippet {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #475569;
 }
 
 .requirement-ai-steps {

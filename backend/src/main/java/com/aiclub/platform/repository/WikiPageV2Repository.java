@@ -19,6 +19,9 @@ public interface WikiPageV2Repository extends JpaRepository<WikiPageV2Entity, Lo
     /** 按 slug 读取空间页面。 */
     Optional<WikiPageV2Entity> findBySpace_IdAndSlugIgnoreCase(Long spaceId, String slug);
 
+    /** 按目录与标题读取页面，供业务幂等初始化复用。 */
+    Optional<WikiPageV2Entity> findBySpace_IdAndDirectory_IdAndTitleIgnoreCase(Long spaceId, Long directoryId, String title);
+
     /** 判断空间内 slug 是否存在。 */
     boolean existsBySpace_IdAndSlugIgnoreCase(Long spaceId, String slug);
 

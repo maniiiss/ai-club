@@ -7,6 +7,7 @@ import com.aiclub.platform.domain.model.IterationEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.TaskCommentEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
+import com.aiclub.platform.domain.model.TaskPrdProjectionEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.AgentSummary;
 import com.aiclub.platform.dto.DashboardOverview;
@@ -31,6 +32,7 @@ import com.aiclub.platform.repository.IterationRepository;
 import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.aiclub.platform.repository.TaskCommentRepository;
+import com.aiclub.platform.repository.TaskPrdProjectionRepository;
 import com.aiclub.platform.repository.TaskRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.security.AuthContextHolder;
@@ -63,6 +65,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
@@ -74,6 +77,7 @@ public class PlatformStoreService {
     private static final String WORK_ITEM_CODE_PREFIX = "#";
     private static final String WORK_ITEM_CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final int WORK_ITEM_CODE_RANDOM_LENGTH = 6;
+    private static final String DEFAULT_REQUIREMENT_MODULE_NAME = "未分类";
 
     private final ProjectRepository projectRepository;
     private final ProjectGitlabBindingRepository projectGitlabBindingRepository;
@@ -82,11 +86,14 @@ public class PlatformStoreService {
     private final IterationRepository iterationRepository;
     private final TaskRepository taskRepository;
     private final TaskCommentRepository taskCommentRepository;
+    private final TaskPrdProjectionRepository taskPrdProjectionRepository;
     private final UserRepository userRepository;
     private final TokenCipherService tokenCipherService;
     private final TaskNotificationService taskNotificationService;
     private final KnowledgeGraphService knowledgeGraphService;
     private final ProjectDataPermissionService projectDataPermissionService;
+    private final RequirementModuleOptionService requirementModuleOptionService;
+    private final TaskPrdService taskPrdService;
     private final SecureRandom workItemCodeRandom = new SecureRandom();
 
     public PlatformStoreService(ProjectRepository projectRepository,
@@ -96,11 +103,14 @@ public class PlatformStoreService {
                                 IterationRepository iterationRepository,
                                 TaskRepository taskRepository,
                                 TaskCommentRepository taskCommentRepository,
+                                TaskPrdProjectionRepository taskPrdProjectionRepository,
                                 UserRepository userRepository,
                                 TokenCipherService tokenCipherService,
                                 TaskNotificationService taskNotificationService,
                                 KnowledgeGraphService knowledgeGraphService,
-                                ProjectDataPermissionService projectDataPermissionService) {
+                                ProjectDataPermissionService projectDataPermissionService,
+                                RequirementModuleOptionService requirementModuleOptionService,
+                                TaskPrdService taskPrdService) {
         this.projectRepository = projectRepository;
         this.projectGitlabBindingRepository = projectGitlabBindingRepository;
         this.agentRepository = agentRepository;
@@ -108,11 +118,14 @@ public class PlatformStoreService {
         this.iterationRepository = iterationRepository;
         this.taskRepository = taskRepository;
         this.taskCommentRepository = taskCommentRepository;
+        this.taskPrdProjectionRepository = taskPrdProjectionRepository;
         this.userRepository = userRepository;
         this.tokenCipherService = tokenCipherService;
         this.taskNotificationService = taskNotificationService;
         this.knowledgeGraphService = knowledgeGraphService;
         this.projectDataPermissionService = projectDataPermissionService;
+        this.requirementModuleOptionService = requirementModuleOptionService;
+        this.taskPrdService = taskPrdService;
     }
 
     public DashboardOverview getDashboardOverview() {
@@ -532,6 +545,7 @@ public class PlatformStoreService {
         Set<UserEntity> collaborators = resolveAdditionalUsers(request.collaboratorUserIds(), assigneeUser == null ? null : assigneeUser.getId());
         RequirementDocumentPayload requirementDocument = buildRequirementDocument(workItemType, request, true);
         TaskPlanDateRange taskPlanDateRange = resolveTaskPlanDateRange(request.planStartDate(), request.planEndDate());
+        String moduleName = normalizeModuleName(workItemType, request.moduleName());
         UserEntity creatorUser = requireCurrentUser();
         validateAgentProject(project.getId(), agent);
         validateRequirementRelation(workItemType, requirementTask);
@@ -557,6 +571,7 @@ public class PlatformStoreService {
         entity.setRequirementTask(requirementTask);
         entity.setRequirementMarkdown(requirementDocument.requirementMarkdown());
         entity.setPrototypeUrl(requirementDocument.prototypeUrl());
+        entity.setModuleName(moduleName);
         entity.setDevPassed(false);
         entity.setTestPassed(false);
         entity.setWorkHours(normalizeWorkHours(workItemType, request.workHours()));
@@ -564,6 +579,10 @@ public class PlatformStoreService {
         entity.setPlanEndDate(taskPlanDateRange.planEndDate());
         syncOverdueNotificationState(entity);
         TaskEntity saved = taskRepository.save(entity);
+        requirementModuleOptionService.ensureCustomRequirementModule(project, workItemType, moduleName);
+        if ("需求".equals(workItemType)) {
+            taskPrdService.initializeIfEligible(saved.getId());
+        }
         taskNotificationService.notifyTaskCreated(saved, assigneeUser, collaborators);
         TaskSummary summary = toTaskSummary(saved);
         knowledgeGraphService.rebuildProjectGraph(project.getId());
@@ -596,6 +615,9 @@ public class PlatformStoreService {
     public TaskSummary updateTask(Long id, TaskRequest request) {
         TaskEntity entity = requireTask(id);
         Long previousAssigneeUserId = entity.getAssigneeUser() == null ? null : entity.getAssigneeUser().getId();
+        Long previousProjectId = entity.getProject() == null ? null : entity.getProject().getId();
+        String previousWorkItemType = normalizeWorkItemType(entity.getWorkItemType());
+        String previousModuleName = normalizeModuleName(previousWorkItemType, entity.getModuleName());
         String previousStatus = entity.getStatus();
         Set<Long> previousCollaboratorUserIds = entity.getCollaborators().stream().map(UserEntity::getId).collect(LinkedHashSet::new, LinkedHashSet::add, LinkedHashSet::addAll);
         ProjectEntity project = requireProject(request.projectId());
@@ -607,6 +629,7 @@ public class PlatformStoreService {
         Set<UserEntity> collaborators = resolveAdditionalUsers(request.collaboratorUserIds(), assigneeUser == null ? null : assigneeUser.getId());
         RequirementDocumentPayload requirementDocument = buildRequirementDocument(workItemType, request, false);
         TaskPlanDateRange taskPlanDateRange = resolveTaskPlanDateRange(request.planStartDate(), request.planEndDate());
+        String moduleName = normalizeModuleName(workItemType, request.moduleName());
         validateAgentProject(project.getId(), agent);
         validateRequirementRelation(workItemType, requirementTask);
         validateRequirementStatusTransition(workItemType, request.status(), entity.isDevPassed(), entity.isTestPassed());
@@ -627,6 +650,7 @@ public class PlatformStoreService {
         entity.setAssignee(buildAssignee(request.assignee(), assigneeUser));
         entity.setRequirementMarkdown(requirementDocument.requirementMarkdown());
         entity.setPrototypeUrl(requirementDocument.prototypeUrl());
+        entity.setModuleName(moduleName);
         if (!"需求".equals(workItemType)) {
             entity.setDevPassed(false);
             entity.setTestPassed(false);
@@ -637,6 +661,7 @@ public class PlatformStoreService {
         syncOverdueNotificationState(entity);
 
         TaskEntity saved = taskRepository.save(entity);
+        syncRequirementModuleOptionOnUpdate(project, previousProjectId, previousWorkItemType, previousModuleName, workItemType, moduleName);
         taskNotificationService.notifyTaskUpdated(saved, previousAssigneeUserId, previousStatus, previousCollaboratorUserIds);
         TaskSummary summary = toTaskSummary(saved);
         knowledgeGraphService.rebuildProjectGraph(project.getId());
@@ -1416,6 +1441,9 @@ public class PlatformStoreService {
                 .sorted((a, b) -> Long.compare(a.getId(), b.getId()))
                 .toList();
         TaskEntity requirementTask = entity.getRequirementTask();
+        TaskPrdProjectionEntity prdProjection = taskPrdProjectionRepository.findByTask_Id(entity.getId()).orElse(null);
+        String prdStatus = prdProjection == null ? null : prdProjection.getStatus();
+        String prdStatusMessage = resolveTaskPrdStatusMessage(entity, prdProjection);
         return new TaskSummary(
                 entity.getId(),
                 entity.getWorkItemCode(),
@@ -1435,6 +1463,12 @@ public class PlatformStoreService {
                 entity.getDescription(),
                 entity.getRequirementMarkdown(),
                 entity.getPrototypeUrl(),
+                normalizeModuleName(entity.getWorkItemType(), entity.getModuleName()),
+                prdStatus,
+                prdStatusMessage,
+                prdProjection == null || prdProjection.getWikiSpace() == null ? null : prdProjection.getWikiSpace().getId(),
+                prdProjection == null || prdProjection.getPrdWikiDirectory() == null ? null : prdProjection.getPrdWikiDirectory().getId(),
+                prdProjection == null || prdProjection.getPrdWikiPage() == null ? null : prdProjection.getPrdWikiPage().getId(),
                 entity.isDevPassed(),
                 entity.isTestPassed(),
                 requirementTask == null ? null : requirementTask.isDevPassed(),
@@ -1506,6 +1540,38 @@ public class PlatformStoreService {
             throw new IllegalArgumentException("工作项类型仅支持：需求、任务、缺陷");
         }
         return value;
+    }
+
+    /**
+     * 需求模块目前采用自由文本录入，空值统一落为“未分类”。
+     */
+    private String normalizeModuleName(String workItemType, String moduleName) {
+        if (!"需求".equals(workItemType)) {
+            return "";
+        }
+        String normalized = defaultString(moduleName).trim();
+        return normalized.isBlank() ? DEFAULT_REQUIREMENT_MODULE_NAME : normalized;
+    }
+
+    /**
+     * 编辑需求时只有模块、项目或工作项类型实际变化才补录候选。
+     * 这样用户删除候选后，保存同一个历史需求的其他字段不会把候选重新带回下拉。
+     */
+    private void syncRequirementModuleOptionOnUpdate(ProjectEntity project,
+                                                     Long previousProjectId,
+                                                     String previousWorkItemType,
+                                                     String previousModuleName,
+                                                     String workItemType,
+                                                     String moduleName) {
+        if (!"需求".equals(workItemType)) {
+            return;
+        }
+        boolean moduleChanged = !"需求".equals(previousWorkItemType)
+                || !Objects.equals(previousProjectId, project.getId())
+                || !Objects.equals(previousModuleName, moduleName);
+        if (moduleChanged) {
+            requirementModuleOptionService.ensureCustomRequirementModule(project, workItemType, moduleName);
+        }
     }
 
     private String normalizeAgentAccessType(String accessType) {
@@ -1583,6 +1649,25 @@ public class PlatformStoreService {
             return normalized;
         }
         return normalized.substring(0, Math.max(maxLength - 3, 0)).trim() + "...";
+    }
+
+    /**
+     * 统一返回任务侧 PRD 状态提示，避免前端重复拼装错误文案。
+     */
+    private String resolveTaskPrdStatusMessage(TaskEntity entity, TaskPrdProjectionEntity projection) {
+        if (!"需求".equals(defaultString(entity.getWorkItemType()).trim())) {
+            return "";
+        }
+        if (projection == null) {
+            return "尚未初始化 PRD";
+        }
+        String status = defaultString(projection.getStatus()).trim().toUpperCase();
+        return switch (status) {
+            case TaskPrdService.STATUS_READY -> projection.getPrdWikiPage() == null ? "当前工作项关联的 PRD 页面不存在，请重试初始化" : "";
+            case TaskPrdService.STATUS_PENDING -> "PRD 初始化中";
+            case TaskPrdService.STATUS_FAILED -> hasText(projection.getLastError()) ? projection.getLastError() : "PRD 初始化失败";
+            default -> "";
+        };
     }
 
     /**

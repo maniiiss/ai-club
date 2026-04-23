@@ -6,9 +6,11 @@ import com.aiclub.platform.dto.IterationBoardSummary;
 import com.aiclub.platform.dto.IterationSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectBurndownSummary;
+import com.aiclub.platform.dto.ProjectRequirementModuleOptionSummary;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.request.IterationRequest;
 import com.aiclub.platform.service.PlatformStoreService;
+import com.aiclub.platform.service.RequirementModuleOptionService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,9 +29,12 @@ import java.util.List;
 public class IterationController {
 
     private final PlatformStoreService platformStoreService;
+    private final RequirementModuleOptionService requirementModuleOptionService;
 
-    public IterationController(PlatformStoreService platformStoreService) {
+    public IterationController(PlatformStoreService platformStoreService,
+                               RequirementModuleOptionService requirementModuleOptionService) {
         this.platformStoreService = platformStoreService;
+        this.requirementModuleOptionService = requirementModuleOptionService;
     }
 
     @GetMapping("/iteration-board")
@@ -48,6 +53,20 @@ public class IterationController {
     @RequirePermission("project:view")
     public ApiResponse<List<IterationSummary>> listIterations(@PathVariable Long projectId) {
         return ApiResponse.success(platformStoreService.listProjectIterations(projectId));
+    }
+
+    @GetMapping("/requirement-modules")
+    @RequirePermission("task:view")
+    public ApiResponse<List<ProjectRequirementModuleOptionSummary>> listRequirementModules(@PathVariable Long projectId) {
+        return ApiResponse.success(requirementModuleOptionService.listProjectRequirementModules(projectId));
+    }
+
+    @DeleteMapping("/requirement-modules/{optionId}")
+    @RequirePermission("task:manage")
+    public ApiResponse<Void> deleteRequirementModule(@PathVariable Long projectId,
+                                                     @PathVariable Long optionId) {
+        requirementModuleOptionService.deleteProjectRequirementModule(projectId, optionId);
+        return new ApiResponse<>(true, "Deleted successfully", null);
     }
 
     @PostMapping("/iterations")

@@ -592,7 +592,16 @@ public class WikiSpaceService {
                 if (hitByPageId.isEmpty()) {
                     continue;
                 }
-                for (WikiPageV2Entity page : wikiPageV2Repository.findAllByIdIn(new ArrayList<>(hitByPageId.keySet()))) {
+                List<Long> pageIds = new ArrayList<>(hitByPageId.keySet());
+                Map<Long, WikiPageV2Entity> pagesById = new LinkedHashMap<>();
+                for (WikiPageV2Entity page : wikiPageV2Repository.findAllByIdIn(pageIds)) {
+                    pagesById.put(page.getId(), page);
+                }
+                for (Long pageId : pageIds) {
+                    WikiPageV2Entity page = pagesById.get(pageId);
+                    if (page == null) {
+                        continue;
+                    }
                     if (!Objects.equals(page.getSpace().getId(), space.getId())) {
                         continue;
                     }
@@ -686,6 +695,94 @@ public class WikiSpaceService {
      */
     public long countPageVersions(Long pageId) {
         return wikiPageVersionV2Repository.countByPage_Id(pageId);
+    }
+
+    /**
+     * 为自动化场景幂等创建或复用目录，避免需求 PRD 初始化重复建树。
+     */
+    public WikiDirectoryEntity ensureAutomationDirectory(Long spaceId,
+                                                         Long parentDirectoryId,
+                                                         String name,
+                                                         Long boundProjectId) {
+        UserContext userContext = requireCurrentUserContext();
+        WikiSpaceEntity space = requireSpace(spaceId);
+        requireSpaceEditable(space, userContext);
+
+        WikiDirectoryEntity existing = parentDirectoryId == null
+                ? wikiDirectoryRepository.findBySpace_IdAndParentDirectoryIsNullAndNameIgnoreCase(spaceId, name).orElse(null)
+                : wikiDirectoryRepository.findBySpace_IdAndParentDirectory_IdAndNameIgnoreCase(spaceId, parentDirectoryId, name).orElse(null);
+        if (existing != null) {
+            if (boundProjectId != null
+                    && (existing.getBoundProject() == null || !Objects.equals(existing.getBoundProject().getId(), boundProjectId))) {
+                existing.setBoundProject(requireVisibleProject(boundProjectId));
+                existing = wikiDirectoryRepository.save(existing);
+            }
+            return existing;
+        }
+
+        WikiDirectoryEntity parentDirectory = parentDirectoryId == null ? null : requireDirectory(spaceId, parentDirectoryId);
+        ProjectEntity boundProject = boundProjectId == null ? null : requireVisibleProject(boundProjectId);
+        WikiDirectoryEntity entity = new WikiDirectoryEntity();
+        entity.setSpace(space);
+        entity.setParentDirectory(parentDirectory);
+        entity.setName(defaultString(name));
+        entity.setSlug(generateUniqueDirectorySlug(spaceId, parentDirectoryId, name, null));
+        entity.setContent("");
+        entity.setSortOrder(wikiDirectoryRepository.findMaxSortOrder(spaceId, parentDirectoryId) + 1);
+        entity.setBoundProject(boundProject);
+        entity.setCreatedByUser(userContext.user());
+        return wikiDirectoryRepository.save(entity);
+    }
+
+    /**
+     * 为自动化场景幂等创建页面。
+     * 如果目录下已存在同名页面，则直接复用，避免重复生成 PRD 主页面。
+     */
+    public WikiPageV2Entity createAutomationPage(Long spaceId, Long directoryId, String title, String content) {
+        UserContext userContext = requireCurrentUserContext();
+        WikiSpaceEntity space = requireSpace(spaceId);
+        requireSpaceEditable(space, userContext);
+        WikiDirectoryEntity directory = requireDirectory(spaceId, directoryId);
+
+        WikiPageV2Entity existing = wikiPageV2Repository.findBySpace_IdAndDirectory_IdAndTitleIgnoreCase(spaceId, directoryId, title)
+                .orElse(null);
+        if (existing != null) {
+            return existing;
+        }
+
+        WikiPageV2Entity entity = new WikiPageV2Entity();
+        entity.setSpace(space);
+        entity.setDirectory(directory);
+        entity.setParentPage(null);
+        entity.setTitle(defaultString(title));
+        entity.setSlug(generateUniquePageSlug(spaceId, title, null));
+        entity.setContent(defaultString(content));
+        entity.setAuthorUser(userContext.user());
+        entity.setCurrentVersionNumber(1);
+        entity.setSyncStatus(SYNC_STATUS_PENDING);
+        WikiPageV2Entity saved = wikiPageV2Repository.save(entity);
+        createPageVersion(saved, 1, userContext.user(), "创建页面");
+        enqueueRetainTask(saved);
+        return saved;
+    }
+
+    /**
+     * 为自动化场景更新页面正文，仍复用现有版本与 Hindsight 同步链路。
+     */
+    public WikiPageV2Entity updateAutomationPageContent(Long spaceId, Long pageId, String content, String changeSummary) {
+        UserContext userContext = requireCurrentUserContext();
+        WikiSpaceEntity space = requireSpace(spaceId);
+        requireSpaceEditable(space, userContext);
+        WikiPageV2Entity page = requirePage(spaceId, pageId);
+
+        page.setContent(defaultString(content));
+        page.setCurrentVersionNumber(page.getCurrentVersionNumber() + 1);
+        page.setSyncStatus(SYNC_STATUS_PENDING);
+        page.setLastSyncError("");
+        WikiPageV2Entity saved = wikiPageV2Repository.save(page);
+        createPageVersion(saved, saved.getCurrentVersionNumber(), userContext.user(), changeSummary);
+        enqueueRetainTask(saved);
+        return saved;
     }
 
     /**

@@ -41,6 +41,30 @@ public record TaskSummary(
          */
         String prototypeUrl,
         /**
+         * 需求所属模块。
+         */
+        String moduleName,
+        /**
+         * PRD 投影状态：PENDING、READY、FAILED。
+         */
+        String prdStatus,
+        /**
+         * PRD 状态说明，主要用于初始化失败或待处理提示。
+         */
+        String prdStatusMessage,
+        /**
+         * PRD 所在 Wiki 空间ID。
+         */
+        Long prdWikiSpaceId,
+        /**
+         * PRD 所在目录ID。
+         */
+        Long prdWikiDirectoryId,
+        /**
+         * PRD 主页面ID。
+         */
+        Long prdWikiPageId,
+        /**
          * 当前需求是否已开发通过。
          */
         boolean devPassed,

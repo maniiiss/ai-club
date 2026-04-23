@@ -18,9 +18,12 @@ import type {
   PageResponse,
   ProjectBurndownItem,
   ProjectItem,
+  ProjectRequirementModuleOptionItem,
   TestPlanItem,
   TaskAgentRunItem,
   TaskCommentItem,
+  TaskPrdAnalyzeResultItem,
+  TaskPrdDetailItem,
   TaskRequirementAiResultItem,
   TaskItem,
   UploadedFileItem,
@@ -92,6 +95,7 @@ export interface TaskPayload {
   description: string
   requirementMarkdown?: string
   prototypeUrl?: string
+  moduleName?: string
   /** 工作项计划开始日期，格式为 yyyy-MM-dd。 */
   planStartDate?: string | null
   /** 工作项计划结束日期，格式为 yyyy-MM-dd。 */
@@ -391,6 +395,26 @@ export const listTaskComments = async (id: number) => {
 
 export const createTaskComment = async (id: number, content: string) => {
   const { data } = await http.post<ApiResponse<TaskCommentItem>>(`/api/tasks/${id}/comments`, { content })
+  return data.data
+}
+
+export const getTaskPrdDetail = async (id: number) => {
+  const { data } = await http.get<ApiResponse<TaskPrdDetailItem>>(`/api/tasks/${id}/prd`)
+  return data.data
+}
+
+export const initializeTaskPrd = async (id: number) => {
+  const { data } = await http.post<ApiResponse<TaskPrdDetailItem>>(`/api/tasks/${id}/prd/initialize`)
+  return data.data
+}
+
+export const analyzeTaskPrd = async (id: number, payload: { action: 'GAP_CHECK' | 'SUGGEST_UPDATE' | string; modelConfigId?: number }) => {
+  const { data } = await http.post<ApiResponse<TaskPrdAnalyzeResultItem>>(`/api/tasks/${id}/prd/analyze`, payload)
+  return data.data
+}
+
+export const applyTaskPrdSuggestion = async (id: number, payload: { suggestionMarkdown: string; changeSummary?: string }) => {
+  const { data } = await http.post<ApiResponse<TaskPrdDetailItem>>(`/api/tasks/${id}/prd/apply-suggestion`, payload)
   return data.data
 }
 
@@ -818,6 +842,15 @@ export const updateIteration = async (projectId: number, iterationId: number, pa
 
 export const deleteIteration = async (projectId: number, iterationId: number) => {
   await http.delete<ApiResponse<null>>(`/api/projects/${projectId}/iterations/${iterationId}`)
+}
+
+export const listProjectRequirementModules = async (projectId: number) => {
+  const { data } = await http.get<ApiResponse<ProjectRequirementModuleOptionItem[]>>(`/api/projects/${projectId}/requirement-modules`)
+  return data.data
+}
+
+export const deleteProjectRequirementModule = async (projectId: number, optionId: number) => {
+  await http.delete<ApiResponse<null>>(`/api/projects/${projectId}/requirement-modules/${optionId}`)
 }
 
 export const listProjectWorkItems = async (projectId: number, query: WorkItemQuery) => {

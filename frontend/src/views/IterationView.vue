@@ -822,6 +822,42 @@
             </div>
 
             <div v-if="isRequirementWorkItem" class="work-item-field-block work-item-field-relation">
+              <div class="work-item-editor-label">所属模块</div>
+              <el-form-item class="work-item-form-item-plain">
+                <el-select
+                  v-model="workItemForm.moduleName"
+                  filterable
+                  allow-create
+                  default-first-option
+                  placeholder="输入或选择需求模块"
+                  style="width: 100%"
+                >
+                  <el-option label="未分类" value="未分类" />
+                  <el-option
+                    v-for="item in requirementModuleOptions"
+                    :key="item.id"
+                    :label="item.moduleName"
+                    :value="item.moduleName"
+                  >
+                    <div class="requirement-module-option">
+                      <span class="requirement-module-option-name">{{ item.moduleName }}</span>
+                      <button
+                        v-if="canManageWorkItem"
+                        class="requirement-module-option-delete"
+                        type="button"
+                        aria-label="删除模块候选"
+                        @mousedown.prevent.stop
+                        @click.prevent.stop="handleDeleteRequirementModule(item)"
+                      >
+                        <el-icon><Delete /></el-icon>
+                      </button>
+                    </div>
+                  </el-option>
+                </el-select>
+              </el-form-item>
+            </div>
+
+            <div v-if="isRequirementWorkItem" class="work-item-field-block work-item-field-relation">
               <div class="work-item-editor-label">原型链接</div>
               <el-form-item class="work-item-form-item-plain">
                 <el-input v-model="workItemForm.prototypeUrl" placeholder="请输入原型链接" />
@@ -928,6 +964,28 @@
 
     <template #footer>
       <div class="work-item-dialog-footer">
+        <el-button
+          v-if="canManageWorkItem && isRequirementWorkItem && currentDialogWorkItem"
+          plain
+          @click="handleInitializeCurrentTaskPrd"
+        >
+          {{ currentDialogWorkItem.prdWikiPageId ? '重试初始化 PRD' : '初始化 PRD' }}
+        </el-button>
+        <el-button
+          v-if="isRequirementWorkItem && currentDialogWorkItem?.prdWikiSpaceId && currentDialogWorkItem?.prdWikiPageId"
+          plain
+          @click="openWorkItemPrd(currentDialogWorkItem)"
+        >
+          打开 PRD
+        </el-button>
+        <el-button
+          v-if="isRequirementWorkItem && currentDialogWorkItem?.prdWikiSpaceId && currentDialogWorkItem?.prdWikiPageId"
+          type="primary"
+          plain
+          @click="openRequirementAiDialog(currentDialogWorkItem)"
+        >
+          AI 完善 PRD
+        </el-button>
         <el-button v-if="canManageWorkItem && currentDialogWorkItem" type="success" plain @click="openExecutionTaskDialog(currentDialogWorkItem)">
           发起智能执行
         </el-button>
@@ -1022,12 +1080,15 @@ import {
   createIteration,
   createTask,
   deleteIteration,
+  deleteProjectRequirementModule,
   deleteTask,
   getTaskDetail,
   getProjectBurndown,
   getIterationBoard,
   listTaskComments,
+  listProjectRequirementModules,
   listProjectWorkItems,
+  initializeTaskPrd,
   passRequirementDev,
   passRequirementTest,
   pageProjectWorkItems,
@@ -1055,6 +1116,7 @@ import type {
   IterationBoardItem,
   IterationItem,
   ProjectBurndownItem,
+  ProjectRequirementModuleOptionItem,
   ExecutionTaskItem,
   TaskCommentItem,
   TaskItem,
@@ -1089,6 +1151,7 @@ interface WorkItemForm {
   description: string
   requirementMarkdown: string
   prototypeUrl: string
+  moduleName: string
   agentId: number | null
   iterationId: number | null
   requirementTaskId: number | null
@@ -1170,6 +1233,7 @@ const userOptions = ref<UserOptionItem[]>([])
  */
 const userOptionMap = computed(() => new Map(userOptions.value.map((item) => [item.id, item])))
 const requirementOptions = ref<TaskItem[]>([])
+const requirementModuleOptions = ref<ProjectRequirementModuleOptionItem[]>([])
 const workItems = ref<TaskItem[]>([])
 const burndown = ref<ProjectBurndownItem | null>(null)
 const iterationProgressMap = ref<Record<number, IterationProgressSummary>>({})
@@ -1264,6 +1328,7 @@ const workItemForm = reactive<WorkItemForm>({
   description: '',
   requirementMarkdown: '',
   prototypeUrl: '',
+  moduleName: '',
   agentId: null,
   iterationId: null,
   requirementTaskId: null
@@ -1736,6 +1801,7 @@ const resetWorkItemForm = () => {
   workItemForm.description = ''
   workItemForm.requirementMarkdown = ''
   workItemForm.prototypeUrl = ''
+  workItemForm.moduleName = ''
   workItemForm.agentId = null
   workItemForm.iterationId = selectedScope.type === 'iteration' ? selectedScope.iterationId : null
   workItemForm.requirementTaskId = null
@@ -1812,6 +1878,14 @@ const openRequirementAiDialog = (item: TaskItem) => {
   requirementAiDialogVisible.value = true
 }
 
+const openWorkItemPrd = async (item: TaskItem) => {
+  if (!item.prdWikiSpaceId || !item.prdWikiPageId) {
+    ElMessage.warning(item.prdStatusMessage || '当前工作项尚未初始化 PRD')
+    return
+  }
+  await router.push({ name: 'wiki-space-page', params: { spaceId: item.prdWikiSpaceId, pageId: item.prdWikiPageId } })
+}
+
 const openExecutionTaskDialog = (item: TaskItem) => {
   currentExecutionWorkItem.value = item
   executionTaskCreateDialogVisible.value = true
@@ -1823,8 +1897,61 @@ const handleExecutionTaskCreated = async (executionTask: ExecutionTaskItem) => {
 
 const handleRequirementAiChanged = async () => {
   await Promise.all([loadBoard(), loadWorkItems()])
+  await refreshCurrentDialogWorkItem()
   if (currentCommentTask.value && currentRequirementAiTask.value && currentCommentTask.value.id === currentRequirementAiTask.value.id) {
     await loadTaskCommentList()
+  }
+}
+
+const loadRequirementModuleOptions = async () => {
+  requirementModuleOptions.value = await listProjectRequirementModules(projectId)
+}
+
+const handleDeleteRequirementModule = async (item: ProjectRequirementModuleOptionItem) => {
+  if (!canManageWorkItem.value) {
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认从下拉候选中删除模块“${item.moduleName}”吗？历史需求不会被修改。`,
+      '删除模块候选',
+      { type: 'warning' }
+    )
+    await deleteProjectRequirementModule(projectId, item.id)
+    await loadRequirementModuleOptions()
+    ElMessage.success('模块候选已删除')
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || '删除模块候选失败')
+    }
+  }
+}
+
+const refreshCurrentDialogWorkItem = async () => {
+  if (currentWorkItemId.value == null) {
+    return
+  }
+  try {
+    const latest = await getTaskDetail(currentWorkItemId.value)
+    currentDialogWorkItem.value = latest
+    if (currentRequirementAiTask.value?.id === latest.id) {
+      currentRequirementAiTask.value = latest
+    }
+  } catch (error) {
+    // 详情刷新失败时保持当前抽屉态，由全量刷新结果兜底。
+  }
+}
+
+const handleInitializeCurrentTaskPrd = async () => {
+  if (!currentDialogWorkItem.value) {
+    return
+  }
+  try {
+    await initializeTaskPrd(currentDialogWorkItem.value.id)
+    ElMessage.success('PRD 初始化请求已完成')
+    await Promise.all([refreshBoardAndItems(), refreshCurrentDialogWorkItem()])
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '初始化 PRD 失败')
   }
 }
 
@@ -2037,11 +2164,12 @@ const selectIteration = async (item: IterationItem) => {
 }
 
 const loadBoard = async () => {
-  const [boardData, users, burndownData, allWorkItems] = await Promise.all([
+  const [boardData, users, burndownData, allWorkItems, moduleOptions] = await Promise.all([
     getIterationBoard(projectId),
     listUserOptions(),
     getProjectBurndown(projectId),
-    listProjectWorkItems(projectId, { workItemType: '全部' })
+    listProjectWorkItems(projectId, { workItemType: '全部' }),
+    listProjectRequirementModules(projectId)
   ])
   board.project = boardData.project
   board.unplannedCount = boardData.unplannedCount
@@ -2050,6 +2178,7 @@ const loadBoard = async () => {
   userOptions.value = users
   burndown.value = burndownData
   requirementOptions.value = allWorkItems.filter((item) => item.workItemType === '需求')
+  requirementModuleOptions.value = moduleOptions
   applyIterationProgressFromItems(allWorkItems)
 
   const routeIterationId = Number(route.query.iterationId)
@@ -2240,11 +2369,13 @@ const openEditWorkItemDialog = (item: TaskItem) => {
     const requirementDraft = buildRequirementDraft(item.requirementMarkdown, item.description)
     workItemForm.requirementMarkdown = requirementDraft.markdown
     workItemForm.prototypeUrl = item.prototypeUrl || ''
+    workItemForm.moduleName = item.moduleName || '未分类'
     legacyRequirementNeedsUpgrade.value = requirementDraft.upgradedFromLegacy
     legacyRequirementPreview.value = !item.requirementMarkdown && item.description ? item.description : ''
   } else {
     workItemForm.requirementMarkdown = ''
     workItemForm.prototypeUrl = ''
+    workItemForm.moduleName = ''
     legacyRequirementNeedsUpgrade.value = false
     legacyRequirementPreview.value = ''
   }
@@ -2335,6 +2466,7 @@ const handleSubmitWorkItem = async () => {
       description: isRequirementWorkItem.value ? normalizedRequirementMarkdown : workItemForm.description,
       requirementMarkdown: normalizedRequirementMarkdown,
       prototypeUrl: isRequirementWorkItem.value ? workItemForm.prototypeUrl.trim() : '',
+      moduleName: isRequirementWorkItem.value ? workItemForm.moduleName.trim() : '',
       projectId,
       agentId: workItemForm.agentId,
       iterationId: workItemForm.iterationId,
@@ -2403,6 +2535,7 @@ const updateInlineWorkItem = async (
       description: row.description,
       requirementMarkdown: row.requirementMarkdown,
       prototypeUrl: row.prototypeUrl,
+      moduleName: row.moduleName || '',
       projectId: row.projectId,
       agentId: row.agentId,
       iterationId: row.iterationId,
@@ -2517,6 +2650,9 @@ watch(
       if (!workItemForm.requirementMarkdown.trim()) {
         workItemForm.requirementMarkdown = DEFAULT_REQUIREMENT_TEMPLATE
       }
+      if (!workItemForm.moduleName.trim()) {
+        workItemForm.moduleName = '未分类'
+      }
       return
     }
 
@@ -2528,6 +2664,7 @@ watch(
       // 从需求切回普通工作项时，清理模板字段，避免无关数据残留。
       workItemForm.requirementMarkdown = ''
       workItemForm.prototypeUrl = ''
+      workItemForm.moduleName = ''
       legacyRequirementNeedsUpgrade.value = false
       legacyRequirementPreview.value = ''
     }
@@ -4093,6 +4230,40 @@ onMounted(async () => {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+}
+
+.requirement-module-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.requirement-module-option-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.requirement-module-option-delete {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-muted);
+  cursor: pointer;
+}
+
+.requirement-module-option-delete:hover {
+  background: var(--app-danger-soft);
+  color: var(--app-danger);
 }
 
 .work-item-field-members :deep(.work-item-member-reference) {

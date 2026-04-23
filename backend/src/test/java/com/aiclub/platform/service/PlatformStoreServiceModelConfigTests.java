@@ -10,6 +10,7 @@ import com.aiclub.platform.repository.IterationRepository;
 import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.aiclub.platform.repository.TaskCommentRepository;
+import com.aiclub.platform.repository.TaskPrdProjectionRepository;
 import com.aiclub.platform.repository.TaskRepository;
 import com.aiclub.platform.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,6 +53,9 @@ class PlatformStoreServiceModelConfigTests {
     private TaskCommentRepository taskCommentRepository;
 
     @Mock
+    private TaskPrdProjectionRepository taskPrdProjectionRepository;
+
+    @Mock
     private UserRepository userRepository;
 
     @Mock
@@ -66,6 +70,12 @@ class PlatformStoreServiceModelConfigTests {
     @Mock
     private ProjectDataPermissionService projectDataPermissionService;
 
+    @Mock
+    private RequirementModuleOptionService requirementModuleOptionService;
+
+    @Mock
+    private TaskPrdService taskPrdService;
+
     private PlatformStoreService platformStoreService;
 
     @BeforeEach
@@ -78,11 +88,14 @@ class PlatformStoreServiceModelConfigTests {
                 iterationRepository,
                 taskRepository,
                 taskCommentRepository,
+                taskPrdProjectionRepository,
                 userRepository,
                 tokenCipherService,
                 taskNotificationService,
                 knowledgeGraphService,
-                projectDataPermissionService
+                projectDataPermissionService,
+                requirementModuleOptionService,
+                taskPrdService
         );
     }
 

@@ -353,10 +353,13 @@
             <el-option v-for="project in projectOptions" :key="project.id" :label="project.name" :value="project.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="关联需求" class="compact-form-item">
+        <el-form-item v-if="form.workItemType !== '需求'" label="关联需求" class="compact-form-item">
           <el-select v-model="form.requirementTaskId" clearable filterable placeholder="可选，关联一个需求" style="width: 100%">
             <el-option v-for="item in requirementOptions" :key="item.id" :label="item.name" :value="item.id" />
           </el-select>
+        </el-form-item>
+        <el-form-item v-else label="所属模块" class="compact-form-item">
+          <el-input v-model="form.moduleName" placeholder="为空时自动归档到未分类" />
         </el-form-item>
         <el-form-item label="优先级" prop="priority" class="compact-form-item">
           <el-select v-model="form.priority" placeholder="请选择优先级" style="width: 100%">
@@ -389,6 +392,9 @@
             <el-option label="已阻塞" value="已阻塞" />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="form.workItemType === '需求'" label="原型链接" class="compact-form-item">
+          <el-input v-model="form.prototypeUrl" placeholder="请输入原型链接" />
+        </el-form-item>
         </div>
       </section>
 
@@ -397,7 +403,31 @@
           <div class="platform-form-section-title">详细说明</div>
           <div class="platform-form-section-subtitle">支持 Markdown，用于补充背景、目标和执行要求。</div>
         </div>
-        <el-form-item label="详细说明" prop="description" class="grid-span-2 description-form-item">
+        <div v-if="isEditing && currentRequirementTask?.workItemType === '需求'" class="task-prd-actions">
+          <span class="task-prd-status">
+            {{ currentRequirementTask.prdStatus === 'READY' ? 'PRD 已就绪' : currentRequirementTask.prdStatusMessage || '尚未初始化 PRD' }}
+          </span>
+          <div class="task-prd-action-buttons">
+            <el-button v-if="canManageTasks" plain @click="handleInitializeCurrentTaskPrd">
+              {{ currentRequirementTask.prdWikiPageId ? '重试初始化 PRD' : '初始化 PRD' }}
+            </el-button>
+            <el-button v-if="currentRequirementTask.prdWikiSpaceId && currentRequirementTask.prdWikiPageId" plain @click="openTaskPrd(currentRequirementTask)">
+              打开 PRD
+            </el-button>
+            <el-button v-if="currentRequirementTask.prdWikiSpaceId && currentRequirementTask.prdWikiPageId" type="primary" plain @click="openRequirementAiDialog(currentRequirementTask)">
+              AI 完善 PRD
+            </el-button>
+          </div>
+        </div>
+        <el-form-item v-if="form.workItemType === '需求'" class="grid-span-2 description-form-item">
+          <MarkdownEditor
+            v-model="form.requirementMarkdown"
+            :height="380"
+            :upload-image="handleTaskMarkdownImageUpload"
+            placeholder="请填写需求文档，包含用户故事、需求描述和验收标准"
+          />
+        </el-form-item>
+        <el-form-item v-else label="详细说明" prop="description" class="grid-span-2 description-form-item">
           <MarkdownEditor v-model="form.description" :height="380" :upload-image="handleTaskMarkdownImageUpload" placeholder="请填写任务详细说明，支持 Markdown 格式" />
         </el-form-item>
       </section>
@@ -468,11 +498,17 @@
       <el-button type="primary" :loading="runningAgent" @click="handleRunAgent">运行</el-button>
     </template>
   </el-dialog>
+  <RequirementAiDialog
+    v-model="requirementAiDialogVisible"
+    :task="currentRequirementTask"
+    :can-manage="canManageTasks"
+    @changed="handleRequirementAiChanged"
+  />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useRouter } from 'vue-router'
@@ -483,9 +519,12 @@ import ListUserGroupDisplay from '@/components/ListUserGroupDisplay.vue'
 import type { ListUserDisplayItem } from '@/components/listUserDisplay'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import RequirementAiDialog from '@/components/RequirementAiDialog.vue'
 import {
   createTask,
   deleteTask,
+  getTaskDetail,
+  initializeTaskPrd,
   listAgentOptions,
   listProjectWorkItems,
   listProjectOptions,
@@ -499,6 +538,12 @@ import {
   isRequirementFullyPassed,
   getTaskWorkHoursLockedReason
 } from '@/utils/requirementReview'
+import {
+  buildRequirementDraft,
+  DEFAULT_REQUIREMENT_TEMPLATE,
+  normalizeRequirementDocument,
+  validateRequirementTemplate
+} from '@/utils/requirementTemplate'
 import { resolveAssetUrl } from '@/utils/asset'
 import { uploadMarkdownImage } from '@/utils/taskImageUpload'
 import { useAuthStore } from '@/stores/auth'
@@ -521,6 +566,7 @@ interface TaskForm {
   description: string
   requirementMarkdown: string
   prototypeUrl: string
+  moduleName: string
   projectId: number | null
   agentId: number | null
   iterationId: number | null
@@ -540,12 +586,14 @@ const workHoursUpdatingId = ref<number | null>(null)
 const isEditing = ref(false)
 const currentId = ref<number | null>(null)
 const assigneeFallback = ref('')
+const requirementAiDialogVisible = ref(false)
 const taskList = ref<TaskItem[]>([])
 const projectOptions = ref<ProjectItem[]>([])
 const requirementOptions = ref<TaskItem[]>([])
 const userOptions = ref<UserOptionItem[]>([])
 const runHistory = ref<TaskAgentRunItem[]>([])
 const currentRunTask = ref<TaskItem | null>(null)
+const currentRequirementTask = ref<TaskItem | null>(null)
 const runInput = ref('')
 const formRef = ref<FormInstance>()
 const canManageTasks = computed(() => authStore.hasPermission('task:manage'))
@@ -585,6 +633,7 @@ const form = reactive<TaskForm>({
   description: '',
   requirementMarkdown: '',
   prototypeUrl: '',
+  moduleName: '',
   projectId: null,
   agentId: null,
   iterationId: null,
@@ -632,6 +681,7 @@ const collaboratorSelectableUsers = computed(() =>
   projectParticipantUsers.value.filter((item) => item.id !== form.assigneeUserId)
 )
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
+const isRequirementForm = computed(() => form.workItemType === '需求')
 const selectedRequirementForWorkHours = computed(() =>
   requirementOptions.value.find((item) => item.id === form.requirementTaskId) || null
 )
@@ -741,6 +791,16 @@ const normalizeFormParticipants = () => {
 
 const handleTaskMarkdownImageUpload = (file: File) => uploadMarkdownImage(file)
 
+const validateRequirementForm = () => {
+  if (!isRequirementForm.value) {
+    return ''
+  }
+  if (!form.prototypeUrl.trim()) {
+    return '请输入原型链接'
+  }
+  return validateRequirementTemplate(form.requirementMarkdown)
+}
+
 const openRequirementTask = (row: TaskItem) => {
   if (!row.requirementTaskId) {
     return
@@ -765,6 +825,19 @@ const openTaskProject = (projectId: number) => {
     name: 'project-iterations',
     params: { projectId }
   })
+}
+
+const openTaskPrd = async (task: TaskItem) => {
+  if (!task.prdWikiSpaceId || !task.prdWikiPageId) {
+    ElMessage.warning(task.prdStatusMessage || '当前工作项尚未初始化 PRD')
+    return
+  }
+  await router.push({ name: 'wiki-space-page', params: { spaceId: task.prdWikiSpaceId, pageId: task.prdWikiPageId } })
+}
+
+const openRequirementAiDialog = (task: TaskItem) => {
+  currentRequirementTask.value = task
+  requirementAiDialogVisible.value = true
 }
 
 const loadRequirementOptions = async (projectId?: number | null) => {
@@ -800,6 +873,7 @@ const formatRunStatusLabel = (status?: string | null) => {
 
 const resetForm = () => {
   currentId.value = null
+  currentRequirementTask.value = null
   form.name = ''
   form.workItemType = '任务'
   form.status = '草稿'
@@ -814,6 +888,7 @@ const resetForm = () => {
   form.description = ''
   form.requirementMarkdown = ''
   form.prototypeUrl = ''
+  form.moduleName = ''
   form.projectId = projectOptions.value[0]?.id ?? null
   form.agentId = null
   form.iterationId = null
@@ -929,6 +1004,7 @@ const openEditDialog = async (row: TaskItem) => {
   }
   isEditing.value = true
   currentId.value = row.id
+  currentRequirementTask.value = row.workItemType === '需求' ? row : null
   form.name = row.name
   form.workItemType = row.workItemType
   form.status = row.status
@@ -941,8 +1017,16 @@ const openEditDialog = async (row: TaskItem) => {
   form.assigneeUserId = row.assigneeUserId
   form.collaboratorUserIds = [...row.collaboratorUserIds]
   form.description = row.description
-  form.requirementMarkdown = row.requirementMarkdown
-  form.prototypeUrl = row.prototypeUrl
+  if (row.workItemType === '需求') {
+    const requirementDraft = buildRequirementDraft(row.requirementMarkdown, row.description)
+    form.requirementMarkdown = requirementDraft.markdown
+    form.prototypeUrl = row.prototypeUrl
+    form.moduleName = row.moduleName || '未分类'
+  } else {
+    form.requirementMarkdown = ''
+    form.prototypeUrl = ''
+    form.moduleName = ''
+  }
   form.projectId = row.projectId
   await loadRequirementOptions(form.projectId)
   normalizeFormParticipants()
@@ -950,6 +1034,35 @@ const openEditDialog = async (row: TaskItem) => {
   form.iterationId = row.iterationId
   form.requirementTaskId = row.requirementTaskId
   dialogVisible.value = true
+}
+
+const refreshCurrentRequirementTask = async () => {
+  if (currentId.value == null) {
+    return
+  }
+  try {
+    const latest = await getTaskDetail(currentId.value)
+    currentRequirementTask.value = latest.workItemType === '需求' ? latest : null
+  } catch (error) {
+    // 当前编辑弹窗允许继续工作，刷新失败由列表重载兜底。
+  }
+}
+
+const handleInitializeCurrentTaskPrd = async () => {
+  if (!currentRequirementTask.value) {
+    return
+  }
+  try {
+    await initializeTaskPrd(currentRequirementTask.value.id)
+    ElMessage.success('PRD 初始化请求已完成')
+    await Promise.all([loadTasks(), refreshCurrentRequirementTask()])
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '初始化 PRD 失败')
+  }
+}
+
+const handleRequirementAiChanged = async () => {
+  await Promise.all([loadTasks(), refreshCurrentRequirementTask()])
 }
 
 const openRunDialog = async (row: TaskItem) => {
@@ -973,6 +1086,11 @@ const handleSubmit = async () => {
   }
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid || form.projectId === null) return
+  const requirementValidationMessage = validateRequirementForm()
+  if (requirementValidationMessage) {
+    ElMessage.warning(requirementValidationMessage)
+    return
+  }
   if (form.workItemType === '任务' && taskFormWorkHoursLockedReason.value && form.workHours !== null) {
     ElMessage.warning(taskFormWorkHoursLockedReason.value)
     return
@@ -981,6 +1099,9 @@ const handleSubmit = async () => {
   submitting.value = true
   try {
     syncFormAssignee()
+    const normalizedRequirementMarkdown = isRequirementForm.value
+      ? normalizeRequirementDocument(form.requirementMarkdown)
+      : ''
     const payload = {
       name: form.name,
       workItemType: form.workItemType,
@@ -992,9 +1113,10 @@ const handleSubmit = async () => {
       assignee: form.assignee,
       assigneeUserId: form.assigneeUserId,
       collaboratorUserIds: form.collaboratorUserIds,
-      description: form.description,
-      requirementMarkdown: form.requirementMarkdown,
-      prototypeUrl: form.prototypeUrl,
+      description: isRequirementForm.value ? normalizedRequirementMarkdown : form.description,
+      requirementMarkdown: normalizedRequirementMarkdown,
+      prototypeUrl: isRequirementForm.value ? form.prototypeUrl.trim() : '',
+      moduleName: isRequirementForm.value ? form.moduleName.trim() : '',
       projectId: form.projectId,
       agentId: form.agentId,
       iterationId: form.iterationId,
@@ -1076,6 +1198,7 @@ const handleQuickWorkHoursChange = async (row: TaskItem, value: number | string 
       description: row.description,
       requirementMarkdown: row.requirementMarkdown,
       prototypeUrl: row.prototypeUrl,
+      moduleName: row.moduleName || '',
       projectId: row.projectId,
       agentId: row.agentId,
       iterationId: row.iterationId,
@@ -1105,6 +1228,33 @@ const handleDelete = async (id: number) => {
     }
   }
 }
+
+watch(
+  () => form.workItemType,
+  (workItemType, previousType) => {
+    if (workItemType === '需求') {
+      form.requirementTaskId = null
+      form.workHours = null
+      if (!form.requirementMarkdown.trim()) {
+        form.requirementMarkdown = DEFAULT_REQUIREMENT_TEMPLATE
+      }
+      if (!form.moduleName.trim()) {
+        form.moduleName = '未分类'
+      }
+      return
+    }
+
+    if (previousType === '需求') {
+      form.requirementMarkdown = ''
+      form.prototypeUrl = ''
+      form.moduleName = ''
+    }
+
+    if (workItemType !== '任务') {
+      form.workHours = null
+    }
+  }
+)
 
 onMounted(async () => {
   await loadOptions()

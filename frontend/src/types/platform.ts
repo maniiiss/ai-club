@@ -81,6 +81,11 @@ export interface ProjectBurndownItem {
   actualRemaining: number[]
 }
 
+export interface ProjectRequirementModuleOptionItem {
+  id: number
+  moduleName: string
+}
+
 export interface KnowledgeGraphNodeItem {
   id: number
   nodeType: string
@@ -342,6 +347,12 @@ export interface TaskItem {
   description: string
   requirementMarkdown: string
   prototypeUrl: string
+  moduleName?: string | null
+  prdStatus?: 'PENDING' | 'READY' | 'FAILED' | string | null
+  prdStatusMessage?: string | null
+  prdWikiSpaceId?: number | null
+  prdWikiDirectoryId?: number | null
+  prdWikiPageId?: number | null
   projectId: number
   projectName: string
   agentId: number | null
@@ -400,6 +411,45 @@ export interface TaskRequirementAiResultItem {
   modelConfigName: string | null
   taskSuggestions: TaskRequirementAiSuggestionItem[]
   testCaseSuggestions: TaskRequirementAiTestCaseSuggestionItem[]
+}
+
+export interface TaskPrdDetailItem {
+  taskId: number
+  moduleName: string
+  status: 'PENDING' | 'READY' | 'FAILED' | string | null
+  statusMessage: string
+  wikiSpaceId: number | null
+  wikiSpaceName: string | null
+  prdWikiDirectoryId: number | null
+  prdWikiDirectoryName: string | null
+  prdWikiPageId: number | null
+  prdWikiPageTitle: string | null
+  prdWikiPageContent: string | null
+  prdWikiPageUpdatedAt: string | null
+  lastGeneratedAt: string | null
+  lastAiSuggestedAt: string | null
+  lastUserConfirmedAt: string | null
+}
+
+export interface TaskPrdRecallReferenceItem {
+  spaceId: number
+  pageId: number
+  title: string
+  directoryName: string
+  snippet: string
+  score: number | null
+}
+
+export interface TaskPrdAnalyzeResultItem {
+  action: 'GAP_CHECK' | 'SUGGEST_UPDATE' | string
+  title: string
+  markdown: string
+  suggestionMarkdown: string
+  modelConfigId: number | null
+  modelConfigName: string | null
+  gaps: string[]
+  questions: string[]
+  references: TaskPrdRecallReferenceItem[]
 }
 
 export interface TaskAgentRunItem {

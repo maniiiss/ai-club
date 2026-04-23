@@ -9,7 +9,14 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.models import CodexExecutionContext, CodexExecutionRepository, CodexExecutionRequest
+from app.models import (
+    CodexExecutionContext,
+    CodexExecutionRepository,
+    CodexExecutionRequest,
+    HttpCheckPlan,
+    TestExecutionPlan as CodexTestExecutionPlan,
+    TestSuitePlan as CodexTestSuitePlan,
+)
 from app.services.codex_execution_service import (
     DevelopmentExecutionWorkspace,
     _build_codex_prompt,
@@ -313,6 +320,263 @@ class CodexExecutionServiceTests(unittest.TestCase):
             command = _infer_frontend_start_command(project_dir, "pnpm")
 
         self.assertEqual("pnpm preview", command)
+
+    def test_should_execute_playwright_smoke_suite_and_collect_sidecar_artifacts(self):
+        request = self._build_request("TEST").model_copy(update={
+            "testPlan": CodexTestExecutionPlan(
+                suites=[
+                    CodexTestSuitePlan(
+                        suiteId="playwright-smoke",
+                        type="PLAYWRIGHT_SMOKE",
+                        status="PENDING",
+                        summary="等待执行浏览器烟测",
+                        workingDir="frontend",
+                        packageManager="pnpm",
+                        startCommand="pnpm dev",
+                        smokePaths=["/", "/dashboard"],
+                        readySelector="[data-ready]",
+                    )
+                ]
+            )
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            project_dir = workspace.repo_dir / "frontend"
+            project_dir.mkdir(parents=True, exist_ok=True)
+            workspace.out_dir.mkdir(parents=True, exist_ok=True)
+            (project_dir / "node_modules").mkdir(parents=True, exist_ok=True)
+            (project_dir / "package.json").write_text(
+                json.dumps(
+                    {
+                        "name": "demo-frontend",
+                        "scripts": {
+                            "dev": "vite",
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            def which_side_effect(name: str) -> str | None:
+                return f"C:/mock/{name}.exe" if name in {"node", "npm"} else None
+
+            def start_background_process_side_effect(command, cwd, log_file, env, shell):
+                log_file.write_text("frontend started", encoding="utf-8")
+                return SimpleNamespace(pid=1234), ("stdout", "stderr")
+
+            def ensure_playwright_runtime_side_effect(*, runner_dir, **kwargs):
+                runner_dir.mkdir(parents=True, exist_ok=True)
+                return [
+                    {
+                        "command": "pnpm exec playwright install",
+                        "cwd": str(runner_dir),
+                        "exitCode": 0,
+                        "stdout": "runtime ready",
+                        "stderr": "",
+                    }
+                ]
+
+            def run_process_side_effect(command, cwd, timeout_seconds, workspace, command_label, batcher, stdout_file, stderr_file, env, shell, should_cancel):
+                artifact_dir = workspace.out_dir / "playwright-smoke-artifacts"
+                artifact_dir.mkdir(parents=True, exist_ok=True)
+                (artifact_dir / "playwright-smoke-trace.zip").write_text("trace", encoding="utf-8")
+                (artifact_dir / "playwright-smoke-home.png").write_text("png", encoding="utf-8")
+                (artifact_dir / "playwright-result.json").write_text(
+                    json.dumps(
+                        {
+                            "summary": "Playwright 烟测通过",
+                            "checks": [
+                                {"name": "landing", "status": "SUCCESS", "detail": "首页加载成功"},
+                                {"name": "dashboard", "status": "SUCCESS", "detail": "仪表盘加载成功"},
+                            ],
+                            "artifacts": [
+                                {
+                                    "artifactType": "PLAYWRIGHT_TRACE",
+                                    "title": "Playwright Trace",
+                                    "fileName": "playwright-smoke-trace.zip",
+                                },
+                                {
+                                    "artifactType": "SCREENSHOT",
+                                    "title": "首页截图",
+                                    "fileName": "playwright-smoke-home.png",
+                                },
+                            ],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+                return SimpleNamespace(stdout="playwright ok", stderr="", exit_code=0)
+
+            with patch("app.services.codex_execution_service._workspace_for", return_value=workspace), \
+                    patch("app.services.codex_execution_service.shutil.which", side_effect=which_side_effect), \
+                    patch("app.services.codex_execution_service._find_free_port", return_value=4173), \
+                    patch("app.services.codex_execution_service._start_background_process", side_effect=start_background_process_side_effect), \
+                    patch("app.services.codex_execution_service._wait_for_http_ready", return_value=(True, "前端应用已就绪")), \
+                    patch("app.services.codex_execution_service._ensure_playwright_runtime", side_effect=ensure_playwright_runtime_side_effect), \
+                    patch("app.services.codex_execution_service._run_process", side_effect=run_process_side_effect), \
+                    patch("app.services.codex_execution_service._stop_background_process") as stop_mock:
+                response = execute_codex_execution(request)
+
+            payload = json.loads(response.output)
+            suite_result = payload["suiteResults"][0]
+            manifest = json.loads((workspace.out_dir / "sidecar-artifacts-manifest.json").read_text(encoding="utf-8"))
+
+        self.assertEqual("SUCCESS", payload["status"])
+        self.assertEqual("Playwright 烟测通过", suite_result["summary"])
+        self.assertEqual(
+            ["pnpm exec playwright install", "node smoke.mjs playwright-config.json"],
+            [item["command"] for item in suite_result["commandResults"]],
+        )
+        self.assertEqual(
+            ["PLAYWRIGHT_TRACE", "SCREENSHOT"],
+            [item["artifactType"] for item in suite_result["artifacts"]],
+        )
+        self.assertEqual(
+            ["playwright-smoke-trace.zip", "playwright-smoke-home.png"],
+            [item["fileName"] for item in payload["rawArtifacts"]],
+        )
+        self.assertEqual(
+            ["PLAYWRIGHT_TRACE", "SCREENSHOT"],
+            [item["artifactType"] for item in manifest],
+        )
+        stop_mock.assert_called_once()
+
+    def test_should_execute_service_smoke_suite_and_collect_http_log_artifacts(self):
+        request = self._build_request("TEST").model_copy(update={
+            "testPlan": CodexTestExecutionPlan(
+                suites=[
+                    CodexTestSuitePlan(
+                        suiteId="service-smoke",
+                        type="SERVICE_SMOKE",
+                        status="PENDING",
+                        summary="等待执行服务集成烟测",
+                        workingDir="backend",
+                        startCommand="python app.py",
+                        healthPath="/health",
+                        httpChecks=[
+                            HttpCheckPlan(name="详情接口", method="GET", path="/api/detail", expectedStatus=200),
+                        ],
+                    )
+                ]
+            )
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            (workspace.repo_dir / "backend").mkdir(parents=True, exist_ok=True)
+            workspace.out_dir.mkdir(parents=True, exist_ok=True)
+
+            def start_background_process_side_effect(command, cwd, log_file, env, shell):
+                log_file.write_text("service started", encoding="utf-8")
+                return SimpleNamespace(pid=4321), ("stdout", "stderr")
+
+            def run_http_check_side_effect(client, base_url, name, method, path_value, expected_status, log_file):
+                with log_file.open("a", encoding="utf-8") as handle:
+                    handle.write(f"{name}:{path_value}\n")
+                return {
+                    "name": name,
+                    "status": "SUCCESS",
+                    "detail": f"{method} {path_value} -> {expected_status}",
+                }
+
+            with patch("app.services.codex_execution_service._workspace_for", return_value=workspace), \
+                    patch("app.services.codex_execution_service._find_free_port", return_value=18080), \
+                    patch("app.services.codex_execution_service._start_background_process", side_effect=start_background_process_side_effect), \
+                    patch("app.services.codex_execution_service._wait_for_http_ready", return_value=(True, "服务已就绪")), \
+                    patch("app.services.codex_execution_service._run_http_check", side_effect=run_http_check_side_effect), \
+                    patch("app.services.codex_execution_service._stop_background_process") as stop_mock:
+                response = execute_codex_execution(request)
+
+            payload = json.loads(response.output)
+            suite_result = payload["suiteResults"][0]
+            manifest = json.loads((workspace.out_dir / "sidecar-artifacts-manifest.json").read_text(encoding="utf-8"))
+
+        self.assertEqual("SUCCESS", payload["status"])
+        self.assertEqual("服务烟测通过", suite_result["summary"])
+        self.assertEqual(
+            ["startup", "健康检查", "详情接口"],
+            [item["name"] for item in suite_result["checks"]],
+        )
+        self.assertEqual(
+            ["SERVICE_START_LOG", "HTTP_SMOKE_LOG"],
+            [item["artifactType"] for item in suite_result["artifacts"]],
+        )
+        self.assertEqual(
+            ["SERVICE_START_LOG", "HTTP_SMOKE_LOG"],
+            [item["artifactType"] for item in manifest],
+        )
+        stop_mock.assert_called_once()
+
+    def test_should_persist_service_logs_when_service_smoke_startup_fails(self):
+        request = self._build_request("TEST").model_copy(update={
+            "testPlan": CodexTestExecutionPlan(
+                suites=[
+                    CodexTestSuitePlan(
+                        suiteId="service-smoke",
+                        type="SERVICE_SMOKE",
+                        status="PENDING",
+                        summary="等待执行服务集成烟测",
+                        workingDir="backend",
+                        startCommand="python app.py",
+                        healthPath="/health",
+                    )
+                ]
+            )
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            (workspace.repo_dir / "backend").mkdir(parents=True, exist_ok=True)
+            workspace.out_dir.mkdir(parents=True, exist_ok=True)
+
+            def start_background_process_side_effect(command, cwd, log_file, env, shell):
+                log_file.write_text("service started", encoding="utf-8")
+                return SimpleNamespace(pid=5678), ("stdout", "stderr")
+
+            with patch("app.services.codex_execution_service._workspace_for", return_value=workspace), \
+                    patch("app.services.codex_execution_service._find_free_port", return_value=18081), \
+                    patch("app.services.codex_execution_service._start_background_process", side_effect=start_background_process_side_effect), \
+                    patch("app.services.codex_execution_service._wait_for_http_ready", return_value=(False, "端口未监听")), \
+                    patch("app.services.codex_execution_service._stop_background_process") as stop_mock:
+                response = execute_codex_execution(request)
+
+            payload = json.loads(response.output)
+            suite_result = payload["suiteResults"][0]
+            manifest = json.loads((workspace.out_dir / "sidecar-artifacts-manifest.json").read_text(encoding="utf-8"))
+            http_log_text = (workspace.out_dir / "service-smoke-http-smoke.log").read_text(encoding="utf-8")
+
+        self.assertEqual("FAILED", payload["status"])
+        self.assertEqual("服务未就绪：端口未监听", suite_result["summary"])
+        self.assertEqual("FAILED", suite_result["checks"][0]["status"])
+        self.assertEqual(
+            ["SERVICE_START_LOG", "HTTP_SMOKE_LOG"],
+            [item["artifactType"] for item in suite_result["artifacts"]],
+        )
+        self.assertEqual(
+            ["SERVICE_START_LOG", "HTTP_SMOKE_LOG"],
+            [item["artifactType"] for item in payload["rawArtifacts"]],
+        )
+        self.assertEqual(
+            ["SERVICE_START_LOG", "HTTP_SMOKE_LOG"],
+            [item["artifactType"] for item in manifest],
+        )
+        self.assertIn("端口未监听", http_log_text)
+        stop_mock.assert_called_once()
 
     def test_should_ask_codex_implementation_to_return_markdown_not_json(self):
         prompt = _build_codex_prompt(self._build_request("IMPLEMENT"))

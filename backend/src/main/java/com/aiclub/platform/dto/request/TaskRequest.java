@@ -39,6 +39,11 @@ public record TaskRequest(
         @Size(max = 500, message = "原型链接长度不能超过500")
         String prototypeUrl,
         /**
+         * 需求所属模块，供 PRD 目录归档使用。
+         */
+        @Size(max = 120, message = "模块名称长度不能超过120")
+        String moduleName,
+        /**
          * 需求开发是否通过。
          */
         Boolean devPassed,

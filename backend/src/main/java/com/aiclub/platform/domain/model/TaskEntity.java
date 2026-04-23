@@ -80,6 +80,12 @@ public class TaskEntity {
     private String prototypeUrl = "";
 
     /**
+     * 需求所属模块，作为 PRD 目录归档依据。
+     */
+    @Column(name = "module_name", nullable = false, length = 120)
+    private String moduleName = "";
+
+    /**
      * 需求开发是否通过。
      */
     @Column(name = "dev_passed", nullable = false)
@@ -262,6 +268,14 @@ public class TaskEntity {
 
     public void setPrototypeUrl(String prototypeUrl) {
         this.prototypeUrl = prototypeUrl;
+    }
+
+    public String getModuleName() {
+        return moduleName;
+    }
+
+    public void setModuleName(String moduleName) {
+        this.moduleName = moduleName;
     }
 
     public boolean isDevPassed() {

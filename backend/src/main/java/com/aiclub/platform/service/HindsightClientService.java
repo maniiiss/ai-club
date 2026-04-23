@@ -64,9 +64,7 @@ public class HindsightClientService {
         try {
             HttpResponse<String> response = sendJsonRequest("POST", recallUrl(projectId), payload);
             JsonNode root = objectMapper.readTree(response.body());
-            List<WikiRecallHit> hits = new ArrayList<>();
-            collectRecallHits(root, hits);
-            return deduplicateHits(hits);
+            return extractRecallHits(root);
         } catch (IOException exception) {
             throw new IllegalStateException("解析 Hindsight 召回结果失败", exception);
         }
@@ -105,9 +103,7 @@ public class HindsightClientService {
         try {
             HttpResponse<String> response = sendJsonRequest("POST", spaceRecallUrl(spaceId), payload);
             JsonNode root = objectMapper.readTree(response.body());
-            List<WikiRecallHit> hits = new ArrayList<>();
-            collectRecallHits(root, hits);
-            return deduplicateHits(hits);
+            return extractRecallHits(root);
         } catch (IOException exception) {
             throw new IllegalStateException("解析空间 Wiki Hindsight 召回结果失败", exception);
         }
@@ -225,6 +221,30 @@ public class HindsightClientService {
         }
     }
 
+    /**
+     * 优先读取 Hindsight recall 的主结果数组，保留其原始 rerank 顺序；
+     * 若不存在标准数组结构，则退回原有递归解析兜底。
+     */
+    private List<WikiRecallHit> extractRecallHits(JsonNode root) {
+        JsonNode resultsNode = firstArray(root, "results", "hits", "items", "memories");
+        if (resultsNode != null) {
+            List<WikiRecallHit> orderedHits = new ArrayList<>();
+            for (JsonNode item : resultsNode) {
+                List<WikiRecallHit> candidates = new ArrayList<>();
+                collectRecallHits(item, candidates);
+                WikiRecallHit best = pickBestHit(candidates);
+                if (best.documentId() != null && !best.documentId().isBlank()) {
+                    orderedHits.add(best);
+                }
+            }
+            return deduplicateHits(orderedHits);
+        }
+
+        List<WikiRecallHit> hits = new ArrayList<>();
+        collectRecallHits(root, hits);
+        return deduplicateHits(hits);
+    }
+
     private WikiRecallHit toRecallHit(JsonNode node) {
         String documentId = firstText(node, "document_id", "documentId", "id");
         JsonNode metadata = node.path("metadata");
@@ -237,16 +257,60 @@ public class HindsightClientService {
             title = firstText(metadata, "title");
         }
         String snippet = firstText(node, "snippet", "text", "content", "memory");
-        Double score = firstDouble(node, "score", "similarity", "distance");
+        Double score = firstDouble(node, "score", "similarity", "distance", "rank_score", "relevance", "relevanceScore");
+        if (score == null && metadata.isObject()) {
+            score = firstDouble(metadata, "score", "similarity", "distance", "rank_score", "relevance", "relevanceScore");
+        }
         return new WikiRecallHit(documentId, pageId, title, snippet, score);
     }
 
     private List<WikiRecallHit> deduplicateHits(List<WikiRecallHit> hits) {
         Map<String, WikiRecallHit> result = new LinkedHashMap<>();
         for (WikiRecallHit hit : hits) {
-            result.putIfAbsent(hit.documentId(), hit);
+            WikiRecallHit existing = result.get(hit.documentId());
+            if (existing == null || shouldReplaceHit(existing, hit)) {
+                result.put(hit.documentId(), hit);
+            }
         }
         return List.copyOf(result.values());
+    }
+
+    private WikiRecallHit pickBestHit(List<WikiRecallHit> candidates) {
+        WikiRecallHit best = new WikiRecallHit("", null, "", "", null);
+        for (WikiRecallHit candidate : candidates) {
+            if (candidate.documentId() == null || candidate.documentId().isBlank()) {
+                continue;
+            }
+            if (best.documentId().isBlank() || shouldReplaceHit(best, candidate)) {
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private boolean shouldReplaceHit(WikiRecallHit existing, WikiRecallHit candidate) {
+        if (existing == null) {
+            return true;
+        }
+        if (candidate == null) {
+            return false;
+        }
+        if (existing.score() == null && candidate.score() != null) {
+            return true;
+        }
+        if (existing.score() != null && candidate.score() == null) {
+            return false;
+        }
+        if (existing.score() != null && candidate.score() != null && candidate.score() > existing.score()) {
+            return true;
+        }
+        if (!hasText(existing.snippet()) && hasText(candidate.snippet())) {
+            return true;
+        }
+        if (!hasText(existing.title()) && hasText(candidate.title())) {
+            return true;
+        }
+        return existing.pageId() == null && candidate.pageId() != null;
     }
 
     private String firstText(JsonNode node, String... fieldNames) {
@@ -281,6 +345,23 @@ public class HindsightClientService {
             JsonNode value = node.path(fieldName);
             if (value.isNumber()) {
                 return value.asDouble();
+            }
+            if (value.isTextual()) {
+                try {
+                    return Double.parseDouble(value.asText(""));
+                } catch (NumberFormatException ignored) {
+                    // 继续尝试下一个字段。
+                }
+            }
+        }
+        return null;
+    }
+
+    private JsonNode firstArray(JsonNode node, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            JsonNode value = node.path(fieldName);
+            if (value.isArray()) {
+                return value;
             }
         }
         return null;

@@ -19,6 +19,12 @@ public interface WikiDirectoryRepository extends JpaRepository<WikiDirectoryEnti
     /** 读取空间内指定目录。 */
     Optional<WikiDirectoryEntity> findBySpace_IdAndId(Long spaceId, Long id);
 
+    /** 按名称读取空间根目录。 */
+    Optional<WikiDirectoryEntity> findBySpace_IdAndParentDirectoryIsNullAndNameIgnoreCase(Long spaceId, String name);
+
+    /** 按名称读取同级目录。 */
+    Optional<WikiDirectoryEntity> findBySpace_IdAndParentDirectory_IdAndNameIgnoreCase(Long spaceId, Long parentDirectoryId, String name);
+
     /** 判断目录是否有子目录。 */
     boolean existsByParentDirectory_Id(Long parentDirectoryId);
 

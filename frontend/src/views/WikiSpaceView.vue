@@ -1,7 +1,7 @@
 <template>
   <div class="wiki-space-page">
     <section class="wiki-shell">
-      <aside class="wiki-sidebar" v-loading="treeLoading">
+      <aside class="wiki-sidebar" v-loading="treeLoading || searchLoading">
         <div class="wiki-sidebar-head">
           <button class="wiki-back-link" type="button" @click="goBack">
             <el-icon><ArrowLeft /></el-icon>
@@ -20,11 +20,81 @@
           </div>
         </div>
 
+        <div class="wiki-search-shell">
+          <div class="wiki-search-tabs" role="tablist" aria-label="Wiki 搜索模式切换">
+            <button
+              class="wiki-search-tab"
+              :class="{ active: searchMode === 'semantic' }"
+              type="button"
+              @click="switchSearchMode('semantic')"
+            >
+              召回搜索
+            </button>
+            <button
+              class="wiki-search-tab"
+              :class="{ active: searchMode === 'keyword' }"
+              type="button"
+              @click="switchSearchMode('keyword')"
+            >
+              关键词搜索
+            </button>
+          </div>
+          <div class="wiki-search-bar">
+            <input
+              v-model="activeSearchQuery"
+              class="wiki-search-input"
+              type="text"
+              :placeholder="searchMode === 'semantic' ? '描述你想找的 Wiki 内容' : '输入标题、目录或正文关键词'"
+              @keyup.enter="handleSearch"
+            />
+            <button class="wiki-search-action" type="button" @click="handleSearch">搜索</button>
+            <button class="wiki-search-action ghost" type="button" @click="clearCurrentSearch">清空</button>
+          </div>
+          <div v-if="searchStatusMessage && !searchPanelVisible" class="wiki-search-status">{{ searchStatusMessage }}</div>
+        </div>
+
         <div class="wiki-tree-shell">
-          <div v-if="canEditSpace" class="wiki-tree-toolbar">
+          <div v-if="!searchPanelVisible && canEditSpace" class="wiki-tree-toolbar">
             <button class="wiki-side-text-button wiki-tree-create-button" type="button" @click="openDirectoryDialog(null)">添加目录</button>
           </div>
-          <div v-if="directoryNodes.length" class="wiki-directory-tree">
+          <div v-if="searchPanelVisible" class="wiki-search-panel">
+            <div class="wiki-search-panel-head">
+              <button class="wiki-side-text-button" type="button" @click="backToTree">返回目录树</button>
+              <span class="wiki-search-panel-meta">
+                {{ searchMode === 'semantic' ? '召回搜索' : '关键词搜索' }}
+                <template v-if="activeSearchState.searched && !activeSearchState.error"> · {{ activeSearchState.results.length }} 条结果</template>
+              </span>
+            </div>
+            <div v-if="searchLoading" class="wiki-search-loading">正在搜索当前空间内容...</div>
+            <div v-else-if="activeSearchState.error" class="wiki-search-status error">{{ activeSearchState.error }}</div>
+            <div v-else-if="activeSearchState.searched && !activeSearchState.results.length" class="wiki-search-empty">
+              <el-empty description="当前空间内没有找到匹配页面" />
+            </div>
+            <div v-else-if="activeSearchState.results.length" class="wiki-search-results">
+              <button
+                v-for="item in activeSearchState.results"
+                :key="item.key"
+                class="wiki-search-result-card"
+                :class="{ active: currentPage?.id === item.pageId }"
+                type="button"
+                @click="openPage(item.pageId)"
+              >
+                <div class="wiki-search-result-head">
+                  <strong>{{ item.title }}</strong>
+                  <span v-if="item.score != null" class="wiki-search-result-score">{{ item.score.toFixed(2) }}</span>
+                </div>
+                <div class="wiki-search-result-meta">
+                  <span>{{ item.directoryName || '未知目录' }}</span>
+                  <span>{{ item.updatedAt || '-' }}</span>
+                </div>
+                <p class="wiki-search-result-snippet">{{ item.snippet }}</p>
+              </button>
+            </div>
+            <div v-else class="wiki-search-placeholder">
+              <p>输入搜索内容后，可在当前空间里查看关键词结果或召回结果。</p>
+            </div>
+          </div>
+          <div v-else-if="directoryNodes.length" class="wiki-directory-tree">
             <div
               v-for="row in visibleRows"
               :key="row.key"
@@ -54,6 +124,7 @@
                 <button
                   class="wiki-tree-link"
                   type="button"
+                  :title="row.label"
                   @click="row.type === 'page' ? openPage(row.id) : selectDirectory(row.id)"
                 >
                   <span class="tree-row-title">{{ row.label }}</span>
@@ -294,6 +365,8 @@ import {
   previewWikiImport,
   replaceWikiSpaceMembers,
   restoreWikiSpacePageVersion,
+  searchWikiPages,
+  semanticSearchWikiPages,
   updateWikiDirectory,
   updateWikiSpace,
   updateWikiSpacePage,
@@ -313,7 +386,8 @@ import type {
   WikiSpaceMemberItem,
   WikiSpacePageDetailItem,
   WikiSpacePageSummaryItem,
-  WikiSpacePageVersionItem
+  WikiSpacePageVersionItem,
+  WikiSpaceSearchResultItem
 } from '@/types/platform'
 
 interface FlatRow {
@@ -351,6 +425,26 @@ interface SpaceForm {
   readScope: 'MEMBERS_ONLY' | 'ALL_LOGGED_IN'
   boundProjectId: number | null
   memberDefaultSource: 'MANUAL' | 'PROJECT_MEMBERS'
+}
+
+type WikiSearchMode = 'keyword' | 'semantic'
+
+interface WikiSearchPanelItem {
+  key: string
+  pageId: number
+  title: string
+  directoryName: string
+  updatedAt: string
+  snippet: string
+  score: number | null
+  mode: WikiSearchMode
+}
+
+interface WikiSearchState {
+  query: string
+  results: WikiSearchPanelItem[]
+  searched: boolean
+  error: string
 }
 
 const route = useRoute()
@@ -413,6 +507,21 @@ const importPreview = ref<DocumentMarkdownResultItem | null>(null)
 const expandedRowKeys = ref<string[]>([])
 const knownExpandableRowKeys = ref<string[]>([])
 const pageLoadSequence = ref(0)
+const searchMode = ref<WikiSearchMode>('semantic')
+const searchPanelVisible = ref(false)
+const searchLoading = ref(false)
+const keywordSearchState = reactive<WikiSearchState>({
+  query: '',
+  results: [],
+  searched: false,
+  error: ''
+})
+const semanticSearchState = reactive<WikiSearchState>({
+  query: '',
+  results: [],
+  searched: false,
+  error: ''
+})
 
 const spaceRules: FormRules<SpaceForm> = {
   name: [{ required: true, message: '请输入空间名称', trigger: 'blur' }]
@@ -480,11 +589,49 @@ const currentBreadcrumb = computed(() => {
   const pagePath = resolvePagePath(directoryNodes.value, currentPage.value.id)
   return [spaceDetail.value?.name || 'Wiki 空间', ...pagePath].filter(Boolean).join(' / ')
 })
+const activeSearchState = computed(() => searchMode.value === 'semantic' ? semanticSearchState : keywordSearchState)
+const activeSearchQuery = computed({
+  get: () => activeSearchState.value.query,
+  set: (value: string) => {
+    activeSearchState.value.query = value
+    if (activeSearchState.value.error === '请输入搜索内容') {
+      activeSearchState.value.error = ''
+    }
+  }
+})
+const searchStatusMessage = computed(() => {
+  if (searchLoading.value) {
+    return '正在搜索当前空间内容...'
+  }
+  if (activeSearchState.value.error) {
+    return activeSearchState.value.error
+  }
+  if (searchPanelVisible.value || !activeSearchState.value.searched) {
+    return ''
+  }
+  if (!activeSearchState.value.results.length) {
+    return '当前空间内没有找到匹配页面'
+  }
+  return ''
+})
 
 watch(
   () => route.params.pageId,
   () => {
     void loadCurrentPage()
+  }
+)
+
+watch(
+  () => route.params.spaceId,
+  async (value, previousValue) => {
+    if (value === previousValue) {
+      return
+    }
+    resetSearchState()
+    currentDirectory.value = null
+    currentPage.value = null
+    await reloadAll()
   }
 )
 
@@ -597,6 +744,102 @@ async function loadCurrentPage() {
       pageLoading.value = false
     }
   }
+}
+
+function switchSearchMode(mode: WikiSearchMode) {
+  searchMode.value = mode
+}
+
+async function handleSearch() {
+  const state = activeSearchState.value
+  const query = state.query.trim()
+  state.error = ''
+  if (!query) {
+    state.results = []
+    state.searched = false
+    state.error = '请输入搜索内容'
+    searchPanelVisible.value = false
+    return
+  }
+
+  searchLoading.value = true
+  searchPanelVisible.value = true
+  try {
+    if (searchMode.value === 'semantic') {
+      const results = await semanticSearchWikiPages({ query, spaceId: spaceId.value })
+      state.results = mapSemanticSearchResults(results)
+    } else {
+      const results = await searchWikiPages({ keyword: query, spaceId: spaceId.value })
+      state.results = mapKeywordSearchResults(results)
+    }
+    state.searched = true
+  } catch (error: any) {
+    state.results = []
+    state.searched = true
+    state.error = error?.response?.data?.message || '搜索失败，请稍后重试'
+  } finally {
+    searchLoading.value = false
+  }
+}
+
+function clearCurrentSearch() {
+  const state = activeSearchState.value
+  state.query = ''
+  state.results = []
+  state.searched = false
+  state.error = ''
+  if (!keywordSearchState.searched && !semanticSearchState.searched) {
+    searchPanelVisible.value = false
+  }
+}
+
+function backToTree() {
+  searchPanelVisible.value = false
+}
+
+function resetSearchState() {
+  searchPanelVisible.value = false
+  searchLoading.value = false
+  keywordSearchState.query = ''
+  keywordSearchState.results = []
+  keywordSearchState.searched = false
+  keywordSearchState.error = ''
+  semanticSearchState.query = ''
+  semanticSearchState.results = []
+  semanticSearchState.searched = false
+  semanticSearchState.error = ''
+}
+
+function mapKeywordSearchResults(results: WikiSpacePageSummaryItem[]): WikiSearchPanelItem[] {
+  return results.map((item) => ({
+    key: `keyword-${item.id}`,
+    pageId: item.id,
+    title: item.title,
+    directoryName: item.directoryName,
+    updatedAt: item.updatedAt,
+    snippet: `关键词匹配结果 · ${item.directoryName || '当前目录'}`,
+    score: null,
+    mode: 'keyword' as WikiSearchMode
+  }))
+}
+
+function mapSemanticSearchResults(results: WikiSpaceSearchResultItem[]): WikiSearchPanelItem[] {
+  return results
+    .filter((item) => !isKeywordFallbackSemanticResult(item))
+    .map((item) => ({
+      key: `semantic-${item.page.id}`,
+      pageId: item.page.id,
+      title: item.page.title,
+      directoryName: item.page.directoryName,
+      updatedAt: item.page.updatedAt,
+      snippet: item.snippet || '召回结果',
+      score: item.score,
+      mode: 'semantic' as WikiSearchMode
+    }))
+}
+
+function isKeywordFallbackSemanticResult(item: WikiSpaceSearchResultItem) {
+  return item.score == null && (item.snippet || '').trim() === '关键词匹配结果'
 }
 
 function flattenTree(nodes: WikiDirectoryTreeNodeItem[], depth = 0, onlyVisible = false): FlatRow[] {
@@ -1375,6 +1618,90 @@ function collectPageRowKeys(pages: WikiSpacePageSummaryItem[]): string[] {
   line-height: 1.5;
 }
 
+.wiki-search-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.wiki-search-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.wiki-search-tab {
+  border: 1px solid rgba(203, 213, 225, 0.92);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.9);
+  color: #475569;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+.wiki-search-tab.active {
+  background: linear-gradient(135deg, rgba(var(--app-primary-rgb), 0.95) 0%, rgba(var(--app-primary-container-rgb), 0.78) 100%);
+  border-color: rgba(var(--app-primary-rgb), 0.4);
+  color: #fffdf9;
+}
+
+.wiki-search-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+}
+
+.wiki-search-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid rgba(203, 213, 225, 0.92);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #172033;
+  font: inherit;
+  font-size: 13px;
+  padding: 0 12px;
+}
+
+.wiki-search-input:focus {
+  outline: 2px solid rgba(var(--app-primary-rgb), 0.16);
+  border-color: rgba(var(--app-primary-rgb), 0.4);
+}
+
+.wiki-search-action {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(var(--app-primary-rgb), 0.9);
+  color: #fffdf9;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.wiki-search-action.ghost {
+  background: rgba(243, 244, 245, 0.92);
+  color: #516072;
+}
+
+.wiki-search-status {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.wiki-search-status.error {
+  color: #b42318;
+}
+
 .wiki-tree-shell {
   display: flex;
   flex: 1 1 auto;
@@ -1390,6 +1717,110 @@ function collectPageRowKeys(pages: WikiSpacePageSummaryItem[]): string[] {
 
 .wiki-tree-create-button {
   min-width: 84px;
+}
+
+.wiki-search-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.wiki-search-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.wiki-search-panel-meta {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.wiki-search-loading,
+.wiki-search-placeholder {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.wiki-search-placeholder {
+  padding: 6px 2px 0;
+}
+
+.wiki-search-placeholder p {
+  margin: 0;
+}
+
+.wiki-search-results {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.wiki-search-result-card {
+  border: 1px solid rgba(226, 232, 240, 0.96);
+  border-radius: 10px;
+  background: rgba(248, 250, 252, 0.92);
+  color: #172033;
+  cursor: pointer;
+  font: inherit;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.wiki-search-result-card.active {
+  border-color: rgba(var(--app-primary-rgb), 0.36);
+  background: rgba(var(--app-primary-container-rgb), 0.14);
+}
+
+.wiki-search-result-head,
+.wiki-search-result-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wiki-search-result-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.wiki-search-result-score {
+  color: var(--app-primary);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.wiki-search-result-meta {
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.wiki-search-result-snippet {
+  margin: 8px 0 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.wiki-search-empty {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
 }
 
 .wiki-tree-head {
@@ -1629,6 +2060,10 @@ function collectPageRowKeys(pages: WikiSpacePageSummaryItem[]): string[] {
 @media (max-width: 860px) {
   .wiki-shell,
   .wiki-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wiki-search-bar {
     grid-template-columns: 1fr;
   }
 
