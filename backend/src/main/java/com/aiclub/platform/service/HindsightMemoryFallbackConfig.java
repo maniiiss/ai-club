@@ -1,12 +1,9 @@
 package com.aiclub.platform.service;
 
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-
-import javax.sql.DataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 /**
  * Hindsight 库内回退查询配置。
@@ -16,20 +13,17 @@ import javax.sql.DataSource;
 @Configuration
 public class HindsightMemoryFallbackConfig {
 
-    @Bean(name = "hindsightMemoryDataSource")
-    public DataSource hindsightMemoryDataSource(HindsightProperties hindsightProperties) {
-        return DataSourceBuilder.create()
-                .driverClassName("org.postgresql.Driver")
-                .url(hindsightProperties.getMemoryFactDatabaseUrl())
-                .username(hindsightProperties.getMemoryFactDatabaseUsername())
-                .password(hindsightProperties.getMemoryFactDatabasePassword())
-                .build();
-    }
-
     @Bean(name = "hindsightMemoryJdbcTemplate")
     public NamedParameterJdbcTemplate hindsightMemoryJdbcTemplate(
-            @Qualifier("hindsightMemoryDataSource") DataSource dataSource
+            HindsightProperties hindsightProperties
     ) {
+        // 回退查询只需要独立 JDBC 模板，不能再声明 DataSource Bean，
+        // 否则会让 Spring Boot 误把 Hindsight 库当成应用主数据源。
+        DriverManagerDataSource dataSource = new DriverManagerDataSource();
+        dataSource.setDriverClassName("org.postgresql.Driver");
+        dataSource.setUrl(hindsightProperties.getMemoryFactDatabaseUrl());
+        dataSource.setUsername(hindsightProperties.getMemoryFactDatabaseUsername());
+        dataSource.setPassword(hindsightProperties.getMemoryFactDatabasePassword());
         return new NamedParameterJdbcTemplate(dataSource);
     }
 }

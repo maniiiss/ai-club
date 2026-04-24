@@ -9,7 +9,9 @@ set -eu
 
 POSTGRES_ADMIN_USER="${POSTGRES_USER:-postgres}"
 PRIMARY_DB="${POSTGRES_DB:-postgres}"
-HINDSIGHT_DB="${HINDSIGHT_POSTGRES_DB:-hindsight}"
+# 未显式指定 Hindsight 独立库时，默认只补偿主业务库，避免共享 PostgreSQL 误建额外数据库。
+HINDSIGHT_DB="${HINDSIGHT_POSTGRES_DB:-${PRIMARY_DB}}"
+VECTOR_EXTENSION="${HINDSIGHT_API_VECTOR_EXTENSION:-pgvector}"
 
 # 兼容两种执行场景：
 # 1. PostgreSQL 容器首次初始化时，通过本地 socket 执行；
@@ -42,9 +44,9 @@ if [ "${HINDSIGHT_DB}" != "${PRIMARY_DB}" ]; then
   fi
 fi
 
-# 为主业务数据库和 Hindsight 数据库都启用 pgvector 扩展：
-# - 主业务数据库启用后，后续如果平台其他模块需要向量能力，可以直接复用。
-# - Hindsight 数据库启用后，可满足官方默认 pgvector 扩展要求。
+# 为目标数据库补偿向量扩展：
+# - 始终安装 pgvector 基础扩展；
+# - Hindsight 指定 pgvectorscale 时，再额外安装 vectorscale，满足高维向量索引需求。
 for target_db in "${PRIMARY_DB}" "${HINDSIGHT_DB}"; do
   # 去重，避免 PRIMARY_DB 与 HINDSIGHT_DB 相同场景下重复执行。
   if [ -n "${PROCESSED_DBS:-}" ] && printf '%s\n' "${PROCESSED_DBS}" | grep -Fxq "${target_db}"; then
@@ -54,6 +56,12 @@ for target_db in "${PRIMARY_DB}" "${HINDSIGHT_DB}"; do
   psql -v ON_ERROR_STOP=1 --username "${POSTGRES_ADMIN_USER}" --dbname "${target_db}" <<'EOSQL'
 CREATE EXTENSION IF NOT EXISTS vector;
 EOSQL
+
+  if [ "${VECTOR_EXTENSION}" = "pgvectorscale" ]; then
+    psql -v ON_ERROR_STOP=1 --username "${POSTGRES_ADMIN_USER}" --dbname "${target_db}" <<'EOSQL'
+CREATE EXTENSION IF NOT EXISTS vectorscale CASCADE;
+EOSQL
+  fi
 
   PROCESSED_DBS="${PROCESSED_DBS:-}
 ${target_db}"
