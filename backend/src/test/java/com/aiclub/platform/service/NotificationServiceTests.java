@@ -74,7 +74,7 @@ class NotificationServiceTests {
         verify(notificationMessageRepository).save(captor.capture());
         NotificationMessageEntity saved = captor.getValue();
         assertThat(saved.getType()).hasSize(30);
-        assertThat(saved.getBizType()).hasSize(40);
+        assertThat(saved.getBizType()).hasSize(48);
         assertThat(saved.getActionUrl()).hasSize(300);
     }
 }

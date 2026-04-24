@@ -36,4 +36,14 @@ public interface UserRepository extends JpaRepository<UserEntity, Long>, JpaSpec
     Optional<UserEntity> findByGitlabUsernameIgnoreCase(String gitlabUsername);
 
     List<UserEntity> findAllByEnabledTrueOrderByIdAsc();
+
+    @Query("""
+            select distinct u
+            from UserEntity u
+            join u.roles r
+            where u.enabled = true
+              and lower(r.code) = lower(:roleCode)
+            order by u.id asc
+            """)
+    List<UserEntity> findDistinctByRoleCodeAndEnabledTrueOrderByIdAsc(@Param("roleCode") String roleCode);
 }

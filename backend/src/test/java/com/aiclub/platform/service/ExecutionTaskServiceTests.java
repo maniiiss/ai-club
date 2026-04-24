@@ -89,6 +89,9 @@ class ExecutionTaskServiceTests {
     @Mock
     private ExecutionEventService executionEventService;
 
+    @Mock
+    private SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
+
     private ExecutionTaskService executionTaskService;
 
     @BeforeEach
@@ -106,6 +109,7 @@ class ExecutionTaskServiceTests {
                 executionWorkflowService,
                 executionDispatchService,
                 executionEventService,
+                selfUpgradeExecutionWritebackService,
                 new ObjectMapper()
         );
         AuthContextHolder.set(new AuthContext(1001L, "alice", "Alice", Set.of(), Set.of()));

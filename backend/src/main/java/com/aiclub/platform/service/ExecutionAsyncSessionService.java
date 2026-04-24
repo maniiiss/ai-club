@@ -12,6 +12,7 @@ import com.aiclub.platform.repository.ExecutionArtifactRepository;
 import com.aiclub.platform.repository.ExecutionRunRepository;
 import com.aiclub.platform.repository.ExecutionStepRepository;
 import com.aiclub.platform.repository.ExecutionTaskRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,17 +37,20 @@ public class ExecutionAsyncSessionService {
     private final ExecutionTaskRepository executionTaskRepository;
     private final ExecutionArtifactRepository executionArtifactRepository;
     private final ExecutionEventService executionEventService;
+    private final ObjectMapper objectMapper;
 
     public ExecutionAsyncSessionService(ExecutionStepRepository executionStepRepository,
                                         ExecutionRunRepository executionRunRepository,
                                         ExecutionTaskRepository executionTaskRepository,
                                         ExecutionArtifactRepository executionArtifactRepository,
-                                        ExecutionEventService executionEventService) {
+                                        ExecutionEventService executionEventService,
+                                        ObjectMapper objectMapper) {
         this.executionStepRepository = executionStepRepository;
         this.executionRunRepository = executionRunRepository;
         this.executionTaskRepository = executionTaskRepository;
         this.executionArtifactRepository = executionArtifactRepository;
         this.executionEventService = executionEventService;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -244,9 +248,29 @@ public class ExecutionAsyncSessionService {
             case "TEST" -> 2400;
             // 多仓执行规划需要先完成 clone、结构化理解和跨仓梳理，10 分钟在真实仓库下容易不够。
             case "PLAN" -> 1800;
+            case "PATROL" -> 3600;
             case "REPORT", "REVIEW", "TEST_DESIGN", "AD_HOC_RUN" -> 600;
             default -> 600;
         };
+    }
+
+    /**
+     * 自升级巡检的真实超时时间由任务载荷里的 runTimeoutSeconds 决定；
+     * 这里在 runner watchdog 前再做一次解析，保证夜间计划配置能够真正生效。
+     */
+    public int maxRuntimeSeconds(String stepCode, String inputPayload) {
+        if (!"PATROL".equalsIgnoreCase(defaultString(stepCode))) {
+            return maxRuntimeSeconds(stepCode);
+        }
+        try {
+            int configured = objectMapper.readTree(defaultString(inputPayload)).path("runTimeoutSeconds").asInt(0);
+            if (configured > 0) {
+                return Math.max(30, Math.min(configured, 7200));
+            }
+        } catch (Exception ignored) {
+            // 解析失败时回退到静态上限，避免因为配置格式问题阻塞整条执行链路。
+        }
+        return maxRuntimeSeconds(stepCode);
     }
 
     private void markTimedOut(ExecutionStepEntity step, String message) {

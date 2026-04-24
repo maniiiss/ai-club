@@ -461,6 +461,110 @@ class CliExecutionRepository(BaseModel):
         return str(value).strip()
 
 
+class PatrolWriteAllowRule(BaseModel):
+    """巡检写操作白名单规则。"""
+
+    pathPattern: str = ""
+    selector: str = ""
+    actionType: str = ""
+    maxCount: int = Field(default=1, ge=1, le=1000)
+
+    @field_validator("pathPattern", "selector", "actionType", mode="before")
+    @classmethod
+    def normalize_allow_rule_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class PatrolEnvironmentProfile(BaseModel):
+    """巡检环境档案。"""
+
+    id: str = ""
+    code: str = ""
+    name: str = ""
+    baseUrl: str = ""
+    allowedHostPatterns: list[str] = Field(default_factory=list)
+    loginScript: list[dict[str, Any]] = Field(default_factory=list)
+    sandboxUsername: str = ""
+    sandboxPassword: str = ""
+    sessionStateJson: str = ""
+    writeAllowlist: list[PatrolWriteAllowRule] = Field(default_factory=list)
+
+    @field_validator("id", "code", "name", "baseUrl", "sandboxUsername", "sandboxPassword", "sessionStateJson", mode="before")
+    @classmethod
+    def normalize_environment_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+    @field_validator("allowedHostPatterns", mode="before")
+    @classmethod
+    def normalize_allowed_hosts(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        text = str(value).strip()
+        return [text] if text else []
+
+
+class PatrolModelConfig(BaseModel):
+    """巡检计划绑定的模型配置。"""
+
+    id: str = ""
+    name: str = ""
+    provider: Literal["OPENAI", "ANTHROPIC"]
+    apiBaseUrl: str = ""
+    modelName: str = ""
+    apiKey: str = ""
+
+    @field_validator("id", "name", "apiBaseUrl", "modelName", "apiKey", mode="before")
+    @classmethod
+    def normalize_model_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class PatrolTarget(BaseModel):
+    """单个巡检目标配置。"""
+
+    targetId: int | None = None
+    name: str = ""
+    seedUrl: str = ""
+    goalPrompt: str = ""
+    readySelector: str = ""
+    allowWrite: bool = False
+    maxStepsOverride: int | None = Field(default=None, ge=1, le=200)
+    writeAllowlistOverride: list[PatrolWriteAllowRule] = Field(default_factory=list)
+
+    @field_validator("name", "seedUrl", "goalPrompt", "readySelector", mode="before")
+    @classmethod
+    def normalize_target_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class PatrolExecutionPlan(BaseModel):
+    """PATROL 模式的结构化巡检执行计划。"""
+
+    environmentProfile: PatrolEnvironmentProfile
+    modelConfig: PatrolModelConfig
+    targets: list[PatrolTarget] = Field(default_factory=list)
+    maxExplorationSteps: int = Field(default=25, ge=1, le=200)
+    targetTimeoutSeconds: int = Field(default=600, ge=30, le=ASYNC_EXECUTION_TIMEOUT_LIMIT_SECONDS)
+    runTimeoutSeconds: int = Field(default=1800, ge=30, le=ASYNC_EXECUTION_TIMEOUT_LIMIT_SECONDS)
+
+    @field_validator("targets")
+    @classmethod
+    def validate_targets(cls, value: list[PatrolTarget]) -> list[PatrolTarget]:
+        if not value:
+            raise ValueError("巡检计划至少需要一个目标")
+        return value
+
+
 class ExecutionSessionAcceptedResponse(BaseModel):
     """异步执行会话 accepted 响应。"""
 
@@ -474,14 +578,15 @@ class ExecutionSessionAcceptedResponse(BaseModel):
 class CliExecutionRequest(BaseModel):
     """统一 CLI Runner 执行请求。"""
 
-    runnerType: Literal["CODEX_CLI", "CLAUDE_CODE_CLI"]
-    mode: Literal["PLAN", "IMPLEMENT", "TEST", "AD_HOC"]
+    runnerType: Literal["CODEX_CLI", "CLAUDE_CODE_CLI", "PATROL_MODEL"]
+    mode: Literal["PLAN", "IMPLEMENT", "TEST", "AD_HOC", "PATROL"]
     systemPrompt: str = ""
     input: str = ""
     repositories: list[CliExecutionRepository] = Field(default_factory=list)
     execution: CodexExecutionContext
     testCommands: list[str] = Field(default_factory=list)
     testPlan: TestExecutionPlan | None = None
+    patrolPlan: PatrolExecutionPlan | None = None
     timeoutSeconds: int = Field(default=270, ge=30, le=ASYNC_EXECUTION_TIMEOUT_LIMIT_SECONDS)
 
     @field_validator("systemPrompt", "input", mode="before")

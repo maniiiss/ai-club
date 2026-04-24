@@ -37,7 +37,7 @@ public class ExecutionDispatchService {
     private static final Logger log = LoggerFactory.getLogger(ExecutionDispatchService.class);
     private static final String STATUS_WAITING_CONFIRMATION = "WAITING_CONFIRMATION";
     private static final String BIZ_TYPE_DEVELOPMENT_EXECUTION_COMPLETED = "DEVELOPMENT_EXECUTION_COMPLETED";
-    // notification_message.biz_type 长度为 40，规划确认通知使用短业务码避免收尾事务因字段过长失败。
+    // 规划确认通知继续沿用短业务码，避免影响既有消息筛选与统计口径。
     private static final String BIZ_TYPE_DEVELOPMENT_EXECUTION_PLAN_CONFIRM = "DEVELOPMENT_EXECUTION_PLAN_CONFIRM";
 
     private final ExecutionTaskRepository executionTaskRepository;
@@ -50,6 +50,7 @@ public class ExecutionDispatchService {
     private final NotificationService notificationService;
     private final RepositoryScanExecutionService repositoryScanExecutionService;
     private final DevelopmentExecutionService developmentExecutionService;
+    private final SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
     private final ExecutionEventService executionEventService;
     private final ExecutionAsyncSessionService executionAsyncSessionService;
     private final Executor executionTaskExecutor;
@@ -65,6 +66,7 @@ public class ExecutionDispatchService {
                                     NotificationService notificationService,
                                     RepositoryScanExecutionService repositoryScanExecutionService,
                                     DevelopmentExecutionService developmentExecutionService,
+                                    SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService,
                                     ExecutionEventService executionEventService,
                                     ExecutionAsyncSessionService executionAsyncSessionService,
                                     @Qualifier("executionTaskExecutor") Executor executionTaskExecutor) {
@@ -78,6 +80,7 @@ public class ExecutionDispatchService {
         this.notificationService = notificationService;
         this.repositoryScanExecutionService = repositoryScanExecutionService;
         this.developmentExecutionService = developmentExecutionService;
+        this.selfUpgradeExecutionWritebackService = selfUpgradeExecutionWritebackService;
         this.executionEventService = executionEventService;
         this.executionAsyncSessionService = executionAsyncSessionService;
         this.executionTaskExecutor = executionTaskExecutor;
@@ -217,8 +220,42 @@ public class ExecutionDispatchService {
                 Map<String, String> runtimeVariables = buildRuntimeVariables(latestTask, executionRun, stepEntity, workItem);
                 try {
                     String output;
-                    if (agentExecutionService.supportsAsyncExecution(stepPlan.agent(), stepEntity.getStepCode())) {
-                        int maxRuntimeSeconds = executionAsyncSessionService.maxRuntimeSeconds(stepEntity.getStepCode());
+                    if (isSelfUpgradePatrolStep(latestTask, stepEntity)) {
+                        int maxRuntimeSeconds = executionAsyncSessionService.maxRuntimeSeconds(
+                                stepEntity.getStepCode(),
+                                latestTask.getInputPayload()
+                        );
+                        AgentExecutionService.AsyncExecutionStartResult startResult = agentExecutionService.startPatrolAsyncExecution(
+                                stepEntity.getInputSnapshot(),
+                                runtimeVariables,
+                                executionAsyncSessionService.submitTimeoutSeconds(),
+                                maxRuntimeSeconds
+                        );
+                        executionAsyncSessionService.bindRunnerSession(
+                                latestTask,
+                                executionRun,
+                                stepEntity,
+                                startResult.sessionId(),
+                                startResult.runnerType()
+                        );
+                        stepEntity = executionAsyncSessionService.awaitTerminalStep(
+                                stepEntity.getId(),
+                                maxRuntimeSeconds
+                        );
+                        if ("CANCELED".equalsIgnoreCase(stepEntity.getStatus())) {
+                            return finishCanceled(latestTask, executionRun, writebackArtifacts);
+                        }
+                        if (!"SUCCESS".equalsIgnoreCase(stepEntity.getStatus())) {
+                            throw new IllegalStateException(defaultString(stepEntity.getErrorMessage()).isBlank()
+                                    ? "异步步骤执行失败"
+                                    : stepEntity.getErrorMessage());
+                        }
+                        output = defaultString(stepEntity.getOutputSnapshot());
+                    } else if (agentExecutionService.supportsAsyncExecution(stepPlan.agent(), stepEntity.getStepCode())) {
+                        int maxRuntimeSeconds = executionAsyncSessionService.maxRuntimeSeconds(
+                                stepEntity.getStepCode(),
+                                latestTask.getInputPayload()
+                        );
                         AgentExecutionService.AsyncExecutionStartResult startResult = agentExecutionService.startAsyncExecution(
                                 stepPlan.agent(),
                                 stepEntity.getInputSnapshot(),
@@ -294,6 +331,11 @@ public class ExecutionDispatchService {
         boolean hasReportStep = workflowPlan.steps().stream()
                 .anyMatch(step -> ExecutionWorkflowService.STEP_REPORT.equalsIgnoreCase(step.stepCode()));
         return hasTestStep && hasReportStep;
+    }
+
+    private boolean isSelfUpgradePatrolStep(ExecutionTaskEntity executionTask, ExecutionStepEntity stepEntity) {
+        return ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL.equalsIgnoreCase(defaultString(executionTask.getScenarioCode()))
+                && ExecutionWorkflowService.STEP_PATROL.equalsIgnoreCase(defaultString(stepEntity.getStepCode()));
     }
 
     /**
@@ -406,6 +448,7 @@ public class ExecutionDispatchService {
         executionTaskRepository.save(executionTask);
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
+        selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "SUCCESS");
         notifyRequesterWhenDevelopmentExecutionSucceeds(executionTask, executionRun);
         return executionRun;
     }
@@ -448,6 +491,7 @@ public class ExecutionDispatchService {
         executionTaskRepository.save(executionTask);
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
+        selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "FAILED");
         return executionRun;
     }
 
@@ -480,6 +524,7 @@ public class ExecutionDispatchService {
         executionTaskRepository.save(executionTask);
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
+        selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "FAILED");
         return executionRun;
     }
 
@@ -510,6 +555,7 @@ public class ExecutionDispatchService {
         executionTaskRepository.save(executionTask);
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
+        selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "CANCELED");
         return executionRun;
     }
 
@@ -560,6 +606,9 @@ public class ExecutionDispatchService {
             variables.put("work_item_type", defaultString(workItem.getWorkItemType()));
         }
         variables.put("session_key", "execution:" + executionTask.getId() + ":run:" + executionRun.getId());
+        if (ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL.equalsIgnoreCase(executionTask.getScenarioCode())) {
+            variables.put("patrol_plan_json", defaultString(executionTask.getInputPayload()));
+        }
         return variables;
     }
 

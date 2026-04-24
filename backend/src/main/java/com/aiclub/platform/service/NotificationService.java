@@ -50,7 +50,7 @@ public class NotificationService {
     private static final int SENDER_NAME_MAX_LENGTH = 100;
     private static final int TITLE_MAX_LENGTH = 200;
     private static final int CONTENT_MAX_LENGTH = 5000;
-    private static final int BIZ_TYPE_MAX_LENGTH = 40;
+    private static final int BIZ_TYPE_MAX_LENGTH = 80;
     private static final int ACTION_URL_MAX_LENGTH = 300;
 
     private final NotificationMessageRepository notificationMessageRepository;

@@ -724,6 +724,7 @@ const primaryMenuItems: MenuItem[] = [
   { path: '/wiki', label: 'Wiki 中心', shortLabel: 'Wiki', permission: 'wiki:view', icon: Document, matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page'] },
   { path: '/agents', label: '智能体管理', shortLabel: '智能体', permission: 'agent:view', icon: Connection, matchNames: ['agents'] },
   { path: '/tasks', label: '执行中心', shortLabel: '执行', permission: 'task:view', icon: Tickets, matchNames: ['tasks', 'execution-task-detail'] },
+  { path: '/self-upgrade', label: '自升级中心', shortLabel: '自升级', permission: 'self-upgrade:view', icon: Connection, matchNames: ['self-upgrade'] },
   { path: '/tests', label: '测试管理', shortLabel: '测试', permission: 'test:view', icon: Finished, matchNames: ['tests', 'test-plan-detail'] },
   { path: '/gitlab', label: '代码仓库', shortLabel: '仓库', permission: 'gitlab:view', icon: DocumentCopy, matchNames: ['gitlab'] }
 ]
@@ -835,6 +836,7 @@ const hermesQuickPrompts = computed(() => {
     'wiki-space': ['这个空间最近有哪些知识更新', '帮我梳理这个空间里的重点内容', '这个空间目前最值得关注的页面是什么'],
     'wiki-space-page': ['帮我总结当前 Wiki 页面', '这个页面和哪些知识有关', '基于 Wiki 内容下一步应该做什么'],
     tasks: ['最近有哪些执行任务失败了', '哪些智能体任务还在运行', '帮我总结执行中心的风险'],
+    'self-upgrade': ['最近有哪些新建议值得优先处理', '夜间巡检都发现了什么问题', '哪些整改工作项最值得先做'],
     'execution-task-detail': ['这次执行失败的原因是什么', '帮我总结当前执行结果', '这次执行下一步该做什么']
   }
   return quickPromptMap[hermesRouteName.value] || ['我今天最该推进什么', '帮我总结当前最值得关注的事项', '最近有哪些需要我关注的异常']

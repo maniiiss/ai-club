@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import time
@@ -22,6 +23,7 @@ from app.services.codex_execution_service import (
     _build_codex_prompt,
     _checkout_commit_if_needed,
     _clone_repository,
+    _ensure_playwright_runtime,
     _execute_test_plan,
     _infer_frontend_start_command,
     _implementation_raw_output_from_markdown,
@@ -371,6 +373,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
             project_dir = workspace.repo_dir / "frontend"
             project_dir.mkdir(parents=True, exist_ok=True)
             workspace.out_dir.mkdir(parents=True, exist_ok=True)
+            (workspace.out_dir / "playwright-runner").mkdir(parents=True, exist_ok=True)
             (project_dir / "node_modules").mkdir(parents=True, exist_ok=True)
             (project_dir / "package.json").write_text(
                 json.dumps(
@@ -469,6 +472,140 @@ class CodexExecutionServiceTests(unittest.TestCase):
             [item["artifactType"] for item in manifest],
         )
         stop_mock.assert_called_once()
+
+    def test_should_prefer_official_registry_when_preparing_playwright_runtime(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            workspace.out_dir.mkdir(parents=True, exist_ok=True)
+            runner_dir = workspace.out_dir / "playwright-runner"
+            stdout_log = workspace.out_dir / "playwright-stdout.log"
+            stderr_log = workspace.out_dir / "playwright-stderr.log"
+            env_history: list[dict[str, str]] = []
+
+            def run_process_side_effect(command, cwd, timeout_seconds, workspace, command_label, batcher, stdout_file, stderr_file, env, shell, should_cancel):
+                env_history.append(dict(env))
+                if len(env_history) == 1:
+                    return SimpleNamespace(exit_code=0, stdout="playwright ready", stderr="")
+                return SimpleNamespace(exit_code=0, stdout="chromium ready", stderr="")
+
+            with patch("app.services.codex_execution_service._playwright_runtime_uses_npmmirror", return_value=True), \
+                    patch("app.services.codex_execution_service._run_process", side_effect=run_process_side_effect), \
+                    patch.dict("app.services.codex_execution_service.os.environ", {"PATH": os.environ.get("PATH", "")}, clear=True):
+                results = _ensure_playwright_runtime(
+                    workspace=workspace,
+                    runner_dir=runner_dir,
+                    deadline=time.monotonic() + 120,
+                    batcher=None,
+                    cancel_watcher=None,
+                    stdout_log=stdout_log,
+                    stderr_log=stderr_log,
+                )
+
+        self.assertEqual([0, 0], [item["exitCode"] for item in results])
+        self.assertEqual("https://registry.npmjs.org/", env_history[0]["npm_config_registry"])
+        self.assertEqual("https://registry.npmjs.org/", env_history[1]["npm_config_registry"])
+        self.assertTrue(env_history[0]["npm_config_userconfig"].endswith(".playwright-official.npmrc"))
+
+    def test_should_allow_playwright_smoke_suite_when_runtime_retry_eventually_succeeds(self):
+        request = self._build_request("TEST").model_copy(update={
+            "testPlan": CodexTestExecutionPlan(
+                suites=[
+                    CodexTestSuitePlan(
+                        suiteId="playwright-smoke-retry",
+                        type="PLAYWRIGHT_SMOKE",
+                        status="PENDING",
+                        summary="等待执行前端烟测",
+                        workingDir="frontend",
+                        smokePaths=["/", "/dashboard"],
+                    )
+                ]
+            )
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            project_dir = workspace.repo_dir / "frontend"
+            project_dir.mkdir(parents=True, exist_ok=True)
+            workspace.out_dir.mkdir(parents=True, exist_ok=True)
+            (workspace.out_dir / "playwright-runner").mkdir(parents=True, exist_ok=True)
+            (project_dir / "node_modules").mkdir(parents=True, exist_ok=True)
+            (project_dir / "package.json").write_text(
+                json.dumps(
+                    {
+                        "name": "demo-frontend",
+                        "scripts": {
+                            "dev": "vite",
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            def which_side_effect(name: str) -> str | None:
+                return f"C:/mock/{name}.exe" if name in {"node", "npm"} else None
+
+            def start_background_process_side_effect(command, cwd, log_file, env, shell):
+                log_file.write_text("frontend started", encoding="utf-8")
+                return SimpleNamespace(pid=2222), ("stdout", "stderr")
+
+            def run_process_side_effect(command, cwd, timeout_seconds, workspace, command_label, batcher, stdout_file, stderr_file, env, shell, should_cancel):
+                artifact_dir = workspace.out_dir / "playwright-smoke-retry-artifacts"
+                artifact_dir.mkdir(parents=True, exist_ok=True)
+                (artifact_dir / "playwright-result.json").write_text(
+                    json.dumps(
+                        {
+                            "summary": "Playwright 烟测通过",
+                            "checks": [
+                                {"name": "landing", "status": "SUCCESS", "detail": "首页加载成功"},
+                            ],
+                            "artifacts": [],
+                        },
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+                return SimpleNamespace(stdout="playwright ok", stderr="", exit_code=0)
+
+            with patch("app.services.codex_execution_service._workspace_for", return_value=workspace), \
+                    patch("app.services.codex_execution_service.shutil.which", side_effect=which_side_effect), \
+                    patch("app.services.codex_execution_service._find_free_port", return_value=4174), \
+                    patch("app.services.codex_execution_service._start_background_process", side_effect=start_background_process_side_effect), \
+                    patch("app.services.codex_execution_service._wait_for_http_ready", return_value=(True, "前端应用已就绪")), \
+                    patch("app.services.codex_execution_service._ensure_playwright_runtime", return_value=[
+                        {
+                            "command": "npm install --no-audit --no-fund playwright@1.54.0",
+                            "cwd": str(workspace.out_dir / "playwright-runner"),
+                            "exitCode": 1,
+                            "stdout": "",
+                            "stderr": "Idle timeout reached for host `cdn.npmmirror.com:443`",
+                        },
+                        {
+                            "command": "npm install --no-audit --no-fund playwright@1.54.0",
+                            "cwd": str(workspace.out_dir / "playwright-runner"),
+                            "exitCode": 0,
+                            "stdout": "fallback ready",
+                            "stderr": "",
+                        },
+                    ]), \
+                    patch("app.services.codex_execution_service._run_process", side_effect=run_process_side_effect), \
+                    patch("app.services.codex_execution_service._stop_background_process"):
+                response = execute_codex_execution(request)
+
+        payload = json.loads(response.output)
+        suite_result = payload["suiteResults"][0]
+        self.assertEqual("SUCCESS", payload["status"])
+        self.assertEqual("Playwright 烟测通过", suite_result["summary"])
+        self.assertEqual([1, 0, 0], [item["exitCode"] for item in suite_result["commandResults"]])
 
     def test_should_execute_service_smoke_suite_and_collect_http_log_artifacts(self):
         request = self._build_request("TEST").model_copy(update={

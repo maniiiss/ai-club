@@ -2,6 +2,7 @@ package com.aiclub.platform.service;
 
 import com.aiclub.platform.common.DataPermissionScopeType;
 import com.aiclub.platform.domain.model.AgentEntity;
+import com.aiclub.platform.domain.model.ExecutionTaskEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
 import com.aiclub.platform.domain.model.IterationEntity;
@@ -14,10 +15,12 @@ import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.IterationSummary;
 import com.aiclub.platform.dto.PageResponse;
+import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
 import com.aiclub.platform.dto.ProjectPipelineBindingSummary;
 import com.aiclub.platform.dto.ProjectSummary;
 import com.aiclub.platform.dto.TaskSummary;
+import com.aiclub.platform.dto.request.ProjectGitlabBindingRequest;
 import com.aiclub.platform.dto.request.IterationRequest;
 import com.aiclub.platform.dto.request.ProjectRequest;
 import com.aiclub.platform.dto.request.TaskCommentRequest;
@@ -25,6 +28,7 @@ import com.aiclub.platform.dto.request.TaskRequirementAiRequest;
 import com.aiclub.platform.dto.request.TaskRequest;
 import com.aiclub.platform.exception.ForbiddenException;
 import com.aiclub.platform.repository.AgentRepository;
+import com.aiclub.platform.repository.ExecutionTaskRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
 import com.aiclub.platform.repository.IterationRepository;
@@ -74,6 +78,9 @@ class ProjectDataPermissionIntegrationTests {
     private TaskRequirementAiService taskRequirementAiService;
 
     @Autowired
+    private ExecutionTaskService executionTaskService;
+
+    @Autowired
     private ProjectRepository projectRepository;
 
     @Autowired
@@ -90,6 +97,9 @@ class ProjectDataPermissionIntegrationTests {
 
     @Autowired
     private AgentRepository agentRepository;
+
+    @Autowired
+    private ExecutionTaskRepository executionTaskRepository;
 
     @Autowired
     private ProjectGitlabBindingRepository projectGitlabBindingRepository;
@@ -439,6 +449,59 @@ class ProjectDataPermissionIntegrationTests {
                 .containsExactlyInAnyOrder("项目I-A", "项目I-B");
     }
 
+    /**
+     * 项目绑定资源不再单独扩数据权限字段，而是统一跟随项目可见范围：
+     * 项目成员既能创建项目下的 GitLab 绑定，也能查看执行中心中的项目任务；
+     * 非项目成员则会在服务端被拒绝。
+     */
+    @Test
+    void projectParticipantShouldAccessProjectBoundGitlabAndExecutionResources() {
+        UserEntity creator = createUser("creator-j", "创建人J");
+        UserEntity owner = createUser("owner-j", "负责人J");
+        UserEntity member = createUser("member-j", "成员J");
+        UserEntity outsider = createUser("outsider-j", "旁观者J");
+
+        ProjectEntity visibleProject = createProjectAs(creator, owner, List.of(member), "可见项目J");
+        ProjectEntity hiddenProject = createProjectAs(creator, owner, List.of(), "隐藏项目J");
+        ExecutionTaskEntity visibleExecutionTask = createExecutionTask(visibleProject, creator, "可见执行任务J");
+        ExecutionTaskEntity hiddenExecutionTask = createExecutionTask(hiddenProject, creator, "隐藏执行任务J");
+
+        loginAs(member);
+        ProjectGitlabBindingSummary createdBinding = gitlabManagementService.createBinding(new ProjectGitlabBindingRequest(
+                visibleProject.getId(),
+                "http://gitlab.example.com/api/v4",
+                "visible/project-j",
+                "main",
+                "[]",
+                "member-visible-token",
+                true
+        ));
+        assertThat(createdBinding.projectId()).isEqualTo(visibleProject.getId());
+        assertThat(createdBinding.projectName()).isEqualTo("可见项目J");
+
+        PageResponse<ExecutionTaskSummary> executionTaskPage = executionTaskService.pageExecutionTasks(1, 20, null, null, null, null);
+        assertThat(executionTaskPage.records())
+                .extracting(ExecutionTaskSummary::title)
+                .contains("可见执行任务J")
+                .doesNotContain("隐藏执行任务J");
+        assertThat(executionTaskService.getExecutionTask(visibleExecutionTask.getId()).id()).isEqualTo(visibleExecutionTask.getId());
+        assertThatThrownBy(() -> executionTaskService.getExecutionTask(hiddenExecutionTask.getId()))
+                .isInstanceOf(ForbiddenException.class);
+
+        loginAs(outsider);
+        assertThatThrownBy(() -> gitlabManagementService.createBinding(new ProjectGitlabBindingRequest(
+                visibleProject.getId(),
+                "http://gitlab.example.com/api/v4",
+                "visible/project-j-outsider",
+                "main",
+                "[]",
+                "outsider-visible-token",
+                true
+        ))).isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> executionTaskService.getExecutionTask(visibleExecutionTask.getId()))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
     private UserEntity createUser(String username, String nickname) {
         RoleEntity defaultRole = createRole(
                 "ROLE_" + username.toUpperCase(),
@@ -593,6 +656,23 @@ class ProjectDataPermissionIntegrationTests {
         binding.setTokenCiphertext("encrypted-token");
         binding.setEnabled(true);
         return binding;
+    }
+
+    private ExecutionTaskEntity createExecutionTask(ProjectEntity project, UserEntity createdByUser, String title) {
+        ExecutionTaskEntity entity = new ExecutionTaskEntity();
+        entity.setSourceType("MANUAL");
+        entity.setSourceId(null);
+        entity.setTriggerSource("PAGE");
+        entity.setScenarioCode(ExecutionWorkflowService.SCENARIO_AD_HOC_AGENT_RUN);
+        entity.setTitle(title);
+        entity.setProject(project);
+        entity.setCreatedByUser(createdByUser);
+        entity.setStatus("PENDING");
+        entity.setCancelRequested(false);
+        entity.setLatestSummary(title + " 的摘要");
+        entity.setInputPayload("{}");
+        entity.setAgentBindingPayload("[]");
+        return executionTaskRepository.save(entity);
     }
 
     private JenkinsServerEntity createJenkinsServer(String name) {

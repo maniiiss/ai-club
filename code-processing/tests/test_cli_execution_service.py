@@ -5,7 +5,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.models import CliExecutionRepository, CliExecutionRequest, CliExecutionResponse, CodexExecutionContext
+from app.models import (
+    CliExecutionRepository,
+    CliExecutionRequest,
+    CliExecutionResponse,
+    CodexExecutionContext,
+    PatrolEnvironmentProfile,
+    PatrolExecutionPlan,
+    PatrolModelConfig,
+    PatrolTarget,
+)
 from app.services.cli_execution_service import (
     _build_claude_implementation_prompt,
     _to_claude_request,
@@ -177,6 +186,45 @@ class CliExecutionServiceTests(unittest.TestCase):
         self.assertTrue(response.accepted)
         self.assertIn("claude_code_cli-ad_hoc", response.sessionId)
         launch_mock.assert_called_once()
+
+    def test_should_delegate_patrol_mode_to_self_upgrade_patrol_service(self):
+        request = self._build_request("PATROL_MODEL", "PATROL").model_copy(update={
+            "repositories": [],
+            "execution": self._build_request("PATROL_MODEL", "PATROL").execution.model_copy(update={"stepCode": "PATROL"}),
+            "patrolPlan": PatrolExecutionPlan(
+                environmentProfile=PatrolEnvironmentProfile(
+                    code="STAGING",
+                    name="Staging",
+                    baseUrl="https://staging.example.com",
+                ),
+                modelConfig=PatrolModelConfig(
+                    id="12",
+                    name="巡检模型",
+                    provider="OPENAI",
+                    apiBaseUrl="https://api.openai.com/v1",
+                    modelName="gpt-4.1-mini",
+                    apiKey="secret-key",
+                ),
+                targets=[
+                    PatrolTarget(
+                        targetId=1,
+                        name="控制台首页",
+                        seedUrl="/dashboard",
+                    )
+                ],
+            ),
+        })
+
+        with patch("app.services.cli_execution_service.patrol_service.execute_patrol", return_value=CliExecutionResponse(
+            output='{"status":"SUCCESS"}',
+            workspaceRoot="C:/patrol",
+            logPreview="ready",
+        )) as execute_mock:
+            response = execute_cli_execution(request)
+
+        self.assertEqual('{"status":"SUCCESS"}', response.output)
+        execute_mock.assert_called_once()
+        self.assertEqual(300, execute_mock.call_args.args[0].timeoutSeconds)
 
 
 if __name__ == "__main__":

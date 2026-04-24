@@ -42,6 +42,7 @@ public class AgentExecutionService {
     public static final String RUNTIME_OPENCLAW = "OPENCLAW";
     public static final String RUNTIME_CODEX_CLI = "CODEX_CLI";
     public static final String RUNTIME_CLAUDE_CODE_CLI = "CLAUDE_CODE_CLI";
+    public static final String RUNNER_PATROL_MODEL = "PATROL_MODEL";
 
     public static final String BUILTIN_CODE_REVIEW = "CODE_REVIEW";
     public static final String BUILTIN_TEST_SUGGESTION = "TEST_SUGGESTION";
@@ -214,6 +215,52 @@ public class AgentExecutionService {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("异步执行会话启动被中断", exception);
+        }
+    }
+
+    /**
+     * PATROL 步骤不再依赖具体 Agent，而是直接把巡检计划里的模型配置桥接到 code-processing。
+     * 这里仍复用统一 runner 会话模型，保证执行中心的异步收口、心跳和日志链路保持一致。
+     */
+    public AsyncExecutionStartResult startPatrolAsyncExecution(String input,
+                                                               Map<String, String> variables,
+                                                               int submitTimeoutSeconds,
+                                                               int maxRuntimeSeconds) {
+        if (!hasText(codeProcessingBaseUrl)) {
+            throw new IllegalArgumentException("PATROL 执行未配置 code-processing 服务地址");
+        }
+        String requestBody = buildPatrolRuntimeRequestBody(input, variables, maxRuntimeSeconds);
+        String asyncStartUrl = trimTrailingSlash(codeProcessingBaseUrl) + CODE_PROCESSING_CLI_PATH + "/start";
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(asyncStartUrl))
+                    .timeout(Duration.ofSeconds(Math.max(submitTimeoutSeconds, 5)));
+            applyCliRuntimeHeaders(builder);
+            HttpResponse<String> response = httpClient.send(
+                    builder.POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8)).build(),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+            );
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("PATROL 异步执行会话启动失败，HTTP "
+                        + response.statusCode() + "：" + abbreviate(response.body(), 1000));
+            }
+            JsonNode body = objectMapper.readTree(defaultString(response.body()));
+            String sessionId = trimToNull(body.path("sessionId").asText(""));
+            if (sessionId == null) {
+                throw new IllegalStateException("PATROL 异步执行会话启动成功但缺少 sessionId");
+            }
+            return new AsyncExecutionStartResult(
+                    sessionId,
+                    body.path("accepted").asBoolean(true),
+                    trimToNull(body.path("runnerType").asText("")),
+                    trimToNull(body.path("workspaceRoot").asText("")),
+                    trimToNull(body.path("startedAt").asText(""))
+            );
+        } catch (IOException exception) {
+            throw new IllegalStateException("PATROL 异步执行会话启动失败", exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("PATROL 异步执行会话启动被中断", exception);
         }
     }
 
@@ -582,6 +629,10 @@ public class AgentExecutionService {
     }
 
     private void applyCliRuntimeHeaders(HttpRequest.Builder builder, AgentEntity agent) {
+        applyCliRuntimeHeaders(builder);
+    }
+
+    private void applyCliRuntimeHeaders(HttpRequest.Builder builder) {
         builder.header("Accept", "application/json");
         builder.header("Content-Type", "application/json");
         // 统一 CLI Runner 只调用平台内 code-processing 服务，鉴权固定复用平台级内部服务 Token，
@@ -643,6 +694,46 @@ public class AgentExecutionService {
                 throw new IllegalArgumentException("test_plan_json 不是合法 JSON", exception);
             }
         }
+        if (variables != null && hasText(variables.get("patrol_plan_json"))) {
+            try {
+                payload.set("patrolPlan", objectMapper.readTree(variables.get("patrol_plan_json")));
+            } catch (IOException exception) {
+                throw new IllegalArgumentException("patrol_plan_json 不是合法 JSON", exception);
+            }
+        }
+        return payload.toString();
+    }
+
+    private String buildPatrolRuntimeRequestBody(String input,
+                                                 Map<String, String> variables,
+                                                 int timeoutSeconds) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("runnerType", RUNNER_PATROL_MODEL);
+        payload.put("mode", "PATROL");
+        payload.put("systemPrompt", "");
+        payload.put("input", defaultString(input));
+        payload.put("timeoutSeconds", Math.max(timeoutSeconds, 30));
+
+        ObjectNode executionNode = payload.putObject("execution");
+        putText(executionNode, "taskId", variables == null ? null : variables.get("execution_task_id"));
+        putText(executionNode, "runId", variables == null ? null : variables.get("execution_run_id"));
+        putText(executionNode, "stepId", variables == null ? null : variables.get("step_id"));
+        putText(executionNode, "stepCode", variables == null ? null : variables.get("step_code"));
+        putText(executionNode, "stepName", variables == null ? null : variables.get("step_name"));
+        putText(executionNode, "projectId", variables == null ? null : variables.get("project_id"));
+        putText(executionNode, "projectName", variables == null ? null : variables.get("project_name"));
+        putText(executionNode, "sessionKey", variables == null ? null : variables.get("session_key"));
+        putText(executionNode, "userId", variables == null ? null : variables.get("user_id"));
+        putText(executionNode, "userName", variables == null ? null : variables.get("user_name"));
+
+        if (variables == null || !hasText(variables.get("patrol_plan_json"))) {
+            throw new IllegalArgumentException("PATROL 执行缺少 patrol_plan_json");
+        }
+        try {
+            payload.set("patrolPlan", objectMapper.readTree(variables.get("patrol_plan_json")));
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("patrol_plan_json 不是合法 JSON", exception);
+        }
         return payload.toString();
     }
 
@@ -675,6 +766,7 @@ public class AgentExecutionService {
             case "IMPLEMENT" -> "IMPLEMENT";
             case "TEST" -> "TEST";
             case "AD_HOC_RUN" -> "AD_HOC";
+            case "PATROL" -> "PATROL";
             default -> null;
         };
     }

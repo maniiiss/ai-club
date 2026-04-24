@@ -82,6 +82,7 @@ public class ExecutionTaskService {
     private final ExecutionWorkflowService executionWorkflowService;
     private final ExecutionDispatchService executionDispatchService;
     private final ExecutionEventService executionEventService;
+    private final SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
     private final ObjectMapper objectMapper;
 
     public ExecutionTaskService(ExecutionTaskRepository executionTaskRepository,
@@ -96,6 +97,7 @@ public class ExecutionTaskService {
                                 ExecutionWorkflowService executionWorkflowService,
                                 ExecutionDispatchService executionDispatchService,
                                 ExecutionEventService executionEventService,
+                                SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService,
                                 ObjectMapper objectMapper) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
@@ -109,6 +111,7 @@ public class ExecutionTaskService {
         this.executionWorkflowService = executionWorkflowService;
         this.executionDispatchService = executionDispatchService;
         this.executionEventService = executionEventService;
+        this.selfUpgradeExecutionWritebackService = selfUpgradeExecutionWritebackService;
         this.objectMapper = objectMapper;
     }
 
@@ -159,39 +162,47 @@ public class ExecutionTaskService {
         ProjectEntity project = requireProject(request.projectId());
         TaskEntity workItem = request.workItemId() == null ? null : requireWorkItem(project.getId(), request.workItemId());
         UserEntity currentUser = requireCurrentUser();
-        Map<String, Object> normalizedPayload = defaultPayload(request.inputPayload());
-        String normalizedTriggerSource = normalizeTriggerSource(request.triggerSource());
-        boolean planConfirmationRequired = normalizePlanConfirmationRequired(
+        ExecutionTaskEntity entity = buildExecutionTaskEntity(
                 request.scenarioCode(),
-                normalizedTriggerSource,
-                request.planConfirmationRequired()
-        );
-        normalizedPayload.put("planConfirmationRequired", planConfirmationRequired);
-        List<ExecutionWorkflowService.DevelopmentRepositorySelection> developmentRepositories =
-                resolveDevelopmentRepositories(request.scenarioCode(), project, normalizedPayload);
-        ExecutionWorkflowService.WorkflowPlan workflowPlan = executionWorkflowService.buildWorkflow(
-                request.scenarioCode(),
-                project.getId(),
+                project,
+                workItem,
+                currentUser,
+                request.title(),
+                request.triggerSource(),
+                workItem == null ? "MANUAL" : "WORK_ITEM",
+                workItem == null ? null : workItem.getId(),
+                request.planConfirmationRequired(),
                 request.agentBindings(),
-                developmentRepositories
+                request.inputPayload(),
+                false
         );
-        validateDevelopmentExecutionAgents(workflowPlan);
-
-        ExecutionTaskEntity entity = new ExecutionTaskEntity();
-        entity.setSourceType(workItem == null ? "MANUAL" : "WORK_ITEM");
-        entity.setSourceId(workItem == null ? null : workItem.getId());
-        entity.setTriggerSource(normalizedTriggerSource);
-        entity.setScenarioCode(workflowPlan.scenarioCode());
-        entity.setTitle(resolveExecutionTaskTitle(request.title(), workflowPlan.scenarioName(), workItem));
-        entity.setProject(project);
-        entity.setWorkItem(workItem);
-        entity.setCreatedByUser(currentUser);
-        entity.setStatus("PENDING");
-        entity.setCancelRequested(false);
-        entity.setLatestSummary("等待调度");
-        entity.setInputPayload(serializePayload(normalizedPayload));
-        entity.setAgentBindingPayload(executionWorkflowService.serializeBindings(workflowPlan));
         return toTaskSummary(executionTaskRepository.save(entity));
+    }
+
+    /**
+     * 平台内部模块可以通过该入口创建执行任务，并显式写入 sourceType/sourceId/createdByUser，
+     * 同时跳过页面可见性校验，便于自升级中心等内部模块复用执行中心能力。
+     */
+    @Transactional
+    public ExecutionTaskEntity createInternalExecutionTask(InternalCreateExecutionTaskCommand command) {
+        ProjectEntity project = requireProjectInternal(command.projectId());
+        TaskEntity workItem = command.workItemId() == null ? null : requireWorkItemInternal(project.getId(), command.workItemId());
+        UserEntity createdByUser = command.createdByUserId() == null ? null : requireUser(command.createdByUserId());
+        ExecutionTaskEntity entity = buildExecutionTaskEntity(
+                command.scenarioCode(),
+                project,
+                workItem,
+                createdByUser,
+                command.title(),
+                command.triggerSource(),
+                command.sourceType(),
+                command.sourceId(),
+                command.planConfirmationRequired(),
+                command.agentBindings(),
+                command.inputPayload(),
+                true
+        );
+        return executionTaskRepository.save(entity);
     }
 
     /**
@@ -205,7 +216,9 @@ public class ExecutionTaskService {
             executionTask.setStatus("CANCELED");
             executionTask.setCancelRequested(false);
             executionTask.setLatestSummary("执行已取消");
-            return toTaskSummary(executionTaskRepository.save(executionTask));
+            ExecutionTaskEntity saved = executionTaskRepository.save(executionTask);
+            selfUpgradeExecutionWritebackService.handleExecutionFinished(saved, saved.getCurrentRun(), "CANCELED");
+            return toTaskSummary(saved);
         }
         if (STATUS_WAITING_CONFIRMATION.equals(executionTask.getStatus())) {
             cancelWaitingConfirmationTask(executionTask);
@@ -565,8 +578,22 @@ public class ExecutionTaskService {
         return project;
     }
 
+    private ProjectEntity requireProjectInternal(Long projectId) {
+        return projectRepository.findById(projectId)
+                .orElseThrow(() -> new NoSuchElementException("项目不存在: " + projectId));
+    }
+
     private TaskEntity requireWorkItem(Long projectId, Long workItemId) {
         TaskEntity workItem = requireWorkItemVisible(workItemId);
+        if (!workItem.getProject().getId().equals(projectId)) {
+            throw new IllegalArgumentException("工作项必须属于当前项目");
+        }
+        return workItem;
+    }
+
+    private TaskEntity requireWorkItemInternal(Long projectId, Long workItemId) {
+        TaskEntity workItem = taskRepository.findById(workItemId)
+                .orElseThrow(() -> new NoSuchElementException("工作项不存在: " + workItemId));
         if (!workItem.getProject().getId().equals(projectId)) {
             throw new IllegalArgumentException("工作项必须属于当前项目");
         }
@@ -605,6 +632,10 @@ public class ExecutionTaskService {
         Long userId = AuthContextHolder.get()
                 .map(authContext -> authContext.userId())
                 .orElseThrow(() -> new UnauthorizedException("Not logged in"));
+        return requireUser(userId);
+    }
+
+    private UserEntity requireUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new NoSuchElementException("用户不存在: " + userId));
     }
@@ -681,6 +712,7 @@ public class ExecutionTaskService {
         executionTask.setCancelRequested(false);
         executionTask.setLatestSummary("执行已取消");
         executionTaskRepository.save(executionTask);
+        selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, currentRun, "CANCELED");
     }
 
     private void scheduleDispatchAfterCommit(Long executionTaskId) {
@@ -696,6 +728,57 @@ public class ExecutionTaskService {
         });
     }
 
+    /**
+     * 统一整理外部页面入口与内部平台入口的执行任务创建逻辑，
+     * 保证步骤绑定、规划确认和输入载荷序列化规则完全一致。
+     */
+    private ExecutionTaskEntity buildExecutionTaskEntity(String scenarioCode,
+                                                         ProjectEntity project,
+                                                         TaskEntity workItem,
+                                                         UserEntity createdByUser,
+                                                         String requestedTitle,
+                                                         String triggerSource,
+                                                         String sourceType,
+                                                         Long sourceId,
+                                                         Boolean requestedPlanConfirmationRequired,
+                                                         List<ExecutionAgentBindingRequest> agentBindings,
+                                                         Map<String, Object> rawInputPayload,
+                                                         boolean skipPermissionChecks) {
+        Map<String, Object> normalizedPayload = defaultPayload(rawInputPayload);
+        String normalizedTriggerSource = normalizeTriggerSource(triggerSource);
+        boolean planConfirmationRequired = normalizePlanConfirmationRequired(
+                scenarioCode,
+                normalizedTriggerSource,
+                requestedPlanConfirmationRequired
+        );
+        normalizedPayload.put("planConfirmationRequired", planConfirmationRequired);
+        List<ExecutionWorkflowService.DevelopmentRepositorySelection> developmentRepositories =
+                resolveDevelopmentRepositories(scenarioCode, project, normalizedPayload, skipPermissionChecks);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = executionWorkflowService.buildWorkflow(
+                scenarioCode,
+                project.getId(),
+                agentBindings,
+                developmentRepositories
+        );
+        validateDevelopmentExecutionAgents(workflowPlan);
+
+        ExecutionTaskEntity entity = new ExecutionTaskEntity();
+        entity.setSourceType(trimToNull(sourceType) == null ? (workItem == null ? "MANUAL" : "WORK_ITEM") : sourceType.trim().toUpperCase());
+        entity.setSourceId(sourceId == null && workItem != null ? workItem.getId() : sourceId);
+        entity.setTriggerSource(normalizedTriggerSource);
+        entity.setScenarioCode(workflowPlan.scenarioCode());
+        entity.setTitle(resolveExecutionTaskTitle(requestedTitle, workflowPlan.scenarioName(), workItem));
+        entity.setProject(project);
+        entity.setWorkItem(workItem);
+        entity.setCreatedByUser(createdByUser);
+        entity.setStatus("PENDING");
+        entity.setCancelRequested(false);
+        entity.setLatestSummary("等待调度");
+        entity.setInputPayload(serializePayload(normalizedPayload));
+        entity.setAgentBindingPayload(executionWorkflowService.serializeBindings(workflowPlan));
+        return entity;
+    }
+
     private Map<String, Object> defaultPayload(Map<String, Object> inputPayload) {
         return inputPayload == null ? new LinkedHashMap<>() : new LinkedHashMap<>(inputPayload);
     }
@@ -705,7 +788,8 @@ public class ExecutionTaskService {
      */
     private List<ExecutionWorkflowService.DevelopmentRepositorySelection> resolveDevelopmentRepositories(String scenarioCode,
                                                                                                         ProjectEntity project,
-                                                                                                        Map<String, Object> inputPayload) {
+                                                                                                        Map<String, Object> inputPayload,
+                                                                                                        boolean skipPermissionChecks) {
         if (!ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(defaultString(scenarioCode))) {
             return List.of();
         }
@@ -739,7 +823,7 @@ public class ExecutionTaskService {
             if (targetBranch == null) {
                 throw new IllegalArgumentException("开发执行仓库必须填写目标分支");
             }
-            ProjectGitlabBindingEntity binding = requireDevelopmentBinding(project.getId(), bindingId);
+            ProjectGitlabBindingEntity binding = requireDevelopmentBinding(project.getId(), bindingId, skipPermissionChecks);
             normalizedRepositories.add(Map.of(
                     "bindingId", bindingId,
                     "targetBranch", targetBranch
@@ -770,10 +854,12 @@ public class ExecutionTaskService {
         }
     }
 
-    private ProjectGitlabBindingEntity requireDevelopmentBinding(Long projectId, Long bindingId) {
+    private ProjectGitlabBindingEntity requireDevelopmentBinding(Long projectId, Long bindingId, boolean skipPermissionChecks) {
         ProjectGitlabBindingEntity binding = projectGitlabBindingRepository.findById(bindingId)
                 .orElseThrow(() -> new NoSuchElementException("GitLab 绑定不存在: " + bindingId));
-        projectDataPermissionService.requireGitlabBindingVisible(binding);
+        if (!skipPermissionChecks) {
+            projectDataPermissionService.requireGitlabBindingVisible(binding);
+        }
         if (!binding.getProject().getId().equals(projectId)) {
             throw new IllegalArgumentException("GitLab 绑定必须属于当前项目");
         }
@@ -834,7 +920,8 @@ public class ExecutionTaskService {
         if (!ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(defaultString(scenarioCode))) {
             return false;
         }
-        if (!"PAGE".equalsIgnoreCase(defaultString(triggerSource))) {
+        if (!"PAGE".equalsIgnoreCase(defaultString(triggerSource))
+                && !"SELF_UPGRADE_CENTER".equalsIgnoreCase(defaultString(triggerSource))) {
             return false;
         }
         return Boolean.TRUE.equals(requestedPlanConfirmationRequired);
@@ -897,5 +984,24 @@ public class ExecutionTaskService {
 
     private String defaultString(String value) {
         return value == null ? "" : value;
+    }
+
+    /**
+     * 平台内部模块创建执行任务时使用的命令对象。
+     * sourceType/sourceId/createdByUserId 会被原样写入执行任务，便于后续做业务回写。
+     */
+    public record InternalCreateExecutionTaskCommand(
+            String scenarioCode,
+            Long projectId,
+            Long workItemId,
+            String title,
+            String triggerSource,
+            String sourceType,
+            Long sourceId,
+            Long createdByUserId,
+            Boolean planConfirmationRequired,
+            List<ExecutionAgentBindingRequest> agentBindings,
+            Map<String, Object> inputPayload
+    ) {
     }
 }

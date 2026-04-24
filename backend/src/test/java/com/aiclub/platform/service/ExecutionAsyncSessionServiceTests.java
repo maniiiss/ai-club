@@ -10,6 +10,7 @@ import com.aiclub.platform.repository.ExecutionArtifactRepository;
 import com.aiclub.platform.repository.ExecutionRunRepository;
 import com.aiclub.platform.repository.ExecutionStepRepository;
 import com.aiclub.platform.repository.ExecutionTaskRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -56,7 +57,8 @@ class ExecutionAsyncSessionServiceTests {
                 executionRunRepository,
                 executionTaskRepository,
                 executionArtifactRepository,
-                executionEventService
+                executionEventService,
+                new ObjectMapper()
         );
     }
 

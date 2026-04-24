@@ -34,6 +34,7 @@ public class ExecutionWorkflowService {
     public static final String SCENARIO_TEST_DESIGN_OR_REVIEW = "TEST_DESIGN_OR_REVIEW";
     public static final String SCENARIO_AD_HOC_AGENT_RUN = "AD_HOC_AGENT_RUN";
     public static final String SCENARIO_CODEBASE_COMPLIANCE_SCAN = "CODEBASE_COMPLIANCE_SCAN";
+    public static final String SCENARIO_SELF_UPGRADE_PATROL = "SELF_UPGRADE_PATROL";
 
     public static final String STEP_PLAN = "PLAN";
     public static final String STEP_REPO_STRUCTURING = "REPO_STRUCTURING";
@@ -43,13 +44,15 @@ public class ExecutionWorkflowService {
     public static final String STEP_REPORT = "REPORT";
     public static final String STEP_REVIEW = "REVIEW";
     public static final String STEP_AD_HOC_RUN = "AD_HOC_RUN";
+    public static final String STEP_PATROL = "PATROL";
 
     private static final Set<String> SUPPORTED_SCENARIOS = Set.of(
             SCENARIO_REQUIREMENT_BREAKDOWN,
             SCENARIO_DEVELOPMENT_IMPLEMENTATION,
             SCENARIO_TEST_DESIGN_OR_REVIEW,
             SCENARIO_AD_HOC_AGENT_RUN,
-            SCENARIO_CODEBASE_COMPLIANCE_SCAN
+            SCENARIO_CODEBASE_COMPLIANCE_SCAN,
+            SCENARIO_SELF_UPGRADE_PATROL
     );
 
     private final AgentRepository agentRepository;
@@ -242,6 +245,7 @@ public class ExecutionWorkflowService {
             case SCENARIO_TEST_DESIGN_OR_REVIEW -> "测试设计/评审";
             case SCENARIO_AD_HOC_AGENT_RUN -> "兼容单次执行";
             case SCENARIO_CODEBASE_COMPLIANCE_SCAN -> "仓库规范扫描";
+            case SCENARIO_SELF_UPGRADE_PATROL -> "自升级巡检";
             default -> throw new IllegalArgumentException("不支持的执行场景");
         };
     }
@@ -259,6 +263,7 @@ public class ExecutionWorkflowService {
             case STEP_REPORT -> "请基于规划、开发与测试结果输出交付报告，明确结论、风险、遗留项与未覆盖验证。";
             case STEP_REVIEW -> "请从质量、风险、边界情况和可交付性角度评审前序输出，结果使用 Markdown。";
             case STEP_AD_HOC_RUN -> "请直接根据补充说明处理当前任务，结果使用 Markdown。";
+            case STEP_PATROL -> "请按照自升级巡检协议执行页面探索，并仅返回结构化 JSON 结果。";
             default -> "请根据当前上下文完成该步骤。";
         };
     }
@@ -316,6 +321,9 @@ public class ExecutionWorkflowService {
             case SCENARIO_AD_HOC_AGENT_RUN -> List.of(
                     new StepTemplate(STEP_AD_HOC_RUN, "兼容执行", null, null, null)
             );
+            case SCENARIO_SELF_UPGRADE_PATROL -> List.of(
+                    new StepTemplate(STEP_PATROL, "平台巡检", null, null, null)
+            );
             case SCENARIO_CODEBASE_COMPLIANCE_SCAN -> List.of();
             default -> throw new IllegalArgumentException("不支持的执行场景");
         };
@@ -353,7 +361,7 @@ public class ExecutionWorkflowService {
             return null;
         }
         if (STEP_REPO_STRUCTURING.equalsIgnoreCase(defaultString(binding.stepCode()))
-                && binding.agentId() == null) {
+                || STEP_PATROL.equalsIgnoreCase(defaultString(binding.stepCode()))) {
             return null;
         }
         return availableAgents.stream()
@@ -365,7 +373,8 @@ public class ExecutionWorkflowService {
     private AgentEntity resolveStepAgent(StepTemplate template,
                                          Long explicitAgentId,
                                          List<AgentEntity> availableAgents) {
-        if (STEP_REPO_STRUCTURING.equalsIgnoreCase(defaultString(template.stepCode()))) {
+        if (STEP_REPO_STRUCTURING.equalsIgnoreCase(defaultString(template.stepCode()))
+                || STEP_PATROL.equalsIgnoreCase(defaultString(template.stepCode()))) {
             return null;
         }
         if (explicitAgentId != null) {

@@ -68,6 +68,9 @@ class ExecutionDispatchServiceTests {
     private DevelopmentExecutionService developmentExecutionService;
 
     @Mock
+    private SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
+
+    @Mock
     private ExecutionEventService executionEventService;
 
     @Mock
@@ -88,6 +91,7 @@ class ExecutionDispatchServiceTests {
                 notificationService,
                 repositoryScanExecutionService,
                 developmentExecutionService,
+                selfUpgradeExecutionWritebackService,
                 executionEventService,
                 executionAsyncSessionService,
                 Runnable::run
@@ -485,7 +489,10 @@ class ExecutionDispatchServiceTests {
         when(agentExecutionService.supportsAsyncExecution(cliAgent, ExecutionWorkflowService.STEP_AD_HOC_RUN))
                 .thenReturn(true);
         when(executionAsyncSessionService.submitTimeoutSeconds()).thenReturn(15);
-        when(executionAsyncSessionService.maxRuntimeSeconds(ExecutionWorkflowService.STEP_AD_HOC_RUN)).thenReturn(600);
+        when(executionAsyncSessionService.maxRuntimeSeconds(
+                ExecutionWorkflowService.STEP_AD_HOC_RUN,
+                executionTask.getInputPayload()
+        )).thenReturn(600);
         when(agentExecutionService.startAsyncExecution(
                 eq(cliAgent),
                 any(),

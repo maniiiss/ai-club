@@ -34,6 +34,8 @@ from app.settings import settings
 
 SYNC_TIMEOUT_LIMIT_SECONDS = 300
 TERMINAL_RESULT_STATUSES = {"SUCCESS", "FAILED", "CANCELED"}
+PLAYWRIGHT_NPM_PACKAGE = "playwright@1.54.0"
+OFFICIAL_NPM_REGISTRY = "https://registry.npmjs.org/"
 
 
 @dataclass(frozen=True)
@@ -653,15 +655,15 @@ def _execute_playwright_smoke_suite(
             stderr_log=stderr_log,
         )
         command_results.extend(runtime_result)
-        for item in runtime_result:
-            if item["exitCode"] != 0:
-                return _build_suite_result(
-                    suite,
-                    "FAILED",
-                    "Playwright 运行时准备失败",
-                    checks=[_build_check("playwright-runtime", "FAILED", item["stderr"] or "运行时准备失败")],
-                    command_results=command_results,
-                )
+        if _playwright_runtime_has_failed(runtime_result):
+            failed_item = runtime_result[-1]
+            return _build_suite_result(
+                suite,
+                "FAILED",
+                "Playwright 运行时准备失败",
+                checks=[_build_check("playwright-runtime", "FAILED", failed_item["stderr"] or "运行时准备失败")],
+                command_results=command_results,
+            )
 
         artifact_dir.mkdir(parents=True, exist_ok=True)
         config_path = artifact_dir / "playwright-config.json"
@@ -951,31 +953,76 @@ def _ensure_playwright_runtime(
             encoding="utf-8",
         )
     results: list[dict[str, object]] = []
+    playwright_env = _default_command_env()
     if not (runner_dir / "node_modules" / "playwright").exists():
-        install_command = "npm install --no-audit --no-fund playwright@1.54.0"
-        install_result = _run_process(
-            install_command,
-            cwd=runner_dir,
-            timeout_seconds=_remaining_seconds(deadline),
-            workspace=workspace,
-            command_label="安装 Playwright 运行时",
-            batcher=batcher,
-            stdout_file=stdout_log,
-            stderr_file=stderr_log,
-            env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
-            shell=True,
-            should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
-        )
-        results.append(
-            {
-                "command": install_command,
-                "cwd": str(runner_dir),
-                "exitCode": install_result.exit_code,
-                "stdout": tail_text(install_result.stdout, 2000),
-                "stderr": tail_text(install_result.stderr, 2000),
-            }
-        )
-        if install_result.exit_code != 0:
+        install_command = f"npm install --no-audit --no-fund {PLAYWRIGHT_NPM_PACKAGE}"
+        install_attempts: list[tuple[str, dict[str, str]]] = []
+        # 业务意图：如果宿主机全局 npm registry 指向 npmmirror，
+        # Playwright 大包安装很容易卡在镜像 tarball 下载阶段，因此优先尝试官方源；
+        # 若官方源在当前网络不可达，再回退到宿主机原始 npm 配置。
+        if _playwright_runtime_uses_npmmirror(runner_dir):
+            install_attempts.append(("安装 Playwright 运行时（官方源）", _playwright_runtime_env(runner_dir, force_official_registry=True)))
+        install_attempts.append(("安装 Playwright 运行时", _default_command_env()))
+        official_registry_attempted = any("官方源" in label for label, _ in install_attempts)
+        install_succeeded = False
+
+        for command_label, install_env in install_attempts:
+            install_result = _run_process(
+                install_command,
+                cwd=runner_dir,
+                timeout_seconds=_remaining_seconds(deadline),
+                workspace=workspace,
+                command_label=command_label,
+                batcher=batcher,
+                stdout_file=stdout_log,
+                stderr_file=stderr_log,
+                env=install_env,
+                shell=True,
+                should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
+            )
+            results.append(
+                {
+                    "command": install_command,
+                    "cwd": str(runner_dir),
+                    "exitCode": install_result.exit_code,
+                    "stdout": tail_text(install_result.stdout, 2000),
+                    "stderr": tail_text(install_result.stderr, 2000),
+                }
+            )
+            if install_result.exit_code == 0:
+                playwright_env = install_env
+                install_succeeded = True
+                break
+            if not official_registry_attempted and _should_retry_playwright_runtime_with_official_registry(install_result, runner_dir):
+                official_registry_attempted = True
+                official_env = _playwright_runtime_env(runner_dir, force_official_registry=True)
+                retry_result = _run_process(
+                    install_command,
+                    cwd=runner_dir,
+                    timeout_seconds=_remaining_seconds(deadline),
+                    workspace=workspace,
+                    command_label="安装 Playwright 运行时（官方源回退）",
+                    batcher=batcher,
+                    stdout_file=stdout_log,
+                    stderr_file=stderr_log,
+                    env=official_env,
+                    shell=True,
+                    should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
+                )
+                results.append(
+                    {
+                        "command": install_command,
+                        "cwd": str(runner_dir),
+                        "exitCode": retry_result.exit_code,
+                        "stdout": tail_text(retry_result.stdout, 2000),
+                        "stderr": tail_text(retry_result.stderr, 2000),
+                    }
+                )
+                if retry_result.exit_code == 0:
+                    playwright_env = official_env
+                    install_succeeded = True
+                break
+        if not install_succeeded:
             return results
     browser_marker = runner_dir / ".chromium-installed"
     if not browser_marker.exists():
@@ -988,7 +1035,7 @@ def _ensure_playwright_runtime(
             batcher=batcher,
             stdout_file=stdout_log,
             stderr_file=stderr_log,
-            env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
+            env=playwright_env,
             shell=False,
             should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
         )
@@ -1004,6 +1051,64 @@ def _ensure_playwright_runtime(
         if browser_result.exit_code == 0:
             browser_marker.write_text("ok\n", encoding="utf-8")
     return results
+
+
+def _default_command_env() -> dict[str, str]:
+    return {**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"}
+
+
+def _playwright_runtime_env(runner_dir: Path, *, force_official_registry: bool) -> dict[str, str]:
+    env = _default_command_env()
+    if not force_official_registry:
+        return env
+    npmrc_path = runner_dir / ".playwright-official.npmrc"
+    npmrc_path.write_text(f"registry={OFFICIAL_NPM_REGISTRY}\n", encoding="utf-8")
+    env.update(
+        {
+            "npm_config_registry": OFFICIAL_NPM_REGISTRY,
+            "NPM_CONFIG_REGISTRY": OFFICIAL_NPM_REGISTRY,
+            "npm_config_userconfig": str(npmrc_path),
+            "NPM_CONFIG_USERCONFIG": str(npmrc_path),
+        }
+    )
+    return env
+
+
+def _playwright_runtime_uses_npmmirror(runner_dir: Path) -> bool:
+    registry_candidates = [
+        os.environ.get("npm_config_registry", ""),
+        os.environ.get("NPM_CONFIG_REGISTRY", ""),
+    ]
+    custom_userconfig = (os.environ.get("npm_config_userconfig") or os.environ.get("NPM_CONFIG_USERCONFIG") or "").strip()
+    candidate_paths = [runner_dir / ".npmrc", Path.home() / ".npmrc"]
+    if custom_userconfig:
+        candidate_paths.append(Path(custom_userconfig))
+    for candidate in candidate_paths:
+        try:
+            if candidate.exists():
+                registry_candidates.append(candidate.read_text(encoding="utf-8", errors="ignore"))
+        except OSError:
+            continue
+    return any("npmmirror.com" in value.lower() for value in registry_candidates if value)
+
+
+def _should_retry_playwright_runtime_with_official_registry(result: object, runner_dir: Path) -> bool:
+    combined = "\n".join(
+        [
+            _normalize_text(getattr(result, "stdout", "")),
+            _normalize_text(getattr(result, "stderr", "")),
+        ]
+    ).lower()
+    return "npmmirror.com" in combined or _playwright_runtime_uses_npmmirror(runner_dir)
+
+
+def _playwright_runtime_has_failed(results: list[dict[str, object]]) -> bool:
+    if not results:
+        return False
+    try:
+        return int(results[-1].get("exitCode", 1)) != 0
+    except (TypeError, ValueError):
+        return True
 
 
 def _playwright_script_text() -> str:

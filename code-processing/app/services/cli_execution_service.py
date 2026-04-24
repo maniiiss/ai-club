@@ -19,6 +19,7 @@ from app.models import (
 )
 from app.services import claude_planning_service as claude_service
 from app.services import codex_execution_service as codex_service
+from app.services import self_upgrade_patrol_service as patrol_service
 from app.services.execution_streaming_support import (
     BackendEventBatcher,
     complete_session,
@@ -46,6 +47,8 @@ class CliMarkdownWorkspace:
 def execute_cli_execution(request: CliExecutionRequest) -> CliExecutionResponse:
     """统一 CLI Runner 同步执行入口。"""
     request = _clamp_sync_request_timeout(request)
+    if request.mode == "PATROL":
+        return patrol_service.execute_patrol(request)
     if request.runnerType == "CODEX_CLI":
         if request.mode in {"IMPLEMENT", "TEST"}:
             return _wrap_codex_response(codex_service.execute_codex_execution(_to_codex_request(request)))
@@ -62,6 +65,8 @@ def execute_cli_execution(request: CliExecutionRequest) -> CliExecutionResponse:
 
 def start_cli_execution(request: CliExecutionRequest) -> ExecutionSessionAcceptedResponse:
     """统一 CLI Runner 异步执行入口。"""
+    if request.mode == "PATROL":
+        return patrol_service.start_patrol(request)
     if request.runnerType == "CODEX_CLI":
         if request.mode in {"IMPLEMENT", "TEST"}:
             return codex_service.start_codex_execution(_to_codex_request(request))

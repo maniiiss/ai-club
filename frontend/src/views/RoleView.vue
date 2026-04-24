@@ -251,7 +251,9 @@
       <section class="platform-form-section">
         <div class="platform-form-section-head">
           <div class="platform-form-section-title">数据权限</div>
-          <div class="platform-form-section-subtitle">按角色固定枚举配置项目数据可见和删除范围。</div>
+          <div class="platform-form-section-subtitle">
+            按角色固定枚举配置项目数据可见和删除范围；项目绑定的新功能统一跟随“项目可见”，其中“项目成员”包含负责人、创建人和项目成员。
+          </div>
         </div>
         <el-form-item label="项目可见" prop="projectVisibilityScope">
           <el-select v-model="form.projectVisibilityScope" placeholder="请选择项目可见范围" style="width: 100%">
@@ -351,7 +353,7 @@ const dataPermissionScopeOptions: DataPermissionScopeOption[] = [
   { value: 'OWNER_ONLY', label: '仅负责人' },
   { value: 'CREATOR_ONLY', label: '仅创建人' },
   { value: 'OWNER_OR_CREATOR', label: '负责人或创建人' },
-  { value: 'PROJECT_PARTICIPANT', label: '项目参与人' },
+  { value: 'PROJECT_PARTICIPANT', label: '项目成员（含负责人/创建人）' },
   { value: 'ALL', label: '所有人' }
 ]
 
@@ -360,7 +362,7 @@ const dataPermissionScopeLabelMap: Record<DataPermissionScopeValue, string> = {
   OWNER_ONLY: '仅负责人',
   CREATOR_ONLY: '仅创建人',
   OWNER_OR_CREATOR: '负责人或创建人',
-  PROJECT_PARTICIPANT: '项目参与人',
+  PROJECT_PARTICIPANT: '项目成员（含负责人/创建人）',
   ALL: '所有人'
 }
 

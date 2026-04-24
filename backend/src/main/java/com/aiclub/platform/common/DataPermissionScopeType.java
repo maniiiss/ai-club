@@ -2,6 +2,7 @@ package com.aiclub.platform.common;
 
 /**
  * 角色可配置的数据权限范围枚举。
+ * 项目绑定能力默认复用这套范围，不再为智能体、执行中心、GitLab、CI/CD 等模块额外扩展数据权限字段。
  */
 public enum DataPermissionScopeType {
 
@@ -27,6 +28,7 @@ public enum DataPermissionScopeType {
 
     /**
      * 项目参与人命中，包含负责人、项目创建人和项目成员。
+     * 前端展示上统一称为“项目成员（含负责人/创建人）”，降低权限配置歧义。
      */
     PROJECT_PARTICIPANT,
 

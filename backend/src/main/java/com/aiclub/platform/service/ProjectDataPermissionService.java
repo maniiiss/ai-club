@@ -23,6 +23,7 @@ import java.util.function.Function;
 
 /**
  * 统一封装项目级数据权限判定，并按当前用户启用角色实时合并数据权限配置。
+ * 项目绑定资源默认复用这里的“项目可见/项目参与人”判断，避免在智能体、执行中心、GitLab、CI/CD 等模块重复维护数据权限模型。
  */
 @Service
 public class ProjectDataPermissionService {
