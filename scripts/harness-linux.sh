@@ -73,7 +73,12 @@ run_code_processing_install_check() {
   )
 }
 
+print_architecture_doc_reminder() {
+  warn '如果本次改动涉及技术架构调整、跨模块边界变化或大型技术设计，请同步更新 docs/architecture.md 或新增 docs/*-architecture-vN.md / docs/*-technical-design-vN.md；模板见 docs/architecture-design-template.md。'
+}
+
 run_encoding_check
+print_architecture_doc_reminder
 
 if [[ "${TARGET}" == 'backend' || "${TARGET}" == 'all' ]]; then
   run_backend_tests

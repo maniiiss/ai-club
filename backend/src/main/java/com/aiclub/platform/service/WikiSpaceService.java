@@ -1261,6 +1261,7 @@ public class WikiSpaceService {
     private List<String> buildHindsightTags(WikiPageV2Entity page) {
         List<String> tags = new ArrayList<>();
         tags.add("wiki");
+        tags.add("source:wiki");
         tags.add("space:" + page.getSpace().getId());
         tags.add("directory:" + page.getDirectory().getId());
         Long boundProjectId = resolveEffectiveBoundProjectId(page.getDirectory());

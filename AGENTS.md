@@ -7,6 +7,7 @@
 - 新增或修改类、接口方法、实体字段、复杂流程时，需要补充中文注释说明业务意图。
 - 修改前先阅读关联模块和现有测试，避免只按文件名猜测职责。
 - 不要回滚、覆盖或格式化与当前任务无关的改动。
+- 完成技术架构调整、跨模块边界变化或大型技术设计后，必须同步更新 `docs/architecture.md` 或新增专题设计文档，不能只把结论留在聊天记录里。
 
 ## 项目地图
 
@@ -35,12 +36,13 @@
 - 后端业务变更优先运行相关 JUnit 测试，再视影响范围运行 Maven 全量测试。
 - 前端类型或页面变更优先运行 `npm run build`。
 - 跨服务改动需要至少验证对应服务能启动，必要时使用源码模式脚本串起 `backend`、`frontend`、`code-processing`。
+- 涉及技术架构调整、大型技术设计或重要模块边界变化时，交付物必须包含文档更新，优先补充 `docs/architecture.md` 或新增 `docs/*-architecture-vN.md` / `docs/*-technical-design-vN.md`。
 - 详细规范见 `docs/harness-best-practices.md`。
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **ai-club** (9948 symbols, 36085 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **ai-club** (9987 symbols, 36204 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

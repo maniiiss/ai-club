@@ -720,7 +720,7 @@ const feedbackRules: FormRules<typeof feedbackForm> = {
 
 const primaryMenuItems: MenuItem[] = [
   { path: '/dashboard', label: '首页看板', shortLabel: '首页', permission: 'dashboard:view', icon: Odometer, matchNames: ['dashboard'] },
-  { path: '/projects', label: '项目管理', shortLabel: '项目', permission: 'project:view', icon: FolderOpened, matchNames: ['projects', 'project-iterations', 'project-knowledge-graph'] },
+  { path: '/projects', label: '项目管理', shortLabel: '项目', permission: 'project:view', icon: FolderOpened, matchNames: ['projects', 'project-iterations', 'project-knowledge-graph', 'project-memory-fact-graph'] },
   { path: '/wiki', label: 'Wiki 中心', shortLabel: 'Wiki', permission: 'wiki:view', icon: Document, matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page'] },
   { path: '/agents', label: '智能体管理', shortLabel: '智能体', permission: 'agent:view', icon: Connection, matchNames: ['agents'] },
   { path: '/tasks', label: '执行中心', shortLabel: '执行', permission: 'task:view', icon: Tickets, matchNames: ['tasks', 'execution-task-detail'] },
@@ -822,6 +822,14 @@ const projectWorkspaceMenus = computed<MenuItem[]>(() => {
       permission: 'project:view',
       icon: Connection,
       matchNames: ['project-knowledge-graph']
+    },
+    {
+      path: `/projects/${currentProjectId.value}/memory-fact-graph`,
+      label: '记忆事实图',
+      shortLabel: '记忆',
+      permission: 'project:view',
+      icon: DataAnalysis,
+      matchNames: ['project-memory-fact-graph']
     }
   ]
 })
@@ -832,6 +840,7 @@ const hermesQuickPrompts = computed(() => {
     projects: ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个项目本周最值得关注的风险是什么'],
     'project-iterations': ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个任务为什么延期了'],
     'project-knowledge-graph': ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个项目本周最值得关注的风险是什么'],
+    'project-memory-fact-graph': ['这个项目里最近形成了哪些稳定事实', '哪些实体和当前项目关系最紧密', '从这些事实里能看出什么风险或机会'],
     'wiki-home': ['有哪些空间与当前项目相关', '帮我找某个项目关联的知识目录', '当前最值得看的空间是哪个'],
     'wiki-space': ['这个空间最近有哪些知识更新', '帮我梳理这个空间里的重点内容', '这个空间目前最值得关注的页面是什么'],
     'wiki-space-page': ['帮我总结当前 Wiki 页面', '这个页面和哪些知识有关', '基于 Wiki 内容下一步应该做什么'],

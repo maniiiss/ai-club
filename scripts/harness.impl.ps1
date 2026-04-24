@@ -72,6 +72,10 @@ function Invoke-EncodingCheck {
     }
 }
 
+function Write-ArchitectureDocReminder {
+    Write-WarnMessage '如果本次改动涉及技术架构调整、跨模块边界变化或大型技术设计，请同步更新 docs/architecture.md 或新增 docs/*-architecture-vN.md / docs/*-technical-design-vN.md；模板见 docs/architecture-design-template.md。'
+}
+
 function Invoke-BackendTests {
     Invoke-HarnessStep -Name '运行后端 Maven 测试' -Action {
         Push-Location $context.BackendDir
@@ -110,6 +114,7 @@ function Invoke-CodeProcessingInstallCheck {
 
 # Harness 统一入口先跑编码检查，避免 UTF-8、LF 或中文乱码问题扩散到后续步骤。
 Invoke-EncodingCheck
+Write-ArchitectureDocReminder
 
 if ($Target -in @('backend', 'all')) {
     Invoke-BackendTests

@@ -750,7 +750,12 @@ public class WikiPageService {
     }
 
     private List<String> buildHindsightTags(WikiPageEntity page) {
-        return List.of("wiki", "project:" + page.getProject().getId(), "visibility:" + page.getVisibilityScope());
+        return List.of(
+                "wiki",
+                "source:wiki",
+                "project:" + page.getProject().getId(),
+                "visibility:" + page.getVisibilityScope()
+        );
     }
 
     private Map<String, Object> buildHindsightMetadata(WikiPageEntity page) {

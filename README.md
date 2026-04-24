@@ -101,6 +101,12 @@ git-ai-club/
 - `code-processing`：校验 `code-processing/` 编码并执行 Python 包安装检查。
 - `all`：对整个仓库执行完整 harness。
 
+## 架构与设计文档 Harness
+
+- 任何技术架构调整、跨模块方案重构或大型技术设计完成后，必须同步更新 `docs/architecture.md` 或新增专题设计文档。
+- 推荐直接基于 `docs/architecture-design-template.md` 新建 `docs/<主题>-architecture-v1.md` 或 `docs/<主题>-technical-design-v1.md`。
+- 如果改动同时影响启动方式、环境变量、日志路径或 harness，请在同一次交付里同步更新 `README.md`、`AGENTS.md` 和对应专题文档。
+
 ### 1. 启动 PostgreSQL
 
 ```bash

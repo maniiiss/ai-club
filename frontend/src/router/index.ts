@@ -29,6 +29,7 @@ import WikiSpaceView from '@/views/WikiSpaceView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const KnowledgeGraphView = () => import('@/views/KnowledgeGraphView.vue')
+const MemoryFactGraphView = () => import('@/views/MemoryFactGraphView.vue')
 
 const APP_TITLE = 'AI代理工程管理平台'
 
@@ -60,6 +61,7 @@ const router = createRouter({
         { path: 'wiki/spaces/:spaceId/pages/:pageId', name: 'wiki-space-page', component: WikiSpaceView, meta: { title: 'Wiki 页面', permission: 'wiki:view' } },
         { path: 'projects/:projectId/iterations', name: 'project-iterations', component: IterationView, meta: { title: '迭代管理', permission: 'project:view' } },
         { path: 'projects/:projectId/knowledge-graph', name: 'project-knowledge-graph', component: KnowledgeGraphView, meta: { title: '知识图谱', permission: 'project:view' } },
+        { path: 'projects/:projectId/memory-fact-graph', name: 'project-memory-fact-graph', component: MemoryFactGraphView, meta: { title: '记忆事实图', permission: 'project:view' } },
         { path: 'agents', name: 'agents', component: AgentView, meta: { title: '智能体管理', permission: 'agent:view' } },
         { path: 'tasks', name: 'tasks', component: ExecutionTaskView, meta: { title: '执行中心', permission: 'task:view' } },
         { path: 'tasks/:executionTaskId', name: 'execution-task-detail', component: ExecutionTaskDetailView, meta: { title: '执行详情', permission: 'task:view', activeMenu: '/tasks' } },

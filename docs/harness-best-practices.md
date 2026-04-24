@@ -44,6 +44,27 @@
 - 新增智能体工具、MCP 工具、自动化执行链路。
 - 修改启动方式、端口、环境变量或日志位置。
 
+### 2.1 架构调整与大型技术设计必须落文档
+
+这条规则是本仓库的硬约束：只要改动达到“技术架构调整”或“大型技术设计”级别，任务完成前就必须把结论沉淀到 `docs/`，未补文档视为任务未完成。
+
+建议按下表判断是否触发：
+
+| 场景 | 是否必须落文档 | 推荐位置 |
+| --- | --- | --- |
+| 服务拓扑、模块边界、职责归属发生变化 | 是 | `docs/architecture.md` + 专题设计文档 |
+| 新增跨服务链路、异步任务、调度流程、权限模型或共享数据模型 | 是 | 专题设计文档，必要时同步更新 `docs/architecture.md` |
+| 引入新中间件、新运行模式、新部署方式、新环境变量或新日志路径 | 是 | 专题设计文档 + `README.md` + `AGENTS.md` |
+| 影响 `frontend` / `backend` / `code-processing` / `scripts` 中两个及以上目录的方案设计 | 是 | 专题设计文档 |
+| 只改局部实现细节，不改变边界、链路和约束 | 否 | 只在代码注释或模块文档中补充说明即可 |
+
+最低交付要求如下：
+
+- 全局架构变化：至少更新 `docs/architecture.md`，说明新的边界、链路和依赖关系。
+- 专题方案设计：新增 `docs/*-architecture-vN.md` 或 `docs/*-technical-design-vN.md`，推荐从 `docs/architecture-design-template.md` 开始。
+- 启动、环境、harness、日志路径变化：同一次交付内同步更新 `README.md`、`AGENTS.md` 和相关专题文档。
+- 最终验证：至少运行一次 `docs` 级别 harness，确认文档编码、命令和链接没有明显问题。
+
 ### 3. 执行层：scripts/
 
 `scripts/` 是本项目最重要的可执行 harness：
@@ -80,6 +101,7 @@
 | --- | --- | --- |
 | 纯文档 | `python scripts/check_encoding.py` | 人工检查链接、标题、命令是否可执行 |
 | 脚本 | `python scripts/check_encoding.py`，执行脚本帮助或 dry-run 路径 | 在 Windows 与 Linux 入口各跑一次等价命令 |
+| 架构调整 / 大型技术设计 | `powershell -ExecutionPolicy Bypass -File .\scripts\harness.ps1 -Target docs` 或 `bash ./scripts/harness-linux.sh docs` | 按影响范围补充对应模块测试或源码模式联调 |
 | 后端 DTO / Service / Controller | 相关 JUnit 测试 | `cd backend && mvn -s maven-settings-central.xml test` |
 | Flyway 迁移 | 后端测试，必要时重建本地库 | 源码模式启动后检查后端日志和页面 |
 | 前端页面 / 类型 | `cd frontend && npm run build` | 源码模式启动后人工走一遍页面 |
@@ -132,14 +154,15 @@ bash ./scripts/harness-linux.sh all
 
 ### 修改后
 
-1. 运行选定 harness。
-2. 如果失败，先看命令输出，再看 `.run-logs/`。
-3. 修复后重新运行同一 harness，确认不是偶发通过。
-4. 在最终说明里列出改动、验证命令和未验证风险。
+1. 如果本次任务涉及架构调整或大型技术设计，先更新 `docs/architecture.md` 或新增专题设计文档，再运行 harness。
+2. 运行选定 harness。
+3. 如果失败，先看命令输出，再看 `.run-logs/`。
+4. 修复后重新运行同一 harness，确认不是偶发通过。
+5. 在最终说明里列出改动、验证命令、文档路径和未验证风险。
 
 ## Harness 文档模板
 
-新增重要模块时，建议在 `docs/` 增加对应文档，并包含以下章节：
+新增重要模块或专题设计时，建议在 `docs/` 增加对应文档，并包含以下章节。也可以直接复制 `docs/architecture-design-template.md` 作为起点：
 
 ```markdown
 # 模块名称
@@ -203,6 +226,7 @@ bash ./scripts/harness-linux.sh all
 
 - 当脚本入口变化时，同步更新 `README.md`、`AGENTS.md` 和本文。
 - 当模块边界变化时，同步更新 `docs/architecture.md` 或对应模块文档。
+- 当完成技术架构调整或大型技术设计时，同步创建或更新专题设计文档，未补文档不算任务完成。
 - 当新增测试或验证命令时，同步更新推荐验证矩阵。
 - 当发现文档错误时，优先修正文档，而不是让后续智能体靠聊天上下文记住例外。
 

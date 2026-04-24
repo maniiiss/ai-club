@@ -124,6 +124,11 @@
                       <el-icon><Connection /></el-icon>
                     </button>
                   </el-tooltip>
+                  <el-tooltip content="记忆事实图" placement="top">
+                    <button class="project-action-button memory" type="button" aria-label="打开记忆事实图" @click="openMemoryFactGraph(row)">
+                      <el-icon><Lightning /></el-icon>
+                    </button>
+                  </el-tooltip>
                   <el-tooltip v-if="canManageProjects && row.canEdit" content="编辑" placement="top">
                     <button
                       class="project-action-button"
@@ -213,6 +218,10 @@
               <button class="project-mobile-action-button graph" type="button" @click="openKnowledgeGraph(row)">
                 <el-icon><Connection /></el-icon>
                 <span>知识图谱</span>
+              </button>
+              <button class="project-mobile-action-button memory" type="button" @click="openMemoryFactGraph(row)">
+                <el-icon><Lightning /></el-icon>
+                <span>记忆事实图</span>
               </button>
               <button
                 v-if="canManageProjects && row.canEdit"
@@ -613,6 +622,10 @@ const openIterationBoard = (row: ProjectItem) => {
 
 const openKnowledgeGraph = (row: ProjectItem) => {
   router.push({ name: 'project-knowledge-graph', params: { projectId: row.id } })
+}
+
+const openMemoryFactGraph = (row: ProjectItem) => {
+  router.push({ name: 'project-memory-fact-graph', params: { projectId: row.id } })
 }
 
 const openRepoDialog = async (row: ProjectItem) => {
@@ -1101,6 +1114,10 @@ onBeforeUnmount(() => {
   color: var(--app-tertiary);
 }
 
+.project-mobile-action-button.memory {
+  color: var(--app-primary);
+}
+
 .project-mobile-action-button.danger {
   color: var(--app-danger);
 }
@@ -1388,6 +1405,10 @@ onBeforeUnmount(() => {
 
 .project-action-button.graph:hover {
   color: #00658f;
+}
+
+.project-action-button.memory:hover {
+  color: var(--app-primary);
 }
 
 .project-action-button.danger:hover {

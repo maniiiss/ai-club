@@ -115,6 +115,76 @@ export interface KnowledgeGraphItem {
   edges: KnowledgeGraphEdgeItem[]
 }
 
+export interface MemoryFactNodeItem {
+  id: string
+  entityType: string
+  label: string
+  aliases: string[]
+  degree: number
+  factCount: number
+  metadataJson: string
+}
+
+export interface MemoryFactEdgeItem {
+  id: string
+  sourceId: string
+  targetId: string
+  relationType: string
+  weight: number | null
+  factIds: string[]
+  metadataJson: string
+}
+
+export interface MemoryFactGraphItem {
+  projectId: number
+  bankId: string
+  generatedAt: string
+  nodeCount: number
+  edgeCount: number
+  factCount: number
+  warnings: string[]
+  nodes: MemoryFactNodeItem[]
+  edges: MemoryFactEdgeItem[]
+}
+
+export interface MemoryFactItem {
+  id: string
+  type: string
+  subject: string
+  predicate: string
+  object: string
+  summary: string
+  confidence: number | null
+  sourceType: string
+  createdAt: string
+  tags: string[]
+  metadataJson: string
+}
+
+export interface MemoryFactFactsResponseItem {
+  projectId: number
+  scopeType: string
+  scopeId: string
+  query: string
+  factCount: number
+  warnings: string[]
+  facts: MemoryFactItem[]
+}
+
+export interface MemoryFactEntityDetailItem {
+  projectId: number
+  entityId: string
+  label: string
+  entityType: string
+  aliases: string[]
+  degree: number
+  factCount: number
+  observations: string[]
+  metadataJson: string
+  warnings: string[]
+  facts: MemoryFactItem[]
+}
+
 export interface WikiSpaceItem {
   /** 空间ID。 */
   id: number
