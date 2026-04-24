@@ -1020,7 +1020,7 @@ public class DevelopmentExecutionService {
                 .append("- status\n")
                 .append("- summary\n")
                 .append("- suiteResults[]，每项必须包含 suiteId/type/status/summary/checks/artifacts/commandResults\n")
-                .append("- rawArtifacts[]，用于补充 sidecar 生成的截图、trace 和日志文件摘要\n");
+                .append("- rawArtifacts[]，用于补充测试过程中生成的截图、trace 和日志文件摘要\n");
         return builder.toString().trim();
     }
 
@@ -1372,7 +1372,7 @@ public class DevelopmentExecutionService {
                 "command",
                 "COMMAND",
                 "PENDING",
-                "等待执行命令型 Harness",
+                "等待执行基础门禁 Harness",
                 "",
                 commands,
                 "",
@@ -1498,6 +1498,7 @@ public class DevelopmentExecutionService {
         }
         for (TestSuitePlan suite : plan.suites()) {
             builder.append("## ").append(defaultString(suite.type())).append(" / ").append(defaultString(suite.suiteId())).append("\n\n")
+                    .append("- 验证层级：").append(resolveSuiteLayerLabel(suite.type())).append('\n')
                     .append("- 计划状态：").append(defaultString(suite.status())).append('\n')
                     .append("- 计划摘要：").append(defaultString(suite.summary())).append('\n');
             if (hasText(suite.workingDir())) {
@@ -1521,6 +1522,17 @@ public class DevelopmentExecutionService {
             builder.append('\n');
         }
         return builder.toString().trim();
+    }
+
+    /**
+     * 阶段一先把 suite 的职责语义固定在 Markdown 上，避免前后端协议尚未演进前用户难以理解主次关系。
+     */
+    private String resolveSuiteLayerLabel(String suiteType) {
+        return switch (defaultString(suiteType).trim().toUpperCase()) {
+            case "COMMAND" -> "基础门禁";
+            case "PLAYWRIGHT_SMOKE", "SERVICE_SMOKE" -> "补充烟测";
+            default -> "补充验证";
+        };
     }
 
     private List<String> buildHarnessCommands(List<String> changedFiles) {
@@ -1875,7 +1887,7 @@ public class DevelopmentExecutionService {
     }
 
     private void appendRawArtifacts(StringBuilder builder, List<TestRawArtifact> rawArtifacts) {
-        builder.append("## Sidecar 原始产物\n\n");
+        builder.append("## 测试原始产物\n\n");
         if (rawArtifacts == null || rawArtifacts.isEmpty()) {
             builder.append("- 无\n");
             return;
@@ -2353,7 +2365,7 @@ public class DevelopmentExecutionService {
     }
 
     /**
-     * TEST 步骤升级为 suite 驱动后，结果需要同时保留 suite 明细、sidecar 产物摘要和兼容聚合原文。
+     * TEST 步骤升级为 suite 驱动后，结果需要同时保留 suite 明细、测试产物摘要和兼容聚合原文。
      */
     private record TestStepResult(
             String status,
@@ -2364,11 +2376,14 @@ public class DevelopmentExecutionService {
     ) {
     }
 
+    /**
+     * 测试计划协议当前仍以 suite 列表为核心，统一承载基础门禁与补充烟测。
+     */
     private record TestExecutionPlan(List<TestSuitePlan> suites) {
     }
 
     /**
-     * backend 只负责生成 suite 计划，不直接执行 sidecar；空字段交由 code-processing 在运行时补默认值。
+     * backend 只负责生成 suite 计划，不直接执行具体测试子进程；空字段交由 code-processing 在运行时补默认值。
      */
     private record TestSuitePlan(
             String suiteId,

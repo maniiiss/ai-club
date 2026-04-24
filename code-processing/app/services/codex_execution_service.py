@@ -58,8 +58,8 @@ class ResolvedTestCommand:
 
 
 @dataclass(frozen=True)
-class SidecarArtifactRecord:
-    """sidecar 执行中生成的二进制/日志产物元数据，供上传和结果摘要复用。"""
+class TestArtifactRecord:
+    """测试执行中生成的二进制/日志产物元数据，供上传和结果摘要复用。"""
 
     artifact_type: str
     title: str
@@ -202,7 +202,7 @@ def _run_codex_execution_session(
     batcher.emit("step_summary_updated", summary=summary)
     batcher.emit("progress_changed", progress_percent=1, summary=summary)
     batcher.flush()
-    # Codex 开发/测试会话在 clone、安装依赖、sidecar 启动阶段可能没有日志输出，后台心跳负责向 backend 证明 runner 仍存活。
+    # Codex 开发/测试会话在 clone、安装依赖、测试子进程启动阶段可能没有日志输出，后台心跳负责向 backend 证明 runner 仍存活。
     batcher.start_heartbeat(summary=lambda: f"执行中：{step_title}")
 
     try:
@@ -363,7 +363,7 @@ def _execute_test_plan(
     _append_log(workspace, f"开始执行测试：{repo_label}")
     test_plan = _resolve_test_plan(request)
     if test_plan is None or not test_plan.suites:
-        summary = "当前仓库未命中额外 Harness 命令，也没有 sidecar suite 计划"
+        summary = "当前仓库未命中额外 Harness 命令，也没有补充验证 suite 计划"
         return {"status": "SUCCESS", "summary": summary, "suiteResults": [], "rawArtifacts": []}
 
     deadline = monotonic() + request.timeoutSeconds
@@ -371,7 +371,7 @@ def _execute_test_plan(
     previous_failed = False
     for index, suite in enumerate(test_plan.suites, start=1):
         if cancel_watcher is not None and cancel_watcher.should_cancel():
-            cancel_summary = "执行任务已取消，测试 sidecar 已停止"
+            cancel_summary = "执行任务已取消，测试子进程已停止"
             suite_results.append(_build_suite_result(suite, "FAILED", cancel_summary, checks=[_build_check("runner", "FAILED", cancel_summary)]))
             previous_failed = True
             break
@@ -773,14 +773,14 @@ def _execute_service_smoke_suite(
             should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
         )
         checks: list[dict[str, object]] = []
-        artifacts: list[SidecarArtifactRecord] = []
+        artifacts: list[TestArtifactRecord] = []
         if service_log.exists():
-            artifacts.append(SidecarArtifactRecord("SERVICE_START_LOG", f"服务启动日志 · {suite.suiteId or 'service'}", service_log))
+            artifacts.append(TestArtifactRecord("SERVICE_START_LOG", f"服务启动日志 · {suite.suiteId or 'service'}", service_log))
         if not ready_ok:
             _append_text(http_log, ready_detail)
             if http_log.exists():
-                artifacts.append(SidecarArtifactRecord("HTTP_SMOKE_LOG", f"HTTP 烟测日志 · {suite.suiteId or 'service'}", http_log))
-            _record_sidecar_artifacts(workspace, artifacts)
+                artifacts.append(TestArtifactRecord("HTTP_SMOKE_LOG", f"HTTP 烟测日志 · {suite.suiteId or 'service'}", http_log))
+            _record_test_artifacts(workspace, artifacts)
             return _build_suite_result(
                 suite,
                 "FAILED",
@@ -807,8 +807,8 @@ def _execute_service_smoke_suite(
                     )
                 )
         if http_log.exists():
-            artifacts.append(SidecarArtifactRecord("HTTP_SMOKE_LOG", f"HTTP 烟测日志 · {suite.suiteId or 'service'}", http_log))
-        _record_sidecar_artifacts(workspace, artifacts)
+            artifacts.append(TestArtifactRecord("HTTP_SMOKE_LOG", f"HTTP 烟测日志 · {suite.suiteId or 'service'}", http_log))
+        _record_test_artifacts(workspace, artifacts)
         failed_checks = [item for item in checks if _normalize_status(item.get("status"), default="SUCCESS") == "FAILED"]
         summary = "服务烟测通过" if not failed_checks else f"服务烟测失败：{len(failed_checks)} 个检查未通过"
         return _build_suite_result(
@@ -867,7 +867,7 @@ def _collect_raw_artifacts(suite_results: list[dict[str, object]]) -> list[dict[
     return raw_artifacts
 
 
-def _artifact_payloads(artifacts: list[SidecarArtifactRecord]) -> list[dict[str, object]]:
+def _artifact_payloads(artifacts: list[TestArtifactRecord]) -> list[dict[str, object]]:
     return [
         {
             "artifactType": item.artifact_type,
@@ -1123,8 +1123,8 @@ if (result.status !== 'SUCCESS') {
 """.strip()
 
 
-def _record_suite_artifacts(workspace: DevelopmentExecutionWorkspace, payload: object, artifact_dir: Path) -> list[SidecarArtifactRecord]:
-    artifacts: list[SidecarArtifactRecord] = []
+def _record_suite_artifacts(workspace: DevelopmentExecutionWorkspace, payload: object, artifact_dir: Path) -> list[TestArtifactRecord]:
+    artifacts: list[TestArtifactRecord] = []
     if isinstance(payload, list):
         for item in payload:
             if not isinstance(item, dict):
@@ -1136,8 +1136,8 @@ def _record_suite_artifacts(workspace: DevelopmentExecutionWorkspace, payload: o
                 continue
             file_path = artifact_dir / file_name
             if file_path.exists():
-                artifacts.append(SidecarArtifactRecord(artifact_type, title, file_path))
-    _record_sidecar_artifacts(workspace, artifacts)
+                artifacts.append(TestArtifactRecord(artifact_type, title, file_path))
+    _record_test_artifacts(workspace, artifacts)
     return artifacts
 
 
@@ -2186,7 +2186,7 @@ def _append_json_degradation_log_if_needed(workspace: DevelopmentExecutionWorksp
 
 def _implementation_raw_output_from_markdown(markdown_output: str, exit_code: int) -> dict[str, object]:
     """
-    IMPLEMENT 阶段不再要求模型输出 JSON；平台内部需要的结构化字段由 sidecar
+    IMPLEMENT 阶段不再要求模型输出 JSON；平台内部需要的结构化字段由运行时
     基于 Markdown 说明、CLI 退出码和后续 git 状态统一组装，避免用户看到 JSON 降级提示。
     """
     normalized = _normalize_text(markdown_output)
@@ -2322,23 +2322,39 @@ def _tail_text(text: str, max_chars: int) -> str:
     return text[-max_chars:]
 
 
-def _sidecar_artifact_manifest_path(workspace: DevelopmentExecutionWorkspace) -> Path:
+def _test_artifact_manifest_path(workspace: DevelopmentExecutionWorkspace) -> Path:
+    return workspace.out_dir / "test-artifacts-manifest.json"
+
+
+def _legacy_test_artifact_manifest_path(workspace: DevelopmentExecutionWorkspace) -> Path:
     return workspace.out_dir / "sidecar-artifacts-manifest.json"
 
 
-def _record_sidecar_artifacts(workspace: DevelopmentExecutionWorkspace, artifacts: list[SidecarArtifactRecord]) -> None:
+def _read_test_artifact_manifest_entries(manifest_path: Path) -> list[dict[str, str]]:
+    if not manifest_path.exists():
+        return []
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+    except Exception:
+        return []
+    return []
+
+
+def _record_test_artifacts(workspace: DevelopmentExecutionWorkspace, artifacts: list[TestArtifactRecord]) -> None:
     if not artifacts:
         return
-    manifest_path = _sidecar_artifact_manifest_path(workspace)
+    manifest_path = _test_artifact_manifest_path(workspace)
     current: list[dict[str, str]] = []
-    if manifest_path.exists():
-        try:
-            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if isinstance(payload, list):
-                current = [item for item in payload if isinstance(item, dict)]
-        except Exception:
-            current = []
-    existing = {(str(item.get("path", "")), str(item.get("artifactType", ""))) for item in current}
+    existing: set[tuple[str, str]] = set()
+    for current_manifest_path in (manifest_path, _legacy_test_artifact_manifest_path(workspace)):
+        for item in _read_test_artifact_manifest_entries(current_manifest_path):
+            key = (str(item.get("path", "")), str(item.get("artifactType", "")))
+            if key in existing:
+                continue
+            existing.add(key)
+            current.append(item)
     for artifact in artifacts:
         if not artifact.path.exists():
             continue
@@ -2356,30 +2372,26 @@ def _record_sidecar_artifacts(workspace: DevelopmentExecutionWorkspace, artifact
     manifest_path.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _load_sidecar_artifacts(workspace: DevelopmentExecutionWorkspace) -> list[SidecarArtifactRecord]:
-    manifest_path = _sidecar_artifact_manifest_path(workspace)
-    if not manifest_path.exists():
-        return []
-    try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-    artifacts: list[SidecarArtifactRecord] = []
-    if not isinstance(payload, list):
-        return artifacts
-    for item in payload:
-        if not isinstance(item, dict):
-            continue
-        file_path = Path(_normalize_text(item.get("path")))
-        if not file_path.exists():
-            continue
-        artifacts.append(
-            SidecarArtifactRecord(
-                _normalize_text(item.get("artifactType")),
-                _normalize_text(item.get("title")),
-                file_path,
+def _load_test_artifacts(workspace: DevelopmentExecutionWorkspace) -> list[TestArtifactRecord]:
+    artifacts: list[TestArtifactRecord] = []
+    existing: set[tuple[str, str]] = set()
+    for manifest_path in (_test_artifact_manifest_path(workspace), _legacy_test_artifact_manifest_path(workspace)):
+        for item in _read_test_artifact_manifest_entries(manifest_path):
+            file_path = Path(_normalize_text(item.get("path")))
+            if not file_path.exists():
+                continue
+            artifact_type = _normalize_text(item.get("artifactType"))
+            key = (str(file_path), artifact_type)
+            if key in existing:
+                continue
+            existing.add(key)
+            artifacts.append(
+                TestArtifactRecord(
+                    artifact_type,
+                    _normalize_text(item.get("title")),
+                    file_path,
+                )
             )
-        )
     return artifacts
 
 
@@ -2390,7 +2402,7 @@ def _upload_codex_log_artifacts(
 ) -> list[dict[str, object]]:
     """异步 runner 结束后统一上传完整日志，供执行详情页下载。"""
     try:
-        sidecar_files = [(item.artifact_type, item.title, item.path) for item in _load_sidecar_artifacts(workspace)]
+        test_artifact_files = [(item.artifact_type, item.title, item.path) for item in _load_test_artifacts(workspace)]
         return upload_log_artifacts(
             session_id=session_id,
             task_id=request.execution.taskId,
@@ -2400,7 +2412,7 @@ def _upload_codex_log_artifacts(
                 ("STEP_RAW_LOG", "完整执行日志", workspace.log_file),
                 ("STEP_STDOUT_LOG", "标准输出日志", workspace.out_dir / ("codex-stdout.log" if request.mode == "IMPLEMENT" else "test-stdout.log")),
                 ("STEP_STDERR_LOG", "标准错误日志", workspace.out_dir / ("codex-stderr.log" if request.mode == "IMPLEMENT" else "test-stderr.log")),
-                *sidecar_files,
+                *test_artifact_files,
             ],
         )
     except Exception as exception:

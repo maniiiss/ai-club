@@ -134,7 +134,7 @@ public class ExecutionAsyncSessionService {
     }
 
     /**
-     * sidecar 进程需要低频轮询当前会话状态，以便在用户取消时主动回收子进程树，
+     * 测试子进程需要低频轮询当前会话状态，以便在用户取消时主动回收子进程树，
      * 避免浏览器、服务进程继续悬挂在宿主机上。
      */
     @Transactional(readOnly = true)

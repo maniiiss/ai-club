@@ -563,6 +563,9 @@ class DevelopmentExecutionServiceTests {
                                 && String.valueOf(variables.get("test_commands_json")).contains("cd frontend && npm run build")
                                 && String.valueOf(variables.get("test_plan_json")).contains("\"COMMAND\"")
                                 && String.valueOf(variables.get("test_plan_json")).contains("\"PLAYWRIGHT_SMOKE\"")
+                                && String.valueOf(variables.get("test_plan_markdown")).contains("验证层级：基础门禁")
+                                && String.valueOf(variables.get("test_plan_markdown")).contains("验证层级：补充烟测")
+                                && !String.valueOf(variables.get("test_plan_markdown")).toLowerCase(java.util.Locale.ROOT).contains("sidecar")
                 )))
                 .thenReturn("""
                         {

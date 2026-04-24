@@ -395,7 +395,7 @@ class TestSuitePlan(BaseModel):
 
 
 class TestExecutionPlan(BaseModel):
-    """TEST sidecar 的计划入口，兼容 backend 生成的多 suite JSON。"""
+    """TEST suite 的计划入口，兼容 backend 生成的多 suite JSON。"""
 
     suites: list[TestSuitePlan] = Field(default_factory=list)
 

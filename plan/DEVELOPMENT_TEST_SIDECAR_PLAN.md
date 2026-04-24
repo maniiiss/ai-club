@@ -1,5 +1,8 @@
 # 开发执行测试边车方案
 
+> 历史方案记录：该文档保留用于回溯测试边车阶段的设计背景，不再作为当前主导实施方案。
+> 当前以 harness 视角推进的主方案见 [plan/DEVELOPMENT_TEST_HARNESS_PLAN.md](D:/ai-club/plan/DEVELOPMENT_TEST_HARNESS_PLAN.md)。
+
 ## 背景
 
 当前开发执行里的 `TEST` 步骤，本质上还是“命令型 harness 执行”：

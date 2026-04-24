@@ -22,8 +22,10 @@ from app.services.codex_execution_service import (
     _build_codex_prompt,
     _checkout_commit_if_needed,
     _clone_repository,
+    _execute_test_plan,
     _infer_frontend_start_command,
     _implementation_raw_output_from_markdown,
+    _load_test_artifacts,
     _normalize_implementation_payload,
     execute_codex_execution,
     start_codex_execution,
@@ -210,6 +212,26 @@ class CodexExecutionServiceTests(unittest.TestCase):
         self.assertIn("已跳过", command_results[0]["stdout"])
         self.assertIn("不适用命令", payload["suiteResults"][0]["summary"])
 
+    def test_should_report_when_no_supplemental_suite_plan_is_selected(self):
+        request = self._build_request("TEST")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            workspace.repo_dir.mkdir(parents=True, exist_ok=True)
+            workspace.out_dir.mkdir(parents=True, exist_ok=True)
+
+            with patch("app.services.codex_execution_service._workspace_for", return_value=workspace):
+                response = execute_codex_execution(request)
+
+        payload = json.loads(response.output)
+        self.assertEqual("SUCCESS", payload["status"])
+        self.assertEqual("当前仓库未命中额外 Harness 命令，也没有补充验证 suite 计划", payload["summary"])
+        self.assertEqual([], payload["rawArtifacts"])
+
     def test_should_promote_frontend_build_to_repo_root_and_bootstrap_pnpm(self):
         request = self._build_request("TEST", ["cd frontend && npm run build"])
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -321,7 +343,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
 
         self.assertEqual("pnpm preview", command)
 
-    def test_should_execute_playwright_smoke_suite_and_collect_sidecar_artifacts(self):
+    def test_should_execute_playwright_smoke_suite_and_collect_test_artifacts(self):
         request = self._build_request("TEST").model_copy(update={
             "testPlan": CodexTestExecutionPlan(
                 suites=[
@@ -426,7 +448,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
 
             payload = json.loads(response.output)
             suite_result = payload["suiteResults"][0]
-            manifest = json.loads((workspace.out_dir / "sidecar-artifacts-manifest.json").read_text(encoding="utf-8"))
+            manifest = json.loads((workspace.out_dir / "test-artifacts-manifest.json").read_text(encoding="utf-8"))
 
         self.assertEqual("SUCCESS", payload["status"])
         self.assertEqual("Playwright 烟测通过", suite_result["summary"])
@@ -500,7 +522,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
 
             payload = json.loads(response.output)
             suite_result = payload["suiteResults"][0]
-            manifest = json.loads((workspace.out_dir / "sidecar-artifacts-manifest.json").read_text(encoding="utf-8"))
+            manifest = json.loads((workspace.out_dir / "test-artifacts-manifest.json").read_text(encoding="utf-8"))
 
         self.assertEqual("SUCCESS", payload["status"])
         self.assertEqual("服务烟测通过", suite_result["summary"])
@@ -557,7 +579,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
 
             payload = json.loads(response.output)
             suite_result = payload["suiteResults"][0]
-            manifest = json.loads((workspace.out_dir / "sidecar-artifacts-manifest.json").read_text(encoding="utf-8"))
+            manifest = json.loads((workspace.out_dir / "test-artifacts-manifest.json").read_text(encoding="utf-8"))
             http_log_text = (workspace.out_dir / "service-smoke-http-smoke.log").read_text(encoding="utf-8")
 
         self.assertEqual("FAILED", payload["status"])
@@ -577,6 +599,71 @@ class CodexExecutionServiceTests(unittest.TestCase):
         )
         self.assertIn("端口未监听", http_log_text)
         stop_mock.assert_called_once()
+
+    def test_should_load_test_artifacts_from_legacy_manifest_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            workspace.out_dir.mkdir(parents=True, exist_ok=True)
+            artifact_file = workspace.out_dir / "legacy-trace.zip"
+            artifact_file.write_text("trace", encoding="utf-8")
+            (workspace.out_dir / "sidecar-artifacts-manifest.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "artifactType": "PLAYWRIGHT_TRACE",
+                            "title": "Legacy Trace",
+                            "path": str(artifact_file),
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            artifacts = _load_test_artifacts(workspace)
+
+        self.assertEqual(["PLAYWRIGHT_TRACE"], [item.artifact_type for item in artifacts])
+        self.assertEqual(["Legacy Trace"], [item.title for item in artifacts])
+
+    def test_should_report_cancel_with_test_subprocess_wording(self):
+        request = self._build_request("TEST").model_copy(update={
+            "testPlan": CodexTestExecutionPlan(
+                suites=[
+                    CodexTestSuitePlan(
+                        suiteId="command",
+                        type="COMMAND",
+                        status="PENDING",
+                        summary="等待执行命令型 Harness",
+                        commands=["python scripts/check_encoding.py"],
+                    )
+                ]
+            )
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            workspace.repo_dir.mkdir(parents=True, exist_ok=True)
+            workspace.out_dir.mkdir(parents=True, exist_ok=True)
+
+            payload = _execute_test_plan(
+                request,
+                workspace,
+                batcher=None,
+                cancel_watcher=SimpleNamespace(should_cancel=lambda: True),
+            )
+
+        self.assertEqual("FAILED", payload["status"])
+        self.assertEqual("执行任务已取消，测试子进程已停止", payload["suiteResults"][0]["summary"])
+        self.assertEqual([], payload["rawArtifacts"])
 
     def test_should_ask_codex_implementation_to_return_markdown_not_json(self):
         prompt = _build_codex_prompt(self._build_request("IMPLEMENT"))
