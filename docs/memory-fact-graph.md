@@ -2,14 +2,14 @@
 
 ## 目标
 
-记忆事实图用于在项目维度展示 Hindsight 中沉淀的实体关系与事实证据。
+记忆事实图用于在项目与 Wiki 空间维度展示 Hindsight 中沉淀的实体关系与事实证据。
 
 第一版的设计目标是：
 
-- 保留现有“知识图谱”页面不变，新增独立“记忆事实图”入口。
+- 保留项目“逻辑图谱”页面，记忆事实图入口放入 Wiki 中心；每个 Wiki 空间直接打开自己的记忆事实图，不依赖关联项目。
 - 后端在线代理 Hindsight 的实体图、实体详情和事实 recall 接口。
 - 页面支持实体点击、关系点击、搜索、过滤、刷新和空态提示。
-- 平台可控的 Wiki retain 路径统一补齐 `project:{projectId}` 与 `source:wiki` 标签。
+- 平台可控的 Wiki retain 路径统一补齐 `source:wiki` 标签，并按来源补齐 `space:{spaceId}` 或 `project:{projectId}` 标签。
 
 第一版不做：
 
@@ -19,11 +19,17 @@
 
 ## 核心接口
 
-后端新增三个只读接口：
+项目维度保留三个只读接口：
 
 - `GET /api/projects/{projectId}/memory-fact-graph`
 - `GET /api/projects/{projectId}/memory-fact-graph/facts`
 - `GET /api/projects/{projectId}/memory-fact-graph/entity/{entityId}`
+
+Wiki 空间维度提供对应的独立只读接口：
+
+- `GET /api/wiki/spaces/{spaceId}/memory-fact-graph`
+- `GET /api/wiki/spaces/{spaceId}/memory-fact-graph/facts`
+- `GET /api/wiki/spaces/{spaceId}/memory-fact-graph/entity/{entityId}`
 
 返回约定：
 
@@ -42,13 +48,16 @@
    默认会回退到当前已存在的 `git-ai-club:wiki:project:{projectId}` 结构，保证项目 Wiki 页面可直接进入记忆事实图。
 2. 项目相关 Wiki space bank
    通过 `WikiSpaceService.buildProjectGraphProjection(projectId)` 找出当前项目相关空间，再读取对应 `git-ai-club:wiki:space:{spaceId}` bank。
+3. Wiki 空间独立入口
+   直接读取当前空间自己的 `git-ai-club:wiki:space:{spaceId}` bank，不要求该空间绑定项目。
 
 ### 事实 recall
 
 事实 recall 会读取：
 
 - 图骨架涉及的项目 bank 与空间 bank
-- 显式配置的共享 bank（如果有）
+- 项目维度显式配置的共享 bank（如果有）
+- Wiki 空间维度仅读取当前空间 bank，并通过 `space:{spaceId}` 标签做范围过滤
 
 共享 bank 当前仅参与事实 recall，不参与实体图骨架聚合。原因是当前 Hindsight 官方实体图接口更适合项目级或空间级隔离 bank，直接对共享 bank 做项目标签级实体图过滤并不稳定。
 
@@ -75,7 +84,7 @@ platform:
     memory-fact:
       project-bank-template:
       shared-bank-id:
-      entity-graph-path-template: /v1/default/banks/{bankId}/entities/graph
+      entity-graph-path-template: /v1/default/banks/{bankId}/graph
       entity-detail-path-template: /v1/default/banks/{bankId}/entities/{entityId}
       recall-path-template: /v1/default/banks/{bankId}/memories/recall
 ```
@@ -97,7 +106,7 @@ python scripts/probe_hindsight_memory_fact_graph.py --bank-id git-ai-club:wiki:p
 脚本会探测：
 
 - `/health`
-- `/v1/default/banks/{bankId}/entities/graph`
+- `/v1/default/banks/{bankId}/graph`
 - `/v1/default/banks/{bankId}/entities/{entityId}`
 - `/v1/default/banks/{bankId}/memories/recall`
 
@@ -141,9 +150,10 @@ HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL=Qwen/Qwen3-Embedding-4B
 
 - `wiki`
 - `source:wiki`
-- `project:{projectId}`（若当前页面可解析到项目）
+- `space:{spaceId}`（Wiki 空间路径）
+- `project:{projectId}`（项目 Wiki 路径，或 Wiki 空间目录绑定项目时）
 
-这保证后续按项目做事实 recall 时，不会漏掉平台自己写入的 Wiki 记忆。
+这保证后续按项目或 Wiki 空间做事实 recall 时，不会漏掉平台自己写入的 Wiki 记忆。
 
 ## 已知边界
 

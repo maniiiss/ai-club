@@ -5,6 +5,7 @@ import com.aiclub.platform.domain.model.WikiSpaceEntity;
 import com.aiclub.platform.dto.MemoryFactEntityDetail;
 import com.aiclub.platform.dto.MemoryFactFactsResponse;
 import com.aiclub.platform.dto.MemoryFactGraphSummary;
+import com.aiclub.platform.dto.WikiSpaceDetail;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +21,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -60,7 +63,7 @@ class MemoryFactGraphServiceTests {
                         30,
                         "",
                         "",
-                        "/v1/default/banks/{bankId}/entities/graph",
+                        "/v1/default/banks/{bankId}/graph",
                         "/v1/default/banks/{bankId}/entities/{entityId}",
                         "/v1/default/banks/{bankId}/memories/recall",
                         true,
@@ -83,7 +86,7 @@ class MemoryFactGraphServiceTests {
                         30,
                         "",
                         "{bankPrefix}:memory:shared",
-                        "/v1/default/banks/{bankId}/entities/graph",
+                        "/v1/default/banks/{bankId}/graph",
                         "/v1/default/banks/{bankId}/entities/{entityId}",
                         "/v1/default/banks/{bankId}/memories/recall",
                         true,
@@ -94,7 +97,7 @@ class MemoryFactGraphServiceTests {
                 wikiSpaceService,
                 assembler
         );
-        when(projectRepository.findById(12L)).thenReturn(Optional.of(project(12L)));
+        lenient().when(projectRepository.findById(12L)).thenReturn(Optional.of(project(12L)));
     }
 
     @Test
@@ -204,6 +207,66 @@ class MemoryFactGraphServiceTests {
     }
 
     @Test
+    void shouldReadWikiSpaceGraphFromItsOwnBank() {
+        when(wikiSpaceService.getSpaceDetail(9L)).thenReturn(spaceDetail(9L));
+        when(hindsightClientService.fetchEntityGraph("git-ai-club:wiki:space:9", 200)).thenReturn(new HindsightClientService.MemoryEntityGraph(
+                List.of(new HindsightClientService.MemoryEntityNode("SpacePage", "空间页面", 3, "orange", Map.of("type", "DOCUMENT"))),
+                List.of()
+        ));
+
+        MemoryFactGraphSummary summary = serviceWithoutSharedBank.getWikiSpaceGraph(9L);
+
+        assertThat(summary.projectId()).isNull();
+        assertThat(summary.bankId()).isEqualTo("git-ai-club:wiki:space:9");
+        assertThat(summary.nodeCount()).isEqualTo(1);
+        assertThat(summary.nodes()).extracting(item -> item.id()).containsExactly("git-ai-club:wiki:space:9::SpacePage");
+        assertThat(summary.warnings()).isEmpty();
+    }
+
+    @Test
+    void shouldRecallWikiSpaceFactsWithSpaceTag() {
+        when(wikiSpaceService.getSpaceDetail(9L)).thenReturn(spaceDetail(9L));
+        when(hindsightClientService.fetchEntityGraph("git-ai-club:wiki:space:9", 200)).thenReturn(new HindsightClientService.MemoryEntityGraph(
+                List.of(new HindsightClientService.MemoryEntityNode("SpacePage", "空间页面", 3, "orange", Map.of("type", "DOCUMENT"))),
+                List.of()
+        ));
+        when(hindsightClientService.recallWorldFacts(eq("git-ai-club:wiki:space:9"), eq("空间页面"), eq(List.of("space:9")), anyInt()))
+                .thenReturn(List.of(new HindsightClientService.MemoryWorldFact(
+                        "fact-space-1", "world", "空间页面", "mentions", "空间事实", "空间级事实", 0.9d, "HINDSIGHT_RECALL",
+                        "2026-04-24T09:00:00Z", List.of("space:9"), Map.of()
+                )));
+
+        MemoryFactFactsResponse facts = serviceWithSharedBank.getWikiSpaceFacts(9L, "git-ai-club:wiki:space:9::SpacePage", null, null, 10);
+
+        assertThat(facts.projectId()).isNull();
+        assertThat(facts.factCount()).isEqualTo(1);
+        assertThat(facts.facts()).extracting(item -> item.id()).containsExactly("fact-space-1");
+        assertThat(facts.warnings()).noneMatch(item -> item.contains("共享 bank 当前仅参与事实召回"));
+        verify(hindsightClientService).recallWorldFacts("git-ai-club:wiki:space:9", "空间页面", List.of("space:9"), 10);
+    }
+
+    @Test
+    void shouldNotFetchEntityDetailForFactGraphNode() {
+        when(wikiSpaceService.getSpaceDetail(9L)).thenReturn(spaceDetail(9L));
+        when(hindsightClientService.fetchEntityGraph("git-ai-club:wiki:space:9", 200)).thenReturn(new HindsightClientService.MemoryEntityGraph(
+                List.of(new HindsightClientService.MemoryEntityNode("fact-1", "空间事实", 1, "#42a5f5", Map.of(
+                        "type", "FACT",
+                        "text", "空间事实来自 Hindsight 图节点"
+                ))),
+                List.of()
+        ));
+        when(hindsightClientService.recallWorldFacts(eq("git-ai-club:wiki:space:9"), eq("空间事实"), eq(List.of("space:9")), anyInt()))
+                .thenReturn(List.of());
+
+        MemoryFactEntityDetail detail = serviceWithoutSharedBank.getWikiSpaceEntityDetail(9L, "git-ai-club:wiki:space:9::fact-1");
+
+        assertThat(detail.entityType()).isEqualTo("FACT");
+        assertThat(detail.observations()).containsExactly("空间事实来自 Hindsight 图节点");
+        assertThat(detail.warnings()).noneMatch(item -> item.contains("实体详情"));
+        verify(hindsightClientService, never()).getEntityDetail("git-ai-club:wiki:space:9", "fact-1");
+    }
+
+    @Test
     void shouldLoadEntityDetailFromScopedEntityId() {
         when(wikiSpaceService.buildProjectGraphProjection(12L)).thenReturn(new WikiSpaceService.WikiProjectGraphProjection(
                 List.of(),
@@ -276,5 +339,25 @@ class MemoryFactGraphServiceTests {
         entity.setId(id);
         entity.setName("空间-" + id);
         return entity;
+    }
+
+    private WikiSpaceDetail spaceDetail(Long id) {
+        return new WikiSpaceDetail(
+                id,
+                "空间-" + id,
+                "",
+                WikiSpaceService.READ_SCOPE_ALL_LOGGED_IN,
+                null,
+                null,
+                WikiSpaceService.MEMBER_SOURCE_MANUAL,
+                WikiSpaceService.ROLE_VIEWER,
+                "测试用户",
+                0,
+                0,
+                0,
+                false,
+                "",
+                ""
+        );
     }
 }

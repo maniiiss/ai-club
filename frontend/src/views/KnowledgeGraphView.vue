@@ -4,7 +4,7 @@
       <div class="page-header">
         <div>
           <el-button text @click="goBack">返回项目</el-button>
-          <div class="page-title">{{ projectName || '知识图谱' }}</div>
+          <div class="page-title">{{ projectName || '逻辑图谱' }}</div>
           <div class="page-subtitle">图谱页已经拆分成独立组件，G6 画布会按需动态加载。</div>
         </div>
         <el-space wrap>
@@ -346,7 +346,7 @@ const handleRebuild = async () => {
   rebuilding.value = true
   try {
     graph.value = await rebuildProjectKnowledgeGraph(projectId)
-    ElMessage.success('知识图谱已重建')
+    ElMessage.success('逻辑图谱已重建')
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '重建失败')
   } finally {
@@ -415,7 +415,7 @@ onMounted(async () => {
   try {
     await Promise.all([loadProject(), loadGraph()])
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '加载知识图谱失败')
+    ElMessage.error(error?.response?.data?.message || '加载逻辑图谱失败')
   }
 })
 </script>

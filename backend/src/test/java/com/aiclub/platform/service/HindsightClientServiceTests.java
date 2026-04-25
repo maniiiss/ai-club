@@ -146,7 +146,7 @@ class HindsightClientServiceTests {
                       ]
                     }
                     """;
-        } else if (path.endsWith("/entities/graph")) {
+        } else if (path.endsWith("/graph")) {
             body = """
                     {
                       "nodes": [

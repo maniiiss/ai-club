@@ -136,7 +136,7 @@ export interface MemoryFactEdgeItem {
 }
 
 export interface MemoryFactGraphItem {
-  projectId: number
+  projectId: number | null
   bankId: string
   generatedAt: string
   nodeCount: number
@@ -162,7 +162,7 @@ export interface MemoryFactItem {
 }
 
 export interface MemoryFactFactsResponseItem {
-  projectId: number
+  projectId: number | null
   scopeType: string
   scopeId: string
   query: string
@@ -172,7 +172,7 @@ export interface MemoryFactFactsResponseItem {
 }
 
 export interface MemoryFactEntityDetailItem {
-  projectId: number
+  projectId: number | null
   entityId: string
   label: string
   entityType: string

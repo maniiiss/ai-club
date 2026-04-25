@@ -3,9 +3,9 @@
     <el-card class="page-card" shadow="never">
       <div class="page-header">
         <div>
-          <el-button text @click="goBack">返回项目</el-button>
-          <div class="page-title">{{ projectName || '记忆事实图' }}</div>
-          <div class="page-subtitle">图结构来自 Hindsight 实体关系，右侧面板展示实体观察与事实证据。</div>
+          <el-button text @click="goBack">{{ backLabel }}</el-button>
+          <div class="page-title">{{ scopeName || '记忆事实图' }}</div>
+          <div class="page-subtitle">{{ pageSubtitle }}</div>
         </div>
         <el-space wrap>
           <el-select v-model="layoutMode" style="width: 160px">
@@ -47,8 +47,8 @@
 
       <div class="stats-grid">
         <div class="stat-card">
-          <span class="stat-label">项目</span>
-          <strong>{{ graph?.projectId ?? projectId }}</strong>
+          <span class="stat-label">{{ scopeStatLabel }}</span>
+          <strong>{{ scopeStatValue }}</strong>
         </div>
         <div class="stat-card">
           <span class="stat-label">节点数</span>
@@ -123,7 +123,11 @@ import {
   getProjectDetail,
   getProjectMemoryFactGraph,
   getProjectMemoryFactGraphEntityDetail,
-  getProjectMemoryFactGraphFacts
+  getProjectMemoryFactGraphFacts,
+  getWikiSpaceDetail,
+  getWikiSpaceMemoryFactGraph,
+  getWikiSpaceMemoryFactGraphEntityDetail,
+  getWikiSpaceMemoryFactGraphFacts
 } from '@/api/platform'
 import type {
   MemoryFactEdgeItem,
@@ -146,7 +150,9 @@ const MemoryFactPanel = defineAsyncComponent(() => import('@/components/MemoryFa
 const route = useRoute()
 const router = useRouter()
 const projectId = Number(route.params.projectId)
-const projectName = ref('')
+const spaceId = Number(route.params.spaceId)
+const isWikiSpaceMode = computed(() => route.name === 'wiki-space-memory-fact-graph')
+const scopeName = ref('')
 const graph = ref<MemoryFactGraphItem | null>(null)
 const entityDetail = ref<MemoryFactEntityDetailItem | null>(null)
 const factsResponse = ref<MemoryFactFactsResponseItem | null>(null)
@@ -159,6 +165,15 @@ const entityTypeFilter = ref('')
 const relationTypeFilter = ref('')
 const sourceTypeFilter = ref('')
 const searchKeyword = ref('')
+
+const backLabel = computed(() => isWikiSpaceMode.value ? '返回 Wiki 空间' : '返回 Wiki 中心')
+const pageSubtitle = computed(() =>
+  isWikiSpaceMode.value
+    ? '图结构来自当前 Wiki 空间的 Hindsight 实体关系，右侧面板展示实体观察与事实证据。'
+    : '图结构来自 Hindsight 实体关系，右侧面板展示实体观察与事实证据。'
+)
+const scopeStatLabel = computed(() => isWikiSpaceMode.value ? 'Wiki 空间' : '项目')
+const scopeStatValue = computed(() => isWikiSpaceMode.value ? spaceId : graph.value?.projectId ?? projectId)
 
 const parseMetadata = (value?: string) => {
   if (!value) return {}
@@ -272,13 +287,20 @@ const sourceTypeLabel = (sourceType: string) => {
 
 const loadProject = async () => {
   const project = await getProjectDetail(projectId)
-  projectName.value = project.name
+  scopeName.value = project.name
+}
+
+const loadWikiSpace = async () => {
+  const space = await getWikiSpaceDetail(spaceId)
+  scopeName.value = space.name
 }
 
 const loadGraph = async () => {
   loading.value = true
   try {
-    graph.value = await getProjectMemoryFactGraph(projectId)
+    graph.value = isWikiSpaceMode.value
+      ? await getWikiSpaceMemoryFactGraph(spaceId)
+      : await getProjectMemoryFactGraph(projectId)
   } finally {
     loading.value = false
   }
@@ -287,7 +309,9 @@ const loadGraph = async () => {
 const loadEntityDetail = async (entityId: string) => {
   factsLoading.value = true
   try {
-    entityDetail.value = await getProjectMemoryFactGraphEntityDetail(projectId, entityId)
+    entityDetail.value = isWikiSpaceMode.value
+      ? await getWikiSpaceMemoryFactGraphEntityDetail(spaceId, entityId)
+      : await getProjectMemoryFactGraphEntityDetail(projectId, entityId)
     factsResponse.value = null
   } finally {
     factsLoading.value = false
@@ -297,7 +321,9 @@ const loadEntityDetail = async (entityId: string) => {
 const loadEdgeFacts = async (edgeId: string) => {
   factsLoading.value = true
   try {
-    factsResponse.value = await getProjectMemoryFactGraphFacts(projectId, { edgeId, limit: 12 })
+    factsResponse.value = isWikiSpaceMode.value
+      ? await getWikiSpaceMemoryFactGraphFacts(spaceId, { edgeId, limit: 12 })
+      : await getProjectMemoryFactGraphFacts(projectId, { edgeId, limit: 12 })
     entityDetail.value = null
   } finally {
     factsLoading.value = false
@@ -335,7 +361,9 @@ const handleSearch = async () => {
   }
   factsLoading.value = true
   try {
-    factsResponse.value = await getProjectMemoryFactGraphFacts(projectId, { query: keyword, limit: 12 })
+    factsResponse.value = isWikiSpaceMode.value
+      ? await getWikiSpaceMemoryFactGraphFacts(spaceId, { query: keyword, limit: 12 })
+      : await getProjectMemoryFactGraphFacts(projectId, { query: keyword, limit: 12 })
     entityDetail.value = null
     selectedNodeId.value = null
     selectedEdgeId.value = null
@@ -345,7 +373,12 @@ const handleSearch = async () => {
 }
 
 const goBack = () => {
-  router.push({ name: 'projects' })
+  if (isWikiSpaceMode.value) {
+    router.push({ name: 'wiki-space', params: { spaceId } })
+    return
+  }
+  const query = Number.isNaN(projectId) || projectId <= 0 ? undefined : { projectId }
+  router.push({ name: 'wiki-home', query })
 }
 
 watch(
@@ -376,13 +409,16 @@ watch([entityTypeFilter, relationTypeFilter, sourceTypeFilter], () => {
 })
 
 onMounted(async () => {
-  if (Number.isNaN(projectId) || projectId <= 0) {
-    ElMessage.error('项目参数不正确')
+  const invalidScope = isWikiSpaceMode.value
+    ? Number.isNaN(spaceId) || spaceId <= 0
+    : Number.isNaN(projectId) || projectId <= 0
+  if (invalidScope) {
+    ElMessage.error(isWikiSpaceMode.value ? 'Wiki 空间参数不正确' : '项目参数不正确')
     goBack()
     return
   }
   try {
-    await Promise.all([loadProject(), loadGraph()])
+    await Promise.all([isWikiSpaceMode.value ? loadWikiSpace() : loadProject(), loadGraph()])
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '加载记忆事实图失败')
   }

@@ -8,15 +8,13 @@ import com.aiclub.platform.dto.MemoryFactGraphSummary;
 import com.aiclub.platform.service.MemoryFactGraphService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 项目级记忆事实图控制器。
+ * 记忆事实图控制器，支持项目聚合图与 Wiki 空间独立图。
  */
 @RestController
-@RequestMapping("/api/projects/{projectId}/memory-fact-graph")
 public class MemoryFactGraphController {
 
     private final MemoryFactGraphService memoryFactGraphService;
@@ -25,13 +23,13 @@ public class MemoryFactGraphController {
         this.memoryFactGraphService = memoryFactGraphService;
     }
 
-    @GetMapping
+    @GetMapping("/api/projects/{projectId}/memory-fact-graph")
     @RequirePermission("project:view")
     public ApiResponse<MemoryFactGraphSummary> getProjectGraph(@PathVariable Long projectId) {
         return ApiResponse.success(memoryFactGraphService.getProjectGraph(projectId));
     }
 
-    @GetMapping("/facts")
+    @GetMapping("/api/projects/{projectId}/memory-fact-graph/facts")
     @RequirePermission("project:view")
     public ApiResponse<MemoryFactFactsResponse> getFacts(@PathVariable Long projectId,
                                                          @RequestParam(required = false) String entityId,
@@ -41,10 +39,33 @@ public class MemoryFactGraphController {
         return ApiResponse.success(memoryFactGraphService.getFacts(projectId, entityId, edgeId, query, limit));
     }
 
-    @GetMapping("/entity/{entityId}")
+    @GetMapping("/api/projects/{projectId}/memory-fact-graph/entity/{entityId}")
     @RequirePermission("project:view")
     public ApiResponse<MemoryFactEntityDetail> getEntityDetail(@PathVariable Long projectId,
                                                                @PathVariable String entityId) {
         return ApiResponse.success(memoryFactGraphService.getEntityDetail(projectId, entityId));
+    }
+
+    @GetMapping("/api/wiki/spaces/{spaceId}/memory-fact-graph")
+    @RequirePermission("wiki:view")
+    public ApiResponse<MemoryFactGraphSummary> getWikiSpaceGraph(@PathVariable Long spaceId) {
+        return ApiResponse.success(memoryFactGraphService.getWikiSpaceGraph(spaceId));
+    }
+
+    @GetMapping("/api/wiki/spaces/{spaceId}/memory-fact-graph/facts")
+    @RequirePermission("wiki:view")
+    public ApiResponse<MemoryFactFactsResponse> getWikiSpaceFacts(@PathVariable Long spaceId,
+                                                                  @RequestParam(required = false) String entityId,
+                                                                  @RequestParam(required = false) String edgeId,
+                                                                  @RequestParam(required = false) String query,
+                                                                  @RequestParam(required = false) Integer limit) {
+        return ApiResponse.success(memoryFactGraphService.getWikiSpaceFacts(spaceId, entityId, edgeId, query, limit));
+    }
+
+    @GetMapping("/api/wiki/spaces/{spaceId}/memory-fact-graph/entity/{entityId}")
+    @RequirePermission("wiki:view")
+    public ApiResponse<MemoryFactEntityDetail> getWikiSpaceEntityDetail(@PathVariable Long spaceId,
+                                                                        @PathVariable String entityId) {
+        return ApiResponse.success(memoryFactGraphService.getWikiSpaceEntityDetail(spaceId, entityId));
     }
 }

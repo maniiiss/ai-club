@@ -664,7 +664,7 @@ public class WikiSpaceService {
     }
 
     /**
-     * 为知识图谱读取绑定到指定项目的目录和其子树页面。
+     * 为逻辑图谱读取绑定到指定项目的目录和其子树页面。
      */
     public WikiProjectGraphProjection buildProjectGraphProjection(Long projectId) {
         List<WikiDirectoryEntity> boundRoots = wikiDirectoryRepository.findAllByBoundProject_IdOrderBySortOrderAscIdAsc(projectId);
@@ -691,7 +691,7 @@ public class WikiSpaceService {
     }
 
     /**
-     * 统计页面版本数量，供知识图谱节点元数据使用。
+     * 统计页面版本数量，供逻辑图谱节点元数据使用。
      */
     public long countPageVersions(Long pageId) {
         return wikiPageVersionV2Repository.countByPage_Id(pageId);

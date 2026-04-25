@@ -89,7 +89,7 @@ platform:
     memory-fact:
       project-bank-template: ${PLATFORM_HINDSIGHT_MEMORY_FACT_PROJECT_BANK_TEMPLATE:}
       shared-bank-id: ${PLATFORM_HINDSIGHT_MEMORY_FACT_SHARED_BANK_ID:}
-      entity-graph-path-template: ${PLATFORM_HINDSIGHT_MEMORY_FACT_ENTITY_GRAPH_PATH_TEMPLATE:/v1/default/banks/{bankId}/entities/graph}
+      entity-graph-path-template: ${PLATFORM_HINDSIGHT_MEMORY_FACT_ENTITY_GRAPH_PATH_TEMPLATE:/v1/default/banks/{bankId}/graph}
       entity-detail-path-template: ${PLATFORM_HINDSIGHT_MEMORY_FACT_ENTITY_DETAIL_PATH_TEMPLATE:/v1/default/banks/{bankId}/entities/{entityId}}
       recall-path-template: ${PLATFORM_HINDSIGHT_MEMORY_FACT_RECALL_PATH_TEMPLATE:/v1/default/banks/{bankId}/memories/recall}
       database-fallback-enabled: ${PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_FALLBACK_ENABLED:true}

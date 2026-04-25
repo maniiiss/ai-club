@@ -60,7 +60,7 @@ public class HindsightProperties {
                                @Value("${platform.hindsight.timeout-seconds:30}") int timeoutSeconds,
                                @Value("${platform.hindsight.memory-fact.project-bank-template:}") String memoryFactProjectBankTemplate,
                                @Value("${platform.hindsight.memory-fact.shared-bank-id:}") String memoryFactSharedBankId,
-                               @Value("${platform.hindsight.memory-fact.entity-graph-path-template:/v1/default/banks/{bankId}/entities/graph}") String memoryFactEntityGraphPathTemplate,
+                               @Value("${platform.hindsight.memory-fact.entity-graph-path-template:/v1/default/banks/{bankId}/graph}") String memoryFactEntityGraphPathTemplate,
                                @Value("${platform.hindsight.memory-fact.entity-detail-path-template:/v1/default/banks/{bankId}/entities/{entityId}}") String memoryFactEntityDetailPathTemplate,
                                @Value("${platform.hindsight.memory-fact.recall-path-template:/v1/default/banks/{bankId}/memories/recall}") String memoryFactRecallPathTemplate,
                                @Value("${platform.hindsight.memory-fact.database-fallback-enabled:true}") boolean memoryFactDatabaseFallbackEnabled,
@@ -76,7 +76,7 @@ public class HindsightProperties {
         this.memoryFactSharedBankId = defaultString(memoryFactSharedBankId);
         this.memoryFactEntityGraphPathTemplate = hasText(memoryFactEntityGraphPathTemplate)
                 ? memoryFactEntityGraphPathTemplate.trim()
-                : "/v1/default/banks/{bankId}/entities/graph";
+                : "/v1/default/banks/{bankId}/graph";
         this.memoryFactEntityDetailPathTemplate = hasText(memoryFactEntityDetailPathTemplate)
                 ? memoryFactEntityDetailPathTemplate.trim()
                 : "/v1/default/banks/{bankId}/entities/{entityId}";
@@ -105,7 +105,7 @@ public class HindsightProperties {
                 timeoutSeconds,
                 "",
                 "",
-                "/v1/default/banks/{bankId}/entities/graph",
+                "/v1/default/banks/{bankId}/graph",
                 "/v1/default/banks/{bankId}/entities/{entityId}",
                 "/v1/default/banks/{bankId}/memories/recall",
                 true,

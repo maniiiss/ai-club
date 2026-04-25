@@ -233,15 +233,6 @@
               <el-icon><Edit /></el-icon>
               <span>编辑</span>
             </el-button>
-            <el-button
-              v-if="canManagePlans"
-              :type="plan.enabled ? 'warning' : 'success'"
-              plain
-              @click="handleTogglePlan(plan)"
-            >
-              <el-icon><SwitchButton /></el-icon>
-              <span>{{ plan.enabled ? '停用' : '启用' }}</span>
-            </el-button>
             <el-button v-if="canManagePlans" type="danger" plain @click="handleDeletePlan(plan)">
               <el-icon><Delete /></el-icon>
               <span>删除</span>
@@ -1054,7 +1045,6 @@ import {
   RefreshRight,
   Search,
   Setting,
-  SwitchButton,
   VideoPlay,
   View
 } from '@element-plus/icons-vue'
@@ -1068,8 +1058,6 @@ import {
   completeSelfUpgradeWorkItem,
   createSelfUpgradePatrolPlan,
   deleteSelfUpgradePatrolPlan,
-  disableSelfUpgradePatrolPlan,
-  enableSelfUpgradePatrolPlan,
   getSelfUpgradeConfig,
   getSelfUpgradePatrolPlan,
   getSelfUpgradePatrolRun,
@@ -1775,21 +1763,6 @@ async function handleSavePlan() {
   }
 }
 
-async function handleTogglePlan(plan: SelfUpgradePatrolPlan) {
-  try {
-    if (plan.enabled) {
-      await disableSelfUpgradePatrolPlan(plan.id)
-      ElMessage.success('计划已停用')
-    } else {
-      await enableSelfUpgradePatrolPlan(plan.id)
-      ElMessage.success('计划已启用')
-    }
-    await loadPlans()
-  } catch (error: any) {
-    ElMessage.error(resolveErrorMessage(error, '更新计划状态失败'))
-  }
-}
-
 async function handleDeletePlan(plan: SelfUpgradePatrolPlan) {
   try {
     await ElMessageBox.confirm(`确认删除巡检计划“${plan.name}”吗？删除后历史运行仍会保留。`, '删除计划', { type: 'warning' })
@@ -2300,13 +2273,19 @@ onMounted(async () => {
 }
 
 .self-upgrade-grid {
+  --self-upgrade-card-width: 360px;
+  --self-upgrade-card-height: 300px;
+
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--self-upgrade-card-width)), var(--self-upgrade-card-width)));
+  grid-auto-rows: var(--self-upgrade-card-height);
   gap: 14px;
+  align-items: stretch;
 }
 
 .self-upgrade-suggestion-grid {
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  --self-upgrade-card-width: 392px;
+  --self-upgrade-card-height: 352px;
 }
 
 .self-upgrade-grid-empty {
@@ -2319,8 +2298,12 @@ onMounted(async () => {
 .self-upgrade-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
+  min-width: 0;
+  height: 100%;
   padding: 18px;
+  overflow: hidden;
+  box-sizing: border-box;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(148, 163, 184, 0.18);
@@ -2336,14 +2319,33 @@ onMounted(async () => {
 }
 
 .self-upgrade-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  flex: 0 0 auto;
   align-items: flex-start;
   justify-content: space-between;
+}
+
+.self-upgrade-card-head > div:first-child {
+  display: contents;
+  min-width: 0;
 }
 
 .self-upgrade-card-head h2,
 .self-upgrade-editor-card-head h3 {
   margin: 0;
   color: #172033;
+}
+
+.self-upgrade-card-head h2 {
+  grid-column: 1;
+  grid-row: 1;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  -webkit-box-orient: vertical;
 }
 
 .self-upgrade-card-head p,
@@ -2354,6 +2356,16 @@ onMounted(async () => {
   line-height: 1.6;
 }
 
+.self-upgrade-card-head p {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 .self-upgrade-tag-group {
   display: flex;
   flex-wrap: wrap;
@@ -2361,10 +2373,29 @@ onMounted(async () => {
   align-items: center;
 }
 
+.self-upgrade-card > .self-upgrade-card-head .self-upgrade-tag-group {
+  grid-column: 2;
+  grid-row: 1;
+  flex: 0 0 auto;
+  max-width: 100%;
+  max-height: 62px;
+  overflow: hidden;
+}
+
 .self-upgrade-meta-line {
   color: #475569;
   font-size: 13px;
-  margin: 14px 0 18px;
+  line-height: 1.45;
+  max-height: 58px;
+  margin: 0;
+  overflow: hidden;
+}
+
+.self-upgrade-meta-line span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .self-upgrade-card-meta-grid {
@@ -2415,8 +2446,16 @@ onMounted(async () => {
   gap: 8px;
 }
 
+.self-upgrade-card > .self-upgrade-chip-list {
+  flex: 0 0 auto;
+  max-height: 66px;
+  overflow: hidden;
+}
+
 .self-upgrade-evidence-preview {
-  max-height: 160px;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 132px;
   overflow: hidden;
   padding: 14px 16px;
   border-radius: 8px;
@@ -2432,10 +2471,36 @@ onMounted(async () => {
 
 .self-upgrade-card-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
   gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 3px 0 8px;
+  overflow-x: auto;
+  overflow-y: visible;
   justify-content: flex-start;
-  margin-top: auto;
+  margin: 1px 0 -6px;
+  scrollbar-width: none;
+}
+
+.self-upgrade-card-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.self-upgrade-card-actions :deep(.el-button) {
+  flex: 0 0 auto;
+  margin-left: 0;
+  box-shadow: none;
+  transform: none;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+  white-space: nowrap;
+}
+
+.self-upgrade-card-actions :deep(.el-button:hover),
+.self-upgrade-card-actions :deep(.el-button:focus-visible) {
+  box-shadow: none;
+  transform: none;
 }
 
 .self-upgrade-pagination {
@@ -2672,6 +2737,21 @@ onMounted(async () => {
   .self-upgrade-inline-form-grid,
   .self-upgrade-card-meta-grid {
     grid-template-columns: 1fr;
+  }
+
+  .self-upgrade-card-head {
+    grid-template-columns: 1fr;
+  }
+
+  .self-upgrade-card-head h2,
+  .self-upgrade-card-head p,
+  .self-upgrade-card > .self-upgrade-card-head .self-upgrade-tag-group {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .self-upgrade-card > .self-upgrade-card-head .self-upgrade-tag-group {
+    justify-content: flex-start;
   }
 
   .self-upgrade-toolbar-main,

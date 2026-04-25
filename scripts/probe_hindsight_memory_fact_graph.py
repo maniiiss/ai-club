@@ -6,7 +6,7 @@
 
 用途：
 1. 快速确认 Hindsight 是否已启动；
-2. 检查实体图、实体详情、事实 recall 接口是否可用；
+2. 检查图骨架、实体详情、事实 recall 接口是否可用；
 3. 输出一份归一化样例，便于后端 DTO 与解析逻辑对照真实返回。
 
 示例：
@@ -136,7 +136,7 @@ def main() -> int:
 
     entity_graph_url = build_url(
         args.base_url,
-        f"/v1/default/banks/{urllib.parse.quote(args.bank_id, safe='')}/entities/graph",
+        f"/v1/default/banks/{urllib.parse.quote(args.bank_id, safe='')}/graph",
         {"limit": max(1, min(args.limit, 200))},
     )
     recall_url = build_url(

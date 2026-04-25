@@ -119,14 +119,9 @@
                       <el-icon><Tickets /></el-icon>
                     </button>
                   </el-tooltip>
-                  <el-tooltip content="知识图谱" placement="top">
-                    <button class="project-action-button graph" type="button" aria-label="打开知识图谱" @click="openKnowledgeGraph(row)">
+                  <el-tooltip content="逻辑图谱" placement="top">
+                    <button class="project-action-button graph" type="button" aria-label="打开逻辑图谱" @click="openKnowledgeGraph(row)">
                       <el-icon><Connection /></el-icon>
-                    </button>
-                  </el-tooltip>
-                  <el-tooltip content="记忆事实图" placement="top">
-                    <button class="project-action-button memory" type="button" aria-label="打开记忆事实图" @click="openMemoryFactGraph(row)">
-                      <el-icon><Lightning /></el-icon>
                     </button>
                   </el-tooltip>
                   <el-tooltip v-if="canManageProjects && row.canEdit" content="编辑" placement="top">
@@ -217,11 +212,7 @@
               </button>
               <button class="project-mobile-action-button graph" type="button" @click="openKnowledgeGraph(row)">
                 <el-icon><Connection /></el-icon>
-                <span>知识图谱</span>
-              </button>
-              <button class="project-mobile-action-button memory" type="button" @click="openMemoryFactGraph(row)">
-                <el-icon><Lightning /></el-icon>
-                <span>记忆事实图</span>
+                <span>逻辑图谱</span>
               </button>
               <button
                 v-if="canManageProjects && row.canEdit"
@@ -398,7 +389,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Connection, Delete, Document, EditPen, Filter, FolderOpened, Lightning, PieChart, Plus, RefreshRight, Search, Tickets, TrendCharts } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Connection, Delete, EditPen, Filter, FolderOpened, Lightning, PieChart, Plus, RefreshRight, Search, Tickets, TrendCharts } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { listUserOptions } from '@/api/access'
 import ListUserDisplay from '@/components/ListUserDisplay.vue'
@@ -622,10 +613,6 @@ const openIterationBoard = (row: ProjectItem) => {
 
 const openKnowledgeGraph = (row: ProjectItem) => {
   router.push({ name: 'project-knowledge-graph', params: { projectId: row.id } })
-}
-
-const openMemoryFactGraph = (row: ProjectItem) => {
-  router.push({ name: 'project-memory-fact-graph', params: { projectId: row.id } })
 }
 
 const openRepoDialog = async (row: ProjectItem) => {
@@ -1114,10 +1101,6 @@ onBeforeUnmount(() => {
   color: var(--app-tertiary);
 }
 
-.project-mobile-action-button.memory {
-  color: var(--app-primary);
-}
-
 .project-mobile-action-button.danger {
   color: var(--app-danger);
 }
@@ -1405,10 +1388,6 @@ onBeforeUnmount(() => {
 
 .project-action-button.graph:hover {
   color: #00658f;
-}
-
-.project-action-button.memory:hover {
-  color: var(--app-primary);
 }
 
 .project-action-button.danger:hover {

@@ -79,6 +79,10 @@
 
         <div class="wiki-space-actions">
           <el-button type="primary" @click="openSpace(space.id)">进入空间</el-button>
+          <el-button @click="openMemoryFactGraph(space.id)">
+            <el-icon><DataAnalysis /></el-icon>
+            记忆事实图
+          </el-button>
           <el-button v-if="space.canManage" @click="openEditSpaceDialog(space)">编辑空间</el-button>
           <el-button v-if="space.canManage" type="danger" plain @click="handleDeleteSpace(space)">删除</el-button>
         </div>
@@ -126,7 +130,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Filter, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
+import { DataAnalysis, Filter, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   createWikiSpace,
@@ -249,6 +253,10 @@ async function applyFilterMode(mode: 'all' | 'mine') {
 
 function openSpace(spaceId: number) {
   router.push({ name: 'wiki-space', params: { spaceId } })
+}
+
+function openMemoryFactGraph(spaceId: number) {
+  router.push({ name: 'wiki-space-memory-fact-graph', params: { spaceId } })
 }
 
 function openCreateSpaceDialog() {

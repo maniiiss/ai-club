@@ -152,6 +152,9 @@ public class MemoryFactGraphAssembler {
                 .map(HindsightClientService.MemoryObservation::text)
                 .filter(value -> value != null && !value.isBlank())
                 .toList();
+        if (observations.isEmpty()) {
+            observations = resolveNodeObservations(node);
+        }
         LinkedHashSet<String> aliases = new LinkedHashSet<>();
         if (node != null && node.aliases() != null) {
             aliases.addAll(node.aliases());
@@ -231,6 +234,23 @@ public class MemoryFactGraphAssembler {
         return metadata;
     }
 
+    /**
+     * Hindsight 图接口会返回事实节点，节点自身的 text 就是最有价值的观察记录。
+     */
+    private List<String> resolveNodeObservations(MemoryFactNodeSummary node) {
+        if (node == null) {
+            return List.of();
+        }
+        Map<String, Object> metadata = parseMetadata(node.metadataJson());
+        Object raw = metadata.get("raw");
+        if (!(raw instanceof Map<?, ?> rawMap)) {
+            return List.of();
+        }
+        Object text = rawMap.get("text");
+        String value = text == null ? "" : String.valueOf(text).trim();
+        return value.isBlank() ? List.of() : List.of(value);
+    }
+
     private List<String> resolveAliases(Map<String, Object> metadata) {
         if (metadata == null || metadata.isEmpty()) {
             return List.of();
@@ -268,11 +288,11 @@ public class MemoryFactGraphAssembler {
 
     private String resolveSourceType(String bankId) {
         String normalized = defaultString(bankId);
-        if (normalized.contains(":wiki:")) {
-            return "WIKI";
-        }
         if (normalized.contains(":space:")) {
             return "WIKI_SPACE";
+        }
+        if (normalized.contains(":wiki:")) {
+            return "WIKI";
         }
         return "MEMORY";
     }

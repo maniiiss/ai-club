@@ -702,6 +702,28 @@ export const getProjectMemoryFactGraphEntityDetail = async (projectId: number, e
   return data.data
 }
 
+export const getWikiSpaceMemoryFactGraph = async (spaceId: number) => {
+  const { data } = await http.get<ApiResponse<MemoryFactGraphItem>>(`/api/wiki/spaces/${spaceId}/memory-fact-graph`)
+  return data.data
+}
+
+export const getWikiSpaceMemoryFactGraphFacts = async (
+  spaceId: number,
+  params: { entityId?: string; edgeId?: string; query?: string; limit?: number }
+) => {
+  const { data } = await http.get<ApiResponse<MemoryFactFactsResponseItem>>(`/api/wiki/spaces/${spaceId}/memory-fact-graph/facts`, {
+    params: cleanParams(params)
+  })
+  return data.data
+}
+
+export const getWikiSpaceMemoryFactGraphEntityDetail = async (spaceId: number, entityId: string) => {
+  const { data } = await http.get<ApiResponse<MemoryFactEntityDetailItem>>(
+    `/api/wiki/spaces/${spaceId}/memory-fact-graph/entity/${encodeURIComponent(entityId)}`
+  )
+  return data.data
+}
+
 export const listWikiSpaces = async (query?: { keyword?: string; mineOnly?: boolean; publicOnly?: boolean; projectId?: number | null }) => {
   const { data } = await http.get<ApiResponse<WikiSpaceItem[]>>('/api/wiki/spaces', {
     params: cleanParams(query || {})

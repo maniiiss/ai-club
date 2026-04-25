@@ -350,12 +350,16 @@ public class HindsightClientService {
                 String label = firstText(data, "label", "name", "canonicalName", "canonical_name", "id");
                 Integer mentionCount = firstInt(data, "mentionCount", "mention_count", "frequency", "count");
                 String color = firstText(data, "color", "type");
+                Map<String, Object> metadata = objectMap(data);
+                if (!metadata.containsKey("type") && hasText(firstText(data, "text", "fact_type", "context"))) {
+                    metadata.put("type", "FACT");
+                }
                 nodes.add(new MemoryEntityNode(
                         entityId,
                         hasText(label) ? label : entityId,
                         mentionCount == null ? 0 : mentionCount,
                         color,
-                        objectMap(data)
+                        metadata
                 ));
             }
         }

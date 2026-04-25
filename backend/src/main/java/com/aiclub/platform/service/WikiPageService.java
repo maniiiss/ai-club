@@ -374,14 +374,14 @@ public class WikiPageService {
     }
 
     /**
-     * 供知识图谱服务读取项目内 Wiki 页面。
+     * 供逻辑图谱服务读取项目内 Wiki 页面。
      */
     public List<WikiPageEntity> listProjectPagesForGraph(Long projectId) {
         return wikiPageRepository.findAllByProject_IdOrderBySortOrderAscIdAsc(projectId);
     }
 
     /**
-     * 供知识图谱服务读取页面版本数量。
+     * 供逻辑图谱服务读取页面版本数量。
      */
     public long countPageVersions(Long pageId) {
         return wikiPageVersionRepository.countByPage_Id(pageId);
