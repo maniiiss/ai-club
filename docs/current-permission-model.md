@@ -1,6 +1,6 @@
 # 当前权限模型与权限码说明
 
-> 更新时间：2026-04-24
+> 更新时间：2026-04-25
 
 ## 1. 文档目标
 
@@ -98,6 +98,8 @@
 - 迭代
 - 工作项
 - 项目逻辑图谱
+- 项目记忆事实图
+- 测试计划、测试用例与测试管理入口
 
 ### 项目绑定的智能体与执行
 
@@ -119,6 +121,12 @@
 - 流水线构建列表
 - 构建日志
 - 手动触发流水线
+
+其中当前已明确拆分为两层功能权限：
+
+- `cicd:view`：查看 Jenkins 服务、项目流水线、构建历史与构建日志
+- `cicd:build`：触发 Jenkins Job 或项目流水线构建
+- `cicd:manage`：维护 Jenkins 服务与项目流水线配置
 
 ## 4.2 独立域资源
 
@@ -189,9 +197,9 @@
 | Wiki | `wiki:view` | 查看 Wiki 空间与页面 |
 | 智能体 | `agent:view` | 查看智能体 |
 | 工作项 / 执行中心 | `task:view` | 查看工作项、执行任务、执行运行、执行产物 |
-| 测试管理 | `test:view` | 查看测试计划与测试详情 |
+| 测试管理 | `test:view` | 查看测试计划、测试详情与项目关联迭代选项 |
 | GitLab | `gitlab:view` | 查看 GitLab 绑定、自动合并配置、相关列表 |
-| CI/CD | `cicd:view` | 查看 Jenkins 服务与项目流水线 |
+| CI/CD | `cicd:view` | 查看 Jenkins 服务、项目流水线与构建信息 |
 | 模型管理 | `model:view` | 查看模型配置 |
 | 自升级中心 | `self-upgrade:view` | 查看自升级中心 |
 | 用户管理 | `system:user:view` | 查看用户 |
@@ -214,6 +222,7 @@
 | 执行中心 | `task:execution:cancel` | 取消执行任务 |
 | 执行中心 | `task:execution:retry` | 重试执行任务 |
 | GitLab | `gitlab:manage` | 管理 GitLab 绑定、自动合并、分支 / Tag / MR 等动作 |
+| CI/CD | `cicd:build` | 触发 Jenkins Job 与项目流水线构建 |
 | CI/CD | `cicd:manage` | 管理 Jenkins 服务与项目流水线 |
 | 测试管理 | `test:manage` | 管理测试计划与测试数据 |
 | 模型管理 | `model:manage` | 管理模型配置 |

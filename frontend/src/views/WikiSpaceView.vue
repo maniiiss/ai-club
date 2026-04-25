@@ -18,6 +18,14 @@
             <span>绑定项目：{{ spaceDetail?.boundProjectName || '未绑定' }}</span>
             <span>成员默认：{{ memberDefaultSourceLabel(spaceDetail?.memberDefaultSource) }}</span>
           </div>
+          <div class="wiki-space-card-actions-shell">
+            <div class="wiki-space-card-actions">
+              <el-button type="primary" @click="openMemoryFactGraph">
+                <el-icon><DataAnalysis /></el-icon>
+                <span>记忆事实图</span>
+              </el-button>
+            </div>
+          </div>
         </div>
 
         <div class="wiki-search-shell">
@@ -345,7 +353,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowDown, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, ArrowRight, DataAnalysis } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MdPreview } from 'md-editor-v3'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
@@ -1243,6 +1251,10 @@ function goBack() {
   router.push({ name: 'wiki-home' })
 }
 
+function openMemoryFactGraph() {
+  router.push({ name: 'wiki-space-memory-fact-graph', params: { spaceId: spaceId.value } })
+}
+
 function roleLabel(role?: string | null) {
   if (role === 'ADMIN') return '管理员'
   if (role === 'EDITOR') return '编辑者'
@@ -1609,6 +1621,44 @@ function collectPageRowKeys(pages: WikiSpacePageSummaryItem[]): string[] {
   margin-top: 10px;
   color: #475569;
   font-size: 12px;
+}
+
+.wiki-space-card-actions-shell {
+  margin-top: 12px;
+}
+
+.wiki-space-card-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 3px 0 8px;
+  overflow-x: auto;
+  overflow-y: visible;
+  justify-content: flex-start;
+  margin: 1px 0 -6px;
+  scrollbar-width: none;
+}
+
+.wiki-space-card-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.wiki-space-card-actions :deep(.el-button) {
+  flex: 0 0 auto;
+  margin-left: 0;
+  box-shadow: none;
+  transform: none;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+  white-space: nowrap;
+}
+
+.wiki-space-card-actions :deep(.el-button:hover),
+.wiki-space-card-actions :deep(.el-button:focus-visible) {
+  box-shadow: none;
+  transform: none;
 }
 
 .wiki-space-form-hint {

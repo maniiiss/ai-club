@@ -14,6 +14,7 @@ from app.models import (
     PatrolTarget,
 )
 from app.services.codex_execution_service import DevelopmentExecutionWorkspace
+from app.services.execution_streaming_support import upload_log_artifacts
 from app.services.self_upgrade_patrol_service import (
     _normalize_patrol_result,
     _upload_patrol_artifacts,
@@ -249,12 +250,14 @@ class SelfUpgradePatrolServiceTests(unittest.TestCase):
             }
 
             def upload_side_effect(*, files, **kwargs):
-                artifact_type, title, file_path = files[0]
+                file_entry = files[0]
+                artifact_type, title, file_path = file_entry[:3]
+                object_name = file_entry[3] if len(file_entry) > 3 else Path(file_path).name
                 return [
                     {
                         "artifactType": artifact_type,
                         "title": title,
-                        "contentRef": f"minio/{Path(file_path).name}",
+                        "contentRef": f"minio/{object_name}",
                         "contentText": f"preview-{Path(file_path).name}",
                     }
                 ]
@@ -263,10 +266,59 @@ class SelfUpgradePatrolServiceTests(unittest.TestCase):
                 artifacts = _upload_patrol_artifacts("session-1", request, workspace, payload)
 
         self.assertGreaterEqual(len(artifacts), 2)
-        self.assertEqual("minio/dashboard.png", payload["targetResults"][0]["artifacts"][0]["contentRef"])
+        self.assertEqual("minio/1/dashboard.png", payload["targetResults"][0]["artifacts"][0]["contentRef"])
         self.assertEqual(
-            "minio/dashboard.png",
+            "minio/1/dashboard.png",
             payload["targetResults"][0]["findings"][0]["executionArtifactRefs"][0]["contentRef"],
+        )
+
+    def test_should_keep_same_named_patrol_artifacts_distinct_between_targets(self):
+        class FakeMinioClient:
+            def __init__(self):
+                self.uploads: list[tuple[str, str, str, str | None]] = []
+
+            def fput_object(self, bucket_name, object_key, file_path, content_type=None):
+                self.uploads.append((bucket_name, object_key, file_path, content_type))
+
+        fake_client = FakeMinioClient()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            first_file = temp_path / "1" / "failed.png"
+            second_file = temp_path / "2" / "failed.png"
+            first_file.parent.mkdir(parents=True, exist_ok=True)
+            second_file.parent.mkdir(parents=True, exist_ok=True)
+            first_file.write_text("first", encoding="utf-8")
+            second_file.write_text("second", encoding="utf-8")
+
+            with patch("app.services.execution_streaming_support._build_minio_client", return_value=fake_client), \
+                    patch("app.services.execution_streaming_support._ensure_bucket"), \
+                    patch("app.services.execution_streaming_support._read_artifact_preview", return_value="binary-preview"):
+                artifacts = upload_log_artifacts(
+                    session_id="session-1",
+                    task_id="22",
+                    run_id="60",
+                    step_id="254",
+                    files=[
+                        ("PLAYWRIGHT_SCREENSHOT", "巡检截图 · 首页核心路径巡检-failed", first_file, "1/failed.png"),
+                        ("PLAYWRIGHT_SCREENSHOT", "巡检截图 · 设置页表单体验巡检-failed", second_file, "2/failed.png"),
+                    ],
+                )
+
+        self.assertEqual(2, len(fake_client.uploads))
+        self.assertEqual(
+            [
+                "execution-sessions/task-22/run-60/step-254/session-1/1/failed.png",
+                "execution-sessions/task-22/run-60/step-254/session-1/2/failed.png",
+            ],
+            [item[1] for item in fake_client.uploads],
+        )
+        self.assertEqual(
+            [
+                "execution-sessions/task-22/run-60/step-254/session-1/1/failed.png",
+                "execution-sessions/task-22/run-60/step-254/session-1/2/failed.png",
+            ],
+            [item["contentRef"] for item in artifacts],
         )
 
 

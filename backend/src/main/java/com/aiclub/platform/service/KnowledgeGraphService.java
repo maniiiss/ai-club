@@ -67,6 +67,7 @@ public class KnowledgeGraphService {
     private final KnowledgeGraphEdgeRepository knowledgeGraphEdgeRepository;
     private final WikiSpaceService wikiSpaceService;
     private final ObjectMapper objectMapper;
+    private final ProjectDataPermissionService projectDataPermissionService;
 
     public KnowledgeGraphService(ProjectRepository projectRepository,
                                  IterationRepository iterationRepository,
@@ -76,7 +77,8 @@ public class KnowledgeGraphService {
                                  KnowledgeGraphNodeRepository knowledgeGraphNodeRepository,
                                  KnowledgeGraphEdgeRepository knowledgeGraphEdgeRepository,
                                  WikiSpaceService wikiSpaceService,
-                                 ObjectMapper objectMapper) {
+                                 ObjectMapper objectMapper,
+                                 ProjectDataPermissionService projectDataPermissionService) {
         this.projectRepository = projectRepository;
         this.iterationRepository = iterationRepository;
         this.taskRepository = taskRepository;
@@ -86,6 +88,7 @@ public class KnowledgeGraphService {
         this.knowledgeGraphEdgeRepository = knowledgeGraphEdgeRepository;
         this.wikiSpaceService = wikiSpaceService;
         this.objectMapper = objectMapper;
+        this.projectDataPermissionService = projectDataPermissionService;
     }
 
     @Transactional
@@ -443,8 +446,15 @@ public class KnowledgeGraphService {
     }
 
     private ProjectEntity requireProject(Long projectId) {
-        return projectRepository.findById(projectId)
+        ProjectEntity project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new NoSuchElementException("项目不存在: " + projectId));
+        ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.currentScopeOrNull();
+        if (scope != null) {
+            // 逻辑图谱属于项目绑定视图，前台读取或手动重建时必须复用项目数据权限；
+            // 但测试计划保存后的无登录态重建链路仍允许继续执行，所以这里按“有登录态才校验”处理。
+            projectDataPermissionService.requireProjectVisible(project, scope);
+        }
+        return project;
     }
 
     private KnowledgeGraphNodeEntity userNode(Map<String, KnowledgeGraphNodeEntity> nodeMap,

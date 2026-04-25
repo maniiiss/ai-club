@@ -1,5 +1,6 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.common.DataPermissionScopeType;
 import com.aiclub.platform.domain.model.IterationEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.TestCaseEntity;
@@ -17,6 +18,8 @@ import com.aiclub.platform.repository.IterationRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.aiclub.platform.repository.TestCaseRepository;
 import com.aiclub.platform.repository.TestPlanRepository;
+import jakarta.persistence.criteria.From;
+import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -43,17 +46,20 @@ public class TestManagementService {
     private final ProjectRepository projectRepository;
     private final IterationRepository iterationRepository;
     private final KnowledgeGraphService knowledgeGraphService;
+    private final ProjectDataPermissionService projectDataPermissionService;
 
     public TestManagementService(TestPlanRepository testPlanRepository,
                                  TestCaseRepository testCaseRepository,
                                  ProjectRepository projectRepository,
                                  IterationRepository iterationRepository,
-                                 KnowledgeGraphService knowledgeGraphService) {
+                                 KnowledgeGraphService knowledgeGraphService,
+                                 ProjectDataPermissionService projectDataPermissionService) {
         this.testPlanRepository = testPlanRepository;
         this.testCaseRepository = testCaseRepository;
         this.projectRepository = projectRepository;
         this.iterationRepository = iterationRepository;
         this.knowledgeGraphService = knowledgeGraphService;
+        this.projectDataPermissionService = projectDataPermissionService;
     }
 
     public PageResponse<TestPlanSummary> pageTestPlans(int page,
@@ -62,8 +68,12 @@ public class TestManagementService {
                                                        Long projectId,
                                                        Long iterationId,
                                                        String status) {
+        ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.requireCurrentScope();
+        if (projectId != null) {
+            requireProject(projectId, scope);
+        }
         Pageable pageable = buildPageable(page, size, Sort.by(Sort.Direction.DESC, "updatedAt", "id"));
-        Page<TestPlanSummary> pageData = testPlanRepository.findAll(testPlanSpecification(keyword, projectId, iterationId, status), pageable)
+        Page<TestPlanSummary> pageData = testPlanRepository.findAll(testPlanSpecification(keyword, projectId, iterationId, status, scope), pageable)
                 .map(entity -> toTestPlanSummary(entity, false));
         return PageResponse.from(pageData);
     }
@@ -227,9 +237,11 @@ public class TestManagementService {
     private Specification<TestPlanEntity> testPlanSpecification(String keyword,
                                                                 Long projectId,
                                                                 Long iterationId,
-                                                                String status) {
+                                                                String status,
+                                                                ProjectDataPermissionService.ProjectDataScope scope) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
+            appendProjectVisibilityPredicate(predicates, root.join("project", JoinType.INNER), query, cb, scope);
             if (hasText(keyword)) {
                 String pattern = "%" + keyword.trim().toLowerCase() + "%";
                 predicates.add(cb.or(
@@ -257,13 +269,31 @@ public class TestManagementService {
     }
 
     private TestPlanEntity requireTestPlan(Long id) {
-        return testPlanRepository.findById(id)
+        TestPlanEntity testPlan = testPlanRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("测试计划不存在: " + id));
+        ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.currentScopeOrNull();
+        if (scope != null) {
+            projectDataPermissionService.requireProjectVisible(testPlan.getProject(), scope);
+        }
+        return testPlan;
     }
 
     private ProjectEntity requireProject(Long id) {
-        return projectRepository.findById(id)
+        return requireProject(id, projectDataPermissionService.currentScopeOrNull());
+    }
+
+    /**
+     * 测试管理属于项目绑定资源：
+     * 页面级功能权限仍由 `test:view` / `test:manage` 控制，
+     * 但真正能看到或维护哪些测试计划，要继续复用项目数据权限。
+     */
+    private ProjectEntity requireProject(Long id, ProjectDataPermissionService.ProjectDataScope scope) {
+        ProjectEntity project = projectRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("项目不存在: " + id));
+        if (scope != null) {
+            projectDataPermissionService.requireProjectVisible(project, scope);
+        }
+        return project;
     }
 
     private IterationEntity requireIteration(Long projectId, Long iterationId) {
@@ -300,5 +330,40 @@ public class TestManagementService {
 
     private String formatDate(java.time.LocalDate value) {
         return value == null ? null : value.toString();
+    }
+
+    /**
+     * 测试计划列表需要像项目/任务列表一样按项目可见范围过滤，
+     * 这样测试管理、逻辑图谱、需求联动等项目绑定能力才能共享同一套数据权限口径。
+     */
+    private void appendProjectVisibilityPredicate(List<Predicate> predicates,
+                                                  From<?, ProjectEntity> projectRoot,
+                                                  jakarta.persistence.criteria.CriteriaQuery<?> query,
+                                                  jakarta.persistence.criteria.CriteriaBuilder cb,
+                                                  ProjectDataPermissionService.ProjectDataScope scope) {
+        if (scope.superAdmin()) {
+            return;
+        }
+        DataPermissionScopeType visibilityScope = scope.policy().projectVisibilityScope();
+        switch (visibilityScope) {
+            case ALL -> {
+                return;
+            }
+            case NONE -> predicates.add(cb.disjunction());
+            case OWNER_ONLY -> predicates.add(cb.equal(projectRoot.join("ownerUser", JoinType.LEFT).get("id"), scope.userId()));
+            case CREATOR_ONLY -> predicates.add(cb.equal(projectRoot.join("creatorUser", JoinType.LEFT).get("id"), scope.userId()));
+            case OWNER_OR_CREATOR -> predicates.add(cb.or(
+                    cb.equal(projectRoot.join("ownerUser", JoinType.LEFT).get("id"), scope.userId()),
+                    cb.equal(projectRoot.join("creatorUser", JoinType.LEFT).get("id"), scope.userId())
+            ));
+            case PROJECT_PARTICIPANT -> {
+                query.distinct(true);
+                predicates.add(cb.or(
+                        cb.equal(projectRoot.join("ownerUser", JoinType.LEFT).get("id"), scope.userId()),
+                        cb.equal(projectRoot.join("creatorUser", JoinType.LEFT).get("id"), scope.userId()),
+                        cb.equal(projectRoot.join("members", JoinType.LEFT).get("id"), scope.userId())
+                ));
+            }
+        }
     }
 }

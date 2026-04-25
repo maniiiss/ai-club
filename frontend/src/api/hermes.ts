@@ -7,6 +7,7 @@ import type {
   HermesConversationDetailItem,
   HermesConversationSessionQuery,
   HermesConversationSessionSummaryItem,
+  HermesSpeechTranscriptionPayload,
   HermesSessionChatRequestPayload,
   HermesSessionChatResponsePayload,
   HermesStreamDeltaEvent,
@@ -98,6 +99,16 @@ export const restoreHermesConversationSession = async (sessionId: number) => {
  */
 export const deleteHermesConversationSession = async (sessionId: number) => {
   await http.delete<ApiResponse<null>>(`/api/hermes/sessions/${sessionId}`)
+}
+
+/**
+ * 将 Hermes 录制的短语音转写为文本，再回填到输入框。
+ */
+export const transcribeHermesSpeech = async (file: File) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const { data } = await http.post<ApiResponse<HermesSpeechTranscriptionPayload>>('/api/hermes/speech/transcriptions', formData)
+  return data.data.text || ''
 }
 
 /**

@@ -16,18 +16,18 @@
         <span>{{ nodeTypeLabel(item) }}</span>
       </button>
     </div>
-    <div ref="graphContainerRef" class="graph-container"></div>
+    <div ref="graphContainerRef" class="graph-container" @contextmenu.prevent></div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElEmpty } from 'element-plus'
-import { ConcentricLayout, ForceLayout, Graph as G6Graph } from '@antv/g6'
+import { Graph as G6Graph } from '@antv/g6'
 import type { ComboData, EdgeData, GraphData, NodeData } from '@antv/g6'
 import type { KnowledgeGraphEdgeItem, KnowledgeGraphNodeItem } from '@/types/platform'
 
-type LayoutMode = 'flat' | 'ring' | 'cluster' | 'grid'
+type LayoutMode = 'network' | 'ring' | 'grid'
 
 const props = defineProps<{
   nodes: KnowledgeGraphNodeItem[]
@@ -102,6 +102,11 @@ const truncate = (value: string, max: number) => {
   if (!value) return ''
   return value.length > max ? `${value.slice(0, max)}…` : value
 }
+const compareScore = (left: number, right: number) => {
+  if (left === right) return 0
+  return left > right ? -1 : 1
+}
+const disableEdgeInteraction = computed(() => props.edges.length >= 350)
 
 const parseMetadata = (value?: string) => {
   if (!value) return {}
@@ -117,64 +122,50 @@ const nodeSecondary = (node: KnowledgeGraphNodeItem) => {
   return String(meta.status || meta.priority || meta.category || meta.type || meta.username || '')
 }
 
-const comboId = (nodeType: string) => `combo-${nodeType.toLowerCase()}`
-
-const buildPresetPositions = (nodes: KnowledgeGraphNodeItem[]) => {
-  const grouped = new Map<string, KnowledgeGraphNodeItem[]>()
-  for (const type of nodeTypeOptions.value) grouped.set(type, [])
-  nodes.forEach((node) => {
-    const bucket = grouped.get(node.nodeType) || []
-    bucket.push(node)
-    grouped.set(node.nodeType, bucket)
-  })
-
-  const width = Math.max(containerWidth.value, 980)
-  const height = Math.max(containerHeight.value, 620)
-  const sidePadding = 100
-  const topPadding = 100
-  const bottomPadding = 80
-  const columnCount = Math.max(nodeTypeOptions.value.length, 1)
-  const columnGap = columnCount === 1 ? 0 : (width - sidePadding * 2) / (columnCount - 1)
-  const result = new Map<number, { x: number; y: number }>()
-
-  nodeTypeOptions.value.forEach((type, columnIndex) => {
-    const items = grouped.get(type) || []
-    const count = Math.max(items.length, 1)
-    const availableHeight = Math.max(height - topPadding - bottomPadding, 1)
-    const rowGap = count === 1 ? 0 : availableHeight / (count - 1)
-    items.forEach((item, rowIndex) => {
-      result.set(item.id, {
-        x: sidePadding + columnIndex * columnGap,
-        y: topPadding + rowIndex * rowGap
-      })
-    })
+const degreeMap = computed(() => {
+  const result = new Map<number, number>()
+  props.nodes.forEach((node) => result.set(node.id, 0))
+  props.edges.forEach((edge) => {
+    result.set(edge.fromNodeId, (result.get(edge.fromNodeId) || 0) + 1)
+    result.set(edge.toNodeId, (result.get(edge.toNodeId) || 0) + 1)
   })
   return result
+})
+const knowledgeNodeScore = (nodeType: string, degree: number) => {
+  const typeWeight: Record<string, number> = {
+    PROJECT: 10,
+    ITERATION: 8,
+    REQUIREMENT: 7,
+    TASK: 6,
+    BUG: 5,
+    TEST_PLAN: 4,
+    TEST_CASE: 3,
+    USER: 2,
+    AGENT: 2
+  }
+  return degree * 4 + (typeWeight[nodeType] || 1)
 }
+const circleSize = (nodeType: string, degree: number) => {
+  const base = nodeType === 'PROJECT' ? 22 : nodeType === 'REQUIREMENT' ? 18 : 15
+  return Math.max(base, Math.min(32, base + Math.sqrt(Math.max(degree, 1)) * 2.8))
+}
+const shouldShowDefaultLabel = (nodeType: string, degree: number) =>
+  nodeType === 'PROJECT' || nodeType === 'REQUIREMENT' || degree >= 5
 
 const graphData = computed<GraphData>(() => {
-  const positions = buildPresetPositions(props.nodes)
-  const useCombos = props.layoutMode === 'cluster'
-
   const nodes: NodeData[] = props.nodes.map((item) => {
-    const position = positions.get(item.id)
     return {
       id: String(item.id),
-      combo: useCombos && item.nodeType !== 'PROJECT' ? comboId(item.nodeType) : undefined,
       data: {
         bizId: item.bizId,
         name: item.name,
+        shortLabel: truncate(item.name, 22),
         description: item.description,
         nodeType: item.nodeType,
+        degree: degreeMap.value.get(item.id) || 0,
         secondary: nodeSecondary(item),
         metadataJson: item.metadataJson
-      },
-      style: props.layoutMode === 'flat' && position
-        ? {
-            x: position.x,
-            y: position.y
-          }
-        : undefined
+      }
     }
   })
 
@@ -188,22 +179,10 @@ const graphData = computed<GraphData>(() => {
       sourceType: item.sourceType,
       confidence: item.confidence,
       evidenceText: item.evidenceText
-    }
-  }))
+      }
+    }))
 
-  const combos: ComboData[] = useCombos
-    ? nodeTypeOptions.value
-        .filter((type) => type !== 'PROJECT' && props.nodes.some((item) => item.nodeType === type))
-        .map((type) => ({
-          id: comboId(type),
-          data: {
-            label: nodeTypeLabel(type),
-            nodeType: type
-          }
-        }))
-    : []
-
-  return { nodes, edges, combos }
+  return { nodes, edges, combos: [] as ComboData[] }
 })
 
 const createLayoutConfig = () => {
@@ -211,6 +190,17 @@ const createLayoutConfig = () => {
   const height = Math.max(containerHeight.value, 620)
   const center: [number, number] = [width / 2, height / 2]
   const common = { width, height, center }
+
+  if (props.layoutMode === 'network') {
+    return {
+      type: 'force',
+      ...common,
+      gravity: 0.08,
+      linkDistance: 240,
+      preventOverlap: true,
+      nodeSize: 26
+    }
+  }
 
   if (props.layoutMode === 'grid') {
     return {
@@ -230,28 +220,6 @@ const createLayoutConfig = () => {
       clockwise: true,
       divisions: 1
     }
-  }
-
-  if (props.layoutMode === 'cluster') {
-    return {
-      type: 'combo-combined',
-      ...common,
-      comboPadding: 32,
-      spacing: 22,
-      outerLayout: new ForceLayout({
-        ...common,
-        gravity: 0.8,
-        linkDistance: 220,
-        preventOverlap: true,
-        nodeSize: 42
-      }),
-      innerLayout: new ConcentricLayout({
-        ...common,
-        preventOverlap: true,
-        nodeSpacing: 16,
-        sortBy: 'id'
-      })
-    } as any
   }
 
   return undefined
@@ -282,66 +250,82 @@ const initGraph = async () => {
     container,
     width,
     height,
-    autoFit: 'view',
+    autoFit: false,
     animation: true,
     data: graphData.value,
     layout: createLayoutConfig(),
     node: {
-      type: 'rect',
+      type: 'circle',
       style: {
-        size: [174, 68],
-        radius: 18,
-        lineWidth: 1.6,
+        size: (datum: NodeData) => circleSize(String(datum.data?.nodeType || ''), Number(datum.data?.degree || 0)),
+        lineWidth: 1.1,
         fill: (datum: NodeData) => `${nodeColor(String(datum.data?.nodeType || ''))}18`,
         stroke: (datum: NodeData) => nodeColor(String(datum.data?.nodeType || '')),
-        shadowColor: 'rgba(15, 23, 42, 0.08)',
-        shadowBlur: 10,
-        shadowOffsetY: 4,
-        labelText: (datum: NodeData) => truncate(String(datum.data?.name || ''), 14),
-        labelFontWeight: 700,
-        labelFontSize: 14,
-        labelFill: '#17324c',
-        labelPlacement: 'center'
+        shadowColor: 'rgba(14, 116, 144, 0.14)',
+        shadowBlur: 8,
+        shadowOffsetY: 2,
+        halo: true,
+        haloLineWidth: 4,
+        haloStroke: (datum: NodeData) => nodeColor(String(datum.data?.nodeType || '')),
+        haloStrokeOpacity: 0.05,
+        label: true,
+        labelText: (datum: NodeData) =>
+          shouldShowDefaultLabel(String(datum.data?.nodeType || ''), Number(datum.data?.degree || 0))
+            ? String(datum.data?.shortLabel || '')
+            : '',
+        labelPlacement: 'right',
+        labelOffsetX: 7,
+        labelFontWeight: 600,
+        labelFontSize: (datum: NodeData) => String(datum.data?.nodeType || '') === 'PROJECT' ? 13 : 11,
+        labelFill: '#334155',
+        labelMaxWidth: 180
       },
       state: {
-        selected: { lineWidth: 3, shadowBlur: 18, shadowColor: 'rgba(23, 50, 76, 0.18)' },
-        related: { lineWidth: 2.4 },
-        dimmed: { opacity: 0.22 }
-      }
-    },
-    combo: {
-      type: 'rect',
-      style: {
-        radius: 24,
-        fill: (datum: ComboData) => `${nodeColor(String(datum.data?.nodeType || ''))}10`,
-        stroke: (datum: ComboData) => `${nodeColor(String(datum.data?.nodeType || ''))}88`,
-        lineWidth: 1.8,
-        padding: [28, 22, 22, 22],
-        labelText: (datum: ComboData) => String(datum.data?.label || ''),
-        labelFontWeight: 700,
-        labelFill: '#385166',
-        labelPlacement: 'top'
-      },
-      state: {
-        related: { lineWidth: 2.4 },
-        dimmed: { opacity: 0.14 }
-      }
-    },
-    edge: {
-      type: 'cubic',
-      style: {
-        stroke: (datum: EdgeData) => edgeColor(String(datum.data?.edgeType || '')),
-        lineWidth: 1.8,
-        endArrow: true,
-        opacity: 0.68
-      },
-      state: {
-        selected: { lineWidth: 3.2, opacity: 1 },
-        related: { opacity: 0.92 },
+        selected: { lineWidth: 2.2, haloStrokeOpacity: 0.18, shadowBlur: 12, opacity: 1 },
+        related: { lineWidth: 1.6, haloStrokeOpacity: 0.12, opacity: 1 },
+        active: { haloStrokeOpacity: 0.1, shadowBlur: 10, opacity: 1 },
         dimmed: { opacity: 0.1 }
       }
     },
-    behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element']
+    edge: {
+      type: 'quadratic',
+      style: {
+        stroke: (datum: EdgeData) => edgeColor(String(datum.data?.edgeType || '')),
+        lineWidth: 1.1,
+        lineCap: 'round',
+        endArrow: true,
+        opacity: 0.08,
+        pointerEvents: disableEdgeInteraction.value ? 'none' : 'visiblestroke'
+      },
+      state: {
+        selected: { lineWidth: 2.4, opacity: 0.72 },
+        related: { opacity: 0.22 },
+        active: { opacity: 0.16 },
+        dimmed: { opacity: 0.02 }
+      }
+    },
+    behaviors: [
+      'drag-canvas',
+      'zoom-canvas',
+      'drag-element',
+      {
+        type: 'hover-activate',
+        enable: (event: any) => event?.targetType === 'node',
+        degree: 0,
+        state: 'active',
+        inactiveState: undefined
+      },
+      {
+        type: 'auto-adapt-label',
+        padding: [10, 20, 10, 20],
+        // 逻辑图谱优先展示项目、需求和高连接节点标签，让复杂关系图里先看到业务骨架。
+        sortNode: (left: NodeData, right: NodeData) =>
+          compareScore(
+            knowledgeNodeScore(String(right.data?.nodeType || ''), Number(right.data?.degree || 0)),
+            knowledgeNodeScore(String(left.data?.nodeType || ''), Number(left.data?.degree || 0))
+          )
+      }
+    ]
   } as any)
 
   graphInstance.on('node:click', (event: any) => {
@@ -364,7 +348,7 @@ const initGraph = async () => {
     graphInstance = null
     return
   }
-  await graphInstance.fitView()
+  await graphInstance.fitView({ when: 'overflow' })
   await applySelectionStates()
 }
 
@@ -374,10 +358,9 @@ const applySelectionStates = async () => {
   const states: Record<string, string[]> = {}
   const nodeIds = graphData.value.nodes?.map((item) => String(item.id)) || []
   const edgeIds = graphData.value.edges?.map((item) => String(item.id)) || []
-  const comboIds = graphData.value.combos?.map((item) => String(item.id)) || []
 
   if (props.selectedNodeId === null && props.selectedEdgeId === null) {
-    ;[...nodeIds, ...edgeIds, ...comboIds].forEach((id) => {
+    ;[...nodeIds, ...edgeIds].forEach((id) => {
       states[id] = []
     })
     await graphInstance.setElementState(states, false)
@@ -386,13 +369,10 @@ const applySelectionStates = async () => {
 
   const relatedNodeIds = new Set<string>()
   const relatedEdgeIds = new Set<string>()
-  const relatedComboIds = new Set<string>()
 
   if (props.selectedNodeId !== null) {
     const selectedId = String(props.selectedNodeId)
     relatedNodeIds.add(selectedId)
-    const selectedNode = graphData.value.nodes?.find((item) => String(item.id) === selectedId)
-    if (selectedNode?.combo) relatedComboIds.add(String(selectedNode.combo))
     for (const edge of graphData.value.edges || []) {
       const source = String(edge.source)
       const target = String(edge.target)
@@ -402,9 +382,6 @@ const applySelectionStates = async () => {
         relatedNodeIds.add(target)
       }
     }
-    for (const node of graphData.value.nodes || []) {
-      if (relatedNodeIds.has(String(node.id)) && node.combo) relatedComboIds.add(String(node.combo))
-    }
   } else if (props.selectedEdgeId !== null) {
     const selectedId = String(props.selectedEdgeId)
     relatedEdgeIds.add(selectedId)
@@ -412,9 +389,6 @@ const applySelectionStates = async () => {
     if (selected) {
       relatedNodeIds.add(String(selected.source))
       relatedNodeIds.add(String(selected.target))
-    }
-    for (const node of graphData.value.nodes || []) {
-      if (relatedNodeIds.has(String(node.id)) && node.combo) relatedComboIds.add(String(node.combo))
     }
   }
 
@@ -428,10 +402,6 @@ const applySelectionStates = async () => {
     if (props.selectedEdgeId !== null && id === String(props.selectedEdgeId)) states[id] = ['selected']
     else if (relatedEdgeIds.has(id)) states[id] = ['related']
     else states[id] = ['dimmed']
-  })
-
-  comboIds.forEach((id) => {
-    states[id] = relatedComboIds.has(id) ? ['related'] : ['dimmed']
   })
 
   await graphInstance.setElementState(states, false)
@@ -511,16 +481,27 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 14px;
   border-radius: 999px;
-  border: 1px solid var(--app-border);
-  background: rgba(255, 255, 255, 0.85);
-  color: var(--app-text);
+  border: 1px solid rgba(191, 219, 254, 0.48);
+  background: rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(12px);
+  color: #334155;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.legend-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(14, 116, 144, 0.36);
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .legend-item.active {
-  border-color: rgba(31, 122, 140, 0.4);
-  background: rgba(231, 245, 246, 0.85);
+  border-color: rgba(14, 116, 144, 0.36);
+  background: linear-gradient(135deg, rgba(236, 253, 245, 0.94) 0%, rgba(224, 242, 254, 0.92) 100%);
 }
 
 .legend-dot {
@@ -532,11 +513,16 @@ onBeforeUnmount(() => {
 .graph-container {
   width: 100%;
   min-height: 680px;
-  border-radius: 18px;
-  border: 1px solid rgba(209, 219, 229, 0.92);
+  border-radius: 24px;
+  border: 1px solid rgba(191, 219, 254, 0.5);
   background:
-    radial-gradient(circle at top left, rgba(245, 166, 35, 0.05), transparent 24%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 249, 252, 0.98) 100%);
+    radial-gradient(circle at 16% 18%, rgba(15, 118, 110, 0.08), transparent 24%),
+    radial-gradient(circle at 84% 12%, rgba(59, 130, 246, 0.08), transparent 22%),
+    radial-gradient(circle at 70% 82%, rgba(245, 158, 11, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(244, 248, 252, 0.98) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 24px 60px rgba(148, 163, 184, 0.12);
   overflow: hidden;
 }
 

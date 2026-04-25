@@ -37,19 +37,22 @@ public class MemoryFactGraphService {
     private final HindsightProperties hindsightProperties;
     private final WikiSpaceService wikiSpaceService;
     private final MemoryFactGraphAssembler assembler;
+    private final ProjectDataPermissionService projectDataPermissionService;
 
     public MemoryFactGraphService(ProjectRepository projectRepository,
                                   HindsightClientService hindsightClientService,
                                   HindsightMemoryFallbackService hindsightMemoryFallbackService,
                                   HindsightProperties hindsightProperties,
                                   WikiSpaceService wikiSpaceService,
-                                  MemoryFactGraphAssembler assembler) {
+                                  MemoryFactGraphAssembler assembler,
+                                  ProjectDataPermissionService projectDataPermissionService) {
         this.projectRepository = projectRepository;
         this.hindsightClientService = hindsightClientService;
         this.hindsightMemoryFallbackService = hindsightMemoryFallbackService;
         this.hindsightProperties = hindsightProperties;
         this.wikiSpaceService = wikiSpaceService;
         this.assembler = assembler;
+        this.projectDataPermissionService = projectDataPermissionService;
     }
 
     public MemoryFactGraphSummary getProjectGraph(Long projectId) {
@@ -276,8 +279,15 @@ public class MemoryFactGraphService {
     }
 
     private ProjectEntity requireProject(Long projectId) {
-        return projectRepository.findById(projectId)
+        ProjectEntity project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new NoSuchElementException("项目不存在: " + projectId));
+        ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.currentScopeOrNull();
+        if (scope != null) {
+            // 项目记忆事实图属于项目级知识视图，用户访问时要跟项目权限走；
+            // 若由后台链路无登录态触发，则继续允许读取，避免内部聚合流程被权限拦截。
+            projectDataPermissionService.requireProjectVisible(project, scope);
+        }
+        return project;
     }
 
     private void requireWikiSpace(Long spaceId) {

@@ -359,17 +359,18 @@
       v-model="planDialogVisible"
       :title="planDialogMode === 'create' ? '新建巡检计划' : '编辑巡检计划'"
       width="1120px"
-      top="4vh"
+      class="platform-form-dialog self-upgrade-plan-dialog"
+      align-center
       destroy-on-close
     >
       <div class="self-upgrade-plan-editor">
-        <section class="self-upgrade-editor-card">
+        <section class="self-upgrade-editor-card self-upgrade-plan-editor-panel">
           <div class="self-upgrade-editor-card-head">
             <h3>计划配置</h3>
             <span>定义调度策略、运行预算，以及环境和巡检模型绑定。</span>
           </div>
 
-          <el-form label-position="top">
+          <el-form label-position="top" class="self-upgrade-plan-form">
             <el-form-item label="计划名称">
               <el-input v-model="planForm.name" maxlength="120" placeholder="例如：STAGING 夜间体验巡检" />
             </el-form-item>
@@ -419,7 +420,7 @@
           </el-form>
         </section>
 
-        <section class="self-upgrade-editor-card">
+        <section class="self-upgrade-editor-card self-upgrade-plan-editor-panel">
           <div class="self-upgrade-editor-card-head">
             <div>
               <h3>探索入口</h3>
@@ -431,7 +432,7 @@
             </el-button>
           </div>
 
-          <div class="self-upgrade-target-editor-list">
+          <div class="self-upgrade-target-editor-list self-upgrade-target-editor-list-scroll">
             <article
               v-for="(target, index) in planForm.targets"
               :key="target.id ?? `draft-${index}`"
@@ -2475,12 +2476,15 @@ onMounted(async () => {
   flex: 0 0 auto;
   gap: 8px;
   align-items: center;
+  align-self: stretch;
   min-width: 0;
-  padding: 3px 0 8px;
+  min-height: 52px;
+  margin-top: auto;
+  padding: 12px 0 0;
   overflow-x: auto;
   overflow-y: visible;
   justify-content: flex-start;
-  margin: 1px 0 -6px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
   scrollbar-width: none;
 }
 
@@ -2490,11 +2494,14 @@ onMounted(async () => {
 
 .self-upgrade-card-actions :deep(.el-button) {
   flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 16px;
   margin-left: 0;
   box-shadow: none;
   transform: none;
   transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
   white-space: nowrap;
+  border-radius: 12px;
 }
 
 .self-upgrade-card-actions :deep(.el-button:hover),
@@ -2538,6 +2545,23 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
   gap: 18px;
+  min-height: 0;
+  height: min(700px, calc(var(--platform-dialog-max-height) - 188px));
+}
+
+.self-upgrade-plan-editor-panel {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.self-upgrade-plan-form,
+.self-upgrade-target-editor-list-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 6px;
 }
 
 .self-upgrade-editor-card {
@@ -2707,9 +2731,25 @@ onMounted(async () => {
   line-height: 1.6;
 }
 
+:deep(.self-upgrade-plan-dialog .el-dialog__body) {
+  overflow: hidden;
+}
+
 @media (max-width: 1280px) {
   .self-upgrade-plan-editor {
     grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .self-upgrade-plan-form,
+  .self-upgrade-target-editor-list-scroll {
+    overflow: visible;
+    padding-right: 0;
+    scrollbar-gutter: auto;
+  }
+
+  :deep(.self-upgrade-plan-dialog .el-dialog__body) {
+    overflow-y: auto;
   }
 }
 

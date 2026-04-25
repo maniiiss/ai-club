@@ -325,19 +325,20 @@ def upload_log_artifacts(
     task_id: str,
     run_id: str,
     step_id: str,
-    files: list[tuple[str, str, Path]],
+    files: list[tuple[str, str, Path] | tuple[str, str, Path, str]],
 ) -> list[dict[str, object]]:
     client = _build_minio_client()
     _ensure_bucket(client)
     prefix = f"execution-sessions/task-{_safe_slug(task_id)}/run-{_safe_slug(run_id)}/step-{_safe_slug(step_id)}/{_safe_slug(session_id)}"
     artifacts: list[dict[str, object]] = []
-    for artifact_type, title, file_path in files:
+    for file_entry in files:
+        artifact_type, title, file_path, object_name = _resolve_upload_file_entry(file_entry)
         if not file_path.exists():
             continue
         if file_path.is_dir():
             continue
-        object_key = f"{prefix}/{file_path.name}"
-        content_type = mimetypes.guess_type(file_path.name)[0] or "text/plain"
+        object_key = f"{prefix}/{_normalize_artifact_object_name(object_name or file_path.name)}"
+        content_type = mimetypes.guess_type(Path(object_name or file_path.name).name)[0] or "text/plain"
         client.fput_object(settings.minio_bucket, object_key, str(file_path), content_type=content_type)
         preview_text = _read_artifact_preview(file_path, content_type)
         artifacts.append(
@@ -517,6 +518,23 @@ def _safe_slug(value: str) -> str:
     cleaned = "".join(char if char.isalnum() else "-" for char in (value or "default"))
     cleaned = cleaned.strip("-").lower()
     return cleaned or "default"
+
+
+def _resolve_upload_file_entry(
+    file_entry: tuple[str, str, Path] | tuple[str, str, Path, str],
+) -> tuple[str, str, Path, str]:
+    if len(file_entry) == 4:
+        artifact_type, title, file_path, object_name = file_entry
+        return artifact_type, title, file_path, object_name
+    artifact_type, title, file_path = file_entry
+    return artifact_type, title, file_path, ""
+
+
+def _normalize_artifact_object_name(value: str) -> str:
+    # 巡检目标的截图和 trace 会放在 target-artifacts/<targetId>/ 目录下。
+    # 上传到对象存储时必须保留相对路径，否则不同目标中的 failed.png 会互相覆盖。
+    normalized = str(value or "").replace("\\", "/").strip("/")
+    return normalized or "artifact.dat"
 
 
 def _read_artifact_preview(file_path: Path, content_type: str) -> str:

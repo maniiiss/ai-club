@@ -119,7 +119,7 @@
                   <button class="management-list-row-button" type="button" title="构建历史" @click="openBuildHistoryDrawer(row)">
                     <el-icon><Tickets /></el-icon>
                   </button>
-                  <button v-if="canManage" class="management-list-row-button" type="button" title="触发构建" @click="handleTriggerBuild(row.id)">
+                  <button v-if="canBuild" class="management-list-row-button" type="button" title="触发构建" @click="handleTriggerBuild(row.id)">
                     <el-icon><VideoPlay /></el-icon>
                   </button>
                   <button v-if="canManage" class="management-list-row-button" type="button" title="编辑绑定" @click="openBindingEditDialog(row)">
@@ -206,7 +206,7 @@
                     <el-icon><Tickets /></el-icon>
                     <span>构建历史</span>
                   </button>
-                  <button v-if="canManage" class="mobile-entity-action-button info" type="button" @click="handleTriggerBuild(row.id)">
+                  <button v-if="canBuild" class="mobile-entity-action-button info" type="button" @click="handleTriggerBuild(row.id)">
                     <el-icon><VideoPlay /></el-icon>
                     <span>触发构建</span>
                   </button>
@@ -417,6 +417,7 @@ interface PipelineBindingForm {
 
 const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('cicd:manage'))
+const canBuild = computed(() => authStore.hasPermission('cicd:build'))
 const canView = computed(() => authStore.hasPermission('cicd:view'))
 const { isMobileViewport } = useMobileViewport()
 

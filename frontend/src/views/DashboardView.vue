@@ -146,11 +146,11 @@
                   <div class="quick-build-kicker">CI/CD 工作台</div>
                   <div class="quick-build-hero-title">快速构建</div>
                   <p class="quick-build-hero-text">
-                    {{ canManageCicd ? '选择已启用的项目流水线，一键触发 Jenkins 构建并快速跳转到流水线中心继续跟进。' : '查看首页推荐的项目流水线，快速进入流水线中心了解最新构建状态。' }}
+                    {{ canBuildCicd ? '选择已启用的项目流水线，一键触发 Jenkins 构建并快速跳转到流水线中心继续跟进。' : '查看首页推荐的项目流水线，快速进入流水线中心了解最新构建状态。' }}
                   </p>
                   <div class="quick-build-meta-line">
                     <span>可用流水线：{{ quickBuildBindingCount }}</span>
-                    <span>当前权限：{{ canManageCicd ? '可触发构建' : '仅查看' }}</span>
+                      <span>当前权限：{{ canBuildCicd ? '可触发构建' : '仅查看' }}</span>
                   </div>
                 </div>
                 <div class="dashboard-widget-scroll-area">
@@ -174,7 +174,7 @@
                       <div class="quick-build-actions">
                         <button class="quick-build-button ghost" type="button" @click="handleOpenPipelineCenter">查看流水线</button>
                         <button
-                          v-if="canManageCicd"
+                          v-if="canBuildCicd"
                           class="quick-build-button solid"
                           type="button"
                           :disabled="quickBuildTriggeringId === binding.id"
@@ -186,7 +186,7 @@
                     </article>
                   </div>
                   <div v-else class="widget-empty">
-                    {{ canManageCicd ? '当前没有可快速触发的启用流水线，请先在项目流水线页完成绑定。' : '当前没有可展示的启用流水线，可进入流水线页查看详情。' }}
+                    {{ canBuildCicd ? '当前没有可快速触发的启用流水线，请先在项目流水线页完成绑定。' : '当前没有可展示的启用流水线，可进入流水线页查看详情。' }}
                   </div>
                 </div>
                 <button v-if="canViewCicd" class="widget-footer-button" type="button" @click="handleOpenPipelineCenter">进入流水线中心</button>
@@ -514,7 +514,7 @@ const canViewProjects = computed(() => authStore.hasPermission('project:view'))
 const canViewGitlab = computed(() => authStore.hasPermission('gitlab:view'))
 const canManageGitlab = computed(() => authStore.hasPermission('gitlab:manage'))
 const canViewCicd = computed(() => authStore.hasPermission('cicd:view'))
-const canManageCicd = computed(() => authStore.hasPermission('cicd:manage'))
+const canBuildCicd = computed(() => authStore.hasPermission('cicd:build'))
 const meNames = computed(() => [authStore.user?.nickname, authStore.user?.username].filter((value): value is string => Boolean(value && value.trim())).map((value) => value.trim()))
 const gitlabBindingCount = computed(() => quickMergeBindingOptions.value.length)
 const currentQuickMergeBinding = computed(() => quickMergeBindingOptions.value.find((item) => item.id === quickMergeForm.bindingId) || null)
@@ -1014,7 +1014,7 @@ function handleOpenPipelineCenter() {
 }
 
 async function handleQuickBuildTrigger(binding: ProjectPipelineBindingItem) {
-  if (!canManageCicd.value) {
+  if (!canBuildCicd.value) {
     handleOpenPipelineCenter()
     return
   }

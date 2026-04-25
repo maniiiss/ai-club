@@ -62,7 +62,7 @@
               <th class="center jenkins-col-test">测试状态</th>
               <th class="jenkins-col-time">最近测试时间</th>
               <th class="jenkins-col-message">测试信息</th>
-              <th v-if="canManage" class="right jenkins-col-actions">操作</th>
+              <th v-if="canView" class="right jenkins-col-actions">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -105,18 +105,18 @@
               <td class="jenkins-col-message" data-label="测试信息">
                 <span class="management-list-empty">{{ row.lastTestMessage || '-' }}</span>
               </td>
-              <td v-if="canManage" class="right jenkins-col-actions" data-label="操作">
+              <td v-if="canView" class="right jenkins-col-actions" data-label="操作">
                 <div class="management-list-row-actions">
-                  <button class="management-list-row-button" type="button" title="测试连接" @click="handleServerTest(row.id)">
-                    <el-icon><Promotion /></el-icon>
-                  </button>
                   <button class="management-list-row-button" type="button" title="查看任务" @click="openJobDrawer(row)">
                     <el-icon><Tickets /></el-icon>
                   </button>
-                  <button class="management-list-row-button" type="button" title="编辑服务" @click="openServerEditDialog(row)">
+                  <button v-if="canManage" class="management-list-row-button" type="button" title="测试连接" @click="handleServerTest(row.id)">
+                    <el-icon><Promotion /></el-icon>
+                  </button>
+                  <button v-if="canManage" class="management-list-row-button" type="button" title="编辑服务" @click="openServerEditDialog(row)">
                     <el-icon><EditPen /></el-icon>
                   </button>
-                  <button class="management-list-row-button danger" type="button" title="删除服务" @click="handleServerDelete(row.id)">
+                  <button v-if="canManage" class="management-list-row-button danger" type="button" title="删除服务" @click="handleServerDelete(row.id)">
                     <el-icon><Delete /></el-icon>
                   </button>
                 </div>
@@ -187,20 +187,20 @@
                     </div>
                   </div>
                 </div>
-                <footer v-if="canManage" class="mobile-entity-actions">
-                  <button class="mobile-entity-action-button info" type="button" @click="handleServerTest(row.id)">
-                    <el-icon><Promotion /></el-icon>
-                    <span>测试连接</span>
-                  </button>
+                <footer v-if="canView" class="mobile-entity-actions">
                   <button class="mobile-entity-action-button info" type="button" @click="openJobDrawer(row)">
                     <el-icon><Tickets /></el-icon>
                     <span>查看任务</span>
                   </button>
-                  <button class="mobile-entity-action-button" type="button" @click="openServerEditDialog(row)">
+                  <button v-if="canManage" class="mobile-entity-action-button info" type="button" @click="handleServerTest(row.id)">
+                    <el-icon><Promotion /></el-icon>
+                    <span>测试连接</span>
+                  </button>
+                  <button v-if="canManage" class="mobile-entity-action-button" type="button" @click="openServerEditDialog(row)">
                     <el-icon><EditPen /></el-icon>
                     <span>编辑</span>
                   </button>
-                  <button class="mobile-entity-action-button danger" type="button" @click="handleServerDelete(row.id)">
+                  <button v-if="canManage" class="mobile-entity-action-button danger" type="button" @click="handleServerDelete(row.id)">
                     <el-icon><Delete /></el-icon>
                     <span>删除</span>
                   </button>
@@ -297,7 +297,7 @@
         <el-table-column prop="lastBuildNumber" label="最近构建号" width="110" />
         <el-table-column prop="lastBuildResult" label="最近结果" width="120" />
         <el-table-column prop="lastBuildAt" label="最近构建时间" width="180" />
-        <el-table-column v-if="canManage" label="操作" width="120" fixed="right">
+        <el-table-column v-if="canBuild" label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button
               link
@@ -353,6 +353,8 @@ interface JenkinsServerForm {
 
 const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('cicd:manage'))
+const canBuild = computed(() => authStore.hasPermission('cicd:build'))
+const canView = computed(() => authStore.hasPermission('cicd:view'))
 const { isMobileViewport } = useMobileViewport()
 
 const serverLoading = ref(false)

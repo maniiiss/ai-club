@@ -16,16 +16,19 @@ import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.IterationSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
+import com.aiclub.platform.dto.KnowledgeGraphSummary;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
 import com.aiclub.platform.dto.ProjectPipelineBindingSummary;
 import com.aiclub.platform.dto.ProjectSummary;
 import com.aiclub.platform.dto.TaskSummary;
+import com.aiclub.platform.dto.TestPlanSummary;
 import com.aiclub.platform.dto.request.ProjectGitlabBindingRequest;
 import com.aiclub.platform.dto.request.IterationRequest;
 import com.aiclub.platform.dto.request.ProjectRequest;
 import com.aiclub.platform.dto.request.TaskCommentRequest;
 import com.aiclub.platform.dto.request.TaskRequirementAiRequest;
 import com.aiclub.platform.dto.request.TaskRequest;
+import com.aiclub.platform.dto.request.TestPlanRequest;
 import com.aiclub.platform.exception.ForbiddenException;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.ExecutionTaskRepository;
@@ -79,6 +82,15 @@ class ProjectDataPermissionIntegrationTests {
 
     @Autowired
     private ExecutionTaskService executionTaskService;
+
+    @Autowired
+    private TestManagementService testManagementService;
+
+    @Autowired
+    private KnowledgeGraphService knowledgeGraphService;
+
+    @Autowired
+    private MemoryFactGraphService memoryFactGraphService;
 
     @Autowired
     private ProjectRepository projectRepository;
@@ -502,6 +514,72 @@ class ProjectDataPermissionIntegrationTests {
                 .isInstanceOf(ForbiddenException.class);
     }
 
+    /**
+     * 测试管理属于项目绑定资源：
+     * 列表、详情、项目迭代选项以及新增入口都应继续跟随项目数据权限过滤。
+     */
+    @Test
+    void shouldFilterAndProtectTestPlansByProjectVisibility() {
+        UserEntity creator = createUser("creator-k", "创建人K");
+        UserEntity owner = createUser("owner-k", "负责人K");
+        UserEntity member = createUser("member-k", "成员K");
+
+        ProjectEntity visibleProject = createProjectAs(creator, owner, List.of(member), "可见项目K");
+        ProjectEntity hiddenProject = createProjectAs(creator, owner, List.of(), "隐藏项目K");
+        IterationSummary visibleIteration = createIterationAs(creator, visibleProject, "可见迭代K");
+        IterationSummary hiddenIteration = createIterationAs(creator, hiddenProject, "隐藏迭代K");
+        TestPlanSummary visiblePlan = createTestPlanAs(creator, visibleProject, visibleIteration.id(), "可见测试计划K");
+        TestPlanSummary hiddenPlan = createTestPlanAs(creator, hiddenProject, hiddenIteration.id(), "隐藏测试计划K");
+
+        loginAs(member);
+        assertThat(testManagementService.pageTestPlans(1, 20, null, null, null, null).records())
+                .extracting(TestPlanSummary::name)
+                .containsExactly("可见测试计划K");
+        assertThat(testManagementService.getTestPlan(visiblePlan.id()).id()).isEqualTo(visiblePlan.id());
+        assertThat(testManagementService.listProjectIterationOptions(visibleProject.getId()))
+                .extracting(IterationSummary::id)
+                .containsExactly(visibleIteration.id());
+
+        assertThatThrownBy(() -> testManagementService.pageTestPlans(1, 20, null, hiddenProject.getId(), null, null))
+                .isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> testManagementService.getTestPlan(hiddenPlan.id()))
+                .isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> testManagementService.listProjectIterationOptions(hiddenProject.getId()))
+                .isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> testManagementService.createTestPlan(buildTestPlanRequest(hiddenProject.getId(), hiddenIteration.id(), "非法测试计划K")))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    /**
+     * 逻辑图谱和记忆事实图都属于项目级知识视图，
+     * 拿到 `project:view` 后仍需再过一层项目数据权限校验，避免跨项目越权查看。
+     */
+    @Test
+    void shouldProtectKnowledgeAndMemoryGraphsByProjectVisibility() {
+        UserEntity creator = createUser("creator-l", "创建人L");
+        UserEntity owner = createUser("owner-l", "负责人L");
+        UserEntity member = createUser("member-l", "成员L");
+
+        ProjectEntity visibleProject = createProjectAs(creator, owner, List.of(member), "可见项目L");
+        ProjectEntity hiddenProject = createProjectAs(creator, owner, List.of(), "隐藏项目L");
+
+        loginAs(member);
+        KnowledgeGraphSummary visibleGraph = knowledgeGraphService.getProjectGraph(visibleProject.getId(), true);
+        assertThat(visibleGraph.projectId()).isEqualTo(visibleProject.getId());
+        assertThatThrownBy(() -> knowledgeGraphService.getProjectGraph(hiddenProject.getId(), false))
+                .isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> knowledgeGraphService.rebuildProjectGraph(hiddenProject.getId()))
+                .isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> memoryFactGraphService.getProjectGraph(hiddenProject.getId()))
+                .isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> memoryFactGraphService.getFacts(hiddenProject.getId(), null, null, "隐藏项目", 5))
+                .isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> memoryFactGraphService.getEntityDetail(
+                hiddenProject.getId(),
+                "git-ai-club:wiki:project:" + hiddenProject.getId() + "::entity-hidden"
+        )).isInstanceOf(ForbiddenException.class);
+    }
+
     private UserEntity createUser(String username, String nickname) {
         RoleEntity defaultRole = createRole(
                 "ROLE_" + username.toUpperCase(),
@@ -638,6 +716,22 @@ class ProjectDataPermissionIntegrationTests {
                 task.agentId(),
                 task.iterationId(),
                 task.requirementTaskId()
+        );
+    }
+
+    private TestPlanSummary createTestPlanAs(UserEntity creator, ProjectEntity project, Long iterationId, String name) {
+        loginAs(creator);
+        return testManagementService.createTestPlan(buildTestPlanRequest(project.getId(), iterationId, name));
+    }
+
+    private TestPlanRequest buildTestPlanRequest(Long projectId, Long iterationId, String name) {
+        return new TestPlanRequest(
+                name,
+                projectId,
+                iterationId,
+                "草稿",
+                name + " 的描述",
+                List.of()
         );
     }
 

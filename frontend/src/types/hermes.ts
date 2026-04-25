@@ -47,6 +47,13 @@ export interface HermesSessionChatRequestPayload {
 }
 
 /**
+ * Hermes 语音转写返回体。
+ */
+export interface HermesSpeechTranscriptionPayload {
+  text: string
+}
+
+/**
  * Hermes 会话列表摘要项。
  */
 export interface HermesConversationSessionSummaryItem {

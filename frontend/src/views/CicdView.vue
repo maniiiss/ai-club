@@ -44,13 +44,13 @@
               </el-table-column>
               <el-table-column prop="lastTestedAt" label="最近测试时间" width="180" />
               <el-table-column prop="lastTestMessage" label="测试信息" min-width="280" show-overflow-tooltip />
-              <el-table-column v-if="canManage" label="操作" width="320" fixed="right">
+              <el-table-column v-if="canView" label="操作" width="320" fixed="right">
                 <template #default="{ row }">
                   <el-space wrap>
-                    <el-button link type="success" @click="handleServerTest(row.id)">测试连接</el-button>
                     <el-button link type="primary" @click="openJobDrawer(row)">查看任务</el-button>
-                    <el-button link type="warning" @click="openServerEditDialog(row)">编辑</el-button>
-                    <el-button link type="danger" @click="handleServerDelete(row.id)">删除</el-button>
+                    <el-button v-if="canManage" link type="success" @click="handleServerTest(row.id)">测试连接</el-button>
+                    <el-button v-if="canManage" link type="warning" @click="openServerEditDialog(row)">编辑</el-button>
+                    <el-button v-if="canManage" link type="danger" @click="handleServerDelete(row.id)">删除</el-button>
                   </el-space>
                 </template>
               </el-table-column>
@@ -127,7 +127,7 @@
                 <template #default="{ row }">
                   <el-space wrap>
                     <el-button link type="primary" @click="openBuildHistoryDrawer(row)">构建历史</el-button>
-                    <el-button v-if="canManage" link type="success" @click="handleTriggerBuild(row.id)">触发构建</el-button>
+                    <el-button v-if="canBuild" link type="success" @click="handleTriggerBuild(row.id)">触发构建</el-button>
                     <el-button v-if="canManage" link type="warning" @click="openBindingEditDialog(row)">编辑</el-button>
                     <el-button v-if="canManage" link type="danger" @click="handleBindingDelete(row.id)">删除</el-button>
                   </el-space>
@@ -238,7 +238,7 @@
       <el-table-column prop="lastBuildNumber" label="最近构建号" width="110" />
       <el-table-column prop="lastBuildResult" label="最近结果" width="120" />
       <el-table-column prop="lastBuildAt" label="最近构建时间" width="180" />
-      <el-table-column v-if="canManage" label="操作" width="120" fixed="right">
+      <el-table-column v-if="canBuild" label="操作" width="120" fixed="right">
         <template #default="{ row }">
           <el-button
             link
@@ -375,6 +375,7 @@ interface PipelineBindingForm {
 
 const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('cicd:manage'))
+const canBuild = computed(() => authStore.hasPermission('cicd:build'))
 const canView = computed(() => authStore.hasPermission('cicd:view'))
 const activeTab = ref('servers')
 

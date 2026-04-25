@@ -60,31 +60,49 @@
 
     <section class="wiki-space-grid" :class="{ 'wiki-space-grid-empty': !loading && !spaces.length }" v-loading="loading">
       <article v-for="space in spaces" :key="space.id" class="wiki-space-card">
-        <div class="wiki-space-card-head">
+        <header class="wiki-space-card-head">
           <div>
             <h2>{{ space.name }}</h2>
             <p>{{ space.description || '暂无空间说明' }}</p>
           </div>
-          <el-tag :type="space.readScope === 'ALL_LOGGED_IN' ? 'success' : 'info'">{{ readScopeLabel(space.readScope) }}</el-tag>
-        </div>
+          <div class="wiki-space-tag-group">
+            <span class="management-list-pill" :class="space.readScope === 'ALL_LOGGED_IN' ? 'success' : 'info'">
+              {{ readScopeLabel(space.readScope) }}
+            </span>
+            <span class="management-list-pill" :class="roleTone(space.currentUserRole)">
+              {{ roleLabel(space.currentUserRole) || '访客' }}
+            </span>
+          </div>
+        </header>
 
-        <div class="wiki-space-meta">
-          <span>我的角色：{{ roleLabel(space.currentUserRole) || '访客' }}</span>
+        <div class="wiki-space-meta-line">
           <span>绑定项目：{{ space.boundProjectName || '未绑定' }}</span>
           <span>成员默认：{{ memberDefaultSourceLabel(space.memberDefaultSource) }}</span>
-          <span>目录：{{ space.directoryCount }}</span>
-          <span>页面：{{ space.pageCount }}</span>
-          <span>项目关联：{{ space.boundProjectCount }}</span>
+          <span>创建时间：{{ space.createdAt || '-' }}</span>
+          <span>最近更新：{{ space.updatedAt || '-' }}</span>
         </div>
 
-        <div class="wiki-space-actions">
-          <el-button type="primary" @click="openSpace(space.id)">进入空间</el-button>
-          <el-button @click="openMemoryFactGraph(space.id)">
-            <el-icon><DataAnalysis /></el-icon>
-            记忆事实图
-          </el-button>
-          <el-button v-if="space.canManage" @click="openEditSpaceDialog(space)">编辑空间</el-button>
-          <el-button v-if="space.canManage" type="danger" plain @click="handleDeleteSpace(space)">删除</el-button>
+        <div class="wiki-space-chip-list">
+          <span class="management-list-chip">目录 {{ space.directoryCount }}</span>
+          <span class="management-list-chip">页面 {{ space.pageCount }}</span>
+          <span class="management-list-chip">项目关联 {{ space.boundProjectCount }}</span>
+        </div>
+
+        <div class="wiki-space-card-actions-shell">
+          <div class="wiki-space-card-actions">
+            <el-button type="primary" @click="openSpace(space.id)">
+              <el-icon><View /></el-icon>
+              <span>进入空间</span>
+            </el-button>
+            <el-button v-if="space.canManage" @click="openEditSpaceDialog(space)">
+              <el-icon><Edit /></el-icon>
+              <span>编辑</span>
+            </el-button>
+            <el-button v-if="space.canManage" type="danger" plain @click="handleDeleteSpace(space)">
+              <el-icon><Delete /></el-icon>
+              <span>删除</span>
+            </el-button>
+          </div>
         </div>
       </article>
 
@@ -130,7 +148,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { DataAnalysis, Filter, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
+import { Delete, Edit, Filter, Plus, RefreshRight, Search, View } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   createWikiSpace,
@@ -255,10 +273,6 @@ function openSpace(spaceId: number) {
   router.push({ name: 'wiki-space', params: { spaceId } })
 }
 
-function openMemoryFactGraph(spaceId: number) {
-  router.push({ name: 'wiki-space-memory-fact-graph', params: { spaceId } })
-}
-
 function openCreateSpaceDialog() {
   editingSpace.value = null
   spaceForm.name = ''
@@ -327,6 +341,13 @@ function roleLabel(role: string) {
   return ''
 }
 
+function roleTone(role: string) {
+  if (role === 'ADMIN') return 'warning'
+  if (role === 'EDITOR') return 'info'
+  if (role === 'VIEWER') return 'neutral'
+  return 'neutral'
+}
+
 function readScopeLabel(scope: string) {
   return scope === 'ALL_LOGGED_IN' ? '全员可读' : '仅成员可读'
 }
@@ -341,13 +362,6 @@ function memberDefaultSourceLabel(source: string) {
   display: flex;
   flex-direction: column;
   gap: 20px;
-}
-
-.wiki-space-card {
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
 }
 
 .wiki-home-toolbar {
@@ -382,9 +396,14 @@ function memberDefaultSourceLabel(source: string) {
 }
 
 .wiki-space-grid {
+  --wiki-space-card-width: 360px;
+  --wiki-space-card-height: 300px;
+
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--wiki-space-card-width)), var(--wiki-space-card-width)));
+  grid-auto-rows: var(--wiki-space-card-height);
   gap: 14px;
+  align-items: stretch;
 }
 
 .wiki-space-grid-empty {
@@ -395,36 +414,97 @@ function memberDefaultSourceLabel(source: string) {
 }
 
 .wiki-space-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  height: 100%;
   padding: 18px;
+  overflow: hidden;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
 }
 
 .wiki-space-card-head,
-.wiki-space-meta,
-.wiki-space-actions {
+.wiki-space-meta-line,
+.wiki-space-card-actions {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
 
 .wiki-space-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  flex: 0 0 auto;
+  align-items: flex-start;
   justify-content: space-between;
+}
+
+.wiki-space-card-head > div:first-child {
+  display: contents;
+  min-width: 0;
 }
 
 .wiki-space-card h2 {
   margin: 0;
   color: #172033;
+  grid-column: 1;
+  grid-row: 1;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  -webkit-box-orient: vertical;
 }
 
 .wiki-space-card p {
   margin: 8px 0 0;
   color: #64748b;
   line-height: 1.6;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
-.wiki-space-meta {
+.wiki-space-tag-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.wiki-space-card > .wiki-space-card-head .wiki-space-tag-group {
+  grid-column: 2;
+  grid-row: 1;
+  flex: 0 0 auto;
+  max-width: 100%;
+  max-height: 62px;
+  overflow: hidden;
+}
+
+.wiki-space-meta-line {
   color: #475569;
   font-size: 13px;
-  margin: 14px 0 18px;
+  line-height: 1.45;
+  max-height: 58px;
+  margin: 0;
+  overflow: hidden;
+}
+
+.wiki-space-meta-line span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wiki-space-form-hint {
@@ -434,16 +514,82 @@ function memberDefaultSourceLabel(source: string) {
   line-height: 1.5;
 }
 
-.wiki-space-actions {
+.wiki-space-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 0 0 auto;
+  max-height: 66px;
+  overflow: hidden;
+}
+
+.wiki-space-card-actions-shell {
+  display: flex;
+  flex: 0 0 auto;
+  align-self: stretch;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.wiki-space-card-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: center;
+  align-self: stretch;
+  min-width: 0;
+  min-height: 52px;
+  padding: 0 0 2px;
+  overflow-x: auto;
+  overflow-y: visible;
   justify-content: flex-start;
+  scrollbar-width: none;
+}
+
+.wiki-space-card-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.wiki-space-card-actions :deep(.el-button) {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 16px;
+  margin-left: 0;
+  box-shadow: none;
+  transform: none;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+  white-space: nowrap;
+  border-radius: 12px;
+}
+
+.wiki-space-card-actions :deep(.el-button:hover),
+.wiki-space-card-actions :deep(.el-button:focus-visible) {
+  box-shadow: none;
+  transform: none;
 }
 
 @media (max-width: 980px) {
+  .wiki-space-grid {
+    grid-auto-rows: minmax(300px, auto);
+  }
+
   .wiki-home-toolbar .management-list-toolbar-main {
     width: fit-content;
     max-width: 100%;
     justify-self: start;
     flex: 0 1 auto;
+  }
+
+  .wiki-space-card-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wiki-space-card > .wiki-space-card-head .wiki-space-tag-group {
+    grid-column: 1;
+    grid-row: 3;
+    max-height: none;
   }
 }
 </style>

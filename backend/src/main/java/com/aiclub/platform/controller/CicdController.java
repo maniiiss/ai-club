@@ -85,7 +85,7 @@ public class CicdController {
     }
 
     @PostMapping("/jenkins-servers/{id}/jobs/trigger")
-    @RequirePermission("cicd:manage")
+    @RequirePermission("cicd:build")
     public ApiResponse<JenkinsBuildTriggerResult> triggerJenkinsJob(@PathVariable Long id,
                                                                     @RequestParam String jobName) {
         return ApiResponse.success(cicdManagementService.triggerJenkinsJob(id, jobName));
@@ -138,7 +138,7 @@ public class CicdController {
     }
 
     @PostMapping("/pipeline-bindings/{id}/trigger")
-    @RequirePermission("cicd:manage")
+    @RequirePermission("cicd:build")
     public ApiResponse<JenkinsBuildTriggerResult> triggerPipelineBuild(@PathVariable Long id) {
         return ApiResponse.success(cicdManagementService.triggerPipelineBuild(id));
     }

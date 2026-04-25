@@ -45,6 +45,9 @@ class MemoryFactGraphServiceTests {
     @Mock
     private WikiSpaceService wikiSpaceService;
 
+    @Mock
+    private ProjectDataPermissionService projectDataPermissionService;
+
     private MemoryFactGraphService serviceWithoutSharedBank;
     private MemoryFactGraphService serviceWithSharedBank;
 
@@ -72,7 +75,8 @@ class MemoryFactGraphServiceTests {
                         "aiclub123"
                 ),
                 wikiSpaceService,
-                assembler
+                assembler,
+                projectDataPermissionService
         );
         serviceWithSharedBank = new MemoryFactGraphService(
                 projectRepository,
@@ -95,7 +99,8 @@ class MemoryFactGraphServiceTests {
                         "aiclub123"
                 ),
                 wikiSpaceService,
-                assembler
+                assembler,
+                projectDataPermissionService
         );
         lenient().when(projectRepository.findById(12L)).thenReturn(Optional.of(project(12L)));
     }

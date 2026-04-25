@@ -3,35 +3,29 @@
     <el-empty description="暂无记忆事实图数据" />
   </div>
   <div v-else class="graph-panel">
-    <div class="graph-legend">
-      <button
-        v-for="item in entityTypeOptions"
-        :key="item"
-        type="button"
-        class="legend-item"
-        :class="{ active: selectedNode?.entityType === item }"
-        @click="focusFirstNode(item)"
-      >
-        <span class="legend-dot" :style="{ background: entityColor(item) }"></span>
-        <span>{{ entityTypeLabel(item) }}</span>
-      </button>
-    </div>
-    <div ref="graphContainerRef" class="graph-container"></div>
+    <div
+      ref="graphContainerRef"
+      class="graph-container"
+      :class="{ transitioning: isTransitioning }"
+      @contextmenu.prevent
+    ></div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ConcentricLayout, ForceLayout, Graph as G6Graph } from '@antv/g6'
+import { Graph as G6Graph } from '@antv/g6'
 import type { ComboData, EdgeData, GraphData, NodeData } from '@antv/g6'
 import type { MemoryFactEdgeItem, MemoryFactNodeItem } from '@/types/platform'
 
-type LayoutMode = 'cluster' | 'ring' | 'grid'
+type LayoutMode = 'network' | 'ring' | 'grid'
+type DensityMode = 'compact' | 'standard' | 'loose'
 
 const props = defineProps<{
   nodes: MemoryFactNodeItem[]
   edges: MemoryFactEdgeItem[]
   layoutMode: LayoutMode
+  densityMode: DensityMode
   selectedNodeId: string | null
   selectedEdgeId: string | null
 }>()
@@ -45,20 +39,17 @@ const emit = defineEmits<{
 const graphContainerRef = ref<HTMLDivElement | null>(null)
 const containerWidth = ref(1100)
 const containerHeight = ref(700)
+const isTransitioning = ref(false)
 
 let graphInstance: G6Graph | null = null
 let resizeObserver: ResizeObserver | null = null
 let renderToken = 0
-
-const selectedNode = computed(() => props.nodes.find((item) => item.id === props.selectedNodeId) || null)
-
-const entityTypeOptions = computed(() => {
-  const values = new Set(props.nodes.map((item) => item.entityType || 'ENTITY'))
-  return Array.from(values)
-})
+let resizeFrameId: number | null = null
+let transitionFrameId: number | null = null
 
 const entityColor = (entityType: string) => {
   const map: Record<string, string> = {
+    FACT: '#2563eb',
     ENTITY: '#4f46e5',
     LOCATION: '#0891b2',
     PERSON: '#ef4444',
@@ -69,18 +60,6 @@ const entityColor = (entityType: string) => {
   return map[entityType] || '#64748b'
 }
 
-const entityTypeLabel = (entityType: string) => {
-  const map: Record<string, string> = {
-    ENTITY: '实体',
-    LOCATION: '地点',
-    PERSON: '人物',
-    ORGANIZATION: '组织',
-    DOCUMENT: '文档',
-    EVENT: '事件'
-  }
-  return map[entityType] || entityType
-}
-
 const edgeColor = (relationType: string) => {
   if (relationType.includes('cause')) return '#ef4444'
   if (relationType.includes('contain')) return '#d97706'
@@ -89,15 +68,29 @@ const edgeColor = (relationType: string) => {
 }
 
 const truncate = (value: string, max: number) => (value.length > max ? `${value.slice(0, max)}…` : value)
-
-const comboId = (entityType: string) => `combo-${entityType.toLowerCase()}`
+const entityNodeScore = (degree: number, factCount: number) => degree * 3 + factCount * 4
+const circleSize = (degree: number, factCount: number) => {
+  const normalizedDegree = Math.max(degree, 1)
+  const normalizedFactCount = Math.max(factCount, 1)
+  return Math.max(14, Math.min(28, 9 + Math.sqrt(normalizedDegree) * 2.8 + Math.sqrt(normalizedFactCount) * 2.2))
+}
+const compareScore = (left: number, right: number) => {
+  if (left === right) return 0
+  return left > right ? -1 : 1
+}
+const isHeavyGraph = computed(() => props.edges.length >= 300 || props.nodes.length >= 60)
+const disableEdgeInteraction = computed(() => props.edges.length >= 500)
+const shouldShowDefaultLabel = (degree: number, factCount: number) =>
+  isHeavyGraph.value
+    ? degree >= 8 || factCount >= 12
+    : degree >= 4 || factCount >= 5
 
 const graphData = computed<GraphData>(() => {
   const nodes: NodeData[] = props.nodes.map((item) => ({
     id: item.id,
-    combo: props.layoutMode === 'cluster' ? comboId(item.entityType || 'ENTITY') : undefined,
     data: {
       label: item.label,
+      shortLabel: truncate(item.label, 26),
       entityType: item.entityType || 'ENTITY',
       factCount: item.factCount,
       degree: item.degree
@@ -112,70 +105,185 @@ const graphData = computed<GraphData>(() => {
       weight: item.weight ?? 1
     }
   }))
-  const combos: ComboData[] = props.layoutMode !== 'cluster'
-    ? []
-    : entityTypeOptions.value.map((item) => ({
-        id: comboId(item),
-        data: {
-          label: entityTypeLabel(item),
-          entityType: item
-        }
-      }))
-  return { nodes, edges, combos }
+  return { nodes, edges, combos: [] as ComboData[] }
 })
+
+const densityConfig = computed(() => {
+  const map: Record<DensityMode, { nodeSpacing: number; sweep: number; gridColsBoost: number }> = {
+    compact: { nodeSpacing: 12, sweep: Math.PI * 1.2, gridColsBoost: 1 },
+    standard: { nodeSpacing: 22, sweep: (Math.PI * 3) / 2, gridColsBoost: 0 },
+    loose: { nodeSpacing: 38, sweep: Math.PI * 2, gridColsBoost: -1 }
+  }
+  return map[props.densityMode]
+})
+const viewTransition = {
+  duration: 560,
+  easing: 'cubic-bezier(0.18, 0.92, 0.24, 1)'
+} as const
+
+const measureContainerSize = () => {
+  const container = graphContainerRef.value
+  if (!container) return { width: containerWidth.value, height: containerHeight.value, changed: false }
+  const nextWidth = Math.max(container.clientWidth, 980)
+  const nextHeight = Math.max(container.clientHeight, 620)
+  const changed = nextWidth !== containerWidth.value || nextHeight !== containerHeight.value
+  containerWidth.value = nextWidth
+  containerHeight.value = nextHeight
+  return { width: nextWidth, height: nextHeight, changed }
+}
+
+const beginTransition = () => {
+  isTransitioning.value = true
+  if (transitionFrameId !== null) {
+    cancelAnimationFrame(transitionFrameId)
+    transitionFrameId = null
+  }
+}
+
+const finishTransition = () => {
+  if (transitionFrameId !== null) {
+    cancelAnimationFrame(transitionFrameId)
+  }
+  transitionFrameId = requestAnimationFrame(() => {
+    transitionFrameId = requestAnimationFrame(() => {
+      isTransitioning.value = false
+      transitionFrameId = null
+    })
+  })
+}
 
 const createLayoutConfig = () => {
   const width = Math.max(containerWidth.value, 980)
   const height = Math.max(containerHeight.value, 620)
   const center: [number, number] = [width / 2, height / 2]
+  if (props.layoutMode === 'network') {
+    const currentDensity = densityConfig.value
+    return {
+      type: 'concentric',
+      width,
+      height,
+      center,
+      preventOverlap: true,
+      nodeSize: 28,
+      nodeSpacing: currentDensity.nodeSpacing,
+      sweep: currentDensity.sweep,
+      equidistant: true,
+      sortBy: 'degree'
+    }
+  }
   if (props.layoutMode === 'ring') {
+    const currentDensity = densityConfig.value
     return {
       type: 'circular',
       width,
       height,
       center,
       startAngle: -Math.PI / 2,
-      endAngle: (Math.PI * 3) / 2
+      endAngle: -Math.PI / 2 + currentDensity.sweep
     }
   }
   if (props.layoutMode === 'grid') {
+    const currentDensity = densityConfig.value
+    const baseCols = Math.max(Math.ceil(Math.sqrt(Math.max(props.nodes.length, 1))), 3)
     return {
       type: 'grid',
       width,
       height,
       center,
       preventOverlap: true,
-      cols: Math.max(Math.ceil(Math.sqrt(Math.max(props.nodes.length, 1))), 3)
+      cols: Math.max(baseCols + currentDensity.gridColsBoost, 2)
     }
   }
-  return {
-    type: 'combo-combined',
-    width,
-    height,
-    center,
-    comboPadding: 30,
-    spacing: 24,
-    outerLayout: new ForceLayout({
-      width,
-      height,
-      center,
-      gravity: 0.9,
-      linkDistance: 220,
-      preventOverlap: true,
-      nodeSize: 48
-    }),
-    innerLayout: new ConcentricLayout({
-      width,
-      height,
-      center,
-      nodeSpacing: 14,
-      preventOverlap: true,
-      sortBy: 'id'
-    })
-  } as any
+  return undefined
 }
 
-const nodeWidth = (factCount: number) => Math.max(150, Math.min(220, 150 + factCount * 8))
+const createGraphOptions = () => ({
+  container: graphContainerRef.value as HTMLDivElement,
+  width: containerWidth.value,
+  height: containerHeight.value,
+  autoFit: false,
+  animation: false,
+  data: graphData.value,
+  layout: createLayoutConfig(),
+  node: {
+    type: 'circle',
+    style: {
+      size: (datum: NodeData) => circleSize(Number(datum.data?.degree || 1), Number(datum.data?.factCount || 1)),
+      lineWidth: 1.2,
+      fill: (datum: NodeData) => `${entityColor(String(datum.data?.entityType || 'ENTITY'))}16`,
+      stroke: (datum: NodeData) => entityColor(String(datum.data?.entityType || 'ENTITY')),
+      shadowColor: 'rgba(59, 130, 246, 0.12)',
+      shadowBlur: isHeavyGraph.value ? 0 : 8,
+      shadowOffsetY: 2,
+      halo: !isHeavyGraph.value,
+      haloLineWidth: isHeavyGraph.value ? 0 : 4,
+      haloStroke: (datum: NodeData) => entityColor(String(datum.data?.entityType || 'ENTITY')),
+      haloStrokeOpacity: isHeavyGraph.value ? 0 : 0.06,
+      label: true,
+      labelText: (datum: NodeData) =>
+        shouldShowDefaultLabel(Number(datum.data?.degree || 0), Number(datum.data?.factCount || 0))
+          ? String(datum.data?.shortLabel || '')
+          : '',
+      labelPlacement: 'right',
+      labelOffsetX: 7,
+      labelFontWeight: 600,
+      labelFontSize: (datum: NodeData) => Number(datum.data?.degree || 0) >= 6 ? 13 : 11,
+      labelFill: '#334155',
+      labelMaxWidth: 180
+    },
+    state: {
+      selected: { lineWidth: 2.4, haloStrokeOpacity: 0.22, shadowBlur: 14, opacity: 1 },
+      related: { lineWidth: 1.8, haloStrokeOpacity: 0.14, opacity: 1 },
+      active: { haloStrokeOpacity: 0.12, shadowBlur: 12, opacity: 1 },
+      dimmed: { opacity: 0.1 }
+    }
+  },
+  edge: {
+    type: isHeavyGraph.value ? 'line' : 'quadratic',
+    style: {
+      stroke: (datum: EdgeData) => edgeColor(String(datum.data?.relationType || 'co_occurrence')),
+      lineWidth: (datum: EdgeData) => Math.max(1, Math.min(isHeavyGraph.value ? 1.6 : 2.4, Number(datum.data?.weight || 1) * 0.85)),
+      lineCap: 'round',
+      opacity: 0.08,
+      pointerEvents: disableEdgeInteraction.value ? 'none' : 'visiblestroke'
+    },
+    state: {
+      selected: { lineWidth: 3, opacity: 0.75 },
+      related: { opacity: 0.24 },
+      active: { opacity: 0.18 },
+      dimmed: { opacity: 0.02 }
+    }
+  },
+  behaviors: [
+    'drag-canvas',
+    'zoom-canvas',
+    'drag-element',
+    'optimize-viewport-transform',
+    {
+      type: 'auto-adapt-label',
+      padding: [10, 20, 10, 20],
+      // 按业务价值优先显示高连接、高事实量实体标签，避免大图时标签噪声淹没重点节点。
+      sortNode: (left: NodeData, right: NodeData) =>
+        compareScore(
+          entityNodeScore(Number(right.data?.degree || 0), Number(right.data?.factCount || 0)),
+          entityNodeScore(Number(left.data?.degree || 0), Number(left.data?.factCount || 0))
+        )
+    }
+  ]
+})
+
+const bindGraphEvents = () => {
+  if (!graphInstance) return
+  graphInstance.on('node:click', (event: any) => {
+    const id = String(event?.target?.id || '')
+    if (id) emit('select-node', id)
+  })
+  graphInstance.on('edge:click', (event: any) => {
+    const id = String(event?.target?.id || '')
+    if (id) emit('select-edge', id)
+  })
+  graphInstance.on('canvas:click', () => emit('clear-selection'))
+}
 
 const initGraph = async () => {
   const container = graphContainerRef.value
@@ -188,97 +296,27 @@ const initGraph = async () => {
   }
 
   const token = ++renderToken
-  containerWidth.value = Math.max(container.clientWidth, 980)
-  containerHeight.value = Math.max(container.clientHeight, 620)
-  if (graphInstance) {
-    graphInstance.destroy()
-    graphInstance = null
+  beginTransition()
+  measureContainerSize()
+  if (!graphInstance) {
+    graphInstance = new G6Graph(createGraphOptions() as any)
+    bindGraphEvents()
+  } else {
+    graphInstance.setSize(containerWidth.value, containerHeight.value)
+    graphInstance.setData(graphData.value)
+    graphInstance.setLayout(createLayoutConfig() as any)
   }
-
-  graphInstance = new G6Graph({
-    container,
-    width: containerWidth.value,
-    height: containerHeight.value,
-    autoFit: 'view',
-    animation: true,
-    data: graphData.value,
-    layout: createLayoutConfig(),
-    node: {
-      type: 'rect',
-      style: {
-        size: (datum: NodeData) => [nodeWidth(Number(datum.data?.factCount || 1)), 72],
-        radius: 18,
-        lineWidth: 1.8,
-        fill: (datum: NodeData) => `${entityColor(String(datum.data?.entityType || 'ENTITY'))}16`,
-        stroke: (datum: NodeData) => entityColor(String(datum.data?.entityType || 'ENTITY')),
-        shadowColor: 'rgba(15, 23, 42, 0.08)',
-        shadowBlur: 10,
-        shadowOffsetY: 4,
-        labelText: (datum: NodeData) => truncate(String(datum.data?.label || ''), 18),
-        labelFontWeight: 700,
-        labelFontSize: 14,
-        labelFill: '#17324c',
-        labelPlacement: 'center'
-      },
-      state: {
-        selected: { lineWidth: 3, shadowBlur: 18, shadowColor: 'rgba(23, 50, 76, 0.18)' },
-        related: { lineWidth: 2.4 },
-        dimmed: { opacity: 0.22 }
-      }
-    },
-    combo: {
-      type: 'rect',
-      style: {
-        radius: 26,
-        fill: (datum: ComboData) => `${entityColor(String(datum.data?.entityType || 'ENTITY'))}10`,
-        stroke: (datum: ComboData) => `${entityColor(String(datum.data?.entityType || 'ENTITY'))}88`,
-        lineWidth: 1.6,
-        padding: [28, 24, 24, 24],
-        labelText: (datum: ComboData) => String(datum.data?.label || ''),
-        labelFill: '#385166',
-        labelFontWeight: 700,
-        labelPlacement: 'top'
-      },
-      state: {
-        related: { lineWidth: 2.4 },
-        dimmed: { opacity: 0.14 }
-      }
-    },
-    edge: {
-      type: 'cubic',
-      style: {
-        stroke: (datum: EdgeData) => edgeColor(String(datum.data?.relationType || 'co_occurrence')),
-        lineWidth: (datum: EdgeData) => Math.max(1.6, Math.min(4.2, Number(datum.data?.weight || 1))),
-        endArrow: true,
-        opacity: 0.7
-      },
-      state: {
-        selected: { lineWidth: 3.2, opacity: 1 },
-        related: { opacity: 0.92 },
-        dimmed: { opacity: 0.12 }
-      }
-    },
-    behaviors: ['drag-canvas', 'zoom-canvas', 'drag-element']
-  } as any)
-
-  graphInstance.on('node:click', (event: any) => {
-    const id = String(event?.target?.id || '')
-    if (id) emit('select-node', id)
-  })
-  graphInstance.on('edge:click', (event: any) => {
-    const id = String(event?.target?.id || '')
-    if (id) emit('select-edge', id)
-  })
-  graphInstance.on('canvas:click', () => emit('clear-selection'))
 
   await graphInstance.render()
   if (token !== renderToken) {
     graphInstance.destroy()
     graphInstance = null
+    finishTransition()
     return
   }
-  await graphInstance.fitView()
+  await graphInstance.fitView({ when: 'overflow' }, viewTransition)
   await applySelectionState()
+  finishTransition()
 }
 
 const applySelectionState = async () => {
@@ -286,10 +324,9 @@ const applySelectionState = async () => {
   const states: Record<string, string[]> = {}
   const nodeIds = props.nodes.map((item) => item.id)
   const edgeIds = props.edges.map((item) => item.id)
-  const comboIds = entityTypeOptions.value.map((item) => comboId(item))
 
   if (!props.selectedNodeId && !props.selectedEdgeId) {
-    ;[...nodeIds, ...edgeIds, ...comboIds].forEach((id) => {
+    ;[...nodeIds, ...edgeIds].forEach((id) => {
       states[id] = []
     })
     await graphInstance.setElementState(states, false)
@@ -298,7 +335,6 @@ const applySelectionState = async () => {
 
   const relatedNodeIds = new Set<string>()
   const relatedEdgeIds = new Set<string>()
-  const relatedComboIds = new Set<string>()
 
   if (props.selectedNodeId) {
     relatedNodeIds.add(props.selectedNodeId)
@@ -318,11 +354,6 @@ const applySelectionState = async () => {
       relatedNodeIds.add(edge.targetId)
     }
   }
-  for (const node of props.nodes) {
-    if (relatedNodeIds.has(node.id)) {
-      relatedComboIds.add(comboId(node.entityType || 'ENTITY'))
-    }
-  }
 
   nodeIds.forEach((id) => {
     if (props.selectedNodeId === id) states[id] = ['selected']
@@ -334,19 +365,11 @@ const applySelectionState = async () => {
     else if (relatedEdgeIds.has(id)) states[id] = ['related']
     else states[id] = ['dimmed']
   })
-  comboIds.forEach((id) => {
-    states[id] = relatedComboIds.has(id) ? ['related'] : ['dimmed']
-  })
   await graphInstance.setElementState(states, false)
 }
 
-const focusFirstNode = (entityType: string) => {
-  const target = props.nodes.find((item) => item.entityType === entityType)
-  if (target) emit('select-node', target.id)
-}
-
 watch(
-  [() => props.nodes, () => props.edges, () => props.layoutMode, containerWidth, containerHeight],
+  [() => props.nodes, () => props.edges, () => props.layoutMode, () => props.densityMode],
   async () => {
     await nextTick()
     await initGraph()
@@ -363,10 +386,16 @@ watch(
 
 onMounted(async () => {
   resizeObserver = new ResizeObserver(() => {
-    const container = graphContainerRef.value
-    if (!container) return
-    containerWidth.value = Math.max(container.clientWidth, 980)
-    containerHeight.value = Math.max(container.clientHeight, 620)
+    if (resizeFrameId !== null) {
+      cancelAnimationFrame(resizeFrameId)
+    }
+    resizeFrameId = requestAnimationFrame(() => {
+      resizeFrameId = null
+      const { width, height, changed } = measureContainerSize()
+      if (!changed || !graphInstance) return
+      graphInstance.setSize(width, height)
+      void graphInstance.fitView({ when: 'overflow' })
+    })
   })
   await nextTick()
   if (graphContainerRef.value) {
@@ -378,6 +407,14 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   resizeObserver = null
+  if (resizeFrameId !== null) {
+    cancelAnimationFrame(resizeFrameId)
+    resizeFrameId = null
+  }
+  if (transitionFrameId !== null) {
+    cancelAnimationFrame(transitionFrameId)
+    transitionFrameId = null
+  }
   if (graphInstance) {
     graphInstance.destroy()
     graphInstance = null
@@ -389,50 +426,38 @@ onBeforeUnmount(() => {
 .graph-panel {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-}
-
-.graph-legend {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid rgba(206, 217, 226, 0.92);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #3f5568;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.legend-item.active {
-  border-color: rgba(37, 99, 235, 0.3);
-  background: rgba(233, 241, 255, 0.9);
-}
-
-.legend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
+  height: 100%;
+  min-height: 0;
 }
 
 .graph-container {
+  flex: 1;
   width: 100%;
-  min-height: 700px;
-  border-radius: 20px;
-  border: 1px solid rgba(209, 219, 229, 0.92);
+  min-height: 0;
+  height: 100%;
+  border-radius: 24px;
+  border: 1px solid rgba(191, 219, 254, 0.52);
   background:
-    radial-gradient(circle at top left, rgba(14, 165, 233, 0.08), transparent 24%),
-    radial-gradient(circle at bottom right, rgba(99, 102, 241, 0.08), transparent 24%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(246, 250, 253, 0.98) 100%);
+    radial-gradient(circle at 18% 16%, rgba(56, 189, 248, 0.12), transparent 28%),
+    radial-gradient(circle at 82% 14%, rgba(96, 165, 250, 0.1), transparent 24%),
+    radial-gradient(circle at 72% 78%, rgba(168, 85, 247, 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(244, 248, 252, 0.98) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 24px 60px rgba(148, 163, 184, 0.12);
   overflow: hidden;
+  transition:
+    opacity 420ms ease,
+    transform 620ms cubic-bezier(0.18, 0.92, 0.24, 1),
+    filter 620ms ease;
+  will-change: transform, opacity, filter;
+  transform-origin: 54% 46%;
+}
+
+.graph-container.transitioning {
+  opacity: 0.72;
+  transform: translate3d(16px, 10px, 0) scale(1.018);
+  filter: saturate(0.98) blur(0.5px);
 }
 
 .graph-empty {

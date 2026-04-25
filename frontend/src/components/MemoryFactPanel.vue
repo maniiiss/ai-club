@@ -22,24 +22,24 @@
 
       <div class="panel-meta-grid">
         <div class="panel-meta-item">
-          <span>连接度</span>
+          <span>关联数量</span>
           <strong>{{ entityDetail?.degree ?? selectedNode.degree }}</strong>
         </div>
         <div class="panel-meta-item">
-          <span>别名数</span>
+          <span>其他叫法数量</span>
           <strong>{{ (entityDetail?.aliases || selectedNode.aliases || []).length }}</strong>
         </div>
       </div>
 
       <div v-if="(entityDetail?.aliases || selectedNode.aliases || []).length" class="panel-section">
-        <div class="panel-section-title">别名</div>
+        <div class="panel-section-title">其他叫法</div>
         <div class="chip-list">
           <span v-for="item in entityDetail?.aliases || selectedNode.aliases" :key="item" class="chip">{{ item }}</span>
         </div>
       </div>
 
       <div v-if="entityDetail?.observations?.length" class="panel-section">
-        <div class="panel-section-title">观察记录</div>
+        <div class="panel-section-title">补充说明</div>
         <div class="fact-list">
           <article v-for="item in entityDetail.observations" :key="item" class="fact-card compact">
             <div class="fact-summary">{{ item }}</div>
@@ -51,7 +51,7 @@
     <template v-else-if="selectedEdge">
       <div class="panel-header">
         <div>
-          <div class="panel-title">{{ selectedEdge.relationType }}</div>
+          <div class="panel-title">{{ relationTypeLabel(selectedEdge.relationType) }}</div>
           <div class="panel-subtitle">{{ selectedEdge.sourceLabel }} → {{ selectedEdge.targetLabel }}</div>
         </div>
         <el-tag type="info">{{ selectedEdge.weight ?? '-' }}</el-tag>
@@ -63,11 +63,11 @@
     </div>
 
     <div v-else-if="facts.length" class="panel-section">
-      <div class="panel-section-title">事实证据</div>
+      <div class="panel-section-title">参考内容</div>
       <div class="fact-list">
         <article v-for="item in facts" :key="item.id" class="fact-card">
           <div class="fact-header">
-            <div class="fact-type">{{ item.type || item.sourceType || '事实' }}</div>
+            <div class="fact-type">{{ factTypeLabel(item.type, item.sourceType) }}</div>
             <div class="fact-date">{{ item.createdAt || '-' }}</div>
           </div>
           <div class="fact-summary">{{ item.summary }}</div>
@@ -75,28 +75,28 @@
             {{ item.subject || '实体' }} · {{ item.predicate || '关联' }} · {{ item.object || '上下文' }}
           </div>
           <div v-if="item.tags.length" class="chip-list">
-            <span v-for="tag in item.tags" :key="tag" class="chip muted">{{ tag }}</span>
+            <span v-for="tag in displayTags(item.tags)" :key="tag" class="chip muted">{{ tag }}</span>
           </div>
         </article>
       </div>
     </div>
 
     <div v-else-if="selectedNode || selectedEdge" class="panel-empty">
-      <el-empty description="当前选择暂无可展示的事实证据" />
+      <el-empty description="当前内容暂无更多参考信息" />
     </div>
 
     <div v-if="metadataEntries.length" class="panel-section">
-      <div class="panel-section-title">元数据</div>
+      <div class="panel-section-title">附加信息</div>
       <div class="metadata-list">
         <div v-for="entry in metadataEntries" :key="entry.key" class="metadata-item">
-          <span>{{ entry.key }}</span>
+          <span>{{ metadataKeyLabel(entry.key) }}</span>
           <strong>{{ entry.value }}</strong>
         </div>
       </div>
     </div>
 
     <div v-if="!selectedNode && !selectedEdge" class="panel-empty">
-      <el-empty description="点击节点、边或执行搜索后查看详情" />
+      <el-empty description="点击图中的内容后在这里查看详情" />
     </div>
   </div>
 </template>
@@ -122,6 +122,10 @@ const props = defineProps<{
   facts: MemoryFactItem[]
   factsLoading: boolean
   warnings: string[]
+  spaceName?: string
+  projectName?: string
+  directoryLabelMap?: Record<string, string>
+  projectLabelMap?: Record<string, string>
 }>()
 
 const metadataEntries = computed(() => {
@@ -144,6 +148,7 @@ const metadataEntries = computed(() => {
 
 const entityTypeLabel = (value: string) => {
   const map: Record<string, string> = {
+    FACT: '事实',
     ENTITY: '实体',
     LOCATION: '地点',
     PERSON: '人物',
@@ -153,13 +158,117 @@ const entityTypeLabel = (value: string) => {
   }
   return map[value] || value || '实体'
 }
+
+const relationTypeLabel = (value: string) => {
+  const normalized = String(value || '').toLowerCase()
+  const map: Record<string, string> = {
+    semantic: '内容关联',
+    entity: '实体关联',
+    temporal: '时间关联',
+    cause: '因果',
+    contain: '包含',
+    co_occurrence: '共现',
+    relation: '关系',
+    reference: '引用',
+    mention: '提及'
+  }
+  return map[normalized] || value || '关系'
+}
+
+const sourceTypeLabel = (value: string) => {
+  const normalized = String(value || '').toUpperCase()
+  const map: Record<string, string> = {
+    WIKI: '知识库',
+    WIKI_SPACE: '空间知识库',
+    MEMORY: '记忆'
+  }
+  return map[normalized] || value
+}
+
+const factTypeLabel = (type?: string, sourceType?: string) => {
+  if (type) {
+    const normalized = String(type || '').toUpperCase()
+    const map: Record<string, string> = {
+      FACT: '事实',
+      WORLD: '事实',
+      OBSERVATION: '观察',
+      MEMORY: '记忆',
+      EVENT: '事件',
+      ENTITY: '实体'
+    }
+    return map[normalized] || type
+  }
+  if (sourceType) {
+    return sourceTypeLabel(sourceType)
+  }
+  return '事实'
+}
+
+const metadataKeyLabel = (key: string) => {
+  const map: Record<string, string> = {
+    bankId: '存储库',
+    rawEntityId: '原始实体 ID',
+    rawEdgeId: '原始关系 ID',
+    rawSourceId: '原始起点 ID',
+    rawTargetId: '原始终点 ID',
+    mentionCount: '提及次数',
+    color: '颜色',
+    sourceType: '来源',
+    raw: '原始数据',
+    graphNodeMetadata: '图谱节点元数据',
+    entityDetail: '实体详情',
+    firstSeenAt: '首次出现时间',
+    lastSeenAt: '最近出现时间'
+  }
+  return map[key] || key
+}
+
+const displayTag = (tag: string) => {
+  const value = String(tag || '').trim()
+  if (!value) return ''
+  if (value === 'wiki') return '知识库'
+  if (value.startsWith('source:')) {
+    return `来源：${sourceTypeLabel(value.slice('source:'.length).toUpperCase())}`
+  }
+  if (value.startsWith('space:')) {
+    return props.spaceName ? `空间：${props.spaceName}` : '空间'
+  }
+  if (value.startsWith('directory:')) {
+    const directoryId = value.slice('directory:'.length)
+    const label = props.directoryLabelMap?.[directoryId]
+    return label ? `目录：${label}` : '目录'
+  }
+  if (value.startsWith('project:')) {
+    const projectId = value.slice('project:'.length)
+    const label = props.projectLabelMap?.[projectId] || props.projectName
+    return label ? `项目：${label}` : '项目'
+  }
+  if (value.startsWith('visibility:')) {
+    const scope = value.slice('visibility:'.length)
+    const visibilityMap: Record<string, string> = {
+      ALL_LOGGED_IN: '可见范围：登录可见',
+      MEMBERS_ONLY: '可见范围：成员可见'
+    }
+    return visibilityMap[scope] || `可见范围：${scope}`
+  }
+  return value
+}
+
+const displayTags = (tags: string[]) => {
+  const values = new Set<string>()
+  for (const tag of tags || []) {
+    const label = displayTag(tag)
+    if (label) values.add(label)
+  }
+  return Array.from(values)
+}
 </script>
 
 <style scoped>
 .memory-fact-panel {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 
 .panel-warning-list,
@@ -167,7 +276,7 @@ const entityTypeLabel = (value: string) => {
 .chip-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .chip-list {
@@ -192,27 +301,28 @@ const entityTypeLabel = (value: string) => {
 }
 
 .panel-header {
-  padding: 16px;
-  border-radius: 18px;
+  padding: 12px 14px;
+  border-radius: 14px;
   background: linear-gradient(135deg, rgba(247, 250, 252, 0.96) 0%, rgba(239, 245, 248, 0.96) 100%);
   border: 1px solid rgba(214, 226, 234, 0.92);
 }
 
 .panel-title {
   color: #17324c;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 800;
+  line-height: 1.45;
 }
 
 .panel-subtitle,
 .fact-date,
 .fact-triple {
   color: #6b7f91;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .panel-meta-grid {
-  gap: 12px;
+  gap: 8px;
 }
 
 .panel-meta-item,
@@ -225,10 +335,10 @@ const entityTypeLabel = (value: string) => {
 
 .panel-meta-item {
   flex: 1 1 0;
-  padding: 14px 16px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .panel-meta-item span {
@@ -238,52 +348,53 @@ const entityTypeLabel = (value: string) => {
 
 .panel-meta-item strong {
   color: #17324c;
-  font-size: 20px;
+  font-size: 16px;
 }
 
 .panel-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
 .panel-section-title,
 .fact-type {
-  color: #385166;
-  font-size: 13px;
-  font-weight: 700;
+  color: #637789;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .fact-card {
-  padding: 14px 16px;
+  padding: 10px 12px;
 }
 
 .fact-card.compact {
-  padding-top: 12px;
-  padding-bottom: 12px;
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 
 .fact-summary {
   color: #21384f;
-  font-size: 14px;
-  line-height: 1.7;
+  font-size: 13px;
+  line-height: 1.65;
   white-space: pre-wrap;
 }
 
 .fact-triple {
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
+  min-height: 24px;
+  padding: 0 8px;
   border-radius: 999px;
   background: rgba(236, 244, 247, 0.96);
   color: #315066;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .chip.muted {
@@ -297,7 +408,7 @@ const entityTypeLabel = (value: string) => {
 }
 
 .metadata-item {
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-bottom: 1px solid rgba(228, 235, 240, 0.92);
 }
 
@@ -307,20 +418,20 @@ const entityTypeLabel = (value: string) => {
 
 .metadata-item span {
   color: #6b7f91;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .metadata-item strong {
   color: #21384f;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
   text-align: right;
   word-break: break-word;
 }
 
 .panel-empty,
 .panel-loading {
-  min-height: 180px;
+  min-height: 140px;
   display: flex;
   align-items: center;
   justify-content: center;

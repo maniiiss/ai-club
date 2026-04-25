@@ -181,7 +181,21 @@
           <div class="hermes-attachment-bar">
             <input ref="fileInputRef" type="file" multiple accept=".pdf,.docx,.pptx,.xlsx" style="display: none" @change="handleFileInputChange" />
             <button class="hermes-inline-button secondary" type="button" :disabled="footerDisabled" @click="openFilePicker">添加附件</button>
-            <span class="hermes-attachment-tip">每次最多 3 个文档</span>
+            <button
+              class="hermes-inline-button secondary hermes-voice-button"
+              type="button"
+              :disabled="voiceButtonDisabled"
+              :class="{ active: recording }"
+              @click="handleVoiceButtonClick"
+            >
+              {{ transcribing ? '转写中...' : recording ? '结束录音' : '语音输入' }}
+            </button>
+            <div v-if="recording" class="hermes-voice-meter" :class="{ active: recording }">
+              <div class="hermes-voice-meter-track" aria-hidden="true">
+                <div class="hermes-voice-meter-fill" :style="{ width: `${voiceLevelBarWidth}%` }"></div>
+              </div>
+              <span class="hermes-voice-meter-label">{{ voiceLevelLabel }}</span>
+            </div>
           </div>
           <div v-if="pendingFiles.length" class="hermes-pending-file-list">
             <div v-for="file in pendingFiles" :key="`${file.name}-${file.size}`" class="hermes-pending-file-chip">
@@ -189,7 +203,7 @@
               <button class="hermes-pending-file-remove-button" type="button" :disabled="footerDisabled" @click="removePendingFile(file)">移除</button>
             </div>
           </div>
-          <el-input v-model="draftQuestion" type="textarea" :rows="3" resize="none" :disabled="footerDisabled" :placeholder="footerPlaceholder" @keydown.enter.exact.prevent="handleSubmit()" />
+          <el-input ref="questionInputRef" v-model="draftQuestion" type="textarea" :rows="3" resize="none" :disabled="footerDisabled" :placeholder="footerPlaceholder" @keydown.enter.exact.prevent="handleSubmit()" />
           <div class="hermes-footer-actions">
             <span>{{ footerTip }}</span>
             <button v-if="sending" class="hermes-ghost-button danger" type="button" :disabled="!activeStreamAbort" @click="handleStopStream">停止</button>
@@ -206,7 +220,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { archiveHermesConversationSession, createHermesConversationSession, deleteHermesConversationSession, getHermesConversationDetail, pageHermesConversationSessions, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat, streamHermesSessionChatWithFiles } from '@/api/hermes'
+import { archiveHermesConversationSession, createHermesConversationSession, deleteHermesConversationSession, getHermesConversationDetail, pageHermesConversationSessions, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat, streamHermesSessionChatWithFiles, transcribeHermesSpeech } from '@/api/hermes'
 import { createGitlabBindingScanTask } from '@/api/gitlab'
 import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
@@ -225,16 +239,32 @@ interface HermesDrawerProps {
   fallbackPrompts?: string[]
 }
 
+interface HermesQuestionInputExpose {
+  focus?: () => void
+}
+
 const props = defineProps<HermesDrawerProps>()
 const drawerVisible = defineModel<boolean>({ default: false })
 const router = useRouter()
 const authStore = useAuthStore()
 const messageScrollRef = ref<HTMLDivElement>()
+const questionInputRef = ref<HermesQuestionInputExpose | null>(null)
 const fileInputRef = ref<HTMLInputElement>()
 const isMobileViewport = ref(false)
 const draftQuestion = ref('')
 const pendingFiles = ref<File[]>([])
 const sending = ref(false)
+const recording = ref(false)
+const transcribing = ref(false)
+const voiceInputSupported = ref(false)
+const mediaStream = ref<MediaStream | null>(null)
+const voiceAudioContext = ref<AudioContext | null>(null)
+const voiceSourceNode = ref<MediaStreamAudioSourceNode | null>(null)
+const voiceProcessorNode = ref<ScriptProcessorNode | null>(null)
+const audioChunks = ref<Float32Array[]>([])
+const discardVoiceRecording = ref(false)
+const voiceLevel = ref(0)
+const voiceInputDetected = ref(false)
 const sessionLoading = ref(false)
 const loadingMoreSessions = ref(false)
 const detailLoading = ref(false)
@@ -268,6 +298,7 @@ const STREAM_DRAIN_CHARS_PER_TICK = 18
 const STREAM_PUNCTUATION_PAUSE_MS = 36
 const STREAM_LINE_BREAK_PAUSE_MS = 52
 let pendingStreamDrainTimer: ReturnType<typeof setTimeout> | null = null
+let hermesDrawerDisposed = false
 
 const displayPrompts = computed(() => currentSuggestions.value.length ? currentSuggestions.value : props.fallbackPrompts || [])
 const wikiReferences = computed(() => currentReferences.value.filter((item) => item.type === 'WIKI_PAGE'))
@@ -277,15 +308,37 @@ const currentStreamStatusText = computed(() => {
   return message + '...'
 })
 const canLoadMoreSessions = computed(() => sessionSummaries.value.length < sessionTotal.value)
-const footerDisabled = computed(() => sending.value || detailLoading.value || Boolean(currentSessionDetail.value?.archived))
+const footerDisabled = computed(() => recording.value || transcribing.value || sending.value || detailLoading.value || Boolean(currentSessionDetail.value?.archived))
+const voiceButtonDisabled = computed(() => transcribing.value || sending.value || detailLoading.value || Boolean(currentSessionDetail.value?.archived))
 const footerPlaceholder = computed(() => currentSessionDetail.value?.archived ? '归档会话需要恢复后继续提问' : '问你想问')
-const footerTip = computed(() => sending.value ? currentStreamStatusText.value : currentSessionDetail.value?.archived ? '归档会话仅支持查看，恢复后可继续发送' : 'Enter 发送，Shift+Enter 换行')
+const footerTip = computed(() => {
+  if (recording.value) return '正在录音，再次点击语音输入结束并转写'
+  if (transcribing.value) return '正在转写语音...'
+  return sending.value
+    ? currentStreamStatusText.value
+    : currentSessionDetail.value?.archived
+      ? '归档会话仅支持查看，恢复后可继续发送'
+      : 'Enter 发送，Shift+Enter 换行'
+})
+const voiceLevelPercent = computed(() => Math.min(100, Math.round(Math.sqrt(Math.max(voiceLevel.value, 0)) * 180)))
+const voiceLevelBarWidth = computed(() => {
+  if (!recording.value) return 0
+  if (voiceInputDetected.value) return Math.max(10, voiceLevelPercent.value)
+  return Math.max(4, voiceLevelPercent.value)
+})
+const voiceLevelLabel = computed(() => {
+  if (voiceLevelPercent.value >= 18) return '已检测到声音'
+  if (voiceInputDetected.value) return '声音较弱，请靠近麦克风'
+  return '等待声音'
+})
 const currentContextKey = computed(() => JSON.stringify(buildCurrentRouteContext()))
 
 watch(drawerVisible, (visible) => {
   if (visible) {
     void initializeDrawer()
+    return
   }
+  stopVoiceRecording(true)
 })
 
 watch(archivedView, () => {
@@ -305,7 +358,9 @@ watch(() => authStore.user?.roleNames, () => {
 })
 
 onMounted(() => {
+  hermesDrawerDisposed = false
   syncViewportMode()
+  voiceInputSupported.value = resolveVoiceInputSupport()
   if (typeof window !== 'undefined') {
     isDebugMode.value = window.localStorage.getItem(HERMES_DEBUG_STORAGE_KEY) === '1'
     window.addEventListener('resize', syncViewportMode)
@@ -313,6 +368,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  hermesDrawerDisposed = true
+  stopVoiceRecording(true)
   flushPendingStreamDeltas(true)
   if (typeof window !== 'undefined') {
     if (pendingStreamDrainTimer != null) {
@@ -937,6 +994,304 @@ function clearSelectedSession() {
   persistSelectedSessionId(null)
 }
 
+function resolveVoiceInputSupport() {
+  const AudioContextCtor = typeof window === 'undefined'
+    ? undefined
+    : (window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)
+  return typeof window !== 'undefined'
+    && typeof navigator !== 'undefined'
+    && typeof AudioContextCtor !== 'undefined'
+    && typeof navigator.mediaDevices?.getUserMedia === 'function'
+}
+
+function resolveVoiceInputErrorMessage(error: unknown) {
+  if (error instanceof DOMException) {
+    if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+      return '未获得麦克风权限，请先允许浏览器访问麦克风'
+    }
+    if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+      return '未检测到可用麦克风设备'
+    }
+    if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+      return '麦克风当前不可用，请检查是否被其他应用占用'
+    }
+  }
+  return error instanceof Error && error.message ? error.message : '语音输入暂时不可用'
+}
+
+function resolveVoiceInputUnavailableMessage() {
+  if (typeof window === 'undefined') {
+    return '当前环境暂不支持语音输入'
+  }
+  if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return '当前页面不是安全上下文，移动端请改用 HTTPS 地址后再尝试语音输入'
+  }
+  if (typeof navigator === 'undefined' || typeof navigator.mediaDevices?.getUserMedia !== 'function') {
+    return '当前浏览器不支持麦克风采集，请尝试使用系统浏览器打开'
+  }
+  const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!AudioContextCtor) {
+    return '当前浏览器不支持音频处理，请尝试使用系统浏览器打开'
+  }
+  return '当前环境暂不支持语音输入'
+}
+
+function releaseVoiceStreamTracks() {
+  mediaStream.value?.getTracks().forEach((track) => track.stop())
+  mediaStream.value = null
+}
+
+function resetVoiceRecorderState() {
+  voiceProcessorNode.value?.disconnect()
+  voiceSourceNode.value?.disconnect()
+  if (voiceAudioContext.value && voiceAudioContext.value.state !== 'closed') {
+    void voiceAudioContext.value.close()
+  }
+  voiceAudioContext.value = null
+  voiceSourceNode.value = null
+  voiceProcessorNode.value = null
+  audioChunks.value = []
+  voiceLevel.value = 0
+  voiceInputDetected.value = false
+  recording.value = false
+}
+
+function appendTranscribedText(text: string) {
+  const normalizedText = text.trim()
+  if (!normalizedText) {
+    return
+  }
+  const currentDraft = draftQuestion.value.trimEnd()
+  draftQuestion.value = currentDraft ? `${currentDraft}\n${normalizedText}` : normalizedText
+}
+
+function mergeAudioChunks(chunks: Float32Array[]) {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+  const merged = new Float32Array(totalLength)
+  let offset = 0
+  chunks.forEach((chunk) => {
+    merged.set(chunk, offset)
+    offset += chunk.length
+  })
+  return merged
+}
+
+function resolveSamplesPeak(samples: Float32Array) {
+  let peak = 0
+  for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex += 1) {
+    peak = Math.max(peak, Math.abs(samples[sampleIndex]))
+  }
+  return peak
+}
+
+function downsamplePcmSamples(samples: Float32Array, sourceSampleRate: number, targetSampleRate: number) {
+  if (sourceSampleRate <= targetSampleRate) {
+    return samples
+  }
+  const ratio = sourceSampleRate / targetSampleRate
+  const resultLength = Math.max(1, Math.round(samples.length / ratio))
+  const result = new Float32Array(resultLength)
+  let resultOffset = 0
+  let sourceOffset = 0
+
+  while (resultOffset < result.length) {
+    const nextSourceOffset = Math.min(samples.length, Math.round((resultOffset + 1) * ratio))
+    let total = 0
+    let count = 0
+    for (let index = sourceOffset; index < nextSourceOffset; index += 1) {
+      total += samples[index]
+      count += 1
+    }
+    result[resultOffset] = count > 0 ? total / count : 0
+    resultOffset += 1
+    sourceOffset = nextSourceOffset
+  }
+
+  return result
+}
+
+function encodePcmSamplesToWav(samples: Float32Array, sampleRate: number) {
+  const channelCount = 1
+  const format = 1
+  const bitsPerSample = 16
+  const bytesPerSample = bitsPerSample / 8
+  const blockAlign = channelCount * bytesPerSample
+  const dataLength = samples.length * blockAlign
+  const wavBuffer = new ArrayBuffer(44 + dataLength)
+  const view = new DataView(wavBuffer)
+  let offset = 0
+
+  const writeString = (value: string) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index))
+    }
+    offset += value.length
+  }
+
+  writeString('RIFF')
+  view.setUint32(offset, 36 + dataLength, true)
+  offset += 4
+  writeString('WAVE')
+  writeString('fmt ')
+  view.setUint32(offset, 16, true)
+  offset += 4
+  view.setUint16(offset, format, true)
+  offset += 2
+  view.setUint16(offset, channelCount, true)
+  offset += 2
+  view.setUint32(offset, sampleRate, true)
+  offset += 4
+  view.setUint32(offset, sampleRate * blockAlign, true)
+  offset += 4
+  view.setUint16(offset, blockAlign, true)
+  offset += 2
+  view.setUint16(offset, bitsPerSample, true)
+  offset += 2
+  writeString('data')
+  view.setUint32(offset, dataLength, true)
+  offset += 4
+
+  const peak = resolveSamplesPeak(samples)
+  // 浏览器录音在部分设备上振幅会偏低，先做轻量归一化，减少 ASR 返回空文本的概率。
+  const gain = peak > 0.0001 ? Math.min(0.92 / peak, 12) : 1
+  for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex += 1) {
+    const sample = Math.max(-1, Math.min(1, samples[sampleIndex] * gain))
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true)
+    offset += 2
+  }
+
+  return new Blob([wavBuffer], { type: 'audio/wav' })
+}
+
+/**
+ * 直接从麦克风流采集 PCM，再压成 16k 单声道 WAV，避免 MediaRecorder 转码链路产出静音文件。
+ */
+function buildVoiceWavBlob(sourceSampleRate: number, chunks: Float32Array[]) {
+  const mergedSamples = mergeAudioChunks(chunks)
+  const normalizedSamples = downsamplePcmSamples(mergedSamples, sourceSampleRate, 16000)
+  const peak = resolveSamplesPeak(normalizedSamples)
+  if (peak < 0.001) {
+    throw new Error('未采集到有效麦克风声音，请检查浏览器麦克风权限、输入设备和系统静音设置')
+  }
+  return encodePcmSamplesToWav(normalizedSamples, 16000)
+}
+
+/**
+ * 录音结束后统一在这里转写并回填草稿，保证关闭抽屉时可以通过 discard 标记安全丢弃结果。
+ */
+async function handleVoiceRecorderStop(sourceSampleRate: number) {
+  const shouldDiscard = discardVoiceRecording.value
+  const collectedChunks = [...audioChunks.value]
+  discardVoiceRecording.value = false
+  resetVoiceRecorderState()
+  releaseVoiceStreamTracks()
+
+  if (shouldDiscard || !collectedChunks.length) {
+    transcribing.value = false
+    return
+  }
+
+  try {
+    const voiceBlob = buildVoiceWavBlob(sourceSampleRate, collectedChunks)
+    const voiceFile = new File(
+      [voiceBlob],
+      `hermes-voice-${Date.now()}.wav`,
+      { type: 'audio/wav' }
+    )
+    const transcribedText = (await transcribeHermesSpeech(voiceFile)).trim()
+    if (!transcribedText) {
+      throw new Error('Hermes 未返回可用的转写文本')
+    }
+    if (hermesDrawerDisposed || !drawerVisible.value) {
+      return
+    }
+    appendTranscribedText(transcribedText)
+    await nextTick()
+    questionInputRef.value?.focus?.()
+  } catch (error: any) {
+    if (!hermesDrawerDisposed && drawerVisible.value) {
+      ElMessage.error(error?.response?.data?.message || error?.message || 'Hermes 语音转写失败')
+    }
+  } finally {
+    transcribing.value = false
+  }
+}
+
+async function startVoiceRecording() {
+  if (!voiceInputSupported.value || recording.value || transcribing.value) {
+    return
+  }
+  let stream: MediaStream | null = null
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    })
+    const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AudioContextCtor) {
+      throw new Error('当前浏览器不支持语音输入')
+    }
+    const audioContext = new AudioContextCtor()
+    await audioContext.resume()
+    const sourceNode = audioContext.createMediaStreamSource(stream)
+    const processorNode = audioContext.createScriptProcessor(4096, 1, 1)
+    discardVoiceRecording.value = false
+    audioChunks.value = []
+    mediaStream.value = stream
+    voiceAudioContext.value = audioContext
+    voiceSourceNode.value = sourceNode
+    voiceProcessorNode.value = processorNode
+    processorNode.onaudioprocess = (event) => {
+      const samples = event.inputBuffer.getChannelData(0)
+      const chunk = new Float32Array(samples)
+      const peak = resolveSamplesPeak(chunk)
+      if (peak >= 0.005) {
+        voiceInputDetected.value = true
+      }
+      voiceLevel.value = Math.max(peak, voiceLevel.value * 0.78)
+      audioChunks.value.push(chunk)
+    }
+    sourceNode.connect(processorNode)
+    processorNode.connect(audioContext.destination)
+    recording.value = true
+  } catch (error) {
+    stream?.getTracks().forEach((track) => track.stop())
+    releaseVoiceStreamTracks()
+    resetVoiceRecorderState()
+    ElMessage.error(resolveVoiceInputErrorMessage(error))
+  }
+}
+
+function stopVoiceRecording(discard: boolean) {
+  discardVoiceRecording.value = discard
+  const sourceSampleRate = voiceAudioContext.value?.sampleRate || 16000
+  if (!voiceAudioContext.value) {
+    resetVoiceRecorderState()
+    releaseVoiceStreamTracks()
+    transcribing.value = false
+    return
+  }
+  recording.value = false
+  transcribing.value = !discard
+  void handleVoiceRecorderStop(sourceSampleRate)
+}
+
+async function handleVoiceButtonClick() {
+  if (recording.value) {
+    stopVoiceRecording(false)
+    return
+  }
+  if (!voiceInputSupported.value) {
+    ElMessage.warning(resolveVoiceInputUnavailableMessage())
+    return
+  }
+  await startVoiceRecording()
+}
+
 function openFilePicker() {
   fileInputRef.value?.click()
 }
@@ -1374,6 +1729,71 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-size: 10px;
   font-weight: 600;
   line-height: 1.4;
+}
+
+.hermes-voice-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 220px;
+  min-width: 180px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.hermes-voice-meter.active {
+  background: rgba(15, 118, 110, 0.08);
+}
+
+.hermes-voice-meter-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 120px;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgba(15, 118, 110, 0.18) 0%, rgba(14, 165, 233, 0.18) 52%, rgba(249, 115, 22, 0.24) 100%);
+  box-shadow: inset 0 0 0 1px rgba(var(--app-outline-rgb), 0.08);
+}
+
+.hermes-voice-meter-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.22) 0,
+      rgba(255, 255, 255, 0.22) 10px,
+      transparent 10px,
+      transparent 16px
+    );
+  pointer-events: none;
+}
+
+.hermes-voice-meter-fill {
+  height: 100%;
+  min-width: 6px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f766e 0%, #06b6d4 60%, #f97316 100%);
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.32);
+  transition: width 0.08s linear, box-shadow 0.12s ease;
+}
+
+.hermes-voice-meter-label {
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.hermes-voice-button.active {
+  background: #93000a;
+  color: #fff;
 }
 
 .hermes-pending-file-list {

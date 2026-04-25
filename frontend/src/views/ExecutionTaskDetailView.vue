@@ -139,7 +139,11 @@
                     <strong>最近尾日志</strong>
                     <span>{{ step.tailLogLineCount || 0 }} 行</span>
                   </div>
-                  <pre>{{ step.tailLogText }}</pre>
+                  <pre
+                    :ref="(element) => setTailLogElement(step, element)"
+                    class="execution-step-tail-pre"
+                    @scroll="handleTailLogScroll(step, $event)"
+                  >{{ step.tailLogText }}</pre>
                 </div>
                 <el-collapse>
                   <el-collapse-item title="输入快照">
@@ -429,7 +433,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type ComponentPublicInstance } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowDown, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
@@ -491,6 +495,10 @@ const quickMergeFormRef = ref<FormInstance>()
 const quickMergeOauthBinding = ref<GitlabUserOauthBindingItem>(fallbackQuickMergeOauthBinding())
 const quickMergeSourceBranchOptions = ref<GitlabBranchItem[]>([])
 const quickMergeTargetBranchOptions = ref<GitlabBranchItem[]>([])
+const tailLogElementMap = new Map<string, HTMLElement>()
+const tailLogAutoFollowMap = reactive<Record<string, boolean>>({})
+let tailLogScrollSyncTimer: number | null = null
+let forceTailLogScrollOnNextSync = false
 const hasText = (value: string | null | undefined) => String(value || '').trim().length > 0
 const sourceBranchLoading = ref(false)
 const targetBranchLoading = ref(false)
@@ -1169,6 +1177,95 @@ const mergeArtifactList = (
 const stepMergeKey = (step: Partial<ExecutionStepItem>) =>
   step.stepNo != null ? `step-no-${step.stepNo}` : `step-id-${step.id ?? 0}`
 
+const resolveTailLogRemainingScrollDistance = (element: HTMLElement) =>
+  element.scrollHeight - element.scrollTop - element.clientHeight
+
+const isTailLogPinnedToBottom = (element: HTMLElement) => resolveTailLogRemainingScrollDistance(element) <= 24
+
+const cleanupTailLogState = (steps: ExecutionStepItem[] | null | undefined) => {
+  const activeKeys = new Set((steps || []).map((step) => stepMergeKey(step)))
+  Array.from(tailLogElementMap.keys())
+    .filter((key) => !activeKeys.has(key))
+    .forEach((key) => tailLogElementMap.delete(key))
+  Object.keys(tailLogAutoFollowMap)
+    .filter((key) => !activeKeys.has(key))
+    .forEach((key) => delete tailLogAutoFollowMap[key])
+}
+
+/**
+ * 最近尾日志默认跟随到底部；如果用户主动上翻，就暂停自动滚动，
+ * 直到用户再次滚回底部，避免刷新时把阅读位置强行拉走。
+ */
+const syncTailLogAutoScroll = async (force = false) => {
+  await nextTick()
+  for (const step of runDetail.value?.steps || []) {
+    if (!step.tailLogText) {
+      continue
+    }
+    const key = stepMergeKey(step)
+    const element = tailLogElementMap.get(key)
+    if (!element) {
+      continue
+    }
+    if (force || tailLogAutoFollowMap[key] !== false) {
+      element.scrollTop = element.scrollHeight
+      tailLogAutoFollowMap[key] = true
+    }
+  }
+}
+
+const flushTailLogAutoScroll = async () => {
+  tailLogScrollSyncTimer = null
+  const shouldForce = forceTailLogScrollOnNextSync
+  forceTailLogScrollOnNextSync = false
+  await syncTailLogAutoScroll(shouldForce)
+}
+
+const scheduleTailLogAutoScrollSync = (force = false) => {
+  if (typeof window === 'undefined') {
+    return
+  }
+  forceTailLogScrollOnNextSync = forceTailLogScrollOnNextSync || force
+  if (tailLogScrollSyncTimer != null) {
+    return
+  }
+  tailLogScrollSyncTimer = window.setTimeout(() => {
+    void flushTailLogAutoScroll()
+  }, 0)
+}
+
+const resolveTailLogElement = (element: Element | ComponentPublicInstance | null) => {
+  if (element instanceof HTMLElement) {
+    return element
+  }
+  if (element && '$el' in element && element.$el instanceof HTMLElement) {
+    return element.$el
+  }
+  return null
+}
+
+const setTailLogElement = (step: ExecutionStepItem, element: Element | ComponentPublicInstance | null) => {
+  const key = stepMergeKey(step)
+  const tailLogElement = resolveTailLogElement(element)
+  if (tailLogElement) {
+    tailLogElementMap.set(key, tailLogElement)
+    if (!(key in tailLogAutoFollowMap)) {
+      tailLogAutoFollowMap[key] = true
+    }
+    scheduleTailLogAutoScrollSync()
+    return
+  }
+  tailLogElementMap.delete(key)
+}
+
+const handleTailLogScroll = (step: ExecutionStepItem, event: Event) => {
+  const target = event.target
+  if (!(target instanceof HTMLElement)) {
+    return
+  }
+  tailLogAutoFollowMap[stepMergeKey(step)] = isTailLogPinnedToBottom(target)
+}
+
 const mergeStepItem = (currentStep: ExecutionStepItem | null | undefined, nextStep: ExecutionStepItem): ExecutionStepItem => {
   if (!currentStep) {
     return nextStep
@@ -1212,6 +1309,20 @@ const mergeStepList = (currentSteps: ExecutionStepItem[] | null | undefined, nex
   ]
   return orderedKeys.map((key) => mergedMap.get(key)).filter(Boolean) as ExecutionStepItem[]
 }
+
+watch(
+  () => ({
+    runId: runDetail.value?.id || null,
+    tailLogSignature: (runDetail.value?.steps || [])
+      .map((step) => `${stepMergeKey(step)}:${step.tailLogText || ''}`)
+      .join('\u0001')
+  }),
+  (currentValue, previousValue) => {
+    cleanupTailLogState(runDetail.value?.steps)
+    scheduleTailLogAutoScrollSync(currentValue.runId !== previousValue?.runId)
+  },
+  { immediate: true }
+)
 
 /**
  * 运行详情刷新时保留事件流里已经拿到的中间态，避免“刚出现的产物卡片”
@@ -1886,6 +1997,10 @@ onBeforeUnmount(() => {
   if (snapshotRefreshTimer.value != null && typeof window !== 'undefined') {
     window.clearTimeout(snapshotRefreshTimer.value)
   }
+  if (tailLogScrollSyncTimer != null && typeof window !== 'undefined') {
+    window.clearTimeout(tailLogScrollSyncTimer)
+    tailLogScrollSyncTimer = null
+  }
   if (typeof window !== 'undefined') {
     for (const timer of artifactHydrationRetryTimers.values()) {
       window.clearTimeout(timer)
@@ -1895,6 +2010,8 @@ onBeforeUnmount(() => {
     })
   }
   artifactHydrationRetryTimers.clear()
+  tailLogElementMap.clear()
+  Object.keys(tailLogAutoFollowMap).forEach((key) => delete tailLogAutoFollowMap[key])
 })
 </script>
 

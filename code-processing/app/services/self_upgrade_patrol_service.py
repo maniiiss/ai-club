@@ -29,6 +29,7 @@ class PatrolUploadEntry:
     scope: str
     target_id: str
     file_name: str
+    object_name: str
     artifact_type: str
     title: str
     path: Path
@@ -413,7 +414,7 @@ def _upload_patrol_artifacts(
             task_id=request.execution.taskId,
             run_id=request.execution.runId,
             step_id=request.execution.stepId,
-            files=[(entry.artifact_type, entry.title, entry.path)],
+            files=[(entry.artifact_type, entry.title, entry.path, entry.object_name)],
         )
         if uploaded:
             uploads.extend(uploaded)
@@ -484,6 +485,7 @@ def _collect_target_upload_entries(
                     scope="target",
                     target_id=target_id,
                     file_name=file_name,
+                    object_name=file_path.relative_to(workspace.out_dir / "target-artifacts").as_posix(),
                     artifact_type=_normalize_text(artifact.get("artifactType")),
                     title=_normalize_text(artifact.get("title")),
                     path=file_path,
