@@ -25,8 +25,6 @@ export interface MemoryFactVisualizationData {
   links: MemoryFactVisualizationLink[]
 }
 
-const nodeScore = (node: MemoryFactVisualizationNode) => node.degree * 3 + node.factCount * 4
-
 export const entityColor = (entityType: string) => {
   const map: Record<string, string> = {
     FACT: '#0074d9',
@@ -60,9 +58,9 @@ export const relationColor = (relationType: string) => {
 }
 
 /**
- * 将当前筛选后的图谱裁成更适合视觉渲染的一份子集。
- * 优先保留当前选中的节点及其邻域，再按关联度和事实量做排序，
- * 这样既能复用 Hindsight 的“重点优先”视觉逻辑，也不会把用户当前关注点裁掉。
+ * 按 Hindsight Graph/Constellation 的处理方式截取渲染子集。
+ * 只在节点数量超过上限时保留后端返回顺序中的前 N 个节点，
+ * 再展示这些可见节点之间的全部关系，避免因为前端二次重排导致内容不一致。
  */
 export const buildRenderableGraphData = (
   data: MemoryFactVisualizationData,
@@ -72,47 +70,13 @@ export const buildRenderableGraphData = (
     selectedEdgeId?: string | null
   }
 ) => {
-  const selectedNodeId = options?.selectedNodeId || null
-  const selectedEdgeId = options?.selectedEdgeId || null
   const maxNodes = options?.maxNodes && options.maxNodes > 0 ? options.maxNodes : null
 
   if (!maxNodes || data.nodes.length <= maxNodes) {
     return data
   }
 
-  const neighborIds = new Set<string>()
-  if (selectedNodeId) {
-    neighborIds.add(selectedNodeId)
-    for (const link of data.links) {
-      if (link.source === selectedNodeId || link.target === selectedNodeId) {
-        neighborIds.add(link.source)
-        neighborIds.add(link.target)
-      }
-    }
-  }
-  if (selectedEdgeId) {
-    const selectedEdge = data.links.find((item) => item.id === selectedEdgeId)
-    if (selectedEdge) {
-      neighborIds.add(selectedEdge.source)
-      neighborIds.add(selectedEdge.target)
-    }
-  }
-
-  const orderedNodes = [...data.nodes].sort((left, right) => {
-    const leftIsSelected = left.id === selectedNodeId
-    const rightIsSelected = right.id === selectedNodeId
-    if (leftIsSelected !== rightIsSelected) return leftIsSelected ? -1 : 1
-
-    const leftIsNeighbor = neighborIds.has(left.id)
-    const rightIsNeighbor = neighborIds.has(right.id)
-    if (leftIsNeighbor !== rightIsNeighbor) return leftIsNeighbor ? -1 : 1
-
-    const scoreDelta = nodeScore(right) - nodeScore(left)
-    if (scoreDelta !== 0) return scoreDelta
-    return left.label.localeCompare(right.label, 'zh-CN')
-  })
-
-  const keptNodes = orderedNodes.slice(0, maxNodes)
+  const keptNodes = data.nodes.slice(0, maxNodes)
   const keptNodeIds = new Set(keptNodes.map((item) => item.id))
   const keptLinks = data.links.filter((item) => keptNodeIds.has(item.source) && keptNodeIds.has(item.target))
 

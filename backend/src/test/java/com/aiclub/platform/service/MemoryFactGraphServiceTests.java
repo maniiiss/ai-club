@@ -251,6 +251,32 @@ class MemoryFactGraphServiceTests {
     }
 
     @Test
+    void shouldLoadScopedTableFactsWithoutSelector() {
+        when(wikiSpaceService.buildProjectGraphProjection(12L)).thenReturn(new WikiSpaceService.WikiProjectGraphProjection(
+                List.of(),
+                List.of(),
+                List.of()
+        ));
+        when(hindsightClientService.fetchEntityGraph("git-ai-club:wiki:project:12", 200)).thenReturn(new HindsightClientService.MemoryEntityGraph(
+                List.of(new HindsightClientService.MemoryEntityNode("fact-1", "项目事实", 3, "blue", Map.of("type", "FACT"))),
+                List.of()
+        ));
+        when(hindsightClientService.recallWorldFacts(eq("git-ai-club:wiki:project:12"), eq(""), eq(List.of("project:12")), anyInt()))
+                .thenReturn(List.of(new HindsightClientService.MemoryWorldFact(
+                        "fact-table-1", "world", "项目事实", "mentions", "空间知识库", "表格事实", 0.9d, "HINDSIGHT_RECALL",
+                        "2026-04-24T09:00:00Z", List.of("project:12", "wiki"), Map.of("occurred_at", "2026-04-20T09:00:00Z")
+                )));
+
+        MemoryFactFactsResponse facts = serviceWithoutSharedBank.getFacts(12L, null, null, null, 100);
+
+        assertThat(facts.scopeType()).isEqualTo("SCOPE");
+        assertThat(facts.scopeId()).isEqualTo("12");
+        assertThat(facts.factCount()).isEqualTo(1);
+        assertThat(facts.facts()).extracting(item -> item.id()).containsExactly("fact-table-1");
+        verify(hindsightClientService).recallWorldFacts("git-ai-club:wiki:project:12", "", List.of("project:12"), 100);
+    }
+
+    @Test
     void shouldNotFetchEntityDetailForFactGraphNode() {
         when(wikiSpaceService.getSpaceDetail(9L)).thenReturn(spaceDetail(9L));
         when(hindsightClientService.fetchEntityGraph("git-ai-club:wiki:space:9", 200)).thenReturn(new HindsightClientService.MemoryEntityGraph(

@@ -2,21 +2,21 @@
   <div class="preview-card">
     <template v-if="selectedNode">
       <div class="preview-head">
-        <span class="preview-type">{{ entityTypeLabel(entityDetail?.entityType || selectedNode.entityType) }}</span>
+        <span class="preview-type">{{ previewEntityType }}</span>
         <span class="preview-count">{{ entityDetail?.degree ?? selectedNode.degree }} 条关联</span>
       </div>
 
-      <div class="preview-title">{{ entityDetail?.label || selectedNode.label }}</div>
-      <div class="preview-summary">{{ previewSummary }}</div>
+      <div class="preview-title">{{ previewTitle }}</div>
+      <div v-if="previewSummary" class="preview-summary">{{ previewSummary }}</div>
+      <div v-if="previewInvolving" class="preview-involving">涉及：{{ previewInvolving }}</div>
+      <div v-if="previewContext" class="preview-context">背景：{{ previewContext }}</div>
 
-      <div v-if="previewTriple" class="preview-involving">涉及：{{ previewTriple }}</div>
-
-      <div v-if="factsLoading" class="preview-loading">
+      <div v-if="factsLoading && !hasInstantPreview" class="preview-loading">
         <el-skeleton :rows="4" animated />
       </div>
 
       <template v-else>
-        <div class="preview-meta">
+        <div v-if="previewMeta.length" class="preview-meta">
           <div v-for="item in previewMeta" :key="item.label" class="preview-meta-row">
             <span>{{ item.label }}</span>
             <strong>{{ item.value }}</strong>
@@ -27,7 +27,7 @@
           <span v-for="item in previewTags" :key="item" class="preview-chip">{{ item }}</span>
         </div>
 
-        <div class="preview-id">{{ previewRawId }}</div>
+        <div v-if="previewRawId" class="preview-id">{{ previewRawId }}</div>
       </template>
     </template>
   </div>
@@ -59,6 +59,25 @@ const parseMetadata = (value?: string) => {
   } catch {
     return {}
   }
+}
+
+const asRecord = (value: unknown) => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+  return {}
+}
+
+const asString = (value: unknown) => String(value ?? '').trim()
+
+const asStringList = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => asString(item)).filter(Boolean)
+  }
+  if (typeof value === 'string') {
+    return value.split(',').map((item) => item.trim()).filter(Boolean)
+  }
+  return []
 }
 
 const entityTypeLabel = (value: string) => {
@@ -111,46 +130,103 @@ const nodeMetadata = computed(() => parseMetadata(props.selectedNode?.metadataJs
 const detailMetadata = computed(() => parseMetadata(props.entityDetail?.metadataJson))
 const firstFact = computed(() => props.facts[0] || null)
 const firstFactMetadata = computed(() => parseMetadata(firstFact.value?.metadataJson))
+const rawNodeMetadata = computed(() => {
+  const localRaw = asRecord(nodeMetadata.value.raw)
+  if (Object.keys(localRaw).length) return localRaw
+  const detailRaw = asRecord(asRecord(detailMetadata.value.graphNodeMetadata).raw)
+  return detailRaw
+})
+
+const formatTimestamp = (value: unknown) => {
+  const normalized = asString(value)
+  return normalized ? normalized.slice(0, 16).replace('T', ' ') : ''
+}
+
+const previewEntityType = computed(() => {
+  const localType = asString(rawNodeMetadata.value.fact_type || rawNodeMetadata.value.type).toUpperCase()
+  return entityTypeLabel(localType || props.entityDetail?.entityType || props.selectedNode?.entityType || '内容')
+})
+
+const previewTitle = computed(() => {
+  const detailLabel = asString(props.entityDetail?.label)
+  const localText = asString(rawNodeMetadata.value.text)
+  return detailLabel || localText || props.selectedNode?.label || ''
+})
 
 const previewSummary = computed(() => {
   const observation = props.entityDetail?.observations?.find((item) => item && item.trim())
-  if (observation) return observation
-  if (firstFact.value?.summary) return firstFact.value.summary
-  return props.selectedNode?.label || ''
+  const localSummary = asString(rawNodeMetadata.value.summary || rawNodeMetadata.value.observation)
+  const factSummary = asString(firstFact.value?.summary)
+  const candidate = observation || localSummary || factSummary
+  return candidate && candidate !== previewTitle.value ? candidate : ''
 })
 
-const previewTriple = computed(() => {
-  if (firstFact.value && (firstFact.value.subject || firstFact.value.predicate || firstFact.value.object)) {
-    return [firstFact.value.subject, firstFact.value.predicate, firstFact.value.object].filter(Boolean).join(' | ')
-  }
-  const aliases = props.entityDetail?.aliases || props.selectedNode?.aliases || []
-  return aliases.length ? aliases.slice(0, 3).join(' | ') : ''
+const previewContext = computed(() => {
+  const context = asString(rawNodeMetadata.value.context || firstFactMetadata.value.context)
+  if (!context || context === 'N/A') return ''
+  if (context === previewSummary.value || context === previewTitle.value) return ''
+  return context
 })
 
 const previewMeta = computed(() => {
-  const sourceType = String(firstFact.value?.sourceType || nodeMetadata.value.sourceType || '')
-  const lastSeenAt = String(detailMetadata.value.lastSeenAt || firstFactMetadata.value.lastSeenAt || '')
-  const createdAt = String(firstFact.value?.createdAt || detailMetadata.value.firstSeenAt || '')
+  const rows: Array<{ label: string; value: string }> = []
+  const sourceType = asString(firstFact.value?.sourceType || nodeMetadata.value.sourceType)
+  const occurredStart = formatTimestamp(rawNodeMetadata.value.occurred_start)
+  const occurredEnd = formatTimestamp(rawNodeMetadata.value.occurred_end)
+  const mentionedAt = formatTimestamp(rawNodeMetadata.value.mentioned_at || firstFactMetadata.value.mentioned_at)
+  const lastSeenAt = formatTimestamp(detailMetadata.value.lastSeenAt || firstFactMetadata.value.lastSeenAt)
+  const proofCount = Number(rawNodeMetadata.value.proof_count || 0)
   const documentLabel = (() => {
-    const tags = firstFact.value?.tags || []
+    const tags = [...asStringList(rawNodeMetadata.value.tags), ...(firstFact.value?.tags || [])]
     const directoryTag = tags.find((item) => item.startsWith('directory:'))
     if (directoryTag) {
       const directoryId = directoryTag.slice('directory:'.length)
       return props.directoryLabelMap?.[directoryId] || '目录内容'
     }
-    return props.projectName || props.spaceName || '-'
+    const documentId = asString(rawNodeMetadata.value.document_id)
+    if (documentId) {
+      return `${documentId.slice(0, 12)}...`
+    }
+    return props.projectName || props.spaceName || ''
   })()
-  return [
-    { label: '来源', value: sourceTypeLabel(sourceType) },
-    { label: '最近出现', value: lastSeenAt || '-' },
-    { label: '创建时间', value: createdAt || '-' },
-    { label: '文档', value: documentLabel }
-  ]
+
+  if (sourceType) {
+    rows.push({ label: '来源', value: sourceTypeLabel(sourceType) })
+  }
+  if (occurredStart) {
+    rows.push({ label: '发生时间', value: occurredEnd && occurredEnd !== occurredStart ? `${occurredStart} → ${occurredEnd}` : occurredStart })
+  }
+  if (mentionedAt) {
+    rows.push({ label: '提及时间', value: mentionedAt })
+  } else if (lastSeenAt) {
+    rows.push({ label: '最近出现', value: lastSeenAt })
+  }
+  if (proofCount > 1) {
+    rows.push({ label: '证据数', value: `${proofCount} 条` })
+  } else if (props.selectedNode?.factCount) {
+    rows.push({ label: '事实数', value: `${props.selectedNode.factCount}` })
+  }
+  if (documentLabel) {
+    rows.push({ label: '文档', value: documentLabel })
+  }
+  return rows
 })
+
+const previewEntities = computed(() => {
+  const values = new Set<string>()
+  asStringList(rawNodeMetadata.value.entities).forEach((item) => values.add(item))
+  ;(props.entityDetail?.aliases || props.selectedNode?.aliases || []).slice(0, 6).forEach((item) => {
+    const normalized = asString(item)
+    if (normalized) values.add(normalized)
+  })
+  return Array.from(values).slice(0, 8)
+})
+
+const previewInvolving = computed(() => previewEntities.value.slice(0, 3).join(' | '))
 
 const previewTags = computed(() => {
   const values = new Set<string>()
-  for (const tag of firstFact.value?.tags || []) {
+  for (const tag of [...asStringList(rawNodeMetadata.value.tags), ...(firstFact.value?.tags || [])]) {
     const label = displayTag(tag)
     if (label) values.add(label)
   }
@@ -161,29 +237,40 @@ const previewRawId = computed(() => {
   const rawEntityId = String(nodeMetadata.value.rawEntityId || '')
   return rawEntityId || props.selectedNode?.id || ''
 })
+
+const hasInstantPreview = computed(() =>
+  Boolean(
+    previewTitle.value
+    || previewSummary.value
+    || previewInvolving.value
+    || previewContext.value
+    || previewMeta.value.length
+    || previewTags.value.length
+  )
+)
 </script>
 
 <style scoped>
 .preview-card {
-  width: min(480px, calc(100vw - 64px));
-  padding: 20px 20px 18px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(226, 232, 240, 0.92);
+  width: min(360px, calc(100vw - 48px));
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(228, 232, 239, 0.96);
   box-shadow:
-    0 28px 72px rgba(15, 23, 42, 0.18),
-    0 8px 24px rgba(15, 23, 42, 0.08);
-  backdrop-filter: blur(14px);
+    0 10px 28px rgba(15, 23, 42, 0.18),
+    0 3px 10px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(10px);
 }
 
 .preview-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: #94a3b8;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
@@ -192,47 +279,54 @@ const previewRawId = computed(() => {
 }
 
 .preview-title {
-  margin-top: 10px;
+  margin-top: 8px;
   color: #0f172a;
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1.55;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
 }
 
 .preview-summary,
-.preview-involving {
-  margin-top: 10px;
+.preview-involving,
+.preview-context {
+  margin-top: 6px;
   color: #1e293b;
-  font-size: 13px;
-  line-height: 1.75;
+  font-size: 12px;
+  line-height: 1.6;
   white-space: pre-wrap;
 }
 
 .preview-involving {
+  color: #111827;
+}
+
+.preview-context {
   color: #334155;
 }
 
 .preview-meta {
-  margin-top: 16px;
+  margin-top: 8px;
   border-top: 1px solid rgba(226, 232, 240, 0.86);
-  padding-top: 14px;
+  padding-top: 8px;
 }
 
 .preview-meta-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 18px;
+  gap: 12px;
 }
 
 .preview-meta-row + .preview-meta-row {
-  margin-top: 10px;
+  margin-top: 6px;
 }
 
 .preview-meta-row span {
   color: #94a3b8;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .preview-meta-row strong {
@@ -246,30 +340,30 @@ const previewRawId = computed(() => {
 .preview-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .preview-chip {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: rgba(239, 246, 255, 0.92);
-  color: #3b82f6;
-  font-size: 12px;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: rgba(239, 246, 255, 0.9);
+  color: #60a5fa;
+  font-size: 10px;
 }
 
 .preview-id {
-  margin-top: 16px;
+  margin-top: 8px;
   color: #94a3b8;
-  font-size: 12px;
+  font-size: 10px;
   font-family: Consolas, 'SFMono-Regular', monospace;
   word-break: break-all;
 }
 
 .preview-loading {
-  margin-top: 16px;
+  margin-top: 8px;
 }
 </style>

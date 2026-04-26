@@ -14,7 +14,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { MemoryFactVisualizationData } from '@/utils/memoryFactVisualization'
 import { buildRenderableGraphData } from '@/utils/memoryFactVisualization'
 
@@ -34,7 +34,8 @@ const emit = defineEmits<{
 
 interface PreparedNode {
   id: string
-  label: string
+  shortLabel: string
+  fullLabel: string
   color: string
   heatColor: string
   wx: number
@@ -62,6 +63,8 @@ const renderableData = computed(() =>
 )
 
 const lerp = (from: number, to: number, factor: number) => from + (to - from) * factor
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value))
+const easeOutCubic = (value: number) => 1 - Math.pow(1 - clamp01(value), 3)
 
 const heatColor = (value: number) => {
   const clamped = Math.max(0, Math.min(1, value))
@@ -119,7 +122,8 @@ const preparedGraph = computed(() => {
     const linkCount = linkCounts.get(item.id) || 0
     return {
       id: item.id,
-      label: item.shortLabel || item.label,
+      shortLabel: item.shortLabel || item.label,
+      fullLabel: item.label,
       color: item.color,
       heatColor: heatColor(Math.sqrt(linkCount / maxLinkCount)),
       wx: Math.cos(angle) * radius + ((seed % 200) - 100) * 0.5,
@@ -149,10 +153,29 @@ const preparedGraph = computed(() => {
     linksByNode.get(rightIndex)!.push(currentIndex)
   })
 
+  const revealRanks = new Int16Array(preparedNodes.length)
+  preparedNodes
+    .map((item, index) => ({
+      index,
+      linkCount: item.linkCount,
+      factCount: item.factCount
+    }))
+    .sort((left, right) => {
+      const linkDelta = right.linkCount - left.linkCount
+      if (linkDelta !== 0) return linkDelta
+      const factDelta = right.factCount - left.factCount
+      if (factDelta !== 0) return factDelta
+      return left.index - right.index
+    })
+    .forEach((item, rank) => {
+      revealRanks[item.index] = rank
+    })
+
   return {
     nodes: preparedNodes,
     links: preparedLinks,
-    linksByNode
+    linksByNode,
+    revealRanks
   }
 })
 
@@ -174,7 +197,8 @@ const state = {
   dragStartX: 0,
   dragStartY: 0,
   panStartX: 0,
-  panStartY: 0
+  panStartY: 0,
+  introStartedAt: 0
 }
 
 let animationFrameId: number | null = null
@@ -182,6 +206,7 @@ let resizeObserver: ResizeObserver | null = null
 let lastHoverNodeId = ''
 let lastHoverX = -1
 let lastHoverY = -1
+let observedWrapper: HTMLDivElement | null = null
 
 const resizeCanvas = () => {
   const canvas = canvasRef.value
@@ -201,6 +226,7 @@ const drawFrame = () => {
   if (!canvas) return
   const context = canvas.getContext('2d')
   if (!context) return
+  const now = performance.now()
 
   state.panX = lerp(state.panX, state.targetPanX, 0.12)
   state.panY = lerp(state.panY, state.targetPanY, 0.12)
@@ -225,22 +251,29 @@ const drawFrame = () => {
   const screenX = new Float32Array(preparedGraph.value.nodes.length)
   const screenY = new Float32Array(preparedGraph.value.nodes.length)
   const visible = new Uint8Array(preparedGraph.value.nodes.length)
+  const revealProgress = new Float32Array(preparedGraph.value.nodes.length)
+  const introElapsed = state.introStartedAt > 0 ? now - state.introStartedAt : Number.MAX_SAFE_INTEGER
+  const revealDelayMs = 18
+  const revealDurationMs = 320
   const margin = 56
 
   for (let index = 0; index < preparedGraph.value.nodes.length; index++) {
     const node = preparedGraph.value.nodes[index]
+    const revealRank = preparedGraph.value.revealRanks[index] || 0
+    const reveal = easeOutCubic((introElapsed - revealRank * revealDelayMs) / revealDurationMs)
+    revealProgress[index] = reveal
     const sx = centerX + node.wx * state.zoom
     const sy = centerY + node.wy * state.zoom
     screenX[index] = sx
     screenY[index] = sy
-    visible[index] = sx > -margin && sx < width + margin && sy > -margin && sy < height + margin ? 1 : 0
+    visible[index] = reveal > 0.02 && sx > -margin && sx < width + margin && sy > -margin && sy < height + margin ? 1 : 0
   }
 
   if (state.mouseX >= 0 && !state.isDragging) {
     let bestDistance = state.zoom > 1.4 ? 80 : 28
     let bestIndex = -1
     for (let index = 0; index < preparedGraph.value.nodes.length; index++) {
-      if (!visible[index]) continue
+      if (!visible[index] || revealProgress[index] < 0.7) continue
       const dx = state.mouseX - screenX[index]
       const dy = state.mouseY - screenY[index]
       const distance = Math.sqrt(dx * dx + dy * dy)
@@ -288,10 +321,12 @@ const drawFrame = () => {
     const rightX = screenX[link.b]
     const rightY = screenY[link.b]
     if (!visible[link.a] && !visible[link.b]) return
+    const reveal = Math.min(revealProgress[link.a], revealProgress[link.b])
+    if (reveal <= 0.04) return
 
     const isRelatedToHover = hoveredLinks.has(index)
     context.strokeStyle = link.color
-    context.globalAlpha = state.hoverIndex >= 0 ? (isRelatedToHover ? 0.42 : 0.03) : 0.08 + Math.min(state.zoom * 0.04, 0.12)
+    context.globalAlpha = (state.hoverIndex >= 0 ? (isRelatedToHover ? 0.42 : 0.03) : 0.08 + Math.min(state.zoom * 0.04, 0.12)) * reveal
     context.beginPath()
     context.moveTo(leftX, leftY)
     context.quadraticCurveTo((leftX + rightX) / 2 + (rightY - leftY) * 0.08, (leftY + rightY) / 2 - (rightX - leftX) * 0.08, rightX, rightY)
@@ -299,36 +334,122 @@ const drawFrame = () => {
   })
   context.globalAlpha = 1
 
-  const drawNodeLabel = (label: string, x: number, y: number, color: string, strong = false) => {
-    context.font = strong ? '600 11px "Segoe UI", sans-serif' : '11px "Segoe UI", sans-serif'
-    const textWidth = context.measureText(label).width
-    context.fillStyle = 'rgba(255,255,255,0.92)'
-    context.strokeStyle = 'rgba(226,232,240,0.9)'
-    context.lineWidth = 1
-    context.beginPath()
-    context.roundRect(x - 6, y - 14, textWidth + 12, 22, 10)
-    context.fill()
-    context.stroke()
-    context.fillStyle = strong ? color : '#334155'
-    context.fillText(label, x, y)
+  const wrapLabelLines = (label: string, maxWidth: number, maxLines: number) => {
+    const normalized = label.trim()
+    if (!normalized) return []
+    const lines: string[] = []
+    let current = ''
+    for (const char of normalized) {
+      const candidate = current + char
+      if (context.measureText(candidate).width <= maxWidth || !current) {
+        current = candidate
+        continue
+      }
+      lines.push(current)
+      current = char
+      if (lines.length >= maxLines - 1) break
+    }
+    if (current && lines.length < maxLines) {
+      lines.push(current)
+    }
+    const consumedLength = lines.join('').length
+    if (consumedLength < normalized.length && lines.length) {
+      const lastIndex = lines.length - 1
+      let lastLine = lines[lastIndex]
+      while (lastLine.length > 1 && context.measureText(`${lastLine}…`).width > maxWidth) {
+        lastLine = lastLine.slice(0, -1)
+      }
+      lines[lastIndex] = `${lastLine}…`
+    }
+    return lines
+  }
+
+  const labelGrid = new Set<string>()
+  const labelGridCell = 88
+
+  const canPlaceLabel = (left: number, top: number, boxWidth: number, boxHeight: number) => {
+    const colStart = Math.floor(left / labelGridCell)
+    const colEnd = Math.floor((left + boxWidth) / labelGridCell)
+    const rowStart = Math.floor(top / labelGridCell)
+    const rowEnd = Math.floor((top + boxHeight) / labelGridCell)
+    for (let col = colStart; col <= colEnd; col++) {
+      for (let row = rowStart; row <= rowEnd; row++) {
+        if (labelGrid.has(`${col},${row}`)) return false
+      }
+    }
+    return true
+  }
+
+  const claimLabel = (left: number, top: number, boxWidth: number, boxHeight: number) => {
+    const colStart = Math.floor(left / labelGridCell)
+    const colEnd = Math.floor((left + boxWidth) / labelGridCell)
+    const rowStart = Math.floor(top / labelGridCell)
+    const rowEnd = Math.floor((top + boxHeight) / labelGridCell)
+    for (let col = colStart; col <= colEnd; col++) {
+      for (let row = rowStart; row <= rowEnd; row++) {
+        labelGrid.add(`${col},${row}`)
+      }
+    }
+  }
+
+  const drawNodeLabel = (node: PreparedNode, x: number, y: number, radius: number, hovered = false, selected = false) => {
+    if (hovered || selected) {
+      context.font = '11px "Segoe UI", sans-serif'
+      const lines = wrapLabelLines(node.fullLabel, 188, hovered ? 4 : 3)
+      if (!lines.length) return true
+      const lineHeight = 14
+      const boxWidth = Math.min(212, Math.max(...lines.map((line) => context.measureText(line).width)) + 18)
+      const boxHeight = lines.length * lineHeight + 14
+      const boxLeft = x - 8
+      const boxTop = y - 16
+
+      context.fillStyle = hovered ? 'rgba(255,255,255,0.97)' : 'rgba(255,255,255,0.92)'
+      context.strokeStyle = hovered ? 'rgba(96,165,250,0.9)' : 'rgba(226,232,240,0.95)'
+      context.lineWidth = hovered ? 1.2 : 1
+      context.beginPath()
+      context.roundRect(boxLeft, boxTop, boxWidth, boxHeight, 8)
+      context.fill()
+      context.stroke()
+      context.fillStyle = hovered ? '#111827' : '#334155'
+      lines.forEach((line, lineIndex) => {
+        context.fillText(line, boxLeft + 9, boxTop + 10 + (lineIndex + 1) * lineHeight - 4)
+      })
+      return true
+    }
+
+    context.font = '11px "Segoe UI", sans-serif'
+    const inlineLabel = node.shortLabel
+    const textWidth = context.measureText(inlineLabel).width
+    const textLeft = x + radius + 6
+    const textTop = y - 10
+    const boxWidth = textWidth + 8
+    const boxHeight = 18
+    if (!canPlaceLabel(textLeft, textTop, boxWidth, boxHeight)) {
+      return false
+    }
+    claimLabel(textLeft, textTop, boxWidth, boxHeight)
+    context.fillStyle = 'rgba(51,65,85,0.42)'
+    context.fillText(inlineLabel, textLeft, y + 4)
+    return true
   }
 
   preparedGraph.value.nodes.forEach((node, index) => {
     if (!visible[index]) return
     const sx = screenX[index]
     const sy = screenY[index]
+    const reveal = revealProgress[index]
     const isHovered = index === state.hoverIndex
     const isSelected = index === selectedIndex
     const isNeighbor = state.hoverIndex >= 0
       && (preparedGraph.value.linksByNode.get(index) || []).some((linkIndex) => hoveredLinks.has(linkIndex))
 
     const baseRadius = 2.8 + Math.min(node.linkCount * 0.18, 2.8)
-    const radius = Math.max(1.8, baseRadius * Math.min(state.zoom, 2.2) + (isSelected ? 1.8 : 0))
+    const radius = Math.max(1.2, baseRadius * Math.min(state.zoom, 2.2) * (0.55 + reveal * 0.45) + (isSelected ? 1.8 : 0))
 
     context.beginPath()
     context.arc(sx, sy, radius, 0, Math.PI * 2)
     context.fillStyle = node.heatColor
-    context.globalAlpha = isSelected ? 1 : isHovered ? 1 : isNeighbor ? 0.92 : state.hoverIndex >= 0 ? 0.08 : 0.42 + Math.min(node.linkCount * 0.04, 0.45)
+    context.globalAlpha = (isSelected ? 1 : isHovered ? 1 : isNeighbor ? 0.92 : state.hoverIndex >= 0 ? 0.08 : 0.42 + Math.min(node.linkCount * 0.04, 0.45)) * reveal
     context.shadowColor = isSelected || isHovered ? node.heatColor : 'transparent'
     context.shadowBlur = isSelected ? 18 : isHovered ? 14 : 0
     context.fill()
@@ -343,19 +464,19 @@ const drawFrame = () => {
       context.stroke()
     }
 
-    if (node.linkCount > 3 && !isHovered && !isSelected && state.hoverIndex < 0) {
+    if (reveal > 0.84 && node.linkCount > 3 && !isHovered && !isSelected && state.hoverIndex < 0) {
       context.beginPath()
       context.arc(sx, sy, radius * 2, 0, Math.PI * 2)
       context.fillStyle = node.heatColor
-      context.globalAlpha = 0.05 + Math.min(node.linkCount * 0.005, 0.08)
+      context.globalAlpha = (0.05 + Math.min(node.linkCount * 0.005, 0.08)) * reveal
       context.fill()
     }
 
     context.globalAlpha = 1
 
-    const shouldShowLabel = isSelected || isHovered || (props.showLabels && (state.zoom > 0.72 || node.degree >= 5 || node.factCount >= 6))
+    const shouldShowLabel = reveal > 0.72 && (isSelected || isHovered || (props.showLabels && (state.zoom > 0.72 || node.degree >= 5 || node.factCount >= 6)))
     if (shouldShowLabel) {
-      drawNodeLabel(node.label, sx + radius + 6, sy + 4, node.color, isSelected || isHovered)
+      drawNodeLabel(node, sx + radius + 6, sy + 4, radius, isHovered, isSelected)
     }
   })
 
@@ -456,35 +577,88 @@ const bindCanvasEvents = () => {
 
 let unbindCanvasEvents: (() => void) | null = null
 
+const clearCanvasRuntime = () => {
+  if (animationFrameId !== null) {
+    window.cancelAnimationFrame(animationFrameId)
+    animationFrameId = null
+  }
+  if (observedWrapper && resizeObserver) {
+    resizeObserver.unobserve(observedWrapper)
+    observedWrapper = null
+  }
+  unbindCanvasEvents?.()
+  unbindCanvasEvents = null
+  state.hoverIndex = -1
+  state.mouseX = -1
+  state.mouseY = -1
+  state.introStartedAt = 0
+  if (lastHoverNodeId) {
+    lastHoverNodeId = ''
+    lastHoverX = -1
+    lastHoverY = -1
+    emit('clear-hover')
+  }
+}
+
+/**
+ * 星图首屏通常会先经历一次“空态挂载 -> 数据返回后切成 canvas”的过程，
+ * 这里在真正出现 canvas 后再补初始化，避免必须切换 tab 才能触发重挂载。
+ */
+const ensureCanvasReady = () => {
+  const wrapper = wrapperRef.value
+  const canvas = canvasRef.value
+  if (!wrapper || !canvas) return
+  if (resizeObserver && observedWrapper !== wrapper) {
+    if (observedWrapper) {
+      resizeObserver.unobserve(observedWrapper)
+    }
+    resizeObserver.observe(wrapper)
+    observedWrapper = wrapper
+  }
+  resizeCanvas()
+  if (state.introStartedAt === 0) {
+    state.introStartedAt = performance.now()
+  }
+  if (!unbindCanvasEvents) {
+    unbindCanvasEvents = bindCanvasEvents() || null
+  }
+  if (animationFrameId === null) {
+    drawFrame()
+  }
+}
+
 onMounted(() => {
   resizeObserver = new ResizeObserver(() => {
     resizeCanvas()
   })
-  if (wrapperRef.value) {
-    resizeObserver.observe(wrapperRef.value)
-  }
-  resizeCanvas()
-  unbindCanvasEvents = bindCanvasEvents() || null
-  drawFrame()
+  ensureCanvasReady()
 })
 
 watch(
   () => renderableData.value,
   () => {
     state.hoverIndex = -1
+    state.introStartedAt = performance.now()
   },
   { deep: true }
 )
 
-onBeforeUnmount(() => {
-  if (animationFrameId !== null) {
-    window.cancelAnimationFrame(animationFrameId)
-    animationFrameId = null
+watch(
+  () => renderableData.value.nodes.length,
+  async (length) => {
+    await nextTick()
+    if (!length) {
+      clearCanvasRuntime()
+      return
+    }
+    ensureCanvasReady()
   }
+)
+
+onBeforeUnmount(() => {
+  clearCanvasRuntime()
   resizeObserver?.disconnect()
   resizeObserver = null
-  unbindCanvasEvents?.()
-  unbindCanvasEvents = null
 })
 </script>
 

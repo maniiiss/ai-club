@@ -4,7 +4,9 @@
   </div>
   <div v-else class="graph-shell">
     <div class="graph-hud">
-      <span>点击节点查看详情，拖动画布浏览图谱</span>
+      <span>拖动画布</span>
+      <span>滚轮缩放</span>
+      <span>点击查看</span>
     </div>
     <div ref="graphContainerRef" class="graph-surface" @contextmenu.prevent></div>
   </div>
@@ -53,7 +55,17 @@ const renderableData = computed(() =>
   })
 )
 
-const nodeSize = (node: MemoryFactVisualizationNode) => Math.max(18, Math.min(42, 16 + Math.sqrt(node.degree + node.factCount) * 4))
+const connectionCounts = computed(() => {
+  const counts = new Map<string, number>()
+  renderableData.value.links.forEach((link) => {
+    counts.set(link.source, (counts.get(link.source) || 0) + 1)
+    counts.set(link.target, (counts.get(link.target) || 0) + 1)
+  })
+  return counts
+})
+
+const nodeSize = (node: MemoryFactVisualizationNode) =>
+  Math.max(16, Math.min(40, 16 + (connectionCounts.value.get(node.id) || 0) * 4))
 const edgeWidth = (link: MemoryFactVisualizationLink) => Math.max(1, Math.min(3, link.width || link.weight || 1))
 
 const toElements = () => {
@@ -88,20 +100,22 @@ const runLayout = () => {
     quality: 'default',
     randomize: false,
     animate: true,
-    animationDuration: 700,
+    animationDuration: 1500,
     fit: true,
-    padding: 36,
-    nodeSeparation: 180,
-    idealEdgeLength: () => 220,
-    edgeElasticity: () => 0.08,
-    gravity: 0.06,
-    numIter: 1800,
-    nodeOverlap: 24,
+    padding: 20,
+    nodeSeparation: 200,
+    idealEdgeLength: () => 250,
+    edgeElasticity: () => 0.05,
+    nestingFactor: 0.05,
+    gravity: 0.05,
+    numIter: 2500,
+    nodeOverlap: 30,
     avoidOverlap: true,
     nodeDimensionsIncludeLabels: true,
     tile: true,
-    tilingPaddingVertical: 32,
-    tilingPaddingHorizontal: 32,
+    tilingPaddingVertical: 30,
+    tilingPaddingHorizontal: 30,
+    uniformNodeDimensions: false,
     packComponents: false
   } as any).run()
 }
@@ -226,19 +240,20 @@ const initGraph = async () => {
             height: 'data(size)',
             label: props.showLabels ? 'data(label)' : '',
             color: '#1f2937',
-            'font-size': 10,
+            'font-size': 8,
             'font-weight': 500,
             'text-valign': 'bottom',
             'text-halign': 'center',
-            'text-margin-y': 6,
+            'text-margin-y': 3,
             'text-wrap': 'wrap',
-            'text-max-width': '110px',
-            'text-background-color': 'rgba(255,255,255,0.88)',
-            'text-background-opacity': 1,
+            'text-max-width': '80px',
+            'text-background-color': 'rgba(255,255,255,0.9)',
+            'text-background-opacity': 0.9,
             'text-background-padding': '2px',
             'text-background-shape': 'roundrectangle',
             'border-width': 1,
-            'border-color': 'rgba(15,23,42,0.14)'
+            'border-color': 'rgba(0,0,0,0.12)',
+            'border-opacity': 0.3
           }
         },
         {
@@ -248,9 +263,9 @@ const initGraph = async () => {
             'line-color': 'data(color)',
             'target-arrow-color': 'data(color)',
             'target-arrow-shape': 'triangle',
-            'target-arrow-size': 7,
+            'target-arrow-size': 6,
             'curve-style': 'bezier',
-            opacity: 0.72
+            opacity: 0.7
           }
         },
         {
@@ -337,7 +352,7 @@ onMounted(async () => {
   resizeObserver = new ResizeObserver(() => {
     if (!graphInstance) return
     graphInstance.resize()
-    graphInstance.fit(undefined, 56)
+    graphInstance.fit(undefined, 80)
   })
 
   await nextTick()
@@ -376,12 +391,12 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   min-height: 0;
-  border-radius: 20px;
+  border-radius: 16px;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 16% 18%, rgba(0, 116, 217, 0.08), transparent 28%),
-    radial-gradient(circle at 84% 14%, rgba(0, 146, 150, 0.08), transparent 22%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(246, 249, 252, 0.98) 100%);
+  border: 1px solid rgba(206, 217, 226, 0.92);
+  background-image: radial-gradient(circle at 1px 1px, rgba(0, 0, 0, 0.06) 1px, transparent 0);
+  background-size: 20px 20px;
+  background-color: #f8fafc;
 }
 
 .graph-surface {
@@ -397,6 +412,7 @@ onBeforeUnmount(() => {
   z-index: 2;
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   min-height: 28px;
   padding: 0 10px;
   border-radius: 999px;

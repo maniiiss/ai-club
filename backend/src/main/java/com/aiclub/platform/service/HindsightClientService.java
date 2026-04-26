@@ -262,7 +262,7 @@ public class HindsightClientService {
      * 事实召回显式限制 world 类型，避免面板混入 chunk 结果。
      */
     private ObjectNode buildWorldFactRecallPayload(String query, int limit, List<String> tags) {
-        ObjectNode payload = buildRecallPayload(query, Math.max(1, Math.min(limit, 50)), tags);
+        ObjectNode payload = buildRecallPayload(query, Math.max(1, Math.min(limit, 200)), tags);
         ArrayNode types = payload.putArray("types");
         types.add("world");
         return payload;

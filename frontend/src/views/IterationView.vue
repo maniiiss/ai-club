@@ -925,10 +925,13 @@
         </section>
 
         <section class="work-item-editor-description">
-          <div class="work-item-description-body">
-            <el-alert
-              v-if="isRequirementWorkItem && legacyRequirementNeedsUpgrade"
-              type="warning"
+            <div class="work-item-description-body">
+              <div class="work-item-description-section-head">
+                <div class="work-item-description-section-title">{{ workItemDescriptionSectionTitle }}</div>
+              </div>
+              <el-alert
+                v-if="isRequirementWorkItem && legacyRequirementNeedsUpgrade"
+                type="warning"
               :closable="false"
               title="该需求为历史数据，本次保存后会升级为新模板结构。"
               class="legacy-requirement-alert"
@@ -938,26 +941,28 @@
               <div class="legacy-requirement-preview-body" v-html="renderMarkdownToHtml(legacyRequirementPreview)"></div>
             </div>
 
-            <el-form-item v-if="isRequirementWorkItem" class="description-form-item work-item-description-form-item">
-              <MarkdownEditor
-                v-model="workItemForm.requirementMarkdown"
-                :height="workItemEditorHeight"
-                :preview="true"
-                :upload-image="handleTaskMarkdownImageUpload"
-                :placeholder="requirementDocumentPlaceholder"
-              />
-            </el-form-item>
+              <el-form-item v-if="isRequirementWorkItem" class="description-form-item work-item-description-form-item">
+                <MarkdownEditor
+                  v-model="workItemForm.requirementMarkdown"
+                  :height="workItemEditorHeight"
+                  :preview="true"
+                  :start-in-edit-mode="!workItemEditing"
+                  :upload-image="handleTaskMarkdownImageUpload"
+                  placeholder=""
+                />
+              </el-form-item>
 
-            <el-form-item v-else prop="description" class="description-form-item work-item-description-form-item">
-              <MarkdownEditor
-                v-model="workItemForm.description"
-                :height="workItemEditorHeight"
-                :preview="true"
-                :upload-image="handleTaskMarkdownImageUpload"
-                placeholder="请填写工作项详细说明，支持 Markdown 格式"
-              />
-            </el-form-item>
-          </div>
+              <el-form-item v-else prop="description" class="description-form-item work-item-description-form-item">
+                <MarkdownEditor
+                  v-model="workItemForm.description"
+                  :height="workItemEditorHeight"
+                  :preview="true"
+                  :start-in-edit-mode="!workItemEditing"
+                  :upload-image="handleTaskMarkdownImageUpload"
+                  placeholder=""
+                />
+              </el-form-item>
+            </div>
         </section>
       </div>
     </el-form>
@@ -1429,10 +1434,10 @@ const workItemPlanDateRange = computed<[string, string] | []>({
     workItemForm.planEndDate = planEndDate || null
   }
 })
-// 让编辑器直接撑满抽屉剩余空间，避免底部删除信息区后出现视觉留白。
-// 工作项抽屉中的 Markdown 编辑器不再拉满剩余空间，避免顶部出现大片空白。
-const workItemEditorHeight = computed(() => 'clamp(460px, 58vh, 720px)')
+// 工作项抽屉中的 Markdown 编辑器需要吃满正文剩余区域，方便在长内容场景下直接沉浸式编辑。
+const workItemEditorHeight = computed(() => '100%')
 const workItemDialogUpdatedAt = computed(() => currentDialogWorkItem.value?.updatedAt || '保存后生成')
+const workItemDescriptionSectionTitle = computed(() => isRequirementWorkItem.value ? '需求文档' : '工作项描述')
 
 const hasWorkItemPlanDateRange = (task: Pick<TaskItem, 'planStartDate' | 'planEndDate'>) =>
   Boolean(task.planStartDate && task.planEndDate)
@@ -3996,8 +4001,11 @@ onMounted(async () => {
 :deep(.work-item-drawer .el-drawer__body) {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100%;
   min-height: 0;
   padding: 0;
+  overflow: hidden;
   background: rgba(248, 249, 250, 0.96);
 }
 
@@ -4166,16 +4174,32 @@ onMounted(async () => {
 }
 
 .work-item-editor-form {
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .work-item-editor-shell {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  min-height: calc(100vh - 206px);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .work-item-editor-top {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
   padding: 10px 18px 14px;
   border-bottom: 1px solid var(--app-border);
   background: var(--app-surface-card);
@@ -4476,7 +4500,11 @@ onMounted(async () => {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
+  overflow: hidden;
   background: var(--app-surface-card);
   border-bottom: 1px solid var(--app-border);
 }
@@ -4485,27 +4513,54 @@ onMounted(async () => {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
   padding: 10px 18px 18px;
+  box-sizing: border-box;
+}
+
+.work-item-description-section-head {
+  flex: 0 0 auto;
+  margin-bottom: 12px;
+}
+
+.work-item-description-section-title {
+  color: var(--app-text);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.4;
 }
 
 .work-item-description-form-item {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  align-self: stretch;
+  min-width: 0;
   min-height: 0;
   margin: 0;
 }
 
 .work-item-description-form-item :deep(.el-form-item__content) {
-  display: flex;
+  display: flex !important;
   flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
 }
 
 .work-item-description-form-item :deep(.markdown-editor-wrapper) {
   display: flex;
   flex: 1 1 auto;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -4513,28 +4568,89 @@ onMounted(async () => {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0;
   min-height: 0;
   border-radius: 14px;
   box-shadow: inset 0 0 0 1px var(--app-border);
 }
 
-.work-item-description-form-item :deep(.md-editor-input-wrapper),
-.work-item-description-form-item :deep(.md-editor-preview-wrapper) {
-  flex: 1 1 50%;
-  width: auto;
-  min-height: 0;
-  min-width: 0;
+.work-item-description-form-item :deep(.markdown-editor-wrapper.is-preview-mode .md-editor) {
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .work-item-description-form-item :deep(.md-editor-content-wrapper) {
   display: flex;
   flex: 1 1 auto;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.work-item-description-form-item :deep(.markdown-editor-wrapper.is-edit-mode .md-editor-content) {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.work-item-description-form-item :deep(.markdown-editor-wrapper.is-edit-mode .md-editor-content-wrapper) {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  overflow: hidden;
+}
+
+.work-item-description-form-item :deep(.markdown-editor-wrapper.is-edit-mode .md-editor-content-wrapper > .md-editor-custom-scrollbar:first-child) {
+  display: block !important;
+  grid-column: 1;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  height: 100% !important;
+}
+
+.work-item-description-form-item :deep(.markdown-editor-wrapper.is-edit-mode .md-editor-content-wrapper > .md-editor-custom-scrollbar:last-child) {
+  display: block !important;
+  grid-column: 2;
+  width: 0 !important;
+  max-width: 0 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.work-item-description-form-item :deep(.markdown-editor-wrapper.is-edit-mode .md-editor-input-wrapper) {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0;
+  min-height: 0;
+}
+
+.work-item-description-form-item :deep(.markdown-editor-wrapper.is-edit-mode .md-editor-preview-wrapper),
+.work-item-description-form-item :deep(.markdown-editor-wrapper.is-edit-mode .md-editor-resize-operate) {
+  display: none !important;
+}
+
+.work-item-description-form-item :deep(.markdown-editor-wrapper.is-preview-mode .md-editor-preview-wrapper) {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
   min-height: 0;
 }
 
 .work-item-description-form-item :deep(.md-editor-preview-wrapper) {
   background: rgba(255, 255, 255, 0.82);
+}
+
+.work-item-description-form-item :deep(.markdown-editor-wrapper.is-preview-mode .md-editor-preview-wrapper) {
+  background: transparent;
 }
 
 .work-item-description-form-item :deep(.cm-editor),
@@ -4828,8 +4944,9 @@ onMounted(async () => {
   }
 
   .work-item-editor-shell {
-    min-height: calc(100vh - 188px);
-  }
+      height: 100%;
+      min-height: 0;
+    }
 
   .work-item-editor-top,
   .work-item-description-body {

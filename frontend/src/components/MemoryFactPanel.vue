@@ -95,7 +95,7 @@
       </div>
     </div>
 
-    <div v-if="!selectedNode && !selectedEdge" class="panel-empty">
+    <div v-if="!selectedNode && !selectedEdge && !selectedFact && !factsLoading && !facts.length" class="panel-empty">
       <el-empty description="点击图中的内容后在这里查看详情" />
     </div>
   </div>
@@ -118,6 +118,7 @@ interface SelectedEdgeDetail extends MemoryFactEdgeItem {
 const props = defineProps<{
   selectedNode: MemoryFactNodeItem | null
   selectedEdge: SelectedEdgeDetail | null
+  selectedFact: MemoryFactItem | null
   entityDetail: MemoryFactEntityDetailItem | null
   facts: MemoryFactItem[]
   factsLoading: boolean
@@ -129,7 +130,11 @@ const props = defineProps<{
 }>()
 
 const metadataEntries = computed(() => {
-  const raw = props.entityDetail?.metadataJson || props.selectedEdge?.metadataJson || props.selectedNode?.metadataJson || ''
+  const raw = props.entityDetail?.metadataJson
+    || props.selectedEdge?.metadataJson
+    || props.selectedNode?.metadataJson
+    || props.selectedFact?.metadataJson
+    || ''
   if (!raw) {
     return []
   }

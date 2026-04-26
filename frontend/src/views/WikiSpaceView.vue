@@ -181,11 +181,21 @@
                 <span v-if="currentDirectory.boundProjectName">关联项目 {{ currentDirectory.boundProjectName }}</span>
                 <span>Slug {{ currentDirectory.slug }}</span>
               </template>
+              <span v-if="inlineContentSaving" class="wiki-page-meta-saving">正文保存中...</span>
             </div>
           </header>
 
-          <section class="wiki-article-body">
+          <section class="wiki-article-body" :class="{ 'is-inline-editable': inlineContentEditable }">
+            <MarkdownEditor
+              v-if="inlineContentEditable"
+              v-model="inlineContentDraft"
+              height="100%"
+              :upload-image="handleUploadImage"
+              :placeholder="inlineContentPlaceholder"
+              @edit-state-change="handleInlineEditorStateChange"
+            />
             <MdPreview
+              v-else
               :key="currentNodeKey"
               :editor-id="`wiki-space-preview-${currentNodeKey}`"
               language="zh-CN"
@@ -468,6 +478,7 @@ const pageLoading = ref(false)
 const versionLoading = ref(false)
 const importLoading = ref(false)
 const submitting = ref(false)
+const inlineContentSaving = ref(false)
 const spaceDetail = ref<WikiSpaceDetailItem | null>(null)
 const directoryNodes = ref<WikiDirectoryTreeNodeItem[]>([])
 const currentDirectory = ref<WikiDirectoryTreeNodeItem | null>(null)
@@ -546,6 +557,7 @@ const canEditSpace = computed(() => {
   const role = spaceDetail.value?.currentUserRole
   return role === 'ADMIN' || role === 'EDITOR'
 })
+const inlineContentEditable = computed(() => canEditSpace.value && Boolean(currentPage.value || currentDirectory.value))
 const showMemberAction = computed(() => currentDirectory.value?.parentDirectoryId == null)
 
 const flatRows = computed(() => flattenTree(directoryNodes.value))
@@ -585,7 +597,11 @@ const currentNodeKey = computed(() => {
   return 'empty'
 })
 const currentNodeTitle = computed(() => currentPage.value?.title || currentDirectory.value?.name || 'Wiki 页面')
-const currentNodeContent = computed(() => currentPage.value?.content || currentDirectory.value?.content || '暂无内容')
+const currentNodeRawContent = computed(() => currentPage.value?.content || currentDirectory.value?.content || '')
+const currentNodeContent = computed(() => currentNodeRawContent.value || '暂无内容')
+const inlineContentDraft = ref('')
+const inlineContentPlaceholder = computed(() => currentPage.value ? '开始编写页面正文' : '开始编写目录正文')
+const inlineContentDirty = computed(() => inlineContentDraft.value !== currentNodeRawContent.value)
 const currentBreadcrumb = computed(() => {
   if (!currentPage.value) {
     if (currentDirectory.value) {
@@ -607,6 +623,14 @@ const activeSearchQuery = computed({
     }
   }
 })
+
+watch(
+  [currentNodeKey, currentNodeRawContent],
+  () => {
+    inlineContentDraft.value = currentNodeRawContent.value
+  },
+  { immediate: true }
+)
 const searchStatusMessage = computed(() => {
   if (searchLoading.value) {
     return '正在搜索当前空间内容...'
@@ -1149,6 +1173,66 @@ async function handleSubmitPage() {
     ElMessage.error(error?.response?.data?.message || '保存页面失败')
   } finally {
     submitting.value = false
+  }
+}
+
+async function handleInlineEditorStateChange(editing: boolean) {
+  if (editing) {
+    return
+  }
+  await persistInlineContent()
+}
+
+// Wiki 正文支持就地编辑，退出编辑态时自动保存当前节点内容。
+async function persistInlineContent() {
+  if (!inlineContentEditable.value || inlineContentSaving.value || !inlineContentDirty.value) {
+    return
+  }
+  const nodeKey = currentNodeKey.value
+  const nextContent = inlineContentDraft.value
+  inlineContentSaving.value = true
+  try {
+    if (currentPage.value) {
+      const page = currentPage.value
+      const saved = await updateWikiSpacePage(spaceId.value, page.id, {
+        directoryId: page.directoryId,
+        parentPageId: page.parentPageId,
+        title: page.title,
+        content: nextContent,
+        changeSummary: ''
+      })
+      saved.relatedPages = page.relatedPages || []
+      if (currentNodeKey.value === nodeKey) {
+        currentPage.value = saved
+      }
+    } else if (currentDirectory.value) {
+      const directory = currentDirectory.value
+      await updateWikiDirectory(spaceId.value, directory.id, {
+        name: directory.name,
+        content: nextContent,
+        parentDirectoryId: directory.parentDirectoryId ?? null,
+        boundProjectId: directory.boundProjectId ?? null
+      })
+      if (currentNodeKey.value === nodeKey) {
+        currentDirectory.value = {
+          ...directory,
+          content: nextContent
+        }
+      }
+    } else {
+      return
+    }
+    await loadDirectoryTree()
+    if (currentNodeKey.value === nodeKey) {
+      ElMessage.success('正文已保存')
+    }
+  } catch (error: any) {
+    if (currentNodeKey.value === nodeKey) {
+      inlineContentDraft.value = currentNodeRawContent.value
+    }
+    ElMessage.error(error?.response?.data?.message || '保存正文失败')
+  } finally {
+    inlineContentSaving.value = false
   }
 }
 
@@ -2066,6 +2150,11 @@ function collectPageRowKeys(pages: WikiSpacePageSummaryItem[]): string[] {
   font-size: 13px;
 }
 
+.wiki-page-meta-saving {
+  color: var(--app-primary);
+  font-weight: 700;
+}
+
 .wiki-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2078,6 +2167,17 @@ function collectPageRowKeys(pages: WikiSpacePageSummaryItem[]): string[] {
   min-height: 0;
   padding-top: 18px;
   overflow: auto;
+}
+
+.wiki-article-body.is-inline-editable {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wiki-article-body.is-inline-editable :deep(.markdown-editor-wrapper) {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .wiki-member-editor,

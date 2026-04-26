@@ -3,47 +3,100 @@
     <el-card class="page-card toolbar-card" shadow="never">
       <div class="page-header">
         <div class="page-headline">
-          <el-button text @click="goBack">{{ backLabel }}</el-button>
-          <div class="page-title">{{ scopeName || '记忆事实图' }}</div>
+          <button class="memory-back-link" type="button" @click="goBack">
+            <el-icon><ArrowLeft /></el-icon>
+            <span>{{ backLabel }}</span>
+          </button>
         </div>
-        <el-space wrap>
-          <el-segmented
-            v-model="viewMode"
-            :options="viewModeOptions"
-            class="view-mode-switch"
-          />
-          <el-select v-model="graphScopeMode" style="width: 132px">
-            <el-option label="当前周边" value="local" />
-            <el-option label="全部内容" value="all" />
-          </el-select>
-          <el-select v-model="maxRenderableNodesValue" style="width: 132px">
-            <el-option label="节点 20" :value="20" />
-            <el-option label="节点 40" :value="40" />
-            <el-option label="节点 80" :value="80" />
-            <el-option label="全部节点" :value="0" />
-          </el-select>
-          <el-button text @click="showLabels = !showLabels">
-            {{ showLabels ? '隐藏标签' : '显示标签' }}
-          </el-button>
-          <el-select v-model="entityTypeFilter" clearable placeholder="筛选内容类型" style="width: 160px">
-            <el-option v-for="item in entityTypeOptions" :key="item" :label="entityTypeLabel(item)" :value="item" />
-          </el-select>
-          <el-select v-model="relationTypeFilter" clearable placeholder="筛选关系类型" style="width: 170px">
-            <el-option v-for="item in relationTypeOptions" :key="item" :label="relationTypeLabel(item)" :value="item" />
-          </el-select>
-          <el-select v-model="sourceTypeFilter" clearable placeholder="筛选来源" style="width: 140px">
-            <el-option v-for="item in sourceTypeOptions" :key="item" :label="sourceTypeLabel(item)" :value="item" />
-          </el-select>
-          <el-input
-            v-model="searchKeyword"
-            placeholder="搜索内容或关键词"
-            style="width: 200px"
-            clearable
-            @keyup.enter="handleSearch"
-          />
-          <el-button :loading="factsLoading" @click="handleSearch">搜索</el-button>
-          <el-button :loading="loading" @click="loadGraph">刷新</el-button>
-        </el-space>
+        <div class="memory-toolbar-shell">
+          <div class="management-list-toolbar-main memory-toolbar-main">
+            <div class="management-list-search-shell memory-search-shell">
+              <el-icon class="management-list-search-icon"><Search /></el-icon>
+              <input
+                v-model="searchKeyword"
+                class="management-list-search-input"
+                type="text"
+                placeholder="搜索内容或关键词..."
+                @keyup.enter="handleSearch"
+              />
+            </div>
+            <span class="management-list-toolbar-divider" aria-hidden="true"></span>
+            <el-popover
+              v-model:visible="filterPopoverVisible"
+              trigger="click"
+              placement="bottom-start"
+              :width="340"
+              popper-class="management-list-popper"
+            >
+              <template #reference>
+                <button class="management-list-toolbar-button" type="button">
+                  <el-icon><Filter /></el-icon>
+                  <span>{{ activeFilterCount > 0 ? `筛选（${activeFilterCount}）` : '筛选' }}</span>
+                </button>
+              </template>
+
+              <div class="management-list-filter-panel management-list-compact-input memory-filter-panel">
+                <div class="management-list-filter-field">
+                  <label>图谱范围</label>
+                  <el-select v-model="graphScopeMode" style="width: 100%" :teleported="false">
+                    <el-option label="当前周边" value="local" />
+                    <el-option label="全部内容" value="all" />
+                  </el-select>
+                </div>
+                <div class="management-list-filter-field">
+                  <label>显示多少内容</label>
+                  <el-select v-model="maxRenderableNodesValue" style="width: 100%" :teleported="false">
+                    <el-option label="少一点（20 个）" :value="20" />
+                    <el-option label="适中（40 个）" :value="40" />
+                    <el-option label="多一点（80 个）" :value="80" />
+                    <el-option label="全部显示" :value="0" />
+                  </el-select>
+                </div>
+                <div class="management-list-filter-field">
+                  <label>内容类型</label>
+                  <el-select v-model="entityTypeFilter" clearable placeholder="筛选内容类型" style="width: 100%" :teleported="false">
+                    <el-option v-for="item in entityTypeOptions" :key="item" :label="entityTypeLabel(item)" :value="item" />
+                  </el-select>
+                </div>
+                <div class="management-list-filter-field">
+                  <label>关系类型</label>
+                  <el-select v-model="relationTypeFilter" clearable placeholder="筛选关系类型" style="width: 100%" :teleported="false">
+                    <el-option v-for="item in relationTypeOptions" :key="item" :label="relationTypeLabel(item)" :value="item" />
+                  </el-select>
+                </div>
+                <div class="management-list-filter-field">
+                  <label>来源</label>
+                  <el-select v-model="sourceTypeFilter" clearable placeholder="筛选来源" style="width: 100%" :teleported="false">
+                    <el-option v-for="item in sourceTypeOptions" :key="item" :label="sourceTypeLabel(item)" :value="item" />
+                  </el-select>
+                </div>
+                <div class="management-list-filter-field">
+                  <label>标签显示</label>
+                  <div class="memory-filter-switch-row">
+                    <span>{{ showLabels ? '当前显示标签' : '当前隐藏标签' }}</span>
+                    <el-switch v-model="showLabels" />
+                  </div>
+                </div>
+                <div class="management-list-filter-actions">
+                  <el-button type="primary" @click="closeFilterPopover">完成</el-button>
+                  <el-button @click="handleResetFilters">重置</el-button>
+                </div>
+              </div>
+            </el-popover>
+            <button class="management-list-toolbar-button" type="button" :disabled="searchSubmitting" @click="handleSearch">
+              <el-icon><Search /></el-icon>
+              <span>{{ searchSubmitting ? '搜索中...' : '搜索' }}</span>
+            </button>
+            <button class="management-list-toolbar-button" type="button" @click="handleResetFilters">
+              <el-icon><RefreshRight /></el-icon>
+              <span>重置</span>
+            </button>
+            <button class="management-list-toolbar-button" type="button" :disabled="loading" @click="loadGraph">
+              <el-icon><RefreshRight /></el-icon>
+              <span>{{ loading ? '刷新中...' : '刷新' }}</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div v-if="combinedWarnings.length" class="warning-list">
@@ -57,28 +110,6 @@
         />
       </div>
 
-      <div class="stats-grid">
-        <div class="stat-card">
-          <span class="stat-label">{{ scopeStatLabel }}</span>
-          <strong>{{ scopeStatValue }}</strong>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">当前视图</span>
-          <strong>{{ currentViewTitle }}</strong>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">关联数</span>
-          <strong>{{ visibleEdges.length }}</strong>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">{{ primaryCountLabel }}</span>
-          <strong>{{ visibleNodes.length }}</strong>
-        </div>
-        <div class="stat-card">
-          <span class="stat-label">更新时间</span>
-          <strong>{{ graph?.generatedAt || '-' }}</strong>
-        </div>
-      </div>
     </el-card>
 
     <div class="main-grid">
@@ -87,12 +118,14 @@
           <div class="section-header">
             <div class="section-header-copy">
               <span>{{ currentViewTitle }}</span>
-              <small>{{ currentViewDescription }}</small>
             </div>
-            <el-space wrap>
-              <el-tag type="info">{{ visibleNodes.length }} 个内容</el-tag>
-              <el-tag type="info">{{ visibleEdges.length }} 条关系</el-tag>
-            </el-space>
+            <div class="graph-header-actions">
+              <el-segmented
+                v-model="viewMode"
+                :options="viewModeOptions"
+                class="view-mode-switch"
+              />
+            </div>
           </div>
         </template>
 
@@ -125,9 +158,10 @@
 
           <MemoryFactTableView
             v-else-if="viewMode === 'table'"
-            :nodes="visibleNodes"
-            :selected-node-id="selectedNodeId"
-            @select-node="handleSelectNode"
+            :facts="tableFacts"
+            :facts-loading="tableFactsLoading"
+            :selected-fact-id="selectedTableFactId"
+            @select-fact="handleSelectTableFact"
           />
 
           <MemoryFactTimelineView
@@ -170,6 +204,7 @@
           <MemoryFactPanel
             :selected-node="selectedNode"
             :selected-edge="selectedEdgeDetail"
+            :selected-fact="selectedTableFact"
             :entity-detail="entityDetail"
             :facts="panelFacts"
             :facts-loading="factsLoading"
@@ -188,8 +223,10 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ArrowLeft, Filter, RefreshRight, Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
+import { useAppStore } from '@/stores/app'
 import {
   getProjectDetail,
   getProjectMemoryFactGraph,
@@ -204,6 +241,7 @@ import {
 import type {
   MemoryFactEdgeItem,
   MemoryFactEntityDetailItem,
+  MemoryFactItem,
   MemoryFactFactsResponseItem,
   MemoryFactGraphItem,
   MemoryFactNodeItem,
@@ -230,38 +268,45 @@ const MemoryFactTimelineView = defineAsyncComponent(() => import('@/components/M
 
 const route = useRoute()
 const router = useRouter()
+const appStore = useAppStore()
 const pageRootRef = ref<HTMLElement | null>(null)
 const viewStageRef = ref<HTMLElement | null>(null)
 const projectId = Number(route.params.projectId)
 const spaceId = Number(route.params.spaceId)
 const isWikiSpaceMode = computed(() => route.name === 'wiki-space-memory-fact-graph')
+const pageRouteName = computed(() => String(route.name || ''))
 const scopeName = ref('')
 const wikiSpaceDetail = ref<WikiSpaceDetailItem | null>(null)
 const wikiDirectoryTree = ref<WikiDirectoryTreeNodeItem[]>([])
 const graph = ref<MemoryFactGraphItem | null>(null)
 const entityDetail = ref<MemoryFactEntityDetailItem | null>(null)
 const factsResponse = ref<MemoryFactFactsResponseItem | null>(null)
+const tableFactsResponse = ref<MemoryFactFactsResponseItem | null>(null)
 const entityDetailCache = ref<Record<string, MemoryFactEntityDetailItem>>({})
 const loading = ref(false)
 const factsLoading = ref(false)
+const tableFactsLoading = ref(false)
 const selectedNodeId = ref<string | null>(null)
 const selectedEdgeId = ref<string | null>(null)
+const selectedTableFactId = ref<string | null>(null)
 const scopeAnchorNodeId = ref<string | null>(null)
 const viewMode = ref<ViewMode>('constellation')
-const graphScopeMode = ref<GraphScopeMode>('local')
+// 与 Hindsight 首屏保持一致，默认先展示当前空间的整张事实图，
+// 避免进入详情页后被首个锚点自动收窄成局部子图。
+const graphScopeMode = ref<GraphScopeMode>('all')
 const showLabels = ref(true)
-const maxRenderableNodesValue = ref(40)
+// Hindsight 首屏在节点较多时默认先看一屏可读范围，这里用 20 作为默认值对齐它的 Graph 行为。
+const maxRenderableNodesValue = ref(20)
 const entityTypeFilter = ref('FACT')
 const relationTypeFilter = ref('')
 const sourceTypeFilter = ref('')
 const searchKeyword = ref('')
+const filterPopoverVisible = ref(false)
+const searchSubmitting = ref(false)
 const hoverPreview = ref<{ nodeId: string; left: number; top: number } | null>(null)
 const hoverPreviewLoading = ref(false)
-let hoverPreviewTimer: number | null = null
 
 const backLabel = computed(() => isWikiSpaceMode.value ? '返回 Wiki 空间' : '返回 Wiki 中心')
-const scopeStatLabel = computed(() => isWikiSpaceMode.value ? '所在空间' : '所属项目')
-const scopeStatValue = computed(() => isWikiSpaceMode.value ? spaceId : graph.value?.projectId ?? projectId)
 const normalizeEntityType = (value?: string) => String(value || 'ENTITY').toUpperCase()
 const maxRenderableNodes = computed(() => maxRenderableNodesValue.value > 0 ? maxRenderableNodesValue.value : null)
 
@@ -270,6 +315,19 @@ const baseNodeIds = computed(() => new Set(baseNodes.value.map((item) => item.id
 const baseEdges = computed(() =>
   (graph.value?.edges || []).filter((item) => baseNodeIds.value.has(item.sourceId) && baseNodeIds.value.has(item.targetId))
 )
+const defaultEntityTypeFilter = computed(() =>
+  baseNodes.value.some((item) => normalizeEntityType(item.entityType) === 'FACT') ? 'FACT' : ''
+)
+const activeFilterCount = computed(() => {
+  let count = 0
+  if (graphScopeMode.value !== 'all') count += 1
+  if (maxRenderableNodesValue.value !== 20) count += 1
+  if (entityTypeFilter.value !== defaultEntityTypeFilter.value) count += 1
+  if (relationTypeFilter.value) count += 1
+  if (sourceTypeFilter.value) count += 1
+  if (!showLabels.value) count += 1
+  return count
+})
 
 const parseMetadata = (value?: string) => {
   if (!value) return {}
@@ -294,6 +352,23 @@ const sourceTypeOptions = computed(() => {
   }
   return Array.from(values)
 })
+
+const asStringList = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+  return []
+}
+
+const normalizeKeyword = (value?: string) => String(value || '').trim().toLowerCase()
 
 const passesNodeFilter = (item: MemoryFactNodeItem) => {
   if (entityTypeFilter.value && item.entityType !== entityTypeFilter.value) return false
@@ -360,6 +435,24 @@ const visibleNodeIds = computed(() => new Set(visibleNodes.value.map((item) => i
 const visibleEdges = computed(() =>
   filteredEdges.value.filter((item) => visibleNodeIds.value.has(item.sourceId) && visibleNodeIds.value.has(item.targetId))
 )
+const visibleFactIds = computed(() => {
+  const values = new Set<string>()
+  visibleEdges.value.forEach((item) => {
+    ;(item.factIds || []).forEach((factId) => {
+      if (factId) values.add(factId)
+    })
+  })
+  return values
+})
+const visibleNodeKeywords = computed(() => {
+  const values = new Set<string>()
+  visibleNodes.value.forEach((item) => {
+    values.add(normalizeKeyword(item.label))
+    ;(item.aliases || []).forEach((alias) => values.add(normalizeKeyword(alias)))
+  })
+  values.delete('')
+  return values
+})
 
 const nodeMap = computed(() => {
   const map = new Map<string, MemoryFactNodeItem>()
@@ -413,6 +506,7 @@ const combinedWarnings = computed(() => {
   for (const item of graph.value?.warnings || []) values.add(item)
   for (const item of entityDetail.value?.warnings || []) values.add(item)
   for (const item of factsResponse.value?.warnings || []) values.add(item)
+  for (const item of tableFactsResponse.value?.warnings || []) values.add(item)
   return Array.from(values)
 })
 
@@ -420,10 +514,78 @@ const panelWarnings = computed(() => {
   const values = new Set<string>()
   for (const item of entityDetail.value?.warnings || []) values.add(item)
   for (const item of factsResponse.value?.warnings || []) values.add(item)
+  for (const item of tableFactsResponse.value?.warnings || []) values.add(item)
   return Array.from(values)
 })
 
+const extractFactEntities = (item: MemoryFactItem) => {
+  const metadata = parseMetadata(item.metadataJson)
+  const sourceFact = metadata.sourceFact && typeof metadata.sourceFact === 'object'
+    ? metadata.sourceFact as Record<string, unknown>
+    : null
+  const rawEntityValues = [
+    ...asStringList(sourceFact?.entities),
+    ...asStringList(metadata.entities),
+    ...asStringList((metadata.raw as Record<string, unknown> | undefined)?.entities),
+    item.subject,
+    item.object
+  ]
+  const values = new Set<string>()
+  rawEntityValues
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .forEach((value) => values.add(value))
+  return Array.from(values)
+}
+
+const factSourceType = (item: MemoryFactItem) => {
+  const metadata = parseMetadata(item.metadataJson)
+  return String(metadata.sourceType || item.sourceType || '')
+}
+
+const matchesFactVisibleScope = (item: MemoryFactItem) => {
+  if (visibleFactIds.value.has(item.id)) {
+    return true
+  }
+  const entityNames = extractFactEntities(item)
+  if (entityNames.some((name) => visibleNodeKeywords.value.has(normalizeKeyword(name)))) {
+    return true
+  }
+  const haystack = normalizeKeyword(`${item.summary} ${item.subject} ${item.predicate} ${item.object}`)
+  for (const keyword of visibleNodeKeywords.value) {
+    if (keyword && haystack.includes(keyword)) {
+      return true
+    }
+  }
+  return false
+}
+
+const tableFacts = computed(() => {
+  const items = tableFactsResponse.value?.facts || []
+  return items.filter((item) => {
+    if (entityTypeFilter.value && entityTypeFilter.value !== 'FACT') {
+      return false
+    }
+    if (sourceTypeFilter.value && factSourceType(item) !== sourceTypeFilter.value) {
+      return false
+    }
+    if (relationTypeFilter.value && !visibleFactIds.value.has(item.id)) {
+      return false
+    }
+    if (graphScopeMode.value !== 'all' && !matchesFactVisibleScope(item)) {
+      return false
+    }
+    return true
+  })
+})
+const selectedTableFact = computed(() =>
+  tableFacts.value.find((item) => item.id === selectedTableFactId.value) || null
+)
+
 const panelFacts = computed(() => {
+  if (selectedTableFact.value) {
+    return [selectedTableFact.value]
+  }
   if (selectedNode.value) {
     return entityDetail.value?.facts || []
   }
@@ -489,12 +651,6 @@ const sourceTypeLabel = (sourceType: string) => {
   return map[sourceType] || sourceType
 }
 
-const primaryCountLabel = computed(() => {
-  if (entityTypeFilter.value === 'FACT') return '事实数'
-  if (entityTypeFilter.value) return `${entityTypeLabel(entityTypeFilter.value)}数`
-  return '内容数'
-})
-
 const viewModeOptions = [
   { label: '星图', value: 'constellation' },
   { label: '关系图', value: 'graph' },
@@ -508,16 +664,6 @@ const currentViewTitle = computed(() => {
     graph: 'Graph 关系图',
     table: 'Table 内容清单',
     timeline: 'Timeline 时间线'
-  }
-  return map[viewMode.value]
-})
-
-const currentViewDescription = computed(() => {
-  const map: Record<ViewMode, string> = {
-    constellation: '参考 Hindsight Constellation 的漂浮星图体验，适合快速看整体分布和热点。',
-    graph: '基于 Hindsight Graph 的网络关系视角，适合查看节点之间的直接关联。',
-    table: '将当前筛选结果整理成清单，方便产品和开发按内容逐条确认。',
-    timeline: '优先展示已选内容的事实时间线，未选择时回退到关系最近变化时间。'
   }
   return map[viewMode.value]
 })
@@ -555,9 +701,18 @@ const projectLabelMap = computed<Record<string, string>>(() => {
   return map
 })
 
+const syncGlobalPageTitle = (title?: string | null) => {
+  const nextTitle = String(title || '').trim()
+  if (!nextTitle) {
+    return
+  }
+  appStore.setDynamicPageTitle(nextTitle, pageRouteName.value)
+}
+
 const loadProject = async () => {
   const project = await getProjectDetail(projectId)
   scopeName.value = project.name
+  syncGlobalPageTitle(project.name)
 }
 
 const loadWikiSpace = async () => {
@@ -565,10 +720,12 @@ const loadWikiSpace = async () => {
   wikiSpaceDetail.value = space
   wikiDirectoryTree.value = tree
   scopeName.value = space.name
+  syncGlobalPageTitle(space.name)
 }
 
 const loadGraph = async () => {
   loading.value = true
+  tableFactsResponse.value = null
   try {
     graph.value = isWikiSpaceMode.value
       ? await getWikiSpaceMemoryFactGraph(spaceId)
@@ -616,6 +773,7 @@ const loadEdgeFacts = async (edgeId: string) => {
 const handleSelectNode = async (id: string) => {
   selectedNodeId.value = id
   selectedEdgeId.value = null
+  selectedTableFactId.value = null
   await loadEntityDetail(id)
 }
 
@@ -623,64 +781,102 @@ const handleHoverPreviewNode = ({ id, x, y }: { id: string; x: number; y: number
   const host = viewStageRef.value
   if (!host) {
     hoverPreview.value = { nodeId: id, left: 24, top: 24 }
-    return
-  }
-  const previewWidth = 420
-  const previewHeight = 300
-  const offset = 18
-  const stageWidth = host.clientWidth
-  const stageHeight = host.clientHeight
-  const placeLeft = x + offset + previewWidth <= stageWidth
-  const nextLeft = placeLeft ? x + offset : Math.max(16, x - previewWidth - offset)
-  const nextTop = Math.min(Math.max(16, y - 46), Math.max(16, stageHeight - previewHeight - 16))
-  hoverPreview.value = {
-    nodeId: id,
-    left: nextLeft,
-    top: nextTop
-  }
-  if (selectedNodeId.value === id || entityDetailCache.value[id]) {
     hoverPreviewLoading.value = false
     return
   }
-  hoverPreviewLoading.value = true
-  if (hoverPreviewTimer !== null) {
-    window.clearTimeout(hoverPreviewTimer)
-  }
-  hoverPreviewTimer = window.setTimeout(async () => {
-    try {
-      const response = isWikiSpaceMode.value
-        ? await getWikiSpaceMemoryFactGraphEntityDetail(spaceId, id)
-        : await getProjectMemoryFactGraphEntityDetail(projectId, id)
-      entityDetailCache.value = {
-        ...entityDetailCache.value,
-        [id]: response
-      }
-    } catch {
-      // 悬停预览失败时只回退为基础信息卡片，不打断主流程。
-    } finally {
-      if (hoverPreview.value?.nodeId === id) {
-        hoverPreviewLoading.value = false
-      }
+  const previewWidth = 360
+  const previewHeight = 220
+  const offset = 18
+  const safePadding = 16
+  const stageWidth = host.clientWidth
+  const stageHeight = host.clientHeight
+
+  const clampPosition = (left: number, top: number) => {
+    const maxLeft = Math.max(safePadding, stageWidth - previewWidth - safePadding)
+    const maxTop = Math.max(safePadding, stageHeight - previewHeight - safePadding)
+    return {
+      left: Math.min(Math.max(safePadding, left), maxLeft),
+      top: Math.min(Math.max(safePadding, top), maxTop)
     }
-  }, 180)
+  }
+
+  /**
+   * 星图上的节点标题会在节点右侧展开，这里把该区域当成避让框，
+   * 让悬停卡片优先尝试放到左侧/上下方，尽量不要把当前节点标题盖住。
+   */
+  const avoidRect = {
+    left: Math.max(0, x - 28),
+    top: Math.max(0, y - 42),
+    right: Math.min(stageWidth, x + 236),
+    bottom: Math.min(stageHeight, y + 58)
+  }
+
+  const overlapArea = (left: number, top: number) => {
+    const right = left + previewWidth
+    const bottom = top + previewHeight
+    const overlapWidth = Math.max(0, Math.min(right, avoidRect.right) - Math.max(left, avoidRect.left))
+    const overlapHeight = Math.max(0, Math.min(bottom, avoidRect.bottom) - Math.max(top, avoidRect.top))
+    return overlapWidth * overlapHeight
+  }
+
+  const candidates = [
+    { left: x - previewWidth - offset, top: y - 46 },
+    { left: x - previewWidth * 0.18, top: y + offset },
+    { left: x - previewWidth * 0.18, top: y - previewHeight - offset },
+    { left: x + offset, top: y - 46 },
+    { left: x + offset, top: y - previewHeight + 34 },
+    { left: x - previewWidth - offset, top: y - previewHeight + 34 }
+  ]
+
+  const bestPlacement = candidates
+    .map((candidate, index) => {
+      const clamped = clampPosition(candidate.left, candidate.top)
+      const clampDrift = Math.abs(clamped.left - candidate.left) + Math.abs(clamped.top - candidate.top)
+      return {
+        ...clamped,
+        score: overlapArea(clamped.left, clamped.top) * 100 + clampDrift + index * 4
+      }
+    })
+    .sort((left, right) => left.score - right.score)[0]
+
+  hoverPreview.value = {
+    nodeId: id,
+    left: bestPlacement.left,
+    top: bestPlacement.top
+  }
+  hoverPreviewLoading.value = false
 }
 
 const clearHoverPreview = () => {
   hoverPreview.value = null
   hoverPreviewLoading.value = false
-  if (hoverPreviewTimer !== null) {
-    window.clearTimeout(hoverPreviewTimer)
-    hoverPreviewTimer = null
-  }
 }
 
 const handleSelectEdge = async (id: string) => {
   selectedEdgeId.value = id
   selectedNodeId.value = null
+  selectedTableFactId.value = null
   await loadEdgeFacts(id)
 }
 
-const clearSelection = () => {
+const loadTableFacts = async (force = false) => {
+  if (!force && tableFactsResponse.value) {
+    return
+  }
+  tableFactsLoading.value = true
+  try {
+    tableFactsResponse.value = isWikiSpaceMode.value
+      ? await getWikiSpaceMemoryFactGraphFacts(spaceId, { limit: 200 })
+      : await getProjectMemoryFactGraphFacts(projectId, { limit: 200 })
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载表格事实失败')
+  } finally {
+    tableFactsLoading.value = false
+  }
+}
+
+const handleSelectTableFact = (item: MemoryFactItem) => {
+  selectedTableFactId.value = item.id
   selectedNodeId.value = null
   selectedEdgeId.value = null
   entityDetail.value = null
@@ -688,28 +884,59 @@ const clearSelection = () => {
   clearHoverPreview()
 }
 
+const clearSelection = () => {
+  selectedNodeId.value = null
+  selectedEdgeId.value = null
+  selectedTableFactId.value = null
+  entityDetail.value = null
+  factsResponse.value = null
+  clearHoverPreview()
+}
+
+const closeFilterPopover = () => {
+  filterPopoverVisible.value = false
+}
+
+const handleResetFilters = () => {
+  graphScopeMode.value = 'all'
+  maxRenderableNodesValue.value = 20
+  showLabels.value = true
+  entityTypeFilter.value = defaultEntityTypeFilter.value
+  relationTypeFilter.value = ''
+  sourceTypeFilter.value = ''
+  searchKeyword.value = ''
+  clearSelection()
+  filterPopoverVisible.value = false
+}
+
 const handleSearch = async () => {
   const keyword = searchKeyword.value.trim()
   if (!keyword) {
     return
   }
-  const matchedNode = baseNodes.value.find((item) => item.label.toLowerCase().includes(keyword.toLowerCase()))
-  if (matchedNode) {
-    scopeAnchorNodeId.value = matchedNode.id
-    await handleSelectNode(matchedNode.id)
-    return
-  }
-  factsLoading.value = true
   try {
-    factsResponse.value = isWikiSpaceMode.value
-      ? await getWikiSpaceMemoryFactGraphFacts(spaceId, { query: keyword, limit: 12 })
-      : await getProjectMemoryFactGraphFacts(projectId, { query: keyword, limit: 12 })
-    entityDetail.value = null
-    selectedNodeId.value = null
-    selectedEdgeId.value = null
-    viewMode.value = 'timeline'
+    searchSubmitting.value = true
+    const matchedNode = baseNodes.value.find((item) => item.label.toLowerCase().includes(keyword.toLowerCase()))
+    if (matchedNode) {
+      scopeAnchorNodeId.value = matchedNode.id
+      await handleSelectNode(matchedNode.id)
+      return
+    }
+    factsLoading.value = true
+    try {
+      factsResponse.value = isWikiSpaceMode.value
+        ? await getWikiSpaceMemoryFactGraphFacts(spaceId, { query: keyword, limit: 12 })
+        : await getProjectMemoryFactGraphFacts(projectId, { query: keyword, limit: 12 })
+      entityDetail.value = null
+      selectedNodeId.value = null
+      selectedEdgeId.value = null
+      selectedTableFactId.value = null
+      viewMode.value = 'timeline'
+    } finally {
+      factsLoading.value = false
+    }
   } finally {
-    factsLoading.value = false
+    searchSubmitting.value = false
   }
 }
 
@@ -748,10 +975,8 @@ watch(
       clearSelection()
       return
     }
-    if (nodes.some((item) => normalizeEntityType(item.entityType) === 'FACT')) {
-      entityTypeFilter.value = 'FACT'
-    } else if (entityTypeFilter.value === 'FACT') {
-      entityTypeFilter.value = ''
+    if (!entityTypeFilter.value || entityTypeFilter.value === 'FACT') {
+      entityTypeFilter.value = defaultEntityTypeFilter.value
     }
     const firstNode = nodes[0]
     if (!firstNode) return
@@ -775,6 +1000,9 @@ watch([entityTypeFilter, relationTypeFilter, sourceTypeFilter, graphScopeMode], 
   if (selectedEdgeId.value && !visibleEdges.value.some((item) => item.id === selectedEdgeId.value)) {
     clearSelection()
   }
+  if (selectedTableFactId.value && !tableFacts.value.some((item) => item.id === selectedTableFactId.value)) {
+    selectedTableFactId.value = null
+  }
 })
 
 watch([selectedNodeId, selectedEdgeId], ([nextNodeId, nextEdgeId]) => {
@@ -783,11 +1011,23 @@ watch([selectedNodeId, selectedEdgeId], ([nextNodeId, nextEdgeId]) => {
   }
 })
 
-watch(viewMode, (nextValue) => {
+watch(viewMode, async (nextValue) => {
+  if (nextValue === 'table') {
+    await loadTableFacts()
+  }
   if (nextValue !== 'constellation' && nextValue !== 'graph') {
     clearHoverPreview()
   }
 })
+
+watch(
+  () => graph.value?.generatedAt,
+  async () => {
+    if (viewMode.value === 'table') {
+      await loadTableFacts(true)
+    }
+  }
+)
 
 onMounted(async () => {
   await nextTick()
@@ -810,6 +1050,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearHoverPreview()
   clearHostLayout()
+  appStore.clearDynamicPageTitle(pageRouteName.value)
 })
 </script>
 
@@ -845,7 +1086,6 @@ onBeforeUnmount(() => {
 
 .page-header,
 .section-header,
-.stats-grid,
 .warning-list {
   display: flex;
 }
@@ -859,15 +1099,75 @@ onBeforeUnmount(() => {
 
 .page-headline {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 168px;
+  min-width: 168px;
 }
 
-.page-title {
-  margin-top: 0;
-  font-size: 20px;
+.memory-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #516072;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
   font-weight: 800;
-  color: #17324c;
+  white-space: nowrap;
+}
+
+.memory-back-link .el-icon {
+  font-size: 15px;
+}
+
+.memory-back-link:hover {
+  color: var(--app-primary);
+}
+
+.memory-toolbar-shell {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.memory-toolbar-main {
+  width: 100%;
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-self: auto;
+  box-sizing: border-box;
+}
+
+.memory-search-shell {
+  flex: 1 1 260px;
+  width: auto;
+  max-width: min(360px, 100%);
+}
+
+.memory-toolbar-main .management-list-toolbar-button:disabled {
+  opacity: 0.64;
+  cursor: not-allowed;
+}
+
+.memory-filter-panel {
+  min-width: 0;
+}
+
+.memory-filter-switch-row {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .view-mode-switch {
@@ -888,34 +1188,6 @@ onBeforeUnmount(() => {
 .warning-list :deep(.el-alert) {
   padding-top: 6px;
   padding-bottom: 6px;
-}
-
-.stats-grid {
-  margin-top: 6px;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.stat-card {
-  min-width: 120px;
-  padding: 8px 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(206, 217, 226, 0.92);
-  background: linear-gradient(135deg, rgba(248, 251, 255, 0.98) 0%, rgba(238, 244, 251, 0.98) 100%);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.stat-label {
-  color: #6b7f91;
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.stat-card strong {
-  color: #17324c;
-  font-size: 15px;
 }
 
 .main-grid {
@@ -965,10 +1237,11 @@ onBeforeUnmount(() => {
   font-weight: 800;
 }
 
-.section-header-copy small {
-  color: #6b7f91;
-  font-size: 12px;
-  line-height: 1.45;
+.graph-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .view-stage {
@@ -982,6 +1255,8 @@ onBeforeUnmount(() => {
   position: absolute;
   z-index: 10;
   pointer-events: none;
+  will-change: transform, opacity;
+  transition: opacity 120ms ease;
 }
 
 .detail-scroll {
@@ -1005,6 +1280,49 @@ onBeforeUnmount(() => {
   .detail-scroll {
     overflow: visible;
     padding-right: 0;
+  }
+}
+
+@media (max-width: 1480px) {
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .page-headline {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .memory-toolbar-shell {
+    width: 100%;
+  }
+}
+
+@media (max-width: 960px) {
+  .section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .memory-toolbar-main {
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .memory-search-shell {
+    flex-basis: 100%;
+    width: 100%;
+    max-width: none;
+  }
+
+  .memory-toolbar-main .management-list-toolbar-divider {
+    display: none;
+  }
+
+  .graph-header-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 }
 </style>
