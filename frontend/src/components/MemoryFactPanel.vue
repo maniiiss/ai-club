@@ -314,9 +314,9 @@ const displayTags = (tags: string[]) => {
 
 .panel-title {
   color: #17324c;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 800;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 .panel-subtitle,
