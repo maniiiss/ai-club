@@ -208,13 +208,27 @@ public class HindsightMemoryFallbackService {
     }
 
     public List<HindsightClientService.MemoryWorldFact> searchFacts(List<String> bankIds, String query, int limit) {
+        return searchFacts(bankIds, query, "", limit);
+    }
+
+    /**
+     * Table 模式在共享 bank 或多空间 bank 下需要按 project/space tag 做范围收敛，
+     * 否则空查询回退会把同库中其他作用域的事实也一起带出来。
+     */
+    public List<HindsightClientService.MemoryWorldFact> searchFacts(List<String> bankIds,
+                                                                    String query,
+                                                                    String requiredTag,
+                                                                    int limit) {
         if (!isEnabled() || bankIds == null || bankIds.isEmpty()) {
             return List.of();
         }
+        // Table 模式一次会加载最多 200 条事实，库内回退上限要与前端作用域清单保持一致，
+        // 否则 Hindsight HTTP 不可用时会被错误截断到 30 条。
         MapSqlParameterSource params = new MapSqlParameterSource()
                 .addValue("bankIds", bankIds)
                 .addValue("pattern", "%" + defaultString(query) + "%")
-                .addValue("limit", Math.max(1, Math.min(limit, 30)));
+                .addValue("requiredTag", defaultString(requiredTag))
+                .addValue("limit", Math.max(1, Math.min(limit, 200)));
         return jdbcTemplate.query(
                 """
                 select mu.id::text as memory_id,
@@ -228,8 +242,10 @@ public class HindsightMemoryFallbackService {
                        coalesce(mu.event_date, mu.mentioned_at, mu.created_at) as created_at
                 from memory_units mu
                 where mu.bank_id in (:bankIds)
+                  and (:requiredTag = '' or :requiredTag = any(mu.tags))
                   and (
-                    mu.text ilike :pattern
+                    :pattern = '%%'
+                    or mu.text ilike :pattern
                     or coalesce(mu.context, '') ilike :pattern
                     or coalesce(mu.document_id, '') ilike :pattern
                     or array_to_string(mu.tags, ',') ilike :pattern

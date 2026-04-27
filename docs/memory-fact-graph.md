@@ -66,6 +66,7 @@ Wiki 空间维度提供对应的独立只读接口：
 ### Hindsight HTTP 可用
 
 - 优先走 Hindsight 实体图、实体详情、facts recall 在线接口。
+- `table` 模式在“当前作用域全部内容”场景下，优先读取 `/graph` 返回的 `table_rows`，避免空查询 recall 被 Hindsight 直接拒绝。
 
 ### Hindsight HTTP 不可用
 

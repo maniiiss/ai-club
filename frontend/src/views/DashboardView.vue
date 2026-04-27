@@ -7,6 +7,9 @@
           {{ dashboardEditing ? '完成编辑' : '编辑看板' }}
         </button>
       </div>
+      <p v-if="dashboardEditing && isMobileViewport" class="dashboard-toolbar-mobile-tip">
+        手机端支持拖动排序和隐藏卡片，宽高布局请在桌面端调整。
+      </p>
     </section>
 
     <VueDraggable
@@ -48,7 +51,7 @@
               </button>
             </div>
             <div v-if="dashboardEditing" class="dashboard-widget-head-actions">
-              <div class="dashboard-widget-size-group">
+              <div v-if="!isMobileViewport" class="dashboard-widget-size-group">
                 <span class="dashboard-widget-size-label">宽度</span>
                 <div class="dashboard-widget-size-buttons">
                   <button
@@ -65,7 +68,7 @@
                   </button>
                 </div>
               </div>
-              <div class="dashboard-widget-size-group">
+              <div v-if="!isMobileViewport" class="dashboard-widget-size-group">
                 <span class="dashboard-widget-size-label">高度</span>
                 <div class="dashboard-widget-size-buttons">
                   <button
@@ -82,7 +85,10 @@
                   </button>
                 </div>
               </div>
-              <button class="dashboard-widget-icon dashboard-widget-drag-handle" type="button" aria-label="拖拽排序">⋮⋮</button>
+              <div v-if="isMobileViewport" class="dashboard-widget-mobile-edit-chip">长按手柄后拖动排序</div>
+              <button class="dashboard-widget-icon dashboard-widget-drag-handle" type="button" :aria-label="isMobileViewport ? '长按后拖动排序' : '拖拽排序'">
+                {{ isMobileViewport ? '拖动排序' : '⋮⋮' }}
+              </button>
               <button class="dashboard-widget-icon" type="button" aria-label="隐藏组件" @click="hideWidget(element.id)">隐藏</button>
             </div>
           </header>
@@ -423,6 +429,7 @@ import {
   readStoredDashboardLayout,
   writeStoredDashboardLayout
 } from '@/utils/dashboardLayout'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface TaskRowItem {
   id: string
@@ -546,6 +553,7 @@ const quickMergeSubmitDisabledReason = computed(() => {
 })
 const quickBuildBindingCount = computed(() => quickBuildBindings.value.length)
 const dashboardLayoutUserId = computed(() => authStore.user?.id ?? null)
+const { isMobileViewport } = useMobileViewport()
 
 const availableWidgetDefinitions = computed(() =>
   filterDashboardWidgetsByPermission(DASHBOARD_WIDGET_DEFINITIONS, (permission) => authStore.hasPermission(permission))
@@ -1178,6 +1186,13 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
 }
 
+.dashboard-toolbar-mobile-tip {
+  margin: 0;
+  color: var(--app-text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
 .dashboard-toolbar-button,
 .dashboard-widget-size-button,
 .dashboard-widget-icon,
@@ -1295,6 +1310,18 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
+.dashboard-widget-mobile-edit-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(var(--app-primary-rgb), 0.08);
+  color: var(--app-primary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .dashboard-widget-size-group {
   display: flex;
   align-items: center;
@@ -1363,6 +1390,9 @@ onBeforeUnmount(() => {
 
 .dashboard-widget-drag-handle {
   cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
 }
 
 .dashboard-widget-body {
@@ -1999,6 +2029,13 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 900px) {
+  /* 手机端改用纵向自然流布局，避免桌面网格跨行高度在单列场景下留下大块留白。 */
+  .dashboard-screen {
+    --dashboard-grid-gap: 16px;
+    gap: 16px;
+    padding-top: 8px;
+  }
+
   .dashboard-toolbar {
     flex-direction: column;
     align-items: flex-start;
@@ -2008,13 +2045,33 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 
-  .dashboard-widget-grid,
+  .dashboard-toolbar-mobile-tip {
+    width: 100%;
+  }
+
+  .dashboard-widget-grid {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--dashboard-grid-gap);
+  }
+
   .dashboard-widget-library-list {
     grid-template-columns: 1fr;
   }
 
   .dashboard-widget-card {
+    width: 100%;
+    max-width: 100%;
+    align-self: stretch;
+    box-sizing: border-box;
+    flex: 0 0 auto;
     height: auto;
+    border-radius: 20px;
+  }
+
+  .dashboard-widget-card.editing {
+    box-shadow: 0 0 0 2px rgba(var(--app-primary-rgb), 0.14), 0 16px 36px rgba(15, 23, 42, 0.08);
   }
 
   .dashboard-widget-card.width-quarter,
@@ -2022,6 +2079,19 @@ onBeforeUnmount(() => {
   .dashboard-widget-card.width-three-quarter,
   .dashboard-widget-card.width-full {
     grid-column: span 1;
+  }
+
+  .dashboard-widget-head {
+    gap: 12px;
+    padding: 18px 18px 0;
+  }
+
+  .dashboard-widget-body {
+    padding: 18px 18px 20px;
+  }
+
+  .dashboard-widget-card-shell {
+    width: 100%;
   }
 
   .dashboard-widget-head-actions {
@@ -2032,6 +2102,16 @@ onBeforeUnmount(() => {
   .dashboard-widget-head-quick-task-action {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .dashboard-widget-mobile-edit-chip {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .dashboard-widget-drag-handle,
+  .dashboard-widget-icon {
+    min-height: 36px;
   }
 
   .info-list-item,

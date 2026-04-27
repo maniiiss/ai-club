@@ -131,12 +131,24 @@ public class MemoryFactGraphService {
         }
         boolean scopedTableRequest = selectorCount == 0;
 
-        MemoryFactGraphSummary graph = getScopedGraph(scope);
         String resolvedQuery = defaultString(query);
         String scopeType = scopedTableRequest ? "SCOPE" : "QUERY";
         String scopeId = scopedTableRequest
                 ? scope.projectScope() ? String.valueOf(scope.projectId()) : String.valueOf(scope.spaceId())
                 : defaultString(query);
+        int defaultLimit = scopedTableRequest ? TABLE_FACT_LIMIT : FACT_LIMIT;
+        int maxLimit = scopedTableRequest ? TABLE_FACT_LIMIT : 30;
+        int effectiveLimit = limit == null ? defaultLimit : Math.max(1, Math.min(limit, maxLimit));
+        if (scopedTableRequest) {
+            List<String> warnings = new ArrayList<>();
+            List<HindsightClientService.MemoryWorldFact> facts = loadScopedTableFacts(scope, effectiveLimit, warnings);
+            if (facts.size() > effectiveLimit) {
+                facts = facts.subList(0, effectiveLimit);
+            }
+            return assembler.toFactsResponse(scope.projectId(), scopeType, scopeId, resolvedQuery, facts, deduplicateWarnings(warnings));
+        }
+
+        MemoryFactGraphSummary graph = getScopedGraph(scope);
         if (!defaultString(entityId).isBlank()) {
             MemoryFactNodeSummary node = findNode(graph, entityId);
             resolvedQuery = node.label();
@@ -156,10 +168,8 @@ public class MemoryFactGraphService {
 
         List<HindsightClientService.MemoryWorldFact> facts = new ArrayList<>();
         List<String> warnings = new ArrayList<>(graph.warnings() == null ? List.of() : graph.warnings());
-        int defaultLimit = scopedTableRequest ? TABLE_FACT_LIMIT : FACT_LIMIT;
-        int maxLimit = scopedTableRequest ? TABLE_FACT_LIMIT : 30;
-        int effectiveLimit = limit == null ? defaultLimit : Math.max(1, Math.min(limit, maxLimit));
-        for (String bankId : resolveRecallBanks(scope)) {
+        List<String> recallBanks = resolveRecallBanks(scope);
+        for (String bankId : recallBanks) {
             try {
                 facts.addAll(hindsightClientService.recallWorldFacts(
                         bankId,
@@ -168,16 +178,21 @@ public class MemoryFactGraphService {
                         effectiveLimit
                 ));
             } catch (RuntimeException exception) {
-                List<HindsightClientService.MemoryWorldFact> fallbackFacts = tryFallbackFacts(scope, bankId, entityId, edgeId, resolvedQuery, effectiveLimit, warnings, exception);
+                List<HindsightClientService.MemoryWorldFact> fallbackFacts = tryFallbackFacts(
+                        scope,
+                        bankId,
+                        entityId,
+                        edgeId,
+                        resolvedQuery,
+                        effectiveLimit,
+                        warnings
+                );
                 if (!fallbackFacts.isEmpty()) {
                     facts.addAll(fallbackFacts);
                     continue;
                 }
                 warnings.add("读取 Hindsight 事实失败（bank=" + bankId + "）：" + sanitizeWarning(exception));
             }
-        }
-        if (scopedTableRequest && facts.isEmpty()) {
-            facts = loadFallbackFacts(scope, entityId, edgeId, resolvedQuery, effectiveLimit);
         }
         if (facts.size() > effectiveLimit) {
             facts = facts.subList(0, effectiveLimit);
@@ -391,13 +406,13 @@ public class MemoryFactGraphService {
                                                                           String edgeId,
                                                                           String resolvedQuery,
                                                                           int limit,
-                                                                          List<String> warnings,
-                                                                          RuntimeException exception) {
+                                                                          List<String> warnings) {
         if (!hindsightMemoryFallbackService.isEnabled()) {
             return List.of();
         }
         try {
-            List<HindsightClientService.MemoryWorldFact> facts = loadFallbackFacts(scope, entityId, edgeId, resolvedQuery, limit);
+            // 逐 bank 回退，避免项目 bank / 共享 bank 同时失败时把整作用域快照重复装入多次。
+            List<HindsightClientService.MemoryWorldFact> facts = loadFallbackFactsForBank(scope, bankId, entityId, edgeId, resolvedQuery, limit);
             if (!facts.isEmpty()) {
                 warnings.add("Hindsight HTTP 不可用，事实证据已回退到库内快照");
             }
@@ -412,23 +427,162 @@ public class MemoryFactGraphService {
      * 表格模式允许“当前作用域下的全部事实”直接回退到库内快照查询，
      * 这样即便 Hindsight recall 不接受空查询，也能保持与 Hindsight Table 接近的数据形态。
      */
-    private List<HindsightClientService.MemoryWorldFact> loadFallbackFacts(MemoryFactScope scope,
-                                                                           String entityId,
-                                                                           String edgeId,
-                                                                           String resolvedQuery,
-                                                                           int limit) {
+    /**
+     * 单个 recall bank 在线调用失败时，优先只回退这个 bank 的本地快照。
+     * 这样可以避免多 bank 场景下把整作用域事实重复装入结果集，也能把共享 bank 的快照正确并入表格模式。
+     */
+    private List<HindsightClientService.MemoryWorldFact> loadFallbackFactsForBank(MemoryFactScope scope,
+                                                                                  String bankId,
+                                                                                  String entityId,
+                                                                                  String edgeId,
+                                                                                  String resolvedQuery,
+                                                                                  int limit) {
         if (!defaultString(entityId).isBlank()) {
             ScopedEntityId scoped = parseScopedEntityId(entityId);
-            return hindsightMemoryFallbackService.loadFactsByEntity(scoped.bankId(), scoped.rawId(), limit);
+            if (Objects.equals(scoped.bankId(), bankId)) {
+                return hindsightMemoryFallbackService.loadFactsByEntity(scoped.bankId(), scoped.rawId(), limit);
+            }
+            return hindsightMemoryFallbackService.searchFacts(List.of(bankId), resolvedQuery, limit);
         }
         if (!defaultString(edgeId).isBlank()) {
             MemoryFactGraphSummary graph = getScopedGraph(scope);
             MemoryFactEdgeSummary edge = findEdge(graph, edgeId);
             ScopedEntityId source = parseScopedEntityId(edge.sourceId());
             ScopedEntityId target = parseScopedEntityId(edge.targetId());
-            return hindsightMemoryFallbackService.loadFactsByEdge(source.bankId(), source.rawId(), target.rawId(), limit);
+            if (Objects.equals(source.bankId(), bankId) && Objects.equals(target.bankId(), bankId)) {
+                return hindsightMemoryFallbackService.loadFactsByEdge(bankId, source.rawId(), target.rawId(), limit);
+            }
+            return hindsightMemoryFallbackService.searchFacts(List.of(bankId), resolvedQuery, limit);
         }
-        return hindsightMemoryFallbackService.searchFacts(resolveGraphBanks(scope), resolvedQuery, limit);
+        return hindsightMemoryFallbackService.searchFacts(List.of(bankId), resolvedQuery, limit);
+    }
+
+    /**
+     * Table 模式优先消费 Hindsight /graph 返回的 table_rows。
+     * 这样既能保留 Hindsight 原始表格排序，也能绕过空 recall 查询被 422 拒绝的问题。
+     */
+    private List<HindsightClientService.MemoryWorldFact> loadScopedTableFacts(MemoryFactScope scope,
+                                                                              int limit,
+                                                                              List<String> warnings) {
+        List<HindsightClientService.MemoryWorldFact> facts = new ArrayList<>();
+        for (String bankId : resolveRecallBanks(scope)) {
+            try {
+                HindsightClientService.MemoryEntityGraph graph = hindsightClientService.fetchEntityGraph(
+                        bankId,
+                        limit,
+                        null,
+                        scope.recallTags()
+                );
+                facts.addAll(graph.tableRows().stream()
+                        .map(row -> toTableFact(bankId, row))
+                        .toList());
+            } catch (RuntimeException exception) {
+                List<HindsightClientService.MemoryWorldFact> fallbackFacts = loadScopedTableFallbackFacts(scope, bankId, limit, warnings, exception);
+                if (!fallbackFacts.isEmpty()) {
+                    facts.addAll(fallbackFacts);
+                    continue;
+                }
+                warnings.add("读取 Hindsight 表格事实失败（bank=" + bankId + "）：" + sanitizeWarning(exception));
+            }
+        }
+        return deduplicateFacts(facts);
+    }
+
+    private List<HindsightClientService.MemoryWorldFact> loadScopedTableFallbackFacts(MemoryFactScope scope,
+                                                                                       String bankId,
+                                                                                       int limit,
+                                                                                       List<String> warnings,
+                                                                                       RuntimeException exception) {
+        if (!hindsightMemoryFallbackService.isEnabled()) {
+            return List.of();
+        }
+        try {
+            List<HindsightClientService.MemoryWorldFact> facts = hindsightMemoryFallbackService.searchFacts(
+                    List.of(bankId),
+                    "",
+                    scope.primaryRecallTag(),
+                    limit
+            );
+            if (!facts.isEmpty()) {
+                warnings.add("Hindsight HTTP 不可用，事实证据已回退到库内快照");
+            }
+            return facts;
+        } catch (RuntimeException fallbackException) {
+            warnings.add("Hindsight HTTP 与库内事实快照都不可用（bank=" + bankId + "）：" + sanitizeWarning(fallbackException));
+            return List.of();
+        }
+    }
+
+    /**
+     * Hindsight graph table_rows 更接近前端表格形态，这里只补齐统一 DTO 需要的字段。
+     */
+    private HindsightClientService.MemoryWorldFact toTableFact(String bankId,
+                                                               HindsightClientService.MemoryTableRow row) {
+        List<String> entities = row.entities() == null ? List.of() : row.entities();
+        String subject = entities.isEmpty() ? "" : entities.get(0);
+        String object = entities.size() > 1 ? entities.get(1) : "";
+        String predicate = "N/A".equalsIgnoreCase(defaultString(row.context())) ? "" : defaultString(row.context());
+        java.util.LinkedHashMap<String, Object> metadata = new java.util.LinkedHashMap<>();
+        metadata.put("bankId", bankId);
+        metadata.put("context", defaultString(row.context()));
+        metadata.put("entities", entities);
+        metadata.put("documentId", defaultString(row.documentId()));
+        metadata.put("chunkId", defaultString(row.chunkId()));
+        metadata.put("occurred_start", defaultString(row.occurredStart()));
+        metadata.put("occurred_end", defaultString(row.occurredEnd()));
+        metadata.put("mentioned_at", defaultString(row.mentionedAt()));
+        metadata.put("date", defaultString(row.date()));
+        metadata.put("proof_count", row.proofCount() == null ? 0 : row.proofCount());
+        metadata.put("raw", row.metadata() == null ? java.util.Map.of() : row.metadata());
+        return new HindsightClientService.MemoryWorldFact(
+                defaultString(row.id()),
+                defaultString(row.factType()).isBlank() ? "world" : row.factType(),
+                subject,
+                predicate,
+                object,
+                defaultString(row.text()),
+                null,
+                resolveSourceType(bankId),
+                firstNonBlank(row.createdAt(), row.mentionedAt(), row.occurredStart(), row.date()),
+                row.tags() == null ? List.of() : row.tags(),
+                metadata
+        );
+    }
+
+    private List<HindsightClientService.MemoryWorldFact> deduplicateFacts(List<HindsightClientService.MemoryWorldFact> facts) {
+        java.util.LinkedHashMap<String, HindsightClientService.MemoryWorldFact> values = new java.util.LinkedHashMap<>();
+        for (HindsightClientService.MemoryWorldFact fact : facts == null ? List.<HindsightClientService.MemoryWorldFact>of() : facts) {
+            if (fact == null) {
+                continue;
+            }
+            String key = !defaultString(fact.id()).isBlank()
+                    ? fact.id()
+                    : defaultString(fact.summary());
+            if (!key.isBlank()) {
+                values.putIfAbsent(key, fact);
+            }
+        }
+        return List.copyOf(values.values());
+    }
+
+    private String resolveSourceType(String bankId) {
+        String normalized = defaultString(bankId);
+        if (normalized.contains(":wiki:space:")) {
+            return "WIKI_SPACE";
+        }
+        if (normalized.contains(":wiki:project:")) {
+            return "WIKI";
+        }
+        return "MEMORY";
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (!defaultString(value).isBlank()) {
+                return defaultString(value);
+            }
+        }
+        return "";
     }
 
     private String defaultString(String value) {
@@ -476,6 +630,10 @@ public class MemoryFactGraphService {
                 return List.of("space:" + spaceId);
             }
             return List.of("project:" + projectId);
+        }
+
+        private String primaryRecallTag() {
+            return recallTags().isEmpty() ? "" : recallTags().get(0);
         }
 
         private String emptyBankWarning() {

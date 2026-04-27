@@ -23,6 +23,7 @@ class HindsightClientServiceTests {
 
     private HttpServer server;
     private final AtomicReference<String> lastRequestBody = new AtomicReference<>("");
+    private final AtomicReference<String> lastRequestUri = new AtomicReference<>("");
 
     @AfterEach
     void tearDown() {
@@ -64,6 +65,19 @@ class HindsightClientServiceTests {
         assertThat(graph.edges().get(0).targetId()).isEqualTo("Berlin");
         assertThat(graph.edges().get(0).relationType()).isEqualTo("co_occurrence");
         assertThat(graph.edges().get(0).weight()).isEqualTo(4.0d);
+        assertThat(graph.tableRows()).hasSize(1);
+        assertThat(graph.tableRows().get(0).id()).isEqualTo("fact-table-1");
+        assertThat(graph.tableRows().get(0).entities()).containsExactly("Paris", "Berlin");
+    }
+
+    @Test
+    void shouldRequestGraphWithTagsAndReuseTableRowsForTableMode() throws Exception {
+        HindsightClientService service = createService();
+
+        HindsightClientService.MemoryEntityGraph graph = service.fetchEntityGraph("test-bank", 5, null, List.of("project:12"));
+
+        assertThat(graph.tableRows()).hasSize(1);
+        assertThat(lastRequestUri.get()).contains("/graph?limit=5&tags=project%3A12");
     }
 
     @Test
@@ -111,6 +125,7 @@ class HindsightClientServiceTests {
 
     private void handleRequest(HttpExchange exchange) throws IOException {
         lastRequestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+        lastRequestUri.set(exchange.getRequestURI().toString());
         String path = exchange.getRequestURI().getRawPath();
         String body;
         if (path.contains("wiki%3Aspace%3A5") && path.endsWith("/memories/recall")) {
@@ -183,6 +198,18 @@ class HindsightClientServiceTests {
                             "weight": 4,
                             "lastCooccurred": "2026-04-24T09:00:00Z"
                           }
+                        }
+                      ],
+                      "table_rows": [
+                        {
+                          "id": "fact-table-1",
+                          "text": "Paris and Berlin are often discussed together.",
+                          "context": "co_occurrence",
+                          "entities": "Paris, Berlin",
+                          "fact_type": "world",
+                          "tags": ["project:12", "source:wiki"],
+                          "mentioned_at": "2026-04-24T09:00:00Z",
+                          "created_at": "2026-04-24T09:00:00Z"
                         }
                       ]
                     }

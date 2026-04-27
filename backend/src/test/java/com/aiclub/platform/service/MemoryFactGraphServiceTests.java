@@ -21,6 +21,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -257,15 +258,29 @@ class MemoryFactGraphServiceTests {
                 List.of(),
                 List.of()
         ));
-        when(hindsightClientService.fetchEntityGraph("git-ai-club:wiki:project:12", 200)).thenReturn(new HindsightClientService.MemoryEntityGraph(
-                List.of(new HindsightClientService.MemoryEntityNode("fact-1", "项目事实", 3, "blue", Map.of("type", "FACT"))),
-                List.of()
-        ));
-        when(hindsightClientService.recallWorldFacts(eq("git-ai-club:wiki:project:12"), eq(""), eq(List.of("project:12")), anyInt()))
-                .thenReturn(List.of(new HindsightClientService.MemoryWorldFact(
-                        "fact-table-1", "world", "项目事实", "mentions", "空间知识库", "表格事实", 0.9d, "HINDSIGHT_RECALL",
-                        "2026-04-24T09:00:00Z", List.of("project:12", "wiki"), Map.of("occurred_at", "2026-04-20T09:00:00Z")
-                )));
+        when(hindsightClientService.fetchEntityGraph(eq("git-ai-club:wiki:project:12"), eq(100), isNull(), eq(List.of("project:12"))))
+                .thenReturn(new HindsightClientService.MemoryEntityGraph(
+                        List.of(),
+                        List.of(),
+                        List.of(new HindsightClientService.MemoryTableRow(
+                                "fact-table-1",
+                                "表格事实",
+                                "wiki",
+                                "",
+                                "",
+                                "2026-04-24T09:00:00Z",
+                                "2026-04-24 09:00",
+                                List.of("项目事实", "空间知识库"),
+                                "wiki-page-v2:1",
+                                "chunk-1",
+                                "world",
+                                List.of("project:12", "wiki"),
+                                "2026-04-24T09:00:00Z",
+                                1,
+                                Map.of()
+                        )),
+                        1
+                ));
 
         MemoryFactFactsResponse facts = serviceWithoutSharedBank.getFacts(12L, null, null, null, 100);
 
@@ -273,7 +288,43 @@ class MemoryFactGraphServiceTests {
         assertThat(facts.scopeId()).isEqualTo("12");
         assertThat(facts.factCount()).isEqualTo(1);
         assertThat(facts.facts()).extracting(item -> item.id()).containsExactly("fact-table-1");
-        verify(hindsightClientService).recallWorldFacts("git-ai-club:wiki:project:12", "", List.of("project:12"), 100);
+        assertThat(facts.facts().get(0).summary()).isEqualTo("表格事实");
+        verify(hindsightClientService).fetchEntityGraph("git-ai-club:wiki:project:12", 100, null, List.of("project:12"));
+        verify(hindsightClientService, never()).recallWorldFacts("git-ai-club:wiki:project:12", "", List.of("project:12"), 100);
+    }
+
+    @Test
+    void shouldFallbackScopedTableFactsPerRecallBankWhenHindsightHttpIsUnavailable() {
+        when(hindsightMemoryFallbackService.isEnabled()).thenReturn(true);
+        when(wikiSpaceService.buildProjectGraphProjection(12L)).thenReturn(new WikiSpaceService.WikiProjectGraphProjection(
+                List.of(),
+                List.of(),
+                List.of()
+        ));
+        when(hindsightClientService.fetchEntityGraph(eq("git-ai-club:wiki:project:12"), eq(200), isNull(), eq(List.of("project:12"))))
+                .thenThrow(new IllegalStateException("Hindsight 服务未正常就绪"));
+        when(hindsightClientService.fetchEntityGraph(eq("git-ai-club:memory:shared"), eq(200), isNull(), eq(List.of("project:12"))))
+                .thenThrow(new IllegalStateException("Hindsight 服务未正常就绪"));
+        when(hindsightMemoryFallbackService.searchFacts(List.of("git-ai-club:wiki:project:12"), "", "project:12", 200))
+                .thenReturn(List.of(new HindsightClientService.MemoryWorldFact(
+                        "fact-table-project", "world", "项目事实", "mentions", "平台", "项目库内快照事实", 0.9d, "WIKI",
+                        "2026-04-24T09:00:00Z", List.of("project:12"), Map.of("bankId", "git-ai-club:wiki:project:12")
+                )));
+        when(hindsightMemoryFallbackService.searchFacts(List.of("git-ai-club:memory:shared"), "", "project:12", 200))
+                .thenReturn(List.of(new HindsightClientService.MemoryWorldFact(
+                        "fact-table-shared", "world", "共享事实", "mentions", "平台", "共享库内快照事实", 0.8d, "MEMORY",
+                        "2026-04-24T10:00:00Z", List.of("project:12"), Map.of("bankId", "git-ai-club:memory:shared")
+                )));
+
+        MemoryFactFactsResponse facts = serviceWithSharedBank.getFacts(12L, null, null, null, 200);
+
+        assertThat(facts.scopeType()).isEqualTo("SCOPE");
+        assertThat(facts.scopeId()).isEqualTo("12");
+        assertThat(facts.factCount()).isEqualTo(2);
+        assertThat(facts.facts()).extracting(item -> item.id()).containsExactly("fact-table-project", "fact-table-shared");
+        assertThat(facts.warnings()).anyMatch(item -> item.contains("事实证据已回退到库内快照"));
+        verify(hindsightMemoryFallbackService).searchFacts(List.of("git-ai-club:wiki:project:12"), "", "project:12", 200);
+        verify(hindsightMemoryFallbackService).searchFacts(List.of("git-ai-club:memory:shared"), "", "project:12", 200);
     }
 
     @Test

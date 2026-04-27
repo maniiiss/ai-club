@@ -118,9 +118,24 @@ public class HindsightClientService {
      * 当前优先对接 Hindsight 的实体图接口，字段解析尽量对不同版本保持兼容。
      */
     public MemoryEntityGraph fetchEntityGraph(String bankId, int limit) {
-        String url = appendQuery(properties.memoryFactEntityGraphUrl(bankId), Map.of(
-                "limit", String.valueOf(Math.max(1, Math.min(limit, 500)))
-        ));
+        return fetchEntityGraph(bankId, limit, null, List.of());
+    }
+
+    /**
+     * 图接口除了骨架节点和关系外，Hindsight 还会返回 table_rows。
+     * 记忆事实图的 Table 模式需要直接消费这批行数据，避免空查询 recall 在部分版本上返回 422。
+     */
+    public MemoryEntityGraph fetchEntityGraph(String bankId, int limit, String query, List<String> tags) {
+        LinkedHashMap<String, Object> params = new LinkedHashMap<>();
+        params.put("limit", String.valueOf(Math.max(1, Math.min(limit, 500))));
+        if (hasText(query)) {
+            params.put("q", defaultString(query));
+        }
+        List<String> normalizedTags = normalizeTags(tags);
+        if (!normalizedTags.isEmpty()) {
+            params.put("tags", normalizedTags);
+        }
+        String url = appendQuery(properties.memoryFactEntityGraphUrl(bankId), params);
         try {
             HttpResponse<String> response = sendJsonRequest("GET", url, null);
             return parseEntityGraph(objectMapper.readTree(response.body()));
@@ -396,7 +411,36 @@ public class HindsightClientService {
             }
         }
 
-        return new MemoryEntityGraph(nodes, edges);
+        List<MemoryTableRow> tableRows = new ArrayList<>();
+        JsonNode tableRowArray = firstArray(graphNode, "table_rows", "tableRows");
+        if (tableRowArray != null) {
+            for (JsonNode row : tableRowArray) {
+                tableRows.add(new MemoryTableRow(
+                        firstText(row, "id"),
+                        firstText(row, "text", "summary", "content", "memory"),
+                        firstText(row, "context"),
+                        firstText(row, "occurred_start", "occurredStart"),
+                        firstText(row, "occurred_end", "occurredEnd"),
+                        firstText(row, "mentioned_at", "mentionedAt"),
+                        firstText(row, "date"),
+                        parseLooseStringList(row.path("entities")),
+                        firstText(row, "document_id", "documentId"),
+                        firstText(row, "chunk_id", "chunkId"),
+                        firstText(row, "fact_type", "factType", "type"),
+                        firstStringList(row.path("tags")),
+                        firstText(row, "created_at", "createdAt"),
+                        firstInt(row, "proof_count", "proofCount"),
+                        objectMap(row)
+                ));
+            }
+        }
+
+        return new MemoryEntityGraph(
+                nodes,
+                edges,
+                tableRows,
+                firstInt(graphNode, "total_units", "totalUnits")
+        );
     }
 
     private MemoryEntityDetail parseEntityDetail(JsonNode root) {
@@ -611,16 +655,28 @@ public class HindsightClientService {
         return existing.pageId() == null && candidate.pageId() != null;
     }
 
-    private String appendQuery(String url, Map<String, String> params) {
+    private String appendQuery(String url, Map<String, ?> params) {
         if (params == null || params.isEmpty()) {
             return url;
         }
         List<String> queryPairs = new ArrayList<>();
-        for (Map.Entry<String, String> entry : params.entrySet()) {
-            if (!hasText(entry.getKey()) || !hasText(entry.getValue())) {
+        for (Map.Entry<String, ?> entry : params.entrySet()) {
+            if (!hasText(entry.getKey()) || entry.getValue() == null) {
                 continue;
             }
-            queryPairs.add(encode(entry.getKey()) + "=" + encode(entry.getValue()));
+            if (entry.getValue() instanceof Iterable<?> iterable) {
+                for (Object item : iterable) {
+                    String value = item == null ? "" : String.valueOf(item);
+                    if (hasText(value)) {
+                        queryPairs.add(encode(entry.getKey()) + "=" + encode(value));
+                    }
+                }
+                continue;
+            }
+            String value = String.valueOf(entry.getValue());
+            if (hasText(value)) {
+                queryPairs.add(encode(entry.getKey()) + "=" + encode(value));
+            }
         }
         if (queryPairs.isEmpty()) {
             return url;
@@ -753,6 +809,26 @@ public class HindsightClientService {
         return normalizeTags(names);
     }
 
+    private List<String> parseLooseStringList(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return List.of();
+        }
+        if (node.isTextual()) {
+            String raw = node.asText("");
+            if (!hasText(raw)) {
+                return List.of();
+            }
+            List<String> values = new ArrayList<>();
+            for (String item : raw.split(",")) {
+                if (hasText(item)) {
+                    values.add(item.trim());
+                }
+            }
+            return normalizeTags(values);
+        }
+        return firstStringList(node);
+    }
+
     private List<String> normalizeTags(List<String> tags) {
         LinkedHashSet<String> normalized = new LinkedHashSet<>();
         for (String tag : tags == null ? List.<String>of() : tags) {
@@ -824,8 +900,13 @@ public class HindsightClientService {
      */
     public record MemoryEntityGraph(
             List<MemoryEntityNode> nodes,
-            List<MemoryEntityEdge> edges
+            List<MemoryEntityEdge> edges,
+            List<MemoryTableRow> tableRows,
+            Integer totalUnits
     ) {
+        public MemoryEntityGraph(List<MemoryEntityNode> nodes, List<MemoryEntityEdge> edges) {
+            this(nodes, edges, List.of(), null);
+        }
     }
 
     /**
@@ -850,6 +931,29 @@ public class HindsightClientService {
             String relationType,
             Double weight,
             String lastSeenAt,
+            Map<String, Object> metadata
+    ) {
+    }
+
+    /**
+     * Graph 接口中的表格行。
+     * Table 模式优先使用这份结果，既能保留 Hindsight 原始排序，也能避免空 recall 查询被服务端拒绝。
+     */
+    public record MemoryTableRow(
+            String id,
+            String text,
+            String context,
+            String occurredStart,
+            String occurredEnd,
+            String mentionedAt,
+            String date,
+            List<String> entities,
+            String documentId,
+            String chunkId,
+            String factType,
+            List<String> tags,
+            String createdAt,
+            Integer proofCount,
             Map<String, Object> metadata
     ) {
     }

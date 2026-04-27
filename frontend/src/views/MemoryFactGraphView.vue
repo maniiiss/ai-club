@@ -1286,16 +1286,19 @@ onBeforeUnmount(() => {
 @media (max-width: 1480px) {
   .page-header {
     align-items: flex-start;
-    flex-direction: column;
+    flex-wrap: wrap;
   }
 
   .page-headline {
-    width: 100%;
-    min-width: 0;
+    flex: 0 0 auto;
+    width: auto;
+    min-width: fit-content;
+    justify-content: flex-start;
   }
 
   .memory-toolbar-shell {
-    width: 100%;
+    flex: 1 1 720px;
+    width: auto;
   }
 }
 
