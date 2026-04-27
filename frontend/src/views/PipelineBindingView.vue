@@ -44,10 +44,14 @@
           <el-icon><RefreshRight /></el-icon>
           <span>重置</span>
         </button>
+        <button v-if="canManage && isMobileViewport" class="work-list-create-button" type="button" @click="openBindingCreateDialog">
+          <el-icon><Plus /></el-icon>
+          <span>新增流水线绑定</span>
+        </button>
       </div>
 
-      <div class="work-list-toolbar-side">
-        <button v-if="canManage" class="work-list-create-button" type="button" @click="openBindingCreateDialog">
+      <div v-if="canManage && !isMobileViewport" class="work-list-toolbar-side">
+        <button class="work-list-create-button" type="button" @click="openBindingCreateDialog">
           <el-icon><Plus /></el-icon>
           <span>新增流水线绑定</span>
         </button>
@@ -222,13 +226,14 @@
               </article>
             </div>
           </div>
-          <div v-else class="mobile-entity-empty-state">
+            <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
+          <div v-if="!bindingList.length" class="mobile-entity-empty-state">
             <el-empty description="当前筛选条件下暂无项目流水线" />
           </div>
         </template>
       </div>
 
-      <div class="work-list-footer">
+      <div v-if="showDesktopPagination" class="work-list-footer">
         <div class="work-list-footer-total">
           共 <span>{{ bindingPagination.total }}</span> 条
         </div>
@@ -396,6 +401,7 @@ import type {
   ProjectPipelineBindingItem
 } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
+import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 /**
  * 流水线绑定表单。
@@ -458,6 +464,13 @@ const buildLogVisible = ref(false)
 const currentBuildLog = ref<JenkinsBuildLogDetailItem | null>(null)
 
 const bindingTotalPages = computed(() => Math.max(1, Math.ceil(bindingPagination.total / bindingPagination.size) || 1))
+const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMobileItems, resetMobilePagination } = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading: bindingLoading,
+  itemCount: computed(() => bindingList.value.length),
+  pagination: bindingPagination,
+  loadPage: async () => loadBindings()
+})
 const bindingDialogTitle = computed(() => {
   if (bindingReadonlyMode.value) {
     return '查看流水线绑定'
@@ -557,8 +570,8 @@ const loadBindings = async () => {
   bindingLoading.value = true
   try {
     const pageData = await pagePipelineBindings({
-      page: bindingPagination.page,
-      size: bindingPagination.size,
+      page: requestPage.value,
+      size: requestSize.value,
       keyword: bindingFilters.keyword,
       serverId: bindingFilters.serverId,
       enabled: bindingFilters.enabled
@@ -590,7 +603,7 @@ const handleBuildHistoryLimitChange = async () => {
 
 const handleBindingSearch = async () => {
   bindingFilterPopoverVisible.value = false
-  bindingPagination.page = 1
+  resetMobilePagination()
   await loadBindings()
 }
 
@@ -598,12 +611,12 @@ const handleBindingReset = async () => {
   bindingFilters.keyword = ''
   bindingFilters.serverId = undefined
   bindingFilters.enabled = undefined
-  bindingPagination.page = 1
+  resetMobilePagination()
   await loadBindings()
 }
 
 const handleBindingSizeChange = async () => {
-  bindingPagination.page = 1
+  resetMobilePagination()
   await loadBindings()
 }
 

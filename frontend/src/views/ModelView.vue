@@ -61,9 +61,13 @@
           <el-icon><RefreshRight /></el-icon>
           <span>重置</span>
         </button>
+        <button v-if="isMobileViewport" class="atelier-create-button" type="button" @click="openCreateDialog">
+          <el-icon><Plus /></el-icon>
+          <span>新增模型</span>
+        </button>
       </div>
 
-      <div class="atelier-toolbar-side">
+      <div v-if="!isMobileViewport" class="atelier-toolbar-side">
         <button class="atelier-create-button" type="button" @click="openCreateDialog">
           <el-icon><Plus /></el-icon>
           <span>新增模型</span>
@@ -225,13 +229,14 @@
               </article>
             </div>
           </div>
-          <div v-else class="mobile-entity-empty-state">
+            <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
+          <div v-if="!list.length" class="mobile-entity-empty-state">
             <el-empty description="当前筛选条件下暂无模型配置" />
           </div>
         </template>
       </div>
 
-      <div class="atelier-table-footer">
+      <div v-if="showDesktopPagination" class="atelier-table-footer">
         <div class="atelier-footer-total">
           共 <span>{{ pagination.total }}</span> 条
         </div>
@@ -322,6 +327,7 @@ import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { createModelConfig, deleteModelConfig, pageModelConfigs, testModelConfig, updateModelConfig } from '@/api/models'
 import type { AiModelConfigItem, AiModelType } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
+import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 const OPENAI_API_BASE_URL = 'https://api.openai.com/v1'
 const ANTHROPIC_API_BASE_URL = 'https://api.anthropic.com/v1'
@@ -368,6 +374,13 @@ const filters = reactive({
 })
 const modelFilterPopoverVisible = ref(false)
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
+const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMobileItems, resetMobilePagination } = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading,
+  itemCount: computed(() => list.value.length),
+  pagination,
+  loadPage: async () => loadData()
+})
 const form = reactive<ModelForm>({
   name: '',
   modelType: 'CHAT',
@@ -456,7 +469,7 @@ const resetForm = () => {
 const loadData = async () => {
   loading.value = true
   try {
-    const pageData = await pageModelConfigs({ ...filters, page: pagination.page, size: pagination.size })
+    const pageData = await pageModelConfigs({ ...filters, page: requestPage.value, size: requestSize.value })
     list.value = pageData.records
     pagination.total = pageData.total
   } finally {
@@ -466,7 +479,7 @@ const loadData = async () => {
 
 const handleSearch = async () => {
   modelFilterPopoverVisible.value = false
-  pagination.page = 1
+  resetMobilePagination()
   await loadData()
 }
 
@@ -475,12 +488,12 @@ const handleReset = async () => {
   filters.modelType = undefined
   filters.provider = undefined
   filters.enabled = undefined
-  pagination.page = 1
+  resetMobilePagination()
   await loadData()
 }
 
 const handleSizeChange = async () => {
-  pagination.page = 1
+  resetMobilePagination()
   await loadData()
 }
 

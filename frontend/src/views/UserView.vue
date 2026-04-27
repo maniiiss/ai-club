@@ -44,10 +44,14 @@
           <el-icon><RefreshRight /></el-icon>
           <span>重置</span>
         </button>
+        <button v-if="canManage && isMobileViewport" class="management-list-create-button" type="button" @click="openCreateDialog">
+          <el-icon><Plus /></el-icon>
+          <span>新建用户</span>
+        </button>
       </div>
 
-      <div class="management-list-toolbar-side">
-        <button v-if="canManage" class="management-list-create-button" type="button" @click="openCreateDialog">
+      <div v-if="canManage && !isMobileViewport" class="management-list-toolbar-side">
+        <button class="management-list-create-button" type="button" @click="openCreateDialog">
           <el-icon><Plus /></el-icon>
           <span>新建用户</span>
         </button>
@@ -205,14 +209,15 @@
                 </footer>
               </article>
             </div>
+            <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
           </div>
-          <div v-else class="mobile-entity-empty-state">
+          <div v-if="!userList.length" class="mobile-entity-empty-state">
             <el-empty description="当前筛选条件下暂无用户" />
           </div>
         </template>
       </div>
 
-        <div class="management-list-footer">
+        <div v-if="showDesktopPagination" class="management-list-footer">
           <div class="management-list-footer-total">
           共 <span>{{ pagination.total }}</span> 条
           </div>
@@ -297,6 +302,7 @@ import { createUser, deleteUser, listRoleOptions, pageUsers, resetUserPassword, 
 import { useAuthStore } from '@/stores/auth'
 import type { RoleItem, UserItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
+import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 interface UserForm {
   username: string
@@ -325,6 +331,13 @@ const formRef = ref<FormInstance>()
 
 const pagination = reactive({ page: 1, size: 10, total: 0 })
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
+const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMobileItems, resetMobilePagination } = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading,
+  itemCount: computed(() => userList.value.length),
+  pagination,
+  loadPage: async () => loadUsers()
+})
 const filters = reactive<{ keyword: string; enabled: boolean | ''; roleId?: number }>({ keyword: '', enabled: '', roleId: undefined })
 const userFilterPopoverVisible = ref(false)
 const dialogTitle = computed(() => {
@@ -386,8 +399,8 @@ const loadUsers = async () => {
   loading.value = true
   try {
     const data = await pageUsers({
-      page: pagination.page,
-      size: pagination.size,
+      page: requestPage.value,
+      size: requestSize.value,
       keyword: filters.keyword,
       enabled: filters.enabled,
       roleId: filters.roleId
@@ -401,7 +414,7 @@ const loadUsers = async () => {
 
 const handleSearch = async () => {
   userFilterPopoverVisible.value = false
-  pagination.page = 1
+  resetMobilePagination()
   await loadUsers()
 }
 
@@ -409,12 +422,12 @@ const handleReset = async () => {
   filters.keyword = ''
   filters.enabled = ''
   filters.roleId = undefined
-  pagination.page = 1
+  resetMobilePagination()
   await loadUsers()
 }
 
 const handleSizeChange = async () => {
-  pagination.page = 1
+  resetMobilePagination()
   await loadUsers()
 }
 

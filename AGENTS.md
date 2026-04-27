@@ -39,6 +39,11 @@
 - 涉及技术架构调整、大型技术设计或重要模块边界变化时，交付物必须包含文档更新，优先补充 `docs/architecture.md` 或新增 `docs/*-architecture-vN.md` / `docs/*-technical-design-vN.md`。
 - 详细规范见 `docs/harness-best-practices.md`。
 
+## 移动端样式设计
+
+- 移动端样式设计方案见 `docs/mobile-console-technical-design-v1.md`。
+- 后续新增移动端模块或继续改造首页、项目管理、执行中心、迭代管理与各类管理列表时，优先按这份方案复用布局、分页和交互规则，而不是重新各做一套。
+
 ## GitNexus 路由
 
 - 代码理解、影响分析、调试和重构优先使用 GitNexus；索引过期时先运行 `npx gitnexus analyze`。

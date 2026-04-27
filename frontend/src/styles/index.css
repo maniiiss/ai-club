@@ -2493,6 +2493,11 @@ a {
   padding: 16px;
 }
 
+.mobile-waterfall-sentinel {
+  width: 100%;
+  min-height: 1px;
+}
+
 @media (max-width: 1280px) {
   .atelier-toolbar {
     grid-template-columns: 1fr;
@@ -2610,14 +2615,26 @@ a {
     flex-wrap: wrap;
   }
 
+  .management-list-toolbar-main > .management-list-create-button {
+    margin-left: auto;
+  }
+
   .atelier-toolbar-main,
   .atelier-table-footer {
     flex-wrap: wrap;
   }
 
+  .atelier-toolbar-main > .atelier-create-button {
+    margin-left: auto;
+  }
+
   .work-list-toolbar-main,
   .work-list-footer {
     flex-wrap: wrap;
+  }
+
+  .work-list-toolbar-main > .work-list-create-button {
+    margin-left: auto;
   }
 
   .management-list-toolbar-side {

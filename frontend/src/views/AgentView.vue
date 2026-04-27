@@ -49,8 +49,12 @@
           <el-icon><RefreshRight /></el-icon>
           <span>重置</span>
         </button>
+        <button v-if="isMobileViewport" class="atelier-create-button" type="button" @click="openCreateDialog">
+          <el-icon><Plus /></el-icon>
+          <span>新建智能体</span>
+        </button>
       </div>
-      <div class="atelier-toolbar-side">
+      <div v-if="!isMobileViewport" class="atelier-toolbar-side">
         <button class="atelier-create-button" type="button" @click="openCreateDialog">
           <el-icon><Plus /></el-icon>
           <span>新建智能体</span>
@@ -201,13 +205,14 @@
               </article>
             </div>
           </div>
-          <div v-else class="mobile-entity-empty-state">
+            <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
+          <div v-if="!agentList.length" class="mobile-entity-empty-state">
             <el-empty description="当前筛选条件下暂无智能体" />
           </div>
         </template>
       </div>
 
-      <div class="atelier-table-footer">
+      <div v-if="showDesktopPagination" class="atelier-table-footer">
         <div class="atelier-footer-total">
           共 <span>{{ pagination.total }}</span> 条
         </div>
@@ -488,6 +493,7 @@ import { listModelConfigOptions } from '@/api/models'
 import { createAgent, deleteAgent, listProjectOptions, pageAgents, testAgent, updateAgent } from '@/api/platform'
 import type { AgentItem, AgentTestResult, AiModelConfigItem, ProjectItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
+import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 interface AgentForm {
   name: string
@@ -554,6 +560,13 @@ const formRef = ref<FormInstance>()
 
 const pagination = reactive({ page: 1, size: 10, total: 0 })
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
+const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMobileItems, resetMobilePagination } = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading,
+  itemCount: computed(() => agentList.value.length),
+  pagination,
+  loadPage: async () => loadAgents()
+})
 const filters = reactive({
   keyword: '',
   status: '',
@@ -659,8 +672,8 @@ const loadAgents = async () => {
   loading.value = true
   try {
     const pageData = await pageAgents({
-      page: pagination.page,
-      size: pagination.size,
+      page: requestPage.value,
+      size: requestSize.value,
       keyword: filters.keyword,
       status: filters.status,
       type: filters.type,
@@ -676,7 +689,7 @@ const loadAgents = async () => {
 
 const handleSearch = async () => {
   agentFilterPopoverVisible.value = false
-  pagination.page = 1
+  resetMobilePagination()
   await loadAgents()
 }
 
@@ -686,12 +699,12 @@ const handleReset = async () => {
   filters.type = ''
   filters.accessType = undefined
   filters.projectId = undefined
-  pagination.page = 1
+  resetMobilePagination()
   await loadAgents()
 }
 
 const handleSizeChange = async () => {
-  pagination.page = 1
+  resetMobilePagination()
   await loadAgents()
 }
 

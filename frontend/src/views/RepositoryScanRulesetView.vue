@@ -153,14 +153,15 @@
                 </footer>
               </article>
             </div>
+            <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
           </div>
-          <div v-else class="mobile-entity-empty-state">
+          <div v-if="!list.length" class="mobile-entity-empty-state">
             <el-empty description="当前筛选条件下暂无扫描规则集" />
           </div>
         </template>
       </div>
 
-      <div class="management-list-footer">
+      <div v-if="showDesktopPagination" class="management-list-footer">
         <div class="management-list-footer-total">
           共 <span>{{ pagination.total }}</span> 条
         </div>
@@ -261,6 +262,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import type { RepositoryScanRulesetItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
+import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 interface RepositoryScanRulesetForm {
   code: string
@@ -290,6 +292,13 @@ const validationSuccess = ref(false)
 
 const pagination = reactive({ page: 1, size: 10, total: 0 })
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
+const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMobileItems, resetMobilePagination } = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading,
+  itemCount: computed(() => list.value.length),
+  pagination,
+  loadPage: async () => loadRulesets()
+})
 const filters = reactive<{ keyword: string; engineType: string; enabled: boolean | '' }>({
   keyword: '',
   engineType: '',
@@ -362,8 +371,8 @@ const loadRulesets = async () => {
   loading.value = true
   try {
     const data = await pageRepositoryScanRulesets({
-      page: pagination.page,
-      size: pagination.size,
+      page: requestPage.value,
+      size: requestSize.value,
       keyword: filters.keyword,
       engineType: filters.engineType || undefined,
       enabled: filters.enabled
@@ -377,7 +386,7 @@ const loadRulesets = async () => {
 
 const handleSearch = async () => {
   filterPopoverVisible.value = false
-  pagination.page = 1
+  resetMobilePagination()
   await loadRulesets()
 }
 
@@ -385,12 +394,12 @@ const handleReset = async () => {
   filters.keyword = ''
   filters.engineType = ''
   filters.enabled = ''
-  pagination.page = 1
+  resetMobilePagination()
   await loadRulesets()
 }
 
 const handleSizeChange = async () => {
-  pagination.page = 1
+  resetMobilePagination()
   await loadRulesets()
 }
 

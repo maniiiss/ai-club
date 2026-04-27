@@ -49,10 +49,14 @@
           <el-icon><RefreshRight /></el-icon>
           <span>重置</span>
         </button>
+        <button v-if="canManage && isMobileViewport" class="atelier-create-button" type="button" @click="openCreateDialog">
+          <el-icon><Plus /></el-icon>
+          <span>新建测试计划</span>
+        </button>
       </div>
 
-      <div class="atelier-toolbar-side">
-        <button v-if="canManage" class="atelier-create-button" type="button" @click="openCreateDialog">
+      <div v-if="canManage && !isMobileViewport" class="atelier-toolbar-side">
+        <button class="atelier-create-button" type="button" @click="openCreateDialog">
           <el-icon><Plus /></el-icon>
           <span>新建测试计划</span>
         </button>
@@ -202,13 +206,14 @@
               </article>
             </div>
           </div>
-          <div v-else class="mobile-entity-empty-state">
+            <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
+          <div v-if="!list.length" class="mobile-entity-empty-state">
             <el-empty description="当前筛选条件下暂无测试计划" />
           </div>
         </template>
       </div>
 
-      <div class="atelier-table-footer">
+      <div v-if="showDesktopPagination" class="atelier-table-footer">
         <div class="atelier-footer-total">
           共 <span>{{ pagination.total }}</span> 条
         </div>
@@ -327,6 +332,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import type { IterationItem, ProjectItem, TestCaseItem, TestPlanItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
+import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 interface PlanForm {
   name: string
@@ -369,6 +375,13 @@ const pagination = reactive({
   total: 0
 })
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
+const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMobileItems, resetMobilePagination } = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading,
+  itemCount: computed(() => list.value.length),
+  pagination,
+  loadPage: async () => loadData()
+})
 
 const filters = reactive({
   keyword: '',
@@ -463,8 +476,8 @@ const loadData = async () => {
   loading.value = true
   try {
     const pageData = await pageTestPlans({
-      page: pagination.page,
-      size: pagination.size,
+      page: requestPage.value,
+      size: requestSize.value,
       keyword: filters.keyword,
       projectId: filters.projectId,
       iterationId: filters.iterationId,
@@ -479,7 +492,7 @@ const loadData = async () => {
 
 const handleSearch = async () => {
   testPlanFilterPopoverVisible.value = false
-  pagination.page = 1
+  resetMobilePagination()
   await loadData()
 }
 
@@ -489,12 +502,12 @@ const handleReset = async () => {
   filters.iterationId = undefined
   filters.status = ''
   filterIterationOptions.value = []
-  pagination.page = 1
+  resetMobilePagination()
   await loadData()
 }
 
 const handleSizeChange = async () => {
-  pagination.page = 1
+  resetMobilePagination()
   await loadData()
 }
 

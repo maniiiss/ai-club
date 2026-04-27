@@ -52,10 +52,19 @@
             <el-icon><RefreshRight /></el-icon>
             <span>重置</span>
           </button>
+          <button
+            v-if="canManageProjects && isMobileViewport"
+            class="management-list-create-button project-create-button"
+            type="button"
+            @click="openCreateDialog"
+          >
+            <el-icon><Plus /></el-icon>
+            <span>新建项目</span>
+          </button>
         </div>
 
-        <div class="management-list-toolbar-side">
-          <button v-if="canManageProjects" class="management-list-create-button" type="button" @click="openCreateDialog">
+        <div v-if="canManageProjects && !isMobileViewport" class="management-list-toolbar-side">
+          <button class="management-list-create-button project-create-button" type="button" @click="openCreateDialog">
             <el-icon><Plus /></el-icon>
             <span>新建项目</span>
           </button>
@@ -151,7 +160,7 @@
         </table>
       </div>
 
-      <div v-else class="project-mobile-list-shell" v-loading="loading">
+        <div v-else class="project-mobile-list-shell" v-loading="loading">
         <div v-if="projectList.length" class="project-mobile-list">
           <article v-for="row in projectList" :key="row.id" class="project-mobile-card">
             <header class="project-mobile-card-header">
@@ -235,12 +244,13 @@
             </footer>
           </article>
         </div>
-        <div v-else class="project-mobile-empty-state">
+        <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
+        <div v-if="!projectList.length" class="project-mobile-empty-state">
           <el-empty description="暂无项目数据" />
         </div>
       </div>
 
-      <div class="management-list-footer project-footer">
+      <div v-if="showDesktopPagination" class="management-list-footer project-footer">
         <div class="management-list-footer-total">共 <span>{{ pagination.total }}</span> 条</div>
         <div class="management-list-footer-controls">
           <div class="management-list-page-size management-list-compact-input">
@@ -400,6 +410,7 @@ import { pageGitlabBindings } from '@/api/gitlab'
 import { useAuthStore } from '@/stores/auth'
 import type { ProjectGitlabBindingItem, ProjectItem, ProjectMemberItem, UserOptionItem } from '@/types/platform'
 import { resolveAssetUrl } from '@/utils/asset'
+import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 interface ProjectForm {
   /** 项目名称。 */
@@ -447,6 +458,13 @@ const pagination = reactive({
   total: 0
 })
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
+const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMobileItems, resetMobilePagination } = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading,
+  itemCount: computed(() => projectList.value.length),
+  pagination,
+  loadPage: async () => loadProjects()
+})
 
 const filters = reactive({
   keyword: '',
@@ -525,8 +543,8 @@ const loadProjects = async () => {
   loading.value = true
   try {
     const pageData = await pageProjects({
-      page: pagination.page,
-      size: pagination.size,
+      page: requestPage.value,
+      size: requestSize.value,
       keyword: filters.keyword,
       status: filters.status
     })
@@ -546,13 +564,13 @@ const applyPreset = async (preset: 'all' | 'planning' | 'draft') => {
   } else {
     filters.status = '已立项'
   }
-  pagination.page = 1
+  resetMobilePagination()
   await loadProjects()
 }
 
 const handleSearch = async () => {
   projectFilterPopoverVisible.value = false
-  pagination.page = 1
+  resetMobilePagination()
   await loadProjects()
 }
 
@@ -560,12 +578,12 @@ const handleReset = async () => {
   filters.keyword = ''
   filters.status = ''
   activePreset.value = 'all'
-  pagination.page = 1
+  resetMobilePagination()
   await loadProjects()
 }
 
 const handleSizeChange = async () => {
-  pagination.page = 1
+  resetMobilePagination()
   await loadProjects()
 }
 
@@ -816,6 +834,10 @@ onBeforeUnmount(() => {
 .project-list-page {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+.project-create-button {
+  box-shadow: 0 10px 24px rgba(25, 28, 29, 0.08);
 }
 
 .project-dialog-shell {
@@ -1402,11 +1424,46 @@ onBeforeUnmount(() => {
 
 @media (max-width: 900px) {
   .project-kpi-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .project-kpi-card {
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 16px;
+  }
+
+  .project-kpi-label {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+  }
+
+  .project-kpi-value {
+    margin-top: 2px;
+    font-size: 22px;
+  }
+
+  .project-kpi-icon {
+    font-size: 16px;
   }
 
   .project-dialog-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .project-create-button {
+    margin-left: auto;
+    min-height: 32px;
+    gap: 6px;
+    padding: 0 14px;
+    border-radius: 12px;
+    background: #191c1d;
+    color: #fff;
+  }
+
+  .project-create-button span {
+    letter-spacing: 0;
   }
 
   .project-dialog-span-2 {
@@ -1464,6 +1521,27 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 640px) {
+  .project-kpi-row {
+    gap: 8px;
+  }
+
+  .project-kpi-card {
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .project-kpi-value {
+    font-size: 20px;
+  }
+
+  .project-create-button {
+    margin-left: auto;
+    min-height: 30px;
+    padding: 0 12px;
+    border-radius: 10px;
+    font-size: 11px;
+  }
+
   .project-dialog-header {
     gap: 10px;
     padding-right: 22px;

@@ -48,10 +48,14 @@
           <el-icon><RefreshRight /></el-icon>
           <span>重置</span>
         </button>
+        <button v-if="canManageWiki && isMobileViewport" class="management-list-create-button" type="button" @click="openCreateSpaceDialog">
+          <el-icon><Plus /></el-icon>
+          <span>创建空间</span>
+        </button>
       </div>
 
-      <div class="management-list-toolbar-side">
-        <button v-if="canManageWiki" class="management-list-create-button" type="button" @click="openCreateSpaceDialog">
+      <div v-if="canManageWiki && !isMobileViewport" class="management-list-toolbar-side">
+        <button class="management-list-create-button" type="button" @click="openCreateSpaceDialog">
           <el-icon><Plus /></el-icon>
           <span>创建空间</span>
         </button>
@@ -160,6 +164,7 @@ import {
 } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import type { ProjectItem, WikiSpaceItem } from '@/types/platform'
+import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface WikiSpaceForm {
   name: string
@@ -172,6 +177,7 @@ interface WikiSpaceForm {
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const { isMobileViewport } = useMobileViewport()
 const loading = ref(false)
 const submitting = ref(false)
 const spaces = ref<WikiSpaceItem[]>([])

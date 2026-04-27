@@ -38,10 +38,14 @@
           <el-icon><RefreshRight /></el-icon>
           <span>重置</span>
         </button>
+        <button v-if="canManage && isMobileViewport" class="work-list-create-button" type="button" @click="openServerCreateDialog">
+          <el-icon><Plus /></el-icon>
+          <span>新增 Jenkins 服务</span>
+        </button>
       </div>
 
-      <div class="work-list-toolbar-side">
-        <button v-if="canManage" class="work-list-create-button" type="button" @click="openServerCreateDialog">
+      <div v-if="canManage && !isMobileViewport" class="work-list-toolbar-side">
+        <button class="work-list-create-button" type="button" @click="openServerCreateDialog">
           <el-icon><Plus /></el-icon>
           <span>新增 Jenkins 服务</span>
         </button>
@@ -208,13 +212,14 @@
               </article>
             </div>
           </div>
-          <div v-else class="mobile-entity-empty-state">
+            <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
+          <div v-if="!serverList.length" class="mobile-entity-empty-state">
             <el-empty description="当前筛选条件下暂无 Jenkins 服务" />
           </div>
         </template>
       </div>
 
-      <div class="work-list-footer">
+      <div v-if="showDesktopPagination" class="work-list-footer">
         <div class="work-list-footer-total">
           共 <span>{{ serverPagination.total }}</span> 条
         </div>
@@ -332,6 +337,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import type { JenkinsJobItem, JenkinsServerItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
+import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 /**
  * Jenkins 服务表单。
@@ -378,6 +384,13 @@ const currentJobServerId = ref<number | null>(null)
 const jobTriggeringName = ref('')
 
 const serverTotalPages = computed(() => Math.max(1, Math.ceil(serverPagination.total / serverPagination.size) || 1))
+const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMobileItems, resetMobilePagination } = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading: serverLoading,
+  itemCount: computed(() => serverList.value.length),
+  pagination: serverPagination,
+  loadPage: async () => loadServers()
+})
 const serverDialogTitle = computed(() => {
   if (serverReadonlyMode.value) {
     return '查看 Jenkins 服务'
@@ -438,8 +451,8 @@ const loadServers = async () => {
   serverLoading.value = true
   try {
     const pageData = await pageJenkinsServers({
-      page: serverPagination.page,
-      size: serverPagination.size,
+      page: requestPage.value,
+      size: requestSize.value,
       keyword: serverFilters.keyword,
       enabled: serverFilters.enabled
     })
@@ -452,19 +465,19 @@ const loadServers = async () => {
 
 const handleServerSearch = async () => {
   serverFilterPopoverVisible.value = false
-  serverPagination.page = 1
+  resetMobilePagination()
   await loadServers()
 }
 
 const handleServerReset = async () => {
   serverFilters.keyword = ''
   serverFilters.enabled = undefined
-  serverPagination.page = 1
+  resetMobilePagination()
   await loadServers()
 }
 
 const handleServerSizeChange = async () => {
-  serverPagination.page = 1
+  resetMobilePagination()
   await loadServers()
 }
 

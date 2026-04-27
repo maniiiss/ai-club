@@ -149,7 +149,7 @@
               </tbody>
             </table>
           </template>
-          <div v-else class="mobile-entity-empty-state operation-log-empty-state">
+          <div v-if="!logList.length" class="mobile-entity-empty-state operation-log-empty-state">
             <el-empty description="当前筛选条件下暂无操作日志" />
           </div>
         </template>
@@ -219,6 +219,7 @@
                 </div>
               </article>
             </div>
+            <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
           </div>
           <div v-else class="mobile-entity-empty-state operation-log-empty-state">
             <el-empty description="当前筛选条件下暂无操作日志" />
@@ -226,7 +227,7 @@
         </template>
       </div>
 
-      <div class="management-list-footer">
+      <div v-if="showDesktopPagination" class="management-list-footer">
         <div class="management-list-footer-total">
           共 <span>{{ pagination.total }}</span> 条
         </div>
@@ -340,6 +341,7 @@ import { listUserOptions } from '@/api/access'
 import { pageOperationLogs } from '@/api/operation-logs'
 import type { OperationLogItem, UserOptionItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
+import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 interface OperationLogFilters {
   /** 搜索关键字。 */
@@ -375,6 +377,13 @@ const filters = reactive<OperationLogFilters>({
 })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
+const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMobileItems, resetMobilePagination } = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading,
+  itemCount: computed(() => logList.value.length),
+  pagination,
+  loadPage: async () => loadLogs()
+})
 const detailDrawerSize = computed(() => (isMobileViewport.value ? '100%' : '680px'))
 const detailTitle = computed(() => (currentLog.value ? `${currentLog.value.actionName || '操作日志'} · ${currentLog.value.createdAt}` : '操作日志详情'))
 const detailRequestSnapshot = computed(() => prettyPrintJson(currentLog.value?.requestSnapshot))
@@ -383,8 +392,8 @@ const detailRequestSnapshot = computed(() => prettyPrintJson(currentLog.value?.r
  * 将筛选表单统一转换为接口参数，避免列表刷新时各处重复拼接时间范围。
  */
 const buildQueryParams = () => ({
-  page: pagination.page,
-  size: pagination.size,
+  page: requestPage.value,
+  size: requestSize.value,
   keyword: filters.keyword,
   userId: filters.userId,
   moduleCode: filters.moduleCode.trim() || undefined,
@@ -417,7 +426,7 @@ const loadLogs = async () => {
 
 const handleSearch = async () => {
   filterPopoverVisible.value = false
-  pagination.page = 1
+  resetMobilePagination()
   await loadLogs()
 }
 
@@ -428,12 +437,12 @@ const handleReset = async () => {
   filters.operationStatus = ''
   filters.bizType = ''
   filters.timeRange = []
-  pagination.page = 1
+  resetMobilePagination()
   await loadLogs()
 }
 
 const handleSizeChange = async () => {
-  pagination.page = 1
+  resetMobilePagination()
   await loadLogs()
 }
 

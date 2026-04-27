@@ -175,14 +175,15 @@
                 </footer>
               </article>
             </div>
+            <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
           </div>
-          <div v-else class="mobile-entity-empty-state">
+          <div v-if="!toolList.length" class="mobile-entity-empty-state">
             <el-empty description="当前筛选条件下暂无工具" />
           </div>
         </template>
       </div>
 
-      <div class="management-list-footer">
+      <div v-if="showDesktopPagination" class="management-list-footer">
         <div class="management-list-footer-total">
           共 <span>{{ pagination.total }}</span> 条
         </div>
@@ -277,6 +278,7 @@ import { getPlatformToolDetail, pagePlatformTools, updatePlatformTool } from '@/
 import { useAuthStore } from '@/stores/auth'
 import type { PlatformToolItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
+import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 interface PlatformToolForm {
   displayName: string
@@ -299,6 +301,13 @@ const formRef = ref<FormInstance>()
 
 const pagination = reactive({ page: 1, size: 10, total: 0 })
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
+const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMobileItems, resetMobilePagination } = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading,
+  itemCount: computed(() => toolList.value.length),
+  pagination,
+  loadPage: async () => loadTools()
+})
 const filters = reactive<{ keyword: string; moduleCode: string; enabled: boolean | ''; readOnly: boolean | '' }>({
   keyword: '',
   moduleCode: '',
@@ -341,8 +350,8 @@ const loadTools = async () => {
   loading.value = true
   try {
     const data = await pagePlatformTools({
-      page: pagination.page,
-      size: pagination.size,
+      page: requestPage.value,
+      size: requestSize.value,
       keyword: filters.keyword,
       moduleCode: filters.moduleCode,
       enabled: filters.enabled,
@@ -365,7 +374,7 @@ const loadModuleOptions = async () => {
 
 const handleSearch = async () => {
   toolFilterPopoverVisible.value = false
-  pagination.page = 1
+  resetMobilePagination()
   await loadTools()
 }
 
@@ -374,12 +383,12 @@ const handleReset = async () => {
   filters.moduleCode = ''
   filters.enabled = ''
   filters.readOnly = ''
-  pagination.page = 1
+  resetMobilePagination()
   await loadTools()
 }
 
 const handleSizeChange = async () => {
-  pagination.page = 1
+  resetMobilePagination()
   await loadTools()
 }
 

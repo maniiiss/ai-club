@@ -317,22 +317,22 @@
         </div>
 
         <div class="header-actions">
-          <el-dropdown @command="handleCommand">
-            <div class="header-profile-group">
-              <button
-                v-if="isMobileViewport && canUseHermes"
-                class="header-hermes-button"
-                type="button"
-                aria-label="打开 Hermes 助手"
-                @click.stop="handleOpenHermesDrawer"
-              >
-                <el-icon><Search /></el-icon>
-              </button>
-              <button class="header-notification-button" type="button" aria-label="打开消息中心" @click.stop="handleOpenNotifications">
-                <el-icon><Bell /></el-icon>
-                <span v-if="notificationStore.unreadCount > 0" class="header-notification-dot"></span>
-              </button>
-              <span class="header-divider" aria-hidden="true"></span>
+          <div class="header-profile-group">
+            <button
+              v-if="isMobileViewport && canUseHermes"
+              class="header-hermes-button"
+              type="button"
+              aria-label="打开 Hermes 助手"
+              @click.stop="handleOpenHermesDrawer"
+            >
+              <el-icon><Search /></el-icon>
+            </button>
+            <button class="header-notification-button" type="button" aria-label="打开消息中心" @click.stop="handleOpenNotifications">
+              <el-icon><Bell /></el-icon>
+              <span v-if="notificationStore.unreadCount > 0" class="header-notification-dot"></span>
+            </button>
+            <span class="header-divider" aria-hidden="true"></span>
+            <el-dropdown class="header-user-dropdown" @command="handleCommand">
               <button class="user-trigger" type="button">
                 <span class="user-meta">
                   <strong>{{ authStore.user?.nickname || authStore.user?.username || '当前用户' }}</strong>
@@ -343,18 +343,18 @@
                   <span v-else>{{ userInitial }}</span>
                 </span>
               </button>
-            </div>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="profile">个人中心</el-dropdown-item>
-                <el-dropdown-item command="feedback">反馈与建议</el-dropdown-item>
-                <el-dropdown-item command="roles" disabled>
-                  {{ authStore.user?.roleNames?.join(' / ') || '暂无角色' }}
-                </el-dropdown-item>
-                <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="profile">个人中心</el-dropdown-item>
+                  <el-dropdown-item command="feedback">反馈与建议</el-dropdown-item>
+                  <el-dropdown-item command="roles" disabled>
+                    {{ authStore.user?.roleNames?.join(' / ') || '暂无角色' }}
+                  </el-dropdown-item>
+                  <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </div>
 
       </el-header>
@@ -1620,6 +1620,11 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: 16px;
+}
+
+.header-user-dropdown {
+  display: inline-flex;
+  align-items: center;
 }
 
 .header-hermes-button,

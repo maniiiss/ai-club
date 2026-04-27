@@ -232,14 +232,15 @@
                       </footer>
                     </article>
                   </div>
+                  <div v-if="hasMoreBindingItems" ref="bindingSentinelRef" class="mobile-waterfall-sentinel"></div>
                 </div>
-                <div v-else class="mobile-entity-empty-state">
+                <div v-if="!bindingList.length" class="mobile-entity-empty-state">
                   <el-empty description="暂无仓库绑定" />
                 </div>
               </template>
             </div>
 
-            <div class="management-list-footer">
+            <div v-if="showDesktopGitlabPagination" class="management-list-footer">
               <div class="management-list-footer-total">共 <span>{{ bindingPagination.total }}</span> 条</div>
               <div class="management-list-footer-controls">
                 <div class="management-list-page-size management-list-compact-input">
@@ -504,14 +505,15 @@
                     </footer>
                   </article>
                 </div>
+                <div v-if="hasMoreAutoMergeItems" ref="autoMergeSentinelRef" class="mobile-waterfall-sentinel"></div>
               </div>
-              <div v-else class="mobile-entity-empty-state">
+              <div v-if="!autoMergeList.length" class="mobile-entity-empty-state">
                 <el-empty description="暂无自动合并策略" />
               </div>
             </template>
           </div>
 
-          <div class="management-list-footer">
+          <div v-if="showDesktopGitlabPagination" class="management-list-footer">
             <div class="management-list-footer-total">共 <span>{{ autoMergePagination.total }}</span> 条</div>
             <div class="management-list-footer-controls">
               <div class="management-list-page-size management-list-compact-input">
@@ -717,14 +719,15 @@
                       </footer>
                     </article>
                   </div>
+                  <div v-if="hasMoreLogItems" ref="logSentinelRef" class="mobile-waterfall-sentinel"></div>
                 </div>
-                <div v-else class="mobile-entity-empty-state">
+                <div v-if="!logList.length" class="mobile-entity-empty-state">
                   <el-empty description="暂无自动合并日志" />
                 </div>
               </template>
             </div>
 
-            <div class="management-list-footer">
+            <div v-if="showDesktopGitlabPagination" class="management-list-footer">
               <div class="management-list-footer-total">共 <span>{{ logPagination.total }}</span> 条</div>
               <div class="management-list-footer-controls">
                 <div class="management-list-page-size management-list-compact-input">
@@ -1254,6 +1257,7 @@ import type {
 } from '@/types/platform'
 import { renderMarkdownToHtml } from '@/utils/markdown'
 import { useMobileViewport } from '@/utils/mobileViewport'
+import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 const DEFAULT_GITLAB_API_URL = 'http://192.168.110.138:30080/api/v4'
 
@@ -1299,6 +1303,20 @@ const bindingList = ref<ProjectGitlabBindingItem[]>([])
 const bindingFormRef = ref<FormInstance>()
 const bindingPagination = reactive({ page: 1, size: 10, total: 0 })
 const bindingTotalPages = computed(() => Math.max(1, Math.ceil(bindingPagination.total / bindingPagination.size) || 1))
+const {
+  sentinelRef: bindingSentinelRef,
+  requestPage: bindingRequestPage,
+  requestSize: bindingRequestSize,
+  showDesktopPagination: showDesktopGitlabPagination,
+  hasMoreMobileItems: hasMoreBindingItems,
+  resetMobilePagination: resetBindingMobilePagination
+} = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading: bindingLoading,
+  itemCount: computed(() => bindingList.value.length),
+  pagination: bindingPagination,
+  loadPage: async () => loadBindings()
+})
 const bindingFilters = reactive({ keyword: '', projectId: undefined as number | undefined })
 const bindingFilterPopoverVisible = ref(false)
 const bindingForm = reactive<BindingForm>({
@@ -1345,6 +1363,19 @@ const autoMergeList = ref<GitlabAutoMergeConfigItem[]>([])
 const autoMergeFormRef = ref<FormInstance>()
 const autoMergePagination = reactive({ page: 1, size: 10, total: 0 })
 const autoMergeTotalPages = computed(() => Math.max(1, Math.ceil(autoMergePagination.total / autoMergePagination.size) || 1))
+const {
+  sentinelRef: autoMergeSentinelRef,
+  requestPage: autoMergeRequestPage,
+  requestSize: autoMergeRequestSize,
+  hasMoreMobileItems: hasMoreAutoMergeItems,
+  resetMobilePagination: resetAutoMergeMobilePagination
+} = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading: autoMergeLoading,
+  itemCount: computed(() => autoMergeList.value.length),
+  pagination: autoMergePagination,
+  loadPage: async () => loadAutoMergeConfigs()
+})
 const autoMergeFilters = reactive({ keyword: '', executionMode: undefined as 'PROJECT_BOUND' | 'STANDALONE' | undefined, enabled: undefined as boolean | undefined })
 const autoMergeFilterPopoverVisible = ref(false)
 const autoMergeForm = reactive<AutoMergeForm>({ name: '', executionMode: 'PROJECT_BOUND', description: '', bindingId: null, apiBaseUrl: DEFAULT_GITLAB_API_URL, gitlabProjectRef: '', apiToken: '', sourceBranch: '', targetBranch: '', titleKeyword: '', schedulerEnabled: false, schedulerCron: '0 */5 * * * *', enabled: true, autoMerge: true, squashOnMerge: false, removeSourceBranch: true, triggerPipelineAfterMerge: false, requirePipelineSuccess: true, reviewAgentId: null, aiReviewEnabled: false, aiReviewPrompt: '' })
@@ -1353,6 +1384,19 @@ const logLoading = ref(false)
 const logList = ref<GitlabAutoMergeLogItem[]>([])
 const logPagination = reactive({ page: 1, size: 10, total: 0 })
 const logTotalPages = computed(() => Math.max(1, Math.ceil(logPagination.total / logPagination.size) || 1))
+const {
+  sentinelRef: logSentinelRef,
+  requestPage: logRequestPage,
+  requestSize: logRequestSize,
+  hasMoreMobileItems: hasMoreLogItems,
+  resetMobilePagination: resetLogMobilePagination
+} = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading: logLoading,
+  itemCount: computed(() => logList.value.length),
+  pagination: logPagination,
+  loadPage: async () => loadAutoMergeLogs()
+})
 const logFilters = reactive({ result: undefined as string | undefined, triggerType: undefined as 'MANUAL' | 'SCHEDULED' | undefined })
 const logFilterPopoverVisible = ref(false)
 const logDetailVisible = ref(false)
@@ -1559,24 +1603,24 @@ const loadBaseOptions = async () => {
   if (!autoMergeForm.bindingId && bindingOptions.value.length > 0) autoMergeForm.bindingId = bindingOptions.value[0].id
   if (!autoMergeForm.reviewAgentId && reviewAgentOptions.value.length > 0) autoMergeForm.reviewAgentId = reviewAgentOptions.value[0].id
 }
-const loadBindings = async () => { bindingLoading.value = true; try { const pageData = await pageGitlabBindings({ page: bindingPagination.page, size: bindingPagination.size, keyword: bindingFilters.keyword, projectId: bindingFilters.projectId }); bindingList.value = pageData.records; bindingPagination.total = pageData.total } finally { bindingLoading.value = false } }
-const loadAutoMergeConfigs = async () => { autoMergeLoading.value = true; try { const pageData = await pageGitlabAutoMergeConfigs({ page: autoMergePagination.page, size: autoMergePagination.size, keyword: autoMergeFilters.keyword, executionMode: autoMergeFilters.executionMode, enabled: autoMergeFilters.enabled }); autoMergeList.value = pageData.records; autoMergePagination.total = pageData.total } finally { autoMergeLoading.value = false } }
-const loadAutoMergeLogs = async () => { logLoading.value = true; try { const pageData = await pageGitlabAutoMergeLogs({ page: logPagination.page, size: logPagination.size, result: logFilters.result, triggerType: logFilters.triggerType }); logList.value = pageData.records; logPagination.total = pageData.total } finally { logLoading.value = false } }
+const loadBindings = async () => { bindingLoading.value = true; try { const pageData = await pageGitlabBindings({ page: bindingRequestPage.value, size: bindingRequestSize.value, keyword: bindingFilters.keyword, projectId: bindingFilters.projectId }); bindingList.value = pageData.records; bindingPagination.total = pageData.total } finally { bindingLoading.value = false } }
+const loadAutoMergeConfigs = async () => { autoMergeLoading.value = true; try { const pageData = await pageGitlabAutoMergeConfigs({ page: autoMergeRequestPage.value, size: autoMergeRequestSize.value, keyword: autoMergeFilters.keyword, executionMode: autoMergeFilters.executionMode, enabled: autoMergeFilters.enabled }); autoMergeList.value = pageData.records; autoMergePagination.total = pageData.total } finally { autoMergeLoading.value = false } }
+const loadAutoMergeLogs = async () => { logLoading.value = true; try { const pageData = await pageGitlabAutoMergeLogs({ page: logRequestPage.value, size: logRequestSize.value, result: logFilters.result, triggerType: logFilters.triggerType }); logList.value = pageData.records; logPagination.total = pageData.total } finally { logLoading.value = false } }
 const refreshAll = async () => { await loadBaseOptions(); await Promise.all([loadBindings(), loadAutoMergeConfigs(), loadAutoMergeLogs()]) }
 
-const handleBindingSearch = async () => { bindingFilterPopoverVisible.value = false; bindingPagination.page = 1; await loadBindings() }
-const handleBindingReset = async () => { bindingFilters.keyword = ''; bindingFilters.projectId = undefined; bindingPagination.page = 1; await loadBindings() }
-const handleBindingSizeChange = async () => { bindingPagination.page = 1; await loadBindings() }
+const handleBindingSearch = async () => { bindingFilterPopoverVisible.value = false; resetBindingMobilePagination(); await loadBindings() }
+const handleBindingReset = async () => { bindingFilters.keyword = ''; bindingFilters.projectId = undefined; resetBindingMobilePagination(); await loadBindings() }
+const handleBindingSizeChange = async () => { resetBindingMobilePagination(); await loadBindings() }
 const handleBindingPrevPage = async () => { if (bindingPagination.page <= 1) return; bindingPagination.page -= 1; await loadBindings() }
 const handleBindingNextPage = async () => { if (bindingPagination.page >= bindingTotalPages.value) return; bindingPagination.page += 1; await loadBindings() }
-const handleAutoMergeSearch = async () => { autoMergeFilterPopoverVisible.value = false; autoMergePagination.page = 1; await loadAutoMergeConfigs() }
-const handleAutoMergeReset = async () => { autoMergeFilters.keyword = ''; autoMergeFilters.executionMode = undefined; autoMergeFilters.enabled = undefined; autoMergePagination.page = 1; await loadAutoMergeConfigs() }
-const handleAutoMergeSizeChange = async () => { autoMergePagination.page = 1; await loadAutoMergeConfigs() }
+const handleAutoMergeSearch = async () => { autoMergeFilterPopoverVisible.value = false; resetAutoMergeMobilePagination(); await loadAutoMergeConfigs() }
+const handleAutoMergeReset = async () => { autoMergeFilters.keyword = ''; autoMergeFilters.executionMode = undefined; autoMergeFilters.enabled = undefined; resetAutoMergeMobilePagination(); await loadAutoMergeConfigs() }
+const handleAutoMergeSizeChange = async () => { resetAutoMergeMobilePagination(); await loadAutoMergeConfigs() }
 const handleAutoMergePrevPage = async () => { if (autoMergePagination.page <= 1) return; autoMergePagination.page -= 1; await loadAutoMergeConfigs() }
 const handleAutoMergeNextPage = async () => { if (autoMergePagination.page >= autoMergeTotalPages.value) return; autoMergePagination.page += 1; await loadAutoMergeConfigs() }
-const handleLogSearch = async () => { logFilterPopoverVisible.value = false; logPagination.page = 1; await loadAutoMergeLogs() }
-const handleLogReset = async () => { logFilters.result = undefined; logFilters.triggerType = undefined; logPagination.page = 1; await loadAutoMergeLogs() }
-const handleLogSizeChange = async () => { logPagination.page = 1; await loadAutoMergeLogs() }
+const handleLogSearch = async () => { logFilterPopoverVisible.value = false; resetLogMobilePagination(); await loadAutoMergeLogs() }
+const handleLogReset = async () => { logFilters.result = undefined; logFilters.triggerType = undefined; resetLogMobilePagination(); await loadAutoMergeLogs() }
+const handleLogSizeChange = async () => { resetLogMobilePagination(); await loadAutoMergeLogs() }
 const handleLogPrevPage = async () => { if (logPagination.page <= 1) return; logPagination.page -= 1; await loadAutoMergeLogs() }
 const handleLogNextPage = async () => { if (logPagination.page >= logTotalPages.value) return; logPagination.page += 1; await loadAutoMergeLogs() }
 const handleCronTemplateChange = (value: string) => { if (value) { autoMergeForm.schedulerEnabled = true; autoMergeForm.schedulerCron = value } }

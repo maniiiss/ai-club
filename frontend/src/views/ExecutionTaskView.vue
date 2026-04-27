@@ -82,9 +82,18 @@
             <el-icon><RefreshRight /></el-icon>
             <span>重置</span>
           </button>
+          <button
+            v-if="isMobileViewport"
+            class="management-list-toolbar-button execution-refresh-button execution-refresh-button-mobile"
+            type="button"
+            @click="loadExecutionTasks"
+          >
+            <el-icon><RefreshRight /></el-icon>
+            <span>刷新</span>
+          </button>
         </div>
 
-        <div class="management-list-toolbar-side">
+        <div v-if="!isMobileViewport" class="management-list-toolbar-side">
           <button class="management-list-toolbar-button execution-refresh-button" type="button" @click="loadExecutionTasks">
             <el-icon><RefreshRight /></el-icon>
             <span>刷新</span>
@@ -203,10 +212,10 @@
         </div>
 
         <div v-else class="execution-mobile-list-shell" v-loading="loading">
-          <div v-if="executionTasks.length" class="execution-mobile-list">
+          <div v-if="executionTasks.length" class="execution-mobile-list mobile-card-list">
             <article v-for="row in executionTasks" :key="row.id" class="execution-mobile-card">
               <header class="execution-mobile-card-header">
-                <button class="execution-mobile-title-trigger" type="button" @click="openDetail(row)">
+                <button class="execution-mobile-title-trigger management-list-title-trigger" type="button" @click="openDetail(row)">
                   <span class="management-list-title-cell">
                     <span class="management-list-title-icon execution-title-icon">
                       <el-icon><Tickets /></el-icon>
@@ -304,12 +313,13 @@
               </footer>
             </article>
           </div>
-          <div v-else class="execution-mobile-empty-state">
+          <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
+          <div v-if="!executionTasks.length" class="execution-mobile-empty-state">
             <el-empty description="暂无执行任务" />
           </div>
         </div>
 
-        <div class="management-list-footer execution-footer">
+        <div v-if="showDesktopPagination" class="management-list-footer execution-footer">
           <div class="management-list-footer-total">共 <span>{{ pagination.total }}</span> 条</div>
           <div class="management-list-footer-controls">
             <div class="management-list-page-size management-list-compact-input">
@@ -349,6 +359,7 @@ import {
 } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import type { ExecutionTaskItem, ProjectItem } from '@/types/platform'
+import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 interface ExecutionSummaryCard {
   /** 概览卡片标题。 */
@@ -389,6 +400,13 @@ const filters = reactive<{
 })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
+const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMobileItems, resetMobilePagination } = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading,
+  itemCount: computed(() => executionTasks.value.length),
+  pagination,
+  loadPage: async () => loadExecutionTasks()
+})
 const canCancelExecution = computed(() => authStore.hasPermission('task:execution:cancel'))
 const canRetryExecution = computed(() => authStore.hasPermission('task:execution:retry'))
 
@@ -496,8 +514,8 @@ const loadExecutionTasks = async () => {
   loading.value = true
   try {
     const pageData = await pageExecutionTasks({
-      page: pagination.page,
-      size: pagination.size,
+      page: requestPage.value,
+      size: requestSize.value,
       keyword: filters.keyword,
       status: filters.status,
       scenarioCode: filters.scenarioCode,
@@ -516,7 +534,7 @@ const loadOptions = async () => {
 
 const handleSearch = async () => {
   filterPopoverVisible.value = false
-  pagination.page = 1
+  resetMobilePagination()
   await loadExecutionTasks()
 }
 
@@ -526,12 +544,12 @@ const handleReset = async () => {
   filters.status = ''
   filters.scenarioCode = ''
   filters.projectId = undefined
-  pagination.page = 1
+  resetMobilePagination()
   await loadExecutionTasks()
 }
 
 const handleSizeChange = async () => {
-  pagination.page = 1
+  resetMobilePagination()
   await loadExecutionTasks()
 }
 
@@ -704,6 +722,10 @@ onBeforeUnmount(() => {
 .execution-refresh-button {
   min-height: 34px;
   padding: 0 14px;
+}
+
+.execution-refresh-button-mobile {
+  margin-left: auto;
 }
 
 .execution-title-icon {
@@ -956,11 +978,24 @@ onBeforeUnmount(() => {
 
 .execution-mobile-title-trigger {
   width: 100%;
+  min-width: 0;
   padding: 0;
   border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
+  overflow: hidden;
+}
+
+.execution-mobile-title-trigger :deep(.management-list-title-cell),
+.execution-mobile-title-trigger :deep(.management-list-title-copy) {
+  min-width: 0;
+  width: 100%;
+}
+
+.execution-mobile-title-trigger :deep(.management-list-title),
+.execution-mobile-title-trigger :deep(.management-list-subtitle) {
+  max-width: 100%;
 }
 
 .execution-mobile-fields {
@@ -1018,11 +1053,56 @@ onBeforeUnmount(() => {
 
 @media (max-width: 900px) {
   .execution-kpi-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .execution-kpi-card {
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 16px;
+  }
+
+  .execution-kpi-label {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+  }
+
+  .execution-kpi-value {
+    margin-top: 2px;
+    font-size: 22px;
+  }
+
+  .execution-kpi-icon {
+    font-size: 16px;
+  }
+
+  .execution-refresh-button-mobile {
+    min-height: 30px;
+    padding: 0 12px;
   }
 
   .execution-mobile-fields {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .execution-kpi-row {
+    gap: 8px;
+  }
+
+  .execution-kpi-card {
+    padding: 10px;
+    border-radius: 14px;
+  }
+
+  .execution-kpi-value {
+    font-size: 20px;
+  }
+
+  .execution-refresh-button-mobile {
+    font-size: 11px;
   }
 }
 </style>

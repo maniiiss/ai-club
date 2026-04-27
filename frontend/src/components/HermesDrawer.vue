@@ -16,8 +16,22 @@
     </template>
 
     <div class="hermes-panel">
-      <aside class="hermes-session-sidebar">
+      <div
+        v-if="isMobileViewport"
+        class="hermes-mobile-session-backdrop"
+        :class="{ visible: mobileSessionPanelVisible }"
+        @click="closeMobileSessionPanel"
+      ></div>
+
+      <aside
+        class="hermes-session-sidebar"
+        :class="{ 'mobile-panel-open': isMobileViewport && mobileSessionPanelVisible }"
+      >
         <div class="hermes-session-content">
+          <div v-if="isMobileViewport" class="hermes-mobile-session-head">
+            <div class="hermes-mobile-session-title">会话记录</div>
+            <button class="hermes-mobile-session-close" type="button" @click="closeMobileSessionPanel">收起</button>
+          </div>
           <div class="hermes-session-toolbar">
             <button class="hermes-primary-button" type="button" :disabled="sending" @click="handleCreateSession">新建会话</button>
             <div class="hermes-session-tabs">
@@ -71,6 +85,21 @@
       </aside>
 
       <section class="hermes-chat-shell">
+        <div v-if="isMobileViewport" class="hermes-mobile-session-toggle-shell">
+          <button
+            class="hermes-mobile-session-toggle"
+            type="button"
+            :aria-expanded="mobileSessionPanelVisible"
+            :disabled="sending"
+            @click="toggleMobileSessionPanel"
+          >
+            <span class="hermes-mobile-session-toggle-label">
+              {{ mobileSessionPanelVisible ? '收起会话记录' : '打开会话记录' }}
+            </span>
+            <strong class="hermes-mobile-session-toggle-value">{{ mobileSessionToggleValue }}</strong>
+          </button>
+        </div>
+
         <div ref="messageScrollRef" class="hermes-body" @click="handleThinkSummaryClick" @scroll="handleMessageScroll">
           <section v-if="!currentSessionDetail" class="hermes-empty-state">
             <div class="hermes-empty-kicker">云端会话</div>
@@ -272,6 +301,8 @@ const archivedView = ref(false)
 const sessionSummaries = ref<HermesConversationSessionSummaryItem[]>([])
 const sessionPage = ref(1)
 const sessionTotal = ref(0)
+// 移动端优先把历史会话折叠成滑出面板，避免聊天首屏被顶部会话区挤占。
+const mobileSessionPanelVisible = ref(false)
 const selectedSessionId = ref<number | null>(readSelectedSessionId())
 const currentSessionDetail = ref<HermesConversationDetailItem | null>(null)
 const currentRoleName = ref(resolveCurrentRoleName())
@@ -308,6 +339,10 @@ const currentStreamStatusText = computed(() => {
   return message + '...'
 })
 const canLoadMoreSessions = computed(() => sessionSummaries.value.length < sessionTotal.value)
+const mobileSessionToggleValue = computed(() => {
+  const count = sessionTotal.value || sessionSummaries.value.length
+  return `${archivedView.value ? '已归档' : '当前'} · ${count} 条`
+})
 const footerDisabled = computed(() => recording.value || transcribing.value || sending.value || detailLoading.value || Boolean(currentSessionDetail.value?.archived))
 const voiceButtonDisabled = computed(() => transcribing.value || sending.value || detailLoading.value || Boolean(currentSessionDetail.value?.archived))
 const footerPlaceholder = computed(() => currentSessionDetail.value?.archived ? '归档会话需要恢复后继续提问' : '问你想问')
@@ -338,6 +373,7 @@ watch(drawerVisible, (visible) => {
     void initializeDrawer()
     return
   }
+  mobileSessionPanelVisible.value = false
   stopVoiceRecording(true)
 })
 
@@ -350,6 +386,12 @@ watch(archivedView, () => {
 watch(currentContextKey, () => {
   if (drawerVisible.value && !archivedView.value && !sending.value) {
     void reconcileSelectedSessionForCurrentContext()
+  }
+})
+
+watch(isMobileViewport, (mobile) => {
+  if (!mobile) {
+    mobileSessionPanelVisible.value = false
   }
 })
 
@@ -443,6 +485,7 @@ const loadSessionDetail = async (sessionId: number) => {
 const handleSelectSession = async (sessionId: number) => {
   if (!sending.value) {
     await loadSessionDetail(sessionId)
+    closeMobileSessionPanel()
   }
 }
 
@@ -452,6 +495,7 @@ const handleCreateSession = async () => {
   }
   // 不再立即创建会话，只是清空当前选中状态，等待用户发送消息时再创建
   clearSelectedSession()
+  closeMobileSessionPanel()
 }
 
 /**
@@ -1430,6 +1474,17 @@ function syncViewportMode() {
   if (typeof window !== 'undefined') isMobileViewport.value = window.innerWidth <= 900
 }
 
+function toggleMobileSessionPanel() {
+  if (!isMobileViewport.value) {
+    return
+  }
+  mobileSessionPanelVisible.value = !mobileSessionPanelVisible.value
+}
+
+function closeMobileSessionPanel() {
+  mobileSessionPanelVisible.value = false
+}
+
 function resolveCurrentRoleName() {
   return authStore.user?.roleNames?.[0] || '协作成员'
 }
@@ -1530,6 +1585,7 @@ function persistSelectedSessionId(sessionId: number | null) {
 }
 
 .hermes-panel {
+  position: relative;
   display: grid;
   grid-template-columns: 164px minmax(0, 1fr);
   flex: 1 1 auto;
@@ -1540,6 +1596,8 @@ function persistSelectedSessionId(sessionId: number | null) {
 }
 
 .hermes-session-sidebar {
+  --hermes-session-scroll-gutter: 14px;
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1549,6 +1607,12 @@ function persistSelectedSessionId(sessionId: number | null) {
   padding: 0 7px;
   border-right: 1px solid rgba(var(--app-outline-rgb), 0.12);
   background: rgba(248, 250, 252, 0.95);
+}
+
+.hermes-mobile-session-backdrop,
+.hermes-mobile-session-head,
+.hermes-mobile-session-toggle-shell {
+  display: none;
 }
 
 .hermes-session-content {
@@ -1567,7 +1631,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   gap: 12px;
   width: 100%;
   box-sizing: border-box;
-  padding: 10px 0;
+  padding: 10px var(--hermes-session-scroll-gutter) 10px 0;
   border-bottom: 1px solid rgba(var(--app-outline-rgb), 0.1);
 }
 
@@ -1596,7 +1660,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   gap: 10px;
   width: 100%;
   box-sizing: border-box;
-  padding: 8px 14px 8px 0;
+  padding: 8px var(--hermes-session-scroll-gutter) 8px 0;
   align-items: stretch;
   scrollbar-gutter: stable;
 }
@@ -1672,6 +1736,61 @@ function persistSelectedSessionId(sessionId: number | null) {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.hermes-mobile-session-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 46px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(241, 245, 249, 0.98) 100%);
+  color: #0f172a;
+  box-shadow:
+    0 12px 30px rgba(15, 23, 42, 0.08),
+    inset 0 0 0 1px rgba(var(--app-outline-rgb), 0.08);
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  font: inherit;
+}
+
+.hermes-mobile-session-toggle-label,
+.hermes-mobile-session-title {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hermes-mobile-session-toggle-value {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.hermes-mobile-session-head {
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0 12px;
+}
+
+.hermes-mobile-session-close {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(241, 245, 249, 0.96);
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .hermes-body {
@@ -2292,13 +2411,60 @@ button:disabled {
 
 @media (max-width: 900px) {
   .hermes-panel {
+    position: relative;
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(180px, 32vh) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .hermes-session-sidebar {
-    border-right: 0;
-    border-bottom: 1px solid rgba(var(--app-outline-rgb), 0.12);
+    --hermes-session-scroll-gutter: 0px;
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    z-index: 20;
+    height: min(42vh, 340px);
+    padding: 10px 12px 12px;
+    border: 1px solid rgba(var(--app-outline-rgb), 0.1);
+    border-radius: 24px;
+    background: rgba(248, 250, 252, 0.98);
+    box-shadow: 0 20px 44px rgba(15, 23, 42, 0.16);
+    transform: translateY(calc(-100% - 18px));
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.26s ease, opacity 0.22s ease;
+  }
+
+  .hermes-session-sidebar.mobile-panel-open {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .hermes-mobile-session-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    background: rgba(15, 23, 42, 0.18);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+    backdrop-filter: blur(2px);
+  }
+
+  .hermes-mobile-session-backdrop.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .hermes-mobile-session-head,
+  .hermes-mobile-session-toggle-shell {
+    display: flex;
+  }
+
+  .hermes-mobile-session-toggle-shell {
+    padding: 12px 14px 0;
   }
 
   .hermes-body {

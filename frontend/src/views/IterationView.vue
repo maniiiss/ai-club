@@ -2,7 +2,7 @@
   <div class="iteration-workspace">
     <aside class="workspace-sidebar">
       <div class="workspace-sidebar-brand">
-        <div class="workspace-sidebar-brand-main">
+        <div v-if="!isMobileViewport" class="workspace-sidebar-brand-main">
           <div class="workspace-brand-mark">
             <el-icon><FolderOpened /></el-icon>
           </div>
@@ -11,8 +11,9 @@
             <p>活跃迭代</p>
           </div>
         </div>
-        <div v-if="isMobileViewport" class="workspace-sidebar-brand-profile">
-          <el-dropdown @command="handleHeaderCommand">
+        <div v-if="isMobileViewport" class="workspace-mobile-header-row">
+          <div class="workspace-mobile-project-name">{{ board.project.name || '项目迭代' }}</div>
+          <div class="workspace-sidebar-brand-profile">
             <div class="header-profile-group">
               <button
                 v-if="canUseHermes"
@@ -29,27 +30,44 @@
                 <span v-if="notificationStore.unreadCount > 0" class="header-notification-dot"></span>
               </button>
               <span class="header-divider" aria-hidden="true"></span>
-              <button class="user-trigger" type="button">
-                <span class="user-meta">
-                  <strong>{{ authStore.user?.nickname || authStore.user?.username || '当前用户' }}</strong>
-                  <small>{{ authStore.user?.roleNames?.[0] || '协作成员' }}</small>
-                </span>
-                <span class="user-avatar">
-                  <img v-if="userAvatarUrl" :src="userAvatarUrl" alt="当前用户头像" class="user-avatar-image" />
-                  <span v-else>{{ userInitial }}</span>
-                </span>
-              </button>
+              <el-dropdown class="workspace-mobile-user-dropdown" @command="handleHeaderCommand">
+                <button class="user-trigger" type="button">
+                  <span class="user-meta">
+                    <strong>{{ authStore.user?.nickname || authStore.user?.username || '当前用户' }}</strong>
+                    <small>{{ authStore.user?.roleNames?.[0] || '协作成员' }}</small>
+                  </span>
+                  <span class="user-avatar">
+                    <img v-if="userAvatarUrl" :src="userAvatarUrl" alt="当前用户头像" class="user-avatar-image" />
+                    <span v-else>{{ userInitial }}</span>
+                  </span>
+                </button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="profile">个人中心</el-dropdown-item>
+                    <el-dropdown-item command="roles" disabled>
+                      {{ authStore.user?.roleNames?.join(' / ') || '暂无角色' }}
+                    </el-dropdown-item>
+                    <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="profile">个人中心</el-dropdown-item>
-                <el-dropdown-item command="roles" disabled>
-                  {{ authStore.user?.roleNames?.join(' / ') || '暂无角色' }}
-                </el-dropdown-item>
-                <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          </div>
+        </div>
+        <div v-if="isMobileViewport" class="workspace-mobile-nav-row">
+          <button class="workspace-back-link workspace-back-link-mobile" type="button" @click="goBack">
+            <el-icon><ArrowLeft /></el-icon>
+            <span>返回项目列表</span>
+          </button>
+          <button
+            v-if="canManageIteration"
+            class="workspace-sidebar-action workspace-mobile-iteration-create"
+            type="button"
+            @click="openCreateIterationDialog"
+          >
+            <el-icon><Plus /></el-icon>
+            <span>新建迭代</span>
+          </button>
         </div>
       </div>
 
@@ -108,7 +126,7 @@
         </button>
       </div>
 
-      <div class="workspace-sidebar-footer">
+      <div v-if="!isMobileViewport" class="workspace-sidebar-footer">
         <button class="workspace-sidebar-action" type="button" @click="canManageIteration ? openCreateIterationDialog() : goBack()">
           <el-icon><Plus /></el-icon>
           <span>{{ canManageIteration ? '新建迭代' : '返回项目' }}</span>
@@ -117,7 +135,7 @@
     </aside>
 
     <section class="workspace-main">
-      <header class="workspace-topbar">
+      <header v-if="!isMobileViewport" class="workspace-topbar">
         <div class="workspace-topbar-main">
           <button class="workspace-back-link" type="button" @click="goBack">
             <el-icon><ArrowLeft /></el-icon>
@@ -191,59 +209,121 @@
               <button class="workspace-list-tab-button" :class="{ active: activeTypeTab === '任务' }" type="button" @click="setTypeTab('任务')">任务</button>
               <button class="workspace-list-tab-button" :class="{ active: activeTypeTab === '缺陷' }" type="button" @click="setTypeTab('缺陷')">缺陷</button>
             </div>
-            <span class="management-list-toolbar-divider" aria-hidden="true"></span>
-            <div class="management-list-search-shell">
-              <el-icon class="management-list-search-icon"><Search /></el-icon>
-              <input
-                v-model="keyword"
-                class="management-list-search-input"
-                type="text"
-                placeholder="搜索工作项标题、说明或负责人..."
-                @keyup.enter="handleFilterSearch"
-              />
-            </div>
-            <span class="management-list-toolbar-divider" aria-hidden="true"></span>
-            <el-popover v-model:visible="workItemFilterPopoverVisible" trigger="click" placement="bottom-end" :width="360" popper-class="iteration-filter-popper">
-              <template #reference>
-                <button class="management-list-toolbar-button" type="button">
-                  <el-icon><Filter /></el-icon>
-                  <span>筛选</span>
-                </button>
-              </template>
-              <div class="workspace-filter-panel management-list-compact-input">
-                <div class="workspace-filter-field">
-                  <label>状态</label>
-                <el-select v-model="workItemFilters.status" clearable placeholder="状态" style="width: 100%" :teleported="false">
-                    <el-option v-for="item in taskStatusOptions" :key="item" :label="item" :value="item" />
-                  </el-select>
-                </div>
-                <div class="workspace-filter-field">
-                  <label>优先级</label>
-                <el-select v-model="workItemFilters.priority" clearable placeholder="优先级" style="width: 100%" :teleported="false">
-                    <el-option label="高" value="高" />
-                    <el-option label="中" value="中" />
-                    <el-option label="低" value="低" />
-                  </el-select>
-                </div>
-                <div class="workspace-filter-field">
-                  <label>负责人</label>
-                  <el-select v-model="workItemFilters.assigneeUserId" clearable filterable placeholder="负责人" style="width: 100%" :teleported="false">
-                    <el-option v-for="item in projectParticipantUsers" :key="item.id" :label="buildUserLabel(item)" :value="item.id" />
-                  </el-select>
-                </div>
-                <div class="workspace-filter-actions">
-                  <el-button type="primary" @click="handleFilterSearch">查询</el-button>
-                  <el-button @click="handleFilterReset">重置</el-button>
+
+            <template v-if="isMobileViewport">
+              <div class="workspace-mobile-search-row">
+                <div class="management-list-search-shell workspace-mobile-search-shell">
+                  <el-icon class="management-list-search-icon"><Search /></el-icon>
+                  <input
+                    v-model="keyword"
+                    class="management-list-search-input"
+                    type="text"
+                    placeholder="搜索工作项标题、说明或负责人..."
+                    @keyup.enter="handleFilterSearch"
+                  />
                 </div>
               </div>
-            </el-popover>
-            <button class="management-list-toolbar-button" type="button" @click="handleFilterReset">
-              <el-icon><RefreshRight /></el-icon>
-              <span>重置</span>
-            </button>
+              <div class="workspace-mobile-filter-row">
+                <el-popover v-model:visible="workItemFilterPopoverVisible" trigger="click" placement="bottom-end" :width="360" popper-class="iteration-filter-popper">
+                  <template #reference>
+                    <button class="management-list-toolbar-button" type="button">
+                      <el-icon><Filter /></el-icon>
+                      <span>筛选</span>
+                    </button>
+                  </template>
+                  <div class="workspace-filter-panel management-list-compact-input">
+                    <div class="workspace-filter-field">
+                      <label>状态</label>
+                    <el-select v-model="workItemFilters.status" clearable placeholder="状态" style="width: 100%" :teleported="false">
+                        <el-option v-for="item in taskStatusOptions" :key="item" :label="item" :value="item" />
+                      </el-select>
+                    </div>
+                    <div class="workspace-filter-field">
+                      <label>优先级</label>
+                    <el-select v-model="workItemFilters.priority" clearable placeholder="优先级" style="width: 100%" :teleported="false">
+                        <el-option label="高" value="高" />
+                        <el-option label="中" value="中" />
+                        <el-option label="低" value="低" />
+                      </el-select>
+                    </div>
+                    <div class="workspace-filter-field">
+                      <label>负责人</label>
+                      <el-select v-model="workItemFilters.assigneeUserId" clearable filterable placeholder="负责人" style="width: 100%" :teleported="false">
+                        <el-option v-for="item in projectParticipantUsers" :key="item.id" :label="buildUserLabel(item)" :value="item.id" />
+                      </el-select>
+                    </div>
+                    <div class="workspace-filter-actions">
+                      <el-button type="primary" @click="handleFilterSearch">查询</el-button>
+                      <el-button @click="handleFilterReset">重置</el-button>
+                    </div>
+                  </div>
+                </el-popover>
+                <button class="management-list-toolbar-button" type="button" @click="handleFilterReset">
+                  <el-icon><RefreshRight /></el-icon>
+                  <span>重置</span>
+                </button>
+                <button v-if="canManageWorkItem" class="management-list-create-button workspace-mobile-create-work-item" type="button" @click="openCreateWorkItemDialog">
+                  <el-icon><Plus /></el-icon>
+                  <span>新建工作项</span>
+                </button>
+              </div>
+            </template>
+
+            <template v-else>
+              <span class="management-list-toolbar-divider" aria-hidden="true"></span>
+              <div class="management-list-search-shell">
+                <el-icon class="management-list-search-icon"><Search /></el-icon>
+                <input
+                  v-model="keyword"
+                  class="management-list-search-input"
+                  type="text"
+                  placeholder="搜索工作项标题、说明或负责人..."
+                  @keyup.enter="handleFilterSearch"
+                />
+              </div>
+              <span class="management-list-toolbar-divider" aria-hidden="true"></span>
+              <el-popover v-model:visible="workItemFilterPopoverVisible" trigger="click" placement="bottom-end" :width="360" popper-class="iteration-filter-popper">
+                <template #reference>
+                  <button class="management-list-toolbar-button" type="button">
+                    <el-icon><Filter /></el-icon>
+                    <span>筛选</span>
+                  </button>
+                </template>
+                <div class="workspace-filter-panel management-list-compact-input">
+                  <div class="workspace-filter-field">
+                    <label>状态</label>
+                  <el-select v-model="workItemFilters.status" clearable placeholder="状态" style="width: 100%" :teleported="false">
+                      <el-option v-for="item in taskStatusOptions" :key="item" :label="item" :value="item" />
+                    </el-select>
+                  </div>
+                  <div class="workspace-filter-field">
+                    <label>优先级</label>
+                  <el-select v-model="workItemFilters.priority" clearable placeholder="优先级" style="width: 100%" :teleported="false">
+                      <el-option label="高" value="高" />
+                      <el-option label="中" value="中" />
+                      <el-option label="低" value="低" />
+                    </el-select>
+                  </div>
+                  <div class="workspace-filter-field">
+                    <label>负责人</label>
+                    <el-select v-model="workItemFilters.assigneeUserId" clearable filterable placeholder="负责人" style="width: 100%" :teleported="false">
+                      <el-option v-for="item in projectParticipantUsers" :key="item.id" :label="buildUserLabel(item)" :value="item.id" />
+                    </el-select>
+                  </div>
+                  <div class="workspace-filter-actions">
+                    <el-button type="primary" @click="handleFilterSearch">查询</el-button>
+                    <el-button @click="handleFilterReset">重置</el-button>
+                  </div>
+                </div>
+              </el-popover>
+              <button class="management-list-toolbar-button" type="button" @click="handleFilterReset">
+                <el-icon><RefreshRight /></el-icon>
+                <span>重置</span>
+              </button>
+            </template>
           </div>
 
-          <div class="management-list-toolbar-side">
+          <div v-if="!isMobileViewport" class="management-list-toolbar-side">
             <button v-if="canManageWorkItem" class="management-list-create-button" type="button" @click="openCreateWorkItemDialog">
               <el-icon><Plus /></el-icon>
               <span>新建工作项</span>
@@ -637,14 +717,15 @@
                   </footer>
                 </article>
               </div>
+              <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
             </div>
-            <div v-else class="mobile-entity-empty-state">
+            <div v-if="!workItems.length" class="mobile-entity-empty-state">
               <el-empty description="当前筛选条件下暂无工作项" />
             </div>
           </template>
         </div>
 
-        <div class="workspace-pagination">
+        <div v-if="showDesktopPagination" class="workspace-pagination">
           <div class="workspace-footer-total">共 <span>{{ workItemPagination.total }}</span> 条</div>
           <div class="workspace-pagination-controls">
             <div class="workspace-page-size">
@@ -1128,6 +1209,7 @@ import type {
   UserOptionItem
 } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
+import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 interface IterationForm {
   name: string
@@ -1259,6 +1341,13 @@ const keyword = ref('')
 const activeTypeTab = ref<'全部' | '需求' | '任务' | '缺陷'>('全部')
 const workItemPagination = reactive({ page: 1, size: 10, total: 0 })
 const workItemTotalPages = computed(() => Math.max(1, Math.ceil(workItemPagination.total / workItemPagination.size) || 1))
+const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMobileItems, resetMobilePagination } = useMobileWaterfallPagination({
+  isMobileViewport,
+  loading: workItemLoading,
+  itemCount: computed(() => workItems.value.length),
+  pagination: workItemPagination,
+  loadPage: async () => loadWorkItems()
+})
 type InlineEditableField = 'status' | 'hours' | 'assignee' | 'priority'
 const activeInlineEditor = ref<{ rowId: number; field: InlineEditableField } | null>(null)
 const inlineHoursDraft = ref<number | null>(null)
@@ -2018,7 +2107,7 @@ const openTaskFromQuery = async (taskId?: number) => {
 
     selectedScope.type = task.iterationId ? 'iteration' : 'unplanned'
     selectedScope.iterationId = task.iterationId
-    workItemPagination.page = 1
+    resetMobilePagination()
     await loadWorkItems()
     openEditWorkItemDialog(task)
     await syncWorkItemRouteQuery({
@@ -2157,14 +2246,14 @@ const handleWorkItemDialogClosed = () => {
 const selectUnplanned = async () => {
   selectedScope.type = 'unplanned'
   selectedScope.iterationId = null
-  workItemPagination.page = 1
+  resetMobilePagination()
   await Promise.all([loadWorkItems(), syncIterationQuery(null)])
 }
 
 const selectIteration = async (item: IterationItem) => {
   selectedScope.type = 'iteration'
   selectedScope.iterationId = item.id
-  workItemPagination.page = 1
+  resetMobilePagination()
   await Promise.all([loadWorkItems(), syncIterationQuery(item.id)])
 }
 
@@ -2208,8 +2297,8 @@ const loadWorkItems = async () => {
   workItemLoading.value = true
   try {
     const pageData = await pageProjectWorkItems(projectId, {
-      page: workItemPagination.page,
-      size: workItemPagination.size,
+      page: requestPage.value,
+      size: requestSize.value,
       iterationId: selectedScope.type === 'iteration' ? selectedScope.iterationId || undefined : undefined,
       unplanned: selectedScope.type === 'unplanned' ? true : undefined,
       workItemType: activeTypeTab.value,
@@ -2234,13 +2323,13 @@ const refreshBoardAndItems = async () => {
 }
 
 const handleTypeTabChange = async () => {
-  workItemPagination.page = 1
+  resetMobilePagination()
   await loadWorkItems()
 }
 
 const handleFilterSearch = async () => {
   workItemFilterPopoverVisible.value = false
-  workItemPagination.page = 1
+  resetMobilePagination()
   await loadWorkItems()
 }
 
@@ -2251,12 +2340,12 @@ const handleFilterReset = async () => {
   workItemFilters.assigneeUserId = undefined
   keyword.value = ''
   activeTypeTab.value = '全部'
-  workItemPagination.page = 1
+  resetMobilePagination()
   await loadWorkItems()
 }
 
 const handlePageSizeChange = async () => {
-  workItemPagination.page = 1
+  resetMobilePagination()
   await loadWorkItems()
 }
 
@@ -2611,7 +2700,7 @@ watch(
     }
     selectedScope.type = 'iteration'
     selectedScope.iterationId = nextIterationId
-    workItemPagination.page = 1
+    resetMobilePagination()
     await loadWorkItems()
   }
 )
@@ -2724,6 +2813,51 @@ onMounted(async () => {
   padding: 16px 14px 18px;
 }
 
+.workspace-mobile-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.workspace-mobile-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.workspace-mobile-project-name {
+  min-width: 0;
+  color: var(--app-text);
+  font-family: var(--app-font-heading);
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.workspace-back-link-mobile {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: var(--app-shadow-soft);
+  color: var(--app-text);
+}
+
+.workspace-mobile-iteration-create {
+  margin-left: auto;
+  width: fit-content;
+  max-width: max-content;
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+  align-self: center;
+}
+
 .workspace-sidebar-brand-main {
   min-width: 0;
   display: flex;
@@ -2733,6 +2867,11 @@ onMounted(async () => {
 
 .workspace-sidebar-brand-profile {
   flex: 0 0 auto;
+}
+
+.workspace-mobile-user-dropdown {
+  display: inline-flex;
+  align-items: center;
 }
 
 .workspace-brand-mark {
@@ -3216,6 +3355,28 @@ onMounted(async () => {
 
 .workspace-list-toolbar .management-list-toolbar-side {
   min-width: max-content;
+}
+
+.workspace-mobile-search-row,
+.workspace-mobile-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.workspace-mobile-search-shell {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  max-width: none !important;
+}
+
+.workspace-mobile-create-work-item {
+  margin-left: auto;
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
 }
 
 .workspace-list-switcher {
@@ -4824,6 +4985,8 @@ onMounted(async () => {
   }
 
   .workspace-sidebar-brand {
+    flex-direction: column;
+    align-items: stretch;
     padding: 16px 16px 12px;
   }
 
@@ -4841,67 +5004,81 @@ onMounted(async () => {
 
   .workspace-sidebar-list {
     flex-direction: row;
-    gap: 12px;
-    padding: 0 16px 10px;
+    gap: 10px;
+    padding: 0 18px 10px;
     width: 100%;
     max-width: 100%;
     overflow-x: auto;
     overflow-y: hidden;
     scroll-snap-type: x proximity;
+    scroll-padding-inline: 18px;
     overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
+    box-sizing: border-box;
+  }
+
+  .workspace-sidebar-list::before,
+  .workspace-sidebar-list::after {
+    content: '';
+    flex: 0 0 2px;
   }
 
   .workspace-iteration-card {
-    min-width: 180px;
-    flex: 0 0 180px;
+    min-width: 156px;
+    flex: 0 0 156px;
     scroll-snap-align: start;
-  }
-
-  .workspace-sidebar-footer {
-    padding: 0 16px 14px;
-  }
-
-  .workspace-topbar {
-    padding: 14px 16px 0;
-  }
-
-  .workspace-topbar-main {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-    width: 100%;
-  }
-
-  .workspace-search {
-    width: 100%;
-  }
-
-  .workspace-topbar-actions {
-    width: 100%;
-    justify-content: flex-end;
+    padding: 10px;
   }
 
   .workspace-stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     padding: 12px 16px 0;
+    gap: 10px;
   }
 
   .workspace-controls {
     padding: 12px 16px 10px;
   }
 
+  .workspace-stat-card {
+    min-height: 70px;
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+
+  .workspace-stat-value-row {
+    margin-top: 6px;
+  }
+
+  .workspace-stat-value-row strong {
+    font-size: 24px;
+  }
+
+  .workspace-list-toolbar .management-list-toolbar-main {
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .workspace-mobile-search-row {
+    align-items: stretch;
+  }
+
+  .workspace-mobile-filter-row {
+    justify-content: flex-start;
+    align-items: center;
+  }
+
   .workspace-list-switcher {
     width: 100%;
-    overflow-x: auto;
-    overflow-y: hidden;
-    flex-wrap: nowrap;
-    justify-content: flex-start;
-    -webkit-overflow-scrolling: touch;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    overflow: visible;
   }
 
   .workspace-list-tab-button {
-    flex: 0 0 auto;
+    width: 100%;
+    justify-content: center;
     white-space: nowrap;
   }
 
