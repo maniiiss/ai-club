@@ -293,7 +293,7 @@
                 <span>默认目标分支：{{ currentProductBinding.defaultTargetBranch || '-' }}</span>
               </div>
             </div>
-            <div class="management-list-toolbar-side">
+            <div class="management-list-toolbar-side gitlab-product-toolbar-side">
               <button class="management-list-toolbar-button" type="button" @click="openProductBranchSyncLogs" :disabled="!currentProductBindingId">
                 <el-icon><DocumentCopy /></el-icon>
                 <span>同步日志</span>
@@ -1072,8 +1072,17 @@
                 <el-option label="DELETE" value="DELETE" />
               </el-select>
               <el-input v-model="item.path" placeholder="路径，例如 /api/ping" />
-              <el-input-number v-model="item.expectedStatus" :min="100" :max="599" :step="1" controls-position="right" />
-              <el-button text type="danger" @click="removeBindingHttpCheck(index)">删除</el-button>
+              <div class="binding-http-check-actions">
+                <el-input-number
+                  v-model="item.expectedStatus"
+                  class="binding-http-check-status"
+                  :min="100"
+                  :max="599"
+                  :step="1"
+                  controls-position="right"
+                />
+                <el-button class="binding-http-check-remove" text type="danger" @click="removeBindingHttpCheck(index)">删除</el-button>
+              </div>
             </div>
           </div>
           <div v-else class="form-tip">还没有配置 HTTP 检查。仅填写健康检查路径也可以跑最小服务烟测。</div>
@@ -2692,6 +2701,33 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
   min-width: max-content;
 }
 
+.gitlab-product-toolbar-side {
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1280px) and (min-width: 901px) {
+  /* GitLab 工具栏同时承载 tab、搜索和筛选，压缩阶段允许主工具区换行，
+     避免 tab 条被硬拉成长条并把其它控件推出可视区。 */
+  .gitlab-list-page .management-list-toolbar {
+    align-items: start;
+  }
+
+  .gitlab-list-page .management-list-toolbar-main {
+    flex-wrap: wrap;
+    gap: 10px 12px;
+  }
+
+  .gitlab-list-page .gitlab-tab-switcher {
+    width: auto;
+    max-width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+}
+
 .gitlab-list-page .management-list-shell {
   flex: 1 1 auto;
   min-height: 0;
@@ -2884,9 +2920,26 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 
 .binding-http-check-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1.1fr) 110px minmax(180px, 1.6fr) 120px auto;
+  grid-template-columns: minmax(120px, 1.1fr) 110px minmax(180px, 1.6fr) max-content;
   gap: 12px;
   align-items: center;
+}
+
+.binding-http-check-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.binding-http-check-status {
+  width: 132px;
+  flex: 0 0 132px;
+}
+
+.binding-http-check-remove {
+  flex: 0 0 auto;
+  padding-inline: 0;
 }
 
 @media (max-width: 1100px) {
@@ -2914,6 +2967,10 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
   .gitlab-bindings-layout {
     grid-template-columns: 1fr;
   }
+
+  .gitlab-product-toolbar-side {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 680px) {
@@ -2923,6 +2980,10 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 
   .binding-http-check-row {
     grid-template-columns: 1fr;
+  }
+
+  .binding-http-check-actions {
+    justify-content: space-between;
   }
 }
 </style>

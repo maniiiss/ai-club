@@ -321,6 +321,7 @@
             style="width: 100%"
             :remote-method="handleQuickMergeSourceSearch"
             :loading="sourceBranchLoading"
+            @change="handleQuickMergeSourceBranchChange"
           >
             <el-option
               v-for="branch in quickMergeSourceBranchOptions"
@@ -500,6 +501,7 @@ const quickMergeTargetBranchOptions = ref<GitlabBranchItem[]>([])
 const sourceBranchLoading = ref(false)
 const targetBranchLoading = ref(false)
 const quickMergeResult = ref<GitlabCreateMergeRequestResultItem | null>(null)
+const quickMergeAutoFilledTitle = ref('')
 const quickMergeForm = reactive<QuickMergeForm>({ bindingId: null, sourceBranch: '', targetBranch: '', title: '', description: '' })
 const quickMergeDialogSubtitle = computed(() => {
   if (quickMergeSubmitDisabledReason.value) {
@@ -904,6 +906,7 @@ function resetQuickMergeForm() {
   quickMergeForm.targetBranch = ''
   quickMergeForm.title = ''
   quickMergeForm.description = ''
+  quickMergeAutoFilledTitle.value = ''
   quickMergeSourceBranchOptions.value = []
   quickMergeTargetBranchOptions.value = []
   quickMergeFormRef.value?.clearValidate()
@@ -954,12 +957,37 @@ async function loadQuickMergeBranches(kind: 'source' | 'target', keyword = '') {
   }
 }
 
+function resolveQuickMergeBranchAutoTitle(branchName: string) {
+  const matchedBranch = quickMergeSourceBranchOptions.value.find((item) => item.name === branchName)
+  return matchedBranch?.latestCommitTitle?.trim() || ''
+}
+
+/**
+ * 首页快速发起 MR 会优先复用源分支最近一次提交标题；
+ * 只有标题为空，或仍保持上一次自动带入结果时，才继续覆盖，避免误伤用户手工编辑。
+ */
+function tryAutofillQuickMergeTitleFromSourceBranch(branchName: string, force = false) {
+  const currentTitle = quickMergeForm.title.trim()
+  const canReplaceTitle = force || !currentTitle || currentTitle === quickMergeAutoFilledTitle.value
+  if (!canReplaceTitle) {
+    return
+  }
+  const autoTitle = resolveQuickMergeBranchAutoTitle(branchName)
+  quickMergeForm.title = autoTitle
+  quickMergeAutoFilledTitle.value = autoTitle
+  quickMergeFormRef.value?.clearValidate('title')
+}
+
 function handleQuickMergeSourceSearch(keyword: string) {
   void loadQuickMergeBranches('source', keyword)
 }
 
 function handleQuickMergeTargetSearch(keyword: string) {
   void loadQuickMergeBranches('target', keyword)
+}
+
+function handleQuickMergeSourceBranchChange(branchName: string) {
+  tryAutofillQuickMergeTitleFromSourceBranch(branchName)
 }
 
 async function openQuickMergeDialog() {
@@ -1277,6 +1305,7 @@ onBeforeUnmount(() => {
 }
 
 .dashboard-widget-head-copy {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -1946,6 +1975,8 @@ onBeforeUnmount(() => {
 
 .dashboard-widget-card.width-quarter .dashboard-widget-head {
   flex-direction: column;
+  /* 1/4 宽卡片在桌面端仍允许纵向堆叠，但标题文案需要占满可用宽度，避免中文被压成单字换行。 */
+  align-items: stretch;
 }
 
 .dashboard-widget-card.width-quarter .dashboard-widget-head-actions {
@@ -2100,8 +2131,14 @@ onBeforeUnmount(() => {
   }
 
   .dashboard-widget-head-quick-task-action {
-    width: 100%;
-    justify-content: flex-start;
+    margin-left: auto;
+    justify-content: flex-end;
+  }
+
+  /* 手机端所有卡片都会拉满宽度，不再沿用桌面 1/4 宽卡片的纵向头部布局。 */
+  .dashboard-widget-card.width-quarter .dashboard-widget-head {
+    flex-direction: row;
+    align-items: flex-start;
   }
 
   .dashboard-widget-mobile-edit-chip {

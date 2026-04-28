@@ -2545,6 +2545,51 @@ a {
   }
 }
 
+@media (max-width: 1280px) and (min-width: 901px) {
+  /* 中等宽度下先压缩工具栏节奏，避免管理类列表过早切成单列并出现大块空白。 */
+  .management-list-toolbar,
+  .atelier-toolbar,
+  .work-list-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .management-list-toolbar > .management-list-toolbar-main,
+  .atelier-toolbar > .atelier-toolbar-main,
+  .work-list-toolbar > .work-list-toolbar-main {
+    width: auto;
+    max-width: 100%;
+    justify-self: start;
+    flex-wrap: nowrap;
+    gap: 12px;
+    padding: 8px 12px;
+  }
+
+  .management-list-toolbar > .management-list-toolbar-side,
+  .atelier-toolbar > .atelier-toolbar-side,
+  .work-list-toolbar > .work-list-toolbar-side {
+    align-self: center;
+  }
+
+  .management-list-search-shell,
+  .atelier-search-shell,
+  .work-list-search-shell {
+    flex: 0 1 260px;
+    width: 260px;
+    max-width: min(260px, 100%);
+  }
+
+  .management-list-toolbar-button,
+  .management-list-create-button,
+  .atelier-toolbar-button,
+  .atelier-create-button,
+  .work-list-toolbar-button,
+  .work-list-create-button {
+    white-space: nowrap;
+  }
+}
+
 @media (max-width: 900px) {
   :root {
     --app-radius-2xl: 14px;
@@ -2570,6 +2615,12 @@ a {
     margin-left: 12px;
     margin-right: 12px;
     margin-bottom: 16px;
+  }
+
+  .management-list-toolbar,
+  .atelier-toolbar,
+  .work-list-toolbar {
+    grid-template-columns: 1fr;
   }
 
   .metric-value,

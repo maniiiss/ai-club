@@ -164,6 +164,7 @@ Hindsight 是 Hermes 的记忆与检索后端，当前通过 Docker 启动，主
 
 - 存储 Hermes 的记忆数据
 - 提供会话相关的上下文检索能力
+- 存储按用户隔离的 Hermes 会话记忆，当前默认 bank 规则为 `git-ai-club:hermes:user:{userId}`
 
 Hindsight 不再单独占用一套 PostgreSQL 服务，而是与业务后端共用同一 PostgreSQL 实例，通过独立数据库 `hindsight` 隔离记忆表与向量索引。
 
@@ -194,12 +195,13 @@ Hermes 相关链路如下：
 
 1. 用户在前端 Hermes 抽屉中输入问题，或先录制短语音并由后端转写成文本
 2. 前端调用后端 Hermes 会话接口
-3. 后端根据当前用户、页面路由、上下文对象、已绑定对象组装提示词
+3. 后端根据当前用户、页面路由、上下文对象、已绑定对象组装提示词，并优先从 Hindsight 召回当前用户自己的会话记忆，再补项目 / Wiki 记忆
 4. 后端调用 Hermes API Server
 5. Hermes 需要事实时，通过 MCP 调用 `code-processing`
 6. `code-processing` 通过内部认证调用后端工具执行接口
 7. 后端返回工具结果，Hermes 再继续推理与回答
-8. 如果是写操作，后端返回动作卡片，由前端提示用户确认
+8. 回答成功后，后端会把“用户问题 + 助手回答”异步写入当前用户独立的 Hindsight bank，作为后续续聊可召回的用户会话记忆
+9. 如果是写操作，后端返回动作卡片，由前端提示用户确认
 
 其中语音输入只是 Hermes 文本问答链路前的一层预处理：
 

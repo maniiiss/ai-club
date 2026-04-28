@@ -185,6 +185,14 @@ public class HermesChatService {
                         debugInfo,
                         attachments
                 );
+                hermesHindsightMemoryService.retainConversationTurnAsync(
+                        currentUser,
+                        session,
+                        context,
+                        effectiveRequest,
+                        finalizedConversation.content(),
+                        finalizedConversation.state()
+                );
                 finishSuccess(outputStream, audit, gatewayResult, finalizedConversation, debugInfo, attachments);
             } catch (Exception exception) {
                 HermesConversationState latestState = loadLatestState(preparedConversation.state());
@@ -256,6 +264,14 @@ public class HermesChatService {
                     finalizedConversation.content(),
                     debugInfo,
                     attachments
+            );
+            hermesHindsightMemoryService.retainConversationTurnAsync(
+                    currentUser,
+                    session,
+                    context,
+                    effectiveRequest,
+                    finalizedConversation.content(),
+                    finalizedConversation.state()
             );
 
             audit.setStatus("SUCCESS");
@@ -351,7 +367,7 @@ public class HermesChatService {
         hermesConversationStateStore.save(preparedState);
 
         HermesConversationTurn currentUserTurn = buildCurrentUserTurn(request, groundingState, attachmentContextMarkdown);
-        String memoryContextMarkdown = resolveMemoryContextMarkdown(context, request);
+        String memoryContextMarkdown = resolveMemoryContextMarkdown(currentUser, context, request);
         HermesPromptBuilder.HermesPrompt prompt = hermesPromptBuilder.buildConversationPrompt(
                 currentUser,
                 context,
@@ -495,13 +511,14 @@ public class HermesChatService {
     /**
      * 记忆召回属于增强能力，失败时只降级为空，不能反向拖垮主问答。
      */
-    private String resolveMemoryContextMarkdown(HermesContextAssembler.HermesConversationContext context,
+    private String resolveMemoryContextMarkdown(CurrentUserInfo currentUser,
+                                                HermesContextAssembler.HermesConversationContext context,
                                                 HermesChatRequest request) {
         if (hermesHindsightMemoryService == null) {
             return "";
         }
         try {
-            return defaultString(hermesHindsightMemoryService.buildMemoryContextMarkdown(context, request));
+            return defaultString(hermesHindsightMemoryService.buildMemoryContextMarkdown(currentUser, context, request));
         } catch (RuntimeException exception) {
             log.warn("Hermes 组装 Hindsight 记忆上下文失败：{}", resolveErrorMessage(exception));
             return "";

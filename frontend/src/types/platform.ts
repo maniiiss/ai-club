@@ -1010,6 +1010,7 @@ export interface GitlabBranchItem {
   protectedBranch: boolean
   merged: boolean
   webUrl: string | null
+  latestCommitTitle?: string | null
 }
 
 export interface GitlabMergeRequestItem {

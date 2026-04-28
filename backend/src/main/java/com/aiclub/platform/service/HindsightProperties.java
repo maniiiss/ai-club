@@ -186,6 +186,13 @@ public class HindsightProperties {
     }
 
     /**
+     * Hermes 用户会话记忆按用户独立分 bank，避免不同用户的私人记忆互相污染。
+     */
+    public String hermesUserMemoryBankId(Long userId) {
+        return bankPrefix + ":hermes:user:" + userId;
+    }
+
+    /**
      * 记忆事实图默认仍优先读取项目级 bank，便于兼容当前已存在的项目 Wiki bank。
      */
     public String memoryFactProjectBankId(Long projectId) {

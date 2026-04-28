@@ -125,7 +125,7 @@ class HermesChatServiceTests {
                 .thenReturn("session-token");
         when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
-        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any())).thenReturn("- 项目记忆命中");
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any(), any())).thenReturn("- 项目记忆命中");
         when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
         when(hermesGatewayService.createChatCompletion(eq(prompt), any()))
                 .thenReturn(new HermesGatewayService.HermesGatewayResult("resp-1", "完整回答内容"));
@@ -156,6 +156,7 @@ class HermesChatServiceTests {
         assertThat(response.scopeKey()).isEqualTo("test:hermes:project:12:user:5:conversation:conversation-1");
         assertThat(response.content()).isEqualTo("完整回答内容");
         verify(hermesConversationSessionService).recordSuccess(eq(session), any(HermesChatRequest.class), eq(finalState), eq("完整回答内容"), any(), eq(List.of()));
+        verify(hermesHindsightMemoryService).retainConversationTurnAsync(eq(currentUser), eq(session), eq(context), any(HermesChatRequest.class), eq("完整回答内容"), eq(finalState));
     }
 
     /**
@@ -222,7 +223,7 @@ class HermesChatServiceTests {
         when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(selectedGrounding);
         when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), eq(selectedGrounding), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
-        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any())).thenReturn("");
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any(), any())).thenReturn("");
         when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
         when(hermesGatewayService.createChatCompletion(eq(prompt), any()))
                 .thenReturn(new HermesGatewayService.HermesGatewayResult("resp-2", "已基于你确认的对象继续分析"));
@@ -279,7 +280,7 @@ class HermesChatServiceTests {
         when(hermesMcpSessionTokenService.issueToken(any(), any(), any())).thenReturn("session-token");
         when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
-        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any())).thenReturn("");
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any(), any())).thenReturn("");
         when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
         when(hermesGatewayService.createChatCompletion(eq(prompt), any()))
                 .thenReturn(new HermesGatewayService.HermesGatewayResult("resp-3", "ok"));
@@ -343,7 +344,7 @@ class HermesChatServiceTests {
         when(hermesMcpSessionTokenService.issueToken(any(), any(), any())).thenReturn("session-token");
         when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
-        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any())).thenReturn("");
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any(), any())).thenReturn("");
         when(hermesAttachmentService.uploadAndConvert(any())).thenReturn(List.of(attachment));
         when(hermesAttachmentService.buildPreparedAttachmentContextMarkdown(List.of(attachment))).thenReturn("""
                 ## 本轮上传附件
@@ -427,7 +428,7 @@ class HermesChatServiceTests {
         when(hermesMcpSessionTokenService.issueToken(any(), any(), any())).thenReturn("session-token");
         when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
-        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any())).thenReturn("");
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any(), any())).thenReturn("");
         when(hermesAttachmentService.findRecentAttachments(10L)).thenReturn(List.of(recentAttachment));
         when(hermesAttachmentService.buildAttachmentContextMarkdown(List.of(recentAttachment))).thenReturn("""
                 ## 最近一轮可用附件
