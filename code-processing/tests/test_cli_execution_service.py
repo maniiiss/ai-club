@@ -145,6 +145,28 @@ class CliExecutionServiceTests(unittest.TestCase):
                     patch("app.services.cli_execution_service.codex_service._current_head_commit", side_effect=["base-sha", "head-sha"]), \
                     patch("app.services.cli_execution_service.codex_service._collect_changed_files", return_value=["src/App.vue"]), \
                     patch("app.services.cli_execution_service.codex_service._current_branch", return_value="codex/execution-99-1001-1"), \
+                    patch("app.services.cli_execution_service.codex_service._build_change_review_payload", return_value={
+                        "baseCommit": "base-sha",
+                        "currentCommit": "head-sha",
+                        "workBranch": "codex/execution-99-1001-1",
+                        "fileCount": 1,
+                        "additions": 4,
+                        "deletions": 1,
+                        "truncated": False,
+                        "files": [
+                            {
+                                "oldPath": "src/App.vue",
+                                "newPath": "src/App.vue",
+                                "displayPath": "src/App.vue",
+                                "changeType": "M",
+                                "additions": 4,
+                                "deletions": 1,
+                                "isBinary": False,
+                                "isTruncated": False,
+                                "unifiedDiff": "@@ -1 +1 @@",
+                            }
+                        ],
+                    }), \
                     patch("app.services.cli_execution_service.codex_service._normalize_implementation_payload", return_value={
                         "status": "SUCCESS",
                         "summary": "Claude 已完成开发",
@@ -152,6 +174,16 @@ class CliExecutionServiceTests(unittest.TestCase):
                         "commandsExecuted": ["npm run build"],
                         "log": "实现完成",
                         "displayMarkdown": "# 结果概览\n\nClaude 已完成开发",
+                        "changeReview": {
+                            "baseCommit": "base-sha",
+                            "currentCommit": "head-sha",
+                            "workBranch": "codex/execution-99-1001-1",
+                            "fileCount": 1,
+                            "additions": 4,
+                            "deletions": 1,
+                            "truncated": False,
+                            "files": [],
+                        },
                     }), \
                     patch("app.services.cli_execution_service._run_claude_implementation_cli", return_value=(
                         {"status": "SUCCESS", "summary": "Claude 已完成开发"},
@@ -165,6 +197,7 @@ class CliExecutionServiceTests(unittest.TestCase):
         self.assertEqual("SUCCESS", payload["status"])
         self.assertEqual("Claude 已完成开发", payload["summary"])
         self.assertIn("# 结果概览", payload["displayMarkdown"])
+        self.assertEqual(1, payload["changeReview"]["fileCount"])
         self.assertEqual(str(repo_dir), response.repoPath)
 
     def test_should_build_claude_implementation_prompt_as_markdown(self):

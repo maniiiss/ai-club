@@ -30,6 +30,27 @@
 
 ### project_gitlab_binding
 用于平台项目绑定 GitLab 仓库。
+- 补充 `product_main_branch` 字段，表示仓库级产品主线分支。
+
+### gitlab_product_branch
+用于维护某个绑定仓库下的产品分线定义。
+
+首版字段重点包括：
+- 产品线编码 / 名称
+- Git 分线分支名
+- 启用状态
+- 最近同步结果、最近同步时间、最近同步 MR 链接
+
+### gitlab_product_branch_sync_log
+用于记录“产品主线 -> 产品分线”的同步 MR 执行历史。
+
+首版会保留以下快照，避免分线删除后历史不可追：
+- 产品线编码 / 名称
+- 主线分支 / 分线分支
+- 主线 SHA / 分线 SHA
+- 同步结果、原因摘要
+- Merge Request IID / 标题 / 链接
+- 执行人用户 ID、执行时间
 
 ### gitlab_auto_merge_config
 用于自动合并策略：
@@ -45,6 +66,12 @@
 - `DELETE /api/gitlab/bindings/{id}`
 - `POST /api/gitlab/bindings/{id}/test`
 - `GET /api/gitlab/bindings/{id}/merge-requests`
+- `GET /api/gitlab/bindings/{id}/product-branches`
+- `POST /api/gitlab/bindings/{id}/product-branches`
+- `PUT /api/gitlab/bindings/{id}/product-branches/{branchId}`
+- `DELETE /api/gitlab/bindings/{id}/product-branches/{branchId}`
+- `GET /api/gitlab/bindings/{id}/product-branches/sync-logs`
+- `POST /api/gitlab/bindings/{id}/product-branches/sync-merge-requests`
 
 ### 自动合并中心
 - `GET /api/gitlab/auto-merge-configs`
@@ -67,6 +94,29 @@
 - 跳过存在冲突的 MR
 - 可选要求 Pipeline 成功后才执行
 - 支持 Squash / 删除源分支 / GitLab Auto Merge
+
+## 产品分支管理 v1
+
+首版产品分支管理采用“单主线、多分线”模型：
+
+- 每个 GitLab 绑定单独维护 1 条产品主线分支
+- 同一绑定下可以维护多条产品分线
+- 平台支持针对单条分线或一组分线批量创建“主线 -> 分线”的同步 MR
+- 同步动作必须使用当前登录用户的 GitLab OAuth 身份发起，不回退到项目级 token 冒充作者
+
+同步结果当前固定为 4 类：
+
+- `CREATED`：已创建新的同步 MR
+- `NO_CHANGE`：主线当前没有新增提交需要同步
+- `EXISTING_OPEN_MR`：同源同目标已存在开放同步 MR
+- `FAILED`：同步过程中出现校验或 GitLab 调用失败
+
+首版明确不包含：
+
+- 分线回流主线
+- 定时同步调度
+- 与现有自动合并策略的自动联动
+- 独立于仓库绑定之外的多主线或任意上下游图模型
 
 ## 建议的下一步
 

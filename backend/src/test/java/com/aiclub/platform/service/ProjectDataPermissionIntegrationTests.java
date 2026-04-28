@@ -484,6 +484,7 @@ class ProjectDataPermissionIntegrationTests {
                 "http://gitlab.example.com/api/v4",
                 "visible/project-j",
                 "main",
+                "main",
                 "[]",
                 "member-visible-token",
                 true
@@ -505,6 +506,7 @@ class ProjectDataPermissionIntegrationTests {
                 visibleProject.getId(),
                 "http://gitlab.example.com/api/v4",
                 "visible/project-j-outsider",
+                "main",
                 "main",
                 "[]",
                 "outsider-visible-token",

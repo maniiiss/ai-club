@@ -11,6 +11,7 @@ public record ProjectGitlabBindingSummary(
         String gitlabProjectPath,
         String gitlabProjectWebUrl,
         String defaultTargetBranch,
+        String productMainBranch,
         String testProfileJson,
         Boolean tokenConfigured,
         Boolean enabled,

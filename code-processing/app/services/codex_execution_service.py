@@ -1,3 +1,4 @@
+import difflib
 import json
 import os
 import re
@@ -36,6 +37,9 @@ SYNC_TIMEOUT_LIMIT_SECONDS = 300
 TERMINAL_RESULT_STATUSES = {"SUCCESS", "FAILED", "CANCELED"}
 PLAYWRIGHT_NPM_PACKAGE = "playwright@1.54.0"
 OFFICIAL_NPM_REGISTRY = "https://registry.npmjs.org/"
+CHANGE_REVIEW_MAX_FILES = 200
+CHANGE_REVIEW_MAX_DIFF_CHARS_PER_FILE = 20_000
+CHANGE_REVIEW_MAX_TOTAL_DIFF_CHARS = 120_000
 
 
 @dataclass(frozen=True)
@@ -66,6 +70,16 @@ class TestArtifactRecord:
     artifact_type: str
     title: str
     path: Path
+
+
+@dataclass(frozen=True)
+class GitStatusEntry:
+    """统一承接 git status 的文件状态，供变更列表和 diff 产物复用。"""
+
+    raw_status: str
+    status_code: str
+    old_path: str
+    new_path: str
 
 
 @dataclass(frozen=True)
@@ -249,6 +263,7 @@ def _execute_implementation_streaming(
     _append_log(workspace, f"开始开发实现：{repo_label}")
     batcher.emit("progress_changed", progress_percent=5, summary="正在准备开发工作区")
     batcher.flush()
+    base_commit = ""
     try:
         _clone_repository(request, workspace)
         batcher.emit("step_summary_updated", summary="仓库 clone 完成，开始准备工作分支")
@@ -265,7 +280,15 @@ def _execute_implementation_streaming(
         changed_files = _collect_changed_files(workspace)
         current_commit = _current_head_commit(workspace)
         work_branch = _current_branch(workspace)
-        payload = _normalize_implementation_payload(raw_output, changed_files, work_branch, base_commit, current_commit)
+        change_review = _build_change_review_payload(workspace, base_commit, current_commit, work_branch)
+        payload = _normalize_implementation_payload(
+            raw_output,
+            changed_files,
+            work_branch,
+            base_commit,
+            current_commit,
+            change_review=change_review,
+        )
         payload.pop("log", None)
         payload["stdoutPreview"] = tail_text(codex_stdout, 2000)
         payload["stderrPreview"] = tail_text(codex_stderr, 2000)
@@ -291,6 +314,12 @@ def _execute_implementation_streaming(
                 "summary": failure_summary,
                 "changedFiles": _collect_changed_files(workspace),
                 "commandsExecuted": [],
+                "changeReview": _build_change_review_payload(
+                    workspace,
+                    base_commit,
+                    _current_head_commit(workspace),
+                    _current_branch(workspace),
+                ),
             },
             "FAILED",
             failure_summary,
@@ -321,6 +350,7 @@ def _execute_test_streaming(
 def _execute_implementation(request: CodexExecutionRequest, workspace: DevelopmentExecutionWorkspace) -> dict[str, object]:
     _recreate_workspace(workspace)
     _append_log(workspace, f"开始开发实现：{request.repository.displayName or request.repository.projectPath or request.repository.repoUrl}")
+    base_commit = ""
     try:
         _clone_repository(request, workspace)
         _prepare_local_branch(request, workspace)
@@ -329,7 +359,15 @@ def _execute_implementation(request: CodexExecutionRequest, workspace: Developme
         changed_files = _collect_changed_files(workspace)
         current_commit = _current_head_commit(workspace)
         work_branch = _current_branch(workspace)
-        payload = _normalize_implementation_payload(raw_output, changed_files, work_branch, base_commit, current_commit)
+        change_review = _build_change_review_payload(workspace, base_commit, current_commit, work_branch)
+        payload = _normalize_implementation_payload(
+            raw_output,
+            changed_files,
+            work_branch,
+            base_commit,
+            current_commit,
+            change_review=change_review,
+        )
         if exit_code != 0:
             payload["status"] = "FAILED"
             payload["summary"] = _normalize_text(raw_output.get("summary")) or "Codex 执行失败"
@@ -343,6 +381,12 @@ def _execute_implementation(request: CodexExecutionRequest, workspace: Developme
             "changedFiles": _collect_changed_files(workspace),
             "commandsExecuted": [],
             "log": _read_text(workspace.log_file),
+            "changeReview": _build_change_review_payload(
+                workspace,
+                base_commit,
+                _current_head_commit(workspace),
+                _current_branch(workspace),
+            ),
         }
 
 
@@ -1733,6 +1777,8 @@ def _normalize_implementation_payload(
     work_branch: str,
     base_commit: str,
     current_commit: str,
+    *,
+    change_review: dict[str, object] | None = None,
 ) -> dict[str, object]:
     raw_status = _normalize_status(raw_output.get("status"), default="SUCCESS")
     normalized_summary = _normalize_text(raw_output.get("summary"))
@@ -1766,6 +1812,8 @@ def _normalize_implementation_payload(
     merge_request_url = _normalize_text(raw_output.get("mergeRequestUrl"))
     if merge_request_url:
         payload["mergeRequestUrl"] = merge_request_url
+    if isinstance(change_review, dict) and change_review:
+        payload["changeReview"] = change_review
     if not payload["summary"]:
         payload["summary"] = "开发实现已完成"
     return payload
@@ -1888,6 +1936,21 @@ def _schema_text_for_mode(mode: str) -> str:
                 "workBranch": {"type": ["string", "null"]},
                 "commitSha": {"type": ["string", "null"]},
                 "mergeRequestUrl": {"type": ["string", "null"]},
+                "changeReview": {
+                    "type": "object",
+                    "properties": {
+                        "baseCommit": {"type": "string"},
+                        "currentCommit": {"type": "string"},
+                        "workBranch": {"type": "string"},
+                        "fileCount": {"type": "integer"},
+                        "additions": {"type": "integer"},
+                        "deletions": {"type": "integer"},
+                        "truncated": {"type": "boolean"},
+                        "files": {"type": "array"},
+                    },
+                    "required": ["baseCommit", "currentCommit", "workBranch", "fileCount", "additions", "deletions", "truncated", "files"],
+                    "additionalProperties": False,
+                },
             },
             "required": [
                 "status",
@@ -1898,6 +1961,7 @@ def _schema_text_for_mode(mode: str) -> str:
                 "workBranch",
                 "commitSha",
                 "mergeRequestUrl",
+                "changeReview",
             ],
             "additionalProperties": False,
         },
@@ -2119,7 +2183,7 @@ def _run_git_workspace_command(
     return completed.returncode == 0
 
 
-def _collect_changed_files(workspace: DevelopmentExecutionWorkspace) -> list[str]:
+def _collect_git_status_entries(workspace: DevelopmentExecutionWorkspace) -> list[GitStatusEntry]:
     if not workspace.repo_dir.exists():
         return []
     completed = subprocess.run(
@@ -2133,18 +2197,284 @@ def _collect_changed_files(workspace: DevelopmentExecutionWorkspace) -> list[str
     )
     if completed.returncode != 0:
         return []
-    files: list[str] = []
+    entries: list[GitStatusEntry] = []
     for line in (completed.stdout or "").splitlines():
-        text = line.strip()
-        if not text:
+        raw_line = line.rstrip()
+        if not raw_line.strip():
             continue
-        path_text = text[3:] if len(text) > 3 else text
+        raw_status = raw_line[:2] if len(raw_line) >= 2 else raw_line.strip()
+        path_text = raw_line[3:] if len(raw_line) > 3 else raw_line.strip()
+        old_path = path_text
+        new_path = path_text
         if " -> " in path_text:
-            path_text = path_text.split(" -> ", 1)[1]
-        normalized = path_text.replace("\\", "/").strip()
+            old_path, new_path = path_text.split(" -> ", 1)
+        normalized_old_path = old_path.replace("\\", "/").strip()
+        normalized_new_path = new_path.replace("\\", "/").strip()
+        if raw_status == "??":
+            status_code = "??"
+        else:
+            status_code = raw_status[1] if len(raw_status) > 1 and raw_status[1] != " " else raw_status[:1]
+        if normalized_old_path or normalized_new_path:
+            entries.append(
+                GitStatusEntry(
+                    raw_status=raw_status.strip(),
+                    status_code=status_code.strip() or raw_status.strip() or "?",
+                    old_path=normalized_old_path,
+                    new_path=normalized_new_path,
+                )
+            )
+    return entries
+
+
+def _collect_changed_files(workspace: DevelopmentExecutionWorkspace) -> list[str]:
+    files: list[str] = []
+    for entry in _collect_git_status_entries(workspace):
+        normalized = entry.new_path or entry.old_path
         if normalized:
             files.append(normalized)
     return files
+
+
+def _build_change_review_payload(
+    workspace: DevelopmentExecutionWorkspace,
+    base_commit: str,
+    current_commit: str,
+    work_branch: str,
+) -> dict[str, object]:
+    status_entries = _collect_git_status_entries(workspace)
+    review_files = _build_tracked_change_review_files(workspace, base_commit)
+    review_files.extend(
+        _build_untracked_change_review_file(workspace, entry.new_path)
+        for entry in status_entries
+        if entry.status_code == "??" and entry.new_path
+    )
+    review_files = [item for item in review_files if item]
+
+    total_file_count = len(review_files)
+    total_additions = sum(int(item.get("additions") or 0) for item in review_files)
+    total_deletions = sum(int(item.get("deletions") or 0) for item in review_files)
+    files_for_display = review_files[:CHANGE_REVIEW_MAX_FILES]
+    overall_truncated = total_file_count > len(files_for_display)
+
+    remaining_budget = CHANGE_REVIEW_MAX_TOTAL_DIFF_CHARS
+    normalized_files: list[dict[str, object]] = []
+    for item in files_for_display:
+        normalized_item = dict(item)
+        unified_diff = _normalize_text(normalized_item.get("unifiedDiff"))
+        rendered_diff, diff_truncated, consumed_chars = _prepare_change_review_diff(
+            unified_diff,
+            display_path=_normalize_text(normalized_item.get("displayPath")) or _normalize_text(normalized_item.get("newPath")) or _normalize_text(normalized_item.get("oldPath")) or "未知文件",
+            is_binary=bool(normalized_item.get("isBinary")),
+            remaining_budget=remaining_budget,
+        )
+        normalized_item["unifiedDiff"] = rendered_diff
+        normalized_item["isTruncated"] = bool(normalized_item.get("isTruncated")) or diff_truncated
+        normalized_item["changeType"] = _normalize_text(normalized_item.get("changeType")) or "M"
+        normalized_item["displayPath"] = _normalize_text(normalized_item.get("displayPath")) or _resolve_change_review_display_path(
+            _normalize_text(normalized_item.get("oldPath")),
+            _normalize_text(normalized_item.get("newPath")),
+            _normalize_text(normalized_item.get("changeType")) or "M",
+        )
+        remaining_budget = max(0, remaining_budget - consumed_chars)
+        overall_truncated = overall_truncated or bool(normalized_item["isTruncated"])
+        normalized_files.append(normalized_item)
+
+    return {
+        "baseCommit": _normalize_text(base_commit),
+        "currentCommit": _normalize_text(current_commit),
+        "workBranch": _normalize_text(work_branch),
+        "fileCount": total_file_count,
+        "additions": total_additions,
+        "deletions": total_deletions,
+        "truncated": overall_truncated,
+        "files": normalized_files,
+    }
+
+
+def _build_tracked_change_review_files(
+    workspace: DevelopmentExecutionWorkspace,
+    base_commit: str,
+) -> list[dict[str, object]]:
+    if not workspace.repo_dir.exists() or not _normalize_text(base_commit):
+        return []
+    completed = subprocess.run(
+        ["git", "diff", "--find-renames", "--no-color", "--unified=3", base_commit, "--"],
+        cwd=workspace.repo_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
+    )
+    if completed.returncode != 0:
+        return []
+    chunks = _split_git_diff_chunks(completed.stdout or "")
+    return [_parse_tracked_change_review_chunk(chunk) for chunk in chunks if chunk]
+
+
+def _split_git_diff_chunks(diff_text: str) -> list[list[str]]:
+    chunks: list[list[str]] = []
+    current_chunk: list[str] = []
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git "):
+            if current_chunk:
+                chunks.append(current_chunk)
+            current_chunk = [line]
+            continue
+        if current_chunk:
+            current_chunk.append(line)
+    if current_chunk:
+        chunks.append(current_chunk)
+    return chunks
+
+
+def _parse_tracked_change_review_chunk(chunk_lines: list[str]) -> dict[str, object]:
+    old_path, new_path = _parse_git_diff_path_pair(chunk_lines[0] if chunk_lines else "")
+    rename_from = _find_prefixed_value(chunk_lines, "rename from ")
+    rename_to = _find_prefixed_value(chunk_lines, "rename to ")
+    if rename_from:
+        old_path = rename_from
+    if rename_to:
+        new_path = rename_to
+    is_binary = any(line.startswith("Binary files ") or line == "GIT binary patch" for line in chunk_lines)
+    if _find_prefixed_value(chunk_lines, "new file mode"):
+        change_type = "A"
+    elif _find_prefixed_value(chunk_lines, "deleted file mode"):
+        change_type = "D"
+    elif rename_from or rename_to or (old_path and new_path and old_path != new_path):
+        change_type = "R"
+    else:
+        change_type = "M"
+    additions, deletions = _count_change_review_stats(chunk_lines, is_binary=is_binary)
+    return {
+        "oldPath": old_path,
+        "newPath": new_path,
+        "displayPath": _resolve_change_review_display_path(old_path, new_path, change_type),
+        "changeType": change_type,
+        "additions": additions,
+        "deletions": deletions,
+        "isBinary": is_binary,
+        "isTruncated": False,
+        "unifiedDiff": "\n".join(chunk_lines).strip(),
+    }
+
+
+def _build_untracked_change_review_file(
+    workspace: DevelopmentExecutionWorkspace,
+    relative_path: str,
+) -> dict[str, object] | None:
+    normalized_path = _normalize_text(relative_path).replace("\\", "/")
+    if not normalized_path:
+        return None
+    file_path = workspace.repo_dir / Path(normalized_path)
+    if not file_path.exists() or not file_path.is_file():
+        return None
+    file_bytes = file_path.read_bytes()
+    is_binary = _is_binary_file_content(file_bytes)
+    if is_binary:
+        unified_diff = f"二进制文件 {normalized_path} 无法以内联 Diff 预览，请下载或在本地仓库中查看。"
+        additions = 0
+        deletions = 0
+    else:
+        text = file_bytes.decode("utf-8", errors="replace")
+        lines = text.splitlines(keepends=True)
+        diff_lines = list(
+            difflib.unified_diff(
+                [],
+                lines,
+                fromfile="/dev/null",
+                tofile=f"b/{normalized_path}",
+                lineterm="",
+            )
+        )
+        unified_diff = "\n".join(diff_lines).strip()
+        additions = len(text.splitlines())
+        deletions = 0
+    return {
+        "oldPath": "",
+        "newPath": normalized_path,
+        "displayPath": normalized_path,
+        "changeType": "A",
+        "additions": additions,
+        "deletions": deletions,
+        "isBinary": is_binary,
+        "isTruncated": False,
+        "unifiedDiff": unified_diff,
+    }
+
+
+def _prepare_change_review_diff(
+    unified_diff: str,
+    *,
+    display_path: str,
+    is_binary: bool,
+    remaining_budget: int,
+) -> tuple[str, bool, int]:
+    normalized_diff = unified_diff.strip()
+    if is_binary:
+        rendered = f"二进制文件 {display_path} 无法以内联 Diff 预览，请下载或在本地仓库中查看。"
+        return rendered, False, len(rendered)
+    if not normalized_diff:
+        return f"文件 {display_path} 当前没有可展示的文本 Diff。", False, 0
+    if remaining_budget <= 0:
+        placeholder = f"文件 {display_path} 的 Diff 超出本次预览预算，已省略，请下载完整产物或在本地仓库中查看。"
+        return placeholder, True, len(placeholder)
+    limit = min(CHANGE_REVIEW_MAX_DIFF_CHARS_PER_FILE, remaining_budget)
+    if len(normalized_diff) <= limit:
+        return normalized_diff, False, len(normalized_diff)
+    suffix = "\n\n... Diff 内容过长，平台已截断预览，请下载完整产物或在本地仓库中查看。"
+    safe_limit = max(0, limit - len(suffix))
+    truncated = normalized_diff[:safe_limit].rstrip()
+    rendered = f"{truncated}{suffix}".strip()
+    return rendered, True, len(rendered)
+
+
+def _parse_git_diff_path_pair(header_line: str) -> tuple[str, str]:
+    normalized = header_line.strip()
+    prefix = "diff --git a/"
+    if not normalized.startswith(prefix):
+        return "", ""
+    remaining = normalized[len(prefix):]
+    if " b/" not in remaining:
+        return remaining.strip('"'), remaining.strip('"')
+    old_path, new_path = remaining.split(" b/", 1)
+    return old_path.strip('"'), new_path.strip('"')
+
+
+def _find_prefixed_value(lines: list[str], prefix: str) -> str:
+    for line in lines:
+        if line.startswith(prefix):
+            return line[len(prefix):].strip().strip('"')
+    return ""
+
+
+def _count_change_review_stats(chunk_lines: list[str], *, is_binary: bool) -> tuple[int, int]:
+    if is_binary:
+        return 0, 0
+    additions = 0
+    deletions = 0
+    for line in chunk_lines:
+        if line.startswith("+++ ") or line.startswith("--- ") or line.startswith("@@"):
+            continue
+        if line.startswith("+"):
+            additions += 1
+        elif line.startswith("-"):
+            deletions += 1
+    return additions, deletions
+
+
+def _resolve_change_review_display_path(old_path: str, new_path: str, change_type: str) -> str:
+    normalized_old_path = _normalize_text(old_path).replace("\\", "/")
+    normalized_new_path = _normalize_text(new_path).replace("\\", "/")
+    if change_type == "R" and normalized_old_path and normalized_new_path:
+        return f"{normalized_old_path} -> {normalized_new_path}"
+    if change_type == "D":
+        return normalized_old_path or normalized_new_path
+    return normalized_new_path or normalized_old_path
+
+
+def _is_binary_file_content(file_bytes: bytes) -> bool:
+    return b"\x00" in file_bytes
 
 
 def _current_head_commit(workspace: DevelopmentExecutionWorkspace) -> str:

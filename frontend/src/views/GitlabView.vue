@@ -8,6 +8,7 @@
               <div class="management-list-toolbar-main">
                 <div class="gitlab-tab-switcher" role="tablist" aria-label="GitLab 页面切换">
                   <button class="gitlab-tab-button" :class="{ active: activeTab === 'bindings' }" type="button" @click="activeTab = 'bindings'">项目绑定</button>
+                  <button class="gitlab-tab-button" :class="{ active: activeTab === 'productBranches' }" type="button" @click="activeTab = 'productBranches'">产品分支</button>
                   <button class="gitlab-tab-button" :class="{ active: activeTab === 'autoMerge' }" type="button" @click="activeTab = 'autoMerge'">自动合并中心</button>
                   <button class="gitlab-tab-button" :class="{ active: activeTab === 'logs' }" type="button" @click="activeTab = 'logs'">自动合并日志</button>
                 </div>
@@ -267,12 +268,227 @@
           </div>
       </el-tab-pane>
 
+      <el-tab-pane label="产品分支" name="productBranches">
+        <div class="management-list-page gitlab-list-page">
+          <section class="management-list-toolbar">
+            <div class="management-list-toolbar-main">
+              <div class="gitlab-tab-switcher" role="tablist" aria-label="GitLab 页面切换">
+                <button class="gitlab-tab-button" :class="{ active: activeTab === 'bindings' }" type="button" @click="activeTab = 'bindings'">项目绑定</button>
+                <button class="gitlab-tab-button" :class="{ active: activeTab === 'productBranches' }" type="button" @click="activeTab = 'productBranches'">产品分支</button>
+                <button class="gitlab-tab-button" :class="{ active: activeTab === 'autoMerge' }" type="button" @click="activeTab = 'autoMerge'">自动合并中心</button>
+                <button class="gitlab-tab-button" :class="{ active: activeTab === 'logs' }" type="button" @click="activeTab = 'logs'">自动合并日志</button>
+              </div>
+              <span class="management-list-toolbar-divider" aria-hidden="true"></span>
+              <el-select v-model="currentProductBindingId" placeholder="请选择 GitLab 绑定" style="width: 360px" @change="handleProductBindingChange">
+                <el-option
+                  v-for="binding in bindingOptions"
+                  :key="binding.id"
+                  :label="`${binding.projectName} / ${binding.gitlabProjectPath || binding.gitlabProjectRef}`"
+                  :value="binding.id"
+                />
+              </el-select>
+              <span class="management-list-toolbar-divider" aria-hidden="true"></span>
+              <div class="gitlab-meta-stack" v-if="currentProductBinding">
+                <span>产品主线：{{ currentProductBinding.productMainBranch || '未配置' }}</span>
+                <span>默认目标分支：{{ currentProductBinding.defaultTargetBranch || '-' }}</span>
+              </div>
+            </div>
+            <div class="management-list-toolbar-side">
+              <button class="management-list-toolbar-button" type="button" @click="openProductBranchSyncLogs" :disabled="!currentProductBindingId">
+                <el-icon><DocumentCopy /></el-icon>
+                <span>同步日志</span>
+              </button>
+              <button class="management-list-toolbar-button" type="button" @click="openProductBranchSyncDialog()" :disabled="!canManageProductBranches || !selectedProductBranchIds.length">
+                <el-icon><Connection /></el-icon>
+                <span>批量同步</span>
+              </button>
+              <button class="management-list-create-button" type="button" @click="openProductBranchCreateDialog" :disabled="!currentProductBindingId">
+                <el-icon><Plus /></el-icon>
+                <span>新增分支</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="management-list-shell">
+            <div v-if="currentProductBinding && !currentProductBinding.productMainBranch" class="mobile-entity-empty-state gitlab-product-empty">
+              <el-empty description="当前绑定尚未配置产品主线分支">
+                <el-button type="primary" @click="openBindingEditDialog(currentProductBinding)">去配置主线</el-button>
+              </el-empty>
+            </div>
+
+            <div v-else class="management-list-table-scroll mobile-card-scroll" v-loading="productBranchLoading">
+              <template v-if="!isMobileViewport">
+                <table class="management-list-table gitlab-product-branch-table mobile-card-table">
+                  <colgroup>
+                    <col class="gitlab-product-col-select" />
+                    <col class="gitlab-product-col-main" />
+                    <col class="gitlab-product-col-branch" />
+                    <col class="gitlab-product-col-status" />
+                    <col class="gitlab-product-col-mr" />
+                    <col class="gitlab-product-col-enabled" />
+                    <col class="gitlab-product-col-actions" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th class="center">
+                        <el-checkbox
+                          :model-value="selectedProductBranchIds.length > 0 && selectedProductBranchIds.length === enabledProductBranches.length"
+                          :indeterminate="selectedProductBranchIds.length > 0 && selectedProductBranchIds.length < enabledProductBranches.length"
+                          @change="selectedProductBranchIds = $event ? enabledProductBranches.map((item) => item.id) : []"
+                        />
+                      </th>
+                      <th>产品线</th>
+                      <th>Git 分支</th>
+                      <th>同步状态</th>
+                      <th>开放 MR</th>
+                      <th class="center">启用</th>
+                      <th class="right">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-if="!productBranchList.length">
+                      <td colspan="7" class="gitlab-empty-row">暂无产品分支</td>
+                    </tr>
+                    <tr v-for="row in productBranchList" :key="row.id" class="management-list-row">
+                      <td class="center gitlab-product-col-select">
+                        <el-checkbox
+                          :model-value="selectedProductBranchIds.includes(row.id)"
+                          :disabled="!row.enabled"
+                          @change="(checked: boolean) => selectedProductBranchIds = checked ? [...new Set([...selectedProductBranchIds, row.id])] : selectedProductBranchIds.filter((id) => id !== row.id)"
+                        />
+                      </td>
+                      <td class="gitlab-product-col-main">
+                        <div class="management-list-title-cell">
+                          <span class="management-list-title-icon"><el-icon><FolderOpened /></el-icon></span>
+                          <div class="management-list-title-copy">
+                            <div class="management-list-title">{{ row.lineName }}</div>
+                            <div class="management-list-subtitle">{{ row.lineCode }}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td class="gitlab-product-col-branch">
+                        <div class="gitlab-meta-stack">
+                          <span>分线：{{ row.branchName }}</span>
+                          <span>落后提交：{{ row.behindCount }}</span>
+                          <span>{{ row.hasDiffWithMainline ? '主线有待同步变更' : '已与主线对齐' }}</span>
+                        </div>
+                      </td>
+                      <td class="gitlab-product-col-status">
+                        <div class="gitlab-meta-stack">
+                          <span class="management-list-pill" :class="runStatusType(row.lastSyncStatus)">{{ productBranchSyncResultText(row.lastSyncStatus) }}</span>
+                          <span class="gitlab-meta-note">上次：{{ formatDateTimeText(row.lastSyncAt) }}</span>
+                          <span class="gitlab-meta-note">{{ row.lastSyncMessage || '暂无同步记录' }}</span>
+                        </div>
+                      </td>
+                      <td class="gitlab-product-col-mr">
+                        <div class="gitlab-meta-stack">
+                          <span>{{ row.hasOpenSyncMr ? `开放 MR：!${row.openSyncMergeRequestIid}` : '无开放同步 MR' }}</span>
+                          <a v-if="row.openSyncMergeRequestWebUrl" class="management-list-link" :href="row.openSyncMergeRequestWebUrl" target="_blank" rel="noreferrer">打开 MR</a>
+                          <a v-else-if="row.lastSyncMrUrl" class="management-list-link" :href="row.lastSyncMrUrl" target="_blank" rel="noreferrer">最近同步 MR</a>
+                          <span v-else class="management-list-empty">-</span>
+                        </div>
+                      </td>
+                      <td class="center gitlab-product-col-enabled">
+                        <span class="management-list-pill" :class="row.enabled ? 'success' : 'neutral'">{{ row.enabled ? '启用' : '停用' }}</span>
+                      </td>
+                      <td class="right gitlab-product-col-actions">
+                        <div class="management-list-row-actions">
+                          <el-tooltip content="同步主线" placement="top">
+                            <button class="management-list-row-button gitlab-action-button run" type="button" :disabled="!currentProductBinding?.productMainBranch || !row.enabled" @click="openProductBranchSyncDialog([row.id])">
+                              <el-icon><Connection /></el-icon>
+                            </button>
+                          </el-tooltip>
+                          <el-tooltip content="编辑分线" placement="top">
+                            <button class="management-list-row-button gitlab-action-button" type="button" @click="openProductBranchEditDialog(row)">
+                              <el-icon><EditPen /></el-icon>
+                            </button>
+                          </el-tooltip>
+                          <el-tooltip content="删除分线" placement="top">
+                            <button class="management-list-row-button gitlab-action-button danger" type="button" @click="handleProductBranchDelete(row)">
+                              <el-icon><Delete /></el-icon>
+                            </button>
+                          </el-tooltip>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </template>
+              <template v-else>
+                <div v-if="productBranchList.length" class="mobile-entity-list-shell">
+                  <div class="mobile-entity-list">
+                    <article v-for="row in productBranchList" :key="row.id" class="mobile-entity-card">
+                      <header class="mobile-entity-card-header">
+                        <div class="mobile-entity-header-static">
+                          <span class="mobile-entity-icon"><el-icon><FolderOpened /></el-icon></span>
+                          <span class="mobile-entity-copy">
+                            <span class="mobile-entity-title">{{ row.lineName }}</span>
+                            <span class="mobile-entity-description">{{ row.lineCode }}</span>
+                          </span>
+                        </div>
+                      </header>
+                      <div class="mobile-entity-fields">
+                        <div class="mobile-entity-field">
+                          <span class="mobile-entity-field-label">分支</span>
+                          <div class="mobile-entity-field-content">
+                            <span class="mobile-entity-empty-text">{{ row.branchName }}</span>
+                          </div>
+                        </div>
+                        <div class="mobile-entity-field">
+                          <span class="mobile-entity-field-label">落后</span>
+                          <div class="mobile-entity-field-content">
+                            <span class="mobile-entity-empty-text">{{ row.behindCount }} 个提交</span>
+                          </div>
+                        </div>
+                        <div class="mobile-entity-field">
+                          <span class="mobile-entity-field-label">启用</span>
+                          <div class="mobile-entity-field-content">
+                            <span class="management-list-pill" :class="row.enabled ? 'success' : 'neutral'">{{ row.enabled ? '启用' : '停用' }}</span>
+                          </div>
+                        </div>
+                        <div class="mobile-entity-field mobile-entity-field-full">
+                          <span class="mobile-entity-field-label">同步</span>
+                          <div class="mobile-entity-field-content">
+                            <div class="mobile-entity-meta-stack">
+                              <span class="mobile-entity-empty-text">{{ productBranchSyncResultText(row.lastSyncStatus) }}</span>
+                              <span class="mobile-entity-empty-text">{{ row.lastSyncMessage || '暂无同步记录' }}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <footer class="mobile-entity-actions">
+                        <button class="mobile-entity-action-button info" type="button" @click="openProductBranchSyncDialog([row.id])" :disabled="!currentProductBinding?.productMainBranch || !row.enabled">
+                          <el-icon><Connection /></el-icon>
+                          <span>同步主线</span>
+                        </button>
+                        <button class="mobile-entity-action-button" type="button" @click="openProductBranchEditDialog(row)">
+                          <el-icon><EditPen /></el-icon>
+                          <span>编辑</span>
+                        </button>
+                        <button class="mobile-entity-action-button danger" type="button" @click="handleProductBranchDelete(row)">
+                          <el-icon><Delete /></el-icon>
+                          <span>删除</span>
+                        </button>
+                      </footer>
+                    </article>
+                  </div>
+                </div>
+                <div v-else class="mobile-entity-empty-state">
+                  <el-empty description="暂无产品分支" />
+                </div>
+              </template>
+            </div>
+          </section>
+        </div>
+      </el-tab-pane>
+
       <el-tab-pane label="自动合并中心" name="autoMerge">
         <div class="management-list-page gitlab-list-page">
           <section class="management-list-toolbar">
             <div class="management-list-toolbar-main">
               <div class="gitlab-tab-switcher" role="tablist" aria-label="GitLab 页面切换">
                 <button class="gitlab-tab-button" :class="{ active: activeTab === 'bindings' }" type="button" @click="activeTab = 'bindings'">项目绑定</button>
+                <button class="gitlab-tab-button" :class="{ active: activeTab === 'productBranches' }" type="button" @click="activeTab = 'productBranches'">产品分支</button>
                 <button class="gitlab-tab-button" :class="{ active: activeTab === 'autoMerge' }" type="button" @click="activeTab = 'autoMerge'">自动合并中心</button>
                 <button class="gitlab-tab-button" :class="{ active: activeTab === 'logs' }" type="button" @click="activeTab = 'logs'">自动合并日志</button>
               </div>
@@ -546,6 +762,7 @@
               <div class="management-list-toolbar-main">
                 <div class="gitlab-tab-switcher" role="tablist" aria-label="GitLab 页面切换">
                   <button class="gitlab-tab-button" :class="{ active: activeTab === 'bindings' }" type="button" @click="activeTab = 'bindings'">项目绑定</button>
+                  <button class="gitlab-tab-button" :class="{ active: activeTab === 'productBranches' }" type="button" @click="activeTab = 'productBranches'">产品分支</button>
                   <button class="gitlab-tab-button" :class="{ active: activeTab === 'autoMerge' }" type="button" @click="activeTab = 'autoMerge'">自动合并中心</button>
                   <button class="gitlab-tab-button" :class="{ active: activeTab === 'logs' }" type="button" @click="activeTab = 'logs'">自动合并日志</button>
                 </div>
@@ -775,6 +992,7 @@
         <el-form-item label="GitLab API" prop="apiBaseUrl"><el-input v-model="bindingForm.apiBaseUrl" /></el-form-item>
         <el-form-item label="项目 ID / 路径" prop="gitlabProjectRef"><el-input v-model="bindingForm.gitlabProjectRef" /></el-form-item>
         <el-form-item label="默认目标分支"><el-input v-model="bindingForm.defaultTargetBranch" /></el-form-item>
+        <el-form-item label="产品主线分支"><el-input v-model="bindingForm.productMainBranch" placeholder="例如：main" /></el-form-item>
         <el-form-item label="APIToken"><el-input v-model="bindingForm.apiToken" type="password" show-password :placeholder="bindingIsEditing ? '留空则保留原 Token' : '请输入 APIToken'" /></el-form-item>
         <el-form-item label="启用"><el-switch v-model="bindingForm.enabled" /></el-form-item>
       </section>
@@ -1140,6 +1358,112 @@
     </template>
   </el-dialog>
 
+  <el-dialog v-model="productBranchDialogVisible" :title="productBranchDialogTitle" width="680px" class="platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader :title="productBranchDialogTitle" :subtitle="productBranchDialogSubtitle" :icon="FolderOpened" />
+    </template>
+    <el-form ref="productBranchFormRef" :model="productBranchForm" :rules="productBranchRules" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">分线信息</div>
+          <div class="platform-form-section-subtitle">维护产品线编码、名称和对应的 Git 分支。</div>
+        </div>
+        <el-form-item label="当前绑定">
+          <el-input :model-value="currentProductBinding ? `${currentProductBinding.projectName} / ${currentProductBinding.gitlabProjectPath || currentProductBinding.gitlabProjectRef}` : ''" disabled />
+          <div class="form-tip">产品主线：{{ currentProductBinding?.productMainBranch || '未配置' }}</div>
+        </el-form-item>
+        <el-form-item label="产品线编码" prop="lineCode">
+          <el-input v-model="productBranchForm.lineCode" placeholder="例如：line-a" />
+        </el-form-item>
+        <el-form-item label="产品线名称" prop="lineName">
+          <el-input v-model="productBranchForm.lineName" placeholder="例如：A 产品线" />
+        </el-form-item>
+        <el-form-item label="分线分支" prop="branchName">
+          <el-input v-model="productBranchForm.branchName" placeholder="例如：release/a" />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="productBranchForm.enabled" />
+        </el-form-item>
+      </section>
+    </el-form>
+    <template #footer>
+      <div class="platform-dialog-footer">
+        <el-button @click="productBranchDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="productBranchSubmitting" @click="handleProductBranchSubmit">保存</el-button>
+      </div>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="productBranchSyncDialogVisible" title="批量同步主线到分线" width="720px" class="platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader title="批量同步主线到分线" subtitle="系统会按所选产品分线创建主线同步 MR，并返回逐条结果。" :icon="Connection" />
+    </template>
+    <section class="platform-form-section">
+      <div class="platform-form-section-head">
+        <div class="platform-form-section-title">同步范围</div>
+        <div class="platform-form-section-subtitle">本次同步会以当前绑定的产品主线为源分支。</div>
+      </div>
+      <el-descriptions :column="2" border>
+        <el-descriptions-item label="当前绑定">{{ currentProductBinding ? `${currentProductBinding.projectName} / ${currentProductBinding.gitlabProjectPath || currentProductBinding.gitlabProjectRef}` : '-' }}</el-descriptions-item>
+        <el-descriptions-item label="产品主线">{{ currentProductBinding?.productMainBranch || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="目标分线数">{{ selectedProductBranchIds.length }}</el-descriptions-item>
+        <el-descriptions-item label="目标列表">
+          {{ productBranchList.filter((item) => selectedProductBranchIds.includes(item.id)).map((item) => item.lineName).join('、') || '-' }}
+        </el-descriptions-item>
+      </el-descriptions>
+    </section>
+    <template #footer>
+      <div class="platform-dialog-footer">
+        <el-button @click="productBranchSyncDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="productBranchSyncSubmitting" @click="handleProductBranchSyncSubmit">创建同步 MR</el-button>
+      </div>
+    </template>
+  </el-dialog>
+
+  <el-drawer v-model="productBranchSyncLogsVisible" title="产品分支同步日志" size="56%" append-to-body>
+    <el-table :data="productBranchSyncLogs" v-loading="productBranchSyncLogsLoading" style="width: 100%">
+      <el-table-column prop="executedAt" label="执行时间" width="160" />
+      <el-table-column prop="lineName" label="产品线" width="140" />
+      <el-table-column prop="sourceBranchName" label="主线" width="120" />
+      <el-table-column prop="targetBranchName" label="分线" width="140" />
+      <el-table-column prop="result" label="结果" width="150" />
+      <el-table-column prop="reason" label="摘要" min-width="220" show-overflow-tooltip />
+      <el-table-column label="MR" width="90">
+        <template #default="{ row }">
+          <el-link v-if="row.mergeRequestWebUrl" :href="row.mergeRequestWebUrl" target="_blank" type="primary">打开</el-link>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+    </el-table>
+  </el-drawer>
+
+  <el-dialog v-model="productBranchSyncRunResultVisible" title="主线同步结果" width="760px">
+    <el-descriptions v-if="productBranchSyncRunResult" :column="4" border>
+      <el-descriptions-item label="平台项目">{{ productBranchSyncRunResult.projectName }}</el-descriptions-item>
+      <el-descriptions-item label="产品主线">{{ productBranchSyncRunResult.sourceBranchName }}</el-descriptions-item>
+      <el-descriptions-item label="目标数">{{ productBranchSyncRunResult.targetCount }}</el-descriptions-item>
+      <el-descriptions-item label="创建 / 无变更">{{ productBranchSyncRunResult.createdCount }} / {{ productBranchSyncRunResult.noChangeCount }}</el-descriptions-item>
+      <el-descriptions-item label="已存在 MR / 失败" :span="2">{{ productBranchSyncRunResult.existingOpenMrCount }} / {{ productBranchSyncRunResult.failedCount }}</el-descriptions-item>
+    </el-descriptions>
+    <el-table v-if="productBranchSyncRunResult" :data="productBranchSyncRunResult.items" style="width: 100%; margin-top: 16px">
+      <el-table-column prop="lineName" label="产品线" width="140" />
+      <el-table-column prop="targetBranchName" label="目标分线" width="140" />
+      <el-table-column label="结果" width="150">
+        <template #default="{ row }">
+          {{ productBranchSyncResultText(row.result) }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="behindCount" label="落后提交" width="100" />
+      <el-table-column prop="message" label="结果说明" min-width="240" show-overflow-tooltip />
+      <el-table-column label="MR" width="90">
+        <template #default="{ row }">
+          <el-link v-if="row.mergeRequestWebUrl" :href="row.mergeRequestWebUrl" target="_blank" type="primary">打开</el-link>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+    </el-table>
+  </el-dialog>
+
   <el-drawer v-model="mergeRequestDrawerVisible" :title="mergeRequestDrawerTitle" size="60%" append-to-body>
     <el-table :data="mergeRequestList" v-loading="mergeRequestLoading" style="width: 100%">
       <el-table-column prop="iid" label="IID" width="80" />
@@ -1226,11 +1550,16 @@ import {
   createGitlabAutoMergeConfig,
   createGitlabBindingScanTask,
   createGitlabBinding,
+  createGitlabProductBranch,
+  createGitlabProductBranchSyncMergeRequests,
   createGitlabTag,
   deleteGitlabAutoMergeConfig,
   deleteGitlabBinding,
+  deleteGitlabProductBranch,
   listGitlabBindingOptions,
   listGitlabBranches,
+  listGitlabProductBranches,
+  listGitlabProductBranchSyncLogs,
   listRepositoryScanRulesets,
   pageGitlabAutoMergeConfigs,
   pageGitlabAutoMergeLogs,
@@ -1241,7 +1570,8 @@ import {
   testGitlabAutoMergeConfig,
   testGitlabBinding,
   updateGitlabAutoMergeConfig,
-  updateGitlabBinding
+  updateGitlabBinding,
+  updateGitlabProductBranch
 } from '@/api/gitlab'
 import type {
   AgentItem,
@@ -1250,6 +1580,9 @@ import type {
   GitlabAutoMergeRunResult,
   GitlabBranchItem,
   GitlabMergeRequestItem,
+  GitlabProductBranchItem,
+  GitlabProductBranchSyncLogItem,
+  GitlabProductBranchSyncRunResult,
   GitlabTagCreateResultItem,
   ProjectGitlabBindingItem,
   ProjectItem,
@@ -1269,6 +1602,7 @@ interface BindingForm {
   apiBaseUrl: string
   gitlabProjectRef: string
   defaultTargetBranch: string
+  productMainBranch: string
   apiToken: string
   enabled: boolean
   repoKind: BindingRepoKind
@@ -1286,6 +1620,7 @@ interface TagForm { tagName: string; branchName: string; message: string }
 /** 仓库规范扫描表单。 */
 interface ScanTaskForm { branch: string; rulesetCode: string; planAgentId: number | null }
 interface AutoMergeForm { name: string; executionMode: 'PROJECT_BOUND' | 'STANDALONE'; description: string; bindingId: number | null; apiBaseUrl: string; gitlabProjectRef: string; apiToken: string; sourceBranch: string; targetBranch: string; titleKeyword: string; schedulerEnabled: boolean; schedulerCron: string; enabled: boolean; autoMerge: boolean; squashOnMerge: boolean; removeSourceBranch: boolean; triggerPipelineAfterMerge: boolean; requirePipelineSuccess: boolean; reviewAgentId: number | null; aiReviewEnabled: boolean; aiReviewPrompt: string }
+interface ProductBranchForm { lineCode: string; lineName: string; branchName: string; enabled: boolean }
 
 const router = useRouter()
 const activeTab = ref('bindings')
@@ -1324,6 +1659,7 @@ const bindingForm = reactive<BindingForm>({
   apiBaseUrl: DEFAULT_GITLAB_API_URL,
   gitlabProjectRef: '',
   defaultTargetBranch: '',
+  productMainBranch: '',
   apiToken: '',
   enabled: true,
   repoKind: '',
@@ -1353,6 +1689,23 @@ const scanForm = reactive<ScanTaskForm>({ branch: '', rulesetCode: '', planAgent
 const scanBranchOptions = ref<GitlabBranchItem[]>([])
 const scanBranchLoading = ref(false)
 const scanRulesetOptions = ref<RepositoryScanRulesetItem[]>([])
+const productBranchLoading = ref(false)
+const currentProductBindingId = ref<number | null>(null)
+const productBranchList = ref<GitlabProductBranchItem[]>([])
+const productBranchDialogVisible = ref(false)
+const productBranchSubmitting = ref(false)
+const productBranchIsEditing = ref(false)
+const currentProductBranchId = ref<number | null>(null)
+const productBranchFormRef = ref<FormInstance>()
+const productBranchForm = reactive<ProductBranchForm>({ lineCode: '', lineName: '', branchName: '', enabled: true })
+const productBranchSyncDialogVisible = ref(false)
+const productBranchSyncSubmitting = ref(false)
+const selectedProductBranchIds = ref<number[]>([])
+const productBranchSyncLogsVisible = ref(false)
+const productBranchSyncLogsLoading = ref(false)
+const productBranchSyncLogs = ref<GitlabProductBranchSyncLogItem[]>([])
+const productBranchSyncRunResultVisible = ref(false)
+const productBranchSyncRunResult = ref<GitlabProductBranchSyncRunResult | null>(null)
 const autoMergeLoading = ref(false)
 const autoMergeSubmitting = ref(false)
 const autoMergeDialogVisible = ref(false)
@@ -1411,16 +1764,32 @@ const bindingRules: FormRules<BindingForm> = { projectId: [{ required: true, mes
 const tagRules: FormRules<TagForm> = { tagName: [{ required: true, message: '请输入 Tag 名称', trigger: 'blur' }], branchName: [{ required: true, message: '请选择来源分支', trigger: 'change' }] }
 const scanRules: FormRules<ScanTaskForm> = { branch: [{ required: true, message: '请选择扫描分支', trigger: 'change' }], rulesetCode: [{ required: true, message: '请选择规则集', trigger: 'change' }] }
 const autoMergeRules: FormRules<AutoMergeForm> = { name: [{ required: true, message: '请输入策略名称', trigger: 'blur' }], executionMode: [{ required: true, message: '请选择执行模式', trigger: 'change' }] }
+const productBranchRules: FormRules<ProductBranchForm> = {
+  lineCode: [{ required: true, message: '请输入产品线编码', trigger: 'blur' }],
+  lineName: [{ required: true, message: '请输入产品线名称', trigger: 'blur' }],
+  branchName: [{ required: true, message: '请输入 Git 分支名', trigger: 'blur' }]
+}
 const bindingDialogTitle = computed(() => bindingIsEditing.value ? '编辑 GitLab 绑定' : '新增 GitLab 绑定')
 const bindingDialogSubtitle = computed(() =>
   bindingIsEditing.value
     ? '调整平台项目与 GitLab 仓库的映射关系，并维护测试模板。'
     : '配置平台项目与 GitLab 仓库的基础映射信息，并可补充测试模板。'
 )
+const currentProductBinding = computed(() =>
+  bindingOptions.value.find((item) => item.id === currentProductBindingId.value) || null
+)
+const productBranchDialogTitle = computed(() => productBranchIsEditing.value ? '编辑产品分支' : '新增产品分支')
+const productBranchDialogSubtitle = computed(() =>
+  productBranchIsEditing.value
+    ? '调整该产品线对应的分线分支和启用状态。'
+    : '为当前仓库绑定新增一条产品分线定义。'
+)
 const tagDialogSubtitle = computed(() => '基于当前仓库分支创建新的 GitLab Tag。')
 const scanDialogSubtitle = computed(() => '选择扫描分支和规则集后，系统会在执行中心创建一条仓库规范扫描任务。')
 const showFrontendTestProfile = computed(() => ['FRONTEND', 'MIXED'].includes(bindingForm.repoKind))
 const showBackendTestProfile = computed(() => ['BACKEND', 'MIXED'].includes(bindingForm.repoKind))
+const canManageProductBranches = computed(() => !!currentProductBinding.value && !!currentProductBinding.value.productMainBranch)
+const enabledProductBranches = computed(() => productBranchList.value.filter((item) => item.enabled))
 
 const createBindingHttpCheck = (): BindingHttpCheckForm => ({
   name: '',
@@ -1536,6 +1905,12 @@ const bindingStatusType = (status?: string | null) => status === 'SUCCESS' ? 'su
 const runStatusType = (status?: string | null) => status === 'SUCCESS' ? 'success' : status === 'PARTIAL' || status === 'SKIPPED' ? 'warning' : status === 'FAILED' ? 'danger' : 'info'
 const logResultType = (result?: string | null) => result === 'MERGED' ? 'success' : result === 'FAILED' ? 'danger' : result === 'EMPTY' ? 'info' : 'warning'
 const logResultText = (result?: string | null) => result === 'MERGED' ? '已合并' : result === 'FAILED' ? '失败' : result === 'AI_REJECTED' ? 'AI 拒绝' : result === 'SKIPPED' ? '已跳过' : result === 'EMPTY' ? '空执行' : (result || '未知')
+const productBranchSyncResultText = (result?: string | null) =>
+  result === 'CREATED' ? '已创建同步 MR'
+    : result === 'NO_CHANGE' ? '无变更'
+      : result === 'EXISTING_OPEN_MR' ? '已有开放 MR'
+        : result === 'FAILED' ? '同步失败'
+          : (result || '未同步')
 const getMergeRequestBehindCount = (item: GitlabMergeRequestItem) => item.divergedCommitsCount ?? item.diverged_commits_count ?? 0
 const isMergeRequestBehind = (item: GitlabMergeRequestItem) => getMergeRequestBehindCount(item) > 0 || item.detailedMergeStatus === 'need_rebase'
 const mergeRequestBehindTagType = (item: GitlabMergeRequestItem) => isMergeRequestBehind(item) ? 'danger' : 'success'
@@ -1585,12 +1960,21 @@ const resetBindingForm = () => {
   bindingForm.apiBaseUrl = DEFAULT_GITLAB_API_URL
   bindingForm.gitlabProjectRef = ''
   bindingForm.defaultTargetBranch = ''
+  bindingForm.productMainBranch = ''
   bindingForm.apiToken = ''
   bindingForm.enabled = true
   resetBindingTestProfile()
   bindingFormRef.value?.clearValidate()
 }
 const resetTagForm = () => { currentTagBinding.value = null; tagForm.tagName = ''; tagForm.branchName = ''; tagForm.message = ''; tagBranchOptions.value = []; tagFormRef.value?.clearValidate() }
+const resetProductBranchForm = () => {
+  currentProductBranchId.value = null
+  productBranchForm.lineCode = ''
+  productBranchForm.lineName = ''
+  productBranchForm.branchName = ''
+  productBranchForm.enabled = true
+  productBranchFormRef.value?.clearValidate()
+}
 const resetAutoMergeForm = () => { currentAutoMergeId.value = null; autoMergeForm.name = ''; autoMergeForm.executionMode = 'PROJECT_BOUND'; autoMergeForm.description = ''; autoMergeForm.bindingId = bindingOptions.value[0]?.id ?? null; autoMergeForm.apiBaseUrl = DEFAULT_GITLAB_API_URL; autoMergeForm.gitlabProjectRef = ''; autoMergeForm.apiToken = ''; autoMergeForm.sourceBranch = ''; autoMergeForm.targetBranch = ''; autoMergeForm.titleKeyword = ''; autoMergeForm.schedulerEnabled = false; autoMergeForm.schedulerCron = '0 */5 * * * *'; autoMergeForm.enabled = true; autoMergeForm.autoMerge = true; autoMergeForm.squashOnMerge = false; autoMergeForm.removeSourceBranch = true; autoMergeForm.triggerPipelineAfterMerge = false; autoMergeForm.requirePipelineSuccess = true; autoMergeForm.reviewAgentId = reviewAgentOptions.value[0]?.id ?? null; autoMergeForm.aiReviewEnabled = false; autoMergeForm.aiReviewPrompt = ''; cronTemplate.value = ''; autoMergeFormRef.value?.clearValidate() }
 
 const loadBaseOptions = async () => {
@@ -1602,11 +1986,39 @@ const loadBaseOptions = async () => {
   if (!bindingForm.projectId && projectOptions.value.length > 0) bindingForm.projectId = projectOptions.value[0].id
   if (!autoMergeForm.bindingId && bindingOptions.value.length > 0) autoMergeForm.bindingId = bindingOptions.value[0].id
   if (!autoMergeForm.reviewAgentId && reviewAgentOptions.value.length > 0) autoMergeForm.reviewAgentId = reviewAgentOptions.value[0].id
+  if (!currentProductBindingId.value && bindingOptions.value.length > 0) currentProductBindingId.value = bindingOptions.value[0].id
+  if (currentProductBindingId.value && !bindingOptions.value.some((item) => item.id === currentProductBindingId.value)) {
+    currentProductBindingId.value = bindingOptions.value[0]?.id ?? null
+  }
 }
 const loadBindings = async () => { bindingLoading.value = true; try { const pageData = await pageGitlabBindings({ page: bindingRequestPage.value, size: bindingRequestSize.value, keyword: bindingFilters.keyword, projectId: bindingFilters.projectId }); bindingList.value = pageData.records; bindingPagination.total = pageData.total } finally { bindingLoading.value = false } }
+const loadProductBranches = async () => {
+  if (!currentProductBindingId.value) {
+    productBranchList.value = []
+    return
+  }
+  productBranchLoading.value = true
+  try {
+    productBranchList.value = await listGitlabProductBranches(currentProductBindingId.value)
+  } finally {
+    productBranchLoading.value = false
+  }
+}
+const loadProductBranchSyncLogs = async () => {
+  if (!currentProductBindingId.value) {
+    productBranchSyncLogs.value = []
+    return
+  }
+  productBranchSyncLogsLoading.value = true
+  try {
+    productBranchSyncLogs.value = await listGitlabProductBranchSyncLogs(currentProductBindingId.value)
+  } finally {
+    productBranchSyncLogsLoading.value = false
+  }
+}
 const loadAutoMergeConfigs = async () => { autoMergeLoading.value = true; try { const pageData = await pageGitlabAutoMergeConfigs({ page: autoMergeRequestPage.value, size: autoMergeRequestSize.value, keyword: autoMergeFilters.keyword, executionMode: autoMergeFilters.executionMode, enabled: autoMergeFilters.enabled }); autoMergeList.value = pageData.records; autoMergePagination.total = pageData.total } finally { autoMergeLoading.value = false } }
 const loadAutoMergeLogs = async () => { logLoading.value = true; try { const pageData = await pageGitlabAutoMergeLogs({ page: logRequestPage.value, size: logRequestSize.value, result: logFilters.result, triggerType: logFilters.triggerType }); logList.value = pageData.records; logPagination.total = pageData.total } finally { logLoading.value = false } }
-const refreshAll = async () => { await loadBaseOptions(); await Promise.all([loadBindings(), loadAutoMergeConfigs(), loadAutoMergeLogs()]) }
+const refreshAll = async () => { await loadBaseOptions(); await Promise.all([loadBindings(), loadProductBranches(), loadAutoMergeConfigs(), loadAutoMergeLogs()]) }
 
 const handleBindingSearch = async () => { bindingFilterPopoverVisible.value = false; resetBindingMobilePagination(); await loadBindings() }
 const handleBindingReset = async () => { bindingFilters.keyword = ''; bindingFilters.projectId = undefined; resetBindingMobilePagination(); await loadBindings() }
@@ -1623,6 +2035,10 @@ const handleLogReset = async () => { logFilters.result = undefined; logFilters.t
 const handleLogSizeChange = async () => { resetLogMobilePagination(); await loadAutoMergeLogs() }
 const handleLogPrevPage = async () => { if (logPagination.page <= 1) return; logPagination.page -= 1; await loadAutoMergeLogs() }
 const handleLogNextPage = async () => { if (logPagination.page >= logTotalPages.value) return; logPagination.page += 1; await loadAutoMergeLogs() }
+const handleProductBindingChange = async () => {
+  selectedProductBranchIds.value = []
+  await loadProductBranches()
+}
 const handleCronTemplateChange = (value: string) => { if (value) { autoMergeForm.schedulerEnabled = true; autoMergeForm.schedulerCron = value } }
 
 const resolveGitlabProjectUrl = (explicitUrl?: string | null, apiBaseUrl?: string | null, projectRef?: string | null) => {
@@ -1704,6 +2120,7 @@ const openBindingEditDialog = (row: ProjectGitlabBindingItem) => {
   bindingForm.apiBaseUrl = row.apiBaseUrl
   bindingForm.gitlabProjectRef = row.gitlabProjectPath || row.gitlabProjectRef
   bindingForm.defaultTargetBranch = row.defaultTargetBranch || ''
+  bindingForm.productMainBranch = row.productMainBranch || ''
   bindingForm.apiToken = ''
   bindingForm.enabled = row.enabled
   applyBindingTestProfile(row.testProfileJson)
@@ -1723,6 +2140,7 @@ const handleBindingSubmit = async () => {
       apiBaseUrl: bindingForm.apiBaseUrl.trim(),
       gitlabProjectRef: bindingForm.gitlabProjectRef.trim(),
       defaultTargetBranch: bindingForm.defaultTargetBranch.trim(),
+      productMainBranch: bindingForm.productMainBranch.trim(),
       apiToken: bindingForm.apiToken,
       enabled: bindingForm.enabled,
       testProfileJson: buildBindingTestProfileJson()
@@ -1799,6 +2217,115 @@ const handleScanSubmit = async () => {
   }
 }
 const openBindingMergeRequests = async (row: ProjectGitlabBindingItem) => { mergeRequestDrawerTitle.value = `绑定仓库 MR 预览 - ${row.projectName} / ${row.gitlabProjectPath || row.gitlabProjectRef}`; mergeRequestDrawerVisible.value = true; mergeRequestLoading.value = true; try { mergeRequestList.value = await previewBindingMergeRequests(row.id, row.defaultTargetBranch || undefined) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '加载 MR 失败') } finally { mergeRequestLoading.value = false } }
+
+const openProductBranchCreateDialog = () => {
+  if (!currentProductBinding.value) {
+    ElMessage.warning('请先选择一个 GitLab 绑定')
+    return
+  }
+  productBranchIsEditing.value = false
+  resetProductBranchForm()
+  productBranchDialogVisible.value = true
+}
+
+const openProductBranchEditDialog = (row: GitlabProductBranchItem) => {
+  productBranchIsEditing.value = true
+  currentProductBranchId.value = row.id
+  productBranchForm.lineCode = row.lineCode
+  productBranchForm.lineName = row.lineName
+  productBranchForm.branchName = row.branchName
+  productBranchForm.enabled = row.enabled
+  productBranchDialogVisible.value = true
+}
+
+const handleProductBranchSubmit = async () => {
+  const valid = await productBranchFormRef.value?.validate().catch(() => false)
+  if (!valid || !currentProductBindingId.value) return
+  productBranchSubmitting.value = true
+  try {
+    const payload = {
+      lineCode: productBranchForm.lineCode.trim(),
+      lineName: productBranchForm.lineName.trim(),
+      branchName: productBranchForm.branchName.trim(),
+      enabled: productBranchForm.enabled
+    }
+    if (productBranchIsEditing.value && currentProductBranchId.value !== null) {
+      await updateGitlabProductBranch(currentProductBindingId.value, currentProductBranchId.value, payload)
+      ElMessage.success('产品分支已更新')
+    } else {
+      await createGitlabProductBranch(currentProductBindingId.value, payload)
+      ElMessage.success('产品分支已创建')
+    }
+    productBranchDialogVisible.value = false
+    await loadProductBranches()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '保存产品分支失败')
+  } finally {
+    productBranchSubmitting.value = false
+  }
+}
+
+const handleProductBranchDelete = async (row: GitlabProductBranchItem) => {
+  if (!currentProductBindingId.value) return
+  try {
+    await ElMessageBox.confirm(`确认删除产品分支「${row.lineName}」吗？`, '提示', { type: 'warning' })
+    await deleteGitlabProductBranch(currentProductBindingId.value, row.id)
+    ElMessage.success('产品分支已删除')
+    selectedProductBranchIds.value = selectedProductBranchIds.value.filter((id) => id !== row.id)
+    await loadProductBranches()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || '删除产品分支失败')
+    }
+  }
+}
+
+const openProductBranchSyncDialog = (branchIds?: number[]) => {
+  if (!currentProductBinding.value) {
+    ElMessage.warning('请先选择一个 GitLab 绑定')
+    return
+  }
+  if (!currentProductBinding.value.productMainBranch) {
+    ElMessage.warning('请先在 GitLab 绑定中配置产品主线分支')
+    return
+  }
+  if (branchIds?.length) {
+    selectedProductBranchIds.value = [...branchIds]
+  }
+  if (!selectedProductBranchIds.value.length) {
+    ElMessage.warning('请至少选择一个产品分支')
+    return
+  }
+  productBranchSyncDialogVisible.value = true
+}
+
+const handleProductBranchSyncSubmit = async () => {
+  if (!currentProductBindingId.value || !selectedProductBranchIds.value.length) return
+  productBranchSyncSubmitting.value = true
+  try {
+    const result = await createGitlabProductBranchSyncMergeRequests(currentProductBindingId.value, {
+      productBranchIds: selectedProductBranchIds.value
+    })
+    productBranchSyncRunResult.value = result
+    productBranchSyncDialogVisible.value = false
+    productBranchSyncRunResultVisible.value = true
+    await Promise.all([loadProductBranches(), loadProductBranchSyncLogs()])
+    ElMessage.success(`同步完成：创建 ${result.createdCount}，无变更 ${result.noChangeCount}，已存在 ${result.existingOpenMrCount}，失败 ${result.failedCount}`)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '创建同步 MR 失败')
+  } finally {
+    productBranchSyncSubmitting.value = false
+  }
+}
+
+const openProductBranchSyncLogs = async () => {
+  productBranchSyncLogsVisible.value = true
+  try {
+    await loadProductBranchSyncLogs()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载同步日志失败')
+  }
+}
 
 const openAutoMergeCreateDialog = () => { autoMergeReadonlyMode.value = false; autoMergeIsEditing.value = false; resetAutoMergeForm(); autoMergeDialogVisible.value = true }
 const fillAutoMergeForm = (row: GitlabAutoMergeConfigItem) => { autoMergeIsEditing.value = true; currentAutoMergeId.value = row.id; autoMergeForm.name = row.name; autoMergeForm.executionMode = row.executionMode; autoMergeForm.description = row.description; autoMergeForm.bindingId = row.bindingId; autoMergeForm.apiBaseUrl = row.apiBaseUrl; autoMergeForm.gitlabProjectRef = row.executionMode === 'STANDALONE' ? row.gitlabProjectRef : ''; autoMergeForm.apiToken = ''; autoMergeForm.sourceBranch = row.sourceBranch || ''; autoMergeForm.targetBranch = row.targetBranch || ''; autoMergeForm.titleKeyword = row.titleKeyword || ''; autoMergeForm.schedulerEnabled = row.schedulerEnabled; autoMergeForm.schedulerCron = row.schedulerCron || '0 */5 * * * *'; autoMergeForm.enabled = row.enabled; autoMergeForm.autoMerge = row.autoMerge; autoMergeForm.squashOnMerge = row.squashOnMerge; autoMergeForm.removeSourceBranch = row.removeSourceBranch; autoMergeForm.triggerPipelineAfterMerge = row.triggerPipelineAfterMerge; autoMergeForm.requirePipelineSuccess = row.requirePipelineSuccess; autoMergeForm.reviewAgentId = row.reviewAgentId; autoMergeForm.aiReviewEnabled = row.aiReviewEnabled; autoMergeForm.aiReviewPrompt = row.aiReviewPrompt || ''; cronTemplate.value = '' }
@@ -1937,9 +2464,14 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 }
 
 .gitlab-binding-table,
+.gitlab-product-branch-table,
 .gitlab-auto-merge-table,
 .gitlab-log-table {
   min-width: 1160px;
+}
+
+.gitlab-product-branch-table {
+  min-width: 1080px;
 }
 
 .gitlab-binding-col-main { width: 28%; }
@@ -1949,6 +2481,37 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 .gitlab-binding-col-test { width: 10%; }
 .gitlab-binding-col-updated { width: 12%; }
 .gitlab-binding-col-actions { width: 12%; }
+
+.gitlab-product-branch-table col.gitlab-product-col-select { width: 3.5%; }
+.gitlab-product-branch-table col.gitlab-product-col-main { width: 16.5%; }
+.gitlab-product-branch-table col.gitlab-product-col-branch { width: 28%; }
+.gitlab-product-branch-table col.gitlab-product-col-status { width: 22%; }
+.gitlab-product-branch-table col.gitlab-product-col-mr { width: 14%; }
+.gitlab-product-branch-table col.gitlab-product-col-enabled { width: 8%; }
+.gitlab-product-branch-table col.gitlab-product-col-actions { width: 8%; }
+
+.gitlab-product-col-select {
+  padding-left: 4px !important;
+  padding-right: 4px !important;
+  text-align: center;
+}
+
+.gitlab-product-col-main {
+  padding-left: 8px !important;
+}
+
+.gitlab-product-col-main :deep(.management-list-title-copy) {
+  min-width: 0;
+}
+
+.gitlab-product-col-main :deep(.management-list-title-cell) {
+  gap: 8px;
+}
+
+.gitlab-product-col-main :deep(.management-list-title-icon) {
+  width: 22px;
+  height: 22px;
+}
 
 .gitlab-auto-col-main { width: 24%; }
 .gitlab-auto-col-mode { width: 10%; }

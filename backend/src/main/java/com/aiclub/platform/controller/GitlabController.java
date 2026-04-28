@@ -8,6 +8,9 @@ import com.aiclub.platform.dto.GitlabAutoMergeRunResult;
 import com.aiclub.platform.dto.GitlabBranchSummary;
 import com.aiclub.platform.dto.GitlabCreateMergeRequestResult;
 import com.aiclub.platform.dto.GitlabMergeRequestSummary;
+import com.aiclub.platform.dto.GitlabProductBranchSummary;
+import com.aiclub.platform.dto.GitlabProductBranchSyncLogSummary;
+import com.aiclub.platform.dto.GitlabProductBranchSyncRunResult;
 import com.aiclub.platform.dto.GitlabTagCreateResult;
 import com.aiclub.platform.dto.GitlabUserOauthAuthorizeResult;
 import com.aiclub.platform.dto.GitlabUserOauthBindingSummary;
@@ -16,8 +19,10 @@ import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
 import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabCreateProductBranchSyncRequest;
 import com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest;
 import com.aiclub.platform.dto.request.GitlabCreateMergeRequestRequest;
+import com.aiclub.platform.dto.request.GitlabProductBranchRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
 import com.aiclub.platform.dto.request.GitlabUserOauthAuthorizeRequest;
 import com.aiclub.platform.dto.request.GitlabUserOauthCallbackRequest;
@@ -162,6 +167,48 @@ public class GitlabController {
     public ApiResponse<List<GitlabBranchSummary>> listBindingBranches(@PathVariable Long id,
                                                                       @RequestParam(required = false) String search) {
         return ApiResponse.success(gitlabManagementService.listBindingBranches(id, search));
+    }
+
+    @GetMapping("/bindings/{id}/product-branches")
+    @RequirePermission("gitlab:view")
+    public ApiResponse<List<GitlabProductBranchSummary>> listProductBranches(@PathVariable Long id) {
+        return ApiResponse.success(gitlabManagementService.listProductBranches(id));
+    }
+
+    @PostMapping("/bindings/{id}/product-branches")
+    @RequirePermission("gitlab:manage")
+    public ApiResponse<GitlabProductBranchSummary> createProductBranch(@PathVariable Long id,
+                                                                       @Valid @RequestBody GitlabProductBranchRequest request) {
+        return ApiResponse.success(gitlabManagementService.createProductBranch(id, request));
+    }
+
+    @PutMapping("/bindings/{id}/product-branches/{branchId}")
+    @RequirePermission("gitlab:manage")
+    public ApiResponse<GitlabProductBranchSummary> updateProductBranch(@PathVariable Long id,
+                                                                       @PathVariable Long branchId,
+                                                                       @Valid @RequestBody GitlabProductBranchRequest request) {
+        return ApiResponse.success(gitlabManagementService.updateProductBranch(id, branchId, request));
+    }
+
+    @DeleteMapping("/bindings/{id}/product-branches/{branchId}")
+    @RequirePermission("gitlab:manage")
+    public ApiResponse<Void> deleteProductBranch(@PathVariable Long id, @PathVariable Long branchId) {
+        gitlabManagementService.deleteProductBranch(id, branchId);
+        return new ApiResponse<>(true, "Deleted successfully", null);
+    }
+
+    @GetMapping("/bindings/{id}/product-branches/sync-logs")
+    @RequirePermission("gitlab:view")
+    public ApiResponse<List<GitlabProductBranchSyncLogSummary>> listProductBranchSyncLogs(@PathVariable Long id) {
+        return ApiResponse.success(gitlabManagementService.listProductBranchSyncLogs(id));
+    }
+
+    @PostMapping("/bindings/{id}/product-branches/sync-merge-requests")
+    @RequirePermission("gitlab:manage")
+    public ApiResponse<GitlabProductBranchSyncRunResult> createProductBranchSyncMergeRequests(
+            @PathVariable Long id,
+            @Valid @RequestBody GitlabCreateProductBranchSyncRequest request) {
+        return ApiResponse.success(gitlabManagementService.createProductBranchSyncMergeRequests(id, request));
     }
 
     /**
