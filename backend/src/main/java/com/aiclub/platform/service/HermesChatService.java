@@ -53,6 +53,7 @@ public class HermesChatService {
     private final HermesContextAssembler hermesContextAssembler;
     private final HermesPromptBuilder hermesPromptBuilder;
     private final HermesGatewayService hermesGatewayService;
+    private final HermesHindsightMemoryService hermesHindsightMemoryService;
     private final HermesToolOrchestrator hermesToolOrchestrator;
     private final HermesActionFallbackService hermesActionFallbackService;
     private final HermesConversationStateStore hermesConversationStateStore;
@@ -69,6 +70,7 @@ public class HermesChatService {
                              HermesContextAssembler hermesContextAssembler,
                              HermesPromptBuilder hermesPromptBuilder,
                              HermesGatewayService hermesGatewayService,
+                             HermesHindsightMemoryService hermesHindsightMemoryService,
                              HermesToolOrchestrator hermesToolOrchestrator,
                              HermesActionFallbackService hermesActionFallbackService,
                              HermesConversationStateStore hermesConversationStateStore,
@@ -83,6 +85,7 @@ public class HermesChatService {
         this.hermesContextAssembler = hermesContextAssembler;
         this.hermesPromptBuilder = hermesPromptBuilder;
         this.hermesGatewayService = hermesGatewayService;
+        this.hermesHindsightMemoryService = hermesHindsightMemoryService;
         this.hermesToolOrchestrator = hermesToolOrchestrator;
         this.hermesActionFallbackService = hermesActionFallbackService;
         this.hermesConversationStateStore = hermesConversationStateStore;
@@ -102,6 +105,7 @@ public class HermesChatService {
                              HermesContextAssembler hermesContextAssembler,
                              HermesPromptBuilder hermesPromptBuilder,
                              HermesGatewayService hermesGatewayService,
+                             HermesHindsightMemoryService hermesHindsightMemoryService,
                              HermesToolOrchestrator hermesToolOrchestrator,
                              HermesActionFallbackService hermesActionFallbackService,
                              HermesConversationStateStore hermesConversationStateStore,
@@ -110,7 +114,7 @@ public class HermesChatService {
                              HermesConversationSessionService hermesConversationSessionService,
                              ObjectMapper objectMapper) {
         this(authService, userRepository, hermesProperties, hermesContextAssembler, hermesPromptBuilder, hermesGatewayService,
-                hermesToolOrchestrator, hermesActionFallbackService, hermesConversationStateStore, hermesMcpSessionTokenService,
+                hermesHindsightMemoryService, hermesToolOrchestrator, hermesActionFallbackService, hermesConversationStateStore, hermesMcpSessionTokenService,
                 hermesChatAuditRepository, hermesConversationSessionService, null, objectMapper);
     }
 
@@ -339,7 +343,7 @@ public class HermesChatService {
                 context.references(),
                 context.suggestions(),
                 existingState == null ? List.of() : existingState.actions(),
-                existingState == null ? List.of() : existingState.selectionCards(),
+                resolvePreparedSelectionCards(existingState, request),
                 groundingState,
                 existingState == null ? List.of() : existingState.toolExecutions(),
                 existingState == null ? "" : existingState.lastErrorMessage()
@@ -347,17 +351,35 @@ public class HermesChatService {
         hermesConversationStateStore.save(preparedState);
 
         HermesConversationTurn currentUserTurn = buildCurrentUserTurn(request, groundingState, attachmentContextMarkdown);
+        String memoryContextMarkdown = resolveMemoryContextMarkdown(context, request);
         HermesPromptBuilder.HermesPrompt prompt = hermesPromptBuilder.buildConversationPrompt(
                 currentUser,
                 context,
                 request,
                 groundingState,
-                sessionToken
+                sessionToken,
+                currentUserTurn.content(),
+                memoryContextMarkdown
         );
 
-        List<HermesConversationTurn> outboundTranscript = new ArrayList<>(trimTranscript(preparedState.transcript()));
-        outboundTranscript.add(currentUserTurn);
-        return new PreparedConversation(preparedState, currentUserTurn, List.copyOf(outboundTranscript), prompt);
+        return new PreparedConversation(
+                preparedState,
+                currentUserTurn,
+                trimTranscript(preparedState.transcript()),
+                prompt
+        );
+    }
+
+    /**
+     * 用户已经在候选卡片中完成确认后，本轮展示态不应继续回显上一轮的待确认卡片。
+     * 否则前端会在 selection 请求发出后被旧 meta/done 事件重新刷回“需要确认”区块。
+     */
+    private List<com.aiclub.platform.dto.HermesSelectionCard> resolvePreparedSelectionCards(HermesConversationState existingState,
+                                                                                             HermesChatRequest request) {
+        if (request != null && request.selection() != null) {
+            return List.of();
+        }
+        return existingState == null ? List.of() : existingState.selectionCards();
     }
 
     /**
@@ -468,6 +490,22 @@ public class HermesChatService {
         return hermesAttachmentService.buildAttachmentContextMarkdown(
                 hermesAttachmentService.findRecentAttachments(session.getId())
         );
+    }
+
+    /**
+     * 记忆召回属于增强能力，失败时只降级为空，不能反向拖垮主问答。
+     */
+    private String resolveMemoryContextMarkdown(HermesContextAssembler.HermesConversationContext context,
+                                                HermesChatRequest request) {
+        if (hermesHindsightMemoryService == null) {
+            return "";
+        }
+        try {
+            return defaultString(hermesHindsightMemoryService.buildMemoryContextMarkdown(context, request));
+        } catch (RuntimeException exception) {
+            log.warn("Hermes 组装 Hindsight 记忆上下文失败：{}", resolveErrorMessage(exception));
+            return "";
+        }
     }
 
     /**

@@ -67,6 +67,9 @@ class HermesChatServiceTests {
     private HermesGatewayService hermesGatewayService;
 
     @Mock
+    private HermesHindsightMemoryService hermesHindsightMemoryService;
+
+    @Mock
     private HermesToolOrchestrator hermesToolOrchestrator;
 
     @Mock
@@ -120,8 +123,9 @@ class HermesChatServiceTests {
         when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(HermesGroundingState.empty());
         when(hermesMcpSessionTokenService.issueToken(eq(currentUser), eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
                 .thenReturn("session-token");
-        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token")))
+        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any())).thenReturn("- 项目记忆命中");
         when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
         when(hermesGatewayService.createChatCompletion(eq(prompt), any()))
                 .thenReturn(new HermesGatewayService.HermesGatewayResult("resp-1", "完整回答内容"));
@@ -135,7 +139,11 @@ class HermesChatServiceTests {
         ));
 
         ArgumentCaptor<HermesConversationState> stateCaptor = ArgumentCaptor.forClass(HermesConversationState.class);
+        ArgumentCaptor<List<HermesConversationTurn>> outboundTranscriptCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<String> currentTurnContentCaptor = ArgumentCaptor.forClass(String.class);
         verify(hermesConversationStateStore, atLeast(2)).save(stateCaptor.capture());
+        verify(hermesGatewayService).createChatCompletion(eq(prompt), outboundTranscriptCaptor.capture());
+        verify(hermesPromptBuilder).buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), currentTurnContentCaptor.capture(), eq("- 项目记忆命中"));
         HermesConversationState finalState = stateCaptor.getAllValues().get(stateCaptor.getAllValues().size() - 1);
 
         assertThat(finalState.scopeKey()).isEqualTo("test:hermes:project:12:user:5:conversation:conversation-1");
@@ -143,6 +151,8 @@ class HermesChatServiceTests {
         assertThat(finalState.transcript()).extracting(HermesConversationTurn::role).containsExactly("user", "assistant");
         assertThat(finalState.transcript().get(0).content()).isEqualTo("这个项目当前最大的阻塞是什么");
         assertThat(finalState.transcript().get(1).content()).isEqualTo("完整回答内容");
+        assertThat(outboundTranscriptCaptor.getValue()).isEmpty();
+        assertThat(currentTurnContentCaptor.getValue()).isEqualTo("这个项目当前最大的阻塞是什么");
         assertThat(response.scopeKey()).isEqualTo("test:hermes:project:12:user:5:conversation:conversation-1");
         assertThat(response.content()).isEqualTo("完整回答内容");
         verify(hermesConversationSessionService).recordSuccess(eq(session), any(HermesChatRequest.class), eq(finalState), eq("完整回答内容"), any(), eq(List.of()));
@@ -210,8 +220,9 @@ class HermesChatServiceTests {
         when(hermesMcpSessionTokenService.issueToken(eq(currentUser), eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
                 .thenReturn("session-token");
         when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(selectedGrounding);
-        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), eq(selectedGrounding), eq("session-token")))
+        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), eq(selectedGrounding), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any())).thenReturn("");
         when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
         when(hermesGatewayService.createChatCompletion(eq(prompt), any()))
                 .thenReturn(new HermesGatewayService.HermesGatewayResult("resp-2", "已基于你确认的对象继续分析"));
@@ -232,6 +243,7 @@ class HermesChatServiceTests {
         assertThat(finalState.transcript().get(2).content()).contains("用户刚刚在平台候选卡片中完成了对象确认");
         assertThat(finalState.transcript().get(2).content()).contains("REQ-123 登录改造");
         assertThat(finalState.transcript().get(3).content()).isEqualTo("已基于你确认的对象继续分析");
+        assertThat(finalState.selectionCards()).isEmpty();
     }
 
     /**
@@ -265,8 +277,9 @@ class HermesChatServiceTests {
         when(hermesConversationStateStore.load(any(), any())).thenReturn(Optional.empty());
         when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(HermesGroundingState.empty());
         when(hermesMcpSessionTokenService.issueToken(any(), any(), any())).thenReturn("session-token");
-        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token")))
+        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any())).thenReturn("");
         when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
         when(hermesGatewayService.createChatCompletion(eq(prompt), any()))
                 .thenReturn(new HermesGatewayService.HermesGatewayResult("resp-3", "ok"));
@@ -328,8 +341,9 @@ class HermesChatServiceTests {
         when(hermesConversationStateStore.load(any(), any())).thenReturn(Optional.empty());
         when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(HermesGroundingState.empty());
         when(hermesMcpSessionTokenService.issueToken(any(), any(), any())).thenReturn("session-token");
-        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token")))
+        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any())).thenReturn("");
         when(hermesAttachmentService.uploadAndConvert(any())).thenReturn(List.of(attachment));
         when(hermesAttachmentService.buildPreparedAttachmentContextMarkdown(List.of(attachment))).thenReturn("""
                 ## 本轮上传附件
@@ -360,13 +374,17 @@ class HermesChatServiceTests {
         ));
 
         ArgumentCaptor<HermesConversationState> stateCaptor = ArgumentCaptor.forClass(HermesConversationState.class);
+        ArgumentCaptor<String> currentTurnContentCaptor = ArgumentCaptor.forClass(String.class);
         verify(hermesConversationStateStore, atLeast(2)).save(stateCaptor.capture());
+        verify(hermesPromptBuilder).buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), currentTurnContentCaptor.capture(), eq(""));
         HermesConversationState finalState = stateCaptor.getAllValues().get(stateCaptor.getAllValues().size() - 1);
 
         assertThat(finalState.transcript().get(0).content()).contains("解释一下这份文档的内容");
         assertThat(finalState.transcript().get(0).content()).contains("以下是从该附件提取出的 Markdown 正文");
         assertThat(finalState.transcript().get(0).content()).contains("# 登录设计");
         assertThat(finalState.transcript().get(0).content()).contains("短信验证码与密码双因子登录");
+        assertThat(currentTurnContentCaptor.getValue()).contains("以下是从该附件提取出的 Markdown 正文");
+        assertThat(currentTurnContentCaptor.getValue()).contains("# 登录设计");
         verify(hermesConversationSessionService).recordSuccess(eq(session), any(HermesChatRequest.class), eq(finalState), eq("这份文档主要描述登录设计"), any(), eq(List.of(attachment)));
     }
 
@@ -407,8 +425,9 @@ class HermesChatServiceTests {
         when(hermesConversationStateStore.load(any(), any())).thenReturn(Optional.empty());
         when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(HermesGroundingState.empty());
         when(hermesMcpSessionTokenService.issueToken(any(), any(), any())).thenReturn("session-token");
-        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token")))
+        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any())).thenReturn("");
         when(hermesAttachmentService.findRecentAttachments(10L)).thenReturn(List.of(recentAttachment));
         when(hermesAttachmentService.buildAttachmentContextMarkdown(List.of(recentAttachment))).thenReturn("""
                 ## 最近一轮可用附件
@@ -525,6 +544,7 @@ class HermesChatServiceTests {
                 hermesContextAssembler,
                 promptBuilder,
                 hermesGatewayService,
+                hermesHindsightMemoryService,
                 hermesToolOrchestrator,
                 hermesActionFallbackService,
                 hermesConversationStateStore,

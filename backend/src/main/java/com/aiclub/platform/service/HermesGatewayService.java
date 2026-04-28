@@ -114,6 +114,11 @@ public class HermesGatewayService {
                         .put("content", turn.content() == null ? "" : turn.content());
             }
         }
+        if (prompt != null && hasText(prompt.userPrompt())) {
+            messages.addObject()
+                    .put("role", "user")
+                    .put("content", prompt.userPrompt());
+        }
         return payload;
     }
 
@@ -252,6 +257,10 @@ public class HermesGatewayService {
         }
         String normalized = value.trim();
         return normalized.length() > 500 ? normalized.substring(0, 500) : normalized;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     /**

@@ -323,6 +323,7 @@ const SESSION_PAGE_SIZE = 20
 const isDebugMode = ref(false)
 const currentStreamStatus = ref<HermesStreamStatusEvent | null>(null)
 const isPinnedToBottom = ref(true)
+const pendingSessionBottomScroll = ref(false)
 const pendingStreamDeltaMap = new Map<string, string>()
 const STREAM_DRAIN_INTERVAL_MS = 20
 const STREAM_DRAIN_CHARS_PER_TICK = 18
@@ -370,6 +371,7 @@ const currentContextKey = computed(() => JSON.stringify(buildCurrentRouteContext
 
 watch(drawerVisible, (visible) => {
   if (visible) {
+    pendingSessionBottomScroll.value = true
     void initializeDrawer()
     return
   }
@@ -484,6 +486,7 @@ const loadSessionDetail = async (sessionId: number) => {
 
 const handleSelectSession = async (sessionId: number) => {
   if (!sending.value) {
+    pendingSessionBottomScroll.value = true
     await loadSessionDetail(sessionId)
     closeMobileSessionPanel()
   }
@@ -1023,7 +1026,9 @@ function applySessionDetail(detail: HermesConversationDetailItem) {
   currentSelectionCards.value = latestDisplayState.selectionCards || []
   currentDebug.value = latestDisplayState.debug || null
   currentRoleName.value = resolveCurrentRoleName()
-  void restoreThinkBlocksAndScroll(false)
+  const shouldScrollToBottom = pendingSessionBottomScroll.value
+  pendingSessionBottomScroll.value = false
+  void restoreThinkBlocksAndScroll(shouldScrollToBottom)
 }
 
 function clearSelectedSession() {
