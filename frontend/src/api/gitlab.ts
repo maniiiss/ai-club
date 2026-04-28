@@ -8,6 +8,9 @@ import type {
   GitlabBranchItem,
   GitlabCreateMergeRequestResultItem,
   GitlabMergeRequestItem,
+  GitlabProductBranchItem,
+  GitlabProductBranchSyncLogItem,
+  GitlabProductBranchSyncRunResult,
   GitlabTagCreateResultItem,
   GitlabUserOauthBindingItem,
   PageResponse,
@@ -20,6 +23,7 @@ export interface GitlabBindingPayload {
   apiBaseUrl: string
   gitlabProjectRef: string
   defaultTargetBranch: string
+  productMainBranch: string
   apiToken: string
   enabled: boolean
   testProfileJson?: string
@@ -113,6 +117,17 @@ export interface GitlabBindingScanTaskPayload {
   planAgentId?: number | null
 }
 
+export interface GitlabProductBranchPayload {
+  lineCode: string
+  lineName: string
+  branchName: string
+  enabled: boolean
+}
+
+export interface GitlabProductBranchSyncPayload {
+  productBranchIds: number[]
+}
+
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
     Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
@@ -180,6 +195,35 @@ export const createGitlabTag = async (id: number, payload: GitlabTagPayload) => 
 
 export const createGitlabMergeRequest = async (id: number, payload: GitlabCreateMergeRequestPayload) => {
   const { data } = await http.post<ApiResponse<GitlabCreateMergeRequestResultItem>>(`/api/gitlab/bindings/${id}/merge-requests`, payload)
+  return data.data
+}
+
+export const listGitlabProductBranches = async (id: number) => {
+  const { data } = await http.get<ApiResponse<GitlabProductBranchItem[]>>(`/api/gitlab/bindings/${id}/product-branches`)
+  return data.data
+}
+
+export const createGitlabProductBranch = async (id: number, payload: GitlabProductBranchPayload) => {
+  const { data } = await http.post<ApiResponse<GitlabProductBranchItem>>(`/api/gitlab/bindings/${id}/product-branches`, payload)
+  return data.data
+}
+
+export const updateGitlabProductBranch = async (id: number, branchId: number, payload: GitlabProductBranchPayload) => {
+  const { data } = await http.put<ApiResponse<GitlabProductBranchItem>>(`/api/gitlab/bindings/${id}/product-branches/${branchId}`, payload)
+  return data.data
+}
+
+export const deleteGitlabProductBranch = async (id: number, branchId: number) => {
+  await http.delete<ApiResponse<null>>(`/api/gitlab/bindings/${id}/product-branches/${branchId}`)
+}
+
+export const listGitlabProductBranchSyncLogs = async (id: number) => {
+  const { data } = await http.get<ApiResponse<GitlabProductBranchSyncLogItem[]>>(`/api/gitlab/bindings/${id}/product-branches/sync-logs`)
+  return data.data
+}
+
+export const createGitlabProductBranchSyncMergeRequests = async (id: number, payload: GitlabProductBranchSyncPayload) => {
+  const { data } = await http.post<ApiResponse<GitlabProductBranchSyncRunResult>>(`/api/gitlab/bindings/${id}/product-branches/sync-merge-requests`, payload)
   return data.data
 }
 

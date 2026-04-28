@@ -867,6 +867,7 @@ export interface ProjectGitlabBindingItem {
   gitlabProjectPath: string | null
   gitlabProjectWebUrl: string | null
   defaultTargetBranch: string | null
+  productMainBranch: string | null
   tokenConfigured: boolean
   enabled: boolean
   lastTestStatus: string | null
@@ -1043,6 +1044,67 @@ export interface GitlabAutoMergeRunResult {
   mergedCount: number
   skippedCount: number
   items: GitlabAutoMergeRunItem[]
+}
+
+export interface GitlabProductBranchItem {
+  id: number
+  bindingId: number
+  lineCode: string
+  lineName: string
+  branchName: string
+  enabled: boolean
+  behindCount: number
+  hasDiffWithMainline: boolean
+  hasOpenSyncMr: boolean
+  openSyncMergeRequestIid: number | null
+  openSyncMergeRequestTitle: string | null
+  openSyncMergeRequestWebUrl: string | null
+  lastSyncStatus: string | null
+  lastSyncMessage: string | null
+  lastSyncAt: string | null
+  lastSyncMrUrl: string | null
+}
+
+export interface GitlabProductBranchSyncLogItem {
+  id: number
+  productBranchId: number | null
+  lineCode: string | null
+  lineName: string | null
+  sourceBranchName: string
+  targetBranchName: string
+  sourceCommitSha: string | null
+  targetCommitSha: string | null
+  mergeRequestIid: number | null
+  mergeRequestTitle: string | null
+  mergeRequestWebUrl: string | null
+  result: string
+  reason: string
+  executedByUserId: number | null
+  executedAt: string
+}
+
+export interface GitlabProductBranchSyncRunItem {
+  productBranchId: number
+  lineCode: string
+  lineName: string
+  targetBranchName: string
+  result: string
+  message: string
+  behindCount: number
+  mergeRequestIid: number | null
+  mergeRequestWebUrl: string | null
+}
+
+export interface GitlabProductBranchSyncRunResult {
+  bindingId: number
+  projectName: string
+  sourceBranchName: string
+  targetCount: number
+  createdCount: number
+  noChangeCount: number
+  existingOpenMrCount: number
+  failedCount: number
+  items: GitlabProductBranchSyncRunItem[]
 }
 
 /**

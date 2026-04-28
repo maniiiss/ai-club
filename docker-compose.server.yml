@@ -3,15 +3,14 @@ services:
   postgres:
     image: ${POSTGRES_IMAGE:-timescale/timescaledb-ha:pg16}
     container_name: git-ai-club-server-postgres
+    user: "0:0"
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ai_agent_platform}
       POSTGRES_USER: ${POSTGRES_USER:-aiclub}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
-      # 单一 PostgreSQL 服务同时承载业务库 ai_agent_platform 与 Hindsight 库 hindsight。
-      PGDATA: /home/postgres/pgdata/data
       HINDSIGHT_POSTGRES_DB: ${HINDSIGHT_POSTGRES_DB:-hindsight}
-      HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvector}
+      HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvectorscale}
       TZ: ${APP_TZ:-Asia/Shanghai}
       PGTZ: ${APP_TZ:-Asia/Shanghai}
     ports:
@@ -20,6 +19,10 @@ services:
       - "${POSTGRES_DATA_DIR:-/data/git-ai-club/postgres}:/home/postgres/pgdata"
       # 初始化 Hindsight 专用数据库与 pgvector 扩展；仅在 PGDATA 首次初始化时执行。
       - "./docker/postgres/init:/docker-entrypoint-initdb.d:ro"
+      - "./docker/postgres/bin:/opt/git-ai-club/postgres/bin:ro"
+    entrypoint:
+      - /bin/sh
+      - /opt/git-ai-club/postgres/bin/start-postgres-with-auto-pgdata.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiclub} -d ${POSTGRES_DB:-ai_agent_platform}"]
       interval: 10s
@@ -38,7 +41,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-aiclub}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
       HINDSIGHT_POSTGRES_DB: ${HINDSIGHT_POSTGRES_DB:-hindsight}
-      HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvector}
+      HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvectorscale}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
     volumes:
@@ -108,7 +111,7 @@ services:
       HINDSIGHT_API_RERANKER_LOCAL_MODEL: ${HINDSIGHT_API_RERANKER_LOCAL_MODEL:-BAAI/bge-reranker-v2-m3}
       # Hindsight 固定连接独立数据库，避免与业务库 ai_agent_platform 混用。
       HINDSIGHT_API_DATABASE_URL: postgresql://${POSTGRES_USER:-aiclub}:${POSTGRES_PASSWORD:-aiclub123}@postgres:5432/${HINDSIGHT_POSTGRES_DB:-hindsight}
-      HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvector}
+      HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvectorscale}
       # 在 bridge 网络内固定监听容器端口，避免服务只绑定到容器回环地址导致 Hermes 无法访问。
       HINDSIGHT_API_HOST: 0.0.0.0
       HINDSIGHT_API_PORT: 8888

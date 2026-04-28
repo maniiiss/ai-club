@@ -76,6 +76,32 @@ public class GitlabApiService {
     }
 
     /**
+     * 读取单个分支详情，主要用于同步日志记录分支最新提交 SHA。
+     */
+    public GitlabBranchDetail fetchBranch(String apiBaseUrl, String token, String projectRef, String branchName) {
+        return fetchBranch(apiBaseUrl, GitlabAuthorization.privateToken(token), projectRef, branchName);
+    }
+
+    /**
+     * 读取单个分支详情，支持项目 token 与用户 Bearer token。
+     */
+    public GitlabBranchDetail fetchBranch(String apiBaseUrl, GitlabAuthorization authorization, String projectRef, String branchName) {
+        String url = normalizeBaseUrl(apiBaseUrl)
+                + "/projects/" + encodeProjectRef(projectRef)
+                + "/repository/branches/" + urlEncode(branchName);
+        JsonNode node = sendJsonRequest("GET", url, authorization, null, null);
+        JsonNode commitNode = node.path("commit");
+        return new GitlabBranchDetail(
+                node.path("name").asText(""),
+                node.path("default").asBoolean(false),
+                node.path("protected").asBoolean(false),
+                node.path("merged").asBoolean(false),
+                node.path("web_url").asText(""),
+                commitNode.path("id").asText("")
+        );
+    }
+
+    /**
      * 查询仓库分支，支持项目级 token 与用户 Bearer token。
      */
     public List<GitlabBranch> listBranches(String apiBaseUrl, GitlabAuthorization authorization, String projectRef, String search) {
@@ -104,13 +130,34 @@ public class GitlabApiService {
     }
 
     public List<GitlabMergeRequest> listMergeRequests(String apiBaseUrl, String token, String projectRef, String state, String targetBranch) {
-        return listMergeRequests(apiBaseUrl, GitlabAuthorization.privateToken(token), projectRef, state, targetBranch);
+        return listMergeRequests(apiBaseUrl, GitlabAuthorization.privateToken(token), projectRef, state, null, targetBranch);
+    }
+
+    public List<GitlabMergeRequest> listMergeRequests(String apiBaseUrl,
+                                                      String token,
+                                                      String projectRef,
+                                                      String state,
+                                                      String sourceBranch,
+                                                      String targetBranch) {
+        return listMergeRequests(apiBaseUrl, GitlabAuthorization.privateToken(token), projectRef, state, sourceBranch, targetBranch);
     }
 
     /**
      * 查询 Merge Request 列表，支持不同的鉴权请求头。
      */
     public List<GitlabMergeRequest> listMergeRequests(String apiBaseUrl, GitlabAuthorization authorization, String projectRef, String state, String targetBranch) {
+        return listMergeRequests(apiBaseUrl, authorization, projectRef, state, null, targetBranch);
+    }
+
+    /**
+     * 查询 Merge Request 列表，支持同时按源分支与目标分支筛选。
+     */
+    public List<GitlabMergeRequest> listMergeRequests(String apiBaseUrl,
+                                                      GitlabAuthorization authorization,
+                                                      String projectRef,
+                                                      String state,
+                                                      String sourceBranch,
+                                                      String targetBranch) {
         StringBuilder url = new StringBuilder(normalizeBaseUrl(apiBaseUrl))
                 .append("/projects/")
                 .append(encodeProjectRef(projectRef))
@@ -118,6 +165,9 @@ public class GitlabApiService {
 
         if (hasText(state)) {
             url.append("&state=").append(urlEncode(state));
+        }
+        if (hasText(sourceBranch)) {
+            url.append("&source_branch=").append(urlEncode(sourceBranch));
         }
         if (hasText(targetBranch)) {
             url.append("&target_branch=").append(urlEncode(targetBranch));
@@ -131,6 +181,40 @@ public class GitlabApiService {
             }
         }
         return items;
+    }
+
+    /**
+     * 比较两个分支之间的提交差异，主要用于判断主线是否领先于产品分线。
+     */
+    public GitlabCompareResult compareBranches(String apiBaseUrl, String token, String projectRef, String fromBranch, String toBranch) {
+        return compareBranches(apiBaseUrl, GitlabAuthorization.privateToken(token), projectRef, fromBranch, toBranch);
+    }
+
+    /**
+     * 比较两个分支之间的提交差异，支持项目 token 与用户 Bearer token。
+     */
+    public GitlabCompareResult compareBranches(String apiBaseUrl,
+                                               GitlabAuthorization authorization,
+                                               String projectRef,
+                                               String fromBranch,
+                                               String toBranch) {
+        String url = normalizeBaseUrl(apiBaseUrl)
+                + "/projects/" + encodeProjectRef(projectRef)
+                + "/repository/compare?from=" + urlEncode(fromBranch)
+                + "&to=" + urlEncode(toBranch);
+        JsonNode node = sendJsonRequest("GET", url, authorization, null, null);
+        List<String> commitIds = new ArrayList<>();
+        JsonNode commitsNode = node.path("commits");
+        if (commitsNode.isArray()) {
+            for (JsonNode commitNode : commitsNode) {
+                commitIds.add(commitNode.path("id").asText(""));
+            }
+        }
+        return new GitlabCompareResult(
+                node.path("compare_same_ref").asBoolean(false),
+                node.path("compare_timeout").asBoolean(false),
+                commitIds
+        );
     }
 
     public GitlabMergeRequest fetchMergeRequest(String apiBaseUrl, String token, String projectRef, Long mergeRequestIid) {
@@ -461,9 +545,20 @@ public class GitlabApiService {
     public record GitlabBranch(String name, Boolean defaultBranch, Boolean protectedBranch, Boolean merged, String webUrl) {
     }
 
+    public record GitlabBranchDetail(String name,
+                                     Boolean defaultBranch,
+                                     Boolean protectedBranch,
+                                     Boolean merged,
+                                     String webUrl,
+                                     String commitSha) {
+    }
+
     public record GitlabMergeRequest(Long iid, String title, String state, String sourceBranch, String targetBranch,
                                      Boolean draft, Boolean hasConflicts, String detailedMergeStatus, String pipelineStatus,
                                      String authorName, String authorUsername, String webUrl, String updatedAt, Integer divergedCommitsCount) {
+    }
+
+    public record GitlabCompareResult(boolean sameRef, boolean compareTimeout, List<String> commitIds) {
     }
 
     /**

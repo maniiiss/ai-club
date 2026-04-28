@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# 初始化 Hindsight 专用数据库，并为相关数据库启用 pgvector 扩展。
+# 初始化 Hindsight 专用数据库，并为相关数据库启用向量扩展。
 # 说明：
 # 1. PostgreSQL 首次初始化时，该脚本会由 docker-entrypoint-initdb.d 自动执行。
 # 2. 后续 Compose 启动阶段，还会通过补偿任务再次执行，兼容已有 PGDATA 场景。
@@ -11,7 +11,7 @@ POSTGRES_ADMIN_USER="${POSTGRES_USER:-postgres}"
 PRIMARY_DB="${POSTGRES_DB:-postgres}"
 # 未显式指定 Hindsight 独立库时，默认只补偿主业务库，避免共享 PostgreSQL 误建额外数据库。
 HINDSIGHT_DB="${HINDSIGHT_POSTGRES_DB:-${PRIMARY_DB}}"
-VECTOR_EXTENSION="${HINDSIGHT_API_VECTOR_EXTENSION:-pgvector}"
+VECTOR_EXTENSION="${HINDSIGHT_API_VECTOR_EXTENSION:-pgvectorscale}"
 
 # 兼容两种执行场景：
 # 1. PostgreSQL 容器首次初始化时，通过本地 socket 执行；

@@ -6,6 +6,8 @@ import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
+import com.aiclub.platform.domain.model.GitlabProductBranchEntity;
+import com.aiclub.platform.domain.model.GitlabProductBranchSyncLogEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
 import com.aiclub.platform.domain.model.RepositoryScanRulesetEntity;
@@ -17,23 +19,32 @@ import com.aiclub.platform.dto.GitlabAutoMergeRunResult;
 import com.aiclub.platform.dto.GitlabBranchSummary;
 import com.aiclub.platform.dto.GitlabCreateMergeRequestResult;
 import com.aiclub.platform.dto.GitlabMergeRequestSummary;
+import com.aiclub.platform.dto.GitlabProductBranchSummary;
+import com.aiclub.platform.dto.GitlabProductBranchSyncLogSummary;
+import com.aiclub.platform.dto.GitlabProductBranchSyncRunItem;
+import com.aiclub.platform.dto.GitlabProductBranchSyncRunResult;
 import com.aiclub.platform.dto.GitlabTagCreateResult;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
 import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabCreateProductBranchSyncRequest;
 import com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest;
 import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
 import com.aiclub.platform.dto.request.GitlabCreateMergeRequestRequest;
+import com.aiclub.platform.dto.request.GitlabProductBranchRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
 import com.aiclub.platform.dto.request.ProjectGitlabBindingRequest;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
+import com.aiclub.platform.repository.GitlabProductBranchRepository;
+import com.aiclub.platform.repository.GitlabProductBranchSyncLogRepository;
 import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
+import com.aiclub.platform.security.AuthContextHolder;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,7 +55,10 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -66,12 +80,18 @@ public class GitlabManagementService {
     private static final String TRIGGER_MANUAL = "MANUAL";
     private static final String TRIGGER_SCHEDULED = "SCHEDULED";
     private static final String BRANCH_BEHIND_REASON_PREFIX = "源分支落后于目标分支";
+    private static final String PRODUCT_BRANCH_RESULT_CREATED = "CREATED";
+    private static final String PRODUCT_BRANCH_RESULT_NO_CHANGE = "NO_CHANGE";
+    private static final String PRODUCT_BRANCH_RESULT_EXISTING_OPEN_MR = "EXISTING_OPEN_MR";
+    private static final String PRODUCT_BRANCH_RESULT_FAILED = "FAILED";
 
     private final ProjectRepository projectRepository;
     private final AgentRepository agentRepository;
     private final ProjectGitlabBindingRepository bindingRepository;
     private final GitlabAutoMergeConfigRepository autoMergeConfigRepository;
     private final GitlabAutoMergeLogRepository autoMergeLogRepository;
+    private final GitlabProductBranchRepository productBranchRepository;
+    private final GitlabProductBranchSyncLogRepository productBranchSyncLogRepository;
     private final AiModelConfigRepository aiModelConfigRepository;
     private final GitlabApiService gitlabApiService;
     private final TokenCipherService tokenCipherService;
@@ -87,11 +107,14 @@ public class GitlabManagementService {
     private final RepositoryScanRulesetService repositoryScanRulesetService;
     private final ObjectMapper objectMapper;
     private final String defaultApiUrl;
+    private final TransactionTemplate requiresNewTransactionTemplate;
 
     public GitlabManagementService(ProjectRepository projectRepository,
                                    ProjectGitlabBindingRepository bindingRepository,
                                    GitlabAutoMergeConfigRepository autoMergeConfigRepository,
                                    GitlabAutoMergeLogRepository autoMergeLogRepository,
+                                   GitlabProductBranchRepository productBranchRepository,
+                                   GitlabProductBranchSyncLogRepository productBranchSyncLogRepository,
                                    AiModelConfigRepository aiModelConfigRepository,
                                    AgentRepository agentRepository,
                                    GitlabApiService gitlabApiService,
@@ -107,12 +130,15 @@ public class GitlabManagementService {
                                    RepositoryScanClientService repositoryScanClientService,
                                    RepositoryScanRulesetService repositoryScanRulesetService,
                                    ObjectMapper objectMapper,
-                                   @Value("${platform.gitlab.default-api-url}") String defaultApiUrl) {
+                                   @Value("${platform.gitlab.default-api-url}") String defaultApiUrl,
+                                   PlatformTransactionManager transactionManager) {
         this.projectRepository = projectRepository;
         this.agentRepository = agentRepository;
         this.bindingRepository = bindingRepository;
         this.autoMergeConfigRepository = autoMergeConfigRepository;
         this.autoMergeLogRepository = autoMergeLogRepository;
+        this.productBranchRepository = productBranchRepository;
+        this.productBranchSyncLogRepository = productBranchSyncLogRepository;
         this.aiModelConfigRepository = aiModelConfigRepository;
         this.gitlabApiService = gitlabApiService;
         this.tokenCipherService = tokenCipherService;
@@ -128,6 +154,8 @@ public class GitlabManagementService {
         this.repositoryScanRulesetService = repositoryScanRulesetService;
         this.objectMapper = objectMapper;
         this.defaultApiUrl = defaultApiUrl;
+        this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
+        this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     public PageResponse<ProjectGitlabBindingSummary> pageBindings(int page, int size, String keyword, Long projectId) {
@@ -159,6 +187,7 @@ public class GitlabManagementService {
         entity.setApiBaseUrl(apiBaseUrl);
         entity.setGitlabProjectRef(projectRef);
         entity.setDefaultTargetBranch(trimToNull(request.defaultTargetBranch()));
+        entity.setProductMainBranch(trimToNull(request.productMainBranch()));
         entity.setTestProfileJson(normalizeJsonText(request.testProfileJson()));
         entity.setTokenCiphertext(tokenCipherService.encrypt(requireToken(request.apiToken())));
         entity.setEnabled(defaultBoolean(request.enabled(), true));
@@ -176,6 +205,8 @@ public class GitlabManagementService {
         entity.setApiBaseUrl(apiBaseUrl);
         entity.setGitlabProjectRef(projectRef);
         entity.setDefaultTargetBranch(trimToNull(request.defaultTargetBranch()));
+        entity.setProductMainBranch(trimToNull(request.productMainBranch()));
+        validateProductMainBranch(entity);
         entity.setTestProfileJson(normalizeJsonText(request.testProfileJson()));
         entity.setEnabled(defaultBoolean(request.enabled(), true));
         if (hasText(request.apiToken())) {
@@ -207,6 +238,10 @@ public class GitlabManagementService {
             if (!hasText(entity.getDefaultTargetBranch()) && hasText(project.defaultBranch())) {
                 entity.setDefaultTargetBranch(project.defaultBranch());
             }
+            if (!hasText(entity.getProductMainBranch()) && hasText(project.defaultBranch())) {
+                entity.setProductMainBranch(project.defaultBranch());
+            }
+            validateProductMainBranch(entity);
             entity.setLastTestStatus("SUCCESS");
             entity.setLastTestMessage("连接成功");
             entity.setLastTestedAt(LocalDateTime.now());
@@ -273,6 +308,169 @@ public class GitlabManagementService {
                 .stream()
                 .map(branch -> toBranchSummary(entity, branch))
                 .toList();
+    }
+
+    /**
+     * 查询指定绑定仓库下的产品分线，并补充主线差异和开放同步 MR 状态。
+     */
+    public List<GitlabProductBranchSummary> listProductBranches(Long bindingId) {
+        ProjectGitlabBindingEntity binding = requireBinding(bindingId);
+        List<GitlabProductBranchEntity> branches = productBranchRepository.findAllByBinding_IdOrderByIdAsc(binding.getId());
+        if (branches.isEmpty()) {
+            return List.of();
+        }
+        String productMainBranch = trimToNull(binding.getProductMainBranch());
+        if (!hasText(productMainBranch)) {
+            return branches.stream()
+                    .map(branch -> toProductBranchSummary(branch, 0, false, null))
+                    .toList();
+        }
+        ResolvedGitlabConfig resolved = resolveBindingConfig(binding);
+        List<GitlabProductBranchSummary> summaries = new ArrayList<>();
+        for (GitlabProductBranchEntity branch : branches) {
+            GitlabApiService.GitlabCompareResult compareResult = gitlabApiService.compareBranches(
+                    resolved.apiBaseUrl(),
+                    resolved.token(),
+                    resolved.projectRef(),
+                    branch.getBranchName(),
+                    productMainBranch
+            );
+            List<GitlabApiService.GitlabMergeRequest> openMergeRequests = gitlabApiService.listMergeRequests(
+                    resolved.apiBaseUrl(),
+                    resolved.token(),
+                    resolved.projectRef(),
+                    "opened",
+                    productMainBranch,
+                    branch.getBranchName()
+            );
+            GitlabApiService.GitlabMergeRequest openMergeRequest = openMergeRequests.isEmpty() ? null : openMergeRequests.get(0);
+            boolean hasDiffWithMainline = !compareResult.sameRef() && !compareResult.commitIds().isEmpty();
+            summaries.add(toProductBranchSummary(branch, compareResult.commitIds().size(), hasDiffWithMainline, openMergeRequest));
+        }
+        return summaries;
+    }
+
+    /**
+     * 创建绑定仓库下的一条产品分线定义。
+     */
+    @Transactional
+    public GitlabProductBranchSummary createProductBranch(Long bindingId, GitlabProductBranchRequest request) {
+        ProjectGitlabBindingEntity binding = requireBinding(bindingId);
+        String lineCode = requireValue(request.lineCode(), "产品线编码");
+        String lineName = requireValue(request.lineName(), "产品线名称");
+        String branchName = requireValue(request.branchName(), "分线分支");
+        validateProductBranchRequest(binding, lineCode, branchName, null);
+        GitlabProductBranchEntity entity = new GitlabProductBranchEntity();
+        entity.setBinding(binding);
+        entity.setLineCode(lineCode);
+        entity.setLineName(lineName);
+        entity.setBranchName(branchName);
+        entity.setEnabled(defaultBoolean(request.enabled(), true));
+        return toProductBranchSummary(productBranchRepository.save(entity), 0, false, null);
+    }
+
+    /**
+     * 更新指定产品分线定义。
+     */
+    @Transactional
+    public GitlabProductBranchSummary updateProductBranch(Long bindingId, Long productBranchId, GitlabProductBranchRequest request) {
+        ProjectGitlabBindingEntity binding = requireBinding(bindingId);
+        GitlabProductBranchEntity entity = requireProductBranch(binding, productBranchId);
+        String lineCode = requireValue(request.lineCode(), "产品线编码");
+        String lineName = requireValue(request.lineName(), "产品线名称");
+        String branchName = requireValue(request.branchName(), "分线分支");
+        validateProductBranchRequest(binding, lineCode, branchName, entity.getId());
+        entity.setLineCode(lineCode);
+        entity.setLineName(lineName);
+        entity.setBranchName(branchName);
+        entity.setEnabled(defaultBoolean(request.enabled(), true));
+        return toProductBranchSummary(productBranchRepository.save(entity), 0, false, null);
+    }
+
+    /**
+     * 删除产品分线定义，历史同步日志通过快照字段继续保留。
+     */
+    @Transactional
+    public void deleteProductBranch(Long bindingId, Long productBranchId) {
+        ProjectGitlabBindingEntity binding = requireBinding(bindingId);
+        productBranchRepository.delete(requireProductBranch(binding, productBranchId));
+    }
+
+    /**
+     * 查询绑定仓库下的产品分线同步日志。
+     */
+    public List<GitlabProductBranchSyncLogSummary> listProductBranchSyncLogs(Long bindingId) {
+        requireBinding(bindingId);
+        return productBranchSyncLogRepository.findAllByBinding_IdOrderByExecutedAtDescIdDesc(bindingId).stream()
+                .map(this::toProductBranchSyncLogSummary)
+                .toList();
+    }
+
+    /**
+     * 按指定产品分线批量创建“主线 -> 分线”的同步 Merge Request。
+     */
+    public GitlabProductBranchSyncRunResult createProductBranchSyncMergeRequests(Long bindingId,
+                                                                                 GitlabCreateProductBranchSyncRequest request) {
+        ProjectGitlabBindingEntity binding = requireBinding(bindingId);
+        String productMainBranch = requireProductMainBranch(binding);
+        GitlabUserOauthService.CurrentGitlabOauthAccess oauthAccess = gitlabUserOauthService.requireCurrentUserAccess(binding.getApiBaseUrl());
+        String projectRef = resolveBindingProjectRef(binding);
+        List<Long> requestedIds = request.productBranchIds().stream()
+                .filter(id -> id != null)
+                .distinct()
+                .toList();
+        if (requestedIds.isEmpty()) {
+            throw new IllegalArgumentException("至少选择一个产品分线");
+        }
+
+        LinkedHashMap<Long, GitlabProductBranchEntity> branchMap = new LinkedHashMap<>();
+        for (GitlabProductBranchEntity branch : productBranchRepository.findAllByBinding_IdOrderByIdAsc(bindingId)) {
+            branchMap.put(branch.getId(), branch);
+        }
+
+        List<GitlabProductBranchEntity> targets = new ArrayList<>();
+        for (Long branchId : requestedIds) {
+            GitlabProductBranchEntity branch = branchMap.get(branchId);
+            if (branch == null) {
+                throw new NoSuchElementException("产品分线不存在: " + branchId);
+            }
+            targets.add(branch);
+        }
+
+        LocalDateTime executedAt = LocalDateTime.now();
+        List<GitlabProductBranchSyncRunItem> items = new ArrayList<>();
+        int createdCount = 0;
+        int noChangeCount = 0;
+        int existingOpenMrCount = 0;
+        int failedCount = 0;
+        for (GitlabProductBranchEntity branch : targets) {
+            ProductBranchSyncExecution execution = executeProductBranchSync(
+                    binding,
+                    projectRef,
+                    productMainBranch,
+                    oauthAccess.authorization(),
+                    branch,
+                    executedAt
+            );
+            items.add(execution.item());
+            switch (execution.result()) {
+                case PRODUCT_BRANCH_RESULT_CREATED -> createdCount++;
+                case PRODUCT_BRANCH_RESULT_NO_CHANGE -> noChangeCount++;
+                case PRODUCT_BRANCH_RESULT_EXISTING_OPEN_MR -> existingOpenMrCount++;
+                default -> failedCount++;
+            }
+        }
+        return new GitlabProductBranchSyncRunResult(
+                binding.getId(),
+                binding.getProject().getName(),
+                productMainBranch,
+                targets.size(),
+                createdCount,
+                noChangeCount,
+                existingOpenMrCount,
+                failedCount,
+                items
+        );
     }
 
     /**
@@ -983,6 +1181,7 @@ public class GitlabManagementService {
                 entity.getGitlabProjectPath(),
                 entity.getGitlabProjectWebUrl(),
                 entity.getDefaultTargetBranch(),
+                entity.getProductMainBranch(),
                 entity.getTestProfileJson(),
                 hasText(entity.getTokenCiphertext()),
                 defaultBoolean(entity.getEnabled(), true),
@@ -990,6 +1189,309 @@ public class GitlabManagementService {
                 entity.getLastTestMessage(),
                 formatTime(entity.getLastTestedAt())
         );
+    }
+
+    private GitlabProductBranchSummary toProductBranchSummary(GitlabProductBranchEntity entity,
+                                                              Integer behindCount,
+                                                              boolean hasDiffWithMainline,
+                                                              GitlabApiService.GitlabMergeRequest openMergeRequest) {
+        return new GitlabProductBranchSummary(
+                entity.getId(),
+                entity.getBinding().getId(),
+                entity.getLineCode(),
+                entity.getLineName(),
+                entity.getBranchName(),
+                defaultBoolean(entity.getEnabled(), true),
+                behindCount == null ? 0 : behindCount,
+                hasDiffWithMainline,
+                openMergeRequest != null,
+                openMergeRequest == null ? null : openMergeRequest.iid(),
+                openMergeRequest == null ? null : openMergeRequest.title(),
+                openMergeRequest == null ? null : openMergeRequest.webUrl(),
+                entity.getLastSyncStatus(),
+                entity.getLastSyncMessage(),
+                formatTime(entity.getLastSyncAt()),
+                entity.getLastSyncMergeRequestWebUrl()
+        );
+    }
+
+    private GitlabProductBranchSyncLogSummary toProductBranchSyncLogSummary(GitlabProductBranchSyncLogEntity entity) {
+        return new GitlabProductBranchSyncLogSummary(
+                entity.getId(),
+                entity.getProductBranch() == null ? null : entity.getProductBranch().getId(),
+                entity.getProductBranchLineCode(),
+                entity.getProductBranchLineName(),
+                entity.getSourceBranchName(),
+                entity.getTargetBranchName(),
+                entity.getSourceCommitSha(),
+                entity.getTargetCommitSha(),
+                entity.getMergeRequestIid(),
+                entity.getMergeRequestTitle(),
+                entity.getMergeRequestWebUrl(),
+                entity.getResult(),
+                entity.getReason(),
+                entity.getExecutedByUserId(),
+                formatTime(entity.getExecutedAt())
+        );
+    }
+
+    private ProductBranchSyncExecution executeProductBranchSync(ProjectGitlabBindingEntity binding,
+                                                                String projectRef,
+                                                                String productMainBranch,
+                                                                GitlabApiService.GitlabAuthorization authorization,
+                                                                GitlabProductBranchEntity branch,
+                                                                LocalDateTime executedAt) {
+        Integer behindCount = 0;
+        String sourceCommitSha = null;
+        String targetCommitSha = null;
+        try {
+            if (!defaultBoolean(branch.getEnabled(), true)) {
+                return finalizeProductBranchSync(
+                        binding,
+                        branch,
+                        productMainBranch,
+                        PRODUCT_BRANCH_RESULT_FAILED,
+                        "当前产品分线已停用，不能发起主线同步",
+                        behindCount,
+                        sourceCommitSha,
+                        targetCommitSha,
+                        null,
+                        null,
+                        null,
+                        executedAt
+                );
+            }
+            if (productMainBranch.equalsIgnoreCase(branch.getBranchName())) {
+                return finalizeProductBranchSync(
+                        binding,
+                        branch,
+                        productMainBranch,
+                        PRODUCT_BRANCH_RESULT_FAILED,
+                        "分线分支不能与产品主线分支相同",
+                        behindCount,
+                        sourceCommitSha,
+                        targetCommitSha,
+                        null,
+                        null,
+                        null,
+                        executedAt
+                );
+            }
+
+            GitlabApiService.GitlabBranchDetail sourceBranch = gitlabApiService.fetchBranch(
+                    binding.getApiBaseUrl(),
+                    authorization,
+                    projectRef,
+                    productMainBranch
+            );
+            GitlabApiService.GitlabBranchDetail targetBranch = gitlabApiService.fetchBranch(
+                    binding.getApiBaseUrl(),
+                    authorization,
+                    projectRef,
+                    branch.getBranchName()
+            );
+            sourceCommitSha = trimToNull(sourceBranch.commitSha());
+            targetCommitSha = trimToNull(targetBranch.commitSha());
+
+            GitlabApiService.GitlabCompareResult compareResult = gitlabApiService.compareBranches(
+                    binding.getApiBaseUrl(),
+                    authorization,
+                    projectRef,
+                    branch.getBranchName(),
+                    productMainBranch
+            );
+            behindCount = compareResult.commitIds().size();
+            if (compareResult.sameRef() || compareResult.commitIds().isEmpty()) {
+                return finalizeProductBranchSync(
+                        binding,
+                        branch,
+                        productMainBranch,
+                        PRODUCT_BRANCH_RESULT_NO_CHANGE,
+                        "主线当前没有新增提交需要同步到该分线",
+                        behindCount,
+                        sourceCommitSha,
+                        targetCommitSha,
+                        null,
+                        null,
+                        null,
+                        executedAt
+                );
+            }
+
+            List<GitlabApiService.GitlabMergeRequest> openMergeRequests = gitlabApiService.listMergeRequests(
+                    binding.getApiBaseUrl(),
+                    authorization,
+                    projectRef,
+                    "opened",
+                    productMainBranch,
+                    branch.getBranchName()
+            );
+            if (!openMergeRequests.isEmpty()) {
+                GitlabApiService.GitlabMergeRequest openMergeRequest = openMergeRequests.get(0);
+                return finalizeProductBranchSync(
+                        binding,
+                        branch,
+                        productMainBranch,
+                        PRODUCT_BRANCH_RESULT_EXISTING_OPEN_MR,
+                        "已存在从产品主线到该分线的开放同步 MR",
+                        behindCount,
+                        sourceCommitSha,
+                        targetCommitSha,
+                        openMergeRequest.iid(),
+                        openMergeRequest.title(),
+                        openMergeRequest.webUrl(),
+                        executedAt
+                );
+            }
+
+            GitlabApiService.GitlabCreatedMergeRequest mergeRequest = gitlabApiService.createMergeRequest(
+                    binding.getApiBaseUrl(),
+                    authorization,
+                    projectRef,
+                    productMainBranch,
+                    branch.getBranchName(),
+                    buildProductBranchSyncMrTitle(productMainBranch, branch.getBranchName()),
+                    buildProductBranchSyncMrDescription(binding, branch, productMainBranch, executedAt)
+            );
+            return finalizeProductBranchSync(
+                    binding,
+                    branch,
+                    productMainBranch,
+                    PRODUCT_BRANCH_RESULT_CREATED,
+                    "已创建主线同步 MR",
+                    behindCount,
+                    sourceCommitSha,
+                    targetCommitSha,
+                    mergeRequest.iid(),
+                    mergeRequest.title(),
+                    mergeRequest.webUrl(),
+                    executedAt
+            );
+        } catch (RuntimeException exception) {
+            return finalizeProductBranchSync(
+                    binding,
+                    branch,
+                    productMainBranch,
+                    PRODUCT_BRANCH_RESULT_FAILED,
+                    limitMessage(exception.getMessage()),
+                    behindCount,
+                    sourceCommitSha,
+                    targetCommitSha,
+                    null,
+                    null,
+                    null,
+                    executedAt
+            );
+        }
+    }
+
+    private ProductBranchSyncExecution finalizeProductBranchSync(ProjectGitlabBindingEntity binding,
+                                                                 GitlabProductBranchEntity branch,
+                                                                 String sourceBranchName,
+                                                                 String result,
+                                                                 String message,
+                                                                 Integer behindCount,
+                                                                 String sourceCommitSha,
+                                                                 String targetCommitSha,
+                                                                 Long mergeRequestIid,
+                                                                 String mergeRequestTitle,
+                                                                 String mergeRequestWebUrl,
+                                                                 LocalDateTime executedAt) {
+        requiresNewTransactionTemplate.executeWithoutResult(status -> {
+            updateProductBranchSyncState(branch, result, message, mergeRequestIid, mergeRequestWebUrl, executedAt);
+            saveProductBranchSyncLog(
+                    binding,
+                    branch,
+                    sourceBranchName,
+                    branch.getBranchName(),
+                    sourceCommitSha,
+                    targetCommitSha,
+                    mergeRequestIid,
+                    mergeRequestTitle,
+                    mergeRequestWebUrl,
+                    result,
+                    message,
+                    executedAt
+            );
+        });
+        return new ProductBranchSyncExecution(
+                result,
+                new GitlabProductBranchSyncRunItem(
+                        branch.getId(),
+                        branch.getLineCode(),
+                        branch.getLineName(),
+                        branch.getBranchName(),
+                        result,
+                        message,
+                        behindCount == null ? 0 : behindCount,
+                        mergeRequestIid,
+                        mergeRequestWebUrl
+                )
+        );
+    }
+
+    private void updateProductBranchSyncState(GitlabProductBranchEntity branch,
+                                              String result,
+                                              String message,
+                                              Long mergeRequestIid,
+                                              String mergeRequestWebUrl,
+                                              LocalDateTime executedAt) {
+        branch.setLastSyncStatus(result);
+        branch.setLastSyncMessage(limitProductBranchSyncStateMessage(message));
+        branch.setLastSyncAt(executedAt);
+        branch.setLastSyncMergeRequestIid(mergeRequestIid);
+        branch.setLastSyncMergeRequestWebUrl(trimToNull(mergeRequestWebUrl));
+        productBranchRepository.save(branch);
+    }
+
+    private void saveProductBranchSyncLog(ProjectGitlabBindingEntity binding,
+                                          GitlabProductBranchEntity branch,
+                                          String sourceBranchName,
+                                          String targetBranchName,
+                                          String sourceCommitSha,
+                                          String targetCommitSha,
+                                          Long mergeRequestIid,
+                                          String mergeRequestTitle,
+                                          String mergeRequestWebUrl,
+                                          String result,
+                                          String reason,
+                                          LocalDateTime executedAt) {
+        GitlabProductBranchSyncLogEntity log = new GitlabProductBranchSyncLogEntity();
+        log.setBinding(binding);
+        log.setProductBranch(branch);
+        log.setProductBranchLineCode(branch.getLineCode());
+        log.setProductBranchLineName(branch.getLineName());
+        log.setSourceBranchName(sourceBranchName);
+        log.setTargetBranchName(targetBranchName);
+        log.setSourceCommitSha(trimToNull(sourceCommitSha));
+        log.setTargetCommitSha(trimToNull(targetCommitSha));
+        log.setMergeRequestIid(mergeRequestIid);
+        log.setMergeRequestTitle(trimToNull(mergeRequestTitle));
+        log.setMergeRequestWebUrl(trimToNull(mergeRequestWebUrl));
+        log.setResult(result);
+        log.setReason(limitMessage(reason));
+        log.setExecutedByUserId(resolveCurrentUserId());
+        log.setExecutedAt(executedAt);
+        productBranchSyncLogRepository.save(log);
+    }
+
+    private String buildProductBranchSyncMrTitle(String sourceBranchName, String targetBranchName) {
+        return "[主线同步] " + sourceBranchName + " -> " + targetBranchName;
+    }
+
+    private String buildProductBranchSyncMrDescription(ProjectGitlabBindingEntity binding,
+                                                       GitlabProductBranchEntity branch,
+                                                       String sourceBranchName,
+                                                       LocalDateTime executedAt) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("## 主线同步信息\n\n");
+        builder.append("- 平台项目：").append(binding.getProject().getName()).append("\n");
+        builder.append("- 产品线：").append(branch.getLineName()).append(" (").append(branch.getLineCode()).append(")\n");
+        builder.append("- 主线分支：").append(sourceBranchName).append("\n");
+        builder.append("- 分线分支：").append(branch.getBranchName()).append("\n");
+        builder.append("- 发起时间：").append(formatTime(executedAt)).append("\n\n");
+        builder.append("该 Merge Request 由 AI Club GitLab 产品分支管理自动创建，用于把产品主线代码同步到指定分线。");
+        return builder.toString();
     }
 
     /**
@@ -1363,6 +1865,15 @@ public class GitlabManagementService {
         return binding;
     }
 
+    private GitlabProductBranchEntity requireProductBranch(ProjectGitlabBindingEntity binding, Long productBranchId) {
+        GitlabProductBranchEntity branch = productBranchRepository.findById(productBranchId)
+                .orElseThrow(() -> new NoSuchElementException("产品分线不存在: " + productBranchId));
+        if (!binding.getId().equals(branch.getBinding().getId())) {
+            throw new NoSuchElementException("产品分线不存在: " + productBranchId);
+        }
+        return branch;
+    }
+
     /**
      * 允许一个业务项目绑定多个仓库，但仍然拦截同一项目下对同一仓库的重复绑定。
      */
@@ -1373,6 +1884,48 @@ public class GitlabManagementService {
         if (duplicated) {
             throw new IllegalArgumentException("当前项目已绑定该 GitLab 仓库，请勿重复创建");
         }
+    }
+
+    private void validateProductBranchRequest(ProjectGitlabBindingEntity binding,
+                                              String lineCode,
+                                              String branchName,
+                                              Long currentProductBranchId) {
+        boolean duplicatedLineCode = currentProductBranchId == null
+                ? productBranchRepository.existsByBinding_IdAndLineCodeIgnoreCase(binding.getId(), lineCode)
+                : productBranchRepository.existsByBinding_IdAndLineCodeIgnoreCaseAndIdNot(binding.getId(), lineCode, currentProductBranchId);
+        if (duplicatedLineCode) {
+            throw new IllegalArgumentException("当前绑定下已存在相同的产品线编码");
+        }
+
+        boolean duplicatedBranchName = currentProductBranchId == null
+                ? productBranchRepository.existsByBinding_IdAndBranchNameIgnoreCase(binding.getId(), branchName)
+                : productBranchRepository.existsByBinding_IdAndBranchNameIgnoreCaseAndIdNot(binding.getId(), branchName, currentProductBranchId);
+        if (duplicatedBranchName) {
+            throw new IllegalArgumentException("当前绑定下已存在相同的产品分线分支");
+        }
+
+        String productMainBranch = trimToNull(binding.getProductMainBranch());
+        if (productMainBranch != null && productMainBranch.equalsIgnoreCase(branchName)) {
+            throw new IllegalArgumentException("分线分支不能与产品主线分支相同");
+        }
+    }
+
+    private void validateProductMainBranch(ProjectGitlabBindingEntity binding) {
+        String productMainBranch = trimToNull(binding.getProductMainBranch());
+        if (productMainBranch == null || binding.getId() == null) {
+            return;
+        }
+        if (productBranchRepository.existsByBinding_IdAndBranchNameIgnoreCase(binding.getId(), productMainBranch)) {
+            throw new IllegalArgumentException("产品主线分支不能与已有产品分线分支相同");
+        }
+    }
+
+    private String requireProductMainBranch(ProjectGitlabBindingEntity binding) {
+        String productMainBranch = trimToNull(binding.getProductMainBranch());
+        if (!hasText(productMainBranch)) {
+            throw new IllegalArgumentException("请先在 GitLab 绑定中配置产品主线分支");
+        }
+        return productMainBranch;
     }
 
     /**
@@ -1716,6 +2269,12 @@ public class GitlabManagementService {
         return value == null ? defaultValue : value;
     }
 
+    private Long resolveCurrentUserId() {
+        return AuthContextHolder.get()
+                .map(authContext -> authContext.userId())
+                .orElse(null);
+    }
+
     private String formatTime(LocalDateTime time) {
         return time == null ? null : time.format(TIME_FORMATTER);
     }
@@ -1728,6 +2287,17 @@ public class GitlabManagementService {
         return value.length() > 1000 ? value.substring(0, 1000) : value;
     }
 
+    /**
+     * 产品分线表中的最近同步摘要字段长度为 500，需要和日志详情的 1000 字截断规则分开处理。
+     */
+    private String limitProductBranchSyncStateMessage(String message) {
+        String value = limitMessage(message);
+        return value.length() > 500 ? value.substring(0, 500) : value;
+    }
+
     private record ResolvedGitlabConfig(String apiBaseUrl, String token, String projectRef, String targetBranch) {
+    }
+
+    private record ProductBranchSyncExecution(String result, GitlabProductBranchSyncRunItem item) {
     }
 }

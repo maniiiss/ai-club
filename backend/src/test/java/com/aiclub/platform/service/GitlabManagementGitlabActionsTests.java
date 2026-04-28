@@ -16,6 +16,8 @@ import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
+import com.aiclub.platform.repository.GitlabProductBranchRepository;
+import com.aiclub.platform.repository.GitlabProductBranchSyncLogRepository;
 import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.List;
 import java.util.Map;
@@ -53,6 +56,12 @@ class GitlabManagementGitlabActionsTests {
 
     @Mock
     private GitlabAutoMergeLogRepository autoMergeLogRepository;
+
+    @Mock
+    private GitlabProductBranchRepository productBranchRepository;
+
+    @Mock
+    private GitlabProductBranchSyncLogRepository productBranchSyncLogRepository;
 
     @Mock
     private AiModelConfigRepository aiModelConfigRepository;
@@ -96,6 +105,9 @@ class GitlabManagementGitlabActionsTests {
     @Mock
     private RepositoryScanRulesetService repositoryScanRulesetService;
 
+    @Mock
+    private PlatformTransactionManager transactionManager;
+
     private GitlabManagementService gitlabManagementService;
 
     @BeforeEach
@@ -105,6 +117,8 @@ class GitlabManagementGitlabActionsTests {
                 bindingRepository,
                 autoMergeConfigRepository,
                 autoMergeLogRepository,
+                productBranchRepository,
+                productBranchSyncLogRepository,
                 aiModelConfigRepository,
                 agentRepository,
                 gitlabApiService,
@@ -120,7 +134,8 @@ class GitlabManagementGitlabActionsTests {
                 repositoryScanClientService,
                 repositoryScanRulesetService,
                 new ObjectMapper(),
-                "http://gitlab.example.com/api/v4"
+                "http://gitlab.example.com/api/v4",
+                transactionManager
         );
     }
 
@@ -392,6 +407,7 @@ class GitlabManagementGitlabActionsTests {
         binding.setGitlabProjectPath("group/demo-repo");
         binding.setGitlabProjectWebUrl("http://gitlab.example.com/group/demo-repo");
         binding.setDefaultTargetBranch("main");
+        binding.setProductMainBranch("main");
         binding.setTokenCiphertext("cipher-token");
         binding.setEnabled(true);
         return binding;

@@ -63,6 +63,13 @@ public class ProjectGitlabBindingEntity {
     private String defaultTargetBranch;
 
     /**
+     * 产品主线分支。
+     * 用于“主线同步到分线”的上游分支定义，不复用默认目标分支。
+     */
+    @Column(name = "product_main_branch", length = 100)
+    private String productMainBranch;
+
+    /**
      * 项目级测试模板配置。
      * 首版直接保存 JSON 文本，避免仓库绑定表单与执行侧模型发生强耦合。
      */
@@ -188,6 +195,14 @@ public class ProjectGitlabBindingEntity {
 
     public void setDefaultTargetBranch(String defaultTargetBranch) {
         this.defaultTargetBranch = defaultTargetBranch;
+    }
+
+    public String getProductMainBranch() {
+        return productMainBranch;
+    }
+
+    public void setProductMainBranch(String productMainBranch) {
+        this.productMainBranch = productMainBranch;
     }
 
     public String getTestProfileJson() {
