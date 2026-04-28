@@ -118,6 +118,34 @@ python scripts/probe_hindsight_memory_fact_graph.py --bank-id git-ai-club:wiki:p
 - 归一化后的实体详情样例
 - 归一化后的 facts recall 样例
 
+## 向量重建脚本
+
+当 Hindsight 因 embedding 维度切换导致 `memory_units` 无法自动迁移时，可以使用仓库内置脚本重建平台托管的 Wiki 向量数据：
+
+```bash
+python scripts/rebuild_hindsight_vectors.py
+```
+
+脚本会自动完成：
+
+- 备份 `hindsight` 数据库到 `.run-logs/hindsight-backups/`
+- 停止 `hindsight / hermes`
+- 清理平台托管 `git-ai-club:wiki:*` bank 下的旧向量与实体快照
+- 重新排队 `wiki_page / wiki_page_v2` 对应的 Hindsight retain 任务
+- 等待 `backend` 调度器重新把当前 Wiki 页面全文回灌到 Hindsight
+
+可选参数：
+
+- `--skip-backup`：跳过重建前备份
+- `--all-banks`：清空 Hindsight 中所有 bank 的内容，而不仅限于平台托管的 Wiki bank
+- `--wait-seconds 240`：调整等待 Hindsight 启动和后台回灌完成的超时时间
+- `--hindsight-console-port 29999`：临时改用新的 Hindsight 控制台端口，避免宿主机 `19999` 被其他进程占用时无法拉起容器
+
+注意：
+
+- 默认模式只重建平台可再生的 Wiki 向量数据，比较适合当前仓库。
+- 如果你使用了 `--all-banks`，非平台托管的手工记忆或外部 bank 内容不会自动回灌，需要你自己重新写入。
+
 建议在 Hindsight 容器启动后先跑一遍脚本，再做联调。
 
 如果本地 Hindsight 一直停留在 `Waiting for application startup`，优先检查两项：

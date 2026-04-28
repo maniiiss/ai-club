@@ -41,6 +41,9 @@ git-ai-club/
    `powershell -ExecutionPolicy Bypass -File .\scripts\stop-docker.ps1`
 6. 全量 Docker 打包：
    `powershell -ExecutionPolicy Bypass -File .\scripts\package.ps1`
+7. Hindsight 向量重建：
+   `python .\scripts\rebuild_hindsight_vectors.py`
+   作用：备份 `hindsight` 数据库、清理旧向量快照，并按当前 Wiki 页面重新回灌平台托管的记忆数据。
 
 ### Linux 脚本入口
 
@@ -60,6 +63,9 @@ git-ai-club/
    `bash ./scripts/stop-docker-linux.sh`
 6. 全量 Docker 打包：
    `bash ./scripts/package-linux.sh`
+7. Hindsight 向量重建：
+   `python ./scripts/rebuild_hindsight_vectors.py`
+   作用：备份 `hindsight` 数据库、清理旧向量快照，并按当前 Wiki 页面重新回灌平台托管的记忆数据。
 
 源码模式脚本会自动完成以下动作：
 

@@ -391,6 +391,14 @@ backend 会自动在其后追加 `/start` 发起异步执行。
 - 从规划 Markdown 中裁剪出的当前仓库摘要
 - 当前执行任务 / run / step 元信息
 
+开发实现结束后，`code-processing` 不再只回传 `changedFiles` 摘要，还会基于本地工作区相对 `baseCommit` 的真实改动生成 `changeReview`：
+
+- 已跟踪文件通过 `git diff --find-renames <baseCommit>` 生成 unified diff
+- 未跟踪文件补成“空文件 -> 新文件”的新增 diff
+- 二进制文件或超大 diff 不内联完整内容，而是标记 `isBinary` / `isTruncated`
+
+backend 会把这部分结果拆成独立产物，供执行详情页直接做代码审查视图，而不是再依赖 GitLab compare。
+
 ### 6.6.3 测试步骤
 
 `TEST` 步骤主要向 Codex 测试桥发送：
@@ -412,7 +420,16 @@ backend 会自动在其后追加 `/start` 发起异步执行。
 
 - `PLAN_MARKDOWN`
 - `REPORT_MARKDOWN`
-- 实现结果 JSON / 日志 artifact
+- `IMPLEMENT_RESULT_MARKDOWN`
+- `IMPLEMENT_RESULT_JSON`
+- `IMPLEMENT_DIFF_JSON`
+- 实现日志 artifact
+
+其中：
+
+- `IMPLEMENT_RESULT_JSON` 保持轻量摘要，只承载状态、变更文件、执行命令、工作分支等信息
+- `IMPLEMENT_DIFF_JSON` 专门承载变更审查数据，结构包含 `baseCommit`、`currentCommit`、`workBranch`、汇总统计和 `files[]` 逐文件 unified diff
+- 前端执行详情页的“变更审查”专区优先读取 `IMPLEMENT_DIFF_JSON`，历史任务若缺少该产物，则回退为 `changedFiles` 文件清单模式
 
 ---
 

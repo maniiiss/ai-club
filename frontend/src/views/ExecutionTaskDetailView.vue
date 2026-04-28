@@ -10,6 +10,7 @@
           <h1>{{ taskDetail.title }}</h1>
         </div>
         <div class="execution-detail-actions">
+          <el-button v-if="showImplementationChangeReviewSection" type="primary" plain @click="changeReviewDialogVisible = true">变更审查</el-button>
           <el-button v-if="canSubmitMergeRequest" type="success" @click="openQuickMergeDialog">提交MR</el-button>
           <el-button v-if="canCancelExecution && canCancel(taskDetail.status)" type="success" @click="handleCancel">取消</el-button>
           <el-button v-if="canRetryExecution && canRetry(taskDetail.status)" type="success" @click="handleRetry">重试</el-button>
@@ -102,6 +103,106 @@
             >
               确认继续执行
             </el-button>
+          </div>
+        </div>
+      </section>
+
+      <section v-if="false" class="execution-change-review-card">
+        <div class="execution-panel-head">
+          <div>
+            <h2>变更审查</h2>
+            <p>按仓库查看本次开发执行生成的代码变更；优先展示本地工作区沉淀的统一 diff，历史运行则回退为变更文件清单。</p>
+          </div>
+          <div v-if="activeChangeReviewRepository" class="execution-change-review-summary">
+            <span>文件 {{ activeChangeReviewRepository.fileCount }}</span>
+            <span>+{{ activeChangeReviewRepository.additions }}</span>
+            <span>-{{ activeChangeReviewRepository.deletions }}</span>
+            <span v-if="activeChangeReviewRepository.workBranch">分支 {{ activeChangeReviewRepository.workBranch }}</span>
+            <span v-if="activeChangeReviewRepository.truncated">预览已截断</span>
+          </div>
+        </div>
+
+        <div class="execution-change-review-repositories">
+          <button
+            v-for="repository in implementationChangeReviewRepositories"
+            :key="repository.key"
+            type="button"
+            class="execution-change-review-repository"
+            :class="{ active: repository.key === activeChangeReviewRepository?.key }"
+            @click="selectedChangeReviewRepositoryKey = repository.key"
+          >
+            <strong>{{ repository.order }}. {{ repository.repositoryDisplayName }}</strong>
+            <span>{{ repository.targetBranch ? `目标分支：${repository.targetBranch}` : '未记录目标分支' }}</span>
+            <span>{{ repository.fileCount }} 个文件</span>
+            <span v-if="repository.source === 'fallback'">仅文件清单</span>
+          </button>
+        </div>
+
+        <div v-if="activeChangeReviewRepository" class="execution-change-review-layout">
+          <aside class="execution-change-review-files">
+            <div class="execution-change-review-files-head">
+              <div>
+                <strong>{{ activeChangeReviewRepository.stepLabel || `开发实现 · ${activeChangeReviewRepository.repositoryDisplayName}` }}</strong>
+                <p v-if="activeChangeReviewRepository.baseCommit || activeChangeReviewRepository.currentCommit">
+                  Base：{{ activeChangeReviewRepository.baseCommit || '-' }} / Head：{{ activeChangeReviewRepository.currentCommit || '-' }}
+                </p>
+              </div>
+              <el-link
+                v-if="activeChangeReviewRepository.artifact?.contentRef"
+                type="primary"
+                @click.prevent="handleArtifactDownload(activeChangeReviewRepository.artifact)"
+              >
+                下载变更产物
+              </el-link>
+            </div>
+
+            <div v-if="activeChangeReviewRepository.source === 'fallback'" class="execution-change-review-fallback">
+              {{ activeChangeReviewRepository.fallbackMessage }}
+            </div>
+
+            <div v-if="activeChangeReviewRepository.files.length" class="execution-change-review-file-list">
+              <button
+                v-for="file in activeChangeReviewRepository.files"
+                :key="changeReviewFileKey(file)"
+                type="button"
+                class="execution-change-review-file"
+                :class="{ active: changeReviewFileKey(file) === selectedChangeReviewFileKey }"
+                @click="selectedChangeReviewFileKey = changeReviewFileKey(file)"
+              >
+                <span class="execution-change-review-file-type" :data-change-type="file.changeType">{{ file.changeType }}</span>
+                <span class="execution-change-review-file-path">{{ file.displayPath }}</span>
+                <span class="execution-change-review-file-stats">+{{ file.additions }} / -{{ file.deletions }}</span>
+                <span v-if="file.isBinary" class="execution-change-review-file-hint">二进制</span>
+                <span v-else-if="file.isTruncated" class="execution-change-review-file-hint">已截断</span>
+              </button>
+            </div>
+            <el-empty v-else description="当前仓库没有检测到可审查的代码变更" />
+          </aside>
+
+          <div class="execution-change-review-diff">
+            <div v-if="activeChangeReviewFile" class="execution-change-review-diff-head">
+              <div>
+                <strong>{{ activeChangeReviewFile.displayPath }}</strong>
+                <p>{{ activeChangeReviewFile.changeType }} · +{{ activeChangeReviewFile.additions }} / -{{ activeChangeReviewFile.deletions }}</p>
+              </div>
+            </div>
+
+            <div v-if="activeChangeReviewRepository.source === 'fallback'" class="execution-change-review-empty">
+              仅记录到变更文件清单，当前没有可直接审查的统一 diff。
+            </div>
+            <div v-else-if="activeChangeReviewFile" class="execution-change-review-diff-body">
+              <div
+                v-for="line in activeChangeReviewDiffLines"
+                :key="line.key"
+                class="execution-change-review-diff-line"
+                :class="`is-${line.type}`"
+              >
+                <span class="execution-change-review-line-number">{{ formatDiffLineNumber(line.leftLineNumber) }}</span>
+                <span class="execution-change-review-line-number">{{ formatDiffLineNumber(line.rightLineNumber) }}</span>
+                <code>{{ line.text || ' ' }}</code>
+              </div>
+            </div>
+            <el-empty v-else description="请选择左侧文件查看 diff" />
           </div>
         </div>
       </section>
@@ -328,6 +429,116 @@
 
     <el-empty v-else-if="!loading" description="执行任务不存在或无权访问" />
 
+    <el-dialog
+      v-model="changeReviewDialogVisible"
+      title="变更审查"
+      width="min(1320px, 97vw)"
+      class="platform-form-dialog execution-change-review-dialog"
+      align-center
+      destroy-on-close
+    >
+      <template v-if="showImplementationChangeReviewSection">
+        <div class="execution-change-review-dialog-shell">
+          <div class="execution-change-review-card execution-change-review-card-dialog">
+            <div v-if="activeChangeReviewRepository" class="execution-change-review-toolbar">
+              <div class="execution-change-review-summary">
+                <span>文件 {{ activeChangeReviewRepository.fileCount }}</span>
+                <span>+{{ activeChangeReviewRepository.additions }}</span>
+                <span>-{{ activeChangeReviewRepository.deletions }}</span>
+                <span v-if="activeChangeReviewRepository.workBranch">分支 {{ activeChangeReviewRepository.workBranch }}</span>
+                <span v-if="activeChangeReviewRepository.truncated">预览已截断</span>
+              </div>
+            </div>
+
+            <div class="execution-change-review-repositories">
+              <button
+                v-for="repository in implementationChangeReviewRepositories"
+                :key="repository.key"
+                type="button"
+                class="execution-change-review-repository"
+                :class="{ active: repository.key === activeChangeReviewRepository?.key }"
+                @click="selectedChangeReviewRepositoryKey = repository.key"
+              >
+                <strong>{{ repository.order }}. {{ repository.repositoryDisplayName }}</strong>
+                <span>{{ repository.targetBranch ? `目标分支：${repository.targetBranch}` : '未记录目标分支' }}</span>
+                <span>{{ repository.fileCount }} 个文件</span>
+                <span v-if="repository.source === 'fallback'">仅文件清单</span>
+                <span v-else-if="repository.source === 'legacy-json'">兼容旧版产物</span>
+              </button>
+            </div>
+
+            <div v-if="activeChangeReviewRepository" class="execution-change-review-layout">
+              <aside class="execution-change-review-files">
+                <div class="execution-change-review-files-head">
+                  <div>
+                    <strong>{{ activeChangeReviewRepository.stepLabel || `开发实现 · ${activeChangeReviewRepository.repositoryDisplayName}` }}</strong>
+                    <p v-if="activeChangeReviewRepository.baseCommit || activeChangeReviewRepository.currentCommit">
+                      Base：{{ activeChangeReviewRepository.baseCommit || '-' }} / Head：{{ activeChangeReviewRepository.currentCommit || '-' }}
+                    </p>
+                  </div>
+                  <el-link
+                    v-if="activeChangeReviewRepository.artifact?.contentRef"
+                    type="primary"
+                    @click.prevent="handleArtifactDownload(activeChangeReviewRepository.artifact)"
+                  >
+                    下载变更产物
+                  </el-link>
+                </div>
+
+                <div v-if="activeChangeReviewRepository.source === 'fallback'" class="execution-change-review-fallback">
+                  {{ activeChangeReviewRepository.fallbackMessage }}
+                </div>
+
+                <div v-if="activeChangeReviewRepository.files.length" class="execution-change-review-file-list">
+                  <button
+                    v-for="file in activeChangeReviewRepository.files"
+                    :key="changeReviewFileKey(file)"
+                    type="button"
+                    class="execution-change-review-file"
+                    :class="{ active: changeReviewFileKey(file) === selectedChangeReviewFileKey }"
+                    @click="selectedChangeReviewFileKey = changeReviewFileKey(file)"
+                  >
+                    <span class="execution-change-review-file-type" :data-change-type="file.changeType">{{ file.changeType }}</span>
+                    <span class="execution-change-review-file-path">{{ file.displayPath }}</span>
+                    <span class="execution-change-review-file-stats">+{{ file.additions }} / -{{ file.deletions }}</span>
+                    <span v-if="file.isBinary" class="execution-change-review-file-hint">二进制</span>
+                    <span v-else-if="file.isTruncated" class="execution-change-review-file-hint">已截断</span>
+                  </button>
+                </div>
+                <el-empty v-else description="当前仓库没有检测到可审查的代码变更" />
+              </aside>
+
+              <div class="execution-change-review-diff">
+                <div v-if="activeChangeReviewFile" class="execution-change-review-diff-head">
+                  <div>
+                    <strong>{{ activeChangeReviewFile.displayPath }}</strong>
+                    <p>{{ activeChangeReviewFile.changeType }} · +{{ activeChangeReviewFile.additions }} / -{{ activeChangeReviewFile.deletions }}</p>
+                  </div>
+                </div>
+
+                <div v-if="activeChangeReviewRepository.source === 'fallback'" class="execution-change-review-empty">
+                  仅记录到变更文件清单，当前没有可直接审查的统一 diff。
+                </div>
+                <div v-else-if="activeChangeReviewFile" class="execution-change-review-diff-body">
+                  <div
+                    v-for="line in activeChangeReviewDiffLines"
+                    :key="line.key"
+                    class="execution-change-review-diff-line"
+                    :class="`is-${line.type}`"
+                  >
+                    <span class="execution-change-review-line-number">{{ formatDiffLineNumber(line.leftLineNumber) }}</span>
+                    <span class="execution-change-review-line-number">{{ formatDiffLineNumber(line.rightLineNumber) }}</span>
+                    <code>{{ line.text || ' ' }}</code>
+                  </div>
+                </div>
+                <el-empty v-else description="请选择左侧文件查看 diff" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="quickMergeDialogVisible" title="快速提交 MR" width="720px" class="platform-form-dialog" align-center>
       <el-form ref="quickMergeFormRef" :model="quickMergeForm" :rules="quickMergeRules" label-position="top" class="platform-form-layout">
         <el-form-item label="仓库" prop="bindingId">
@@ -485,6 +696,7 @@ const artifactHydrationRetryTimers = new Map<number, number>()
 const expandedArtifactPreviewMap = ref<Record<string, boolean>>({})
 const artifactImagePreviewUrls = ref<Record<number, string>>({})
 const artifactImagePreviewLoadingMap = ref<Record<number, boolean>>({})
+const changeReviewDialogVisible = ref(false)
 const quickMergeDialogVisible = ref(false)
 const quickMergeResultVisible = ref(false)
 const quickMergeSubmitting = ref(false)
@@ -530,6 +742,58 @@ interface DevelopmentQuickMergeRepository {
 interface ImplementationArtifactState {
   workBranch: string
   mergeRequestUrl: string | null
+  changedFiles: string[]
+  changeReview: ImplementationChangeReviewPayload | null
+}
+
+interface ImplementationChangeReviewFileItem {
+  oldPath: string
+  newPath: string
+  displayPath: string
+  changeType: 'A' | 'M' | 'D' | 'R' | string
+  additions: number
+  deletions: number
+  isBinary: boolean
+  isTruncated: boolean
+  unifiedDiff: string
+}
+
+interface ImplementationChangeReviewPayload {
+  baseCommit: string
+  currentCommit: string
+  workBranch: string
+  fileCount: number
+  additions: number
+  deletions: number
+  truncated: boolean
+  files: ImplementationChangeReviewFileItem[]
+}
+
+interface ImplementationChangeReviewRepository {
+  key: string
+  order: number
+  repositoryDisplayName: string
+  targetBranch: string
+  stepLabel: string
+  source: 'artifact' | 'legacy-json' | 'fallback'
+  artifact: ExecutionArtifactItem | null
+  workBranch: string
+  baseCommit: string
+  currentCommit: string
+  fileCount: number
+  additions: number
+  deletions: number
+  truncated: boolean
+  files: ImplementationChangeReviewFileItem[]
+  fallbackMessage: string
+}
+
+interface ParsedDiffLineItem {
+  key: string
+  type: 'meta' | 'hunk' | 'context' | 'add' | 'del' | 'placeholder'
+  text: string
+  leftLineNumber: number | null
+  rightLineNumber: number | null
 }
 
 const quickMergeForm = reactive<QuickMergeForm>({
@@ -550,6 +814,9 @@ const quickMergeRules: FormRules<QuickMergeForm> = {
   targetBranch: [{ required: true, message: '请选择目标分支', trigger: 'change' }],
   title: [{ required: true, message: '请输入 MR 标题', trigger: 'blur' }]
 }
+const selectedChangeReviewRepositoryKey = ref('')
+const selectedChangeReviewFileKey = ref('')
+const isDevelopmentExecution = computed(() => taskDetail.value?.scenarioCode === 'DEVELOPMENT_IMPLEMENTATION')
 const runCardDescription = computed(() =>
   taskDetail.value?.planConfirmationPending
     ? '当前运行已完成执行规划，正在等待发起人进入执行详情查看、编辑并确认后再继续。'
@@ -602,7 +869,7 @@ const implementationArtifactStateMap = computed(() => {
     if (artifact.artifactType !== 'IMPLEMENT_RESULT_JSON') {
       continue
     }
-    const repositoryDisplayName = extractRepositoryDisplayNameFromStepName(artifactStepLabel(artifact))
+    const repositoryDisplayName = resolveImplementationRepositoryDisplayName(artifact)
     if (!repositoryDisplayName) {
       continue
     }
@@ -610,6 +877,140 @@ const implementationArtifactStateMap = computed(() => {
   }
   return map
 })
+
+const implementationDiffArtifactMap = computed(() => {
+  const map = new Map<string, ExecutionArtifactItem>()
+  for (const artifact of runDetail.value?.artifacts || []) {
+    if (artifact.artifactType !== 'IMPLEMENT_DIFF_JSON') {
+      continue
+    }
+    const repositoryDisplayName = resolveImplementationRepositoryDisplayName(artifact)
+    if (!repositoryDisplayName) {
+      continue
+    }
+    map.set(repositoryDisplayName, artifact)
+  }
+  return map
+})
+
+const implementationChangeReviewRepositories = computed<ImplementationChangeReviewRepository[]>(() => {
+  const repositories: ImplementationChangeReviewRepository[] = []
+  const visited = new Set<string>()
+  const sourceRepositories = developmentRepositories.value
+
+  const appendRepository = (
+    repositoryDisplayName: string,
+    targetBranch: string,
+    order: number,
+    artifact: ExecutionArtifactItem | null,
+    stepLabel: string,
+  ) => {
+    const state = implementationArtifactStateMap.value.get(repositoryDisplayName) || { workBranch: '', mergeRequestUrl: null, changedFiles: [], changeReview: null }
+    const parsedReview = artifact ? parseImplementationChangeReviewPayload(artifact.contentText) : null
+    const normalizedReview = parsedReview || {
+      baseCommit: '',
+      currentCommit: '',
+      workBranch: '',
+      fileCount: 0,
+      additions: 0,
+      deletions: 0,
+      truncated: false,
+      files: [] as ImplementationChangeReviewFileItem[]
+    }
+    const legacyReview = !parsedReview && state.changeReview ? state.changeReview : null
+    const effectiveReview = parsedReview || legacyReview || normalizedReview
+    const fallbackFiles = state.changedFiles.map((path) => ({
+      oldPath: '',
+      newPath: path,
+      displayPath: path,
+      changeType: 'M',
+      additions: 0,
+      deletions: 0,
+      isBinary: false,
+      isTruncated: false,
+      unifiedDiff: ''
+    }))
+    const source: 'artifact' | 'legacy-json' | 'fallback' =
+      parsedReview ? 'artifact' : legacyReview ? 'legacy-json' : 'fallback'
+    const files = source === 'fallback' ? fallbackFiles : effectiveReview.files
+    if (!files.length && !artifact && !state.changedFiles.length) {
+      return
+    }
+    repositories.push({
+      key: repositoryDisplayName || `repository-${order}`,
+      order,
+      repositoryDisplayName,
+      targetBranch,
+      stepLabel,
+      source,
+      artifact: artifact || (source === 'legacy-json'
+        ? runDetail.value?.artifacts.find((item) =>
+          item.artifactType === 'IMPLEMENT_RESULT_JSON'
+          && resolveImplementationRepositoryDisplayName(item) === repositoryDisplayName
+        ) || null
+        : null),
+      workBranch: source === 'fallback' ? state.workBranch : effectiveReview.workBranch || state.workBranch,
+      baseCommit: source === 'fallback' ? '' : effectiveReview.baseCommit,
+      currentCommit: source === 'fallback' ? '' : effectiveReview.currentCommit,
+      fileCount: source === 'fallback' ? fallbackFiles.length : effectiveReview.fileCount,
+      additions: source === 'fallback' ? 0 : effectiveReview.additions,
+      deletions: source === 'fallback' ? 0 : effectiveReview.deletions,
+      truncated: source === 'fallback' ? false : effectiveReview.truncated,
+      files,
+      fallbackMessage: artifact && !parsedReview
+        ? '变更审查产物解析失败，已回退为变更文件清单。'
+        : '当前运行仅沉淀了变更文件清单，尚未生成可审查的 diff 预览。'
+    })
+  }
+
+  sourceRepositories.forEach((repository, index) => {
+    visited.add(repository.displayName)
+    appendRepository(
+      repository.displayName,
+      repository.targetBranch,
+      repository.order || index + 1,
+      implementationDiffArtifactMap.value.get(repository.displayName) || null,
+      implementationDiffArtifactMap.value.get(repository.displayName)
+        ? artifactStepLabel(implementationDiffArtifactMap.value.get(repository.displayName)!)
+        : `开发实现 · ${repository.displayName}`
+    )
+  })
+
+  for (const [repositoryDisplayName, artifact] of implementationDiffArtifactMap.value.entries()) {
+    if (visited.has(repositoryDisplayName)) {
+      continue
+    }
+    appendRepository(
+      repositoryDisplayName,
+      '',
+      repositories.length + 1,
+      artifact,
+      artifactStepLabel(artifact) || `开发实现 · ${repositoryDisplayName}`
+    )
+  }
+
+  return repositories.sort((left, right) => left.order - right.order)
+})
+
+const showImplementationChangeReviewSection = computed(() =>
+  Boolean(isDevelopmentExecution.value && implementationChangeReviewRepositories.value.length)
+)
+
+const activeChangeReviewRepository = computed(() =>
+  implementationChangeReviewRepositories.value.find((item) => item.key === selectedChangeReviewRepositoryKey.value)
+  || implementationChangeReviewRepositories.value[0]
+  || null
+)
+
+const activeChangeReviewFile = computed(() =>
+  activeChangeReviewRepository.value?.files.find((item) => changeReviewFileKey(item) === selectedChangeReviewFileKey.value)
+  || activeChangeReviewRepository.value?.files[0]
+  || null
+)
+
+const activeChangeReviewDiffLines = computed<ParsedDiffLineItem[]>(() =>
+  buildParsedDiffLines(activeChangeReviewFile.value)
+)
 
 const developmentQuickMergeRepositories = computed<DevelopmentQuickMergeRepository[]>(() =>
   developmentRepositories.value.map((repository) => ({
@@ -684,6 +1085,44 @@ watch(
       return
     }
     planMarkdownDraft.value = value
+  },
+  { immediate: true }
+)
+
+watch(
+  implementationChangeReviewRepositories,
+  (repositories) => {
+    if (!repositories.length) {
+      selectedChangeReviewRepositoryKey.value = ''
+      selectedChangeReviewFileKey.value = ''
+      return
+    }
+    const currentRepository = repositories.find((item) => item.key === selectedChangeReviewRepositoryKey.value)
+    const nextRepository = currentRepository || repositories[0]
+    selectedChangeReviewRepositoryKey.value = nextRepository.key
+    const currentFile = nextRepository.files.find((item) => changeReviewFileKey(item) === selectedChangeReviewFileKey.value)
+    selectedChangeReviewFileKey.value = currentFile
+      ? changeReviewFileKey(currentFile)
+      : nextRepository.files[0]
+        ? changeReviewFileKey(nextRepository.files[0])
+        : ''
+  },
+  { immediate: true }
+)
+
+watch(
+  () => activeChangeReviewRepository.value?.key,
+  () => {
+    if (!activeChangeReviewRepository.value) {
+      selectedChangeReviewFileKey.value = ''
+      return
+    }
+    const currentFile = activeChangeReviewRepository.value.files.find((item) => changeReviewFileKey(item) === selectedChangeReviewFileKey.value)
+    selectedChangeReviewFileKey.value = currentFile
+      ? changeReviewFileKey(currentFile)
+      : activeChangeReviewRepository.value.files[0]
+        ? changeReviewFileKey(activeChangeReviewRepository.value.files[0])
+        : ''
   },
   { immediate: true }
 )
@@ -840,6 +1279,9 @@ const isLogArtifact = (artifact: ExecutionArtifactItem) =>
  * 详情页这里优先展示 Markdown，避免用户看到重复卡片。
  */
 const shouldHideArtifactFromDisplay = (artifact: ExecutionArtifactItem, artifacts: ExecutionArtifactItem[]) => {
+  if (artifact.artifactType === 'IMPLEMENT_DIFF_JSON') {
+    return true
+  }
   if (artifact.artifactType === 'IMPLEMENT_RESULT_JSON') {
     return artifacts.some((item) => item.stepId === artifact.stepId && item.artifactType === 'IMPLEMENT_RESULT_MARKDOWN')
   }
@@ -869,18 +1311,201 @@ const extractRepositoryDisplayNameFromStepName = (stepName: string | null | unde
   return normalized.replace(/^开发实现/, '').trim()
 }
 
+const extractRepositoryDisplayNameFromArtifactTitle = (title: string | null | undefined) => {
+  const normalized = String(title || '').trim()
+  if (!normalized) {
+    return ''
+  }
+  const separatorIndex = normalized.lastIndexOf('·')
+  if (separatorIndex >= 0) {
+    return normalized.slice(separatorIndex + 1).trim()
+  }
+  return ''
+}
+
+const resolveImplementationRepositoryDisplayName = (artifact: ExecutionArtifactItem) =>
+  extractRepositoryDisplayNameFromStepName(artifactStepLabel(artifact))
+  || extractRepositoryDisplayNameFromArtifactTitle(artifact.title)
+
 const parseImplementationArtifactState = (contentText: string | null | undefined): ImplementationArtifactState => {
   try {
     const parsed = JSON.parse(String(contentText || '{}'))
     const workBranch = String(parsed?.workBranch || '').trim()
     const mergeRequestUrl = String(parsed?.mergeRequestUrl || '').trim()
+    const changedFiles = Array.isArray(parsed?.changedFiles)
+      ? parsed.changedFiles.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+      : []
+    const changeReview = parseImplementationChangeReviewValue(parsed?.changeReview)
+      || parseImplementationChangeReviewValue(parseRawOutputJson(parsed?.rawOutput)?.changeReview)
     return {
       workBranch,
-      mergeRequestUrl: mergeRequestUrl || null
+      mergeRequestUrl: mergeRequestUrl || null,
+      changedFiles,
+      changeReview
     }
   } catch (error) {
-    return { workBranch: '', mergeRequestUrl: null }
+    return { workBranch: '', mergeRequestUrl: null, changedFiles: [], changeReview: null }
   }
+}
+
+const parseImplementationChangeReviewPayload = (contentText: string | null | undefined): ImplementationChangeReviewPayload | null => {
+  try {
+    const parsed = JSON.parse(String(contentText || '{}'))
+    return parseImplementationChangeReviewValue(parsed)
+  } catch (error) {
+    return null
+  }
+}
+
+const parseRawOutputJson = (value: unknown): Record<string, any> | null => {
+  if (!hasText(String(value || ''))) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(String(value))
+    return typeof parsed === 'object' && parsed !== null ? parsed : null
+  } catch (error) {
+    return null
+  }
+}
+
+const parseImplementationChangeReviewValue = (value: unknown): ImplementationChangeReviewPayload | null => {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const parsed = value as Record<string, any>
+  const files = Array.isArray(parsed.files)
+    ? parsed.files.map((item: any, index: number) => ({
+      oldPath: String(item?.oldPath || '').trim(),
+      newPath: String(item?.newPath || '').trim(),
+      displayPath: String(item?.displayPath || '').trim() || String(item?.newPath || item?.oldPath || `变更文件 ${index + 1}`).trim(),
+      changeType: String(item?.changeType || 'M').trim() || 'M',
+      additions: Number(item?.additions || 0),
+      deletions: Number(item?.deletions || 0),
+      isBinary: Boolean(item?.isBinary),
+      isTruncated: Boolean(item?.isTruncated),
+      unifiedDiff: String(item?.unifiedDiff || '')
+    }))
+    : []
+  if (!files.length && !hasText(String(parsed.baseCommit || parsed.currentCommit || parsed.workBranch || ''))) {
+    return null
+  }
+  return {
+    baseCommit: String(parsed.baseCommit || '').trim(),
+    currentCommit: String(parsed.currentCommit || '').trim(),
+    workBranch: String(parsed.workBranch || '').trim(),
+    fileCount: Number(parsed.fileCount || files.length || 0),
+    additions: Number(parsed.additions || 0),
+    deletions: Number(parsed.deletions || 0),
+    truncated: Boolean(parsed.truncated),
+    files
+  }
+}
+
+const changeReviewFileKey = (file: ImplementationChangeReviewFileItem) =>
+  [file.changeType, file.displayPath || file.newPath || file.oldPath].join('::')
+
+const formatDiffLineNumber = (value: number | null) => value == null ? '' : String(value)
+
+const buildParsedDiffLines = (file: ImplementationChangeReviewFileItem | null): ParsedDiffLineItem[] => {
+  if (!file) {
+    return []
+  }
+  if (!hasText(file.unifiedDiff)) {
+    return [{
+      key: `${changeReviewFileKey(file)}-empty`,
+      type: 'placeholder',
+      text: '当前文件没有可展示的 diff 内容。',
+      leftLineNumber: null,
+      rightLineNumber: null
+    }]
+  }
+  if (file.isBinary) {
+    return [{
+      key: `${changeReviewFileKey(file)}-binary`,
+      type: 'placeholder',
+      text: file.unifiedDiff,
+      leftLineNumber: null,
+      rightLineNumber: null
+    }]
+  }
+  const lines = String(file.unifiedDiff || '').replace(/\r/g, '').split('\n')
+  const result: ParsedDiffLineItem[] = []
+  let leftLineNumber = 0
+  let rightLineNumber = 0
+  let inHunk = false
+  lines.forEach((line, index) => {
+    if (line.startsWith('@@')) {
+      const matched = line.match(/^@@\s+\-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/)
+      if (matched) {
+        leftLineNumber = Number(matched[1])
+        rightLineNumber = Number(matched[2])
+      }
+      inHunk = true
+      result.push({
+        key: `${changeReviewFileKey(file)}-hunk-${index}`,
+        type: 'hunk',
+        text: line,
+        leftLineNumber: null,
+        rightLineNumber: null
+      })
+      return
+    }
+    if (line.startsWith('diff --git ') || line.startsWith('index ') || line.startsWith('--- ') || line.startsWith('+++ ')
+      || line.startsWith('new file mode') || line.startsWith('deleted file mode') || line.startsWith('rename from ')
+      || line.startsWith('rename to ') || line.startsWith('similarity index ') || line.startsWith('Binary files ')) {
+      result.push({
+        key: `${changeReviewFileKey(file)}-meta-${index}`,
+        type: 'meta',
+        text: line,
+        leftLineNumber: null,
+        rightLineNumber: null
+      })
+      return
+    }
+    if (inHunk && line.startsWith('+') && !line.startsWith('+++')) {
+      result.push({
+        key: `${changeReviewFileKey(file)}-add-${index}`,
+        type: 'add',
+        text: line,
+        leftLineNumber: null,
+        rightLineNumber: rightLineNumber
+      })
+      rightLineNumber += 1
+      return
+    }
+    if (inHunk && line.startsWith('-') && !line.startsWith('---')) {
+      result.push({
+        key: `${changeReviewFileKey(file)}-del-${index}`,
+        type: 'del',
+        text: line,
+        leftLineNumber: leftLineNumber,
+        rightLineNumber: null
+      })
+      leftLineNumber += 1
+      return
+    }
+    if (inHunk && line.startsWith(' ')) {
+      result.push({
+        key: `${changeReviewFileKey(file)}-context-${index}`,
+        type: 'context',
+        text: line,
+        leftLineNumber,
+        rightLineNumber
+      })
+      leftLineNumber += 1
+      rightLineNumber += 1
+      return
+    }
+    result.push({
+      key: `${changeReviewFileKey(file)}-fallback-${index}`,
+      type: inHunk ? 'context' : 'meta',
+      text: line,
+      leftLineNumber: null,
+      rightLineNumber: null
+    })
+  })
+  return result
 }
 
 /**
@@ -2165,6 +2790,337 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 
+.execution-change-review-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}
+
+.execution-change-review-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.execution-change-review-dialog-shell {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 2px 4px 4px;
+}
+
+:deep(.execution-change-review-dialog .el-dialog__body) {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: calc(var(--change-review-dialog-max-height, var(--platform-dialog-max-height, calc(100vh - 48px))) - 118px);
+  max-height: calc(var(--change-review-dialog-max-height, var(--platform-dialog-max-height, calc(100vh - 48px))) - 118px);
+  padding: 14px 18px 18px;
+  overflow: hidden;
+}
+
+:deep(.execution-change-review-dialog .el-dialog) {
+  --change-review-dialog-max-height: min(900px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  width: min(1320px, calc(100vw - 24px)) !important;
+  max-height: var(--change-review-dialog-max-height);
+  overflow: hidden;
+}
+
+:deep(.execution-change-review-dialog .el-dialog__header) {
+  flex: 0 0 auto;
+  padding-bottom: 12px;
+}
+
+:deep(.execution-change-review-dialog .el-dialog__footer) {
+  flex: 0 0 auto;
+  padding-top: 12px;
+}
+
+.execution-change-review-card-dialog {
+  height: 100%;
+  padding: 8px 16px 16px;
+  box-shadow: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  gap: 12px;
+}
+
+.execution-change-review-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.execution-change-review-summary span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.execution-change-review-repositories {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 0;
+}
+
+.execution-change-review-repository {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.96) 0%, rgba(248, 250, 252, 0.98) 100%);
+  color: #1e3a8a;
+  text-align: left;
+  cursor: pointer;
+}
+
+.execution-change-review-repository.active {
+  border-color: #0284c7;
+  box-shadow: 0 14px 28px rgba(14, 116, 144, 0.16);
+}
+
+.execution-change-review-repository strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.execution-change-review-repository span {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.execution-change-review-layout {
+  display: grid;
+  grid-template-columns: minmax(360px, 440px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.execution-change-review-files,
+.execution-change-review-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #fbfdff;
+  overflow: hidden;
+}
+
+.execution-change-review-files-head,
+.execution-change-review-diff-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.execution-change-review-files-head strong,
+.execution-change-review-diff-head strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.execution-change-review-files-head p,
+.execution-change-review-diff-head p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.execution-change-review-fallback,
+.execution-change-review-empty {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(14, 116, 144, 0.08);
+  color: #0f766e;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.execution-change-review-file-list {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 2px 0 0;
+  scrollbar-gutter: stable;
+}
+
+.execution-change-review-file {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.execution-change-review-file.active {
+  border-color: #0284c7;
+  background: rgba(224, 242, 254, 0.64);
+}
+
+.execution-change-review-file-type {
+  grid-row: span 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #0f172a;
+  color: #f8fafc;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.execution-change-review-file-type[data-change-type='A'] {
+  background: #047857;
+}
+
+.execution-change-review-file-type[data-change-type='M'] {
+  background: #1d4ed8;
+}
+
+.execution-change-review-file-type[data-change-type='D'] {
+  background: #b91c1c;
+}
+
+.execution-change-review-file-type[data-change-type='R'] {
+  background: #7c3aed;
+}
+
+.execution-change-review-file-path {
+  min-width: 0;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.execution-change-review-file-stats,
+.execution-change-review-file-hint {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.execution-change-review-diff-body {
+  flex: 1 1 auto;
+  height: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 2px 0;
+  border-radius: 12px;
+  background: #020617;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  scrollbar-gutter: stable;
+}
+
+.execution-change-review-diff-line {
+  display: grid;
+  grid-template-columns: 64px 64px minmax(0, 1fr);
+  align-items: stretch;
+  min-width: 0;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.execution-change-review-diff-line code {
+  display: block;
+  padding: 0 10px 0 8px;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.execution-change-review-line-number {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 8px;
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+  color: #64748b;
+  user-select: none;
+}
+
+.execution-change-review-diff-line.is-add {
+  background: rgba(20, 83, 45, 0.55);
+}
+
+.execution-change-review-diff-line.is-add .execution-change-review-line-number {
+  background: rgba(20, 83, 45, 0.35);
+  color: #bbf7d0;
+}
+
+.execution-change-review-diff-line.is-del {
+  background: rgba(127, 29, 29, 0.58);
+}
+
+.execution-change-review-diff-line.is-del .execution-change-review-line-number {
+  background: rgba(127, 29, 29, 0.32);
+  color: #fecaca;
+}
+
+.execution-change-review-diff-line.is-context {
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.execution-change-review-diff-line.is-hunk {
+  background: rgba(30, 41, 59, 0.95);
+}
+
+.execution-change-review-diff-line.is-hunk code,
+.execution-change-review-diff-line.is-meta code,
+.execution-change-review-diff-line.is-placeholder code {
+  color: #93c5fd;
+}
+
+.execution-change-review-diff-line.is-meta,
+.execution-change-review-diff-line.is-placeholder {
+  background: rgba(15, 23, 42, 0.96);
+}
+
 .execution-run-head,
 .execution-artifact-head,
 .execution-step-log-head {
@@ -2505,10 +3461,137 @@ pre {
     grid-template-columns: 1fr;
   }
 
+  .execution-change-review-toolbar {
+    justify-content: flex-start;
+  }
+
+  .execution-change-review-layout {
+    grid-template-columns: 1fr;
+  }
+
   .execution-detail-heading,
-  .execution-run-head {
+  .execution-run-head,
+  .execution-change-review-files-head,
+  .execution-change-review-diff-head {
     flex-direction: column;
     align-items: stretch;
+  }
+}
+
+@media (max-width: 768px) {
+  :deep(.execution-change-review-dialog .el-dialog) {
+    --change-review-dialog-max-height: calc(100vh - 8px);
+    width: calc(100vw - 8px) !important;
+    margin: 4px auto !important;
+  }
+
+  :deep(.execution-change-review-dialog .el-dialog__header) {
+    padding: 18px 18px 10px;
+  }
+
+  :deep(.execution-change-review-dialog .el-dialog__title) {
+    font-size: 22px;
+  }
+
+  :deep(.execution-change-review-dialog .el-dialog__body) {
+    height: calc(var(--change-review-dialog-max-height) - 92px);
+    max-height: calc(var(--change-review-dialog-max-height) - 92px);
+    padding: 8px 10px 10px;
+  }
+
+  .execution-change-review-toolbar,
+  .execution-change-review-summary {
+    justify-content: flex-start;
+  }
+
+  .execution-change-review-card-dialog {
+    padding: 4px 6px 8px;
+    gap: 8px;
+  }
+
+  .execution-change-review-summary {
+    gap: 6px;
+  }
+
+  .execution-change-review-summary span {
+    font-size: 10px;
+  }
+
+  .execution-change-review-repositories {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(240px, 84vw);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 4px;
+    padding: 0 4px 4px;
+    scrollbar-gutter: stable;
+  }
+
+  .execution-change-review-repository {
+    min-height: 100%;
+    padding: 10px 12px;
+    scroll-snap-align: start;
+  }
+
+  .execution-change-review-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(220px, 0.92fr) minmax(0, 1.35fr);
+    gap: 8px;
+  }
+
+  .execution-change-review-files,
+  .execution-change-review-diff {
+    padding: 10px;
+    border-radius: 12px;
+  }
+
+  .execution-change-review-files-head,
+  .execution-change-review-diff-head {
+    gap: 8px;
+  }
+
+  .execution-change-review-files-head strong,
+  .execution-change-review-diff-head strong {
+    font-size: 13px;
+  }
+
+  .execution-change-review-files-head p,
+  .execution-change-review-diff-head p {
+    font-size: 11px;
+  }
+
+  .execution-change-review-file {
+    padding: 9px 10px;
+  }
+
+  .execution-change-review-file-path {
+    font-size: 12px;
+  }
+
+  .execution-change-review-file-stats,
+  .execution-change-review-file-hint {
+    font-size: 10px;
+  }
+
+  .execution-change-review-diff-body {
+    min-height: 280px;
+  }
+
+  .execution-change-review-diff-line {
+    grid-template-columns: 44px 44px minmax(0, 1fr);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .execution-change-review-diff-line code {
+    padding: 0 8px 0 6px;
+  }
+
+  .execution-change-review-line-number {
+    padding: 0 6px;
+    font-size: 10px;
   }
 }
 </style>

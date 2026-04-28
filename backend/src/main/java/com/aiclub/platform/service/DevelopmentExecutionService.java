@@ -272,7 +272,24 @@ public class DevelopmentExecutionService {
         String displayMarkdown = buildImplementationDisplayMarkdown(result);
         completeStep(executionTask, executionRun, stepPlan, totalSteps, step, displayMarkdown, defaultSuccessMessage(result.summary(), repository.repositoryDisplayName(), "开发实现"));
         artifacts.add(saveArtifact(executionTask, executionRun, step, "IMPLEMENT_RESULT_MARKDOWN", "实现结果 · " + repository.repositoryDisplayName(), displayMarkdown));
-        artifacts.add(saveArtifact(executionTask, executionRun, step, "IMPLEMENT_RESULT_JSON", "实现结果 JSON · " + repository.repositoryDisplayName(), prettyJson(toJson(result))));
+        artifacts.add(saveArtifact(
+                executionTask,
+                executionRun,
+                step,
+                "IMPLEMENT_RESULT_JSON",
+                "实现结果 JSON · " + repository.repositoryDisplayName(),
+                prettyJson(toJson(buildImplementationResultSummary(result)))
+        ));
+        if (result.changeReview() != null) {
+            artifacts.add(saveArtifact(
+                    executionTask,
+                    executionRun,
+                    step,
+                    "IMPLEMENT_DIFF_JSON",
+                    "变更审查 JSON · " + repository.repositoryDisplayName(),
+                    prettyJson(toJson(result.changeReview()))
+            ));
+        }
         artifacts.add(saveArtifact(executionTask, executionRun, step, "IMPLEMENT_LOG", "开发实现日志 · " + repository.repositoryDisplayName(), defaultString(result.log())));
         return result;
     }
@@ -1630,6 +1647,7 @@ public class DevelopmentExecutionService {
             if (!hasText(displayMarkdown) && node.path("jsonParseDegraded").asBoolean(false)) {
                 displayMarkdown = trimToNull(node.path("rawOutput").asText(""));
             }
+            ImplementationChangeReview changeReview = readImplementationChangeReview(node.path("changeReview"));
             return new ImplementationStepResult(
                     node.path("status").asText("SUCCESS"),
                     hasText(summary) ? summary : "开发实现已完成",
@@ -1639,6 +1657,7 @@ public class DevelopmentExecutionService {
                     trimToNull(node.path("workBranch").asText("")),
                     trimToNull(node.path("commitSha").asText("")),
                     trimToNull(node.path("mergeRequestUrl").asText("")),
+                    changeReview,
                     rawOutput,
                     displayMarkdown
             );
@@ -1653,10 +1672,48 @@ public class DevelopmentExecutionService {
                     null,
                     null,
                     null,
+                    null,
                     rawOutput,
                     trimToNull(rawOutput)
             );
         }
+    }
+
+    /**
+     * code-processing 会把本地工作区相对 base commit 的真实 diff 结构化回传；
+     * backend 这里保持弱解析，避免历史运行或降级输出因为字段缺失导致整步失败。
+     */
+    private ImplementationChangeReview readImplementationChangeReview(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull() || !node.isObject()) {
+            return null;
+        }
+        List<ImplementationChangeFileReview> files = new ArrayList<>();
+        JsonNode filesNode = node.path("files");
+        if (filesNode.isArray()) {
+            for (JsonNode item : filesNode) {
+                files.add(new ImplementationChangeFileReview(
+                        item.path("oldPath").asText(""),
+                        item.path("newPath").asText(""),
+                        item.path("displayPath").asText(""),
+                        item.path("changeType").asText("M"),
+                        item.path("additions").asInt(0),
+                        item.path("deletions").asInt(0),
+                        item.path("isBinary").asBoolean(false),
+                        item.path("isTruncated").asBoolean(false),
+                        item.path("unifiedDiff").asText("")
+                ));
+            }
+        }
+        return new ImplementationChangeReview(
+                node.path("baseCommit").asText(""),
+                node.path("currentCommit").asText(""),
+                node.path("workBranch").asText(""),
+                node.path("fileCount").asInt(files.size()),
+                node.path("additions").asInt(0),
+                node.path("deletions").asInt(0),
+                node.path("truncated").asBoolean(false),
+                files
+        );
     }
 
     private void validateImplementationResult(ImplementationStepResult result) {
@@ -1913,6 +1970,19 @@ public class DevelopmentExecutionService {
             return result.displayMarkdown().trim();
         }
         return buildImplementationResultMarkdown(result);
+    }
+
+    private ImplementationResultSummary buildImplementationResultSummary(ImplementationStepResult result) {
+        return new ImplementationResultSummary(
+                result.status(),
+                result.summary(),
+                result.changedFiles(),
+                result.commandsExecuted(),
+                result.log(),
+                result.workBranch(),
+                result.commitSha(),
+                result.mergeRequestUrl()
+        );
     }
 
     /**
@@ -2359,8 +2429,46 @@ public class DevelopmentExecutionService {
             String workBranch,
             String commitSha,
             String mergeRequestUrl,
+            ImplementationChangeReview changeReview,
             String rawOutput,
             String displayMarkdown
+    ) {
+    }
+
+    private record ImplementationResultSummary(
+            String status,
+            String summary,
+            List<String> changedFiles,
+            List<String> commandsExecuted,
+            String log,
+            String workBranch,
+            String commitSha,
+            String mergeRequestUrl
+    ) {
+    }
+
+    private record ImplementationChangeReview(
+            String baseCommit,
+            String currentCommit,
+            String workBranch,
+            int fileCount,
+            int additions,
+            int deletions,
+            boolean truncated,
+            List<ImplementationChangeFileReview> files
+    ) {
+    }
+
+    private record ImplementationChangeFileReview(
+            String oldPath,
+            String newPath,
+            String displayPath,
+            String changeType,
+            int additions,
+            int deletions,
+            boolean isBinary,
+            boolean isTruncated,
+            String unifiedDiff
     ) {
     }
 

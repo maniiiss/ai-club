@@ -319,21 +319,30 @@
             <div v-else class="management-list-table-scroll mobile-card-scroll" v-loading="productBranchLoading">
               <template v-if="!isMobileViewport">
                 <table class="management-list-table gitlab-product-branch-table mobile-card-table">
+                  <colgroup>
+                    <col class="gitlab-product-col-select" />
+                    <col class="gitlab-product-col-main" />
+                    <col class="gitlab-product-col-branch" />
+                    <col class="gitlab-product-col-status" />
+                    <col class="gitlab-product-col-mr" />
+                    <col class="gitlab-product-col-enabled" />
+                    <col class="gitlab-product-col-actions" />
+                  </colgroup>
                   <thead>
                     <tr>
-                      <th style="width: 48px">
+                      <th class="center">
                         <el-checkbox
                           :model-value="selectedProductBranchIds.length > 0 && selectedProductBranchIds.length === enabledProductBranches.length"
                           :indeterminate="selectedProductBranchIds.length > 0 && selectedProductBranchIds.length < enabledProductBranches.length"
                           @change="selectedProductBranchIds = $event ? enabledProductBranches.map((item) => item.id) : []"
                         />
                       </th>
-                      <th class="gitlab-product-col-main">产品线</th>
-                      <th class="gitlab-product-col-branch">Git 分支</th>
-                      <th class="gitlab-product-col-status">同步状态</th>
-                      <th class="gitlab-product-col-mr">开放 MR</th>
-                      <th class="center gitlab-product-col-enabled">启用</th>
-                      <th class="right gitlab-product-col-actions">操作</th>
+                      <th>产品线</th>
+                      <th>Git 分支</th>
+                      <th>同步状态</th>
+                      <th>开放 MR</th>
+                      <th class="center">启用</th>
+                      <th class="right">操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -341,7 +350,7 @@
                       <td colspan="7" class="gitlab-empty-row">暂无产品分支</td>
                     </tr>
                     <tr v-for="row in productBranchList" :key="row.id" class="management-list-row">
-                      <td>
+                      <td class="center gitlab-product-col-select">
                         <el-checkbox
                           :model-value="selectedProductBranchIds.includes(row.id)"
                           :disabled="!row.enabled"
@@ -2461,6 +2470,10 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
   min-width: 1160px;
 }
 
+.gitlab-product-branch-table {
+  min-width: 1080px;
+}
+
 .gitlab-binding-col-main { width: 28%; }
 .gitlab-binding-col-branch { width: 12%; }
 .gitlab-binding-col-api { width: 18%; }
@@ -2469,12 +2482,36 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 .gitlab-binding-col-updated { width: 12%; }
 .gitlab-binding-col-actions { width: 12%; }
 
-.gitlab-product-col-main { width: 18%; }
-.gitlab-product-col-branch { width: 22%; }
-.gitlab-product-col-status { width: 18%; }
-.gitlab-product-col-mr { width: 14%; }
-.gitlab-product-col-enabled { width: 8%; }
-.gitlab-product-col-actions { width: 10%; }
+.gitlab-product-branch-table col.gitlab-product-col-select { width: 3.5%; }
+.gitlab-product-branch-table col.gitlab-product-col-main { width: 16.5%; }
+.gitlab-product-branch-table col.gitlab-product-col-branch { width: 28%; }
+.gitlab-product-branch-table col.gitlab-product-col-status { width: 22%; }
+.gitlab-product-branch-table col.gitlab-product-col-mr { width: 14%; }
+.gitlab-product-branch-table col.gitlab-product-col-enabled { width: 8%; }
+.gitlab-product-branch-table col.gitlab-product-col-actions { width: 8%; }
+
+.gitlab-product-col-select {
+  padding-left: 4px !important;
+  padding-right: 4px !important;
+  text-align: center;
+}
+
+.gitlab-product-col-main {
+  padding-left: 8px !important;
+}
+
+.gitlab-product-col-main :deep(.management-list-title-copy) {
+  min-width: 0;
+}
+
+.gitlab-product-col-main :deep(.management-list-title-cell) {
+  gap: 8px;
+}
+
+.gitlab-product-col-main :deep(.management-list-title-icon) {
+  width: 22px;
+  height: 22px;
+}
 
 .gitlab-auto-col-main { width: 24%; }
 .gitlab-auto-col-mode { width: 10%; }

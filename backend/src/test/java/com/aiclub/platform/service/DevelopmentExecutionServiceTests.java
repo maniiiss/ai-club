@@ -551,7 +551,40 @@ class DevelopmentExecutionServiceTests {
                           "changedFiles": ["backend/src/main/App.java", "frontend/src/App.vue"],
                           "commandsExecuted": ["git status"],
                           "log": "实现完成",
-                          "workBranch": "feature/multi-repo"
+                          "workBranch": "feature/multi-repo",
+                          "changeReview": {
+                            "baseCommit": "frontend-base-sha",
+                            "currentCommit": "frontend-head-sha",
+                            "workBranch": "feature/multi-repo",
+                            "fileCount": 2,
+                            "additions": 8,
+                            "deletions": 3,
+                            "truncated": false,
+                            "files": [
+                              {
+                                "oldPath": "frontend/src/App.vue",
+                                "newPath": "frontend/src/App.vue",
+                                "displayPath": "frontend/src/App.vue",
+                                "changeType": "M",
+                                "additions": 5,
+                                "deletions": 2,
+                                "isBinary": false,
+                                "isTruncated": false,
+                                "unifiedDiff": "diff --git a/frontend/src/App.vue b/frontend/src/App.vue\\n@@ -1 +1 @@\\n-old\\n+new"
+                              },
+                              {
+                                "oldPath": "",
+                                "newPath": "backend/src/main/App.java",
+                                "displayPath": "backend/src/main/App.java",
+                                "changeType": "A",
+                                "additions": 3,
+                                "deletions": 0,
+                                "isBinary": false,
+                                "isTruncated": false,
+                                "unifiedDiff": "--- /dev/null\\n+++ b/backend/src/main/App.java"
+                              }
+                            ]
+                          }
                         }
                         """);
         when(agentExecutionService.runAgent(
@@ -619,6 +652,7 @@ class DevelopmentExecutionServiceTests {
                         "PLAN_MARKDOWN",
                         "IMPLEMENT_RESULT_MARKDOWN",
                         "IMPLEMENT_RESULT_JSON",
+                        "IMPLEMENT_DIFF_JSON",
                         "IMPLEMENT_LOG",
                         "TEST_PLAN_JSON",
                         "TEST_SUITE_RESULT_MARKDOWN",
@@ -628,6 +662,23 @@ class DevelopmentExecutionServiceTests {
                         "TEST_LOG",
                         "REPORT_MARKDOWN"
                 );
+        String implementationJson = savedArtifacts.stream()
+                .filter(artifact -> "IMPLEMENT_RESULT_JSON".equals(artifact.getArtifactType()))
+                .findFirst()
+                .orElseThrow()
+                .getContentText();
+        String implementationDiffJson = savedArtifacts.stream()
+                .filter(artifact -> "IMPLEMENT_DIFF_JSON".equals(artifact.getArtifactType()))
+                .findFirst()
+                .orElseThrow()
+                .getContentText();
+        assertThat(implementationJson)
+                .contains("\"status\"")
+                .contains("\"changedFiles\"")
+                .doesNotContain("changeReview");
+        assertThat(implementationDiffJson)
+                .contains("\"baseCommit\"")
+                .contains("\"frontend/src/App.vue\"");
         verify(agentExecutionService).runAgent(
                 eq(13L),
                 any(String.class),

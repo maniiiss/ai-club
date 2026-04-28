@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -19,7 +20,9 @@ from app.models import (
     TestSuitePlan as CodexTestSuitePlan,
 )
 from app.services.codex_execution_service import (
+    CHANGE_REVIEW_MAX_DIFF_CHARS_PER_FILE,
     DevelopmentExecutionWorkspace,
+    _build_change_review_payload,
     _build_codex_prompt,
     _checkout_commit_if_needed,
     _clone_repository,
@@ -64,6 +67,29 @@ class CodexExecutionServiceTests(unittest.TestCase):
             testCommands=test_commands or [],
         )
 
+    def _run_git(self, repo_dir: Path, *args: str) -> str:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        )
+        return (completed.stdout or "").strip()
+
+    def _init_change_review_repo(self, repo_dir: Path) -> str:
+        self._run_git(repo_dir, "init")
+        self._run_git(repo_dir, "config", "user.name", "AI Club Test")
+        self._run_git(repo_dir, "config", "user.email", "test@example.com")
+        (repo_dir / "app.txt").write_text("line-1\nline-2\n", encoding="utf-8")
+        (repo_dir / "rename-me.txt").write_text("rename-me\n", encoding="utf-8")
+        (repo_dir / "delete-me.txt").write_text("delete-me\n", encoding="utf-8")
+        (repo_dir / "binary.dat").write_bytes(b"\x00\x01before")
+        self._run_git(repo_dir, "add", ".")
+        self._run_git(repo_dir, "commit", "-m", "init")
+        return self._run_git(repo_dir, "rev-parse", "HEAD")
+
     def test_should_return_implementation_payload_from_codex_bridge(self):
         request = self._build_request("IMPLEMENT")
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -93,6 +119,16 @@ class CodexExecutionServiceTests(unittest.TestCase):
                         0,
                     )), \
                     patch("app.services.codex_execution_service._collect_changed_files", return_value=["frontend/src/App.vue"]), \
+                    patch("app.services.codex_execution_service._build_change_review_payload", return_value={
+                        "baseCommit": "base-commit",
+                        "currentCommit": "head-commit",
+                        "workBranch": "codex/execution-101-3-1",
+                        "fileCount": 1,
+                        "additions": 3,
+                        "deletions": 1,
+                        "truncated": False,
+                        "files": [],
+                    }), \
                     patch("app.services.codex_execution_service._current_head_commit", side_effect=["base-commit", "base-commit"]), \
                     patch("app.services.codex_execution_service._current_branch", return_value="codex/execution-101-3-1"):
                 response = execute_codex_execution(request)
@@ -103,6 +139,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
         self.assertEqual(["frontend/src/App.vue"], payload["changedFiles"])
         self.assertEqual("codex/execution-101-3-1", payload["workBranch"])
         self.assertEqual(["npm run lint"], payload["commandsExecuted"])
+        self.assertEqual(1, payload["changeReview"]["fileCount"])
         self.assertIn("# 结果概览", payload["displayMarkdown"])
         self.assertIn("执行日志", payload["log"])
 
@@ -125,6 +162,16 @@ class CodexExecutionServiceTests(unittest.TestCase):
             work_branch="codex/execution-101-3-1",
             base_commit="base-sha",
             current_commit="head-sha",
+            change_review={
+                "baseCommit": "base-sha",
+                "currentCommit": "head-sha",
+                "workBranch": "codex/execution-101-3-1",
+                "fileCount": 1,
+                "additions": 2,
+                "deletions": 0,
+                "truncated": False,
+                "files": [],
+            },
         )
 
         self.assertEqual("SUCCESS", payload["status"])
@@ -132,6 +179,68 @@ class CodexExecutionServiceTests(unittest.TestCase):
         self.assertIn("模型执行完成", payload["displayMarkdown"])
         self.assertIn("已修改 src/App.vue", payload["log"])
         self.assertEqual(["src/App.vue"], payload["changedFiles"])
+        self.assertEqual(1, payload["changeReview"]["fileCount"])
+
+    def test_should_build_change_review_payload_for_text_rename_delete_and_untracked_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_dir = Path(temp_dir)
+            base_commit = self._init_change_review_repo(repo_dir)
+            workspace = DevelopmentExecutionWorkspace(
+                root=repo_dir,
+                repo_dir=repo_dir,
+                out_dir=repo_dir / "out",
+                log_file=repo_dir / "execution.log",
+            )
+            self._run_git(repo_dir, "checkout", "-B", "codex/execution-101-3-1")
+            (repo_dir / "app.txt").write_text("line-1\nline-2-updated\nline-3\n", encoding="utf-8")
+            (repo_dir / "rename-me.txt").rename(repo_dir / "renamed.txt")
+            (repo_dir / "delete-me.txt").unlink()
+            (repo_dir / "new-file.txt").write_text("hello\nreview\n", encoding="utf-8")
+            self._run_git(repo_dir, "add", "app.txt", "renamed.txt", "delete-me.txt")
+            current_commit = self._run_git(repo_dir, "rev-parse", "HEAD")
+
+            payload = _build_change_review_payload(workspace, base_commit, current_commit, "codex/execution-101-3-1")
+
+        self.assertEqual(base_commit, payload["baseCommit"])
+        self.assertEqual("codex/execution-101-3-1", payload["workBranch"])
+        self.assertEqual(4, payload["fileCount"])
+        file_map = {item["displayPath"]: item for item in payload["files"]}
+        self.assertIn("app.txt", file_map)
+        self.assertIn("rename-me.txt -> renamed.txt", file_map)
+        self.assertIn("delete-me.txt", file_map)
+        self.assertIn("new-file.txt", file_map)
+        self.assertEqual("M", file_map["app.txt"]["changeType"])
+        self.assertEqual("R", file_map["rename-me.txt -> renamed.txt"]["changeType"])
+        self.assertEqual("D", file_map["delete-me.txt"]["changeType"])
+        self.assertEqual("A", file_map["new-file.txt"]["changeType"])
+        self.assertIn("@@", file_map["app.txt"]["unifiedDiff"])
+        self.assertIn("--- /dev/null", file_map["new-file.txt"]["unifiedDiff"])
+        self.assertGreaterEqual(file_map["new-file.txt"]["additions"], 2)
+
+    def test_should_mark_binary_and_truncated_change_review_files(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_dir = Path(temp_dir)
+            base_commit = self._init_change_review_repo(repo_dir)
+            workspace = DevelopmentExecutionWorkspace(
+                root=repo_dir,
+                repo_dir=repo_dir,
+                out_dir=repo_dir / "out",
+                log_file=repo_dir / "execution.log",
+            )
+            self._run_git(repo_dir, "checkout", "-B", "codex/execution-101-3-1")
+            (repo_dir / "binary.dat").write_bytes(b"\x00\x02after")
+            (repo_dir / "large.txt").write_text(("diff-line\n" * 80).strip() + "\n", encoding="utf-8")
+            current_commit = self._run_git(repo_dir, "rev-parse", "HEAD")
+
+            with patch("app.services.codex_execution_service.CHANGE_REVIEW_MAX_DIFF_CHARS_PER_FILE", 120):
+                payload = _build_change_review_payload(workspace, base_commit, current_commit, "codex/execution-101-3-1")
+
+        file_map = {item["displayPath"]: item for item in payload["files"]}
+        self.assertTrue(file_map["binary.dat"]["isBinary"])
+        self.assertIn("二进制文件", file_map["binary.dat"]["unifiedDiff"])
+        self.assertTrue(file_map["large.txt"]["isTruncated"])
+        self.assertIn("平台已截断预览", file_map["large.txt"]["unifiedDiff"])
+        self.assertTrue(payload["truncated"])
 
     def test_should_checkout_requested_commit_after_clone(self):
         request = self._build_request("IMPLEMENT").model_copy(update={

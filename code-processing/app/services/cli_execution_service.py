@@ -197,7 +197,15 @@ def _execute_claude_implementation_sync(request: CliExecutionRequest) -> CliExec
     changed_files = codex_service._collect_changed_files(workspace)
     current_commit = codex_service._current_head_commit(workspace)
     work_branch = codex_service._current_branch(workspace)
-    payload = codex_service._normalize_implementation_payload(raw_output, changed_files, work_branch, base_commit, current_commit)
+    change_review = codex_service._build_change_review_payload(workspace, base_commit, current_commit, work_branch)
+    payload = codex_service._normalize_implementation_payload(
+        raw_output,
+        changed_files,
+        work_branch,
+        base_commit,
+        current_commit,
+        change_review=change_review,
+    )
     if exit_code != 0:
         payload["status"] = "FAILED"
         payload["summary"] = codex_service._normalize_text(raw_output.get("summary")) or "Claude Code 执行失败"
@@ -339,7 +347,15 @@ def _run_claude_implementation_session(
         changed_files = codex_service._collect_changed_files(workspace)
         current_commit = codex_service._current_head_commit(workspace)
         work_branch = codex_service._current_branch(workspace)
-        payload = codex_service._normalize_implementation_payload(raw_output, changed_files, work_branch, base_commit, current_commit)
+        change_review = codex_service._build_change_review_payload(workspace, base_commit, current_commit, work_branch)
+        payload = codex_service._normalize_implementation_payload(
+            raw_output,
+            changed_files,
+            work_branch,
+            base_commit,
+            current_commit,
+            change_review=change_review,
+        )
         payload.pop("log", None)
         payload["stdoutPreview"] = tail_text(stdout, 2000)
         payload["stderrPreview"] = tail_text(stderr, 2000)
