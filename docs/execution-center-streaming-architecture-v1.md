@@ -17,9 +17,7 @@
 
 当前执行中心覆盖以下场景：
 
-- `REQUIREMENT_BREAKDOWN`：需求拆解
 - `DEVELOPMENT_IMPLEMENTATION`：开发执行
-- `TEST_DESIGN_OR_REVIEW`：测试设计 / 评审
 - `AD_HOC_AGENT_RUN`：临时单次执行
 - `CODEBASE_COMPLIANCE_SCAN`：仓库规范扫描
 
@@ -27,7 +25,8 @@
 
 - `DEVELOPMENT_IMPLEMENTATION` 与 `AD_HOC_AGENT_RUN` 会复用内部 Claude / Codex / 测试桥
 - `CODEBASE_COMPLIANCE_SCAN` 走专用扫描执行器，不复用通用步骤串行逻辑
-- 其他场景仍可走通用步骤执行链路
+- 历史上的 `REQUIREMENT_BREAKDOWN` 与 `TEST_DESIGN_OR_REVIEW` 已停止新建，仅保留历史任务查看兼容
+- 需求拆解与测试用例建议统一收口到“需求 AI 助手”，避免与执行中心重复暴露入口
 
 ---
 
@@ -312,7 +311,7 @@ worker 线程进入 `dispatchTaskNow` 后，会：
 
 ## 6.5 通用步骤执行链路
 
-通用步骤链路用于需求拆解、测试设计、单次执行等场景。
+通用步骤链路当前主要用于临时单次执行，以及兼容历史遗留的需求拆解 / 测试设计任务。
 
 每个步骤主要流程：
 

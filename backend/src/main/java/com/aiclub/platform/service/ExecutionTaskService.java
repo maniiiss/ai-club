@@ -69,6 +69,15 @@ public class ExecutionTaskService {
     private static final String STATUS_WAITING_CONFIRMATION = "WAITING_CONFIRMATION";
     private static final String PLAN_ARTIFACT_TYPE = "PLAN_MARKDOWN";
     private static final String PLAN_ARTIFACT_TITLE = "执行规划 Markdown";
+    /**
+     * 需求拆解与测试设计/评审已被更贴近业务的一线能力替代：
+     * 前者改由需求 AI 助手承担，后者改由需求 AI 助手的测试用例建议承载。
+     * 这里仅禁止继续新建/重试，历史任务仍允许查询展示。
+     */
+    private static final Set<String> RETIRED_EXECUTION_SCENARIOS = Set.of(
+            ExecutionWorkflowService.SCENARIO_REQUIREMENT_BREAKDOWN,
+            ExecutionWorkflowService.SCENARIO_TEST_DESIGN_OR_REVIEW
+    );
 
     private final ExecutionTaskRepository executionTaskRepository;
     private final ExecutionRunRepository executionRunRepository;
@@ -244,6 +253,7 @@ public class ExecutionTaskService {
     @Transactional
     public ExecutionTaskSummary retryExecutionTask(Long executionTaskId) {
         ExecutionTaskEntity executionTask = requireExecutionTaskWithContext(executionTaskId);
+        requireScenarioAvailableForExecutionEntry(executionTask.getScenarioCode(), "重试");
         if ("RUNNING".equals(executionTask.getStatus()) || "PENDING".equals(executionTask.getStatus())) {
             throw new IllegalArgumentException("当前执行任务仍在处理中，暂不可重试");
         }
@@ -744,6 +754,7 @@ public class ExecutionTaskService {
                                                          List<ExecutionAgentBindingRequest> agentBindings,
                                                          Map<String, Object> rawInputPayload,
                                                          boolean skipPermissionChecks) {
+        requireScenarioAvailableForExecutionEntry(scenarioCode, "创建");
         Map<String, Object> normalizedPayload = defaultPayload(rawInputPayload);
         String normalizedTriggerSource = normalizeTriggerSource(triggerSource);
         boolean planConfirmationRequired = normalizePlanConfirmationRequired(
@@ -950,6 +961,19 @@ public class ExecutionTaskService {
         return currentUserId != null
                 && executionTask.getCreatedByUser() != null
                 && currentUserId.equals(executionTask.getCreatedByUser().getId());
+    }
+
+    private void requireScenarioAvailableForExecutionEntry(String scenarioCode, String actionLabel) {
+        String normalizedScenarioCode = defaultString(scenarioCode).trim().toUpperCase();
+        if (!RETIRED_EXECUTION_SCENARIOS.contains(normalizedScenarioCode)) {
+            return;
+        }
+        if (ExecutionWorkflowService.SCENARIO_REQUIREMENT_BREAKDOWN.equals(normalizedScenarioCode)) {
+            throw new IllegalArgumentException(actionLabel + "“需求拆解”执行任务已下线，请改用需求 AI 助手中的“拆解子任务”能力");
+        }
+        if (ExecutionWorkflowService.SCENARIO_TEST_DESIGN_OR_REVIEW.equals(normalizedScenarioCode)) {
+            throw new IllegalArgumentException(actionLabel + "“测试设计/评审”执行任务已下线，请改用需求 AI 助手中的“生成测试用例”能力");
+        }
     }
 
     private String displayName(UserEntity user) {

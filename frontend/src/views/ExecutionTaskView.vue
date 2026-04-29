@@ -42,9 +42,7 @@
               <div class="management-list-filter-field">
                 <label>执行场景</label>
                   <el-select v-model="filters.scenarioCode" clearable placeholder="全部场景" style="width: 100%" :teleported="false">
-                    <el-option label="需求拆解" value="REQUIREMENT_BREAKDOWN" />
                     <el-option label="开发执行" value="DEVELOPMENT_IMPLEMENTATION" />
-                    <el-option label="测试设计/评审" value="TEST_DESIGN_OR_REVIEW" />
                     <el-option label="仓库规范扫描" value="CODEBASE_COMPLIANCE_SCAN" />
                   </el-select>
               </div>
@@ -189,7 +187,7 @@
                         <el-icon><CloseBold /></el-icon>
                       </button>
                     </el-tooltip>
-                    <el-tooltip v-if="canRetryExecution && canRetry(row.status)" content="重新执行" placement="top">
+                    <el-tooltip v-if="canRetryExecution && canRetryTask(row)" content="重新执行" placement="top">
                       <button
                         class="execution-action-button success"
                         type="button"
@@ -302,7 +300,7 @@
                   <span>取消</span>
                 </button>
                 <button
-                  v-if="canRetryExecution && canRetry(row.status)"
+                  v-if="canRetryExecution && canRetryTask(row)"
                   class="execution-mobile-action-button success"
                   type="button"
                   @click="handleRetry(row)"
@@ -409,6 +407,7 @@ const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMob
 })
 const canCancelExecution = computed(() => authStore.hasPermission('task:execution:cancel'))
 const canRetryExecution = computed(() => authStore.hasPermission('task:execution:retry'))
+const retiredScenarioCodes = new Set(['REQUIREMENT_BREAKDOWN', 'TEST_DESIGN_OR_REVIEW'])
 
 /**
  * 顶部概览卡片统一基于当前筛选结果生成，避免为了纯展示再增加统计接口。
@@ -464,6 +463,9 @@ const scenarioTone = (scenarioCode: string) => {
   }
   return toneMap[scenarioCode] || 'default'
 }
+
+const canRetryTask = (row: ExecutionTaskItem) =>
+  canRetry(row.status) && !retiredScenarioCodes.has(String(row.scenarioCode || '').trim().toUpperCase())
 
 /**
  * 列表里展示的进度条需要强制兜底到 0-100，避免后端异步更新窗口期出现异常宽度。

@@ -13,7 +13,7 @@
           <el-button v-if="showImplementationChangeReviewSection" type="primary" plain @click="changeReviewDialogVisible = true">变更审查</el-button>
           <el-button v-if="canSubmitMergeRequest" type="success" @click="openQuickMergeDialog">提交MR</el-button>
           <el-button v-if="canCancelExecution && canCancel(taskDetail.status)" type="success" @click="handleCancel">取消</el-button>
-          <el-button v-if="canRetryExecution && canRetry(taskDetail.status)" type="success" @click="handleRetry">重试</el-button>
+          <el-button v-if="canRetryExecution && canRetry(taskDetail.status) && canRetryCurrentScenario" type="success" @click="handleRetry">重试</el-button>
         </div>
       </div>
 
@@ -807,7 +807,11 @@ const quickMergeForm = reactive<QuickMergeForm>({
 const executionTaskId = computed(() => Number(route.params.executionTaskId))
 const canCancelExecution = computed(() => authStore.hasPermission('task:execution:cancel'))
 const canRetryExecution = computed(() => authStore.hasPermission('task:execution:retry'))
+const retiredScenarioCodes = new Set(['REQUIREMENT_BREAKDOWN', 'TEST_DESIGN_OR_REVIEW'])
 const canManageGitlab = computed(() => authStore.hasPermission('gitlab:manage'))
+const canRetryCurrentScenario = computed(() =>
+  !retiredScenarioCodes.has(String(taskDetail.value?.scenarioCode || '').trim().toUpperCase())
+)
 const quickMergeRules: FormRules<QuickMergeForm> = {
   bindingId: [{ required: true, message: '请选择仓库', trigger: 'change' }],
   sourceBranch: [{ required: true, message: '请选择源分支', trigger: 'change' }],

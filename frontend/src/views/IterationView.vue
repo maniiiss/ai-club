@@ -266,7 +266,7 @@
                   type="button"
                   @click="openIterationGiteeBindingDialog"
                 >
-                  <el-icon><Connection /></el-icon>
+                  <el-icon><Link /></el-icon>
                   <span>Gitee绑定</span>
                 </button>
                 <button
@@ -278,6 +278,16 @@
                 >
                   <el-icon><RefreshRight /></el-icon>
                   <span>同步工作项</span>
+                </button>
+                <button
+                  v-if="selectedScope.type === 'iteration' && canSyncGiteeWorkItems"
+                  class="management-list-toolbar-button"
+                  type="button"
+                  :disabled="!currentIterationGiteeBinding"
+                  @click="handleOpenIterationSyncLogs"
+                >
+                  <el-icon><Document /></el-icon>
+                  <span>同步日志</span>
                 </button>
                 <button v-if="canManageWorkItem" class="management-list-create-button workspace-mobile-create-work-item" type="button" @click="openCreateWorkItemDialog">
                   <el-icon><Plus /></el-icon>
@@ -335,39 +345,39 @@
                 <el-icon><RefreshRight /></el-icon>
                 <span>重置</span>
               </button>
+              <button
+                v-if="selectedScope.type === 'iteration' && canManageGiteeBinding"
+                class="management-list-toolbar-button"
+                type="button"
+                @click="openIterationGiteeBindingDialog"
+              >
+                <el-icon><Link /></el-icon>
+                <span>Gitee绑定</span>
+              </button>
+              <button
+                v-if="selectedScope.type === 'iteration' && canSyncGiteeWorkItems"
+                class="management-list-toolbar-button"
+                type="button"
+                :disabled="!currentIterationGiteeBinding"
+                @click="handleSyncCurrentIterationWorkItems"
+              >
+                <el-icon><RefreshRight /></el-icon>
+                <span>同步工作项</span>
+              </button>
+              <button
+                v-if="selectedScope.type === 'iteration' && canSyncGiteeWorkItems"
+                class="management-list-toolbar-button"
+                type="button"
+                :disabled="!currentIterationGiteeBinding"
+                @click="handleOpenIterationSyncLogs"
+              >
+                <el-icon><Document /></el-icon>
+                <span>同步日志</span>
+              </button>
             </template>
           </div>
 
           <div v-if="!isMobileViewport" class="management-list-toolbar-side">
-            <button
-              v-if="selectedScope.type === 'iteration' && canManageGiteeBinding"
-              class="management-list-toolbar-button"
-              type="button"
-              @click="openIterationGiteeBindingDialog"
-            >
-              <el-icon><Connection /></el-icon>
-              <span>Gitee绑定</span>
-            </button>
-            <button
-              v-if="selectedScope.type === 'iteration' && canSyncGiteeWorkItems"
-              class="management-list-toolbar-button"
-              type="button"
-              :disabled="!currentIterationGiteeBinding"
-              @click="handleOpenIterationSyncLogs"
-            >
-              <el-icon><Tickets /></el-icon>
-              <span>同步日志</span>
-            </button>
-            <button
-              v-if="selectedScope.type === 'iteration' && canSyncGiteeWorkItems"
-              class="management-list-toolbar-button"
-              type="button"
-              :disabled="!currentIterationGiteeBinding"
-              @click="handleSyncCurrentIterationWorkItems"
-            >
-              <el-icon><RefreshRight /></el-icon>
-              <span>同步工作项</span>
-            </button>
             <button v-if="canManageWorkItem" class="management-list-create-button" type="button" @click="openCreateWorkItemDialog">
               <el-icon><Plus /></el-icon>
               <span>新建工作项</span>
@@ -1275,7 +1285,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Bell, ChatDotRound, Cpu, Delete, EditPen, Filter, FolderOpened, Finished, Management, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
+import { ArrowLeft, Bell, ChatDotRound, Cpu, Delete, Document, EditPen, Filter, FolderOpened, Finished, Link, Management, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { listUserOptions } from '@/api/access'
 import {

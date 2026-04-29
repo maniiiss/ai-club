@@ -8,13 +8,7 @@
       </div>
 
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="execution-create-form">
-        <el-form-item label="执行场景" prop="scenarioCode">
-          <el-select v-model="form.scenarioCode" placeholder="请选择执行场景" style="width: 100%">
-            <el-option v-for="item in scenarioOptions" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
-        </el-form-item>
-
-        <section v-if="isDevelopmentScenario" class="execution-step-section">
+        <section class="execution-step-section">
           <div class="execution-step-head">
             <div class="execution-step-title">涉及仓库</div>
             <div class="execution-step-subtitle">至少选择 1 个 GitLab 仓库，列表顺序就是执行顺序。</div>
@@ -91,7 +85,7 @@
           />
         </el-form-item>
 
-        <el-form-item v-if="isDevelopmentScenario" label="规划确认">
+        <el-form-item label="规划确认">
           <div class="execution-plan-confirm-field">
             <el-switch v-model="form.planConfirmationRequired" />
             <div class="execution-plan-confirm-copy">
@@ -179,30 +173,15 @@ const submitting = ref(false)
 const agentOptions = ref<AgentItem[]>([])
 const gitlabBindingOptions = ref<ProjectGitlabBindingItem[]>([])
 
-const scenarioOptions = [
-  { label: '需求拆解', value: 'REQUIREMENT_BREAKDOWN' },
-  { label: '开发执行', value: 'DEVELOPMENT_IMPLEMENTATION' },
-  { label: '测试设计 / 评审', value: 'TEST_DESIGN_OR_REVIEW' }
+const developmentStepOptions: StepOption[] = [
+  { stepCode: 'PLAN', stepName: '执行规划', description: '由所选 CLI Runner 或规划智能体扫描所选仓库并生成执行规划。' },
+  { stepCode: 'IMPLEMENT', stepName: '开发实现', description: '由可真实执行的 Runtime / API Agent 完成代码开发。' },
+  { stepCode: 'TEST', stepName: '执行测试', description: '由可真实执行的 Runtime / API Agent 完成仓库级验证。' },
+  { stepCode: 'REPORT', stepName: '交付报告', description: '汇总多仓执行结果、失败位置与遗留风险。' }
 ]
 
-const stepOptionsMap: Record<string, StepOption[]> = {
-  REQUIREMENT_BREAKDOWN: [
-    { stepCode: 'PLAN', stepName: '需求拆解', description: '拆分需求、梳理目标与执行项。' }
-  ],
-  DEVELOPMENT_IMPLEMENTATION: [
-    { stepCode: 'PLAN', stepName: '执行规划', description: '由所选 CLI Runner 或规划智能体扫描所选仓库并生成执行规划。' },
-    { stepCode: 'IMPLEMENT', stepName: '开发实现', description: '由可真实执行的 Runtime / API Agent 完成代码开发。' },
-    { stepCode: 'TEST', stepName: '执行测试', description: '由可真实执行的 Runtime / API Agent 完成仓库级验证。' },
-    { stepCode: 'REPORT', stepName: '交付报告', description: '汇总多仓执行结果、失败位置与遗留风险。' }
-  ],
-  TEST_DESIGN_OR_REVIEW: [
-    { stepCode: 'TEST_DESIGN', stepName: '测试设计', description: '整理测试点、测试案例和验收建议。' },
-    { stepCode: 'REVIEW', stepName: '测试评审', description: '对测试设计或前序结果进行评审。' }
-  ]
-}
-
 const form = reactive<ExecutionCreateForm>({
-  scenarioCode: 'REQUIREMENT_BREAKDOWN',
+  scenarioCode: 'DEVELOPMENT_IMPLEMENTATION',
   inputText: '',
   planConfirmationRequired: false,
   stepAgentMap: {},
@@ -210,11 +189,10 @@ const form = reactive<ExecutionCreateForm>({
 })
 
 const rules: FormRules<ExecutionCreateForm> = {
-  scenarioCode: [{ required: true, message: '请选择执行场景', trigger: 'change' }]
+  scenarioCode: [{ required: true, message: '执行场景不能为空', trigger: 'change' }]
 }
 
-const currentStepOptions = computed(() => stepOptionsMap[form.scenarioCode] || [])
-const isDevelopmentScenario = computed(() => form.scenarioCode === 'DEVELOPMENT_IMPLEMENTATION')
+const currentStepOptions = computed(() => developmentStepOptions)
 const availableGitlabBindings = computed(() =>
   gitlabBindingOptions.value.filter((binding) => binding.projectId === props.workItem?.projectId && binding.enabled)
 )
@@ -224,12 +202,12 @@ const selectedRepositoryIds = computed<number[]>({
 })
 
 /**
- * 每次切换场景时，按当前项目 Agent 重新给出步骤默认绑定，避免沿用上一个场景的不匹配选择。
+ * 智能执行现阶段仅保留开发执行场景，默认步骤绑定统一按开发执行推荐规则生成。
  */
-const resetStepAgentMapByScenario = () => {
+const resetStepAgentMap = () => {
   const nextMap: Record<string, number | undefined> = {}
   for (const step of currentStepOptions.value) {
-    nextMap[step.stepCode] = recommendAgentId(form.scenarioCode, step.stepCode)
+    nextMap[step.stepCode] = recommendAgentId(step.stepCode)
   }
   form.stepAgentMap = nextMap
 }
@@ -263,24 +241,15 @@ const findRecommendedAgent = (...predicates: Array<(agent: AgentItem, haystack: 
 const isRuntimeType = (agent: AgentItem, runtimeType: string) =>
   agent.accessType === 'AGENT_RUNTIME' && agent.runtimeType === runtimeType
 
-const recommendAgentId = (scenarioCode: string, stepCode: string) => {
+const recommendAgentId = (stepCode: string) => {
   const normalizedStepCode = stepCode.toUpperCase()
-  if (normalizedStepCode === 'PLAN' && scenarioCode === 'DEVELOPMENT_IMPLEMENTATION') {
+  if (normalizedStepCode === 'PLAN') {
     const planAgentId = findRecommendedAgent(
       (agent, _haystack) => isRuntimeType(agent, 'CLAUDE_CODE_CLI'),
       (agent, haystack) => agent.accessType === 'HTTP_API' && /claude/.test(haystack) && /plan|planning|规划/.test(haystack),
       (agent, haystack) => agent.accessType === 'HTTP_API' && /执行规划|开发执行规划/.test(haystack),
       (agent, haystack) => /claude/.test(haystack) && /plan|planning|规划/.test(haystack),
       (_agent, haystack) => /plan|planning|规划/.test(haystack)
-    )
-    if (planAgentId) {
-      return planAgentId
-    }
-  }
-  if (normalizedStepCode === 'PLAN' && scenarioCode === 'REQUIREMENT_BREAKDOWN') {
-    const planAgentId = findRecommendedAgent(
-      (agent, _haystack) => agent.builtinCode === 'REQUIREMENT_BREAKDOWN',
-      (_agent, haystack) => /planner|规划|需求/.test(haystack)
     )
     if (planAgentId) {
       return planAgentId
@@ -309,10 +278,10 @@ const recommendAgentId = (scenarioCode: string, stepCode: string) => {
     return match
   }
   if (normalizedStepCode === 'TEST') {
-    return recommendAgentId(scenarioCode, 'IMPLEMENT')
+    return recommendAgentId('IMPLEMENT')
   }
   if (normalizedStepCode === 'REPORT') {
-    return recommendAgentId(scenarioCode, 'PLAN')
+    return recommendAgentId('PLAN')
   }
   return undefined
 }
@@ -325,7 +294,7 @@ const loadAgents = async () => {
   loadingAgents.value = true
   try {
     agentOptions.value = await listAgentOptions(props.workItem.projectId)
-    resetStepAgentMapByScenario()
+    resetStepAgentMap()
   } finally {
     loadingAgents.value = false
   }
@@ -376,7 +345,7 @@ const removeRepository = (bindingId: number) => {
 }
 
 const resetForm = () => {
-  form.scenarioCode = props.workItem?.workItemType === '需求' ? 'REQUIREMENT_BREAKDOWN' : 'DEVELOPMENT_IMPLEMENTATION'
+  form.scenarioCode = 'DEVELOPMENT_IMPLEMENTATION'
   form.inputText = ''
   form.planConfirmationRequired = false
   form.stepAgentMap = {}
@@ -392,17 +361,6 @@ watch(
     }
     resetForm()
     await Promise.all([loadAgents(), loadGitlabBindings()])
-  }
-)
-
-watch(
-  () => form.scenarioCode,
-  () => {
-    resetStepAgentMapByScenario()
-    if (!isDevelopmentScenario.value) {
-      form.planConfirmationRequired = false
-      form.repositories = []
-    }
   }
 )
 
@@ -443,7 +401,7 @@ const handleSubmit = async () => {
   if (!valid) {
     return
   }
-  if (isDevelopmentScenario.value && (!validateDevelopmentRepositories() || !validateDevelopmentAgents())) {
+  if (!validateDevelopmentRepositories() || !validateDevelopmentAgents()) {
     return
   }
 
@@ -453,18 +411,16 @@ const handleSubmit = async () => {
     if (form.inputText.trim()) {
       inputPayload.inputText = form.inputText.trim()
     }
-    if (isDevelopmentScenario.value) {
-      inputPayload.repositories = form.repositories.map((repository) => ({
-        bindingId: repository.bindingId,
-        targetBranch: repository.targetBranch.trim()
-      }))
-    }
+    inputPayload.repositories = form.repositories.map((repository) => ({
+      bindingId: repository.bindingId,
+      targetBranch: repository.targetBranch.trim()
+    }))
     const executionTask = await createExecutionTask({
       scenarioCode: form.scenarioCode,
       projectId: props.workItem.projectId,
       workItemId: props.workItem.id,
       triggerSource: 'PAGE',
-      planConfirmationRequired: isDevelopmentScenario.value ? form.planConfirmationRequired : false,
+      planConfirmationRequired: form.planConfirmationRequired,
       agentBindings: currentStepOptions.value
         .map((step) => ({
           stepCode: step.stepCode,

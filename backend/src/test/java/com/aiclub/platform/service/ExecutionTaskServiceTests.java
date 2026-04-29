@@ -148,6 +148,44 @@ class ExecutionTaskServiceTests {
     }
 
     /**
+     * 需求拆解能力已经收口到需求 AI 助手，新建执行任务时应直接给出迁移提示。
+     */
+    @Test
+    void shouldRejectCreatingRequirementBreakdownExecutionTask() {
+        assertThatThrownBy(() -> executionTaskService.createExecutionTask(new CreateExecutionTaskRequest(
+                ExecutionWorkflowService.SCENARIO_REQUIREMENT_BREAKDOWN,
+                11L,
+                null,
+                null,
+                "PAGE",
+                false,
+                List.of(),
+                Map.of("inputText", "帮我拆需求")
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("创建“需求拆解”执行任务已下线，请改用需求 AI 助手中的“拆解子任务”能力");
+    }
+
+    /**
+     * 测试设计/评审能力已经收口到需求 AI 助手，新建执行任务时不再暴露该旧场景。
+     */
+    @Test
+    void shouldRejectCreatingTestDesignOrReviewExecutionTask() {
+        assertThatThrownBy(() -> executionTaskService.createExecutionTask(new CreateExecutionTaskRequest(
+                ExecutionWorkflowService.SCENARIO_TEST_DESIGN_OR_REVIEW,
+                11L,
+                null,
+                null,
+                "PAGE",
+                false,
+                List.of(),
+                Map.of("inputText", "帮我补测试设计")
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("创建“测试设计/评审”执行任务已下线，请改用需求 AI 助手中的“生成测试用例”能力");
+    }
+
+    /**
      * 同一个任务内不允许重复选择同一 GitLab 绑定，避免多仓编排出现重复仓库。
      */
     @Test
@@ -348,6 +386,22 @@ class ExecutionTaskServiceTests {
         assertThat(summary.status()).isEqualTo("CANCELED");
         assertThat(summary.latestSummary()).contains("当前步骤正在停止");
         verify(executionDispatchService).requestCancelRunningTask(99L);
+    }
+
+    /**
+     * 已下线场景保留历史查询能力，但不允许再次重试执行，避免重复入口重新暴露。
+     */
+    @Test
+    void shouldRejectRetryingRetiredExecutionScenario() {
+        ExecutionTaskEntity executionTask = buildWaitingConfirmationTask(1001L);
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_REQUIREMENT_BREAKDOWN);
+        executionTask.setStatus("FAILED");
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+
+        assertThatThrownBy(() -> executionTaskService.retryExecutionTask(99L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("重试“需求拆解”执行任务已下线，请改用需求 AI 助手中的“拆解子任务”能力");
+        verify(executionTaskRepository, never()).save(any(ExecutionTaskEntity.class));
     }
 
     private ProjectEntity buildProject() {
