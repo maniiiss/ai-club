@@ -299,7 +299,7 @@
     >
       <el-header v-if="!isIterationWorkspaceRoute" class="layout-header">
         <div class="header-search-group">
-          <h1 class="header-page-title">{{ pageTitle }}</h1>
+          <h1 class="header-page-title" :title="pageTitle">{{ pageTitle }}</h1>
           <div v-if="!isMobileViewport && canUseHermes" class="header-search-shell" @click="handleOpenHermesDrawer">
             <el-icon><Search /></el-icon>
             <input
@@ -1550,12 +1550,17 @@ watch(
 
 .header-page-title {
   margin: 0;
-  flex: 0 0 auto;
+  min-width: 0;
+  max-width: min(46vw, 520px);
+  flex: 0 1 520px;
   color: var(--app-text);
   font-family: var(--app-font-heading);
   font-size: 20px;
   font-weight: 800;
   line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .header-search-shell {

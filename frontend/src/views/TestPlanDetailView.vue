@@ -1,73 +1,50 @@
 <template>
   <div class="atelier-list-page test-plan-detail-page">
     <section class="detail-hero">
-      <div class="detail-hero-head">
-        <div class="detail-hero-copy">
-          <button class="detail-back-link" type="button" @click="goBack">
-            <el-icon><ArrowLeft /></el-icon>
-            <span>返回测试计划</span>
-          </button>
-        </div>
-        <div class="detail-hero-actions">
-          <button v-if="canManage" class="atelier-create-button" type="button" @click="handleCreateCase">
-            <el-icon><Plus /></el-icon>
-            <span>新增测试用例</span>
-          </button>
+      <button class="detail-back-link" type="button" @click="goBack">
+        <el-icon><ArrowLeft /></el-icon>
+        <span>返回测试计划</span>
+      </button>
+
+      <div class="detail-hero-heading">
+        <div>
+          <h1 :title="plan?.name || '测试计划'">{{ plan?.name || '测试计划' }}</h1>
         </div>
       </div>
 
-      <div class="detail-summary-grid">
-        <article class="detail-summary-card detail-summary-card-compact">
-          <div class="detail-summary-label">所属项目</div>
-          <div class="detail-summary-main">
-            <button v-if="plan?.projectId" class="management-list-link detail-summary-link" type="button" @click="goToProject(plan.projectId)">
-              {{ plan?.projectName || '-' }}
-            </button>
-            <div v-else class="detail-summary-value">{{ plan?.projectName || '-' }}</div>
-          </div>
-        </article>
-
-        <article class="detail-summary-card detail-summary-card-compact">
-          <div class="detail-summary-label">所属迭代</div>
-          <div class="detail-summary-main">
-            <button
-              v-if="plan?.projectId && plan?.iterationId"
-              class="management-list-link detail-summary-link"
-              type="button"
-              @click="goToIteration(plan.projectId, plan.iterationId)"
-            >
-              {{ plan?.iterationName || '-' }}
-            </button>
-            <div v-else class="detail-summary-value">{{ plan?.iterationName || '-' }}</div>
-            <div class="detail-summary-note">{{ plan?.updatedAt || '暂无更新时间' }}</div>
-          </div>
-        </article>
-
-        <article class="detail-summary-card detail-summary-card-compact">
-          <div class="detail-summary-label">计划状态</div>
-          <div class="detail-summary-main">
-            <CompactSelectMenu
-              v-if="canManage && plan"
-              :model-value="plan.status"
-              :options="statusSelectOptions"
-              class="status-select"
-              @change="handlePlanStatusChange(String($event))"
-            />
-            <span v-else class="management-list-pill" :class="planStatusTone(plan?.status)">{{ plan?.status || '-' }}</span>
-          </div>
-        </article>
-
-        <article class="detail-summary-card detail-summary-card-compact detail-summary-card-emphasis">
-          <div class="detail-summary-label">用例总数</div>
-          <div class="detail-summary-main">
-            <div class="detail-summary-value">{{ cases.length }}</div>
-          </div>
-        </article>
-
-        <article class="detail-summary-card detail-summary-card-description">
-          <div class="detail-summary-label">计划说明</div>
-          <div class="detail-summary-description">{{ plan?.description || '暂无说明' }}</div>
-        </article>
+      <div class="detail-hero-meta">
+        <span>测试计划</span>
+        <button v-if="plan?.projectId" type="button" @click="goToProject(plan.projectId)">
+          项目：{{ plan?.projectName || '-' }}
+        </button>
+        <span v-else>项目：{{ plan?.projectName || '-' }}</span>
+        <button
+          v-if="plan?.projectId && plan?.iterationId"
+          type="button"
+          @click="goToIteration(plan.projectId, plan.iterationId)"
+        >
+          迭代：{{ plan?.iterationName || '-' }}
+        </button>
+        <span v-else>迭代：{{ plan?.iterationName || '-' }}</span>
+        <div v-if="canManage && plan" class="detail-hero-meta-select">
+          <CompactSelectMenu
+            :model-value="plan.status"
+            :options="statusSelectOptions"
+            variant="inline-pill"
+            @change="handlePlanStatusChange(String($event))"
+          />
+        </div>
+        <span v-else>状态：{{ plan?.status || '-' }}</span>
+        <span>用例数：{{ cases.length }}</span>
+        <span v-if="plan?.createdAt">创建时间：{{ plan.createdAt }}</span>
+        <span>更新时间：{{ plan?.updatedAt || '-' }}</span>
+        <span
+          v-if="plan?.description"
+          class="detail-hero-meta-description"
+          :title="plan.description"
+        >
+          说明：{{ plan.description }}
+        </span>
       </div>
     </section>
 
@@ -87,10 +64,17 @@
           <el-icon><RefreshRight /></el-icon>
           <span>重置筛选</span>
         </button>
+        <button v-if="canManage && isMobileViewport" class="atelier-create-button" type="button" @click="handleCreateCase">
+          <el-icon><Plus /></el-icon>
+          <span>新增测试用例</span>
+        </button>
       </div>
 
-      <div class="atelier-toolbar-side">
-        <div class="detail-toolbar-note">测试用例列表</div>
+      <div v-if="canManage && !isMobileViewport" class="atelier-toolbar-side">
+        <button class="atelier-create-button" type="button" @click="handleCreateCase">
+          <el-icon><Plus /></el-icon>
+          <span>新增测试用例</span>
+        </button>
       </div>
     </section>
 
@@ -443,7 +427,6 @@ const authStore = useAuthStore()
 const { isMobileViewport } = useMobileViewport()
 const canManage = computed(() => authStore.hasPermission('test:manage'))
 
-const statusOptions = ['草稿', '待执行', '执行中', '已完成']
 const statusSelectOptions: CompactSelectOption[] = [
   { label: '草稿', value: '草稿', tone: 'info' },
   { label: '待执行', value: '待执行', tone: 'warning' },
@@ -485,9 +468,8 @@ const normalizeText = (value: unknown, fallback = '') => {
  */
 const getCurrentPlanId = () => Number(route.params.planId)
 
-const syncPageTitle = (title?: string | null) => {
-  const pageTitle = normalizeText(title).trim() || '测试计划详情'
-  appStore.setDynamicPageTitle(pageTitle, 'test-plan-detail')
+const syncPageTitle = () => {
+  appStore.setDynamicPageTitle('测试计划详情', 'test-plan-detail')
 }
 
 const filteredCases = computed(() => {
@@ -536,13 +518,6 @@ const drawerTitle = computed(() => {
   }
   return normalizeText(activeCase.value.title).trim() || '测试用例详情'
 })
-
-const planStatusTone = (status?: string | null) => {
-  if (status === '已完成') return 'success'
-  if (status === '执行中') return 'warning'
-  if (status === '待执行') return 'info'
-  return 'neutral'
-}
 
 const casePriorityTone = (priority?: string | null) => {
   if (priority === 'P0') return 'danger'
@@ -659,6 +634,7 @@ const fillCases = (detail: TestPlanItem) => {
 }
 
 const loadPlan = async () => {
+  syncPageTitle()
   const planId = getCurrentPlanId()
   if (Number.isNaN(planId) || planId <= 0) {
     ElMessage.error('测试计划参数不正确')
@@ -669,7 +645,6 @@ const loadPlan = async () => {
   try {
     const detail = await getTestPlanDetail(planId)
     plan.value = detail
-    syncPageTitle(detail.name)
     fillCases(detail)
     if (activeCaseIndex.value !== null && activeCaseIndex.value >= cases.value.length) {
       activeCaseIndex.value = cases.value.length ? cases.value.length - 1 : null
@@ -894,37 +869,20 @@ onBeforeUnmount(() => {
 .detail-hero {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 20px;
+  gap: 12px;
+  padding: 14px 16px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 12px 32px rgba(25, 28, 29, 0.04);
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
 }
 
-.detail-hero-head,
-.detail-hero-actions,
 .step-section-head {
   display: flex;
   align-items: center;
 }
 
-.detail-hero-head,
 .step-section-head {
   justify-content: space-between;
-}
-
-.detail-hero-head {
-  gap: 18px;
-  flex-wrap: wrap;
-}
-
-.detail-hero-copy {
-  min-width: 0;
-}
-
-.detail-hero-actions {
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
 .detail-back-link {
@@ -935,102 +893,92 @@ onBeforeUnmount(() => {
   border: 0;
   background: transparent;
   color: #374151;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
+  cursor: pointer;
   white-space: nowrap;
+  transition: color 0.18s ease;
 }
 
 .detail-back-link .el-icon {
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .detail-back-link:hover {
   color: var(--app-primary);
 }
 
-.detail-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.detail-summary-card {
+.detail-hero-heading {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: rgba(243, 244, 245, 0.72);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-}
-
-.detail-summary-card-compact {
-  min-height: 92px;
-}
-
-.detail-summary-card-emphasis {
-  background: linear-gradient(135deg, rgba(243, 244, 245, 0.84) 0%, rgba(233, 237, 242, 0.96) 100%);
-}
-
-.detail-summary-card-description {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  align-items: start;
-  gap: 12px;
-}
-
-.detail-summary-main {
-  display: flex;
-  min-width: 0;
-  flex: 1 1 auto;
-  flex-direction: column;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 6px;
+  gap: 12px;
+  margin-top: 2px;
 }
 
-.detail-summary-label {
-  color: #94a3b8;
-  font-family: var(--app-font-heading);
-  font-size: 10px;
+.detail-hero-heading h1 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 21px;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.detail-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.detail-hero-meta span,
+.detail-hero-meta button,
+.detail-hero-meta-select {
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 11px;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+.detail-hero-meta button {
+  cursor: pointer;
   font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  color: #0f766e;
 }
 
-.detail-summary-link,
-.detail-summary-value {
-  min-width: 0;
-  color: var(--app-text);
-  font-family: var(--app-font-heading);
-  font-size: 17px;
-  font-weight: 800;
-  line-height: 1.35;
+.detail-hero-meta-select {
+  padding: 0;
+  background: transparent;
 }
 
-.detail-summary-description {
-  color: var(--app-text-soft);
-  font-size: 12px;
-  line-height: 1.75;
-  padding-top: 1px;
+.detail-hero-meta-select :deep(.compact-select-trigger.variant-inline-pill) {
+  min-height: 24px;
+  padding: 0 10px;
+  background: #f1f5f9;
+  color: #475569;
+  box-shadow: none;
 }
 
-.status-select {
-  width: 100%;
+.detail-hero-meta-select :deep(.compact-select-trigger.variant-inline-pill:hover),
+.detail-hero-meta-select :deep(.compact-select-trigger.variant-inline-pill.is-open) {
+  background: rgba(var(--app-primary-container-rgb), 0.12);
+  color: var(--app-primary);
+  box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.18);
+}
+
+.detail-hero-meta-description {
+  max-width: min(100%, 420px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .detail-toolbar-main {
   width: fit-content;
-}
-
-.detail-toolbar-note {
-  color: #94a3b8;
-  font-family: var(--app-font-heading);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
 
 .detail-case-head,
@@ -1172,14 +1120,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1180px) {
-  .detail-summary-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .detail-summary-card-description {
-    grid-column: 1 / -1;
-  }
-
   .detail-case-head,
   .detail-case-row {
     grid-template-columns: minmax(220px, 2fr) minmax(110px, 0.9fr) 100px 90px 90px minmax(140px, 1fr) 86px;
@@ -1192,22 +1132,13 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
-  .detail-hero-head,
-  .detail-hero-actions {
+  .detail-hero-heading {
     align-items: flex-start;
   }
 
-  .detail-hero-actions {
-    width: 100%;
-  }
-
-  .detail-summary-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .detail-summary-card-description {
-    grid-template-columns: 1fr;
-    gap: 6px;
+  .detail-hero-heading {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .step-row {

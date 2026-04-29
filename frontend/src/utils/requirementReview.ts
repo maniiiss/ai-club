@@ -2,7 +2,7 @@
  * 需求评审阶段显示所需的最小字段集合。
  */
 interface RequirementReviewState {
-  workItemType: '需求' | '任务' | '缺陷'
+  workItemType: '需求' | '任务' | '缺陷' | string
   status: string
   devPassed: boolean
   testPassed: boolean

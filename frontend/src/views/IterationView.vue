@@ -241,9 +241,7 @@
                     <div class="workspace-filter-field">
                       <label>优先级</label>
                     <el-select v-model="workItemFilters.priority" clearable placeholder="优先级" style="width: 100%" :teleported="false">
-                        <el-option label="高" value="高" />
-                        <el-option label="中" value="中" />
-                        <el-option label="低" value="低" />
+                        <el-option v-for="item in priorityOptions" :key="item" :label="item" :value="item" />
                       </el-select>
                     </div>
                     <div class="workspace-filter-field">
@@ -261,6 +259,25 @@
                 <button class="management-list-toolbar-button" type="button" @click="handleFilterReset">
                   <el-icon><RefreshRight /></el-icon>
                   <span>重置</span>
+                </button>
+                <button
+                  v-if="selectedScope.type === 'iteration' && canManageGiteeBinding"
+                  class="management-list-toolbar-button"
+                  type="button"
+                  @click="openIterationGiteeBindingDialog"
+                >
+                  <el-icon><Connection /></el-icon>
+                  <span>Gitee绑定</span>
+                </button>
+                <button
+                  v-if="selectedScope.type === 'iteration' && canSyncGiteeWorkItems"
+                  class="management-list-toolbar-button"
+                  type="button"
+                  :disabled="!currentIterationGiteeBinding"
+                  @click="handleSyncCurrentIterationWorkItems"
+                >
+                  <el-icon><RefreshRight /></el-icon>
+                  <span>同步工作项</span>
                 </button>
                 <button v-if="canManageWorkItem" class="management-list-create-button workspace-mobile-create-work-item" type="button" @click="openCreateWorkItemDialog">
                   <el-icon><Plus /></el-icon>
@@ -299,9 +316,7 @@
                   <div class="workspace-filter-field">
                     <label>优先级</label>
                   <el-select v-model="workItemFilters.priority" clearable placeholder="优先级" style="width: 100%" :teleported="false">
-                      <el-option label="高" value="高" />
-                      <el-option label="中" value="中" />
-                      <el-option label="低" value="低" />
+                      <el-option v-for="item in priorityOptions" :key="item" :label="item" :value="item" />
                     </el-select>
                   </div>
                   <div class="workspace-filter-field">
@@ -324,6 +339,35 @@
           </div>
 
           <div v-if="!isMobileViewport" class="management-list-toolbar-side">
+            <button
+              v-if="selectedScope.type === 'iteration' && canManageGiteeBinding"
+              class="management-list-toolbar-button"
+              type="button"
+              @click="openIterationGiteeBindingDialog"
+            >
+              <el-icon><Connection /></el-icon>
+              <span>Gitee绑定</span>
+            </button>
+            <button
+              v-if="selectedScope.type === 'iteration' && canSyncGiteeWorkItems"
+              class="management-list-toolbar-button"
+              type="button"
+              :disabled="!currentIterationGiteeBinding"
+              @click="handleOpenIterationSyncLogs"
+            >
+              <el-icon><Tickets /></el-icon>
+              <span>同步日志</span>
+            </button>
+            <button
+              v-if="selectedScope.type === 'iteration' && canSyncGiteeWorkItems"
+              class="management-list-toolbar-button"
+              type="button"
+              :disabled="!currentIterationGiteeBinding"
+              @click="handleSyncCurrentIterationWorkItems"
+            >
+              <el-icon><RefreshRight /></el-icon>
+              <span>同步工作项</span>
+            </button>
             <button v-if="canManageWorkItem" class="management-list-create-button" type="button" @click="openCreateWorkItemDialog">
               <el-icon><Plus /></el-icon>
               <span>新建工作项</span>
@@ -368,65 +412,51 @@
                   <div class="workspace-primary-cell">
                     <div class="workspace-primary-copy">
                       <button class="workspace-title-button" type="button" @click="openWorkItemDetailFromRow(row)">{{ row.name }}</button>
+                      <div v-if="row.externalSource" class="workspace-primary-source-row">
+                        <span class="workspace-source-pill">{{ formatExternalSourceLabel(row.externalSource) }}</span>
+                        <a
+                          v-if="row.externalRemoteUrl"
+                          class="workspace-source-link"
+                          :href="row.externalRemoteUrl"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          #{{ row.externalRemoteId || '-' }}
+                        </a>
+                      </div>
                     </div>
                   </div>
                 </td>
                 <td class="center workspace-col-status" data-label="状态">
                   <CompactSelectMenu
-                    v-if="isInlineEditorActive(row.id, 'status')"
+                    v-if="canEditInlineSelectField(row)"
                     :model-value="row.status || null"
                     :options="taskStatusSelectOptions"
                     class="status-select"
                     variant="inline-pill"
                     :popover-width="132"
-                    :open-on-mount="true"
                     :disabled="statusUpdatingId === row.id"
                     @change="handleQuickStatusChange(row, String($event))"
-                    @visible-change="handleInlineSelectVisibleChange(row.id, 'status', $event)"
                   />
-                  <button
-                    v-else-if="canEditInlineSelectField(row)"
-                    class="workspace-editable-display is-chip"
-                    type="button"
-                    :disabled="statusUpdatingId === row.id"
-                    @click="openInlineEditor(row, 'status')"
-                  >
-                    <span class="workspace-status-pill" :class="workItemTone(row.status)">{{ formatTaskStatusLabel(row) }}</span>
-                  </button>
                   <span v-else class="workspace-status-pill" :class="workItemTone(row.status)">{{ formatTaskStatusLabel(row) }}</span>
                 </td>
                 <td class="center workspace-col-hours" data-label="预估工时">
-                  <div
-                    v-if="isInlineEditorActive(row.id, 'hours')"
-                    class="workspace-inline-number-shell"
-                    @focusout="handleInlineHoursFocusOut(row, $event)"
+                  <el-tooltip
+                    v-if="canManageWorkItem && row.workItemType === '任务'"
+                    :content="getRowWorkHoursLockedReason(row)"
+                    :disabled="!getRowWorkHoursLockedReason(row)"
                   >
                     <el-input-number
-                      v-model="inlineHoursDraft"
+                      :model-value="row.workHours ?? undefined"
                       :min="0"
                       :max="15"
                       :step="0.5"
                       :precision="1"
-                      :controls="false"
-                      class="work-hours-input workspace-inline-number"
+                      controls-position="right"
+                      class="work-hours-input"
                       :disabled="statusUpdatingId === row.id"
-                      @keyup.enter="handleInlineHoursSubmit(row)"
-                      @keydown.esc.prevent="handleInlineHoursCancel(row)"
+                      @change="handleQuickWorkHoursChange(row, $event)"
                     />
-                  </div>
-                  <el-tooltip
-                    v-else-if="canManageWorkItem && row.workItemType === '任务'"
-                    :content="getRowWorkHoursLockedReason(row)"
-                    :disabled="!getRowWorkHoursLockedReason(row)"
-                  >
-                    <button
-                      class="workspace-editable-display is-chip"
-                      type="button"
-                      :disabled="statusUpdatingId === row.id"
-                      @click="openInlineEditor(row, 'hours')"
-                    >
-                      <span class="workspace-hours-pill" :class="{ empty: row.workHours == null }">{{ formatInlineWorkHours(row.workHours) }}</span>
-                    </button>
                   </el-tooltip>
                   <span v-else class="workspace-hours-pill" :class="{ empty: row.workHours == null }">{{ formatInlineWorkHours(row.workHours) }}</span>
                 </td>
@@ -441,48 +471,26 @@
                 </td>
                 <td class="workspace-col-owner" data-label="负责人">
                   <CompactSelectMenu
-                    v-if="isInlineEditorActive(row.id, 'assignee')"
+                    v-if="canEditInlineSelectField(row)"
                     :model-value="row.assigneeUserId ?? -1"
                     :options="assigneeSelectOptions"
                     class="assignee-select"
                     variant="inline-pill"
-                    :open-on-mount="true"
                     :disabled="statusUpdatingId === row.id"
                     @change="handleQuickAssigneeChange(row, Number($event))"
-                    @visible-change="handleInlineSelectVisibleChange(row.id, 'assignee', $event)"
                   />
-                  <button
-                    v-else-if="canEditInlineSelectField(row)"
-                    class="workspace-editable-display is-owner"
-                    type="button"
-                    :disabled="statusUpdatingId === row.id"
-                    @click="openInlineEditor(row, 'assignee')"
-                  >
-                    <ListUserDisplay :user="buildWorkItemAssigneeDisplayItem(row)" empty-text="未分配" size="md" />
-                  </button>
                   <ListUserDisplay v-else :user="buildWorkItemAssigneeDisplayItem(row)" empty-text="未分配" size="md" />
                 </td>
                 <td class="center workspace-col-priority" data-label="优先级">
                   <CompactSelectMenu
-                    v-if="isInlineEditorActive(row.id, 'priority')"
+                    v-if="canEditInlineSelectField(row)"
                     :model-value="row.priority || null"
                     :options="prioritySelectOptions"
                     class="priority-select"
                     variant="inline-pill"
-                    :open-on-mount="true"
                     :disabled="statusUpdatingId === row.id"
                     @change="handleQuickPriorityChange(row, String($event))"
-                    @visible-change="handleInlineSelectVisibleChange(row.id, 'priority', $event)"
                   />
-                  <button
-                    v-else-if="canEditInlineSelectField(row)"
-                    class="workspace-editable-display is-chip"
-                    type="button"
-                    :disabled="statusUpdatingId === row.id"
-                    @click="openInlineEditor(row, 'priority')"
-                  >
-                    <span class="workspace-priority-pill" :class="workspacePriorityTone(row.priority)">{{ row.priority || '-' }}</span>
-                  </button>
                   <span v-else class="workspace-priority-pill" :class="workspacePriorityTone(row.priority)">{{ row.priority || '-' }}</span>
                 </td>
                 <td class="workspace-col-creator" data-label="创建人">
@@ -543,6 +551,10 @@
                       <span class="mobile-entity-copy">
                         <span class="mobile-entity-description">{{ row.workItemCode }}</span>
                         <span class="mobile-entity-title">{{ row.name }}</span>
+                        <span v-if="row.externalSource" class="mobile-entity-description">
+                          {{ formatExternalSourceLabel(row.externalSource) }}
+                          <template v-if="row.externalRemoteId"> #{{ row.externalRemoteId }}</template>
+                        </span>
                       </span>
                     </button>
                     <div class="mobile-entity-badge-group workspace-mobile-badge-group">
@@ -846,6 +858,18 @@
                 <el-input v-model="workItemForm.name" placeholder="请填写工作项标题" size="large" />
               </div>
             </el-form-item>
+            <div v-if="currentDialogWorkItem?.externalSource" class="work-item-source-row">
+              <span class="workspace-source-pill">{{ formatExternalSourceLabel(currentDialogWorkItem.externalSource) }}</span>
+              <a
+                v-if="currentDialogWorkItem.externalRemoteUrl"
+                class="workspace-source-link"
+                :href="currentDialogWorkItem.externalRemoteUrl"
+                target="_blank"
+                rel="noreferrer"
+              >
+                查看远端工作项 #{{ currentDialogWorkItem.externalRemoteId || '-' }}
+              </a>
+            </div>
           </div>
 
           <div class="work-item-editor-grid">
@@ -853,9 +877,7 @@
               <div class="work-item-editor-label">工作项类型</div>
               <el-form-item prop="workItemType" class="work-item-form-item-plain">
                 <el-select v-model="workItemForm.workItemType" style="width: 100%">
-                  <el-option label="需求" value="需求" />
-                  <el-option label="任务" value="任务" />
-                  <el-option label="缺陷" value="缺陷" />
+                  <el-option v-for="item in workItemTypeOptions" :key="item" :label="item" :value="item" />
                 </el-select>
               </el-form-item>
             </div>
@@ -1130,6 +1152,110 @@
     </div>
   </el-dialog>
 
+  <el-dialog
+    v-model="iterationGiteeBindingDialogVisible"
+    :title="iterationGiteeBindingDialogTitle"
+    width="680px"
+    class="platform-form-dialog"
+    align-center
+    destroy-on-close
+  >
+    <template v-if="selectedScope.type === 'iteration' && currentIteration">
+      <el-form ref="iterationGiteeBindingFormRef" :model="iterationGiteeBindingForm" :rules="iterationGiteeBindingRules" label-position="top" v-loading="iterationGiteeBindingLoading">
+        <el-form-item label="平台项目">
+          <el-input :model-value="board.project.name" disabled />
+        </el-form-item>
+        <el-form-item label="当前迭代">
+          <el-input :model-value="currentIteration.name" disabled />
+        </el-form-item>
+        <el-alert
+          v-if="!currentProjectGiteeBinding"
+          type="warning"
+          :closable="false"
+          title="当前项目尚未绑定 Gitee 项目，请先到项目管理页完成 Gitee 项目绑定。"
+          style="margin-bottom: 16px"
+        />
+        <el-form-item label="Gitee 迭代" prop="giteeMilestoneId">
+          <el-select
+            v-model="iterationGiteeBindingForm.giteeMilestoneId"
+            filterable
+            :disabled="!currentProjectGiteeBinding"
+            placeholder="请选择 Gitee 迭代"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in giteeMilestoneOptions"
+              :key="item.id"
+              :label="item.state ? `${item.title}（${item.state}）` : item.title"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <div class="workspace-gitee-binding-tip" v-if="currentIterationGiteeBinding">
+          <span>当前绑定迭代：{{ currentIterationGiteeBinding.giteeMilestoneTitle }}</span>
+        </div>
+      </el-form>
+    </template>
+    <template #footer>
+      <div class="platform-dialog-footer">
+        <el-button @click="iterationGiteeBindingDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="iterationGiteeBindingSubmitting" :disabled="!currentProjectGiteeBinding" @click="handleSubmitIterationGiteeBinding">保存绑定</el-button>
+      </div>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="iterationSyncResultVisible"
+    title="Gitee 工作项同步结果"
+    width="680px"
+    align-center
+    destroy-on-close
+  >
+    <template v-if="iterationSyncResult">
+      <el-descriptions :column="2" border>
+        <el-descriptions-item label="执行状态">{{ formatSyncExecutionStatusLabel(iterationSyncResult.executionStatus) }}</el-descriptions-item>
+        <el-descriptions-item label="执行时间">{{ iterationSyncResult.executedAt || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="远端工作项">{{ iterationSyncResult.totalIssueCount }}</el-descriptions-item>
+        <el-descriptions-item label="新增 / 更新">{{ iterationSyncResult.createdCount }} / {{ iterationSyncResult.updatedCount }}</el-descriptions-item>
+        <el-descriptions-item label="移出迭代">{{ iterationSyncResult.removedCount }}</el-descriptions-item>
+        <el-descriptions-item label="失败">{{ iterationSyncResult.failedCount }}</el-descriptions-item>
+      </el-descriptions>
+      <div class="workspace-gitee-sync-summary">{{ iterationSyncResult.summaryMessage }}</div>
+    </template>
+    <template #footer>
+      <el-button @click="iterationSyncResultVisible = false">关闭</el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog
+    v-model="iterationSyncLogsVisible"
+    title="Gitee 工作项同步日志"
+    width="860px"
+    align-center
+    destroy-on-close
+  >
+    <el-table v-loading="iterationSyncLogsLoading" :data="iterationSyncLogs" style="width: 100%">
+      <el-table-column prop="executedAt" label="执行时间" width="180" />
+      <el-table-column label="状态" width="120">
+        <template #default="{ row }">
+          <el-tag :type="syncExecutionStatusType(row.executionStatus)">{{ formatSyncExecutionStatusLabel(row.executionStatus) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="远端数量" width="100">
+        <template #default="{ row }">{{ row.totalIssueCount }}</template>
+      </el-table-column>
+      <el-table-column label="新增 / 更新 / 移出 / 失败" min-width="220">
+        <template #default="{ row }">
+          {{ row.createdCount }} / {{ row.updatedCount }} / {{ row.removedCount }} / {{ row.failedCount }}
+        </template>
+      </el-table-column>
+      <el-table-column prop="summaryMessage" label="摘要" min-width="260" />
+    </el-table>
+    <template #footer>
+      <el-button @click="iterationSyncLogsVisible = false">关闭</el-button>
+    </template>
+  </el-dialog>
+
   <RequirementAiDialog
     v-model="requirementAiDialogVisible"
     :task="currentRequirementAiTask"
@@ -1152,6 +1278,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Bell, ChatDotRound, Cpu, Delete, EditPen, Filter, FolderOpened, Finished, Management, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { listUserOptions } from '@/api/access'
+import {
+  createIterationGiteeBinding,
+  getIterationGiteeBinding,
+  getProjectGiteeBinding,
+  listIterationGiteeWorkItemSyncLogs,
+  listProjectGiteeMilestones,
+  syncIterationGiteeWorkItems,
+  updateIterationGiteeBinding
+} from '@/api/gitee'
 import CompactSelectMenu, { type CompactSelectOption } from '@/components/CompactSelectMenu.vue'
 import ListUserDisplay from '@/components/ListUserDisplay.vue'
 import type { ListUserDisplayItem } from '@/components/listUserDisplay'
@@ -1199,9 +1334,14 @@ import {
 import { resolveAssetUrl } from '@/utils/asset'
 import { renderMarkdownToHtml } from '@/utils/markdown'
 import type {
+  GiteeMilestoneItem,
+  GiteeWorkItemSyncLogItem,
+  GiteeWorkItemSyncResultItem,
+  IterationGiteeBindingItem,
   IterationBoardItem,
   IterationItem,
   ProjectBurndownItem,
+  ProjectGiteeBindingItem,
   ProjectRequirementModuleOptionItem,
   ExecutionTaskItem,
   TaskCommentItem,
@@ -1223,7 +1363,7 @@ interface WorkItemForm {
   /** 工作项编号，仅用于详情展示。 */
   workItemCode: string
   name: string
-  workItemType: '需求' | '任务' | '缺陷'
+  workItemType: string
   status: string
   priority: string
   /** 预估工时，单位为小时。 */
@@ -1255,7 +1395,8 @@ interface CommentForm {
   content: string
 }
 
-const taskStatusOptions = ['草稿', '待开始', '处理中', '已完成', '已阻塞']
+const BASE_TASK_STATUS_OPTIONS = ['草稿', '待开始', '处理中', '已完成', '已阻塞']
+const BASE_PRIORITY_OPTIONS = ['高', '中', '低']
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
@@ -1265,6 +1406,8 @@ const projectId = Number(route.params.projectId)
 
 const canManageIteration = computed(() => authStore.hasPermission('project:manage'))
 const canManageWorkItem = computed(() => authStore.hasPermission('task:manage'))
+const canManageGiteeBinding = computed(() => authStore.hasPermission('gitee:binding:manage'))
+const canSyncGiteeWorkItems = computed(() => authStore.hasPermission('gitee:work-item:sync'))
 const canRequirementDevPass = computed(() => authStore.hasPermission('task:requirement:dev'))
 const canRequirementTestPass = computed(() => authStore.hasPermission('task:requirement:test'))
 const canUseHermes = computed(() => authStore.hasPermission('hermes:chat'))
@@ -1322,6 +1465,17 @@ const userOptionMap = computed(() => new Map(userOptions.value.map((item) => [it
 const requirementOptions = ref<TaskItem[]>([])
 const requirementModuleOptions = ref<ProjectRequirementModuleOptionItem[]>([])
 const workItems = ref<TaskItem[]>([])
+const currentProjectGiteeBinding = ref<ProjectGiteeBindingItem | null>(null)
+const currentIterationGiteeBinding = ref<IterationGiteeBindingItem | null>(null)
+const giteeMilestoneOptions = ref<GiteeMilestoneItem[]>([])
+const iterationGiteeBindingDialogVisible = ref(false)
+const iterationGiteeBindingLoading = ref(false)
+const iterationGiteeBindingSubmitting = ref(false)
+const iterationSyncResultVisible = ref(false)
+const iterationSyncLogsVisible = ref(false)
+const iterationSyncLogsLoading = ref(false)
+const iterationSyncResult = ref<GiteeWorkItemSyncResultItem | null>(null)
+const iterationSyncLogs = ref<GiteeWorkItemSyncLogItem[]>([])
 const burndown = ref<ProjectBurndownItem | null>(null)
 const iterationProgressMap = ref<Record<number, IterationProgressSummary>>({})
 const unplannedProgress = ref<IterationProgressSummary | null>(null)
@@ -1381,6 +1535,11 @@ const iterationForm = reactive<IterationForm>({
   sortOrder: 0
 })
 const iterationDateRange = ref<string[]>([])
+const iterationGiteeBindingFormRef = ref<FormInstance>()
+const iterationGiteeBindingForm = reactive<{ giteeMilestoneId: number | null }>({
+  giteeMilestoneId: null
+})
+const iterationGiteeBindingDialogTitle = computed(() => currentIterationGiteeBinding.value ? '编辑 Gitee 迭代绑定' : '新增 Gitee 迭代绑定')
 
 const workItemDialogVisible = ref(false)
 const workItemEditing = ref(false)
@@ -1431,6 +1590,10 @@ const workItemForm = reactive<WorkItemForm>({
 const iterationRules: FormRules<IterationForm> = {
   name: [{ required: true, message: '请输入迭代名称', trigger: 'blur' }],
   status: [{ required: true, message: '请选择迭代状态', trigger: 'change' }]
+}
+
+const iterationGiteeBindingRules: FormRules<{ giteeMilestoneId: number | null }> = {
+  giteeMilestoneId: [{ required: true, message: '请选择 Gitee 迭代', trigger: 'change' }]
 }
 
 const workItemRules: FormRules<WorkItemForm> = {
@@ -1552,6 +1715,130 @@ const currentIteration = computed(() =>
   board.iterations.find((item) => item.id === selectedScope.iterationId) || null
 )
 
+const resetIterationGiteeBindingForm = () => {
+  iterationGiteeBindingForm.giteeMilestoneId = null
+  iterationGiteeBindingFormRef.value?.clearValidate()
+}
+
+const loadProjectGiteeBinding = async () => {
+  currentProjectGiteeBinding.value = await getProjectGiteeBinding(projectId)
+}
+
+const loadCurrentIterationGiteeBinding = async () => {
+  if (selectedScope.type !== 'iteration' || !selectedScope.iterationId) {
+    currentIterationGiteeBinding.value = null
+    return
+  }
+  currentIterationGiteeBinding.value = await getIterationGiteeBinding(selectedScope.iterationId)
+}
+
+const openIterationGiteeBindingDialog = async () => {
+  if (selectedScope.type !== 'iteration' || !currentIteration.value) {
+    ElMessage.warning('请先选择一个迭代')
+    return
+  }
+  iterationGiteeBindingDialogVisible.value = true
+  iterationGiteeBindingLoading.value = true
+  resetIterationGiteeBindingForm()
+  giteeMilestoneOptions.value = []
+  try {
+    await Promise.all([loadProjectGiteeBinding(), loadCurrentIterationGiteeBinding()])
+    if (currentProjectGiteeBinding.value) {
+      giteeMilestoneOptions.value = await listProjectGiteeMilestones(projectId)
+    }
+    if (currentIterationGiteeBinding.value) {
+      iterationGiteeBindingForm.giteeMilestoneId = currentIterationGiteeBinding.value.giteeMilestoneId
+    }
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载 Gitee 迭代绑定失败')
+  } finally {
+    iterationGiteeBindingLoading.value = false
+  }
+}
+
+const handleSubmitIterationGiteeBinding = async () => {
+  if (selectedScope.type !== 'iteration' || !selectedScope.iterationId) {
+    return
+  }
+  const valid = await iterationGiteeBindingFormRef.value?.validate().catch(() => false)
+  if (!valid) {
+    return
+  }
+  iterationGiteeBindingSubmitting.value = true
+  try {
+    const isEditingBinding = Boolean(currentIterationGiteeBinding.value)
+    const payload = {
+      giteeMilestoneId: Number(iterationGiteeBindingForm.giteeMilestoneId)
+    }
+    const binding = isEditingBinding
+      ? await updateIterationGiteeBinding(selectedScope.iterationId, payload)
+      : await createIterationGiteeBinding(selectedScope.iterationId, payload)
+    currentIterationGiteeBinding.value = binding
+    iterationGiteeBindingDialogVisible.value = false
+    ElMessage.success(isEditingBinding ? 'Gitee 迭代绑定已更新' : 'Gitee 迭代绑定已创建')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '保存 Gitee 迭代绑定失败')
+  } finally {
+    iterationGiteeBindingSubmitting.value = false
+  }
+}
+
+const loadIterationSyncLogs = async () => {
+  if (selectedScope.type !== 'iteration' || !selectedScope.iterationId) {
+    iterationSyncLogs.value = []
+    return
+  }
+  iterationSyncLogsLoading.value = true
+  try {
+    iterationSyncLogs.value = await listIterationGiteeWorkItemSyncLogs(selectedScope.iterationId)
+  } finally {
+    iterationSyncLogsLoading.value = false
+  }
+}
+
+const handleOpenIterationSyncLogs = async () => {
+  if (selectedScope.type !== 'iteration' || !selectedScope.iterationId) {
+    ElMessage.warning('请先选择一个迭代')
+    return
+  }
+  if (!currentIterationGiteeBinding.value) {
+    ElMessage.warning('当前迭代尚未绑定 Gitee 迭代')
+    return
+  }
+  iterationSyncLogsVisible.value = true
+  try {
+    await loadIterationSyncLogs()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载同步日志失败')
+  }
+}
+
+const handleSyncCurrentIterationWorkItems = async () => {
+  if (selectedScope.type !== 'iteration' || !selectedScope.iterationId) {
+    ElMessage.warning('请先选择一个迭代')
+    return
+  }
+  if (!currentIterationGiteeBinding.value) {
+    ElMessage.warning('当前迭代尚未绑定 Gitee 迭代')
+    return
+  }
+  try {
+    const result = await syncIterationGiteeWorkItems(selectedScope.iterationId)
+    iterationSyncResult.value = result
+    iterationSyncResultVisible.value = true
+    if (result.executionStatus === 'FAILED') {
+      ElMessage.error(result.summaryMessage || '工作项同步失败')
+    } else if (result.executionStatus === 'PARTIAL') {
+      ElMessage.warning(result.summaryMessage || '工作项同步部分成功')
+    } else {
+      ElMessage.success(result.summaryMessage || '工作项同步成功')
+    }
+    await Promise.all([loadBoard(), loadCurrentIterationGiteeBinding(), loadWorkItems(), loadIterationSyncLogs()])
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '工作项同步失败')
+  }
+}
+
 const currentScopeTitle = computed(() => {
   if (selectedScope.type === 'unplanned') return '未规划工作项'
   return currentIteration.value?.name || '迭代工作项'
@@ -1668,6 +1955,41 @@ const workspacePriorityTone = (priority?: string | null) => {
   return 'medium'
 }
 
+const resolveTaskStatusTone = (status?: string | null): CompactSelectOption['tone'] => {
+  if (['已完成', '完成'].includes(status || '')) return 'success'
+  if (['进行中', '开发中', '处理中'].includes(status || '')) return 'primary'
+  if (status === '待开始') return 'warning'
+  if (status === '已阻塞' || status === '阻塞') return 'danger'
+  return 'info'
+}
+
+const resolvePriorityTone = (priority?: string | null): CompactSelectOption['tone'] => {
+  if (priority === '高') return 'danger'
+  if (priority === '低') return 'info'
+  return 'warning'
+}
+
+const formatExternalSourceLabel = (source?: string | null) => {
+  if (source === 'GITEE') {
+    return '来自 Gitee'
+  }
+  return source || '外部来源'
+}
+
+const formatSyncExecutionStatusLabel = (status?: string | null) => {
+  if (status === 'SUCCESS') return '成功'
+  if (status === 'PARTIAL') return '部分成功'
+  if (status === 'FAILED') return '失败'
+  return status || '未知'
+}
+
+const syncExecutionStatusType = (status?: string | null) => {
+  if (status === 'SUCCESS') return 'success'
+  if (status === 'PARTIAL') return 'warning'
+  if (status === 'FAILED') return 'danger'
+  return 'info'
+}
+
 /**
  * 迭代工作项列表优先复用用户选项中的真实头像地址，再回退到字母头像。
  */
@@ -1702,7 +2024,11 @@ const buildWorkItemCreatorDisplayItem = (item: TaskItem): ListUserDisplayItem | 
 const isInlineEditorActive = (rowId: number, field: InlineEditableField) =>
   activeInlineEditor.value?.rowId === rowId && activeInlineEditor.value?.field === field
 
-const canEditInlineSelectField = (row: TaskItem) => canManageWorkItem.value && row.workItemType !== '需求'
+/**
+ * 需求也允许在列表中快速调整状态、负责人和优先级；
+ * 只有 PRD、模块、原型链接等重字段仍保留在详情抽屉内编辑。
+ */
+const canEditInlineSelectField = (row: TaskItem) => canManageWorkItem.value
 const canEditInlineHoursField = (row: TaskItem) => canManageWorkItem.value && row.workItemType === '任务'
 const formatInlineWorkHours = (value?: number | null) => (value == null ? '-' : `${value}h`)
 
@@ -1821,19 +2147,55 @@ const applyIterationProgressFromItems = (items: TaskItem[]) => {
   unplannedProgress.value = buildIterationProgressSummary(nextUnplannedItems)
 }
 
-const taskStatusSelectOptions: CompactSelectOption[] = [
-  { label: '草稿', value: '草稿', tone: 'info' },
-  { label: '待开始', value: '待开始', tone: 'warning' },
-  { label: '处理中', value: '处理中', tone: 'primary' },
-  { label: '已完成', value: '已完成', tone: 'success' },
-  { label: '已阻塞', value: '已阻塞', tone: 'danger' }
-]
+const taskStatusOptions = computed(() => {
+  const values = new Set<string>(BASE_TASK_STATUS_OPTIONS)
+  for (const item of workItems.value) {
+    if (item.status?.trim()) {
+      values.add(item.status.trim())
+    }
+  }
+  if (currentDialogWorkItem.value?.status?.trim()) {
+    values.add(currentDialogWorkItem.value.status.trim())
+  }
+  return Array.from(values)
+})
 
-const prioritySelectOptions: CompactSelectOption[] = [
-  { label: '高', value: '高', tone: 'danger' },
-  { label: '中', value: '中', tone: 'warning' },
-  { label: '低', value: '低', tone: 'info' }
-]
+const taskStatusSelectOptions = computed<CompactSelectOption[]>(() =>
+  taskStatusOptions.value.map((item) => ({
+    label: item,
+    value: item,
+    tone: resolveTaskStatusTone(item)
+  }))
+)
+
+const priorityOptions = computed(() => {
+  const values = new Set<string>(BASE_PRIORITY_OPTIONS)
+  for (const item of workItems.value) {
+    if (item.priority?.trim()) {
+      values.add(item.priority.trim())
+    }
+  }
+  if (currentDialogWorkItem.value?.priority?.trim()) {
+    values.add(currentDialogWorkItem.value.priority.trim())
+  }
+  return Array.from(values)
+})
+
+const prioritySelectOptions = computed<CompactSelectOption[]>(() =>
+  priorityOptions.value.map((item) => ({
+    label: item,
+    value: item,
+    tone: resolvePriorityTone(item)
+  }))
+)
+
+const workItemTypeOptions = computed(() => {
+  const values = new Set<string>(['需求', '任务', '缺陷'])
+  if (currentDialogWorkItem.value?.workItemType?.trim()) {
+    values.add(currentDialogWorkItem.value.workItemType.trim())
+  }
+  return Array.from(values)
+})
 
 const assigneeSelectOptions = computed<CompactSelectOption[]>(() => [
   { label: '未分配', value: -1, tone: 'info' },
@@ -2247,14 +2609,14 @@ const selectUnplanned = async () => {
   selectedScope.type = 'unplanned'
   selectedScope.iterationId = null
   resetMobilePagination()
-  await Promise.all([loadWorkItems(), syncIterationQuery(null)])
+  await Promise.all([loadCurrentIterationGiteeBinding(), loadWorkItems(), syncIterationQuery(null)])
 }
 
 const selectIteration = async (item: IterationItem) => {
   selectedScope.type = 'iteration'
   selectedScope.iterationId = item.id
   resetMobilePagination()
-  await Promise.all([loadWorkItems(), syncIterationQuery(item.id)])
+  await Promise.all([loadCurrentIterationGiteeBinding(), loadWorkItems(), syncIterationQuery(item.id)])
 }
 
 const loadBoard = async () => {
@@ -2319,7 +2681,7 @@ const loadWorkItems = async () => {
 
 const refreshBoardAndItems = async () => {
   await loadBoard()
-  await loadWorkItems()
+  await Promise.all([loadProjectGiteeBinding(), loadCurrentIterationGiteeBinding(), loadWorkItems()])
 }
 
 const handleTypeTabChange = async () => {
@@ -2701,7 +3063,7 @@ watch(
     selectedScope.type = 'iteration'
     selectedScope.iterationId = nextIterationId
     resetMobilePagination()
-    await loadWorkItems()
+    await Promise.all([loadCurrentIterationGiteeBinding(), loadWorkItems()])
   }
 )
 
@@ -3631,6 +3993,37 @@ onMounted(async () => {
   font-weight: 500;
 }
 
+.workspace-primary-source-row,
+.work-item-source-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.workspace-source-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(217, 242, 223, 0.9);
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.workspace-source-link {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workspace-source-link:hover {
+  color: #0a5a55;
+}
+
 .workspace-editable-display {
   width: 100%;
   display: inline-flex;
@@ -4402,6 +4795,20 @@ onMounted(async () => {
   font-family: var(--app-font-mono);
   font-size: 11px;
   font-weight: 700;
+}
+
+.workspace-gitee-binding-tip {
+  margin-top: 6px;
+  color: #6d7f95;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.workspace-gitee-sync-summary {
+  margin-top: 16px;
+  color: #516174;
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .work-item-editor-grid {

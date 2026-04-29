@@ -552,7 +552,7 @@ import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface TaskForm {
   name: string
-  workItemType: '需求' | '任务' | '缺陷'
+  workItemType: string
   status: string
   priority: string
   workHours: number | null

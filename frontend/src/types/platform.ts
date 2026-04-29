@@ -392,7 +392,7 @@ export interface TaskItem {
   /** 工作项编号，由后端自动生成。 */
   workItemCode: string
   name: string
-  workItemType: '需求' | '任务' | '缺陷'
+  workItemType: '需求' | '任务' | '缺陷' | string
   /** 工作项创建人用户ID。 */
   creatorUserId: number | null
   /** 工作项创建人展示名称。 */
@@ -431,6 +431,12 @@ export interface TaskItem {
   iterationName: string | null
   requirementTaskId: number | null
   requirementTaskName: string | null
+  /** 外部来源系统编码，例如 GITEE。 */
+  externalSource?: string | null
+  /** 外部来源系统中的主键快照。 */
+  externalRemoteId?: string | null
+  /** 外部来源系统中的工作项链接。 */
+  externalRemoteUrl?: string | null
   /** 当前用户是否可以删除当前工作项。 */
   canDelete: boolean
 }
@@ -874,6 +880,77 @@ export interface ProjectGitlabBindingItem {
   lastTestMessage: string | null
   lastTestedAt: string | null
   testProfileJson: string | null
+}
+
+export interface GiteeProgramItem {
+  id: number
+  name: string
+  ident: string | null
+}
+
+export interface GiteeMilestoneItem {
+  id: number
+  title: string
+  state: string | null
+  startDate: string | null
+  endDate: string | null
+}
+
+export interface ProjectGiteeBindingItem {
+  id: number
+  projectId: number
+  projectName: string
+  enterpriseId: number
+  apiBaseUrl: string
+  giteeProgramId: number
+  giteeProgramName: string
+  tokenConfigured: boolean
+  enabled: boolean
+  lastTestStatus: string | null
+  lastTestMessage: string | null
+  lastTestedAt: string | null
+}
+
+export interface IterationGiteeBindingItem {
+  id: number
+  iterationId: number
+  projectId: number
+  projectName: string
+  iterationName: string
+  giteeMilestoneId: number
+  giteeMilestoneTitle: string
+}
+
+export interface GiteeProjectBindingDiscoveryResultItem {
+  enterpriseId: number
+  apiBaseUrl: string
+  message: string
+  programs: GiteeProgramItem[]
+}
+
+export interface GiteeWorkItemSyncResultItem {
+  executionStatus: 'SUCCESS' | 'PARTIAL' | 'FAILED' | string
+  totalIssueCount: number
+  createdCount: number
+  updatedCount: number
+  removedCount: number
+  failedCount: number
+  summaryMessage: string
+  executedAt: string | null
+}
+
+export interface GiteeWorkItemSyncLogItem {
+  id: number
+  projectId: number
+  iterationId: number
+  executionStatus: 'SUCCESS' | 'PARTIAL' | 'FAILED' | string
+  totalIssueCount: number
+  createdCount: number
+  updatedCount: number
+  removedCount: number
+  failedCount: number
+  summaryMessage: string
+  executedAt: string | null
 }
 
 export interface RepositoryScanRulesetItem {

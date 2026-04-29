@@ -37,10 +37,10 @@ public class TaskEntity {
     @Column(name = "work_item_code", nullable = false, unique = true, length = 7)
     private String workItemCode;
 
-    @Column(name = "work_item_type", nullable = false, length = 20)
+    @Column(name = "work_item_type", nullable = false, length = 50)
     private String workItemType = "任务";
 
-    @Column(nullable = false, length = 30)
+    @Column(nullable = false, length = 50)
     private String status;
 
     @Column(nullable = false, length = 30)

@@ -10,6 +10,7 @@ import com.aiclub.platform.repository.IterationRepository;
 import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.aiclub.platform.repository.TaskCommentRepository;
+import com.aiclub.platform.repository.TaskGiteeBindingRepository;
 import com.aiclub.platform.repository.TaskPrdProjectionRepository;
 import com.aiclub.platform.repository.TaskRepository;
 import com.aiclub.platform.repository.UserRepository;
@@ -50,6 +51,9 @@ class PlatformStoreServiceModelConfigTests {
     private TaskRepository taskRepository;
 
     @Mock
+    private TaskGiteeBindingRepository taskGiteeBindingRepository;
+
+    @Mock
     private TaskCommentRepository taskCommentRepository;
 
     @Mock
@@ -87,6 +91,7 @@ class PlatformStoreServiceModelConfigTests {
                 aiModelConfigRepository,
                 iterationRepository,
                 taskRepository,
+                taskGiteeBindingRepository,
                 taskCommentRepository,
                 taskPrdProjectionRepository,
                 userRepository,

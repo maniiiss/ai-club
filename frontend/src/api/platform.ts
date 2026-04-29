@@ -87,7 +87,7 @@ export interface AgentPayload {
 
 export interface TaskPayload {
   name: string
-  workItemType?: '需求' | '任务' | '缺陷'
+  workItemType?: '需求' | '任务' | '缺陷' | string
   status: string
   priority: string
   /** 预估工时，单位为小时。 */

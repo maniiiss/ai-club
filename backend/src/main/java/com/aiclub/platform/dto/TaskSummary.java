@@ -92,6 +92,18 @@ public record TaskSummary(
         String iterationName,
         Long requirementTaskId,
         String requirementTaskName,
+        /**
+         * 外部来源系统编码，当前同步场景下可能为 GITEE。
+         */
+        String externalSource,
+        /**
+         * 外部来源系统中的主键ID快照，供前端展示“来自 Gitee #123”等只读标识。
+         */
+        String externalRemoteId,
+        /**
+         * 外部来源系统中的跳转链接。
+         */
+        String externalRemoteUrl,
         boolean canDelete
 ) {
 }

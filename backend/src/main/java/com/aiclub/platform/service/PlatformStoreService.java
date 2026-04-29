@@ -30,6 +30,7 @@ import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.IterationRepository;
 import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
+import com.aiclub.platform.repository.TaskGiteeBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.aiclub.platform.repository.TaskCommentRepository;
 import com.aiclub.platform.repository.TaskPrdProjectionRepository;
@@ -85,6 +86,7 @@ public class PlatformStoreService {
     private final AiModelConfigRepository aiModelConfigRepository;
     private final IterationRepository iterationRepository;
     private final TaskRepository taskRepository;
+    private final TaskGiteeBindingRepository taskGiteeBindingRepository;
     private final TaskCommentRepository taskCommentRepository;
     private final TaskPrdProjectionRepository taskPrdProjectionRepository;
     private final UserRepository userRepository;
@@ -102,6 +104,7 @@ public class PlatformStoreService {
                                 AiModelConfigRepository aiModelConfigRepository,
                                 IterationRepository iterationRepository,
                                 TaskRepository taskRepository,
+                                TaskGiteeBindingRepository taskGiteeBindingRepository,
                                 TaskCommentRepository taskCommentRepository,
                                 TaskPrdProjectionRepository taskPrdProjectionRepository,
                                 UserRepository userRepository,
@@ -117,6 +120,7 @@ public class PlatformStoreService {
         this.aiModelConfigRepository = aiModelConfigRepository;
         this.iterationRepository = iterationRepository;
         this.taskRepository = taskRepository;
+        this.taskGiteeBindingRepository = taskGiteeBindingRepository;
         this.taskCommentRepository = taskCommentRepository;
         this.taskPrdProjectionRepository = taskPrdProjectionRepository;
         this.userRepository = userRepository;
@@ -1442,6 +1446,7 @@ public class PlatformStoreService {
                 .toList();
         TaskEntity requirementTask = entity.getRequirementTask();
         TaskPrdProjectionEntity prdProjection = taskPrdProjectionRepository.findByTask_Id(entity.getId()).orElse(null);
+        com.aiclub.platform.domain.model.TaskGiteeBindingEntity giteeBinding = taskGiteeBindingRepository.findByTask_Id(entity.getId()).orElse(null);
         String prdStatus = prdProjection == null ? null : prdProjection.getStatus();
         String prdStatusMessage = resolveTaskPrdStatusMessage(entity, prdProjection);
         return new TaskSummary(
@@ -1482,6 +1487,9 @@ public class PlatformStoreService {
                 entity.getIteration() == null ? null : entity.getIteration().getName(),
                 entity.getRequirementTask() == null ? null : entity.getRequirementTask().getId(),
                 entity.getRequirementTask() == null ? null : entity.getRequirementTask().getName(),
+                giteeBinding == null ? null : "GITEE",
+                giteeBinding == null ? null : String.valueOf(giteeBinding.getGiteeIssueId()),
+                giteeBinding == null ? null : trimToNull(giteeBinding.getGiteeIssueUrl()),
                 canDeleteTask(entity)
         );
     }

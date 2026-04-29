@@ -14,10 +14,10 @@ public record TaskRequest(
         @NotBlank(message = "任务名称不能为空")
         @Size(max = 120, message = "任务名称长度不能超过120")
         String name,
-        @Size(max = 20, message = "工作项类型长度不能超过20")
+        @Size(max = 50, message = "工作项类型长度不能超过50")
         String workItemType,
         @NotBlank(message = "任务状态不能为空")
-        @Size(max = 30, message = "任务状态长度不能超过30")
+        @Size(max = 50, message = "任务状态长度不能超过50")
         String status,
         @NotBlank(message = "优先级不能为空")
         @Size(max = 30, message = "优先级长度不能超过30")
