@@ -92,26 +92,20 @@ public class SelfUpgradeExecutionWritebackService {
         patrolRun.setLinkedExecutionTask(executionTask);
         patrolRun.setFinishedAt(LocalDateTime.now());
         String normalizedStatus = normalizeRunStatus(terminalStatus);
-        patrolRun.setStatus(normalizedStatus);
-        if (!"SUCCESS".equals(normalizedStatus)) {
-            String summary = resolveSummary(executionTask, executionRun);
-            patrolRun.setSummary(summary);
-            patrolRunRepository.save(patrolRun);
-            markPendingTargetsTerminal(patrolRun, normalizedStatus, summary);
-            patrolPlanService.markLastRun(patrolRun.getPlan().getId(), normalizedStatus, summary, LocalDateTime.now());
-            return;
-        }
-
-        ExecutionStepEntity patrolStep = executionStepRepository.findAllByRun_IdOrderByStepNoAscIdAsc(executionRun.getId()).stream()
+        String fallbackSummary = resolveSummary(executionTask, executionRun);
+        ExecutionStepEntity patrolStep = executionRun == null
+                ? null
+                : executionStepRepository.findAllByRun_IdOrderByStepNoAscIdAsc(executionRun.getId()).stream()
                 .findFirst()
                 .orElse(null);
         if (patrolStep == null || patrolStep.getOutputSnapshot() == null || patrolStep.getOutputSnapshot().isBlank()) {
-            String summary = "巡检执行成功，但缺少结构化结果";
-            patrolRun.setStatus("FAILED");
+            String summary = "SUCCESS".equals(normalizedStatus) ? "巡检执行成功，但缺少结构化结果" : fallbackSummary;
+            String effectiveStatus = "SUCCESS".equals(normalizedStatus) ? "FAILED" : normalizedStatus;
+            patrolRun.setStatus(effectiveStatus);
             patrolRun.setSummary(summary);
             patrolRunRepository.save(patrolRun);
-            markPendingTargetsTerminal(patrolRun, "FAILED", summary);
-            patrolPlanService.markLastRun(patrolRun.getPlan().getId(), "FAILED", summary, LocalDateTime.now());
+            markPendingTargetsTerminal(patrolRun, effectiveStatus, summary);
+            patrolPlanService.markLastRun(patrolRun.getPlan().getId(), effectiveStatus, summary, LocalDateTime.now());
             return;
         }
 
@@ -120,6 +114,7 @@ public class SelfUpgradeExecutionWritebackService {
             List<ExecutionArtifactEntity> executionArtifacts = executionArtifactRepository.findAllByRun_IdOrderByCreatedAtAscIdAsc(executionRun.getId());
             Map<Long, SelfUpgradePatrolRunTargetEntity> targetByPlanId = new LinkedHashMap<>();
             List<SelfUpgradePatrolRunTargetEntity> runTargets = patrolRunTargetRepository.findAllByRun_IdOrderByIdAsc(patrolRun.getId());
+            List<SelfUpgradePatrolRunTargetEntity> unresolvedTargets = new ArrayList<>(runTargets);
             for (SelfUpgradePatrolRunTargetEntity item : runTargets) {
                 if (item.getPlanTarget() != null) {
                     targetByPlanId.put(item.getPlanTarget().getId(), item);
@@ -136,6 +131,7 @@ public class SelfUpgradeExecutionWritebackService {
             if (targetResultsNode.isArray()) {
                 for (JsonNode targetResultNode : targetResultsNode) {
                     SelfUpgradePatrolRunTargetEntity runTarget = resolveRunTarget(runTargets, targetByPlanId, targetResultNode);
+                    unresolvedTargets.remove(runTarget);
                     String targetStatus = normalizeRunStatus(readText(targetResultNode, "status"));
                     runTarget.setStatus(targetStatus);
                     runTarget.setPagePath(trimToNull(readText(targetResultNode, "pagePath")));
@@ -171,6 +167,29 @@ public class SelfUpgradeExecutionWritebackService {
                 }
             }
 
+            String structuredSummary = defaultString(readText(resultNode, "summary")).isBlank()
+                    ? fallbackSummary
+                    : defaultString(readText(resultNode, "summary"));
+            String unresolvedStatus = "CANCELED".equals(normalizedStatus) ? "CANCELED" : "FAILED";
+            // PATROL 可能在写出部分 targetResults 后提前结束，剩余未落库的目标需要补齐终态，避免页面一直显示 PENDING。
+            for (SelfUpgradePatrolRunTargetEntity unresolvedTarget : unresolvedTargets) {
+                if (!"PENDING".equalsIgnoreCase(defaultString(unresolvedTarget.getStatus()))
+                        && !"RUNNING".equalsIgnoreCase(defaultString(unresolvedTarget.getStatus()))) {
+                    continue;
+                }
+                unresolvedTarget.setStatus(unresolvedStatus);
+                unresolvedTarget.setSummary(structuredSummary);
+                unresolvedTarget.setFinishedAt(LocalDateTime.now());
+                patrolRunTargetRepository.save(unresolvedTarget);
+                if ("SUCCESS".equals(unresolvedStatus)) {
+                    successCount++;
+                } else if ("PARTIAL_SUCCESS".equals(unresolvedStatus)) {
+                    partialSuccessCount++;
+                } else {
+                    failedCount++;
+                }
+            }
+
             patrolRun.setSuccessTargetCount(successCount);
             patrolRun.setPartialSuccessTargetCount(partialSuccessCount);
             patrolRun.setFailedTargetCount(failedCount);
@@ -178,7 +197,7 @@ public class SelfUpgradeExecutionWritebackService {
             patrolRun.setOpenedSuggestionCount(openedCount);
             patrolRun.setReopenedSuggestionCount(reopenedCount);
             patrolRun.setStatus(resolvePatrolRunStatus(resultNode, successCount, partialSuccessCount, failedCount));
-            patrolRun.setSummary(defaultString(readText(resultNode, "summary")));
+            patrolRun.setSummary(structuredSummary);
             patrolRun.setArtifactRefsJson(writeJson(resultNode.path("artifacts")));
             patrolRunRepository.save(patrolRun);
             patrolPlanService.markLastRun(patrolRun.getPlan().getId(), patrolRun.getStatus(), patrolRun.getSummary(), LocalDateTime.now());

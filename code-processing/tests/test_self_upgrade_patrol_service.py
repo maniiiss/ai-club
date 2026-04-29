@@ -198,6 +198,31 @@ class SelfUpgradePatrolServiceTests(unittest.TestCase):
         self.assertEqual("MEDIUM", payload["targetResults"][0]["findings"][0]["severity"])
         self.assertEqual(1, payload["targetResults"][0]["findingCount"])
 
+    def test_should_expand_generic_all_failed_summary_with_first_target_reason(self):
+        raw_payload = {
+            "status": "FAILED",
+            "summary": "巡检失败，所有目标都执行失败",
+            "targetResults": [
+                {
+                    "targetId": 1,
+                    "name": "控制台首页",
+                    "status": "FAILED",
+                    "pagePath": "blank",
+                    "stepCount": 0,
+                    "skippedGuardrailCount": 0,
+                    "summary": "page.goto: net::ERR_CONNECTION_CLOSED at https://staging.example.com/\nCall log:\n  - navigating",
+                    "artifacts": [],
+                    "findings": [],
+                }
+            ],
+        }
+
+        payload = _normalize_patrol_result(raw_payload)
+
+        self.assertEqual("FAILED", payload["status"])
+        self.assertIn("首个失败目标：控制台首页", payload["summary"])
+        self.assertIn("ERR_CONNECTION_CLOSED", payload["summary"])
+
     def test_should_upload_target_artifacts_and_attach_execution_refs(self):
         request = self._build_request()
         with tempfile.TemporaryDirectory() as temp_dir:
