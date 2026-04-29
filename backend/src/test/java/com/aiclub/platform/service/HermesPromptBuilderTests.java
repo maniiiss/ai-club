@@ -188,6 +188,38 @@ class HermesPromptBuilderTests {
     }
 
     /**
+     * 当上层已经召回到 Hindsight 记忆时，PromptBuilder 应把这段记忆和当前轮输入一起注入 user prompt。
+     */
+    @Test
+    void shouldIncludeHindsightMemoryAndCurrentTurnContentInUserPrompt() {
+        HermesPromptBuilder promptBuilder = createPromptBuilder();
+
+        HermesPromptBuilder.HermesPrompt prompt = promptBuilder.buildConversationPrompt(
+                currentUser(),
+                new HermesContextAssembler.HermesConversationContext(
+                        "project",
+                        12L,
+                        null,
+                        "项目经理",
+                        List.of(new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations")),
+                        List.of(),
+                        "项目上下文"
+                ),
+                new HermesChatRequest("继续分析这个项目的发布风险", "project-iterations", 12L, null, null, null, null, null, "client-6", null, false),
+                HermesGroundingState.empty(),
+                "hcs_test_token",
+                "继续分析这个项目的发布风险\n\n请重点关注巴黎和柏林的讨论记录。",
+                "- Paris and Berlin are often discussed together.（来源：项目 Wiki；标签：project:12）"
+        );
+
+        assertThat(prompt.userPrompt())
+                .contains("当前可参考的 Hindsight 记忆")
+                .contains("Paris and Berlin are often discussed together.")
+                .contains("用户当前输入：")
+                .contains("请重点关注巴黎和柏林的讨论记录。");
+    }
+
+    /**
      * 资源文件缺失时应直接失败，避免运行时无感知地丢失关键 Prompt 片段。
      */
     @Test

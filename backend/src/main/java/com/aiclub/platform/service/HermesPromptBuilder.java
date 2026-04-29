@@ -45,10 +45,31 @@ public class HermesPromptBuilder {
                                                 HermesChatRequest request,
                                                 HermesGroundingState groundingState,
                                                 String sessionToken) {
+        return buildConversationPrompt(
+                currentUser,
+                context,
+                request,
+                groundingState,
+                sessionToken,
+                request == null ? "" : request.question(),
+                ""
+        );
+    }
+
+    /**
+     * 构造携带当前轮用户输入与记忆召回结果的完整 Prompt。
+     */
+    public HermesPrompt buildConversationPrompt(CurrentUserInfo currentUser,
+                                                HermesContextAssembler.HermesConversationContext context,
+                                                HermesChatRequest request,
+                                                HermesGroundingState groundingState,
+                                                String sessionToken,
+                                                String currentTurnContent,
+                                                String memoryContextMarkdown) {
         HermesSkillContext skillContext = new HermesSkillContext(currentUser, context, request, groundingState, sessionToken);
         return new HermesPrompt(
                 buildSystemPrompt(skillContext),
-                buildUserPrompt(currentUser, context, request, groundingState, sessionToken)
+                buildUserPrompt(currentUser, context, request, groundingState, sessionToken, currentTurnContent, memoryContextMarkdown)
         );
     }
 
@@ -85,7 +106,9 @@ public class HermesPromptBuilder {
                                    HermesContextAssembler.HermesConversationContext context,
                                    HermesChatRequest request,
                                    HermesGroundingState groundingState,
-                                   String sessionToken) {
+                                   String sessionToken,
+                                   String currentTurnContent,
+                                   String memoryContextMarkdown) {
         String userName = resolveUserName(currentUser);
         String roleName = resolveRoleName(currentUser, context);
         return """
@@ -101,6 +124,9 @@ public class HermesPromptBuilder {
                 当前可见上下文：
                 %s
 
+                当前可参考的 Hindsight 记忆：
+                %s
+
                 当前会话已绑定对象：
                 %s
 
@@ -113,7 +139,7 @@ public class HermesPromptBuilder {
                 - 如果工具报 token 相关错误，直接用这个值重试同一个工具调用，不要向用户解释 token
                 - 这个令牌不能出现在自然语言回答中
 
-                用户当前问题：
+                用户当前输入：
                 %s
                 """.formatted(
                 userName,
@@ -122,10 +148,11 @@ public class HermesPromptBuilder {
                 request == null || request.wikiSpaceId() == null ? "" : String.valueOf(request.wikiSpaceId()),
                 request == null || request.wikiPageId() == null ? "" : String.valueOf(request.wikiPageId()),
                 context == null ? "- 当前没有额外页面上下文" : defaultString(context.contextMarkdown()),
+                renderMemoryContext(memoryContextMarkdown),
                 groundingMarkdown(groundingState),
                 defaultString(sessionToken),
                 defaultString(sessionToken),
-                defaultString(request == null ? null : request.question())
+                defaultString(currentTurnContent)
         );
     }
 
@@ -182,6 +209,13 @@ public class HermesPromptBuilder {
 
     private String defaultString(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private String renderMemoryContext(String memoryContextMarkdown) {
+        if (!hasText(memoryContextMarkdown)) {
+            return "- 当前未召回到额外的 Hindsight 记忆";
+        }
+        return memoryContextMarkdown.trim();
     }
 
     /**

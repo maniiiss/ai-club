@@ -117,12 +117,14 @@ public class GitlabApiService {
         List<GitlabBranch> items = new ArrayList<>();
         if (arrayNode.isArray()) {
             for (JsonNode node : arrayNode) {
+                JsonNode commitNode = node.path("commit");
                 items.add(new GitlabBranch(
                         node.path("name").asText(""),
                         node.path("default").asBoolean(false),
                         node.path("protected").asBoolean(false),
                         node.path("merged").asBoolean(false),
-                        node.path("web_url").asText("")
+                        node.path("web_url").asText(""),
+                        commitNode.path("title").asText("")
                 ));
             }
         }
@@ -542,7 +544,12 @@ public class GitlabApiService {
     /**
      * GitLab 分支接口的精简响应。
      */
-    public record GitlabBranch(String name, Boolean defaultBranch, Boolean protectedBranch, Boolean merged, String webUrl) {
+    public record GitlabBranch(String name,
+                               Boolean defaultBranch,
+                               Boolean protectedBranch,
+                               Boolean merged,
+                               String webUrl,
+                               String latestCommitTitle) {
     }
 
     public record GitlabBranchDetail(String name,

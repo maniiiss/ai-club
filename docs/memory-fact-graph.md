@@ -15,7 +15,7 @@
 
 - 平台侧缓存表或快照表。
 - 手工编辑图、改边、改节点。
-- Hermes 主记忆历史回补。
+- Hermes 用户会话记忆直接汇入记忆事实图页面展示。
 
 ## 核心接口
 
@@ -186,6 +186,6 @@ HINDSIGHT_API_EMBEDDINGS_OPENAI_MODEL=Qwen/Qwen3-Embedding-4B
 
 ## 已知边界
 
-- Hermes 主记忆的 retain 逻辑不在当前仓库里，本次没有直接为其补项目标签。
+- Hermes 用户会话记忆现在已经按 `user:{userId}` 独立写入 Hindsight 用户 bank，但当前记忆事实图页面仍不会聚合这部分用户私有 bank。
 - 如果 Hindsight 完全不可达，页面会返回空图或空事实，并通过 `warnings` 给出提示。
-- 当前共享 bank 只参与事实 recall，不参与图骨架聚合；如果后续需要把 Hermes 共享记忆也稳定纳入图骨架，需要进一步评估 Hindsight 的共享 bank 图过滤能力。
+- 当前共享 bank 只参与事实 recall，不参与图骨架聚合；如果后续需要把 Hermes 用户记忆或共享记忆稳定纳入图骨架，需要进一步评估 Hindsight 的图过滤能力。

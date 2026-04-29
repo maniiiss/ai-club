@@ -647,17 +647,59 @@ onMounted(() => {
   color: #475569;
 }
 
-@media (max-width: 1280px) {
-  .model-list-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px 16px;
-    padding: 14px;
+@media (max-width: 1280px) and (min-width: 901px) {
+  .model-list-head {
+    display: grid !important;
   }
 
-  .model-col-main,
-  .model-col-api,
-  .model-col-actions {
-    grid-column: 1 / -1;
+  .model-list-head,
+  .model-list-row {
+    grid-template-columns:
+      minmax(0, 2fr)
+      minmax(0, 0.95fr)
+      minmax(0, 0.82fr)
+      minmax(0, 1fr)
+      minmax(0, 1.35fr)
+      minmax(0, 0.72fr)
+      minmax(0, 0.72fr)
+      minmax(0, 0.82fr);
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .model-list-row .management-list-title-cell {
+    gap: 10px;
+  }
+
+  .model-list-row .management-list-title-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .model-list-row .management-list-title {
+    font-size: 13px;
+  }
+
+  .model-list-row .management-list-subtitle,
+  .model-list-row .management-list-text,
+  .model-list-row .management-list-empty,
+  .model-list-row .management-list-link,
+  .model-list-row .management-list-updated {
+    font-size: 11px;
+  }
+
+  .model-list-row .management-list-pill {
+    min-height: 20px;
+    padding: 0 8px;
+  }
+
+  .model-list-row .management-list-row-actions {
+    gap: 4px;
+  }
+
+  .model-list-row .management-list-row-button {
+    width: 26px;
+    height: 26px;
   }
 }
 </style>

@@ -756,16 +756,58 @@ onMounted(async () => {
   color: var(--app-primary);
 }
 
-@media (max-width: 1200px) {
-  .test-plan-list-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px 16px;
-    padding: 14px;
+@media (max-width: 1200px) and (min-width: 901px) {
+  .test-plan-list-head {
+    display: grid !important;
   }
 
-  .test-col-main,
-  .test-col-actions {
-    grid-column: 1 / -1;
+  .test-plan-list-head,
+  .test-plan-list-row {
+    grid-template-columns:
+      minmax(0, 2.1fr)
+      minmax(0, 1.08fr)
+      minmax(0, 1.08fr)
+      minmax(0, 0.92fr)
+      minmax(0, 0.62fr)
+      minmax(0, 0.92fr)
+      minmax(0, 0.78fr);
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .test-plan-list-row .management-list-title-cell {
+    gap: 10px;
+  }
+
+  .test-plan-list-row .management-list-title-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .test-plan-list-row .management-list-title {
+    font-size: 13px;
+  }
+
+  .test-plan-list-row .management-list-subtitle,
+  .test-plan-list-row .management-list-text,
+  .test-plan-list-row .management-list-empty,
+  .test-plan-list-row .management-list-link,
+  .test-plan-list-row .management-list-updated {
+    font-size: 11px;
+  }
+
+  .test-plan-list-row .management-list-pill {
+    min-height: 20px;
+    padding: 0 8px;
+  }
+
+  .test-plan-list-row .management-list-row-actions {
+    gap: 4px;
+  }
+
+  .test-plan-list-row .management-list-row-button {
+    width: 26px;
+    height: 26px;
   }
 }
 

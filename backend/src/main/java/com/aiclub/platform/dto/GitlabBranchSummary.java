@@ -8,12 +8,14 @@ package com.aiclub.platform.dto;
  * @param protectedBranch 是否为受保护分支
  * @param merged 是否已经合入默认分支
  * @param webUrl 分支详情链接
+ * @param latestCommitTitle 分支最近一次提交标题，供首页快速发起 MR 自动带入标题
  */
 public record GitlabBranchSummary(
         String name,
         Boolean defaultBranch,
         Boolean protectedBranch,
         Boolean merged,
-        String webUrl
+        String webUrl,
+        String latestCommitTitle
 ) {
 }

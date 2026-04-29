@@ -1145,7 +1145,8 @@ public class GitlabManagementService {
                 defaultBoolean(branch.defaultBranch(), false),
                 defaultBoolean(branch.protectedBranch(), false),
                 defaultBoolean(branch.merged(), false),
-                hasText(branch.webUrl()) ? branch.webUrl() : buildBindingBranchWebUrl(entity, branch.name())
+                hasText(branch.webUrl()) ? branch.webUrl() : buildBindingBranchWebUrl(entity, branch.name()),
+                trimToNull(branch.latestCommitTitle())
         );
     }
 

@@ -148,13 +148,21 @@ class GitlabManagementGitlabActionsTests {
         when(bindingRepository.findById(1L)).thenReturn(Optional.of(binding));
         when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
         when(gitlabApiService.listBranches("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "main"))
-                .thenReturn(List.of(new GitlabApiService.GitlabBranch("main", true, true, false, "http://gitlab.example.com/group/demo-repo/-/branches/main")));
+                .thenReturn(List.of(new GitlabApiService.GitlabBranch(
+                        "main",
+                        true,
+                        true,
+                        false,
+                        "http://gitlab.example.com/group/demo-repo/-/branches/main",
+                        "feat: 首页自动带入 MR 标题"
+                )));
 
         List<GitlabBranchSummary> branches = gitlabManagementService.listBindingBranches(1L, "main");
 
         assertThat(branches).hasSize(1);
         assertThat(branches.get(0).name()).isEqualTo("main");
         assertThat(branches.get(0).defaultBranch()).isTrue();
+        assertThat(branches.get(0).latestCommitTitle()).isEqualTo("feat: 首页自动带入 MR 标题");
         verify(gitlabApiService).listBranches("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "main");
     }
 

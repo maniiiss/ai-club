@@ -11,6 +11,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -111,6 +112,44 @@ class HindsightClientServiceTests {
         assertThat(facts.get(0).tags()).contains("project:12", "source:wiki");
         assertThat(lastRequestBody.get()).contains("\"types\":[\"world\"]");
         assertThat(lastRequestBody.get()).contains("\"tags\":[\"project:12\",\"source:wiki\"]");
+    }
+
+    @Test
+    void shouldRetainHermesConversationMemoryIntoUserBank() throws Exception {
+        HindsightClientService service = createService();
+
+        service.retainHermesConversationMemory(
+                7L,
+                "hermes-conversation:conversation-1:turn:1",
+                "Hermes 会话记忆：当前阻塞",
+                "用户问题：当前最大的阻塞是什么\n\n助手回答：发布时间没有对齐。",
+                List.of("hermes", "source:hermes", "user:7", "project:12"),
+                Map.of("memoryType", "conversation_turn", "projectId", 12L)
+        );
+
+        assertThat(lastRequestUri.get()).contains("/banks/git-ai-club%3Ahermes%3Auser%3A7/memories");
+        assertThat(lastRequestBody.get()).contains("\"context\":\"hermes\"");
+        assertThat(lastRequestBody.get()).contains("\"source\":\"hermes\"");
+        assertThat(lastRequestBody.get()).contains("\"document_id\":\"hermes-conversation:conversation-1:turn:1\"");
+        assertThat(lastRequestBody.get()).contains("\"tags\":[\"hermes\",\"source:hermes\",\"user:7\",\"project:12\"]");
+    }
+
+    @Test
+    void shouldRecallGenericHermesConversationMemoriesFromUserBank() throws Exception {
+        HindsightClientService service = createService();
+
+        List<HindsightClientService.MemoryRecallHit> hits = service.recallMemories(
+                "git-ai-club:hermes:user:7",
+                "我明天有什么事情",
+                List.of("project:12"),
+                3
+        );
+
+        assertThat(hits).hasSize(1);
+        assertThat(hits.get(0).documentId()).isEqualTo("hermes-conversation:conversation-1:turn:1");
+        assertThat(hits.get(0).title()).isEqualTo("Hermes 会话记忆：明天安排");
+        assertThat(hits.get(0).snippet()).contains("我明天要去趟公司");
+        assertThat(lastRequestUri.get()).contains("/git-ai-club%3Ahermes%3Auser%3A7/memories/recall");
     }
 
     private HindsightClientService createService() throws Exception {
@@ -232,6 +271,19 @@ class HindsightClientServiceTests {
                           }
                         ]
                       }
+                    }
+                    """;
+        } else if (path.contains("git-ai-club%3Ahermes%3Auser%3A7") && path.endsWith("/memories/recall")) {
+            body = """
+                    {
+                      "results": [
+                        {
+                          "document_id": "hermes-conversation:conversation-1:turn:1",
+                          "title": "Hermes 会话记忆：明天安排",
+                          "snippet": "我明天要去趟公司，拿一下电脑。",
+                          "score": 0.96
+                        }
+                      ]
                     }
                     """;
         } else if (path.endsWith("/test-bank/memories/recall")) {

@@ -50,7 +50,7 @@ public class HindsightClientService {
                                    String content,
                                    List<String> tags,
                                    Map<String, Object> metadata) {
-        sendJsonRequest("POST", memoriesUrl(projectId), buildRetainPayload(documentId, title, content, tags, metadata));
+        sendJsonRequest("POST", memoriesUrl(projectId), buildRetainPayload(documentId, title, content, tags, metadata, "wiki", "wiki"));
     }
 
     /**
@@ -86,7 +86,23 @@ public class HindsightClientService {
                                         String content,
                                         List<String> tags,
                                         Map<String, Object> metadata) {
-        sendJsonRequest("POST", spaceMemoriesUrl(spaceId), buildRetainPayload(documentId, title, content, tags, metadata));
+        sendJsonRequest("POST", spaceMemoriesUrl(spaceId), buildRetainPayload(documentId, title, content, tags, metadata, "wiki", "wiki"));
+    }
+
+    /**
+     * 将 Hermes 用户会话记忆写入用户独立的 Hindsight bank。
+     */
+    public void retainHermesConversationMemory(Long userId,
+                                               String documentId,
+                                               String title,
+                                               String content,
+                                               List<String> tags,
+                                               Map<String, Object> metadata) {
+        sendJsonRequest(
+                "POST",
+                bankMemoriesUrl(properties.hermesUserMemoryBankId(userId)),
+                buildRetainPayload(documentId, title, content, tags, metadata, "hermes", "hermes")
+        );
     }
 
     /**
@@ -103,6 +119,26 @@ public class HindsightClientService {
             return extractRecallHits(root);
         } catch (IOException exception) {
             throw new IllegalStateException("解析空间 Wiki Hindsight 召回结果失败", exception);
+        }
+    }
+
+    /**
+     * 从任意 Hindsight bank 中召回通用记忆片段。
+     * 这条链路更适合 Hermes 的用户会话记忆，因为会话文本不一定会稳定抽成 world facts。
+     */
+    public List<MemoryRecallHit> recallMemories(String bankId, String query, List<String> tags, int limit) {
+        try {
+            HttpResponse<String> response = sendJsonRequest(
+                    "POST",
+                    bankRecallUrl(bankId),
+                    buildRecallPayload(query, limit, tags)
+            );
+            JsonNode root = objectMapper.readTree(response.body());
+            return extractRecallHits(root).stream()
+                    .map(hit -> new MemoryRecallHit(hit.documentId(), hit.title(), hit.snippet(), hit.score()))
+                    .toList();
+        } catch (IOException exception) {
+            throw new IllegalStateException("解析 Hindsight 通用记忆召回结果失败", exception);
         }
     }
 
@@ -175,7 +211,7 @@ public class HindsightClientService {
     }
 
     private String memoriesUrl(Long projectId) {
-        return properties.getBaseUrl() + "/v1/default/banks/" + encode(properties.wikiBankId(projectId)) + "/memories";
+        return bankMemoriesUrl(properties.wikiBankId(projectId));
     }
 
     private String documentsUrl(Long projectId, String documentId) {
@@ -187,7 +223,7 @@ public class HindsightClientService {
     }
 
     private String spaceMemoriesUrl(Long spaceId) {
-        return properties.getBaseUrl() + "/v1/default/banks/" + encode(properties.wikiSpaceBankId(spaceId)) + "/memories";
+        return bankMemoriesUrl(properties.wikiSpaceBankId(spaceId));
     }
 
     private String spaceDocumentsUrl(Long spaceId, String documentId) {
@@ -196,6 +232,10 @@ public class HindsightClientService {
 
     private String spaceRecallUrl(Long spaceId) {
         return spaceMemoriesUrl(spaceId) + "/recall";
+    }
+
+    private String bankRecallUrl(String bankId) {
+        return bankMemoriesUrl(bankId) + "/recall";
     }
 
     private HttpResponse<String> sendJsonRequest(String method, String url, JsonNode payload) {
@@ -234,13 +274,15 @@ public class HindsightClientService {
                                           String title,
                                           String content,
                                           List<String> tags,
-                                          Map<String, Object> metadata) {
+                                          Map<String, Object> metadata,
+                                          String context,
+                                          String source) {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("async", false);
         ArrayNode items = payload.putArray("items");
         ObjectNode item = items.addObject();
         item.put("content", content == null ? "" : content);
-        item.put("context", "wiki");
+        item.put("context", defaultString(context));
         item.put("document_id", documentId == null ? "" : documentId);
         ArrayNode tagArray = item.putArray("tags");
         for (String tag : normalizeTags(tags)) {
@@ -248,7 +290,7 @@ public class HindsightClientService {
         }
         ObjectNode metadataNode = item.putObject("metadata");
         metadataNode.put("title", title == null ? "" : title);
-        metadataNode.put("source", "wiki");
+        metadataNode.put("source", defaultString(source));
         for (Map.Entry<String, Object> entry : (metadata == null ? Map.<String, Object>of() : metadata).entrySet()) {
             if (entry.getKey() == null || entry.getKey().isBlank() || entry.getValue() == null) {
                 continue;
@@ -256,6 +298,10 @@ public class HindsightClientService {
             metadataNode.put(entry.getKey(), String.valueOf(entry.getValue()));
         }
         return payload;
+    }
+
+    private String bankMemoriesUrl(String bankId) {
+        return properties.getBaseUrl() + "/v1/default/banks/" + encode(bankId) + "/memories";
     }
 
     /**
@@ -889,6 +935,17 @@ public class HindsightClientService {
     public record WikiRecallHit(
             String documentId,
             Long pageId,
+            String title,
+            String snippet,
+            Double score
+    ) {
+    }
+
+    /**
+     * 通用记忆召回命中，适合 Hermes 用户会话记忆这类 chunk/document 级文本回忆。
+     */
+    public record MemoryRecallHit(
+            String documentId,
             String title,
             String snippet,
             Double score

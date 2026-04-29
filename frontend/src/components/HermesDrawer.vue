@@ -53,6 +53,7 @@
                   class="hermes-session-main"
                   type="button"
                   :disabled="sending"
+                  :title="session.title || '新会话'"
                   @click="handleSelectSession(session.id)"
                 >
                   <strong>{{ session.title || '新会话' }}</strong>
@@ -172,7 +173,7 @@
           <section v-if="currentActions.length" class="hermes-section">
             <div class="hermes-section-title">可执行动作</div>
             <article v-for="(action, index) in currentActions" :key="`${action.type}-${index}`" class="hermes-action-card">
-              <div>
+              <div class="hermes-action-copy">
                 <strong>{{ action.title }}</strong>
                 <span>{{ action.description }}</span>
               </div>
@@ -185,17 +186,31 @@
           <section v-if="currentReferences.length" class="hermes-section">
             <div v-if="wikiReferences.length" class="hermes-section-title">相关 Wiki 页面</div>
             <div v-if="wikiReferences.length" class="hermes-chip-list">
-              <button v-for="reference in wikiReferences" :key="`wiki-${reference.id ?? reference.title}`" class="hermes-reference-item" type="button" @click="handleOpenReference(reference.route)">
-                <span>{{ reference.type }}</span>
-                <strong>{{ reference.title }}</strong>
+              <button
+                v-for="reference in wikiReferences"
+                :key="`wiki-${reference.id ?? reference.title}`"
+                class="hermes-reference-item"
+                type="button"
+                :title="formatReferenceDisplayText(reference)"
+                @click="handleOpenReference(reference.route)"
+              >
+                <span v-if="shouldShowReferenceLabel(reference)" class="hermes-reference-label">{{ formatReferenceTypeLabel(reference.type) }}:</span>
+                <strong class="hermes-reference-title">{{ reference.title }}</strong>
               </button>
             </div>
 
             <div class="hermes-section-title">引用来源</div>
             <div class="hermes-chip-list">
-              <button v-for="reference in nonWikiReferences" :key="`${reference.type}-${reference.id ?? reference.title}`" class="hermes-reference-item" type="button" @click="handleOpenReference(reference.route)">
-                <span>{{ reference.type }}</span>
-                <strong>{{ reference.title }}</strong>
+              <button
+                v-for="reference in nonWikiReferences"
+                :key="`${reference.type}-${reference.id ?? reference.title}`"
+                class="hermes-reference-item"
+                type="button"
+                :title="formatReferenceDisplayText(reference)"
+                @click="handleOpenReference(reference.route)"
+              >
+                <span v-if="shouldShowReferenceLabel(reference)" class="hermes-reference-label">{{ formatReferenceTypeLabel(reference.type) }}:</span>
+                <strong class="hermes-reference-title">{{ reference.title }}</strong>
               </button>
             </div>
           </section>
@@ -323,6 +338,7 @@ const SESSION_PAGE_SIZE = 20
 const isDebugMode = ref(false)
 const currentStreamStatus = ref<HermesStreamStatusEvent | null>(null)
 const isPinnedToBottom = ref(true)
+const pendingSessionBottomScroll = ref(false)
 const pendingStreamDeltaMap = new Map<string, string>()
 const STREAM_DRAIN_INTERVAL_MS = 20
 const STREAM_DRAIN_CHARS_PER_TICK = 18
@@ -330,6 +346,22 @@ const STREAM_PUNCTUATION_PAUSE_MS = 36
 const STREAM_LINE_BREAK_PAUSE_MS = 52
 let pendingStreamDrainTimer: ReturnType<typeof setTimeout> | null = null
 let hermesDrawerDisposed = false
+
+// 统一把 Hermes 返回的引用类型转成前端可读的中文标签，避免直接暴露后端枚举值。
+const HERMES_REFERENCE_TYPE_LABELS: Record<string, string> = {
+  DASHBOARD: '首页看板',
+  EXECUTION_TASK: '执行任务',
+  GITLAB_BINDING: 'GitLab绑定',
+  GLOBAL: '全局工作台',
+  ITERATION: '迭代',
+  PLAN: '测试计划',
+  PROJECT: '项目',
+  TASK: '任务',
+  TEST_PLAN: '测试计划',
+  WIKI_PAGE: 'Wiki页面',
+  WIKI_SPACE: 'Wiki空间',
+  WORK_ITEM: '工作项'
+}
 
 const displayPrompts = computed(() => currentSuggestions.value.length ? currentSuggestions.value : props.fallbackPrompts || [])
 const wikiReferences = computed(() => currentReferences.value.filter((item) => item.type === 'WIKI_PAGE'))
@@ -370,6 +402,7 @@ const currentContextKey = computed(() => JSON.stringify(buildCurrentRouteContext
 
 watch(drawerVisible, (visible) => {
   if (visible) {
+    pendingSessionBottomScroll.value = true
     void initializeDrawer()
     return
   }
@@ -484,6 +517,7 @@ const loadSessionDetail = async (sessionId: number) => {
 
 const handleSelectSession = async (sessionId: number) => {
   if (!sending.value) {
+    pendingSessionBottomScroll.value = true
     await loadSessionDetail(sessionId)
     closeMobileSessionPanel()
   }
@@ -631,6 +665,26 @@ const handleOpenReference = async (route: string) => {
   if (route) {
     await router.push(route)
   }
+}
+
+const formatReferenceTypeLabel = (type: string) => {
+  const rawType = type.trim()
+  if (!rawType) return '引用'
+  const normalizedType = rawType.toUpperCase()
+  return HERMES_REFERENCE_TYPE_LABELS[normalizedType] || rawType.replace(/_/g, ' ')
+}
+
+const shouldShowReferenceLabel = (reference: HermesReferenceItem) => {
+  const label = formatReferenceTypeLabel(reference.type)
+  const title = reference.title.trim()
+  return Boolean(title) && title !== label
+}
+
+const formatReferenceDisplayText = (reference: HermesReferenceItem) => {
+  const label = formatReferenceTypeLabel(reference.type)
+  const title = reference.title.trim()
+  if (!title) return label
+  return title === label ? title : `${label}:${title}`
 }
 
 const actionKey = (action: HermesActionItem, index: number) => `${action.type}:${index}:${action.title}`
@@ -1023,7 +1077,9 @@ function applySessionDetail(detail: HermesConversationDetailItem) {
   currentSelectionCards.value = latestDisplayState.selectionCards || []
   currentDebug.value = latestDisplayState.debug || null
   currentRoleName.value = resolveCurrentRoleName()
-  void restoreThinkBlocksAndScroll(false)
+  const shouldScrollToBottom = pendingSessionBottomScroll.value
+  pendingSessionBottomScroll.value = false
+  void restoreThinkBlocksAndScroll(shouldScrollToBottom)
 }
 
 function clearSelectedSession() {
@@ -1834,6 +1890,49 @@ function persistSelectedSessionId(sessionId: number | null) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.hermes-action-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hermes-action-copy strong {
+  display: block;
+  color: #0f172a;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.hermes-reference-label {
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hermes-reference-item {
+  display: inline-flex;
+  max-width: min(100%, 420px);
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.hermes-reference-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .hermes-attachment-bar {
