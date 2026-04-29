@@ -357,9 +357,10 @@ def _normalize_patrol_result(payload: object) -> dict[str, Any]:
                 "findings": findings,
             }
         )
-    summary = _normalize_text(payload.get("summary")) or _build_default_summary(target_results)
+    status = _normalize_patrol_status(payload.get("status"), default=_derive_overall_status(target_results))
+    summary = _resolve_patrol_summary(_normalize_text(payload.get("summary")), status, target_results)
     return {
-        "status": _normalize_patrol_status(payload.get("status"), default=_derive_overall_status(target_results)),
+        "status": status,
         "summary": summary,
         "targetResults": target_results,
         "artifacts": _normalize_result_artifacts(payload.get("artifacts")),
@@ -549,9 +550,40 @@ def _build_default_summary(target_results: list[dict[str, Any]]) -> str:
         return "巡检失败，未生成目标结果"
     finding_count = sum(int(item.get("findingCount") or 0) for item in target_results)
     failed_count = sum(1 for item in target_results if _normalize_patrol_status(item.get("status"), default="SUCCESS") == "FAILED")
+    if failed_count == len(target_results):
+        first_failed_reason = _first_failed_target_reason(target_results)
+        if first_failed_reason:
+            return f"巡检失败，所有目标都执行失败。首个失败目标：{first_failed_reason}"
+        return "巡检失败，所有目标都执行失败"
     if failed_count > 0:
         return f"巡检部分失败：{failed_count} 个目标执行失败，发现 {finding_count} 条建议"
     return f"巡检完成：共巡检 {len(target_results)} 个目标，发现 {finding_count} 条建议"
+
+
+def _resolve_patrol_summary(summary: str, status: str, target_results: list[dict[str, Any]]) -> str:
+    if not summary:
+        return _build_default_summary(target_results)
+    if status == "FAILED" and summary == "巡检失败，所有目标都执行失败":
+        return _build_default_summary(target_results)
+    return summary
+
+
+def _first_failed_target_reason(target_results: list[dict[str, Any]]) -> str:
+    for item in target_results:
+        if _normalize_patrol_status(item.get("status"), default="SUCCESS") != "FAILED":
+            continue
+        target_name = _normalize_text(item.get("name")) or "未命名目标"
+        target_summary = _first_summary_line(_normalize_text(item.get("summary")))
+        return f"{target_name}，原因：{target_summary}" if target_summary else target_name
+    return ""
+
+
+def _first_summary_line(summary: str) -> str:
+    for line in summary.splitlines():
+        normalized = _normalize_text(line).replace("\x1b[2m", "").replace("\x1b[22m", "")
+        if normalized:
+            return normalized
+    return ""
 
 
 def _normalize_patrol_status(value: object, default: str) -> str:
