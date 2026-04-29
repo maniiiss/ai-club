@@ -3,6 +3,7 @@ package com.aiclub.platform.service;
 import com.aiclub.platform.common.DataPermissionScopeType;
 import com.aiclub.platform.domain.model.IterationEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
+import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
 import com.aiclub.platform.domain.model.TestCaseEntity;
 import com.aiclub.platform.domain.model.TestCaseStepEntity;
 import com.aiclub.platform.domain.model.TestPlanEntity;
@@ -15,6 +16,7 @@ import com.aiclub.platform.dto.request.TestCaseRequest;
 import com.aiclub.platform.dto.request.TestCaseStepRequest;
 import com.aiclub.platform.dto.request.TestPlanRequest;
 import com.aiclub.platform.repository.IterationRepository;
+import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.aiclub.platform.repository.TestCaseRepository;
 import com.aiclub.platform.repository.TestPlanRepository;
@@ -44,6 +46,7 @@ public class TestManagementService {
     private final TestPlanRepository testPlanRepository;
     private final TestCaseRepository testCaseRepository;
     private final ProjectRepository projectRepository;
+    private final ProjectGitlabBindingRepository projectGitlabBindingRepository;
     private final IterationRepository iterationRepository;
     private final KnowledgeGraphService knowledgeGraphService;
     private final ProjectDataPermissionService projectDataPermissionService;
@@ -51,12 +54,14 @@ public class TestManagementService {
     public TestManagementService(TestPlanRepository testPlanRepository,
                                  TestCaseRepository testCaseRepository,
                                  ProjectRepository projectRepository,
+                                 ProjectGitlabBindingRepository projectGitlabBindingRepository,
                                  IterationRepository iterationRepository,
                                  KnowledgeGraphService knowledgeGraphService,
                                  ProjectDataPermissionService projectDataPermissionService) {
         this.testPlanRepository = testPlanRepository;
         this.testCaseRepository = testCaseRepository;
         this.projectRepository = projectRepository;
+        this.projectGitlabBindingRepository = projectGitlabBindingRepository;
         this.iterationRepository = iterationRepository;
         this.knowledgeGraphService = knowledgeGraphService;
         this.projectDataPermissionService = projectDataPermissionService;
@@ -123,11 +128,14 @@ public class TestManagementService {
                                     TestPlanRequest request,
                                     ProjectEntity project,
                                     IterationEntity iteration) {
+        ProjectGitlabBindingEntity automationBinding = resolveAutomationBinding(project, request.automationBindingId());
         entity.setName(request.name().trim());
         entity.setProject(project);
         entity.setIteration(iteration);
         entity.setStatus(normalizeStatus(request.status()));
         entity.setDescription(defaultString(request.description()));
+        entity.setAutomationBinding(automationBinding);
+        entity.setAutomationTargetBranch(resolveAutomationTargetBranch(automationBinding, request.automationTargetBranch()));
         rebuildCases(entity, request.cases());
     }
 
@@ -148,6 +156,8 @@ public class TestManagementService {
             caseEntity.setPrecondition(defaultString(caseRequest.precondition()));
             caseEntity.setRemarks(defaultString(caseRequest.remarks()));
             caseEntity.setSortOrder(caseRequest.sortOrder() == null ? caseIndex : Math.max(caseRequest.sortOrder(), 0));
+            caseEntity.setAutomationType(normalizeAutomationType(caseRequest.automationType()));
+            caseEntity.setAutomationHint(defaultString(caseRequest.automationHint()));
             rebuildSteps(caseEntity, caseRequest.steps());
             entity.getCases().add(caseEntity);
             caseIndex++;
@@ -177,6 +187,12 @@ public class TestManagementService {
                 ? entity.getCases().stream().map(this::toTestCaseSummary).toList()
                 : List.of();
         int caseCount = includeCases ? cases.size() : Math.toIntExact(testCaseRepository.countByTestPlan_Id(entity.getId()));
+        int automationEnabledCaseCount = entity.getCases().stream()
+                .map(TestCaseEntity::getAutomationType)
+                .map(this::normalizeAutomationType)
+                .filter("PLAYWRIGHT"::equals)
+                .mapToInt(item -> 1)
+                .sum();
         return new TestPlanSummary(
                 entity.getId(),
                 entity.getName(),
@@ -187,6 +203,15 @@ public class TestManagementService {
                 entity.getIteration() == null ? null : entity.getIteration().getId(),
                 entity.getIteration() == null ? null : entity.getIteration().getName(),
                 caseCount,
+                entity.getAutomationBinding() == null ? null : entity.getAutomationBinding().getId(),
+                entity.getAutomationTargetBranch(),
+                automationEnabledCaseCount,
+                entity.getLastAutomationStatus(),
+                entity.getLastAutomationTaskId(),
+                entity.getLastAutomationRunId(),
+                entity.getLastAutomationSummary(),
+                formatTime(entity.getLastAutomationAt()),
+                entity.getLastAutomationMrUrl(),
                 formatTime(entity.getCreatedAt()),
                 formatTime(entity.getUpdatedAt()),
                 cases
@@ -203,6 +228,8 @@ public class TestManagementService {
                 entity.getPrecondition(),
                 entity.getRemarks(),
                 entity.getSortOrder(),
+                displayAutomationType(entity.getAutomationType()),
+                entity.getAutomationHint(),
                 entity.getSteps().stream().map(this::toTestCaseStepSummary).toList()
         );
     }
@@ -314,6 +341,53 @@ public class TestManagementService {
     private String normalizePriority(String value) {
         String result = defaultString(value).trim();
         return result.isBlank() ? "P2" : result;
+    }
+
+    private String normalizeAutomationType(String value) {
+        String raw = defaultString(value).trim();
+        String result = raw.toUpperCase();
+        if ("PLAYWRIGHT".equals(result)
+                || "自动化".equals(raw)
+                || "Playwright自动化".equals(raw)
+                || "Playwright 自动化".equals(raw)) {
+            return "PLAYWRIGHT";
+        }
+        if ("手工".equals(raw)) {
+            return "MANUAL";
+        }
+        return "MANUAL";
+    }
+
+    private String displayAutomationType(String value) {
+        return "PLAYWRIGHT".equals(normalizeAutomationType(value)) ? "自动化" : "手工";
+    }
+
+    /**
+     * 自动化仓库绑定必须属于当前测试计划项目，避免把别的项目仓库误绑到当前计划。
+     */
+    private ProjectGitlabBindingEntity resolveAutomationBinding(ProjectEntity project, Long automationBindingId) {
+        if (automationBindingId == null) {
+            return null;
+        }
+        ProjectGitlabBindingEntity binding = projectGitlabBindingRepository.findById(automationBindingId)
+                .orElseThrow(() -> new NoSuchElementException("GitLab 绑定不存在: " + automationBindingId));
+        projectDataPermissionService.requireGitlabBindingVisible(binding);
+        if (!binding.getProject().getId().equals(project.getId())) {
+            throw new IllegalArgumentException("自动化仓库必须属于当前测试计划所在项目");
+        }
+        return binding;
+    }
+
+    private String resolveAutomationTargetBranch(ProjectGitlabBindingEntity automationBinding, String requestedBranch) {
+        String normalized = defaultString(requestedBranch).trim();
+        if (!normalized.isBlank()) {
+            return normalized;
+        }
+        if (automationBinding == null) {
+            return null;
+        }
+        String defaultBranch = defaultString(automationBinding.getDefaultTargetBranch()).trim();
+        return defaultBranch.isBlank() ? null : defaultBranch;
     }
 
     private String defaultString(String value) {

@@ -11,6 +11,8 @@ public record TestCaseSummary(
         String precondition,
         String remarks,
         Integer sortOrder,
+        String automationType,
+        String automationHint,
         List<TestCaseStepSummary> steps
 ) {
 }

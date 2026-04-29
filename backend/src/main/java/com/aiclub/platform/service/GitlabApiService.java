@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 统一封装 GitLab REST API 调用，兼容项目级 PRIVATE-TOKEN 与用户级 Bearer token。
@@ -347,6 +348,130 @@ public class GitlabApiService {
         );
     }
 
+    /**
+     * 基于指定 ref 创建新的工作分支。
+     */
+    public GitlabBranchCreated createBranch(String apiBaseUrl,
+                                            String token,
+                                            String projectRef,
+                                            String branchName,
+                                            String ref) {
+        return createBranch(apiBaseUrl, GitlabAuthorization.privateToken(token), projectRef, branchName, ref);
+    }
+
+    public GitlabBranchCreated createBranch(String apiBaseUrl,
+                                            GitlabAuthorization authorization,
+                                            String projectRef,
+                                            String branchName,
+                                            String ref) {
+        String url = normalizeBaseUrl(apiBaseUrl)
+                + "/projects/" + encodeProjectRef(projectRef)
+                + "/repository/branches?branch=" + urlEncode(branchName)
+                + "&ref=" + urlEncode(ref);
+        JsonNode node = sendJsonRequest("POST", url, authorization, null, null);
+        JsonNode commitNode = node.path("commit");
+        return new GitlabBranchCreated(
+                node.path("name").asText(branchName),
+                node.path("default").asBoolean(false),
+                node.path("protected").asBoolean(false),
+                commitNode.path("id").asText("")
+        );
+    }
+
+    /**
+     * 判断指定分支上某个文件是否存在。
+     * 新版自动化脚本提交会根据它选择 create 或 update action。
+     */
+    public boolean repositoryFileExists(String apiBaseUrl,
+                                        String token,
+                                        String projectRef,
+                                        String branchName,
+                                        String filePath) {
+        return repositoryFileExists(apiBaseUrl, GitlabAuthorization.privateToken(token), projectRef, branchName, filePath);
+    }
+
+    public boolean repositoryFileExists(String apiBaseUrl,
+                                        GitlabAuthorization authorization,
+                                        String projectRef,
+                                        String branchName,
+                                        String filePath) {
+        String url = normalizeBaseUrl(apiBaseUrl)
+                + "/projects/" + encodeProjectRef(projectRef)
+                + "/repository/files/" + urlEncode(filePath).replace("+", "%20")
+                + "?ref=" + urlEncode(branchName);
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(20))
+                    .header("Accept", "application/json");
+            if (authorization != null) {
+                authorization.apply(builder);
+            }
+            HttpResponse<String> response = httpClient.send(builder.GET().build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() == 404) {
+                return false;
+            }
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                return true;
+            }
+            throw new IllegalStateException(extractGitlabError(response));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("调用 GitLab API 失败", exception);
+        } catch (IOException exception) {
+            throw new IllegalStateException("调用 GitLab API 失败", exception);
+        }
+    }
+
+    /**
+     * 通过 GitLab Commit Actions 一次性写入多份脚本资产。
+     */
+    public GitlabCreatedCommit createCommit(String apiBaseUrl,
+                                            String token,
+                                            String projectRef,
+                                            String branchName,
+                                            String commitMessage,
+                                            List<GitlabCommitAction> actions) {
+        return createCommit(apiBaseUrl, GitlabAuthorization.privateToken(token), projectRef, branchName, commitMessage, actions);
+    }
+
+    public GitlabCreatedCommit createCommit(String apiBaseUrl,
+                                            GitlabAuthorization authorization,
+                                            String projectRef,
+                                            String branchName,
+                                            String commitMessage,
+                                            List<GitlabCommitAction> actions) {
+        List<Map<String, Object>> actionPayload = new ArrayList<>();
+        for (GitlabCommitAction action : actions) {
+            actionPayload.add(Map.of(
+                    "action", action.action(),
+                    "file_path", action.filePath(),
+                    "content", action.content()
+            ));
+        }
+        try {
+            JsonNode node = sendJsonRequest(
+                    "POST",
+                    normalizeBaseUrl(apiBaseUrl) + "/projects/" + encodeProjectRef(projectRef) + "/repository/commits",
+                    authorization,
+                    objectMapper.writeValueAsString(Map.of(
+                            "branch", branchName,
+                            "commit_message", commitMessage,
+                            "actions", actionPayload
+                    )),
+                    "application/json"
+            );
+            return new GitlabCreatedCommit(
+                    node.path("id").asText(""),
+                    node.path("short_id").asText(""),
+                    node.path("title").asText(""),
+                    node.path("web_url").asText("")
+            );
+        } catch (IOException exception) {
+            throw new IllegalStateException("调用 GitLab API 失败", exception);
+        }
+    }
+
     public GitlabMergeResult acceptMergeRequest(String apiBaseUrl, String token, String projectRef, Long mergeRequestIid,
                                                 boolean autoMerge, boolean squash, boolean removeSourceBranch) {
         return acceptMergeRequest(apiBaseUrl, GitlabAuthorization.privateToken(token), projectRef, mergeRequestIid, autoMerge, squash, removeSourceBranch);
@@ -596,6 +721,23 @@ public class GitlabApiService {
                                             String state,
                                             String webUrl,
                                             String createdAt) {
+    }
+
+    public record GitlabBranchCreated(String name,
+                                      Boolean defaultBranch,
+                                      Boolean protectedBranch,
+                                      String commitSha) {
+    }
+
+    public record GitlabCreatedCommit(String id,
+                                      String shortId,
+                                      String title,
+                                      String webUrl) {
+    }
+
+    public record GitlabCommitAction(String action,
+                                     String filePath,
+                                     String content) {
     }
 
     /**

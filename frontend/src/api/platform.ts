@@ -144,6 +144,8 @@ export interface TestCasePayload {
   precondition: string
   remarks: string
   sortOrder: number
+  automationType?: '手工' | '自动化' | string
+  automationHint?: string
   steps: TestCaseStepPayload[]
 }
 
@@ -153,6 +155,8 @@ export interface TestPlanPayload {
   iterationId: number
   status: string
   description: string
+  automationBindingId?: number | null
+  automationTargetBranch?: string | null
   cases: TestCasePayload[]
 }
 
@@ -250,6 +254,33 @@ export interface UpdateExecutionPlanMarkdownPayload {
 
 export interface ConfirmExecutionPlanPayload {
   planMarkdown: string
+}
+
+export interface TriggerTestPlanAutomationResponse {
+  id: number
+  title: string
+  scenarioCode: string
+  scenarioName: string
+  sourceType: string
+  sourceId: number | null
+  projectId: number
+  projectName: string
+  workItemId: number | null
+  workItemCode: string | null
+  workItemName: string | null
+  status: string
+  currentRunId: number | null
+  currentRunStatus: string | null
+  progressPercent: number
+  currentStepNo: number | null
+  currentStepName: string | null
+  latestSummary: string
+  planConfirmationRequired: boolean
+  planConfirmationPending: boolean
+  createdByUserId: number | null
+  createdByName: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export interface WorkItemQuery {
@@ -656,6 +687,16 @@ export const updateTestPlan = async (id: number, payload: TestPlanPayload) => {
 
 export const deleteTestPlan = async (id: number) => {
   await http.delete<ApiResponse<null>>(`/api/test-plans/${id}`)
+}
+
+export const generateAndRunTestPlanAutomation = async (id: number) => {
+  const { data } = await http.post<ApiResponse<TriggerTestPlanAutomationResponse>>(`/api/test-plans/${id}/automation/generate-and-run`)
+  return data.data
+}
+
+export const runTestPlanAutomation = async (id: number) => {
+  const { data } = await http.post<ApiResponse<TriggerTestPlanAutomationResponse>>(`/api/test-plans/${id}/automation/run`)
+  return data.data
 }
 
 export const getIterationBoard = async (projectId: number) => {

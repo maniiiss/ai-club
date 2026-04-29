@@ -19,6 +19,9 @@ public record TestPlanRequest(
         String status,
         @Size(max = 2000, message = "测试计划说明长度不能超过2000")
         String description,
+        Long automationBindingId,
+        @Size(max = 100, message = "自动化目标分支长度不能超过100")
+        String automationTargetBranch,
         List<@Valid TestCaseRequest> cases
 ) {
 }

@@ -147,6 +147,10 @@ public class ExecutionTaskService {
         return toTaskDetail(requireExecutionTask(executionTaskId));
     }
 
+    public ExecutionTaskSummary getExecutionTaskSummary(Long executionTaskId) {
+        return toTaskSummary(requireExecutionTaskWithContext(executionTaskId));
+    }
+
     public List<ExecutionRunSummary> listExecutionRuns(Long executionTaskId) {
         requireExecutionTask(executionTaskId);
         return executionRunRepository.findAllByExecutionTask_IdOrderByRunNoDescIdDesc(executionTaskId).stream()

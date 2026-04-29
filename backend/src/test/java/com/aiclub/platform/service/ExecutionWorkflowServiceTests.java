@@ -150,6 +150,35 @@ class ExecutionWorkflowServiceTests {
                 );
     }
 
+    /**
+     * 测试计划自动化场景首版由平台内置编排器直接执行，不依赖项目 Agent。
+     */
+    @Test
+    void shouldBuildInternalAutomationWorkflowWithoutAgents() {
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = executionWorkflowService.buildWorkflow(
+                ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION,
+                11L,
+                List.of()
+        );
+
+        assertThat(workflowPlan.scenarioName()).isEqualTo("自动化测试");
+        assertThat(workflowPlan.steps())
+                .extracting(
+                        ExecutionWorkflowService.ExecutionStepPlan::stepNo,
+                        ExecutionWorkflowService.ExecutionStepPlan::stepCode,
+                        ExecutionWorkflowService.ExecutionStepPlan::stepName
+                )
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(1, "PLAN", "自动化规划"),
+                        org.assertj.core.groups.Tuple.tuple(2, "IMPLEMENT", "生成脚本"),
+                        org.assertj.core.groups.Tuple.tuple(3, "TEST", "执行自动化"),
+                        org.assertj.core.groups.Tuple.tuple(4, "REPORT", "结果回写")
+                );
+        assertThat(workflowPlan.steps())
+                .extracting(ExecutionWorkflowService.ExecutionStepPlan::agent)
+                .containsOnlyNulls();
+    }
+
     private AgentEntity buildAgent(Long id, String name, String accessType) {
         AgentEntity agent = new AgentEntity();
         agent.setId(id);

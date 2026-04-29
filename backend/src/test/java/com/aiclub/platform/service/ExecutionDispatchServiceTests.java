@@ -68,6 +68,9 @@ class ExecutionDispatchServiceTests {
     private DevelopmentExecutionService developmentExecutionService;
 
     @Mock
+    private TestAutomationExecutionService testAutomationExecutionService;
+
+    @Mock
     private SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
 
     @Mock
@@ -91,6 +94,7 @@ class ExecutionDispatchServiceTests {
                 notificationService,
                 repositoryScanExecutionService,
                 developmentExecutionService,
+                testAutomationExecutionService,
                 selfUpgradeExecutionWritebackService,
                 executionEventService,
                 executionAsyncSessionService,
@@ -146,6 +150,55 @@ class ExecutionDispatchServiceTests {
         verify(executionTaskRepository, never()).findById(99L);
         verify(executionTaskRepository, atLeastOnce()).findWithExecutionContextById(99L);
         verify(developmentExecutionService).executeDevelopmentTask(eq(executionTask), any(ExecutionRunEntity.class), eq(workflowPlan));
+    }
+
+    /**
+     * 自动化测试场景应直接走专用执行器，而不是回落到通用串行链路。
+     */
+    @Test
+    void shouldDispatchTestAutomationScenarioToSpecializedService() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION);
+
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION,
+                "自动化测试",
+                List.of(
+                        new ExecutionWorkflowService.ExecutionStepPlan(1, "PLAN", "自动化规划", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(2, "IMPLEMENT", "生成脚本", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(3, "TEST", "执行自动化", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(4, "REPORT", "结果回写", null, null, null, null)
+                )
+        );
+
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionRunRepository.countByExecutionTask_Id(99L)).thenReturn(0L);
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> {
+            ExecutionRunEntity run = invocation.getArgument(0);
+            if (run.getId() == null) {
+                run.setId(701L);
+            }
+            return run;
+        });
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionWorkflowService.restoreWorkflow(
+                eq(ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION),
+                eq(7L),
+                eq("[]")
+        )).thenReturn(workflowPlan);
+        when(testAutomationExecutionService.executeAutomationTask(eq(executionTask), any(ExecutionRunEntity.class), eq(workflowPlan)))
+                .thenReturn(new TestAutomationExecutionService.TestAutomationExecutionResult("自动化执行完成", List.of(), false));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(990L);
+            return artifact;
+        });
+
+        ExecutionRunEntity result = executionDispatchService.dispatchTaskNow(99L);
+
+        assertThat(result.getStatus()).isEqualTo("SUCCESS");
+        verify(testAutomationExecutionService).executeAutomationTask(eq(executionTask), any(ExecutionRunEntity.class), eq(workflowPlan));
+        verify(agentExecutionService, never()).runAgent(anyLong(), any(), any());
     }
 
     /**

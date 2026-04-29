@@ -4,8 +4,10 @@ import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.IterationSummary;
 import com.aiclub.platform.dto.PageResponse;
+import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.TestPlanSummary;
 import com.aiclub.platform.dto.request.TestPlanRequest;
+import com.aiclub.platform.service.TestPlanAutomationService;
 import com.aiclub.platform.service.TestManagementService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -25,9 +27,12 @@ import java.util.List;
 public class TestPlanController {
 
     private final TestManagementService testManagementService;
+    private final TestPlanAutomationService testPlanAutomationService;
 
-    public TestPlanController(TestManagementService testManagementService) {
+    public TestPlanController(TestManagementService testManagementService,
+                              TestPlanAutomationService testPlanAutomationService) {
         this.testManagementService = testManagementService;
+        this.testPlanAutomationService = testPlanAutomationService;
     }
 
     @GetMapping
@@ -65,6 +70,18 @@ public class TestPlanController {
     @RequirePermission("test:manage")
     public ApiResponse<TestPlanSummary> update(@PathVariable Long id, @Valid @RequestBody TestPlanRequest request) {
         return ApiResponse.success(testManagementService.updateTestPlan(id, request));
+    }
+
+    @PostMapping("/{id}/automation/generate-and-run")
+    @RequirePermission("test:manage")
+    public ApiResponse<ExecutionTaskSummary> generateAndRunAutomation(@PathVariable Long id) {
+        return ApiResponse.success(testPlanAutomationService.generateAndRun(id));
+    }
+
+    @PostMapping("/{id}/automation/run")
+    @RequirePermission("test:manage")
+    public ApiResponse<ExecutionTaskSummary> runAutomation(@PathVariable Long id) {
+        return ApiResponse.success(testPlanAutomationService.runExistingAutomation(id));
     }
 
     @DeleteMapping("/{id}")

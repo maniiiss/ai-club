@@ -375,15 +375,18 @@ class TestSuitePlan(BaseModel):
     readySelector: str = ""
     healthPath: str = ""
     httpChecks: list[HttpCheckPlan] = Field(default_factory=list)
+    configPath: str = ""
+    specPaths: list[str] = Field(default_factory=list)
+    planSlug: str = ""
 
-    @field_validator("suiteId", "type", "status", "summary", "workingDir", "packageManager", "startCommand", "baseUrl", "readySelector", "healthPath", mode="before")
+    @field_validator("suiteId", "type", "status", "summary", "workingDir", "packageManager", "startCommand", "baseUrl", "readySelector", "healthPath", "configPath", "planSlug", mode="before")
     @classmethod
     def normalize_suite_text(cls, value: Any) -> str:
         if value is None:
             return ""
         return str(value).strip()
 
-    @field_validator("commands", "smokePaths", mode="before")
+    @field_validator("commands", "smokePaths", "specPaths", mode="before")
     @classmethod
     def normalize_string_list(cls, value: Any) -> list[str]:
         if value is None:

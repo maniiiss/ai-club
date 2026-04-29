@@ -72,6 +72,7 @@
             <div class="atelier-data-head-item test-col-project">所属项目</div>
             <div class="atelier-data-head-item test-col-iteration">所属迭代</div>
             <div class="atelier-data-head-item test-col-status center">状态</div>
+            <div class="atelier-data-head-item test-col-automation center">自动化</div>
             <div class="atelier-data-head-item test-col-cases center">用例数</div>
             <div class="atelier-data-head-item test-col-updated">更新时间</div>
             <div class="atelier-data-head-item test-col-actions right">操作</div>
@@ -107,6 +108,9 @@
                 @change="handleStatusChange(row.id, String($event))"
               />
               <span v-else class="management-list-pill" :class="testPlanStatusTone(row.status)">{{ row.status }}</span>
+            </div>
+            <div class="atelier-data-cell test-col-automation center" data-label="自动化">
+              <span class="management-list-pill" :class="automationStatusTone(row.lastAutomationStatus)">{{ formatAutomationStatus(row.lastAutomationStatus) }}</span>
             </div>
             <div class="atelier-data-cell test-col-cases center" data-label="用例数">
               <span class="management-list-pill neutral">{{ row.caseCount }}</span>
@@ -173,6 +177,12 @@
                         @change="handleStatusChange(row.id, String($event))"
                       />
                       <span v-else class="management-list-pill" :class="testPlanStatusTone(row.status)">{{ row.status }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">自动化</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="automationStatusTone(row.lastAutomationStatus)">{{ formatAutomationStatus(row.lastAutomationStatus) }}</span>
                     </div>
                   </div>
                   <div class="mobile-entity-field">
@@ -362,6 +372,8 @@ const dialogVisible = ref(false)
 const isEditing = ref(false)
 const readonlyMode = ref(false)
 const currentId = ref<number | null>(null)
+const currentAutomationBindingId = ref<number | null>(null)
+const currentAutomationTargetBranch = ref<string | null>(null)
 const list = ref<TestPlanItem[]>([])
 const projectOptions = ref<ProjectItem[]>([])
 const filterIterationOptions = ref<IterationItem[]>([])
@@ -426,6 +438,8 @@ const canManageCurrent = computed(() => canManage.value && !readonlyMode.value)
 
 const resetForm = () => {
   currentId.value = null
+  currentAutomationBindingId.value = null
+  currentAutomationTargetBranch.value = null
   currentCases.value = []
   form.name = ''
   form.projectId = projectOptions.value[0]?.id ?? null
@@ -443,6 +457,8 @@ const fillForm = (plan: TestPlanItem) => {
   form.status = plan.status
   form.description = plan.description
   currentCases.value = plan.cases
+  currentAutomationBindingId.value = plan.automationBindingId
+  currentAutomationTargetBranch.value = plan.automationTargetBranch
 }
 
 const buildCasePayload = (cases: TestCaseItem[]) =>
@@ -454,6 +470,8 @@ const buildCasePayload = (cases: TestCaseItem[]) =>
     precondition: item.precondition,
     remarks: item.remarks,
     sortOrder: item.sortOrder ?? caseIndex,
+    automationType: item.automationType || '手工',
+    automationHint: item.automationHint || '',
     steps: item.steps.map((step, stepIndex) => ({
       stepNo: step.stepNo ?? stepIndex + 1,
       action: step.action,
@@ -598,6 +616,8 @@ const handleStatusChange = async (id: number, status: string) => {
       iterationId: detail.iterationId as number,
       status,
       description: detail.description,
+      automationBindingId: detail.automationBindingId,
+      automationTargetBranch: detail.automationTargetBranch,
       cases: buildCasePayload(detail.cases)
     })
     const target = list.value.find((item) => item.id === id)
@@ -626,6 +646,8 @@ const handleSubmit = async () => {
       iterationId: form.iterationId,
       status: form.status,
       description: form.description.trim(),
+      automationBindingId: currentAutomationBindingId.value,
+      automationTargetBranch: currentAutomationTargetBranch.value,
       cases: buildCasePayload(currentCases.value)
     }
 
@@ -667,6 +689,22 @@ const testPlanStatusTone = (status?: string | null) => {
   return 'neutral'
 }
 
+const formatAutomationStatus = (status?: string | null) => {
+  const normalized = String(status || '').trim().toUpperCase()
+  if (normalized === 'PENDING') return '待执行'
+  if (normalized === 'SUCCESS') return '成功'
+  if (normalized === 'FAILED') return '失败'
+  return '未配置'
+}
+
+const automationStatusTone = (status?: string | null) => {
+  const normalized = String(status || '').trim().toUpperCase()
+  if (normalized === 'SUCCESS') return 'success'
+  if (normalized === 'FAILED') return 'danger'
+  if (normalized === 'PENDING') return 'warning'
+  return 'neutral'
+}
+
 onMounted(async () => {
   try {
     await loadProjectOptions()
@@ -700,6 +738,7 @@ onMounted(async () => {
     minmax(0, 1.3fr)
     minmax(0, 1.3fr)
     minmax(0, 1.1fr)
+    minmax(0, 0.9fr)
     minmax(0, 0.7fr)
     minmax(0, 1.1fr)
     minmax(0, 0.95fr);
@@ -722,6 +761,10 @@ onMounted(async () => {
 }
 
 .test-col-cases {
+  min-width: 0;
+}
+
+.test-col-automation {
   min-width: 0;
 }
 
@@ -768,6 +811,7 @@ onMounted(async () => {
       minmax(0, 1.08fr)
       minmax(0, 1.08fr)
       minmax(0, 0.92fr)
+      minmax(0, 0.82fr)
       minmax(0, 0.62fr)
       minmax(0, 0.92fr)
       minmax(0, 0.78fr);

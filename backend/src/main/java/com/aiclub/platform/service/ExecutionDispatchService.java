@@ -50,6 +50,7 @@ public class ExecutionDispatchService {
     private final NotificationService notificationService;
     private final RepositoryScanExecutionService repositoryScanExecutionService;
     private final DevelopmentExecutionService developmentExecutionService;
+    private final TestAutomationExecutionService testAutomationExecutionService;
     private final SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
     private final ExecutionEventService executionEventService;
     private final ExecutionAsyncSessionService executionAsyncSessionService;
@@ -66,6 +67,7 @@ public class ExecutionDispatchService {
                                     NotificationService notificationService,
                                     RepositoryScanExecutionService repositoryScanExecutionService,
                                     DevelopmentExecutionService developmentExecutionService,
+                                    TestAutomationExecutionService testAutomationExecutionService,
                                     SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService,
                                     ExecutionEventService executionEventService,
                                     ExecutionAsyncSessionService executionAsyncSessionService,
@@ -80,6 +82,7 @@ public class ExecutionDispatchService {
         this.notificationService = notificationService;
         this.repositoryScanExecutionService = repositoryScanExecutionService;
         this.developmentExecutionService = developmentExecutionService;
+        this.testAutomationExecutionService = testAutomationExecutionService;
         this.selfUpgradeExecutionWritebackService = selfUpgradeExecutionWritebackService;
         this.executionEventService = executionEventService;
         this.executionAsyncSessionService = executionAsyncSessionService;
@@ -184,6 +187,9 @@ public class ExecutionDispatchService {
         try {
             if (ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN.equalsIgnoreCase(runningTask.getScenarioCode())) {
                 return dispatchRepositoryScanTask(runningTask, executionRun, writebackArtifacts);
+            }
+            if (ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION.equalsIgnoreCase(runningTask.getScenarioCode())) {
+                return dispatchTestAutomationTask(runningTask, executionRun, workflowPlan, writebackArtifacts);
             }
             if (shouldUseDevelopmentExecution(runningTask, workflowPlan)) {
                 return dispatchDevelopmentTask(runningTask, executionRun, workflowPlan, writebackArtifacts);
@@ -390,6 +396,46 @@ public class ExecutionDispatchService {
             }
             return finishSuccess(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
         } catch (DevelopmentExecutionService.DevelopmentExecutionStepException exception) {
+            if (exception.artifacts() != null) {
+                writebackArtifacts.addAll(exception.artifacts());
+            }
+            if (exception.outputSummary() != null) {
+                executionRun.setOutputSummary(exception.outputSummary());
+                executionRun.setUpdatedAt(LocalDateTime.now());
+                executionRunRepository.save(executionRun);
+            }
+            return finishFailed(
+                    requireExecutionTask(executionTask.getId()),
+                    executionRun,
+                    exception.failedStep(),
+                    exception,
+                    writebackArtifacts
+            );
+        }
+    }
+
+    /**
+     * 测试计划自动化场景由平台内置编排器完成：
+     * 生成脚本、触发 Playwright 仓库级执行、并把结果回写到测试计划。
+     */
+    private ExecutionRunEntity dispatchTestAutomationTask(ExecutionTaskEntity executionTask,
+                                                          ExecutionRunEntity executionRun,
+                                                          ExecutionWorkflowService.WorkflowPlan workflowPlan,
+                                                          List<ExecutionArtifactEntity> writebackArtifacts) {
+        try {
+            TestAutomationExecutionService.TestAutomationExecutionResult result =
+                    testAutomationExecutionService.executeAutomationTask(executionTask, executionRun, workflowPlan);
+            if (result.artifacts() != null) {
+                writebackArtifacts.addAll(result.artifacts());
+            }
+            executionRun.setOutputSummary(result.outputSummary());
+            executionRun.setUpdatedAt(LocalDateTime.now());
+            executionRunRepository.save(executionRun);
+            if (result.canceled()) {
+                return finishCanceled(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
+            }
+            return finishSuccess(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
+        } catch (TestAutomationExecutionService.TestAutomationExecutionStepException exception) {
             if (exception.artifacts() != null) {
                 writebackArtifacts.addAll(exception.artifacts());
             }

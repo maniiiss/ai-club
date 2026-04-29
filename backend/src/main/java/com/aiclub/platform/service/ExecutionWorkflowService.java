@@ -35,6 +35,7 @@ public class ExecutionWorkflowService {
     public static final String SCENARIO_AD_HOC_AGENT_RUN = "AD_HOC_AGENT_RUN";
     public static final String SCENARIO_CODEBASE_COMPLIANCE_SCAN = "CODEBASE_COMPLIANCE_SCAN";
     public static final String SCENARIO_SELF_UPGRADE_PATROL = "SELF_UPGRADE_PATROL";
+    public static final String SCENARIO_TEST_AUTOMATION = "TEST_AUTOMATION";
 
     public static final String STEP_PLAN = "PLAN";
     public static final String STEP_REPO_STRUCTURING = "REPO_STRUCTURING";
@@ -52,7 +53,8 @@ public class ExecutionWorkflowService {
             SCENARIO_TEST_DESIGN_OR_REVIEW,
             SCENARIO_AD_HOC_AGENT_RUN,
             SCENARIO_CODEBASE_COMPLIANCE_SCAN,
-            SCENARIO_SELF_UPGRADE_PATROL
+            SCENARIO_SELF_UPGRADE_PATROL,
+            SCENARIO_TEST_AUTOMATION
     );
 
     private final AgentRepository agentRepository;
@@ -92,7 +94,9 @@ public class ExecutionWorkflowService {
 
         for (int index = 0; index < templates.size(); index++) {
             StepTemplate template = templates.get(index);
-            AgentEntity agent = resolveStepAgent(template, requestedBindingMap.get(template.stepCode()), availableAgents);
+            AgentEntity agent = usesInternalExecutionEngine(normalizedScenarioCode)
+                    ? null
+                    : resolveStepAgent(template, requestedBindingMap.get(template.stepCode()), availableAgents);
             steps.add(new ExecutionStepPlan(
                     index + 1,
                     template.stepCode(),
@@ -143,7 +147,9 @@ public class ExecutionWorkflowService {
 
         for (int index = 0; index < templates.size(); index++) {
             StepTemplate template = templates.get(index);
-            AgentEntity agent = resolveStepAgent(template, bindingMap.get(template.stepCode()), availableAgents);
+            AgentEntity agent = usesInternalExecutionEngine(normalizedScenarioCode)
+                    ? null
+                    : resolveStepAgent(template, bindingMap.get(template.stepCode()), availableAgents);
             steps.add(new ExecutionStepPlan(
                     index + 1,
                     template.stepCode(),
@@ -246,6 +252,7 @@ public class ExecutionWorkflowService {
             case SCENARIO_AD_HOC_AGENT_RUN -> "兼容单次执行";
             case SCENARIO_CODEBASE_COMPLIANCE_SCAN -> "仓库规范扫描";
             case SCENARIO_SELF_UPGRADE_PATROL -> "自升级巡检";
+            case SCENARIO_TEST_AUTOMATION -> "自动化测试";
             default -> throw new IllegalArgumentException("不支持的执行场景");
         };
     }
@@ -258,7 +265,9 @@ public class ExecutionWorkflowService {
                     : "请先梳理当前工作项的执行路径、关键风险和依赖，输出结构化 Markdown 计划。";
             case STEP_REPO_STRUCTURING -> "请先准备仓库代码快照并生成结构化代码理解结果，供后续规划、开发和测试步骤复用。";
             case STEP_IMPLEMENT -> "请基于工作项上下文和上游计划，给出可执行的开发实现方案、代码改造建议或关键实现片段。";
-            case STEP_TEST -> "请根据当前仓库的实现结果执行真实验证，并返回结构化 JSON 测试结果。";
+            case STEP_TEST -> SCENARIO_TEST_AUTOMATION.equals(normalizedScenarioCode)
+                    ? "请执行项目自动化脚本并返回结构化测试结果。"
+                    : "请根据当前仓库的实现结果执行真实验证，并返回结构化 JSON 测试结果。";
             case STEP_TEST_DESIGN -> "请基于工作项上下文和现有方案，输出测试点、测试案例设计和验收建议。";
             case STEP_REPORT -> "请基于规划、开发与测试结果输出交付报告，明确结论、风险、遗留项与未覆盖验证。";
             case STEP_REVIEW -> "请从质量、风险、边界情况和可交付性角度评审前序输出，结果使用 Markdown。";
@@ -324,6 +333,12 @@ public class ExecutionWorkflowService {
             case SCENARIO_SELF_UPGRADE_PATROL -> List.of(
                     new StepTemplate(STEP_PATROL, "平台巡检", null, null, null)
             );
+            case SCENARIO_TEST_AUTOMATION -> List.of(
+                    new StepTemplate(STEP_PLAN, "自动化规划", null, null, null),
+                    new StepTemplate(STEP_IMPLEMENT, "生成脚本", null, null, null),
+                    new StepTemplate(STEP_TEST, "执行自动化", null, null, null),
+                    new StepTemplate(STEP_REPORT, "结果回写", null, null, null)
+            );
             case SCENARIO_CODEBASE_COMPLIANCE_SCAN -> List.of();
             default -> throw new IllegalArgumentException("不支持的执行场景");
         };
@@ -358,6 +373,9 @@ public class ExecutionWorkflowService {
 
     private AgentEntity resolveStoredAgent(StoredAgentBinding binding, List<AgentEntity> availableAgents) {
         if (binding == null) {
+            return null;
+        }
+        if (binding.agentId() == null) {
             return null;
         }
         if (STEP_REPO_STRUCTURING.equalsIgnoreCase(defaultString(binding.stepCode()))
@@ -509,6 +527,13 @@ public class ExecutionWorkflowService {
 
     private String defaultString(String value) {
         return value == null ? "" : value;
+    }
+
+    /**
+     * 自动化测试场景首版由平台内置编排器执行，不依赖用户配置 Agent。
+     */
+    private boolean usesInternalExecutionEngine(String scenarioCode) {
+        return SCENARIO_TEST_AUTOMATION.equalsIgnoreCase(defaultString(scenarioCode));
     }
 
     private record StepTemplate(

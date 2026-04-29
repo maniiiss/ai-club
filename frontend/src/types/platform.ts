@@ -690,6 +690,8 @@ export interface TestCaseItem {
   precondition: string
   remarks: string
   sortOrder: number
+  automationType: '手工' | '自动化' | string
+  automationHint: string
   steps: TestCaseStepItem[]
 }
 
@@ -703,6 +705,15 @@ export interface TestPlanItem {
   iterationId: number | null
   iterationName: string | null
   caseCount: number
+  automationBindingId: number | null
+  automationTargetBranch: string | null
+  automationEnabledCaseCount: number
+  lastAutomationStatus: 'IDLE' | 'PENDING' | 'SUCCESS' | 'FAILED' | string | null
+  lastAutomationTaskId: number | null
+  lastAutomationRunId: number | null
+  lastAutomationSummary: string | null
+  lastAutomationAt: string | null
+  lastAutomationMrUrl: string | null
   createdAt: string | null
   updatedAt: string | null
   cases: TestCaseItem[]

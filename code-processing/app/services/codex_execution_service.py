@@ -402,8 +402,13 @@ def _execute_test_plan(
     cancel_watcher: SessionCancelWatcher | None,
 ) -> dict[str, object]:
     if not workspace.repo_dir.exists():
-        summary = "未找到开发实现阶段生成的仓库工作区，无法继续执行测试"
-        return {"status": "FAILED", "summary": summary, "suiteResults": [], "rawArtifacts": []}
+        workspace.repo_dir.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            _append_log(workspace, "未命中复用工作区，准备按当前仓库与分支重新 clone 后执行测试")
+            _clone_repository(request, workspace)
+        except Exception as exception:
+            summary = f"未找到可复用的仓库工作区，且重新 clone 失败：{exception}"
+            return {"status": "FAILED", "summary": summary, "suiteResults": [], "rawArtifacts": []}
 
     repo_label = request.repository.displayName or request.repository.projectPath or request.repository.repoUrl
     _append_log(workspace, f"开始执行测试：{repo_label}")
@@ -448,6 +453,8 @@ def _execute_test_plan(
             suite_result = _execute_playwright_smoke_suite(request, workspace, suite, deadline, batcher, cancel_watcher)
         elif suite_type == "SERVICE_SMOKE":
             suite_result = _execute_service_smoke_suite(request, workspace, suite, deadline, batcher, cancel_watcher)
+        elif suite_type == "PLAYWRIGHT_REPO_SUITE":
+            suite_result = _execute_playwright_repo_suite(request, workspace, suite, deadline, batcher, cancel_watcher)
         else:
             suite_result = _build_suite_result(suite, "SKIPPED", f"暂不支持的 suite 类型：{suite.type}")
         suite_results.append(suite_result)
@@ -658,8 +665,9 @@ def _execute_playwright_smoke_suite(
             )
 
     port = _find_free_port()
+    base_url_provided = bool(_normalize_text(suite.baseUrl))
     base_url = _normalize_base_url(suite.baseUrl or f"http://127.0.0.1:{port}")
-    runtime_start_command = _build_frontend_runtime_command(start_command, port, base_url_provided=bool(_normalize_text(suite.baseUrl)))
+    runtime_start_command = _build_frontend_runtime_command(start_command, port, base_url_provided=base_url_provided)
     app_log_file = workspace.out_dir / f"{suite.suiteId or 'playwright'}-app.log"
     process, handles = _start_background_process(
         runtime_start_command,
@@ -677,6 +685,17 @@ def _execute_playwright_smoke_suite(
             process=process,
             should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
         )
+        if not ready_ok and not base_url_provided:
+            discovered_base_url = _discover_frontend_base_url_from_log(app_log_file, base_url)
+            if discovered_base_url != base_url:
+                base_url = discovered_base_url
+                ready_ok, ready_detail = _wait_for_http_ready(
+                    base_url=base_url,
+                    ready_path="/",
+                    deadline=min(deadline, monotonic() + 30),
+                    process=process,
+                    should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
+                )
         if not ready_ok:
             return _build_suite_result(
                 suite,
@@ -776,6 +795,162 @@ def _execute_playwright_smoke_suite(
         )
     finally:
         _stop_background_process(process, handles, workspace, f"{suite.suiteId or 'playwright'} 启动进程")
+
+
+def _execute_playwright_repo_suite(
+    request: CodexExecutionRequest,
+    workspace: DevelopmentExecutionWorkspace,
+    suite: TestSuitePlan,
+    deadline: float,
+    batcher: BackendEventBatcher | None,
+    cancel_watcher: SessionCancelWatcher | None,
+) -> dict[str, object]:
+    if shutil.which("node") is None or shutil.which("npm") is None:
+        return _build_suite_result(suite, "FAILED", "宿主机缺少 node/npm，无法执行仓库 Playwright 自动化")
+    project_dir = _resolve_suite_working_dir(workspace.repo_dir, suite.workingDir)
+    if project_dir is None or not (project_dir / "package.json").exists():
+        return _build_suite_result(suite, "FAILED", "Playwright 仓库自动化工作目录不存在，或缺少 package.json")
+
+    config_rel = _normalize_text(suite.configPath or ".ai-club/automation/playwright/playwright.config.ts")
+    config_path = project_dir / config_rel
+    spec_paths = [_normalize_text(item) for item in suite.specPaths or [] if _normalize_text(item)]
+    if not spec_paths:
+        return _build_suite_result(suite, "FAILED", "未提供仓库级 Playwright spec 路径")
+    if not config_path.exists():
+        return _build_suite_result(suite, "FAILED", "仓库中不存在自动化 Playwright 配置文件")
+    if any(not (project_dir / item).exists() for item in spec_paths):
+        return _build_suite_result(suite, "FAILED", "仓库中不存在自动化 Playwright 脚本文件")
+
+    package_manager = _normalize_text(suite.packageManager) or _detect_node_package_manager(project_dir)
+    start_command = _normalize_text(suite.startCommand) or _infer_frontend_start_command(project_dir, package_manager)
+    if not start_command:
+        return _build_suite_result(suite, "SKIPPED", "缺少 startCommand，且未从 package.json 推断出前端启动命令")
+
+    remaining_seconds = _remaining_seconds(deadline)
+    if remaining_seconds <= 0:
+        return _build_suite_result(suite, "FAILED", f"测试超时：总预算 {request.timeoutSeconds} 秒已耗尽")
+
+    stdout_log = workspace.out_dir / "test-stdout.log"
+    stderr_log = workspace.out_dir / "test-stderr.log"
+    command_results: list[dict[str, object]] = []
+    install_result = _ensure_node_dependencies(
+        workspace=workspace,
+        project_dir=project_dir,
+        package_manager=package_manager,
+        deadline=deadline,
+        batcher=batcher,
+        cancel_watcher=cancel_watcher,
+        stdout_log=stdout_log,
+        stderr_log=stderr_log,
+        command_label="前端依赖安装",
+    )
+    if install_result is not None:
+        command_results.append(install_result)
+        if install_result["exitCode"] != 0:
+            return _build_suite_result(
+                suite,
+                "FAILED",
+                f"前端依赖安装失败：{install_result['command']}",
+                checks=[_build_check("install", "FAILED", install_result["stderr"] or "依赖安装失败")],
+                command_results=command_results,
+            )
+
+    port = _find_free_port()
+    base_url_provided = bool(_normalize_text(suite.baseUrl))
+    base_url = _normalize_base_url(suite.baseUrl or f"http://127.0.0.1:{port}")
+    runtime_start_command = _build_frontend_runtime_command(start_command, port, base_url_provided=base_url_provided)
+    app_log_file = workspace.out_dir / f"{suite.suiteId or 'playwright-repo'}-app.log"
+    process, handles = _start_background_process(
+        runtime_start_command,
+        cwd=project_dir,
+        log_file=app_log_file,
+        env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
+        shell=True,
+    )
+
+    try:
+        ready_ok, ready_detail = _wait_for_http_ready(
+            base_url=base_url,
+            ready_path="/",
+            deadline=min(deadline, monotonic() + 180),
+            process=process,
+            should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
+        )
+        if not ready_ok and not base_url_provided:
+            discovered_base_url = _discover_frontend_base_url_from_log(app_log_file, base_url)
+            if discovered_base_url != base_url:
+                base_url = discovered_base_url
+                ready_ok, ready_detail = _wait_for_http_ready(
+                    base_url=base_url,
+                    ready_path="/",
+                    deadline=min(deadline, monotonic() + 30),
+                    process=process,
+                    should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
+                )
+        if not ready_ok:
+            return _build_suite_result(
+                suite,
+                "FAILED",
+                f"前端应用未就绪：{ready_detail}",
+                checks=[_build_check("startup", "FAILED", ready_detail)],
+                command_results=command_results,
+            )
+
+        plan_slug = _normalize_text(suite.planSlug) or "default"
+        repo_env = {
+            **os.environ,
+            "PYTHONUTF8": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+            "AI_CLUB_BASE_URL": base_url,
+            "AI_CLUB_TEST_PLAN_SLUG": plan_slug,
+        }
+        spec_command = " ".join([f'"{item}"' for item in spec_paths])
+        playwright_command = f'npx playwright test -c "{config_rel}" {spec_command}'.strip()
+        script_result = _run_process(
+            playwright_command,
+            cwd=project_dir,
+            timeout_seconds=_remaining_seconds(deadline),
+            workspace=workspace,
+            command_label="Playwright 仓库自动化",
+            batcher=batcher,
+            stdout_file=stdout_log,
+            stderr_file=stderr_log,
+            env=repo_env,
+            shell=True,
+            should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
+        )
+        command_results.append(
+            {
+                "command": playwright_command,
+                "cwd": str(project_dir),
+                "exitCode": script_result.exit_code,
+                "stdout": tail_text(script_result.stdout, 2000),
+                "stderr": tail_text(script_result.stderr, 2000),
+            }
+        )
+
+        artifacts = _collect_playwright_repo_artifacts(workspace, project_dir, plan_slug)
+        _record_test_artifacts(workspace, artifacts)
+        result_json_path = project_dir / ".ai-club" / "automation" / "playwright" / "results" / f"{plan_slug}.json"
+        payload: dict[str, object] = {}
+        if result_json_path.exists():
+            try:
+                payload = _extract_json_object(result_json_path.read_text(encoding="utf-8"))
+            except RuntimeError:
+                payload = {}
+        status = "SUCCESS" if script_result.exit_code == 0 else "FAILED"
+        summary = _build_playwright_repo_summary(payload, status)
+        checks = [_build_check("startup", "SUCCESS", ready_detail), _build_check("playwright-script", status, summary)]
+        return _build_suite_result(
+            suite,
+            status,
+            summary,
+            checks=checks,
+            artifacts=_artifact_payloads(artifacts),
+            command_results=command_results,
+        )
+    finally:
+        _stop_background_process(process, handles, workspace, f"{suite.suiteId or 'playwright-repo'} 启动进程")
 
 
 def _execute_service_smoke_suite(
@@ -886,6 +1061,46 @@ def _build_suite_result(
         "artifacts": artifacts or [],
         "commandResults": command_results or [],
     }
+
+
+def _collect_playwright_repo_artifacts(
+    workspace: DevelopmentExecutionWorkspace,
+    project_dir: Path,
+    plan_slug: str,
+) -> list[TestArtifactRecord]:
+    artifacts: list[TestArtifactRecord] = []
+    result_json_path = project_dir / ".ai-club" / "automation" / "playwright" / "results" / f"{plan_slug}.json"
+    if result_json_path.exists():
+        artifacts.append(TestArtifactRecord("PLAYWRIGHT_RESULT_JSON", "Playwright 结果 JSON", result_json_path))
+
+    report_dir = project_dir / ".ai-club" / "automation" / "playwright" / "reports" / plan_slug
+    if report_dir.exists() and report_dir.is_dir():
+        archive_base = workspace.out_dir / f"{plan_slug}-html-report"
+        archive_file = Path(shutil.make_archive(str(archive_base), "zip", root_dir=report_dir))
+        artifacts.append(TestArtifactRecord("PLAYWRIGHT_HTML_REPORT", "Playwright HTML 报告", archive_file))
+
+    test_results_dir = project_dir / ".ai-club" / "automation" / "playwright" / "test-results" / plan_slug
+    if test_results_dir.exists():
+        for trace_file in test_results_dir.rglob("*.zip"):
+            artifacts.append(TestArtifactRecord("PLAYWRIGHT_TRACE", f"Playwright Trace · {trace_file.relative_to(test_results_dir).as_posix()}", trace_file))
+        for screenshot_file in test_results_dir.rglob("*.png"):
+            artifacts.append(TestArtifactRecord("PLAYWRIGHT_SCREENSHOT", f"Playwright 截图 · {screenshot_file.relative_to(test_results_dir).as_posix()}", screenshot_file))
+    return artifacts
+
+
+def _build_playwright_repo_summary(payload: dict[str, object], status: str) -> str:
+    explicit_summary = _normalize_text(payload.get("summary"))
+    if explicit_summary:
+        return explicit_summary
+    stats = payload.get("stats")
+    if isinstance(stats, dict):
+        unexpected = int(stats.get("unexpected", 0) or 0)
+        expected = int(stats.get("expected", 0) or 0)
+        if unexpected > 0:
+            return f"Playwright 仓库自动化失败：{unexpected} 条断言未通过"
+        if expected > 0:
+            return f"Playwright 仓库自动化通过，共执行 {expected} 个测试"
+    return "Playwright 仓库自动化通过" if status == "SUCCESS" else "Playwright 仓库自动化失败"
 
 
 def _build_check(name: str, status: str, detail: str) -> dict[str, object]:
@@ -1454,6 +1669,20 @@ def _normalize_base_url(value: str) -> str:
     if normalized.startswith("http://") or normalized.startswith("https://"):
         return normalized.rstrip("/")
     return f"http://{normalized}".rstrip("/")
+
+
+def _discover_frontend_base_url_from_log(log_file: Path, fallback_base_url: str) -> str:
+    if not log_file.exists():
+        return fallback_base_url
+    try:
+        content = log_file.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return fallback_base_url
+    matches = re.findall(r"https?://(?:127\.0\.0\.1|localhost):\d+", content, flags=re.IGNORECASE)
+    if not matches:
+        return fallback_base_url
+    candidate = matches[-1].replace("localhost", "127.0.0.1")
+    return _normalize_base_url(candidate)
 
 
 def _join_url(base_url: str, path_value: str) -> str:

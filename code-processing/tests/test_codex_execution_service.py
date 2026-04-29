@@ -716,6 +716,212 @@ class CodexExecutionServiceTests(unittest.TestCase):
         self.assertEqual("Playwright 烟测通过", suite_result["summary"])
         self.assertEqual([1, 0, 0], [item["exitCode"] for item in suite_result["commandResults"]])
 
+    def test_should_execute_playwright_repo_suite_and_collect_report_artifacts(self):
+        request = self._build_request("TEST").model_copy(update={
+            "testPlan": CodexTestExecutionPlan(
+                suites=[
+                    CodexTestSuitePlan(
+                        suiteId="playwright-repo-suite",
+                        type="PLAYWRIGHT_REPO_SUITE",
+                        status="PENDING",
+                        summary="等待执行仓库 Playwright 自动化脚本",
+                        workingDir="frontend",
+                        packageManager="pnpm",
+                        startCommand="pnpm dev",
+                        baseUrl="http://127.0.0.1:5173",
+                        readySelector="[data-ready]",
+                        configPath=".ai-club/automation/playwright/playwright.config.ts",
+                        specPaths=[".ai-club/automation/playwright/plans/test-plan-12.spec.ts"],
+                        planSlug="test-plan-12",
+                    )
+                ]
+            )
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            project_dir = workspace.repo_dir / "frontend"
+            report_dir = project_dir / ".ai-club" / "automation" / "playwright" / "reports" / "test-plan-12"
+            result_dir = project_dir / ".ai-club" / "automation" / "playwright" / "results"
+            test_results_dir = project_dir / ".ai-club" / "automation" / "playwright" / "test-results" / "test-plan-12"
+            config_path = project_dir / ".ai-club" / "automation" / "playwright" / "playwright.config.ts"
+            spec_path = project_dir / ".ai-club" / "automation" / "playwright" / "plans" / "test-plan-12.spec.ts"
+            project_dir.mkdir(parents=True, exist_ok=True)
+            workspace.out_dir.mkdir(parents=True, exist_ok=True)
+            (project_dir / "node_modules").mkdir(parents=True, exist_ok=True)
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            spec_path.parent.mkdir(parents=True, exist_ok=True)
+            report_dir.mkdir(parents=True, exist_ok=True)
+            result_dir.mkdir(parents=True, exist_ok=True)
+            test_results_dir.mkdir(parents=True, exist_ok=True)
+            config_path.write_text("export default {}", encoding="utf-8")
+            spec_path.write_text("test('demo', async () => {})", encoding="utf-8")
+            (project_dir / "package.json").write_text(
+                json.dumps(
+                    {
+                        "name": "demo-frontend",
+                        "scripts": {
+                            "dev": "vite",
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (report_dir / "index.html").write_text("<html>report</html>", encoding="utf-8")
+            (result_dir / "test-plan-12.json").write_text(
+                json.dumps(
+                    {
+                        "summary": "Playwright 仓库自动化通过",
+                        "stats": {"expected": 2, "unexpected": 0},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (test_results_dir / "trace.zip").write_text("trace", encoding="utf-8")
+            (test_results_dir / "failed.png").write_text("png", encoding="utf-8")
+
+            def which_side_effect(name: str) -> str | None:
+                return f"C:/mock/{name}.exe" if name in {"node", "npm"} else None
+
+            def start_background_process_side_effect(command, cwd, log_file, env, shell):
+                log_file.write_text("frontend started", encoding="utf-8")
+                return SimpleNamespace(pid=3333), ("stdout", "stderr")
+
+            def run_process_side_effect(command, cwd, timeout_seconds, workspace, command_label, batcher, stdout_file, stderr_file, env, shell, should_cancel):
+                return SimpleNamespace(stdout="playwright repo ok", stderr="", exit_code=0)
+
+            with patch("app.services.codex_execution_service._workspace_for", return_value=workspace), \
+                    patch("app.services.codex_execution_service.shutil.which", side_effect=which_side_effect), \
+                    patch("app.services.codex_execution_service._find_free_port", return_value=4175), \
+                    patch("app.services.codex_execution_service._start_background_process", side_effect=start_background_process_side_effect), \
+                    patch("app.services.codex_execution_service._wait_for_http_ready", return_value=(True, "前端应用已就绪")), \
+                    patch("app.services.codex_execution_service._run_process", side_effect=run_process_side_effect), \
+                    patch("app.services.codex_execution_service._stop_background_process"):
+                response = execute_codex_execution(request)
+
+            payload = json.loads(response.output)
+            suite_result = payload["suiteResults"][0]
+            manifest = json.loads((workspace.out_dir / "test-artifacts-manifest.json").read_text(encoding="utf-8"))
+
+        self.assertEqual("SUCCESS", payload["status"])
+        self.assertEqual("Playwright 仓库自动化通过", suite_result["summary"])
+        self.assertEqual(
+            ["PLAYWRIGHT_RESULT_JSON", "PLAYWRIGHT_HTML_REPORT", "PLAYWRIGHT_TRACE", "PLAYWRIGHT_SCREENSHOT"],
+            [item["artifactType"] for item in suite_result["artifacts"]],
+        )
+        self.assertEqual(
+            ["PLAYWRIGHT_RESULT_JSON", "PLAYWRIGHT_HTML_REPORT", "PLAYWRIGHT_TRACE", "PLAYWRIGHT_SCREENSHOT"],
+            [item["artifactType"] for item in manifest],
+        )
+        self.assertEqual('npx playwright test -c ".ai-club/automation/playwright/playwright.config.ts" ".ai-club/automation/playwright/plans/test-plan-12.spec.ts"', suite_result["commandResults"][0]["command"])
+
+    def test_should_fallback_to_discovered_frontend_port_from_app_log_for_repo_suite(self):
+        request = self._build_request("TEST").model_copy(update={
+            "testPlan": CodexTestExecutionPlan(
+                suites=[
+                    CodexTestSuitePlan(
+                        suiteId="playwright-repo-suite",
+                        type="PLAYWRIGHT_REPO_SUITE",
+                        status="PENDING",
+                        summary="等待执行仓库 Playwright 自动化脚本",
+                        workingDir="frontend",
+                        packageManager="pnpm",
+                        startCommand="pnpm dev",
+                        configPath=".ai-club/automation/playwright/playwright.config.ts",
+                        specPaths=[".ai-club/automation/playwright/plans/test-plan-12.spec.ts"],
+                        planSlug="test-plan-12",
+                    )
+                ]
+            )
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            project_dir = workspace.repo_dir / "frontend"
+            config_path = project_dir / ".ai-club" / "automation" / "playwright" / "playwright.config.ts"
+            spec_path = project_dir / ".ai-club" / "automation" / "playwright" / "plans" / "test-plan-12.spec.ts"
+            result_dir = project_dir / ".ai-club" / "automation" / "playwright" / "results"
+            project_dir.mkdir(parents=True, exist_ok=True)
+            workspace.out_dir.mkdir(parents=True, exist_ok=True)
+            (project_dir / "node_modules").mkdir(parents=True, exist_ok=True)
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            spec_path.parent.mkdir(parents=True, exist_ok=True)
+            result_dir.mkdir(parents=True, exist_ok=True)
+            config_path.write_text("export default {}", encoding="utf-8")
+            spec_path.write_text("test('demo', async () => {})", encoding="utf-8")
+            (project_dir / "package.json").write_text(
+                json.dumps(
+                    {
+                        "name": "demo-frontend",
+                        "scripts": {
+                            "dev": "vite",
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (result_dir / "test-plan-12.json").write_text(
+                json.dumps(
+                    {
+                        "summary": "Playwright 仓库自动化通过",
+                        "stats": {"expected": 1, "unexpected": 0},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            def which_side_effect(name: str) -> str | None:
+                return f"C:/mock/{name}.exe" if name in {"node", "npm"} else None
+
+            def start_background_process_side_effect(command, cwd, log_file, env, shell):
+                log_file.write_text(
+                    """
+                    VITE ready
+                    Local:   http://localhost:3100/
+                    Network: http://192.168.1.3:3100/
+                    """.strip(),
+                    encoding="utf-8",
+                )
+                return SimpleNamespace(pid=4444), ("stdout", "stderr")
+
+            ready_calls: list[str] = []
+
+            def wait_ready_side_effect(*, base_url, **kwargs):
+                ready_calls.append(base_url)
+                if len(ready_calls) == 1:
+                    return False, f"{base_url}/ -> 502"
+                return True, f"{base_url}/ -> 200"
+
+            def run_process_side_effect(command, cwd, timeout_seconds, workspace, command_label, batcher, stdout_file, stderr_file, env, shell, should_cancel):
+                return SimpleNamespace(stdout="playwright repo ok", stderr="", exit_code=0)
+
+            with patch("app.services.codex_execution_service._workspace_for", return_value=workspace), \
+                    patch("app.services.codex_execution_service.shutil.which", side_effect=which_side_effect), \
+                    patch("app.services.codex_execution_service._find_free_port", return_value=54952), \
+                    patch("app.services.codex_execution_service._start_background_process", side_effect=start_background_process_side_effect), \
+                    patch("app.services.codex_execution_service._wait_for_http_ready", side_effect=wait_ready_side_effect), \
+                    patch("app.services.codex_execution_service._run_process", side_effect=run_process_side_effect), \
+                    patch("app.services.codex_execution_service._stop_background_process"):
+                response = execute_codex_execution(request)
+
+        payload = json.loads(response.output)
+        suite_result = payload["suiteResults"][0]
+        self.assertEqual("SUCCESS", payload["status"])
+        self.assertEqual("Playwright 仓库自动化通过", suite_result["summary"])
+        self.assertEqual(["http://127.0.0.1:54952", "http://127.0.0.1:3100"], ready_calls)
+
     def test_should_execute_service_smoke_suite_and_collect_http_log_artifacts(self):
         request = self._build_request("TEST").model_copy(update={
             "testPlan": CodexTestExecutionPlan(

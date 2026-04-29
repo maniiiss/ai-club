@@ -7,8 +7,8 @@
     <div class="constellation-hud">
       <span>滚轮缩放</span>
       <span>拖动画布</span>
-      <span>悬停探索</span>
-      <span>点击查看</span>
+      <span>悬停联动</span>
+      <span>点击锁定关联</span>
     </div>
   </div>
 </template>
@@ -16,7 +16,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { MemoryFactVisualizationData } from '@/utils/memoryFactVisualization'
-import { buildRenderableGraphData } from '@/utils/memoryFactVisualization'
+import { buildRenderableGraphData, relationCategory } from '@/utils/memoryFactVisualization'
 
 const props = defineProps<{
   data: MemoryFactVisualizationData
@@ -50,7 +50,11 @@ interface PreparedLink {
   a: number
   b: number
   color: string
+  width: number
+  category: RelationVisualCategory
 }
+
+type RelationVisualCategory = 'semantic' | 'temporal' | 'entity' | 'causal'
 
 const wrapperRef = ref<HTMLDivElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -90,6 +94,19 @@ const hashString = (value: string) => {
     hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0
   }
   return hash
+}
+
+const relationDashPattern = (category: RelationVisualCategory) => {
+  switch (category) {
+    case 'temporal':
+      return [10, 6]
+    case 'entity':
+      return [3, 5]
+    case 'causal':
+      return [14, 6, 3, 6]
+    default:
+      return []
+  }
 }
 
 const preparedGraph = computed(() => {
@@ -145,7 +162,9 @@ const preparedGraph = computed(() => {
       id: item.id,
       a: leftIndex,
       b: rightIndex,
-      color: item.color
+      color: item.color,
+      width: Math.max(1, Number(item.width || item.weight || 1)),
+      category: relationCategory(item.type) as RelationVisualCategory
     })
     if (!linksByNode.has(leftIndex)) linksByNode.set(leftIndex, [])
     if (!linksByNode.has(rightIndex)) linksByNode.set(rightIndex, [])
@@ -178,6 +197,30 @@ const preparedGraph = computed(() => {
     revealRanks
   }
 })
+
+/**
+ * 星图里的悬停与选中共用一套邻接关系收集逻辑，
+ * 这样点击锁定后也能持续看清与当前节点直接相关的对象和连线。
+ */
+const collectRelationState = (nodeIndex: number) => {
+  const linkIndexes = new Set<number>()
+  const neighborIndexes = new Set<number>()
+  const semanticNeighborIndexes = new Set<number>()
+  if (nodeIndex < 0) {
+    return { linkIndexes, neighborIndexes, semanticNeighborIndexes }
+  }
+  for (const linkIndex of preparedGraph.value.linksByNode.get(nodeIndex) || []) {
+    const link = preparedGraph.value.links[linkIndex]
+    if (!link) continue
+    linkIndexes.add(linkIndex)
+    const neighborIndex = link.a === nodeIndex ? link.b : link.a
+    neighborIndexes.add(neighborIndex)
+    if (link.category === 'semantic') {
+      semanticNeighborIndexes.add(neighborIndex)
+    }
+  }
+  return { linkIndexes, neighborIndexes, semanticNeighborIndexes }
+}
 
 const state = {
   panX: 0,
@@ -286,12 +329,9 @@ const drawFrame = () => {
   }
 
   const selectedIndex = preparedGraph.value.nodes.findIndex((item) => item.id === props.selectedNodeId)
-  const hoveredLinks = new Set<number>()
-  if (state.hoverIndex >= 0) {
-    for (const linkIndex of preparedGraph.value.linksByNode.get(state.hoverIndex) || []) {
-      hoveredLinks.add(linkIndex)
-    }
-  }
+  const selectedRelationState = collectRelationState(selectedIndex)
+  const focusIndex = state.hoverIndex >= 0 ? state.hoverIndex : selectedIndex
+  const focusRelationState = focusIndex === selectedIndex ? selectedRelationState : collectRelationState(focusIndex)
 
   if (state.hoverIndex >= 0) {
     const hoveredNode = preparedGraph.value.nodes[state.hoverIndex]
@@ -314,7 +354,8 @@ const drawFrame = () => {
     emit('clear-hover')
   }
 
-  context.lineWidth = 0.6
+  context.lineCap = 'round'
+  context.lineJoin = 'round'
   preparedGraph.value.links.forEach((link, index) => {
     const leftX = screenX[link.a]
     const leftY = screenY[link.a]
@@ -324,13 +365,29 @@ const drawFrame = () => {
     const reveal = Math.min(revealProgress[link.a], revealProgress[link.b])
     if (reveal <= 0.04) return
 
-    const isRelatedToHover = hoveredLinks.has(index)
+    const isFocusedLink = focusRelationState.linkIndexes.has(index)
+    const isSelectedLink = selectedRelationState.linkIndexes.has(index)
+    const baseLineWidth = 0.8 + link.width * 0.42
+    context.lineWidth = isFocusedLink ? baseLineWidth + 1.5 : isSelectedLink ? baseLineWidth + 0.5 : baseLineWidth
     context.strokeStyle = link.color
-    context.globalAlpha = (state.hoverIndex >= 0 ? (isRelatedToHover ? 0.42 : 0.03) : 0.08 + Math.min(state.zoom * 0.04, 0.12)) * reveal
+    context.setLineDash(relationDashPattern(link.category))
+    context.globalAlpha = (
+      focusIndex >= 0
+        ? isFocusedLink
+          ? 0.92
+          : isSelectedLink
+            ? 0.24
+            : 0.035
+        : 0.12 + Math.min(link.width * 0.04, 0.14) + Math.min(state.zoom * 0.03, 0.08)
+    ) * reveal
+    context.shadowColor = isFocusedLink ? link.color : 'transparent'
+    context.shadowBlur = isFocusedLink ? 12 : 0
     context.beginPath()
     context.moveTo(leftX, leftY)
     context.quadraticCurveTo((leftX + rightX) / 2 + (rightY - leftY) * 0.08, (leftY + rightY) / 2 - (rightX - leftX) * 0.08, rightX, rightY)
     context.stroke()
+    context.shadowBlur = 0
+    context.setLineDash([])
   })
   context.globalAlpha = 1
 
@@ -403,6 +460,7 @@ const drawFrame = () => {
       const boxLeft = x - 8
       const boxTop = y - 16
 
+      claimLabel(boxLeft, boxTop, boxWidth, boxHeight)
       context.fillStyle = hovered ? 'rgba(255,255,255,0.97)' : 'rgba(255,255,255,0.92)'
       context.strokeStyle = hovered ? 'rgba(96,165,250,0.9)' : 'rgba(226,232,240,0.95)'
       context.lineWidth = hovered ? 1.2 : 1
@@ -433,6 +491,46 @@ const drawFrame = () => {
     return true
   }
 
+  /**
+   * 点击节点后，为一跳关联节点展示更紧凑的标签气泡，
+   * 让用户不用逐个悬停也能直接看到“当前节点关联了谁”。
+   */
+  const drawRelatedNodeLabel = (node: PreparedNode, x: number, y: number, radius: number) => {
+    context.font = '11px "Segoe UI", sans-serif'
+    const lines = wrapLabelLines(node.fullLabel, 132, 2)
+    if (!lines.length) return false
+    const lineHeight = 13
+    const boxWidth = Math.min(150, Math.max(...lines.map((line) => context.measureText(line).width)) + 16)
+    const boxHeight = lines.length * lineHeight + 12
+    const candidates = [
+      { left: x + radius + 8, top: y - boxHeight * 0.5 },
+      { left: x - boxWidth - radius - 8, top: y - boxHeight * 0.5 },
+      { left: x - boxWidth * 0.2, top: y - boxHeight - radius - 8 },
+      { left: x - boxWidth * 0.2, top: y + radius + 8 }
+    ]
+
+    for (const candidate of candidates) {
+      if (!canPlaceLabel(candidate.left, candidate.top, boxWidth, boxHeight)) {
+        continue
+      }
+      claimLabel(candidate.left, candidate.top, boxWidth, boxHeight)
+      context.fillStyle = 'rgba(255,255,255,0.94)'
+      context.strokeStyle = 'rgba(203,213,225,0.92)'
+      context.lineWidth = 1
+      context.beginPath()
+      context.roundRect(candidate.left, candidate.top, boxWidth, boxHeight, 8)
+      context.fill()
+      context.stroke()
+      context.fillStyle = '#475569'
+      lines.forEach((line, lineIndex) => {
+        context.fillText(line, candidate.left + 8, candidate.top + 9 + (lineIndex + 1) * lineHeight - 4)
+      })
+      return true
+    }
+
+    return false
+  }
+
   preparedGraph.value.nodes.forEach((node, index) => {
     if (!visible[index]) return
     const sx = screenX[index]
@@ -440,20 +538,42 @@ const drawFrame = () => {
     const reveal = revealProgress[index]
     const isHovered = index === state.hoverIndex
     const isSelected = index === selectedIndex
-    const isNeighbor = state.hoverIndex >= 0
-      && (preparedGraph.value.linksByNode.get(index) || []).some((linkIndex) => hoveredLinks.has(linkIndex))
+    const isFocusedNeighbor = focusRelationState.neighborIndexes.has(index)
+    const isSelectedNeighbor = selectedRelationState.neighborIndexes.has(index)
+    const isSemanticSelectedNeighbor = selectedRelationState.semanticNeighborIndexes.has(index)
+    const isFocusNode = index === focusIndex
 
     const baseRadius = 2.8 + Math.min(node.linkCount * 0.18, 2.8)
-    const radius = Math.max(1.2, baseRadius * Math.min(state.zoom, 2.2) * (0.55 + reveal * 0.45) + (isSelected ? 1.8 : 0))
+    const radiusBoost = isSelected ? 1.8 : isFocusNode ? 1.1 : isFocusedNeighbor ? 0.7 : 0
+    const radius = Math.max(1.2, baseRadius * Math.min(state.zoom, 2.2) * (0.55 + reveal * 0.45) + radiusBoost)
 
     context.beginPath()
     context.arc(sx, sy, radius, 0, Math.PI * 2)
     context.fillStyle = node.heatColor
-    context.globalAlpha = (isSelected ? 1 : isHovered ? 1 : isNeighbor ? 0.92 : state.hoverIndex >= 0 ? 0.08 : 0.42 + Math.min(node.linkCount * 0.04, 0.45)) * reveal
-    context.shadowColor = isSelected || isHovered ? node.heatColor : 'transparent'
-    context.shadowBlur = isSelected ? 18 : isHovered ? 14 : 0
+    context.globalAlpha = (
+      focusIndex >= 0
+        ? isSelected || isHovered || isFocusNode
+          ? 1
+          : isFocusedNeighbor
+            ? 0.98
+            : isSelectedNeighbor
+              ? 0.46
+              : 0.08
+        : 0.42 + Math.min(node.linkCount * 0.04, 0.45)
+    ) * reveal
+    context.shadowColor = isSelected || isHovered || isFocusedNeighbor ? node.heatColor : 'transparent'
+    context.shadowBlur = isSelected ? 18 : isHovered ? 14 : isFocusedNeighbor ? 9 : 0
     context.fill()
     context.shadowBlur = 0
+
+    if (isFocusedNeighbor && !isSelected && !isHovered) {
+      context.beginPath()
+      context.arc(sx, sy, radius + 4, 0, Math.PI * 2)
+      context.strokeStyle = 'rgba(15,23,42,0.24)'
+      context.lineWidth = 1.1
+      context.globalAlpha = 0.72 * reveal
+      context.stroke()
+    }
 
     if (isSelected) {
       context.beginPath()
@@ -474,7 +594,25 @@ const drawFrame = () => {
 
     context.globalAlpha = 1
 
-    const shouldShowLabel = reveal > 0.72 && (isSelected || isHovered || (props.showLabels && (state.zoom > 0.72 || node.degree >= 5 || node.factCount >= 6)))
+    const shouldShowRelatedLabel = reveal > 0.72 && selectedIndex >= 0 && isSemanticSelectedNeighbor && !isSelected && !isHovered
+    if (shouldShowRelatedLabel) {
+      drawRelatedNodeLabel(node, sx, sy, radius)
+    }
+
+    const shouldKeepInlineName = props.showLabels && (
+      isSelectedNeighbor
+      || state.zoom > 0.72
+      || node.degree >= 5
+      || node.factCount >= 6
+    )
+    const shouldShowLabel = reveal > 0.72 && (
+      isSelected
+      || isHovered
+      || (
+        !shouldShowRelatedLabel
+        && shouldKeepInlineName
+      )
+    )
     if (shouldShowLabel) {
       drawNodeLabel(node, sx + radius + 6, sy + 4, radius, isHovered, isSelected)
     }

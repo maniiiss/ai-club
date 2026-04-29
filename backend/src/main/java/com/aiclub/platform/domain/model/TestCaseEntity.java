@@ -52,6 +52,20 @@ public class TestCaseEntity {
     @Column(name = "sort_order", nullable = false)
     private Integer sortOrder = 0;
 
+    /**
+     * 当前测试用例的自动化方式。
+     * V1 仅区分手工用例与 Playwright 自动化用例。
+     */
+    @Column(name = "automation_type", nullable = false, length = 30)
+    private String automationType = "MANUAL";
+
+    /**
+     * 给脚本生成器的补充提示。
+     * 支持用自然语言或简单键值对描述路径、断言文本等信息。
+     */
+    @Column(name = "automation_hint", nullable = false, length = 2000)
+    private String automationHint = "";
+
     @OneToMany(mappedBy = "testCase", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("stepNo ASC, id ASC")
     private List<TestCaseStepEntity> steps = new ArrayList<>();
@@ -144,6 +158,22 @@ public class TestCaseEntity {
 
     public void setSortOrder(Integer sortOrder) {
         this.sortOrder = sortOrder;
+    }
+
+    public String getAutomationType() {
+        return automationType;
+    }
+
+    public void setAutomationType(String automationType) {
+        this.automationType = automationType;
+    }
+
+    public String getAutomationHint() {
+        return automationHint;
+    }
+
+    public void setAutomationHint(String automationHint) {
+        this.automationHint = automationHint;
     }
 
     public List<TestCaseStepEntity> getSteps() {

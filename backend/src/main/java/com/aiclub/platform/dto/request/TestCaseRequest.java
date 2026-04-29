@@ -21,6 +21,10 @@ public record TestCaseRequest(
         @Size(max = 20000, message = "备注长度不能超过20000")
         String remarks,
         Integer sortOrder,
+        @Size(max = 30, message = "自动化类型长度不能超过30")
+        String automationType,
+        @Size(max = 2000, message = "自动化提示长度不能超过2000")
+        String automationHint,
         List<@Valid TestCaseStepRequest> steps
 ) {
 }

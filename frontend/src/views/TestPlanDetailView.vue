@@ -10,6 +10,12 @@
         <div>
           <h1 :title="plan?.name || '测试计划'">{{ plan?.name || '测试计划' }}</h1>
         </div>
+        <div class="detail-hero-actions">
+          <button class="detail-hero-action-button" type="button" @click="automationDialogVisible = true">
+            <el-icon><Finished /></el-icon>
+            <span>自动化测试</span>
+          </button>
+        </div>
       </div>
 
       <div class="detail-hero-meta">
@@ -268,6 +274,88 @@
       </template>
     </section>
 
+    <el-dialog
+      v-model="automationDialogVisible"
+      width="720px"
+      class="automation-detail-dialog"
+      align-center
+      destroy-on-close
+    >
+      <template #header>
+        <PlatformDialogHeader
+          title="自动化测试"
+          subtitle="针对平台内项目仓库生成或执行 Playwright 自动化脚本，结果会回写到当前测试计划。"
+          :icon="Finished"
+        />
+      </template>
+
+      <div class="automation-card">
+        <div class="automation-card-grid">
+          <div class="automation-card-field">
+            <span class="automation-card-label">自动化仓库</span>
+            <div class="automation-card-content">
+              <el-select
+                v-model="automationBindingId"
+                :disabled="!canManage"
+                clearable
+                filterable
+                placeholder="请选择 GitLab 绑定仓库"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="binding in projectGitlabBindings"
+                  :key="binding.id"
+                  :label="binding.gitlabProjectPath || binding.gitlabProjectRef"
+                  :value="binding.id"
+                />
+              </el-select>
+            </div>
+          </div>
+          <div class="automation-card-field">
+            <span class="automation-card-label">目标分支</span>
+            <div class="automation-card-content">
+              <el-input
+                v-model="automationTargetBranch"
+                :disabled="!canManage"
+                placeholder="未填写时回退到仓库默认目标分支"
+              />
+            </div>
+          </div>
+          <div class="automation-card-field">
+            <span class="automation-card-label">自动化用例</span>
+            <div class="automation-card-content">
+              <span class="management-list-pill neutral">{{ automatedCaseCount }} 条</span>
+            </div>
+          </div>
+          <div class="automation-card-field">
+            <span class="automation-card-label">最近状态</span>
+            <div class="automation-card-content">
+              <span class="management-list-pill" :class="automationStatusTone(plan?.lastAutomationStatus)">{{ formatAutomationStatus(plan?.lastAutomationStatus) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="automation-card-meta">
+          <span>摘要：{{ plan?.lastAutomationSummary || '暂无自动化执行记录' }}</span>
+          <span>时间：{{ plan?.lastAutomationAt || '-' }}</span>
+          <a v-if="plan?.lastAutomationMrUrl" :href="plan.lastAutomationMrUrl" target="_blank" rel="noreferrer">最近 MR</a>
+          <button v-if="plan?.lastAutomationTaskId" type="button" @click="goToExecutionTask(plan.lastAutomationTaskId)">执行任务</button>
+        </div>
+
+        <div v-if="canManage" class="automation-card-actions">
+          <el-button :loading="automationSaving" @click="handleSaveAutomationConfig">保存自动化配置</el-button>
+          <el-button type="primary" :loading="automationGenerating" @click="handleGenerateAndRunAutomation">生成并验证自动化脚本</el-button>
+          <el-button type="success" plain :loading="automationRunning" @click="handleRunAutomation">执行已接入自动化</el-button>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="platform-dialog-footer">
+          <el-button @click="automationDialogVisible = false">关闭</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
     <el-drawer
       v-model="drawerVisible"
       :title="drawerTitle"
@@ -298,6 +386,11 @@
               <el-form-item label="优先级">
                 <el-select v-model="activeCase.priority" :disabled="!canManage" style="width: 100%">
                   <el-option v-for="option in priorityOptions" :key="option" :label="option" :value="option" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="自动化类型">
+                <el-select v-model="activeCase.automationType" :disabled="!canManage" style="width: 100%">
+                  <el-option v-for="option in automationTypeOptions" :key="option.value" :label="option.label" :value="option.value" />
                 </el-select>
               </el-form-item>
               <div />
@@ -352,6 +445,22 @@
 
           <section class="form-section">
             <div class="form-section-head">
+              <div class="form-section-title">自动化提示</div>
+              <div class="form-section-subtitle">支持填写“页面路径 / 就绪选择器 / 断言文本”等简单键值对，用于模板生成脚本。</div>
+            </div>
+            <el-form-item label="自动化提示">
+              <el-input
+                v-model="activeCase.automationHint"
+                :disabled="!canManage"
+                type="textarea"
+                :rows="4"
+                placeholder="例如：页面路径: /login&#10;就绪选择器: [data-testid=&quot;login-form&quot;]&#10;断言文本: 登录"
+              />
+            </el-form-item>
+          </section>
+
+          <section class="form-section">
+            <div class="form-section-head">
               <div class="form-section-title">备注</div>
               <div class="form-section-subtitle">补充环境说明、风险提示或数据准备要求。</div>
             </div>
@@ -382,10 +491,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, ArrowRight, Delete, Finished, Plus, RefreshRight, Right, Search } from '@element-plus/icons-vue'
 import CompactSelectMenu, { type CompactSelectOption } from '@/components/CompactSelectMenu.vue'
-import { getTestPlanDetail, updateTestPlan } from '@/api/platform'
+import { generateAndRunTestPlanAutomation, getTestPlanDetail, runTestPlanAutomation, updateTestPlan } from '@/api/platform'
+import { listGitlabBindingOptions } from '@/api/gitlab'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
-import type { TestPlanItem } from '@/types/platform'
+import type { ProjectGitlabBindingItem, TestPlanItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface StepForm {
@@ -414,6 +525,10 @@ interface CaseForm {
   precondition: string
   /** 用例备注。 */
   remarks: string
+  /** 当前用例是否参与自动化模板生成。 */
+  automationType: string
+  /** 给模板生成器的附加提示。 */
+  automationHint: string
   /** 用例排序序号。 */
   sortOrder: number
   /** 当前用例下的测试步骤。 */
@@ -435,12 +550,25 @@ const statusSelectOptions: CompactSelectOption[] = [
 ]
 const caseTypeOptions = ['功能测试', '接口测试', '回归测试', '冒烟测试', '兼容性测试']
 const priorityOptions = ['P0', 'P1', 'P2', 'P3']
+const AUTOMATION_TYPE_MANUAL = '手工'
+const AUTOMATION_TYPE_PLAYWRIGHT = '自动化'
+const automationTypeOptions = [
+  { label: '手工', value: AUTOMATION_TYPE_MANUAL },
+  { label: '自动化（Playwright）', value: AUTOMATION_TYPE_PLAYWRIGHT }
+]
 
 const plan = ref<TestPlanItem | null>(null)
 const cases = ref<CaseForm[]>([])
 const saving = ref(false)
+const automationSaving = ref(false)
+const automationGenerating = ref(false)
+const automationRunning = ref(false)
+const automationDialogVisible = ref(false)
 const drawerVisible = ref(false)
 const activeCaseIndex = ref<number | null>(null)
+const gitlabBindingOptions = ref<ProjectGitlabBindingItem[]>([])
+const automationBindingId = ref<number | null>(null)
+const automationTargetBranch = ref('')
 
 const pagination = reactive({
   page: 1,
@@ -449,6 +577,18 @@ const pagination = reactive({
 const caseKeyword = ref('')
 
 const createLocalId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+const normalizeAutomationType = (value?: string | null) => {
+  const normalized = String(value || '').trim()
+  if (normalized === '自动化' || normalized === 'Playwright自动化' || normalized === 'Playwright 自动化' || normalized.toUpperCase() === 'PLAYWRIGHT') {
+    return AUTOMATION_TYPE_PLAYWRIGHT
+  }
+  return AUTOMATION_TYPE_MANUAL
+}
+
+const automatedCaseCount = computed(() => cases.value.filter((item) => normalizeAutomationType(item.automationType) === AUTOMATION_TYPE_PLAYWRIGHT).length)
+const projectGitlabBindings = computed(() =>
+  gitlabBindingOptions.value.filter((item) => item.projectId === plan.value?.projectId && item.enabled)
+)
 
 /**
  * 统一把接口返回值收敛为字符串，避免历史空值导致详情页渲染时直接报错。
@@ -594,6 +734,8 @@ const createCase = (): CaseForm => ({
   priority: 'P2',
   precondition: '',
   remarks: '',
+  automationType: AUTOMATION_TYPE_MANUAL,
+  automationHint: '',
   sortOrder: cases.value.length,
   steps: [createStep()]
 })
@@ -620,6 +762,8 @@ const fillCases = (detail: TestPlanItem) => {
     priority: normalizeText(item.priority, 'P2') || 'P2',
     precondition: normalizeText(item.precondition),
     remarks: normalizeText(item.remarks),
+    automationType: normalizeAutomationType(normalizeText(item.automationType, AUTOMATION_TYPE_MANUAL)),
+    automationHint: normalizeText(item.automationHint),
     sortOrder: item.sortOrder ?? index,
     steps: Array.isArray(item.steps) && item.steps.length
       ? item.steps.map((step, stepIndex) => ({
@@ -631,6 +775,11 @@ const fillCases = (detail: TestPlanItem) => {
       : [createStep()]
   }))
   syncOrder()
+}
+
+const syncAutomationConfig = (detail: TestPlanItem) => {
+  automationBindingId.value = detail.automationBindingId
+  automationTargetBranch.value = detail.automationTargetBranch || ''
 }
 
 const loadPlan = async () => {
@@ -646,6 +795,7 @@ const loadPlan = async () => {
     const detail = await getTestPlanDetail(planId)
     plan.value = detail
     fillCases(detail)
+    syncAutomationConfig(detail)
     if (activeCaseIndex.value !== null && activeCaseIndex.value >= cases.value.length) {
       activeCaseIndex.value = cases.value.length ? cases.value.length - 1 : null
     }
@@ -664,6 +814,8 @@ const buildPayloadCases = () => {
     precondition: string
     remarks: string
     sortOrder: number
+    automationType: string
+    automationHint: string
     steps: Array<{ stepNo: number; action: string; expectedResult: string }>
   }> = []
 
@@ -712,6 +864,8 @@ const buildPayloadCases = () => {
       precondition,
       remarks,
       sortOrder: payloadCases.length,
+      automationType: normalizeAutomationType(item.automationType),
+      automationHint: normalizeText(item.automationHint).trim(),
       steps
     })
   }
@@ -777,6 +931,8 @@ const handleSave = async () => {
       iterationId: plan.value.iterationId as number,
       status: plan.value.status,
       description: plan.value.description,
+      automationBindingId: automationBindingId.value,
+      automationTargetBranch: automationTargetBranch.value.trim() || null,
       cases: buildPayloadCases()
     })
     ElMessage.success('测试用例已保存')
@@ -807,6 +963,8 @@ const handlePlanStatusChange = async (status: string) => {
       iterationId: plan.value.iterationId,
       status,
       description: plan.value.description,
+      automationBindingId: automationBindingId.value,
+      automationTargetBranch: automationTargetBranch.value.trim() || null,
       cases: buildPayloadCases()
     })
     plan.value.status = status
@@ -845,10 +1003,131 @@ const goBack = async () => {
   await router.push({ name: 'tests' })
 }
 
+const formatAutomationStatus = (status?: string | null) => {
+  const normalized = String(status || '').trim().toUpperCase()
+  if (normalized === 'PENDING') return '待执行'
+  if (normalized === 'SUCCESS') return '成功'
+  if (normalized === 'FAILED') return '失败'
+  return '未配置'
+}
+
+const automationStatusTone = (status?: string | null) => {
+  const normalized = String(status || '').trim().toUpperCase()
+  if (normalized === 'SUCCESS') return 'success'
+  if (normalized === 'FAILED') return 'danger'
+  if (normalized === 'PENDING') return 'warning'
+  return 'neutral'
+}
+
+const handleSaveAutomationConfig = async () => {
+  if (!plan.value) {
+    return
+  }
+  automationSaving.value = true
+  try {
+    await updateTestPlan(plan.value.id, {
+      name: plan.value.name,
+      projectId: plan.value.projectId,
+      iterationId: plan.value.iterationId as number,
+      status: plan.value.status,
+      description: plan.value.description,
+      automationBindingId: automationBindingId.value,
+      automationTargetBranch: automationTargetBranch.value.trim() || null,
+      cases: buildPayloadCases()
+    })
+    ElMessage.success('自动化配置已保存')
+    await loadPlan()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '保存自动化配置失败')
+    throw error
+  } finally {
+    automationSaving.value = false
+  }
+}
+
+const ensureAutomationConfigReady = async () => {
+  if (!plan.value) {
+    throw new Error('测试计划不存在')
+  }
+  if (!automationBindingId.value) {
+    throw new Error('请先选择自动化仓库')
+  }
+  if (
+    automationBindingId.value !== plan.value.automationBindingId
+    || (automationTargetBranch.value || '') !== (plan.value.automationTargetBranch || '')
+  ) {
+    await handleSaveAutomationConfig()
+  }
+}
+
+const handleGenerateAndRunAutomation = async () => {
+  if (!plan.value) {
+    return
+  }
+  if (automatedCaseCount.value <= 0) {
+    ElMessage.warning('请先把至少一条测试用例标记为“自动化”')
+    return
+  }
+  automationGenerating.value = true
+  try {
+    await ensureAutomationConfigReady()
+    const task = await generateAndRunTestPlanAutomation(plan.value.id)
+    ElMessage.success('自动化生成与验证任务已创建')
+    await loadPlan()
+    await router.push({ name: 'execution-task-detail', params: { executionTaskId: task.id } })
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || error?.message || '创建自动化生成任务失败')
+  } finally {
+    automationGenerating.value = false
+  }
+}
+
+const handleRunAutomation = async () => {
+  if (!plan.value) {
+    return
+  }
+  if (automatedCaseCount.value <= 0) {
+    ElMessage.warning('请先把至少一条测试用例标记为“自动化”')
+    return
+  }
+  automationRunning.value = true
+  try {
+    await ensureAutomationConfigReady()
+    const task = await runTestPlanAutomation(plan.value.id)
+    ElMessage.success('自动化执行任务已创建')
+    await loadPlan()
+    await router.push({ name: 'execution-task-detail', params: { executionTaskId: task.id } })
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || error?.message || '创建自动化执行任务失败')
+  } finally {
+    automationRunning.value = false
+  }
+}
+
+const goToExecutionTask = async (executionTaskId: number) => {
+  await router.push({ name: 'execution-task-detail', params: { executionTaskId } })
+}
+
 watch(
   () => route.params.planId,
   async () => {
     await loadPlan()
+  },
+  { immediate: true }
+)
+
+watch(
+  () => plan.value?.projectId,
+  async (projectId) => {
+    if (!projectId || !canManage.value) {
+      gitlabBindingOptions.value = []
+      return
+    }
+    try {
+      gitlabBindingOptions.value = await listGitlabBindingOptions()
+    } catch (error: any) {
+      ElMessage.error(error?.response?.data?.message || '加载 GitLab 绑定失败')
+    }
   },
   { immediate: true }
 )
@@ -874,6 +1153,100 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+}
+
+.detail-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.detail-hero-action-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(var(--app-primary-container-rgb), 0.16);
+  color: var(--app-primary);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.detail-hero-action-button:hover {
+  background: rgba(var(--app-primary-container-rgb), 0.24);
+  transform: translateY(-1px);
+}
+
+.automation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.automation-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+.automation-card-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.automation-card-label {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.automation-card-content {
+  min-width: 0;
+}
+
+.automation-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.automation-card-meta span,
+.automation-card-meta a,
+.automation-card-meta button {
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 11px;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+.automation-card-meta button {
+  cursor: pointer;
+  font-weight: 800;
+  color: #0f766e;
+}
+
+.automation-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.automation-detail-dialog :deep(.el-dialog__body) {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 8px;
 }
 
 .step-section-head {
@@ -1127,6 +1500,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1024px) {
+  .automation-card-grid,
   .two-columns,
   .step-fields {
     grid-template-columns: 1fr;
@@ -1139,6 +1513,10 @@ onBeforeUnmount(() => {
   .detail-hero-heading {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .detail-hero-actions {
+    width: 100%;
   }
 
   .step-row {
