@@ -195,7 +195,18 @@
 
       <section class="workspace-stats">
         <article v-for="item in workspaceStatCards" :key="item.label" class="workspace-stat-card">
-          <span class="workspace-stat-label">{{ item.label }}</span>
+          <div class="workspace-stat-head">
+            <span class="workspace-stat-label">{{ item.label }}</span>
+            <el-tooltip placement="right" effect="light" popper-class="workspace-stat-tooltip-popper">
+              <template #content>
+                <div class="workspace-stat-tooltip">
+                  <div class="workspace-stat-tooltip-title">{{ item.label }}计算逻辑</div>
+                  <div v-for="line in item.logicLines" :key="line" class="workspace-stat-tooltip-line">{{ line }}</div>
+                </div>
+              </template>
+              <button class="workspace-stat-help" type="button" :aria-label="`查看${item.label}计算逻辑`">?</button>
+            </el-tooltip>
+          </div>
           <div class="workspace-stat-value-row">
             <strong>{{ item.value }}</strong>
             <span v-if="item.highlight" class="workspace-stat-highlight">{{ item.highlight }}</span>
@@ -245,7 +256,7 @@
                     <div class="workspace-filter-field">
                       <label>状态</label>
                     <el-select v-model="workItemFilters.status" clearable placeholder="状态" style="width: 100%" :teleported="false">
-                        <el-option v-for="item in taskStatusOptions" :key="item" :label="item" :value="item" />
+                        <el-option v-for="item in workItemFilterStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
                       </el-select>
                     </div>
                     <div class="workspace-filter-field">
@@ -330,7 +341,7 @@
                   <div class="workspace-filter-field">
                     <label>状态</label>
                   <el-select v-model="workItemFilters.status" clearable placeholder="状态" style="width: 100%" :teleported="false">
-                      <el-option v-for="item in taskStatusOptions" :key="item" :label="item" :value="item" />
+                      <el-option v-for="item in workItemFilterStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
                     </el-select>
                   </div>
                   <div class="workspace-filter-field">
@@ -436,7 +447,7 @@
                 <td class="workspace-col-main" data-label="标题">
                   <div class="workspace-primary-cell">
                     <div class="workspace-primary-copy">
-                      <button class="workspace-title-button" type="button" @click="openWorkItemDetailFromRow(row)">{{ row.name }}</button>
+                      <button class="workspace-title-button" type="button" :title="row.name" @click="openWorkItemDetailFromRow(row)">{{ row.name }}</button>
                       <div v-if="row.externalSource" class="workspace-primary-source-row">
                         <span class="workspace-source-pill">{{ formatExternalSourceLabel(row.externalSource) }}</span>
                         <a
@@ -456,14 +467,14 @@
                   <CompactSelectMenu
                     v-if="canEditInlineSelectField(row)"
                     :model-value="row.status || null"
-                    :options="taskStatusSelectOptions"
+                    :options="getWorkItemStatusSelectOptions(row.workItemType)"
                     class="status-select"
                     variant="inline-pill"
                     :popover-width="132"
                     :disabled="statusUpdatingId === row.id"
                     @change="handleQuickStatusChange(row, String($event))"
                   />
-                  <span v-else class="workspace-status-pill" :class="workItemTone(row.status)">{{ formatTaskStatusLabel(row) }}</span>
+                  <span v-else class="workspace-status-pill" :class="workItemTone(row)">{{ formatTaskStatusLabel(row) }}</span>
                 </td>
                 <td class="center workspace-col-hours" data-label="预估工时">
                   <span class="workspace-hours-pill" :class="{ empty: row.workHours == null }">{{ formatInlineWorkHours(row.workHours) }}</span>
@@ -564,7 +575,7 @@
                       <CompactSelectMenu
                         v-if="isInlineEditorActive(row.id, 'status')"
                         :model-value="row.status || null"
-                        :options="taskStatusSelectOptions"
+                        :options="getWorkItemStatusSelectOptions(row.workItemType)"
                         class="status-select"
                         variant="inline-pill"
                         :popover-width="132"
@@ -580,9 +591,9 @@
                         :disabled="statusUpdatingId === row.id"
                         @click="openInlineEditor(row, 'status')"
                       >
-                        <span class="workspace-status-pill" :class="workItemTone(row.status)">{{ formatTaskStatusLabel(row) }}</span>
+                      <span class="workspace-status-pill" :class="workItemTone(row)">{{ formatTaskStatusLabel(row) }}</span>
                       </button>
-                      <span v-else class="workspace-status-pill" :class="workItemTone(row.status)">{{ formatTaskStatusLabel(row) }}</span>
+                      <span v-else class="workspace-status-pill" :class="workItemTone(row)">{{ formatTaskStatusLabel(row) }}</span>
 
                       <CompactSelectMenu
                         v-if="isInlineEditorActive(row.id, 'priority')"
@@ -882,7 +893,7 @@
                 <el-form-item prop="status" class="work-item-form-item-plain">
                   <CompactSelectMenu
                     :model-value="workItemForm.status"
-                    :options="taskStatusSelectOptions"
+                    :options="getWorkItemStatusSelectOptions(workItemForm.workItemType)"
                     class="status-select work-item-status-select"
                     size="default"
                     :disabled="!canManageWorkItem"
@@ -1263,6 +1274,7 @@ import {
   deleteIteration,
   deleteProjectRequirementModule,
   deleteTask,
+  getProjectWorkItemStats,
   getTaskDetail,
   getProjectBurndown,
   getIterationBoard,
@@ -1279,9 +1291,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
 import {
-  formatRequirementStatusLabel,
-  isRequirementFullyPassed,
-  isTaskWorkHoursUnlocked
+  isRequirementFullyPassed
 } from '@/utils/requirementReview'
 import { uploadMarkdownImage } from '@/utils/taskImageUpload'
 import {
@@ -1292,6 +1302,15 @@ import {
 } from '@/utils/requirementTemplate'
 import { resolveAssetUrl } from '@/utils/asset'
 import { renderMarkdownToHtml } from '@/utils/markdown'
+import {
+  formatWorkItemStatusLabel,
+  getAllWorkItemStatusOptions,
+  getDefaultWorkItemStatus,
+  getWorkItemStatusOptions,
+  getWorkItemStatusTone,
+  isWorkItemCompletedStatus,
+  isWorkItemStatusAllowed
+} from '@/utils/workItemStatus'
 import type {
   GiteeMilestoneItem,
   GiteeWorkItemSyncLogItem,
@@ -1301,6 +1320,7 @@ import type {
   IterationItem,
   ProjectBurndownItem,
   ProjectGiteeBindingItem,
+  ProjectWorkItemStatsItem,
   ProjectRequirementModuleOptionItem,
   ExecutionTaskItem,
   TaskCommentItem,
@@ -1354,7 +1374,6 @@ interface CommentForm {
   content: string
 }
 
-const BASE_TASK_STATUS_OPTIONS = ['草稿', '待开始', '处理中', '已完成', '已阻塞']
 const BASE_PRIORITY_OPTIONS = ['高', '中', '低']
 const route = useRoute()
 const router = useRouter()
@@ -1437,17 +1456,9 @@ const iterationSyncSubmitting = ref(false)
 const iterationSyncResult = ref<GiteeWorkItemSyncResultItem | null>(null)
 const iterationSyncLogs = ref<GiteeWorkItemSyncLogItem[]>([])
 const burndown = ref<ProjectBurndownItem | null>(null)
+const workItemStats = ref<ProjectWorkItemStatsItem | null>(null)
 const iterationProgressMap = ref<Record<number, IterationProgressSummary>>({})
 const unplannedProgress = ref<IterationProgressSummary | null>(null)
-const currentIterationProgress = computed(() => {
-  if (selectedScope.type === 'unplanned') {
-    return unplannedProgress.value
-  }
-  if (!selectedScope.iterationId) {
-    return null
-  }
-  return iterationProgressMap.value[selectedScope.iterationId] || null
-})
 const burndownDialogVisible = ref(false)
 const statusUpdatingId = ref<number | null>(null)
 const boardLoading = ref(false)
@@ -1531,7 +1542,7 @@ const workItemForm = reactive<WorkItemForm>({
   workItemCode: '',
   name: '',
   workItemType: '任务',
-  status: '草稿',
+  status: getDefaultWorkItemStatus('任务'),
   priority: '中',
   workHours: null,
   planStartDate: null,
@@ -1613,8 +1624,12 @@ const normalizeWorkItemWorkHoursInput = () => {
   workItemWorkHoursInput.value = workItemForm.workHours == null ? '' : String(workItemForm.workHours)
 }
 
-const workItemStatusDisplay = computed(() => currentDialogWorkItem.value ? formatTaskStatusLabel(currentDialogWorkItem.value) : workItemForm.status || '草稿')
-const workItemStatusTone = computed(() => workItemTone(workItemForm.status))
+const workItemStatusDisplay = computed(() =>
+  currentDialogWorkItem.value
+    ? formatTaskStatusLabel(currentDialogWorkItem.value)
+    : formatWorkItemStatusLabel(workItemForm.workItemType, workItemForm.status)
+)
+const workItemStatusTone = computed(() => workItemTone(workItemForm))
 /**
  * 工作项编辑器改成一个时间范围选择器，但提交时仍沿用后端既有的开始/结束日期字段。
  */
@@ -1814,7 +1829,7 @@ const handleSyncCurrentIterationWorkItems = async () => {
     } else {
       ElMessage.success(result.summaryMessage || '工作项同步成功')
     }
-    await Promise.all([loadBoard(), loadCurrentIterationGiteeBinding(), loadWorkItems(), loadIterationSyncLogs()])
+    await Promise.all([loadBoard(), loadCurrentIterationGiteeBinding(), loadWorkItems(), loadWorkItemStats(), loadIterationSyncLogs()])
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '工作项同步失败')
   } finally {
@@ -1837,18 +1852,69 @@ const currentScopeDescription = computed(() => {
 })
 
 const workspaceStatCards = computed(() => {
-  const totalItems = currentIterationProgress.value?.total ?? workItems.value.length
-  const completed = currentIterationProgress.value?.completed ?? workItems.value.filter((item) => isCompletedStatus(item.status)).length
-  const defects = workItems.value.filter((item) => item.workItemType === '缺陷').length
-  const openTasks = workItems.value.filter((item) => !isCompletedStatus(item.status)).length
+  const totalItems = workItemStats.value?.totalCount ?? 0
+  const completed = workItemStats.value?.completedCount ?? 0
+  const defects = workItemStats.value?.defectCount ?? 0
+  const openTasks = workItemStats.value?.openCount ?? 0
   const velocity = totalItems ? Number(((completed / Math.max(totalItems, 1)) * 50).toFixed(1)) : 0
-  const burnRate = currentIterationProgress.value?.percent ?? 0
+  const burnRate = workItemStats.value?.completionRate ?? 0
+  const openRatio = totalItems ? Math.round((openTasks / totalItems) * 100) : 0
+
+  const completedRuleText = '完成态规则：需求/缺陷按“通过”，任务按“已完成”统计。'
+  const velocityFormulaText = totalItems
+    ? `当前值：${completed} / ${totalItems} × 50 = ${velocity.toFixed(1)}`
+    : '当前值：筛选结果总数为 0，迭代速度按 0 计算。'
+  const openFormulaText = totalItems
+    ? `当前值：${totalItems} - ${completed} = ${openTasks}，未完成占比 ${openRatio}%`
+    : '当前值：筛选结果总数为 0，未完成项按 0 计算。'
+  const defectFormulaText = `当前值：当前筛选结果中工作项类型为“缺陷”的共有 ${defects} 项。`
+  const burnRateFormulaText = totalItems
+    ? `当前值：${completed} / ${totalItems} × 100 = ${burnRate}%`
+    : '当前值：筛选结果总数为 0，燃尽率按 0% 计算。'
 
   return [
-    { label: '迭代速度', value: velocity.toFixed(1), highlight: completed ? `+${completed}%` : '', progress: Math.min(100, Math.round(velocity * 2)), progressTone: 'primary', subtext: '' },
-    { label: '未完成项', value: String(openTasks), highlight: '', progress: undefined, progressTone: '', subtext: `${totalItems ? Math.round((openTasks / totalItems) * 100) : 0}% 处理中`, dots: 0, activeDots: 0 },
-    { label: '缺陷数', value: String(defects), highlight: defects > 0 ? '风险偏高' : '', progress: Math.min(100, defects * 8), progressTone: 'danger', subtext: '', dots: 0, activeDots: 0 },
-    { label: '燃尽率', value: `${burnRate}%`, highlight: '', progress: undefined, progressTone: '', subtext: '', dots: 4, activeDots: Math.max(1, Math.round(burnRate / 25)) }
+    {
+      label: '迭代速度',
+      value: velocity.toFixed(1),
+      highlight: completed ? `+${completed}项` : '',
+      progress: Math.min(100, Math.round(velocity * 2)),
+      progressTone: 'primary',
+      subtext: '',
+      logicLines: ['口径：当前筛选结果中的完成项数 / 总项数，再乘以 50。', completedRuleText, velocityFormulaText]
+    },
+    {
+      label: '未完成项',
+      value: String(openTasks),
+      highlight: '',
+      progress: undefined,
+      progressTone: '',
+      subtext: `${openRatio}% 未完成占比`,
+      dots: 0,
+      activeDots: 0,
+      logicLines: ['口径：当前筛选结果总数减去完成项数。', completedRuleText, openFormulaText]
+    },
+    {
+      label: '缺陷数',
+      value: String(defects),
+      highlight: defects > 0 ? '风险偏高' : '',
+      progress: Math.min(100, defects * 8),
+      progressTone: 'danger',
+      subtext: '',
+      dots: 0,
+      activeDots: 0,
+      logicLines: ['口径：当前筛选结果中，工作项类型等于“缺陷”的数量。', defectFormulaText]
+    },
+    {
+      label: '燃尽率',
+      value: `${burnRate}%`,
+      highlight: '',
+      progress: undefined,
+      progressTone: '',
+      subtext: '',
+      dots: 4,
+      activeDots: totalItems ? Math.max(1, Math.round(burnRate / 25)) : 0,
+      logicLines: ['口径：当前筛选结果中的完成项数 / 总项数，再乘以 100。', completedRuleText, burnRateFormulaText]
+    }
   ]
 })
 
@@ -1924,27 +1990,14 @@ const workItemTypeTone = (type?: string | null) => {
   return 'task'
 }
 
-const workItemTone = (status?: string | null) => {
-  if (['进行中', '开发中', '处理中'].includes(status || '')) return 'running'
-  if (['已完成', '完成'].includes(status || '')) return 'done'
-  if (status === '已阻塞' || status === '阻塞') return 'blocked'
-  if (status === '待开始') return 'pending'
-  return 'draft'
-}
+const workItemTone = (task?: { workItemType?: string | null; status?: string | null } | null) =>
+  getWorkItemStatusTone(task?.workItemType, task?.status)
 
 const workspacePriorityTone = (priority?: string | null) => {
   if (!priority?.trim()) return 'none'
   if (priority === '高') return 'high'
   if (priority === '低') return 'low'
   return 'medium'
-}
-
-const resolveTaskStatusTone = (status?: string | null): CompactSelectOption['tone'] => {
-  if (['已完成', '完成'].includes(status || '')) return 'success'
-  if (['进行中', '开发中', '处理中'].includes(status || '')) return 'primary'
-  if (status === '待开始') return 'warning'
-  if (status === '已阻塞' || status === '阻塞') return 'danger'
-  return 'info'
 }
 
 const resolvePriorityTone = (priority?: string | null): CompactSelectOption['tone'] => {
@@ -2048,14 +2101,14 @@ const handleInlineSelectVisibleChange = (
   }
 }
 
-const isCompletedStatus = (status?: string | null) => status === '已完成' || status === '完成'
+const isCompletedStatus = (item: TaskItem) => isWorkItemCompletedStatus(item.workItemType, item.status)
 
 /**
  * 左侧迭代列表和顶部统计卡统一复用真实聚合结果，避免切换选中项时进度条出现假变化。
  */
 const buildIterationProgressSummary = (items: TaskItem[]): IterationProgressSummary => {
   const total = items.length
-  const completed = items.filter((item) => isCompletedStatus(item.status)).length
+  const completed = items.filter((item) => isCompletedStatus(item)).length
   return {
     total,
     completed,
@@ -2090,26 +2143,10 @@ const applyIterationProgressFromItems = (items: TaskItem[]) => {
   unplannedProgress.value = buildIterationProgressSummary(nextUnplannedItems)
 }
 
-const taskStatusOptions = computed(() => {
-  const values = new Set<string>(BASE_TASK_STATUS_OPTIONS)
-  for (const item of workItems.value) {
-    if (item.status?.trim()) {
-      values.add(item.status.trim())
-    }
-  }
-  if (currentDialogWorkItem.value?.status?.trim()) {
-    values.add(currentDialogWorkItem.value.status.trim())
-  }
-  return Array.from(values)
-})
+const workItemFilterStatusOptions = computed(() => getAllWorkItemStatusOptions())
 
-const taskStatusSelectOptions = computed<CompactSelectOption[]>(() =>
-  taskStatusOptions.value.map((item) => ({
-    label: item,
-    value: item,
-    tone: resolveTaskStatusTone(item)
-  }))
-)
+const getWorkItemStatusSelectOptions = (workItemType?: string | null): CompactSelectOption[] =>
+  getWorkItemStatusOptions(workItemType)
 
 const priorityOptions = computed(() => {
   const values = new Set<string>(BASE_PRIORITY_OPTIONS)
@@ -2182,13 +2219,14 @@ const resolveDefaultWorkItemType = (): WorkItemForm['workItemType'] => {
 }
 
 const resetWorkItemForm = () => {
+  const defaultWorkItemType = resolveDefaultWorkItemType()
   currentWorkItemId.value = null
   currentDialogWorkItem.value = null
   workItemDescriptionEditing.value = true
   workItemForm.workItemCode = ''
   workItemForm.name = ''
-  workItemForm.workItemType = resolveDefaultWorkItemType()
-  workItemForm.status = '草稿'
+  workItemForm.workItemType = defaultWorkItemType
+  workItemForm.status = getDefaultWorkItemStatus(defaultWorkItemType)
   workItemForm.priority = '中'
   workItemForm.workHours = null
   workItemWorkHoursInput.value = ''
@@ -2240,7 +2278,7 @@ const formatTaskStatusLabel = (task: TaskItem | null | undefined) => {
   if (!task) {
     return '-'
   }
-  return formatRequirementStatusLabel(task)
+  return formatWorkItemStatusLabel(task.workItemType, task.status)
 }
 
 // 将 Markdown 描述压平成单行摘要，避免需求文档把列表行高撑得过大。
@@ -2402,7 +2440,7 @@ const openTaskFromQuery = async (taskId?: number) => {
     selectedScope.type = task.iterationId ? 'iteration' : 'unplanned'
     selectedScope.iterationId = task.iterationId
     resetMobilePagination()
-    await loadWorkItems()
+    await refreshFilteredWorkItems()
     openEditWorkItemDialog(task)
     await syncWorkItemRouteQuery({
       iterationId: task.iterationId,
@@ -2541,14 +2579,14 @@ const selectUnplanned = async () => {
   selectedScope.type = 'unplanned'
   selectedScope.iterationId = null
   resetMobilePagination()
-  await Promise.all([loadCurrentIterationGiteeBinding(), loadWorkItems(), syncIterationQuery(null)])
+  await Promise.all([loadCurrentIterationGiteeBinding(), refreshFilteredWorkItems(), syncIterationQuery(null)])
 }
 
 const selectIteration = async (item: IterationItem) => {
   selectedScope.type = 'iteration'
   selectedScope.iterationId = item.id
   resetMobilePagination()
-  await Promise.all([loadCurrentIterationGiteeBinding(), loadWorkItems(), syncIterationQuery(item.id)])
+  await Promise.all([loadCurrentIterationGiteeBinding(), refreshFilteredWorkItems(), syncIterationQuery(item.id)])
 }
 
 const loadBoard = async () => {
@@ -2616,20 +2654,40 @@ const loadWorkItems = async () => {
   }
 }
 
+const loadWorkItemStats = async () => {
+  workItemStats.value = await getProjectWorkItemStats(projectId, {
+    iterationId: selectedScope.type === 'iteration' ? selectedScope.iterationId || undefined : undefined,
+    unplanned: selectedScope.type === 'unplanned' ? true : undefined,
+    workItemType: activeTypeTab.value,
+    keyword: keyword.value,
+    status: workItemFilters.status || undefined,
+    priority: workItemFilters.priority || undefined,
+    assigneeUserId: workItemFilters.assigneeUserId
+  })
+}
+
+const refreshFilteredWorkItems = async (reloadStats = true) => {
+  if (!reloadStats) {
+    await loadWorkItems()
+    return
+  }
+  await Promise.all([loadWorkItems(), loadWorkItemStats()])
+}
+
 const refreshBoardAndItems = async () => {
   await loadBoard()
-  await Promise.all([loadProjectGiteeBinding(), loadCurrentIterationGiteeBinding(), loadWorkItems()])
+  await Promise.all([loadProjectGiteeBinding(), loadCurrentIterationGiteeBinding(), loadWorkItems(), loadWorkItemStats()])
 }
 
 const handleTypeTabChange = async () => {
   resetMobilePagination()
-  await loadWorkItems()
+  await refreshFilteredWorkItems()
 }
 
 const handleFilterSearch = async () => {
   workItemFilterPopoverVisible.value = false
   resetMobilePagination()
-  await loadWorkItems()
+  await refreshFilteredWorkItems()
 }
 
 const handleFilterReset = async () => {
@@ -2640,7 +2698,7 @@ const handleFilterReset = async () => {
   keyword.value = ''
   activeTypeTab.value = '全部'
   resetMobilePagination()
-  await loadWorkItems()
+  await refreshFilteredWorkItems()
 }
 
 const handlePageSizeChange = async () => {
@@ -2936,7 +2994,7 @@ const updateInlineWorkItem = async (
       requirementTaskId: row.requirementTaskId
     })
     Object.assign(row, updated)
-    await Promise.all([loadBoard(), loadWorkItems()])
+    await Promise.all([loadBoard(), loadWorkItemStats(), loadWorkItems()])
     ElMessage.success('工作项已更新')
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '更新失败')
@@ -3003,7 +3061,7 @@ watch(
     selectedScope.type = 'iteration'
     selectedScope.iterationId = nextIterationId
     resetMobilePagination()
-    await Promise.all([loadCurrentIterationGiteeBinding(), loadWorkItems()])
+    await Promise.all([loadCurrentIterationGiteeBinding(), refreshFilteredWorkItems()])
   }
 )
 
@@ -3038,6 +3096,10 @@ watch(
 watch(
   () => workItemForm.workItemType,
   (workItemType, previousType) => {
+    if (!isWorkItemStatusAllowed(workItemType, workItemForm.status)) {
+      workItemForm.status = getDefaultWorkItemStatus(workItemType)
+    }
+
     if (workItemType === '需求') {
       // 用户切换到需求类型时，自动带出固定模板，并清空关联需求关系。
       workItemForm.requirementTaskId = null
@@ -3562,6 +3624,13 @@ onMounted(async () => {
   box-shadow: var(--app-shadow-soft);
 }
 
+.workspace-stat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .workspace-stat-label {
   display: block;
   color: var(--app-text-muted);
@@ -3569,6 +3638,36 @@ onMounted(async () => {
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.workspace-stat-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(var(--app-primary-rgb), 0.08);
+  color: var(--app-primary);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: help;
+  transition: background-color 0.18s ease, transform 0.18s ease;
+}
+
+.workspace-stat-help:hover,
+.workspace-stat-help:focus-visible {
+  background: rgba(var(--app-primary-rgb), 0.16);
+  transform: translateY(-1px);
+}
+
+.workspace-stat-help:focus-visible {
+  outline: 2px solid rgba(var(--app-primary-rgb), 0.28);
+  outline-offset: 2px;
 }
 
 .workspace-stat-value-row {
@@ -3618,6 +3717,25 @@ onMounted(async () => {
   color: var(--app-text-muted);
   font-size: 9px;
   font-weight: 700;
+}
+
+.workspace-stat-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 240px;
+}
+
+.workspace-stat-tooltip-title {
+  color: var(--app-text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.workspace-stat-tooltip-line {
+  color: var(--app-text-soft);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .workspace-stat-dots {
@@ -4017,29 +4135,34 @@ onMounted(async () => {
   text-transform: uppercase;
 }
 
-.workspace-status-pill.running {
+.workspace-status-pill.primary {
   background: rgba(199, 231, 255, 0.72);
   color: #004c6c;
 }
 
-.workspace-status-pill.done {
-  background: rgba(216, 240, 212, 0.82);
-  color: #2f6f3e;
-}
-
-.workspace-status-pill.blocked {
+.workspace-status-pill.danger {
   background: rgba(255, 218, 214, 0.86);
   color: #93000a;
 }
 
-.workspace-status-pill.pending {
+.workspace-status-pill.warning {
   background: rgba(255, 220, 195, 0.86);
   color: #a35100;
 }
 
-.workspace-status-pill.draft {
+.workspace-status-pill.info {
   background: rgba(231, 232, 233, 0.88);
   color: #64748b;
+}
+
+.workspace-status-pill.success {
+  background: rgba(216, 240, 212, 0.82);
+  color: #2f6f3e;
+}
+
+.workspace-status-pill.accent {
+  background: rgba(237, 233, 254, 0.92);
+  color: #6d28d9;
 }
 
 .workspace-priority-pill.high {
@@ -4383,6 +4506,11 @@ onMounted(async () => {
   color: #64748b;
 }
 
+.status-select :deep(.compact-select-trigger.variant-inline-pill.selected-tone-accent) {
+  background: rgba(237, 233, 254, 0.92);
+  color: #6d28d9;
+}
+
 .status-select :deep(.compact-select-trigger.variant-inline-pill:hover),
 .status-select :deep(.compact-select-trigger.variant-inline-pill.is-open) {
   transform: none;
@@ -4553,24 +4681,34 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
-.work-item-dialog-status-pill.running {
+.work-item-dialog-status-pill.primary {
   background: var(--app-info-soft);
   color: var(--app-info);
 }
 
-.work-item-dialog-status-pill.done {
-  background: var(--app-success-soft);
-  color: var(--app-success);
-}
-
-.work-item-dialog-status-pill.blocked {
+.work-item-dialog-status-pill.danger {
   background: var(--app-danger-soft);
   color: var(--app-danger);
 }
 
-.work-item-dialog-status-pill.backlog {
+.work-item-dialog-status-pill.warning {
+  background: rgba(255, 220, 195, 0.86);
+  color: #a35100;
+}
+
+.work-item-dialog-status-pill.info {
   background: var(--app-surface-muted);
   color: var(--app-text-muted);
+}
+
+.work-item-dialog-status-pill.success {
+  background: var(--app-success-soft);
+  color: var(--app-success);
+}
+
+.work-item-dialog-status-pill.accent {
+  background: rgba(237, 233, 254, 0.92);
+  color: #6d28d9;
 }
 
 .work-item-dialog-header-side {

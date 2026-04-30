@@ -19,6 +19,10 @@ public record TestPlanRequest(
         String status,
         @Size(max = 2000, message = "测试计划说明长度不能超过2000")
         String description,
+        @Size(max = 10, message = "测试计划开始日期格式长度不能超过10")
+        String startDate,
+        @Size(max = 10, message = "测试计划结束日期格式长度不能超过10")
+        String endDate,
         Long automationBindingId,
         @Size(max = 100, message = "自动化目标分支长度不能超过100")
         String automationTargetBranch,

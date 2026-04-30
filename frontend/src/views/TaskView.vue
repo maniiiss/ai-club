@@ -38,11 +38,7 @@
             <div class="task-filter-field">
               <label>状态</label>
               <el-select v-model="filters.status" clearable placeholder="状态" style="width: 100%" :teleported="false">
-                <el-option label="草稿" value="草稿" />
-                <el-option label="待开始" value="待开始" />
-                <el-option label="处理中" value="处理中" />
-                <el-option label="已完成" value="已完成" />
-                <el-option label="已阻塞" value="已阻塞" />
+                <el-option v-for="item in taskFilterStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
             </div>
             <div class="task-filter-actions">
@@ -351,11 +347,7 @@
         </el-form-item>
         <el-form-item label="状态" prop="status" class="compact-form-item">
           <el-select v-model="form.status" placeholder="请选择状态" style="width: 100%">
-            <el-option label="草稿" value="草稿" />
-            <el-option label="待开始" value="待开始" />
-            <el-option label="处理中" value="处理中" />
-            <el-option label="已完成" value="已完成" />
-            <el-option label="已阻塞" value="已阻塞" />
+            <el-option v-for="item in taskFormStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="form.workItemType === '需求'" label="原型链接" class="compact-form-item">
@@ -500,7 +492,6 @@ import {
   updateTask
 } from '@/api/platform'
 import {
-  formatRequirementStatusLabel,
   isRequirementFullyPassed
 } from '@/utils/requirementReview'
 import {
@@ -511,6 +502,14 @@ import {
 } from '@/utils/requirementTemplate'
 import { resolveAssetUrl } from '@/utils/asset'
 import { uploadMarkdownImage } from '@/utils/taskImageUpload'
+import {
+  formatWorkItemStatusLabel,
+  getAllWorkItemStatusOptions,
+  getDefaultWorkItemStatus,
+  getWorkItemStatusTone,
+  getWorkItemStatusOptions,
+  isWorkItemStatusAllowed
+} from '@/utils/workItemStatus'
 import { useAuthStore } from '@/stores/auth'
 import type { AgentItem, ProjectItem, TaskAgentRunItem, TaskItem, UserOptionItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
@@ -582,11 +581,12 @@ const filters = reactive({
   agentId: undefined as number | undefined
 })
 const taskFilterPopoverVisible = ref(false)
+const taskFilterStatusOptions = computed(() => getAllWorkItemStatusOptions())
 
 const form = reactive<TaskForm>({
   name: '',
   workItemType: '任务',
-  status: '草稿',
+  status: getDefaultWorkItemStatus('任务'),
   priority: '中',
   workHours: null,
   planStartDate: null,
@@ -603,6 +603,7 @@ const form = reactive<TaskForm>({
   iterationId: null,
   requirementTaskId: null
 })
+const taskFormStatusOptions = computed(() => getWorkItemStatusOptions(form.workItemType))
 
 const rules: FormRules<TaskForm> = {
   name: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],
@@ -662,7 +663,7 @@ const formatTaskStatusLabel = (task: TaskItem | null | undefined) => {
   if (!task) {
     return '-'
   }
-  return formatRequirementStatusLabel(task)
+  return formatWorkItemStatusLabel(task.workItemType, task.status)
 }
 
 const buildUserLabel = (item: UserOptionItem) => {
@@ -721,13 +722,7 @@ const taskPriorityTone = (priority?: string | null) => {
   return 'medium'
 }
 
-const taskStatusTone = (task: TaskItem) => {
-  const status = formatTaskStatusLabel(task)
-  if (['处理中', '进行中', '开发中'].includes(status)) return 'running'
-  if (['已完成', '完成', '测试通过', '开发通过'].includes(status)) return 'done'
-  if (['已阻塞', '阻塞'].includes(status)) return 'blocked'
-  return 'draft'
-}
+const taskStatusTone = (task: TaskItem) => getWorkItemStatusTone(task.workItemType, task.status)
 
 const formatTaskWorkHours = (value?: number | null) => (value == null ? '-' : `${value}h`)
 
@@ -832,11 +827,12 @@ const formatRunStatusLabel = (status?: string | null) => {
 }
 
 const resetForm = () => {
+  const defaultWorkItemType = '任务'
   currentId.value = null
   currentRequirementTask.value = null
   form.name = ''
-  form.workItemType = '任务'
-  form.status = '草稿'
+  form.workItemType = defaultWorkItemType
+  form.status = getDefaultWorkItemStatus(defaultWorkItemType)
   form.priority = '中'
   form.workHours = null
   form.planStartDate = null
@@ -1139,6 +1135,10 @@ const handleDelete = async (id: number) => {
 watch(
   () => form.workItemType,
   (workItemType, previousType) => {
+    if (!isWorkItemStatusAllowed(workItemType, form.status)) {
+      form.status = getDefaultWorkItemStatus(workItemType)
+    }
+
     if (workItemType === '需求') {
       form.requirementTaskId = null
       form.workHours = null
@@ -1633,24 +1633,34 @@ onMounted(async () => {
   color: #94a3b8;
 }
 
-.task-status-pill.running {
+.task-status-pill.primary {
   background: rgba(199, 231, 255, 0.72);
   color: #004c6c;
 }
 
-.task-status-pill.done {
-  background: rgba(216, 240, 212, 0.82);
-  color: #2f6f3e;
-}
-
-.task-status-pill.blocked {
+.task-status-pill.danger {
   background: rgba(255, 218, 214, 0.86);
   color: #93000a;
 }
 
-.task-status-pill.draft {
+.task-status-pill.info {
   background: rgba(231, 232, 233, 0.88);
   color: #64748b;
+}
+
+.task-status-pill.warning {
+  background: rgba(255, 220, 195, 0.86);
+  color: #a35100;
+}
+
+.task-status-pill.success {
+  background: rgba(216, 240, 212, 0.82);
+  color: #2f6f3e;
+}
+
+.task-status-pill.accent {
+  background: rgba(237, 233, 254, 0.92);
+  color: #6d28d9;
 }
 
 .task-row-actions {

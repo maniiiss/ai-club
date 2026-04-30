@@ -207,7 +207,10 @@ class GiteeTestPlanPushServiceTests {
     @Test
     void shouldReturnDisabledReasonWhenIterationDateMissing() {
         TestPlanEntity testPlan = buildTestPlan();
+        testPlan.setStartDate(null);
+        testPlan.setEndDate(null);
         testPlan.getIteration().setStartDate(null);
+        testPlan.getIteration().setEndDate(null);
         ProjectGiteeBindingEntity projectBinding = buildProjectBinding(testPlan.getProject());
         IterationGiteeBindingEntity iterationBinding = buildIterationBinding(testPlan.getIteration());
 
@@ -218,10 +221,43 @@ class GiteeTestPlanPushServiceTests {
         GiteeTestPlanPushContextSummary context = giteeTestPlanPushService.getPushContext(21L);
 
         assertThat(context.pushable()).isFalse();
-        assertThat(context.disabledReason()).isEqualTo("当前迭代未配置开始日期或结束日期");
+        assertThat(context.disabledReason()).isEqualTo("当前测试计划未配置开始日期或结束日期，且所属迭代也没有可继承的时间");
         assertThatThrownBy(() -> giteeTestPlanPushService.pushTestPlan(21L))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessage("当前迭代未配置开始日期或结束日期");
+                .hasMessage("当前测试计划未配置开始日期或结束日期，且所属迭代也没有可继承的时间");
+    }
+
+    @Test
+    void shouldPreferPlanScheduleWhenPushingToGitee() {
+        TestPlanEntity testPlan = buildTestPlan();
+        testPlan.setStartDate(LocalDate.of(2026, 5, 6));
+        testPlan.setEndDate(LocalDate.of(2026, 5, 18));
+        testPlan.getIteration().setStartDate(LocalDate.of(2026, 4, 30));
+        testPlan.getIteration().setEndDate(LocalDate.of(2026, 5, 30));
+        ProjectGiteeBindingEntity projectBinding = buildProjectBinding(testPlan.getProject());
+        IterationGiteeBindingEntity iterationBinding = buildIterationBinding(testPlan.getIteration());
+
+        when(testPlanRepository.findGiteePushContextById(21L)).thenReturn(Optional.of(testPlan));
+        when(projectGiteeBindingRepository.findByProject_Id(7L)).thenReturn(Optional.of(projectBinding));
+        when(iterationGiteeBindingRepository.findByIteration_Id(12L)).thenReturn(Optional.of(iterationBinding));
+        when(testCaseRepository.findAutomationCasesWithStepsByTestPlanId(21L)).thenReturn(testPlan.getCases());
+        when(testPlanGiteeBindingRepository.findByTestPlan_Id(21L)).thenReturn(Optional.empty());
+        when(testCaseGiteeBindingRepository.findAllByTestPlan_IdOrderByIdAsc(21L)).thenReturn(List.of());
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(giteeApiService.createTestPlan(any(), any(), any(), any()))
+                .thenReturn(new GiteeApiService.GiteeRemoteTestPlan(80001L, "远端测试计划"));
+        when(giteeApiService.createTestCase(any(), any(), any(), any()))
+                .thenReturn(new GiteeApiService.GiteeRemoteTestCase(90001L, "远端用例A"))
+                .thenReturn(new GiteeApiService.GiteeRemoteTestCase(90002L, "远端用例B"));
+        when(testPlanGiteeBindingRepository.save(any(TestPlanGiteeBindingEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(testCaseGiteeBindingRepository.save(any(TestCaseGiteeBindingEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        giteeTestPlanPushService.pushTestPlan(21L);
+
+        ArgumentCaptor<GiteeApiService.GiteeTestPlanRequest> requestCaptor = ArgumentCaptor.forClass(GiteeApiService.GiteeTestPlanRequest.class);
+        verify(giteeApiService).createTestPlan(any(), any(), any(), requestCaptor.capture());
+        assertThat(requestCaptor.getValue().start_date()).contains("2026-05-06T00:00:00");
+        assertThat(requestCaptor.getValue().end_date()).contains("2026-05-18T23:59:59");
     }
 
     private TestPlanEntity buildTestPlan() {
@@ -247,6 +283,8 @@ class GiteeTestPlanPushServiceTests {
         testPlan.setIteration(iteration);
         testPlan.setStatus("草稿");
         testPlan.setDescription("测试计划描述");
+        testPlan.setStartDate(iteration.getStartDate());
+        testPlan.setEndDate(iteration.getEndDate());
         testPlan.setCases(new ArrayList<>());
 
         testPlan.getCases().add(buildTestCase(testPlan, 31L, "登录测试", "P0", 0));

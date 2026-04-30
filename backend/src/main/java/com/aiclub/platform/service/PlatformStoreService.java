@@ -18,6 +18,7 @@ import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectMemberSummary;
 import com.aiclub.platform.dto.ProjectSummary;
 import com.aiclub.platform.dto.ProjectBurndownSummary;
+import com.aiclub.platform.dto.ProjectWorkItemStatsSummary;
 import com.aiclub.platform.dto.TaskCommentSummary;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.request.AgentRequest;
@@ -237,12 +238,12 @@ public class PlatformStoreService {
         }
 
         int totalCount = tasks.size();
-        int completedCount = (int) tasks.stream().filter(task -> isCompletedStatus(task.getStatus())).count();
+        int completedCount = (int) tasks.stream().filter(task -> isCompletedStatus(task.getWorkItemType(), task.getStatus())).count();
         int remainingCount = Math.max(totalCount - completedCount, 0);
 
         Map<LocalDate, Integer> completedByDate = new HashMap<>();
         for (TaskEntity task : tasks) {
-            if (!isCompletedStatus(task.getStatus()) || task.getUpdatedAt() == null) {
+            if (!isCompletedStatus(task.getWorkItemType(), task.getStatus()) || task.getUpdatedAt() == null) {
                 continue;
             }
             LocalDate completedDate = task.getUpdatedAt().toLocalDate();
@@ -522,6 +523,28 @@ public class PlatformStoreService {
                 .toList();
     }
 
+    /**
+     * 为迭代详情页返回“当前筛选结果”的全量统计，避免分页只覆盖当前页数据。
+     */
+    public ProjectWorkItemStatsSummary getProjectWorkItemStats(Long projectId,
+                                                               Long iterationId,
+                                                               Boolean unplanned,
+                                                               String workItemType,
+                                                               String keyword,
+                                                               String status,
+                                                               String priority,
+                                                               Long assigneeUserId) {
+        requireProject(projectId);
+        if (iterationId != null) {
+            requireIteration(projectId, iterationId);
+        }
+        List<TaskEntity> items = taskRepository.findAll(
+                workItemPageSpecification(projectId, iterationId, unplanned, workItemType, keyword, status, priority, assigneeUserId),
+                Sort.by(Sort.Direction.DESC, "updatedAt", "id")
+        );
+        return summarizeProjectWorkItems(items);
+    }
+
     public PageResponse<TaskSummary> pageProjectWorkItems(Long projectId, int page, int size,
                                                           Long iterationId, Boolean unplanned, String workItemType, String keyword,
                                                           String status, String priority, Long assigneeUserId) {
@@ -544,6 +567,7 @@ public class PlatformStoreService {
         AgentEntity agent = request.agentId() == null ? null : requireAgent(request.agentId());
         IterationEntity iteration = request.iterationId() == null ? null : requireIteration(project.getId(), request.iterationId());
         String workItemType = normalizeWorkItemType(request.workItemType());
+        String status = normalizeWorkItemStatus(workItemType, request.status());
         TaskEntity requirementTask = request.requirementTaskId() == null ? null : requireRequirementTask(project.getId(), request.requirementTaskId());
         UserEntity assigneeUser = request.assigneeUserId() == null ? null : requireUser(request.assigneeUserId());
         Set<UserEntity> collaborators = resolveAdditionalUsers(request.collaboratorUserIds(), assigneeUser == null ? null : assigneeUser.getId());
@@ -553,14 +577,14 @@ public class PlatformStoreService {
         UserEntity creatorUser = requireCurrentUser();
         validateAgentProject(project.getId(), agent);
         validateRequirementRelation(workItemType, requirementTask);
-        validateRequirementStatusTransition(workItemType, request.status(), false, false);
+        validateWorkItemStatus(workItemType, status);
         validateTaskWorkHoursPermission(workItemType, requirementTask, request.workHours());
         validateProjectParticipants(project, assigneeUser, collaborators);
 
         TaskEntity entity = new TaskEntity(
                 request.name(),
                 workItemType,
-                request.status(),
+                status,
                 request.priority(),
                 buildAssignee(request.assignee(), assigneeUser),
                 requirementDocument.description(),
@@ -628,6 +652,7 @@ public class PlatformStoreService {
         AgentEntity agent = request.agentId() == null ? null : requireAgent(request.agentId());
         IterationEntity iteration = request.iterationId() == null ? null : requireIteration(project.getId(), request.iterationId());
         String workItemType = normalizeWorkItemType(request.workItemType());
+        String status = normalizeWorkItemStatus(workItemType, request.status());
         TaskEntity requirementTask = request.requirementTaskId() == null ? null : requireRequirementTask(project.getId(), request.requirementTaskId());
         UserEntity assigneeUser = request.assigneeUserId() == null ? null : requireUser(request.assigneeUserId());
         Set<UserEntity> collaborators = resolveAdditionalUsers(request.collaboratorUserIds(), assigneeUser == null ? null : assigneeUser.getId());
@@ -636,13 +661,13 @@ public class PlatformStoreService {
         String moduleName = normalizeModuleName(workItemType, request.moduleName());
         validateAgentProject(project.getId(), agent);
         validateRequirementRelation(workItemType, requirementTask);
-        validateRequirementStatusTransition(workItemType, request.status(), entity.isDevPassed(), entity.isTestPassed());
+        validateWorkItemStatus(workItemType, status);
         validateTaskWorkHoursPermission(workItemType, requirementTask, request.workHours());
         validateProjectParticipants(project, assigneeUser, collaborators);
 
         entity.setName(request.name());
         entity.setWorkItemType(workItemType);
-        entity.setStatus(request.status());
+        entity.setStatus(status);
         entity.setPriority(request.priority());
         entity.setDescription(requirementDocument.description());
         entity.setProject(project);
@@ -782,7 +807,7 @@ public class PlatformStoreService {
                 ));
             }
             if (hasText(status)) {
-                predicates.add(cb.equal(root.get("status"), status.trim()));
+                predicates.add(root.get("status").in(TaskStatusUtils.candidateStatusesForQuery(null, status)));
             }
             if (hasText(priority)) {
                 predicates.add(cb.equal(root.get("priority"), priority.trim()));
@@ -1248,14 +1273,11 @@ public class PlatformStoreService {
     }
 
     /**
-     * 校验需求主状态是否允许变更。
+     * 工作项主状态由类型驱动，避免需求、任务、缺陷混用彼此的状态集。
      */
-    private void validateRequirementStatusTransition(String workItemType, String status, boolean devPassed, boolean testPassed) {
-        if (!"需求".equals(workItemType) || (devPassed && testPassed)) {
-            return;
-        }
-        if (!"草稿".equals(defaultString(status).trim())) {
-            throw new IllegalArgumentException("需求开发通过和测试通过后才可以将需求草稿状态更改为待开始");
+    private void validateWorkItemStatus(String workItemType, String status) {
+        if (!TaskStatusUtils.isValidStatus(workItemType, status)) {
+            throw new IllegalArgumentException(workItemType + "状态仅支持：" + TaskStatusUtils.describeAllowedStatuses(workItemType));
         }
     }
 
@@ -1362,6 +1384,28 @@ public class PlatformStoreService {
         return requirementTask != null
                 && requirementTask.isDevPassed()
                 && requirementTask.isTestPassed();
+    }
+
+    /**
+     * 统计摘要统一复用类型化完成态定义，供迭代详情顶部卡片直接消费。
+     */
+    private ProjectWorkItemStatsSummary summarizeProjectWorkItems(List<TaskEntity> items) {
+        int totalCount = items.size();
+        int completedCount = (int) items.stream()
+                .filter(item -> isCompletedStatus(item.getWorkItemType(), item.getStatus()))
+                .count();
+        int defectCount = (int) items.stream()
+                .filter(item -> TaskStatusUtils.WORK_ITEM_TYPE_DEFECT.equals(normalizeWorkItemType(item.getWorkItemType())))
+                .count();
+        int openCount = Math.max(totalCount - completedCount, 0);
+        int completionRate = totalCount == 0 ? 0 : (int) Math.round((completedCount * 100.0) / totalCount);
+        return new ProjectWorkItemStatsSummary(
+                totalCount,
+                completedCount,
+                openCount,
+                defectCount,
+                completionRate
+        );
     }
 
     private ProjectSummary toProjectSummary(ProjectEntity entity) {
@@ -1549,6 +1593,13 @@ public class PlatformStoreService {
     }
 
     /**
+     * 服务端统一归一化状态值，确保前后端切换新状态体系时不会继续写入历史别名。
+     */
+    private String normalizeWorkItemStatus(String workItemType, String status) {
+        return TaskStatusUtils.normalizeStatus(workItemType, status);
+    }
+
+    /**
      * 需求模块目前采用自由文本录入，空值统一落为“未分类”。
      */
     private String normalizeModuleName(String workItemType, String moduleName) {
@@ -1636,8 +1687,8 @@ public class PlatformStoreService {
         return value == null ? null : value.format(DATE_FORMATTER);
     }
 
-    private boolean isCompletedStatus(String status) {
-        return TaskStatusUtils.isCompletedStatus(status);
+    private boolean isCompletedStatus(String workItemType, String status) {
+        return TaskStatusUtils.isCompletedStatus(workItemType, status);
     }
 
     private String defaultString(String value) {
@@ -1680,7 +1731,7 @@ public class PlatformStoreService {
      * 当工作项恢复为未逾期状态时，清空逾期通知标记，允许后续再次进入新的逾期周期时重新提醒。
      */
     private void syncOverdueNotificationState(TaskEntity task) {
-        if (!TaskStatusUtils.isOverdue(task.getPlanEndDate(), task.getStatus(), LocalDate.now())) {
+        if (!TaskStatusUtils.isOverdue(task.getPlanEndDate(), task.getWorkItemType(), task.getStatus(), LocalDate.now())) {
             task.setOverdueNotifiedAt(null);
         }
     }

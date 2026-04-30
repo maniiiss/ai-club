@@ -287,9 +287,21 @@
               :disabled="!canManageCurrent || !form.projectId"
               placeholder="请选择迭代"
               style="width: 100%"
+              @change="handleFormIterationChange"
             >
               <el-option v-for="item in formIterationOptions" :key="item.id" :label="item.name" :value="item.id" />
             </el-select>
+          </el-form-item>
+          <el-form-item label="计划时间" class="span-2">
+            <el-date-picker
+              v-model="planDateRange"
+              :disabled="!canManageCurrent"
+              type="daterange"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              value-format="YYYY-MM-DD"
+              style="width: 100%"
+            />
           </el-form-item>
           <el-form-item label="状态" prop="status">
             <el-select v-model="form.status" :disabled="!canManageCurrent" style="width: 100%">
@@ -323,7 +335,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -348,6 +360,8 @@ interface PlanForm {
   name: string
   projectId: number | null
   iterationId: number | null
+  startDate: string | null
+  endDate: string | null
   status: string
   description: string
 }
@@ -380,6 +394,8 @@ const filterIterationOptions = ref<IterationItem[]>([])
 const formIterationOptions = ref<IterationItem[]>([])
 const currentCases = ref<TestCaseItem[]>([])
 const formRef = ref<FormInstance>()
+const planDateRange = ref<string[]>([])
+const previousFormIterationId = ref<number | null>(null)
 
 const pagination = reactive({
   page: 1,
@@ -407,6 +423,8 @@ const form = reactive<PlanForm>({
   name: '',
   projectId: null,
   iterationId: null,
+  startDate: null,
+  endDate: null,
   status: '草稿',
   description: ''
 })
@@ -444,9 +462,13 @@ const resetForm = () => {
   form.name = ''
   form.projectId = projectOptions.value[0]?.id ?? null
   form.iterationId = null
+  form.startDate = null
+  form.endDate = null
   form.status = '草稿'
   form.description = ''
+  planDateRange.value = []
   formIterationOptions.value = []
+  previousFormIterationId.value = null
   formRef.value?.clearValidate()
 }
 
@@ -454,12 +476,59 @@ const fillForm = (plan: TestPlanItem) => {
   form.name = plan.name
   form.projectId = plan.projectId
   form.iterationId = plan.iterationId
+  form.startDate = plan.startDate
+  form.endDate = plan.endDate
   form.status = plan.status
   form.description = plan.description
   currentCases.value = plan.cases
   currentAutomationBindingId.value = plan.automationBindingId
   currentAutomationTargetBranch.value = plan.automationTargetBranch
+  syncPlanDateRangeFromForm()
+  previousFormIterationId.value = plan.iterationId
 }
+
+const syncPlanDateRangeFromForm = () => {
+  planDateRange.value = form.startDate && form.endDate ? [form.startDate, form.endDate] : []
+}
+
+const applyPlanDateRange = (range?: string[] | null) => {
+  if (range && range.length === 2) {
+    form.startDate = range[0]
+    form.endDate = range[1]
+    return
+  }
+  form.startDate = null
+  form.endDate = null
+}
+
+const findFormIterationOption = (iterationId?: number | null) =>
+  formIterationOptions.value.find((item) => item.id === iterationId) || null
+
+/**
+ * 只有当前时间仍然为空，或仍等于“上一次关联迭代自动回填的值”时，
+ * 才在切换迭代后继续自动覆盖，避免误伤用户手工调整过的测试计划时间。
+ */
+const shouldBackfillPlanSchedule = (previousIteration: IterationItem | null) => {
+  if (!form.startDate && !form.endDate) {
+    return true
+  }
+  return form.startDate === (previousIteration?.startDate || null)
+    && form.endDate === (previousIteration?.endDate || null)
+}
+
+const applyIterationScheduleToForm = (iteration: IterationItem | null) => {
+  form.startDate = iteration?.startDate || null
+  form.endDate = iteration?.endDate || null
+  syncPlanDateRangeFromForm()
+}
+
+watch(
+  planDateRange,
+  (value) => {
+    applyPlanDateRange(value)
+  },
+  { deep: true }
+)
 
 const buildCasePayload = (cases: TestCaseItem[]) =>
   cases.map((item, caseIndex) => ({
@@ -554,10 +623,33 @@ const handleFilterProjectChange = async () => {
 }
 
 const handleFormProjectChange = async () => {
+  const previousIteration = findFormIterationOption(previousFormIterationId.value)
+  const shouldBackfill = shouldBackfillPlanSchedule(previousIteration)
+  if (!form.projectId) {
+    formIterationOptions.value = []
+    form.iterationId = null
+    if (shouldBackfill) {
+      applyIterationScheduleToForm(null)
+    }
+    previousFormIterationId.value = null
+    return
+  }
   formIterationOptions.value = await loadIterationsByProject(form.projectId)
   if (form.iterationId && !formIterationOptions.value.some((item) => item.id === form.iterationId)) {
-    form.iterationId = null
+    form.iterationId = formIterationOptions.value[0]?.id ?? null
   }
+  if (shouldBackfill) {
+    applyIterationScheduleToForm(findFormIterationOption(form.iterationId))
+  }
+  previousFormIterationId.value = form.iterationId
+}
+
+const handleFormIterationChange = () => {
+  const previousIteration = findFormIterationOption(previousFormIterationId.value)
+  if (shouldBackfillPlanSchedule(previousIteration)) {
+    applyIterationScheduleToForm(findFormIterationOption(form.iterationId))
+  }
+  previousFormIterationId.value = form.iterationId
 }
 
 const openCreateDialog = async () => {
@@ -567,7 +659,9 @@ const openCreateDialog = async () => {
   if (form.projectId) {
     formIterationOptions.value = await loadIterationsByProject(form.projectId)
     form.iterationId = formIterationOptions.value[0]?.id ?? null
+    applyIterationScheduleToForm(findFormIterationOption(form.iterationId))
   }
+  previousFormIterationId.value = form.iterationId
   dialogVisible.value = true
 }
 
@@ -616,6 +710,8 @@ const handleStatusChange = async (id: number, status: string) => {
       iterationId: detail.iterationId as number,
       status,
       description: detail.description,
+      startDate: detail.startDate,
+      endDate: detail.endDate,
       automationBindingId: detail.automationBindingId,
       automationTargetBranch: detail.automationTargetBranch,
       cases: buildCasePayload(detail.cases)
@@ -646,6 +742,8 @@ const handleSubmit = async () => {
       iterationId: form.iterationId,
       status: form.status,
       description: form.description.trim(),
+      startDate: form.startDate,
+      endDate: form.endDate,
       automationBindingId: currentAutomationBindingId.value,
       automationTargetBranch: currentAutomationTargetBranch.value,
       cases: buildCasePayload(currentCases.value)

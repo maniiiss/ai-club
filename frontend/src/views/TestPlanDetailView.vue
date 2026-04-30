@@ -45,6 +45,7 @@
           迭代：{{ plan?.iterationName || '-' }}
         </button>
         <span v-else>迭代：{{ plan?.iterationName || '-' }}</span>
+        <span v-if="plan?.startDate || plan?.endDate">计划时间：{{ plan?.startDate || '-' }} ~ {{ plan?.endDate || '-' }}</span>
         <div v-if="canManage && plan" class="detail-hero-meta-select">
           <CompactSelectMenu
             :model-value="plan.status"
@@ -931,6 +932,8 @@ const buildCurrentPlanPayload = () => {
     iterationId: plan.value.iterationId as number,
     status: plan.value.status,
     description: plan.value.description,
+    startDate: plan.value.startDate,
+    endDate: plan.value.endDate,
     automationBindingId: automationBindingId.value,
     automationTargetBranch: automationTargetBranch.value.trim() || null,
     cases: buildPayloadCases()

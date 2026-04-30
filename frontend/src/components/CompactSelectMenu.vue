@@ -45,7 +45,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 
 type SelectValue = string | number
-type Tone = 'primary' | 'success' | 'warning' | 'danger' | 'info'
+type Tone = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'accent'
 
 export interface CompactSelectOption {
   label: string
@@ -235,6 +235,10 @@ function handleSelect(value: SelectValue) {
 
 .tone-info {
   background: #94a3b8;
+}
+
+.tone-accent {
+  background: #8b5cf6;
 }
 
 .compact-select-menu {

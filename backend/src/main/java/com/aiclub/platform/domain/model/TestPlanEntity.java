@@ -15,6 +15,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -43,6 +44,20 @@ public class TestPlanEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "iteration_id")
     private IterationEntity iteration;
+
+    /**
+     * 测试计划自身的计划开始日期。
+     * 若为空，则在需要排期信息的场景回退继承所属迭代的开始日期。
+     */
+    @Column(name = "start_date")
+    private LocalDate startDate;
+
+    /**
+     * 测试计划自身的计划结束日期。
+     * 若为空，则在需要排期信息的场景回退继承所属迭代的结束日期。
+     */
+    @Column(name = "end_date")
+    private LocalDate endDate;
 
     /**
      * 自动化测试关联的 GitLab 仓库绑定。
@@ -164,6 +179,22 @@ public class TestPlanEntity {
 
     public void setIteration(IterationEntity iteration) {
         this.iteration = iteration;
+    }
+
+    public LocalDate getStartDate() {
+        return startDate;
+    }
+
+    public void setStartDate(LocalDate startDate) {
+        this.startDate = startDate;
+    }
+
+    public LocalDate getEndDate() {
+        return endDate;
+    }
+
+    public void setEndDate(LocalDate endDate) {
+        this.endDate = endDate;
     }
 
     public ProjectGitlabBindingEntity getAutomationBinding() {

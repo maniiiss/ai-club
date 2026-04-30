@@ -21,7 +21,7 @@
 - 测试计划必须关联本地迭代
 - 本地迭代必须已绑定 Gitee 迭代
 - 本地项目必须已绑定并启用 Gitee 项目
-- 本地迭代必须填写开始日期和结束日期
+- 测试计划自身必须具备完整的开始日期和结束日期；若未单独配置，则允许继承所属迭代的开始/结束日期
 
 前端详情页通过 `GET /api/gitee/test-plans/{planId}/push-context` 获取是否可推送、禁用原因和最近推送状态。
 
@@ -55,8 +55,8 @@
 - `program_id` <- 项目 Gitee 绑定的 `gitee_program_id`
 - `assignee_id` <- 配置项 `platform.gitee.test-push.test-plan-assignee-id`
 - `description` <- 本地测试计划 `description`
-- `start_date` <- 本地迭代开始日期，按 `Asia/Shanghai` 序列化为 ISO 8601
-- `end_date` <- 本地迭代结束日期，按 `Asia/Shanghai` 序列化为 ISO 8601
+- `start_date` <- 优先使用本地测试计划 `start_date`，为空时回退到所属迭代开始日期，按 `Asia/Shanghai` 序列化为 ISO 8601
+- `end_date` <- 优先使用本地测试计划 `end_date`，为空时回退到所属迭代结束日期，按 `Asia/Shanghai` 序列化为 ISO 8601
 
 ### 4.2 测试用例
 
@@ -94,3 +94,8 @@
 - 显示“推送到 Gitee”按钮
 - 不满足前置条件时按钮禁用并显示原因
 - 推送完成后刷新详情页，显示远端计划 ID 和最近推送结果
+
+测试计划创建/编辑页新增“计划时间”配置：
+
+- 用户关联迭代后，若当前测试计划时间仍为空，则默认回填所属迭代时间
+- 需求 AI 助手从测试用例建议创建测试计划时，如果请求没有显式传入计划时间，后端也按同样规则继承迭代时间

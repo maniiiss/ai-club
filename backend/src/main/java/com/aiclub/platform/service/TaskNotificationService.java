@@ -126,7 +126,9 @@ public class TaskNotificationService {
             notificationService.sendToUsers(
                     recipients,
                     NotificationService.TYPE_TASK,
-                    TaskStatusUtils.isCompletedStatus(task.getStatus()) ? NotificationService.LEVEL_SUCCESS : NotificationService.LEVEL_INFO,
+                    TaskStatusUtils.isCompletedStatus(task.getWorkItemType(), task.getStatus())
+                            ? NotificationService.LEVEL_SUCCESS
+                            : NotificationService.LEVEL_INFO,
                     workItemName + "状态已更新",
                     "项目《" + task.getProject().getName() + "》将工作项状态更新为「" + task.getStatus() + "」。",
                     buildTaskActionUrl(task),

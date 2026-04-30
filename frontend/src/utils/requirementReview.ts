@@ -1,3 +1,5 @@
+import { formatWorkItemStatusLabel } from './workItemStatus'
+
 /**
  * 需求评审阶段显示所需的最小字段集合。
  */
@@ -28,12 +30,8 @@ interface RequirementLinkedState {
 /**
  * 构建需求工作项状态展示文案。
  */
-export const formatRequirementStatusLabel = (state: RequirementReviewState) => {
-  if (state.workItemType === '需求' && state.status === '草稿' && isRequirementFullyPassed(state)) {
-    return '草稿（评审通过）'
-  }
-  return state.status
-}
+export const formatRequirementStatusLabel = (state: RequirementReviewState) =>
+  formatWorkItemStatusLabel(state.workItemType, state.status)
 
 /**
  * 判断需求是否评审、开发、测试均已通过。

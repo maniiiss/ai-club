@@ -31,6 +31,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -42,6 +43,7 @@ import java.util.NoSuchElementException;
 public class TestManagementService {
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
 
     private final TestPlanRepository testPlanRepository;
     private final TestCaseRepository testCaseRepository;
@@ -129,9 +131,14 @@ public class TestManagementService {
                                     ProjectEntity project,
                                     IterationEntity iteration) {
         ProjectGitlabBindingEntity automationBinding = resolveAutomationBinding(project, request.automationBindingId());
+        LocalDate startDate = resolvePlanDate(entity, request.startDate(), iteration, true);
+        LocalDate endDate = resolvePlanDate(entity, request.endDate(), iteration, false);
+        validatePlanDateRange(startDate, endDate);
         entity.setName(request.name().trim());
         entity.setProject(project);
         entity.setIteration(iteration);
+        entity.setStartDate(startDate);
+        entity.setEndDate(endDate);
         entity.setStatus(normalizeStatus(request.status()));
         entity.setDescription(defaultString(request.description()));
         entity.setAutomationBinding(automationBinding);
@@ -202,6 +209,8 @@ public class TestManagementService {
                 entity.getProject().getName(),
                 entity.getIteration() == null ? null : entity.getIteration().getId(),
                 entity.getIteration() == null ? null : entity.getIteration().getName(),
+                formatDate(entity.getStartDate()),
+                formatDate(entity.getEndDate()),
                 caseCount,
                 entity.getAutomationBinding() == null ? null : entity.getAutomationBinding().getId(),
                 entity.getAutomationTargetBranch(),
@@ -331,6 +340,44 @@ public class TestManagementService {
     private String normalizeStatus(String value) {
         String result = defaultString(value).trim();
         return result.isBlank() ? "草稿" : result;
+    }
+
+    /**
+     * 测试计划时间遵循“显式填写优先，其次保留原值，最后继承当前迭代”的规则：
+     * 这样既能满足新建时自动带出迭代排期，也能避免旧入口在更新测试用例时把计划自定义时间抹掉。
+     */
+    private LocalDate resolvePlanDate(TestPlanEntity entity,
+                                      String requestedValue,
+                                      IterationEntity iteration,
+                                      boolean startDateField) {
+        LocalDate requestedDate = parseDate(requestedValue, startDateField ? "测试计划开始日期" : "测试计划结束日期");
+        if (requestedDate != null) {
+            return requestedDate;
+        }
+        Long currentIterationId = entity.getIteration() == null ? null : entity.getIteration().getId();
+        Long targetIterationId = iteration == null ? null : iteration.getId();
+        LocalDate existingDate = startDateField ? entity.getStartDate() : entity.getEndDate();
+        if (currentIterationId != null && currentIterationId.equals(targetIterationId) && existingDate != null) {
+            return existingDate;
+        }
+        return iteration == null ? null : (startDateField ? iteration.getStartDate() : iteration.getEndDate());
+    }
+
+    private LocalDate parseDate(String value, String label) {
+        if (!hasText(value)) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value.trim(), DATE_FORMATTER);
+        } catch (Exception exception) {
+            throw new IllegalArgumentException(label + "格式不正确，必须为 yyyy-MM-dd");
+        }
+    }
+
+    private void validatePlanDateRange(LocalDate startDate, LocalDate endDate) {
+        if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
+            throw new IllegalArgumentException("测试计划结束日期不能早于开始日期");
+        }
     }
 
     private String normalizeCaseType(String value) {

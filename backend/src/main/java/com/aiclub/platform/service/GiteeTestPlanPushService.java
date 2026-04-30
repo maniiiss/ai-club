@@ -1,6 +1,5 @@
 package com.aiclub.platform.service;
 
-import com.aiclub.platform.domain.model.IterationEntity;
 import com.aiclub.platform.domain.model.IterationGiteeBindingEntity;
 import com.aiclub.platform.domain.model.ProjectGiteeBindingEntity;
 import com.aiclub.platform.domain.model.TestCaseEntity;
@@ -245,23 +244,50 @@ public class GiteeTestPlanPushService {
         if (iterationGiteeBindingRepository.findByIteration_Id(testPlan.getIteration().getId()).isEmpty()) {
             return "当前测试计划所属迭代尚未绑定 Gitee 迭代";
         }
-        if (testPlan.getIteration().getStartDate() == null || testPlan.getIteration().getEndDate() == null) {
-            return "当前迭代未配置开始日期或结束日期";
+        if (resolvePlannedStartDate(testPlan) == null || resolvePlannedEndDate(testPlan) == null) {
+            return "当前测试计划未配置开始日期或结束日期，且所属迭代也没有可继承的时间";
         }
         return null;
     }
 
     private GiteeApiService.GiteeTestPlanRequest buildPlanRequest(TestPlanEntity testPlan, ProjectGiteeBindingEntity projectBinding) {
-        IterationEntity iteration = testPlan.getIteration();
+        LocalDate startDate = resolvePlannedStartDate(testPlan);
+        LocalDate endDate = resolvePlannedEndDate(testPlan);
+        if (startDate == null || endDate == null) {
+            throw new IllegalStateException("当前测试计划未配置开始日期或结束日期，且所属迭代也没有可继承的时间");
+        }
         return new GiteeApiService.GiteeTestPlanRequest(
                 resolveTitle(testPlan.getName(), "未命名测试计划"),
                 PLAN_REF_TYPE,
                 projectBinding.getGiteeProgramId(),
                 testPlanAssigneeId,
                 defaultString(testPlan.getDescription()),
-                formatRemoteDateTime(iteration.getStartDate(), false),
-                formatRemoteDateTime(iteration.getEndDate(), true)
+                formatRemoteDateTime(startDate, false),
+                formatRemoteDateTime(endDate, true)
         );
+    }
+
+    /**
+     * Gitee 推送优先使用测试计划自身时间，只有计划没配置时才继承所属迭代排期。
+     */
+    private LocalDate resolvePlannedStartDate(TestPlanEntity testPlan) {
+        if (testPlan.getStartDate() != null) {
+            return testPlan.getStartDate();
+        }
+        if (testPlan.getIteration() == null) {
+            return null;
+        }
+        return testPlan.getIteration().getStartDate();
+    }
+
+    private LocalDate resolvePlannedEndDate(TestPlanEntity testPlan) {
+        if (testPlan.getEndDate() != null) {
+            return testPlan.getEndDate();
+        }
+        if (testPlan.getIteration() == null) {
+            return null;
+        }
+        return testPlan.getIteration().getEndDate();
     }
 
     private GiteeApiService.GiteeTestCaseRequest buildTestCaseRequest(TestCaseEntity testCase, ProjectGiteeBindingEntity projectBinding) {

@@ -6,6 +6,7 @@ import com.aiclub.platform.dto.IterationBoardSummary;
 import com.aiclub.platform.dto.IterationSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectBurndownSummary;
+import com.aiclub.platform.dto.ProjectWorkItemStatsSummary;
 import com.aiclub.platform.dto.ProjectRequirementModuleOptionSummary;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.request.IterationRequest;
@@ -100,6 +101,28 @@ public class IterationController {
                                                         @RequestParam(required = false) String workItemType,
                                                         @RequestParam(required = false) String keyword) {
         return ApiResponse.success(platformStoreService.listProjectWorkItems(projectId, iterationId, unplanned, workItemType, keyword));
+    }
+
+    @GetMapping("/work-items/stats")
+    @RequirePermission("task:view")
+    public ApiResponse<ProjectWorkItemStatsSummary> getWorkItemStats(@PathVariable Long projectId,
+                                                                     @RequestParam(required = false) Long iterationId,
+                                                                     @RequestParam(required = false) Boolean unplanned,
+                                                                     @RequestParam(required = false) String workItemType,
+                                                                     @RequestParam(required = false) String keyword,
+                                                                     @RequestParam(required = false) String status,
+                                                                     @RequestParam(required = false) String priority,
+                                                                     @RequestParam(required = false) Long assigneeUserId) {
+        return ApiResponse.success(platformStoreService.getProjectWorkItemStats(
+                projectId,
+                iterationId,
+                unplanned,
+                workItemType,
+                keyword,
+                status,
+                priority,
+                assigneeUserId
+        ));
     }
 
     @GetMapping("/work-items/page")

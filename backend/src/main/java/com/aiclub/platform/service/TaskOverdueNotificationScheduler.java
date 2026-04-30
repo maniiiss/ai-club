@@ -54,7 +54,7 @@ public class TaskOverdueNotificationScheduler {
         LocalDateTime now = LocalDateTime.now();
         List<TaskEntity> updatedTasks = new ArrayList<>();
         for (TaskEntity task : taskRepository.findAllByPlanEndDateBeforeAndAssigneeUserIsNotNullAndOverdueNotifiedAtIsNullOrderByPlanEndDateAscIdAsc(today)) {
-            if (!TaskStatusUtils.isOverdue(task.getPlanEndDate(), task.getStatus(), today)) {
+            if (!TaskStatusUtils.isOverdue(task.getPlanEndDate(), task.getWorkItemType(), task.getStatus(), today)) {
                 continue;
             }
             if (!task.getAssigneeUser().isEnabled()) {

@@ -1,4 +1,5 @@
 import { AUTH_TOKEN_KEY } from '@/constants/auth'
+import { normalizeWorkItemStatus } from '@/utils/workItemStatus'
 import { http, getResolvedApiBaseUrl } from './http'
 import type {
   AgentItem,
@@ -20,6 +21,7 @@ import type {
   MemoryFactGraphItem,
   PageResponse,
   ProjectBurndownItem,
+  ProjectWorkItemStatsItem,
   ProjectItem,
   ProjectRequirementModuleOptionItem,
   TestPlanItem,
@@ -70,7 +72,8 @@ const normalizeTaskPriority = (priority?: string | number | null) => {
 
 const normalizeTaskItem = (task: TaskItem): TaskItem => ({
   ...task,
-  priority: normalizeTaskPriority(task.priority)
+  priority: normalizeTaskPriority(task.priority),
+  status: normalizeWorkItemStatus(task.workItemType, task.status)
 })
 
 const normalizeTaskPage = (page: PageResponse<TaskItem>): PageResponse<TaskItem> => ({
@@ -184,6 +187,8 @@ export interface TestPlanPayload {
   iterationId: number
   status: string
   description: string
+  startDate?: string | null
+  endDate?: string | null
   automationBindingId?: number | null
   automationTargetBranch?: string | null
   cases: TestCasePayload[]
@@ -322,6 +327,12 @@ export interface WorkItemQuery {
 export interface WorkItemPageQuery extends WorkItemQuery {
   page: number
   size: number
+  status?: string
+  priority?: string
+  assigneeUserId?: number
+}
+
+export interface WorkItemStatsQuery extends WorkItemQuery {
   status?: string
   priority?: string
   assigneeUserId?: number
@@ -980,6 +991,13 @@ export const listProjectWorkItems = async (projectId: number, query: WorkItemQue
     params: cleanParams(query)
   })
   return data.data.map(normalizeTaskItem)
+}
+
+export const getProjectWorkItemStats = async (projectId: number, query: WorkItemStatsQuery) => {
+  const { data } = await http.get<ApiResponse<ProjectWorkItemStatsItem>>(`/api/projects/${projectId}/work-items/stats`, {
+    params: cleanParams(query)
+  })
+  return data.data
 }
 
 export const pageProjectWorkItems = async (projectId: number, query: WorkItemPageQuery) => {

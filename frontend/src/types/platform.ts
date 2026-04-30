@@ -441,6 +441,19 @@ export interface TaskItem {
   canDelete: boolean
 }
 
+export interface ProjectWorkItemStatsItem {
+  /** 当前筛选结果总数。 */
+  totalCount: number
+  /** 当前筛选结果中满足完成态的数量。 */
+  completedCount: number
+  /** 当前筛选结果中的未完成数量。 */
+  openCount: number
+  /** 当前筛选结果中的缺陷数量。 */
+  defectCount: number
+  /** 当前筛选结果完成率，范围 0-100。 */
+  completionRate: number
+}
+
 export interface TaskCommentItem {
   id: number
   taskId: number
@@ -704,6 +717,8 @@ export interface TestPlanItem {
   projectName: string
   iterationId: number | null
   iterationName: string | null
+  startDate: string | null
+  endDate: string | null
   caseCount: number
   automationBindingId: number | null
   automationTargetBranch: string | null

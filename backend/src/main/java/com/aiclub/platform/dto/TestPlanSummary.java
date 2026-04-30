@@ -11,6 +11,8 @@ public record TestPlanSummary(
         String projectName,
         Long iterationId,
         String iterationName,
+        String startDate,
+        String endDate,
         Integer caseCount,
         Long automationBindingId,
         String automationTargetBranch,

@@ -998,6 +998,10 @@ const appendToExistingPlan = async () => {
       iterationId: detail.iterationId as number,
       status: detail.status,
       description: detail.description,
+      startDate: detail.startDate,
+      endDate: detail.endDate,
+      automationBindingId: detail.automationBindingId,
+      automationTargetBranch: detail.automationTargetBranch,
       cases: [...detail.cases, ...buildCasePayload(editableTestCaseSuggestions.value)].map((item, index) => ({
         ...item,
         sortOrder: index
