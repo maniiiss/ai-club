@@ -221,6 +221,82 @@ class RequirementModuleOptionIntegrationTests {
     }
 
     /**
+     * 需求原型链接改为选填后，草稿创建与提交更新都不应再因空链接被拒绝。
+     */
+    @Test
+    void shouldAllowRequirementWithoutPrototypeUrl() {
+        UserEntity creator = createUser("creator-module-f", "模块创建人己");
+        UserEntity owner = createUser("owner-module-f", "模块负责人己");
+        ProjectEntity project = createProjectAs(creator, owner, "模块项目F");
+
+        loginAs(creator);
+        TaskSummary created = platformStoreService.createTask(new TaskRequest(
+                "需求F",
+                "需求",
+                "草稿",
+                "中",
+                "",
+                null,
+                List.of(),
+                "需求F 的描述",
+                """
+                        ## 用户故事
+
+                        作为项目成员，我希望查看当前需求。
+
+                        ## 需求描述
+
+                        需要展示 需求F 的详情内容。
+
+                        ## 验收标准
+
+                        1. 能正常打开页面。
+                        2. 页面内容完整显示。
+                        """,
+                "",
+                "Alpha",
+                false,
+                false,
+                null,
+                null,
+                null,
+                project.getId(),
+                null,
+                null,
+                null
+        ));
+
+        platformStoreService.passRequirementDev(created.id());
+        platformStoreService.passRequirementTest(created.id());
+        TaskSummary updated = platformStoreService.updateTask(created.id(), new TaskRequest(
+                created.name(),
+                created.workItemType(),
+                "待开始",
+                created.priority(),
+                created.assignee(),
+                created.assigneeUserId(),
+                created.collaboratorUserIds(),
+                created.description(),
+                created.requirementMarkdown(),
+                "",
+                created.moduleName(),
+                true,
+                true,
+                created.workHours(),
+                created.planStartDate(),
+                created.planEndDate(),
+                project.getId(),
+                created.agentId(),
+                created.iterationId(),
+                created.requirementTaskId()
+        ));
+
+        assertThat(created.prototypeUrl()).isEmpty();
+        assertThat(updated.prototypeUrl()).isEmpty();
+        assertThat(updated.status()).isEqualTo("待开始");
+    }
+
+    /**
      * 模块候选按项目隔离，避免不同项目的下拉数据串联。
      */
     @Test

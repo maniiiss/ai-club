@@ -73,7 +73,11 @@ platform:
       redirect-uri: ${PLATFORM_GITLAB_OAUTH_REDIRECT_URI:http://localhost:5173/profile/gitlab-callback}
       state-expire-minutes: ${PLATFORM_GITLAB_OAUTH_STATE_EXPIRE_MINUTES:10}
   gitee:
-    default-api-url: ${PLATFORM_GITEE_DEFAULT_API_URL:https://gitee.com/api/v8}
+    default-api-url: ${PLATFORM_GITEE_DEFAULT_API_URL:https://api.gitee.com/enterprises}
+    test-push:
+      test-plan-assignee-id: ${PLATFORM_GITEE_TEST_PUSH_TEST_PLAN_ASSIGNEE_ID:9917662}
+      test-case-module-id: ${PLATFORM_GITEE_TEST_PUSH_TEST_CASE_MODULE_ID:229413}
+      test-case-type: ${PLATFORM_GITEE_TEST_PUSH_TEST_CASE_TYPE:2}
   hermes:
     base-url: ${PLATFORM_HERMES_BASE_URL:http://localhost:18080/v1}
     api-key: ${PLATFORM_HERMES_API_KEY:}

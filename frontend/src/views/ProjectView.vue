@@ -422,7 +422,7 @@
           </el-form-item>
           <div class="project-dialog-form-grid">
             <el-form-item label="Gitee API 地址" prop="apiBaseUrl" class="project-dialog-span-2">
-              <el-input v-model="giteeBindingForm.apiBaseUrl" placeholder="例如：https://gitee.com/api/v8" />
+              <el-input v-model="giteeBindingForm.apiBaseUrl" placeholder="例如：https://api.gitee.com/enterprises" />
             </el-form-item>
             <el-form-item label="企业 ID" prop="enterpriseId">
               <el-input-number v-model="giteeBindingForm.enterpriseId" :min="1" :controls="false" style="width: 100%" />
@@ -439,7 +439,13 @@
               />
             </el-form-item>
             <el-form-item label="Gitee 项目" prop="giteeProgramId" class="project-dialog-span-2">
-              <el-select v-model="giteeBindingForm.giteeProgramId" filterable placeholder="请先测试连接并加载 Gitee 项目" style="width: 100%">
+              <el-select
+                v-model="giteeBindingForm.giteeProgramId"
+                filterable
+                placeholder="请先测试连接并加载 Gitee 项目"
+                :no-data-text="giteeProgramLoading ? 'Gitee 项目加载中...' : '未查询到可见的 Gitee 项目'"
+                style="width: 100%"
+              >
                 <el-option
                   v-for="item in giteeProgramOptions"
                   :key="item.id"
@@ -521,7 +527,7 @@ interface ProjectGiteeBindingForm {
   enabled: boolean
 }
 
-const DEFAULT_GITEE_API_URL = 'https://gitee.com/api/v8'
+const DEFAULT_GITEE_API_URL = 'https://api.gitee.com/enterprises'
 
 const loading = ref(false)
 const submitting = ref(false)

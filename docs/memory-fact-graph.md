@@ -95,6 +95,8 @@ platform:
 - `project-bank-template` 为空时，会默认回退到当前项目 Wiki bank 模板。
 - `shared-bank-id` 只有显式配置才会启用，避免运行时盲猜。
 - 三个 path template 允许在 Hindsight 版本升级后只改配置，不改代码。
+- 当前仓库三套 Docker 编排默认追加 `HINDSIGHT_API_SKIP_LLM_VERIFICATION=true`，避免外部 LLM 启动校验失败时把整个 Hindsight HTTP 服务拖挂。
+- 该容错策略只影响启动期健康拉起，不会吞掉真实业务错误；真正需要 LLM 的 retain、reflect、consolidation 请求仍会在调用时返回明确失败。
 
 ## 探测脚本
 
@@ -152,6 +154,11 @@ python scripts/rebuild_hindsight_vectors.py
 
 - embeddings 维度是否和已有库里历史向量一致。当前仓库默认改成 384 维 `BAAI/bge-small-en-v1.5`，用于兼容已有 `memory_units` 数据。
 - reranker 是否仍在加载本地大模型。当前编排默认改成 `rrf`，避免 dev 环境因为本地 reranker 初始化过慢而长时间无法响应 `/health`。
+
+如果日志里出现 `Connection verification failed`、`insufficient balance` 或其他外部 LLM 校验错误，当前编排会通过 `HINDSIGHT_API_SKIP_LLM_VERIFICATION=true` 让容器继续启动。
+
+- 这时 `recall`、记忆事实图、已有向量与实体快照读取通常仍可用。
+- 但新写入需要 LLM 抽事实的 retain / reflect / consolidation 请求，仍会在运行期按单次请求失败，需要修复真实的 LLM 配额或连通性问题。
 
 如果你准备自己在本机启动 OpenAI-compatible embedding 服务，例如 `Qwen/Qwen3-Embedding-4B`，当前编排已经支持直接切换：
 

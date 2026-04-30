@@ -11,6 +11,19 @@
           <h1 :title="plan?.name || '测试计划'">{{ plan?.name || '测试计划' }}</h1>
         </div>
         <div class="detail-hero-actions">
+          <button
+            v-if="canPushToGitee"
+            class="detail-hero-action-button secondary"
+            :class="{ muted: !giteePushContext?.pushable && !giteePushing }"
+            type="button"
+            :disabled="giteePushing"
+            :aria-disabled="!giteePushContext?.pushable"
+            :title="giteePushContext?.pushable ? '推送当前测试计划与测试用例到 Gitee' : (giteePushContext?.disabledReason || '当前不可推送')"
+            @click="handlePushToGitee"
+          >
+            <el-icon><Finished /></el-icon>
+            <span>{{ giteePushing ? '推送中...' : '推送到 Gitee' }}</span>
+          </button>
           <button class="detail-hero-action-button" type="button" @click="automationDialogVisible = true">
             <el-icon><Finished /></el-icon>
             <span>自动化测试</span>
@@ -44,12 +57,29 @@
         <span>用例数：{{ cases.length }}</span>
         <span v-if="plan?.createdAt">创建时间：{{ plan.createdAt }}</span>
         <span>更新时间：{{ plan?.updatedAt || '-' }}</span>
+        <span v-if="canPushToGitee">Gitee 计划ID：{{ giteePushContext?.remoteTestPlanId || '-' }}</span>
+        <span v-if="canPushToGitee">最近推送：{{ formatGiteePushStatus(giteePushContext?.lastPushStatus) }}</span>
+        <span v-if="canPushToGitee">推送时间：{{ giteePushContext?.lastPushedAt || '-' }}</span>
+        <span
+          v-if="canPushToGitee && giteePushContext && !giteePushContext.pushable && giteePushContext.disabledReason"
+          class="detail-hero-meta-description warning"
+          :title="giteePushContext.disabledReason"
+        >
+          不可推送原因：{{ giteePushContext.disabledReason }}
+        </span>
         <span
           v-if="plan?.description"
           class="detail-hero-meta-description"
           :title="plan.description"
         >
           说明：{{ plan.description }}
+        </span>
+        <span
+          v-if="canPushToGitee && giteePushContext?.lastPushMessage"
+          class="detail-hero-meta-description"
+          :title="giteePushContext.lastPushMessage"
+        >
+          推送结果：{{ giteePushContext.lastPushMessage }}
         </span>
       </div>
     </section>
@@ -491,12 +521,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, ArrowRight, Delete, Finished, Plus, RefreshRight, Right, Search } from '@element-plus/icons-vue'
 import CompactSelectMenu, { type CompactSelectOption } from '@/components/CompactSelectMenu.vue'
+import { getTestPlanGiteePushContext, pushTestPlanToGitee } from '@/api/gitee'
 import { generateAndRunTestPlanAutomation, getTestPlanDetail, runTestPlanAutomation, updateTestPlan } from '@/api/platform'
 import { listGitlabBindingOptions } from '@/api/gitlab'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
-import type { ProjectGitlabBindingItem, TestPlanItem } from '@/types/platform'
+import type { GiteeTestPlanPushContextItem, ProjectGitlabBindingItem, TestPlanItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface StepForm {
@@ -541,6 +572,7 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const { isMobileViewport } = useMobileViewport()
 const canManage = computed(() => authStore.hasPermission('test:manage'))
+const canPushToGitee = computed(() => authStore.hasPermission('gitee:test:push'))
 
 const statusSelectOptions: CompactSelectOption[] = [
   { label: '草稿', value: '草稿', tone: 'info' },
@@ -563,12 +595,14 @@ const saving = ref(false)
 const automationSaving = ref(false)
 const automationGenerating = ref(false)
 const automationRunning = ref(false)
+const giteePushing = ref(false)
 const automationDialogVisible = ref(false)
 const drawerVisible = ref(false)
 const activeCaseIndex = ref<number | null>(null)
 const gitlabBindingOptions = ref<ProjectGitlabBindingItem[]>([])
 const automationBindingId = ref<number | null>(null)
 const automationTargetBranch = ref('')
+const giteePushContext = ref<GiteeTestPlanPushContextItem | null>(null)
 
 const pagination = reactive({
   page: 1,
@@ -782,6 +816,19 @@ const syncAutomationConfig = (detail: TestPlanItem) => {
   automationTargetBranch.value = detail.automationTargetBranch || ''
 }
 
+const loadGiteePushContext = async (planId: number) => {
+  if (!canPushToGitee.value) {
+    giteePushContext.value = null
+    return
+  }
+  try {
+    giteePushContext.value = await getTestPlanGiteePushContext(planId)
+  } catch (error: any) {
+    giteePushContext.value = null
+    ElMessage.error(error?.response?.data?.message || '加载 Gitee 推送状态失败')
+  }
+}
+
 const loadPlan = async () => {
   syncPageTitle()
   const planId = getCurrentPlanId()
@@ -796,6 +843,7 @@ const loadPlan = async () => {
     plan.value = detail
     fillCases(detail)
     syncAutomationConfig(detail)
+    await loadGiteePushContext(planId)
     if (activeCaseIndex.value !== null && activeCaseIndex.value >= cases.value.length) {
       activeCaseIndex.value = cases.value.length ? cases.value.length - 1 : null
     }
@@ -873,6 +921,22 @@ const buildPayloadCases = () => {
   return payloadCases
 }
 
+const buildCurrentPlanPayload = () => {
+  if (!plan.value) {
+    throw new Error('测试计划不存在')
+  }
+  return {
+    name: plan.value.name,
+    projectId: plan.value.projectId,
+    iterationId: plan.value.iterationId as number,
+    status: plan.value.status,
+    description: plan.value.description,
+    automationBindingId: automationBindingId.value,
+    automationTargetBranch: automationTargetBranch.value.trim() || null,
+    cases: buildPayloadCases()
+  }
+}
+
 const addCase = () => {
   cases.value.push(createCase())
   syncOrder()
@@ -925,16 +989,7 @@ const handleSave = async () => {
 
   saving.value = true
   try {
-    await updateTestPlan(plan.value.id, {
-      name: plan.value.name,
-      projectId: plan.value.projectId,
-      iterationId: plan.value.iterationId as number,
-      status: plan.value.status,
-      description: plan.value.description,
-      automationBindingId: automationBindingId.value,
-      automationTargetBranch: automationTargetBranch.value.trim() || null,
-      cases: buildPayloadCases()
-    })
+    await updateTestPlan(plan.value.id, buildCurrentPlanPayload())
     ElMessage.success('测试用例已保存')
     await loadPlan()
   } catch (error: any) {
@@ -957,16 +1012,9 @@ const handlePlanStatusChange = async (status: string) => {
     return
   }
   try {
-    await updateTestPlan(plan.value.id, {
-      name: plan.value.name,
-      projectId: plan.value.projectId,
-      iterationId: plan.value.iterationId,
-      status,
-      description: plan.value.description,
-      automationBindingId: automationBindingId.value,
-      automationTargetBranch: automationTargetBranch.value.trim() || null,
-      cases: buildPayloadCases()
-    })
+    const payload = buildCurrentPlanPayload()
+    payload.status = status
+    await updateTestPlan(plan.value.id, payload)
     plan.value.status = status
     ElMessage.success('测试计划状态已更新')
   } catch (error: any) {
@@ -1019,22 +1067,21 @@ const automationStatusTone = (status?: string | null) => {
   return 'neutral'
 }
 
+const formatGiteePushStatus = (status?: string | null) => {
+  const normalized = String(status || '').trim().toUpperCase()
+  if (normalized === 'SUCCESS') return '成功'
+  if (normalized === 'PARTIAL') return '部分成功'
+  if (normalized === 'FAILED') return '失败'
+  return '未推送'
+}
+
 const handleSaveAutomationConfig = async () => {
   if (!plan.value) {
     return
   }
   automationSaving.value = true
   try {
-    await updateTestPlan(plan.value.id, {
-      name: plan.value.name,
-      projectId: plan.value.projectId,
-      iterationId: plan.value.iterationId as number,
-      status: plan.value.status,
-      description: plan.value.description,
-      automationBindingId: automationBindingId.value,
-      automationTargetBranch: automationTargetBranch.value.trim() || null,
-      cases: buildPayloadCases()
-    })
+    await updateTestPlan(plan.value.id, buildCurrentPlanPayload())
     ElMessage.success('自动化配置已保存')
     await loadPlan()
   } catch (error: any) {
@@ -1101,6 +1148,33 @@ const handleRunAutomation = async () => {
     ElMessage.error(error?.response?.data?.message || error?.message || '创建自动化执行任务失败')
   } finally {
     automationRunning.value = false
+  }
+}
+
+const handlePushToGitee = async () => {
+  if (!plan.value) {
+    return
+  }
+  if (!giteePushContext.value?.pushable) {
+    ElMessage.warning(giteePushContext.value?.disabledReason || '当前测试计划暂不可推送到 Gitee')
+    return
+  }
+  giteePushing.value = true
+  try {
+    await updateTestPlan(plan.value.id, buildCurrentPlanPayload())
+    const result = await pushTestPlanToGitee(plan.value.id)
+    if (result.executionStatus === 'FAILED') {
+      ElMessage.error(result.summaryMessage || '推送到 Gitee 失败')
+    } else if (result.executionStatus === 'PARTIAL') {
+      ElMessage.warning(result.summaryMessage || '已推送到 Gitee，但存在部分失败')
+    } else {
+      ElMessage.success(result.summaryMessage || '已推送到 Gitee')
+    }
+    await loadPlan()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || error?.message || '推送到 Gitee 失败')
+  } finally {
+    giteePushing.value = false
   }
 }
 
@@ -1178,9 +1252,28 @@ onBeforeUnmount(() => {
   transition: background 0.18s ease, transform 0.18s ease;
 }
 
+.detail-hero-action-button.secondary {
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+}
+
+.detail-hero-action-button.muted {
+  opacity: 0.72;
+}
+
 .detail-hero-action-button:hover {
   background: rgba(var(--app-primary-container-rgb), 0.24);
   transform: translateY(-1px);
+}
+
+.detail-hero-action-button:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.detail-hero-meta-description.warning {
+  color: #b45309;
 }
 
 .automation-card {

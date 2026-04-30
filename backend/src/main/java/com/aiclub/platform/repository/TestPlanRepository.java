@@ -27,4 +27,18 @@ public interface TestPlanRepository extends JpaRepository<TestPlanEntity, Long>,
             where plan.id = :id
             """)
     Optional<TestPlanEntity> findAutomationContextById(@Param("id") Long id);
+
+    /**
+     * Gitee 测试推送只在这里加载计划、项目与迭代基础上下文。
+     * 测试用例和步骤会通过独立查询读取，避免 Hibernate 对两个 List 集合同时 fetch join
+     * 触发 MultipleBagFetchException。
+     */
+    @Query("""
+            select distinct plan
+            from TestPlanEntity plan
+            left join fetch plan.project
+            left join fetch plan.iteration
+            where plan.id = :id
+            """)
+    Optional<TestPlanEntity> findGiteePushContextById(@Param("id") Long id);
 }

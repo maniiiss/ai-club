@@ -1,5 +1,10 @@
 <template>
-  <div class="iteration-workspace">
+  <div
+    class="iteration-workspace"
+    v-loading.fullscreen.lock="iterationSyncSubmitting"
+    element-loading-text="正在同步 Gitee 工作项，请稍候..."
+    element-loading-background="rgba(248, 249, 250, 0.72)"
+  >
     <aside class="workspace-sidebar">
       <div class="workspace-sidebar-brand">
         <div v-if="!isMobileViewport" class="workspace-sidebar-brand-main">
@@ -71,7 +76,12 @@
         </div>
       </div>
 
-      <div class="workspace-sidebar-list">
+      <div
+        class="workspace-sidebar-list"
+        v-loading="boardLoading"
+        element-loading-text="正在加载迭代列表..."
+        element-loading-background="rgba(248, 249, 250, 0.72)"
+      >
         <button
           class="workspace-iteration-card"
           :class="{ active: selectedScope.type === 'unplanned' }"
@@ -273,7 +283,7 @@
                   v-if="selectedScope.type === 'iteration' && canSyncGiteeWorkItems"
                   class="management-list-toolbar-button"
                   type="button"
-                  :disabled="!currentIterationGiteeBinding"
+                  :disabled="!currentIterationGiteeBinding || iterationSyncSubmitting"
                   @click="handleSyncCurrentIterationWorkItems"
                 >
                   <el-icon><RefreshRight /></el-icon>
@@ -358,7 +368,7 @@
                 v-if="selectedScope.type === 'iteration' && canSyncGiteeWorkItems"
                 class="management-list-toolbar-button"
                 type="button"
-                :disabled="!currentIterationGiteeBinding"
+                :disabled="!currentIterationGiteeBinding || iterationSyncSubmitting"
                 @click="handleSyncCurrentIterationWorkItems"
               >
                 <el-icon><RefreshRight /></el-icon>
@@ -386,8 +396,13 @@
         </div>
       </section>
 
-      <section class="workspace-table-shell">
-        <div class="workspace-table-scroll mobile-card-scroll" v-loading="workItemLoading">
+      <section
+        class="workspace-table-shell"
+        v-loading="workItemLoading"
+        element-loading-text="正在加载工作项列表..."
+        element-loading-background="rgba(248, 249, 250, 0.72)"
+      >
+        <div class="workspace-table-scroll mobile-card-scroll">
           <template v-if="!isMobileViewport">
           <table class="workspace-table mobile-card-table">
             <thead>
@@ -451,24 +466,7 @@
                   <span v-else class="workspace-status-pill" :class="workItemTone(row.status)">{{ formatTaskStatusLabel(row) }}</span>
                 </td>
                 <td class="center workspace-col-hours" data-label="预估工时">
-                  <el-tooltip
-                    v-if="canManageWorkItem && row.workItemType === '任务'"
-                    :content="getRowWorkHoursLockedReason(row)"
-                    :disabled="!getRowWorkHoursLockedReason(row)"
-                  >
-                    <el-input-number
-                      :model-value="row.workHours ?? undefined"
-                      :min="0"
-                      :max="15"
-                      :step="0.5"
-                      :precision="1"
-                      controls-position="right"
-                      class="work-hours-input"
-                      :disabled="statusUpdatingId === row.id"
-                      @change="handleQuickWorkHoursChange(row, $event)"
-                    />
-                  </el-tooltip>
-                  <span v-else class="workspace-hours-pill" :class="{ empty: row.workHours == null }">{{ formatInlineWorkHours(row.workHours) }}</span>
+                  <span class="workspace-hours-pill" :class="{ empty: row.workHours == null }">{{ formatInlineWorkHours(row.workHours) }}</span>
                 </td>
                 <td class="center workspace-col-type" data-label="工作项类型">
                   <span class="workspace-type-pill" :class="workItemTypeTone(row.workItemType)">{{ row.workItemType }}</span>
@@ -513,19 +511,14 @@
                         <el-icon><ChatDotRound /></el-icon>
                       </button>
                     </el-tooltip>
-                    <el-tooltip v-if="canManageWorkItem" content="智能执行" placement="top">
-                      <button class="workspace-action-button ai" type="button" aria-label="发起智能执行" @click="openExecutionTaskDialog(row)">
+                    <el-tooltip v-if="canOpenSmartActionDialog(row)" content="智能操作" placement="top">
+                      <button class="workspace-action-button ai" type="button" aria-label="打开智能操作" @click="openSmartActionDialog(row)">
                         <el-icon><Cpu /></el-icon>
                       </button>
                     </el-tooltip>
                     <el-tooltip v-if="canManageWorkItem" content="编辑" placement="top">
                       <button class="workspace-action-button" type="button" aria-label="编辑工作项" @click="openWorkItemDetailFromRow(row)">
                         <el-icon><EditPen /></el-icon>
-                      </button>
-                    </el-tooltip>
-                    <el-tooltip v-if="row.workItemType === '需求'" content="需求 AI" placement="top">
-                      <button class="workspace-action-button ai" type="button" aria-label="打开需求 AI" @click="openRequirementAiDialog(row)">
-                        <el-icon><Cpu /></el-icon>
                       </button>
                     </el-tooltip>
                     <el-tooltip v-if="row.workItemType === '需求' && canRequirementDevPass && !row.devPassed" content="开发通过" placement="top">
@@ -626,39 +619,7 @@
                       <div class="mobile-entity-field workspace-mobile-field-half">
                         <span class="mobile-entity-field-label">工时</span>
                         <div class="mobile-entity-field-content">
-                          <div
-                            v-if="isInlineEditorActive(row.id, 'hours')"
-                            class="workspace-inline-number-shell"
-                            @focusout="handleInlineHoursFocusOut(row, $event)"
-                          >
-                            <el-input-number
-                              v-model="inlineHoursDraft"
-                              :min="0"
-                              :max="15"
-                              :step="0.5"
-                              :precision="1"
-                              :controls="false"
-                              class="work-hours-input workspace-inline-number"
-                              :disabled="statusUpdatingId === row.id"
-                              @keyup.enter="handleInlineHoursSubmit(row)"
-                              @keydown.esc.prevent="handleInlineHoursCancel(row)"
-                            />
-                          </div>
-                          <el-tooltip
-                            v-else-if="canManageWorkItem && row.workItemType === '任务'"
-                            :content="getRowWorkHoursLockedReason(row)"
-                            :disabled="!getRowWorkHoursLockedReason(row)"
-                          >
-                            <button
-                              class="workspace-editable-display is-chip"
-                              type="button"
-                              :disabled="statusUpdatingId === row.id"
-                              @click="openInlineEditor(row, 'hours')"
-                            >
-                              <span class="workspace-hours-pill" :class="{ empty: row.workHours == null }">{{ formatInlineWorkHours(row.workHours) }}</span>
-                            </button>
-                          </el-tooltip>
-                          <span v-else class="workspace-hours-pill" :class="{ empty: row.workHours == null }">{{ formatInlineWorkHours(row.workHours) }}</span>
+                          <span class="workspace-hours-pill" :class="{ empty: row.workHours == null }">{{ formatInlineWorkHours(row.workHours) }}</span>
                         </div>
                       </div>
                     </div>
@@ -716,13 +677,9 @@
                       <el-icon><EditPen /></el-icon>
                       <span>编辑</span>
                     </button>
-                    <button v-if="canManageWorkItem" class="mobile-entity-action-button info" type="button" @click="openExecutionTaskDialog(row)">
+                    <button v-if="canOpenSmartActionDialog(row)" class="mobile-entity-action-button info" type="button" @click="openSmartActionDialog(row)">
                       <el-icon><Cpu /></el-icon>
-                      <span>智能执行</span>
-                    </button>
-                    <button v-if="row.workItemType === '需求'" class="mobile-entity-action-button info" type="button" @click="openRequirementAiDialog(row)">
-                      <el-icon><Cpu /></el-icon>
-                      <span>需求 AI</span>
+                      <span>智能操作</span>
                     </button>
                     <button v-if="row.workItemType === '需求' && canRequirementDevPass && !row.devPassed" class="mobile-entity-action-button" type="button" @click="handleRequirementDevPass(row)">
                       <el-icon><Management /></el-icon>
@@ -824,6 +781,7 @@
 
   <el-drawer
     v-model="workItemDialogVisible"
+    :with-header="false"
     :show-close="false"
     :before-close="handleWorkItemDrawerBeforeClose"
     direction="rtl"
@@ -832,287 +790,275 @@
     append-to-body
     @closed="handleWorkItemDialogClosed"
   >
-    <template #header>
-      <div class="work-item-dialog-header">
-        <div class="work-item-dialog-header-main">
-          <button class="work-item-dialog-close" type="button" @click="closeWorkItemDetail">×</button>
-          <span class="work-item-dialog-divider" aria-hidden="true"></span>
-          <div class="work-item-dialog-heading">
-            <span class="work-item-dialog-heading-icon">
-              <el-icon><FolderOpened /></el-icon>
-            </span>
-            <div class="work-item-dialog-heading-copy">
-              <div class="work-item-dialog-eyebrow">{{ workItemEditing ? '编辑工作项' : '新建工作项' }}</div>
-              <div class="work-item-dialog-heading-line">
-                <span class="work-item-dialog-heading-text">{{ workItemForm.name || (workItemEditing ? '编辑工作项' : '新建工作项') }}</span>
-                <span class="work-item-dialog-status-pill" :class="workItemStatusTone">{{ workItemStatusDisplay }}</span>
+    <el-form
+      ref="workItemFormRef"
+      :model="workItemForm"
+      :rules="workItemRules"
+      :disabled="!canManageWorkItem"
+      label-position="top"
+      class="work-item-form work-item-editor-form"
+      :class="{ compact: !workItemDescriptionEditing }"
+    >
+      <div class="work-item-editor-shell" :class="{ compact: !workItemDescriptionEditing }">
+        <div class="work-item-dialog-header">
+          <div class="work-item-dialog-header-main">
+            <button class="work-item-dialog-close" type="button" @click="closeWorkItemDetail">×</button>
+            <span class="work-item-dialog-divider" aria-hidden="true"></span>
+            <div class="work-item-dialog-heading">
+              <span class="work-item-dialog-heading-icon">
+                <el-icon><FolderOpened /></el-icon>
+              </span>
+              <div class="work-item-dialog-heading-copy">
+                <div class="work-item-dialog-heading-line">
+                  <span class="work-item-dialog-heading-text">{{ workItemEditing ? '编辑工作项' : '新建工作项' }}</span>
+                  <span class="work-item-dialog-status-pill" :class="workItemStatusTone">{{ workItemStatusDisplay }}</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        <div class="work-item-dialog-header-side">
-          <span class="work-item-priority-badge" :class="workItemPriorityTone">{{ workItemPriorityBadge }}</span>
-          <span class="work-item-dialog-updated">更新于 {{ workItemDialogUpdatedAt }}</span>
-        </div>
-      </div>
-    </template>
-
-    <el-form ref="workItemFormRef" :model="workItemForm" :rules="workItemRules" :disabled="!canManageWorkItem" label-position="top" class="work-item-form work-item-editor-form">
-      <div class="work-item-editor-shell">
-        <section class="work-item-editor-top">
-          <div class="work-item-editor-title-row">
-            <div class="work-item-editor-label">标题与编号</div>
-            <el-form-item prop="name" class="work-item-title-form-item work-item-form-item-plain">
-              <div class="work-item-title-input-row">
-                <span class="work-item-id-badge">{{ workItemDisplayCode }}</span>
-                <el-input v-model="workItemForm.name" placeholder="请填写工作项标题" size="large" />
-              </div>
-            </el-form-item>
-            <div v-if="currentDialogWorkItem?.externalSource" class="work-item-source-row">
-              <span class="workspace-source-pill">{{ formatExternalSourceLabel(currentDialogWorkItem.externalSource) }}</span>
-              <a
-                v-if="currentDialogWorkItem.externalRemoteUrl"
-                class="workspace-source-link"
-                :href="currentDialogWorkItem.externalRemoteUrl"
-                target="_blank"
-                rel="noreferrer"
-              >
-                查看远端工作项 #{{ currentDialogWorkItem.externalRemoteId || '-' }}
-              </a>
-            </div>
+          <div class="work-item-dialog-header-side">
+            <span class="work-item-dialog-updated">更新于 {{ workItemDialogUpdatedAt }}</span>
           </div>
+        </div>
 
-          <div class="work-item-editor-grid">
-            <div class="work-item-field-block work-item-field-type">
-              <div class="work-item-editor-label">工作项类型</div>
-              <el-form-item prop="workItemType" class="work-item-form-item-plain">
-                <el-select v-model="workItemForm.workItemType" style="width: 100%">
-                  <el-option v-for="item in workItemTypeOptions" :key="item" :label="item" :value="item" />
-                </el-select>
+        <div class="work-item-editor-scroll">
+          <section class="work-item-editor-top">
+            <div class="work-item-editor-title-row">
+              <el-form-item prop="name" class="work-item-title-form-item work-item-form-item-plain">
+                <div class="work-item-title-input-row">
+                  <span class="work-item-id-badge">{{ workItemDisplayCode }}</span>
+                  <el-input v-model="workItemForm.name" placeholder="请填写工作项标题" size="large" />
+                </div>
               </el-form-item>
-            </div>
-
-            <div class="work-item-field-block work-item-field-iteration">
-              <div class="work-item-editor-label">所属迭代</div>
-              <el-form-item class="work-item-form-item-plain">
-                <el-select v-model="workItemForm.iterationId" clearable placeholder="未选择则放入未规划工作项" style="width: 100%">
-                  <el-option v-for="item in board.iterations" :key="item.id" :label="item.name" :value="item.id" />
-                </el-select>
-              </el-form-item>
-            </div>
-
-            <div class="work-item-field-block work-item-field-members">
-              <div class="work-item-editor-label">负责人 / 协作者</div>
-              <el-form-item class="work-item-form-item-plain">
-                <WorkItemMemberField
-                  v-model:assignee-user-id="workItemForm.assigneeUserId"
-                  v-model:collaborator-user-ids="workItemForm.collaboratorUserIds"
-                  :user-options="projectParticipantUsers"
-                  :project-member-user-ids="projectParticipantUserIds"
-                  placeholder="指派负责人/协作者"
-                  class="work-item-members-field"
-                />
-              </el-form-item>
-            </div>
-
-            <div class="work-item-field-block work-item-field-status">
-              <div class="work-item-editor-label">状态</div>
-              <el-form-item prop="status" class="work-item-form-item-plain">
-                <CompactSelectMenu
-                  :model-value="workItemForm.status"
-                  :options="taskStatusSelectOptions"
-                  class="status-select work-item-status-select"
-                  size="default"
-                  :disabled="!canManageWorkItem"
-                  @change="workItemForm.status = String($event)"
-                />
-              </el-form-item>
-            </div>
-
-            <div class="work-item-field-block work-item-field-project">
-              <div class="work-item-editor-label">所属项目</div>
-              <div class="work-item-static-field">{{ board.project.name || '当前项目' }}</div>
-            </div>
-
-            <div v-if="isRequirementWorkItem" class="work-item-field-block work-item-field-relation">
-              <div class="work-item-editor-label">所属模块</div>
-              <el-form-item class="work-item-form-item-plain">
-                <el-select
-                  v-model="workItemForm.moduleName"
-                  filterable
-                  allow-create
-                  default-first-option
-                  placeholder="输入或选择需求模块"
-                  style="width: 100%"
+              <div v-if="currentDialogWorkItem?.externalSource" class="work-item-source-row">
+                <span class="workspace-source-pill">{{ formatExternalSourceLabel(currentDialogWorkItem.externalSource) }}</span>
+                <a
+                  v-if="currentDialogWorkItem.externalRemoteUrl"
+                  class="workspace-source-link"
+                  :href="currentDialogWorkItem.externalRemoteUrl"
+                  target="_blank"
+                  rel="noreferrer"
                 >
-                  <el-option label="未分类" value="未分类" />
-                  <el-option
-                    v-for="item in requirementModuleOptions"
-                    :key="item.id"
-                    :label="item.moduleName"
-                    :value="item.moduleName"
-                  >
-                    <div class="requirement-module-option">
-                      <span class="requirement-module-option-name">{{ item.moduleName }}</span>
-                      <button
-                        v-if="canManageWorkItem"
-                        class="requirement-module-option-delete"
-                        type="button"
-                        aria-label="删除模块候选"
-                        @mousedown.prevent.stop
-                        @click.prevent.stop="handleDeleteRequirementModule(item)"
-                      >
-                        <el-icon><Delete /></el-icon>
-                      </button>
-                    </div>
-                  </el-option>
-                </el-select>
-              </el-form-item>
+                  查看远端工作项 #{{ currentDialogWorkItem.externalRemoteId || '-' }}
+                </a>
+              </div>
             </div>
 
-            <div v-if="isRequirementWorkItem" class="work-item-field-block work-item-field-relation">
-              <div class="work-item-editor-label">原型链接</div>
-              <el-form-item class="work-item-form-item-plain">
-                <el-input v-model="workItemForm.prototypeUrl" placeholder="请输入原型链接" />
-              </el-form-item>
-            </div>
-            <div v-else class="work-item-field-block work-item-field-relation">
-              <div class="work-item-editor-label">关联需求</div>
-              <el-form-item class="work-item-form-item-plain">
-                <el-select v-model="workItemForm.requirementTaskId" clearable filterable placeholder="可选，关联一个需求" style="width: 100%">
-                  <el-option v-for="item in requirementSelectableOptions" :key="item.id" :label="item.name" :value="item.id" />
-                </el-select>
-              </el-form-item>
-            </div>
+            <div class="work-item-editor-grid">
+              <div class="work-item-field-block work-item-field-type">
+                <div class="work-item-editor-label">工作项类型</div>
+                <el-form-item prop="workItemType" class="work-item-form-item-plain">
+                  <el-select v-model="workItemForm.workItemType" style="width: 100%">
+                    <el-option v-for="item in workItemTypeOptions" :key="item" :label="item" :value="item" />
+                  </el-select>
+                </el-form-item>
+              </div>
 
-            <div class="work-item-field-block work-item-field-schedule">
-              <div class="work-item-editor-label">计划时间</div>
-              <div class="work-item-inline-pair single">
+              <div class="work-item-field-block work-item-field-iteration">
+                <div class="work-item-editor-label">所属迭代</div>
                 <el-form-item class="work-item-form-item-plain">
-                  <el-date-picker
-                    v-model="workItemPlanDateRange"
-                    type="daterange"
-                    value-format="YYYY-MM-DD"
-                    start-placeholder="开始日期"
-                    end-placeholder="结束日期"
-                    range-separator="至"
-                    style="width: 100%"
+                  <el-select v-model="workItemForm.iterationId" clearable placeholder="未选择则放入未规划工作项" style="width: 100%">
+                    <el-option v-for="item in board.iterations" :key="item.id" :label="item.name" :value="item.id" />
+                  </el-select>
+                </el-form-item>
+              </div>
+
+              <div class="work-item-field-block work-item-field-members">
+                <div class="work-item-editor-label">负责人 / 协作者</div>
+                <el-form-item class="work-item-form-item-plain">
+                  <WorkItemMemberField
+                    v-model:assignee-user-id="workItemForm.assigneeUserId"
+                    v-model:collaborator-user-ids="workItemForm.collaboratorUserIds"
+                    :user-options="projectParticipantUsers"
+                    :project-member-user-ids="projectParticipantUserIds"
+                    placeholder="指派负责人/协作者"
+                    class="work-item-members-field"
                   />
                 </el-form-item>
               </div>
-            </div>
 
-            <div class="work-item-field-block work-item-field-priority">
-              <div class="work-item-editor-label">{{ workItemForm.workItemType === '任务' ? '优先级 / 预估工时' : '优先级' }}</div>
-              <div class="work-item-inline-pair" :class="{ single: workItemForm.workItemType !== '任务' }">
-                <el-form-item prop="priority" class="work-item-form-item-plain">
+              <div class="work-item-field-block work-item-field-status">
+                <div class="work-item-editor-label">状态</div>
+                <el-form-item prop="status" class="work-item-form-item-plain">
                   <CompactSelectMenu
-                    :model-value="workItemForm.priority"
-                    :options="prioritySelectOptions"
-                    class="priority-select work-item-priority-select"
+                    :model-value="workItemForm.status"
+                    :options="taskStatusSelectOptions"
+                    class="status-select work-item-status-select"
                     size="default"
                     :disabled="!canManageWorkItem"
-                    @change="workItemForm.priority = String($event)"
+                    @change="workItemForm.status = String($event)"
                   />
                 </el-form-item>
-                <el-form-item v-if="workItemForm.workItemType === '任务'" class="work-item-form-item-plain work-item-hours-item">
-                  <el-tooltip :content="workItemWorkHoursLockedReason" :disabled="!workItemWorkHoursLockedReason">
-                    <el-input
-                      v-model="workItemWorkHoursInput"
-                      class="work-item-hours-input"
-                      inputmode="decimal"
-                      placeholder="工时"
-                      style="width: 100%"
-                      :disabled="!canManageWorkItem || Boolean(workItemWorkHoursLockedReason)"
-                      @input="handleWorkItemWorkHoursInput"
-                      @blur="normalizeWorkItemWorkHoursInput"
-                    />
-                  </el-tooltip>
+              </div>
+
+              <div class="work-item-field-block work-item-field-project">
+                <div class="work-item-editor-label">所属项目</div>
+                <div class="work-item-static-field">{{ board.project.name || '当前项目' }}</div>
+              </div>
+
+              <div v-if="isRequirementWorkItem" class="work-item-field-block work-item-field-relation">
+                <div class="work-item-editor-label">所属模块</div>
+                <el-form-item class="work-item-form-item-plain">
+                  <el-select
+                    v-model="workItemForm.moduleName"
+                    filterable
+                    allow-create
+                    default-first-option
+                    placeholder="输入或选择需求模块"
+                    style="width: 100%"
+                  >
+                    <el-option label="未分类" value="未分类" />
+                    <el-option
+                      v-for="item in requirementModuleOptions"
+                      :key="item.id"
+                      :label="item.moduleName"
+                      :value="item.moduleName"
+                    >
+                      <div class="requirement-module-option">
+                        <span class="requirement-module-option-name">{{ item.moduleName }}</span>
+                        <button
+                          v-if="canManageWorkItem"
+                          class="requirement-module-option-delete"
+                          type="button"
+                          aria-label="删除模块候选"
+                          @mousedown.prevent.stop
+                          @click.prevent.stop="handleDeleteRequirementModule(item)"
+                        >
+                          <el-icon><Delete /></el-icon>
+                        </button>
+                      </div>
+                    </el-option>
+                  </el-select>
                 </el-form-item>
               </div>
-              <div v-if="workItemWorkHoursLockedReason && workItemForm.workItemType === '任务'" class="form-tip work-item-inline-tip">
-                {{ workItemWorkHoursLockedReason }}
+
+              <div v-if="isRequirementWorkItem" class="work-item-field-block work-item-field-relation">
+                <div class="work-item-editor-label">原型链接</div>
+                <el-form-item class="work-item-form-item-plain">
+                  <el-input v-model="workItemForm.prototypeUrl" placeholder="请输入原型链接（选填）" />
+                </el-form-item>
+              </div>
+              <div v-else class="work-item-field-block work-item-field-relation">
+                <div class="work-item-editor-label">关联需求</div>
+                <el-form-item class="work-item-form-item-plain">
+                  <el-select v-model="workItemForm.requirementTaskId" clearable filterable placeholder="可选，关联一个需求" style="width: 100%">
+                    <el-option v-for="item in requirementSelectableOptions" :key="item.id" :label="item.name" :value="item.id" />
+                  </el-select>
+                </el-form-item>
+              </div>
+
+              <div class="work-item-field-block work-item-field-schedule">
+                <div class="work-item-editor-label">计划时间</div>
+                <div class="work-item-inline-pair single">
+                  <el-form-item class="work-item-form-item-plain">
+                    <el-date-picker
+                      v-model="workItemPlanDateRange"
+                      type="daterange"
+                      value-format="YYYY-MM-DD"
+                      start-placeholder="开始日期"
+                      end-placeholder="结束日期"
+                      range-separator="至"
+                      style="width: 100%"
+                    />
+                  </el-form-item>
+                </div>
+              </div>
+
+              <div class="work-item-field-block work-item-field-priority">
+                <div class="work-item-editor-label">{{ workItemForm.workItemType === '任务' ? '优先级 / 预估工时' : '优先级' }}</div>
+                <div class="work-item-inline-pair" :class="{ single: workItemForm.workItemType !== '任务' }">
+                  <el-form-item prop="priority" class="work-item-form-item-plain">
+                    <CompactSelectMenu
+                      :model-value="workItemForm.priority"
+                      :options="prioritySelectOptions"
+                      class="priority-select work-item-priority-select"
+                      size="default"
+                      :disabled="!canManageWorkItem"
+                      @change="workItemForm.priority = String($event)"
+                    />
+                  </el-form-item>
+                  <el-form-item v-if="workItemForm.workItemType === '任务'" class="work-item-form-item-plain work-item-hours-item">
+                    <el-tooltip :content="workItemWorkHoursLockedReason" :disabled="!workItemWorkHoursLockedReason">
+                      <el-input
+                        v-model="workItemWorkHoursInput"
+                        class="work-item-hours-input"
+                        inputmode="decimal"
+                        placeholder="工时"
+                        style="width: 100%"
+                        :disabled="!canManageWorkItem || Boolean(workItemWorkHoursLockedReason)"
+                        @input="handleWorkItemWorkHoursInput"
+                        @blur="normalizeWorkItemWorkHoursInput"
+                      />
+                    </el-tooltip>
+                  </el-form-item>
+                </div>
+                <div v-if="workItemWorkHoursLockedReason && workItemForm.workItemType === '任务'" class="form-tip work-item-inline-tip">
+                  {{ workItemWorkHoursLockedReason }}
+                </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="work-item-editor-description">
-            <div class="work-item-description-body">
-              <div class="work-item-description-section-head">
-                <div class="work-item-description-section-title">{{ workItemDescriptionSectionTitle }}</div>
+          <section class="work-item-editor-description" :class="{ compact: !workItemDescriptionEditing }">
+              <div class="work-item-description-body">
+                <div class="work-item-description-section-head">
+                  <div class="work-item-description-section-title">{{ workItemDescriptionSectionTitle }}</div>
+                </div>
+                <el-alert
+                  v-if="isRequirementWorkItem && legacyRequirementNeedsUpgrade"
+                  type="warning"
+                :closable="false"
+                title="该需求为历史数据，本次保存后会升级为新模板结构。"
+                class="legacy-requirement-alert"
+              />
+              <div v-if="isRequirementWorkItem && legacyRequirementPreview" class="legacy-requirement-preview">
+                <div class="legacy-requirement-preview-title">历史说明预览</div>
+                <div class="legacy-requirement-preview-body" v-html="renderMarkdownToHtml(legacyRequirementPreview)"></div>
               </div>
-              <el-alert
-                v-if="isRequirementWorkItem && legacyRequirementNeedsUpgrade"
-                type="warning"
-              :closable="false"
-              title="该需求为历史数据，本次保存后会升级为新模板结构。"
-              class="legacy-requirement-alert"
-            />
-            <div v-if="isRequirementWorkItem && legacyRequirementPreview" class="legacy-requirement-preview">
-              <div class="legacy-requirement-preview-title">历史说明预览</div>
-              <div class="legacy-requirement-preview-body" v-html="renderMarkdownToHtml(legacyRequirementPreview)"></div>
-            </div>
 
-              <el-form-item v-if="isRequirementWorkItem" class="description-form-item work-item-description-form-item">
-                <MarkdownEditor
-                  v-model="workItemForm.requirementMarkdown"
-                  :height="workItemEditorHeight"
-                  :preview="true"
-                  :start-in-edit-mode="!workItemEditing"
-                  :upload-image="handleTaskMarkdownImageUpload"
-                  placeholder=""
-                />
-              </el-form-item>
+                <el-form-item v-if="isRequirementWorkItem" class="description-form-item work-item-description-form-item">
+                  <MarkdownEditor
+                    v-model="workItemForm.requirementMarkdown"
+                    :height="workItemEditorHeight"
+                    :preview="true"
+                    :preview-auto-height="!workItemDescriptionEditing"
+                    :start-in-edit-mode="!workItemEditing"
+                    :upload-image="handleTaskMarkdownImageUpload"
+                    placeholder=""
+                    @edit-state-change="handleWorkItemDescriptionEditStateChange"
+                  />
+                </el-form-item>
 
-              <el-form-item v-else prop="description" class="description-form-item work-item-description-form-item">
-                <MarkdownEditor
-                  v-model="workItemForm.description"
-                  :height="workItemEditorHeight"
-                  :preview="true"
-                  :start-in-edit-mode="!workItemEditing"
-                  :upload-image="handleTaskMarkdownImageUpload"
-                  placeholder=""
-                />
-              </el-form-item>
-            </div>
-        </section>
+                <el-form-item v-else prop="description" class="description-form-item work-item-description-form-item">
+                  <MarkdownEditor
+                    v-model="workItemForm.description"
+                    :height="workItemEditorHeight"
+                    :preview="true"
+                    :preview-auto-height="!workItemDescriptionEditing"
+                    :start-in-edit-mode="!workItemEditing"
+                    :upload-image="handleTaskMarkdownImageUpload"
+                    placeholder=""
+                    @edit-state-change="handleWorkItemDescriptionEditStateChange"
+                  />
+                </el-form-item>
+              </div>
+          </section>
+        </div>
+
+        <div v-if="canManageWorkItem" class="work-item-dialog-footer">
+          <el-button
+            v-if="isRequirementWorkItem && currentDialogWorkItem"
+            plain
+            @click="handleInitializeCurrentTaskPrd"
+          >
+            {{ currentDialogWorkItem.prdWikiPageId ? '重试初始化 PRD' : '初始化 PRD' }}
+          </el-button>
+          <el-button type="primary" :loading="workItemSubmitting" @click="handleSubmitWorkItem">
+            {{ workItemEditing ? '保存工作项' : '创建工作项' }}
+          </el-button>
+        </div>
       </div>
     </el-form>
-
-    <template #footer>
-      <div class="work-item-dialog-footer">
-        <el-button
-          v-if="canManageWorkItem && isRequirementWorkItem && currentDialogWorkItem"
-          plain
-          @click="handleInitializeCurrentTaskPrd"
-        >
-          {{ currentDialogWorkItem.prdWikiPageId ? '重试初始化 PRD' : '初始化 PRD' }}
-        </el-button>
-        <el-button
-          v-if="isRequirementWorkItem && currentDialogWorkItem?.prdWikiSpaceId && currentDialogWorkItem?.prdWikiPageId"
-          plain
-          @click="openWorkItemPrd(currentDialogWorkItem)"
-        >
-          打开 PRD
-        </el-button>
-        <el-button
-          v-if="isRequirementWorkItem && currentDialogWorkItem?.prdWikiSpaceId && currentDialogWorkItem?.prdWikiPageId"
-          type="primary"
-          plain
-          @click="openRequirementAiDialog(currentDialogWorkItem)"
-        >
-          AI 完善 PRD
-        </el-button>
-        <el-button v-if="canManageWorkItem && currentDialogWorkItem" type="success" plain @click="openExecutionTaskDialog(currentDialogWorkItem)">
-          发起智能执行
-        </el-button>
-        <el-button @click="closeWorkItemDetail">取消</el-button>
-        <el-button v-if="canManageWorkItem" type="primary" :loading="workItemSubmitting" @click="handleSubmitWorkItem">
-          {{ workItemEditing ? '保存工作项' : '创建工作项' }}
-        </el-button>
-      </div>
-    </template>
   </el-drawer>
 
   <el-dialog
@@ -1191,6 +1137,7 @@
             filterable
             :disabled="!currentProjectGiteeBinding"
             placeholder="请选择 Gitee 迭代"
+            :no-data-text="iterationGiteeBindingLoading ? 'Gitee 迭代加载中...' : currentProjectGiteeBinding ? '未查询到可见的 Gitee 迭代' : '请先完成 Gitee 项目绑定'"
             style="width: 100%"
           >
             <el-option
@@ -1266,17 +1213,20 @@
     </template>
   </el-dialog>
 
+  <WorkItemSmartActionDialog
+    v-model="smartActionDialogVisible"
+    :work-item="currentSmartActionWorkItem"
+    :can-manage="canManageWorkItem"
+    :can-execute="canManageWorkItem"
+    @changed="handleRequirementAiChanged"
+    @created="handleExecutionTaskCreated"
+  />
+
   <RequirementAiDialog
     v-model="requirementAiDialogVisible"
     :task="currentRequirementAiTask"
     :can-manage="canManageWorkItem"
     @changed="handleRequirementAiChanged"
-  />
-
-  <ExecutionTaskCreateDialog
-    v-model="executionTaskCreateDialogVisible"
-    :work-item="currentExecutionWorkItem"
-    @created="handleExecutionTaskCreated"
   />
 </template>
 
@@ -1302,8 +1252,8 @@ import ListUserDisplay from '@/components/ListUserDisplay.vue'
 import type { ListUserDisplayItem } from '@/components/listUserDisplay'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import ProjectBurndownChart from '@/components/ProjectBurndownChart.vue'
-import ExecutionTaskCreateDialog from '@/components/ExecutionTaskCreateDialog.vue'
 import RequirementAiDialog from '@/components/RequirementAiDialog.vue'
+import WorkItemSmartActionDialog from '@/components/WorkItemSmartActionDialog.vue'
 import WorkItemMemberField from '@/components/WorkItemMemberField.vue'
 import { HERMES_OPEN_EVENT_NAME } from '@/constants/hermes'
 import {
@@ -1331,7 +1281,6 @@ import { useNotificationStore } from '@/stores/notifications'
 import {
   formatRequirementStatusLabel,
   isRequirementFullyPassed,
-  getTaskWorkHoursLockedReason,
   isTaskWorkHoursUnlocked
 } from '@/utils/requirementReview'
 import { uploadMarkdownImage } from '@/utils/taskImageUpload'
@@ -1484,6 +1433,7 @@ const iterationGiteeBindingSubmitting = ref(false)
 const iterationSyncResultVisible = ref(false)
 const iterationSyncLogsVisible = ref(false)
 const iterationSyncLogsLoading = ref(false)
+const iterationSyncSubmitting = ref(false)
 const iterationSyncResult = ref<GiteeWorkItemSyncResultItem | null>(null)
 const iterationSyncLogs = ref<GiteeWorkItemSyncLogItem[]>([])
 const burndown = ref<ProjectBurndownItem | null>(null)
@@ -1500,6 +1450,7 @@ const currentIterationProgress = computed(() => {
 })
 const burndownDialogVisible = ref(false)
 const statusUpdatingId = ref<number | null>(null)
+const boardLoading = ref(false)
 const workItemLoading = ref(false)
 const keyword = ref('')
 const activeTypeTab = ref<'全部' | '需求' | '任务' | '缺陷'>('全部')
@@ -1512,9 +1463,8 @@ const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMob
   pagination: workItemPagination,
   loadPage: async () => loadWorkItems()
 })
-type InlineEditableField = 'status' | 'hours' | 'assignee' | 'priority'
+type InlineEditableField = 'status' | 'assignee' | 'priority'
 const activeInlineEditor = ref<{ rowId: number; field: InlineEditableField } | null>(null)
-const inlineHoursDraft = ref<number | null>(null)
 const workItemFilters = reactive<{ status: string; priority: string; assigneeUserId?: number }>({
   status: '',
   priority: '',
@@ -1565,11 +1515,12 @@ const commentImagePreviewVisible = ref(false)
 const commentImagePreviewSrc = ref('')
 const requirementAiDialogVisible = ref(false)
 const currentRequirementAiTask = ref<TaskItem | null>(null)
-const executionTaskCreateDialogVisible = ref(false)
-const currentExecutionWorkItem = ref<TaskItem | null>(null)
+const smartActionDialogVisible = ref(false)
+const currentSmartActionWorkItem = ref<TaskItem | null>(null)
 const currentDialogWorkItem = ref<TaskItem | null>(null)
 const legacyRequirementNeedsUpgrade = ref(false)
 const legacyRequirementPreview = ref('')
+const workItemDescriptionEditing = ref(true)
 const currentCommentTask = ref<TaskItem | null>(null)
 const taskComments = ref<TaskCommentItem[]>([])
 const workItemFormRef = ref<FormInstance>()
@@ -1639,18 +1590,6 @@ const workItemDisplayCode = computed(() => {
   return workItemForm.workItemCode || '保存后自动生成'
 })
 
-const workItemPriorityTone = computed(() => {
-  if (workItemForm.priority === '高') return 'high'
-  if (workItemForm.priority === '低') return 'low'
-  return 'medium'
-})
-
-const workItemPriorityBadge = computed(() => {
-  if (workItemForm.priority === '高') return 'P0 - 高优先级'
-  if (workItemForm.priority === '低') return 'P2 - 低优先级'
-  return 'P1 - 中优先级'
-})
-
 /**
  * 预估工时改成普通输入框后，统一在这里约束为数字和单个小数点。
  */
@@ -1696,8 +1635,8 @@ const workItemPlanDateRange = computed<[string, string] | []>({
     workItemForm.planEndDate = planEndDate || null
   }
 })
-// 工作项抽屉中的 Markdown 编辑器需要吃满正文剩余区域，方便在长内容场景下直接沉浸式编辑。
-const workItemEditorHeight = computed(() => '100%')
+// 工作项详情在预览态按内容高度收缩，进入编辑态后再占满可用空间。
+const workItemEditorHeight = computed(() => (workItemDescriptionEditing.value ? '100%' : 'auto'))
 const workItemDialogUpdatedAt = computed(() => currentDialogWorkItem.value?.updatedAt || '保存后生成')
 const workItemDescriptionSectionTitle = computed(() => isRequirementWorkItem.value ? '需求文档' : '工作项描述')
 
@@ -1724,6 +1663,34 @@ const syncWorkItemAssignee = () => {
 const currentIteration = computed(() =>
   board.iterations.find((item) => item.id === selectedScope.iterationId) || null
 )
+
+const handleWorkItemDescriptionEditStateChange = (editing: boolean) => {
+  workItemDescriptionEditing.value = editing
+}
+
+/**
+ * 某些浏览器在抽屉首次渲染时会给内容区留下一个需要手动滚动才能消掉的顶部空带，
+ * 这里在打开后自动把首屏内容贴齐到滚动容器顶部，避免用户先滚一下才能看到紧凑布局。
+ */
+const alignWorkItemDrawerContentToTop = () => {
+  if (typeof document === 'undefined') {
+    return
+  }
+  const scrollContainer = document.querySelector('.work-item-drawer .work-item-editor-scroll') as HTMLElement | null
+  if (!scrollContainer) {
+    return
+  }
+  scrollContainer.scrollTop = 0
+}
+
+const scheduleAlignWorkItemDrawerContentToTop = async () => {
+  await nextTick()
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      alignWorkItemDrawerContentToTop()
+    })
+  })
+}
 
 const resetIterationGiteeBindingForm = () => {
   iterationGiteeBindingForm.giteeMilestoneId = null
@@ -1832,6 +1799,10 @@ const handleSyncCurrentIterationWorkItems = async () => {
     ElMessage.warning('当前迭代尚未绑定 Gitee 迭代')
     return
   }
+  if (iterationSyncSubmitting.value) {
+    return
+  }
+  iterationSyncSubmitting.value = true
   try {
     const result = await syncIterationGiteeWorkItems(selectedScope.iterationId)
     iterationSyncResult.value = result
@@ -1846,6 +1817,8 @@ const handleSyncCurrentIterationWorkItems = async () => {
     await Promise.all([loadBoard(), loadCurrentIterationGiteeBinding(), loadWorkItems(), loadIterationSyncLogs()])
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '工作项同步失败')
+  } finally {
+    iterationSyncSubmitting.value = false
   }
 }
 
@@ -1960,6 +1933,7 @@ const workItemTone = (status?: string | null) => {
 }
 
 const workspacePriorityTone = (priority?: string | null) => {
+  if (!priority?.trim()) return 'none'
   if (priority === '高') return 'high'
   if (priority === '低') return 'low'
   return 'medium'
@@ -2028,7 +2002,7 @@ const buildWorkItemCreatorDisplayItem = (item: TaskItem): ListUserDisplayItem | 
 }
 
 /**
- * 列表内状态、工时、负责人、优先级四个快捷编辑字段共用一套激活状态，
+ * 列表内状态、负责人、优先级三个快捷编辑字段共用一套激活状态，
  * 保证同一时间只会打开一个单元格编辑器。
  */
 const isInlineEditorActive = (rowId: number, field: InlineEditableField) =>
@@ -2036,38 +2010,20 @@ const isInlineEditorActive = (rowId: number, field: InlineEditableField) =>
 
 /**
  * 需求也允许在列表中快速调整状态、负责人和优先级；
- * 只有 PRD、模块、原型链接等重字段仍保留在详情抽屉内编辑。
+ * 工时与 PRD、模块、原型链接等字段保留在详情抽屉内维护，避免列表内误触改动。
  */
 const canEditInlineSelectField = (row: TaskItem) => canManageWorkItem.value
-const canEditInlineHoursField = (row: TaskItem) => canManageWorkItem.value && row.workItemType === '任务'
 const formatInlineWorkHours = (value?: number | null) => (value == null ? '-' : `${value}h`)
 
 /**
- * 点击显示态字段后切换到编辑态；工时字段会初始化草稿值并自动聚焦输入框。
+ * 点击显示态字段后切换到编辑态。
  */
 const openInlineEditor = async (row: TaskItem, field: InlineEditableField) => {
-  if (field === 'hours') {
-    if (!canEditInlineHoursField(row)) {
-      return
-    }
-    const lockedReason = getRowWorkHoursLockedReason(row)
-    if (lockedReason) {
-      ElMessage.warning(lockedReason)
-      return
-    }
-    inlineHoursDraft.value = row.workHours
-  } else if (!canEditInlineSelectField(row)) {
+  if (!canEditInlineSelectField(row)) {
     return
   }
 
   activeInlineEditor.value = { rowId: row.id, field }
-
-  if (field === 'hours') {
-    await nextTick()
-    const input = document.querySelector('.workspace-inline-number input') as HTMLInputElement | null
-    input?.focus()
-    input?.select()
-  }
 }
 
 const closeInlineEditor = (rowId?: number, field?: InlineEditableField) => {
@@ -2080,7 +2036,6 @@ const closeInlineEditor = (rowId?: number, field?: InlineEditableField) => {
     }
   }
   activeInlineEditor.value = null
-  inlineHoursDraft.value = null
 }
 
 const handleInlineSelectVisibleChange = (
@@ -2091,28 +2046,6 @@ const handleInlineSelectVisibleChange = (
   if (!visible) {
     closeInlineEditor(rowId, field)
   }
-}
-
-const handleInlineHoursSubmit = async (row: TaskItem) => {
-  if (!isInlineEditorActive(row.id, 'hours')) {
-    return
-  }
-  const draftValue = inlineHoursDraft.value
-  closeInlineEditor(row.id, 'hours')
-  await handleQuickWorkHoursChange(row, draftValue)
-}
-
-const handleInlineHoursFocusOut = async (row: TaskItem, event: FocusEvent) => {
-  const currentTarget = event.currentTarget as HTMLElement | null
-  const nextTarget = event.relatedTarget as Node | null
-  if (currentTarget && nextTarget && currentTarget.contains(nextTarget)) {
-    return
-  }
-  await handleInlineHoursSubmit(row)
-}
-
-const handleInlineHoursCancel = (row: TaskItem) => {
-  closeInlineEditor(row.id, 'hours')
 }
 
 const isCompletedStatus = (status?: string | null) => status === '已完成' || status === '完成'
@@ -2251,6 +2184,7 @@ const resolveDefaultWorkItemType = (): WorkItemForm['workItemType'] => {
 const resetWorkItemForm = () => {
   currentWorkItemId.value = null
   currentDialogWorkItem.value = null
+  workItemDescriptionEditing.value = true
   workItemForm.workItemCode = ''
   workItemForm.name = ''
   workItemForm.workItemType = resolveDefaultWorkItemType()
@@ -2292,13 +2226,12 @@ const renderCommentContent = (value: string) => {
 
 const handleTaskMarkdownImageUpload = (file: File) => uploadMarkdownImage(file)
 
+/**
+ * 需求原型链接改为选填后，提交时只校验模板固定章节是否完整。
+ */
 const validateRequirementForm = () => {
   if (!isRequirementWorkItem.value) {
     return ''
-  }
-  // 需求改为模板化文档后，原型链接与固定章节都需要在提交前完成校验。
-  if (!workItemForm.prototypeUrl.trim()) {
-    return '请输入原型链接'
   }
   return validateRequirementTemplate(workItemForm.requirementMarkdown)
 }
@@ -2332,29 +2265,14 @@ const formatWorkItemUpdatedAt = (value?: string | null) => {
   return value.replace('T', ' ').slice(0, 16)
 }
 
-const getRowWorkHoursLockedReason = (task: TaskItem) => {
-  if (task.workItemType !== '任务') {
-    return ''
-  }
-  return getTaskWorkHoursLockedReason(task)
-}
+const canOpenSmartActionDialog = (item: TaskItem) => item.workItemType === '需求' || canManageWorkItem.value
 
-const openRequirementAiDialog = (item: TaskItem) => {
-  currentRequirementAiTask.value = item
-  requirementAiDialogVisible.value = true
-}
-
-const openWorkItemPrd = async (item: TaskItem) => {
-  if (!item.prdWikiSpaceId || !item.prdWikiPageId) {
-    ElMessage.warning(item.prdStatusMessage || '当前工作项尚未初始化 PRD')
+const openSmartActionDialog = (item: TaskItem) => {
+  if (!canOpenSmartActionDialog(item)) {
     return
   }
-  await router.push({ name: 'wiki-space-page', params: { spaceId: item.prdWikiSpaceId, pageId: item.prdWikiPageId } })
-}
-
-const openExecutionTaskDialog = (item: TaskItem) => {
-  currentExecutionWorkItem.value = item
-  executionTaskCreateDialogVisible.value = true
+  currentSmartActionWorkItem.value = item
+  smartActionDialogVisible.value = true
 }
 
 const handleExecutionTaskCreated = async (executionTask: ExecutionTaskItem) => {
@@ -2364,7 +2282,8 @@ const handleExecutionTaskCreated = async (executionTask: ExecutionTaskItem) => {
 const handleRequirementAiChanged = async () => {
   await Promise.all([loadBoard(), loadWorkItems()])
   await refreshCurrentDialogWorkItem()
-  if (currentCommentTask.value && currentRequirementAiTask.value && currentCommentTask.value.id === currentRequirementAiTask.value.id) {
+  const relatedTask = currentRequirementAiTask.value || currentSmartActionWorkItem.value
+  if (currentCommentTask.value && relatedTask && currentCommentTask.value.id === relatedTask.id) {
     await loadTaskCommentList()
   }
 }
@@ -2402,6 +2321,9 @@ const refreshCurrentDialogWorkItem = async () => {
     currentDialogWorkItem.value = latest
     if (currentRequirementAiTask.value?.id === latest.id) {
       currentRequirementAiTask.value = latest
+    }
+    if (currentSmartActionWorkItem.value?.id === latest.id) {
+      currentSmartActionWorkItem.value = latest
     }
   } catch (error) {
     // 详情刷新失败时保持当前抽屉态，由全量刷新结果兜底。
@@ -2630,38 +2552,43 @@ const selectIteration = async (item: IterationItem) => {
 }
 
 const loadBoard = async () => {
-  const [boardData, users, burndownData, allWorkItems, moduleOptions] = await Promise.all([
-    getIterationBoard(projectId),
-    listUserOptions(),
-    getProjectBurndown(projectId),
-    listProjectWorkItems(projectId, { workItemType: '全部' }),
-    listProjectRequirementModules(projectId)
-  ])
-  board.project = boardData.project
-  board.unplannedCount = boardData.unplannedCount
-  board.totalWorkItemCount = boardData.totalWorkItemCount
-  board.iterations = boardData.iterations
-  userOptions.value = users
-  burndown.value = burndownData
-  requirementOptions.value = allWorkItems.filter((item) => item.workItemType === '需求')
-  requirementModuleOptions.value = moduleOptions
-  applyIterationProgressFromItems(allWorkItems)
+  boardLoading.value = true
+  try {
+    const [boardData, users, burndownData, allWorkItems, moduleOptions] = await Promise.all([
+      getIterationBoard(projectId),
+      listUserOptions(),
+      getProjectBurndown(projectId),
+      listProjectWorkItems(projectId, { workItemType: '全部' }),
+      listProjectRequirementModules(projectId)
+    ])
+    board.project = boardData.project
+    board.unplannedCount = boardData.unplannedCount
+    board.totalWorkItemCount = boardData.totalWorkItemCount
+    board.iterations = boardData.iterations
+    userOptions.value = users
+    burndown.value = burndownData
+    requirementOptions.value = allWorkItems.filter((item) => item.workItemType === '需求')
+    requirementModuleOptions.value = moduleOptions
+    applyIterationProgressFromItems(allWorkItems)
 
-  const routeIterationId = Number(route.query.iterationId)
-  if (!Number.isNaN(routeIterationId) && routeIterationId > 0 && board.iterations.some((item) => item.id === routeIterationId)) {
-    selectedScope.type = 'iteration'
-    selectedScope.iterationId = routeIterationId
-  }
-
-  if (selectedScope.type === 'iteration') {
-    const exists = board.iterations.some((item) => item.id === selectedScope.iterationId)
-    if (!exists) {
-      selectedScope.type = board.iterations.length > 0 ? 'iteration' : 'unplanned'
-      selectedScope.iterationId = board.iterations.length > 0 ? board.iterations[0].id : null
+    const routeIterationId = Number(route.query.iterationId)
+    if (!Number.isNaN(routeIterationId) && routeIterationId > 0 && board.iterations.some((item) => item.id === routeIterationId)) {
+      selectedScope.type = 'iteration'
+      selectedScope.iterationId = routeIterationId
     }
-  } else if (selectedScope.iterationId === null && board.iterations.length > 0 && board.unplannedCount === 0) {
-    selectedScope.type = 'iteration'
-    selectedScope.iterationId = board.iterations[0].id
+
+    if (selectedScope.type === 'iteration') {
+      const exists = board.iterations.some((item) => item.id === selectedScope.iterationId)
+      if (!exists) {
+        selectedScope.type = board.iterations.length > 0 ? 'iteration' : 'unplanned'
+        selectedScope.iterationId = board.iterations.length > 0 ? board.iterations[0].id : null
+      }
+    } else if (selectedScope.iterationId === null && board.iterations.length > 0 && board.unplannedCount === 0) {
+      selectedScope.type = 'iteration'
+      selectedScope.iterationId = board.iterations[0].id
+    }
+  } finally {
+    boardLoading.value = false
   }
 }
 
@@ -2814,6 +2741,7 @@ const openCreateWorkItemDialog = () => {
 
 const openEditWorkItemDialog = (item: TaskItem) => {
   workItemEditing.value = true
+  workItemDescriptionEditing.value = false
   currentDialogWorkItem.value = item
   currentWorkItemId.value = item.id
   workItemForm.workItemCode = item.workItemCode
@@ -3031,24 +2959,6 @@ const handleQuickPriorityChange = async (row: TaskItem, priority: string) => {
   await updateInlineWorkItem(row, { priority })
 }
 
-const handleQuickWorkHoursChange = async (row: TaskItem, value: number | string | null | undefined) => {
-  const lockedReason = getRowWorkHoursLockedReason(row)
-  if (lockedReason) {
-    ElMessage.warning(lockedReason)
-    return
-  }
-  const normalizedValue = value == null || value === '' ? null : Number(value)
-  if (normalizedValue !== null && (!Number.isFinite(normalizedValue) || normalizedValue > 15 || normalizedValue < 0)) {
-    ElMessage.warning('工时必须在 0 到 15 小时之间')
-    return
-  }
-  const formattedValue = normalizedValue == null ? null : Number(normalizedValue.toFixed(1))
-  if (row.workHours === formattedValue) {
-    return
-  }
-  await updateInlineWorkItem(row, { workHours: formattedValue })
-}
-
 const handleQuickAssigneeChange = async (row: TaskItem, assigneeUserId: number) => {
   const normalizedAssigneeUserId = assigneeUserId <= 0 ? null : assigneeUserId
   if (row.assigneeUserId === normalizedAssigneeUserId) {
@@ -3056,6 +2966,26 @@ const handleQuickAssigneeChange = async (row: TaskItem, assigneeUserId: number) 
   }
   await updateInlineWorkItem(row, { assigneeUserId: normalizedAssigneeUserId })
 }
+
+watch(
+  workItemDialogVisible,
+  (visible) => {
+    if (!visible) {
+      return
+    }
+    void scheduleAlignWorkItemDrawerContentToTop()
+  }
+)
+
+watch(
+  workItemDescriptionEditing,
+  (editing) => {
+    if (!workItemDialogVisible.value || editing) {
+      return
+    }
+    void scheduleAlignWorkItemDrawerContentToTop()
+  }
+)
 
 watch(
   () => route.query.iterationId,
@@ -4127,6 +4057,11 @@ onMounted(async () => {
   color: #64748b;
 }
 
+.workspace-priority-pill.none {
+  background: rgba(246, 248, 250, 0.96);
+  color: #94a3b8;
+}
+
 .workspace-hours-pill {
   background: rgba(231, 232, 233, 0.92);
   color: #475569;
@@ -4397,12 +4332,6 @@ onMounted(async () => {
   width: 100%;
 }
 
-.workspace-inline-number-shell {
-  width: 100%;
-  display: flex;
-  align-items: center;
-}
-
 .status-select :deep(.compact-select-trigger.variant-inline-pill) {
   width: auto;
   min-height: 22px;
@@ -4487,39 +4416,6 @@ onMounted(async () => {
   font-size: 11px;
 }
 
-:deep(.workspace-inline-number) {
-  min-height: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  background: rgba(243, 244, 245, 0.92);
-  box-shadow: inset 0 0 0 1px var(--app-border) !important;
-}
-
-:deep(.workspace-inline-number .el-input),
-:deep(.workspace-inline-number .el-input__wrapper) {
-  min-height: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  box-shadow: none !important;
-  background: transparent;
-  padding-left: 8px;
-  padding-right: 8px;
-}
-
-:deep(.workspace-inline-number .el-input__inner) {
-  height: 22px;
-  padding: 0;
-  align-self: center;
-  color: #475569;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  text-align: center;
-}
-
 :deep(.iteration-filter-popper.el-popper) {
   border: 0 !important;
   border-radius: 16px !important;
@@ -4555,13 +4451,6 @@ onMounted(async () => {
   box-shadow: -24px 0 60px rgba(25, 28, 29, 0.12);
 }
 
-:deep(.work-item-drawer .el-drawer__header) {
-  margin-bottom: 0;
-  padding: 0;
-  border-bottom: 1px solid var(--app-border);
-  background: rgba(255, 255, 255, 0.9);
-}
-
 :deep(.work-item-drawer .el-drawer__body) {
   display: flex;
   flex-direction: column;
@@ -4573,36 +4462,31 @@ onMounted(async () => {
   background: rgba(248, 249, 250, 0.96);
 }
 
-:deep(.work-item-drawer .el-drawer__footer) {
-  margin: 0;
-  padding: 0;
-  border-top: 1px solid var(--app-border);
-  background: rgba(255, 255, 255, 0.92);
-}
-
 .work-item-dialog-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 12px 22px 10px;
+  gap: 10px;
+  padding: 4px 12px 2px;
+  border-bottom: 1px solid var(--app-border);
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .work-item-dialog-header-main {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
 }
 
 .work-item-dialog-close {
-  width: 36px;
-  height: 36px;
+  width: 24px;
+  height: 24px;
   border: 0;
   border-radius: 999px;
   background: transparent;
   color: var(--app-text-muted);
-  font-size: 24px;
+  font-size: 18px;
   line-height: 1;
 }
 
@@ -4613,24 +4497,24 @@ onMounted(async () => {
 
 .work-item-dialog-divider {
   width: 1px;
-  height: 24px;
+  height: 16px;
   background: var(--app-border);
 }
 
 .work-item-dialog-heading {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
 }
 
 .work-item-dialog-heading-icon {
-  width: 30px;
-  height: 30px;
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: 7px;
   background: rgba(var(--app-primary-container-rgb), 0.12);
   color: var(--app-primary);
   flex: 0 0 auto;
@@ -4640,19 +4524,10 @@ onMounted(async () => {
   min-width: 0;
 }
 
-.work-item-dialog-eyebrow {
-  color: var(--app-text-soft);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
 .work-item-dialog-heading-line {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 6px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -4661,18 +4536,19 @@ onMounted(async () => {
   color: var(--app-text);
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 800;
+  line-height: 1.15;
 }
 
 .work-item-dialog-status-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 22px;
-  padding: 0 10px;
+  min-height: 18px;
+  padding: 0 7px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   white-space: nowrap;
 }
@@ -4700,46 +4576,21 @@ onMounted(async () => {
 .work-item-dialog-header-side {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   flex: 0 0 auto;
-}
-
-.work-item-priority-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 24px;
-  padding: 0 10px;
-  border-radius: 8px;
-  font-size: 10px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.work-item-priority-badge.high {
-  background: rgba(var(--app-primary-container-rgb), 0.14);
-  color: var(--app-primary);
-}
-
-.work-item-priority-badge.medium {
-  background: var(--app-warning-soft);
-  color: var(--app-warning);
-}
-
-.work-item-priority-badge.low {
-  background: var(--app-surface-muted);
-  color: var(--app-text-soft);
 }
 
 .work-item-dialog-updated {
   color: var(--app-text-muted);
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
+  line-height: 1.1;
 }
 
 .work-item-editor-form {
   display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -4758,19 +4609,29 @@ onMounted(async () => {
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  background: var(--app-surface-card);
 }
 
 .work-item-editor-top {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
-  padding: 10px 18px 14px;
+  padding: 0 12px 6px;
   border-bottom: 1px solid var(--app-border);
   background: var(--app-surface-card);
 }
 
+.work-item-editor-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  background: var(--app-surface-card);
+}
+
 .work-item-editor-title-row {
-  margin-bottom: 14px;
+  margin-bottom: 6px;
 }
 
 .work-item-editor-label {
@@ -4782,13 +4643,13 @@ onMounted(async () => {
 }
 
 .work-item-title-form-item {
-  margin: 8px 0 0;
+  margin: 0;
 }
 
 .work-item-title-input-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .work-item-id-badge {
@@ -4796,14 +4657,14 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  min-height: 22px;
-  padding: 0 8px;
+  min-height: 20px;
+  padding: 0 7px;
   border: 1px solid var(--app-border);
   border-radius: 6px;
   background: var(--app-surface-base);
   color: var(--app-text-muted);
   font-family: var(--app-font-mono);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -4824,13 +4685,13 @@ onMounted(async () => {
 .work-item-editor-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px 14px;
+  gap: 8px 12px;
 }
 
 .work-item-field-block {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -4869,10 +4730,10 @@ onMounted(async () => {
 }
 
 .work-item-field-members :deep(.work-item-member-reference) {
-  min-height: 34px;
-  padding: 0 10px;
+  min-height: 30px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--app-surface-base);
   box-shadow: inset 0 0 0 1px var(--app-border) !important;
 }
@@ -4888,7 +4749,7 @@ onMounted(async () => {
 .work-item-field-members :deep(.work-item-member-inline-separator),
 .work-item-field-members :deep(.work-item-member-inline-more),
 .work-item-field-members :deep(.work-item-member-arrow) {
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .work-item-field-members :deep(.work-item-member-inline-name) {
@@ -4905,8 +4766,8 @@ onMounted(async () => {
 }
 
 .work-item-status-select :deep(.compact-select-trigger) {
-  min-height: 34px;
-  border-radius: 8px;
+  min-height: 30px;
+  border-radius: 7px;
   background: var(--app-surface-base);
   box-shadow: inset 0 0 0 1px var(--app-border);
 }
@@ -4919,13 +4780,13 @@ onMounted(async () => {
 }
 
 .work-item-priority-select {
-  width: 96px;
+  width: 90px;
 }
 
 .work-item-priority-select :deep(.compact-select-trigger) {
-  min-height: 34px;
-  border-radius: 8px;
-  padding: 0 10px;
+  min-height: 30px;
+  border-radius: 7px;
+  padding: 0 8px;
   background: var(--app-surface-base);
   box-shadow: inset 0 0 0 1px var(--app-border);
 }
@@ -4964,15 +4825,15 @@ onMounted(async () => {
 }
 
 .work-item-static-field {
-  min-height: 34px;
+  min-height: 30px;
   display: flex;
   align-items: center;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 1px solid var(--app-border);
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--app-surface-base);
   color: var(--app-text);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -4999,8 +4860,8 @@ onMounted(async () => {
 
 .work-item-inline-pair {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 120px;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 108px;
+  gap: 6px;
 }
 
 .work-item-inline-pair.single {
@@ -5012,19 +4873,19 @@ onMounted(async () => {
 }
 
 .work-item-inline-tip {
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--app-danger);
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .work-item-editor-shell :deep(.el-input__wrapper),
 .work-item-editor-shell :deep(.el-select__wrapper),
 .work-item-editor-shell :deep(.el-input-number),
 .work-item-editor-shell :deep(.el-textarea__inner) {
-  min-height: 34px;
-  padding-left: 10px;
-  padding-right: 10px;
-  border-radius: 8px;
+  min-height: 30px;
+  padding-left: 8px;
+  padding-right: 8px;
+  border-radius: 7px;
   background: var(--app-surface-base);
   box-shadow: inset 0 0 0 1px var(--app-border) !important;
 }
@@ -5059,8 +4920,9 @@ onMounted(async () => {
 .work-item-title-form-item :deep(.el-input__inner) {
   color: var(--app-text);
   font-family: var(--app-font-heading);
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 800;
+  line-height: 1.2;
 }
 
 .work-item-title-form-item :deep(.el-input__inner::placeholder) {
@@ -5070,8 +4932,8 @@ onMounted(async () => {
 }
 
 .work-item-title-form-item :deep(.el-form-item__error) {
-  margin-top: 6px;
-  padding-left: 66px;
+  margin-top: 4px;
+  padding-left: 60px;
 }
 
 .work-item-editor-description {
@@ -5087,6 +4949,10 @@ onMounted(async () => {
   border-bottom: 1px solid var(--app-border);
 }
 
+.work-item-editor-description.compact {
+  flex: 0 0 auto;
+}
+
 .work-item-description-body {
   display: flex;
   flex: 1 1 auto;
@@ -5095,13 +4961,17 @@ onMounted(async () => {
   max-width: 100%;
   min-width: 0;
   min-height: 0;
-  padding: 10px 18px 18px;
+  padding: 6px 12px 8px;
   box-sizing: border-box;
+}
+
+.work-item-editor-description.compact .work-item-description-body {
+  padding-bottom: 4px;
 }
 
 .work-item-description-section-head {
   flex: 0 0 auto;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .work-item-description-section-title {
@@ -5231,6 +5101,25 @@ onMounted(async () => {
   background: transparent;
 }
 
+.work-item-editor-description.compact .work-item-description-form-item,
+.work-item-editor-description.compact .work-item-description-form-item :deep(.el-form-item__content),
+.work-item-editor-description.compact .work-item-description-form-item :deep(.markdown-editor-wrapper),
+.work-item-editor-description.compact .work-item-description-form-item :deep(.markdown-preview-shell),
+.work-item-editor-description.compact .work-item-description-form-item :deep(.md-editor-previewOnly) {
+  flex: 0 0 auto;
+  height: auto !important;
+  min-height: 0;
+}
+
+.work-item-editor-description.compact .work-item-description-form-item :deep(.md-editor-previewOnly) {
+  overflow: visible;
+}
+
+.work-item-editor-description.compact .work-item-description-form-item :deep(.md-editor-preview) {
+  min-height: 0;
+  padding-top: 0;
+}
+
 .work-item-description-form-item :deep(.cm-editor),
 .work-item-description-form-item :deep(.cm-scroller) {
   height: 100%;
@@ -5299,12 +5188,35 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 18px 22px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--app-border);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 -8px 20px rgba(25, 28, 29, 0.04);
+  flex: 0 0 auto;
 }
 
 .work-item-dialog-footer .el-button {
-  min-height: 46px;
-  border-radius: 14px;
+  min-height: 40px;
+  border-radius: 12px;
+}
+
+.work-item-dialog-footer :deep(.el-button) {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.work-item-dialog-footer :deep(.el-button:not(.el-button--primary)) {
+  --el-button-hover-text-color: var(--app-primary);
+  --el-button-hover-border-color: rgba(var(--app-primary-rgb), 0.3);
+  --el-button-hover-bg-color: rgba(var(--app-primary-rgb), 0.08);
+  --el-button-active-text-color: var(--app-primary);
+  --el-button-active-border-color: rgba(var(--app-primary-rgb), 0.36);
+  --el-button-active-bg-color: rgba(var(--app-primary-rgb), 0.12);
+}
+
+.work-item-dialog-footer :deep(.el-button:hover),
+.work-item-dialog-footer :deep(.el-button:focus-visible),
+.work-item-dialog-footer :deep(.el-button:active) {
+  transform: none;
 }
 
 .work-item-dialog-footer .el-button:first-child {

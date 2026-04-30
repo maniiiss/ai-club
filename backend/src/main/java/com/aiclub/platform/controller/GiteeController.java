@@ -4,6 +4,8 @@ import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.GiteeMilestoneSummary;
 import com.aiclub.platform.dto.GiteeProjectBindingDiscoveryResult;
+import com.aiclub.platform.dto.GiteeTestPlanPushContextSummary;
+import com.aiclub.platform.dto.GiteeTestPlanPushResult;
 import com.aiclub.platform.dto.GiteeWorkItemSyncLogSummary;
 import com.aiclub.platform.dto.GiteeWorkItemSyncResult;
 import com.aiclub.platform.dto.IterationGiteeBindingSummary;
@@ -12,6 +14,7 @@ import com.aiclub.platform.dto.request.GiteeProjectBindingDiscoveryRequest;
 import com.aiclub.platform.dto.request.IterationGiteeBindingRequest;
 import com.aiclub.platform.dto.request.ProjectGiteeBindingRequest;
 import com.aiclub.platform.service.GiteeBindingService;
+import com.aiclub.platform.service.GiteeTestPlanPushService;
 import com.aiclub.platform.service.GiteeWorkItemSyncService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,11 +33,14 @@ public class GiteeController {
 
     private final GiteeBindingService giteeBindingService;
     private final GiteeWorkItemSyncService giteeWorkItemSyncService;
+    private final GiteeTestPlanPushService giteeTestPlanPushService;
 
     public GiteeController(GiteeBindingService giteeBindingService,
-                           GiteeWorkItemSyncService giteeWorkItemSyncService) {
+                           GiteeWorkItemSyncService giteeWorkItemSyncService,
+                           GiteeTestPlanPushService giteeTestPlanPushService) {
         this.giteeBindingService = giteeBindingService;
         this.giteeWorkItemSyncService = giteeWorkItemSyncService;
+        this.giteeTestPlanPushService = giteeTestPlanPushService;
     }
 
     @GetMapping("/projects/{projectId}/binding")
@@ -105,5 +111,17 @@ public class GiteeController {
     @RequirePermission("task:view")
     public ApiResponse<List<GiteeWorkItemSyncLogSummary>> listIterationSyncLogs(@PathVariable Long iterationId) {
         return ApiResponse.success(giteeWorkItemSyncService.listIterationSyncLogs(iterationId));
+    }
+
+    @GetMapping("/test-plans/{testPlanId}/push-context")
+    @RequirePermission("gitee:test:push")
+    public ApiResponse<GiteeTestPlanPushContextSummary> getTestPlanPushContext(@PathVariable Long testPlanId) {
+        return ApiResponse.success(giteeTestPlanPushService.getPushContext(testPlanId));
+    }
+
+    @PostMapping("/test-plans/{testPlanId}/push")
+    @RequirePermission("gitee:test:push")
+    public ApiResponse<GiteeTestPlanPushResult> pushTestPlan(@PathVariable Long testPlanId) {
+        return ApiResponse.success(giteeTestPlanPushService.pushTestPlan(testPlanId));
     }
 }

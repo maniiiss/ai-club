@@ -4,6 +4,8 @@ import type {
   GiteeMilestoneItem,
   GiteeProgramItem,
   GiteeProjectBindingDiscoveryResultItem,
+  GiteeTestPlanPushContextItem,
+  GiteeTestPlanPushResultItem,
   GiteeWorkItemSyncLogItem,
   GiteeWorkItemSyncResultItem,
   IterationGiteeBindingItem,
@@ -75,5 +77,15 @@ export const syncIterationGiteeWorkItems = async (iterationId: number) => {
 
 export const listIterationGiteeWorkItemSyncLogs = async (iterationId: number) => {
   const { data } = await http.get<ApiResponse<GiteeWorkItemSyncLogItem[]>>(`/api/gitee/iterations/${iterationId}/sync-work-item-logs`)
+  return data.data
+}
+
+export const getTestPlanGiteePushContext = async (testPlanId: number) => {
+  const { data } = await http.get<ApiResponse<GiteeTestPlanPushContextItem>>(`/api/gitee/test-plans/${testPlanId}/push-context`)
+  return data.data
+}
+
+export const pushTestPlanToGitee = async (testPlanId: number) => {
+  const { data } = await http.post<ApiResponse<GiteeTestPlanPushResultItem>>(`/api/gitee/test-plans/${testPlanId}/push`)
   return data.data
 }

@@ -235,6 +235,16 @@ public class WikiSpaceController {
     }
 
     /**
+     * 手动重新排队页面 Hindsight 同步任务。
+     */
+    @PostMapping("/spaces/{spaceId}/pages/{pageId}/sync")
+    @RequirePermission("wiki:view")
+    public ApiResponse<WikiSpacePageDetail> retryPageSync(@PathVariable Long spaceId,
+                                                          @PathVariable Long pageId) {
+        return ApiResponse.success(wikiSpaceService.retryPageSync(spaceId, pageId));
+    }
+
+    /**
      * 删除页面。
      */
     @DeleteMapping("/spaces/{spaceId}/pages/{pageId}")

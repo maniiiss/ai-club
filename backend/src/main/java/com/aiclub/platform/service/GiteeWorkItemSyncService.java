@@ -30,13 +30,15 @@ import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
 /**
- * 按迭代绑定的 Gitee milestone 手动拉取 issue，并同步到本地工作项。
+ * 按迭代绑定的 Gitee Scrum Sprint 手动拉取 issue，并同步到本地工作项。
  * 第一版只做单向导入，不回写评论、附件或测试结果。
+ * 这里继续复用历史的 milestone 命名字段，只是为了兼容既有表结构。
  */
 @Service
 @Transactional(readOnly = true)
@@ -47,6 +49,16 @@ public class GiteeWorkItemSyncService {
     private static final String WORK_ITEM_CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final int WORK_ITEM_CODE_RANDOM_LENGTH = 6;
     private static final Set<String> NORMAL_PRIORITIES = Set.of("高", "中", "低");
+    private static final Map<String, String> GITEE_PRIORITY_MAPPING = Map.of(
+            "0", "高",
+            "1", "中",
+            "2", "低",
+            "3", "低",
+            "P0", "高",
+            "P1", "中",
+            "P2", "低",
+            "P3", "低"
+    );
 
     private final IterationRepository iterationRepository;
     private final IterationGiteeBindingRepository iterationGiteeBindingRepository;
@@ -121,6 +133,7 @@ public class GiteeWorkItemSyncService {
 
             Set<Long> seenIssueIds = new LinkedHashSet<>();
             for (GiteeApiService.GiteeIssue remoteIssue : remoteIssues) {
+                remoteIssue = enrichIssueWithDetailWhenDescriptionMissing(projectBinding, accessToken, remoteIssue);
                 seenIssueIds.add(remoteIssue.id());
                 try {
                     TaskGiteeBindingEntity existingBinding = existingBindingsByIssueId.get(remoteIssue.id());
@@ -263,6 +276,8 @@ public class GiteeWorkItemSyncService {
     }
 
     private void updateTaskFromRemoteIssue(TaskEntity entity, IterationEntity iteration, GiteeApiService.GiteeIssue remoteIssue) {
+        String previousDescription = defaultString(entity.getDescription());
+        String previousRequirementMarkdown = defaultString(entity.getRequirementMarkdown());
         entity.setName(resolveTaskName(remoteIssue.title()));
         entity.setWorkItemType(resolveWorkItemType(remoteIssue.workItemType()));
         entity.setStatus(resolveStatus(remoteIssue.status()));
@@ -271,7 +286,7 @@ public class GiteeWorkItemSyncService {
         entity.setAssigneeUser(null);
         entity.setProject(iteration.getProject());
         entity.setIteration(iteration);
-        entity.setDescription(defaultString(remoteIssue.description()));
+        applyRemoteContentForUpdate(entity, remoteIssue, previousDescription, previousRequirementMarkdown);
         entity.setPlanStartDate(parseDate(remoteIssue.planStartDate()));
         entity.setPlanEndDate(parseDate(remoteIssue.planEndDate()));
         taskRepository.save(entity);
@@ -281,7 +296,7 @@ public class GiteeWorkItemSyncService {
         String workItemType = resolveWorkItemType(remoteIssue.workItemType());
         String description = defaultString(remoteIssue.description());
         if ("需求".equals(workItemType)) {
-            String requirementMarkdown = RequirementDocumentUtils.normalizeDocument(description);
+            String requirementMarkdown = normalizeRemoteRequirementMarkdown(description);
             entity.setDescription(requirementMarkdown);
             entity.setRequirementMarkdown(requirementMarkdown);
             entity.setPrototypeUrl("");
@@ -294,6 +309,76 @@ public class GiteeWorkItemSyncService {
         entity.setModuleName("");
     }
 
+    /**
+     * Gitee 同步需要兼顾两类场景：
+     * 1. 首次导入或从未维护过需求文档时，应让 requirementMarkdown 跟随远端描述回填，避免前端详情看起来像“空描述”。
+     * 2. 本地已经人工维护过 requirementMarkdown 时，不应被同步粗暴覆盖。
+     */
+    private void applyRemoteContentForUpdate(TaskEntity entity,
+                                             GiteeApiService.GiteeIssue remoteIssue,
+                                             String previousDescription,
+                                             String previousRequirementMarkdown) {
+        String workItemType = resolveWorkItemType(remoteIssue.workItemType());
+        String description = defaultString(remoteIssue.description());
+        if ("需求".equals(workItemType)) {
+            String requirementMarkdown = normalizeRemoteRequirementMarkdown(description);
+            if (shouldBackfillRequirementMarkdown(previousDescription, previousRequirementMarkdown)) {
+                entity.setDescription(requirementMarkdown);
+                entity.setRequirementMarkdown(requirementMarkdown);
+            } else {
+                String preservedRequirementMarkdown = RequirementDocumentUtils.normalizeDocument(previousRequirementMarkdown);
+                entity.setDescription(preservedRequirementMarkdown);
+                entity.setRequirementMarkdown(preservedRequirementMarkdown);
+            }
+            return;
+        }
+        entity.setDescription(description);
+        entity.setRequirementMarkdown("");
+    }
+
+    /**
+     * Scrum Sprint 列表接口在部分企业实例里不会返回完整描述，
+     * 这里只在正文缺失时按 issueId 补查一次详情，避免每次同步都无条件放大请求量。
+     */
+    private GiteeApiService.GiteeIssue enrichIssueWithDetailWhenDescriptionMissing(ProjectGiteeBindingEntity projectBinding,
+                                                                                   String accessToken,
+                                                                                   GiteeApiService.GiteeIssue remoteIssue) {
+        if (hasText(remoteIssue.description())) {
+            return remoteIssue;
+        }
+        try {
+            GiteeApiService.GiteeIssue detailedIssue = giteeApiService.fetchIssueDetail(
+                    projectBinding.getApiBaseUrl(),
+                    accessToken,
+                    projectBinding.getEnterpriseId(),
+                    remoteIssue.id()
+            );
+            return hasText(detailedIssue.description()) ? detailedIssue : remoteIssue;
+        } catch (RuntimeException ignored) {
+            return remoteIssue;
+        }
+    }
+
+    private boolean shouldBackfillRequirementMarkdown(String previousDescription, String previousRequirementMarkdown) {
+        if (!hasText(previousRequirementMarkdown)) {
+            return true;
+        }
+        return RequirementDocumentUtils.normalizeDocument(previousRequirementMarkdown)
+                .equals(RequirementDocumentUtils.normalizeDocument(previousDescription));
+    }
+
+    /**
+     * 需求类 Gitee 工作项需要先对齐到系统模板，再落到 description / requirementMarkdown。
+     * 若远端正文本身不是 Gitee 四段模板，则保留原始 Markdown 规范化结果。
+     */
+    private String normalizeRemoteRequirementMarkdown(String description) {
+        String normalized = RequirementDocumentUtils.normalizeDocument(description);
+        if (RequirementDocumentUtils.matchesGiteeTemplateHeadings(normalized)) {
+            return RequirementDocumentUtils.convertFromGiteeTemplate(normalized);
+        }
+        return normalized;
+    }
+
     private IterationEntity requireIteration(Long iterationId) {
         IterationEntity iteration = iterationRepository.findById(iterationId)
                 .orElseThrow(() -> new NoSuchElementException("迭代不存在: " + iterationId));
@@ -303,7 +388,7 @@ public class GiteeWorkItemSyncService {
 
     private IterationGiteeBindingEntity requireIterationBinding(Long iterationId) {
         return iterationGiteeBindingRepository.findByIteration_Id(iterationId)
-                .orElseThrow(() -> new NoSuchElementException("当前迭代尚未绑定 Gitee 里程碑"));
+                .orElseThrow(() -> new NoSuchElementException("当前迭代尚未绑定 Gitee 迭代"));
     }
 
     private ProjectGiteeBindingEntity requireProjectBinding(Long projectId) {
@@ -341,6 +426,10 @@ public class GiteeWorkItemSyncService {
         }
         if (NORMAL_PRIORITIES.contains(normalized)) {
             return normalized;
+        }
+        String mappedPriority = GITEE_PRIORITY_MAPPING.get(normalized.toUpperCase(Locale.ROOT));
+        if (mappedPriority != null) {
+            return mappedPriority;
         }
         return normalized;
     }

@@ -1,5 +1,6 @@
 <template>
   <el-dialog
+    v-if="!embedded"
     :model-value="modelValue"
     width="1080px"
     align-center
@@ -38,7 +39,6 @@
           </el-button>
           <el-button
             v-if="prdReady"
-            type="primary"
             plain
             :loading="runningAction === 'SUGGEST_UPDATE'"
             @click="runPrdAction('SUGGEST_UPDATE')"
@@ -273,6 +273,265 @@
     </template>
   </el-dialog>
 
+  <template v-else-if="task">
+    <div class="requirement-ai-embedded-shell">
+      <div class="requirement-ai-toolbar">
+        <el-select
+          v-model="selectedModelConfigId"
+          clearable
+          filterable
+          placeholder="选择模型，不选则使用第一个启用模型"
+          style="width: 320px"
+        >
+          <el-option v-for="item in modelOptions" :key="item.id" :label="item.name" :value="item.id" />
+        </el-select>
+        <el-space wrap>
+          <el-button :loading="runningAction === 'STANDARDIZE'" @click="runAction('STANDARDIZE')">标准化需求</el-button>
+          <el-button :loading="runningAction === 'BREAKDOWN'" @click="runAction('BREAKDOWN')">拆解子任务</el-button>
+          <el-button :loading="runningAction === 'TEST_CASES'" @click="runAction('TEST_CASES')">生成测试用例</el-button>
+          <el-button
+            v-if="prdReady"
+            :loading="runningAction === 'GAP_CHECK'"
+            @click="runPrdAction('GAP_CHECK')"
+          >
+            检查 PRD 缺口
+          </el-button>
+          <el-button
+            v-if="prdReady"
+            plain
+            :loading="runningAction === 'SUGGEST_UPDATE'"
+            @click="runPrdAction('SUGGEST_UPDATE')"
+          >
+            生成 PRD 建议
+          </el-button>
+          <el-button v-if="prdReady" plain @click="openPrdPage">打开 PRD</el-button>
+        </el-space>
+      </div>
+
+      <div class="requirement-ai-body">
+        <div class="requirement-ai-preview">
+          <div class="requirement-ai-section-head">
+            <div>
+              <div class="requirement-ai-section-title">{{ result?.title || 'AI 结果预览' }}</div>
+              <div class="requirement-ai-section-subtitle">
+                {{ result?.modelConfigName ? `模型：${result.modelConfigName}` : '尚未生成内容' }}
+              </div>
+            </div>
+            <el-space v-if="result">
+              <el-button @click="postAsComment">发到评论</el-button>
+              <el-button v-if="canManage && !isRequirementTask" @click="appendToDescription">追加到描述</el-button>
+              <el-button v-if="canManage && result.action === 'STANDARDIZE'" type="primary" @click="replaceDescription">替换描述</el-button>
+              <el-button
+                v-if="canManage && result.action === 'SUGGEST_UPDATE' && result.suggestionMarkdown"
+                type="primary"
+                :loading="applyingPrdSuggestion"
+                @click="applyPrdSuggestion"
+              >
+                写入 PRD
+              </el-button>
+            </el-space>
+          </div>
+          <div class="requirement-ai-markdown" v-html="renderMarkdownToHtml(result?.markdown)"></div>
+        </div>
+
+        <div class="requirement-ai-side">
+          <div v-if="result && (result.action === 'GAP_CHECK' || result.action === 'SUGGEST_UPDATE')" class="requirement-ai-panel">
+            <div class="requirement-ai-section-head compact">
+              <div>
+                <div class="requirement-ai-section-title">PRD 上下文</div>
+                <div class="requirement-ai-section-subtitle">
+                  {{ prdDetail?.prdWikiPageTitle || '当前尚未绑定 PRD 页面' }}
+                </div>
+              </div>
+            </div>
+
+            <div class="requirement-ai-meta-card">
+              <div class="requirement-ai-meta-row">
+                <span>状态</span>
+                <strong>{{ prdStatusText }}</strong>
+              </div>
+              <div class="requirement-ai-meta-row">
+                <span>模块</span>
+                <strong>{{ prdDetail?.moduleName || props.task?.moduleName || '未分类' }}</strong>
+              </div>
+              <div v-if="prdDetail?.prdWikiPageUpdatedAt" class="requirement-ai-meta-row">
+                <span>最近更新</span>
+                <strong>{{ prdDetail.prdWikiPageUpdatedAt }}</strong>
+              </div>
+              <p v-if="prdDetail?.statusMessage" class="requirement-ai-meta-tip">{{ prdDetail.statusMessage }}</p>
+            </div>
+
+            <div v-if="result.gaps?.length" class="requirement-ai-reference-block">
+              <div class="requirement-ai-reference-title">缺口列表</div>
+              <ul class="requirement-ai-reference-list">
+                <li v-for="(item, index) in result.gaps" :key="`gap-${index}`">{{ item }}</li>
+              </ul>
+            </div>
+
+            <div v-if="result.questions?.length" class="requirement-ai-reference-block">
+              <div class="requirement-ai-reference-title">待确认问题</div>
+              <ul class="requirement-ai-reference-list">
+                <li v-for="(item, index) in result.questions" :key="`question-${index}`">{{ item }}</li>
+              </ul>
+            </div>
+
+            <div v-if="result.references?.length" class="requirement-ai-reference-block">
+              <div class="requirement-ai-reference-title">召回参考</div>
+              <div class="requirement-ai-reference-cards">
+                <button
+                  v-for="item in result.references"
+                  :key="`${item.spaceId}-${item.pageId}`"
+                  class="requirement-ai-reference-card"
+                  type="button"
+                  @click="openReferencePage(item.spaceId, item.pageId)"
+                >
+                  <div class="requirement-ai-reference-card-title">{{ item.title }}</div>
+                  <div class="requirement-ai-reference-card-meta">{{ item.directoryName }}<span v-if="item.score != null"> · {{ item.score.toFixed(2) }}</span></div>
+                  <div class="requirement-ai-reference-card-snippet">{{ item.snippet }}</div>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div v-if="result?.action === 'BREAKDOWN'" class="requirement-ai-panel">
+            <div class="requirement-ai-section-head compact">
+              <div>
+                <div class="requirement-ai-section-title">拆解建议</div>
+                <div class="requirement-ai-section-subtitle">支持编辑、删除后再创建任务</div>
+              </div>
+              <el-button
+                v-if="canManage && editableTaskSuggestions.length"
+                type="primary"
+                :loading="creatingTasks"
+                @click="createSuggestedTasks"
+              >
+                创建任务
+              </el-button>
+            </div>
+
+            <el-empty v-if="!editableTaskSuggestions.length" description="暂无拆解任务" />
+            <div v-else class="requirement-ai-suggestions">
+              <div
+                v-for="(item, index) in editableTaskSuggestions"
+                :key="`${item.name}-${index}`"
+                class="requirement-ai-suggestion editable"
+              >
+                <div class="requirement-ai-card-head">
+                  <span class="requirement-ai-card-index">子任务 {{ index + 1 }}</span>
+                  <span class="requirement-ai-card-type">{{ item.category }} / {{ item.priority }}</span>
+                </div>
+                <div class="requirement-ai-suggestion-actions">
+                  <el-button text type="primary" @click="openTaskSuggestionDrawer(index)">展开编辑</el-button>
+                  <el-button text type="danger" @click="removeTaskSuggestion(index)">删除</el-button>
+                </div>
+                <el-input v-model="item.name" placeholder="任务标题" />
+                <div class="requirement-ai-suggestion-grid">
+                  <el-select v-model="item.category">
+                    <el-option v-for="option in taskCategoryOptions" :key="option" :label="option" :value="option" />
+                  </el-select>
+                  <el-select v-model="item.priority">
+                    <el-option v-for="option in taskPriorityOptions" :key="option" :label="option" :value="option" />
+                  </el-select>
+                </div>
+                <div class="requirement-ai-suggestion-desc" v-html="renderMarkdownToHtml(item.description)"></div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else-if="result?.action === 'TEST_CASES'" class="requirement-ai-panel">
+            <div class="requirement-ai-section-head compact">
+              <div>
+                <div class="requirement-ai-section-title">测试用例建议</div>
+                <div class="requirement-ai-section-subtitle">可导入现有测试计划，或新建计划后导入</div>
+              </div>
+            </div>
+
+            <div class="requirement-ai-plan-toolbar">
+              <el-select
+                v-model="selectedPlanId"
+                clearable
+                filterable
+                placeholder="选择已有测试计划"
+                style="width: 100%"
+              >
+                <el-option v-for="item in testPlanOptions" :key="item.id" :label="item.name" :value="item.id" />
+              </el-select>
+              <el-space wrap>
+                <el-button
+                  v-if="canManage && editableTestCaseSuggestions.length && selectedPlanId"
+                  :loading="importingTestCases"
+                  @click="appendToExistingPlan"
+                >
+                  导入现有计划
+                </el-button>
+                <el-button
+                  v-if="canManage && editableTestCaseSuggestions.length"
+                  type="primary"
+                  :loading="creatingTestPlan"
+                  @click="createNewPlanWithCases"
+                >
+                  新建测试计划
+                </el-button>
+              </el-space>
+            </div>
+
+            <el-empty v-if="!editableTestCaseSuggestions.length" description="暂无测试用例" />
+            <div v-else class="requirement-ai-suggestions">
+              <div
+                v-for="(item, index) in editableTestCaseSuggestions"
+                :key="`${item.title}-${index}`"
+                class="requirement-ai-suggestion editable"
+              >
+                <div class="requirement-ai-card-head">
+                  <span class="requirement-ai-card-index">用例 {{ index + 1 }}</span>
+                  <span class="requirement-ai-card-type">{{ item.caseType }} / {{ item.priority }}</span>
+                </div>
+                <div class="requirement-ai-suggestion-actions">
+                  <el-button text type="danger" @click="removeTestCaseSuggestion(index)">删除</el-button>
+                </div>
+                <el-input v-model="item.title" placeholder="用例标题" />
+                <div class="requirement-ai-suggestion-grid triple">
+                  <el-input v-model="item.moduleName" placeholder="功能模块" />
+                  <el-select v-model="item.caseType">
+                    <el-option v-for="option in caseTypeOptions" :key="option" :label="option" :value="option" />
+                  </el-select>
+                  <el-select v-model="item.priority">
+                    <el-option v-for="option in casePriorityOptions" :key="option" :label="option" :value="option" />
+                  </el-select>
+                </div>
+                <el-input v-model="item.precondition" type="textarea" :rows="2" placeholder="前置条件" />
+                <el-input v-model="item.remarks" type="textarea" :rows="2" placeholder="备注" />
+                <div class="requirement-ai-steps">
+                  <div class="requirement-ai-steps-head">
+                    <span>步骤</span>
+                    <el-button text type="primary" @click="appendStep(item)">新增步骤</el-button>
+                  </div>
+                  <div v-for="(step, stepIndex) in item.steps" :key="stepIndex" class="requirement-ai-step">
+                    <div class="requirement-ai-step-head">
+                      <span>步骤 {{ step.stepNo }}</span>
+                      <el-button text type="danger" @click="removeStep(item, stepIndex)">删除</el-button>
+                    </div>
+                    <el-input v-model="step.action" type="textarea" :rows="2" placeholder="执行步骤" />
+                    <el-input v-model="step.expectedResult" type="textarea" :rows="2" placeholder="预期结果" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="requirement-ai-panel">
+            <div class="requirement-ai-section-head compact">
+              <div>
+                <div class="requirement-ai-section-title">结果操作</div>
+                <div class="requirement-ai-section-subtitle">生成后可发布评论或更新需求描述</div>
+              </div>
+            </div>
+            <el-empty description="当前动作没有侧边操作项" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+
   <el-drawer
     v-model="taskSuggestionDrawerVisible"
     size="56%"
@@ -335,7 +594,10 @@ const props = defineProps<{
   modelValue: boolean
   task: TaskItem | null
   canManage: boolean
+  embedded?: boolean
 }>()
+
+const embedded = computed(() => Boolean(props.embedded))
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
@@ -844,20 +1106,60 @@ onMounted(async () => {
   margin-bottom: 16px;
 }
 
+.requirement-ai-toolbar :deep(.el-button) {
+  --el-button-hover-text-color: var(--app-primary);
+  --el-button-hover-border-color: rgba(var(--app-primary-rgb), 0.3);
+  --el-button-hover-bg-color: rgba(var(--app-primary-rgb), 0.08);
+  --el-button-active-text-color: var(--app-primary);
+  --el-button-active-border-color: rgba(var(--app-primary-rgb), 0.36);
+  --el-button-active-bg-color: rgba(var(--app-primary-rgb), 0.12);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.requirement-ai-toolbar :deep(.el-button:hover),
+.requirement-ai-toolbar :deep(.el-button:focus-visible),
+.requirement-ai-toolbar :deep(.el-button:active) {
+  transform: none;
+}
+
+.requirement-ai-embedded-shell {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 .requirement-ai-body {
   display: grid;
+  flex: 1 1 auto;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 0.92fr);
   gap: 16px;
-  min-height: 520px;
+  min-height: 0;
+  height: 100%;
 }
 
 .requirement-ai-preview,
 .requirement-ai-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 18px;
   padding: 16px;
   background: #fff;
   min-height: 0;
+  min-width: 0;
+}
+
+.requirement-ai-side {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
 }
 
 .requirement-ai-section-head {
@@ -885,7 +1187,8 @@ onMounted(async () => {
 }
 
 .requirement-ai-markdown {
-  max-height: 620px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   line-height: 1.7;
   color: var(--el-text-color-primary);
@@ -925,8 +1228,9 @@ onMounted(async () => {
 .requirement-ai-suggestions {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 18px;
-  max-height: 620px;
+  min-height: 0;
   overflow: auto;
   padding-right: 4px;
 }

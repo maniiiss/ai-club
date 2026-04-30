@@ -369,6 +369,22 @@ public class WikiSpaceService {
     }
 
     /**
+     * 当页面最近一次 Hindsight 同步失败时，允许用户手动把 retain 任务重新排队。
+     * 这里不直接阻塞式调用 Hindsight，而是复用现有调度链路，避免前台请求长时间卡住。
+     */
+    @Transactional
+    public WikiSpacePageDetail retryPageSync(Long spaceId, Long pageId) {
+        UserContext userContext = requireCurrentUserContext();
+        WikiPageV2Entity page = requirePage(spaceId, pageId);
+        requireSpaceEditable(page.getSpace(), userContext);
+        requeueRetainTask(page);
+        page.setSyncStatus(SYNC_STATUS_PENDING);
+        page.setLastSyncError("");
+        WikiPageV2Entity saved = wikiPageV2Repository.save(page);
+        return toPageDetail(saved, userContext, safeRelatedPages(saved, 6));
+    }
+
+    /**
      * 按 slug 读取页面详情。
      */
     @Transactional
@@ -1237,6 +1253,25 @@ public class WikiSpaceService {
         task.setOperation(SYNC_OPERATION_RETAIN);
         task.setDocumentId(documentId(page.getId()));
         task.setStatus(SYNC_STATUS_PENDING);
+        wikiPageSyncTaskV2Repository.save(task);
+    }
+
+    /**
+     * 手动重新同步优先复用最近一次 retain 任务，并清空失败退避状态。
+     * 这样可以避免重复堆积多条同页 retain 任务，同时让调度器下一轮立即可见。
+     */
+    private void requeueRetainTask(WikiPageV2Entity page) {
+        WikiPageSyncTaskV2Entity task = wikiPageSyncTaskV2Repository
+                .findFirstByPage_IdAndOperationOrderByIdDesc(page.getId(), SYNC_OPERATION_RETAIN)
+                .orElseGet(WikiPageSyncTaskV2Entity::new);
+        task.setSpace(page.getSpace());
+        task.setPage(page);
+        task.setOperation(SYNC_OPERATION_RETAIN);
+        task.setDocumentId(documentId(page.getId()));
+        task.setStatus(SYNC_STATUS_PENDING);
+        task.setAttemptCount(0);
+        task.setNextAttemptAt(LocalDateTime.now());
+        task.setLastError("");
         wikiPageSyncTaskV2Repository.save(task);
     }
 

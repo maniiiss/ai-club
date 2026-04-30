@@ -155,6 +155,15 @@
                 <button v-if="currentPage?.importSource" class="wiki-header-action" type="button" @click="downloadCurrentSource">下载原文</button>
                 <button v-if="canEditSpace" class="wiki-header-action" type="button" @click="openImportDialog">导入文档</button>
                 <button
+                  v-if="canEditSpace && currentPage?.syncStatus === 'FAILED'"
+                  class="wiki-header-action"
+                  type="button"
+                  :disabled="syncRetrying"
+                  @click="handleRetryPageSync"
+                >
+                  {{ syncRetrying ? '重新同步中...' : '重新同步' }}
+                </button>
+                <button
                   v-if="canEditSpace"
                   class="wiki-header-action"
                   type="button"
@@ -182,6 +191,10 @@
                 <span>Slug {{ currentDirectory.slug }}</span>
               </template>
               <span v-if="inlineContentSaving" class="wiki-page-meta-saving">正文保存中...</span>
+            </div>
+            <div v-if="currentPage?.syncStatus === 'FAILED' && currentPage.lastSyncError" class="wiki-sync-error">
+              <span class="wiki-sync-error-label">同步失败原因</span>
+              <span class="wiki-sync-error-text">{{ currentPage.lastSyncError }}</span>
             </div>
           </header>
 
@@ -382,6 +395,7 @@ import {
   listWikiSpacePageVersions,
   previewWikiImport,
   replaceWikiSpaceMembers,
+  retryWikiSpacePageSync,
   restoreWikiSpacePageVersion,
   searchWikiPages,
   semanticSearchWikiPages,
@@ -479,6 +493,7 @@ const versionLoading = ref(false)
 const importLoading = ref(false)
 const submitting = ref(false)
 const inlineContentSaving = ref(false)
+const syncRetrying = ref(false)
 const spaceDetail = ref<WikiSpaceDetailItem | null>(null)
 const directoryNodes = ref<WikiDirectoryTreeNodeItem[]>([])
 const currentDirectory = ref<WikiDirectoryTreeNodeItem | null>(null)
@@ -1249,6 +1264,21 @@ async function handleDeletePage() {
     if (error !== 'cancel') {
       ElMessage.error(error?.response?.data?.message || '删除页面失败')
     }
+  }
+}
+
+async function handleRetryPageSync() {
+  if (!currentPage.value || syncRetrying.value) {
+    return
+  }
+  syncRetrying.value = true
+  try {
+    currentPage.value = await retryWikiSpacePageSync(spaceId.value, currentPage.value.id)
+    ElMessage.success('已重新加入同步队列')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '重新同步失败')
+  } finally {
+    syncRetrying.value = false
   }
 }
 
@@ -2153,6 +2183,31 @@ function collectPageRowKeys(pages: WikiSpacePageSummaryItem[]): string[] {
 .wiki-page-meta-saving {
   color: var(--app-primary);
   font-weight: 700;
+}
+
+.wiki-sync-error {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(254, 242, 242, 0.92);
+  border: 1px solid rgba(254, 205, 211, 0.9);
+  color: #9f1239;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.wiki-sync-error-label {
+  font-weight: 800;
+}
+
+.wiki-sync-error-text {
+  flex: 1 1 320px;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .wiki-form-grid {

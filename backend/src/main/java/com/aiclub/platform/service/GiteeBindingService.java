@@ -28,6 +28,8 @@ import java.util.NoSuchElementException;
 /**
  * 管理 Gitee 项目与迭代绑定。
  * 第一版只保存绑定关系，不导入项目和迭代主数据。
+ * 由于数据库字段已落地为 milestone 命名，这里内部继续复用旧字段，
+ * 但远端实际已经切换为 Gitee Scrum Sprint 迭代接口。
  */
 @Service
 @Transactional(readOnly = true)
@@ -51,7 +53,7 @@ public class GiteeBindingService {
                                ProjectDataPermissionService projectDataPermissionService,
                                GiteeApiService giteeApiService,
                                TokenCipherService tokenCipherService,
-                               @Value("${platform.gitee.default-api-url:https://gitee.com/api/v8}") String defaultApiUrl) {
+                               @Value("${platform.gitee.default-api-url:https://api.gitee.com/enterprises}") String defaultApiUrl) {
         this.projectRepository = projectRepository;
         this.iterationRepository = iterationRepository;
         this.projectGiteeBindingRepository = projectGiteeBindingRepository;
@@ -106,9 +108,12 @@ public class GiteeBindingService {
             List<GiteeProgramSummary> programs = giteeApiService.listPrograms(apiBaseUrl, accessToken, enterpriseId).stream()
                     .map(item -> new GiteeProgramSummary(item.id(), item.name(), item.ident()))
                     .toList();
+            String successMessage = programs.isEmpty()
+                    ? "连接成功，但当前企业下没有查询到可见的 Gitee 项目"
+                    : "连接成功";
             if (existingBinding != null) {
                 existingBinding.setLastTestStatus("SUCCESS");
-                existingBinding.setLastTestMessage("连接成功");
+                existingBinding.setLastTestMessage(successMessage);
                 existingBinding.setLastTestedAt(LocalDateTime.now());
                 existingBinding.setApiBaseUrl(apiBaseUrl);
                 existingBinding.setEnterpriseId(enterpriseId);
@@ -117,7 +122,7 @@ public class GiteeBindingService {
             return new GiteeProjectBindingDiscoveryResult(
                     enterpriseId,
                     apiBaseUrl,
-                    "连接成功",
+                    successMessage,
                     programs
             );
         } catch (RuntimeException exception) {
@@ -184,7 +189,7 @@ public class GiteeBindingService {
     public IterationGiteeBindingSummary createIterationBinding(Long iterationId, IterationGiteeBindingRequest request) {
         IterationEntity iteration = requireIteration(iterationId);
         if (iterationGiteeBindingRepository.findByIteration_Id(iterationId).isPresent()) {
-            throw new IllegalArgumentException("当前迭代已绑定 Gitee 里程碑，请改用更新操作");
+            throw new IllegalArgumentException("当前迭代已绑定 Gitee 迭代，请改用更新操作");
         }
         ProjectGiteeBindingEntity projectBinding = requireProjectBinding(iteration.getProject().getId());
         GiteeApiService.GiteeMilestone milestone = requireMilestone(projectBinding, request.giteeMilestoneId());
@@ -223,13 +228,13 @@ public class GiteeBindingService {
                 ).stream()
                 .filter(item -> item.id().equals(milestoneId))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("指定里程碑不属于当前绑定的 Gitee 项目"));
+                .orElseThrow(() -> new IllegalArgumentException("指定 Gitee 迭代不属于当前绑定的 Gitee 项目"));
     }
 
     private void validateMilestoneUniqueness(Long projectId, Long milestoneId, Long currentBindingId) {
         Long excludedId = currentBindingId == null ? -1L : currentBindingId;
         if (iterationGiteeBindingRepository.existsByProject_IdAndGiteeMilestoneIdAndIdNot(projectId, milestoneId, excludedId)) {
-            throw new IllegalArgumentException("当前项目下已有其他迭代绑定了该 Gitee 里程碑");
+            throw new IllegalArgumentException("当前项目下已有其他迭代绑定了该 Gitee 迭代");
         }
     }
 
@@ -269,7 +274,7 @@ public class GiteeBindingService {
         if (!hasText(resolved)) {
             throw new IllegalArgumentException("Gitee API 地址不能为空");
         }
-        return resolved;
+        return giteeApiService.normalizeEnterpriseApiBaseUrl(resolved);
     }
 
     private Long resolveEnterpriseId(Long enterpriseId, ProjectGiteeBindingEntity existingBinding) {

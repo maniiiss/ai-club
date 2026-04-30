@@ -15,8 +15,9 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * 本地迭代与 Gitee 里程碑的绑定关系。
- * 迭代自身仍以平台为主数据，远端里程碑只作为工作项同步范围。
+ * 本地迭代与 Gitee 远端迭代的绑定关系。
+ * 这里继续沿用 milestone 字段名兼容既有表结构，
+ * 但远端真实语义已经切到 Gitee Scrum Sprint。
  */
 @Entity
 @Table(name = "iteration_gitee_binding")

@@ -1271,11 +1271,9 @@ public class PlatformStoreService {
         String sourceMarkdown = hasText(request.requirementMarkdown())
                 ? request.requirementMarkdown()
                 : request.description();
-        String requirementMarkdown = RequirementDocumentUtils.normalizeDocument(sourceMarkdown);
+        String requirementMarkdown = RequirementDocumentUtils.normalizeSystemTemplateHeadings(sourceMarkdown);
+        // 原型链接改为选填字段，需求提交阶段仅校验模板章节完整性，不再因缺少链接阻塞保存。
         boolean draftRequirement = "草稿".equals(defaultString(request.status()).trim());
-        if (!draftRequirement && prototypeUrl == null) {
-            throw new IllegalArgumentException("需求原型链接不能为空");
-        }
         if (draftRequirement) {
             if (requirementMarkdown.isBlank()) {
                 requirementMarkdown = RequirementDocumentUtils.defaultTemplate();

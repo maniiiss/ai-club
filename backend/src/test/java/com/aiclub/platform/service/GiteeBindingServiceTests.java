@@ -24,6 +24,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -64,8 +66,10 @@ class GiteeBindingServiceTests {
                 projectDataPermissionService,
                 giteeApiService,
                 tokenCipherService,
-                "https://gitee.com/api/v8"
+                "https://api.gitee.com/enterprises"
         );
+        lenient().when(giteeApiService.normalizeEnterpriseApiBaseUrl(anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -73,7 +77,7 @@ class GiteeBindingServiceTests {
         ProjectEntity project = buildProject(7L, "项目A");
         when(projectRepository.findById(7L)).thenReturn(Optional.of(project));
         when(projectGiteeBindingRepository.findByProject_Id(7L)).thenReturn(Optional.empty());
-        when(giteeApiService.fetchProgram("https://gitee.com/api/v8", "plain-token", 99L, 1001L))
+        when(giteeApiService.fetchProgram("https://api.gitee.com/enterprises", "plain-token", 99L, 1001L))
                 .thenReturn(new GiteeApiService.GiteeProgram(1001L, "远端项目A", "program-a"));
         when(projectGiteeBindingRepository.save(any(ProjectGiteeBindingEntity.class))).thenAnswer(invocation -> {
             ProjectGiteeBindingEntity entity = invocation.getArgument(0);
@@ -83,7 +87,7 @@ class GiteeBindingServiceTests {
 
         ProjectGiteeBindingSummary summary = giteeBindingService.createProjectBinding(
                 7L,
-                new ProjectGiteeBindingRequest(99L, "https://gitee.com/api/v8", 1001L, "plain-token", true)
+                new ProjectGiteeBindingRequest(99L, "https://api.gitee.com/enterprises", 1001L, "plain-token", true)
         );
 
         assertThat(summary.id()).isEqualTo(88L);
@@ -101,13 +105,13 @@ class GiteeBindingServiceTests {
         when(projectRepository.findById(7L)).thenReturn(Optional.of(project));
         when(projectGiteeBindingRepository.findByProject_Id(7L)).thenReturn(Optional.of(binding));
         when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
-        when(giteeApiService.listPrograms("https://gitee.com/api/v8", "plain-token", 99L))
+        when(giteeApiService.listPrograms("https://api.gitee.com/enterprises", "plain-token", 99L))
                 .thenReturn(List.of(new GiteeApiService.GiteeProgram(1001L, "远端项目A", "program-a")));
         when(projectGiteeBindingRepository.save(any(ProjectGiteeBindingEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         GiteeProjectBindingDiscoveryResult result = giteeBindingService.discoverPrograms(
                 7L,
-                new GiteeProjectBindingDiscoveryRequest(99L, "https://gitee.com/api/v8", "")
+                new GiteeProjectBindingDiscoveryRequest(99L, "https://api.gitee.com/enterprises", "")
         );
 
         assertThat(result.programs()).hasSize(1);
@@ -116,7 +120,43 @@ class GiteeBindingServiceTests {
     }
 
     @Test
-    void shouldRejectIterationBindingWhenMilestoneNotBelongToProgram() {
+    void shouldNormalizeLegacyPublicApiUrlWhenDiscoveringPrograms() {
+        ProjectEntity project = buildProject(7L, "项目A");
+        when(projectRepository.findById(7L)).thenReturn(Optional.of(project));
+        when(projectGiteeBindingRepository.findByProject_Id(7L)).thenReturn(Optional.empty());
+        when(giteeApiService.normalizeEnterpriseApiBaseUrl("https://gitee.com/api/v8"))
+                .thenReturn("https://api.gitee.com/enterprises");
+        when(giteeApiService.listPrograms("https://api.gitee.com/enterprises", "plain-token", 99L))
+                .thenReturn(List.of(new GiteeApiService.GiteeProgram(1001L, "远端项目A", "program-a")));
+
+        GiteeProjectBindingDiscoveryResult result = giteeBindingService.discoverPrograms(
+                7L,
+                new GiteeProjectBindingDiscoveryRequest(99L, "https://gitee.com/api/v8", "plain-token")
+        );
+
+        assertThat(result.apiBaseUrl()).isEqualTo("https://api.gitee.com/enterprises");
+        assertThat(result.message()).isEqualTo("连接成功");
+    }
+
+    @Test
+    void shouldReturnHelpfulMessageWhenNoProgramsVisible() {
+        ProjectEntity project = buildProject(7L, "项目A");
+        when(projectRepository.findById(7L)).thenReturn(Optional.of(project));
+        when(projectGiteeBindingRepository.findByProject_Id(7L)).thenReturn(Optional.empty());
+        when(giteeApiService.listPrograms("https://api.gitee.com/enterprises", "plain-token", 99L))
+                .thenReturn(List.of());
+
+        GiteeProjectBindingDiscoveryResult result = giteeBindingService.discoverPrograms(
+                7L,
+                new GiteeProjectBindingDiscoveryRequest(99L, "https://api.gitee.com/enterprises", "plain-token")
+        );
+
+        assertThat(result.programs()).isEmpty();
+        assertThat(result.message()).isEqualTo("连接成功，但当前企业下没有查询到可见的 Gitee 项目");
+    }
+
+    @Test
+    void shouldRejectIterationBindingWhenRemoteIterationNotBelongToProgram() {
         ProjectEntity project = buildProject(7L, "项目A");
         IterationEntity iteration = new IterationEntity();
         iteration.setId(12L);
@@ -129,16 +169,16 @@ class GiteeBindingServiceTests {
         when(projectGiteeBindingRepository.findByProject_Id(7L)).thenReturn(Optional.of(projectBinding));
         when(iterationGiteeBindingRepository.findByIteration_Id(12L)).thenReturn(Optional.empty());
         when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
-        when(giteeApiService.listMilestones("https://gitee.com/api/v8", "plain-token", 99L, 1001L))
-                .thenReturn(List.of(new GiteeApiService.GiteeMilestone(5L, "里程碑A", "open", "2026-04-01", "2026-04-30")));
+        when(giteeApiService.listMilestones("https://api.gitee.com/enterprises", "plain-token", 99L, 1001L))
+                .thenReturn(List.of(new GiteeApiService.GiteeMilestone(5L, "迭代A", "open", "2026-04-01", "2026-04-30")));
 
         assertThatThrownBy(() -> giteeBindingService.createIterationBinding(12L, new IterationGiteeBindingRequest(999L)))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("指定里程碑不属于当前绑定的 Gitee 项目");
+                .hasMessage("指定 Gitee 迭代不属于当前绑定的 Gitee 项目");
     }
 
     @Test
-    void shouldCreateIterationBindingWhenMilestoneBelongsToProjectProgram() {
+    void shouldCreateIterationBindingWhenRemoteIterationBelongsToProjectProgram() {
         ProjectEntity project = buildProject(7L, "项目A");
         IterationEntity iteration = new IterationEntity();
         iteration.setId(12L);
@@ -152,8 +192,8 @@ class GiteeBindingServiceTests {
         when(iterationGiteeBindingRepository.findByIteration_Id(12L)).thenReturn(Optional.empty());
         when(iterationGiteeBindingRepository.existsByProject_IdAndGiteeMilestoneIdAndIdNot(7L, 5L, -1L)).thenReturn(false);
         when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
-        when(giteeApiService.listMilestones("https://gitee.com/api/v8", "plain-token", 99L, 1001L))
-                .thenReturn(List.of(new GiteeApiService.GiteeMilestone(5L, "里程碑A", "open", "2026-04-01", "2026-04-30")));
+        when(giteeApiService.listMilestones("https://api.gitee.com/enterprises", "plain-token", 99L, 1001L))
+                .thenReturn(List.of(new GiteeApiService.GiteeMilestone(5L, "迭代A", "open", "2026-04-01", "2026-04-30")));
         when(iterationGiteeBindingRepository.save(any())).thenAnswer(invocation -> {
             com.aiclub.platform.domain.model.IterationGiteeBindingEntity entity = invocation.getArgument(0);
             entity.setId(66L);
@@ -165,7 +205,7 @@ class GiteeBindingServiceTests {
         assertThat(summary.id()).isEqualTo(66L);
         assertThat(summary.iterationId()).isEqualTo(12L);
         assertThat(summary.giteeMilestoneId()).isEqualTo(5L);
-        assertThat(summary.giteeMilestoneTitle()).isEqualTo("里程碑A");
+        assertThat(summary.giteeMilestoneTitle()).isEqualTo("迭代A");
     }
 
     private ProjectEntity buildProject(Long id, String name) {
@@ -183,7 +223,7 @@ class GiteeBindingServiceTests {
         binding.setId(3L);
         binding.setProject(project);
         binding.setEnterpriseId(99L);
-        binding.setApiBaseUrl("https://gitee.com/api/v8");
+        binding.setApiBaseUrl("https://api.gitee.com/enterprises");
         binding.setAccessTokenCiphertext("cipher-token");
         binding.setGiteeProgramId(1001L);
         binding.setGiteeProgramName("远端项目A");

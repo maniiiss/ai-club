@@ -49,6 +49,35 @@ interface ExecutionRunStreamHandlers {
   onError?: (error: Error) => void
 }
 
+const TASK_PRIORITY_LABEL_MAPPING: Record<string, string> = {
+  '0': '高',
+  '1': '中',
+  '2': '低',
+  '3': '低',
+  P0: '高',
+  P1: '中',
+  P2: '低',
+  P3: '低'
+}
+
+const normalizeTaskPriority = (priority?: string | number | null) => {
+  const normalized = String(priority ?? '').trim()
+  if (!normalized) {
+    return ''
+  }
+  return TASK_PRIORITY_LABEL_MAPPING[normalized.toUpperCase()] || normalized
+}
+
+const normalizeTaskItem = (task: TaskItem): TaskItem => ({
+  ...task,
+  priority: normalizeTaskPriority(task.priority)
+})
+
+const normalizeTaskPage = (page: PageResponse<TaskItem>): PageResponse<TaskItem> => ({
+  ...page,
+  records: page.records.map(normalizeTaskItem)
+})
+
 export interface ProjectPayload {
   name: string
   owner: string
@@ -395,17 +424,17 @@ export const pageTasks = async (query: TaskQuery) => {
   const { data } = await http.get<ApiResponse<PageResponse<TaskItem>>>('/api/tasks', {
     params: cleanParams(query)
   })
-  return data.data
+  return normalizeTaskPage(data.data)
 }
 
 export const createTask = async (payload: TaskPayload) => {
   const { data } = await http.post<ApiResponse<TaskItem>>('/api/tasks', payload)
-  return data.data
+  return normalizeTaskItem(data.data)
 }
 
 export const updateTask = async (id: number, payload: TaskPayload) => {
   const { data } = await http.put<ApiResponse<TaskItem>>(`/api/tasks/${id}`, payload)
-  return data.data
+  return normalizeTaskItem(data.data)
 }
 
 export const deleteTask = async (id: number) => {
@@ -414,7 +443,7 @@ export const deleteTask = async (id: number) => {
 
 export const getTaskDetail = async (id: number) => {
   const { data } = await http.get<ApiResponse<TaskItem>>(`/api/tasks/${id}`)
-  return data.data
+  return normalizeTaskItem(data.data)
 }
 
 export const listTaskAgentRuns = async (id: number) => {
@@ -840,6 +869,11 @@ export const updateWikiSpacePage = async (spaceId: number, pageId: number, paylo
   return data.data
 }
 
+export const retryWikiSpacePageSync = async (spaceId: number, pageId: number) => {
+  const { data } = await http.post<ApiResponse<WikiSpacePageDetailItem>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}/sync`)
+  return data.data
+}
+
 export const deleteWikiSpacePage = async (spaceId: number, pageId: number) => {
   await http.delete<ApiResponse<null>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}`)
 }
@@ -945,12 +979,12 @@ export const listProjectWorkItems = async (projectId: number, query: WorkItemQue
   const { data } = await http.get<ApiResponse<TaskItem[]>>(`/api/projects/${projectId}/work-items`, {
     params: cleanParams(query)
   })
-  return data.data
+  return data.data.map(normalizeTaskItem)
 }
 
 export const pageProjectWorkItems = async (projectId: number, query: WorkItemPageQuery) => {
   const { data } = await http.get<ApiResponse<PageResponse<TaskItem>>>(`/api/projects/${projectId}/work-items/page`, {
     params: cleanParams(query)
   })
-  return data.data
+  return normalizeTaskPage(data.data)
 }

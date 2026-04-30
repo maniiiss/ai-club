@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="dialogVisible" title="发起智能执行" width="760px" destroy-on-close>
+  <el-dialog v-if="!embedded" v-model="dialogVisible" title="发起智能执行" width="760px" destroy-on-close>
     <template v-if="workItem">
       <div class="execution-create-meta">
         <span>{{ workItem.workItemType }}</span>
@@ -128,6 +128,132 @@
       </div>
     </template>
   </el-dialog>
+
+  <template v-else-if="workItem">
+    <div class="execution-create-meta">
+      <span>{{ workItem.workItemType }}</span>
+      <span>{{ workItem.workItemCode || '-' }}</span>
+      <span>{{ workItem.name }}</span>
+    </div>
+
+    <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="execution-create-form">
+      <section class="execution-step-section">
+        <div class="execution-step-head">
+          <div class="execution-step-title">涉及仓库</div>
+          <div class="execution-step-subtitle">至少选择 1 个 GitLab 仓库，列表顺序就是执行顺序。</div>
+        </div>
+
+        <el-form-item label="GitLab 仓库">
+          <el-select
+            v-model="selectedRepositoryIds"
+            multiple
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择要参与执行的 GitLab 仓库"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="binding in availableGitlabBindings"
+              :key="binding.id"
+              :label="buildBindingLabel(binding)"
+              :value="binding.id"
+            >
+              <div class="execution-binding-option">
+                <strong>{{ buildBindingLabel(binding) }}</strong>
+                <span>{{ buildBindingHint(binding) }}</span>
+              </div>
+            </el-option>
+          </el-select>
+          <div class="execution-repo-tip">不做自动推断或去重，完全按你当前选择和排序执行。</div>
+          <div v-if="!loadingBindings && !availableGitlabBindings.length" class="execution-repo-tip">
+            当前项目暂无可用的 GitLab 绑定，请先到仓库管理中配置。
+          </div>
+        </el-form-item>
+
+        <div v-if="form.repositories.length" class="execution-repo-list">
+          <div v-for="(repository, index) in form.repositories" :key="repository.bindingId" class="execution-repo-item">
+            <div class="execution-repo-item-head">
+              <div class="execution-repo-item-copy">
+                <strong>{{ index + 1 }}. {{ buildBindingLabel(resolveBinding(repository.bindingId)) }}</strong>
+                <span>{{ buildBindingHint(resolveBinding(repository.bindingId)) }}</span>
+              </div>
+              <div class="execution-repo-item-actions">
+                <el-button text size="small" :disabled="index === 0" @click="moveRepository(index, -1)">上移</el-button>
+                <el-button
+                  text
+                  size="small"
+                  :disabled="index === form.repositories.length - 1"
+                  @click="moveRepository(index, 1)"
+                >
+                  下移
+                </el-button>
+                <el-button text size="small" type="danger" @click="removeRepository(repository.bindingId)">移除</el-button>
+              </div>
+            </div>
+            <el-input
+              v-model="repository.targetBranch"
+              placeholder="请输入目标分支；若仓库配置了默认分支会自动带出"
+            >
+              <template #prepend>目标分支</template>
+            </el-input>
+            <div class="execution-repo-default">
+              默认分支：{{ resolveBinding(repository.bindingId)?.defaultTargetBranch || '未配置' }}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <el-form-item label="执行说明">
+        <el-input
+          v-model="form.inputText"
+          type="textarea"
+          :rows="4"
+          resize="none"
+          placeholder="可补充当前要智能体重点关注的背景、目标、限制或交付要求"
+        />
+      </el-form-item>
+
+      <el-form-item label="规划确认">
+        <div class="execution-plan-confirm-field">
+          <el-switch v-model="form.planConfirmationRequired" />
+          <div class="execution-plan-confirm-copy">
+            <strong>规划完成后需我确认再继续</strong>
+            <span>开启后只会先生成执行规划，并通过站内消息提醒你进入执行详情查看、编辑和确认。</span>
+          </div>
+        </div>
+      </el-form-item>
+
+      <section class="execution-step-section">
+        <div class="execution-step-head">
+          <div class="execution-step-title">步骤 Agent 绑定</div>
+          <div class="execution-step-subtitle">可留空使用系统推荐，也可手动指定每一步的执行 Agent。</div>
+        </div>
+
+        <div v-loading="loadingAgents" class="execution-step-list">
+          <div v-for="step in currentStepOptions" :key="step.stepCode" class="execution-step-item">
+            <div class="execution-step-item-copy">
+              <strong>{{ step.stepName }}</strong>
+              <span>{{ step.description }}</span>
+            </div>
+            <el-select v-model="form.stepAgentMap[step.stepCode]" clearable filterable placeholder="使用系统推荐" style="width: 280px">
+              <el-option
+                v-for="agent in agentOptions"
+                :key="agent.id"
+                :label="buildAgentLabel(agent)"
+                :value="agent.id"
+              />
+            </el-select>
+          </div>
+        </div>
+      </section>
+
+      <div class="execution-create-footer embedded">
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleSubmit">创建并执行</el-button>
+      </div>
+    </el-form>
+  </template>
 </template>
 
 <script setup lang="ts">
@@ -140,6 +266,7 @@ import type { AgentItem, ExecutionTaskItem, ProjectGitlabBindingItem, TaskItem }
 
 interface ExecutionTaskCreateDialogProps {
   workItem: TaskItem | null
+  embedded?: boolean
 }
 
 interface StepOption {

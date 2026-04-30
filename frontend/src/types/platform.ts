@@ -964,6 +964,27 @@ export interface GiteeWorkItemSyncLogItem {
   executedAt: string | null
 }
 
+export interface GiteeTestPlanPushContextItem {
+  testPlanId: number
+  pushable: boolean
+  disabledReason: string | null
+  remoteTestPlanId: number | null
+  lastPushStatus: 'SUCCESS' | 'PARTIAL' | 'FAILED' | string | null
+  lastPushMessage: string | null
+  lastPushedAt: string | null
+}
+
+export interface GiteeTestPlanPushResultItem {
+  executionStatus: 'SUCCESS' | 'PARTIAL' | 'FAILED' | string
+  testPlanAction: 'CREATED' | 'UPDATED' | string
+  remoteTestPlanId: number | null
+  createdCaseCount: number
+  updatedCaseCount: number
+  failedCaseCount: number
+  summaryMessage: string
+  executedAt: string | null
+}
+
 export interface RepositoryScanRulesetItem {
   id?: number
   code: string

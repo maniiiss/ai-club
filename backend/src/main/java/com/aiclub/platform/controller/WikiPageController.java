@@ -92,6 +92,16 @@ public class WikiPageController {
     }
 
     /**
+     * 手动重新排队项目 Wiki 页面 Hindsight 同步任务。
+     */
+    @PostMapping("/pages/{pageId}/sync")
+    @RequirePermission("wiki:view")
+    public ApiResponse<WikiPageDetail> retrySync(@PathVariable Long projectId,
+                                                 @PathVariable Long pageId) {
+        return ApiResponse.success(wikiPageService.retryPageSync(projectId, pageId));
+    }
+
+    /**
      * 删除 Wiki 页面。
      */
     @DeleteMapping("/pages/{pageId}")

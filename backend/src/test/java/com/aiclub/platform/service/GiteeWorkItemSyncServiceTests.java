@@ -34,6 +34,52 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class GiteeWorkItemSyncServiceTests {
 
+    private static final String GITEE_REQUIREMENT_TEMPLATE = """
+            # 1  功能点
+
+            远端功能点
+
+            # 2  流程图
+
+            远端流程图
+
+            # 3  原型
+
+            远端原型
+
+            # 4  非功能需求
+
+            远端非功能需求
+            """.trim();
+
+    private static final String CONVERTED_REQUIREMENT_TEMPLATE = """
+            # 用户故事
+
+            待补充用户故事
+
+            # 需求描述
+
+            ## 功能点
+
+            远端功能点
+
+            ## 流程图
+
+            远端流程图
+
+            ## 原型
+
+            远端原型
+
+            ## 非功能需求
+
+            远端非功能需求
+
+            # 验收标准
+
+            待补充验收标准
+            """.trim();
+
     @Mock
     private IterationRepository iterationRepository;
 
@@ -103,7 +149,7 @@ class GiteeWorkItemSyncServiceTests {
         ProjectGiteeBindingEntity projectBinding = new ProjectGiteeBindingEntity();
         projectBinding.setProject(project);
         projectBinding.setEnterpriseId(99L);
-        projectBinding.setApiBaseUrl("https://gitee.com/api/v8");
+        projectBinding.setApiBaseUrl("https://api.gitee.com/enterprises");
         projectBinding.setAccessTokenCiphertext("cipher-token");
         projectBinding.setGiteeProgramId(1001L);
         projectBinding.setGiteeProgramName("远端项目A");
@@ -165,10 +211,10 @@ class GiteeWorkItemSyncServiceTests {
         when(iterationGiteeBindingRepository.findByIteration_Id(12L)).thenReturn(Optional.of(iterationBinding));
         when(projectGiteeBindingRepository.findByProject_Id(9L)).thenReturn(Optional.of(projectBinding));
         when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
-        when(giteeApiService.listIssues("https://gitee.com/api/v8", "plain-token", 99L, 1001L, 5001L))
+        when(giteeApiService.listIssues("https://api.gitee.com/enterprises", "plain-token", 99L, 1001L, 5001L))
                 .thenReturn(List.of(
-                        new GiteeApiService.GiteeIssue(101L, "新标题", "远端描述", "需求", "处理中", "高", "Alice", "2026-04-01", "2026-04-10", "https://gitee.com/issues/101"),
-                        new GiteeApiService.GiteeIssue(202L, "新增任务", "新增描述", "任务", "待开始", "中", "Bob", "2026-04-02", "2026-04-12", "https://gitee.com/issues/202")
+                        new GiteeApiService.GiteeIssue(101L, "新标题", GITEE_REQUIREMENT_TEMPLATE, "需求", "处理中", "0", "Alice", "2026-04-01", "2026-04-10", "https://gitee.com/issues/101"),
+                        new GiteeApiService.GiteeIssue(202L, "新增任务", "新增描述", "任务", "待开始", "1", "Bob", "2026-04-02", "2026-04-12", "https://gitee.com/issues/202")
                 ));
         when(taskGiteeBindingRepository.findAllByEnterpriseIdAndGiteeIssueIdIn(99L, List.of(101L, 202L)))
                 .thenReturn(List.of(existingBinding));
@@ -195,7 +241,7 @@ class GiteeWorkItemSyncServiceTests {
         assertThat(result.failedCount()).isEqualTo(0);
 
         assertThat(existingTask.getName()).isEqualTo("新标题");
-        assertThat(existingTask.getDescription()).isEqualTo("远端描述");
+        assertThat(existingTask.getDescription()).isEqualTo("保留的需求文档");
         assertThat(existingTask.getStatus()).isEqualTo("处理中");
         assertThat(existingTask.getPriority()).isEqualTo("高");
         assertThat(existingTask.getAssignee()).isEqualTo("Alice");
@@ -205,6 +251,13 @@ class GiteeWorkItemSyncServiceTests {
         assertThat(existingTask.isDevPassed()).isTrue();
         assertThat(existingTask.isTestPassed()).isTrue();
         assertThat(existingTask.getWorkHours()).isEqualByComparingTo("8.0");
+        ArgumentCaptor<TaskEntity> taskCaptor = ArgumentCaptor.forClass(TaskEntity.class);
+        verify(taskRepository, org.mockito.Mockito.atLeastOnce()).save(taskCaptor.capture());
+        assertThat(taskCaptor.getAllValues()).anySatisfy(task -> {
+            if ("新增任务".equals(task.getName())) {
+                assertThat(task.getPriority()).isEqualTo("中");
+            }
+        });
 
         assertThat(removedTask.getIteration()).isNull();
         verify(knowledgeGraphService).rebuildProjectGraph(9L);
@@ -215,5 +268,156 @@ class GiteeWorkItemSyncServiceTests {
         assertThat(logCaptor.getValue().getUpdatedCount()).isEqualTo(1);
         assertThat(logCaptor.getValue().getRemovedCount()).isEqualTo(1);
         assertThat(logCaptor.getValue().getFailedCount()).isEqualTo(0);
+    }
+
+    @Test
+    void shouldBackfillConvertedRequirementTemplateWhenExistingRequirementDocumentIsMirror() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(9L);
+        project.setName("项目A");
+        project.setOwner("负责人");
+        project.setStatus("进行中");
+        project.setDescription("项目A描述");
+
+        IterationEntity iteration = new IterationEntity();
+        iteration.setId(12L);
+        iteration.setName("迭代A");
+        iteration.setProject(project);
+
+        ProjectGiteeBindingEntity projectBinding = new ProjectGiteeBindingEntity();
+        projectBinding.setProject(project);
+        projectBinding.setEnterpriseId(99L);
+        projectBinding.setApiBaseUrl("https://api.gitee.com/enterprises");
+        projectBinding.setAccessTokenCiphertext("cipher-token");
+        projectBinding.setGiteeProgramId(1001L);
+        projectBinding.setGiteeProgramName("远端项目A");
+
+        IterationGiteeBindingEntity iterationBinding = new IterationGiteeBindingEntity();
+        iterationBinding.setIteration(iteration);
+        iterationBinding.setProject(project);
+        iterationBinding.setGiteeMilestoneId(5001L);
+        iterationBinding.setGiteeMilestoneTitle("迭代A");
+
+        TaskEntity existingTask = new TaskEntity();
+        existingTask.setId(31L);
+        existingTask.setName("旧标题");
+        existingTask.setWorkItemCode("#ABC123");
+        existingTask.setWorkItemType("需求");
+        existingTask.setStatus("草稿");
+        existingTask.setPriority("中");
+        existingTask.setAssignee("旧负责人");
+        existingTask.setProject(project);
+        existingTask.setIteration(iteration);
+        existingTask.setDescription("旧描述");
+        existingTask.setRequirementMarkdown("");
+        existingTask.setPrototypeUrl("https://prototype.example.com/a");
+        existingTask.setModuleName("保留模块");
+
+        TaskGiteeBindingEntity existingBinding = new TaskGiteeBindingEntity();
+        existingBinding.setTask(existingTask);
+        existingBinding.setProject(project);
+        existingBinding.setIteration(iteration);
+        existingBinding.setEnterpriseId(99L);
+        existingBinding.setGiteeProgramId(1001L);
+        existingBinding.setGiteeMilestoneId(5001L);
+        existingBinding.setGiteeIssueId(101L);
+
+        when(iterationRepository.findById(12L)).thenReturn(Optional.of(iteration));
+        when(iterationGiteeBindingRepository.findByIteration_Id(12L)).thenReturn(Optional.of(iterationBinding));
+        when(projectGiteeBindingRepository.findByProject_Id(9L)).thenReturn(Optional.of(projectBinding));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(giteeApiService.listIssues("https://api.gitee.com/enterprises", "plain-token", 99L, 1001L, 5001L))
+                .thenReturn(List.of(
+                        new GiteeApiService.GiteeIssue(101L, "新标题", GITEE_REQUIREMENT_TEMPLATE, "需求", "处理中", "高", "Alice", "2026-04-01", "2026-04-10", "https://gitee.com/issues/101")
+                ));
+        when(taskGiteeBindingRepository.findAllByEnterpriseIdAndGiteeIssueIdIn(99L, List.of(101L)))
+                .thenReturn(List.of(existingBinding));
+        when(taskGiteeBindingRepository.findAllByIteration_IdOrderByIdAsc(12L))
+                .thenReturn(List.of(existingBinding));
+        when(taskGiteeBindingRepository.save(any(TaskGiteeBindingEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(giteeWorkItemSyncLogRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        GiteeWorkItemSyncResult result = giteeWorkItemSyncService.syncIterationWorkItems(12L);
+
+        assertThat(result.executionStatus()).isEqualTo("SUCCESS");
+        assertThat(existingTask.getDescription()).isEqualTo(CONVERTED_REQUIREMENT_TEMPLATE);
+        assertThat(existingTask.getRequirementMarkdown()).isEqualTo(CONVERTED_REQUIREMENT_TEMPLATE);
+        assertThat(existingTask.getPrototypeUrl()).isEqualTo("https://prototype.example.com/a");
+        assertThat(existingTask.getModuleName()).isEqualTo("保留模块");
+    }
+
+    @Test
+    void shouldFetchIssueDetailWhenListResponseDoesNotContainDescription() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(9L);
+        project.setName("项目A");
+        project.setOwner("负责人");
+        project.setStatus("进行中");
+        project.setDescription("项目A描述");
+
+        IterationEntity iteration = new IterationEntity();
+        iteration.setId(12L);
+        iteration.setName("迭代A");
+        iteration.setProject(project);
+
+        ProjectGiteeBindingEntity projectBinding = new ProjectGiteeBindingEntity();
+        projectBinding.setProject(project);
+        projectBinding.setEnterpriseId(99L);
+        projectBinding.setApiBaseUrl("https://api.gitee.com/enterprises");
+        projectBinding.setAccessTokenCiphertext("cipher-token");
+        projectBinding.setGiteeProgramId(1001L);
+        projectBinding.setGiteeProgramName("远端项目A");
+
+        IterationGiteeBindingEntity iterationBinding = new IterationGiteeBindingEntity();
+        iterationBinding.setIteration(iteration);
+        iterationBinding.setProject(project);
+        iterationBinding.setGiteeMilestoneId(5001L);
+        iterationBinding.setGiteeMilestoneTitle("迭代A");
+
+        TaskEntity existingTask = new TaskEntity();
+        existingTask.setId(31L);
+        existingTask.setName("旧标题");
+        existingTask.setWorkItemCode("#ABC123");
+        existingTask.setWorkItemType("任务");
+        existingTask.setStatus("草稿");
+        existingTask.setPriority("中");
+        existingTask.setAssignee("旧负责人");
+        existingTask.setProject(project);
+        existingTask.setIteration(iteration);
+        existingTask.setDescription("");
+        existingTask.setRequirementMarkdown("");
+
+        TaskGiteeBindingEntity existingBinding = new TaskGiteeBindingEntity();
+        existingBinding.setTask(existingTask);
+        existingBinding.setProject(project);
+        existingBinding.setIteration(iteration);
+        existingBinding.setEnterpriseId(99L);
+        existingBinding.setGiteeProgramId(1001L);
+        existingBinding.setGiteeMilestoneId(5001L);
+        existingBinding.setGiteeIssueId(101L);
+
+        when(iterationRepository.findById(12L)).thenReturn(Optional.of(iteration));
+        when(iterationGiteeBindingRepository.findByIteration_Id(12L)).thenReturn(Optional.of(iterationBinding));
+        when(projectGiteeBindingRepository.findByProject_Id(9L)).thenReturn(Optional.of(projectBinding));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(giteeApiService.listIssues("https://api.gitee.com/enterprises", "plain-token", 99L, 1001L, 5001L))
+                .thenReturn(List.of(
+                        new GiteeApiService.GiteeIssue(101L, "新标题", "", "任务", "处理中", "3", "Alice", "2026-04-01", "2026-04-10", "https://gitee.com/issues/101")
+                ));
+        when(giteeApiService.fetchIssueDetail("https://api.gitee.com/enterprises", "plain-token", 99L, 101L))
+                .thenReturn(new GiteeApiService.GiteeIssue(101L, "新标题", "详情正文", "任务", "处理中", "3", "Alice", "2026-04-01", "2026-04-10", "https://gitee.com/issues/101"));
+        when(taskGiteeBindingRepository.findAllByEnterpriseIdAndGiteeIssueIdIn(99L, List.of(101L)))
+                .thenReturn(List.of(existingBinding));
+        when(taskGiteeBindingRepository.findAllByIteration_IdOrderByIdAsc(12L))
+                .thenReturn(List.of(existingBinding));
+        when(taskGiteeBindingRepository.save(any(TaskGiteeBindingEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(giteeWorkItemSyncLogRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        GiteeWorkItemSyncResult result = giteeWorkItemSyncService.syncIterationWorkItems(12L);
+
+        assertThat(result.executionStatus()).isEqualTo("SUCCESS");
+        assertThat(existingTask.getDescription()).isEqualTo("详情正文");
+        assertThat(existingTask.getPriority()).isEqualTo("低");
+        verify(giteeApiService).fetchIssueDetail("https://api.gitee.com/enterprises", "plain-token", 99L, 101L);
     }
 }

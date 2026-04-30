@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Wiki 页面 Hindsight 同步任务仓储。
@@ -18,4 +19,7 @@ public interface WikiPageSyncTaskRepository extends JpaRepository<WikiPageSyncTa
             LocalDateTime nextAttemptAt,
             Pageable pageable
     );
+
+    /** 读取页面最近一次 retain 同步任务，供手动重新排队时复用。 */
+    Optional<WikiPageSyncTaskEntity> findFirstByPage_IdAndOperationOrderByIdDesc(Long pageId, String operation);
 }

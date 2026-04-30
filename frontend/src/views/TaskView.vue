@@ -129,24 +129,7 @@
                 <span class="task-priority-pill" :class="taskPriorityTone(row.priority)">{{ row.priority || '-' }}</span>
               </td>
               <td class="task-col-hours" data-label="工时">
-                <el-tooltip
-                  v-if="canManageTasks && row.workItemType === '任务'"
-                  :content="getRowWorkHoursLockedReason(row)"
-                  :disabled="!getRowWorkHoursLockedReason(row)"
-                >
-                  <el-input-number
-                    :model-value="row.workHours ?? undefined"
-                    :min="0"
-                    :max="15"
-                    :step="0.5"
-                    :precision="1"
-                    controls-position="right"
-                    class="list-work-hours-input"
-                    :disabled="workHoursUpdatingId === row.id || Boolean(getRowWorkHoursLockedReason(row))"
-                    @change="handleQuickWorkHoursChange(row, $event)"
-                  />
-                </el-tooltip>
-                <span v-else class="task-empty-text">-</span>
+                <span class="task-hours-pill" :class="{ empty: row.workHours == null }">{{ formatTaskWorkHours(row.workHours) }}</span>
               </td>
               <td class="task-col-status" data-label="状态">
                 <span class="task-status-pill" :class="taskStatusTone(row)">{{ formatTaskStatusLabel(row) }}</span>
@@ -240,24 +223,7 @@
                   <div class="mobile-entity-field">
                     <span class="mobile-entity-field-label">工时</span>
                     <div class="mobile-entity-field-content">
-                      <el-tooltip
-                        v-if="canManageTasks && row.workItemType === '任务'"
-                        :content="getRowWorkHoursLockedReason(row)"
-                        :disabled="!getRowWorkHoursLockedReason(row)"
-                      >
-                        <el-input-number
-                          :model-value="row.workHours ?? undefined"
-                          :min="0"
-                          :max="15"
-                          :step="0.5"
-                          :precision="1"
-                          controls-position="right"
-                          class="list-work-hours-input"
-                          :disabled="workHoursUpdatingId === row.id || Boolean(getRowWorkHoursLockedReason(row))"
-                          @change="handleQuickWorkHoursChange(row, $event)"
-                        />
-                      </el-tooltip>
-                      <span v-else class="mobile-entity-empty-text">-</span>
+                      <span class="task-hours-pill" :class="{ empty: row.workHours == null }">{{ formatTaskWorkHours(row.workHours) }}</span>
                     </div>
                   </div>
                   <div class="mobile-entity-field">
@@ -393,7 +359,7 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="form.workItemType === '需求'" label="原型链接" class="compact-form-item">
-          <el-input v-model="form.prototypeUrl" placeholder="请输入原型链接" />
+          <el-input v-model="form.prototypeUrl" placeholder="请输入原型链接（选填）" />
         </el-form-item>
         </div>
       </section>
@@ -535,8 +501,7 @@ import {
 } from '@/api/platform'
 import {
   formatRequirementStatusLabel,
-  isRequirementFullyPassed,
-  getTaskWorkHoursLockedReason
+  isRequirementFullyPassed
 } from '@/utils/requirementReview'
 import {
   buildRequirementDraft,
@@ -582,7 +547,6 @@ const dialogVisible = ref(false)
 const runDialogVisible = ref(false)
 const runHistoryLoading = ref(false)
 const runningAgent = ref(false)
-const workHoursUpdatingId = ref<number | null>(null)
 const isEditing = ref(false)
 const currentId = ref<number | null>(null)
 const assigneeFallback = ref('')
@@ -751,6 +715,7 @@ const taskTypeTone = (workItemType?: string | null) => {
 }
 
 const taskPriorityTone = (priority?: string | null) => {
+  if (!priority?.trim()) return 'none'
   if (priority === '高') return 'high'
   if (priority === '低') return 'low'
   return 'medium'
@@ -764,12 +729,7 @@ const taskStatusTone = (task: TaskItem) => {
   return 'draft'
 }
 
-const getRowWorkHoursLockedReason = (task: TaskItem) => {
-  if (task.workItemType !== '任务') {
-    return ''
-  }
-  return getTaskWorkHoursLockedReason(task)
-}
+const formatTaskWorkHours = (value?: number | null) => (value == null ? '-' : `${value}h`)
 
 const syncFormAssignee = () => {
   const selected = userOptions.value.find((item) => item.id === form.assigneeUserId)
@@ -791,12 +751,12 @@ const normalizeFormParticipants = () => {
 
 const handleTaskMarkdownImageUpload = (file: File) => uploadMarkdownImage(file)
 
+/**
+ * 需求原型链接改为选填后，提交时只校验模板固定章节是否完整。
+ */
 const validateRequirementForm = () => {
   if (!isRequirementForm.value) {
     return ''
-  }
-  if (!form.prototypeUrl.trim()) {
-    return '请输入原型链接'
   }
   return validateRequirementTemplate(form.requirementMarkdown)
 }
@@ -856,7 +816,7 @@ const buildTaskRunInput = (task: TaskItem) => {
     `项目：${task.projectName}`,
     `状态：${task.status}`,
     `优先级：${task.priority}`,
-    `工时：${task.workHours == null ? '-' : task.workHours}`,
+    `工时：${formatTaskWorkHours(task.workHours)}`,
     `负责人：${task.assignee}`,
     '',
     '说明：',
@@ -1157,59 +1117,6 @@ const handleRunAgent = async () => {
     ElMessage.error(error?.response?.data?.message || '运行失败')
   } finally {
     runningAgent.value = false
-  }
-}
-
-const handleQuickWorkHoursChange = async (row: TaskItem, value: number | string | null | undefined) => {
-  if (!canManageTasks.value) {
-    return
-  }
-  if (row.workItemType !== '任务') {
-    return
-  }
-  const lockedReason = getRowWorkHoursLockedReason(row)
-  if (lockedReason) {
-    ElMessage.warning(lockedReason)
-    return
-  }
-  const normalizedValue = value == null || value === '' ? null : Number(value)
-  if (normalizedValue !== null && (!Number.isFinite(normalizedValue) || normalizedValue > 15 || normalizedValue < 0)) {
-    ElMessage.warning('工时必须在 0 到 15 小时之间')
-    return
-  }
-  const formattedValue = normalizedValue == null ? null : Number(normalizedValue.toFixed(1))
-  if (row.workHours === formattedValue) {
-    return
-  }
-
-  workHoursUpdatingId.value = row.id
-  try {
-    await updateTask(row.id, {
-      name: row.name,
-      workItemType: row.workItemType,
-      status: row.status,
-      priority: row.priority,
-      workHours: formattedValue,
-      planStartDate: row.planStartDate,
-      planEndDate: row.planEndDate,
-      assignee: row.assignee,
-      assigneeUserId: row.assigneeUserId,
-      collaboratorUserIds: row.collaboratorUserIds,
-      description: row.description,
-      requirementMarkdown: row.requirementMarkdown,
-      prototypeUrl: row.prototypeUrl,
-      moduleName: row.moduleName || '',
-      projectId: row.projectId,
-      agentId: row.agentId,
-      iterationId: row.iterationId,
-      requirementTaskId: row.requirementTaskId
-    })
-    row.workHours = formattedValue
-    ElMessage.success('工时已更新')
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '工时更新失败')
-  } finally {
-    workHoursUpdatingId.value = null
   }
 }
 
@@ -1689,6 +1596,23 @@ onMounted(async () => {
   font-weight: 800;
 }
 
+.task-hours-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(231, 232, 233, 0.92);
+  color: #475569;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.task-hours-pill.empty {
+  color: #64748b;
+}
+
 .task-priority-pill.high {
   background: rgba(255, 220, 195, 0.86);
   color: #a35100;
@@ -1702,6 +1626,11 @@ onMounted(async () => {
 .task-priority-pill.low {
   background: rgba(231, 232, 233, 0.92);
   color: #64748b;
+}
+
+.task-priority-pill.none {
+  background: rgba(246, 248, 250, 0.96);
+  color: #94a3b8;
 }
 
 .task-status-pill.running {
@@ -1845,8 +1774,7 @@ onMounted(async () => {
 
 :deep(.task-page-size .el-select__wrapper),
 :deep(.task-filter-panel .el-select__wrapper),
-:deep(.task-filter-panel .el-input__wrapper),
-:deep(.list-work-hours-input) {
+:deep(.task-filter-panel .el-input__wrapper) {
   min-height: 30px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.96);
@@ -1943,10 +1871,6 @@ onMounted(async () => {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.list-work-hours-input {
-  width: 100%;
 }
 
 @media (max-width: 1280px) {

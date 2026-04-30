@@ -2,8 +2,8 @@
   <div
     ref="rootRef"
     class="markdown-editor-wrapper"
-    :class="{ 'is-preview-mode': showPreviewMode, 'is-edit-mode': !showPreviewMode }"
-    :style="{ height: normalizedHeight }"
+    :class="{ 'is-preview-mode': showPreviewMode, 'is-edit-mode': !showPreviewMode, 'preview-auto-height': props.previewAutoHeight }"
+    :style="{ height: resolvedHeight }"
   >
     <div
       v-if="showPreviewMode"
@@ -62,6 +62,7 @@ const props = withDefaults(
     height?: string | number
     preview?: boolean
     startInEditMode?: boolean
+    previewAutoHeight?: boolean
     uploadImage?: (file: File) => Promise<string>
   }>(),
   {
@@ -69,6 +70,7 @@ const props = withDefaults(
     height: 360,
     preview: true,
     startInEditMode: false,
+    previewAutoHeight: false,
     uploadImage: undefined
   }
 )
@@ -92,6 +94,10 @@ const isEditing = ref(!props.preview || props.startInEditMode)
 
 const normalizedHeight = computed(() =>
   typeof props.height === 'number' ? `${props.height}px` : props.height
+)
+
+const resolvedHeight = computed(() =>
+  showPreviewMode.value && props.previewAutoHeight ? 'auto' : normalizedHeight.value
 )
 
 const showPreviewMode = computed(() => props.preview && !isEditing.value)
@@ -369,5 +375,22 @@ const editingToolbars: ToolbarNames[] = [
   min-height: 100%;
   padding: 8px 0 0;
   box-sizing: border-box;
+}
+
+.markdown-editor-wrapper.is-preview-mode.preview-auto-height,
+.markdown-editor-wrapper.is-preview-mode.preview-auto-height .markdown-preview-shell,
+.markdown-editor-wrapper.is-preview-mode.preview-auto-height :deep(.md-editor-previewOnly) {
+  flex: 0 0 auto;
+  height: auto !important;
+  min-height: 0;
+}
+
+.markdown-editor-wrapper.is-preview-mode.preview-auto-height :deep(.md-editor-previewOnly) {
+  overflow: visible;
+}
+
+.markdown-editor-wrapper.is-preview-mode.preview-auto-height :deep(.md-editor-preview) {
+  min-height: 0;
+  padding-top: 0;
 }
 </style>

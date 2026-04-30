@@ -154,6 +154,21 @@ public class WikiPageService {
     }
 
     /**
+     * 当项目 Wiki 页面同步失败时，允许页面维护者手动重新排队 retain 任务。
+     * 这里仍复用既有调度器消费，避免同步调用把页面操作阻塞到外部依赖完成。
+     */
+    @Transactional
+    public WikiPageDetail retryPageSync(Long projectId, Long pageId) {
+        WikiPageEntity page = requirePage(projectId, pageId);
+        requirePageEditable(page);
+        requeueRetainTask(page);
+        page.setSyncStatus(SYNC_STATUS_PENDING);
+        page.setLastSyncError("");
+        WikiPageEntity saved = wikiPageRepository.save(page);
+        return toDetail(saved, safeRelatedPages(saved, 4));
+    }
+
+    /**
      * 创建 Wiki 页面，并立即生成 v1 版本和 Hindsight 同步任务。
      */
     @Transactional
@@ -576,6 +591,24 @@ public class WikiPageService {
         task.setOperation(SYNC_OPERATION_RETAIN);
         task.setDocumentId(documentId(page.getId()));
         task.setStatus(SYNC_STATUS_PENDING);
+        wikiPageSyncTaskRepository.save(task);
+    }
+
+    /**
+     * 手动重新同步时复用最近一次 retain 任务，重置回退计数与调度时间。
+     */
+    private void requeueRetainTask(WikiPageEntity page) {
+        WikiPageSyncTaskEntity task = wikiPageSyncTaskRepository
+                .findFirstByPage_IdAndOperationOrderByIdDesc(page.getId(), SYNC_OPERATION_RETAIN)
+                .orElseGet(WikiPageSyncTaskEntity::new);
+        task.setPage(page);
+        task.setProject(page.getProject());
+        task.setOperation(SYNC_OPERATION_RETAIN);
+        task.setDocumentId(documentId(page.getId()));
+        task.setStatus(SYNC_STATUS_PENDING);
+        task.setAttemptCount(0);
+        task.setNextAttemptAt(LocalDateTime.now());
+        task.setLastError("");
         wikiPageSyncTaskRepository.save(task);
     }
 

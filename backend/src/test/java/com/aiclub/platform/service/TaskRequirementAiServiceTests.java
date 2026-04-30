@@ -93,7 +93,7 @@ class TaskRequirementAiServiceTests {
                 "chat-key"
         ));
         when(modelConfigService.invokePrompt(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt()))
-                .thenReturn("## 用户故事\n\n补充说明");
+                .thenReturn("# 用户故事\n\n补充说明");
 
         TaskRequirementAiResult result = taskRequirementAiService.generate(1L, new TaskRequirementAiRequest("STANDARDIZE", null));
 
