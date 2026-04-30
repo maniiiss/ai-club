@@ -409,9 +409,22 @@ public class GiteeWorkItemSyncService {
         return normalized == null ? "未命名工作项" : normalized;
     }
 
+    /**
+     * Gitee 侧可能存在“开发任务”“运维任务”等细分类；
+     * 本地当前只支持需求、任务、缺陷三类，因此这里统一折算后再落库。
+     */
     private String resolveWorkItemType(String value) {
         String normalized = trimToNull(value);
-        return normalized == null ? "任务" : normalized;
+        if (normalized == null) {
+            return "任务";
+        }
+        if ("需求".equals(normalized) || normalized.contains("需求")) {
+            return "需求";
+        }
+        if ("缺陷".equals(normalized) || normalized.contains("缺陷") || normalized.toUpperCase(Locale.ROOT).contains("BUG")) {
+            return "缺陷";
+        }
+        return "任务";
     }
 
     private String resolveStatus(String value) {

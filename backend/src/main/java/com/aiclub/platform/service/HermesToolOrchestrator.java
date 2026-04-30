@@ -233,6 +233,19 @@ public class HermesToolOrchestrator {
 
         PlatformToolResult rawResult = safeExecute(validatedToolCall.toolCode(), scopeKey, validatedToolCall.projectId(), validatedToolCall.arguments());
         PlatformToolResult scoredResult = attachCandidateScores(rawResult, validatedToolCall, context, groundingState);
+        if (shouldKeepSearchResultAsCollection(validatedToolCall, request)) {
+            return new HermesToolExecutionOutcome(
+                    groundingState,
+                    List.of(scoredResult),
+                    List.of(),
+                    List.of(),
+                    toToolMessageContent(scoredResult),
+                    false,
+                    "",
+                    defaultString(scoredResult == null ? null : scoredResult.summary()),
+                    debugExecution(toolCall, "SUCCEEDED", validatedToolCall.arguments(), "已按集合查询返回结果")
+            );
+        }
         HermesGroundingState nextGroundingState = groundingState;
         List<HermesSelectionCard> selectionCards = new ArrayList<>();
         if (!Boolean.TRUE.equals(scoredResult.metadata().get("failed"))) {
@@ -653,6 +666,95 @@ public class HermesToolOrchestrator {
                 .filter(reference -> type.equalsIgnoreCase(defaultString(reference.type())))
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * 当前迭代下的列表型查询更适合把结果直接交给 Hermes 汇总，而不是误判成“需要用户选一个工作项”。
+     */
+    private boolean shouldKeepSearchResultAsCollection(ValidatedToolCall validatedToolCall,
+                                                       HermesChatRequest request) {
+        if (validatedToolCall == null) {
+            return false;
+        }
+        String toolCode = defaultString(validatedToolCall.toolCode());
+        if (!isCollectionFriendlySearchTool(toolCode)) {
+            return false;
+        }
+        String question = request == null ? "" : defaultString(request.question());
+        boolean collectionIntent = isCollectionIntentQuestion(question);
+        if (!PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH.equals(toolCode)) {
+            return collectionIntent;
+        }
+        String keyword = defaultString(String.valueOf(validatedToolCall.arguments().getOrDefault("keyword", "")));
+        String workItemType = defaultString(String.valueOf(validatedToolCall.arguments().getOrDefault("workItemType", "")));
+        Long iterationId = resolveLong(validatedToolCall.arguments().get("iterationId"));
+        if (iterationId == null) {
+            return collectionIntent && !keyword.isBlank() && isGenericWorkItemCollectionKeyword(keyword);
+        }
+        if (!workItemType.isBlank()) {
+            return true;
+        }
+        if (keyword.isBlank() || isGenericWorkItemCollectionKeyword(keyword)) {
+            return true;
+        }
+        return collectionIntent;
+    }
+
+    private boolean isGenericWorkItemCollectionKeyword(String keyword) {
+        String normalized = defaultString(keyword).toLowerCase(Locale.ROOT);
+        return "需求".equals(normalized)
+                || "任务".equals(normalized)
+                || "缺陷".equals(normalized)
+                || "bug".equals(normalized)
+                || "工作项".equals(normalized)
+                || "全部".equals(normalized)
+                || "all".equals(normalized)
+                || "已完成".equals(normalized)
+                || "进行中".equals(normalized)
+                || "待处理".equals(normalized)
+                || "待开始".equals(normalized);
+    }
+
+    /**
+     * 这些工具天生既可能用于“解析单对象”，也可能用于“查询一个集合”。
+     * 当问题语义明显是集合问题时，应优先把结果当作列表交给模型总结，而不是立即要求用户确认单对象。
+     */
+    private boolean isCollectionFriendlySearchTool(String toolCode) {
+        return PlatformToolRegistry.TOOL_PROJECT_SEARCH.equals(toolCode)
+                || PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH.equals(toolCode)
+                || PlatformToolRegistry.TOOL_EXECUTION_TASK_SEARCH.equals(toolCode)
+                || PlatformToolRegistry.TOOL_TEST_PLAN_SEARCH.equals(toolCode)
+                || PlatformToolRegistry.TOOL_REPO_SCAN_SEARCH.equals(toolCode)
+                || PlatformToolRegistry.TOOL_WIKI_SPACE_SEARCH.equals(toolCode)
+                || PlatformToolRegistry.TOOL_PROJECT_LIST_ITERATIONS.equals(toolCode);
+    }
+
+    /**
+     * 统一识别“汇总/列表/统计”类问题，减少 Hermes 把集合问题误判成单对象详情。
+     */
+    private boolean isCollectionIntentQuestion(String question) {
+        String normalized = defaultString(question);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        String lowered = normalized.toLowerCase(Locale.ROOT);
+        return lowered.contains("哪些")
+                || lowered.contains("有哪些")
+                || lowered.contains("多少")
+                || lowered.contains("几个")
+                || lowered.contains("列表")
+                || lowered.contains("清单")
+                || lowered.contains("汇总")
+                || lowered.contains("总结")
+                || lowered.contains("概览")
+                || lowered.contains("总览")
+                || lowered.contains("统计")
+                || lowered.contains("全部")
+                || lowered.contains("分别")
+                || lowered.contains("最近有哪些")
+                || lowered.contains("修复了多少")
+                || lowered.contains("开发了哪些")
+                || lowered.contains("发版内容");
     }
 
     private String normalizeSlot(String toolCode) {

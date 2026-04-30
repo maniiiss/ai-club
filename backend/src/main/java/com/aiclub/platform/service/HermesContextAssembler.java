@@ -60,6 +60,9 @@ public class HermesContextAssembler {
             if (request.taskId() != null) {
                 return buildTaskContext(routeName, request.taskId(), currentUser);
             }
+            if (request.projectId() != null && request.iterationId() != null) {
+                return buildIterationContext(routeName, request.projectId(), request.iterationId(), currentUser);
+            }
             if (request.projectId() != null) {
                 return buildProjectContext(routeName, request.projectId(), currentUser);
             }
@@ -204,6 +207,76 @@ public class HermesContextAssembler {
     }
 
     /**
+     * 迭代详情页要优先输出“当前迭代”视角，而不是退化成整个项目摘要。
+     * 这样 Hermes 在回答发版内容、缺陷修复数量和需求清单时，可以直接基于当前迭代上下文作答。
+     */
+    private HermesConversationContext buildIterationContext(String routeName,
+                                                            Long projectId,
+                                                            Long iterationId,
+                                                            CurrentUserInfo currentUser) {
+        ProjectSummary project = platformStoreService.getProject(projectId);
+        IterationSummary iteration = platformStoreService.listProjectIterations(projectId).stream()
+                .filter(item -> item.id() != null && item.id().equals(iterationId))
+                .findFirst()
+                .orElseThrow(() -> new NoSuchElementException("迭代不存在: " + iterationId));
+        List<TaskSummary> iterationWorkItems = platformStoreService.listProjectWorkItems(projectId, iterationId, null, null, null);
+        List<TaskSummary> displayWorkItems = iterationWorkItems.stream()
+                .limit(hermesProperties.getMaxContextMessages())
+                .toList();
+
+        long deliveredCount = iterationWorkItems.stream().filter(task -> isDeliveredStatus(task.status())).count();
+        long openCount = Math.max(iterationWorkItems.size() - deliveredCount, 0);
+        long requirementCount = countWorkItemsByType(iterationWorkItems, "需求");
+        long taskCount = countWorkItemsByType(iterationWorkItems, "任务");
+        long defectCount = countWorkItemsByType(iterationWorkItems, "缺陷");
+
+        List<HermesReferenceSummary> references = new ArrayList<>();
+        references.add(projectReference(project));
+        references.add(iterationReference(iteration));
+        for (TaskSummary task : displayWorkItems.stream().limit(3).toList()) {
+            references.add(taskReference(task));
+        }
+
+        StringBuilder context = new StringBuilder();
+        context.append("## 当前场景\n")
+                .append("迭代详情\n\n")
+                .append("## 当前用户\n")
+                .append("昵称：").append(defaultDisplayName(currentUser)).append('\n')
+                .append("角色：").append(resolveRoleName(currentUser)).append("\n\n")
+                .append("## 当前项目\n")
+                .append("项目名称：").append(defaultString(project.name())).append('\n')
+                .append("项目状态：").append(defaultString(project.status())).append('\n')
+                .append("负责人：").append(defaultString(project.owner())).append("\n\n")
+                .append("## 当前迭代\n")
+                .append("迭代名称：").append(defaultString(iteration.name())).append('\n')
+                .append("迭代状态：").append(defaultString(iteration.status())).append('\n')
+                .append("迭代目标：").append(defaultString(iteration.goal())).append('\n')
+                .append("开始日期：").append(defaultString(iteration.startDate())).append('\n')
+                .append("结束日期：").append(defaultString(iteration.endDate())).append('\n')
+                .append("工作项总数：").append(iterationWorkItems.size()).append("\n\n")
+                .append("## 发版内容速览\n")
+                .append("- 已完成 / 已通过：").append(deliveredCount).append('\n')
+                .append("- 待跟进：").append(openCount).append('\n')
+                .append("- 需求：").append(requirementCount).append('\n')
+                .append("- 任务：").append(taskCount).append('\n')
+                .append("- 缺陷：").append(defectCount).append("\n\n")
+                .append("## 当前迭代工作项\n");
+        appendIterationWorkItems(context, displayWorkItems);
+
+        return new HermesConversationContext(
+                "project-iterations".equals(routeName) ? routeName : "iteration",
+                project.id(),
+                null,
+                null,
+                null,
+                resolveRoleName(currentUser),
+                references,
+                List.of("帮我总结当前迭代发版内容", "这个迭代还有哪些风险", "当前迭代哪些缺陷最值得优先关注"),
+                context.toString()
+        );
+    }
+
+    /**
      * 不支持专属上下文的页面统一退化为全局助手，仍保留角色感知和当前页面信息。
      */
     private HermesConversationContext buildGlobalContext(String routeName, CurrentUserInfo currentUser) {
@@ -329,6 +402,26 @@ public class HermesContextAssembler {
         }
     }
 
+    /**
+     * 迭代摘要里保留编号、类型和状态，便于 Hermes 直接生成发版说明而不必再次搜索对象。
+     */
+    private void appendIterationWorkItems(StringBuilder builder, List<TaskSummary> tasks) {
+        if (tasks == null || tasks.isEmpty()) {
+            builder.append("- 当前迭代暂无工作项\n");
+            return;
+        }
+        for (TaskSummary task : tasks) {
+            builder.append("- ")
+                    .append(defaultString(task.workItemCode()))
+                    .append(' ')
+                    .append(defaultString(task.name()))
+                    .append(" / 类型：").append(defaultString(task.workItemType()))
+                    .append(" / 状态：").append(defaultString(task.status()))
+                    .append(" / 负责人：").append(defaultString(task.assignee()))
+                    .append('\n');
+        }
+    }
+
     private void appendNotifications(StringBuilder builder, List<NotificationItem> notifications) {
         if (notifications == null || notifications.isEmpty()) {
             builder.append("- 暂无未读通知\n");
@@ -433,6 +526,15 @@ public class HermesContextAssembler {
         );
     }
 
+    private HermesReferenceSummary iterationReference(IterationSummary iteration) {
+        return new HermesReferenceSummary(
+                "ITERATION",
+                iteration.id(),
+                defaultString(iteration.name()),
+                "/projects/" + iteration.projectId() + "/iterations?iterationId=" + iteration.id()
+        );
+    }
+
     private HermesReferenceSummary wikiSpaceReference(Long spaceId, String title) {
         return new HermesReferenceSummary(
                 "WIKI_SPACE",
@@ -485,6 +587,30 @@ public class HermesContextAssembler {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private long countWorkItemsByType(List<TaskSummary> tasks, String workItemType) {
+        if (tasks == null || tasks.isEmpty()) {
+            return 0L;
+        }
+        return tasks.stream()
+                .filter(task -> workItemType.equals(defaultString(task.workItemType())))
+                .count();
+    }
+
+    /**
+     * 发版摘要更关心“已完成 / 已通过 / 已关闭”这类可对外说明的状态，统一在这里做轻量归一。
+     */
+    private boolean isDeliveredStatus(String status) {
+        String normalized = defaultString(status);
+        return "已完成".equals(normalized)
+                || "完成".equals(normalized)
+                || "已上线".equals(normalized)
+                || "已发布".equals(normalized)
+                || "通过".equals(normalized)
+                || "关闭".equals(normalized)
+                || "DONE".equalsIgnoreCase(normalized)
+                || "CLOSED".equalsIgnoreCase(normalized);
     }
 
     private String abbreviate(String value, int maxLength) {

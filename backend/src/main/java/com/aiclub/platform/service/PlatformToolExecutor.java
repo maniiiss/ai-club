@@ -117,6 +117,7 @@ public class PlatformToolExecutor {
                 case PlatformToolRegistry.TOOL_PROJECT_SEARCH -> searchProjects(request);
                 case PlatformToolRegistry.TOOL_PROJECT_GET_DETAIL -> getProjectDetail(request);
                 case PlatformToolRegistry.TOOL_PROJECT_LIST_ITERATIONS -> listProjectIterations(request);
+                case PlatformToolRegistry.TOOL_PROJECT_GET_ITERATION_DETAIL -> getIterationDetail(request);
                 case PlatformToolRegistry.TOOL_USER_RESOLVE_PROJECT_MEMBER -> resolveProjectMember(request);
                 case PlatformToolRegistry.TOOL_USER_LIST_PROJECT_MEMBERS -> listProjectMembers(request);
                 case PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH -> searchWorkItems(request);
@@ -177,6 +178,67 @@ public class PlatformToolExecutor {
         return result(request.toolCode(), "项目迭代列表", "项目 “" + project.getName() + "” 有 " + candidates.size() + " 个迭代", candidates, Map.of("projectId", project.getId()));
     }
 
+    /**
+     * 返回当前迭代的结构化详情，供 Hermes 自主生成发版总结、风险概览或工作项分类说明。
+     */
+    private PlatformToolResult getIterationDetail(PlatformToolRequest request) {
+        Long projectId = longValue(request.payload(), "projectId");
+        Long iterationId = longValue(request.payload(), "iterationId");
+        ProjectEntity project = requireVisibleProject(projectId);
+        IterationEntity iteration = requireVisibleIteration(project.getId(), iterationId);
+        List<TaskEntity> workItems = taskRepository.findAll(Sort.by(Sort.Direction.DESC, "updatedAt", "id")).stream()
+                .filter(task -> Objects.equals(task.getProject().getId(), project.getId()))
+                .filter(task -> task.getIteration() != null && Objects.equals(task.getIteration().getId(), iteration.getId()))
+                .filter(this::canSeeTask)
+                .toList();
+
+        long deliveredCount = workItems.stream().filter(task -> isDeliveredStatus(task.getStatus())).count();
+        long pendingCount = Math.max(workItems.size() - deliveredCount, 0);
+        long requirementCount = countWorkItemsByType(workItems, "需求");
+        long taskCount = countWorkItemsByType(workItems, "任务");
+        long defectCount = countWorkItemsByType(workItems, "缺陷");
+
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+        payload.put("projectId", project.getId());
+        payload.put("projectName", defaultString(project.getName()));
+        payload.put("iterationId", iteration.getId());
+        payload.put("iterationName", defaultString(iteration.getName()));
+        payload.put("status", defaultString(iteration.getStatus()));
+        payload.put("goal", defaultString(iteration.getGoal()));
+        payload.put("startDate", iteration.getStartDate() == null ? "" : String.valueOf(iteration.getStartDate()));
+        payload.put("endDate", iteration.getEndDate() == null ? "" : String.valueOf(iteration.getEndDate()));
+        payload.put("description", defaultString(iteration.getDescription()));
+        payload.put("totalWorkItemCount", workItems.size());
+        payload.put("deliveredCount", deliveredCount);
+        payload.put("pendingCount", pendingCount);
+        payload.put("requirementCount", requirementCount);
+        payload.put("taskCount", taskCount);
+        payload.put("defectCount", defectCount);
+        payload.put("workItems", summarizeWorkItems(workItems, 20));
+        payload.put("requirements", summarizeWorkItemsByType(workItems, "需求", 10));
+        payload.put("deliveredRequirements", summarizeDeliveredWorkItemsByType(workItems, "需求", 10));
+        payload.put("defects", summarizeWorkItemsByType(workItems, "缺陷", 10));
+        payload.put("fixedDefects", summarizeDeliveredWorkItemsByType(workItems, "缺陷", 10));
+        payload.put("pendingItems", summarizePendingWorkItems(workItems, 10));
+
+        PlatformToolCandidate candidate = new PlatformToolCandidate(
+                "ITERATION",
+                iteration.getId(),
+                defaultString(iteration.getName()),
+                "状态：" + defaultString(iteration.getStatus()) + " / 目标：" + defaultString(iteration.getGoal()),
+                "/projects/" + project.getId() + "/iterations?iterationId=" + iteration.getId(),
+                Map.copyOf(payload),
+                List.of()
+        );
+        String summary = "已读取当前迭代“" + defaultString(iteration.getName()) + "”，共 "
+                + workItems.size() + " 个工作项，含 "
+                + requirementCount + " 个需求、"
+                + taskCount + " 个任务、"
+                + defectCount + " 个缺陷，已完成/已通过 "
+                + deliveredCount + " 个。";
+        return result(request.toolCode(), "迭代详情", summary, List.of(candidate), metadata("projectId", project.getId(), "iterationId", iteration.getId()));
+    }
+
     private PlatformToolResult resolveProjectMember(PlatformToolRequest request) {
         ProjectEntity project = requireVisibleProject(longValue(request.payload(), "projectId"));
         String keyword = stringValue(request.payload(), "keyword");
@@ -200,8 +262,10 @@ public class PlatformToolExecutor {
         String keyword = stringValue(request.payload(), "keyword");
         String workItemType = stringValue(request.payload(), "workItemType");
         Long projectId = nullableLongValue(request.payload(), "projectId");
+        Long iterationId = nullableLongValue(request.payload(), "iterationId");
         List<PlatformToolCandidate> candidates = taskRepository.findAll(Sort.by(Sort.Direction.DESC, "updatedAt", "id")).stream()
                 .filter(task -> projectId == null || Objects.equals(task.getProject().getId(), projectId))
+                .filter(task -> iterationId == null || task.getIteration() != null && Objects.equals(task.getIteration().getId(), iterationId))
                 .filter(this::canSeeTask)
                 .filter(task -> isBlank(workItemType) || defaultString(task.getWorkItemType()).equals(workItemType))
                 .filter(task -> isBlank(keyword)
@@ -212,7 +276,7 @@ public class PlatformToolExecutor {
                 .map(task -> workItemCandidate(task, true))
                 .toList();
         return result(request.toolCode(), "搜索工作项", "找到 " + candidates.size() + " 个相关工作项", candidates,
-                metadata("keyword", defaultString(keyword), "projectId", projectId));
+                metadata("keyword", defaultString(keyword), "projectId", projectId, "iterationId", iterationId));
     }
 
     private PlatformToolResult getWorkItemDetail(PlatformToolRequest request) {
@@ -535,6 +599,63 @@ public class PlatformToolExecutor {
         );
     }
 
+    private List<Map<String, Object>> summarizeWorkItems(List<TaskEntity> tasks, int limit) {
+        if (tasks == null || tasks.isEmpty() || limit <= 0) {
+            return List.of();
+        }
+        return tasks.stream()
+                .limit(limit)
+                .map(this::workItemSummaryPayload)
+                .toList();
+    }
+
+    private List<Map<String, Object>> summarizeWorkItemsByType(List<TaskEntity> tasks, String workItemType, int limit) {
+        if (tasks == null || tasks.isEmpty() || limit <= 0) {
+            return List.of();
+        }
+        return tasks.stream()
+                .filter(task -> workItemType.equals(defaultString(task.getWorkItemType())))
+                .limit(limit)
+                .map(this::workItemSummaryPayload)
+                .toList();
+    }
+
+    private List<Map<String, Object>> summarizeDeliveredWorkItemsByType(List<TaskEntity> tasks, String workItemType, int limit) {
+        if (tasks == null || tasks.isEmpty() || limit <= 0) {
+            return List.of();
+        }
+        return tasks.stream()
+                .filter(task -> workItemType.equals(defaultString(task.getWorkItemType())))
+                .filter(task -> isDeliveredStatus(task.getStatus()))
+                .limit(limit)
+                .map(this::workItemSummaryPayload)
+                .toList();
+    }
+
+    private List<Map<String, Object>> summarizePendingWorkItems(List<TaskEntity> tasks, int limit) {
+        if (tasks == null || tasks.isEmpty() || limit <= 0) {
+            return List.of();
+        }
+        return tasks.stream()
+                .filter(task -> !isDeliveredStatus(task.getStatus()))
+                .limit(limit)
+                .map(this::workItemSummaryPayload)
+                .toList();
+    }
+
+    private Map<String, Object> workItemSummaryPayload(TaskEntity task) {
+        LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
+        payload.put("workItemId", task.getId());
+        payload.put("workItemCode", defaultString(task.getWorkItemCode()));
+        payload.put("name", defaultString(task.getName()));
+        payload.put("workItemType", defaultString(task.getWorkItemType()));
+        payload.put("status", defaultString(task.getStatus()));
+        payload.put("priority", defaultString(task.getPriority()));
+        payload.put("assignee", defaultString(task.getAssignee()));
+        payload.put("route", "/projects/" + task.getProject().getId() + "/iterations?openTaskId=" + task.getId());
+        return Map.copyOf(payload);
+    }
+
     private PlatformToolCandidate agentCandidate(AgentEntity agent) {
         return new PlatformToolCandidate(
                 "AGENT",
@@ -650,6 +771,16 @@ public class PlatformToolExecutor {
                 .orElseThrow(() -> new NoSuchElementException("项目不存在: " + projectId));
         projectDataPermissionService.requireProjectVisible(project);
         return project;
+    }
+
+    private IterationEntity requireVisibleIteration(Long projectId, Long iterationId) {
+        IterationEntity iteration = iterationRepository.findById(iterationId)
+                .orElseThrow(() -> new NoSuchElementException("迭代不存在: " + iterationId));
+        if (!Objects.equals(iteration.getProject().getId(), projectId)) {
+            throw new IllegalArgumentException("迭代不属于当前项目: " + iterationId);
+        }
+        projectDataPermissionService.requireProjectVisible(iteration.getProject());
+        return iteration;
     }
 
     private TaskEntity requireVisibleTask(Long taskId) {
@@ -798,6 +929,27 @@ public class PlatformToolExecutor {
 
     private boolean isBlank(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    private long countWorkItemsByType(List<TaskEntity> tasks, String workItemType) {
+        if (tasks == null || tasks.isEmpty()) {
+            return 0L;
+        }
+        return tasks.stream()
+                .filter(task -> workItemType.equals(defaultString(task.getWorkItemType())))
+                .count();
+    }
+
+    private boolean isDeliveredStatus(String status) {
+        String normalized = defaultString(status);
+        return "已完成".equals(normalized)
+                || "完成".equals(normalized)
+                || "已上线".equals(normalized)
+                || "已发布".equals(normalized)
+                || "通过".equals(normalized)
+                || "关闭".equals(normalized)
+                || "DONE".equalsIgnoreCase(normalized)
+                || "CLOSED".equalsIgnoreCase(normalized);
     }
 
     private String defaultString(String value) {

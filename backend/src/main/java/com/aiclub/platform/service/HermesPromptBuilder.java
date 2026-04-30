@@ -117,8 +117,16 @@ public class HermesPromptBuilder {
                 当前路由：%s
 
                 当前页面锚点：
+                - projectId：%s
+                - taskId：%s
+                - iterationId：%s
+                - testPlanId：%s
                 - wikiSpaceId：%s
                 - wikiPageId：%s
+                - 如果用户说“当前项目 / 这个项目”，默认就是上面的 projectId；不要再次搜索确认当前项目。
+                - 如果用户说“当前任务 / 这个工作项 / 这个需求 / 这个缺陷”，优先使用上面的 taskId 或当前已绑定对象，不要重复确认。
+                - 如果用户说“当前迭代 / 这个迭代 / 本迭代”，默认就是上面的 iterationId，对应当前路由页面；不要再次搜索确认当前迭代。
+                - 如果用户说“当前测试计划 / 这个测试计划”，默认就是上面的 testPlanId；不要重复确认当前测试计划。
                 - 如果用户说“当前页面 / 这个页面 / 本页”，默认就是上面这个 wikiPageId，对应当前路由页面；不要再次搜索确认当前页是哪一篇。
 
                 当前可见上下文：
@@ -145,6 +153,10 @@ public class HermesPromptBuilder {
                 userName,
                 roleName,
                 defaultString(request == null ? null : request.routeName()),
+                request == null || request.projectId() == null ? "" : String.valueOf(request.projectId()),
+                request == null || request.taskId() == null ? "" : String.valueOf(request.taskId()),
+                request == null || request.iterationId() == null ? "" : String.valueOf(request.iterationId()),
+                request == null || request.planId() == null ? "" : String.valueOf(request.planId()),
                 request == null || request.wikiSpaceId() == null ? "" : String.valueOf(request.wikiSpaceId()),
                 request == null || request.wikiPageId() == null ? "" : String.valueOf(request.wikiPageId()),
                 context == null ? "- 当前没有额外页面上下文" : defaultString(context.contextMarkdown()),

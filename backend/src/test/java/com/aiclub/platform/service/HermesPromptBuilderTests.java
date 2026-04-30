@@ -6,6 +6,7 @@ import com.aiclub.platform.dto.HermesGroundingTarget;
 import com.aiclub.platform.dto.HermesReferenceSummary;
 import com.aiclub.platform.dto.request.HermesChatRequest;
 import com.aiclub.platform.service.hermes.prompt.ExecutionTaskQueryHermesPromptSkill;
+import com.aiclub.platform.service.hermes.prompt.IterationReleaseSummaryHermesPromptSkill;
 import com.aiclub.platform.service.hermes.prompt.HermesPromptResourceLoader;
 import com.aiclub.platform.service.hermes.prompt.RepoScanHermesPromptSkill;
 import com.aiclub.platform.service.hermes.prompt.WikiQaHermesPromptSkill;
@@ -220,6 +221,67 @@ class HermesPromptBuilderTests {
     }
 
     /**
+     * 当前路由已锚定迭代时，user prompt 应显式告诉 Hermes “当前迭代”就是这个 iterationId。
+     */
+    @Test
+    void shouldIncludeIterationAnchorInUserPrompt() {
+        HermesPromptBuilder promptBuilder = createPromptBuilder();
+
+        HermesPromptBuilder.HermesPrompt prompt = promptBuilder.buildConversationPrompt(
+                currentUser(),
+                new HermesContextAssembler.HermesConversationContext(
+                        "project-iterations",
+                        12L,
+                        null,
+                        "项目经理",
+                        List.of(new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations")),
+                        List.of(),
+                        "迭代上下文"
+                ),
+                new HermesChatRequest("帮我总结当前迭代发版内容", "project-iterations", 12L, null, 35L, null, null, null, "client-7", null, false),
+                HermesGroundingState.empty(),
+                "hcs_test_token"
+        );
+
+        assertThat(prompt.userPrompt())
+                .contains("iterationId：35")
+                .contains("如果用户说“当前迭代 / 这个迭代 / 本迭代”")
+                .contains("不要再次搜索确认当前迭代");
+    }
+
+    /**
+     * 当前迭代发版总结问题应命中迭代汇总 Skill，引导模型优先读取当前迭代集合事实而不是单工作项详情。
+     */
+    @Test
+    void shouldMatchIterationReleaseSummarySkillForIterationSummaryQuestion() {
+        HermesPromptBuilder promptBuilder = createPromptBuilder();
+
+        HermesPromptBuilder.HermesPrompt prompt = promptBuilder.buildConversationPrompt(
+                currentUser(),
+                new HermesContextAssembler.HermesConversationContext(
+                        "project-iterations",
+                        12L,
+                        null,
+                        "项目经理",
+                        List.of(
+                                new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations"),
+                                new HermesReferenceSummary("ITERATION", 35L, "2026.04 发版迭代", "/projects/12/iterations?iterationId=35")
+                        ),
+                        List.of(),
+                        "迭代上下文"
+                ),
+                new HermesChatRequest("帮我总结当前迭代发版内容，修复了多少缺陷，开发了哪些需求", "project-iterations", 12L, null, 35L, null, null, null, "client-8", null, false),
+                HermesGroundingState.empty(),
+                "hcs_test_token"
+        );
+
+        assertThat(prompt.systemPrompt())
+                .contains("### Skill: iteration-release-summary")
+                .contains("优先调用 `project.get_iteration_detail`")
+                .contains("不要把“当前迭代工作项集合”误判成需要用户确认单个对象");
+    }
+
+    /**
      * 资源文件缺失时应直接失败，避免运行时无感知地丢失关键 Prompt 片段。
      */
     @Test
@@ -237,6 +299,7 @@ class HermesPromptBuilderTests {
                 resourceLoader,
                 List.of(
                         new WikiQaHermesPromptSkill(resourceLoader),
+                        new IterationReleaseSummaryHermesPromptSkill(resourceLoader),
                         new WorkItemCreateHermesPromptSkill(resourceLoader),
                         new RepoScanHermesPromptSkill(resourceLoader),
                         new ExecutionTaskQueryHermesPromptSkill(resourceLoader)

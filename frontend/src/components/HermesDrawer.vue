@@ -892,12 +892,18 @@ const handleSelectOption = async (selectionCard: HermesSelectionCardItem, option
 
 /**
  * 发送前确保存在可写入的当前会话；如果没有会话，就按当前页面上下文即时创建。
+ * 如果当前选中的会话与页面锚点不一致，也要自动切回当前上下文，避免沿用旧会话造成“当前迭代”失真。
  */
 const ensureWritableSession = async () => {
   if (selectedSessionId.value && (!currentSessionDetail.value || currentSessionDetail.value.id !== selectedSessionId.value)) {
     await loadSessionDetail(selectedSessionId.value)
   }
-  if (currentSessionDetail.value && !currentSessionDetail.value.archived) return currentSessionDetail.value.id
+  if (currentSessionDetail.value && !currentSessionDetail.value.archived && isSessionAlignedWithCurrentContext(currentSessionDetail.value)) {
+    return currentSessionDetail.value.id
+  }
+  if (currentSessionDetail.value && !currentSessionDetail.value.archived && !isSessionAlignedWithCurrentContext(currentSessionDetail.value)) {
+    clearSelectedSession()
+  }
   // 发送消息时才创建会话，不显示提示
   const createdSession = await createAndSelectSession()
   return createdSession?.id || null

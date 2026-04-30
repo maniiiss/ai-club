@@ -1495,7 +1495,7 @@ public class PlatformStoreService {
                 entity.getId(),
                 entity.getWorkItemCode(),
                 entity.getName(),
-                entity.getWorkItemType(),
+                normalizeWorkItemType(entity.getWorkItemType()),
                 entity.getCreatorUser() == null ? null : entity.getCreatorUser().getId(),
                 entity.getCreatorUser() == null ? "" : displayName(entity.getCreatorUser()),
                 entity.getStatus(),
@@ -1586,10 +1586,13 @@ public class PlatformStoreService {
 
     private String normalizeWorkItemType(String workItemType) {
         String value = hasText(workItemType) ? workItemType.trim() : "任务";
-        if (!"需求".equals(value) && !"任务".equals(value) && !"缺陷".equals(value)) {
-            throw new IllegalArgumentException("工作项类型仅支持：需求、任务、缺陷");
+        if ("需求".equals(value) || value.contains("需求")) {
+            return "需求";
         }
-        return value;
+        if ("缺陷".equals(value) || value.contains("缺陷") || value.toUpperCase().contains("BUG")) {
+            return "缺陷";
+        }
+        return "任务";
     }
 
     /**

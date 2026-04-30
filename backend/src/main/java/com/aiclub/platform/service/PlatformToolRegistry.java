@@ -21,6 +21,7 @@ public class PlatformToolRegistry {
     public static final String TOOL_PROJECT_SEARCH = "project.search";
     public static final String TOOL_PROJECT_GET_DETAIL = "project.get_detail";
     public static final String TOOL_PROJECT_LIST_ITERATIONS = "project.list_iterations";
+    public static final String TOOL_PROJECT_GET_ITERATION_DETAIL = "project.get_iteration_detail";
     public static final String TOOL_USER_RESOLVE_PROJECT_MEMBER = "user.resolve_project_member";
     public static final String TOOL_USER_LIST_PROJECT_MEMBERS = "user.list_project_members";
     public static final String TOOL_WORK_ITEM_SEARCH = "work_item.search";
@@ -126,14 +127,17 @@ public class PlatformToolRegistry {
         register(result, TOOL_PROJECT_LIST_ITERATIONS, "项目迭代列表", "PROJECT", "读取项目迭代列表", true, "LOW", "project:view", false,
                 schema("projectId", "项目ID"),
                 iterationOutputSchema());
+        register(result, TOOL_PROJECT_GET_ITERATION_DETAIL, "迭代详情", "PROJECT", "读取当前迭代摘要、工作项统计与发版内容所需事实", true, "LOW", "task:view", false,
+                schema("projectId", "项目ID", "iterationId", "迭代ID"),
+                iterationDetailOutputSchema());
         register(result, TOOL_USER_RESOLVE_PROJECT_MEMBER, "解析项目成员", "USER", "按昵称或用户名解析项目成员", true, "LOW", "project:view", false,
                 schema("projectId", "项目ID", "keyword", "成员关键词"),
                 projectMemberOutputSchema());
         register(result, TOOL_USER_LIST_PROJECT_MEMBERS, "项目成员列表", "USER", "列出项目负责人、创建人和成员", true, "LOW", "project:view", false,
                 schema("projectId", "项目ID"),
                 projectMemberOutputSchema());
-        register(result, TOOL_WORK_ITEM_SEARCH, "搜索工作项", "WORK_ITEM", "按标题、编号或说明搜索需求/任务/缺陷", true, "LOW", "task:view", false,
-                schema("keyword", "工作项关键词", "projectId", "项目ID"),
+        register(result, TOOL_WORK_ITEM_SEARCH, "搜索工作项", "WORK_ITEM", "按项目、迭代、标题、编号或说明搜索需求/任务/缺陷", true, "LOW", "task:view", false,
+                schema("keyword", "工作项关键词", "projectId", "项目ID，可选", "iterationId", "迭代ID，可选", "workItemType", "工作项类型，可选"),
                 workItemOutputSchema());
         register(result, TOOL_WORK_ITEM_GET_DETAIL, "工作项详情", "WORK_ITEM", "读取工作项详情和评论摘要", true, "LOW", "task:view", false,
                 schema("workItemId", "工作项ID"),
@@ -261,6 +265,33 @@ public class PlatformToolRegistry {
                 "candidates[].payload.projectId", "所属项目ID",
                 "candidates[].payload.status", "迭代状态",
                 "metadata.projectId", "查询使用的项目ID"
+        );
+    }
+
+    private Map<String, String> iterationDetailOutputSchema() {
+        return schema(
+                "summary", "本次迭代详情读取摘要",
+                "candidates[]", "详情结果候选列表，第一版固定返回一个结果",
+                "candidates[].id", "迭代ID",
+                "candidates[].title", "迭代名称",
+                "candidates[].subtitle", "迭代状态与目标摘要",
+                "candidates[].route", "前端迭代入口路由",
+                "candidates[].payload.projectId", "所属项目ID",
+                "candidates[].payload.iterationId", "迭代ID",
+                "candidates[].payload.iterationName", "迭代名称",
+                "candidates[].payload.status", "迭代状态",
+                "candidates[].payload.goal", "迭代目标",
+                "candidates[].payload.totalWorkItemCount", "工作项总数",
+                "candidates[].payload.deliveredCount", "已完成或已通过数量",
+                "candidates[].payload.pendingCount", "待继续跟进数量",
+                "candidates[].payload.requirementCount", "需求数量",
+                "candidates[].payload.taskCount", "任务数量",
+                "candidates[].payload.defectCount", "缺陷数量",
+                "candidates[].payload.deliveredRequirements", "已交付需求列表",
+                "candidates[].payload.fixedDefects", "已修复缺陷列表",
+                "candidates[].payload.pendingItems", "待继续跟进工作项列表",
+                "metadata.projectId", "查询使用的项目ID",
+                "metadata.iterationId", "查询使用的迭代ID"
         );
     }
 

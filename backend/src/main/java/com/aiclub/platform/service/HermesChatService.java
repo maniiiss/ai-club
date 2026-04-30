@@ -643,6 +643,7 @@ public class HermesChatService {
         }
     }
 
+
     /**
      * 写出失败结束事件并更新审计日志。
      */

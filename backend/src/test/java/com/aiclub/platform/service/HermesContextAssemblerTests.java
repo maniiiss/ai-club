@@ -5,7 +5,9 @@ import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.RoleEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.CurrentUserInfo;
+import com.aiclub.platform.dto.IterationSummary;
 import com.aiclub.platform.dto.TaskSummary;
+import com.aiclub.platform.dto.request.IterationRequest;
 import com.aiclub.platform.dto.request.HermesChatRequest;
 import com.aiclub.platform.dto.request.ProjectRequest;
 import com.aiclub.platform.dto.request.TaskCommentRequest;
@@ -118,6 +120,97 @@ class HermesContextAssemblerTests {
         assertThat(context.references()).extracting(reference -> reference.type()).contains("TASK", "PROJECT");
         assertThat(context.contextMarkdown()).contains("Hermes 任务");
         assertThat(context.contextMarkdown()).contains("上游接口返回字段仍未稳定");
+    }
+
+    /**
+     * 迭代详情页应优先装配当前迭代摘要，便于 Hermes 直接生成发版内容、需求和缺陷统计。
+     */
+    @Test
+    void shouldBuildIterationContextWithReleaseSummary() {
+        UserEntity creator = createUser("hermes-iteration-creator", "迭代创建人");
+        UserEntity owner = createUser("hermes-iteration-owner", "迭代负责人");
+        ProjectEntity project = createProjectAs(creator, owner, "发版项目");
+
+        loginAs(creator);
+        IterationSummary iteration = platformStoreService.createIteration(project.getId(), new IterationRequest(
+                "2026.04 发版迭代",
+                "聚焦本月发版收口",
+                "进行中",
+                "2026-04-01",
+                "2026-04-30",
+                "覆盖需求交付与缺陷修复",
+                1
+        ));
+        platformStoreService.createTask(new TaskRequest(
+                "统一登录改造",
+                "需求",
+                "通过",
+                "高",
+                "",
+                null,
+                List.of(),
+                "完成统一登录发版准备",
+                """
+                # 用户故事
+
+                作为发版负责人，我希望统一登录能力可以按计划上线。
+
+                # 需求描述
+
+                完成统一登录改造并通过发版验收。
+
+                # 验收标准
+
+                统一登录改造通过联调与回归验证。
+                """,
+                "",
+                "",
+                false,
+                false,
+                null,
+                null,
+                null,
+                project.getId(),
+                null,
+                iteration.id(),
+                null
+        ));
+        platformStoreService.createTask(new TaskRequest(
+                "修复移动端按钮错位",
+                "缺陷",
+                "处理中",
+                "中",
+                "",
+                null,
+                List.of(),
+                "修复发版前移动端展示问题",
+                "",
+                "",
+                "",
+                false,
+                false,
+                null,
+                null,
+                null,
+                project.getId(),
+                null,
+                iteration.id(),
+                null
+        ));
+
+        HermesContextAssembler.HermesConversationContext context = hermesContextAssembler.assemble(
+                new HermesChatRequest("帮我总结这个迭代的发版内容", "project-iterations", project.getId(), null, iteration.id(), null, null, null, null),
+                toCurrentUserInfo(creator)
+        );
+
+        assertThat(context.sceneCode()).isEqualTo("project-iterations");
+        assertThat(context.projectId()).isEqualTo(project.getId());
+        assertThat(context.references()).extracting(reference -> reference.type()).contains("PROJECT", "ITERATION", "TASK");
+        assertThat(context.contextMarkdown()).contains("当前迭代");
+        assertThat(context.contextMarkdown()).contains("发版内容速览");
+        assertThat(context.contextMarkdown()).contains("需求：1");
+        assertThat(context.contextMarkdown()).contains("缺陷：1");
+        assertThat(context.contextMarkdown()).contains("2026.04 发版迭代");
     }
 
     /**

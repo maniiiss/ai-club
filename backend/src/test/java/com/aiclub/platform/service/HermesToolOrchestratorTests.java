@@ -336,6 +336,198 @@ class HermesToolOrchestratorTests {
     }
 
     /**
+     * 当前迭代下的工作项集合查询用于汇总发版内容时，不应被误判成“必须先选一个工作项”。
+     */
+    @Test
+    void shouldKeepIterationScopedWorkItemSearchAsCollection() {
+        HermesToolOrchestrator orchestrator = new HermesToolOrchestrator(
+                platformToolExecutor,
+                platformToolRegistry,
+                hermesActionPlannerService,
+                new ObjectMapper()
+        );
+
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "project-iterations",
+                12L,
+                null,
+                "项目经理",
+                List.of(new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations")),
+                List.of(),
+                "迭代上下文"
+        );
+        HermesChatRequest request = new HermesChatRequest(
+                "帮我总结当前迭代发版内容",
+                "project-iterations",
+                12L,
+                null,
+                35L,
+                null,
+                "conversation-2b",
+                null,
+                null
+        );
+        PlatformToolDefinition workItemSearch = new PlatformToolDefinition(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "搜索工作项",
+                "WORK_ITEM",
+                "按项目、迭代、标题、编号或说明搜索需求/任务/缺陷",
+                true,
+                "LOW",
+                "task:view",
+                false,
+                Map.of("keyword", "工作项关键词", "projectId", "项目ID", "iterationId", "迭代ID", "workItemType", "工作项类型")
+        );
+        PlatformToolResult searchResult = new PlatformToolResult(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "搜索工作项",
+                "找到 2 个相关工作项",
+                List.of(
+                        new PlatformToolCandidate(
+                                "WORK_ITEM",
+                                301L,
+                                "统一登录改造",
+                                "类型：需求 / 状态：通过 / 项目：支付项目",
+                                "/projects/12/iterations?openTaskId=301",
+                                Map.of("projectId", 12L, "workItemId", 301L, "iterationId", 35L, "status", "通过", "projectName", "支付项目"),
+                                List.of()
+                        ),
+                        new PlatformToolCandidate(
+                                "WORK_ITEM",
+                                302L,
+                                "修复移动端按钮错位",
+                                "类型：缺陷 / 状态：处理中 / 项目：支付项目",
+                                "/projects/12/iterations?openTaskId=302",
+                                Map.of("projectId", 12L, "workItemId", 302L, "iterationId", 35L, "status", "处理中", "projectName", "支付项目"),
+                                List.of()
+                        )
+                ),
+                List.of(),
+                Map.of("iterationId", 35L)
+        );
+
+        when(platformToolRegistry.isEnabled(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.isAllowAutoExecute(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.requireDefinition(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(workItemSearch);
+        when(platformToolExecutor.execute(any())).thenReturn(searchResult);
+
+        HermesToolExecutionOutcome outcome = orchestrator.executeToolCall(
+                new HermesToolCallRequest(
+                        "call-2b",
+                        PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                        "work_item__search",
+                        Map.of()
+                ),
+                "scope-2b",
+                context,
+                request,
+                HermesGroundingState.empty()
+        );
+
+        assertThat(outcome.stopLoop()).isFalse();
+        assertThat(outcome.selectionCards()).isEmpty();
+        assertThat(outcome.groundingState().boundSlot("workItem")).isNull();
+        assertThat(outcome.toolMessageContent()).contains("统一登录改造");
+        assertThat(outcome.toolMessageContent()).contains("修复移动端按钮错位");
+    }
+
+    /**
+     * 即使关键词不是纯类型词，只要用户语义明显是在问“有哪些”，当前迭代里的工作项搜索也应按集合返回。
+     */
+    @Test
+    void shouldKeepAmbiguousIterationWorkItemsAsCollectionWhenQuestionAsksForList() {
+        HermesToolOrchestrator orchestrator = new HermesToolOrchestrator(
+                platformToolExecutor,
+                platformToolRegistry,
+                hermesActionPlannerService,
+                new ObjectMapper()
+        );
+
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "project-iterations",
+                12L,
+                null,
+                "项目经理",
+                List.of(new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations")),
+                List.of(),
+                "迭代上下文"
+        );
+        HermesChatRequest request = new HermesChatRequest(
+                "当前迭代有哪些登录改造相关需求",
+                "project-iterations",
+                12L,
+                null,
+                35L,
+                null,
+                "conversation-2c",
+                null,
+                null
+        );
+        PlatformToolDefinition workItemSearch = new PlatformToolDefinition(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "搜索工作项",
+                "WORK_ITEM",
+                "按项目、迭代、标题、编号或说明搜索需求/任务/缺陷",
+                true,
+                "LOW",
+                "task:view",
+                false,
+                Map.of("keyword", "工作项关键词", "projectId", "项目ID", "iterationId", "迭代ID", "workItemType", "工作项类型")
+        );
+        PlatformToolResult searchResult = new PlatformToolResult(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "搜索工作项",
+                "找到 2 个相关工作项",
+                List.of(
+                        new PlatformToolCandidate(
+                                "WORK_ITEM",
+                                401L,
+                                "登录改造一期",
+                                "类型：需求 / 状态：通过 / 项目：支付项目",
+                                "/projects/12/iterations?openTaskId=401",
+                                Map.of("projectId", 12L, "workItemId", 401L, "iterationId", 35L, "status", "通过", "projectName", "支付项目"),
+                                List.of()
+                        ),
+                        new PlatformToolCandidate(
+                                "WORK_ITEM",
+                                402L,
+                                "登录改造二期",
+                                "类型：需求 / 状态：处理中 / 项目：支付项目",
+                                "/projects/12/iterations?openTaskId=402",
+                                Map.of("projectId", 12L, "workItemId", 402L, "iterationId", 35L, "status", "处理中", "projectName", "支付项目"),
+                                List.of()
+                        )
+                ),
+                List.of(),
+                Map.of("iterationId", 35L)
+        );
+
+        when(platformToolRegistry.isEnabled(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.isAllowAutoExecute(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.requireDefinition(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(workItemSearch);
+        when(platformToolExecutor.execute(any())).thenReturn(searchResult);
+
+        HermesToolExecutionOutcome outcome = orchestrator.executeToolCall(
+                new HermesToolCallRequest(
+                        "call-2c",
+                        PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                        "work_item__search",
+                        Map.of("keyword", "登录改造", "workItemType", "需求")
+                ),
+                "scope-2c",
+                context,
+                request,
+                HermesGroundingState.empty()
+        );
+
+        assertThat(outcome.stopLoop()).isFalse();
+        assertThat(outcome.selectionCards()).isEmpty();
+        assertThat(outcome.groundingState().boundSlot("workItem")).isNull();
+        assertThat(outcome.toolMessageContent()).contains("登录改造一期");
+        assertThat(outcome.toolMessageContent()).contains("登录改造二期");
+    }
+
+    /**
      * 当 Hermes 发起写工具调用时，平台应直接转成确认动作卡片。
      */
     @Test
