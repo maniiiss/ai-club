@@ -11,6 +11,7 @@ import type {
   ExecutionRunDetailItem,
   ExecutionRunItem,
   ExecutionStreamEvent,
+  ExecutionTaskListStatsItem,
   ExecutionTaskDetailItem,
   ExecutionTaskItem,
   IterationBoardItem,
@@ -21,6 +22,7 @@ import type {
   MemoryFactGraphItem,
   PageResponse,
   ProjectBurndownItem,
+  ProjectListStatsItem,
   ProjectWorkItemStatsItem,
   ProjectItem,
   ProjectRequirementModuleOptionItem,
@@ -237,6 +239,11 @@ export interface ProjectQuery {
   status?: string
 }
 
+export interface ProjectListStatsQuery {
+  keyword?: string
+  status?: string
+}
+
 export interface AgentQuery {
   page: number
   size: number
@@ -260,6 +267,13 @@ export interface TaskQuery {
 export interface ExecutionTaskQuery {
   page: number
   size: number
+  keyword?: string
+  status?: string
+  scenarioCode?: string
+  projectId?: number
+}
+
+export interface ExecutionTaskListStatsQuery {
   keyword?: string
   status?: string
   scenarioCode?: string
@@ -369,6 +383,13 @@ export const saveDashboardQuickTasks = async (items: DashboardQuickTaskPayloadIt
 
 export const pageProjects = async (query: ProjectQuery) => {
   const { data } = await http.get<ApiResponse<PageResponse<ProjectItem>>>('/api/projects', {
+    params: cleanParams(query)
+  })
+  return data.data
+}
+
+export const getProjectListStats = async (query: ProjectListStatsQuery) => {
+  const { data } = await http.get<ApiResponse<ProjectListStatsItem>>('/api/projects/stats', {
     params: cleanParams(query)
   })
   return data.data
@@ -529,6 +550,13 @@ export const runTaskAgent = async (id: number, input: string) => {
 
 export const pageExecutionTasks = async (query: ExecutionTaskQuery) => {
   const { data } = await http.get<ApiResponse<PageResponse<ExecutionTaskItem>>>('/api/execution-tasks', {
+    params: cleanParams(query)
+  })
+  return data.data
+}
+
+export const getExecutionTaskListStats = async (query: ExecutionTaskListStatsQuery) => {
+  const { data } = await http.get<ApiResponse<ExecutionTaskListStatsItem>>('/api/execution-tasks/stats', {
     params: cleanParams(query)
   })
   return data.data

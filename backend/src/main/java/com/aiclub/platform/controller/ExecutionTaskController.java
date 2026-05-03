@@ -3,6 +3,7 @@ package com.aiclub.platform.controller;
 import com.aiclub.platform.annotation.OperationLog;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
+import com.aiclub.platform.dto.ExecutionTaskListStatsSummary;
 import com.aiclub.platform.dto.ExecutionRunSummary;
 import com.aiclub.platform.dto.ExecutionTaskDetail;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
@@ -46,6 +47,15 @@ public class ExecutionTaskController {
                                                                 @RequestParam(required = false) String scenarioCode,
                                                                 @RequestParam(required = false) Long projectId) {
         return ApiResponse.success(executionTaskService.pageExecutionTasks(page, size, keyword, status, scenarioCode, projectId));
+    }
+
+    @GetMapping("/stats")
+    @RequirePermission("task:view")
+    public ApiResponse<ExecutionTaskListStatsSummary> stats(@RequestParam(required = false) String keyword,
+                                                            @RequestParam(required = false) String status,
+                                                            @RequestParam(required = false) String scenarioCode,
+                                                            @RequestParam(required = false) Long projectId) {
+        return ApiResponse.success(executionTaskService.getExecutionTaskListStats(keyword, status, scenarioCode, projectId));
     }
 
     @GetMapping("/{id}")

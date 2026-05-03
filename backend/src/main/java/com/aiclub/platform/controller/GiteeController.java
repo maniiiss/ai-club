@@ -3,14 +3,13 @@ package com.aiclub.platform.controller;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.GiteeMilestoneSummary;
-import com.aiclub.platform.dto.GiteeProjectBindingDiscoveryResult;
+import com.aiclub.platform.dto.GiteeProgramSummary;
 import com.aiclub.platform.dto.GiteeTestPlanPushContextSummary;
 import com.aiclub.platform.dto.GiteeTestPlanPushResult;
 import com.aiclub.platform.dto.GiteeWorkItemSyncLogSummary;
 import com.aiclub.platform.dto.GiteeWorkItemSyncResult;
 import com.aiclub.platform.dto.IterationGiteeBindingSummary;
 import com.aiclub.platform.dto.ProjectGiteeBindingSummary;
-import com.aiclub.platform.dto.request.GiteeProjectBindingDiscoveryRequest;
 import com.aiclub.platform.dto.request.IterationGiteeBindingRequest;
 import com.aiclub.platform.dto.request.ProjectGiteeBindingRequest;
 import com.aiclub.platform.service.GiteeBindingService;
@@ -49,12 +48,10 @@ public class GiteeController {
         return ApiResponse.success(giteeBindingService.getProjectBinding(projectId));
     }
 
-    @PostMapping("/projects/{projectId}/binding/discover")
+    @GetMapping("/project-programs")
     @RequirePermission("gitee:binding:manage")
-    public ApiResponse<GiteeProjectBindingDiscoveryResult> discoverProjectPrograms(
-            @PathVariable Long projectId,
-            @Valid @RequestBody GiteeProjectBindingDiscoveryRequest request) {
-        return ApiResponse.success(giteeBindingService.discoverPrograms(projectId, request));
+    public ApiResponse<List<GiteeProgramSummary>> listProjectPrograms() {
+        return ApiResponse.success(giteeBindingService.listProjectPrograms());
     }
 
     @PostMapping("/projects/{projectId}/binding")

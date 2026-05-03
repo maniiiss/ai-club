@@ -6,10 +6,8 @@ import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGiteeBindingEntity;
 import com.aiclub.platform.dto.GiteeMilestoneSummary;
 import com.aiclub.platform.dto.GiteeProgramSummary;
-import com.aiclub.platform.dto.GiteeProjectBindingDiscoveryResult;
 import com.aiclub.platform.dto.IterationGiteeBindingSummary;
 import com.aiclub.platform.dto.ProjectGiteeBindingSummary;
-import com.aiclub.platform.dto.request.GiteeProjectBindingDiscoveryRequest;
 import com.aiclub.platform.dto.request.IterationGiteeBindingRequest;
 import com.aiclub.platform.dto.request.ProjectGiteeBindingRequest;
 import com.aiclub.platform.repository.IterationGiteeBindingRepository;
@@ -45,6 +43,16 @@ public class GiteeBindingService {
     private final GiteeApiService giteeApiService;
     private final TokenCipherService tokenCipherService;
     private final String defaultApiUrl;
+    /**
+     * 项目级 Gitee 绑定先统一复用全局企业配置，避免每个项目重复录入企业凭据。
+     */
+    @Value("${platform.gitee.binding.enterprise-id:0}")
+    private long configuredEnterpriseId = 0L;
+    /**
+     * Access Token 先收敛到配置文件，项目级绑定只维护 program 选择和启用状态。
+     */
+    @Value("${platform.gitee.binding.access-token:}")
+    private String configuredAccessToken = "";
 
     public GiteeBindingService(ProjectRepository projectRepository,
                                IterationRepository iterationRepository,
@@ -71,6 +79,15 @@ public class GiteeBindingService {
                 .orElse(null);
     }
 
+    public List<GiteeProgramSummary> listProjectPrograms() {
+        String apiBaseUrl = resolveApiBaseUrl(null);
+        Long enterpriseId = resolveEnterpriseId(null);
+        String accessToken = resolveAccessToken(null, true);
+        return giteeApiService.listPrograms(apiBaseUrl, accessToken, enterpriseId).stream()
+                .map(item -> new GiteeProgramSummary(item.id(), item.name(), item.ident()))
+                .toList();
+    }
+
     public IterationGiteeBindingSummary getIterationBinding(Long iterationId) {
         IterationEntity iteration = requireIteration(iterationId);
         return iterationGiteeBindingRepository.findByIteration_Id(iteration.getId())
@@ -80,11 +97,11 @@ public class GiteeBindingService {
 
     public List<GiteeMilestoneSummary> listProjectMilestones(Long projectId) {
         ProjectGiteeBindingEntity projectBinding = requireProjectBinding(projectId);
-        String accessToken = tokenCipherService.decrypt(projectBinding.getAccessTokenCiphertext());
+        String accessToken = resolveAccessToken(projectBinding, false);
         return giteeApiService.listMilestones(
-                        projectBinding.getApiBaseUrl(),
+                        resolveApiBaseUrl(projectBinding),
                         accessToken,
-                        projectBinding.getEnterpriseId(),
+                        resolveEnterpriseId(projectBinding),
                         projectBinding.getGiteeProgramId()
                 ).stream()
                 .map(item -> new GiteeMilestoneSummary(
@@ -97,54 +114,15 @@ public class GiteeBindingService {
                 .toList();
     }
 
-    @Transactional(noRollbackFor = RuntimeException.class)
-    public GiteeProjectBindingDiscoveryResult discoverPrograms(Long projectId, GiteeProjectBindingDiscoveryRequest request) {
-        ProjectEntity project = requireProject(projectId);
-        ProjectGiteeBindingEntity existingBinding = projectGiteeBindingRepository.findByProject_Id(projectId).orElse(null);
-        String apiBaseUrl = resolveApiBaseUrl(request.apiBaseUrl(), existingBinding);
-        Long enterpriseId = resolveEnterpriseId(request.enterpriseId(), existingBinding);
-        try {
-            String accessToken = resolveAccessToken(request.accessToken(), existingBinding, false);
-            List<GiteeProgramSummary> programs = giteeApiService.listPrograms(apiBaseUrl, accessToken, enterpriseId).stream()
-                    .map(item -> new GiteeProgramSummary(item.id(), item.name(), item.ident()))
-                    .toList();
-            String successMessage = programs.isEmpty()
-                    ? "连接成功，但当前企业下没有查询到可见的 Gitee 项目"
-                    : "连接成功";
-            if (existingBinding != null) {
-                existingBinding.setLastTestStatus("SUCCESS");
-                existingBinding.setLastTestMessage(successMessage);
-                existingBinding.setLastTestedAt(LocalDateTime.now());
-                existingBinding.setApiBaseUrl(apiBaseUrl);
-                existingBinding.setEnterpriseId(enterpriseId);
-                projectGiteeBindingRepository.save(existingBinding);
-            }
-            return new GiteeProjectBindingDiscoveryResult(
-                    enterpriseId,
-                    apiBaseUrl,
-                    successMessage,
-                    programs
-            );
-        } catch (RuntimeException exception) {
-            if (existingBinding != null) {
-                existingBinding.setLastTestStatus("FAILED");
-                existingBinding.setLastTestMessage(limitMessage(exception.getMessage()));
-                existingBinding.setLastTestedAt(LocalDateTime.now());
-                projectGiteeBindingRepository.save(existingBinding);
-            }
-            throw exception;
-        }
-    }
-
     @Transactional
     public ProjectGiteeBindingSummary createProjectBinding(Long projectId, ProjectGiteeBindingRequest request) {
         ProjectEntity project = requireProject(projectId);
         if (projectGiteeBindingRepository.findByProject_Id(projectId).isPresent()) {
             throw new IllegalArgumentException("当前项目已绑定 Gitee 项目，请改用更新操作");
         }
-        String apiBaseUrl = resolveApiBaseUrl(request.apiBaseUrl(), null);
-        Long enterpriseId = resolveEnterpriseId(request.enterpriseId(), null);
-        String accessToken = resolveAccessToken(request.accessToken(), null, true);
+        String apiBaseUrl = resolveApiBaseUrl(null);
+        Long enterpriseId = resolveEnterpriseId(null);
+        String accessToken = resolveAccessToken(null, true);
         GiteeApiService.GiteeProgram program = giteeApiService.fetchProgram(apiBaseUrl, accessToken, enterpriseId, request.giteeProgramId());
 
         ProjectGiteeBindingEntity entity = new ProjectGiteeBindingEntity();
@@ -165,17 +143,15 @@ public class GiteeBindingService {
     public ProjectGiteeBindingSummary updateProjectBinding(Long projectId, ProjectGiteeBindingRequest request) {
         ProjectEntity project = requireProject(projectId);
         ProjectGiteeBindingEntity entity = requireProjectBinding(projectId);
-        String apiBaseUrl = resolveApiBaseUrl(request.apiBaseUrl(), entity);
-        Long enterpriseId = resolveEnterpriseId(request.enterpriseId(), entity);
-        String accessToken = resolveAccessToken(request.accessToken(), entity, false);
+        String apiBaseUrl = resolveApiBaseUrl(entity);
+        Long enterpriseId = resolveEnterpriseId(entity);
+        String accessToken = resolveAccessToken(entity, false);
         GiteeApiService.GiteeProgram program = giteeApiService.fetchProgram(apiBaseUrl, accessToken, enterpriseId, request.giteeProgramId());
 
         entity.setProject(project);
         entity.setEnterpriseId(enterpriseId);
         entity.setApiBaseUrl(apiBaseUrl);
-        if (hasText(request.accessToken())) {
-            entity.setAccessTokenCiphertext(tokenCipherService.encrypt(accessToken));
-        }
+        entity.setAccessTokenCiphertext(tokenCipherService.encrypt(accessToken));
         entity.setGiteeProgramId(program.id());
         entity.setGiteeProgramName(program.name());
         entity.setEnabled(defaultBoolean(request.enabled(), true));
@@ -219,11 +195,11 @@ public class GiteeBindingService {
     }
 
     private GiteeApiService.GiteeMilestone requireMilestone(ProjectGiteeBindingEntity projectBinding, Long milestoneId) {
-        String accessToken = tokenCipherService.decrypt(projectBinding.getAccessTokenCiphertext());
+        String accessToken = resolveAccessToken(projectBinding, false);
         return giteeApiService.listMilestones(
-                        projectBinding.getApiBaseUrl(),
+                        resolveApiBaseUrl(projectBinding),
                         accessToken,
-                        projectBinding.getEnterpriseId(),
+                        resolveEnterpriseId(projectBinding),
                         projectBinding.getGiteeProgramId()
                 ).stream()
                 .filter(item -> item.id().equals(milestoneId))
@@ -264,40 +240,40 @@ public class GiteeBindingService {
                 .orElseThrow(() -> new NoSuchElementException("当前迭代尚未绑定 Gitee 里程碑"));
     }
 
-    private String resolveApiBaseUrl(String value, ProjectGiteeBindingEntity existingBinding) {
-        String resolved = hasText(value)
-                ? value.trim()
-                : existingBinding == null ? defaultApiUrl : existingBinding.getApiBaseUrl();
-        while (resolved.endsWith("/")) {
-            resolved = resolved.substring(0, resolved.length() - 1);
-        }
+    private String resolveApiBaseUrl(ProjectGiteeBindingEntity existingBinding) {
+        String resolved = hasText(defaultApiUrl)
+                ? defaultApiUrl.trim()
+                : existingBinding == null ? null : existingBinding.getApiBaseUrl();
         if (!hasText(resolved)) {
             throw new IllegalArgumentException("Gitee API 地址不能为空");
+        }
+        while (resolved.endsWith("/")) {
+            resolved = resolved.substring(0, resolved.length() - 1);
         }
         return giteeApiService.normalizeEnterpriseApiBaseUrl(resolved);
     }
 
-    private Long resolveEnterpriseId(Long enterpriseId, ProjectGiteeBindingEntity existingBinding) {
-        if (enterpriseId != null) {
-            return enterpriseId;
+    private Long resolveEnterpriseId(ProjectGiteeBindingEntity existingBinding) {
+        if (configuredEnterpriseId > 0) {
+            return configuredEnterpriseId;
         }
-        if (existingBinding != null) {
+        if (existingBinding != null && existingBinding.getEnterpriseId() != null) {
             return existingBinding.getEnterpriseId();
         }
-        throw new IllegalArgumentException("企业ID不能为空");
+        throw new IllegalArgumentException("请先在配置文件中设置 Gitee 企业ID");
     }
 
-    private String resolveAccessToken(String accessToken, ProjectGiteeBindingEntity existingBinding, boolean requiredForCreate) {
-        if (hasText(accessToken)) {
-            return accessToken.trim();
+    private String resolveAccessToken(ProjectGiteeBindingEntity existingBinding, boolean requiredForCreate) {
+        if (hasText(configuredAccessToken)) {
+            return configuredAccessToken.trim();
         }
-        if (existingBinding != null) {
+        if (existingBinding != null && hasText(existingBinding.getAccessTokenCiphertext())) {
             return tokenCipherService.decrypt(existingBinding.getAccessTokenCiphertext());
         }
         if (requiredForCreate) {
-            throw new IllegalArgumentException("Access Token不能为空");
+            throw new IllegalArgumentException("请先在配置文件中设置 Gitee Access Token");
         }
-        throw new IllegalArgumentException("当前绑定未配置可复用的 Access Token，请重新输入");
+        throw new IllegalArgumentException("当前项目缺少可用的 Gitee Access Token，请先补齐配置文件");
     }
 
     private ProjectGiteeBindingSummary toProjectBindingSummary(ProjectGiteeBindingEntity entity) {
@@ -305,11 +281,11 @@ public class GiteeBindingService {
                 entity.getId(),
                 entity.getProject().getId(),
                 entity.getProject().getName(),
-                entity.getEnterpriseId(),
-                entity.getApiBaseUrl(),
+                resolveEnterpriseId(entity),
+                resolveApiBaseUrl(entity),
                 entity.getGiteeProgramId(),
                 entity.getGiteeProgramName(),
-                hasText(entity.getAccessTokenCiphertext()),
+                hasText(configuredAccessToken) || hasText(entity.getAccessTokenCiphertext()),
                 defaultBoolean(entity.getEnabled(), true),
                 entity.getLastTestStatus(),
                 entity.getLastTestMessage(),

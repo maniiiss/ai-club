@@ -16,6 +16,7 @@ import com.aiclub.platform.dto.IterationBoardSummary;
 import com.aiclub.platform.dto.IterationSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectMemberSummary;
+import com.aiclub.platform.dto.ProjectListStatsSummary;
 import com.aiclub.platform.dto.ProjectSummary;
 import com.aiclub.platform.dto.ProjectBurndownSummary;
 import com.aiclub.platform.dto.ProjectWorkItemStatsSummary;
@@ -170,6 +171,41 @@ public class PlatformStoreService {
         Page<ProjectSummary> pageData = projectRepository.findAll(projectSpecification(keyword, status, scope), pageable)
                 .map(this::toProjectSummary);
         return PageResponse.from(pageData);
+    }
+
+    /**
+     * 项目管理顶部统计卡片需要基于完整筛选结果聚合，不能再复用分页列表当前页的 records。
+     */
+    public ProjectListStatsSummary getProjectListStats(String keyword, String status) {
+        ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.requireCurrentScope();
+        List<ProjectEntity> projects = projectRepository.findAll(
+                projectSpecification(keyword, status, scope),
+                Sort.by(Sort.Direction.ASC, "id")
+        );
+        List<Long> projectIds = projects.stream()
+                .map(ProjectEntity::getId)
+                .toList();
+        long totalTaskCount = projectIds.isEmpty()
+                ? 0L
+                : taskRepository.count((root, query, cb) -> root.get("project").get("id").in(projectIds));
+        int activeProjectCount = projects.size();
+        int runningProjectCount = (int) projects.stream()
+                .filter(item -> "进行中".equals(item.getStatus()))
+                .count();
+        int resourceLoadPercent = activeProjectCount == 0
+                ? 0
+                : (int) Math.round((runningProjectCount * 100.0D) / activeProjectCount);
+        double averageTaskCount = activeProjectCount == 0
+                ? 0D
+                : BigDecimal.valueOf(totalTaskCount)
+                .divide(BigDecimal.valueOf(activeProjectCount), 1, RoundingMode.HALF_UP)
+                .doubleValue();
+        return new ProjectListStatsSummary(
+                activeProjectCount,
+                Math.toIntExact(totalTaskCount),
+                resourceLoadPercent,
+                averageTaskCount
+        );
     }
 
     public List<ProjectSummary> listAllProjects() {

@@ -3,10 +3,9 @@ package com.aiclub.platform.service;
 import com.aiclub.platform.domain.model.IterationEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGiteeBindingEntity;
-import com.aiclub.platform.dto.GiteeProjectBindingDiscoveryResult;
+import com.aiclub.platform.dto.GiteeProgramSummary;
 import com.aiclub.platform.dto.IterationGiteeBindingSummary;
 import com.aiclub.platform.dto.ProjectGiteeBindingSummary;
-import com.aiclub.platform.dto.request.GiteeProjectBindingDiscoveryRequest;
 import com.aiclub.platform.dto.request.IterationGiteeBindingRequest;
 import com.aiclub.platform.dto.request.ProjectGiteeBindingRequest;
 import com.aiclub.platform.repository.IterationGiteeBindingRepository;
@@ -18,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -74,6 +74,7 @@ class GiteeBindingServiceTests {
 
     @Test
     void shouldCreateProjectBindingAfterResolvingRemoteProgram() {
+        configureGlobalBinding(99L, "plain-token");
         ProjectEntity project = buildProject(7L, "项目A");
         when(projectRepository.findById(7L)).thenReturn(Optional.of(project));
         when(projectGiteeBindingRepository.findByProject_Id(7L)).thenReturn(Optional.empty());
@@ -87,7 +88,7 @@ class GiteeBindingServiceTests {
 
         ProjectGiteeBindingSummary summary = giteeBindingService.createProjectBinding(
                 7L,
-                new ProjectGiteeBindingRequest(99L, "https://api.gitee.com/enterprises", 1001L, "plain-token", true)
+                new ProjectGiteeBindingRequest(1001L, true)
         );
 
         assertThat(summary.id()).isEqualTo(88L);
@@ -99,60 +100,60 @@ class GiteeBindingServiceTests {
     }
 
     @Test
-    void shouldReuseExistingTokenWhenDiscoveringPrograms() {
+    void shouldReuseExistingTokenWhenUpdatingProjectBindingWithoutGlobalToken() {
         ProjectEntity project = buildProject(7L, "项目A");
         ProjectGiteeBindingEntity binding = buildProjectBinding(project);
         when(projectRepository.findById(7L)).thenReturn(Optional.of(project));
         when(projectGiteeBindingRepository.findByProject_Id(7L)).thenReturn(Optional.of(binding));
         when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
-        when(giteeApiService.listPrograms("https://api.gitee.com/enterprises", "plain-token", 99L))
-                .thenReturn(List.of(new GiteeApiService.GiteeProgram(1001L, "远端项目A", "program-a")));
+        when(giteeApiService.fetchProgram("https://api.gitee.com/enterprises", "plain-token", 99L, 1002L))
+                .thenReturn(new GiteeApiService.GiteeProgram(1002L, "远端项目B", "program-b"));
         when(projectGiteeBindingRepository.save(any(ProjectGiteeBindingEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        GiteeProjectBindingDiscoveryResult result = giteeBindingService.discoverPrograms(
+        ProjectGiteeBindingSummary result = giteeBindingService.updateProjectBinding(
                 7L,
-                new GiteeProjectBindingDiscoveryRequest(99L, "https://api.gitee.com/enterprises", "")
+                new ProjectGiteeBindingRequest(1002L, false)
         );
 
-        assertThat(result.programs()).hasSize(1);
-        assertThat(result.programs().get(0).name()).isEqualTo("远端项目A");
+        assertThat(result.giteeProgramId()).isEqualTo(1002L);
+        assertThat(result.giteeProgramName()).isEqualTo("远端项目B");
+        assertThat(result.enabled()).isFalse();
         verify(tokenCipherService).decrypt("cipher-token");
     }
 
     @Test
-    void shouldNormalizeLegacyPublicApiUrlWhenDiscoveringPrograms() {
-        ProjectEntity project = buildProject(7L, "项目A");
-        when(projectRepository.findById(7L)).thenReturn(Optional.of(project));
-        when(projectGiteeBindingRepository.findByProject_Id(7L)).thenReturn(Optional.empty());
+    void shouldNormalizeLegacyPublicApiUrlWhenListingProjectPrograms() {
+        configureGlobalBinding(99L, "plain-token");
+        giteeBindingService = new GiteeBindingService(
+                projectRepository,
+                iterationRepository,
+                projectGiteeBindingRepository,
+                iterationGiteeBindingRepository,
+                projectDataPermissionService,
+                giteeApiService,
+                tokenCipherService,
+                "https://gitee.com/api/v8"
+        );
+        configureGlobalBinding(99L, "plain-token");
         when(giteeApiService.normalizeEnterpriseApiBaseUrl("https://gitee.com/api/v8"))
                 .thenReturn("https://api.gitee.com/enterprises");
         when(giteeApiService.listPrograms("https://api.gitee.com/enterprises", "plain-token", 99L))
                 .thenReturn(List.of(new GiteeApiService.GiteeProgram(1001L, "远端项目A", "program-a")));
 
-        GiteeProjectBindingDiscoveryResult result = giteeBindingService.discoverPrograms(
-                7L,
-                new GiteeProjectBindingDiscoveryRequest(99L, "https://gitee.com/api/v8", "plain-token")
-        );
+        List<GiteeProgramSummary> result = giteeBindingService.listProjectPrograms();
 
-        assertThat(result.apiBaseUrl()).isEqualTo("https://api.gitee.com/enterprises");
-        assertThat(result.message()).isEqualTo("连接成功");
+        assertThat(result).extracting(GiteeProgramSummary::name).containsExactly("远端项目A");
     }
 
     @Test
-    void shouldReturnHelpfulMessageWhenNoProgramsVisible() {
-        ProjectEntity project = buildProject(7L, "项目A");
-        when(projectRepository.findById(7L)).thenReturn(Optional.of(project));
-        when(projectGiteeBindingRepository.findByProject_Id(7L)).thenReturn(Optional.empty());
+    void shouldReturnEmptyProjectProgramsWhenEnterpriseHasNoVisiblePrograms() {
+        configureGlobalBinding(99L, "plain-token");
         when(giteeApiService.listPrograms("https://api.gitee.com/enterprises", "plain-token", 99L))
                 .thenReturn(List.of());
 
-        GiteeProjectBindingDiscoveryResult result = giteeBindingService.discoverPrograms(
-                7L,
-                new GiteeProjectBindingDiscoveryRequest(99L, "https://api.gitee.com/enterprises", "plain-token")
-        );
+        List<GiteeProgramSummary> result = giteeBindingService.listProjectPrograms();
 
-        assertThat(result.programs()).isEmpty();
-        assertThat(result.message()).isEqualTo("连接成功，但当前企业下没有查询到可见的 Gitee 项目");
+        assertThat(result).isEmpty();
     }
 
     @Test
@@ -229,5 +230,10 @@ class GiteeBindingServiceTests {
         binding.setGiteeProgramName("远端项目A");
         binding.setEnabled(true);
         return binding;
+    }
+
+    private void configureGlobalBinding(long enterpriseId, String accessToken) {
+        ReflectionTestUtils.setField(giteeBindingService, "configuredEnterpriseId", enterpriseId);
+        ReflectionTestUtils.setField(giteeBindingService, "configuredAccessToken", accessToken);
     }
 }

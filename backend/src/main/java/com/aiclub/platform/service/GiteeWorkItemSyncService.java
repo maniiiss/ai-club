@@ -18,6 +18,7 @@ import com.aiclub.platform.repository.TaskRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.security.AuthContextHolder;
 import com.aiclub.platform.util.RequirementDocumentUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -72,6 +73,12 @@ public class GiteeWorkItemSyncService {
     private final TokenCipherService tokenCipherService;
     private final KnowledgeGraphService knowledgeGraphService;
     private final SecureRandom workItemCodeRandom = new SecureRandom();
+    @Value("${platform.gitee.default-api-url:https://api.gitee.com/enterprises}")
+    private String defaultApiUrl = "";
+    @Value("${platform.gitee.binding.enterprise-id:0}")
+    private long configuredEnterpriseId = 0L;
+    @Value("${platform.gitee.binding.access-token:}")
+    private String configuredAccessToken = "";
 
     public GiteeWorkItemSyncService(IterationRepository iterationRepository,
                                     IterationGiteeBindingRepository iterationGiteeBindingRepository,
@@ -112,13 +119,15 @@ public class GiteeWorkItemSyncService {
         int totalIssueCount = 0;
         String executionStatus;
         String summaryMessage;
+        Long enterpriseId = resolveEnterpriseId(projectBinding);
+        String apiBaseUrl = resolveApiBaseUrl(projectBinding);
 
         try {
-            String accessToken = tokenCipherService.decrypt(projectBinding.getAccessTokenCiphertext());
+            String accessToken = resolveAccessToken(projectBinding);
             List<GiteeApiService.GiteeIssue> remoteIssues = giteeApiService.listIssues(
-                    projectBinding.getApiBaseUrl(),
+                    apiBaseUrl,
                     accessToken,
-                    projectBinding.getEnterpriseId(),
+                    enterpriseId,
                     projectBinding.getGiteeProgramId(),
                     iterationBinding.getGiteeMilestoneId()
             );
@@ -127,7 +136,7 @@ public class GiteeWorkItemSyncService {
             Map<Long, TaskGiteeBindingEntity> existingBindingsByIssueId = new LinkedHashMap<>();
             List<Long> remoteIssueIds = remoteIssues.stream().map(GiteeApiService.GiteeIssue::id).toList();
             if (!remoteIssueIds.isEmpty()) {
-                taskGiteeBindingRepository.findAllByEnterpriseIdAndGiteeIssueIdIn(projectBinding.getEnterpriseId(), remoteIssueIds)
+                taskGiteeBindingRepository.findAllByEnterpriseIdAndGiteeIssueIdIn(enterpriseId, remoteIssueIds)
                         .forEach(item -> existingBindingsByIssueId.put(item.getGiteeIssueId(), item));
             }
 
@@ -143,7 +152,7 @@ public class GiteeWorkItemSyncService {
                         binding.setTask(createdTask);
                         binding.setProject(iteration.getProject());
                         binding.setIteration(iteration);
-                        binding.setEnterpriseId(projectBinding.getEnterpriseId());
+                        binding.setEnterpriseId(enterpriseId);
                         binding.setGiteeProgramId(projectBinding.getGiteeProgramId());
                         binding.setGiteeMilestoneId(iterationBinding.getGiteeMilestoneId());
                         binding.setGiteeIssueId(remoteIssue.id());
@@ -199,7 +208,7 @@ public class GiteeWorkItemSyncService {
         logEntity.setProject(iteration.getProject());
         logEntity.setIteration(iteration);
         logEntity.setExecutedByUser(operator);
-        logEntity.setEnterpriseId(projectBinding.getEnterpriseId());
+        logEntity.setEnterpriseId(enterpriseId);
         logEntity.setGiteeProgramId(projectBinding.getGiteeProgramId());
         logEntity.setGiteeMilestoneId(iterationBinding.getGiteeMilestoneId());
         logEntity.setExecutionStatus(executionStatus);
@@ -348,9 +357,9 @@ public class GiteeWorkItemSyncService {
         }
         try {
             GiteeApiService.GiteeIssue detailedIssue = giteeApiService.fetchIssueDetail(
-                    projectBinding.getApiBaseUrl(),
+                    resolveApiBaseUrl(projectBinding),
                     accessToken,
-                    projectBinding.getEnterpriseId(),
+                    resolveEnterpriseId(projectBinding),
                     remoteIssue.id()
             );
             return hasText(detailedIssue.description()) ? detailedIssue : remoteIssue;
@@ -394,6 +403,41 @@ public class GiteeWorkItemSyncService {
     private ProjectGiteeBindingEntity requireProjectBinding(Long projectId) {
         return projectGiteeBindingRepository.findByProject_Id(projectId)
                 .orElseThrow(() -> new NoSuchElementException("当前项目尚未绑定 Gitee 项目"));
+    }
+
+    /**
+     * 项目级 Gitee 绑定已经切到全局企业配置优先，工作项同步也必须走同一套运行时取值规则。
+     */
+    private String resolveApiBaseUrl(ProjectGiteeBindingEntity projectBinding) {
+        boolean useConfiguredApiBaseUrl = hasText(defaultApiUrl);
+        String resolved = useConfiguredApiBaseUrl ? defaultApiUrl.trim() : projectBinding.getApiBaseUrl();
+        if (!hasText(resolved)) {
+            throw new IllegalStateException("当前项目的 Gitee 绑定缺少 API 地址配置");
+        }
+        while (resolved.endsWith("/")) {
+            resolved = resolved.substring(0, resolved.length() - 1);
+        }
+        return useConfiguredApiBaseUrl ? giteeApiService.normalizeEnterpriseApiBaseUrl(resolved) : resolved;
+    }
+
+    private Long resolveEnterpriseId(ProjectGiteeBindingEntity projectBinding) {
+        if (configuredEnterpriseId > 0) {
+            return configuredEnterpriseId;
+        }
+        if (projectBinding.getEnterpriseId() != null) {
+            return projectBinding.getEnterpriseId();
+        }
+        throw new IllegalStateException("当前项目的 Gitee 绑定缺少企业 ID 配置");
+    }
+
+    private String resolveAccessToken(ProjectGiteeBindingEntity projectBinding) {
+        if (hasText(configuredAccessToken)) {
+            return configuredAccessToken.trim();
+        }
+        if (hasText(projectBinding.getAccessTokenCiphertext())) {
+            return tokenCipherService.decrypt(projectBinding.getAccessTokenCiphertext());
+        }
+        throw new IllegalStateException("当前项目的 Gitee 绑定缺少 Access Token 配置");
     }
 
     private UserEntity currentUserOrNull() {

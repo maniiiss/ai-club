@@ -45,6 +45,17 @@ export interface ProjectItem {
   canDelete: boolean
 }
 
+export interface ProjectListStatsItem {
+  /** 当前筛选结果中的项目总数。 */
+  activeProjectCount: number
+  /** 当前筛选结果下的任务总量。 */
+  totalTaskCount: number
+  /** 当前筛选结果中进行中项目占比，范围 0-100。 */
+  resourceLoadPercent: number
+  /** 当前筛选结果下的平均任务数。 */
+  averageTaskCount: number
+}
+
 export interface IterationItem {
   id: number
   projectId: number
@@ -659,6 +670,17 @@ export interface ExecutionTaskItem {
   updatedAt: string
 }
 
+export interface ExecutionTaskListStatsItem {
+  /** 当前筛选结果中的任务总数。 */
+  totalCount: number
+  /** 当前筛选结果中的待执行、执行中和待确认任务总数。 */
+  pendingOrRunningCount: number
+  /** 当前筛选结果中的成功任务总数。 */
+  successCount: number
+  /** 当前筛选结果中的平均进度，范围 0-100。 */
+  averageProgressPercent: number
+}
+
 export interface ExecutionTaskDetailItem {
   id: number
   title: string
@@ -1056,13 +1078,6 @@ export interface IterationGiteeBindingItem {
   iterationName: string
   giteeMilestoneId: number
   giteeMilestoneTitle: string
-}
-
-export interface GiteeProjectBindingDiscoveryResultItem {
-  enterpriseId: number
-  apiBaseUrl: string
-  message: string
-  programs: GiteeProgramItem[]
 }
 
 export interface GiteeWorkItemSyncResultItem {

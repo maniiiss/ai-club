@@ -60,6 +60,12 @@ public class GiteeTestPlanPushService {
     private final long testPlanAssigneeId;
     private final long testCaseModuleId;
     private final int testCaseType;
+    @Value("${platform.gitee.default-api-url:https://api.gitee.com/enterprises}")
+    private String defaultApiUrl = "";
+    @Value("${platform.gitee.binding.enterprise-id:0}")
+    private long configuredEnterpriseId = 0L;
+    @Value("${platform.gitee.binding.access-token:}")
+    private String configuredAccessToken = "";
 
     public GiteeTestPlanPushService(TestPlanRepository testPlanRepository,
                                     TestCaseRepository testCaseRepository,
@@ -114,7 +120,9 @@ public class GiteeTestPlanPushService {
                 .forEach(item -> caseBindingsByCaseId.put(item.getTestCase().getId(), item));
 
         LocalDateTime executedAt = LocalDateTime.now();
-        String accessToken = tokenCipherService.decrypt(projectBinding.getAccessTokenCiphertext());
+        String accessToken = resolveAccessToken(projectBinding);
+        Long enterpriseId = resolveEnterpriseId(projectBinding);
+        String apiBaseUrl = resolveApiBaseUrl(projectBinding);
 
         Long remoteTestPlanId = existingPlanBinding == null ? null : existingPlanBinding.getGiteeTestPlanId();
         String testPlanAction = remoteTestPlanId == null ? ACTION_CREATED : ACTION_UPDATED;
@@ -125,8 +133,8 @@ public class GiteeTestPlanPushService {
         try {
             GiteeApiService.GiteeTestPlanRequest planRequest = buildPlanRequest(testPlan, projectBinding);
             GiteeApiService.GiteeRemoteTestPlan remotePlan = remoteTestPlanId == null
-                    ? giteeApiService.createTestPlan(projectBinding.getApiBaseUrl(), accessToken, projectBinding.getEnterpriseId(), planRequest)
-                    : giteeApiService.updateTestPlan(projectBinding.getApiBaseUrl(), accessToken, projectBinding.getEnterpriseId(), remoteTestPlanId, planRequest);
+                    ? giteeApiService.createTestPlan(apiBaseUrl, accessToken, enterpriseId, planRequest)
+                    : giteeApiService.updateTestPlan(apiBaseUrl, accessToken, enterpriseId, remoteTestPlanId, planRequest);
             remoteTestPlanId = remotePlan.id();
 
             for (TestCaseEntity testCase : testCases) {
@@ -135,9 +143,9 @@ public class GiteeTestPlanPushService {
                 try {
                     if (existingCaseBinding == null) {
                         GiteeApiService.GiteeRemoteTestCase remoteTestCase = giteeApiService.createTestCase(
-                                projectBinding.getApiBaseUrl(),
+                                apiBaseUrl,
                                 accessToken,
-                                projectBinding.getEnterpriseId(),
+                                enterpriseId,
                                 testCaseRequest
                         );
                         TestCaseGiteeBindingEntity createdBinding = new TestCaseGiteeBindingEntity();
@@ -146,9 +154,9 @@ public class GiteeTestPlanPushService {
                         createdCaseCount++;
                     } else {
                         giteeApiService.updateTestCase(
-                                projectBinding.getApiBaseUrl(),
+                                apiBaseUrl,
                                 accessToken,
-                                projectBinding.getEnterpriseId(),
+                                enterpriseId,
                                 existingCaseBinding.getGiteeTestCaseId(),
                                 testCaseRequest
                         );
@@ -216,7 +224,7 @@ public class GiteeTestPlanPushService {
         if (!Boolean.TRUE.equals(binding.getEnabled())) {
             throw new IllegalStateException("当前项目的 Gitee 绑定已停用");
         }
-        if (!hasText(binding.getAccessTokenCiphertext())) {
+        if (!hasText(configuredAccessToken) && !hasText(binding.getAccessTokenCiphertext())) {
             throw new IllegalStateException("当前项目的 Gitee 绑定缺少 Access Token");
         }
         return binding;
@@ -238,7 +246,7 @@ public class GiteeTestPlanPushService {
         if (!Boolean.TRUE.equals(projectBinding.getEnabled())) {
             return "当前项目的 Gitee 绑定已停用";
         }
-        if (!hasText(projectBinding.getAccessTokenCiphertext())) {
+        if (!hasText(configuredAccessToken) && !hasText(projectBinding.getAccessTokenCiphertext())) {
             return "当前项目的 Gitee 绑定缺少 Access Token";
         }
         if (iterationGiteeBindingRepository.findByIteration_Id(testPlan.getIteration().getId()).isEmpty()) {
@@ -248,6 +256,41 @@ public class GiteeTestPlanPushService {
             return "当前测试计划未配置开始日期或结束日期，且所属迭代也没有可继承的时间";
         }
         return null;
+    }
+
+    /**
+     * 测试计划推送与项目管理页共用同一套企业级 Gitee 配置，避免项目保存后推送链路仍继续读旧库数据。
+     */
+    private String resolveApiBaseUrl(ProjectGiteeBindingEntity projectBinding) {
+        boolean useConfiguredApiBaseUrl = hasText(defaultApiUrl);
+        String resolved = useConfiguredApiBaseUrl ? defaultApiUrl.trim() : projectBinding.getApiBaseUrl();
+        if (!hasText(resolved)) {
+            throw new IllegalStateException("当前项目的 Gitee 绑定缺少 API 地址配置");
+        }
+        while (resolved.endsWith("/")) {
+            resolved = resolved.substring(0, resolved.length() - 1);
+        }
+        return useConfiguredApiBaseUrl ? giteeApiService.normalizeEnterpriseApiBaseUrl(resolved) : resolved;
+    }
+
+    private Long resolveEnterpriseId(ProjectGiteeBindingEntity projectBinding) {
+        if (configuredEnterpriseId > 0) {
+            return configuredEnterpriseId;
+        }
+        if (projectBinding.getEnterpriseId() != null) {
+            return projectBinding.getEnterpriseId();
+        }
+        throw new IllegalStateException("当前项目的 Gitee 绑定缺少企业 ID 配置");
+    }
+
+    private String resolveAccessToken(ProjectGiteeBindingEntity projectBinding) {
+        if (hasText(configuredAccessToken)) {
+            return configuredAccessToken.trim();
+        }
+        if (hasText(projectBinding.getAccessTokenCiphertext())) {
+            return tokenCipherService.decrypt(projectBinding.getAccessTokenCiphertext());
+        }
+        throw new IllegalStateException("当前项目的 Gitee 绑定缺少 Access Token 配置");
     }
 
     private GiteeApiService.GiteeTestPlanRequest buildPlanRequest(TestPlanEntity testPlan, ProjectGiteeBindingEntity projectBinding) {
@@ -338,7 +381,7 @@ public class GiteeTestPlanPushService {
         entity.setTestPlan(testPlan);
         entity.setProject(testPlan.getProject());
         entity.setIteration(testPlan.getIteration());
-        entity.setEnterpriseId(projectBinding.getEnterpriseId());
+        entity.setEnterpriseId(resolveEnterpriseId(projectBinding));
         entity.setGiteeProgramId(projectBinding.getGiteeProgramId());
         entity.setGiteeMilestoneId(iterationBinding.getGiteeMilestoneId());
         entity.setGiteeTestPlanId(remoteTestPlanId == null ? entity.getGiteeTestPlanId() : remoteTestPlanId);
@@ -360,7 +403,7 @@ public class GiteeTestPlanPushService {
         entity.setTestPlan(testPlan);
         entity.setProject(testPlan.getProject());
         entity.setIteration(iterationBinding.getIteration());
-        entity.setEnterpriseId(projectBinding.getEnterpriseId());
+        entity.setEnterpriseId(resolveEnterpriseId(projectBinding));
         entity.setGiteeProgramId(projectBinding.getGiteeProgramId());
         entity.setGiteeTestPlanId(remoteTestPlanId);
         entity.setGiteeTestCaseId(remoteTestCaseId);

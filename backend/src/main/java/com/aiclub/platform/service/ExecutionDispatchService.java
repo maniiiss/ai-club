@@ -37,8 +37,22 @@ public class ExecutionDispatchService {
     private static final Logger log = LoggerFactory.getLogger(ExecutionDispatchService.class);
     private static final String STATUS_WAITING_CONFIRMATION = "WAITING_CONFIRMATION";
     private static final String BIZ_TYPE_DEVELOPMENT_EXECUTION_COMPLETED = "DEVELOPMENT_EXECUTION_COMPLETED";
+    private static final String BIZ_TYPE_DEVELOPMENT_EXECUTION_FAILED = "DEVELOPMENT_EXECUTION_FAILED";
+    private static final String BIZ_TYPE_DEVELOPMENT_EXECUTION_CANCELED = "DEVELOPMENT_EXECUTION_CANCELED";
+    private static final String BIZ_TYPE_TEST_AUTOMATION_COMPLETED = "TEST_AUTOMATION_COMPLETED";
+    private static final String BIZ_TYPE_TEST_AUTOMATION_FAILED = "TEST_AUTOMATION_FAILED";
+    private static final String BIZ_TYPE_TEST_AUTOMATION_CANCELED = "TEST_AUTOMATION_CANCELED";
+    private static final String BIZ_TYPE_CODEBASE_SCAN_COMPLETED = "CODEBASE_SCAN_COMPLETED";
+    private static final String BIZ_TYPE_CODEBASE_SCAN_FAILED = "CODEBASE_SCAN_FAILED";
+    private static final String BIZ_TYPE_CODEBASE_SCAN_CANCELED = "CODEBASE_SCAN_CANCELED";
+    private static final String BIZ_TYPE_EXECUTION_COMPLETED = "EXECUTION_COMPLETED";
+    private static final String BIZ_TYPE_EXECUTION_FAILED = "EXECUTION_FAILED";
+    private static final String BIZ_TYPE_EXECUTION_CANCELED = "EXECUTION_CANCELED";
     // 规划确认通知继续沿用短业务码，避免影响既有消息筛选与统计口径。
     private static final String BIZ_TYPE_DEVELOPMENT_EXECUTION_PLAN_CONFIRM = "DEVELOPMENT_EXECUTION_PLAN_CONFIRM";
+    private static final String RESULT_STATUS_SUCCESS = "SUCCESS";
+    private static final String RESULT_STATUS_FAILED = "FAILED";
+    private static final String RESULT_STATUS_CANCELED = "CANCELED";
 
     private final ExecutionTaskRepository executionTaskRepository;
     private final ExecutionRunRepository executionRunRepository;
@@ -495,7 +509,7 @@ public class ExecutionDispatchService {
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "SUCCESS");
-        notifyRequesterWhenDevelopmentExecutionSucceeds(executionTask, executionRun);
+        notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_SUCCESS);
         return executionRun;
     }
 
@@ -538,6 +552,7 @@ public class ExecutionDispatchService {
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "FAILED");
+        notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_FAILED);
         return executionRun;
     }
 
@@ -571,6 +586,7 @@ public class ExecutionDispatchService {
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "FAILED");
+        notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_FAILED);
         return executionRun;
     }
 
@@ -602,6 +618,7 @@ public class ExecutionDispatchService {
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "CANCELED");
+        notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_CANCELED);
         return executionRun;
     }
 
@@ -727,6 +744,36 @@ public class ExecutionDispatchService {
     }
 
     /**
+     * 执行中心的结果通知统一在最终收口阶段发送，
+     * 这样无论任务来自哪种专用执行器，都不会遗漏成功/失败/取消提醒。
+     */
+    private void notifyRequesterWhenExecutionFinished(ExecutionTaskEntity executionTask,
+                                                      ExecutionRunEntity executionRun,
+                                                      String resultStatus) {
+        if (executionTask.getCreatedByUser() == null) {
+            return;
+        }
+        if (ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(executionTask.getScenarioCode())
+                && RESULT_STATUS_SUCCESS.equalsIgnoreCase(resultStatus)) {
+            notifyRequesterWhenDevelopmentExecutionSucceeds(executionTask, executionRun);
+            return;
+        }
+        String scenarioName = resolveScenarioName(executionTask.getScenarioCode());
+        String resultLabel = resolveNotificationResultLabel(resultStatus);
+        String title = scenarioName + resultLabel + "：" + defaultExecutionTitle(executionTask);
+        notificationService.sendToUser(
+                executionTask.getCreatedByUser().getId(),
+                NotificationService.TYPE_TASK,
+                resolveNotificationLevel(resultStatus),
+                title,
+                buildExecutionNotificationContent(executionTask, executionRun, scenarioName, resultStatus),
+                "/tasks/" + executionTask.getId(),
+                resolveExecutionNotificationBizType(executionTask.getScenarioCode(), resultStatus),
+                executionTask.getId()
+        );
+    }
+
+    /**
      * 规划确认模式下，PLAN 完成后立刻提醒发起人进入执行详情查看、编辑并确认继续。
      */
     private void notifyRequesterWhenDevelopmentExecutionNeedsPlanConfirmation(ExecutionTaskEntity executionTask) {
@@ -744,6 +791,137 @@ public class ExecutionDispatchService {
                 BIZ_TYPE_DEVELOPMENT_EXECUTION_PLAN_CONFIRM,
                 executionTask.getId()
         );
+    }
+
+    private String resolveExecutionNotificationBizType(String scenarioCode, String resultStatus) {
+        String normalizedScenario = defaultString(scenarioCode).trim().toUpperCase();
+        String normalizedResult = defaultString(resultStatus).trim().toUpperCase();
+        // 业务类型既承载前端标签，也承载后续筛选统计口径，这里集中映射避免新场景再次漏配。
+        return switch (normalizedScenario) {
+            case ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION -> switch (normalizedResult) {
+                case RESULT_STATUS_SUCCESS -> BIZ_TYPE_DEVELOPMENT_EXECUTION_COMPLETED;
+                case RESULT_STATUS_FAILED -> BIZ_TYPE_DEVELOPMENT_EXECUTION_FAILED;
+                case RESULT_STATUS_CANCELED -> BIZ_TYPE_DEVELOPMENT_EXECUTION_CANCELED;
+                default -> BIZ_TYPE_EXECUTION_COMPLETED;
+            };
+            case ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION -> switch (normalizedResult) {
+                case RESULT_STATUS_SUCCESS -> BIZ_TYPE_TEST_AUTOMATION_COMPLETED;
+                case RESULT_STATUS_FAILED -> BIZ_TYPE_TEST_AUTOMATION_FAILED;
+                case RESULT_STATUS_CANCELED -> BIZ_TYPE_TEST_AUTOMATION_CANCELED;
+                default -> BIZ_TYPE_EXECUTION_COMPLETED;
+            };
+            case ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN -> switch (normalizedResult) {
+                case RESULT_STATUS_SUCCESS -> BIZ_TYPE_CODEBASE_SCAN_COMPLETED;
+                case RESULT_STATUS_FAILED -> BIZ_TYPE_CODEBASE_SCAN_FAILED;
+                case RESULT_STATUS_CANCELED -> BIZ_TYPE_CODEBASE_SCAN_CANCELED;
+                default -> BIZ_TYPE_EXECUTION_COMPLETED;
+            };
+            default -> switch (normalizedResult) {
+                case RESULT_STATUS_SUCCESS -> BIZ_TYPE_EXECUTION_COMPLETED;
+                case RESULT_STATUS_FAILED -> BIZ_TYPE_EXECUTION_FAILED;
+                case RESULT_STATUS_CANCELED -> BIZ_TYPE_EXECUTION_CANCELED;
+                default -> BIZ_TYPE_EXECUTION_COMPLETED;
+            };
+        };
+    }
+
+    private String resolveNotificationLevel(String resultStatus) {
+        return switch (defaultString(resultStatus).trim().toUpperCase()) {
+            case RESULT_STATUS_SUCCESS -> NotificationService.LEVEL_SUCCESS;
+            case RESULT_STATUS_FAILED -> NotificationService.LEVEL_ERROR;
+            case RESULT_STATUS_CANCELED -> NotificationService.LEVEL_WARNING;
+            default -> NotificationService.LEVEL_INFO;
+        };
+    }
+
+    private String resolveNotificationResultLabel(String resultStatus) {
+        return switch (defaultString(resultStatus).trim().toUpperCase()) {
+            case RESULT_STATUS_SUCCESS -> "已完成";
+            case RESULT_STATUS_FAILED -> "失败";
+            case RESULT_STATUS_CANCELED -> "已取消";
+            default -> "状态更新";
+        };
+    }
+
+    private String buildExecutionNotificationContent(ExecutionTaskEntity executionTask,
+                                                     ExecutionRunEntity executionRun,
+                                                     String scenarioName,
+                                                     String resultStatus) {
+        StringBuilder content = new StringBuilder();
+        String projectName = executionTask.getProject() == null ? "" : defaultString(executionTask.getProject().getName()).trim();
+        String workItemText = executionTask.getWorkItem() == null
+                ? ""
+                : defaultString(executionTask.getWorkItem().getWorkItemCode()).trim()
+                + (defaultString(executionTask.getWorkItem().getName()).isBlank()
+                ? ""
+                : " " + defaultString(executionTask.getWorkItem().getName()).trim());
+        if (!projectName.isBlank()) {
+            content.append("项目“").append(projectName).append("”的").append(scenarioName).append(resolveNotificationResultLabel(resultStatus)).append("。");
+        } else {
+            content.append(scenarioName).append(resolveNotificationResultLabel(resultStatus)).append("。");
+        }
+        if (!workItemText.isBlank()) {
+            content.append("关联工作项：").append(workItemText).append("。");
+        }
+        String summary = resolveExecutionNotificationSummary(executionRun, resultStatus);
+        if (!summary.isBlank()) {
+            content.append("结果摘要：").append(summary).append("。");
+        }
+        if (ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(executionTask.getScenarioCode())
+                && RESULT_STATUS_SUCCESS.equalsIgnoreCase(resultStatus)) {
+            content.append("可前往执行详情查看产物，并在右上角直接提交 MR。");
+        } else {
+            content.append("可前往执行详情查看产物和完整日志。");
+        }
+        return content.toString();
+    }
+
+    private String resolveExecutionNotificationSummary(ExecutionRunEntity executionRun, String resultStatus) {
+        if (executionRun == null) {
+            return "";
+        }
+        String normalizedResult = defaultString(resultStatus).trim().toUpperCase();
+        if (RESULT_STATUS_FAILED.equals(normalizedResult) && !defaultString(executionRun.getErrorMessage()).isBlank()) {
+            return trimTrailingSentencePunctuation(abbreviate(executionRun.getErrorMessage(), 180));
+        }
+        if (!defaultString(executionRun.getOutputSummary()).isBlank()) {
+            return trimTrailingSentencePunctuation(abbreviate(executionRun.getOutputSummary(), 180));
+        }
+        if (RESULT_STATUS_CANCELED.equals(normalizedResult)) {
+            return "执行任务已取消，未继续后续步骤";
+        }
+        return "";
+    }
+
+    private String resolveScenarioName(String scenarioCode) {
+        return switch (defaultString(scenarioCode).trim().toUpperCase()) {
+            case ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION -> "开发执行";
+            case ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION -> "自动化测试";
+            case ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN -> "仓库规范扫描";
+            case ExecutionWorkflowService.SCENARIO_REQUIREMENT_BREAKDOWN -> "需求拆解";
+            case ExecutionWorkflowService.SCENARIO_TEST_DESIGN_OR_REVIEW -> "测试设计/评审";
+            case ExecutionWorkflowService.SCENARIO_AD_HOC_AGENT_RUN -> "兼容单次执行";
+            case ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL -> "自升级巡检";
+            default -> "执行任务";
+        };
+    }
+
+    private String defaultExecutionTitle(ExecutionTaskEntity executionTask) {
+        String title = defaultString(executionTask.getTitle()).trim();
+        return title.isBlank() ? "未命名执行任务" : title;
+    }
+
+    private String trimTrailingSentencePunctuation(String value) {
+        String normalized = defaultString(value).trim();
+        while (!normalized.isEmpty()) {
+            char lastChar = normalized.charAt(normalized.length() - 1);
+            if (lastChar == '。' || lastChar == '.' || lastChar == '！' || lastChar == '!' || lastChar == '？' || lastChar == '?') {
+                normalized = normalized.substring(0, normalized.length() - 1).trim();
+                continue;
+            }
+            break;
+        }
+        return normalized;
     }
 
     private String defaultString(String value) {
