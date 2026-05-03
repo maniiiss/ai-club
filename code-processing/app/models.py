@@ -300,6 +300,71 @@ class RepositoryStructuringResponse(BaseModel):
     logPreview: str = ""
 
 
+class GitlabCodeStructureRepository(BaseModel):
+    """GitLab 仓库代码结构请求里的单仓库上下文。"""
+
+    bindingId: str = ""
+    displayName: str = ""
+    projectRef: str = ""
+    projectPath: str = ""
+    repoUrl: str
+    targetBranch: str
+    apiBaseUrl: str = ""
+    authToken: str
+
+    @field_validator("bindingId", "displayName", "projectRef", "projectPath", "repoUrl", "targetBranch", "apiBaseUrl", "authToken", mode="before")
+    @classmethod
+    def normalize_code_structure_repository_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class GitlabCodeStructureOverviewRequest(BaseModel):
+    """生成仓库概览快照的内部请求。"""
+
+    repository: GitlabCodeStructureRepository
+
+
+class GitlabCodeStructureOverviewResponse(BaseModel):
+    """仓库概览快照生成结果。"""
+
+    branchName: str = ""
+    commitSha: str = ""
+    degraded: bool = False
+    truncated: bool = False
+    summaryMarkdown: str = ""
+    overviewJson: str = ""
+    graphJson: str = ""
+    lastErrorMessage: str = ""
+
+
+class GitlabCodeStructureQueryRequest(BaseModel):
+    """代码结构局部查询请求。"""
+
+    repository: GitlabCodeStructureRepository
+    query: str = ""
+
+    @field_validator("query", mode="before")
+    @classmethod
+    def normalize_code_structure_query_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class GitlabCodeStructureQueryResponse(BaseModel):
+    """代码结构局部查询结果。"""
+
+    branchName: str = ""
+    commitSha: str = ""
+    degraded: bool = False
+    truncated: bool = False
+    resultJson: str = ""
+    graphJson: str = ""
+    lastErrorMessage: str = ""
+
+
 class CodexExecutionRepository(BaseModel):
     """开发执行桥接所需的单仓库上下文。"""
 

@@ -67,6 +67,7 @@
                     <th class="gitlab-binding-col-branch">默认目标分支</th>
                     <th class="gitlab-binding-col-api">API 地址</th>
                     <th class="center gitlab-binding-col-status">状态</th>
+                    <th class="gitlab-binding-col-structure">代码结构</th>
                     <th class="center gitlab-binding-col-test">连通性</th>
                     <th class="gitlab-binding-col-updated">最近测试</th>
                     <th class="right gitlab-binding-col-actions">操作</th>
@@ -74,7 +75,7 @@
                 </thead>
                 <tbody>
                   <tr v-if="!bindingList.length">
-                    <td colspan="7" class="gitlab-empty-row">暂无仓库绑定</td>
+                    <td colspan="8" class="gitlab-empty-row">暂无仓库绑定</td>
                   </tr>
                   <tr v-for="row in bindingList" :key="row.id" class="management-list-row">
                     <td class="gitlab-binding-col-main" data-label="仓库绑定">
@@ -107,6 +108,12 @@
                     <td class="center gitlab-binding-col-status" data-label="状态">
                       <span class="management-list-pill" :class="row.enabled ? 'success' : 'neutral'">{{ row.enabled ? '启用' : '停用' }}</span>
                     </td>
+                    <td class="gitlab-binding-col-structure" data-label="代码结构">
+                      <div class="gitlab-meta-stack">
+                        <span class="management-list-updated">{{ row.codeStructureGeneratedAt ? formatDateTimeText(row.codeStructureGeneratedAt) : '-' }}</span>
+                        <span class="gitlab-meta-note">{{ formatCodeStructureStatusLabel(row.codeStructureStatus) }}</span>
+                      </div>
+                    </td>
                     <td class="center gitlab-binding-col-test" data-label="连通性">
                       <span class="management-list-pill" :class="bindingStatusType(row.lastTestStatus)">{{ formatBindingStatusLabel(row.lastTestStatus) }}</span>
                     </td>
@@ -136,6 +143,11 @@
                         <el-tooltip content="发起扫描" placement="top">
                           <button class="management-list-row-button gitlab-action-button scan" type="button" aria-label="发起仓库规范扫描" @click="openBindingScanDialog(row)">
                             <el-icon><Search /></el-icon>
+                          </button>
+                        </el-tooltip>
+                        <el-tooltip content="代码结构" placement="top">
+                          <button class="management-list-row-button gitlab-action-button preview" type="button" aria-label="查看仓库代码结构" @click="openBindingCodeStructure(row)">
+                            <el-icon><Share /></el-icon>
                           </button>
                         </el-tooltip>
                         <el-tooltip content="编辑绑定" placement="top">
@@ -221,6 +233,10 @@
                         <button class="mobile-entity-action-button info" type="button" @click="openBindingScanDialog(row)">
                           <el-icon><Search /></el-icon>
                           <span>发起扫描</span>
+                        </button>
+                        <button class="mobile-entity-action-button info" type="button" @click="openBindingCodeStructure(row)">
+                          <el-icon><Share /></el-icon>
+                          <span>代码结构</span>
                         </button>
                         <button class="mobile-entity-action-button" type="button" @click="openBindingEditDialog(row)">
                           <el-icon><EditPen /></el-icon>
@@ -1551,7 +1567,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Connection, Delete, DocumentCopy, EditPen, Filter, FolderOpened, Plus, RefreshRight, Search, Tickets, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Connection, Delete, DocumentCopy, EditPen, Filter, FolderOpened, Plus, RefreshRight, Search, Share, Tickets, VideoPlay } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { listAgentOptions, listProjectOptions } from '@/api/platform'
@@ -1911,6 +1927,12 @@ watch(() => autoMergeForm.schedulerEnabled, (enabled) => {
 })
 
 const bindingStatusType = (status?: string | null) => status === 'SUCCESS' ? 'success' : status === 'FAILED' ? 'danger' : 'info'
+const codeStructureStatusType = (status?: string | null) =>
+  status === 'READY' ? 'success'
+    : status === 'DEGRADED' ? 'warning'
+      : status === 'BUILDING' ? 'info'
+        : status === 'FAILED' ? 'danger'
+          : 'neutral'
 const runStatusType = (status?: string | null) => status === 'SUCCESS' ? 'success' : status === 'PARTIAL' || status === 'SKIPPED' ? 'warning' : status === 'FAILED' ? 'danger' : 'info'
 const logResultType = (result?: string | null) => result === 'MERGED' ? 'success' : result === 'FAILED' ? 'danger' : result === 'EMPTY' ? 'info' : 'warning'
 const logResultText = (result?: string | null) => result === 'MERGED' ? '已合并' : result === 'FAILED' ? '失败' : result === 'AI_REJECTED' ? 'AI 拒绝' : result === 'SKIPPED' ? '已跳过' : result === 'EMPTY' ? '空执行' : (result || '未知')
@@ -1928,6 +1950,12 @@ const logDetailHtml = computed(() => renderMarkdownToHtml(currentLogDetail.value
 // 统一整理列表中用到的中文展示文案，避免模板层重复判断状态和时间格式。
 const formatDateTimeText = (value?: string | null) => value ? value.replace('T', ' ').slice(0, 16) : '-'
 const formatBindingStatusLabel = (status?: string | null) => status === 'SUCCESS' ? '连通正常' : status === 'FAILED' ? '连接失败' : '未测试'
+const formatCodeStructureStatusLabel = (status?: string | null) =>
+  status === 'READY' ? '结构已生成'
+    : status === 'DEGRADED' ? '结构已降级'
+      : status === 'BUILDING' ? '结构生成中'
+        : status === 'FAILED' ? '结构生成失败'
+          : '结构未生成'
 const formatExecutionModeLabel = (mode?: 'PROJECT_BOUND' | 'STANDALONE' | null) => mode === 'STANDALONE' ? '独立运行' : '关联业务'
 const formatTriggerTypeLabel = (triggerType?: 'MANUAL' | 'SCHEDULED' | null) => triggerType === 'SCHEDULED' ? '定时调度' : '手动执行'
 const formatRunStatusLabel = (status?: string | null) => status === 'SUCCESS' ? '执行成功' : status === 'PARTIAL' ? '部分成功' : status === 'SKIPPED' ? '已跳过' : status === 'FAILED' ? '执行失败' : '未执行'
@@ -2226,6 +2254,9 @@ const handleScanSubmit = async () => {
   }
 }
 const openBindingMergeRequests = async (row: ProjectGitlabBindingItem) => { mergeRequestDrawerTitle.value = `绑定仓库 MR 预览 - ${row.projectName} / ${row.gitlabProjectPath || row.gitlabProjectRef}`; mergeRequestDrawerVisible.value = true; mergeRequestLoading.value = true; try { mergeRequestList.value = await previewBindingMergeRequests(row.id, row.defaultTargetBranch || undefined) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '加载 MR 失败') } finally { mergeRequestLoading.value = false } }
+const openBindingCodeStructure = async (row: ProjectGitlabBindingItem) => {
+  await router.push({ name: 'gitlab-binding-code-structure', params: { id: row.id } })
+}
 
 const openProductBranchCreateDialog = () => {
   if (!currentProductBinding.value) {
@@ -2472,7 +2503,10 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
   overflow-x: auto;
 }
 
-.gitlab-binding-table,
+.gitlab-binding-table {
+  min-width: 1360px;
+}
+
 .gitlab-product-branch-table,
 .gitlab-auto-merge-table,
 .gitlab-log-table {
@@ -2483,13 +2517,14 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
   min-width: 1080px;
 }
 
-.gitlab-binding-col-main { width: 28%; }
-.gitlab-binding-col-branch { width: 12%; }
-.gitlab-binding-col-api { width: 18%; }
-.gitlab-binding-col-status { width: 8%; }
-.gitlab-binding-col-test { width: 10%; }
-.gitlab-binding-col-updated { width: 12%; }
-.gitlab-binding-col-actions { width: 12%; }
+.gitlab-binding-col-main { width: 22%; }
+.gitlab-binding-col-branch { width: 9%; }
+.gitlab-binding-col-api { width: 14%; }
+.gitlab-binding-col-status { width: 6%; }
+.gitlab-binding-col-structure { width: 13%; }
+.gitlab-binding-col-test { width: 8%; }
+.gitlab-binding-col-updated { width: 13%; }
+.gitlab-binding-col-actions { width: 15%; }
 
 .gitlab-product-branch-table col.gitlab-product-col-select { width: 3.5%; }
 .gitlab-product-branch-table col.gitlab-product-col-main { width: 16.5%; }
@@ -2576,8 +2611,17 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
   line-height: 1.6;
 }
 
+.gitlab-binding-structure-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .gitlab-meta-note {
   color: #758393;
+  font-size: 11px;
 }
 
 .gitlab-action-button.connection:hover,

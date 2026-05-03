@@ -15,6 +15,14 @@ from app.services.execution_streaming_support import (
     upload_log_artifacts,
     utc_timestamp,
 )
+from app.services.gitnexus_cli_support import (
+    discover_gitnexus_cli_path as _discover_gitnexus_cli_path_shared,
+    extract_json_object as _extract_json_object_shared,
+    resolve_gitnexus_repo_alias as _resolve_gitnexus_repo_alias_shared,
+    run_gitnexus_command as _shared_run_gitnexus_command,
+    run_gitnexus_json_command as _shared_run_gitnexus_json_command,
+    select_symbol_uids as _select_symbol_uids_shared,
+)
 from app.settings import settings
 
 
@@ -425,21 +433,7 @@ def _resolve_gitnexus_repo_alias(gitnexus_cli: Path, repo_dir: Path, workspace: 
 
 
 def _select_symbol_uids(query_result: dict[str, object]) -> list[str]:
-    candidates: list[str] = []
-    for key in ("process_symbols", "definitions"):
-        value = query_result.get(key)
-        if not isinstance(value, list):
-            continue
-        for item in value:
-            if not isinstance(item, dict):
-                continue
-            uid = str(item.get("id") or "").strip()
-            if not uid or uid in candidates:
-                continue
-            if uid.startswith("File:"):
-                continue
-            candidates.append(uid)
-    return candidates
+    return _select_symbol_uids_shared(query_result)
 
 
 def _run_gitnexus_json_command(
@@ -448,39 +442,16 @@ def _run_gitnexus_json_command(
     workspace: StructuringWorkspace,
     repo_dir: Path,
 ) -> dict[str, object]:
-    output = _run_gitnexus_command(gitnexus_cli, args, workspace, repo_dir)
-    payload = _extract_json_object(output)
-    if not isinstance(payload, dict):
-        raise RuntimeError("GitNexus 返回结果不是 JSON 对象")
-    return payload
+    return _shared_run_gitnexus_json_command(
+        gitnexus_cli,
+        args,
+        repo_dir,
+        lambda message: _append_log(workspace, message),
+    )
 
 
 def _extract_json_object(text: str) -> dict[str, object]:
-    normalized = (text or "").strip()
-    if not normalized:
-        raise RuntimeError("GitNexus 未返回可解析的 JSON")
-    if normalized.startswith("```"):
-        lines = normalized.splitlines()
-        if len(lines) >= 3:
-            normalized = "\n".join(lines[1:-1]).strip()
-    try:
-        payload = json.loads(normalized)
-    except json.JSONDecodeError as exception:
-        decoder = json.JSONDecoder()
-        for index, char in enumerate(normalized):
-            if char not in "{[":
-                continue
-            try:
-                payload, _ = decoder.raw_decode(normalized[index:])
-                if isinstance(payload, dict):
-                    return payload
-            except json.JSONDecodeError:
-                continue
-        excerpt = normalized if len(normalized) <= 300 else normalized[:300] + "...(truncated)"
-        raise RuntimeError(f"GitNexus 返回的不是合法 JSON：{exception}；原始输出片段：{excerpt}") from exception
-    if not isinstance(payload, dict):
-        raise RuntimeError("GitNexus 返回结果不是 JSON 对象")
-    return payload
+    return _extract_json_object_shared(text)
 
 
 def _run_gitnexus_command(
@@ -490,26 +461,13 @@ def _run_gitnexus_command(
     repo_dir: Path,
     fail_message: str | None = None,
 ) -> str:
-    command = [str(gitnexus_cli), *args]
-    _append_log(workspace, f"执行 GitNexus：{' '.join(command)}")
-    completed = subprocess.run(
-        command,
-        cwd=repo_dir,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=300,
+    return _shared_run_gitnexus_command(
+        gitnexus_cli,
+        args,
+        repo_dir,
+        lambda message: _append_log(workspace, message),
+        fail_message=fail_message,
     )
-    stdout = (completed.stdout or "").strip()
-    stderr = (completed.stderr or "").strip()
-    if stdout:
-        _append_log(workspace, stdout)
-    if stderr:
-        _append_log(workspace, stderr)
-    if completed.returncode != 0:
-        raise RuntimeError((fail_message or "GitNexus 执行失败") + f"：{stderr or stdout or '未知错误'}")
-    return stdout
 
 
 def _checkout_commit_if_needed(repo_dir: Path, commit_sha: str, workspace: StructuringWorkspace) -> str:
@@ -631,12 +589,4 @@ def _safe_slug(value: str) -> str:
 
 
 def _discover_gitnexus_cli_path() -> Path | None:
-    configured = (settings.gitnexus_cli_path or "").strip()
-    if configured:
-        path = Path(configured).expanduser().resolve()
-        if path.exists():
-            return path
-    which_path = shutil.which("gitnexus")
-    if which_path:
-        return Path(which_path).resolve()
-    return None
+    return _discover_gitnexus_cli_path_shared()

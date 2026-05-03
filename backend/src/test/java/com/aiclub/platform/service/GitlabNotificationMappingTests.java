@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
+import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
 import com.aiclub.platform.repository.GitlabProductBranchRepository;
 import com.aiclub.platform.repository.GitlabProductBranchSyncLogRepository;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.PlatformTransactionManager;
+import java.util.concurrent.Executor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.mockito.Mockito.verify;
@@ -34,6 +36,9 @@ class GitlabNotificationMappingTests {
 
     @Mock
     private GitlabAutoMergeConfigRepository autoMergeConfigRepository;
+
+    @Mock
+    private GitlabCodeStructureSnapshotRepository gitlabCodeStructureSnapshotRepository;
 
     @Mock
     private GitlabAutoMergeLogRepository autoMergeLogRepository;
@@ -87,7 +92,13 @@ class GitlabNotificationMappingTests {
     private RepositoryScanRulesetService repositoryScanRulesetService;
 
     @Mock
+    private GitlabCodeStructureClientService gitlabCodeStructureClientService;
+
+    @Mock
     private PlatformTransactionManager transactionManager;
+
+    @Mock
+    private Executor executionTaskExecutor;
 
     private GitlabManagementService gitlabManagementService;
 
@@ -96,6 +107,7 @@ class GitlabNotificationMappingTests {
         gitlabManagementService = new GitlabManagementService(
                 projectRepository,
                 bindingRepository,
+                gitlabCodeStructureSnapshotRepository,
                 autoMergeConfigRepository,
                 autoMergeLogRepository,
                 productBranchRepository,
@@ -114,9 +126,11 @@ class GitlabNotificationMappingTests {
                 executionTaskService,
                 repositoryScanClientService,
                 repositoryScanRulesetService,
+                gitlabCodeStructureClientService,
                 new ObjectMapper(),
                 "http://gitlab.example.com/api/v4",
-                transactionManager
+                transactionManager,
+                executionTaskExecutor
         );
     }
 

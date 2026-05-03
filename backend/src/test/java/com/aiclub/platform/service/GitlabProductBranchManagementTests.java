@@ -10,6 +10,7 @@ import com.aiclub.platform.dto.request.GitlabProductBranchRequest;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
+import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
 import com.aiclub.platform.repository.GitlabProductBranchRepository;
 import com.aiclub.platform.repository.GitlabProductBranchSyncLogRepository;
@@ -25,6 +26,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Executor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -51,6 +53,9 @@ class GitlabProductBranchManagementTests {
 
     @Mock
     private GitlabAutoMergeConfigRepository autoMergeConfigRepository;
+
+    @Mock
+    private GitlabCodeStructureSnapshotRepository gitlabCodeStructureSnapshotRepository;
 
     @Mock
     private GitlabAutoMergeLogRepository autoMergeLogRepository;
@@ -104,7 +109,13 @@ class GitlabProductBranchManagementTests {
     private RepositoryScanRulesetService repositoryScanRulesetService;
 
     @Mock
+    private GitlabCodeStructureClientService gitlabCodeStructureClientService;
+
+    @Mock
     private PlatformTransactionManager transactionManager;
+
+    @Mock
+    private Executor executionTaskExecutor;
 
     private GitlabManagementService gitlabManagementService;
 
@@ -113,6 +124,7 @@ class GitlabProductBranchManagementTests {
         gitlabManagementService = new GitlabManagementService(
                 projectRepository,
                 bindingRepository,
+                gitlabCodeStructureSnapshotRepository,
                 autoMergeConfigRepository,
                 autoMergeLogRepository,
                 productBranchRepository,
@@ -131,9 +143,11 @@ class GitlabProductBranchManagementTests {
                 executionTaskService,
                 repositoryScanClientService,
                 repositoryScanRulesetService,
+                gitlabCodeStructureClientService,
                 new ObjectMapper(),
                 "http://gitlab.example.com/api/v4",
-                transactionManager
+                transactionManager,
+                executionTaskExecutor
         );
     }
 

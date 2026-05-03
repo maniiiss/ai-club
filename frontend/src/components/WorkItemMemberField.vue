@@ -1,12 +1,15 @@
 <template>
   <div class="work-item-member-field">
     <el-popover
-      v-model:visible="visible"
-      trigger="click"
-      placement="bottom-start"
-      :width="popoverWidth"
-      popper-class="work-item-member-popper"
-    >
+    v-model:visible="visible"
+    trigger="click"
+    placement="bottom-start"
+    :width="popoverWidth"
+    :offset="4"
+    :show-arrow="false"
+    popper-style="padding: 4px;"
+    popper-class="work-item-member-popper"
+  >
       <template #reference>
         <button
           class="work-item-member-reference"
@@ -77,7 +80,7 @@
                   :class="rowStateClass(item.id)"
                 >
                   <div class="work-item-member-user">
-                    <el-avatar :size="26" class="work-item-member-avatar" :src="resolveUserAvatarUrl(item)">
+                    <el-avatar :size="20" class="work-item-member-avatar" :src="resolveUserAvatarUrl(item)">
                       {{ buildUserAvatar(item) }}
                     </el-avatar>
                     <div class="work-item-member-user-copy">
@@ -86,29 +89,23 @@
                   </div>
 
                   <div class="work-item-member-actions">
-                    <el-button
-                      plain
-                      round
-                      size="small"
-                      type="primary"
-                      class="work-item-member-action"
-                      :class="['is-assignee', { 'is-active': isAssigneeSelected(item.id) }]"
+                    <button
+                      type="button"
+                      class="work-item-member-action is-assignee"
+                      :class="{ 'is-active': isAssigneeSelected(item.id) }"
                       @click.stop="toggleAssignee(item.id)"
                     >
                       负责
-                    </el-button>
-                    <el-button
-                      plain
-                      round
-                      size="small"
-                      type="success"
-                      class="work-item-member-action"
-                      :class="['is-collaborator', { 'is-active': isCollaboratorSelected(item.id) }]"
+                    </button>
+                    <button
+                      type="button"
+                      class="work-item-member-action is-collaborator"
+                      :class="{ 'is-active': isCollaboratorSelected(item.id) }"
                       :disabled="isAssigneeSelected(item.id)"
                       @click.stop="toggleCollaborator(item.id)"
                     >
                       协作
-                    </el-button>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -325,21 +322,20 @@ function toggleCollaborator(userId: number) {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 36px;
-  padding: 7px 10px;
-  border: 1px solid var(--app-border, rgba(137, 115, 98, 0.12));
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.92);
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--el-fill-color-light, #f5f7fa);
   color: var(--app-text, #191c1d);
   cursor: pointer;
-  box-shadow: var(--app-shadow-soft, 0 6px 18px rgba(25, 28, 29, 0.04));
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+  transition: all 0.2s ease;
 }
 
 .work-item-member-reference:hover,
 .work-item-member-reference.is-open {
-  border-color: rgba(var(--app-primary-container-rgb), 0.42);
-  background: rgba(var(--app-primary-container-rgb), 0.08);
+  background: rgba(var(--app-primary-rgb, 144, 77, 0), 0.08); /* 统一沉浸式主题微透底 */
+  color: var(--app-primary, #904d00);
 }
 
 .work-item-member-reference.disabled {
@@ -475,31 +471,28 @@ function toggleCollaborator(userId: number) {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 34px;
-  padding: 5px 6px;
-  border: 1px solid var(--app-border, rgba(137, 115, 98, 0.12));
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.94);
-  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  min-height: 28px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .work-item-member-row:hover {
-  background: var(--el-fill-color-light);
-  border-color: var(--app-border-strong, rgba(137, 115, 98, 0.22));
+  background: var(--el-fill-color-light, #f5f7fa);
 }
 
 .work-item-member-row.is-selected {
-  box-shadow: 0 6px 16px rgba(25, 28, 29, 0.05);
+  /* 移除原有的悬浮阴影，改平铺 */
 }
 
 .work-item-member-row.is-assignee-selected {
-  border-color: rgba(var(--app-primary-rgb), 0.22);
-  background: rgba(var(--app-primary-container-rgb), 0.1);
+  background: rgba(var(--app-primary-container-rgb), 0.06);
 }
 
 .work-item-member-row.is-collaborator-selected {
-  border-color: var(--app-border-strong, rgba(137, 115, 98, 0.22));
-  background: var(--app-info-soft, #d3ebf8);
+  background: rgba(0, 101, 143, 0.04);
 }
 
 .work-item-member-user {
@@ -511,8 +504,8 @@ function toggleCollaborator(userId: number) {
 
 .work-item-member-avatar {
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   background: linear-gradient(135deg, var(--app-primary-container, #ff8c00) 0%, var(--app-primary, #904d00) 100%);
   color: #fff;
   font-size: 11px;
@@ -537,12 +530,19 @@ function toggleCollaborator(userId: number) {
 }
 
 .work-item-member-action {
-  min-width: 42px;
-  height: 22px;
-  padding: 0 6px;
-  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
   font-size: 11px;
-  transition: box-shadow 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+  line-height: 1;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.18s ease;
 }
 
 .work-item-member-action.is-assignee {
@@ -583,8 +583,8 @@ function toggleCollaborator(userId: number) {
 }
 
 :deep(.work-item-member-popper) {
-  padding: 8px !important;
-  border-radius: 12px !important;
+  padding: 4px !important;
+  border-radius: 6px !important;
 }
 
 @media (max-width: 768px) {

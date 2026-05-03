@@ -11,6 +11,10 @@ import type {
   GitlabProductBranchItem,
   GitlabProductBranchSyncLogItem,
   GitlabProductBranchSyncRunResult,
+  GitlabCodeStructureQueryRequest,
+  GitlabCodeStructureQueryResultItem,
+  GitlabCodeStructureRefreshAcceptedResultItem,
+  GitlabCodeStructureSnapshotItem,
   GitlabTagCreateResultItem,
   GitlabUserOauthBindingItem,
   PageResponse,
@@ -128,6 +132,10 @@ export interface GitlabProductBranchSyncPayload {
   productBranchIds: number[]
 }
 
+export interface GitlabCodeStructureRefreshPayload {
+  branch?: string
+}
+
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
     Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
@@ -185,6 +193,23 @@ export const listGitlabBranches = async (id: number, search?: string) => {
   const { data } = await http.get<ApiResponse<GitlabBranchItem[]>>(`/api/gitlab/bindings/${id}/branches`, {
     params: cleanParams({ search })
   })
+  return data.data
+}
+
+export const getGitlabCodeStructure = async (id: number, branch?: string) => {
+  const { data } = await http.get<ApiResponse<GitlabCodeStructureSnapshotItem>>(`/api/gitlab/bindings/${id}/code-structure`, {
+    params: cleanParams({ branch, _ts: Date.now() })
+  })
+  return data.data
+}
+
+export const refreshGitlabCodeStructure = async (id: number, payload: GitlabCodeStructureRefreshPayload = {}) => {
+  const { data } = await http.post<ApiResponse<GitlabCodeStructureRefreshAcceptedResultItem>>(`/api/gitlab/bindings/${id}/code-structure/refresh`, payload)
+  return data.data
+}
+
+export const queryGitlabCodeStructure = async (id: number, payload: GitlabCodeStructureQueryRequest) => {
+  const { data } = await http.post<ApiResponse<GitlabCodeStructureQueryResultItem>>(`/api/gitlab/bindings/${id}/code-structure/query`, payload)
   return data.data
 }
 

@@ -6,6 +6,9 @@ import com.aiclub.platform.dto.GitlabAutoMergeConfigSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeRunResult;
 import com.aiclub.platform.dto.GitlabBranchSummary;
+import com.aiclub.platform.dto.GitlabCodeStructureQueryResult;
+import com.aiclub.platform.dto.GitlabCodeStructureRefreshAcceptedResult;
+import com.aiclub.platform.dto.GitlabCodeStructureSnapshotSummary;
 import com.aiclub.platform.dto.GitlabCreateMergeRequestResult;
 import com.aiclub.platform.dto.GitlabMergeRequestSummary;
 import com.aiclub.platform.dto.GitlabProductBranchSummary;
@@ -21,6 +24,8 @@ import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
 import com.aiclub.platform.dto.request.GitlabCreateProductBranchSyncRequest;
 import com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest;
+import com.aiclub.platform.dto.request.GitlabCodeStructureQueryRequest;
+import com.aiclub.platform.dto.request.GitlabCodeStructureRefreshRequest;
 import com.aiclub.platform.dto.request.GitlabCreateMergeRequestRequest;
 import com.aiclub.platform.dto.request.GitlabProductBranchRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
@@ -167,6 +172,36 @@ public class GitlabController {
     public ApiResponse<List<GitlabBranchSummary>> listBindingBranches(@PathVariable Long id,
                                                                       @RequestParam(required = false) String search) {
         return ApiResponse.success(gitlabManagementService.listBindingBranches(id, search));
+    }
+
+    /**
+     * 读取绑定仓库在指定分支上的代码结构快照。
+     */
+    @GetMapping("/bindings/{id}/code-structure")
+    @RequirePermission("gitlab:view")
+    public ApiResponse<GitlabCodeStructureSnapshotSummary> getBindingCodeStructure(@PathVariable Long id,
+                                                                                   @RequestParam(required = false) String branch) {
+        return ApiResponse.success(gitlabManagementService.getBindingCodeStructure(id, branch));
+    }
+
+    /**
+     * 后台刷新绑定仓库的代码结构快照。
+     */
+    @PostMapping("/bindings/{id}/code-structure/refresh")
+    @RequirePermission("gitlab:manage")
+    public ApiResponse<GitlabCodeStructureRefreshAcceptedResult> refreshBindingCodeStructure(@PathVariable Long id,
+                                                                                              @Valid @RequestBody GitlabCodeStructureRefreshRequest request) {
+        return ApiResponse.success(gitlabManagementService.refreshBindingCodeStructure(id, request));
+    }
+
+    /**
+     * 基于已缓存的 GitNexus 索引执行局部查询。
+     */
+    @PostMapping("/bindings/{id}/code-structure/query")
+    @RequirePermission("gitlab:view")
+    public ApiResponse<GitlabCodeStructureQueryResult> queryBindingCodeStructure(@PathVariable Long id,
+                                                                                 @Valid @RequestBody GitlabCodeStructureQueryRequest request) {
+        return ApiResponse.success(gitlabManagementService.queryBindingCodeStructure(id, request));
     }
 
     @GetMapping("/bindings/{id}/product-branches")

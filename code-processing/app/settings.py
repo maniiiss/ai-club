@@ -15,6 +15,7 @@ class Settings:
     minio_bucket: str
     scan_workspace_root: str
     execution_workspace_root: str
+    gitlab_code_structure_workspace_root: str
     gitnexus_cli_path: str
     codex_cli_path: str
     codex_model_provider: str
@@ -34,6 +35,9 @@ scan_workspace_root = (os.getenv("PLATFORM_SCAN_WORKSPACE_ROOT", "./.scan-worksp
 execution_workspace_root = (
     os.getenv("PLATFORM_EXECUTION_WORKSPACE_ROOT", os.path.join(scan_workspace_root, "development-executions")) or ""
 ).strip()
+gitlab_code_structure_workspace_root = (
+    os.getenv("PLATFORM_GITLAB_CODE_STRUCTURE_WORKSPACE_ROOT", os.path.join(scan_workspace_root, "gitlab-code-structure")) or ""
+).strip()
 
 
 settings = Settings(
@@ -48,6 +52,7 @@ settings = Settings(
     minio_bucket=(os.getenv("PLATFORM_MINIO_BUCKET", "ai-club-assets") or "").strip(),
     scan_workspace_root=scan_workspace_root,
     execution_workspace_root=execution_workspace_root,
+    gitlab_code_structure_workspace_root=gitlab_code_structure_workspace_root,
     gitnexus_cli_path=(os.getenv("PLATFORM_GITNEXUS_CLI_PATH", "") or "").strip(),
     codex_cli_path=(os.getenv("PLATFORM_CODEX_CLI_PATH", "") or "").strip(),
     codex_model_provider=(os.getenv("PLATFORM_CODEX_MODEL_PROVIDER", "") or "").strip(),

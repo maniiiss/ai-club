@@ -469,7 +469,7 @@
                     :model-value="row.status || null"
                     :options="getWorkItemStatusSelectOptions(row.workItemType)"
                     class="status-select"
-                    variant="inline-pill"
+                    
                     :popover-width="132"
                     :disabled="statusUpdatingId === row.id"
                     @change="handleQuickStatusChange(row, String($event))"
@@ -494,7 +494,7 @@
                     :model-value="row.assigneeUserId ?? -1"
                     :options="assigneeSelectOptions"
                     class="assignee-select"
-                    variant="inline-pill"
+                    
                     :disabled="statusUpdatingId === row.id"
                     @change="handleQuickAssigneeChange(row, Number($event))"
                   />
@@ -506,7 +506,7 @@
                     :model-value="row.priority || null"
                     :options="prioritySelectOptions"
                     class="priority-select"
-                    variant="inline-pill"
+                    
                     :disabled="statusUpdatingId === row.id"
                     @change="handleQuickPriorityChange(row, String($event))"
                   />
@@ -577,7 +577,7 @@
                         :model-value="row.status || null"
                         :options="getWorkItemStatusSelectOptions(row.workItemType)"
                         class="status-select"
-                        variant="inline-pill"
+                        
                         :popover-width="132"
                         :open-on-mount="true"
                         :disabled="statusUpdatingId === row.id"
@@ -600,7 +600,7 @@
                         :model-value="row.priority || null"
                         :options="prioritySelectOptions"
                         class="priority-select"
-                        variant="inline-pill"
+                        
                         :open-on-mount="true"
                         :disabled="statusUpdatingId === row.id"
                         @change="handleQuickPriorityChange(row, String($event))"
@@ -652,7 +652,7 @@
                             :model-value="row.assigneeUserId ?? -1"
                             :options="assigneeSelectOptions"
                             class="assignee-select"
-                            variant="inline-pill"
+                            
                             :open-on-mount="true"
                             :disabled="statusUpdatingId === row.id"
                             @change="handleQuickAssigneeChange(row, Number($event))"
@@ -3900,46 +3900,16 @@ onMounted(async () => {
   font-size: 12px;
 }
 
-.workspace-col-code {
-  width: 7%;
-}
-
-.workspace-col-main {
-  width: 28%;
-  min-width: 0;
-}
-
-.workspace-col-type {
-  width: 8%;
-}
-
-.workspace-col-owner {
-  width: 10%;
-}
-
-.workspace-col-priority {
-  width: 7%;
-}
-
-.workspace-col-hours {
-  width: 5%;
-}
-
-.workspace-col-status {
-  width: 8%;
-}
-
-.workspace-col-plan {
-  width: 11%;
-}
-
-.workspace-col-creator {
-  width: 8%;
-}
-
-.workspace-col-actions {
-  width: 8%;
-}
+.workspace-col-code { width: 90px; }
+.workspace-col-main { width: auto; min-width: 0; }
+.workspace-col-type { width: 86px; }
+.workspace-col-owner { width: 124px; }
+.workspace-col-priority { width: 116px; }
+.workspace-col-hours { width: 80px; }
+.workspace-col-status { width: 116px; }
+.workspace-col-plan { width: 156px; }
+.workspace-col-creator { width: 90px; }
+.workspace-col-actions { width: 100px; }
 
 .workspace-row:hover {
   background: #f3f4f5;
@@ -4455,94 +4425,7 @@ onMounted(async () => {
   width: 100%;
 }
 
-.status-select :deep(.compact-select-trigger.variant-inline-pill) {
-  width: auto;
-  min-height: 22px;
-  min-width: 0;
-  padding: 0 8px 0 10px;
-  border-radius: 999px;
-  box-shadow: none !important;
-  justify-content: center;
-  gap: 4px;
-}
 
-.status-select :deep(.compact-select-trigger.variant-inline-pill .compact-select-dot) {
-  display: none;
-}
-
-.status-select :deep(.compact-select-trigger.variant-inline-pill .compact-select-value) {
-  justify-content: center;
-  gap: 4px;
-}
-
-.status-select :deep(.compact-select-trigger.variant-inline-pill .compact-select-arrow) {
-  color: currentColor;
-  opacity: 0.64;
-  font-size: 10px;
-}
-
-.status-select :deep(.compact-select-trigger.variant-inline-pill.selected-tone-primary) {
-  background: rgba(199, 231, 255, 0.72);
-  color: #004c6c;
-}
-
-.status-select :deep(.compact-select-trigger.variant-inline-pill.selected-tone-success) {
-  background: rgba(216, 240, 212, 0.82);
-  color: #2f6f3e;
-}
-
-.status-select :deep(.compact-select-trigger.variant-inline-pill.selected-tone-warning) {
-  background: rgba(255, 220, 195, 0.86);
-  color: #a35100;
-}
-
-.status-select :deep(.compact-select-trigger.variant-inline-pill.selected-tone-danger) {
-  background: rgba(255, 218, 214, 0.86);
-  color: #93000a;
-}
-
-.status-select :deep(.compact-select-trigger.variant-inline-pill.selected-tone-info) {
-  background: rgba(231, 232, 233, 0.88);
-  color: #64748b;
-}
-
-.status-select :deep(.compact-select-trigger.variant-inline-pill.selected-tone-accent) {
-  background: rgba(237, 233, 254, 0.92);
-  color: #6d28d9;
-}
-
-.status-select :deep(.compact-select-trigger.variant-inline-pill:hover),
-.status-select :deep(.compact-select-trigger.variant-inline-pill.is-open) {
-  transform: none;
-  filter: saturate(1.02);
-}
-
-.status-select :deep(.compact-select-menu) {
-  gap: 4px;
-}
-
-.status-select :deep(.compact-select-item) {
-  padding: 10px 12px;
-  border-radius: 12px;
-}
-
-.status-select :deep(.compact-select-item-main) {
-  gap: 6px;
-}
-
-.status-select :deep(.compact-select-item-main span) {
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.status-select :deep(.compact-select-item .compact-select-dot) {
-  width: 6px;
-  height: 6px;
-}
-
-.status-select :deep(.compact-select-check) {
-  font-size: 11px;
-}
 
 :deep(.iteration-filter-popper.el-popper) {
   border: 0 !important;
@@ -4918,7 +4801,7 @@ onMounted(async () => {
 }
 
 .work-item-priority-select {
-  width: 90px;
+  width: 100%;
 }
 
 .work-item-priority-select :deep(.compact-select-trigger) {

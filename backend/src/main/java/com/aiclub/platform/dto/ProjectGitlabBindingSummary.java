@@ -17,6 +17,9 @@ public record ProjectGitlabBindingSummary(
         Boolean enabled,
         String lastTestStatus,
         String lastTestMessage,
-        String lastTestedAt
+        String lastTestedAt,
+        String codeStructureStatus,
+        String codeStructureGeneratedAt,
+        Boolean codeStructureDegraded
 ) {
 }

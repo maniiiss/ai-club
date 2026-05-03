@@ -26,10 +26,15 @@ from app.models import (
     ScanRequest,
     ScanSummary,
     ExecutionSessionAcceptedResponse,
+    GitlabCodeStructureOverviewRequest,
+    GitlabCodeStructureOverviewResponse,
+    GitlabCodeStructureQueryRequest,
+    GitlabCodeStructureQueryResponse,
     RepositoryStructuringRequest,
     RepositoryStructuringResponse,
 )
 from app.services.cli_execution_service import execute_cli_execution, start_cli_execution
+from app.services.gitlab_code_structure_service import build_gitlab_code_structure_overview, query_gitlab_code_structure
 from app.services.repo_structuring_service import execute_repo_structuring, start_repo_structuring
 from app.services.repository_service import build_summary
 from app.services.document_service import convert_document_to_markdown
@@ -241,6 +246,32 @@ def repo_structuring_start(request_http: Request, payload: RepositoryStructuring
     _require_internal_service_auth(request_http)
     try:
         return start_repo_structuring(payload)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+
+
+@router.post("/gitlab-code-structure/overview", response_model=GitlabCodeStructureOverviewResponse)
+def gitlab_code_structure_overview(request_http: Request,
+                                   payload: GitlabCodeStructureOverviewRequest) -> GitlabCodeStructureOverviewResponse:
+    """供 backend 同步生成绑定仓库某个分支的 GitNexus 概览快照。"""
+    _require_internal_service_auth(request_http)
+    try:
+        return build_gitlab_code_structure_overview(payload)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+
+
+@router.post("/gitlab-code-structure/query", response_model=GitlabCodeStructureQueryResponse)
+def gitlab_code_structure_query(request_http: Request,
+                                payload: GitlabCodeStructureQueryRequest) -> GitlabCodeStructureQueryResponse:
+    """供 backend 基于已缓存工作区执行临时代码结构查询。"""
+    _require_internal_service_auth(request_http)
+    try:
+        return query_gitlab_code_structure(payload)
     except ValueError as exception:
         raise HTTPException(status_code=400, detail=str(exception)) from exception
     except RuntimeError as exception:

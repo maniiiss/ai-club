@@ -906,6 +906,103 @@ export interface ProjectGitlabBindingItem {
   lastTestMessage: string | null
   lastTestedAt: string | null
   testProfileJson: string | null
+  codeStructureStatus: string | null
+  codeStructureGeneratedAt: string | null
+  codeStructureDegraded: boolean | null
+}
+
+export interface GitlabCodeStructureOverviewCardItem {
+  key: string
+  label: string
+  value: string
+}
+
+export interface GitlabCodeStructureCandidateSymbolItem {
+  uid: string
+  name: string
+  filePath: string
+  startLine: number | null
+  endLine: number | null
+  symbolKind: string
+}
+
+export interface GitlabCodeStructureProcessItem {
+  id: string
+  name: string
+  stepIndex: number | null
+  stepCount: number | null
+}
+
+export interface GitlabCodeStructureGraphNodeItem {
+  id: string
+  nodeType: string
+  label: string
+  secondaryLabel: string
+  detailText: string
+  filePath: string
+  symbolUid: string
+  startLine: number | null
+  endLine: number | null
+  metadataJson: string
+}
+
+export interface GitlabCodeStructureGraphEdgeItem {
+  id: string
+  sourceId: string
+  targetId: string
+  edgeType: string
+  detailText: string
+}
+
+export interface GitlabCodeStructureSnapshotItem {
+  bindingId: number
+  projectId: number
+  projectName: string
+  repositoryName: string
+  repositoryPath: string
+  branchName: string
+  commitSha: string | null
+  status: string
+  degraded: boolean
+  truncated: boolean
+  generatedAt: string | null
+  refreshStartedAt: string | null
+  refreshFinishedAt: string | null
+  summaryMarkdown: string
+  lastErrorMessage: string | null
+  overviewCards: GitlabCodeStructureOverviewCardItem[]
+  candidateSymbols: GitlabCodeStructureCandidateSymbolItem[]
+  candidateProcesses: GitlabCodeStructureProcessItem[]
+  harnessHints: string[]
+  graphNodes: GitlabCodeStructureGraphNodeItem[]
+  graphEdges: GitlabCodeStructureGraphEdgeItem[]
+}
+
+export interface GitlabCodeStructureQueryRequest {
+  branch: string
+  query: string
+}
+
+export interface GitlabCodeStructureQueryResultItem {
+  branchName: string
+  commitSha: string | null
+  degraded: boolean
+  truncated: boolean
+  lastErrorMessage: string | null
+  hitSymbols: GitlabCodeStructureCandidateSymbolItem[]
+  hitProcesses: GitlabCodeStructureProcessItem[]
+  graphNodes: GitlabCodeStructureGraphNodeItem[]
+  graphEdges: GitlabCodeStructureGraphEdgeItem[]
+}
+
+export interface GitlabCodeStructureRefreshAcceptedResultItem {
+  bindingId: number
+  branchName: string
+  status: string
+  accepted: boolean
+  refreshStartedAt: string | null
+  generatedAt: string | null
+  lastErrorMessage: string | null
 }
 
 export interface GiteeProgramItem {

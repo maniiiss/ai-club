@@ -104,6 +104,7 @@
                 :model-value="row.status || null"
                 :options="statusSelectOptions"
                 :disabled="statusUpdatingId === row.id"
+                :popover-width="116"
                 class="status-select"
                 @change="handleStatusChange(row.id, String($event))"
               />
@@ -832,10 +833,10 @@ onMounted(async () => {
 .test-plan-list-head,
 .test-plan-list-row {
   grid-template-columns:
-    minmax(0, 2.3fr)
-    minmax(0, 1.3fr)
-    minmax(0, 1.3fr)
-    minmax(0, 1.1fr)
+    minmax(0, 3fr)
+    minmax(0, 1.2fr)
+    minmax(0, 1.2fr)
+    116px
     minmax(0, 0.9fr)
     minmax(0, 0.7fr)
     minmax(0, 1.1fr)

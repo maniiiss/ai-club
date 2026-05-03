@@ -1,10 +1,12 @@
 package com.aiclub.platform.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aiclub.platform.common.DataPermissionScopeType;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
+import com.aiclub.platform.domain.model.GitlabCodeStructureSnapshotEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
 import com.aiclub.platform.domain.model.GitlabProductBranchEntity;
 import com.aiclub.platform.domain.model.GitlabProductBranchSyncLogEntity;
@@ -12,11 +14,20 @@ import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
 import com.aiclub.platform.domain.model.RepositoryScanRulesetEntity;
 import com.aiclub.platform.dto.CodeReviewResult;
+import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeConfigSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeRunItem;
 import com.aiclub.platform.dto.GitlabAutoMergeRunResult;
 import com.aiclub.platform.dto.GitlabBranchSummary;
+import com.aiclub.platform.dto.GitlabCodeStructureCandidateSymbolSummary;
+import com.aiclub.platform.dto.GitlabCodeStructureGraphEdgeSummary;
+import com.aiclub.platform.dto.GitlabCodeStructureGraphNodeSummary;
+import com.aiclub.platform.dto.GitlabCodeStructureOverviewCardSummary;
+import com.aiclub.platform.dto.GitlabCodeStructureProcessSummary;
+import com.aiclub.platform.dto.GitlabCodeStructureQueryResult;
+import com.aiclub.platform.dto.GitlabCodeStructureRefreshAcceptedResult;
+import com.aiclub.platform.dto.GitlabCodeStructureSnapshotSummary;
 import com.aiclub.platform.dto.GitlabCreateMergeRequestResult;
 import com.aiclub.platform.dto.GitlabMergeRequestSummary;
 import com.aiclub.platform.dto.GitlabProductBranchSummary;
@@ -27,11 +38,12 @@ import com.aiclub.platform.dto.GitlabTagCreateResult;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
 import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
-import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
 import com.aiclub.platform.dto.request.GitlabCreateProductBranchSyncRequest;
 import com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest;
 import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
+import com.aiclub.platform.dto.request.GitlabCodeStructureQueryRequest;
+import com.aiclub.platform.dto.request.GitlabCodeStructureRefreshRequest;
 import com.aiclub.platform.dto.request.GitlabCreateMergeRequestRequest;
 import com.aiclub.platform.dto.request.GitlabProductBranchRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
@@ -39,6 +51,7 @@ import com.aiclub.platform.dto.request.ProjectGitlabBindingRequest;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
+import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
 import com.aiclub.platform.repository.GitlabProductBranchRepository;
 import com.aiclub.platform.repository.GitlabProductBranchSyncLogRepository;
@@ -47,6 +60,9 @@ import com.aiclub.platform.repository.ProjectRepository;
 import com.aiclub.platform.security.AuthContextHolder;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -67,13 +83,19 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.Executor;
 
 @Service
 @Transactional(readOnly = true)
 public class GitlabManagementService {
 
+    private static final Logger log = LoggerFactory.getLogger(GitlabManagementService.class);
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String MODE_PROJECT_BOUND = "PROJECT_BOUND";
     private static final String MODE_STANDALONE = "STANDALONE";
@@ -84,10 +106,17 @@ public class GitlabManagementService {
     private static final String PRODUCT_BRANCH_RESULT_NO_CHANGE = "NO_CHANGE";
     private static final String PRODUCT_BRANCH_RESULT_EXISTING_OPEN_MR = "EXISTING_OPEN_MR";
     private static final String PRODUCT_BRANCH_RESULT_FAILED = "FAILED";
+    private static final String CODE_STRUCTURE_STATUS_NOT_BUILT = "NOT_BUILT";
+    private static final String CODE_STRUCTURE_STATUS_BUILDING = "BUILDING";
+    private static final String CODE_STRUCTURE_STATUS_READY = "READY";
+    private static final String CODE_STRUCTURE_STATUS_DEGRADED = "DEGRADED";
+    private static final String CODE_STRUCTURE_STATUS_FAILED = "FAILED";
+    private static final String DEFAULT_CODE_STRUCTURE_BRANCH = "main";
 
     private final ProjectRepository projectRepository;
     private final AgentRepository agentRepository;
     private final ProjectGitlabBindingRepository bindingRepository;
+    private final GitlabCodeStructureSnapshotRepository codeStructureSnapshotRepository;
     private final GitlabAutoMergeConfigRepository autoMergeConfigRepository;
     private final GitlabAutoMergeLogRepository autoMergeLogRepository;
     private final GitlabProductBranchRepository productBranchRepository;
@@ -105,12 +134,15 @@ public class GitlabManagementService {
     private final ExecutionTaskService executionTaskService;
     private final RepositoryScanClientService repositoryScanClientService;
     private final RepositoryScanRulesetService repositoryScanRulesetService;
+    private final GitlabCodeStructureClientService gitlabCodeStructureClientService;
     private final ObjectMapper objectMapper;
     private final String defaultApiUrl;
+    private final Executor executionTaskExecutor;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
     public GitlabManagementService(ProjectRepository projectRepository,
                                    ProjectGitlabBindingRepository bindingRepository,
+                                   GitlabCodeStructureSnapshotRepository codeStructureSnapshotRepository,
                                    GitlabAutoMergeConfigRepository autoMergeConfigRepository,
                                    GitlabAutoMergeLogRepository autoMergeLogRepository,
                                    GitlabProductBranchRepository productBranchRepository,
@@ -129,12 +161,15 @@ public class GitlabManagementService {
                                    ExecutionTaskService executionTaskService,
                                    RepositoryScanClientService repositoryScanClientService,
                                    RepositoryScanRulesetService repositoryScanRulesetService,
+                                   GitlabCodeStructureClientService gitlabCodeStructureClientService,
                                    ObjectMapper objectMapper,
                                    @Value("${platform.gitlab.default-api-url}") String defaultApiUrl,
-                                   PlatformTransactionManager transactionManager) {
+                                   PlatformTransactionManager transactionManager,
+                                   @Qualifier("executionTaskExecutor") Executor executionTaskExecutor) {
         this.projectRepository = projectRepository;
         this.agentRepository = agentRepository;
         this.bindingRepository = bindingRepository;
+        this.codeStructureSnapshotRepository = codeStructureSnapshotRepository;
         this.autoMergeConfigRepository = autoMergeConfigRepository;
         this.autoMergeLogRepository = autoMergeLogRepository;
         this.productBranchRepository = productBranchRepository;
@@ -152,8 +187,10 @@ public class GitlabManagementService {
         this.executionTaskService = executionTaskService;
         this.repositoryScanClientService = repositoryScanClientService;
         this.repositoryScanRulesetService = repositoryScanRulesetService;
+        this.gitlabCodeStructureClientService = gitlabCodeStructureClientService;
         this.objectMapper = objectMapper;
         this.defaultApiUrl = defaultApiUrl;
+        this.executionTaskExecutor = executionTaskExecutor;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
@@ -308,6 +345,81 @@ public class GitlabManagementService {
                 .stream()
                 .map(branch -> toBranchSummary(entity, branch))
                 .toList();
+    }
+
+    /**
+     * 读取绑定仓库的代码结构快照。
+     * 页面打开时优先展示最近一次快照，不阻塞用户等待新的 GitNexus 分析完成。
+     */
+    public GitlabCodeStructureSnapshotSummary getBindingCodeStructure(Long bindingId, String branch) {
+        ProjectGitlabBindingEntity binding = requireBinding(bindingId);
+        projectDataPermissionService.requireGitlabBindingVisible(binding);
+        String resolvedBranch = resolveCodeStructureBranch(binding, branch);
+        GitlabCodeStructureSnapshotEntity snapshot = codeStructureSnapshotRepository.findByBinding_IdAndBranchName(bindingId, resolvedBranch)
+                .orElse(null);
+        return toCodeStructureSnapshotSummary(binding, snapshot, resolvedBranch);
+    }
+
+    /**
+     * 后台刷新绑定仓库的代码结构快照。
+     * 刷新入口只负责把状态切到 BUILDING 并投递后台任务，不同步等待 code-processing 完成。
+     */
+    @Transactional
+    public GitlabCodeStructureRefreshAcceptedResult refreshBindingCodeStructure(Long bindingId,
+                                                                                GitlabCodeStructureRefreshRequest request) {
+        ProjectGitlabBindingEntity binding = requireBinding(bindingId);
+        projectDataPermissionService.requireGitlabBindingVisible(binding);
+        requireCodeStructureRefreshable(binding);
+        String resolvedBranch = resolveCodeStructureBranch(binding, request == null ? null : request.branch());
+        GitlabCodeStructureSnapshotEntity snapshot = codeStructureSnapshotRepository.findByBinding_IdAndBranchName(bindingId, resolvedBranch)
+                .orElseGet(() -> {
+                    GitlabCodeStructureSnapshotEntity entity = new GitlabCodeStructureSnapshotEntity();
+                    entity.setBinding(binding);
+                    entity.setBranchName(resolvedBranch);
+                    entity.setStatus(CODE_STRUCTURE_STATUS_NOT_BUILT);
+                    return entity;
+                });
+        if (CODE_STRUCTURE_STATUS_BUILDING.equalsIgnoreCase(defaultString(snapshot.getStatus()))) {
+            return toCodeStructureRefreshAcceptedResult(snapshot, false);
+        }
+        snapshot.setStatus(CODE_STRUCTURE_STATUS_BUILDING);
+        snapshot.setRefreshStartedAt(LocalDateTime.now());
+        snapshot.setRefreshFinishedAt(null);
+        snapshot.setLastErrorMessage(null);
+        GitlabCodeStructureSnapshotEntity savedSnapshot = codeStructureSnapshotRepository.save(snapshot);
+        GitlabCodeStructureClientService.StructureRepository repository = buildCodeStructureRepository(binding, resolvedBranch);
+        executionTaskExecutor.execute(() -> runCodeStructureRefresh(savedSnapshot.getId(), repository));
+        return toCodeStructureRefreshAcceptedResult(savedSnapshot, true);
+    }
+
+    /**
+     * 基于已缓存的 GitNexus 索引执行局部查询。
+     * 查询结果只返回给当前页面，不写入仓库快照表。
+     */
+    public GitlabCodeStructureQueryResult queryBindingCodeStructure(Long bindingId,
+                                                                    GitlabCodeStructureQueryRequest request) {
+        ProjectGitlabBindingEntity binding = requireBinding(bindingId);
+        projectDataPermissionService.requireGitlabBindingVisible(binding);
+        String branch = trimToNull(request.branch());
+        String query = trimToNull(request.query());
+        if (branch == null) {
+            throw new IllegalArgumentException("查询分支不能为空");
+        }
+        if (query == null || query.length() < 2) {
+            throw new IllegalArgumentException("查询关键词长度需至少为 2");
+        }
+        GitlabCodeStructureSnapshotEntity snapshot = codeStructureSnapshotRepository.findByBinding_IdAndBranchName(bindingId, branch)
+                .orElseThrow(() -> new IllegalArgumentException("当前分支尚未生成结构化快照，请先刷新"));
+        if (!hasText(snapshot.getOverviewJson()) || !hasText(snapshot.getGraphJson())) {
+            throw new IllegalArgumentException("当前分支暂无可查询的结构化快照，请先刷新");
+        }
+        GitlabCodeStructureClientService.QueryStructureResponse response = gitlabCodeStructureClientService.queryStructure(
+                new GitlabCodeStructureClientService.QueryStructureRequest(
+                        buildCodeStructureRepository(binding, branch),
+                        query
+                )
+        );
+        return toCodeStructureQueryResult(response);
     }
 
     /**
@@ -1170,7 +1282,327 @@ public class GitlabManagementService {
         );
     }
 
+    /**
+     * 后台线程实际执行仓库代码结构刷新。
+     * 这里统一负责把 code-processing 返回结果落回快照表，并保留旧快照内容兜底页面展示。
+     */
+    private void runCodeStructureRefresh(Long snapshotId,
+                                         GitlabCodeStructureClientService.StructureRepository repository) {
+        try {
+            GitlabCodeStructureClientService.BuildOverviewResponse response = gitlabCodeStructureClientService.buildOverview(
+                    new GitlabCodeStructureClientService.BuildOverviewRequest(repository)
+            );
+            requiresNewTransactionTemplate.executeWithoutResult(status -> {
+                GitlabCodeStructureSnapshotEntity snapshot = codeStructureSnapshotRepository.findById(snapshotId)
+                        .orElseThrow(() -> new NoSuchElementException("代码结构快照不存在: " + snapshotId));
+                snapshot.setCommitSha(trimToNull(response.commitSha()));
+                snapshot.setGeneratedAt(LocalDateTime.now());
+                snapshot.setDegraded(Boolean.TRUE.equals(response.degraded()));
+                snapshot.setSummaryMarkdown(defaultString(response.summaryMarkdown()));
+                snapshot.setOverviewJson(defaultString(response.overviewJson()));
+                snapshot.setGraphJson(defaultString(response.graphJson()));
+                snapshot.setLastErrorMessage(trimToNull(response.lastErrorMessage()));
+                snapshot.setRefreshFinishedAt(LocalDateTime.now());
+                snapshot.setStatus(Boolean.TRUE.equals(response.degraded()) ? CODE_STRUCTURE_STATUS_DEGRADED : CODE_STRUCTURE_STATUS_READY);
+                codeStructureSnapshotRepository.save(snapshot);
+            });
+        } catch (RuntimeException exception) {
+            log.warn("刷新 GitLab 仓库代码结构失败: snapshotId={}, branch={}, message={}", snapshotId, repository.targetBranch(), exception.getMessage());
+            requiresNewTransactionTemplate.executeWithoutResult(status -> {
+                GitlabCodeStructureSnapshotEntity snapshot = codeStructureSnapshotRepository.findById(snapshotId)
+                        .orElseThrow(() -> new NoSuchElementException("代码结构快照不存在: " + snapshotId));
+                snapshot.setStatus(CODE_STRUCTURE_STATUS_FAILED);
+                snapshot.setDegraded(false);
+                snapshot.setLastErrorMessage(limitMessage(exception.getMessage()));
+                snapshot.setRefreshFinishedAt(LocalDateTime.now());
+                codeStructureSnapshotRepository.save(snapshot);
+            });
+        }
+    }
+
+    /**
+     * 代码结构刷新前先校验绑定状态，避免页面发起一个注定失败的后台任务。
+     */
+    private void requireCodeStructureRefreshable(ProjectGitlabBindingEntity binding) {
+        if (!defaultBoolean(binding.getEnabled(), true)) {
+            throw new IllegalArgumentException("当前 GitLab 绑定已停用，不能刷新代码结构");
+        }
+        if (!hasText(binding.getTokenCiphertext())) {
+            throw new IllegalArgumentException("当前 GitLab 绑定未配置 Token，不能刷新代码结构");
+        }
+    }
+
+    /**
+     * 代码结构页的默认分支按“显式参数 -> 绑定默认分支 -> 最近快照 -> main”回退。
+     */
+    private String resolveCodeStructureBranch(ProjectGitlabBindingEntity binding, String requestedBranch) {
+        String normalizedBranch = trimToNull(requestedBranch);
+        if (normalizedBranch != null) {
+            return normalizedBranch;
+        }
+        if (hasText(binding.getDefaultTargetBranch())) {
+            return binding.getDefaultTargetBranch().trim();
+        }
+        return codeStructureSnapshotRepository.findFirstByBinding_IdOrderByGeneratedAtDescIdDesc(binding.getId())
+                .map(GitlabCodeStructureSnapshotEntity::getBranchName)
+                .filter(this::hasText)
+                .orElse(DEFAULT_CODE_STRUCTURE_BRANCH);
+    }
+
+    /**
+     * 为 code-processing 组装稳定的仓库上下文。
+     * 刷新时如果绑定里还没有 clone 地址，会先即时回源 GitLab 补齐。
+     */
+    private GitlabCodeStructureClientService.StructureRepository buildCodeStructureRepository(ProjectGitlabBindingEntity binding,
+                                                                                               String branch) {
+        String token = tokenCipherService.decrypt(binding.getTokenCiphertext());
+        ProjectGitlabBindingEntity refreshedBinding = refreshCodeStructureCloneUrlsIfRequired(binding, token);
+        String repoUrl = resolveCodeStructureCloneUrl(refreshedBinding);
+        if (!hasText(repoUrl)) {
+            throw new IllegalStateException("当前 GitLab 绑定缺少可用的 HTTP Clone 地址");
+        }
+        return new GitlabCodeStructureClientService.StructureRepository(
+                String.valueOf(refreshedBinding.getId()),
+                defaultString(hasText(refreshedBinding.getGitlabProjectPath()) ? refreshedBinding.getGitlabProjectPath() : refreshedBinding.getGitlabProjectRef()),
+                defaultString(refreshedBinding.getGitlabProjectRef()),
+                defaultString(refreshedBinding.getGitlabProjectPath()),
+                repoUrl,
+                branch,
+                refreshedBinding.getApiBaseUrl(),
+                token
+        );
+    }
+
+    /**
+     * 仓库代码结构刷新和扫描一样依赖 HTTP clone 地址，这里复用同样的回源补齐策略。
+     */
+    private ProjectGitlabBindingEntity refreshCodeStructureCloneUrlsIfRequired(ProjectGitlabBindingEntity binding, String token) {
+        if (hasText(binding.getGitlabHttpCloneUrl())) {
+            return binding;
+        }
+        GitlabApiService.GitlabProject project = gitlabApiService.fetchProject(binding.getApiBaseUrl(), token, binding.getGitlabProjectRef());
+        binding.setGitlabProjectId(project.id());
+        binding.setGitlabProjectName(project.name());
+        binding.setGitlabProjectPath(project.pathWithNamespace());
+        binding.setGitlabProjectWebUrl(project.webUrl());
+        binding.setGitlabHttpCloneUrl(project.httpCloneUrl());
+        binding.setGitlabSshCloneUrl(project.sshCloneUrl());
+        if (!hasText(binding.getDefaultTargetBranch()) && hasText(project.defaultBranch())) {
+            binding.setDefaultTargetBranch(project.defaultBranch());
+        }
+        return bindingRepository.save(binding);
+    }
+
+    /**
+     * 结构化能力首版只支持 HTTP/HTTPS clone 地址。
+     */
+    private String resolveCodeStructureCloneUrl(ProjectGitlabBindingEntity binding) {
+        if (hasText(binding.getGitlabHttpCloneUrl())) {
+            return binding.getGitlabHttpCloneUrl().trim();
+        }
+        if (hasText(binding.getGitlabProjectWebUrl())) {
+            String webUrl = binding.getGitlabProjectWebUrl().trim();
+            return webUrl.endsWith(".git") ? webUrl : webUrl + ".git";
+        }
+        return null;
+    }
+
+    /**
+     * 绑定列表上的代码结构状态优先展示默认分支快照，没有默认分支时回退最近一次快照。
+     */
+    private GitlabCodeStructureSnapshotEntity resolveBindingCodeStructureSnapshot(ProjectGitlabBindingEntity entity) {
+        if (hasText(entity.getDefaultTargetBranch())) {
+            Optional<GitlabCodeStructureSnapshotEntity> preferred = codeStructureSnapshotRepository.findByBinding_IdAndBranchName(
+                    entity.getId(),
+                    entity.getDefaultTargetBranch().trim()
+            );
+            if (preferred.isPresent()) {
+                return preferred.get();
+            }
+        }
+        return codeStructureSnapshotRepository.findFirstByBinding_IdOrderByGeneratedAtDescIdDesc(entity.getId()).orElse(null);
+    }
+
+    private GitlabCodeStructureRefreshAcceptedResult toCodeStructureRefreshAcceptedResult(GitlabCodeStructureSnapshotEntity snapshot,
+                                                                                          boolean accepted) {
+        return new GitlabCodeStructureRefreshAcceptedResult(
+                snapshot.getBinding().getId(),
+                snapshot.getBranchName(),
+                defaultString(snapshot.getStatus()),
+                accepted,
+                formatTime(snapshot.getRefreshStartedAt()),
+                formatTime(snapshot.getGeneratedAt()),
+                snapshot.getLastErrorMessage()
+        );
+    }
+
+    /**
+     * 统一把快照表里的 JSON 文本组装成前端页面直接可用的结构。
+     */
+    private GitlabCodeStructureSnapshotSummary toCodeStructureSnapshotSummary(ProjectGitlabBindingEntity binding,
+                                                                              GitlabCodeStructureSnapshotEntity snapshot,
+                                                                              String resolvedBranch) {
+        JsonNode overviewRoot = readJsonText(snapshot == null ? null : snapshot.getOverviewJson());
+        JsonNode graphRoot = readJsonText(snapshot == null ? null : snapshot.getGraphJson());
+        return new GitlabCodeStructureSnapshotSummary(
+                binding.getId(),
+                binding.getProject().getId(),
+                binding.getProject().getName(),
+                hasText(binding.getGitlabProjectName()) ? binding.getGitlabProjectName() : resolveBindingProjectRef(binding),
+                resolveBindingProjectRef(binding),
+                resolvedBranch,
+                snapshot == null ? null : snapshot.getCommitSha(),
+                snapshot == null ? CODE_STRUCTURE_STATUS_NOT_BUILT : defaultString(snapshot.getStatus()),
+                snapshot != null && snapshot.isDegraded(),
+                overviewRoot.path("truncated").asBoolean(false),
+                formatTime(snapshot == null ? null : snapshot.getGeneratedAt()),
+                formatTime(snapshot == null ? null : snapshot.getRefreshStartedAt()),
+                formatTime(snapshot == null ? null : snapshot.getRefreshFinishedAt()),
+                snapshot == null ? "" : defaultString(snapshot.getSummaryMarkdown()),
+                snapshot == null ? null : snapshot.getLastErrorMessage(),
+                readOverviewCards(overviewRoot.path("overviewCards")),
+                readCandidateSymbols(overviewRoot.path("candidateSymbols")),
+                readProcesses(overviewRoot.path("candidateProcesses")),
+                readStringList(overviewRoot.path("harnessHints")),
+                readGraphNodes(graphRoot.path("nodes")),
+                readGraphEdges(graphRoot.path("edges"))
+        );
+    }
+
+    /**
+     * 把 code-processing 返回的局部查询 JSON 结果转成前端 DTO。
+     */
+    private GitlabCodeStructureQueryResult toCodeStructureQueryResult(GitlabCodeStructureClientService.QueryStructureResponse response) {
+        JsonNode resultRoot = readJsonText(response.resultJson());
+        JsonNode graphRoot = readJsonText(response.graphJson());
+        return new GitlabCodeStructureQueryResult(
+                defaultString(response.branchName()),
+                defaultString(response.commitSha()),
+                Boolean.TRUE.equals(response.degraded()),
+                resultRoot.path("truncated").asBoolean(Boolean.TRUE.equals(response.truncated())),
+                trimToNull(response.lastErrorMessage()),
+                readCandidateSymbols(resultRoot.path("hitSymbols")),
+                readProcesses(resultRoot.path("hitProcesses")),
+                readGraphNodes(graphRoot.path("nodes")),
+                readGraphEdges(graphRoot.path("edges"))
+        );
+    }
+
+    private JsonNode readJsonText(String jsonText) {
+        if (!hasText(jsonText)) {
+            return objectMapper.createObjectNode();
+        }
+        try {
+            return objectMapper.readTree(jsonText);
+        } catch (Exception exception) {
+            throw new IllegalStateException("代码结构快照 JSON 解析失败", exception);
+        }
+    }
+
+    private List<GitlabCodeStructureOverviewCardSummary> readOverviewCards(JsonNode node) {
+        List<GitlabCodeStructureOverviewCardSummary> result = new ArrayList<>();
+        if (!node.isArray()) {
+            return result;
+        }
+        node.forEach(item -> result.add(new GitlabCodeStructureOverviewCardSummary(
+                readText(item, "key"),
+                readText(item, "label"),
+                readText(item, "value")
+        )));
+        return result;
+    }
+
+    private List<GitlabCodeStructureCandidateSymbolSummary> readCandidateSymbols(JsonNode node) {
+        List<GitlabCodeStructureCandidateSymbolSummary> result = new ArrayList<>();
+        if (!node.isArray()) {
+            return result;
+        }
+        node.forEach(item -> result.add(new GitlabCodeStructureCandidateSymbolSummary(
+                readText(item, "uid"),
+                readText(item, "name"),
+                readText(item, "filePath"),
+                readInteger(item, "startLine"),
+                readInteger(item, "endLine"),
+                readText(item, "symbolKind")
+        )));
+        return result;
+    }
+
+    private List<GitlabCodeStructureProcessSummary> readProcesses(JsonNode node) {
+        List<GitlabCodeStructureProcessSummary> result = new ArrayList<>();
+        if (!node.isArray()) {
+            return result;
+        }
+        node.forEach(item -> result.add(new GitlabCodeStructureProcessSummary(
+                readText(item, "id"),
+                readText(item, "name"),
+                readInteger(item, "stepIndex"),
+                readInteger(item, "stepCount")
+        )));
+        return result;
+    }
+
+    private List<GitlabCodeStructureGraphNodeSummary> readGraphNodes(JsonNode node) {
+        List<GitlabCodeStructureGraphNodeSummary> result = new ArrayList<>();
+        if (!node.isArray()) {
+            return result;
+        }
+        node.forEach(item -> result.add(new GitlabCodeStructureGraphNodeSummary(
+                readText(item, "id"),
+                readText(item, "nodeType"),
+                readText(item, "label"),
+                readText(item, "secondaryLabel"),
+                readText(item, "detailText"),
+                readText(item, "filePath"),
+                readText(item, "symbolUid"),
+                readInteger(item, "startLine"),
+                readInteger(item, "endLine"),
+                hasText(readText(item, "metadataJson")) ? readText(item, "metadataJson") : "{}"
+        )));
+        return result;
+    }
+
+    private List<GitlabCodeStructureGraphEdgeSummary> readGraphEdges(JsonNode node) {
+        List<GitlabCodeStructureGraphEdgeSummary> result = new ArrayList<>();
+        if (!node.isArray()) {
+            return result;
+        }
+        node.forEach(item -> result.add(new GitlabCodeStructureGraphEdgeSummary(
+                readText(item, "id"),
+                readText(item, "sourceId"),
+                readText(item, "targetId"),
+                readText(item, "edgeType"),
+                readText(item, "detailText")
+        )));
+        return result;
+    }
+
+    private List<String> readStringList(JsonNode node) {
+        List<String> result = new ArrayList<>();
+        if (!node.isArray()) {
+            return result;
+        }
+        node.forEach(item -> {
+            if (item != null && !item.isNull() && hasText(item.asText(""))) {
+                result.add(item.asText(""));
+            }
+        });
+        return result;
+    }
+
+    private String readText(JsonNode node, String fieldName) {
+        return node == null || node.isMissingNode() ? "" : node.path(fieldName).asText("");
+    }
+
+    private Integer readInteger(JsonNode node, String fieldName) {
+        if (node == null || node.isMissingNode() || !node.path(fieldName).canConvertToInt()) {
+            return null;
+        }
+        return node.path(fieldName).asInt();
+    }
+
     private ProjectGitlabBindingSummary toBindingSummary(ProjectGitlabBindingEntity entity) {
+        GitlabCodeStructureSnapshotEntity codeStructureSnapshot = resolveBindingCodeStructureSnapshot(entity);
         return new ProjectGitlabBindingSummary(
                 entity.getId(),
                 entity.getProject().getId(),
@@ -1188,7 +1620,10 @@ public class GitlabManagementService {
                 defaultBoolean(entity.getEnabled(), true),
                 entity.getLastTestStatus(),
                 entity.getLastTestMessage(),
-                formatTime(entity.getLastTestedAt())
+                formatTime(entity.getLastTestedAt()),
+                codeStructureSnapshot == null ? CODE_STRUCTURE_STATUS_NOT_BUILT : defaultString(codeStructureSnapshot.getStatus()),
+                formatTime(codeStructureSnapshot == null ? null : codeStructureSnapshot.getGeneratedAt()),
+                codeStructureSnapshot != null && codeStructureSnapshot.isDegraded()
         );
     }
 

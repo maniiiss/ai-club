@@ -4,7 +4,10 @@
     trigger="click"
     placement="bottom-start"
     :width="popoverWidth"
+    popper-style="padding: 4px;"
     popper-class="compact-select-popper"
+    :offset="4"
+    :show-arrow="false"
   >
     <template #reference>
       <button
@@ -65,7 +68,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   placeholder: '请选择',
   disabled: false,
-  popoverWidth: 180,
+  popoverWidth: 160,
   size: 'small',
   variant: 'default',
   openOnMount: false
@@ -123,30 +126,30 @@ function handleSelect(value: SelectValue) {
 .compact-select-trigger {
   width: 100%;
   justify-content: space-between;
-  gap: 10px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(243, 244, 245, 0.92);
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--el-fill-color-light, #f5f7fa);
   color: var(--app-text, #191c1d);
   cursor: pointer;
-  transition: transform 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+  transition: all 0.2s ease;
 }
 
 .compact-select-trigger.is-small {
-  min-height: 34px;
+  min-height: 28px;
   font-size: 12px;
 }
 
 .compact-select-trigger.is-default {
-  min-height: 38px;
+  min-height: 32px;
   font-size: 13px;
 }
 
-.compact-select-trigger:hover {
-  background: rgba(255, 220, 195, 0.72);
+.compact-select-trigger:hover,
+.compact-select-trigger.is-open {
+  background: rgba(var(--app-primary-rgb, 144, 77, 0), 0.08); /* 统一的主题色微透底底色 */
   color: var(--app-primary, #904d00);
-  transform: translateY(-1px);
 }
 
 .compact-select-trigger.disabled {
@@ -159,9 +162,8 @@ function handleSelect(value: SelectValue) {
   min-height: 24px;
   padding: 0 10px;
   border-radius: 999px;
-  background: rgba(243, 244, 245, 0.92);
+  background: var(--el-fill-color-light, #f5f7fa);
   box-shadow: inset 0 0 0 1px var(--app-border, rgba(137, 115, 98, 0.12));
-  transform: none;
 }
 
 .compact-select-trigger.variant-inline-pill.is-small,
@@ -172,10 +174,9 @@ function handleSelect(value: SelectValue) {
 
 .compact-select-trigger.variant-inline-pill:hover,
 .compact-select-trigger.variant-inline-pill.is-open {
-  background: rgba(var(--app-primary-container-rgb), 0.12);
+  background: rgba(var(--app-primary-rgb, 144, 77, 0), 0.08);
   color: var(--app-primary, #904d00);
   box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.18);
-  transform: none;
 }
 
 .compact-select-trigger.variant-inline-pill .compact-select-value,
@@ -208,6 +209,11 @@ function handleSelect(value: SelectValue) {
 .compact-select-arrow {
   color: var(--app-text-muted, #758393);
   font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+.compact-select-trigger.is-open .compact-select-arrow {
+  transform: rotate(180deg);
 }
 
 .compact-select-dot {
@@ -218,23 +224,23 @@ function handleSelect(value: SelectValue) {
 }
 
 .tone-primary {
-  background: #3b82f6;
+  background: var(--el-color-primary, #409eff);
 }
 
 .tone-success {
-  background: #22c55e;
+  background: var(--el-color-success, #67c23a);
 }
 
 .tone-warning {
-  background: #f59e0b;
+  background: var(--el-color-warning, #e6a23c);
 }
 
 .tone-danger {
-  background: #ef4444;
+  background: var(--el-color-danger, #f56c6c);
 }
 
 .tone-info {
-  background: #94a3b8;
+  background: var(--el-color-info, #909399);
 }
 
 .tone-accent {
@@ -244,34 +250,36 @@ function handleSelect(value: SelectValue) {
 .compact-select-menu {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
 .compact-select-item {
   width: 100%;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: 8px;
+  padding: 8px 10px;
   border: 0;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.9);
+  border-radius: 4px;
+  background: transparent;
   color: var(--app-text, #191c1d);
   cursor: pointer;
-  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  font-size: 13px;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 .compact-select-item:hover {
-  background: rgba(243, 244, 245, 0.94);
-  transform: translateY(-1px);
+  background: var(--el-fill-color-light, #f5f7fa);
 }
 
 .compact-select-item.active {
-  background: rgba(255, 220, 195, 0.76);
+  background: rgba(var(--app-primary-rgb, 144, 77, 0), 0.06);
+  color: var(--app-primary, #904d00);
+  font-weight: 600;
 }
 
 .compact-select-check {
   color: var(--app-primary, #904d00);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 </style>
