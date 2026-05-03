@@ -77,7 +77,11 @@ public class ExecutionAsyncSessionService {
         ExecutionTaskEntity task = run.getExecutionTask();
         List<ExecutionSessionEventRequest> events = request == null ? List.of() : request.events();
         if (!events.isEmpty()) {
-            step.setLastHeartbeatAt(LocalDateTime.now());
+            LocalDateTime activityAt = LocalDateTime.now();
+            // runner 只要还能持续回调任意事件，就说明当前会话仍然存活；
+            // 这里同时刷新 lastHeartbeatAt / lastEventAt，避免 watchdog 因 heartbeat 与 stdout 分批到达而误判失联。
+            step.setLastHeartbeatAt(activityAt);
+            step.setLastEventAt(activityAt);
             executionStepRepository.save(step);
         }
         executionEventService.recordRunnerEvents(task, run, step, events);
@@ -100,6 +104,8 @@ public class ExecutionAsyncSessionService {
         step.setStatus(normalizedStatus);
         step.setProgressPercent("SUCCESS".equals(normalizedStatus) ? 100 : step.getProgressPercent());
         step.setFinishedAt(LocalDateTime.now());
+        step.setLastHeartbeatAt(LocalDateTime.now());
+        step.setLastEventAt(LocalDateTime.now());
         step.setOutputSnapshot(outputSnapshot.isBlank() ? step.getOutputSnapshot() : outputSnapshot);
         step.setErrorMessage(errorMessage.isBlank() ? step.getErrorMessage() : limit(errorMessage, 4000));
         if (!outputSummary.isBlank()) {
@@ -226,7 +232,8 @@ public class ExecutionAsyncSessionService {
         for (ExecutionStepEntity step : executionStepRepository.findAllByStatusAndHasLiveStreamTrue("RUNNING")) {
             LocalDateTime heartbeatAt = step.getLastHeartbeatAt();
             LocalDateTime eventAt = step.getLastEventAt();
-            if (heartbeatAt != null && heartbeatAt.plusSeconds(HEARTBEAT_TIMEOUT_SECONDS).isBefore(now)) {
+            LocalDateTime activityAt = mostRecentActivityAt(heartbeatAt, eventAt);
+            if (activityAt != null && activityAt.plusSeconds(HEARTBEAT_TIMEOUT_SECONDS).isBefore(now)) {
                 markTimedOut(step, "执行心跳超时，runner 可能已失联");
                 continue;
             }
@@ -320,6 +327,16 @@ public class ExecutionAsyncSessionService {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private LocalDateTime mostRecentActivityAt(LocalDateTime heartbeatAt, LocalDateTime eventAt) {
+        if (heartbeatAt == null) {
+            return eventAt;
+        }
+        if (eventAt == null) {
+            return heartbeatAt;
+        }
+        return heartbeatAt.isAfter(eventAt) ? heartbeatAt : eventAt;
     }
 
     private String defaultString(String value) {

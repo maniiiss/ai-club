@@ -65,6 +65,13 @@ public class GitlabCodeStructureClientService {
         return post("/api/code/gitlab-code-structure/query", requestPayload, QueryStructureResponse.class, 120);
     }
 
+    /**
+     * 确保目标分支已 analyze，且 GitNexus serve 已经可用。
+     */
+    public LaunchContextResponse buildLaunchContext(LaunchContextRequest requestPayload) {
+        return post("/api/code/gitnexus/launch-context", requestPayload, LaunchContextResponse.class, 300);
+    }
+
     private <T> T post(String path, Object payload, Class<T> responseType, int timeoutSeconds) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
@@ -132,6 +139,14 @@ public class GitlabCodeStructureClientService {
     }
 
     /**
+     * GitNexus 全仓图启动上下文请求。
+     */
+    public record LaunchContextRequest(
+            StructureRepository repository
+    ) {
+    }
+
+    /**
      * 内部结构化仓库上下文。
      * 这里固定携带分支、HTTP clone 地址和访问 Token，避免 code-processing 再去拼装绑定信息。
      */
@@ -173,6 +188,17 @@ public class GitlabCodeStructureClientService {
             String resultJson,
             String graphJson,
             String lastErrorMessage
+    ) {
+    }
+
+    /**
+     * GitNexus launch 所需的上下文。
+     */
+    public record LaunchContextResponse(
+            String repoAlias,
+            String branchName,
+            String commitSha,
+            Boolean serveReady
     ) {
     }
 }

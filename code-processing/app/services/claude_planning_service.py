@@ -355,6 +355,7 @@ def _run_claude_cli(request: ClaudePlanningRequest,
     command = [
         *_build_claude_command_prefix(claude_cli),
         "-p",
+        "--bare",
         "--permission-mode",
         "plan",
         "--output-format",
@@ -406,6 +407,7 @@ def _run_claude_cli_streaming(
     command = [
         *_build_claude_command_prefix(claude_cli),
         "-p",
+        "--bare",
         "--permission-mode",
         "plan",
         "--output-format",

@@ -2,14 +2,17 @@
 
 ## 1. 设计目标
 
-第一版目标是在“代码仓库管理”里直接展示 GitLab 绑定仓库的结构化代码结果，而不是要求用户去执行中心翻结构化产物，或直接跳进 GitNexus 自带前端。
+第一版目标调整为：
+
+- 平台内保留“代码结构控制台页”，展示仓库摘要、刷新入口和分支切换
+- 全仓图主体验直接复用 GitNexus Web UI，而不是平台自己维护复杂全仓图前端
 
 设计约束如下：
 
-- 前端只访问平台 backend，不直接访问 `gitnexus serve`
+- 前端只访问平台 backend，不直接拼 GitNexus 地址
 - 页面默认读最近一次快照，刷新走后台异步任务
-- 查询结果不落库，只作为当前页面的临时子图
-- GitNexus 部分失败时允许降级，但不能让页面完全没有可读内容
+- 全仓图通过新窗口打开 GitNexus UI
+- GitNexus UI / serve 的对外地址必须适配部署环境 IP / 端口变化
 
 ## 2. 为什么不复用执行中心产物
 
@@ -64,20 +67,46 @@ PLATFORM_GITLAB_CODE_STRUCTURE_WORKSPACE_ROOT/
 
 第一版刷新实现允许在同一稳定工作区下重新 clone 当前分支，以换取实现稳定性；局部查询仍然复用刷新后留下的 clone 与 `.gitnexus` 索引。
 
-## 5. 接口边界
+## 5. GitNexus Launch 方案
+
+平台和 GitNexus 的职责拆分如下：
+
+- 平台负责 GitLab 绑定、分支解析、权限控制和跳转入口
+- `code-processing` 负责 `gitnexus analyze`、repo alias 解析和 `gitnexus serve` 生命周期
+- GitNexus Web UI 负责真正的全仓图浏览
+
+页面打开流程如下：
+
+1. 平台页先读取现有快照，展示摘要
+2. 用户点击“打开 GitNexus 全仓图”
+3. backend 调用 `code-processing` 的 `launch-context`
+4. `code-processing` 确保目标分支已 analyze，且 `serve` 已可访问
+5. backend 组合 GitNexus UI 对外地址，返回最终 launch URL
+6. 前端新窗口打开 GitNexus UI
+
+`serve` 当前采用“按需自启动并复用单实例”模式：
+
+- 若当前端口已经存在可访问的 GitNexus serve，则直接复用
+- 若当前端口不可用，则平台后台重新拉起 `gitnexus serve`
+- 若当前 CLI 版本没有 `/health`，则以“根路径任意 HTTP 响应”作为存活判定
+
+## 6. 接口边界
 
 对前端暴露的接口：
 
 - `GET /api/gitlab/bindings/{id}/code-structure`
 - `POST /api/gitlab/bindings/{id}/code-structure/refresh`
 - `POST /api/gitlab/bindings/{id}/code-structure/query`
+- `POST /api/gitlab/bindings/{id}/gitnexus-launch`
 
 backend 到 code-processing 的内部接口：
 
 - `POST /api/code/gitlab-code-structure/overview`
 - `POST /api/code/gitlab-code-structure/query`
+- `POST /api/code/gitnexus/launch-context`
 
 其中：
 
 - `overview` 负责 clone/analyze/query/context 并产出完整概览
 - `query` 只依赖已有缓存工作区和 `.gitnexus` 索引返回临时子图
+- `launch-context` 负责确保 analyze 与 serve 已就绪，并返回 repo alias / commit / serve 状态

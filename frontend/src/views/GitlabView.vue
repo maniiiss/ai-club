@@ -2254,8 +2254,16 @@ const handleScanSubmit = async () => {
   }
 }
 const openBindingMergeRequests = async (row: ProjectGitlabBindingItem) => { mergeRequestDrawerTitle.value = `绑定仓库 MR 预览 - ${row.projectName} / ${row.gitlabProjectPath || row.gitlabProjectRef}`; mergeRequestDrawerVisible.value = true; mergeRequestLoading.value = true; try { mergeRequestList.value = await previewBindingMergeRequests(row.id, row.defaultTargetBranch || undefined) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '加载 MR 失败') } finally { mergeRequestLoading.value = false } }
-const openBindingCodeStructure = async (row: ProjectGitlabBindingItem) => {
-  await router.push({ name: 'gitlab-binding-code-structure', params: { id: row.id } })
+const openBindingCodeStructure = (row: ProjectGitlabBindingItem) => {
+  const targetRoute = router.resolve({
+    name: 'gitlab-binding-code-structure',
+    params: { id: row.id },
+    query: row.defaultTargetBranch ? { branch: row.defaultTargetBranch } : undefined
+  })
+  const opened = window.open(targetRoute.href, '_blank', 'noopener,noreferrer')
+  if (!opened) {
+    ElMessage.warning('浏览器拦截了新标签页，请允许弹出窗口后重试')
+  }
 }
 
 const openProductBranchCreateDialog = () => {

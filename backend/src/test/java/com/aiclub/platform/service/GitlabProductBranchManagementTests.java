@@ -112,6 +112,9 @@ class GitlabProductBranchManagementTests {
     private GitlabCodeStructureClientService gitlabCodeStructureClientService;
 
     @Mock
+    private GitnexusProperties gitnexusProperties;
+
+    @Mock
     private PlatformTransactionManager transactionManager;
 
     @Mock
@@ -144,6 +147,7 @@ class GitlabProductBranchManagementTests {
                 repositoryScanClientService,
                 repositoryScanRulesetService,
                 gitlabCodeStructureClientService,
+                gitnexusProperties,
                 new ObjectMapper(),
                 "http://gitlab.example.com/api/v4",
                 transactionManager,

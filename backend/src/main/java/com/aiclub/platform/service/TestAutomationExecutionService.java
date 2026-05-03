@@ -138,7 +138,7 @@ public class TestAutomationExecutionService {
             } else {
                 ImplementResult implementResult = commitGeneratedScripts(plan, binding, payload, scriptBundle, generatedBranch);
                 mergeRequestUrl = implementResult.mergeRequestUrl();
-                completeStep(executionTask, executionRun, implementStep, totalSteps, createdImplementStep, implementResult.markdown(), "自动化脚本已提交并创建 MR");
+                completeStep(executionTask, executionRun, implementStep, totalSteps, createdImplementStep, implementResult.markdown(), "自动化脚本已提交到生成分支");
                 artifacts.add(saveArtifact(executionTask, executionRun, createdImplementStep, SCRIPT_MANIFEST_ARTIFACT_TYPE, SCRIPT_MANIFEST_ARTIFACT_TITLE, scriptBundle.files().get(scriptBundle.manifestPath())));
                 artifacts.add(saveArtifact(executionTask, executionRun, createdImplementStep, SCRIPT_PREVIEW_ARTIFACT_TYPE, "自动化脚本预览", implementResult.markdown()));
             }
@@ -226,18 +226,9 @@ public class TestAutomationExecutionService {
                 "test: add automation for plan #" + plan.getId(),
                 actions
         );
-        GitlabApiService.GitlabCreatedMergeRequest mergeRequest = gitlabApiService.createMergeRequest(
-                binding.getApiBaseUrl(),
-                token,
-                binding.getGitlabProjectRef(),
-                generatedBranch,
-                payload.targetBranch(),
-                "test: add automation for " + defaultString(plan.getName()).trim(),
-                buildMergeRequestDescription(plan, scriptBundle)
-        );
         return new ImplementResult(
-                buildImplementMarkdown(plan, binding, payload.targetBranch(), generatedBranch, commit, mergeRequest, scriptBundle),
-                mergeRequest.webUrl()
+                buildImplementMarkdown(plan, binding, payload.targetBranch(), generatedBranch, commit, scriptBundle),
+                null
         );
     }
 
@@ -366,7 +357,6 @@ public class TestAutomationExecutionService {
                                           String targetBranch,
                                           String generatedBranch,
                                           GitlabApiService.GitlabCreatedCommit commit,
-                                          GitlabApiService.GitlabCreatedMergeRequest mergeRequest,
                                           TestAutomationScriptTemplateService.GeneratedScriptBundle scriptBundle) {
         return """
                 # 自动化脚本生成结果
@@ -376,7 +366,6 @@ public class TestAutomationExecutionService {
                 - 目标分支：%s
                 - 生成分支：%s
                 - Commit：%s
-                - Merge Request：%s
 
                 ## 生成文件
 
@@ -387,6 +376,7 @@ public class TestAutomationExecutionService {
                 ## 说明
 
                 - 本次采用平台模板生成 Playwright 自动化资产。
+                - 当前仅提交生成分支，不自动创建 Merge Request；如需提 MR，请通过页面右上角入口手动提交。
                 - 后续如宿主环境接入 Playwright MCP，可在失败修复阶段增强页面理解与定位能力。
                 """.formatted(
                 defaultString(plan.getName()).trim(),
@@ -394,26 +384,9 @@ public class TestAutomationExecutionService {
                 targetBranch,
                 generatedBranch,
                 defaultString(commit.shortId()).trim(),
-                defaultString(mergeRequest.webUrl()).trim(),
                 scriptBundle.configPath(),
                 scriptBundle.specPath(),
                 scriptBundle.manifestPath()
-        ).trim();
-    }
-
-    private String buildMergeRequestDescription(TestPlanEntity plan,
-                                                TestAutomationScriptTemplateService.GeneratedScriptBundle scriptBundle) {
-        return """
-                自动生成测试计划自动化脚本。
-
-                - 测试计划：%s
-                - 计划ID：%s
-                - 自动化用例数：%s
-                - 生成目录：.ai-club/automation/playwright
-                """.formatted(
-                defaultString(plan.getName()).trim(),
-                plan.getId(),
-                scriptBundle.automatedCaseCount()
         ).trim();
     }
 

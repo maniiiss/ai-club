@@ -83,6 +83,7 @@ class ExecutionEventServiceTests {
 
         when(executionRunRepository.findByIdForUpdate(44L)).thenReturn(Optional.of(lockedRun));
         when(executionStepEventRepository.findFirstByRun_IdOrderBySequenceNoDesc(44L)).thenReturn(Optional.of(lastEvent));
+        when(executionStepRepository.findById(88L)).thenReturn(Optional.of(step));
         when(executionStepEventRepository.save(any(ExecutionStepEventEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -97,5 +98,61 @@ class ExecutionEventServiceTests {
         verify(executionStepEventRepository).save(any(ExecutionStepEventEntity.class));
         assertThat(step.getLastEventId()).isEqualTo(13L);
         assertThat(event.stepName()).isEqualTo("执行规划");
+    }
+
+    /**
+     * /complete 成功收口后，迟到的 stdout/heartbeat 仍可能在网络层补到 backend；
+     * 事件落库只能更新运行态元数据，不能把终态步骤覆写回 RUNNING。
+     */
+    @Test
+    void shouldPreserveTerminalStepStatusWhenLateRunnerEventUsesStaleStepSnapshot() {
+        ExecutionTaskEntity task = new ExecutionTaskEntity();
+        task.setId(401L);
+
+        ExecutionRunEntity run = new ExecutionRunEntity();
+        run.setId(55L);
+        run.setExecutionTask(task);
+
+        ExecutionRunEntity lockedRun = new ExecutionRunEntity();
+        lockedRun.setId(55L);
+        lockedRun.setExecutionTask(task);
+
+        ExecutionStepEntity staleStep = new ExecutionStepEntity();
+        staleStep.setId(99L);
+        staleStep.setRun(lockedRun);
+        staleStep.setStatus("RUNNING");
+        staleStep.setCurrentCommand("Playwright 仓库自动化");
+        staleStep.setLatestMessage("执行中：Playwright 仓库自动化");
+        staleStep.setProgressPercent(90);
+
+        ExecutionStepEntity persistedStep = new ExecutionStepEntity();
+        persistedStep.setId(99L);
+        persistedStep.setRun(lockedRun);
+        persistedStep.setStatus("SUCCESS");
+        persistedStep.setLatestMessage("测试执行完成");
+        persistedStep.setProgressPercent(100);
+
+        when(executionRunRepository.findByIdForUpdate(55L)).thenReturn(Optional.of(lockedRun));
+        when(executionStepEventRepository.findFirstByRun_IdOrderBySequenceNoDesc(55L)).thenReturn(Optional.empty());
+        when(executionStepRepository.findById(99L)).thenReturn(Optional.of(persistedStep));
+        when(executionStepEventRepository.save(any(ExecutionStepEventEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        executionEventService.appendEvent(
+                task,
+                run,
+                staleStep,
+                "stdout_chunk",
+                "stdout",
+                new ObjectMapper().createObjectNode().put("text", "late output")
+        );
+
+        assertThat(persistedStep.getStatus()).isEqualTo("SUCCESS");
+        assertThat(persistedStep.getCurrentCommand()).isEqualTo("Playwright 仓库自动化");
+        assertThat(persistedStep.getLastEventId()).isEqualTo(1L);
+        assertThat(staleStep.getStatus()).isEqualTo("RUNNING");
+        verify(executionStepRepository).save(persistedStep);
     }
 }

@@ -15,6 +15,8 @@ import type {
   GitlabCodeStructureQueryResultItem,
   GitlabCodeStructureRefreshAcceptedResultItem,
   GitlabCodeStructureSnapshotItem,
+  GitlabGitnexusLaunchRequestItem,
+  GitlabGitnexusLaunchResultItem,
   GitlabTagCreateResultItem,
   GitlabUserOauthBindingItem,
   PageResponse,
@@ -210,6 +212,11 @@ export const refreshGitlabCodeStructure = async (id: number, payload: GitlabCode
 
 export const queryGitlabCodeStructure = async (id: number, payload: GitlabCodeStructureQueryRequest) => {
   const { data } = await http.post<ApiResponse<GitlabCodeStructureQueryResultItem>>(`/api/gitlab/bindings/${id}/code-structure/query`, payload)
+  return data.data
+}
+
+export const launchGitlabBindingGitnexus = async (id: number, payload: GitlabGitnexusLaunchRequestItem = {}) => {
+  const { data } = await http.post<ApiResponse<GitlabGitnexusLaunchResultItem>>(`/api/gitlab/bindings/${id}/gitnexus-launch`, payload)
   return data.data
 }
 

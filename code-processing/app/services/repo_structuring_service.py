@@ -19,6 +19,7 @@ from app.services.gitnexus_cli_support import (
     discover_gitnexus_cli_path as _discover_gitnexus_cli_path_shared,
     extract_json_object as _extract_json_object_shared,
     resolve_gitnexus_repo_alias as _resolve_gitnexus_repo_alias_shared,
+    run_gitnexus_analyze_command as _run_gitnexus_analyze_command_shared,
     run_gitnexus_command as _shared_run_gitnexus_command,
     run_gitnexus_json_command as _shared_run_gitnexus_json_command,
     select_symbol_uids as _select_symbol_uids_shared,
@@ -271,7 +272,7 @@ def _structure_repository(
         degradation_reasons.append("未找到 GitNexus CLI，已跳过 analyze/query/context。")
     else:
         try:
-            _run_gitnexus_command(gitnexus_cli, ["analyze", str(repo_dir)], workspace, repo_dir)
+            _run_gitnexus_analyze_command_shared(gitnexus_cli, repo_dir, lambda message: _append_log(workspace, message))
             repo_alias = _resolve_gitnexus_repo_alias(gitnexus_cli, repo_dir, workspace)
             if not repo_alias:
                 degradation_reasons.append("GitNexus analyze 已完成，但无法解析当前仓库的 repo alias。")

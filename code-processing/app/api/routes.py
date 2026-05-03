@@ -26,6 +26,8 @@ from app.models import (
     ScanRequest,
     ScanSummary,
     ExecutionSessionAcceptedResponse,
+    GitnexusLaunchContextRequest,
+    GitnexusLaunchContextResponse,
     GitlabCodeStructureOverviewRequest,
     GitlabCodeStructureOverviewResponse,
     GitlabCodeStructureQueryRequest,
@@ -34,7 +36,11 @@ from app.models import (
     RepositoryStructuringResponse,
 )
 from app.services.cli_execution_service import execute_cli_execution, start_cli_execution
-from app.services.gitlab_code_structure_service import build_gitlab_code_structure_overview, query_gitlab_code_structure
+from app.services.gitlab_code_structure_service import (
+    build_gitlab_code_structure_overview,
+    build_gitnexus_launch_context,
+    query_gitlab_code_structure,
+)
 from app.services.repo_structuring_service import execute_repo_structuring, start_repo_structuring
 from app.services.repository_service import build_summary
 from app.services.document_service import convert_document_to_markdown
@@ -272,6 +278,19 @@ def gitlab_code_structure_query(request_http: Request,
     _require_internal_service_auth(request_http)
     try:
         return query_gitlab_code_structure(payload)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+
+
+@router.post("/gitnexus/launch-context", response_model=GitnexusLaunchContextResponse)
+def gitnexus_launch_context(request_http: Request,
+                            payload: GitnexusLaunchContextRequest) -> GitnexusLaunchContextResponse:
+    """供 backend 确保 analyze 与 serve 可用后再打开 GitNexus 全仓图。"""
+    _require_internal_service_auth(request_http)
+    try:
+        return build_gitnexus_launch_context(payload)
     except ValueError as exception:
         raise HTTPException(status_code=400, detail=str(exception)) from exception
     except RuntimeError as exception:

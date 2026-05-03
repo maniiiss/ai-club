@@ -17,6 +17,8 @@ class Settings:
     execution_workspace_root: str
     gitlab_code_structure_workspace_root: str
     gitnexus_cli_path: str
+    gitnexus_serve_host: str
+    gitnexus_serve_port: int
     codex_cli_path: str
     codex_model_provider: str
     codex_reasoning_effort: str
@@ -54,6 +56,8 @@ settings = Settings(
     execution_workspace_root=execution_workspace_root,
     gitlab_code_structure_workspace_root=gitlab_code_structure_workspace_root,
     gitnexus_cli_path=(os.getenv("PLATFORM_GITNEXUS_CLI_PATH", "") or "").strip(),
+    gitnexus_serve_host=(os.getenv("PLATFORM_GITNEXUS_SERVE_HOST", "0.0.0.0") or "").strip() or "0.0.0.0",
+    gitnexus_serve_port=max(1, min(int((os.getenv("PLATFORM_GITNEXUS_SERVE_PORT", "4747") or "4747").strip() or "4747"), 65535)),
     codex_cli_path=(os.getenv("PLATFORM_CODEX_CLI_PATH", "") or "").strip(),
     codex_model_provider=(os.getenv("PLATFORM_CODEX_MODEL_PROVIDER", "") or "").strip(),
     codex_reasoning_effort=(os.getenv("PLATFORM_CODEX_REASONING_EFFORT", "low") or "").strip() or "low",

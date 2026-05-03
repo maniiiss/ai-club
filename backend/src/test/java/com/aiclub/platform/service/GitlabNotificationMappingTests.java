@@ -95,6 +95,9 @@ class GitlabNotificationMappingTests {
     private GitlabCodeStructureClientService gitlabCodeStructureClientService;
 
     @Mock
+    private GitnexusProperties gitnexusProperties;
+
+    @Mock
     private PlatformTransactionManager transactionManager;
 
     @Mock
@@ -127,6 +130,7 @@ class GitlabNotificationMappingTests {
                 repositoryScanClientService,
                 repositoryScanRulesetService,
                 gitlabCodeStructureClientService,
+                gitnexusProperties,
                 new ObjectMapper(),
                 "http://gitlab.example.com/api/v4",
                 transactionManager,

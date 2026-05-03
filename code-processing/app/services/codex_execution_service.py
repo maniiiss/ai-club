@@ -36,7 +36,9 @@ from app.settings import settings
 SYNC_TIMEOUT_LIMIT_SECONDS = 300
 TERMINAL_RESULT_STATUSES = {"SUCCESS", "FAILED", "CANCELED"}
 PLAYWRIGHT_NPM_PACKAGE = "playwright@1.54.0"
+PLAYWRIGHT_TEST_NPM_PACKAGE = "@playwright/test@1.54.0"
 OFFICIAL_NPM_REGISTRY = "https://registry.npmjs.org/"
+WINDOWS_TRANSIENT_NODE_INSTALL_EXIT_CODES = {3221225477, -1073741819}
 CHANGE_REVIEW_MAX_FILES = 200
 CHANGE_REVIEW_MAX_DIFF_CHARS_PER_FILE = 20_000
 CHANGE_REVIEW_MAX_TOTAL_DIFF_CHARS = 120_000
@@ -642,7 +644,7 @@ def _execute_playwright_smoke_suite(
     stdout_log = workspace.out_dir / "test-stdout.log"
     stderr_log = workspace.out_dir / "test-stderr.log"
     command_results: list[dict[str, object]] = []
-    install_result = _ensure_node_dependencies(
+    install_results = _ensure_node_dependencies(
         workspace=workspace,
         project_dir=project_dir,
         package_manager=package_manager,
@@ -653,14 +655,15 @@ def _execute_playwright_smoke_suite(
         stderr_log=stderr_log,
         command_label="前端依赖安装",
     )
-    if install_result is not None:
-        command_results.append(install_result)
-        if install_result["exitCode"] != 0:
+    if install_results:
+        command_results.extend(install_results)
+        last_install_result = install_results[-1]
+        if last_install_result["exitCode"] != 0:
             return _build_suite_result(
                 suite,
                 "FAILED",
-                f"前端依赖安装失败：{install_result['command']}",
-                checks=[_build_check("install", "FAILED", install_result["stderr"] or "依赖安装失败")],
+                f"前端依赖安装失败：{last_install_result['command']}",
+                checks=[_build_check("install", "FAILED", last_install_result["stderr"] or "依赖安装失败")],
                 command_results=command_results,
             )
 
@@ -833,7 +836,7 @@ def _execute_playwright_repo_suite(
     stdout_log = workspace.out_dir / "test-stdout.log"
     stderr_log = workspace.out_dir / "test-stderr.log"
     command_results: list[dict[str, object]] = []
-    install_result = _ensure_node_dependencies(
+    install_results = _ensure_node_dependencies(
         workspace=workspace,
         project_dir=project_dir,
         package_manager=package_manager,
@@ -844,14 +847,36 @@ def _execute_playwright_repo_suite(
         stderr_log=stderr_log,
         command_label="前端依赖安装",
     )
-    if install_result is not None:
-        command_results.append(install_result)
-        if install_result["exitCode"] != 0:
+    if install_results:
+        command_results.extend(install_results)
+        last_install_result = install_results[-1]
+        if last_install_result["exitCode"] != 0:
             return _build_suite_result(
                 suite,
                 "FAILED",
-                f"前端依赖安装失败：{install_result['command']}",
-                checks=[_build_check("install", "FAILED", install_result["stderr"] or "依赖安装失败")],
+                f"前端依赖安装失败：{last_install_result['command']}",
+                checks=[_build_check("install", "FAILED", last_install_result["stderr"] or "依赖安装失败")],
+                command_results=command_results,
+            )
+    playwright_runtime_results = _ensure_playwright_repo_runtime(
+        workspace=workspace,
+        project_dir=project_dir,
+        package_manager=package_manager,
+        deadline=deadline,
+        batcher=batcher,
+        cancel_watcher=cancel_watcher,
+        stdout_log=stdout_log,
+        stderr_log=stderr_log,
+    )
+    if playwright_runtime_results:
+        command_results.extend(playwright_runtime_results)
+        if _playwright_runtime_has_failed(playwright_runtime_results):
+            failed_item = playwright_runtime_results[-1]
+            return _build_suite_result(
+                suite,
+                "FAILED",
+                "Playwright 仓库运行时准备失败",
+                checks=[_build_check("playwright-runtime", "FAILED", failed_item["stderr"] or "运行时准备失败")],
                 command_results=command_results,
             )
 
@@ -938,7 +963,7 @@ def _execute_playwright_repo_suite(
                 payload = _extract_json_object(result_json_path.read_text(encoding="utf-8"))
             except RuntimeError:
                 payload = {}
-        status = "SUCCESS" if script_result.exit_code == 0 else "FAILED"
+        status = _resolve_playwright_repo_status(payload, script_result.exit_code)
         summary = _build_playwright_repo_summary(payload, status)
         checks = [_build_check("startup", "SUCCESS", ready_detail), _build_check("playwright-script", status, summary)]
         return _build_suite_result(
@@ -1103,6 +1128,17 @@ def _build_playwright_repo_summary(payload: dict[str, object], status: str) -> s
     return "Playwright 仓库自动化通过" if status == "SUCCESS" else "Playwright 仓库自动化失败"
 
 
+def _resolve_playwright_repo_status(payload: dict[str, object], script_exit_code: int) -> str:
+    if script_exit_code != 0:
+        return "FAILED"
+    stats = payload.get("stats")
+    if isinstance(stats, dict):
+        unexpected = int(stats.get("unexpected", 0) or 0)
+        if unexpected > 0:
+            return "FAILED"
+    return "SUCCESS"
+
+
 def _build_check(name: str, status: str, detail: str) -> dict[str, object]:
     return {"name": name, "status": status, "detail": detail}
 
@@ -1168,30 +1204,179 @@ def _ensure_node_dependencies(
     stdout_log: Path,
     stderr_log: Path,
     command_label: str,
-) -> dict[str, object] | None:
+) -> list[dict[str, object]]:
     if (project_dir / "node_modules").exists():
-        return None
+        return []
     command = _build_node_install_command(package_manager)
-    result = _run_process(
-        command,
-        cwd=project_dir,
-        timeout_seconds=_remaining_seconds(deadline),
-        workspace=workspace,
-        command_label=command_label,
-        batcher=batcher,
-        stdout_file=stdout_log,
-        stderr_file=stderr_log,
-        env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
-        shell=True,
-        should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
-    )
-    return {
-        "command": command,
-        "cwd": str(project_dir),
-        "exitCode": result.exit_code,
-        "stdout": tail_text(result.stdout, 2000),
-        "stderr": tail_text(result.stderr, 2000),
-    }
+    results: list[dict[str, object]] = []
+    max_attempts = 2 if os.name == "nt" else 1
+    for attempt_index in range(1, max_attempts + 1):
+        result = _run_process(
+            command,
+            cwd=project_dir,
+            timeout_seconds=_remaining_seconds(deadline),
+            workspace=workspace,
+            command_label=command_label,
+            batcher=batcher,
+            stdout_file=stdout_log,
+            stderr_file=stderr_log,
+            env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
+            shell=True,
+            should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
+        )
+        result_payload = {
+            "command": command,
+            "cwd": str(project_dir),
+            "exitCode": result.exit_code,
+            "stdout": tail_text(result.stdout, 2000),
+            "stderr": tail_text(result.stderr, 2000),
+        }
+        results.append(result_payload)
+        if result.exit_code == 0:
+            return results
+        if not _should_retry_windows_node_install(result.exit_code, attempt_index, max_attempts):
+            return results
+        # Windows 下 pnpm/npm 在大仓首次链接 node_modules 时偶发访问冲突崩溃；
+        # 这里仅对已知异常退出码做一次短暂重试，避免把短暂抖动直接放大成 suite 失败。
+        _append_log(
+            workspace,
+            f"{command_label} 命中 Windows 异常退出码 {result.exit_code}，等待 2 秒后重试。",
+        )
+        sleep(2)
+    return results
+
+
+def _should_retry_windows_node_install(exit_code: int, attempt_index: int, max_attempts: int) -> bool:
+    if attempt_index >= max_attempts:
+        return False
+    if os.name != "nt":
+        return False
+    return exit_code in WINDOWS_TRANSIENT_NODE_INSTALL_EXIT_CODES
+
+
+def _ensure_playwright_repo_runtime(
+    *,
+    workspace: DevelopmentExecutionWorkspace,
+    project_dir: Path,
+    package_manager: str,
+    deadline: float,
+    batcher: BackendEventBatcher | None,
+    cancel_watcher: SessionCancelWatcher | None,
+    stdout_log: Path,
+    stderr_log: Path,
+) -> list[dict[str, object]]:
+    results: list[dict[str, object]] = []
+    playwright_env = _default_command_env()
+    playwright_test_dir = project_dir / "node_modules" / "@playwright" / "test"
+    if not playwright_test_dir.exists():
+        install_command = _build_playwright_repo_install_command(package_manager)
+        install_attempts: list[tuple[str, dict[str, str]]] = []
+        if _playwright_runtime_uses_npmmirror(project_dir):
+            install_attempts.append(("安装仓库 Playwright 依赖（官方源）", _playwright_runtime_env(project_dir, force_official_registry=True)))
+        install_attempts.append(("安装仓库 Playwright 依赖", _default_command_env()))
+        official_registry_attempted = any("官方源" in label for label, _ in install_attempts)
+        install_succeeded = False
+
+        for command_label, install_env in install_attempts:
+            install_result = _run_process(
+                install_command,
+                cwd=project_dir,
+                timeout_seconds=_remaining_seconds(deadline),
+                workspace=workspace,
+                command_label=command_label,
+                batcher=batcher,
+                stdout_file=stdout_log,
+                stderr_file=stderr_log,
+                env=install_env,
+                shell=True,
+                should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
+            )
+            results.append(
+                {
+                    "command": install_command,
+                    "cwd": str(project_dir),
+                    "exitCode": install_result.exit_code,
+                    "stdout": tail_text(install_result.stdout, 2000),
+                    "stderr": tail_text(install_result.stderr, 2000),
+                }
+            )
+            if install_result.exit_code == 0:
+                playwright_env = install_env
+                install_succeeded = True
+                break
+            if not official_registry_attempted and _should_retry_playwright_runtime_with_official_registry(install_result, project_dir):
+                official_registry_attempted = True
+                official_env = _playwright_runtime_env(project_dir, force_official_registry=True)
+                retry_result = _run_process(
+                    install_command,
+                    cwd=project_dir,
+                    timeout_seconds=_remaining_seconds(deadline),
+                    workspace=workspace,
+                    command_label="安装仓库 Playwright 依赖（官方源回退）",
+                    batcher=batcher,
+                    stdout_file=stdout_log,
+                    stderr_file=stderr_log,
+                    env=official_env,
+                    shell=True,
+                    should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
+                )
+                results.append(
+                    {
+                        "command": install_command,
+                        "cwd": str(project_dir),
+                        "exitCode": retry_result.exit_code,
+                        "stdout": tail_text(retry_result.stdout, 2000),
+                        "stderr": tail_text(retry_result.stderr, 2000),
+                    }
+                )
+                if retry_result.exit_code == 0:
+                    playwright_env = official_env
+                    install_succeeded = True
+                break
+        if not install_succeeded:
+            return results
+
+    cli_path = project_dir / "node_modules" / "playwright" / "cli.js"
+    if not cli_path.exists():
+        return [
+            *results,
+            {
+                "command": "node node_modules/playwright/cli.js install chromium",
+                "cwd": str(project_dir),
+                "exitCode": 1,
+                "stdout": "",
+                "stderr": "仓库内未找到 Playwright CLI，无法安装 Chromium 浏览器",
+            },
+        ]
+
+    browser_marker = project_dir / ".ai-club" / "automation" / "playwright" / ".chromium-installed"
+    if not browser_marker.exists():
+        browser_result = _run_process(
+            ["node", str(cli_path), "install", "chromium"],
+            cwd=project_dir,
+            timeout_seconds=_remaining_seconds(deadline),
+            workspace=workspace,
+            command_label="安装仓库 Playwright Chromium",
+            batcher=batcher,
+            stdout_file=stdout_log,
+            stderr_file=stderr_log,
+            env=playwright_env,
+            shell=False,
+            should_cancel=cancel_watcher.should_cancel if cancel_watcher is not None else None,
+        )
+        results.append(
+            {
+                "command": "node node_modules/playwright/cli.js install chromium",
+                "cwd": str(project_dir),
+                "exitCode": browser_result.exit_code,
+                "stdout": tail_text(browser_result.stdout, 2000),
+                "stderr": tail_text(browser_result.stderr, 2000),
+            }
+        )
+        if browser_result.exit_code == 0:
+            browser_marker.parent.mkdir(parents=True, exist_ok=True)
+            browser_marker.write_text("ok\n", encoding="utf-8")
+    return results
 
 
 def _ensure_playwright_runtime(
@@ -1314,6 +1499,15 @@ def _ensure_playwright_runtime(
 
 def _default_command_env() -> dict[str, str]:
     return {**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"}
+
+
+def _build_playwright_repo_install_command(package_manager: str) -> str:
+    normalized = _normalize_text(package_manager) or "npm"
+    if normalized == "pnpm":
+        return f"pnpm add -D {PLAYWRIGHT_TEST_NPM_PACKAGE} --prefer-offline"
+    if normalized == "yarn":
+        return f"yarn add -D {PLAYWRIGHT_TEST_NPM_PACKAGE}"
+    return f"npm install --no-audit --no-fund --save-dev {PLAYWRIGHT_TEST_NPM_PACKAGE}"
 
 
 def _playwright_runtime_env(runner_dir: Path, *, force_official_registry: bool) -> dict[str, str]:

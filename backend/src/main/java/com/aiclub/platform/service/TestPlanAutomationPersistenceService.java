@@ -101,6 +101,8 @@ public class TestPlanAutomationPersistenceService {
         plan.setLastAutomationAt(LocalDateTime.now());
         if (hasText(mrUrl)) {
             plan.setLastAutomationMrUrl(limit(mrUrl, 500));
+        } else {
+            plan.setLastAutomationMrUrl(null);
         }
         testPlanRepository.save(plan);
     }

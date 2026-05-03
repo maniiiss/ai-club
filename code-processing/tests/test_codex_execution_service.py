@@ -26,6 +26,8 @@ from app.services.codex_execution_service import (
     _build_codex_prompt,
     _checkout_commit_if_needed,
     _clone_repository,
+    _ensure_node_dependencies,
+    _ensure_playwright_repo_runtime,
     _ensure_playwright_runtime,
     _execute_test_plan,
     _infer_frontend_start_command,
@@ -620,6 +622,167 @@ class CodexExecutionServiceTests(unittest.TestCase):
         self.assertEqual("https://registry.npmjs.org/", env_history[1]["npm_config_registry"])
         self.assertTrue(env_history[0]["npm_config_userconfig"].endswith(".playwright-official.npmrc"))
 
+    def test_should_retry_windows_node_install_once_when_process_exits_with_access_violation(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            project_dir = workspace.repo_dir / "frontend"
+            project_dir.mkdir(parents=True, exist_ok=True)
+            workspace.out_dir.mkdir(parents=True, exist_ok=True)
+            stdout_log = workspace.out_dir / "test-stdout.log"
+            stderr_log = workspace.out_dir / "test-stderr.log"
+
+            run_results = [
+                SimpleNamespace(exit_code=3221225477, stdout="partial", stderr=""),
+                SimpleNamespace(exit_code=0, stdout="done", stderr=""),
+            ]
+
+            with patch("app.services.codex_execution_service._run_process", side_effect=run_results) as run_mock, \
+                    patch("app.services.codex_execution_service.sleep") as sleep_mock, \
+                    patch("app.services.codex_execution_service.os.name", "nt"):
+                command_results = _ensure_node_dependencies(
+                    workspace=workspace,
+                    project_dir=project_dir,
+                    package_manager="pnpm",
+                    deadline=time.monotonic() + 120,
+                    batcher=None,
+                    cancel_watcher=None,
+                    stdout_log=stdout_log,
+                    stderr_log=stderr_log,
+                    command_label="前端依赖安装",
+                )
+                log_text = workspace.log_file.read_text(encoding="utf-8")
+
+        self.assertEqual([3221225477, 0], [item["exitCode"] for item in command_results])
+        self.assertEqual(2, run_mock.call_count)
+        sleep_mock.assert_called_once_with(2)
+        self.assertIn("Windows 异常退出码", log_text)
+
+    def test_should_prepare_playwright_repo_runtime_when_repo_lacks_test_package(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            project_dir = workspace.repo_dir / "frontend"
+            cli_path = project_dir / "node_modules" / "playwright" / "cli.js"
+            cli_path.parent.mkdir(parents=True, exist_ok=True)
+            cli_path.write_text("// mock cli", encoding="utf-8")
+            workspace.out_dir.mkdir(parents=True, exist_ok=True)
+            stdout_log = workspace.out_dir / "test-stdout.log"
+            stderr_log = workspace.out_dir / "test-stderr.log"
+
+            run_results = [
+                SimpleNamespace(exit_code=0, stdout="install ok", stderr=""),
+                SimpleNamespace(exit_code=0, stdout="browser ok", stderr=""),
+            ]
+
+            with patch("app.services.codex_execution_service._run_process", side_effect=run_results) as run_mock:
+                command_results = _ensure_playwright_repo_runtime(
+                    workspace=workspace,
+                    project_dir=project_dir,
+                    package_manager="pnpm",
+                    deadline=time.monotonic() + 120,
+                    batcher=None,
+                    cancel_watcher=None,
+                    stdout_log=stdout_log,
+                    stderr_log=stderr_log,
+                )
+
+        self.assertEqual(
+            [
+                "pnpm add -D @playwright/test@1.54.0 --prefer-offline",
+                "node node_modules/playwright/cli.js install chromium",
+            ],
+            [item["command"] for item in command_results],
+        )
+        self.assertEqual(2, run_mock.call_count)
+
+    def test_should_mark_playwright_repo_suite_failed_when_result_json_reports_unexpected_cases(self):
+        request = self._build_request("TEST").model_copy(update={
+            "testPlan": CodexTestExecutionPlan(
+                suites=[
+                    CodexTestSuitePlan(
+                        suiteId="playwright-repo-suite",
+                        type="PLAYWRIGHT_REPO_SUITE",
+                        status="PENDING",
+                        summary="等待执行仓库 Playwright 自动化脚本",
+                        workingDir="frontend",
+                        packageManager="pnpm",
+                        startCommand="pnpm dev",
+                        baseUrl="http://127.0.0.1:5173",
+                        configPath=".ai-club/automation/playwright/playwright.config.ts",
+                        specPaths=[".ai-club/automation/playwright/plans/test-plan-12.spec.ts"],
+                        planSlug="test-plan-12",
+                    )
+                ]
+            )
+        })
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = DevelopmentExecutionWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                out_dir=Path(temp_dir) / "out",
+                log_file=Path(temp_dir) / "execution.log",
+            )
+            project_dir = workspace.repo_dir / "frontend"
+            result_dir = project_dir / ".ai-club" / "automation" / "playwright" / "results"
+            config_path = project_dir / ".ai-club" / "automation" / "playwright" / "playwright.config.ts"
+            spec_path = project_dir / ".ai-club" / "automation" / "playwright" / "plans" / "test-plan-12.spec.ts"
+            project_dir.mkdir(parents=True, exist_ok=True)
+            workspace.out_dir.mkdir(parents=True, exist_ok=True)
+            (project_dir / "node_modules").mkdir(parents=True, exist_ok=True)
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            spec_path.parent.mkdir(parents=True, exist_ok=True)
+            result_dir.mkdir(parents=True, exist_ok=True)
+            config_path.write_text("export default {}", encoding="utf-8")
+            spec_path.write_text("test('demo', async () => {})", encoding="utf-8")
+            (project_dir / "package.json").write_text(
+                json.dumps({"name": "demo-frontend", "scripts": {"dev": "vite"}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (result_dir / "test-plan-12.json").write_text(
+                json.dumps(
+                    {
+                        "stats": {"expected": 1, "unexpected": 1},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            def which_side_effect(name: str) -> str | None:
+                return f"C:/mock/{name}.exe" if name in {"node", "npm"} else None
+
+            def start_background_process_side_effect(command, cwd, log_file, env, shell):
+                log_file.write_text("frontend started", encoding="utf-8")
+                return SimpleNamespace(pid=5555), ("stdout", "stderr")
+
+            def run_process_side_effect(command, cwd, timeout_seconds, workspace, command_label, batcher, stdout_file, stderr_file, env, shell, should_cancel):
+                return SimpleNamespace(stdout="playwright reported failure", stderr="", exit_code=0)
+
+            with patch("app.services.codex_execution_service._workspace_for", return_value=workspace), \
+                    patch("app.services.codex_execution_service.shutil.which", side_effect=which_side_effect), \
+                    patch("app.services.codex_execution_service._find_free_port", return_value=4176), \
+                    patch("app.services.codex_execution_service._ensure_playwright_repo_runtime", return_value=[]), \
+                    patch("app.services.codex_execution_service._start_background_process", side_effect=start_background_process_side_effect), \
+                    patch("app.services.codex_execution_service._wait_for_http_ready", return_value=(True, "前端应用已就绪")), \
+                    patch("app.services.codex_execution_service._run_process", side_effect=run_process_side_effect), \
+                    patch("app.services.codex_execution_service._stop_background_process"):
+                response = execute_codex_execution(request)
+
+        payload = json.loads(response.output)
+        suite_result = payload["suiteResults"][0]
+        self.assertEqual("FAILED", payload["status"])
+        self.assertEqual("FAILED", suite_result["status"])
+        self.assertIn("1 条断言未通过", suite_result["summary"])
+
     def test_should_allow_playwright_smoke_suite_when_runtime_retry_eventually_succeeds(self):
         request = self._build_request("TEST").model_copy(update={
             "testPlan": CodexTestExecutionPlan(
@@ -799,6 +962,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
             with patch("app.services.codex_execution_service._workspace_for", return_value=workspace), \
                     patch("app.services.codex_execution_service.shutil.which", side_effect=which_side_effect), \
                     patch("app.services.codex_execution_service._find_free_port", return_value=4175), \
+                    patch("app.services.codex_execution_service._ensure_playwright_repo_runtime", return_value=[]), \
                     patch("app.services.codex_execution_service._start_background_process", side_effect=start_background_process_side_effect), \
                     patch("app.services.codex_execution_service._wait_for_http_ready", return_value=(True, "前端应用已就绪")), \
                     patch("app.services.codex_execution_service._run_process", side_effect=run_process_side_effect), \
@@ -910,6 +1074,7 @@ class CodexExecutionServiceTests(unittest.TestCase):
             with patch("app.services.codex_execution_service._workspace_for", return_value=workspace), \
                     patch("app.services.codex_execution_service.shutil.which", side_effect=which_side_effect), \
                     patch("app.services.codex_execution_service._find_free_port", return_value=54952), \
+                    patch("app.services.codex_execution_service._ensure_playwright_repo_runtime", return_value=[]), \
                     patch("app.services.codex_execution_service._start_background_process", side_effect=start_background_process_side_effect), \
                     patch("app.services.codex_execution_service._wait_for_http_ready", side_effect=wait_ready_side_effect), \
                     patch("app.services.codex_execution_service._run_process", side_effect=run_process_side_effect), \

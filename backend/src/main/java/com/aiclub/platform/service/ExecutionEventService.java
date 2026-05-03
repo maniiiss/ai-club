@@ -308,21 +308,21 @@ public class ExecutionEventService {
                 .map(item -> item.getSequenceNo() + 1)
                 .orElse(1L);
         LocalDateTime now = LocalDateTime.now();
+        ExecutionStepEntity writableStep = resolveWritableStep(step);
 
         ExecutionStepEventEntity entity = new ExecutionStepEventEntity();
         entity.setRun(lockedRun);
-        entity.setStep(step);
+        entity.setStep(writableStep);
         entity.setSequenceNo(nextSequence);
         entity.setEventType(defaultString(eventType));
         entity.setStreamKind(trimToNull(streamKind));
         entity.setPayloadJson(payload == null ? "{}" : payload.toString());
         executionStepEventRepository.save(entity);
 
-        if (step != null) {
-            step.setLastEventId(nextSequence);
-            step.setLastEventAt(now);
-            step.setHasLiveStream(true);
-            executionStepRepository.save(step);
+        if (writableStep != null) {
+            mergeRuntimeStepState(writableStep, step, nextSequence, now);
+            executionStepRepository.save(writableStep);
+            syncRuntimeStepState(step, writableStep);
         }
 
         lockedRun.setUpdatedAt(now);
@@ -333,6 +333,54 @@ public class ExecutionEventService {
             executionTaskRepository.save(task);
         }
         return toStreamEvent(entity);
+    }
+
+    /**
+     * runner 的迟到事件可能在 /complete 之后才到达。
+     * 这里必须基于数据库当前版本更新运行态字段，避免把已经 SUCCESS/FAILED/CANCELED 的步骤又覆写回旧状态。
+     */
+    private ExecutionStepEntity resolveWritableStep(ExecutionStepEntity step) {
+        if (step == null || step.getId() == null) {
+            return step;
+        }
+        return executionStepRepository.findById(step.getId()).orElse(step);
+    }
+
+    private void mergeRuntimeStepState(ExecutionStepEntity target,
+                                       ExecutionStepEntity source,
+                                       Long nextSequence,
+                                       LocalDateTime now) {
+        if (target == null) {
+            return;
+        }
+        if (source != null) {
+            target.setCurrentCommand(defaultString(source.getCurrentCommand()));
+            target.setLatestMessage(defaultString(source.getLatestMessage()));
+            target.setProgressPercent(source.getProgressPercent());
+            if (source.getLastHeartbeatAt() != null) {
+                target.setLastHeartbeatAt(source.getLastHeartbeatAt());
+            }
+            target.setTailLogText(source.getTailLogText());
+            target.setTailLogLineCount(source.getTailLogLineCount());
+        }
+        target.setLastEventId(nextSequence);
+        target.setLastEventAt(now);
+        target.setHasLiveStream(true);
+    }
+
+    private void syncRuntimeStepState(ExecutionStepEntity staleStep, ExecutionStepEntity persistedStep) {
+        if (staleStep == null || persistedStep == null || staleStep == persistedStep) {
+            return;
+        }
+        staleStep.setCurrentCommand(persistedStep.getCurrentCommand());
+        staleStep.setLatestMessage(persistedStep.getLatestMessage());
+        staleStep.setProgressPercent(persistedStep.getProgressPercent());
+        staleStep.setLastHeartbeatAt(persistedStep.getLastHeartbeatAt());
+        staleStep.setTailLogText(persistedStep.getTailLogText());
+        staleStep.setTailLogLineCount(persistedStep.getTailLogLineCount());
+        staleStep.setLastEventId(persistedStep.getLastEventId());
+        staleStep.setLastEventAt(persistedStep.getLastEventAt());
+        staleStep.setHasLiveStream(persistedStep.isHasLiveStream());
     }
 
     private void writeEvent(OutputStream outputStream, ExecutionStreamEvent event) throws IOException {

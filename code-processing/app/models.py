@@ -365,6 +365,21 @@ class GitlabCodeStructureQueryResponse(BaseModel):
     lastErrorMessage: str = ""
 
 
+class GitnexusLaunchContextRequest(BaseModel):
+    """GitNexus 全仓图启动上下文请求。"""
+
+    repository: GitlabCodeStructureRepository
+
+
+class GitnexusLaunchContextResponse(BaseModel):
+    """GitNexus 全仓图启动上下文结果。"""
+
+    repoAlias: str = ""
+    branchName: str = ""
+    commitSha: str = ""
+    serveReady: bool = False
+
+
 class CodexExecutionRepository(BaseModel):
     """开发执行桥接所需的单仓库上下文。"""
 

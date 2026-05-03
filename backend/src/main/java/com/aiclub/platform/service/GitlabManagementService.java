@@ -29,6 +29,7 @@ import com.aiclub.platform.dto.GitlabCodeStructureQueryResult;
 import com.aiclub.platform.dto.GitlabCodeStructureRefreshAcceptedResult;
 import com.aiclub.platform.dto.GitlabCodeStructureSnapshotSummary;
 import com.aiclub.platform.dto.GitlabCreateMergeRequestResult;
+import com.aiclub.platform.dto.GitlabGitnexusLaunchResult;
 import com.aiclub.platform.dto.GitlabMergeRequestSummary;
 import com.aiclub.platform.dto.GitlabProductBranchSummary;
 import com.aiclub.platform.dto.GitlabProductBranchSyncLogSummary;
@@ -45,6 +46,7 @@ import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
 import com.aiclub.platform.dto.request.GitlabCodeStructureQueryRequest;
 import com.aiclub.platform.dto.request.GitlabCodeStructureRefreshRequest;
 import com.aiclub.platform.dto.request.GitlabCreateMergeRequestRequest;
+import com.aiclub.platform.dto.request.GitlabGitnexusLaunchRequest;
 import com.aiclub.platform.dto.request.GitlabProductBranchRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
 import com.aiclub.platform.dto.request.ProjectGitlabBindingRequest;
@@ -135,6 +137,7 @@ public class GitlabManagementService {
     private final RepositoryScanClientService repositoryScanClientService;
     private final RepositoryScanRulesetService repositoryScanRulesetService;
     private final GitlabCodeStructureClientService gitlabCodeStructureClientService;
+    private final GitnexusProperties gitnexusProperties;
     private final ObjectMapper objectMapper;
     private final String defaultApiUrl;
     private final Executor executionTaskExecutor;
@@ -162,6 +165,7 @@ public class GitlabManagementService {
                                    RepositoryScanClientService repositoryScanClientService,
                                    RepositoryScanRulesetService repositoryScanRulesetService,
                                    GitlabCodeStructureClientService gitlabCodeStructureClientService,
+                                   GitnexusProperties gitnexusProperties,
                                    ObjectMapper objectMapper,
                                    @Value("${platform.gitlab.default-api-url}") String defaultApiUrl,
                                    PlatformTransactionManager transactionManager,
@@ -188,6 +192,7 @@ public class GitlabManagementService {
         this.repositoryScanClientService = repositoryScanClientService;
         this.repositoryScanRulesetService = repositoryScanRulesetService;
         this.gitlabCodeStructureClientService = gitlabCodeStructureClientService;
+        this.gitnexusProperties = gitnexusProperties;
         this.objectMapper = objectMapper;
         this.defaultApiUrl = defaultApiUrl;
         this.executionTaskExecutor = executionTaskExecutor;
@@ -420,6 +425,47 @@ public class GitlabManagementService {
                 )
         );
         return toCodeStructureQueryResult(response);
+    }
+
+    /**
+     * 为前端准备 GitNexus 全仓图跳转上下文。
+     * 平台负责确保目标分支已 analyze 且 serve 已运行，前端只消费最终 launch URL。
+     */
+    public GitlabGitnexusLaunchResult launchBindingGitnexus(Long bindingId,
+                                                            GitlabGitnexusLaunchRequest request,
+                                                            String requestScheme,
+                                                            String requestHost) {
+        if (!gitnexusProperties.isEnabled()) {
+            throw new IllegalStateException("当前环境未启用 GitNexus 全仓图能力");
+        }
+        ProjectGitlabBindingEntity binding = requireBinding(bindingId);
+        projectDataPermissionService.requireGitlabBindingVisible(binding);
+        requireCodeStructureRefreshable(binding);
+        String resolvedBranch = resolveCodeStructureBranch(binding, request == null ? null : request.branch());
+        GitlabCodeStructureClientService.StructureRepository repository = buildCodeStructureRepository(binding, resolvedBranch);
+        GitlabCodeStructureClientService.LaunchContextResponse response = gitlabCodeStructureClientService.buildLaunchContext(
+                new GitlabCodeStructureClientService.LaunchContextRequest(repository)
+        );
+        String repoAlias = trimToNull(response.repoAlias());
+        if (repoAlias == null) {
+            throw new IllegalStateException("GitNexus analyze 已完成，但无法解析当前仓库的 repo alias。");
+        }
+        String gitnexusUiUrl = gitnexusProperties.resolveUiPublicBaseUrl(requestScheme, requestHost);
+        String gitnexusServerUrl = gitnexusProperties.resolveServePublicBaseUrl(requestScheme, requestHost);
+        String launchUrl = gitnexusUiUrl
+                + "/?project="
+                + URLEncoder.encode(repoAlias, StandardCharsets.UTF_8)
+                + "&server="
+                + URLEncoder.encode(gitnexusServerUrl, StandardCharsets.UTF_8);
+        return new GitlabGitnexusLaunchResult(
+                defaultString(response.branchName()),
+                defaultString(response.commitSha()),
+                repoAlias,
+                gitnexusUiUrl,
+                gitnexusServerUrl,
+                launchUrl,
+                Boolean.TRUE.equals(response.serveReady())
+        );
     }
 
     /**

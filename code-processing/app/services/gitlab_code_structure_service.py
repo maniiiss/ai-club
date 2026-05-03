@@ -1,12 +1,16 @@
 import json
 import os
 import shutil
+import stat
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from app.models import (
+    GitnexusLaunchContextRequest,
+    GitnexusLaunchContextResponse,
     GitlabCodeStructureOverviewRequest,
     GitlabCodeStructureOverviewResponse,
     GitlabCodeStructureQueryRequest,
@@ -15,10 +19,11 @@ from app.models import (
 from app.services.gitnexus_cli_support import (
     discover_gitnexus_cli_path,
     resolve_gitnexus_repo_alias,
-    run_gitnexus_command,
+    run_gitnexus_analyze_command,
     run_gitnexus_json_command,
     select_symbol_uids,
 )
+from app.services.gitnexus_serve_manager import ensure_gitnexus_serve_running
 from app.services.execution_streaming_support import utc_timestamp
 from app.settings import settings
 
@@ -104,6 +109,28 @@ def query_gitlab_code_structure(request: GitlabCodeStructureQueryRequest) -> Git
     )
 
 
+def build_gitnexus_launch_context(request: GitnexusLaunchContextRequest) -> GitnexusLaunchContextResponse:
+    workspace = _workspace_for(request.repository.bindingId, request.repository.targetBranch)
+    _ensure_workspace_root(workspace)
+    _append_log(workspace, f"开始准备 GitNexus launch 上下文：{request.repository.displayName or request.repository.projectRef}")
+    repo_dir = _reclone_repository(request.repository, workspace)
+    commit_sha = _current_head_commit(repo_dir)
+    gitnexus_cli = discover_gitnexus_cli_path()
+    if gitnexus_cli is None:
+        raise RuntimeError("未找到 GitNexus CLI，无法启动全仓图")
+    run_gitnexus_analyze_command(gitnexus_cli, repo_dir, lambda message: _append_log(workspace, message))
+    repo_alias = resolve_gitnexus_repo_alias(gitnexus_cli, repo_dir, lambda message: _append_log(workspace, message))
+    if not repo_alias:
+        raise RuntimeError("GitNexus analyze 已完成，但无法解析当前仓库的 repo alias。")
+    serve_ready = ensure_gitnexus_serve_running(gitnexus_cli)
+    return GitnexusLaunchContextResponse(
+        repoAlias=repo_alias,
+        branchName=request.repository.targetBranch,
+        commitSha=commit_sha,
+        serveReady=serve_ready,
+    )
+
+
 def _collect_gitnexus_structure(
     *,
     repo_dir: Path,
@@ -124,7 +151,7 @@ def _collect_gitnexus_structure(
         degradation_reasons.append("未找到 GitNexus CLI，已跳过 analyze/query/context。")
     else:
         try:
-            run_gitnexus_command(gitnexus_cli, ["analyze", str(repo_dir)], repo_dir, lambda message: _append_log(workspace, message))
+            run_gitnexus_analyze_command(gitnexus_cli, repo_dir, lambda message: _append_log(workspace, message))
             repo_alias = resolve_gitnexus_repo_alias(gitnexus_cli, repo_dir, lambda message: _append_log(workspace, message))
             if not repo_alias:
                 degradation_reasons.append("GitNexus analyze 已完成，但无法解析当前仓库的 repo alias。")
@@ -470,8 +497,13 @@ def _ensure_workspace_root(workspace: GitlabCodeStructureWorkspace) -> None:
 
 
 def _reclone_repository(repository, workspace: GitlabCodeStructureWorkspace) -> Path:
+    if workspace.repo_dir.exists() and (workspace.repo_dir / ".git").exists():
+        if _refresh_existing_repository(repository, workspace):
+            _append_log(workspace, "复用现有仓库缓存并完成分支更新。")
+            return workspace.repo_dir
+        _append_log(workspace, "现有仓库缓存更新失败，回退为全量重新 clone。")
     if workspace.repo_dir.exists():
-        shutil.rmtree(workspace.repo_dir, ignore_errors=True)
+        _remove_directory_with_retry(workspace.repo_dir, workspace, "code-structure-root")
     repo_urls = _build_clone_url_candidates(repository.repoUrl)
     attempts: list[tuple[str, list[str]]] = []
     for repo_url in repo_urls:
@@ -501,12 +533,77 @@ def _reclone_repository(repository, workspace: GitlabCodeStructureWorkspace) -> 
         if stderr:
             _append_log(workspace, stderr)
         if completed.returncode == 0:
-            shutil.move(str(attempt_dir), str(workspace.repo_dir))
+            if workspace.repo_dir.exists():
+                _remove_directory_with_retry(workspace.repo_dir, workspace, "code-structure-root")
+            _promote_directory_with_retry(attempt_dir, workspace.repo_dir, workspace, f"clone:{strategy}")
             _append_log(workspace, f"clone 策略成功：{strategy}")
             return workspace.repo_dir
         errors.append(f"{strategy}: {stderr or stdout or '未知错误'}")
-        shutil.rmtree(attempt_dir, ignore_errors=True)
+        _remove_directory_with_retry(attempt_dir, workspace, f"clone-attempt:{strategy}")
     raise RuntimeError("克隆仓库失败：" + "；".join(errors[-3:]))
+
+
+def _refresh_existing_repository(repository, workspace: GitlabCodeStructureWorkspace) -> bool:
+    """优先复用现有稳定仓库，避免 Windows 下频繁删除目录导致锁冲突。"""
+    repo_urls = _build_clone_url_candidates(repository.repoUrl)
+    branch = repository.targetBranch
+    errors: list[str] = []
+    for repo_url in repo_urls:
+        attempt_definitions = [
+            (
+                "basic-auth",
+                _build_authenticated_repo_url(repo_url, repository.authToken),
+                [
+                    ["git", "remote", "set-url", "origin", _build_authenticated_repo_url(repo_url, repository.authToken)],
+                    ["git", "-c", "http.sslBackend=openssl", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "fetch", "--depth", "1", "origin", branch],
+                    ["git", "checkout", "-B", branch, "FETCH_HEAD"],
+                ],
+            ),
+            (
+                "private-token-header",
+                repo_url,
+                [
+                    ["git", "remote", "set-url", "origin", repo_url],
+                    ["git", "-c", "http.sslBackend=openssl", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "-c", f"http.extraHeader=PRIVATE-TOKEN: {repository.authToken}", "fetch", "--depth", "1", "origin", branch],
+                    ["git", "checkout", "-B", branch, "FETCH_HEAD"],
+                ],
+            ),
+            (
+                "bearer-header",
+                repo_url,
+                [
+                    ["git", "remote", "set-url", "origin", repo_url],
+                    ["git", "-c", "http.sslBackend=openssl", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "-c", f"http.extraHeader=Authorization: Bearer {repository.authToken}", "fetch", "--depth", "1", "origin", branch],
+                    ["git", "checkout", "-B", branch, "FETCH_HEAD"],
+                ],
+            ),
+        ]
+        for strategy, safe_url, commands in attempt_definitions:
+            _append_log(workspace, f"尝试复用仓库缓存：{strategy} / {_safe_repo_url(safe_url)}")
+            strategy_failed = False
+            for command in commands:
+                completed = subprocess.run(
+                    command,
+                    cwd=workspace.repo_dir,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
+                )
+                stdout = _sanitize_sensitive_text((completed.stdout or "").strip(), repository.authToken)
+                stderr = _sanitize_sensitive_text((completed.stderr or "").strip(), repository.authToken)
+                if stdout:
+                    _append_log(workspace, stdout)
+                if stderr:
+                    _append_log(workspace, stderr)
+                if completed.returncode != 0:
+                    strategy_failed = True
+                    errors.append(f"{strategy}: {stderr or stdout or '未知错误'}")
+                    break
+            if not strategy_failed:
+                return True
+    return False
 
 
 def _build_clone_url_candidates(repo_url: str) -> list[str]:
@@ -611,3 +708,92 @@ def _append_log(workspace: GitlabCodeStructureWorkspace, message: str) -> None:
     workspace.root.mkdir(parents=True, exist_ok=True)
     with workspace.log_file.open("a", encoding="utf-8") as handle:
         handle.write(f"[{utc_timestamp()}] {message}\n")
+
+
+def _promote_directory_with_retry(source_dir: Path,
+                                  target_dir: Path,
+                                  workspace: GitlabCodeStructureWorkspace,
+                                  operation_label: str) -> None:
+    """Windows 下目录重命名可能被索引器短暂占用，这里做重试和复制兜底。"""
+    retry_delays = [0.2, 0.5, 1.0]
+    last_error: Exception | None = None
+    for attempt_index, delay_seconds in enumerate([0.0, *retry_delays], start=1):
+        try:
+            if attempt_index > 1:
+                time.sleep(delay_seconds)
+            if target_dir.exists():
+                _remove_directory_with_retry(target_dir, workspace, f"{operation_label}:target-cleanup")
+            source_dir.rename(target_dir)
+            return
+        except Exception as exception:  # noqa: BLE001
+            last_error = exception
+            if not _is_retryable_directory_operation_error(exception):
+                raise
+            _append_log(
+                workspace,
+                f"目录提升重试 {attempt_index}/{len(retry_delays) + 1} 失败：{operation_label} / {source_dir.name} -> {target_dir.name} / {exception}",
+            )
+    if last_error is None:
+        raise RuntimeError(f"目录提升失败：{operation_label}")
+    try:
+        _append_log(workspace, f"目录重命名多次失败，尝试复制兜底：{operation_label} / {source_dir.name} -> {target_dir.name}")
+        if target_dir.exists():
+            _remove_directory_with_retry(target_dir, workspace, f"{operation_label}:fallback-target-cleanup")
+        shutil.copytree(source_dir, target_dir)
+        shutil.rmtree(source_dir, ignore_errors=True)
+    except Exception as fallback_error:  # noqa: BLE001
+        raise RuntimeError(
+            f"目录提升失败：{operation_label}；原始错误：{last_error}；复制兜底也失败：{fallback_error}"
+        ) from fallback_error
+
+
+def _remove_directory_with_retry(target_dir: Path,
+                                 workspace: GitlabCodeStructureWorkspace,
+                                 operation_label: str) -> None:
+    """Windows 下目录删除可能被短暂占用，这里补充重试。"""
+    if not target_dir.exists():
+        return
+    retry_delays = [0.2, 0.5, 1.0, 2.0, 3.0]
+    last_error: Exception | None = None
+
+    def _handle_remove_error(remove_function, path, exc_info):
+        exception = exc_info[1]
+        if not _is_retryable_directory_operation_error(exception):
+            raise exception
+        try:
+            os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+            remove_function(path)
+            return
+        except Exception as chmod_exception:  # noqa: BLE001
+            raise chmod_exception
+
+    for attempt_index, delay_seconds in enumerate([0.0, *retry_delays], start=1):
+        try:
+            if attempt_index > 1:
+                time.sleep(delay_seconds)
+            shutil.rmtree(target_dir, onerror=_handle_remove_error)
+            if not target_dir.exists():
+                return
+            raise PermissionError(13, f"目录删除后仍存在：{target_dir}")
+        except FileNotFoundError:
+            return
+        except Exception as exception:  # noqa: BLE001
+            last_error = exception
+            if not _is_retryable_directory_operation_error(exception):
+                raise
+            _append_log(
+                workspace,
+                f"目录清理重试 {attempt_index}/{len(retry_delays) + 1} 失败：{operation_label} / {target_dir.name} / {exception}",
+            )
+    raise RuntimeError(f"目录清理失败：{operation_label}；最后一次错误：{last_error}")
+
+
+def _is_retryable_directory_operation_error(exception: Exception) -> bool:
+    if isinstance(exception, PermissionError):
+        return True
+    if not isinstance(exception, OSError):
+        return False
+    winerror = getattr(exception, "winerror", None)
+    if winerror in {5, 32, 33}:
+        return True
+    return exception.errno in {13, 16}

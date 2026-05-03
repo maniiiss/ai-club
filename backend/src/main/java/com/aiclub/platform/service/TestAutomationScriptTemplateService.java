@@ -61,15 +61,16 @@ public class TestAutomationScriptTemplateService {
                 import path from 'node:path'
 
                 const planSlug = process.env.AI_CLUB_TEST_PLAN_SLUG || 'default'
+                const artifactRoot = path.resolve(process.cwd(), '.ai-club/automation/playwright')
 
                 export default defineConfig({
                   timeout: 30_000,
                   testDir: '.',
-                  outputDir: path.join('.ai-club/automation/playwright/test-results', planSlug),
+                  outputDir: path.join(artifactRoot, 'test-results', planSlug),
                   reporter: [
                     ['line'],
-                    ['json', { outputFile: path.join('.ai-club/automation/playwright/results', `${planSlug}.json`) }],
-                    ['html', { outputFolder: path.join('.ai-club/automation/playwright/reports', planSlug), open: 'never' }]
+                    ['json', { outputFile: path.join(artifactRoot, 'results', `${planSlug}.json`) }],
+                    ['html', { outputFolder: path.join(artifactRoot, 'reports', planSlug), open: 'never' }]
                   ],
                   use: {
                     baseURL: process.env.AI_CLUB_BASE_URL || 'http://127.0.0.1:3000',
@@ -131,7 +132,9 @@ public class TestAutomationScriptTemplateService {
                     test.describe(%s, () => {
                       for (const item of generatedCases) {
                         test(`[用例#${item.id ?? 'draft'}] ${item.title}`, async ({ page }) => {
-                          await page.goto(item.path || '/')
+                          // 业务意图：平台模板生成的是仓库级占位自动化脚本，
+                          // 对 SPA 项目优先等到 DOM 就绪即可，避免首页资源长连接把 load 事件无限拖长。
+                          await page.goto(item.path || '/', { waitUntil: 'domcontentloaded', timeout: 60_000 })
 
                           if (item.readySelector) {
                             await page.locator(item.readySelector).first().waitFor({ state: 'visible' })

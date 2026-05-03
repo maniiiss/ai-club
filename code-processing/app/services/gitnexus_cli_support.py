@@ -1,10 +1,13 @@
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Callable
 
 from app.settings import settings
+
+ANSI_ESCAPE_PATTERN = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
 
 def discover_gitnexus_cli_path() -> Path | None:
@@ -47,6 +50,10 @@ def run_gitnexus_command(
         log(stderr)
     if completed.returncode != 0:
         raise RuntimeError((fail_message or "GitNexus 执行失败") + f"：{stderr or stdout or '未知错误'}")
+    if stdout:
+        return stdout
+    if looks_like_structured_output(stderr):
+        return stderr
     return stdout
 
 
@@ -62,6 +69,23 @@ def run_gitnexus_json_command(
     if not isinstance(payload, dict):
         raise RuntimeError("GitNexus 返回结果不是 JSON 对象")
     return payload
+
+
+def run_gitnexus_analyze_command(
+    gitnexus_cli: Path,
+    repo_dir: Path,
+    log: Callable[[str], None],
+) -> None:
+    """执行 GitNexus analyze，并在 Windows/路径场景下提供更稳的回退。"""
+    ensure_git_repository(repo_dir, log)
+    try:
+        run_gitnexus_command(gitnexus_cli, ["analyze", str(repo_dir)], repo_dir, log)
+        return
+    except RuntimeError as exception:
+        if "Not a git repository" not in str(exception):
+            raise
+        log("GitNexus analyze 使用绝对路径失败，改为在仓库根目录使用相对路径重试。")
+    run_gitnexus_command(gitnexus_cli, ["analyze", "."], repo_dir, log)
 
 
 def resolve_gitnexus_repo_alias(
@@ -90,6 +114,27 @@ def resolve_gitnexus_repo_alias(
     return ""
 
 
+def ensure_git_repository(repo_dir: Path, log: Callable[[str], None]) -> None:
+    """在调用 GitNexus 前先确认当前目录是一个真实的 Git 仓库。"""
+    completed = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    stdout = (completed.stdout or "").strip()
+    stderr = (completed.stderr or "").strip()
+    if completed.returncode == 0 and stdout.lower() == "true":
+        return
+    if stdout:
+        log(stdout)
+    if stderr:
+        log(stderr)
+    raise RuntimeError(f"当前结构化工作区不是有效的 Git 仓库：{repo_dir}")
+
+
 def select_symbol_uids(query_result: dict[str, object]) -> list[str]:
     """从 query 结果里挑出可继续执行 context 的符号 UID。"""
     candidates: list[str] = []
@@ -111,9 +156,9 @@ def select_symbol_uids(query_result: dict[str, object]) -> list[str]:
 
 def extract_json_object(text: str) -> dict[str, object]:
     """从 GitNexus 的混合输出里提取首个 JSON 对象。"""
-    normalized = (text or "").strip()
+    normalized = strip_ansi_escape_sequences((text or "").strip())
     if not normalized:
-        raise RuntimeError("GitNexus 未返回可解析的 JSON")
+        return {}
     if normalized.startswith("```"):
         lines = normalized.splitlines()
         if len(lines) >= 3:
@@ -136,3 +181,18 @@ def extract_json_object(text: str) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise RuntimeError("GitNexus 返回结果不是 JSON 对象")
     return payload
+
+
+def strip_ansi_escape_sequences(value: str) -> str:
+    """去掉 GitNexus CLI 可能带上的 ANSI 控制字符，避免 JSON 解析被颜色码污染。"""
+    return ANSI_ESCAPE_PATTERN.sub("", value or "")
+
+
+def looks_like_structured_output(value: str) -> bool:
+    """判断 stderr 是否看起来像 JSON 或 fenced JSON，便于 stdout 为空时回退。"""
+    normalized = strip_ansi_escape_sequences((value or "").strip())
+    if not normalized:
+        return False
+    if normalized.startswith("```"):
+        return True
+    return normalized.startswith("{") or normalized.startswith("[")

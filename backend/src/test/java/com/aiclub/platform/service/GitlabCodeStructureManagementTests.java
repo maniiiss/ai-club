@@ -109,6 +109,9 @@ class GitlabCodeStructureManagementTests {
     private GitlabCodeStructureClientService gitlabCodeStructureClientService;
 
     @Mock
+    private GitnexusProperties gitnexusProperties;
+
+    @Mock
     private PlatformTransactionManager transactionManager;
 
     @Mock
@@ -141,6 +144,7 @@ class GitlabCodeStructureManagementTests {
                 repositoryScanClientService,
                 repositoryScanRulesetService,
                 gitlabCodeStructureClientService,
+                gitnexusProperties,
                 new ObjectMapper(),
                 "http://gitlab.example.com/api/v4",
                 transactionManager,
@@ -247,6 +251,53 @@ class GitlabCodeStructureManagementTests {
         assertThat(result.hitSymbols()).hasSize(1);
         assertThat(result.graphNodes()).hasSize(1);
         assertThat(result.hitSymbols().get(0).name()).isEqualTo("createBindingScanTask");
+    }
+
+    @Test
+    void shouldBuildGitnexusLaunchUrlFromConfiguredPublicBaseUrls() {
+        ProjectGitlabBindingEntity binding = buildBinding(true, true);
+        when(bindingRepository.findById(1L)).thenReturn(Optional.of(binding));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(gitnexusProperties.isEnabled()).thenReturn(true);
+        when(gitnexusProperties.resolveUiPublicBaseUrl("https", "example.com")).thenReturn("https://gitnexus-ui.example.com");
+        when(gitnexusProperties.resolveServePublicBaseUrl("https", "example.com")).thenReturn("https://gitnexus-serve.example.com");
+        when(gitlabCodeStructureClientService.buildLaunchContext(any()))
+                .thenReturn(new GitlabCodeStructureClientService.LaunchContextResponse(
+                        "git-ai-club",
+                        "release/1.0",
+                        "abcdef123456",
+                        true
+                ));
+
+        var result = gitlabManagementService.launchBindingGitnexus(
+                1L,
+                new com.aiclub.platform.dto.request.GitlabGitnexusLaunchRequest(null),
+                "https",
+                "example.com"
+        );
+
+        assertThat(result.repoAlias()).isEqualTo("git-ai-club");
+        assertThat(result.gitnexusUiUrl()).isEqualTo("https://gitnexus-ui.example.com");
+        assertThat(result.gitnexusServerUrl()).isEqualTo("https://gitnexus-serve.example.com");
+        assertThat(result.launchUrl()).contains("project=git-ai-club");
+        assertThat(result.launchUrl()).contains("server=https%3A%2F%2Fgitnexus-serve.example.com");
+        assertThat(result.serveReady()).isTrue();
+    }
+
+    @Test
+    void shouldRejectGitnexusLaunchWhenBindingTokenIsMissing() {
+        ProjectGitlabBindingEntity binding = buildBinding(true, false);
+        when(bindingRepository.findById(1L)).thenReturn(Optional.of(binding));
+        when(gitnexusProperties.isEnabled()).thenReturn(true);
+
+        assertThatThrownBy(() -> gitlabManagementService.launchBindingGitnexus(
+                1L,
+                new com.aiclub.platform.dto.request.GitlabGitnexusLaunchRequest("release/1.0"),
+                "https",
+                "example.com"
+        ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("当前 GitLab 绑定未配置 Token，不能刷新代码结构");
     }
 
     private ProjectGitlabBindingEntity buildBinding(boolean enabled, boolean tokenConfigured) {

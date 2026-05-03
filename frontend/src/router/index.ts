@@ -50,6 +50,12 @@ const router = createRouter({
       meta: { requiresAuth: false, title: '无权限' }
     },
     {
+      path: '/gitlab/bindings/:id/code-structure',
+      name: 'gitlab-binding-code-structure',
+      component: GitlabCodeStructureView,
+      meta: { requiresAuth: true, title: '代码结构', permission: 'gitlab:view' }
+    },
+    {
       path: '/',
       component: AppLayout,
       redirect: '/dashboard',
@@ -72,7 +78,6 @@ const router = createRouter({
         { path: 'tests/:planId', name: 'test-plan-detail', component: TestPlanDetailView, meta: { title: '测试计划详情', permission: 'test:view', activeMenu: '/tests' } },
         { path: 'models', name: 'models', component: ModelView, meta: { title: '模型管理', permission: 'model:view' } },
         { path: 'gitlab', name: 'gitlab', component: GitlabView, meta: { title: '代码仓库管理', permission: 'gitlab:view' } },
-        { path: 'gitlab/bindings/:id/code-structure', name: 'gitlab-binding-code-structure', component: GitlabCodeStructureView, meta: { title: '代码结构', permission: 'gitlab:view', activeMenu: '/gitlab' } },
         { path: 'cicd', redirect: { name: 'cicd-servers' } },
         { path: 'cicd/jenkins-servers', name: 'cicd-servers', component: JenkinsServerView, meta: { title: 'Jenkins 服务', permission: 'cicd:view' } },
         { path: 'cicd/pipeline-bindings', name: 'cicd-pipelines', component: PipelineBindingView, meta: { title: '项目流水线', permission: 'cicd:view' } },

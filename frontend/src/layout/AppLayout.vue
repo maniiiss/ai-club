@@ -300,6 +300,9 @@
       <el-header v-if="!isIterationWorkspaceRoute" class="layout-header">
         <div class="header-search-group">
           <h1 class="header-page-title" :title="pageTitle">{{ pageTitle }}</h1>
+        </div>
+
+        <div class="header-actions">
           <div v-if="!isMobileViewport && canUseHermes" class="header-search-shell" @click="handleOpenHermesDrawer">
             <el-icon><Search /></el-icon>
             <input
@@ -314,9 +317,6 @@
               提问
             </button>
           </div>
-        </div>
-
-        <div class="header-actions">
           <div class="header-profile-group">
             <button
               v-if="isMobileViewport && canUseHermes"
@@ -1568,7 +1568,8 @@ watch(
 .header-search-shell {
   min-width: 300px;
   max-width: 540px;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+  width: clamp(300px, 32vw, 540px);
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -1618,8 +1619,8 @@ watch(
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0;
-  flex: 0 0 auto;
+  gap: 16px;
+  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -2358,7 +2359,7 @@ watch(
   .header-search-shell {
     min-width: 180px;
     max-width: 360px;
-    flex-basis: 260px;
+    width: clamp(180px, 24vw, 360px);
   }
 
   .user-meta strong,
@@ -2411,7 +2412,7 @@ watch(
   .header-search-shell {
     min-width: 120px;
     max-width: 220px;
-    flex-basis: 160px;
+    width: clamp(120px, 40vw, 220px);
     padding: 0 12px;
   }
 

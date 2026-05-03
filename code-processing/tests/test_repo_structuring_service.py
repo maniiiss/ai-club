@@ -92,6 +92,7 @@ class RepoStructuringServiceTests(unittest.TestCase):
                     patch("app.services.repo_structuring_service._discover_gitnexus_cli_path", return_value=Path("gitnexus")), \
                     patch("app.services.repo_structuring_service.claude_service._clone_repository", side_effect=clone_side_effect), \
                     patch("app.services.repo_structuring_service._checkout_commit_if_needed", return_value="fixed-sha"), \
+                    patch("app.services.repo_structuring_service._run_gitnexus_analyze_command_shared", return_value=None), \
                     patch("app.services.repo_structuring_service._run_gitnexus_command", return_value="ok"), \
                     patch("app.services.repo_structuring_service._resolve_gitnexus_repo_alias", return_value="group-demo"), \
                     patch("app.services.repo_structuring_service._run_gitnexus_json_command", side_effect=gitnexus_json_side_effect):
@@ -157,7 +158,8 @@ class RepoStructuringServiceTests(unittest.TestCase):
                     raise RuntimeError("GitNexus context 超时")
                 raise AssertionError(f"Unexpected gitnexus JSON command: {args}")
 
-            with patch("app.services.repo_structuring_service._run_gitnexus_command", return_value="ok"), \
+            with patch("app.services.repo_structuring_service._run_gitnexus_analyze_command_shared", return_value=None), \
+                    patch("app.services.repo_structuring_service._run_gitnexus_command", return_value="ok"), \
                     patch("app.services.repo_structuring_service._resolve_gitnexus_repo_alias", return_value="group-demo"), \
                     patch("app.services.repo_structuring_service._run_gitnexus_json_command", side_effect=gitnexus_json_side_effect):
                 entry = _structure_repository(

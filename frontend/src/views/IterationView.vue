@@ -5310,8 +5310,36 @@ onMounted(async () => {
     border-bottom: 1px solid rgba(137, 115, 98, 0.08);
   }
 
+  /* 迭代列表改为横向滚动条，避免纵向堆叠占用过多空间 */
   .workspace-sidebar-list {
+    flex-direction: row;
+    gap: 10px;
+    padding: 0 14px 12px;
     max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 14px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .workspace-iteration-card {
+    min-width: 180px;
+    flex: 0 0 180px;
+    scroll-snap-align: start;
+  }
+
+  /* 侧边栏底部新建按钮也改为内联展示 */
+  .workspace-sidebar-footer {
+    padding: 0 14px 12px;
+    flex: 0 0 auto;
+  }
+
+  .workspace-sidebar-footer .workspace-sidebar-action {
+    min-width: 100px;
+    width: auto;
+    padding: 0 14px;
+    white-space: nowrap;
   }
 
   :deep(.work-item-drawer) {

@@ -100,6 +100,7 @@ class ExecutionAsyncSessionServiceTests {
         );
 
         assertThat(step.getLastHeartbeatAt()).isAfter(LocalDateTime.now().minusSeconds(5));
+        assertThat(step.getLastEventAt()).isAfter(LocalDateTime.now().minusSeconds(5));
         verify(executionStepRepository).save(step);
         verify(executionEventService).recordRunnerEvents(task, run, step, List.of(
                 new ExecutionSessionEventRequest(
@@ -176,5 +177,37 @@ class ExecutionAsyncSessionServiceTests {
     void shouldGivePlanStepMoreRuntimeBudgetThanDefaultMarkdownSteps() {
         assertThat(executionAsyncSessionService.maxRuntimeSeconds("PLAN")).isEqualTo(1800);
         assertThat(executionAsyncSessionService.maxRuntimeSeconds("REPORT")).isEqualTo(600);
+    }
+
+    /**
+     * 某些 runner 会先连续推 stdout/stderr，再补 heartbeat；
+     * watchdog 判活时必须把最近事件时间也视作存活信号，不能仅依赖 lastHeartbeatAt。
+     */
+    @Test
+    void shouldNotFailLiveStepWhenRecentRunnerEventsStillArrive() {
+        ExecutionTaskEntity task = new ExecutionTaskEntity();
+        task.setId(301L);
+        task.setStatus("RUNNING");
+
+        ExecutionRunEntity run = new ExecutionRunEntity();
+        run.setId(99L);
+        run.setExecutionTask(task);
+        run.setStatus("RUNNING");
+
+        ExecutionStepEntity step = new ExecutionStepEntity();
+        step.setId(45L);
+        step.setRun(run);
+        step.setStatus("RUNNING");
+        step.setHasLiveStream(true);
+        step.setLastHeartbeatAt(LocalDateTime.now().minusMinutes(5));
+        step.setLastEventAt(LocalDateTime.now().minusSeconds(5));
+
+        when(executionStepRepository.findAllByStatusAndHasLiveStreamTrue("RUNNING")).thenReturn(List.of(step));
+
+        executionAsyncSessionService.failTimedOutLiveSteps();
+
+        assertThat(step.getStatus()).isEqualTo("RUNNING");
+        verify(executionEventService, never()).recordSummary(any(), any(), any(), any());
+        verify(executionEventService, never()).recordStepFinished(any(), any(), any(), any());
     }
 }

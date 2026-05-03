@@ -1005,6 +1005,20 @@ export interface GitlabCodeStructureRefreshAcceptedResultItem {
   lastErrorMessage: string | null
 }
 
+export interface GitlabGitnexusLaunchRequestItem {
+  branch?: string
+}
+
+export interface GitlabGitnexusLaunchResultItem {
+  branchName: string
+  commitSha: string
+  repoAlias: string
+  gitnexusUiUrl: string
+  gitnexusServerUrl: string
+  launchUrl: string
+  serveReady: boolean
+}
+
 export interface GiteeProgramItem {
   id: number
   name: string

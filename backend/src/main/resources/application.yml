@@ -65,6 +65,12 @@ management:
 platform:
   code-processing:
     base-url: http://localhost:9000
+  gitnexus:
+    enabled: ${PLATFORM_GITNEXUS_ENABLED:true}
+    ui-public-base-url: ${PLATFORM_GITNEXUS_UI_PUBLIC_BASE_URL:}
+    ui-public-port: ${PLATFORM_GITNEXUS_UI_PUBLIC_PORT:5174}
+    serve-public-base-url: ${PLATFORM_GITNEXUS_SERVE_PUBLIC_BASE_URL:}
+    serve-public-port: ${PLATFORM_GITNEXUS_SERVE_PUBLIC_PORT:4747}
   gitlab:
     default-api-url: http://192.168.110.138:30080/api/v4
     oauth:

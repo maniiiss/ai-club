@@ -10,6 +10,7 @@ import com.aiclub.platform.dto.GitlabCodeStructureQueryResult;
 import com.aiclub.platform.dto.GitlabCodeStructureRefreshAcceptedResult;
 import com.aiclub.platform.dto.GitlabCodeStructureSnapshotSummary;
 import com.aiclub.platform.dto.GitlabCreateMergeRequestResult;
+import com.aiclub.platform.dto.GitlabGitnexusLaunchResult;
 import com.aiclub.platform.dto.GitlabMergeRequestSummary;
 import com.aiclub.platform.dto.GitlabProductBranchSummary;
 import com.aiclub.platform.dto.GitlabProductBranchSyncLogSummary;
@@ -27,6 +28,7 @@ import com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest;
 import com.aiclub.platform.dto.request.GitlabCodeStructureQueryRequest;
 import com.aiclub.platform.dto.request.GitlabCodeStructureRefreshRequest;
 import com.aiclub.platform.dto.request.GitlabCreateMergeRequestRequest;
+import com.aiclub.platform.dto.request.GitlabGitnexusLaunchRequest;
 import com.aiclub.platform.dto.request.GitlabProductBranchRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
 import com.aiclub.platform.dto.request.GitlabUserOauthAuthorizeRequest;
@@ -35,6 +37,7 @@ import com.aiclub.platform.dto.request.ProjectGitlabBindingRequest;
 import com.aiclub.platform.service.GitlabManagementService;
 import com.aiclub.platform.service.GitlabUserOauthService;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -204,6 +207,22 @@ public class GitlabController {
         return ApiResponse.success(gitlabManagementService.queryBindingCodeStructure(id, request));
     }
 
+    /**
+     * 为前端准备 GitNexus 全仓图跳转地址。
+     */
+    @PostMapping("/bindings/{id}/gitnexus-launch")
+    @RequirePermission("gitlab:view")
+    public ApiResponse<GitlabGitnexusLaunchResult> launchBindingGitnexus(@PathVariable Long id,
+                                                                         @Valid @RequestBody GitlabGitnexusLaunchRequest request,
+                                                                         HttpServletRequest servletRequest) {
+        return ApiResponse.success(gitlabManagementService.launchBindingGitnexus(
+                id,
+                request,
+                resolveRequestScheme(servletRequest),
+                resolveRequestHost(servletRequest)
+        ));
+    }
+
     @GetMapping("/bindings/{id}/product-branches")
     @RequirePermission("gitlab:view")
     public ApiResponse<List<GitlabProductBranchSummary>> listProductBranches(@PathVariable Long id) {
@@ -244,6 +263,42 @@ public class GitlabController {
             @PathVariable Long id,
             @Valid @RequestBody GitlabCreateProductBranchSyncRequest request) {
         return ApiResponse.success(gitlabManagementService.createProductBranchSyncMergeRequests(id, request));
+    }
+
+    private String resolveRequestScheme(HttpServletRequest request) {
+        String forwardedProto = trimHeaderValue(request.getHeader("X-Forwarded-Proto"));
+        if (forwardedProto != null) {
+            return forwardedProto;
+        }
+        return request.getScheme();
+    }
+
+    private String resolveRequestHost(HttpServletRequest request) {
+        String forwardedHost = trimHeaderValue(request.getHeader("X-Forwarded-Host"));
+        String hostValue = forwardedHost != null ? forwardedHost : trimHeaderValue(request.getHeader("Host"));
+        if (hostValue == null || hostValue.isBlank()) {
+            return request.getServerName();
+        }
+        if (hostValue.startsWith("[")) {
+            int endIndex = hostValue.indexOf(']');
+            if (endIndex > 0) {
+                return hostValue.substring(1, endIndex);
+            }
+        }
+        int colonIndex = hostValue.indexOf(':');
+        return colonIndex > 0 ? hostValue.substring(0, colonIndex) : hostValue;
+    }
+
+    private String trimHeaderValue(String rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        String normalized = rawValue.trim();
+        if (normalized.isBlank()) {
+            return null;
+        }
+        int commaIndex = normalized.indexOf(',');
+        return commaIndex > 0 ? normalized.substring(0, commaIndex).trim() : normalized;
     }
 
     /**
