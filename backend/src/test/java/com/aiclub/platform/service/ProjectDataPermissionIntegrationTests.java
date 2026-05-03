@@ -2,6 +2,7 @@ package com.aiclub.platform.service;
 
 import com.aiclub.platform.common.DataPermissionScopeType;
 import com.aiclub.platform.domain.model.AgentEntity;
+import com.aiclub.platform.domain.model.ExecutionRunEntity;
 import com.aiclub.platform.domain.model.ExecutionTaskEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
@@ -14,10 +15,12 @@ import com.aiclub.platform.domain.model.RoleEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.IterationSummary;
+import com.aiclub.platform.dto.ExecutionTaskListStatsSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.KnowledgeGraphSummary;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
+import com.aiclub.platform.dto.ProjectListStatsSummary;
 import com.aiclub.platform.dto.ProjectPipelineBindingSummary;
 import com.aiclub.platform.dto.ProjectSummary;
 import com.aiclub.platform.dto.TaskSummary;
@@ -32,6 +35,7 @@ import com.aiclub.platform.dto.request.TestPlanRequest;
 import com.aiclub.platform.exception.ForbiddenException;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.ExecutionTaskRepository;
+import com.aiclub.platform.repository.ExecutionRunRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
 import com.aiclub.platform.repository.IterationRepository;
@@ -112,6 +116,9 @@ class ProjectDataPermissionIntegrationTests {
 
     @Autowired
     private ExecutionTaskRepository executionTaskRepository;
+
+    @Autowired
+    private ExecutionRunRepository executionRunRepository;
 
     @Autowired
     private ProjectGitlabBindingRepository projectGitlabBindingRepository;
@@ -517,6 +524,59 @@ class ProjectDataPermissionIntegrationTests {
     }
 
     /**
+     * 项目管理顶部统计卡片必须基于完整筛选结果聚合，不能继续随着列表分页只统计当前页。
+     */
+    @Test
+    void shouldSummarizeProjectCardsAcrossAllFilteredProjectsInsteadOfCurrentPage() {
+        UserEntity creator = createUser("creator-project-summary", "项目统计创建人");
+        UserEntity owner = createUser("owner-project-summary", "项目统计负责人");
+
+        ProjectEntity runningProject = createProjectAs(creator, owner, List.of(), "项目统计-进行中");
+        ProjectEntity plannedProject = createProjectAs(creator, owner, List.of(), "项目统计-已立项");
+        plannedProject.setStatus("已立项");
+        plannedProject = projectRepository.save(plannedProject);
+
+        createTaskAs(creator, runningProject, null, "项目统计任务-1", "任务");
+        createTaskAs(creator, runningProject, null, "项目统计任务-2", "任务");
+        createTaskAs(creator, plannedProject, null, "项目统计任务-3", "任务");
+        createTaskAs(creator, plannedProject, null, "项目统计任务-4", "任务");
+        createTaskAs(creator, plannedProject, null, "项目统计任务-5", "任务");
+
+        loginAs(creator);
+        assertThat(platformStoreService.pageProjects(1, 1, null, null).records()).hasSize(1);
+
+        ProjectListStatsSummary stats = platformStoreService.getProjectListStats(null, null);
+        assertThat(stats.activeProjectCount()).isEqualTo(2);
+        assertThat(stats.totalTaskCount()).isEqualTo(5);
+        assertThat(stats.resourceLoadPercent()).isEqualTo(50);
+        assertThat(stats.averageTaskCount()).isEqualTo(2.5D);
+    }
+
+    /**
+     * 执行中心顶部统计卡片也必须按完整筛选结果聚合，避免翻页后进行中数量和平均进度失真。
+     */
+    @Test
+    void shouldSummarizeExecutionCardsAcrossAllFilteredTasksInsteadOfCurrentPage() {
+        UserEntity creator = createUser("creator-execution-summary", "执行统计创建人");
+        UserEntity owner = createUser("owner-execution-summary", "执行统计负责人");
+
+        ProjectEntity project = createProjectAs(creator, owner, List.of(), "执行统计项目");
+        createExecutionTask(project, creator, "执行统计-待执行", "PENDING", 0);
+        createExecutionTask(project, creator, "执行统计-待确认", "WAITING_CONFIRMATION", 50);
+        createExecutionTask(project, creator, "执行统计-成功", "SUCCESS", 100);
+        createExecutionTask(project, creator, "执行统计-失败", "FAILED", 0);
+
+        loginAs(creator);
+        assertThat(executionTaskService.pageExecutionTasks(1, 1, null, null, null, project.getId()).records()).hasSize(1);
+
+        ExecutionTaskListStatsSummary stats = executionTaskService.getExecutionTaskListStats(null, null, null, project.getId());
+        assertThat(stats.totalCount()).isEqualTo(4);
+        assertThat(stats.pendingOrRunningCount()).isEqualTo(2);
+        assertThat(stats.successCount()).isEqualTo(1);
+        assertThat(stats.averageProgressPercent()).isEqualTo(38);
+    }
+
+    /**
      * 测试管理属于项目绑定资源：
      * 列表、详情、项目迭代选项以及新增入口都应继续跟随项目数据权限过滤。
      */
@@ -759,6 +819,14 @@ class ProjectDataPermissionIntegrationTests {
     }
 
     private ExecutionTaskEntity createExecutionTask(ProjectEntity project, UserEntity createdByUser, String title) {
+        return createExecutionTask(project, createdByUser, title, "PENDING", 0);
+    }
+
+    private ExecutionTaskEntity createExecutionTask(ProjectEntity project,
+                                                    UserEntity createdByUser,
+                                                    String title,
+                                                    String status,
+                                                    int progressPercent) {
         ExecutionTaskEntity entity = new ExecutionTaskEntity();
         entity.setSourceType("MANUAL");
         entity.setSourceId(null);
@@ -767,11 +835,22 @@ class ProjectDataPermissionIntegrationTests {
         entity.setTitle(title);
         entity.setProject(project);
         entity.setCreatedByUser(createdByUser);
-        entity.setStatus("PENDING");
+        entity.setStatus(status);
         entity.setCancelRequested(false);
         entity.setLatestSummary(title + " 的摘要");
         entity.setInputPayload("{}");
         entity.setAgentBindingPayload("[]");
+        entity = executionTaskRepository.save(entity);
+
+        ExecutionRunEntity run = new ExecutionRunEntity();
+        run.setExecutionTask(entity);
+        run.setRunNo(1);
+        run.setStatus(status);
+        run.setProgressPercent(progressPercent);
+        run.setInputSnapshot("{}");
+        run = executionRunRepository.save(run);
+
+        entity.setCurrentRun(run);
         return executionTaskRepository.save(entity);
     }
 

@@ -80,6 +80,9 @@ platform:
       state-expire-minutes: ${PLATFORM_GITLAB_OAUTH_STATE_EXPIRE_MINUTES:10}
   gitee:
     default-api-url: ${PLATFORM_GITEE_DEFAULT_API_URL:https://api.gitee.com/enterprises}
+    binding:
+      enterprise-id: ${PLATFORM_GITEE_BINDING_ENTERPRISE_ID:0}
+      access-token: ${PLATFORM_GITEE_BINDING_ACCESS_TOKEN:}
     test-push:
       test-plan-assignee-id: ${PLATFORM_GITEE_TEST_PUSH_TEST_PLAN_ASSIGNEE_ID:9917662}
       test-case-module-id: ${PLATFORM_GITEE_TEST_PUSH_TEST_CASE_MODULE_ID:229413}

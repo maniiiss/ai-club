@@ -352,12 +352,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import {
   cancelExecutionTask,
+  getExecutionTaskListStats,
   listProjectOptions,
   pageExecutionTasks,
   retryExecutionTask
 } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
-import type { ExecutionTaskItem, ProjectItem } from '@/types/platform'
+import type { ExecutionTaskItem, ExecutionTaskListStatsItem, ProjectItem } from '@/types/platform'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 interface ExecutionSummaryCard {
@@ -375,6 +376,12 @@ const router = useRouter()
 const authStore = useAuthStore()
 const loading = ref(false)
 const executionTasks = ref<ExecutionTaskItem[]>([])
+const executionTaskStats = ref<ExecutionTaskListStatsItem>({
+  totalCount: 0,
+  pendingOrRunningCount: 0,
+  successCount: 0,
+  averageProgressPercent: 0
+})
 const projectOptions = ref<ProjectItem[]>([])
 const refreshTimer = ref<number | null>(null)
 const filterPopoverVisible = ref(false)
@@ -410,22 +417,12 @@ const canCancelExecution = computed(() => authStore.hasPermission('task:executio
 const canRetryExecution = computed(() => authStore.hasPermission('task:execution:retry'))
 const retiredScenarioCodes = new Set(['REQUIREMENT_BREAKDOWN', 'TEST_DESIGN_OR_REVIEW'])
 
-/**
- * 顶部概览卡片统一基于当前筛选结果生成，避免为了纯展示再增加统计接口。
- */
 const summaryCards = computed<ExecutionSummaryCard[]>(() => {
-  const currentPageTasks = executionTasks.value
-  const pendingOrRunningCount = currentPageTasks.filter((item) => ['PENDING', 'RUNNING', 'WAITING_CONFIRMATION'].includes(item.status)).length
-  const successCount = currentPageTasks.filter((item) => item.status === 'SUCCESS').length
-  const averageProgress = currentPageTasks.length
-    ? Math.round(currentPageTasks.reduce((sum, item) => sum + progressPercent(item), 0) / currentPageTasks.length)
-    : 0
-
   return [
-    { label: '当前筛选任务', value: pagination.total, icon: Tickets, active: true },
-    { label: '进行中 / 待执行', value: pendingOrRunningCount, icon: Lightning, active: false },
-    { label: '成功数量', value: successCount, icon: TrendCharts, active: false },
-    { label: '平均进度', value: `${averageProgress}%`, icon: PieChart, active: false }
+    { label: '当前筛选任务', value: executionTaskStats.value.totalCount, icon: Tickets, active: true },
+    { label: '进行中 / 待执行', value: executionTaskStats.value.pendingOrRunningCount, icon: Lightning, active: false },
+    { label: '成功数量', value: executionTaskStats.value.successCount, icon: TrendCharts, active: false },
+    { label: '平均进度', value: `${executionTaskStats.value.averageProgressPercent}%`, icon: PieChart, active: false }
   ]
 })
 
@@ -517,16 +514,25 @@ const formatDateTime = (value?: string | null) => value ? value.replace('T', ' '
 const loadExecutionTasks = async () => {
   loading.value = true
   try {
-    const pageData = await pageExecutionTasks({
-      page: requestPage.value,
-      size: requestSize.value,
-      keyword: filters.keyword,
-      status: filters.status,
-      scenarioCode: filters.scenarioCode,
-      projectId: filters.projectId
-    })
+    const [pageData, statsData] = await Promise.all([
+      pageExecutionTasks({
+        page: requestPage.value,
+        size: requestSize.value,
+        keyword: filters.keyword,
+        status: filters.status,
+        scenarioCode: filters.scenarioCode,
+        projectId: filters.projectId
+      }),
+      getExecutionTaskListStats({
+        keyword: filters.keyword,
+        status: filters.status,
+        scenarioCode: filters.scenarioCode,
+        projectId: filters.projectId
+      })
+    ])
     executionTasks.value = pageData.records
     pagination.total = pageData.total
+    executionTaskStats.value = statsData
   } finally {
     loading.value = false
   }

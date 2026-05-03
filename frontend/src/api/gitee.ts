@@ -3,7 +3,6 @@ import type {
   ApiResponse,
   GiteeMilestoneItem,
   GiteeProgramItem,
-  GiteeProjectBindingDiscoveryResultItem,
   GiteeTestPlanPushContextItem,
   GiteeTestPlanPushResultItem,
   GiteeWorkItemSyncLogItem,
@@ -13,17 +12,8 @@ import type {
 } from '@/types/platform'
 
 export interface ProjectGiteeBindingPayload {
-  enterpriseId: number
-  apiBaseUrl: string
   giteeProgramId: number
-  accessToken?: string
   enabled: boolean
-}
-
-export interface GiteeProjectBindingDiscoveryPayload {
-  enterpriseId: number
-  apiBaseUrl: string
-  accessToken?: string
 }
 
 export interface IterationGiteeBindingPayload {
@@ -35,8 +25,8 @@ export const getProjectGiteeBinding = async (projectId: number) => {
   return data.data
 }
 
-export const discoverProjectGiteePrograms = async (projectId: number, payload: GiteeProjectBindingDiscoveryPayload) => {
-  const { data } = await http.post<ApiResponse<GiteeProjectBindingDiscoveryResultItem>>(`/api/gitee/projects/${projectId}/binding/discover`, payload)
+export const listProjectGiteePrograms = async () => {
+  const { data } = await http.get<ApiResponse<GiteeProgramItem[]>>('/api/gitee/project-programs')
   return data.data
 }
 

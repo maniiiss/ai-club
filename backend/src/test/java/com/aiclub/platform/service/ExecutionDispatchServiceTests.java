@@ -261,6 +261,53 @@ class ExecutionDispatchServiceTests {
     }
 
     /**
+     * 开发执行失败同样需要通知发起人，避免用户只能手动刷新执行详情页确认失败原因。
+     */
+    @Test
+    void shouldNotifyRequesterWhenDevelopmentExecutionFails() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setCreatedByUser(buildUser(78L, "发起人乙"));
+        executionTask.setTitle("开发失败任务");
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(304L);
+        executionRun.setExecutionTask(executionTask);
+        executionRun.setOutputSummary("2 个仓库中 1 个执行失败。");
+
+        ExecutionStepEntity failedStep = new ExecutionStepEntity();
+        failedStep.setId(601L);
+        failedStep.setRun(executionRun);
+        failedStep.setStepName("开发实现 · demo/repo");
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(904L);
+            return artifact;
+        });
+
+        executionDispatchService.finishFailed(
+                executionTask,
+                executionRun,
+                failedStep,
+                new IllegalStateException("开发实现失败，测试未通过"),
+                new java.util.ArrayList<>()
+        );
+
+        verify(notificationService).sendToUser(
+                eq(78L),
+                eq(NotificationService.TYPE_TASK),
+                eq(NotificationService.LEVEL_ERROR),
+                eq("开发执行失败：开发失败任务"),
+                org.mockito.ArgumentMatchers.contains("开发实现失败，测试未通过"),
+                eq("/tasks/99"),
+                eq("DEVELOPMENT_EXECUTION_FAILED"),
+                eq(99L)
+        );
+    }
+
+    /**
      * 规划确认模式下，PLAN 完成后调度层不应直接 finishSuccess，而应保留当前 run 并提醒发起人进入详情确认。
      */
     @Test
@@ -602,6 +649,126 @@ class ExecutionDispatchServiceTests {
         executionDispatchService.finishCanceled(executionTask, executionRun, new java.util.ArrayList<>());
 
         verify(executionEventService).recordArtifactReady(executionTask, executionRun, null, 902L, "取消摘要");
+    }
+
+    /**
+     * 自动化测试失败后也要发送站内通知，帮助测试同学直接从消息中心回到失败执行单。
+     */
+    @Test
+    void shouldNotifyRequesterWhenTestAutomationFails() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION);
+        executionTask.setTitle("自动化回归任务");
+        executionTask.setCreatedByUser(buildUser(79L, "测试同学"));
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(305L);
+        executionRun.setExecutionTask(executionTask);
+        executionRun.setOutputSummary("共 6 条自动化用例，失败 2 条。");
+
+        ExecutionStepEntity failedStep = new ExecutionStepEntity();
+        failedStep.setId(602L);
+        failedStep.setRun(executionRun);
+        failedStep.setStepName("执行自动化");
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(905L);
+            return artifact;
+        });
+
+        executionDispatchService.finishFailed(
+                executionTask,
+                executionRun,
+                failedStep,
+                new IllegalStateException("自动化执行失败，2 条用例未通过"),
+                new java.util.ArrayList<>()
+        );
+
+        verify(notificationService).sendToUser(
+                eq(79L),
+                eq(NotificationService.TYPE_TASK),
+                eq(NotificationService.LEVEL_ERROR),
+                eq("自动化测试失败：自动化回归任务"),
+                org.mockito.ArgumentMatchers.contains("自动化执行失败，2 条用例未通过"),
+                eq("/tasks/99"),
+                eq("TEST_AUTOMATION_FAILED"),
+                eq(99L)
+        );
+    }
+
+    /**
+     * 仓库扫描被取消后仍应给发起人发送提醒，避免用户误以为任务仍在运行。
+     */
+    @Test
+    void shouldNotifyRequesterWhenRepositoryScanCanceled() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN);
+        executionTask.setTitle("仓库扫描任务");
+        executionTask.setCreatedByUser(buildUser(80L, "扫描发起人"));
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(306L);
+        executionRun.setExecutionTask(executionTask);
+        executionRun.setOutputSummary("仓库扫描已取消，基础报告已保留。");
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(906L);
+            return artifact;
+        });
+
+        executionDispatchService.finishCanceled(executionTask, executionRun, new java.util.ArrayList<>());
+
+        verify(notificationService).sendToUser(
+                eq(80L),
+                eq(NotificationService.TYPE_TASK),
+                eq(NotificationService.LEVEL_WARNING),
+                eq("仓库规范扫描已取消：仓库扫描任务"),
+                org.mockito.ArgumentMatchers.contains("仓库扫描已取消"),
+                eq("/tasks/99"),
+                eq("CODEBASE_SCAN_CANCELED"),
+                eq(99L)
+        );
+    }
+
+    /**
+     * 兼容单次执行等非专用场景也要走统一站内通知兜底，避免新增场景后再次漏通知。
+     */
+    @Test
+    void shouldNotifyRequesterWhenGenericExecutionSucceeds() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_AD_HOC_AGENT_RUN);
+        executionTask.setTitle("兼容单次运行任务");
+        executionTask.setCreatedByUser(buildUser(81L, "兼容执行人"));
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(307L);
+        executionRun.setExecutionTask(executionTask);
+        executionRun.setOutputSummary("兼容单次运行已完成，产物已生成。");
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(907L);
+            return artifact;
+        });
+
+        executionDispatchService.finishSuccess(executionTask, executionRun, new java.util.ArrayList<>());
+
+        verify(notificationService).sendToUser(
+                eq(81L),
+                eq(NotificationService.TYPE_TASK),
+                eq(NotificationService.LEVEL_SUCCESS),
+                eq("兼容单次执行已完成：兼容单次运行任务"),
+                org.mockito.ArgumentMatchers.contains("兼容单次运行已完成"),
+                eq("/tasks/99"),
+                eq("EXECUTION_COMPLETED"),
+                eq(99L)
+        );
     }
 
     private ExecutionTaskEntity buildExecutionTask() {

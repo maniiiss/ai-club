@@ -3,6 +3,7 @@ package com.aiclub.platform.controller;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.PageResponse;
+import com.aiclub.platform.dto.ProjectListStatsSummary;
 import com.aiclub.platform.dto.ProjectSummary;
 import com.aiclub.platform.dto.request.ProjectRequest;
 import com.aiclub.platform.service.PlatformStoreService;
@@ -38,6 +39,13 @@ public class ProjectController {
             @RequestParam(required = false) String status
     ) {
         return ApiResponse.success(platformStoreService.pageProjects(page, size, keyword, status));
+    }
+
+    @GetMapping("/stats")
+    @RequirePermission("project:view")
+    public ApiResponse<ProjectListStatsSummary> stats(@RequestParam(required = false) String keyword,
+                                                      @RequestParam(required = false) String status) {
+        return ApiResponse.success(platformStoreService.getProjectListStats(keyword, status));
     }
 
     @GetMapping("/options")

@@ -128,11 +128,6 @@
                       <el-icon><Tickets /></el-icon>
                     </button>
                   </el-tooltip>
-                  <el-tooltip content="逻辑图谱" placement="top">
-                    <button class="project-action-button graph" type="button" aria-label="打开逻辑图谱" @click="openKnowledgeGraph(row)">
-                      <el-icon><Connection /></el-icon>
-                    </button>
-                  </el-tooltip>
                   <el-tooltip v-if="canManageGiteeBinding" content="Gitee 绑定" placement="top">
                     <button class="project-action-button gitee" type="button" aria-label="打开 Gitee 绑定" @click="openProjectGiteeBindingDialog(row)">
                       <el-icon><Link /></el-icon>
@@ -224,10 +219,6 @@
                 <el-icon><Tickets /></el-icon>
                 <span>迭代管理</span>
               </button>
-              <button class="project-mobile-action-button graph" type="button" @click="openKnowledgeGraph(row)">
-                <el-icon><Connection /></el-icon>
-                <span>逻辑图谱</span>
-              </button>
               <button
                 v-if="canManageGiteeBinding"
                 class="project-mobile-action-button gitee"
@@ -318,10 +309,10 @@
             </div>
             <div class="project-dialog-form-grid">
               <el-form-item label="项目名称" prop="name" class="project-dialog-span-2">
-                <el-input v-model="form.name" placeholder="例如：智能代码评审平台" />
+                <el-input v-model="form.name" :disabled="!canEditProjectFields" placeholder="例如：智能代码评审平台" />
               </el-form-item>
               <el-form-item label="负责人" prop="ownerUserId">
-                <el-select v-model="form.ownerUserId" filterable placeholder="请选择负责人" style="width: 100%" @change="handleOwnerChange">
+                <el-select v-model="form.ownerUserId" :disabled="!canEditProjectFields" filterable placeholder="请选择负责人" style="width: 100%" @change="handleOwnerChange">
                   <el-option
                     v-for="item in userOptions"
                     :key="item.id"
@@ -331,7 +322,7 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="状态" prop="status">
-                <el-select v-model="form.status" placeholder="请选择状态" style="width: 100%">
+                <el-select v-model="form.status" :disabled="!canEditProjectFields" placeholder="请选择状态" style="width: 100%">
                   <el-option label="进行中" value="进行中" />
                   <el-option label="规划中" value="规划中" />
                   <el-option label="已立项" value="已立项" />
@@ -339,7 +330,7 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="项目成员" class="project-dialog-span-2">
-                <el-select v-model="form.memberUserIds" multiple filterable collapse-tags placeholder="请选择项目成员" style="width: 100%">
+                <el-select v-model="form.memberUserIds" :disabled="!canEditProjectFields" multiple filterable collapse-tags placeholder="请选择项目成员" style="width: 100%">
                   <el-option
                     v-for="item in memberSelectableUsers"
                     :key="item.id"
@@ -349,7 +340,38 @@
                 </el-select>
               </el-form-item>
               <el-form-item label="项目说明" prop="description" class="project-dialog-span-2">
-                <el-input v-model="form.description" type="textarea" :rows="4" placeholder="请输入项目目标、协作范围或当前阶段说明" />
+                <el-input v-model="form.description" :disabled="!canEditProjectFields" type="textarea" :rows="4" placeholder="请输入项目目标、协作范围或当前阶段说明" />
+              </el-form-item>
+            </div>
+          </section>
+
+          <section v-if="showGiteeBindingSection" class="platform-form-section">
+            <div class="platform-form-section-head">
+              <div class="platform-form-section-title">Gitee 绑定</div>
+            </div>
+            <div v-loading="giteeBindingLoading" class="project-dialog-form-grid">
+              <el-form-item label="Gitee 项目" class="project-dialog-span-2">
+                <el-select
+                  v-model="form.giteeProgramId"
+                  filterable
+                  :disabled="!canEditGiteeBindingFields || giteeProgramLoading"
+                  placeholder="请选择 Gitee 项目"
+                  :no-data-text="giteeProgramLoading ? 'Gitee 项目加载中...' : '未查询到可见的 Gitee 项目'"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="item in giteeProgramOptions"
+                    :key="item.id"
+                    :label="item.ident ? `${item.name}（${item.ident}）` : item.name"
+                    :value="item.id"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="启用状态">
+                <el-switch
+                  v-model="form.giteeBindingEnabled"
+                  :disabled="!canEditGiteeBindingFields || !form.giteeProgramId"
+                />
               </el-form-item>
             </div>
           </section>
@@ -406,71 +428,6 @@
         <el-button @click="repoDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
-
-    <el-dialog
-      v-model="giteeBindingDialogVisible"
-      :title="giteeBindingDialogTitle"
-      width="720px"
-      class="platform-form-dialog"
-      align-center
-      destroy-on-close
-    >
-      <template v-if="currentGiteeProject">
-        <el-form ref="giteeBindingFormRef" :model="giteeBindingForm" :rules="giteeBindingRules" label-position="top" v-loading="giteeBindingLoading">
-          <el-form-item label="平台项目">
-            <el-input :model-value="currentGiteeProject.name" disabled />
-          </el-form-item>
-          <div class="project-dialog-form-grid">
-            <el-form-item label="Gitee API 地址" prop="apiBaseUrl" class="project-dialog-span-2">
-              <el-input v-model="giteeBindingForm.apiBaseUrl" placeholder="例如：https://api.gitee.com/enterprises" />
-            </el-form-item>
-            <el-form-item label="企业 ID" prop="enterpriseId">
-              <el-input-number v-model="giteeBindingForm.enterpriseId" :min="1" :controls="false" style="width: 100%" />
-            </el-form-item>
-            <el-form-item label="启用状态">
-              <el-switch v-model="giteeBindingForm.enabled" />
-            </el-form-item>
-            <el-form-item label="Access Token" prop="accessToken" class="project-dialog-span-2">
-              <el-input
-                v-model="giteeBindingForm.accessToken"
-                type="password"
-                show-password
-                :placeholder="giteeBindingIsEditing ? '留空则沿用已有 Access Token' : '请输入 Gitee Access Token'"
-              />
-            </el-form-item>
-            <el-form-item label="Gitee 项目" prop="giteeProgramId" class="project-dialog-span-2">
-              <el-select
-                v-model="giteeBindingForm.giteeProgramId"
-                filterable
-                placeholder="请先测试连接并加载 Gitee 项目"
-                :no-data-text="giteeProgramLoading ? 'Gitee 项目加载中...' : '未查询到可见的 Gitee 项目'"
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="item in giteeProgramOptions"
-                  :key="item.id"
-                  :label="item.ident ? `${item.name}（${item.ident}）` : item.name"
-                  :value="item.id"
-                />
-              </el-select>
-            </el-form-item>
-          </div>
-          <div class="project-gitee-binding-tip">
-            <span>说明：项目只做一次 Gitee program 绑定，后续由迭代绑定 Gitee 迭代并按迭代手动同步工作项。</span>
-            <span v-if="projectGiteeBinding?.lastTestedAt">最近测试：{{ projectGiteeBinding.lastTestedAt }} / {{ projectGiteeBinding.lastTestMessage || '-' }}</span>
-          </div>
-        </el-form>
-      </template>
-      <template #footer>
-        <div class="project-dialog-footer">
-          <div class="project-dialog-footer-actions">
-            <el-button @click="giteeBindingDialogVisible = false">取消</el-button>
-            <el-button :loading="giteeProgramLoading" @click="handleDiscoverGiteePrograms">测试并加载项目</el-button>
-            <el-button type="primary" :loading="giteeBindingSubmitting" @click="handleSubmitProjectGiteeBinding">保存绑定</el-button>
-          </div>
-        </div>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -478,19 +435,19 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Connection, Delete, EditPen, Filter, FolderOpened, Lightning, Link, PieChart, Plus, RefreshRight, Search, Tickets, TrendCharts } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, FolderOpened, Lightning, Link, PieChart, Plus, RefreshRight, Search, Tickets, TrendCharts } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { listUserOptions } from '@/api/access'
 import {
   createProjectGiteeBinding,
-  discoverProjectGiteePrograms,
   getProjectGiteeBinding,
+  listProjectGiteePrograms,
   updateProjectGiteeBinding
 } from '@/api/gitee'
 import ListUserDisplay from '@/components/ListUserDisplay.vue'
 import ListUserGroupDisplay from '@/components/ListUserGroupDisplay.vue'
 import type { ListUserDisplayItem } from '@/components/listUserDisplay'
-import { createProject, deleteProject, pageProjects, updateProject } from '@/api/platform'
+import { createProject, deleteProject, getProjectListStats, pageProjects, updateProject } from '@/api/platform'
 import { pageGitlabBindings } from '@/api/gitlab'
 import { useAuthStore } from '@/stores/auth'
 import type {
@@ -498,6 +455,7 @@ import type {
   ProjectGiteeBindingItem,
   ProjectGitlabBindingItem,
   ProjectItem,
+  ProjectListStatsItem,
   ProjectMemberItem,
   UserOptionItem
 } from '@/types/platform'
@@ -517,53 +475,69 @@ interface ProjectForm {
   status: string
   /** 项目说明。 */
   description: string
-}
-
-interface ProjectGiteeBindingForm {
-  enterpriseId: number | null
-  apiBaseUrl: string
-  accessToken: string
+  /** 当前项目绑定的 Gitee program，留空表示暂不绑定。 */
   giteeProgramId: number | null
-  enabled: boolean
+  /** Gitee 绑定是否启用。 */
+  giteeBindingEnabled: boolean
 }
-
-const DEFAULT_GITEE_API_URL = 'https://api.gitee.com/enterprises'
 
 const loading = ref(false)
 const submitting = ref(false)
 const dialogVisible = ref(false)
 const isEditing = ref(false)
 const currentId = ref<number | null>(null)
+const currentDialogProject = ref<ProjectItem | null>(null)
 const projectList = ref<ProjectItem[]>([])
+const projectStats = ref<ProjectListStatsItem>({
+  activeProjectCount: 0,
+  totalTaskCount: 0,
+  resourceLoadPercent: 0,
+  averageTaskCount: 0
+})
 const userOptions = ref<UserOptionItem[]>([])
 const repoBindings = ref<ProjectGitlabBindingItem[]>([])
 const repoDialogVisible = ref(false)
 const repoLoading = ref(false)
 const currentRepoProject = ref<ProjectItem | null>(null)
-const currentGiteeProject = ref<ProjectItem | null>(null)
 const projectGiteeBinding = ref<ProjectGiteeBindingItem | null>(null)
 const giteeProgramOptions = ref<GiteeProgramItem[]>([])
-const giteeBindingDialogVisible = ref(false)
 const giteeBindingLoading = ref(false)
-const giteeBindingSubmitting = ref(false)
 const giteeProgramLoading = ref(false)
-const giteeBindingIsEditing = ref(false)
 const formRef = ref<FormInstance>()
-const giteeBindingFormRef = ref<FormInstance>()
 const router = useRouter()
 const authStore = useAuthStore()
 const activePreset = ref<'all' | 'planning' | 'draft'>('all')
 const isMobileViewport = ref(false)
+const dialogEntryMode = ref<'create' | 'edit' | 'gitee'>('create')
 const canManageProjects = computed(() => authStore.hasPermission('project:manage'))
 const canManageGiteeBinding = computed(() => authStore.hasPermission('gitee:binding:manage'))
-const dialogTitle = computed(() => isEditing.value ? '编辑项目' : '新建项目')
+const canEditProjectFields = computed(() => canManageProjects.value && (!isEditing.value || Boolean(currentDialogProject.value?.canEdit)))
+const canEditGiteeBindingFields = computed(() => canManageGiteeBinding.value)
+const showGiteeBindingSection = computed(() => canManageGiteeBinding.value)
+const dialogTitle = computed(() => {
+  if (!isEditing.value) {
+    return '新建项目'
+  }
+  if (dialogEntryMode.value === 'gitee' && !canEditProjectFields.value && canEditGiteeBindingFields.value) {
+    return '维护 Gitee 绑定'
+  }
+  return '编辑项目'
+})
 const dialogSubtitle = computed(() =>
-  isEditing.value
-    ? '调整项目名称、负责人、成员和状态。'
-    : '填写项目基础信息，保存后即可开始继续配置。'
+  !isEditing.value
+    ? (showGiteeBindingSection.value ? '填写项目基础信息，并可同步完成 Gitee 项目绑定。' : '填写项目基础信息，保存后即可开始继续配置。')
+    : dialogEntryMode.value === 'gitee' && !canEditProjectFields.value && canEditGiteeBindingFields.value
+      ? '当前入口只维护 Gitee 项目绑定，不会改动项目基础信息。'
+      : showGiteeBindingSection.value
+        ? '调整项目基础信息，并可同步维护 Gitee 项目绑定。'
+        : '调整项目名称、负责人、成员和状态。'
 )
-const dialogSubmitText = computed(() => isEditing.value ? '保存项目' : '创建项目')
-const giteeBindingDialogTitle = computed(() => giteeBindingIsEditing.value ? '编辑 Gitee 项目绑定' : '新增 Gitee 项目绑定')
+const dialogSubmitText = computed(() => {
+  if (!canEditProjectFields.value && canEditGiteeBindingFields.value) {
+    return projectGiteeBinding.value ? '保存绑定' : '创建绑定'
+  }
+  return isEditing.value ? '保存项目' : '创建项目'
+})
 
 const pagination = reactive({
   page: 1,
@@ -591,15 +565,9 @@ const form = reactive<ProjectForm>({
   ownerUserId: null,
   memberUserIds: [],
   status: '进行中',
-  description: ''
-})
-
-const giteeBindingForm = reactive<ProjectGiteeBindingForm>({
-  enterpriseId: null,
-  apiBaseUrl: DEFAULT_GITEE_API_URL,
-  accessToken: '',
+  description: '',
   giteeProgramId: null,
-  enabled: true
+  giteeBindingEnabled: true
 })
 
 const rules: FormRules<ProjectForm> = {
@@ -608,58 +576,36 @@ const rules: FormRules<ProjectForm> = {
   status: [{ required: true, message: '请选择状态', trigger: 'change' }]
 }
 
-const giteeBindingRules: FormRules<ProjectGiteeBindingForm> = {
-  enterpriseId: [{ required: true, message: '请输入企业 ID', trigger: 'blur' }],
-  apiBaseUrl: [{ required: true, message: '请输入 Gitee API 地址', trigger: 'blur' }],
-  giteeProgramId: [{ required: true, message: '请选择 Gitee 项目', trigger: 'change' }]
-}
-
 const memberSelectableUsers = computed(() => userOptions.value.filter((item) => item.id !== form.ownerUserId))
 
 const summaryCards = computed(() => [
-  { label: '活跃项目', value: projectList.value.length || pagination.total, icon: Lightning, active: true },
-  { label: '任务总量', value: projectList.value.reduce((sum, item) => sum + item.taskCount, 0), icon: TrendCharts, active: false },
-  { label: '资源负载', value: `${resourceLoad.value}%`, icon: PieChart, active: false },
-  { label: '平均速度', value: averageVelocity.value.toFixed(1), icon: FolderOpened, active: false }
+  { label: '活跃项目', value: projectStats.value.activeProjectCount, icon: Lightning, active: true },
+  { label: '任务总量', value: projectStats.value.totalTaskCount, icon: TrendCharts, active: false },
+  { label: '资源负载', value: `${projectStats.value.resourceLoadPercent}%`, icon: PieChart, active: false },
+  { label: '平均速度', value: projectStats.value.averageTaskCount.toFixed(1), icon: FolderOpened, active: false }
 ])
-
-const resourceLoad = computed(() => {
-  if (!projectList.value.length) {
-    return 0
-  }
-  const runningCount = projectList.value.filter((item) => item.status === '进行中').length
-  return Math.round((runningCount / projectList.value.length) * 100)
-})
-
-const averageVelocity = computed(() => {
-  if (!projectList.value.length) {
-    return 0
-  }
-  const total = projectList.value.reduce((sum, item) => sum + item.taskCount, 0)
-  return total / projectList.value.length
-})
 
 const resetForm = () => {
   currentId.value = null
+  currentDialogProject.value = null
   form.name = ''
   form.owner = ''
   form.ownerUserId = null
   form.memberUserIds = []
   form.status = '进行中'
   form.description = ''
+  form.giteeProgramId = null
+  form.giteeBindingEnabled = true
   formRef.value?.clearValidate()
 }
 
 const resetGiteeBindingForm = () => {
   projectGiteeBinding.value = null
   giteeProgramOptions.value = []
-  giteeBindingIsEditing.value = false
-  giteeBindingForm.enterpriseId = null
-  giteeBindingForm.apiBaseUrl = DEFAULT_GITEE_API_URL
-  giteeBindingForm.accessToken = ''
-  giteeBindingForm.giteeProgramId = null
-  giteeBindingForm.enabled = true
-  giteeBindingFormRef.value?.clearValidate()
+  form.giteeProgramId = null
+  form.giteeBindingEnabled = true
+  giteeBindingLoading.value = false
+  giteeProgramLoading.value = false
 }
 
 const buildUserLabel = (item: UserOptionItem) => item.nickname?.trim() ? `${item.nickname}（${item.username}）` : item.username
@@ -681,14 +627,21 @@ const loadUserList = async () => {
 const loadProjects = async () => {
   loading.value = true
   try {
-    const pageData = await pageProjects({
-      page: requestPage.value,
-      size: requestSize.value,
-      keyword: filters.keyword,
-      status: filters.status
-    })
+    const [pageData, statsData] = await Promise.all([
+      pageProjects({
+        page: requestPage.value,
+        size: requestSize.value,
+        keyword: filters.keyword,
+        status: filters.status
+      }),
+      getProjectListStats({
+        keyword: filters.keyword,
+        status: filters.status
+      })
+    ])
     projectList.value = pageData.records
     pagination.total = pageData.total
+    projectStats.value = statsData
   } finally {
     loading.value = false
   }
@@ -738,22 +691,9 @@ const handleNextPage = async () => {
   await loadProjects()
 }
 
-const openCreateDialog = () => {
-  if (!canManageProjects.value) {
-    return
-  }
-  isEditing.value = false
-  resetForm()
-  dialogVisible.value = true
-}
-
-const openEditDialog = (row: ProjectItem) => {
-  if (!canManageProjects.value || !row.canEdit) {
-    ElMessage.warning('当前账号不能编辑该项目')
-    return
-  }
-  isEditing.value = true
+const applyProjectToForm = (row: ProjectItem) => {
   currentId.value = row.id
+  currentDialogProject.value = row
   form.name = row.name
   form.owner = row.owner
   form.ownerUserId = row.ownerUserId
@@ -761,15 +701,79 @@ const openEditDialog = (row: ProjectItem) => {
   form.status = row.status
   form.description = row.description
   syncFormOwner()
+}
+
+const ensureGiteeProgramOption = (id: number, name: string) => {
+  if (giteeProgramOptions.value.some((item) => item.id === id)) {
+    return
+  }
+  giteeProgramOptions.value = [...giteeProgramOptions.value, { id, name, ident: null }]
+}
+
+/**
+ * 项目编辑弹框里的 Gitee 绑定改成自动加载配置化 program 列表；
+ * 这里同时兼容旧项目已有绑定的回显，避免配置刷新失败时用户看不到当前绑定值。
+ */
+const loadProjectDialogGiteeContext = async (projectId?: number | null) => {
+  if (!showGiteeBindingSection.value) {
+    return
+  }
+  giteeBindingLoading.value = true
+  giteeProgramLoading.value = true
+  try {
+    if (projectId) {
+      const binding = await getProjectGiteeBinding(projectId)
+      projectGiteeBinding.value = binding
+      if (binding) {
+        form.giteeProgramId = binding.giteeProgramId
+        form.giteeBindingEnabled = binding.enabled
+        ensureGiteeProgramOption(binding.giteeProgramId, binding.giteeProgramName)
+      }
+    }
+    const programs = await listProjectGiteePrograms()
+    giteeProgramOptions.value = programs
+    if (projectGiteeBinding.value) {
+      ensureGiteeProgramOption(projectGiteeBinding.value.giteeProgramId, projectGiteeBinding.value.giteeProgramName)
+    }
+  } catch (error: any) {
+    if (!projectGiteeBinding.value) {
+      form.giteeProgramId = null
+      form.giteeBindingEnabled = true
+    }
+    ElMessage.error(error?.response?.data?.message || '加载 Gitee 项目失败')
+  } finally {
+    giteeBindingLoading.value = false
+    giteeProgramLoading.value = false
+  }
+}
+
+const openCreateDialog = async () => {
+  if (!canManageProjects.value) {
+    return
+  }
+  dialogEntryMode.value = 'create'
+  isEditing.value = false
+  resetForm()
+  resetGiteeBindingForm()
   dialogVisible.value = true
+  await loadProjectDialogGiteeContext()
+}
+
+const openEditDialog = async (row: ProjectItem) => {
+  if (!canManageProjects.value || !row.canEdit) {
+    ElMessage.warning('当前账号不能编辑该项目')
+    return
+  }
+  dialogEntryMode.value = 'edit'
+  isEditing.value = true
+  resetGiteeBindingForm()
+  applyProjectToForm(row)
+  dialogVisible.value = true
+  await loadProjectDialogGiteeContext(row.id)
 }
 
 const openIterationBoard = (row: ProjectItem) => {
   router.push({ name: 'project-iterations', params: { projectId: row.id } })
-}
-
-const openKnowledgeGraph = (row: ProjectItem) => {
-  router.push({ name: 'project-knowledge-graph', params: { projectId: row.id } })
 }
 
 const openRepoDialog = async (row: ProjectItem) => {
@@ -800,108 +804,88 @@ const openProjectGiteeBindingDialog = async (row: ProjectItem) => {
     ElMessage.warning('当前账号没有维护 Gitee 绑定的权限')
     return
   }
-  currentGiteeProject.value = row
+  dialogEntryMode.value = 'gitee'
+  isEditing.value = true
   resetGiteeBindingForm()
-  giteeBindingDialogVisible.value = true
-  giteeBindingLoading.value = true
-  try {
-    const binding = await getProjectGiteeBinding(row.id)
-    projectGiteeBinding.value = binding
-    if (binding) {
-      giteeBindingIsEditing.value = true
-      giteeBindingForm.enterpriseId = binding.enterpriseId
-      giteeBindingForm.apiBaseUrl = binding.apiBaseUrl || DEFAULT_GITEE_API_URL
-      giteeBindingForm.giteeProgramId = binding.giteeProgramId
-      giteeBindingForm.enabled = binding.enabled
-      giteeProgramOptions.value = [{ id: binding.giteeProgramId, name: binding.giteeProgramName, ident: null }]
-    }
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '加载 Gitee 绑定失败')
-  } finally {
-    giteeBindingLoading.value = false
-  }
+  applyProjectToForm(row)
+  dialogVisible.value = true
+  await loadProjectDialogGiteeContext(row.id)
 }
 
-const handleDiscoverGiteePrograms = async () => {
-  if (!currentGiteeProject.value) {
-    return
+const persistProjectGiteeBinding = async (projectId: number) => {
+  if (!canEditGiteeBindingFields.value || !form.giteeProgramId) {
+    return false
   }
-  if (!giteeBindingForm.enterpriseId || !giteeBindingForm.apiBaseUrl.trim()) {
-    ElMessage.warning('请先填写企业 ID 和 Gitee API 地址')
-    return
+  const payload = {
+    giteeProgramId: Number(form.giteeProgramId),
+    enabled: form.giteeBindingEnabled
   }
-  giteeProgramLoading.value = true
-  try {
-    const result = await discoverProjectGiteePrograms(currentGiteeProject.value.id, {
-      enterpriseId: Number(giteeBindingForm.enterpriseId),
-      apiBaseUrl: giteeBindingForm.apiBaseUrl.trim(),
-      accessToken: giteeBindingForm.accessToken.trim() || undefined
-    })
-    giteeBindingForm.apiBaseUrl = result.apiBaseUrl || giteeBindingForm.apiBaseUrl
-    giteeProgramOptions.value = result.programs
-    if (giteeProgramOptions.value.length === 1 && !giteeBindingForm.giteeProgramId) {
-      giteeBindingForm.giteeProgramId = giteeProgramOptions.value[0].id
-    }
-    ElMessage.success(result.message || 'Gitee 项目加载成功')
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '测试连接失败')
-  } finally {
-    giteeProgramLoading.value = false
-  }
-}
-
-const handleSubmitProjectGiteeBinding = async () => {
-  if (!currentGiteeProject.value) {
-    return
-  }
-  const valid = await giteeBindingFormRef.value?.validate().catch(() => false)
-  if (!valid) {
-    return
-  }
-  if (!giteeBindingIsEditing.value && !giteeBindingForm.accessToken.trim()) {
-    ElMessage.warning('新增绑定时必须填写 Access Token')
-    return
-  }
-  giteeBindingSubmitting.value = true
-  try {
-    const payload = {
-      enterpriseId: Number(giteeBindingForm.enterpriseId),
-      apiBaseUrl: giteeBindingForm.apiBaseUrl.trim(),
-      accessToken: giteeBindingForm.accessToken.trim() || undefined,
-      giteeProgramId: Number(giteeBindingForm.giteeProgramId),
-      enabled: giteeBindingForm.enabled
-    }
-    const binding = giteeBindingIsEditing.value
-      ? await updateProjectGiteeBinding(currentGiteeProject.value.id, payload)
-      : await createProjectGiteeBinding(currentGiteeProject.value.id, payload)
-    projectGiteeBinding.value = binding
-    giteeBindingDialogVisible.value = false
-    ElMessage.success(giteeBindingIsEditing.value ? 'Gitee 项目绑定已更新' : 'Gitee 项目绑定已创建')
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '保存 Gitee 绑定失败')
-  } finally {
-    giteeBindingSubmitting.value = false
-  }
+  const binding = projectGiteeBinding.value
+    ? await updateProjectGiteeBinding(projectId, payload)
+    : await createProjectGiteeBinding(projectId, payload)
+  projectGiteeBinding.value = binding
+  form.giteeProgramId = binding.giteeProgramId
+  form.giteeBindingEnabled = binding.enabled
+  ensureGiteeProgramOption(binding.giteeProgramId, binding.giteeProgramName)
+  return true
 }
 
 const handleSubmit = async () => {
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid) return
+  const shouldSaveProject = canEditProjectFields.value
+  const shouldSaveGiteeBinding = canEditGiteeBindingFields.value && form.giteeProgramId !== null
+  if (shouldSaveProject) {
+    const valid = await formRef.value?.validate().catch(() => false)
+    if (!valid) return
+  }
+  if (!shouldSaveProject && canEditGiteeBindingFields.value && !shouldSaveGiteeBinding) {
+    ElMessage.warning('请选择 Gitee 项目后再保存绑定')
+    return
+  }
 
   submitting.value = true
+  const wasEditingBeforeSubmit = isEditing.value
+  let savedProject: ProjectItem | null = null
   try {
-    syncFormOwner()
-    if (isEditing.value && currentId.value !== null) {
-      await updateProject(currentId.value, { ...form })
-      ElMessage.success('项目更新成功')
-    } else {
-      await createProject({ ...form })
-      ElMessage.success('项目创建成功')
+    if (shouldSaveProject) {
+      syncFormOwner()
+      const projectPayload = {
+        name: form.name,
+        owner: form.owner,
+        ownerUserId: form.ownerUserId,
+        memberUserIds: [...form.memberUserIds],
+        status: form.status,
+        description: form.description
+      }
+      savedProject = isEditing.value && currentId.value !== null
+        ? await updateProject(currentId.value, projectPayload)
+        : await createProject(projectPayload)
+      applyProjectToForm(savedProject)
+      isEditing.value = true
+      dialogEntryMode.value = 'edit'
     }
+
+    const targetProjectId = savedProject?.id ?? currentId.value
+    if (shouldSaveGiteeBinding && targetProjectId !== null) {
+      await persistProjectGiteeBinding(targetProjectId)
+    }
+
+    const successMessage = shouldSaveProject && shouldSaveGiteeBinding
+      ? '项目与 Gitee 绑定已保存'
+      : shouldSaveProject
+        ? (wasEditingBeforeSubmit ? '项目保存成功' : '项目创建成功')
+        : 'Gitee 绑定保存成功'
+    ElMessage.success(successMessage)
     dialogVisible.value = false
     await loadProjects()
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '操作失败')
+    const message = error?.response?.data?.message || '操作失败'
+    if (savedProject) {
+      ElMessage.warning(`项目已保存，但 Gitee 绑定失败：${message}`)
+      await loadProjects()
+      await loadProjectDialogGiteeContext(savedProject.id)
+    } else {
+      ElMessage.error(message)
+    }
   } finally {
     submitting.value = false
   }
@@ -1178,16 +1162,6 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
-.project-gitee-binding-tip {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 4px;
-  color: #6d7f95;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
 .project-mobile-list-shell {
   flex: 1 1 auto;
   min-height: 360px;
@@ -1355,10 +1329,6 @@ onBeforeUnmount(() => {
   color: #516174;
   font-size: 12px;
   font-weight: 800;
-}
-
-.project-mobile-action-button.graph {
-  color: var(--app-tertiary);
 }
 
 .project-mobile-action-button.gitee {
@@ -1648,10 +1618,6 @@ onBeforeUnmount(() => {
 .project-action-button:hover {
   background: rgba(255, 255, 255, 0.96);
   color: #904d00;
-}
-
-.project-action-button.graph:hover {
-  color: #00658f;
 }
 
 .project-action-button.gitee:hover {

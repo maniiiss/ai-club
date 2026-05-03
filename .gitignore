@@ -15,3 +15,6 @@ APITOKEN.md
 /code-processing/.scan-workspace
 .data
 .gitnexus
+.scan-workspace
+.docker-config-temp
+.scripts/__pycache__

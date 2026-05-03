@@ -10,6 +10,7 @@ import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.ExecutionArtifactSummary;
+import com.aiclub.platform.dto.ExecutionTaskListStatsSummary;
 import com.aiclub.platform.dto.ExecutionRunDetail;
 import com.aiclub.platform.dto.ExecutionRunSummary;
 import com.aiclub.platform.dto.ExecutionStepSummary;
@@ -141,6 +142,39 @@ public class ExecutionTaskService {
                 )
                 .map(this::toTaskSummary);
         return PageResponse.from(pageData);
+    }
+
+    /**
+     * 执行中心顶部统计卡片需要脱离分页结果单独聚合，保证翻页和移动端瀑布流都不会影响统计值。
+     */
+    public ExecutionTaskListStatsSummary getExecutionTaskListStats(String keyword,
+                                                                   String status,
+                                                                   String scenarioCode,
+                                                                   Long projectId) {
+        ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.requireCurrentScope();
+        if (projectId != null) {
+            requireProject(projectId);
+        }
+        List<ExecutionTaskEntity> filteredTasks = listExecutionTasksForStats(keyword, status, scenarioCode, projectId, scope);
+        int totalCount = filteredTasks.size();
+        int pendingOrRunningCount = (int) filteredTasks.stream()
+                .filter(item -> List.of("PENDING", "RUNNING", STATUS_WAITING_CONFIRMATION).contains(item.getStatus()))
+                .count();
+        int successCount = (int) filteredTasks.stream()
+                .filter(item -> "SUCCESS".equalsIgnoreCase(item.getStatus()))
+                .count();
+        int averageProgressPercent = totalCount == 0
+                ? 0
+                : (int) Math.round(filteredTasks.stream()
+                .mapToInt(this::progressPercentForStats)
+                .average()
+                .orElse(0D));
+        return new ExecutionTaskListStatsSummary(
+                totalCount,
+                pendingOrRunningCount,
+                successCount,
+                averageProgressPercent
+        );
     }
 
     public ExecutionTaskDetail getExecutionTask(Long executionTaskId) {
@@ -356,6 +390,34 @@ public class ExecutionTaskService {
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
+    }
+
+    /**
+     * 统计接口一次性预取 currentRun，避免按条访问进度字段时触发 N+1 查询。
+     */
+    private List<ExecutionTaskEntity> listExecutionTasksForStats(String keyword,
+                                                                 String status,
+                                                                 String scenarioCode,
+                                                                 Long projectId,
+                                                                 ProjectDataPermissionService.ProjectDataScope scope) {
+        Specification<ExecutionTaskEntity> baseSpecification =
+                executionTaskSpecification(keyword, status, scenarioCode, projectId, scope);
+        return executionTaskRepository.findAll((root, query, cb) -> {
+            root.fetch("currentRun", JoinType.LEFT);
+            query.distinct(true);
+            return baseSpecification.toPredicate(root, query, cb);
+        });
+    }
+
+    /**
+     * 顶部卡片的平均进度与列表页展示口径保持一致，统一兜底到 0-100。
+     */
+    private int progressPercentForStats(ExecutionTaskEntity executionTask) {
+        ExecutionRunEntity currentRun = executionTask.getCurrentRun();
+        int rawValue = currentRun == null || currentRun.getProgressPercent() == null
+                ? 0
+                : currentRun.getProgressPercent();
+        return Math.min(100, Math.max(0, rawValue));
     }
 
     /**

@@ -720,7 +720,7 @@ const feedbackRules: FormRules<typeof feedbackForm> = {
 
 const primaryMenuItems: MenuItem[] = [
   { path: '/dashboard', label: '首页看板', shortLabel: '首页', permission: 'dashboard:view', icon: Odometer, matchNames: ['dashboard'] },
-  { path: '/projects', label: '项目管理', shortLabel: '项目', permission: 'project:view', icon: FolderOpened, matchNames: ['projects', 'project-iterations', 'project-knowledge-graph'] },
+  { path: '/projects', label: '项目管理', shortLabel: '项目', permission: 'project:view', icon: FolderOpened, matchNames: ['projects', 'project-iterations'] },
   { path: '/wiki', label: 'Wiki 中心', shortLabel: 'Wiki', permission: 'wiki:view', icon: Document, matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page', 'wiki-space-memory-fact-graph', 'project-memory-fact-graph'] },
   { path: '/agents', label: '智能体管理', shortLabel: '智能体', permission: 'agent:view', icon: Connection, matchNames: ['agents'] },
   { path: '/tasks', label: '执行中心', shortLabel: '执行', permission: 'task:view', icon: Tickets, matchNames: ['tasks', 'execution-task-detail'] },
@@ -815,14 +815,6 @@ const projectWorkspaceMenus = computed<MenuItem[]>(() => {
       icon: Document,
       matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page', 'wiki-space-memory-fact-graph']
     },
-    {
-      path: `/projects/${currentProjectId.value}/knowledge-graph`,
-      label: '逻辑图谱',
-      shortLabel: '图谱',
-      permission: 'project:view',
-      icon: Connection,
-      matchNames: ['project-knowledge-graph']
-    }
   ]
 })
 const visibleProjectWorkspaceMenus = computed(() => projectWorkspaceMenus.value.filter((item) => authStore.hasPermission(item.permission)))
@@ -833,7 +825,6 @@ const hermesQuickPrompts = computed(() => {
     'project-iterations': hermesIterationId.value
       ? ['帮我总结当前迭代发版内容', '当前迭代修复了多少缺陷', '当前迭代开发了哪些需求']
       : ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个任务为什么延期了'],
-    'project-knowledge-graph': ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个项目本周最值得关注的风险是什么'],
     'project-memory-fact-graph': ['这个项目里最近形成了哪些稳定事实', '哪些实体和当前项目关系最紧密', '从这些事实里能看出什么风险或机会'],
     'wiki-home': ['有哪些空间与当前项目相关', '帮我找某个项目关联的知识目录', '当前最值得看的空间是哪个'],
     'wiki-space': ['这个空间最近有哪些知识更新', '帮我梳理这个空间里的重点内容', '这个空间目前最值得关注的页面是什么'],
@@ -1042,7 +1033,18 @@ const NOTIFICATION_BIZ_TYPE_LABELS: Record<string, string> = {
   GITLAB_BRANCH_BEHIND: '分支落后提醒',
   GITLAB_AUTO_MERGE_LOG: '合并请求',
   DEVELOPMENT_EXECUTION_COMPLETED: '开发执行完成',
+  DEVELOPMENT_EXECUTION_FAILED: '开发执行失败',
+  DEVELOPMENT_EXECUTION_CANCELED: '开发执行已取消',
   DEVELOPMENT_EXECUTION_PLAN_CONFIRM: '开发执行待确认',
+  TEST_AUTOMATION_COMPLETED: '自动化测试完成',
+  TEST_AUTOMATION_FAILED: '自动化测试失败',
+  TEST_AUTOMATION_CANCELED: '自动化测试已取消',
+  CODEBASE_SCAN_COMPLETED: '仓库扫描完成',
+  CODEBASE_SCAN_FAILED: '仓库扫描失败',
+  CODEBASE_SCAN_CANCELED: '仓库扫描已取消',
+  EXECUTION_COMPLETED: '执行完成',
+  EXECUTION_FAILED: '执行失败',
+  EXECUTION_CANCELED: '执行已取消',
   SYSTEM_ANNOUNCEMENT: '系统公告'
 }
 
@@ -1082,6 +1084,8 @@ const resolveNotificationContextTone = (item: NotificationItem) => {
   if (bizKey === 'TASK_UNASSIGNED' || bizKey === 'TASK_OVERDUE' || bizKey === 'GITLAB_BRANCH_BEHIND') return 'warning'
   if (bizKey === 'TASK_COMMENT') return 'info'
   if (bizKey === 'DEVELOPMENT_EXECUTION_PLAN_CONFIRM') return 'warning'
+  if (bizKey.endsWith('_FAILED') || bizKey.endsWith('_CANCELED')) return 'warning'
+  if (bizKey.endsWith('_COMPLETED')) return 'secondary'
   if (bizKey === 'DEVELOPMENT_EXECUTION_COMPLETED') return 'secondary'
   if (bizKey === 'TASK_ASSIGNED' || bizKey === 'TASK_STATUS_CHANGED' || bizKey === 'TASK_COLLABORATOR_ADDED') return 'secondary'
   if (bizKey === 'GITLAB_MERGED' || bizKey === 'GITLAB_AI_REJECTED' || bizKey === 'GITLAB_AUTO_MERGE_LOG') return 'tertiary'
