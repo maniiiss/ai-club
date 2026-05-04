@@ -68,6 +68,7 @@ public class ExecutionDispatchService {
     private final SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
     private final ExecutionEventService executionEventService;
     private final ExecutionAsyncSessionService executionAsyncSessionService;
+    private final ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
     private final Executor executionTaskExecutor;
     private final Set<Long> dispatchingTaskIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
@@ -85,6 +86,7 @@ public class ExecutionDispatchService {
                                     SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService,
                                     ExecutionEventService executionEventService,
                                     ExecutionAsyncSessionService executionAsyncSessionService,
+                                    ExecutionWorkspaceCleanupService executionWorkspaceCleanupService,
                                     @Qualifier("executionTaskExecutor") Executor executionTaskExecutor) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
@@ -100,6 +102,7 @@ public class ExecutionDispatchService {
         this.selfUpgradeExecutionWritebackService = selfUpgradeExecutionWritebackService;
         this.executionEventService = executionEventService;
         this.executionAsyncSessionService = executionAsyncSessionService;
+        this.executionWorkspaceCleanupService = executionWorkspaceCleanupService;
         this.executionTaskExecutor = executionTaskExecutor;
     }
 
@@ -256,7 +259,8 @@ public class ExecutionDispatchService {
                                 executionRun,
                                 stepEntity,
                                 startResult.sessionId(),
-                                startResult.runnerType()
+                                startResult.runnerType(),
+                                startResult.workspaceRoot()
                         );
                         stepEntity = executionAsyncSessionService.awaitTerminalStep(
                                 stepEntity.getId(),
@@ -288,7 +292,8 @@ public class ExecutionDispatchService {
                                 executionRun,
                                 stepEntity,
                                 startResult.sessionId(),
-                                startResult.runnerType()
+                                startResult.runnerType(),
+                                startResult.workspaceRoot()
                         );
                         stepEntity = executionAsyncSessionService.awaitTerminalStep(
                                 stepEntity.getId(),
@@ -506,6 +511,7 @@ public class ExecutionDispatchService {
         executionTask.setCurrentRun(executionRun);
         executionTask.setLatestSummary(abbreviate(defaultString(executionRun.getOutputSummary()), 500));
         executionTaskRepository.save(executionTask);
+        scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_SUCCESS);
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "SUCCESS");
@@ -549,6 +555,7 @@ public class ExecutionDispatchService {
         executionTask.setCurrentRun(executionRun);
         executionTask.setLatestSummary(abbreviate(resolveMessage(exception, "执行失败"), 500));
         executionTaskRepository.save(executionTask);
+        scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_FAILED);
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "FAILED");
@@ -583,6 +590,7 @@ public class ExecutionDispatchService {
         executionTask.setCurrentRun(executionRun);
         executionTask.setLatestSummary(abbreviate(resolveMessage(exception, "执行失败"), 500));
         executionTaskRepository.save(executionTask);
+        scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_FAILED);
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "FAILED");
@@ -615,11 +623,26 @@ public class ExecutionDispatchService {
         executionTask.setCurrentRun(executionRun);
         executionTask.setLatestSummary("执行已取消");
         executionTaskRepository.save(executionTask);
+        scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_CANCELED);
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "CANCELED");
         notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_CANCELED);
         return executionRun;
+    }
+
+    /**
+     * 统一终态收口后立即为当前 run 排期工作区清理，避免不同执行流再次各自遗漏调用。
+     */
+    private void scheduleWorkspaceCleanup(ExecutionRunEntity executionRun, String resultStatus) {
+        if (executionRun == null || executionRun.getId() == null) {
+            return;
+        }
+        executionWorkspaceCleanupService.scheduleCleanupForRun(
+                executionRun.getId(),
+                resultStatus,
+                LocalDateTime.now()
+        );
     }
 
     private ExecutionArtifactEntity createArtifact(ExecutionRunEntity executionRun,

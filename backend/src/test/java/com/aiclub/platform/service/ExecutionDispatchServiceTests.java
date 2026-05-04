@@ -79,6 +79,9 @@ class ExecutionDispatchServiceTests {
     @Mock
     private ExecutionAsyncSessionService executionAsyncSessionService;
 
+    @Mock
+    private ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
+
     private ExecutionDispatchService executionDispatchService;
 
     @BeforeEach
@@ -98,6 +101,7 @@ class ExecutionDispatchServiceTests {
                 selfUpgradeExecutionWritebackService,
                 executionEventService,
                 executionAsyncSessionService,
+                executionWorkspaceCleanupService,
                 Runnable::run
         );
     }
@@ -224,6 +228,35 @@ class ExecutionDispatchServiceTests {
         executionDispatchService.finishSuccess(executionTask, executionRun, new java.util.ArrayList<>());
 
         verify(executionEventService).recordArtifactReady(executionTask, executionRun, null, 901L, "最终摘要");
+    }
+
+    /**
+     * run 进入成功终态后，应立即把该次执行登记过的工作区切到待清理队列，
+     * 避免前端看起来已完成，但异步 runner 工作区因为没人排期而长期残留在宿主机上。
+     */
+    @Test
+    void shouldScheduleWorkspaceCleanupWhenExecutionSucceeds() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(308L);
+        executionRun.setExecutionTask(executionTask);
+        executionRun.setOutputSummary("开发执行已完成");
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(908L);
+            return artifact;
+        });
+
+        executionDispatchService.finishSuccess(executionTask, executionRun, new java.util.ArrayList<>());
+
+        verify(executionWorkspaceCleanupService).scheduleCleanupForRun(
+                eq(308L),
+                eq("SUCCESS"),
+                any(java.time.LocalDateTime.class)
+        );
     }
 
     /**
@@ -528,7 +561,7 @@ class ExecutionDispatchServiceTests {
         assertThat(result.getOutputSummary()).contains("已完成兼容单次运行");
         verify(agentExecutionService).runAgent(eq(21L), eq("请执行一次兼容单次运行"), any());
         verify(agentExecutionService, never()).startAsyncExecution(any(), any(), any(), anyInt(), anyInt());
-        verify(executionAsyncSessionService, never()).bindRunnerSession(any(), any(), any(), any(), any());
+        verify(executionAsyncSessionService, never()).bindRunnerSession(any(), any(), any(), any(), any(), any());
     }
 
     /**
@@ -623,7 +656,14 @@ class ExecutionDispatchServiceTests {
         assertThat(result.getStatus()).isEqualTo("SUCCESS");
         assertThat(result.getOutputSummary()).contains("异步 CLI runtime");
         verify(agentExecutionService).startAsyncExecution(eq(cliAgent), eq("请异步执行一次兼容单次运行"), any(), eq(15), eq(600));
-        verify(executionAsyncSessionService).bindRunnerSession(eq(executionTask), any(), any(), eq("ad-hoc-session-1"), eq("CLI"));
+        verify(executionAsyncSessionService).bindRunnerSession(
+                eq(executionTask),
+                any(),
+                any(),
+                eq("ad-hoc-session-1"),
+                eq("CLI"),
+                eq("C:/workspace")
+        );
         verify(executionAsyncSessionService).awaitTerminalStep(anyLong(), eq(600));
         verify(agentExecutionService, never()).runAgent(eq(22L), any(), any());
     }

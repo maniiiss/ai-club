@@ -254,7 +254,14 @@ public class TestAutomationExecutionService {
         payload.put("timeoutSeconds", executionAsyncSessionService.maxRuntimeSeconds(step.getStepCode()));
 
         CodeProcessingCliExecutionClientService.ExecutionSessionAcceptedResponse startResult = cliExecutionClientService.startExecution(payload);
-        executionAsyncSessionService.bindRunnerSession(executionTask, executionRun, step, startResult.sessionId(), startResult.runnerType());
+        executionAsyncSessionService.bindRunnerSession(
+                executionTask,
+                executionRun,
+                step,
+                startResult.sessionId(),
+                startResult.runnerType(),
+                startResult.workspaceRoot()
+        );
         ExecutionStepEntity completedStep = executionAsyncSessionService.awaitTerminalStep(step.getId(), executionAsyncSessionService.maxRuntimeSeconds(step.getStepCode()));
         if ("CANCELED".equalsIgnoreCase(completedStep.getStatus())) {
             throw new IllegalStateException("自动化执行已取消");

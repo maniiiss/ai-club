@@ -368,7 +368,14 @@ public class DevelopmentExecutionService {
         ExecutionStepEntity step = beginStep(executionTask, executionRun, stepPlan, totalSteps, input);
         RepositoryStructuringClientService.StructuringSessionAcceptedResponse startResult =
                 repositoryStructuringClientService.startStructuring(buildStructuringRequest(executionTask, executionRun, step, repositories, input));
-        executionAsyncSessionService.bindRunnerSession(executionTask, executionRun, step, startResult.sessionId(), startResult.runnerType());
+        executionAsyncSessionService.bindRunnerSession(
+                executionTask,
+                executionRun,
+                step,
+                startResult.sessionId(),
+                startResult.runnerType(),
+                startResult.workspaceRoot()
+        );
         ExecutionStepEntity completedStep = executionAsyncSessionService.awaitTerminalStep(
                 step.getId(),
                 executionAsyncSessionService.maxRuntimeSeconds(stepPlan.stepCode())
@@ -650,7 +657,14 @@ public class DevelopmentExecutionService {
                 executionAsyncSessionService.submitTimeoutSeconds(),
                 maxRuntimeSeconds
         );
-        executionAsyncSessionService.bindRunnerSession(executionTask, executionRun, step, startResult.sessionId(), startResult.runnerType());
+        executionAsyncSessionService.bindRunnerSession(
+                executionTask,
+                executionRun,
+                step,
+                startResult.sessionId(),
+                startResult.runnerType(),
+                startResult.workspaceRoot()
+        );
         ExecutionStepEntity completedStep = executionAsyncSessionService.awaitTerminalStep(
                 step.getId(),
                 maxRuntimeSeconds
