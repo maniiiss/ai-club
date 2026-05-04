@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -93,23 +94,30 @@ public class ExecutionWorkspaceCleanupService {
 
         List<ExecutionWorkspaceCleanupEntity> activeWorkspaces =
                 executionWorkspaceCleanupRepository.findAllByExecutionRunIdAndStatusOrderByIdAsc(runId, STATUS_ACTIVE);
-        if (activeWorkspaces.isEmpty()) {
+        List<ExecutionWorkspaceCleanupEntity> scheduledWorkspaces =
+                executionWorkspaceCleanupRepository.findAllByExecutionRunIdAndStatusOrderByIdAsc(runId, STATUS_SCHEDULED);
+        if (activeWorkspaces.isEmpty() && scheduledWorkspaces.isEmpty()) {
             return 0;
         }
 
         String normalizedResultStatus = trimToNull(resultStatus);
         LocalDateTime expiresAt = scheduledAt.plusHours(retentionHours);
+        List<ExecutionWorkspaceCleanupEntity> dirtyRecords = new ArrayList<>();
         for (ExecutionWorkspaceCleanupEntity entity : activeWorkspaces) {
-            entity.setStatus(STATUS_SCHEDULED);
-            entity.setExecutionResultStatus(normalizedResultStatus);
-            entity.setScheduledAt(scheduledAt);
-            entity.setExpiresAt(expiresAt);
-            entity.setDeletedAt(null);
-            entity.setDeleteFailedAt(null);
-            entity.setDeleteErrorMessage(null);
+            applyScheduledState(entity, normalizedResultStatus, scheduledAt, expiresAt);
+            dirtyRecords.add(entity);
         }
-        executionWorkspaceCleanupRepository.saveAll(activeWorkspaces);
-        return activeWorkspaces.size();
+        for (ExecutionWorkspaceCleanupEntity entity : scheduledWorkspaces) {
+            if (!shouldRefreshScheduledState(entity, normalizedResultStatus)) {
+                continue;
+            }
+            applyScheduledState(entity, normalizedResultStatus, scheduledAt, expiresAt);
+            dirtyRecords.add(entity);
+        }
+        if (!dirtyRecords.isEmpty()) {
+            executionWorkspaceCleanupRepository.saveAll(dirtyRecords);
+        }
+        return activeWorkspaces.size() + scheduledWorkspaces.size();
     }
 
     /**
@@ -117,6 +125,10 @@ public class ExecutionWorkspaceCleanupService {
      * 这里按生命周期风险显式聚合任务下的全部记录，避免混合状态时被某条“更新更晚”的成功记录掩盖失败态。
      */
     public ExecutionWorkspaceCleanupSummary buildTaskSummary(Long executionTaskId) {
+        return buildTaskSummary(executionTaskId, null);
+    }
+
+    public ExecutionWorkspaceCleanupSummary buildTaskSummary(Long executionTaskId, String scenarioCode) {
         if (executionTaskId == null) {
             throw new IllegalArgumentException("executionTaskId 不能为空");
         }
@@ -154,7 +166,7 @@ public class ExecutionWorkspaceCleanupService {
                 formatTime(resolveDeleteFailedAt(aggregatedStatus, recordsWithAggregatedStatus, representativeRecord)),
                 resolveDeleteErrorMessage(aggregatedStatus, representativeRecord),
                 records.size(),
-                buildSummaryMessage(aggregatedStatus, aggregatedExecutionResultStatus, representativeRecord, records.size())
+                buildSummaryMessage(aggregatedStatus, aggregatedExecutionResultStatus, representativeRecord, records.size(), scenarioCode)
         );
     }
 
@@ -216,6 +228,22 @@ public class ExecutionWorkspaceCleanupService {
         return retentionHours;
     }
 
+    /**
+     * 通知与详情页都需要基于同一份 retention 配置输出文案，避免一处改配置、另一处仍写死 24 小时。
+     */
+    public String buildRetentionNotice(String scenarioCode, String resultStatus) {
+        String normalizedResultStatus = defaultStatus(resultStatus);
+        if ("SUCCESS".equals(normalizedResultStatus)) {
+            return shouldUseDevelopmentSuccessGuidance(scenarioCode, normalizedResultStatus)
+                    ? "本地工作区将在 " + retentionHours + " 小时后自动删除；如需走 MR，请在保留期内完成处理。"
+                    : "本地工作区将在 " + retentionHours + " 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。";
+        }
+        if ("FAILED".equals(normalizedResultStatus) || "CANCELED".equals(normalizedResultStatus)) {
+            return "本地工作区将在 " + retentionHours + " 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。";
+        }
+        return "";
+    }
+
     private String defaultDeleteErrorMessage(String errorMessage) {
         String normalized = trimToNull(errorMessage);
         return normalized == null ? "删除执行工作区失败" : normalized;
@@ -227,7 +255,8 @@ public class ExecutionWorkspaceCleanupService {
     private String buildSummaryMessage(String aggregatedStatus,
                                        String aggregatedExecutionResultStatus,
                                        ExecutionWorkspaceCleanupEntity representativeRecord,
-                                       int trackedWorkspaceCount) {
+                                       int trackedWorkspaceCount,
+                                       String scenarioCode) {
         if (STATUS_DELETED.equalsIgnoreCase(aggregatedStatus)) {
             return "本次执行登记的 " + trackedWorkspaceCount + " 个本地工作区已自动删除。";
         }
@@ -238,12 +267,40 @@ public class ExecutionWorkspaceCleanupService {
                     : "本次执行登记的本地工作区自动删除失败：" + errorMessage;
         }
         if (STATUS_SCHEDULED.equalsIgnoreCase(aggregatedStatus)) {
-            if ("SUCCESS".equalsIgnoreCase(defaultStatus(aggregatedExecutionResultStatus))) {
-                return "本次执行产生的本地工作区将在 " + retentionHours + " 小时后自动删除；如需走 MR，请在保留期内完成处理。";
-            }
-            return "本次执行产生的本地工作区将在 " + retentionHours + " 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。";
+            return buildScheduledSummaryMessage(scenarioCode, aggregatedExecutionResultStatus);
         }
         return "本次执行已登记 " + trackedWorkspaceCount + " 个本地工作区，任务结束后将保留 " + retentionHours + " 小时并自动删除。";
+    }
+
+    private String buildScheduledSummaryMessage(String scenarioCode, String aggregatedExecutionResultStatus) {
+        if (shouldUseDevelopmentSuccessGuidance(scenarioCode, aggregatedExecutionResultStatus)) {
+            return "本次执行产生的本地工作区将在 " + retentionHours + " 小时后自动删除；如需走 MR，请在保留期内完成处理。";
+        }
+        return "本次执行产生的本地工作区将在 " + retentionHours + " 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。";
+    }
+
+    private boolean shouldUseDevelopmentSuccessGuidance(String scenarioCode, String resultStatus) {
+        return ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(trimToNull(scenarioCode))
+                && "SUCCESS".equalsIgnoreCase(defaultStatus(resultStatus));
+    }
+
+    private boolean shouldRefreshScheduledState(ExecutionWorkspaceCleanupEntity entity, String normalizedResultStatus) {
+        return !defaultStatus(entity.getExecutionResultStatus()).equals(defaultStatus(normalizedResultStatus))
+                || entity.getScheduledAt() == null
+                || entity.getExpiresAt() == null;
+    }
+
+    private void applyScheduledState(ExecutionWorkspaceCleanupEntity entity,
+                                     String normalizedResultStatus,
+                                     LocalDateTime scheduledAt,
+                                     LocalDateTime expiresAt) {
+        entity.setStatus(STATUS_SCHEDULED);
+        entity.setExecutionResultStatus(normalizedResultStatus);
+        entity.setScheduledAt(scheduledAt);
+        entity.setExpiresAt(expiresAt);
+        entity.setDeletedAt(null);
+        entity.setDeleteFailedAt(null);
+        entity.setDeleteErrorMessage(null);
     }
 
     private String formatTime(LocalDateTime time) {

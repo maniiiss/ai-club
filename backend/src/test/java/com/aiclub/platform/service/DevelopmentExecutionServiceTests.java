@@ -311,11 +311,11 @@ class DevelopmentExecutionServiceTests {
     }
 
     /**
-     * Task 2 仅要求为 IMPLEMENT 透传异步 runner 工作区；
-     * repo structuring 仍沿用旧绑定行为，避免把工作区登记范围扩散到本次任务之外。
+     * 仓库结构化同样会落地真实工作区；必须把 workspaceRoot 透传给统一会话绑定，
+     * 才能让清理登记覆盖 structuring 阶段产生的目录。
      */
     @Test
-    void shouldNotForwardWorkspaceRootWhenStructuringStarts() {
+    void shouldForwardWorkspaceRootWhenStructuringStarts() {
         ExecutionTaskEntity executionTask = buildExecutionTask(true);
         ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
         ExecutionWorkflowService.WorkflowPlan workflowPlan = buildWorkflowPlan();
@@ -333,7 +333,7 @@ class DevelopmentExecutionServiceTests {
                 argThat((ExecutionStepEntity step) -> "仓库结构化".equals(step.getStepName())),
                 eq("session-structuring"),
                 eq("CLI"),
-                org.mockito.ArgumentMatchers.isNull()
+                eq("C:/workspace/structuring")
         );
     }
 

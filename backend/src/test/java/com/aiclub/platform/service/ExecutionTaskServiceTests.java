@@ -333,7 +333,8 @@ class ExecutionTaskServiceTests {
         when(executionTaskRepository.findById(99L)).thenReturn(Optional.of(executionTask));
         when(executionRunRepository.findAllByExecutionTask_IdOrderByRunNoDescIdDesc(99L))
                 .thenReturn(List.of(executionTask.getCurrentRun()));
-        when(executionWorkspaceCleanupService.buildTaskSummary(99L)).thenReturn(new ExecutionWorkspaceCleanupSummary(
+        when(executionWorkspaceCleanupService.buildTaskSummary(99L, ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION))
+                .thenReturn(new ExecutionWorkspaceCleanupSummary(
                 true,
                 24L,
                 "SCHEDULED",
@@ -424,6 +425,32 @@ class ExecutionTaskServiceTests {
         assertThat(summary.status()).isEqualTo("CANCELED");
         assertThat(summary.latestSummary()).contains("当前步骤正在停止");
         verify(executionDispatchService).requestCancelRunningTask(99L);
+    }
+
+    /**
+     * 待确认态取消同样属于终态收口；如果 structuring / runtime 已经登记过工作区，
+     * 这里必须补排 cleanup，避免记录永久停留在 ACTIVE。
+     */
+    @Test
+    void shouldScheduleWorkspaceCleanupWhenCancelingWaitingConfirmationTask() {
+        ExecutionTaskEntity executionTask = buildWaitingConfirmationTask(1001L);
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(901L);
+            return artifact;
+        });
+
+        ExecutionTaskSummary summary = executionTaskService.cancelExecutionTask(99L);
+
+        assertThat(summary.status()).isEqualTo("CANCELED");
+        verify(executionWorkspaceCleanupService).scheduleCleanupForRun(
+                eq(301L),
+                eq("CANCELED"),
+                any(java.time.LocalDateTime.class)
+        );
     }
 
     /**

@@ -497,7 +497,10 @@ public class ExecutionTaskService {
                 .toList();
         boolean planConfirmationRequired = isPlanConfirmationRequired(executionTask.getInputPayload());
         boolean planConfirmationPending = STATUS_WAITING_CONFIRMATION.equalsIgnoreCase(executionTask.getStatus());
-        ExecutionWorkspaceCleanupSummary workspaceCleanup = executionWorkspaceCleanupService.buildTaskSummary(executionTask.getId());
+        ExecutionWorkspaceCleanupSummary workspaceCleanup = executionWorkspaceCleanupService.buildTaskSummary(
+                executionTask.getId(),
+                executionTask.getScenarioCode()
+        );
         return new ExecutionTaskDetail(
                 executionTask.getId(),
                 executionTask.getTitle(),
@@ -795,6 +798,13 @@ public class ExecutionTaskService {
         executionTask.setLatestSummary("执行已取消");
         executionTaskRepository.save(executionTask);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, currentRun, "CANCELED");
+        if (currentRun != null) {
+            executionWorkspaceCleanupService.scheduleCleanupForRun(
+                    currentRun.getId(),
+                    "CANCELED",
+                    LocalDateTime.now()
+            );
+        }
     }
 
     private void scheduleDispatchAfterCommit(Long executionTaskId) {

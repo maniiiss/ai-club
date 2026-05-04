@@ -86,8 +86,8 @@ class ExecutionWorkspaceCleanupServiceTests {
     }
 
     /**
-     * 运行结束后只应调度 ACTIVE 工作区，
-     * 已经进入后续生命周期的记录不能被重复计算到本次调度结果里。
+     * 运行结束后要把 ACTIVE 工作区排入清理队列；
+     * 若同一 run 已有 SCHEDULED 记录，则保留原排期，供后续“成功后又失败”场景做结果状态纠偏。
      */
     @Test
     void shouldScheduleActiveWorkspacesAfterRunFinishes() {
@@ -123,7 +123,7 @@ class ExecutionWorkspaceCleanupServiceTests {
 
         int scheduledCount = executionWorkspaceCleanupService.scheduleCleanupForRun(300L, "FAILED", scheduledAt);
 
-        assertThat(scheduledCount).isEqualTo(2);
+        assertThat(scheduledCount).isEqualTo(3);
 
         List<ExecutionWorkspaceCleanupEntity> scheduledRecords =
                 executionWorkspaceCleanupRepository.findAllByExecutionRunIdAndStatusOrderByIdAsc(
@@ -148,6 +148,35 @@ class ExecutionWorkspaceCleanupServiceTests {
                     assertThat(entity.getExpiresAt()).isEqualTo(scheduledAt.plusHours(23));
                     assertThat(entity.getDeleteErrorMessage()).isEqualTo("已在队列中");
                 });
+    }
+
+    /**
+     * 如果某次执行先按 SUCCESS 排期，之后又被统一收口成 FAILED，
+     * cleanup 记录也要把 executionResultStatus 跟着纠偏，避免 UI 一边显示失败一边展示“成功保留期”。
+     */
+    @Test
+    void shouldUpdateScheduledCleanupResultWhenLaterTerminalStateChanges() {
+        LocalDateTime successScheduledAt = LocalDateTime.of(2026, 5, 4, 10, 0, 0);
+        executionWorkspaceCleanupService.registerWorkspace(
+                901L,
+                301L,
+                903L,
+                "session-success",
+                "C:/tmp/run-301/workspace-a"
+        );
+        executionWorkspaceCleanupService.scheduleCleanupForRun(301L, "SUCCESS", successScheduledAt);
+
+        LocalDateTime failedScheduledAt = LocalDateTime.of(2026, 5, 4, 10, 5, 0);
+        int trackedCount = executionWorkspaceCleanupService.scheduleCleanupForRun(301L, "FAILED", failedScheduledAt);
+
+        assertThat(trackedCount).isEqualTo(1);
+        ExecutionWorkspaceCleanupEntity refreshed = executionWorkspaceCleanupRepository
+                .findByExecutionRunIdAndWorkspaceRoot(301L, "C:/tmp/run-301/workspace-a")
+                .orElseThrow();
+        assertThat(refreshed.getStatus()).isEqualTo(ExecutionWorkspaceCleanupService.STATUS_SCHEDULED);
+        assertThat(refreshed.getExecutionResultStatus()).isEqualTo("FAILED");
+        assertThat(refreshed.getScheduledAt()).isEqualTo(failedScheduledAt);
+        assertThat(refreshed.getExpiresAt()).isEqualTo(failedScheduledAt.plusHours(24));
     }
 
     /**
@@ -200,6 +229,35 @@ class ExecutionWorkspaceCleanupServiceTests {
         assertThat(summary.deleteErrorMessage()).isEqualTo("目录被占用");
         assertThat(summary.trackedWorkspaceCount()).isEqualTo(3);
         assertThat(summary.message()).contains("自动删除失败");
+    }
+
+    /**
+     * 成功清理提示里的 MR 文案只适用于开发执行；
+     * 非开发场景成功也有工作区保留期时，应给出通用“保留代码/继续处理”提示。
+     */
+    @Test
+    void shouldUseGenericSuccessMessageForNonDevelopmentTaskSummary() {
+        ExecutionWorkspaceCleanupEntity scheduledRecord = buildCleanupRecord(
+                1101L,
+                "C:/tmp/run-1101/workspace-a",
+                ExecutionWorkspaceCleanupService.STATUS_SCHEDULED,
+                LocalDateTime.of(2026, 5, 5, 12, 0, 0)
+        );
+        scheduledRecord.setExecutionTaskId(5101L);
+        scheduledRecord.setExecutionResultStatus("SUCCESS");
+        executionWorkspaceCleanupRepository.saveAndFlush(scheduledRecord);
+
+        ExecutionWorkspaceCleanupService configuredService =
+                new ExecutionWorkspaceCleanupService(executionWorkspaceCleanupRepository, 48);
+
+        ExecutionWorkspaceCleanupSummary summary = configuredService.buildTaskSummary(
+                5101L,
+                ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION
+        );
+
+        assertThat(summary.message()).contains("48 小时后自动删除");
+        assertThat(summary.message()).contains("如需保留代码或继续处理");
+        assertThat(summary.message()).doesNotContain("MR");
     }
 
     /**
