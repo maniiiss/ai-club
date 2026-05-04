@@ -51,17 +51,21 @@ public class ExecutionWorkspaceCleanupService {
         ExecutionWorkspaceCleanupEntity entity = executionWorkspaceCleanupRepository
                 .findByExecutionRunIdAndWorkspaceRoot(runId, normalizedWorkspaceRoot)
                 .orElseGet(ExecutionWorkspaceCleanupEntity::new);
+        boolean newRecord = entity.getId() == null;
 
         entity.setExecutionTaskId(taskId);
         entity.setExecutionRunId(runId);
         entity.setExecutionStepId(stepId);
         entity.setRunnerSessionId(trimToNull(sessionId));
         entity.setWorkspaceRoot(normalizedWorkspaceRoot);
-        entity.setStatus(STATUS_ACTIVE);
-        entity.setExecutionResultStatus(null);
-        entity.setScheduledAt(null);
-        entity.setExpiresAt(null);
-        entity.setDeleteErrorMessage(null);
+        if (newRecord) {
+            // 首次登记时才初始化清理生命周期，避免重复回调把已进入队列的记录误回滚成 ACTIVE。
+            entity.setStatus(STATUS_ACTIVE);
+            entity.setExecutionResultStatus(null);
+            entity.setScheduledAt(null);
+            entity.setExpiresAt(null);
+            entity.setDeleteErrorMessage(null);
+        }
         return executionWorkspaceCleanupRepository.save(entity);
     }
 

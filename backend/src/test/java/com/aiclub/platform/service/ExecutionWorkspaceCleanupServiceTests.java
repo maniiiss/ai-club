@@ -2,61 +2,59 @@ package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.ExecutionWorkspaceCleanupEntity;
 import com.aiclub.platform.repository.ExecutionWorkspaceCleanupRepository;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.jdbc.DataSourceBuilder;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.transaction.annotation.Transactional;
 
+import javax.sql.DataSource;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 工作区清理持久化底座的第一阶段先验证登记与调度规则，
- * 避免后续接入真实删除任务时把重复目录或错误保留期写入数据库。
+ * 工作区清理持久化底座需要同时验证服务层生命周期规则与真实数据库约束，
+ * 避免后续清理调度接入时才暴露 JPA 映射、派生查询或 SQL 迁移的不一致问题。
  */
-@ExtendWith(MockitoExtension.class)
+@SpringBootTest
+@Transactional
 class ExecutionWorkspaceCleanupServiceTests {
 
-    @Mock
-    private ExecutionWorkspaceCleanupRepository executionWorkspaceCleanupRepository;
-
+    @Autowired
     private ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
 
-    @BeforeEach
-    void setUp() {
-        executionWorkspaceCleanupService = new ExecutionWorkspaceCleanupService(
-                executionWorkspaceCleanupRepository,
-                24
-        );
-    }
+    @Autowired
+    private ExecutionWorkspaceCleanupRepository executionWorkspaceCleanupRepository;
 
     /**
      * 同一次 run 下，同一个工作区根目录只能登记一条清理记录；
-     * 如果 runner 重新回报了新的 step/session 关联，则应复用原记录并刷新关联信息。
+     * 如果该记录已经进入 SCHEDULED 等后续生命周期，重复登记只能刷新链路关联，不能把状态回滚成 ACTIVE。
      */
     @Test
     void shouldRegisterWorkspaceRootOncePerRun() {
-        ExecutionWorkspaceCleanupEntity existing = new ExecutionWorkspaceCleanupEntity();
-        existing.setId(10L);
-        existing.setExecutionTaskId(101L);
-        existing.setExecutionRunId(202L);
-        existing.setExecutionStepId(11L);
-        existing.setRunnerSessionId("session-old");
-        existing.setWorkspaceRoot("C:/tmp/run-202/workspace-a");
-        existing.setStatus(ExecutionWorkspaceCleanupService.STATUS_ACTIVE);
+        ExecutionWorkspaceCleanupEntity created = executionWorkspaceCleanupService.registerWorkspace(
+                101L,
+                202L,
+                11L,
+                "session-old",
+                "C:/tmp/run-202/workspace-a"
+        );
 
-        when(executionWorkspaceCleanupRepository.findByExecutionRunIdAndWorkspaceRoot(202L, "C:/tmp/run-202/workspace-a"))
-                .thenReturn(Optional.of(existing));
-        when(executionWorkspaceCleanupRepository.save(any(ExecutionWorkspaceCleanupEntity.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        LocalDateTime scheduledAt = LocalDateTime.of(2026, 5, 4, 10, 15, 0);
+        created.setStatus(ExecutionWorkspaceCleanupService.STATUS_SCHEDULED);
+        created.setExecutionResultStatus("SUCCESS");
+        created.setScheduledAt(scheduledAt);
+        created.setExpiresAt(scheduledAt.plusHours(24));
+        created.setDeleteErrorMessage("等待异步删除");
+        executionWorkspaceCleanupRepository.saveAndFlush(created);
 
         ExecutionWorkspaceCleanupEntity saved = executionWorkspaceCleanupService.registerWorkspace(
                 101L,
@@ -66,62 +64,139 @@ class ExecutionWorkspaceCleanupServiceTests {
                 "C:/tmp/run-202/workspace-a"
         );
 
-        assertThat(saved.getId()).isEqualTo(10L);
+        assertThat(saved.getId()).isEqualTo(created.getId());
         assertThat(saved.getExecutionTaskId()).isEqualTo(101L);
         assertThat(saved.getExecutionRunId()).isEqualTo(202L);
         assertThat(saved.getExecutionStepId()).isEqualTo(12L);
         assertThat(saved.getRunnerSessionId()).isEqualTo("session-new");
         assertThat(saved.getWorkspaceRoot()).isEqualTo("C:/tmp/run-202/workspace-a");
-        assertThat(saved.getStatus()).isEqualTo(ExecutionWorkspaceCleanupService.STATUS_ACTIVE);
-        verify(executionWorkspaceCleanupRepository).save(existing);
+        assertThat(saved.getStatus()).isEqualTo(ExecutionWorkspaceCleanupService.STATUS_SCHEDULED);
+        assertThat(saved.getExecutionResultStatus()).isEqualTo("SUCCESS");
+        assertThat(saved.getScheduledAt()).isEqualTo(scheduledAt);
+        assertThat(saved.getExpiresAt()).isEqualTo(scheduledAt.plusHours(24));
+        assertThat(saved.getDeleteErrorMessage()).isEqualTo("等待异步删除");
+
+        List<ExecutionWorkspaceCleanupEntity> allRecords = executionWorkspaceCleanupRepository.findAll();
+        assertThat(allRecords).hasSize(1);
+        assertThat(executionWorkspaceCleanupRepository.findByExecutionRunIdAndWorkspaceRoot(
+                202L,
+                "C:/tmp/run-202/workspace-a"
+        )).hasValueSatisfying(entity -> assertThat(entity.getId()).isEqualTo(created.getId()));
     }
 
     /**
-     * 运行结束后只应调度仍处于 ACTIVE 的工作区，
-     * 并统一补齐结果状态、计划删除时间和过期时间，方便后续清理任务批量拉取。
+     * 运行结束后只应调度 ACTIVE 工作区，
+     * 已经进入后续生命周期的记录不能被重复计算到本次调度结果里。
      */
     @Test
     void shouldScheduleActiveWorkspacesAfterRunFinishes() {
         LocalDateTime scheduledAt = LocalDateTime.of(2026, 5, 4, 9, 30, 0);
 
-        ExecutionWorkspaceCleanupEntity first = activeWorkspace(1L, 300L, "C:/tmp/run-300/workspace-a");
-        first.setDeleteErrorMessage("上次删除失败");
-        ExecutionWorkspaceCleanupEntity second = activeWorkspace(2L, 300L, "C:/tmp/run-300/workspace-b");
-
-        when(executionWorkspaceCleanupRepository.findAllByExecutionRunIdAndStatusOrderByIdAsc(
+        executionWorkspaceCleanupService.registerWorkspace(
+                900L,
                 300L,
-                ExecutionWorkspaceCleanupService.STATUS_ACTIVE
-        )).thenReturn(List.of(first, second));
-        when(executionWorkspaceCleanupRepository.saveAll(any()))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+                901L,
+                "session-1",
+                "C:/tmp/run-300/workspace-a"
+        );
+        executionWorkspaceCleanupService.registerWorkspace(
+                900L,
+                300L,
+                902L,
+                "session-2",
+                "C:/tmp/run-300/workspace-b"
+        );
+
+        ExecutionWorkspaceCleanupEntity scheduled = new ExecutionWorkspaceCleanupEntity();
+        scheduled.setExecutionTaskId(900L);
+        scheduled.setExecutionRunId(300L);
+        scheduled.setExecutionStepId(903L);
+        scheduled.setRunnerSessionId("session-3");
+        scheduled.setWorkspaceRoot("C:/tmp/run-300/workspace-c");
+        scheduled.setStatus(ExecutionWorkspaceCleanupService.STATUS_SCHEDULED);
+        scheduled.setExecutionResultStatus("FAILED");
+        scheduled.setScheduledAt(scheduledAt.minusHours(1));
+        scheduled.setExpiresAt(scheduledAt.plusHours(23));
+        scheduled.setDeleteErrorMessage("已在队列中");
+        executionWorkspaceCleanupRepository.saveAndFlush(scheduled);
 
         int scheduledCount = executionWorkspaceCleanupService.scheduleCleanupForRun(300L, "FAILED", scheduledAt);
 
         assertThat(scheduledCount).isEqualTo(2);
-        assertThat(first.getStatus()).isEqualTo(ExecutionWorkspaceCleanupService.STATUS_SCHEDULED);
-        assertThat(first.getExecutionResultStatus()).isEqualTo("FAILED");
-        assertThat(first.getScheduledAt()).isEqualTo(scheduledAt);
-        assertThat(first.getExpiresAt()).isEqualTo(scheduledAt.plusHours(24));
-        assertThat(first.getDeleteErrorMessage()).isNull();
 
-        assertThat(second.getStatus()).isEqualTo(ExecutionWorkspaceCleanupService.STATUS_SCHEDULED);
-        assertThat(second.getExecutionResultStatus()).isEqualTo("FAILED");
-        assertThat(second.getScheduledAt()).isEqualTo(scheduledAt);
-        assertThat(second.getExpiresAt()).isEqualTo(scheduledAt.plusHours(24));
-
-        verify(executionWorkspaceCleanupRepository).saveAll(List.of(first, second));
-        verify(executionWorkspaceCleanupRepository, never()).save(any(ExecutionWorkspaceCleanupEntity.class));
+        List<ExecutionWorkspaceCleanupEntity> scheduledRecords =
+                executionWorkspaceCleanupRepository.findAllByExecutionRunIdAndStatusOrderByIdAsc(
+                        300L,
+                        ExecutionWorkspaceCleanupService.STATUS_SCHEDULED
+                );
+        assertThat(scheduledRecords).hasSize(3);
+        assertThat(scheduledRecords)
+                .filteredOn(entity -> entity.getWorkspaceRoot().endsWith("workspace-a") || entity.getWorkspaceRoot().endsWith("workspace-b"))
+                .allSatisfy(entity -> {
+                    assertThat(entity.getExecutionResultStatus()).isEqualTo("FAILED");
+                    assertThat(entity.getScheduledAt()).isEqualTo(scheduledAt);
+                    assertThat(entity.getExpiresAt()).isEqualTo(scheduledAt.plusHours(24));
+                    assertThat(entity.getDeleteErrorMessage()).isNull();
+                });
+        assertThat(scheduledRecords)
+                .filteredOn(entity -> entity.getWorkspaceRoot().endsWith("workspace-c"))
+                .singleElement()
+                .satisfies(entity -> {
+                    assertThat(entity.getExecutionResultStatus()).isEqualTo("FAILED");
+                    assertThat(entity.getScheduledAt()).isEqualTo(scheduledAt.minusHours(1));
+                    assertThat(entity.getExpiresAt()).isEqualTo(scheduledAt.plusHours(23));
+                    assertThat(entity.getDeleteErrorMessage()).isEqualTo("已在队列中");
+                });
     }
 
-    private ExecutionWorkspaceCleanupEntity activeWorkspace(Long id, Long runId, String workspaceRoot) {
-        ExecutionWorkspaceCleanupEntity entity = new ExecutionWorkspaceCleanupEntity();
-        entity.setId(id);
-        entity.setExecutionTaskId(900L);
-        entity.setExecutionRunId(runId);
-        entity.setExecutionStepId(901L);
-        entity.setRunnerSessionId("session-" + id);
-        entity.setWorkspaceRoot(workspaceRoot);
-        entity.setStatus(ExecutionWorkspaceCleanupService.STATUS_ACTIVE);
-        return entity;
+    /**
+     * 迁移脚本必须能在真实数据库里创建出唯一约束，
+     * 否则服务层“先查后写”的复用逻辑在并发下无法兜底。
+     */
+    @Test
+    void shouldApplyMigrationAndEnforceUniqueConstraintInDatabase() {
+        DataSource dataSource = createMigrationTestDataSource();
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+
+        jdbcTemplate.execute("CREATE TABLE execution_task (id BIGINT PRIMARY KEY)");
+        jdbcTemplate.execute("CREATE TABLE execution_run (id BIGINT PRIMARY KEY)");
+        jdbcTemplate.execute("CREATE TABLE execution_step (id BIGINT PRIMARY KEY)");
+        new ResourceDatabasePopulator(false, false, StandardCharsets.UTF_8.name(),
+                new ClassPathResource("db/migration/V58__execution_workspace_cleanup.sql"))
+                .execute(dataSource);
+
+        jdbcTemplate.update("INSERT INTO execution_task (id) VALUES (?)", 1L);
+        jdbcTemplate.update("INSERT INTO execution_run (id) VALUES (?)", 2L);
+        jdbcTemplate.update("INSERT INTO execution_step (id) VALUES (?)", 3L);
+        jdbcTemplate.update("""
+                INSERT INTO execution_workspace_cleanup
+                    (execution_task_id, execution_run_id, execution_step_id, runner_session_id, workspace_root,
+                     status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, 1L, 2L, 3L, "session-1", "C:/tmp/run-2/workspace-a", "ACTIVE");
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO execution_workspace_cleanup
+                    (execution_task_id, execution_run_id, execution_step_id, runner_session_id, workspace_root,
+                     status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, 1L, 2L, 3L, "session-2", "C:/tmp/run-2/workspace-a", "ACTIVE"))
+                .isInstanceOf(Exception.class);
+
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM execution_workspace_cleanup WHERE execution_run_id = ?",
+                Integer.class,
+                2L
+        );
+        assertThat(count).isEqualTo(1);
+    }
+
+    private DataSource createMigrationTestDataSource() {
+        return DataSourceBuilder.create()
+                .driverClassName("org.h2.Driver")
+                .url("jdbc:h2:mem:workspace_cleanup_migration_" + UUID.randomUUID() + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE")
+                .username("sa")
+                .password("")
+                .build();
     }
 }
