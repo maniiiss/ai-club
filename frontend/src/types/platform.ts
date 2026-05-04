@@ -688,8 +688,8 @@ export interface ExecutionWorkspaceCleanupSummaryItem {
   retentionHours: number
   /** 当前清理状态，例如 SCHEDULED、DELETED、DELETE_FAILED。 */
   status: string
-  /** 对应执行结果状态，例如 SUCCESS、FAILED、CANCELED。 */
-  executionResultStatus: string
+  /** 对应执行结果状态，例如 SUCCESS、FAILED、CANCELED；无清理记录时允许为空。 */
+  executionResultStatus: string | null
   /** 预计或实际过期时间。 */
   expiresAt: string | null
   /** 实际删除完成时间。 */
