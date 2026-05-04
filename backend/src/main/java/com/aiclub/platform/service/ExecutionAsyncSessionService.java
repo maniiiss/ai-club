@@ -37,6 +37,7 @@ public class ExecutionAsyncSessionService {
     private final ExecutionTaskRepository executionTaskRepository;
     private final ExecutionArtifactRepository executionArtifactRepository;
     private final ExecutionEventService executionEventService;
+    private final ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
     private final ObjectMapper objectMapper;
 
     public ExecutionAsyncSessionService(ExecutionStepRepository executionStepRepository,
@@ -44,12 +45,14 @@ public class ExecutionAsyncSessionService {
                                         ExecutionTaskRepository executionTaskRepository,
                                         ExecutionArtifactRepository executionArtifactRepository,
                                         ExecutionEventService executionEventService,
+                                        ExecutionWorkspaceCleanupService executionWorkspaceCleanupService,
                                         ObjectMapper objectMapper) {
         this.executionStepRepository = executionStepRepository;
         this.executionRunRepository = executionRunRepository;
         this.executionTaskRepository = executionTaskRepository;
         this.executionArtifactRepository = executionArtifactRepository;
         this.executionEventService = executionEventService;
+        this.executionWorkspaceCleanupService = executionWorkspaceCleanupService;
         this.objectMapper = objectMapper;
     }
 
@@ -58,12 +61,22 @@ public class ExecutionAsyncSessionService {
                                   ExecutionRunEntity run,
                                   ExecutionStepEntity step,
                                   String sessionId,
-                                  String runnerType) {
+                                  String runnerType,
+                                  String workspaceRoot) {
         step.setRunnerSessionId(sessionId);
         step.setRunnerType(defaultString(runnerType));
         step.setHasLiveStream(true);
         step.setLastHeartbeatAt(LocalDateTime.now());
         executionStepRepository.save(step);
+        if (hasText(workspaceRoot)) {
+            executionWorkspaceCleanupService.registerWorkspace(
+                    task.getId(),
+                    run.getId(),
+                    step.getId(),
+                    sessionId,
+                    workspaceRoot
+            );
+        }
         executionEventService.recordSummary(task, run, step, "已提交到 " + defaultString(runnerType).trim() + " runner");
     }
 

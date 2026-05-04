@@ -62,6 +62,14 @@
           </div>
         </template>
         <el-empty v-else description="执行运行尚未创建，请稍后刷新" />
+        <el-alert
+          v-if="taskWorkspaceCleanupAlert"
+          class="execution-run-alert"
+          :type="taskWorkspaceCleanupAlert.type"
+          :title="taskWorkspaceCleanupAlert.message"
+          :closable="false"
+          show-icon
+        />
       </section>
 
       <section v-if="showPlanConfirmationSection" class="execution-plan-confirm-card">
@@ -674,6 +682,7 @@ import type {
   ExecutionStepItem,
   ExecutionStreamEvent,
   ExecutionTaskDetailItem,
+  ExecutionWorkspaceCleanupSummaryItem,
   GitlabBranchItem,
   GitlabCreateMergeRequestResultItem,
   GitlabUserOauthBindingItem,
@@ -758,6 +767,8 @@ interface ImplementationChangeReviewFileItem {
   unifiedDiff: string
 }
 
+type ExecutionWorkspaceCleanupAlertType = 'success' | 'warning' | 'error'
+
 interface ImplementationChangeReviewPayload {
   baseCommit: string
   currentCommit: string
@@ -829,6 +840,23 @@ const runCardDescription = computed(() =>
     ? '当前运行会先加载快照，再通过事件流持续刷新；规划、开发、测试和报告都会沉淀为执行产物。'
     : '当前运行会先加载快照，再通过事件流持续刷新，最终结果会沉淀为产物并回写工作项评论。'
 )
+/**
+ * 工作区清理提示只在任务详情页展示，直接复用后端生成的摘要文案，
+ * 避免前端按 run 明细重复拼装或引入额外状态分叉。
+ */
+const taskWorkspaceCleanupAlert = computed<{
+  message: string
+  type: ExecutionWorkspaceCleanupAlertType
+} | null>(() => {
+  const workspaceCleanup = taskDetail.value?.workspaceCleanup
+  if (!workspaceCleanup?.enabled || workspaceCleanup.status === 'ACTIVE') {
+    return null
+  }
+  return {
+    message: workspaceCleanup.message,
+    type: resolveWorkspaceCleanupAlertType(workspaceCleanup)
+  }
+})
 const parsedInputPayload = computed<Record<string, any>>(() => {
   if (!taskDetail.value?.inputPayload) {
     return {}
@@ -1247,6 +1275,18 @@ const timelineType = (status: string) => {
   if (status === 'WAITING_CONFIRMATION') return 'warning'
   if (status === 'RUNNING') return 'warning'
   return 'info'
+}
+
+const resolveWorkspaceCleanupAlertType = (
+  workspaceCleanup: ExecutionWorkspaceCleanupSummaryItem
+): ExecutionWorkspaceCleanupAlertType => {
+  if (workspaceCleanup.status === 'DELETE_FAILED') {
+    return 'error'
+  }
+  if (workspaceCleanup.status === 'DELETED') {
+    return 'success'
+  }
+  return 'warning'
 }
 
 const isMarkdownArtifact = (artifact: ExecutionArtifactItem) =>

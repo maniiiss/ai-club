@@ -26,7 +26,9 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -79,6 +81,9 @@ class ExecutionDispatchServiceTests {
     @Mock
     private ExecutionAsyncSessionService executionAsyncSessionService;
 
+    @Mock
+    private ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
+
     private ExecutionDispatchService executionDispatchService;
 
     @BeforeEach
@@ -98,6 +103,7 @@ class ExecutionDispatchServiceTests {
                 selfUpgradeExecutionWritebackService,
                 executionEventService,
                 executionAsyncSessionService,
+                executionWorkspaceCleanupService,
                 Runnable::run
         );
     }
@@ -227,6 +233,113 @@ class ExecutionDispatchServiceTests {
     }
 
     /**
+     * run 进入成功终态后，应立即把该次执行登记过的工作区切到待清理队列，
+     * 避免前端看起来已完成，但异步 runner 工作区因为没人排期而长期残留在宿主机上。
+     */
+    @Test
+    void shouldScheduleWorkspaceCleanupWhenExecutionSucceeds() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(308L);
+        executionRun.setExecutionTask(executionTask);
+        executionRun.setOutputSummary("开发执行已完成");
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(908L);
+            return artifact;
+        });
+        when(executionWorkspaceCleanupService.scheduleCleanupForRun(eq(308L), eq("SUCCESS"), any(java.time.LocalDateTime.class)))
+                .thenReturn(1);
+
+        executionDispatchService.finishSuccess(executionTask, executionRun, new java.util.ArrayList<>());
+
+        verify(executionWorkspaceCleanupService).scheduleCleanupForRun(
+                eq(308L),
+                eq("SUCCESS"),
+                any(java.time.LocalDateTime.class)
+        );
+    }
+
+    /**
+     * 失败终态与成功终态一样，都必须在收口时排入工作区清理队列，
+     * 否则失败现场会一直残留在 runner 宿主机上。
+     */
+    @Test
+    void shouldScheduleWorkspaceCleanupWhenExecutionFails() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(309L);
+        executionRun.setExecutionTask(executionTask);
+
+        ExecutionStepEntity failedStep = new ExecutionStepEntity();
+        failedStep.setId(603L);
+        failedStep.setRun(executionRun);
+        failedStep.setStepName("开发实现 · demo/repo");
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(909L);
+            return artifact;
+        });
+        when(executionWorkspaceCleanupService.scheduleCleanupForRun(eq(309L), eq("FAILED"), any(java.time.LocalDateTime.class)))
+                .thenReturn(1);
+
+        executionDispatchService.finishFailed(
+                executionTask,
+                executionRun,
+                failedStep,
+                new IllegalStateException("开发实现失败"),
+                new java.util.ArrayList<>()
+        );
+
+        verify(executionWorkspaceCleanupService).scheduleCleanupForRun(
+                eq(309L),
+                eq("FAILED"),
+                any(java.time.LocalDateTime.class)
+        );
+    }
+
+    /**
+     * 基础设施级失败同样会落到统一终态处理，cleanup 排期不能只覆盖业务步骤失败。
+     */
+    @Test
+    void shouldScheduleWorkspaceCleanupWhenInfrastructureFailureOccurs() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(310L);
+        executionRun.setExecutionTask(executionTask);
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(910L);
+            return artifact;
+        });
+        when(executionWorkspaceCleanupService.scheduleCleanupForRun(eq(310L), eq("FAILED"), any(java.time.LocalDateTime.class)))
+                .thenReturn(1);
+
+        executionDispatchService.finishInfrastructureFailure(
+                executionTask,
+                executionRun,
+                new IllegalStateException("runner 宿主机不可用"),
+                new java.util.ArrayList<>()
+        );
+
+        verify(executionWorkspaceCleanupService).scheduleCleanupForRun(
+                eq(310L),
+                eq("FAILED"),
+                any(java.time.LocalDateTime.class)
+        );
+    }
+
+    /**
      * 开发执行成功后应给发起人补一条站内通知，方便用户直接从消息中心回到执行详情并继续提交 MR。
      */
     @Test
@@ -245,6 +358,8 @@ class ExecutionDispatchServiceTests {
             artifact.setId(903L);
             return artifact;
         });
+        when(executionWorkspaceCleanupService.scheduleCleanupForRun(eq(303L), eq("SUCCESS"), any(java.time.LocalDateTime.class)))
+                .thenReturn(1);
 
         executionDispatchService.finishSuccess(executionTask, executionRun, new java.util.ArrayList<>());
 
@@ -253,7 +368,7 @@ class ExecutionDispatchServiceTests {
                 eq(NotificationService.TYPE_TASK),
                 eq(NotificationService.LEVEL_SUCCESS),
                 eq("开发执行已完成：开发执行任务"),
-                org.mockito.ArgumentMatchers.contains("可前往执行详情查看产物，并在右上角直接提交 MR"),
+                org.mockito.ArgumentMatchers.contains("本地工作区将在 24 小时后自动删除；如需走 MR，请在保留期内完成处理。"),
                 eq("/tasks/99"),
                 eq("DEVELOPMENT_EXECUTION_COMPLETED"),
                 eq(99L)
@@ -286,6 +401,8 @@ class ExecutionDispatchServiceTests {
             artifact.setId(904L);
             return artifact;
         });
+        when(executionWorkspaceCleanupService.scheduleCleanupForRun(eq(304L), eq("FAILED"), any(java.time.LocalDateTime.class)))
+                .thenReturn(1);
 
         executionDispatchService.finishFailed(
                 executionTask,
@@ -300,9 +417,173 @@ class ExecutionDispatchServiceTests {
                 eq(NotificationService.TYPE_TASK),
                 eq(NotificationService.LEVEL_ERROR),
                 eq("开发执行失败：开发失败任务"),
-                org.mockito.ArgumentMatchers.contains("开发实现失败，测试未通过"),
+                org.mockito.ArgumentMatchers.contains("本地工作区将在 24 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。"),
                 eq("/tasks/99"),
                 eq("DEVELOPMENT_EXECUTION_FAILED"),
+                eq(99L)
+        );
+    }
+
+    /**
+     * 成功收口后的回写/通知如果再抛基础设施异常，cleanup 结果必须被后续 FAILED 收口覆盖，
+     * 不能把 SCHEDULED/SUCCESS 永久留给本次运行。
+     */
+    @Test
+    void shouldRescheduleCleanupAsFailedWhenSuccessFlowBreaksLater() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setCreatedByUser(buildUser(81L, "发起人戊"));
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION,
+                "开发执行",
+                List.of(
+                        new ExecutionWorkflowService.ExecutionStepPlan(1, "PLAN", "执行规划", buildAgent(11L), null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(2, "IMPLEMENT", "开发实现 · demo/repo", buildAgent(12L), 1L, "main", "demo/repo"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(3, "TEST", "执行测试 · demo/repo", buildAgent(13L), 1L, "main", "demo/repo"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(4, "REPORT", "交付报告", buildAgent(14L), null, null, null)
+                )
+        );
+
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionRunRepository.countByExecutionTask_Id(99L)).thenReturn(0L);
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> {
+            ExecutionRunEntity run = invocation.getArgument(0);
+            if (run.getId() == null) {
+                run.setId(399L);
+            }
+            return run;
+        });
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionWorkflowService.restoreWorkflow(
+                eq(ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION),
+                eq(7L),
+                eq("[]")
+        )).thenReturn(workflowPlan);
+        when(developmentExecutionService.executeDevelopmentTask(eq(executionTask), any(ExecutionRunEntity.class), eq(workflowPlan)))
+                .thenReturn(new DevelopmentExecutionService.DevelopmentExecutionResult("开发执行已完成", List.of(), false, false));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            if (artifact.getId() == null) {
+                artifact.setId(930L);
+            }
+            return artifact;
+        });
+        when(executionWorkspaceCleanupService.scheduleCleanupForRun(eq(399L), eq("SUCCESS"), any(java.time.LocalDateTime.class)))
+                .thenReturn(1);
+        when(executionWorkspaceCleanupService.scheduleCleanupForRun(eq(399L), eq("FAILED"), any(java.time.LocalDateTime.class)))
+                .thenReturn(1);
+        doThrow(new IllegalStateException("通知异常"))
+                .doNothing()
+                .when(notificationService)
+                .sendToUser(
+                        eq(81L),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any(),
+                        any()
+                );
+
+        ExecutionRunEntity result = executionDispatchService.dispatchTaskNow(99L);
+
+        assertThat(result.getStatus()).isEqualTo("FAILED");
+        verify(executionWorkspaceCleanupService).scheduleCleanupForRun(
+                eq(399L),
+                eq("SUCCESS"),
+                any(java.time.LocalDateTime.class)
+        );
+        verify(executionWorkspaceCleanupService).scheduleCleanupForRun(
+                eq(399L),
+                eq("FAILED"),
+                any(java.time.LocalDateTime.class)
+        );
+        verify(notificationService, times(2)).sendToUser(
+                eq(81L),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any()
+        );
+    }
+
+    /**
+     * 如果当前 run 没有登记任何 cleanup 工作区，结果通知里不应凭空提示保留期。
+     */
+    @Test
+    void shouldOmitRetentionNoticeWhenNoCleanupWorkspaceExists() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setCreatedByUser(buildUser(79L, "发起人丙"));
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(305L);
+        executionRun.setExecutionTask(executionTask);
+        executionRun.setOutputSummary("开发执行已完成，共处理 1 个仓库。");
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(905L);
+            return artifact;
+        });
+        when(executionWorkspaceCleanupService.scheduleCleanupForRun(eq(305L), eq("SUCCESS"), any(java.time.LocalDateTime.class)))
+                .thenReturn(0);
+
+        executionDispatchService.finishSuccess(executionTask, executionRun, new java.util.ArrayList<>());
+
+        verify(notificationService).sendToUser(
+                eq(79L),
+                eq(NotificationService.TYPE_TASK),
+                eq(NotificationService.LEVEL_SUCCESS),
+                eq("开发执行已完成：开发执行任务"),
+                org.mockito.ArgumentMatchers.argThat(content -> !content.contains("本地工作区将在")),
+                eq("/tasks/99"),
+                eq("DEVELOPMENT_EXECUTION_COMPLETED"),
+                eq(99L)
+        );
+    }
+
+    /**
+     * 非开发成功通知应使用通用保留期文案，并且保留小时数来自 cleanup 配置而不是写死 24。
+     */
+    @Test
+    void shouldUseConfiguredRetentionHoursForNonDevelopmentSuccessNotification() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION);
+        executionTask.setTitle("自动化回归任务");
+        executionTask.setCreatedByUser(buildUser(80L, "发起人丁"));
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(306L);
+        executionRun.setExecutionTask(executionTask);
+        executionRun.setOutputSummary("自动化执行完成");
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(906L);
+            return artifact;
+        });
+        when(executionWorkspaceCleanupService.scheduleCleanupForRun(eq(306L), eq("SUCCESS"), any(java.time.LocalDateTime.class)))
+                .thenReturn(1);
+        when(executionWorkspaceCleanupService.retentionHours()).thenReturn(48L);
+
+        executionDispatchService.finishSuccess(executionTask, executionRun, new java.util.ArrayList<>());
+
+        verify(notificationService).sendToUser(
+                eq(80L),
+                eq(NotificationService.TYPE_TASK),
+                eq(NotificationService.LEVEL_SUCCESS),
+                eq("自动化测试已完成：自动化回归任务"),
+                org.mockito.ArgumentMatchers.argThat(content ->
+                        content.contains("48 小时后自动删除")
+                                && content.contains("如需保留代码或继续处理")
+                                && !content.contains("MR")),
+                eq("/tasks/99"),
+                eq("TEST_AUTOMATION_COMPLETED"),
                 eq(99L)
         );
     }
@@ -528,7 +809,7 @@ class ExecutionDispatchServiceTests {
         assertThat(result.getOutputSummary()).contains("已完成兼容单次运行");
         verify(agentExecutionService).runAgent(eq(21L), eq("请执行一次兼容单次运行"), any());
         verify(agentExecutionService, never()).startAsyncExecution(any(), any(), any(), anyInt(), anyInt());
-        verify(executionAsyncSessionService, never()).bindRunnerSession(any(), any(), any(), any(), any());
+        verify(executionAsyncSessionService, never()).bindRunnerSession(any(), any(), any(), any(), any(), any());
     }
 
     /**
@@ -623,9 +904,114 @@ class ExecutionDispatchServiceTests {
         assertThat(result.getStatus()).isEqualTo("SUCCESS");
         assertThat(result.getOutputSummary()).contains("异步 CLI runtime");
         verify(agentExecutionService).startAsyncExecution(eq(cliAgent), eq("请异步执行一次兼容单次运行"), any(), eq(15), eq(600));
-        verify(executionAsyncSessionService).bindRunnerSession(eq(executionTask), any(), any(), eq("ad-hoc-session-1"), eq("CLI"));
+        verify(executionAsyncSessionService).bindRunnerSession(
+                eq(executionTask),
+                any(),
+                any(),
+                eq("ad-hoc-session-1"),
+                eq("CLI"),
+                eq("C:/workspace")
+        );
         verify(executionAsyncSessionService).awaitTerminalStep(anyLong(), eq(600));
         verify(agentExecutionService, never()).runAgent(eq(22L), any(), any());
+    }
+
+    /**
+     * 自升级巡检走的是独立 patrol async 启动接口，也必须把 runner 回传的工作区目录透传给会话绑定。
+     */
+    @Test
+    void shouldBindWorkspaceRootWhenPatrolStepRunsAsynchronously() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL);
+        executionTask.setTitle("夜间自升级巡检");
+        executionTask.setInputPayload("""
+                {
+                  "runTimeoutSeconds": 1200
+                }
+                """);
+        AgentEntity patrolAgent = buildCliRuntimeAgent(23L, AgentExecutionService.RUNTIME_CODEX_CLI);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL,
+                "自升级巡检",
+                List.of(new ExecutionWorkflowService.ExecutionStepPlan(
+                        1,
+                        ExecutionWorkflowService.STEP_PATROL,
+                        "平台巡检",
+                        patrolAgent,
+                        null,
+                        null,
+                        null
+                ))
+        );
+
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionRunRepository.countByExecutionTask_Id(99L)).thenReturn(0L);
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> {
+            ExecutionRunEntity run = invocation.getArgument(0);
+            if (run.getId() == null) {
+                run.setId(403L);
+            }
+            return run;
+        });
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> {
+            ExecutionStepEntity step = invocation.getArgument(0);
+            if (step.getId() == null) {
+                step.setId(503L);
+            }
+            return step;
+        });
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            if (artifact.getId() == null) {
+                artifact.setId(953L);
+            }
+            return artifact;
+        });
+        when(executionWorkflowService.restoreWorkflow(
+                eq(ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL),
+                eq(7L),
+                eq("[]")
+        )).thenReturn(workflowPlan);
+        when(executionWorkflowService.buildStepInput(any(), any(), any(), any(), any()))
+                .thenReturn("请执行自升级巡检");
+        when(executionAsyncSessionService.submitTimeoutSeconds()).thenReturn(15);
+        when(executionAsyncSessionService.maxRuntimeSeconds(
+                ExecutionWorkflowService.STEP_PATROL,
+                executionTask.getInputPayload()
+        )).thenReturn(1200);
+        when(agentExecutionService.startPatrolAsyncExecution(
+                eq("请执行自升级巡检"),
+                any(),
+                eq(15),
+                eq(1200)
+        )).thenReturn(new AgentExecutionService.AsyncExecutionStartResult(
+                "patrol-session-1",
+                true,
+                "CLI",
+                "C:/workspace/patrol",
+                "2026-05-04T14:00:00Z"
+        ));
+        when(executionAsyncSessionService.awaitTerminalStep(anyLong(), eq(1200))).thenAnswer(invocation -> {
+            ExecutionStepEntity terminalStep = new ExecutionStepEntity();
+            terminalStep.setId(invocation.getArgument(0));
+            terminalStep.setStatus("SUCCESS");
+            terminalStep.setOutputSnapshot("{\"status\":\"SUCCESS\",\"summary\":\"巡检完成\"}");
+            return terminalStep;
+        });
+
+        ExecutionRunEntity result = executionDispatchService.dispatchTaskNow(99L);
+
+        assertThat(result.getStatus()).isEqualTo("SUCCESS");
+        verify(agentExecutionService).startPatrolAsyncExecution(eq("请执行自升级巡检"), any(), eq(15), eq(1200));
+        verify(executionAsyncSessionService).bindRunnerSession(
+                eq(executionTask),
+                any(),
+                any(),
+                eq("patrol-session-1"),
+                eq("CLI"),
+                eq("C:/workspace/patrol")
+        );
     }
 
     /**
@@ -649,6 +1035,33 @@ class ExecutionDispatchServiceTests {
         executionDispatchService.finishCanceled(executionTask, executionRun, new java.util.ArrayList<>());
 
         verify(executionEventService).recordArtifactReady(executionTask, executionRun, null, 902L, "取消摘要");
+    }
+
+    /**
+     * 取消态收口后同样要排工作区清理，避免用户主动取消时遗留 runner 工作目录。
+     */
+    @Test
+    void shouldScheduleWorkspaceCleanupWhenExecutionIsCanceled() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(311L);
+        executionRun.setExecutionTask(executionTask);
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(911L);
+            return artifact;
+        });
+
+        executionDispatchService.finishCanceled(executionTask, executionRun, new java.util.ArrayList<>());
+
+        verify(executionWorkspaceCleanupService).scheduleCleanupForRun(
+                eq(311L),
+                eq("CANCELED"),
+                any(java.time.LocalDateTime.class)
+        );
     }
 
     /**
@@ -720,6 +1133,8 @@ class ExecutionDispatchServiceTests {
             artifact.setId(906L);
             return artifact;
         });
+        when(executionWorkspaceCleanupService.scheduleCleanupForRun(eq(306L), eq("CANCELED"), any(java.time.LocalDateTime.class)))
+                .thenReturn(1);
 
         executionDispatchService.finishCanceled(executionTask, executionRun, new java.util.ArrayList<>());
 
@@ -728,7 +1143,7 @@ class ExecutionDispatchServiceTests {
                 eq(NotificationService.TYPE_TASK),
                 eq(NotificationService.LEVEL_WARNING),
                 eq("仓库规范扫描已取消：仓库扫描任务"),
-                org.mockito.ArgumentMatchers.contains("仓库扫描已取消"),
+                org.mockito.ArgumentMatchers.contains("本地工作区将在 24 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。"),
                 eq("/tasks/99"),
                 eq("CODEBASE_SCAN_CANCELED"),
                 eq(99L)
@@ -756,6 +1171,8 @@ class ExecutionDispatchServiceTests {
             artifact.setId(907L);
             return artifact;
         });
+        when(executionWorkspaceCleanupService.scheduleCleanupForRun(eq(307L), eq("SUCCESS"), any(java.time.LocalDateTime.class)))
+                .thenReturn(1);
 
         executionDispatchService.finishSuccess(executionTask, executionRun, new java.util.ArrayList<>());
 
@@ -764,7 +1181,7 @@ class ExecutionDispatchServiceTests {
                 eq(NotificationService.TYPE_TASK),
                 eq(NotificationService.LEVEL_SUCCESS),
                 eq("兼容单次执行已完成：兼容单次运行任务"),
-                org.mockito.ArgumentMatchers.contains("兼容单次运行已完成"),
+                org.mockito.ArgumentMatchers.contains("本地工作区将在 24 小时后自动删除"),
                 eq("/tasks/99"),
                 eq("EXECUTION_COMPLETED"),
                 eq(99L)

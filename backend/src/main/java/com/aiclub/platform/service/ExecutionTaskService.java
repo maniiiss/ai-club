@@ -16,6 +16,7 @@ import com.aiclub.platform.dto.ExecutionRunSummary;
 import com.aiclub.platform.dto.ExecutionStepSummary;
 import com.aiclub.platform.dto.ExecutionTaskDetail;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
+import com.aiclub.platform.dto.ExecutionWorkspaceCleanupSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.TaskAgentRunSummary;
 import com.aiclub.platform.dto.request.ConfirmExecutionPlanRequest;
@@ -93,6 +94,7 @@ public class ExecutionTaskService {
     private final ExecutionDispatchService executionDispatchService;
     private final ExecutionEventService executionEventService;
     private final SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
+    private final ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
     private final ObjectMapper objectMapper;
 
     public ExecutionTaskService(ExecutionTaskRepository executionTaskRepository,
@@ -108,6 +110,7 @@ public class ExecutionTaskService {
                                 ExecutionDispatchService executionDispatchService,
                                 ExecutionEventService executionEventService,
                                 SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService,
+                                ExecutionWorkspaceCleanupService executionWorkspaceCleanupService,
                                 ObjectMapper objectMapper) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
@@ -122,6 +125,7 @@ public class ExecutionTaskService {
         this.executionDispatchService = executionDispatchService;
         this.executionEventService = executionEventService;
         this.selfUpgradeExecutionWritebackService = selfUpgradeExecutionWritebackService;
+        this.executionWorkspaceCleanupService = executionWorkspaceCleanupService;
         this.objectMapper = objectMapper;
     }
 
@@ -493,6 +497,10 @@ public class ExecutionTaskService {
                 .toList();
         boolean planConfirmationRequired = isPlanConfirmationRequired(executionTask.getInputPayload());
         boolean planConfirmationPending = STATUS_WAITING_CONFIRMATION.equalsIgnoreCase(executionTask.getStatus());
+        ExecutionWorkspaceCleanupSummary workspaceCleanup = executionWorkspaceCleanupService.buildTaskSummary(
+                executionTask.getId(),
+                executionTask.getScenarioCode()
+        );
         return new ExecutionTaskDetail(
                 executionTask.getId(),
                 executionTask.getTitle(),
@@ -518,7 +526,8 @@ public class ExecutionTaskService {
                 planConfirmationRequired,
                 planConfirmationPending,
                 planConfirmationPending && canCurrentUserConfirmPlan(executionTask),
-                runs
+                runs,
+                workspaceCleanup
         );
     }
 
@@ -789,6 +798,13 @@ public class ExecutionTaskService {
         executionTask.setLatestSummary("执行已取消");
         executionTaskRepository.save(executionTask);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, currentRun, "CANCELED");
+        if (currentRun != null) {
+            executionWorkspaceCleanupService.scheduleCleanupForRun(
+                    currentRun.getId(),
+                    "CANCELED",
+                    LocalDateTime.now()
+            );
+        }
     }
 
     private void scheduleDispatchAfterCommit(Long executionTaskId) {

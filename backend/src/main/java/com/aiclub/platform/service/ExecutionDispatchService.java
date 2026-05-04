@@ -68,6 +68,7 @@ public class ExecutionDispatchService {
     private final SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
     private final ExecutionEventService executionEventService;
     private final ExecutionAsyncSessionService executionAsyncSessionService;
+    private final ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
     private final Executor executionTaskExecutor;
     private final Set<Long> dispatchingTaskIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
@@ -85,6 +86,7 @@ public class ExecutionDispatchService {
                                     SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService,
                                     ExecutionEventService executionEventService,
                                     ExecutionAsyncSessionService executionAsyncSessionService,
+                                    ExecutionWorkspaceCleanupService executionWorkspaceCleanupService,
                                     @Qualifier("executionTaskExecutor") Executor executionTaskExecutor) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
@@ -100,6 +102,7 @@ public class ExecutionDispatchService {
         this.selfUpgradeExecutionWritebackService = selfUpgradeExecutionWritebackService;
         this.executionEventService = executionEventService;
         this.executionAsyncSessionService = executionAsyncSessionService;
+        this.executionWorkspaceCleanupService = executionWorkspaceCleanupService;
         this.executionTaskExecutor = executionTaskExecutor;
     }
 
@@ -256,7 +259,8 @@ public class ExecutionDispatchService {
                                 executionRun,
                                 stepEntity,
                                 startResult.sessionId(),
-                                startResult.runnerType()
+                                startResult.runnerType(),
+                                startResult.workspaceRoot()
                         );
                         stepEntity = executionAsyncSessionService.awaitTerminalStep(
                                 stepEntity.getId(),
@@ -288,7 +292,8 @@ public class ExecutionDispatchService {
                                 executionRun,
                                 stepEntity,
                                 startResult.sessionId(),
-                                startResult.runnerType()
+                                startResult.runnerType(),
+                                startResult.workspaceRoot()
                         );
                         stepEntity = executionAsyncSessionService.awaitTerminalStep(
                                 stepEntity.getId(),
@@ -509,7 +514,8 @@ public class ExecutionDispatchService {
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "SUCCESS");
-        notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_SUCCESS);
+        boolean hasCleanupWorkspace = scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_SUCCESS) > 0;
+        notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_SUCCESS, hasCleanupWorkspace);
         return executionRun;
     }
 
@@ -552,7 +558,8 @@ public class ExecutionDispatchService {
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "FAILED");
-        notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_FAILED);
+        boolean hasCleanupWorkspace = scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_FAILED) > 0;
+        notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_FAILED, hasCleanupWorkspace);
         return executionRun;
     }
 
@@ -586,7 +593,8 @@ public class ExecutionDispatchService {
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "FAILED");
-        notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_FAILED);
+        boolean hasCleanupWorkspace = scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_FAILED) > 0;
+        notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_FAILED, hasCleanupWorkspace);
         return executionRun;
     }
 
@@ -618,8 +626,23 @@ public class ExecutionDispatchService {
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "CANCELED");
-        notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_CANCELED);
+        boolean hasCleanupWorkspace = scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_CANCELED) > 0;
+        notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_CANCELED, hasCleanupWorkspace);
         return executionRun;
+    }
+
+    /**
+     * 统一终态收口后立即为当前 run 排期工作区清理，避免不同执行流再次各自遗漏调用。
+     */
+    private int scheduleWorkspaceCleanup(ExecutionRunEntity executionRun, String resultStatus) {
+        if (executionRun == null || executionRun.getId() == null) {
+            return 0;
+        }
+        return executionWorkspaceCleanupService.scheduleCleanupForRun(
+                executionRun.getId(),
+                resultStatus,
+                LocalDateTime.now()
+        );
     }
 
     private ExecutionArtifactEntity createArtifact(ExecutionRunEntity executionRun,
@@ -706,7 +729,8 @@ public class ExecutionDispatchService {
      * 开发执行成功后主动提醒发起人，避免用户必须盯着执行详情页轮询结果。
      */
     private void notifyRequesterWhenDevelopmentExecutionSucceeds(ExecutionTaskEntity executionTask,
-                                                                 ExecutionRunEntity executionRun) {
+                                                                 ExecutionRunEntity executionRun,
+                                                                 boolean hasCleanupWorkspace) {
         if (executionTask.getCreatedByUser() == null
                 || !ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(executionTask.getScenarioCode())) {
             return;
@@ -731,6 +755,7 @@ public class ExecutionDispatchService {
             content.append("结果摘要：").append(abbreviate(executionRun.getOutputSummary(), 180)).append("。");
         }
         content.append("可前往执行详情查看产物，并在右上角直接提交 MR。");
+        appendWorkspaceRetentionNotice(content, executionTask.getScenarioCode(), RESULT_STATUS_SUCCESS, hasCleanupWorkspace);
         notificationService.sendToUser(
                 executionTask.getCreatedByUser().getId(),
                 NotificationService.TYPE_TASK,
@@ -749,13 +774,14 @@ public class ExecutionDispatchService {
      */
     private void notifyRequesterWhenExecutionFinished(ExecutionTaskEntity executionTask,
                                                       ExecutionRunEntity executionRun,
-                                                      String resultStatus) {
+                                                      String resultStatus,
+                                                      boolean hasCleanupWorkspace) {
         if (executionTask.getCreatedByUser() == null) {
             return;
         }
         if (ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(executionTask.getScenarioCode())
                 && RESULT_STATUS_SUCCESS.equalsIgnoreCase(resultStatus)) {
-            notifyRequesterWhenDevelopmentExecutionSucceeds(executionTask, executionRun);
+            notifyRequesterWhenDevelopmentExecutionSucceeds(executionTask, executionRun, hasCleanupWorkspace);
             return;
         }
         String scenarioName = resolveScenarioName(executionTask.getScenarioCode());
@@ -766,7 +792,7 @@ public class ExecutionDispatchService {
                 NotificationService.TYPE_TASK,
                 resolveNotificationLevel(resultStatus),
                 title,
-                buildExecutionNotificationContent(executionTask, executionRun, scenarioName, resultStatus),
+                buildExecutionNotificationContent(executionTask, executionRun, scenarioName, resultStatus, hasCleanupWorkspace),
                 "/tasks/" + executionTask.getId(),
                 resolveExecutionNotificationBizType(executionTask.getScenarioCode(), resultStatus),
                 executionTask.getId()
@@ -846,7 +872,8 @@ public class ExecutionDispatchService {
     private String buildExecutionNotificationContent(ExecutionTaskEntity executionTask,
                                                      ExecutionRunEntity executionRun,
                                                      String scenarioName,
-                                                     String resultStatus) {
+                                                     String resultStatus,
+                                                     boolean hasCleanupWorkspace) {
         StringBuilder content = new StringBuilder();
         String projectName = executionTask.getProject() == null ? "" : defaultString(executionTask.getProject().getName()).trim();
         String workItemText = executionTask.getWorkItem() == null
@@ -873,6 +900,7 @@ public class ExecutionDispatchService {
         } else {
             content.append("可前往执行详情查看产物和完整日志。");
         }
+        appendWorkspaceRetentionNotice(content, executionTask.getScenarioCode(), resultStatus, hasCleanupWorkspace);
         return content.toString();
     }
 
@@ -922,6 +950,41 @@ public class ExecutionDispatchService {
             break;
         }
         return normalized;
+    }
+
+    /**
+     * 结果通知里的保留期提示只在终态后追加，避免把任务进行中的状态更新误导成已经进入自动删除倒计时。
+     */
+    private void appendWorkspaceRetentionNotice(StringBuilder content,
+                                                String scenarioCode,
+                                                String resultStatus,
+                                                boolean hasCleanupWorkspace) {
+        if (!hasCleanupWorkspace) {
+            return;
+        }
+        String retentionNotice = defaultString(executionWorkspaceCleanupService.buildRetentionNotice(scenarioCode, resultStatus));
+        if (retentionNotice.isBlank()) {
+            retentionNotice = buildDefaultRetentionNotice(scenarioCode, resultStatus);
+        }
+        if (!retentionNotice.isBlank()) {
+            content.append(retentionNotice);
+        }
+    }
+
+    private String buildDefaultRetentionNotice(String scenarioCode, String resultStatus) {
+        long configuredRetentionHours = executionWorkspaceCleanupService.retentionHours();
+        long normalizedRetentionHours = configuredRetentionHours <= 0 ? 24 : configuredRetentionHours;
+        String normalizedResult = defaultString(resultStatus).trim().toUpperCase();
+        if (RESULT_STATUS_SUCCESS.equals(normalizedResult)) {
+            if (ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(defaultString(scenarioCode).trim())) {
+                return "本地工作区将在 " + normalizedRetentionHours + " 小时后自动删除；如需走 MR，请在保留期内完成处理。";
+            }
+            return "本地工作区将在 " + normalizedRetentionHours + " 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。";
+        }
+        if (RESULT_STATUS_FAILED.equals(normalizedResult) || RESULT_STATUS_CANCELED.equals(normalizedResult)) {
+            return "本地工作区将在 " + normalizedRetentionHours + " 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。";
+        }
+        return "";
     }
 
     private String defaultString(String value) {

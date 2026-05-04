@@ -155,7 +155,7 @@ class DevelopmentExecutionServiceTests {
             step.setRunnerType(invocation.getArgument(4, String.class));
             step.setHasLiveStream(true);
             return null;
-        }).when(executionAsyncSessionService).bindRunnerSession(any(), any(), any(), any(String.class), any(String.class));
+        }).when(executionAsyncSessionService).bindRunnerSession(any(), any(), any(), any(String.class), any(String.class), any(String.class));
         lenient().when(executionAsyncSessionService.awaitTerminalStep(any(Long.class), eq(900))).thenAnswer(invocation -> {
             Long stepId = invocation.getArgument(0, Long.class);
             ExecutionStepEntity step = savedSteps.stream()
@@ -308,6 +308,33 @@ class DevelopmentExecutionServiceTests {
                 .containsExactly("PLAN_MARKDOWN");
         verify(agentExecutionService, org.mockito.Mockito.never()).runAgent(eq(12L), any(String.class), any(Map.class));
         verify(agentExecutionService, org.mockito.Mockito.never()).runAgent(eq(13L), any(String.class), any(Map.class));
+    }
+
+    /**
+     * 仓库结构化同样会落地真实工作区；必须把 workspaceRoot 透传给统一会话绑定，
+     * 才能让清理登记覆盖 structuring 阶段产生的目录。
+     */
+    @Test
+    void shouldForwardWorkspaceRootWhenStructuringStarts() {
+        ExecutionTaskEntity executionTask = buildExecutionTask(true);
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = buildWorkflowPlan();
+
+        when(agentExecutionService.runAgent(eq(11L), any(String.class), any(Map.class)))
+                .thenReturn("# 执行规划\n\n- 先改 frontend\n- 再改 backend");
+
+        DevelopmentExecutionService.DevelopmentExecutionResult result =
+                developmentExecutionService.executeDevelopmentTask(executionTask, executionRun, workflowPlan);
+
+        assertThat(result.awaitingConfirmation()).isTrue();
+        verify(executionAsyncSessionService).bindRunnerSession(
+                eq(executionTask),
+                eq(executionRun),
+                argThat((ExecutionStepEntity step) -> "仓库结构化".equals(step.getStepName())),
+                eq("session-structuring"),
+                eq("CLI"),
+                eq("C:/workspace/structuring")
+        );
     }
 
     /**
@@ -906,13 +933,13 @@ class DevelopmentExecutionServiceTests {
         when(agentExecutionService.supportsAsyncExecution(any(AgentEntity.class), eq("REPORT"))).thenReturn(false);
         when(agentExecutionService.startAsyncExecution(any(AgentEntity.class), any(String.class), any(Map.class), eq(15), eq(3600)))
                 .thenReturn(new AgentExecutionService.AsyncExecutionStartResult("session-implement", true, "CLI", "C:/workspace", "2026-04-18T12:00:00Z"));
-        doAnswer(invocation -> {
+        lenient().doAnswer(invocation -> {
             ExecutionStepEntity step = invocation.getArgument(2);
             step.setRunnerSessionId("session-implement");
             step.setRunnerType("CLI");
             step.setHasLiveStream(true);
             return null;
-        }).when(executionAsyncSessionService).bindRunnerSession(any(), any(), any(), eq("session-implement"), eq("CLI"));
+        }).when(executionAsyncSessionService).bindRunnerSession(any(), any(), any(), eq("session-implement"), eq("CLI"), eq("C:/workspace"));
         when(executionAsyncSessionService.awaitTerminalStep(any(Long.class), eq(3600))).thenAnswer(invocation -> {
             Long stepId = invocation.getArgument(0);
             ExecutionStepEntity step = savedSteps.stream()
@@ -937,6 +964,54 @@ class DevelopmentExecutionServiceTests {
     }
 
     /**
+     * IMPLEMENT 走异步 runner 时，编排层需要把 runner 回传的工作区目录一并透传给会话绑定，
+     * 这样 run 在统一终态收口时才能定位并排期后续工作区清理。
+     */
+    @Test
+    void shouldBindWorkspaceRootWhenAsyncImplementationStarts() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = buildWorkflowPlan();
+
+        when(agentExecutionService.runAgent(eq(11L), any(String.class), any(Map.class)))
+                .thenReturn("# 执行规划\n先做 frontend，再做 backend。");
+        when(agentExecutionService.supportsAsyncExecution(any(AgentEntity.class), eq("IMPLEMENT"))).thenReturn(true);
+        when(agentExecutionService.supportsAsyncExecution(any(AgentEntity.class), eq("PLAN"))).thenReturn(false);
+        when(agentExecutionService.startAsyncExecution(any(AgentEntity.class), any(String.class), any(Map.class), eq(15), eq(3600)))
+                .thenReturn(new AgentExecutionService.AsyncExecutionStartResult(
+                        "session-implement-workspace",
+                        true,
+                        "CLI",
+                        "C:/workspace/frontend",
+                        "2026-04-18T12:00:00Z"
+                ));
+        when(executionAsyncSessionService.awaitTerminalStep(any(Long.class), eq(3600))).thenAnswer(invocation -> {
+            Long stepId = invocation.getArgument(0);
+            ExecutionStepEntity step = savedSteps.stream()
+                    .filter(item -> Objects.equals(item.getId(), stepId))
+                    .findFirst()
+                    .orElseThrow();
+            step.setStatus("CANCELED");
+            step.setLatestMessage("执行任务已取消，当前步骤正在停止");
+            step.setErrorMessage("执行任务已取消，当前步骤正在停止");
+            return step;
+        });
+
+        DevelopmentExecutionService.DevelopmentExecutionResult result =
+                developmentExecutionService.executeDevelopmentTask(executionTask, executionRun, workflowPlan);
+
+        assertThat(result.canceled()).isTrue();
+        verify(executionAsyncSessionService).bindRunnerSession(
+                eq(executionTask),
+                eq(executionRun),
+                argThat((ExecutionStepEntity step) -> "开发实现 · group/frontend".equals(step.getStepName())),
+                eq("session-implement-workspace"),
+                eq("CLI"),
+                eq("C:/workspace/frontend")
+        );
+    }
+
+    /**
      * 当前异步 IMPLEMENT 已被取消时，编排层应返回 canceled 结果，而不是误判成失败。
      */
     @Test
@@ -951,13 +1026,13 @@ class DevelopmentExecutionServiceTests {
         when(agentExecutionService.supportsAsyncExecution(any(AgentEntity.class), eq("PLAN"))).thenReturn(false);
         when(agentExecutionService.startAsyncExecution(any(AgentEntity.class), any(String.class), any(Map.class), eq(15), eq(3600)))
                 .thenReturn(new AgentExecutionService.AsyncExecutionStartResult("session-implement-canceled", true, "CLI", "C:/workspace", "2026-04-18T12:00:00Z"));
-        doAnswer(invocation -> {
+        lenient().doAnswer(invocation -> {
             ExecutionStepEntity step = invocation.getArgument(2);
             step.setRunnerSessionId("session-implement-canceled");
             step.setRunnerType("CLI");
             step.setHasLiveStream(true);
             return null;
-        }).when(executionAsyncSessionService).bindRunnerSession(any(), any(), any(), eq("session-implement-canceled"), eq("CLI"));
+        }).when(executionAsyncSessionService).bindRunnerSession(any(), any(), any(), eq("session-implement-canceled"), eq("CLI"), eq("C:/workspace"));
         when(executionAsyncSessionService.awaitTerminalStep(any(Long.class), eq(3600))).thenAnswer(invocation -> {
             Long stepId = invocation.getArgument(0);
             ExecutionStepEntity step = savedSteps.stream()

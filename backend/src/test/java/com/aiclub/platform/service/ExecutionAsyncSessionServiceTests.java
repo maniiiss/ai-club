@@ -48,6 +48,9 @@ class ExecutionAsyncSessionServiceTests {
     @Mock
     private ExecutionEventService executionEventService;
 
+    @Mock
+    private ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
+
     private ExecutionAsyncSessionService executionAsyncSessionService;
 
     @BeforeEach
@@ -58,8 +61,40 @@ class ExecutionAsyncSessionServiceTests {
                 executionTaskRepository,
                 executionArtifactRepository,
                 executionEventService,
+                executionWorkspaceCleanupService,
                 new ObjectMapper()
         );
+    }
+
+    /**
+     * runner 返回了宿主机工作区目录时，绑定阶段就应登记到 cleanup 台账，
+     * 避免后续 run 收口时缺少可排期的工作区记录。
+     */
+    @Test
+    void shouldRegisterWorkspaceWhenBindingRunnerSessionWithWorkspaceRoot() {
+        ExecutionTaskEntity task = new ExecutionTaskEntity();
+        task.setId(101L);
+
+        ExecutionRunEntity run = new ExecutionRunEntity();
+        run.setId(44L);
+        run.setExecutionTask(task);
+
+        ExecutionStepEntity step = new ExecutionStepEntity();
+        step.setId(12L);
+        step.setRun(run);
+
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        executionAsyncSessionService.bindRunnerSession(
+                task,
+                run,
+                step,
+                "session-bind",
+                "CLI",
+                "C:/workspace/demo"
+        );
+
+        verify(executionWorkspaceCleanupService).registerWorkspace(101L, 44L, 12L, "session-bind", "C:/workspace/demo");
     }
 
     /**
