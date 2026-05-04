@@ -3,6 +3,7 @@ package com.aiclub.platform.service;
 import com.aiclub.platform.domain.model.ExecutionWorkspaceCleanupEntity;
 import com.aiclub.platform.repository.ExecutionWorkspaceCleanupRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +16,8 @@ public class ExecutionWorkspaceCleanupService {
 
     public static final String STATUS_ACTIVE = "ACTIVE";
     public static final String STATUS_SCHEDULED = "SCHEDULED";
+    public static final String STATUS_DELETED = "DELETED";
+    public static final String STATUS_DELETE_FAILED = "DELETE_FAILED";
 
     private final ExecutionWorkspaceCleanupRepository executionWorkspaceCleanupRepository;
     private final long retentionHours;
@@ -64,6 +67,8 @@ public class ExecutionWorkspaceCleanupService {
             entity.setExecutionResultStatus(null);
             entity.setScheduledAt(null);
             entity.setExpiresAt(null);
+            entity.setDeletedAt(null);
+            entity.setDeleteFailedAt(null);
             entity.setDeleteErrorMessage(null);
         }
         return executionWorkspaceCleanupRepository.save(entity);
@@ -95,10 +100,73 @@ public class ExecutionWorkspaceCleanupService {
             entity.setExecutionResultStatus(normalizedResultStatus);
             entity.setScheduledAt(scheduledAt);
             entity.setExpiresAt(expiresAt);
+            entity.setDeletedAt(null);
+            entity.setDeleteFailedAt(null);
             entity.setDeleteErrorMessage(null);
         }
         executionWorkspaceCleanupRepository.saveAll(activeWorkspaces);
         return activeWorkspaces.size();
+    }
+
+    /**
+     * 拉取已经到期且仍处于 SCHEDULED 状态的工作区，供调度器分批处理。
+     */
+    public List<ExecutionWorkspaceCleanupEntity> findExpiredScheduledWorkspaces(LocalDateTime now, int limit) {
+        if (now == null) {
+            throw new IllegalArgumentException("now 不能为空");
+        }
+        int normalizedLimit = limit <= 0 ? 20 : limit;
+        return executionWorkspaceCleanupRepository.findAllByStatusAndExpiresAtLessThanEqualOrderByExpiresAtAscIdAsc(
+                STATUS_SCHEDULED,
+                now,
+                PageRequest.of(0, normalizedLimit)
+        );
+    }
+
+    /**
+     * 删除成功后写入最终成功态，避免后续调度继续扫描这条记录。
+     */
+    @Transactional
+    public void markDeleted(Long recordId, LocalDateTime deletedAt) {
+        if (recordId == null) {
+            throw new IllegalArgumentException("recordId 不能为空");
+        }
+        if (deletedAt == null) {
+            throw new IllegalArgumentException("deletedAt 不能为空");
+        }
+        ExecutionWorkspaceCleanupEntity entity = getRequiredRecord(recordId);
+        entity.setStatus(STATUS_DELETED);
+        entity.setDeletedAt(deletedAt);
+        entity.setDeleteFailedAt(null);
+        entity.setDeleteErrorMessage(null);
+    }
+
+    /**
+     * 删除失败后沉淀失败时间与原因，供后续排障或人工处理。
+     */
+    @Transactional
+    public void markDeleteFailed(Long recordId, LocalDateTime failedAt, String errorMessage) {
+        if (recordId == null) {
+            throw new IllegalArgumentException("recordId 不能为空");
+        }
+        if (failedAt == null) {
+            throw new IllegalArgumentException("failedAt 不能为空");
+        }
+        ExecutionWorkspaceCleanupEntity entity = getRequiredRecord(recordId);
+        entity.setStatus(STATUS_DELETE_FAILED);
+        entity.setDeletedAt(null);
+        entity.setDeleteFailedAt(failedAt);
+        entity.setDeleteErrorMessage(defaultDeleteErrorMessage(errorMessage));
+    }
+
+    private ExecutionWorkspaceCleanupEntity getRequiredRecord(Long recordId) {
+        return executionWorkspaceCleanupRepository.findById(recordId)
+                .orElseThrow(() -> new IllegalArgumentException("未找到工作区清理记录: " + recordId));
+    }
+
+    private String defaultDeleteErrorMessage(String errorMessage) {
+        String normalized = trimToNull(errorMessage);
+        return normalized == null ? "删除执行工作区失败" : normalized;
     }
 
     private String trimToNull(String value) {

@@ -150,6 +150,97 @@ class ExecutionWorkspaceCleanupServiceTests {
     }
 
     /**
+     * 到期扫描只能返回已经排期且真正到期的记录，并且要受批量大小限制，
+     * 避免调度器一次性拉全表导致长事务或把未到期目录提前删除。
+     */
+    @Test
+    void shouldFindExpiredScheduledWorkspacesInBatchOrder() {
+        LocalDateTime now = LocalDateTime.of(2026, 5, 4, 12, 0, 0);
+
+        executionWorkspaceCleanupRepository.save(buildCleanupRecord(
+                401L,
+                "C:/tmp/run-401/workspace-a",
+                ExecutionWorkspaceCleanupService.STATUS_SCHEDULED,
+                now.minusMinutes(20)
+        ));
+        executionWorkspaceCleanupRepository.save(buildCleanupRecord(
+                402L,
+                "C:/tmp/run-402/workspace-b",
+                ExecutionWorkspaceCleanupService.STATUS_SCHEDULED,
+                now.minusMinutes(10)
+        ));
+        executionWorkspaceCleanupRepository.save(buildCleanupRecord(
+                403L,
+                "C:/tmp/run-403/workspace-c",
+                ExecutionWorkspaceCleanupService.STATUS_SCHEDULED,
+                now.plusMinutes(10)
+        ));
+        executionWorkspaceCleanupRepository.save(buildCleanupRecord(
+                404L,
+                "C:/tmp/run-404/workspace-d",
+                ExecutionWorkspaceCleanupService.STATUS_ACTIVE,
+                now.minusMinutes(30)
+        ));
+        executionWorkspaceCleanupRepository.flush();
+
+        List<ExecutionWorkspaceCleanupEntity> expired =
+                executionWorkspaceCleanupService.findExpiredScheduledWorkspaces(now, 1);
+
+        assertThat(expired)
+                .extracting(ExecutionWorkspaceCleanupEntity::getWorkspaceRoot)
+                .containsExactly("C:/tmp/run-401/workspace-a");
+    }
+
+    /**
+     * 删除成功后需要把生命周期切到 DELETED，并清空失败态遗留字段，
+     * 否则执行详情会同时看到“已删除”和历史失败原因，造成状态歧义。
+     */
+    @Test
+    void shouldMarkWorkspaceDeletedAndClearFailureState() {
+        ExecutionWorkspaceCleanupEntity entity = buildCleanupRecord(
+                501L,
+                "C:/tmp/run-501/workspace-a",
+                "DELETE_FAILED",
+                LocalDateTime.of(2026, 5, 4, 8, 0, 0)
+        );
+        entity.setDeleteFailedAt(LocalDateTime.of(2026, 5, 4, 9, 0, 0));
+        entity.setDeleteErrorMessage("目录被占用");
+        ExecutionWorkspaceCleanupEntity saved = executionWorkspaceCleanupRepository.saveAndFlush(entity);
+
+        LocalDateTime deletedAt = LocalDateTime.of(2026, 5, 4, 10, 0, 0);
+        executionWorkspaceCleanupService.markDeleted(saved.getId(), deletedAt);
+
+        ExecutionWorkspaceCleanupEntity refreshed = executionWorkspaceCleanupRepository.findById(saved.getId()).orElseThrow();
+        assertThat(refreshed.getStatus()).isEqualTo("DELETED");
+        assertThat(refreshed.getDeletedAt()).isEqualTo(deletedAt);
+        assertThat(refreshed.getDeleteFailedAt()).isNull();
+        assertThat(refreshed.getDeleteErrorMessage()).isNull();
+    }
+
+    /**
+     * 删除失败时需要保留失败原因和失败时间，
+     * 让后续排障能知道当前记录为什么停在 DELETE_FAILED。
+     */
+    @Test
+    void shouldMarkWorkspaceDeleteFailedWithErrorMessage() {
+        ExecutionWorkspaceCleanupEntity entity = executionWorkspaceCleanupRepository.saveAndFlush(buildCleanupRecord(
+                601L,
+                "C:/tmp/run-601/workspace-a",
+                ExecutionWorkspaceCleanupService.STATUS_SCHEDULED,
+                LocalDateTime.of(2026, 5, 4, 8, 0, 0)
+        ));
+
+        LocalDateTime failedAt = LocalDateTime.of(2026, 5, 4, 10, 30, 0);
+        executionWorkspaceCleanupService.markDeleteFailed(savedId(entity), failedAt, "目录被占用");
+
+        ExecutionWorkspaceCleanupEntity refreshed = executionWorkspaceCleanupRepository.findById(entity.getId()).orElseThrow();
+        assertThat(refreshed.getStatus()).isEqualTo("DELETE_FAILED");
+        assertThat(refreshed.getDeletedAt()).isNull();
+        assertThat(refreshed.getDeleteFailedAt()).isEqualTo(failedAt);
+        assertThat(refreshed.getDeleteErrorMessage()).isEqualTo("目录被占用");
+    }
+
+    /**
      * 迁移脚本必须能在真实数据库里创建出唯一约束，
      * 否则服务层“先查后写”的复用逻辑在并发下无法兜底。
      */
@@ -162,7 +253,8 @@ class ExecutionWorkspaceCleanupServiceTests {
         jdbcTemplate.execute("CREATE TABLE execution_run (id BIGINT PRIMARY KEY)");
         jdbcTemplate.execute("CREATE TABLE execution_step (id BIGINT PRIMARY KEY)");
         new ResourceDatabasePopulator(false, false, StandardCharsets.UTF_8.name(),
-                new ClassPathResource("db/migration/V58__execution_workspace_cleanup.sql"))
+                new ClassPathResource("db/migration/V58__execution_workspace_cleanup.sql"),
+                new ClassPathResource("db/migration/V59__execution_workspace_cleanup_deletion_state.sql"))
                 .execute(dataSource);
 
         jdbcTemplate.update("INSERT INTO execution_task (id) VALUES (?)", 1L);
@@ -198,5 +290,26 @@ class ExecutionWorkspaceCleanupServiceTests {
                 .username("sa")
                 .password("")
                 .build();
+    }
+
+    private ExecutionWorkspaceCleanupEntity buildCleanupRecord(Long runId,
+                                                               String workspaceRoot,
+                                                               String status,
+                                                               LocalDateTime expiresAt) {
+        ExecutionWorkspaceCleanupEntity entity = new ExecutionWorkspaceCleanupEntity();
+        entity.setExecutionTaskId(runId + 1000);
+        entity.setExecutionRunId(runId);
+        entity.setExecutionStepId(runId + 2000);
+        entity.setRunnerSessionId("session-" + runId);
+        entity.setWorkspaceRoot(workspaceRoot);
+        entity.setStatus(status);
+        entity.setExecutionResultStatus("SUCCESS");
+        entity.setScheduledAt(expiresAt.minusHours(24));
+        entity.setExpiresAt(expiresAt);
+        return entity;
+    }
+
+    private Long savedId(ExecutionWorkspaceCleanupEntity entity) {
+        return entity.getId();
     }
 }

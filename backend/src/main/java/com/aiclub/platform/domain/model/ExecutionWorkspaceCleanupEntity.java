@@ -88,6 +88,18 @@ public class ExecutionWorkspaceCleanupEntity {
     private LocalDateTime expiresAt;
 
     /**
+     * 最近一次成功删除工作区的时间。
+     */
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    /**
+     * 最近一次删除失败的时间。
+     */
+    @Column(name = "delete_failed_at")
+    private LocalDateTime deleteFailedAt;
+
+    /**
      * 最近一次删除失败原因。
      * 当重新进入调度阶段时需要清空，避免历史错误误导当前状态。
      */
@@ -190,6 +202,22 @@ public class ExecutionWorkspaceCleanupEntity {
 
     public void setExpiresAt(LocalDateTime expiresAt) {
         this.expiresAt = expiresAt;
+    }
+
+    public LocalDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public void setDeletedAt(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
+    }
+
+    public LocalDateTime getDeleteFailedAt() {
+        return deleteFailedAt;
+    }
+
+    public void setDeleteFailedAt(LocalDateTime deleteFailedAt) {
+        this.deleteFailedAt = deleteFailedAt;
     }
 
     public String getDeleteErrorMessage() {
