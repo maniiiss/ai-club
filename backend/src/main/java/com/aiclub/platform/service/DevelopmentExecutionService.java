@@ -374,7 +374,7 @@ public class DevelopmentExecutionService {
                 step,
                 startResult.sessionId(),
                 startResult.runnerType(),
-                startResult.workspaceRoot()
+                null
         );
         ExecutionStepEntity completedStep = executionAsyncSessionService.awaitTerminalStep(
                 step.getId(),

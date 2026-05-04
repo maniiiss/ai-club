@@ -311,6 +311,33 @@ class DevelopmentExecutionServiceTests {
     }
 
     /**
+     * Task 2 仅要求为 IMPLEMENT 透传异步 runner 工作区；
+     * repo structuring 仍沿用旧绑定行为，避免把工作区登记范围扩散到本次任务之外。
+     */
+    @Test
+    void shouldNotForwardWorkspaceRootWhenStructuringStarts() {
+        ExecutionTaskEntity executionTask = buildExecutionTask(true);
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = buildWorkflowPlan();
+
+        when(agentExecutionService.runAgent(eq(11L), any(String.class), any(Map.class)))
+                .thenReturn("# 执行规划\n\n- 先改 frontend\n- 再改 backend");
+
+        DevelopmentExecutionService.DevelopmentExecutionResult result =
+                developmentExecutionService.executeDevelopmentTask(executionTask, executionRun, workflowPlan);
+
+        assertThat(result.awaitingConfirmation()).isTrue();
+        verify(executionAsyncSessionService).bindRunnerSession(
+                eq(executionTask),
+                eq(executionRun),
+                argThat((ExecutionStepEntity step) -> "仓库结构化".equals(step.getStepName())),
+                eq("session-structuring"),
+                eq("CLI"),
+                org.mockito.ArgumentMatchers.isNull()
+        );
+    }
+
+    /**
      * 任一仓库开发失败后应停止后续仓库，但仍然生成统一报告沉淀失败位置和未执行仓库。
      */
     @Test
@@ -906,7 +933,7 @@ class DevelopmentExecutionServiceTests {
         when(agentExecutionService.supportsAsyncExecution(any(AgentEntity.class), eq("REPORT"))).thenReturn(false);
         when(agentExecutionService.startAsyncExecution(any(AgentEntity.class), any(String.class), any(Map.class), eq(15), eq(3600)))
                 .thenReturn(new AgentExecutionService.AsyncExecutionStartResult("session-implement", true, "CLI", "C:/workspace", "2026-04-18T12:00:00Z"));
-        doAnswer(invocation -> {
+        lenient().doAnswer(invocation -> {
             ExecutionStepEntity step = invocation.getArgument(2);
             step.setRunnerSessionId("session-implement");
             step.setRunnerType("CLI");
@@ -999,7 +1026,7 @@ class DevelopmentExecutionServiceTests {
         when(agentExecutionService.supportsAsyncExecution(any(AgentEntity.class), eq("PLAN"))).thenReturn(false);
         when(agentExecutionService.startAsyncExecution(any(AgentEntity.class), any(String.class), any(Map.class), eq(15), eq(3600)))
                 .thenReturn(new AgentExecutionService.AsyncExecutionStartResult("session-implement-canceled", true, "CLI", "C:/workspace", "2026-04-18T12:00:00Z"));
-        doAnswer(invocation -> {
+        lenient().doAnswer(invocation -> {
             ExecutionStepEntity step = invocation.getArgument(2);
             step.setRunnerSessionId("session-implement-canceled");
             step.setRunnerType("CLI");
