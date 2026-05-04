@@ -260,6 +260,78 @@ class ExecutionDispatchServiceTests {
     }
 
     /**
+     * 失败终态与成功终态一样，都必须在收口时排入工作区清理队列，
+     * 否则失败现场会一直残留在 runner 宿主机上。
+     */
+    @Test
+    void shouldScheduleWorkspaceCleanupWhenExecutionFails() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(309L);
+        executionRun.setExecutionTask(executionTask);
+
+        ExecutionStepEntity failedStep = new ExecutionStepEntity();
+        failedStep.setId(603L);
+        failedStep.setRun(executionRun);
+        failedStep.setStepName("开发实现 · demo/repo");
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(909L);
+            return artifact;
+        });
+
+        executionDispatchService.finishFailed(
+                executionTask,
+                executionRun,
+                failedStep,
+                new IllegalStateException("开发实现失败"),
+                new java.util.ArrayList<>()
+        );
+
+        verify(executionWorkspaceCleanupService).scheduleCleanupForRun(
+                eq(309L),
+                eq("FAILED"),
+                any(java.time.LocalDateTime.class)
+        );
+    }
+
+    /**
+     * 基础设施级失败同样会落到统一终态处理，cleanup 排期不能只覆盖业务步骤失败。
+     */
+    @Test
+    void shouldScheduleWorkspaceCleanupWhenInfrastructureFailureOccurs() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(310L);
+        executionRun.setExecutionTask(executionTask);
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(910L);
+            return artifact;
+        });
+
+        executionDispatchService.finishInfrastructureFailure(
+                executionTask,
+                executionRun,
+                new IllegalStateException("runner 宿主机不可用"),
+                new java.util.ArrayList<>()
+        );
+
+        verify(executionWorkspaceCleanupService).scheduleCleanupForRun(
+                eq(310L),
+                eq("FAILED"),
+                any(java.time.LocalDateTime.class)
+        );
+    }
+
+    /**
      * 开发执行成功后应给发起人补一条站内通知，方便用户直接从消息中心回到执行详情并继续提交 MR。
      */
     @Test
@@ -669,6 +741,104 @@ class ExecutionDispatchServiceTests {
     }
 
     /**
+     * 自升级巡检走的是独立 patrol async 启动接口，也必须把 runner 回传的工作区目录透传给会话绑定。
+     */
+    @Test
+    void shouldBindWorkspaceRootWhenPatrolStepRunsAsynchronously() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL);
+        executionTask.setTitle("夜间自升级巡检");
+        executionTask.setInputPayload("""
+                {
+                  "runTimeoutSeconds": 1200
+                }
+                """);
+        AgentEntity patrolAgent = buildCliRuntimeAgent(23L, AgentExecutionService.RUNTIME_CODEX_CLI);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL,
+                "自升级巡检",
+                List.of(new ExecutionWorkflowService.ExecutionStepPlan(
+                        1,
+                        ExecutionWorkflowService.STEP_PATROL,
+                        "平台巡检",
+                        patrolAgent,
+                        null,
+                        null,
+                        null
+                ))
+        );
+
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionRunRepository.countByExecutionTask_Id(99L)).thenReturn(0L);
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> {
+            ExecutionRunEntity run = invocation.getArgument(0);
+            if (run.getId() == null) {
+                run.setId(403L);
+            }
+            return run;
+        });
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> {
+            ExecutionStepEntity step = invocation.getArgument(0);
+            if (step.getId() == null) {
+                step.setId(503L);
+            }
+            return step;
+        });
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            if (artifact.getId() == null) {
+                artifact.setId(953L);
+            }
+            return artifact;
+        });
+        when(executionWorkflowService.restoreWorkflow(
+                eq(ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL),
+                eq(7L),
+                eq("[]")
+        )).thenReturn(workflowPlan);
+        when(executionWorkflowService.buildStepInput(any(), any(), any(), any(), any()))
+                .thenReturn("请执行自升级巡检");
+        when(executionAsyncSessionService.submitTimeoutSeconds()).thenReturn(15);
+        when(executionAsyncSessionService.maxRuntimeSeconds(
+                ExecutionWorkflowService.STEP_PATROL,
+                executionTask.getInputPayload()
+        )).thenReturn(1200);
+        when(agentExecutionService.startPatrolAsyncExecution(
+                eq("请执行自升级巡检"),
+                any(),
+                eq(15),
+                eq(1200)
+        )).thenReturn(new AgentExecutionService.AsyncExecutionStartResult(
+                "patrol-session-1",
+                true,
+                "CLI",
+                "C:/workspace/patrol",
+                "2026-05-04T14:00:00Z"
+        ));
+        when(executionAsyncSessionService.awaitTerminalStep(anyLong(), eq(1200))).thenAnswer(invocation -> {
+            ExecutionStepEntity terminalStep = new ExecutionStepEntity();
+            terminalStep.setId(invocation.getArgument(0));
+            terminalStep.setStatus("SUCCESS");
+            terminalStep.setOutputSnapshot("{\"status\":\"SUCCESS\",\"summary\":\"巡检完成\"}");
+            return terminalStep;
+        });
+
+        ExecutionRunEntity result = executionDispatchService.dispatchTaskNow(99L);
+
+        assertThat(result.getStatus()).isEqualTo("SUCCESS");
+        verify(agentExecutionService).startPatrolAsyncExecution(eq("请执行自升级巡检"), any(), eq(15), eq(1200));
+        verify(executionAsyncSessionService).bindRunnerSession(
+                eq(executionTask),
+                any(),
+                any(),
+                eq("patrol-session-1"),
+                eq("CLI"),
+                eq("C:/workspace/patrol")
+        );
+    }
+
+    /**
      * 取消态同样会生成 run 级摘要，若不发事件，前端只能等下次刷新才看得到取消产物。
      */
     @Test
@@ -689,6 +859,33 @@ class ExecutionDispatchServiceTests {
         executionDispatchService.finishCanceled(executionTask, executionRun, new java.util.ArrayList<>());
 
         verify(executionEventService).recordArtifactReady(executionTask, executionRun, null, 902L, "取消摘要");
+    }
+
+    /**
+     * 取消态收口后同样要排工作区清理，避免用户主动取消时遗留 runner 工作目录。
+     */
+    @Test
+    void shouldScheduleWorkspaceCleanupWhenExecutionIsCanceled() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(311L);
+        executionRun.setExecutionTask(executionTask);
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(911L);
+            return artifact;
+        });
+
+        executionDispatchService.finishCanceled(executionTask, executionRun, new java.util.ArrayList<>());
+
+        verify(executionWorkspaceCleanupService).scheduleCleanupForRun(
+                eq(311L),
+                eq("CANCELED"),
+                any(java.time.LocalDateTime.class)
+        );
     }
 
     /**
