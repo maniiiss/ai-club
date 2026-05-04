@@ -17,6 +17,8 @@ public interface ExecutionWorkspaceCleanupRepository extends JpaRepository<Execu
 
     List<ExecutionWorkspaceCleanupEntity> findAllByExecutionRunIdAndStatusOrderByIdAsc(Long executionRunId, String status);
 
+    List<ExecutionWorkspaceCleanupEntity> findAllByExecutionTaskIdOrderByUpdatedAtDescIdDesc(Long executionTaskId);
+
     List<ExecutionWorkspaceCleanupEntity> findAllByStatusAndExpiresAtLessThanEqualOrderByExpiresAtAscIdAsc(
             String status,
             LocalDateTime expiresAt,

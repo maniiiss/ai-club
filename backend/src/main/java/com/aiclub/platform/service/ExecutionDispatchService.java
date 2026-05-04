@@ -53,6 +53,10 @@ public class ExecutionDispatchService {
     private static final String RESULT_STATUS_SUCCESS = "SUCCESS";
     private static final String RESULT_STATUS_FAILED = "FAILED";
     private static final String RESULT_STATUS_CANCELED = "CANCELED";
+    private static final String DEVELOPMENT_SUCCESS_RETENTION_NOTICE =
+            "本地工作区将在 24 小时后自动删除；如需走 MR，请在保留期内完成处理。";
+    private static final String TERMINAL_RETENTION_NOTICE =
+            "本地工作区将在 24 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。";
 
     private final ExecutionTaskRepository executionTaskRepository;
     private final ExecutionRunRepository executionRunRepository;
@@ -754,6 +758,7 @@ public class ExecutionDispatchService {
             content.append("结果摘要：").append(abbreviate(executionRun.getOutputSummary(), 180)).append("。");
         }
         content.append("可前往执行详情查看产物，并在右上角直接提交 MR。");
+        content.append(DEVELOPMENT_SUCCESS_RETENTION_NOTICE);
         notificationService.sendToUser(
                 executionTask.getCreatedByUser().getId(),
                 NotificationService.TYPE_TASK,
@@ -896,6 +901,7 @@ public class ExecutionDispatchService {
         } else {
             content.append("可前往执行详情查看产物和完整日志。");
         }
+        appendWorkspaceRetentionNotice(content, resultStatus);
         return content.toString();
     }
 
@@ -945,6 +951,16 @@ public class ExecutionDispatchService {
             break;
         }
         return normalized;
+    }
+
+    /**
+     * 结果通知里的保留期提示只在终态后追加，避免把任务进行中的状态更新误导成已经进入自动删除倒计时。
+     */
+    private void appendWorkspaceRetentionNotice(StringBuilder content, String resultStatus) {
+        String normalizedResult = defaultString(resultStatus).trim().toUpperCase();
+        if (RESULT_STATUS_FAILED.equals(normalizedResult) || RESULT_STATUS_CANCELED.equals(normalizedResult)) {
+            content.append(TERMINAL_RETENTION_NOTICE);
+        }
     }
 
     private String defaultString(String value) {

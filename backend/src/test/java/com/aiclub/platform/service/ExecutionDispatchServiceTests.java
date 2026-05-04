@@ -358,7 +358,7 @@ class ExecutionDispatchServiceTests {
                 eq(NotificationService.TYPE_TASK),
                 eq(NotificationService.LEVEL_SUCCESS),
                 eq("开发执行已完成：开发执行任务"),
-                org.mockito.ArgumentMatchers.contains("可前往执行详情查看产物，并在右上角直接提交 MR"),
+                org.mockito.ArgumentMatchers.contains("本地工作区将在 24 小时后自动删除；如需走 MR，请在保留期内完成处理。"),
                 eq("/tasks/99"),
                 eq("DEVELOPMENT_EXECUTION_COMPLETED"),
                 eq(99L)

@@ -9,6 +9,7 @@ import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.ExecutionTaskDetail;
+import com.aiclub.platform.dto.ExecutionWorkspaceCleanupSummary;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.request.ConfirmExecutionPlanRequest;
 import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
@@ -92,6 +93,9 @@ class ExecutionTaskServiceTests {
     @Mock
     private SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
 
+    @Mock
+    private ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
+
     private ExecutionTaskService executionTaskService;
 
     @BeforeEach
@@ -110,6 +114,7 @@ class ExecutionTaskServiceTests {
                 executionDispatchService,
                 executionEventService,
                 selfUpgradeExecutionWritebackService,
+                executionWorkspaceCleanupService,
                 new ObjectMapper()
         );
         AuthContextHolder.set(new AuthContext(1001L, "alice", "Alice", Set.of(), Set.of()));
@@ -121,6 +126,8 @@ class ExecutionTaskServiceTests {
         currentUser.setUsername("alice");
         currentUser.setNickname("Alice");
         lenient().when(userRepository.findById(1001L)).thenReturn(Optional.of(currentUser));
+        lenient().when(executionWorkflowService.scenarioName(ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION))
+                .thenReturn("开发执行");
     }
 
     @AfterEach
@@ -313,6 +320,37 @@ class ExecutionTaskServiceTests {
         verify(executionTaskRepository).save(argThat(task ->
                 String.valueOf(task.getInputPayload()).contains("\"planConfirmationRequired\":true")
         ));
+    }
+
+    /**
+     * 执行详情需要直接带出任务级工作区清理摘要，前端才能在不额外查 run 详情的前提下展示保留期提示。
+     */
+    @Test
+    void shouldIncludeWorkspaceCleanupSummaryInTaskDetail() {
+        ExecutionTaskEntity executionTask = buildWaitingConfirmationTask(1001L);
+        executionTask.setCreatedAt(java.time.LocalDateTime.of(2026, 5, 4, 10, 0));
+        executionTask.setUpdatedAt(java.time.LocalDateTime.of(2026, 5, 4, 11, 0));
+        when(executionTaskRepository.findById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionRunRepository.findAllByExecutionTask_IdOrderByRunNoDescIdDesc(99L))
+                .thenReturn(List.of(executionTask.getCurrentRun()));
+        when(executionWorkspaceCleanupService.buildTaskSummary(99L)).thenReturn(new ExecutionWorkspaceCleanupSummary(
+                true,
+                24L,
+                "SCHEDULED",
+                "SUCCESS",
+                "2026-05-05 10:00:00",
+                null,
+                null,
+                null,
+                2,
+                "本地工作区将在 24 小时后自动删除；如需走 MR，请在保留期内完成处理。"
+        ));
+
+        ExecutionTaskDetail detail = executionTaskService.getExecutionTask(99L);
+
+        assertThat(detail.workspaceCleanup()).isNotNull();
+        assertThat(detail.workspaceCleanup().status()).isEqualTo("SCHEDULED");
+        assertThat(detail.workspaceCleanup().trackedWorkspaceCount()).isEqualTo(2);
     }
 
     /**

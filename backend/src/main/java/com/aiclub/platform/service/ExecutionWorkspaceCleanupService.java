@@ -1,12 +1,14 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.ExecutionWorkspaceCleanupEntity;
+import com.aiclub.platform.dto.ExecutionWorkspaceCleanupSummary;
 import com.aiclub.platform.repository.ExecutionWorkspaceCleanupRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -14,6 +16,7 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class ExecutionWorkspaceCleanupService {
 
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     public static final String STATUS_ACTIVE = "ACTIVE";
     public static final String STATUS_SCHEDULED = "SCHEDULED";
     public static final String STATUS_DELETED = "DELETED";
@@ -109,6 +112,45 @@ public class ExecutionWorkspaceCleanupService {
     }
 
     /**
+     * 为执行详情页聚合任务级清理摘要。
+     * 这里优先取最近更新的一条记录代表当前任务最新的清理生命周期，再补齐总工作区数量与展示文案。
+     */
+    public ExecutionWorkspaceCleanupSummary buildTaskSummary(Long executionTaskId) {
+        if (executionTaskId == null) {
+            throw new IllegalArgumentException("executionTaskId 不能为空");
+        }
+        List<ExecutionWorkspaceCleanupEntity> records =
+                executionWorkspaceCleanupRepository.findAllByExecutionTaskIdOrderByUpdatedAtDescIdDesc(executionTaskId);
+        if (records.isEmpty()) {
+            return new ExecutionWorkspaceCleanupSummary(
+                    false,
+                    retentionHours,
+                    "NONE",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    0,
+                    "当前执行未登记需要自动清理的本地工作区。"
+            );
+        }
+        ExecutionWorkspaceCleanupEntity latestRecord = records.get(0);
+        return new ExecutionWorkspaceCleanupSummary(
+                true,
+                retentionHours,
+                latestRecord.getStatus(),
+                latestRecord.getExecutionResultStatus(),
+                formatTime(latestRecord.getExpiresAt()),
+                formatTime(latestRecord.getDeletedAt()),
+                formatTime(latestRecord.getDeleteFailedAt()),
+                latestRecord.getDeleteErrorMessage(),
+                records.size(),
+                buildSummaryMessage(latestRecord, records.size())
+        );
+    }
+
+    /**
      * 拉取已经到期且仍处于 SCHEDULED 状态的工作区，供调度器分批处理。
      */
     public List<ExecutionWorkspaceCleanupEntity> findExpiredScheduledWorkspaces(LocalDateTime now, int limit) {
@@ -162,9 +204,40 @@ public class ExecutionWorkspaceCleanupService {
         ) > 0;
     }
 
+    public long retentionHours() {
+        return retentionHours;
+    }
+
     private String defaultDeleteErrorMessage(String errorMessage) {
         String normalized = trimToNull(errorMessage);
         return normalized == null ? "删除执行工作区失败" : normalized;
+    }
+
+    /**
+     * 任务详情页只显示一条摘要文案，因此这里把不同生命周期映射成明确的用户动作提示。
+     */
+    private String buildSummaryMessage(ExecutionWorkspaceCleanupEntity latestRecord, int trackedWorkspaceCount) {
+        String status = trimToNull(latestRecord.getStatus());
+        if (STATUS_DELETED.equalsIgnoreCase(status)) {
+            return "本次执行登记的 " + trackedWorkspaceCount + " 个本地工作区已自动删除。";
+        }
+        if (STATUS_DELETE_FAILED.equalsIgnoreCase(status)) {
+            String errorMessage = trimToNull(latestRecord.getDeleteErrorMessage());
+            return errorMessage == null
+                    ? "本次执行登记的本地工作区自动删除失败，请联系管理员处理。"
+                    : "本次执行登记的本地工作区自动删除失败：" + errorMessage;
+        }
+        if (STATUS_SCHEDULED.equalsIgnoreCase(status)) {
+            if ("SUCCESS".equalsIgnoreCase(trimToNull(latestRecord.getExecutionResultStatus()))) {
+                return "本次执行产生的本地工作区将在 " + retentionHours + " 小时后自动删除；如需走 MR，请在保留期内完成处理。";
+            }
+            return "本次执行产生的本地工作区将在 " + retentionHours + " 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。";
+        }
+        return "本次执行已登记 " + trackedWorkspaceCount + " 个本地工作区，任务结束后将保留 " + retentionHours + " 小时并自动删除。";
+    }
+
+    private String formatTime(LocalDateTime time) {
+        return time == null ? null : time.format(TIME_FORMATTER);
     }
 
     private String trimToNull(String value) {

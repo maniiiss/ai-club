@@ -27,6 +27,7 @@ public record ExecutionTaskDetail(
         boolean planConfirmationRequired,
         boolean planConfirmationPending,
         boolean canCurrentUserConfirmPlan,
-        List<ExecutionRunSummary> runs
+        List<ExecutionRunSummary> runs,
+        ExecutionWorkspaceCleanupSummary workspaceCleanup
 ) {
 }
