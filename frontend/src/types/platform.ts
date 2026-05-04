@@ -681,6 +681,29 @@ export interface ExecutionTaskListStatsItem {
   averageProgressPercent: number
 }
 
+export interface ExecutionWorkspaceCleanupSummaryItem {
+  /** 是否启用工作区清理摘要展示。 */
+  enabled: boolean
+  /** 工作区保留时长，单位为小时。 */
+  retentionHours: number
+  /** 当前清理状态，例如 SCHEDULED、DELETED、DELETE_FAILED。 */
+  status: string
+  /** 对应执行结果状态，例如 SUCCESS、FAILED、CANCELED。 */
+  executionResultStatus: string
+  /** 预计或实际过期时间。 */
+  expiresAt: string | null
+  /** 实际删除完成时间。 */
+  deletedAt: string | null
+  /** 删除失败时间。 */
+  deleteFailedAt: string | null
+  /** 删除失败时的错误信息。 */
+  deleteErrorMessage: string | null
+  /** 当前任务下纳入追踪的工作区数量。 */
+  trackedWorkspaceCount: number
+  /** 后端直接生成的详情提示文案。 */
+  message: string
+}
+
 export interface ExecutionTaskDetailItem {
   id: number
   title: string
@@ -707,6 +730,7 @@ export interface ExecutionTaskDetailItem {
   planConfirmationPending: boolean
   canCurrentUserConfirmPlan: boolean
   runs: ExecutionRunItem[]
+  workspaceCleanup: ExecutionWorkspaceCleanupSummaryItem
 }
 
 export interface TestCaseStepItem {
