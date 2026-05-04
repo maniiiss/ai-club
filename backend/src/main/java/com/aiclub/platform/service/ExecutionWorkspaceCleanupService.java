@@ -127,41 +127,39 @@ public class ExecutionWorkspaceCleanupService {
      * 删除成功后写入最终成功态，避免后续调度继续扫描这条记录。
      */
     @Transactional
-    public void markDeleted(Long recordId, LocalDateTime deletedAt) {
+    public boolean markDeleted(Long recordId, LocalDateTime deletedAt) {
         if (recordId == null) {
             throw new IllegalArgumentException("recordId 不能为空");
         }
         if (deletedAt == null) {
             throw new IllegalArgumentException("deletedAt 不能为空");
         }
-        ExecutionWorkspaceCleanupEntity entity = getRequiredRecord(recordId);
-        entity.setStatus(STATUS_DELETED);
-        entity.setDeletedAt(deletedAt);
-        entity.setDeleteFailedAt(null);
-        entity.setDeleteErrorMessage(null);
+        return executionWorkspaceCleanupRepository.markDeletedIfScheduled(
+                recordId,
+                STATUS_SCHEDULED,
+                STATUS_DELETED,
+                deletedAt
+        ) > 0;
     }
 
     /**
      * 删除失败后沉淀失败时间与原因，供后续排障或人工处理。
      */
     @Transactional
-    public void markDeleteFailed(Long recordId, LocalDateTime failedAt, String errorMessage) {
+    public boolean markDeleteFailed(Long recordId, LocalDateTime failedAt, String errorMessage) {
         if (recordId == null) {
             throw new IllegalArgumentException("recordId 不能为空");
         }
         if (failedAt == null) {
             throw new IllegalArgumentException("failedAt 不能为空");
         }
-        ExecutionWorkspaceCleanupEntity entity = getRequiredRecord(recordId);
-        entity.setStatus(STATUS_DELETE_FAILED);
-        entity.setDeletedAt(null);
-        entity.setDeleteFailedAt(failedAt);
-        entity.setDeleteErrorMessage(defaultDeleteErrorMessage(errorMessage));
-    }
-
-    private ExecutionWorkspaceCleanupEntity getRequiredRecord(Long recordId) {
-        return executionWorkspaceCleanupRepository.findById(recordId)
-                .orElseThrow(() -> new IllegalArgumentException("未找到工作区清理记录: " + recordId));
+        return executionWorkspaceCleanupRepository.markDeleteFailedIfScheduled(
+                recordId,
+                STATUS_SCHEDULED,
+                STATUS_DELETE_FAILED,
+                failedAt,
+                defaultDeleteErrorMessage(errorMessage)
+        ) > 0;
     }
 
     private String defaultDeleteErrorMessage(String errorMessage) {

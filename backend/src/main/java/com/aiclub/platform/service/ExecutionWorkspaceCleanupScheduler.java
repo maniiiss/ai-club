@@ -17,22 +17,29 @@ public class ExecutionWorkspaceCleanupScheduler {
     private final ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
     private final ExecutionWorkspaceCleanupClientService executionWorkspaceCleanupClientService;
     private final int batchSize;
+    private final boolean schedulerEnabled;
 
     public ExecutionWorkspaceCleanupScheduler(
             ExecutionWorkspaceCleanupService executionWorkspaceCleanupService,
             ExecutionWorkspaceCleanupClientService executionWorkspaceCleanupClientService,
-            @Value("${platform.execution.workspace-cleanup.batch-size:20}") int batchSize
+            @Value("${platform.execution.workspace-cleanup.batch-size:20}") int batchSize,
+            @Value("${platform.execution.workspace-cleanup.scheduler-enabled:false}") boolean schedulerEnabled
     ) {
         this.executionWorkspaceCleanupService = executionWorkspaceCleanupService;
         this.executionWorkspaceCleanupClientService = executionWorkspaceCleanupClientService;
         this.batchSize = batchSize <= 0 ? 20 : batchSize;
+        this.schedulerEnabled = schedulerEnabled;
     }
 
     /**
      * 分批处理已到期的工作区，避免单次调度拉取过多记录。
+     * Task 4 删除接口落地前默认关闭，避免 backend 单独上线时把所有过期记录误打成 DELETE_FAILED。
      */
     @Scheduled(fixedDelayString = "${platform.execution.workspace-cleanup.cleanup-fixed-delay-ms:300000}")
     public void cleanupExpiredExecutionWorkspaces() {
+        if (!schedulerEnabled) {
+            return;
+        }
         LocalDateTime queryAt = LocalDateTime.now();
         List<ExecutionWorkspaceCleanupEntity> expiredWorkspaces =
                 executionWorkspaceCleanupService.findExpiredScheduledWorkspaces(queryAt, batchSize);
@@ -45,14 +52,15 @@ public class ExecutionWorkspaceCleanupScheduler {
         LocalDateTime processedAt = LocalDateTime.now();
         try {
             executionWorkspaceCleanupClientService.cleanupWorkspace(workspace.getWorkspaceRoot());
-            executionWorkspaceCleanupService.markDeleted(workspace.getId(), processedAt);
         } catch (RuntimeException exception) {
             executionWorkspaceCleanupService.markDeleteFailed(
                     workspace.getId(),
                     processedAt,
                     resolveDeleteErrorMessage(exception)
             );
+            return;
         }
+        executionWorkspaceCleanupService.markDeleted(workspace.getId(), processedAt);
     }
 
     private String resolveDeleteErrorMessage(RuntimeException exception) {

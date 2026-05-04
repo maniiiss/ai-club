@@ -14,7 +14,8 @@ import java.time.LocalDateTime;
 
 /**
  * 执行工作区清理记录。
- * 用于把运行期工作目录的登记、调度和删除失败信息统一沉淀到数据库，便于后续异步清理器接管。
+ * 用于把运行期工作目录的登记、排期、删除成功与删除失败结果统一沉淀到数据库，
+ * 便于后续异步清理器、执行详情和排障链路共享同一份生命周期状态。
  */
 @Entity
 @Table(
@@ -63,7 +64,7 @@ public class ExecutionWorkspaceCleanupEntity {
 
     /**
      * 清理状态。
-     * 第一阶段仅使用 ACTIVE 和 SCHEDULED，后续删除执行器会继续扩展生命周期。
+     * 当前生命周期包含 ACTIVE、SCHEDULED、DELETED、DELETE_FAILED。
      */
     @Column(name = "status", nullable = false, length = 20)
     private String status = "ACTIVE";

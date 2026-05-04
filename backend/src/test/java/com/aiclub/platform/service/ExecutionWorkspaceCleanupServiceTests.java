@@ -200,7 +200,7 @@ class ExecutionWorkspaceCleanupServiceTests {
         ExecutionWorkspaceCleanupEntity entity = buildCleanupRecord(
                 501L,
                 "C:/tmp/run-501/workspace-a",
-                "DELETE_FAILED",
+                ExecutionWorkspaceCleanupService.STATUS_SCHEDULED,
                 LocalDateTime.of(2026, 5, 4, 8, 0, 0)
         );
         entity.setDeleteFailedAt(LocalDateTime.of(2026, 5, 4, 9, 0, 0));
@@ -208,8 +208,9 @@ class ExecutionWorkspaceCleanupServiceTests {
         ExecutionWorkspaceCleanupEntity saved = executionWorkspaceCleanupRepository.saveAndFlush(entity);
 
         LocalDateTime deletedAt = LocalDateTime.of(2026, 5, 4, 10, 0, 0);
-        executionWorkspaceCleanupService.markDeleted(saved.getId(), deletedAt);
+        boolean updated = executionWorkspaceCleanupService.markDeleted(saved.getId(), deletedAt);
 
+        assertThat(updated).isTrue();
         ExecutionWorkspaceCleanupEntity refreshed = executionWorkspaceCleanupRepository.findById(saved.getId()).orElseThrow();
         assertThat(refreshed.getStatus()).isEqualTo("DELETED");
         assertThat(refreshed.getDeletedAt()).isEqualTo(deletedAt);
@@ -231,13 +232,72 @@ class ExecutionWorkspaceCleanupServiceTests {
         ));
 
         LocalDateTime failedAt = LocalDateTime.of(2026, 5, 4, 10, 30, 0);
-        executionWorkspaceCleanupService.markDeleteFailed(savedId(entity), failedAt, "目录被占用");
+        boolean updated = executionWorkspaceCleanupService.markDeleteFailed(savedId(entity), failedAt, "目录被占用");
 
+        assertThat(updated).isTrue();
         ExecutionWorkspaceCleanupEntity refreshed = executionWorkspaceCleanupRepository.findById(entity.getId()).orElseThrow();
         assertThat(refreshed.getStatus()).isEqualTo("DELETE_FAILED");
         assertThat(refreshed.getDeletedAt()).isNull();
         assertThat(refreshed.getDeleteFailedAt()).isEqualTo(failedAt);
         assertThat(refreshed.getDeleteErrorMessage()).isEqualTo("目录被占用");
+    }
+
+    /**
+     * stale worker 只能推进仍处于 SCHEDULED 的记录，
+     * 不能把已经变成 DELETE_FAILED 的记录重新覆盖成 DELETED。
+     */
+    @Test
+    void shouldIgnoreMarkDeletedWhenRecordIsNoLongerScheduled() {
+        ExecutionWorkspaceCleanupEntity entity = buildCleanupRecord(
+                701L,
+                "C:/tmp/run-701/workspace-a",
+                ExecutionWorkspaceCleanupService.STATUS_DELETE_FAILED,
+                LocalDateTime.of(2026, 5, 4, 8, 0, 0)
+        );
+        entity.setDeleteFailedAt(LocalDateTime.of(2026, 5, 4, 9, 30, 0));
+        entity.setDeleteErrorMessage("目录被占用");
+        ExecutionWorkspaceCleanupEntity saved = executionWorkspaceCleanupRepository.saveAndFlush(entity);
+
+        boolean updated = executionWorkspaceCleanupService.markDeleted(
+                saved.getId(),
+                LocalDateTime.of(2026, 5, 4, 10, 0, 0)
+        );
+
+        assertThat(updated).isFalse();
+        ExecutionWorkspaceCleanupEntity refreshed = executionWorkspaceCleanupRepository.findById(saved.getId()).orElseThrow();
+        assertThat(refreshed.getStatus()).isEqualTo(ExecutionWorkspaceCleanupService.STATUS_DELETE_FAILED);
+        assertThat(refreshed.getDeletedAt()).isNull();
+        assertThat(refreshed.getDeleteFailedAt()).isEqualTo(LocalDateTime.of(2026, 5, 4, 9, 30, 0));
+        assertThat(refreshed.getDeleteErrorMessage()).isEqualTo("目录被占用");
+    }
+
+    /**
+     * stale worker 也不能把已经成功删除的记录改回 DELETE_FAILED，
+     * 否则并发调度下会出现“同一目录既删除成功又删除失败”的脏状态。
+     */
+    @Test
+    void shouldIgnoreMarkDeleteFailedWhenRecordIsNoLongerScheduled() {
+        ExecutionWorkspaceCleanupEntity entity = buildCleanupRecord(
+                801L,
+                "C:/tmp/run-801/workspace-a",
+                ExecutionWorkspaceCleanupService.STATUS_DELETED,
+                LocalDateTime.of(2026, 5, 4, 8, 0, 0)
+        );
+        entity.setDeletedAt(LocalDateTime.of(2026, 5, 4, 9, 45, 0));
+        ExecutionWorkspaceCleanupEntity saved = executionWorkspaceCleanupRepository.saveAndFlush(entity);
+
+        boolean updated = executionWorkspaceCleanupService.markDeleteFailed(
+                saved.getId(),
+                LocalDateTime.of(2026, 5, 4, 10, 30, 0),
+                "陈旧 worker 覆盖"
+        );
+
+        assertThat(updated).isFalse();
+        ExecutionWorkspaceCleanupEntity refreshed = executionWorkspaceCleanupRepository.findById(saved.getId()).orElseThrow();
+        assertThat(refreshed.getStatus()).isEqualTo(ExecutionWorkspaceCleanupService.STATUS_DELETED);
+        assertThat(refreshed.getDeletedAt()).isEqualTo(LocalDateTime.of(2026, 5, 4, 9, 45, 0));
+        assertThat(refreshed.getDeleteFailedAt()).isNull();
+        assertThat(refreshed.getDeleteErrorMessage()).isNull();
     }
 
     /**
