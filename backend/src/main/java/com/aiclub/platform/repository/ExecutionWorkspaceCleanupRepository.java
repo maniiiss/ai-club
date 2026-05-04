@@ -17,7 +17,7 @@ public interface ExecutionWorkspaceCleanupRepository extends JpaRepository<Execu
 
     List<ExecutionWorkspaceCleanupEntity> findAllByExecutionRunIdAndStatusOrderByIdAsc(Long executionRunId, String status);
 
-    List<ExecutionWorkspaceCleanupEntity> findAllByExecutionTaskIdOrderByUpdatedAtDescIdDesc(Long executionTaskId);
+    List<ExecutionWorkspaceCleanupEntity> findAllByExecutionTaskId(Long executionTaskId);
 
     List<ExecutionWorkspaceCleanupEntity> findAllByStatusAndExpiresAtLessThanEqualOrderByExpiresAtAscIdAsc(
             String status,
@@ -30,6 +30,7 @@ public interface ExecutionWorkspaceCleanupRepository extends JpaRepository<Execu
             UPDATE ExecutionWorkspaceCleanupEntity entity
                SET entity.status = :deletedStatus,
                    entity.deletedAt = :deletedAt,
+                   entity.updatedAt = CURRENT_TIMESTAMP,
                    entity.deleteFailedAt = NULL,
                    entity.deleteErrorMessage = NULL
              WHERE entity.id = :recordId
@@ -45,6 +46,7 @@ public interface ExecutionWorkspaceCleanupRepository extends JpaRepository<Execu
             UPDATE ExecutionWorkspaceCleanupEntity entity
                SET entity.status = :failedStatus,
                    entity.deletedAt = NULL,
+                   entity.updatedAt = CURRENT_TIMESTAMP,
                    entity.deleteFailedAt = :failedAt,
                    entity.deleteErrorMessage = :errorMessage
              WHERE entity.id = :recordId

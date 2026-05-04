@@ -55,6 +55,8 @@ public class ExecutionDispatchService {
     private static final String RESULT_STATUS_CANCELED = "CANCELED";
     private static final String DEVELOPMENT_SUCCESS_RETENTION_NOTICE =
             "本地工作区将在 24 小时后自动删除；如需走 MR，请在保留期内完成处理。";
+    private static final String GENERIC_SUCCESS_RETENTION_NOTICE =
+            "本地工作区将在 24 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。";
     private static final String TERMINAL_RETENTION_NOTICE =
             "本地工作区将在 24 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。";
 
@@ -958,6 +960,10 @@ public class ExecutionDispatchService {
      */
     private void appendWorkspaceRetentionNotice(StringBuilder content, String resultStatus) {
         String normalizedResult = defaultString(resultStatus).trim().toUpperCase();
+        if (RESULT_STATUS_SUCCESS.equals(normalizedResult)) {
+            content.append(GENERIC_SUCCESS_RETENTION_NOTICE);
+            return;
+        }
         if (RESULT_STATUS_FAILED.equals(normalizedResult) || RESULT_STATUS_CANCELED.equals(normalizedResult)) {
             content.append(TERMINAL_RETENTION_NOTICE);
         }

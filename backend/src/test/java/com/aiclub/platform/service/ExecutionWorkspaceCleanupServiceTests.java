@@ -1,6 +1,7 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.ExecutionWorkspaceCleanupEntity;
+import com.aiclub.platform.dto.ExecutionWorkspaceCleanupSummary;
 import com.aiclub.platform.repository.ExecutionWorkspaceCleanupRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -147,6 +148,58 @@ class ExecutionWorkspaceCleanupServiceTests {
                     assertThat(entity.getExpiresAt()).isEqualTo(scheduledAt.plusHours(23));
                     assertThat(entity.getDeleteErrorMessage()).isEqualTo("已在队列中");
                 });
+    }
+
+    /**
+     * 任务级摘要必须按生命周期风险显式聚合，而不是依赖“最近更新的一条记录”。
+     * 即便某条 DELETED 记录的 updatedAt 更新得更晚，只要任务里还有 DELETE_FAILED，就必须优先暴露失败态。
+     */
+    @Test
+    void shouldPreferDeleteFailedWhenTaskContainsMixedCleanupStates() {
+        ExecutionWorkspaceCleanupEntity failedRecord = buildCleanupRecord(
+                1001L,
+                "C:/tmp/run-1001/workspace-a",
+                ExecutionWorkspaceCleanupService.STATUS_DELETE_FAILED,
+                LocalDateTime.of(2026, 5, 5, 10, 0, 0)
+        );
+        failedRecord.setExecutionTaskId(4001L);
+        failedRecord.setExecutionResultStatus("FAILED");
+        failedRecord.setDeleteFailedAt(LocalDateTime.of(2026, 5, 5, 10, 30, 0));
+        failedRecord.setDeleteErrorMessage("目录被占用");
+        failedRecord.setUpdatedAt(LocalDateTime.of(2026, 5, 5, 10, 31, 0));
+
+        ExecutionWorkspaceCleanupEntity deletedRecord = buildCleanupRecord(
+                1002L,
+                "C:/tmp/run-1002/workspace-b",
+                ExecutionWorkspaceCleanupService.STATUS_DELETED,
+                LocalDateTime.of(2026, 5, 5, 9, 0, 0)
+        );
+        deletedRecord.setExecutionTaskId(4001L);
+        deletedRecord.setExecutionResultStatus("SUCCESS");
+        deletedRecord.setDeletedAt(LocalDateTime.of(2026, 5, 5, 11, 0, 0));
+        deletedRecord.setUpdatedAt(LocalDateTime.of(2026, 5, 5, 11, 5, 0));
+
+        ExecutionWorkspaceCleanupEntity scheduledRecord = buildCleanupRecord(
+                1003L,
+                "C:/tmp/run-1003/workspace-c",
+                ExecutionWorkspaceCleanupService.STATUS_SCHEDULED,
+                LocalDateTime.of(2026, 5, 5, 12, 0, 0)
+        );
+        scheduledRecord.setExecutionTaskId(4001L);
+        scheduledRecord.setExecutionResultStatus("SUCCESS");
+        scheduledRecord.setUpdatedAt(LocalDateTime.of(2026, 5, 5, 11, 30, 0));
+
+        executionWorkspaceCleanupRepository.saveAllAndFlush(List.of(failedRecord, deletedRecord, scheduledRecord));
+
+        ExecutionWorkspaceCleanupSummary summary = executionWorkspaceCleanupService.buildTaskSummary(4001L);
+
+        assertThat(summary.enabled()).isTrue();
+        assertThat(summary.status()).isEqualTo(ExecutionWorkspaceCleanupService.STATUS_DELETE_FAILED);
+        assertThat(summary.executionResultStatus()).isEqualTo("FAILED");
+        assertThat(summary.deleteFailedAt()).isEqualTo("2026-05-05 10:30:00");
+        assertThat(summary.deleteErrorMessage()).isEqualTo("目录被占用");
+        assertThat(summary.trackedWorkspaceCount()).isEqualTo(3);
+        assertThat(summary.message()).contains("自动删除失败");
     }
 
     /**

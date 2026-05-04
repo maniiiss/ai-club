@@ -405,7 +405,7 @@ class ExecutionDispatchServiceTests {
                 eq(NotificationService.TYPE_TASK),
                 eq(NotificationService.LEVEL_ERROR),
                 eq("开发执行失败：开发失败任务"),
-                org.mockito.ArgumentMatchers.contains("开发实现失败，测试未通过"),
+                org.mockito.ArgumentMatchers.contains("本地工作区将在 24 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。"),
                 eq("/tasks/99"),
                 eq("DEVELOPMENT_EXECUTION_FAILED"),
                 eq(99L)
@@ -965,7 +965,7 @@ class ExecutionDispatchServiceTests {
                 eq(NotificationService.TYPE_TASK),
                 eq(NotificationService.LEVEL_WARNING),
                 eq("仓库规范扫描已取消：仓库扫描任务"),
-                org.mockito.ArgumentMatchers.contains("仓库扫描已取消"),
+                org.mockito.ArgumentMatchers.contains("本地工作区将在 24 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。"),
                 eq("/tasks/99"),
                 eq("CODEBASE_SCAN_CANCELED"),
                 eq(99L)
@@ -1001,7 +1001,7 @@ class ExecutionDispatchServiceTests {
                 eq(NotificationService.TYPE_TASK),
                 eq(NotificationService.LEVEL_SUCCESS),
                 eq("兼容单次执行已完成：兼容单次运行任务"),
-                org.mockito.ArgumentMatchers.contains("兼容单次运行已完成"),
+                org.mockito.ArgumentMatchers.contains("本地工作区将在 24 小时后自动删除"),
                 eq("/tasks/99"),
                 eq("EXECUTION_COMPLETED"),
                 eq(99L)

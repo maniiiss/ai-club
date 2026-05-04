@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -113,14 +114,13 @@ public class ExecutionWorkspaceCleanupService {
 
     /**
      * 为执行详情页聚合任务级清理摘要。
-     * 这里优先取最近更新的一条记录代表当前任务最新的清理生命周期，再补齐总工作区数量与展示文案。
+     * 这里按生命周期风险显式聚合任务下的全部记录，避免混合状态时被某条“更新更晚”的成功记录掩盖失败态。
      */
     public ExecutionWorkspaceCleanupSummary buildTaskSummary(Long executionTaskId) {
         if (executionTaskId == null) {
             throw new IllegalArgumentException("executionTaskId 不能为空");
         }
-        List<ExecutionWorkspaceCleanupEntity> records =
-                executionWorkspaceCleanupRepository.findAllByExecutionTaskIdOrderByUpdatedAtDescIdDesc(executionTaskId);
+        List<ExecutionWorkspaceCleanupEntity> records = executionWorkspaceCleanupRepository.findAllByExecutionTaskId(executionTaskId);
         if (records.isEmpty()) {
             return new ExecutionWorkspaceCleanupSummary(
                     false,
@@ -135,18 +135,26 @@ public class ExecutionWorkspaceCleanupService {
                     "当前执行未登记需要自动清理的本地工作区。"
             );
         }
-        ExecutionWorkspaceCleanupEntity latestRecord = records.get(0);
+        String aggregatedStatus = aggregateStatus(records);
+        List<ExecutionWorkspaceCleanupEntity> recordsWithAggregatedStatus = records.stream()
+                .filter(record -> aggregatedStatus.equalsIgnoreCase(defaultStatus(record.getStatus())))
+                .toList();
+        ExecutionWorkspaceCleanupEntity representativeRecord = selectRepresentativeRecord(
+                aggregatedStatus,
+                recordsWithAggregatedStatus
+        );
+        String aggregatedExecutionResultStatus = aggregateExecutionResultStatus(recordsWithAggregatedStatus);
         return new ExecutionWorkspaceCleanupSummary(
                 true,
                 retentionHours,
-                latestRecord.getStatus(),
-                latestRecord.getExecutionResultStatus(),
-                formatTime(latestRecord.getExpiresAt()),
-                formatTime(latestRecord.getDeletedAt()),
-                formatTime(latestRecord.getDeleteFailedAt()),
-                latestRecord.getDeleteErrorMessage(),
+                aggregatedStatus,
+                aggregatedExecutionResultStatus,
+                formatTime(resolveExpiresAt(aggregatedStatus, recordsWithAggregatedStatus, representativeRecord)),
+                formatTime(resolveDeletedAt(aggregatedStatus, recordsWithAggregatedStatus, representativeRecord)),
+                formatTime(resolveDeleteFailedAt(aggregatedStatus, recordsWithAggregatedStatus, representativeRecord)),
+                resolveDeleteErrorMessage(aggregatedStatus, representativeRecord),
                 records.size(),
-                buildSummaryMessage(latestRecord, records.size())
+                buildSummaryMessage(aggregatedStatus, aggregatedExecutionResultStatus, representativeRecord, records.size())
         );
     }
 
@@ -216,19 +224,21 @@ public class ExecutionWorkspaceCleanupService {
     /**
      * 任务详情页只显示一条摘要文案，因此这里把不同生命周期映射成明确的用户动作提示。
      */
-    private String buildSummaryMessage(ExecutionWorkspaceCleanupEntity latestRecord, int trackedWorkspaceCount) {
-        String status = trimToNull(latestRecord.getStatus());
-        if (STATUS_DELETED.equalsIgnoreCase(status)) {
+    private String buildSummaryMessage(String aggregatedStatus,
+                                       String aggregatedExecutionResultStatus,
+                                       ExecutionWorkspaceCleanupEntity representativeRecord,
+                                       int trackedWorkspaceCount) {
+        if (STATUS_DELETED.equalsIgnoreCase(aggregatedStatus)) {
             return "本次执行登记的 " + trackedWorkspaceCount + " 个本地工作区已自动删除。";
         }
-        if (STATUS_DELETE_FAILED.equalsIgnoreCase(status)) {
-            String errorMessage = trimToNull(latestRecord.getDeleteErrorMessage());
+        if (STATUS_DELETE_FAILED.equalsIgnoreCase(aggregatedStatus)) {
+            String errorMessage = trimToNull(representativeRecord.getDeleteErrorMessage());
             return errorMessage == null
                     ? "本次执行登记的本地工作区自动删除失败，请联系管理员处理。"
                     : "本次执行登记的本地工作区自动删除失败：" + errorMessage;
         }
-        if (STATUS_SCHEDULED.equalsIgnoreCase(status)) {
-            if ("SUCCESS".equalsIgnoreCase(trimToNull(latestRecord.getExecutionResultStatus()))) {
+        if (STATUS_SCHEDULED.equalsIgnoreCase(aggregatedStatus)) {
+            if ("SUCCESS".equalsIgnoreCase(defaultStatus(aggregatedExecutionResultStatus))) {
                 return "本次执行产生的本地工作区将在 " + retentionHours + " 小时后自动删除；如需走 MR，请在保留期内完成处理。";
             }
             return "本次执行产生的本地工作区将在 " + retentionHours + " 小时后自动删除；如需保留代码或继续处理，请在保留期内完成。";
@@ -238,6 +248,117 @@ public class ExecutionWorkspaceCleanupService {
 
     private String formatTime(LocalDateTime time) {
         return time == null ? null : time.format(TIME_FORMATTER);
+    }
+
+    /**
+     * 聚合状态采用稳定优先级：
+     * DELETE_FAILED > ACTIVE > SCHEDULED > DELETED。
+     * 这样既不会让删除失败被“已删除”掩盖，也不会让当前仍在使用的工作区被历史排期态覆盖。
+     */
+    private String aggregateStatus(List<ExecutionWorkspaceCleanupEntity> records) {
+        return records.stream()
+                .map(ExecutionWorkspaceCleanupEntity::getStatus)
+                .map(this::defaultStatus)
+                .max(Comparator.comparingInt(this::statusPriority))
+                .orElse("NONE");
+    }
+
+    private int statusPriority(String status) {
+        return switch (defaultStatus(status)) {
+            case STATUS_DELETE_FAILED -> 4;
+            case STATUS_ACTIVE -> 3;
+            case STATUS_SCHEDULED -> 2;
+            case STATUS_DELETED -> 1;
+            default -> 0;
+        };
+    }
+
+    private String aggregateExecutionResultStatus(List<ExecutionWorkspaceCleanupEntity> records) {
+        return records.stream()
+                .map(ExecutionWorkspaceCleanupEntity::getExecutionResultStatus)
+                .map(this::trimToNull)
+                .filter(value -> value != null)
+                .max(Comparator.comparingInt(this::executionResultPriority))
+                .orElse(null);
+    }
+
+    private int executionResultPriority(String status) {
+        return switch (defaultStatus(status)) {
+            case "FAILED" -> 3;
+            case "CANCELED" -> 2;
+            case "SUCCESS" -> 1;
+            default -> 0;
+        };
+    }
+
+    private ExecutionWorkspaceCleanupEntity selectRepresentativeRecord(String aggregatedStatus,
+                                                                       List<ExecutionWorkspaceCleanupEntity> records) {
+        Comparator<ExecutionWorkspaceCleanupEntity> comparator = switch (defaultStatus(aggregatedStatus)) {
+            case STATUS_DELETE_FAILED -> Comparator
+                    .comparing(ExecutionWorkspaceCleanupEntity::getDeleteFailedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                    .thenComparing(ExecutionWorkspaceCleanupEntity::getId, Comparator.nullsLast(Comparator.naturalOrder()));
+            case STATUS_ACTIVE -> Comparator
+                    .comparing(ExecutionWorkspaceCleanupEntity::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                    .thenComparing(ExecutionWorkspaceCleanupEntity::getId, Comparator.nullsLast(Comparator.naturalOrder()));
+            case STATUS_SCHEDULED -> Comparator
+                    .comparing(ExecutionWorkspaceCleanupEntity::getExpiresAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                    .thenComparing(ExecutionWorkspaceCleanupEntity::getId, Comparator.nullsLast(Comparator.naturalOrder()));
+            case STATUS_DELETED -> Comparator
+                    .comparing(ExecutionWorkspaceCleanupEntity::getDeletedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                    .thenComparing(ExecutionWorkspaceCleanupEntity::getId, Comparator.nullsLast(Comparator.naturalOrder()));
+            default -> Comparator.comparing(ExecutionWorkspaceCleanupEntity::getId, Comparator.nullsLast(Comparator.naturalOrder()));
+        };
+        return records.stream().max(comparator).orElseThrow();
+    }
+
+    private LocalDateTime resolveExpiresAt(String aggregatedStatus,
+                                           List<ExecutionWorkspaceCleanupEntity> records,
+                                           ExecutionWorkspaceCleanupEntity representativeRecord) {
+        if (STATUS_SCHEDULED.equalsIgnoreCase(aggregatedStatus)) {
+            return records.stream()
+                    .map(ExecutionWorkspaceCleanupEntity::getExpiresAt)
+                    .filter(value -> value != null)
+                    .max(LocalDateTime::compareTo)
+                    .orElse(null);
+        }
+        return representativeRecord.getExpiresAt();
+    }
+
+    private LocalDateTime resolveDeletedAt(String aggregatedStatus,
+                                           List<ExecutionWorkspaceCleanupEntity> records,
+                                           ExecutionWorkspaceCleanupEntity representativeRecord) {
+        if (STATUS_DELETED.equalsIgnoreCase(aggregatedStatus)) {
+            return records.stream()
+                    .map(ExecutionWorkspaceCleanupEntity::getDeletedAt)
+                    .filter(value -> value != null)
+                    .max(LocalDateTime::compareTo)
+                    .orElse(null);
+        }
+        return representativeRecord.getDeletedAt();
+    }
+
+    private LocalDateTime resolveDeleteFailedAt(String aggregatedStatus,
+                                                List<ExecutionWorkspaceCleanupEntity> records,
+                                                ExecutionWorkspaceCleanupEntity representativeRecord) {
+        if (STATUS_DELETE_FAILED.equalsIgnoreCase(aggregatedStatus)) {
+            return records.stream()
+                    .map(ExecutionWorkspaceCleanupEntity::getDeleteFailedAt)
+                    .filter(value -> value != null)
+                    .max(LocalDateTime::compareTo)
+                    .orElse(null);
+        }
+        return representativeRecord.getDeleteFailedAt();
+    }
+
+    private String resolveDeleteErrorMessage(String aggregatedStatus, ExecutionWorkspaceCleanupEntity representativeRecord) {
+        return STATUS_DELETE_FAILED.equalsIgnoreCase(aggregatedStatus)
+                ? representativeRecord.getDeleteErrorMessage()
+                : null;
+    }
+
+    private String defaultStatus(String status) {
+        String normalized = trimToNull(status);
+        return normalized == null ? "" : normalized.toUpperCase();
     }
 
     private String trimToNull(String value) {
