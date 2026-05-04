@@ -658,6 +658,20 @@ class ExecutionSessionAcceptedResponse(BaseModel):
     startedAt: str = ""
 
 
+class ExecutionWorkspaceCleanupRequest(BaseModel):
+    """执行工作区清理请求。"""
+
+    # 由 backend 传入待清理的真实工作区绝对路径，service 会再次校验是否允许删除。
+    workspaceRoot: str
+
+    @field_validator("workspaceRoot", mode="before")
+    @classmethod
+    def normalize_workspace_root(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
 class CliExecutionRequest(BaseModel):
     """统一 CLI Runner 执行请求。"""
 

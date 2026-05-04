@@ -9,6 +9,7 @@ from app.models import (
     CodexExecutionRequest,
     CodexExecutionResponse,
     DocumentConvertResponse,
+    ExecutionWorkspaceCleanupRequest,
     RepositoryScanFixPlanRequest,
     RepositoryScanFixPlanResponse,
     RepositoryScanNormalizeResponse,
@@ -36,6 +37,7 @@ from app.models import (
     RepositoryStructuringResponse,
 )
 from app.services.cli_execution_service import execute_cli_execution, start_cli_execution
+from app.services.execution_workspace_cleanup_service import cleanup_execution_workspace
 from app.services.gitlab_code_structure_service import (
     build_gitlab_code_structure_overview,
     build_gitnexus_launch_context,
@@ -60,6 +62,7 @@ from app.settings import settings
 router = APIRouter(prefix="/api/code", tags=["code-processing"])
 repo_scan_router = APIRouter(prefix="/api/repo-scans", tags=["repository-scan"])
 document_router = APIRouter(prefix="/api/documents", tags=["documents"])
+execution_workspace_router = APIRouter(prefix="/api/execution-workspaces", tags=["execution-workspace"])
 
 
 @router.post("/summary", response_model=ScanSummary)
@@ -303,6 +306,19 @@ def _require_internal_service_auth(request: Request) -> None:
     actual_header = request.headers.get("Authorization", "").strip()
     if actual_header != expected_header:
         raise HTTPException(status_code=401, detail="内部扫描接口鉴权失败")
+
+
+@execution_workspace_router.post("/cleanup")
+def cleanup_workspace(request_http: Request, payload: ExecutionWorkspaceCleanupRequest) -> dict[str, str]:
+    """供 backend 安全清理 execution_workspace_root 下的执行工作区。"""
+    _require_internal_service_auth(request_http)
+    try:
+        cleanup_execution_workspace(payload.workspaceRoot)
+        return {"status": "deleted"}
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
 
 
 @document_router.post("/convert", response_model=DocumentConvertResponse)
