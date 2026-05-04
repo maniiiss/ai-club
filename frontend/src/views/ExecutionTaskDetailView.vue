@@ -849,7 +849,7 @@ const taskWorkspaceCleanupAlert = computed<{
   type: ExecutionWorkspaceCleanupAlertType
 } | null>(() => {
   const workspaceCleanup = taskDetail.value?.workspaceCleanup
-  if (!workspaceCleanup?.enabled) {
+  if (!workspaceCleanup?.enabled || workspaceCleanup.status === 'ACTIVE') {
     return null
   }
   return {
