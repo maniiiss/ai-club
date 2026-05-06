@@ -198,25 +198,6 @@ public class HermesController {
     }
 
     /**
-     * 下载当前会话中的原始附件文件。
-     */
-    @GetMapping("/sessions/{sessionId}/attachments/{attachmentId}/download")
-    @RequirePermission("hermes:chat")
-    public ResponseEntity<byte[]> downloadAttachment(@PathVariable Long sessionId, @PathVariable Long attachmentId) {
-        var attachment = hermesAttachmentService.requireOwnedAttachment(sessionId, attachmentId);
-        var content = documentAssetService.loadContent(attachment.getDocumentAsset());
-        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
-        try {
-            mediaType = MediaType.parseMediaType(content.contentType());
-        } catch (Exception ignored) {
-        }
-        return ResponseEntity.ok()
-                .contentType(mediaType)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + attachment.getDocumentAsset().getFileName() + "\"")
-                .body(content.bytes());
-    }
-
-    /**
      * 将 multipart 表单参数组装成统一的内部聊天命令。
      */
     private HermesMultipartChatCommand buildMultipartCommand(String question,

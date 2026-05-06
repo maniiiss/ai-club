@@ -9,6 +9,7 @@ public record DocumentAssetSummary(
         String contentType,
         long fileSize,
         String sourceFormat,
-        String bindingStatus
+        String bindingStatus,
+        String url
 ) {
 }

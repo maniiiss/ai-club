@@ -1,5 +1,5 @@
 <template>
-  <div class="dashboard-screen" v-loading="loading">
+  <div class="dashboard-screen">
     <section class="dashboard-toolbar">
       <div class="dashboard-toolbar-actions">
         <button v-if="dashboardEditing" class="dashboard-toolbar-button ghost" type="button" @click="restoreDefaultLayout">恢复默认</button>
@@ -45,8 +45,8 @@
               <div class="dashboard-widget-title">{{ getWidgetDefinition(element.id)?.title }}</div>
               <div class="dashboard-widget-description">{{ getWidgetDefinition(element.id)?.description }}</div>
             </div>
-            <div v-if="!dashboardEditing && shouldShowQuickTaskHeaderAction(element.id)" class="dashboard-widget-head-quick-task-action">
-              <button class="dashboard-widget-quick-task-trigger" type="button" aria-label="新增快捷任务" @mousedown.prevent="handleQuickTaskAdd">
+            <div v-if="!dashboardEditing && shouldShowHeaderAddAction(element.id)" class="dashboard-widget-head-quick-task-action">
+              <button class="dashboard-widget-quick-task-trigger" type="button" :aria-label="headerAddActionLabel(element.id)" @mousedown.prevent="handleWidgetHeaderAdd(element.id)">
                 <el-icon class="dashboard-widget-quick-task-trigger-icon"><Plus /></el-icon>
               </button>
             </div>
@@ -95,7 +95,12 @@
 
           <div class="dashboard-widget-body">
             <template v-if="element.id === 'stat-project-count'">
-              <div class="stat-widget">
+              <div v-if="isWidgetLoading(element.id)" class="dashboard-widget-skeleton-body body-stat">
+                <div class="dashboard-skeleton-square"></div>
+                <div class="dashboard-skeleton-line metric"></div>
+                <div class="dashboard-skeleton-line caption"></div>
+              </div>
+              <div v-else class="stat-widget">
                 <div class="stat-widget-icon orange">
                   <el-icon><FolderOpened /></el-icon>
                 </div>
@@ -105,7 +110,12 @@
             </template>
 
             <template v-else-if="element.id === 'stat-agent-count'">
-              <div class="stat-widget">
+              <div v-if="isWidgetLoading(element.id)" class="dashboard-widget-skeleton-body body-stat">
+                <div class="dashboard-skeleton-square"></div>
+                <div class="dashboard-skeleton-line metric"></div>
+                <div class="dashboard-skeleton-line caption"></div>
+              </div>
+              <div v-else class="stat-widget">
                 <div class="stat-widget-icon blue">
                   <el-icon><Cpu /></el-icon>
                 </div>
@@ -115,7 +125,12 @@
             </template>
 
             <template v-else-if="element.id === 'stat-task-count'">
-              <div class="stat-widget">
+              <div v-if="isWidgetLoading(element.id)" class="dashboard-widget-skeleton-body body-stat">
+                <div class="dashboard-skeleton-square"></div>
+                <div class="dashboard-skeleton-line metric"></div>
+                <div class="dashboard-skeleton-line caption"></div>
+              </div>
+              <div v-else class="stat-widget">
                 <div class="stat-widget-icon purple">
                   <el-icon><Tickets /></el-icon>
                 </div>
@@ -202,7 +217,13 @@
             <template v-else-if="element.id === 'active-project-list'">
               <div class="dashboard-widget-stack">
                 <div class="dashboard-widget-scroll-area">
-                  <div v-if="activeProjects.length" class="info-list">
+                  <div v-if="isWidgetLoading(element.id)" class="dashboard-widget-skeleton-body body-list">
+                    <div v-for="index in 4" :key="`active-project-skeleton-${index}`" class="dashboard-skeleton-list-item">
+                      <div class="dashboard-skeleton-line list-title"></div>
+                      <div class="dashboard-skeleton-line list-subtitle"></div>
+                    </div>
+                  </div>
+                  <div v-else-if="activeProjects.length" class="info-list">
                     <article v-for="project in activeProjects" :key="project.id" class="info-list-item">
                       <div class="info-list-main">
                         <div class="info-list-title">{{ project.name }}</div>
@@ -220,7 +241,13 @@
             <template v-else-if="element.id === 'online-agent-list'">
               <div class="dashboard-widget-stack">
                 <div class="dashboard-widget-scroll-area">
-                  <div v-if="onlineAgents.length" class="info-list">
+                  <div v-if="isWidgetLoading(element.id)" class="dashboard-widget-skeleton-body body-list">
+                    <div v-for="index in 4" :key="`online-agent-skeleton-${index}`" class="dashboard-skeleton-list-item">
+                      <div class="dashboard-skeleton-line list-title"></div>
+                      <div class="dashboard-skeleton-line list-subtitle"></div>
+                    </div>
+                  </div>
+                  <div v-else-if="onlineAgents.length" class="info-list">
                     <article v-for="agent in onlineAgents" :key="agent.id" class="info-list-item">
                       <div class="info-list-main">
                         <div class="info-list-title">{{ agent.name }}</div>
@@ -238,7 +265,13 @@
             <template v-else-if="element.id === 'recent-task-list'">
               <div class="dashboard-widget-stack">
                 <div class="dashboard-widget-scroll-area">
-                  <div v-if="recentTaskRows.length" class="task-list">
+                  <div v-if="isWidgetLoading(element.id)" class="dashboard-widget-skeleton-body body-list">
+                    <div v-for="index in 4" :key="`recent-task-skeleton-${index}`" class="dashboard-skeleton-list-item">
+                      <div class="dashboard-skeleton-line list-title"></div>
+                      <div class="dashboard-skeleton-line list-subtitle"></div>
+                    </div>
+                  </div>
+                  <div v-else-if="recentTaskRows.length" class="task-list">
                     <article v-for="task in recentTaskRows" :key="task.id" class="task-list-item">
                       <div class="task-list-main">
                         <div class="task-list-title">{{ task.title }}</div>
@@ -254,6 +287,20 @@
                 </div>
                 <button v-if="canViewTasks" class="widget-footer-button" type="button" @click="router.push('/tasks')">进入任务中心</button>
               </div>
+            </template>
+
+            <template v-else-if="element.id === 'system-shortcut-entries'">
+              <div v-if="isWidgetLoading(element.id)" class="dashboard-widget-skeleton-body body-list">
+                <div v-for="index in 2" :key="`shortcut-skeleton-${index}`" class="dashboard-skeleton-list-item">
+                  <div class="dashboard-skeleton-line list-title"></div>
+                  <div class="dashboard-skeleton-line list-subtitle"></div>
+                </div>
+              </div>
+              <DashboardShortcutEntriesWidget
+                v-else
+                :ref="setShortcutWidgetRef(element.id)"
+                :overview="overview.shortcutOverview"
+              />
             </template>
 
             <template v-else-if="element.id === 'quick-task-checklist'">
@@ -395,6 +442,7 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Cpu, FolderOpened, Plus, Tickets } from '@element-plus/icons-vue'
 import DashboardQuickTaskWidget from '@/components/DashboardQuickTaskWidget.vue'
+import DashboardShortcutEntriesWidget from '@/components/DashboardShortcutEntriesWidget.vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { pagePipelineBindings, triggerPipelineBuild } from '@/api/cicd'
 import { VueDraggable } from 'vue-draggable-plus'
@@ -404,7 +452,13 @@ import {
   listGitlabBindingOptions,
   listGitlabBranches
 } from '@/api/gitlab'
-import { getDashboardOverview } from '@/api/platform'
+import {
+  getDashboardActiveProjects,
+  getDashboardOnlineAgents,
+  getDashboardRecentTasks,
+  getDashboardShortcutOverview,
+  getDashboardStats
+} from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import type {
   DashboardOverview,
@@ -483,9 +537,13 @@ const DASHBOARD_HEIGHT_OPTIONS: DashboardWidgetHeightOption[] = [
 
 const router = useRouter()
 const authStore = useAuthStore()
-const loading = ref(false)
 const dashboardEditing = ref(false)
 const overview = ref<DashboardOverview>(fallbackOverview())
+const statsLoading = ref(true)
+const activeProjectsLoading = ref(true)
+const onlineAgentsLoading = ref(true)
+const recentTasksLoading = ref(true)
+const shortcutsLoading = ref(true)
 const widgetLayout = ref<DashboardWidgetLayoutItem[]>([])
 const quickMergeDialogVisible = ref(false)
 const quickMergeResultVisible = ref(false)
@@ -620,6 +678,7 @@ const statCards = computed<StatCardItem[]>(() => [
 ])
 const statCardMap = computed(() => new Map(statCards.value.map((item) => [item.id, item])))
 const quickTaskWidgetRef = ref<{ addTask: () => void } | null>(null)
+const shortcutWidgetRef = ref<{ addEntry: () => void; refresh: () => Promise<void> | void } | null>(null)
 const widgetContentElementMap = new Map<DashboardWidgetId, HTMLElement>()
 let widgetContentResizeObserver: ResizeObserver | null = null
 
@@ -686,15 +745,28 @@ function shouldShowWidgetHeaderCopy(widgetId: DashboardWidgetId) {
   return !isActionWidget(widgetId)
 }
 
-function shouldShowQuickTaskHeaderAction(widgetId: DashboardWidgetId) {
-  return widgetId === 'quick-task-checklist'
+function shouldShowHeaderAddAction(widgetId: DashboardWidgetId) {
+  return widgetId === 'quick-task-checklist' || widgetId === 'system-shortcut-entries'
 }
 
 /**
  * 由卡片头部的 + 号统一驱动快捷任务新增，保证按钮和标题处于同一行。
  */
-function handleQuickTaskAdd() {
-  quickTaskWidgetRef.value?.addTask()
+function handleWidgetHeaderAdd(widgetId: DashboardWidgetId) {
+  if (widgetId === 'quick-task-checklist') {
+    quickTaskWidgetRef.value?.addTask()
+    return
+  }
+  if (widgetId === 'system-shortcut-entries') {
+    shortcutWidgetRef.value?.addEntry()
+  }
+}
+
+function headerAddActionLabel(widgetId: DashboardWidgetId) {
+  if (widgetId === 'system-shortcut-entries') {
+    return '新增快捷入口'
+  }
+  return '新增快捷任务'
 }
 
 /**
@@ -707,6 +779,19 @@ function setQuickTaskWidgetRef(widgetId: DashboardWidgetId) {
       return
     }
     quickTaskWidgetRef.value = target as { addTask: () => void } | null
+  }
+}
+
+/**
+ * 快捷入口组件同样位于首页卡片循环里，这里按组件标识精确绑定实例，
+ * 让卡片头部的 + 号可以直接驱动新增个人快捷入口。
+ */
+function setShortcutWidgetRef(widgetId: DashboardWidgetId) {
+  return (target: Element | ComponentPublicInstance | null) => {
+    if (widgetId !== 'system-shortcut-entries') {
+      return
+    }
+    shortcutWidgetRef.value = target as { addEntry: () => void; refresh: () => Promise<void> | void } | null
   }
 }
 
@@ -864,15 +949,108 @@ function showWidget(widgetId: DashboardWidgetId) {
   ]
 }
 
-async function loadOverview() {
-  loading.value = true
-  try {
-    overview.value = normalizeOverview(await getDashboardOverview())
-  } catch {
-    overview.value = fallbackOverview()
-  } finally {
-    loading.value = false
+async function loadDashboardCards() {
+  const base = fallbackOverview()
+  overview.value = {
+    ...base,
+    ...overview.value
   }
+
+  statsLoading.value = true
+  activeProjectsLoading.value = true
+  onlineAgentsLoading.value = true
+  recentTasksLoading.value = true
+  shortcutsLoading.value = true
+
+  const statsPromise = getDashboardStats()
+    .then((stats) => {
+      overview.value = {
+        ...overview.value,
+        stats: { ...base.stats, ...(stats || {}) }
+      }
+    })
+    .catch(() => {
+      overview.value = {
+        ...overview.value,
+        stats: { ...base.stats }
+      }
+    })
+    .finally(() => {
+      statsLoading.value = false
+    })
+
+  const projectsPromise = getDashboardActiveProjects()
+    .then((projects) => {
+      overview.value = {
+        ...overview.value,
+        activeProjects: projects || []
+      }
+    })
+    .catch(() => {
+      overview.value = {
+        ...overview.value,
+        activeProjects: []
+      }
+    })
+    .finally(() => {
+      activeProjectsLoading.value = false
+    })
+
+  const agentsPromise = getDashboardOnlineAgents()
+    .then((agents) => {
+      overview.value = {
+        ...overview.value,
+        onlineAgents: agents || []
+      }
+    })
+    .catch(() => {
+      overview.value = {
+        ...overview.value,
+        onlineAgents: []
+      }
+    })
+    .finally(() => {
+      onlineAgentsLoading.value = false
+    })
+
+  const tasksPromise = getDashboardRecentTasks()
+    .then((tasks) => {
+      overview.value = {
+        ...overview.value,
+        recentTasks: tasks || []
+      }
+    })
+    .catch(() => {
+      overview.value = {
+        ...overview.value,
+        recentTasks: []
+      }
+    })
+    .finally(() => {
+      recentTasksLoading.value = false
+    })
+
+  const shortcutsPromise = getDashboardShortcutOverview()
+    .then((shortcutOverview) => {
+      overview.value = {
+        ...overview.value,
+        shortcutOverview: shortcutOverview || fallbackOverview().shortcutOverview
+      }
+    })
+    .catch(() => {
+      overview.value = {
+        ...overview.value,
+        shortcutOverview: {
+          ...fallbackOverview().shortcutOverview,
+          userEntries: []
+        }
+      }
+    })
+    .finally(() => {
+      shortcutsLoading.value = false
+    })
+
+  await Promise.allSettled([statsPromise, projectsPromise, agentsPromise, tasksPromise, shortcutsPromise])
 }
 
 /**
@@ -1099,6 +1277,10 @@ function fallbackOverview(): DashboardOverview {
     activeProjects: [],
     onlineAgents: [],
     recentTasks: [],
+    shortcutOverview: {
+      systemEntries: [],
+      userEntries: []
+    },
     currentUserGitlabUsername: null,
     currentUserGitlabMergeLogs: [],
     myTasks: [],
@@ -1128,12 +1310,45 @@ function normalizeOverview(data: DashboardOverview): DashboardOverview {
     activeProjects: data.activeProjects || [],
     onlineAgents: data.onlineAgents || [],
     recentTasks: data.recentTasks || [],
+    shortcutOverview: {
+      systemEntries: data.shortcutOverview?.systemEntries || [],
+      userEntries: data.shortcutOverview?.userEntries || []
+    },
     currentUserGitlabMergeLogs: data.currentUserGitlabMergeLogs || [],
     myTasks: data.myTasks || [],
     mergeAlerts: data.mergeAlerts || [],
     focusIterationBoard: data.focusIterationBoard || null,
     focusProjectBurndown: data.focusProjectBurndown || null
   }
+}
+
+function skeletonWidgetKind(widgetId: DashboardWidgetId) {
+  if (widgetId === 'stat-project-count' || widgetId === 'stat-agent-count' || widgetId === 'stat-task-count') {
+    return 'stat'
+  }
+  if (widgetId === 'gitlab-quick-merge' || widgetId === 'quick-pipeline-build') {
+    return 'action'
+  }
+  return 'list'
+}
+
+function isWidgetLoading(widgetId: DashboardWidgetId) {
+  if (widgetId === 'stat-project-count' || widgetId === 'stat-agent-count' || widgetId === 'stat-task-count') {
+    return statsLoading.value
+  }
+  if (widgetId === 'active-project-list') {
+    return activeProjectsLoading.value
+  }
+  if (widgetId === 'online-agent-list') {
+    return onlineAgentsLoading.value
+  }
+  if (widgetId === 'recent-task-list') {
+    return recentTasksLoading.value
+  }
+  if (widgetId === 'system-shortcut-entries') {
+    return shortcutsLoading.value
+  }
+  return false
 }
 
 onMounted(async () => {
@@ -1149,7 +1364,7 @@ onMounted(async () => {
     })
   }
 
-  await loadOverview()
+  await loadDashboardCards()
   if (canViewGitlab.value) {
     try {
       await Promise.all([loadQuickMergeBindings(), loadQuickMergeOauthBinding()])
@@ -1191,6 +1406,43 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+}
+
+.dashboard-toolbar-skeleton {
+  justify-content: flex-start;
+}
+
+.dashboard-skeleton-pill,
+.dashboard-skeleton-line,
+.dashboard-skeleton-square,
+.dashboard-skeleton-chip,
+.dashboard-skeleton-button {
+  position: relative;
+  overflow: hidden;
+  background: rgba(var(--app-outline-rgb), 0.08);
+}
+
+.dashboard-skeleton-pill::after,
+.dashboard-skeleton-line::after,
+.dashboard-skeleton-square::after,
+.dashboard-skeleton-chip::after,
+.dashboard-skeleton-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.68) 50%, transparent 100%);
+  animation: dashboard-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.dashboard-skeleton-pill {
+  width: 132px;
+  height: 40px;
+  border-radius: 999px;
+}
+
+.dashboard-skeleton-pill.large {
+  width: 188px;
 }
 
 .dashboard-toolbar-copy h2 {
@@ -1270,6 +1522,14 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.dashboard-widget-grid-skeleton {
+  pointer-events: none;
+}
+
+.dashboard-widget-skeleton-card {
+  min-height: 220px;
+}
+
 .dashboard-widget-card.width-quarter {
   grid-column: span 3;
 }
@@ -1307,6 +1567,21 @@ onBeforeUnmount(() => {
 .dashboard-widget-head-copy {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.dashboard-skeleton-line {
+  border-radius: 999px;
+}
+
+.dashboard-skeleton-line.title {
+  width: 118px;
+  height: 18px;
+}
+
+.dashboard-skeleton-line.subtitle {
+  width: 172px;
+  height: 12px;
+  margin-top: 10px;
 }
 
 .dashboard-widget-head-quick-task-action {
@@ -1428,6 +1703,94 @@ onBeforeUnmount(() => {
   display: flex;
   width: 100%;
   padding: 20px 24px 24px;
+}
+
+.dashboard-widget-skeleton-body {
+  display: flex;
+  width: 100%;
+}
+
+.dashboard-widget-skeleton-body.body-stat {
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dashboard-widget-skeleton-body.body-action,
+.dashboard-widget-skeleton-body.body-list {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dashboard-skeleton-square {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+}
+
+.dashboard-skeleton-line.metric {
+  width: 92px;
+  height: 38px;
+}
+
+.dashboard-skeleton-line.caption {
+  width: 126px;
+  height: 13px;
+}
+
+.dashboard-skeleton-line.hero-title {
+  width: 168px;
+  height: 30px;
+}
+
+.dashboard-skeleton-line.paragraph {
+  width: 100%;
+  height: 13px;
+}
+
+.dashboard-skeleton-line.paragraph.short {
+  width: 74%;
+}
+
+.dashboard-skeleton-chip-row,
+.dashboard-skeleton-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dashboard-skeleton-chip {
+  width: 88px;
+  height: 24px;
+  border-radius: 999px;
+}
+
+.dashboard-skeleton-button {
+  width: 100px;
+  height: 36px;
+  border-radius: 999px;
+}
+
+.dashboard-skeleton-button.solid {
+  width: 122px;
+}
+
+.dashboard-skeleton-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(var(--app-outline-rgb), 0.04);
+}
+
+.dashboard-skeleton-line.list-title {
+  width: 62%;
+  height: 14px;
+}
+
+.dashboard-skeleton-line.list-subtitle {
+  width: 88%;
+  height: 12px;
 }
 
 .dashboard-widget-ghost {
@@ -2056,6 +2419,12 @@ onBeforeUnmount(() => {
 
   .dashboard-widget-library-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@keyframes dashboard-skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
   }
 }
 

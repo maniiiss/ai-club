@@ -8,6 +8,7 @@ import com.aiclub.platform.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -53,18 +54,18 @@ public class DocumentAssetService {
     @Transactional
     public DocumentAssetSummary uploadAsset(MultipartFile file, String directoryName) {
         UserEntity currentUser = requireCurrentUser();
-        DocumentAssetStorageService.StoredDocumentAsset stored = documentAssetStorageService.store(file, directoryName);
-        DocumentAssetEntity entity = new DocumentAssetEntity();
-        entity.setOwnerUser(currentUser);
-        entity.setFileName(stored.fileName());
-        entity.setContentType(stored.contentType());
-        entity.setFileSize(stored.fileSize());
-        entity.setObjectKey(stored.objectKey());
-        entity.setSourceFormat(stored.sourceFormat());
-        entity.setBindingStatus(BINDING_STATUS_TEMP);
-        entity.setBoundBizType("");
-        DocumentAssetEntity saved = documentAssetRepository.save(entity);
+        DocumentAssetEntity saved = saveAsset(currentUser, documentAssetStorageService.store(file, directoryName));
         return toSummary(saved);
+    }
+
+    /**
+     * 上传任意类型文件并创建临时通用文件资产。
+     * 供 CommonController 收口后复用，图片、文档等统一走同一套资产表。
+     */
+    @Transactional
+    public DocumentAssetEntity uploadGenericAsset(MultipartFile file, String directoryName) {
+        UserEntity currentUser = requireCurrentUser();
+        return saveAsset(currentUser, documentAssetStorageService.storeAnyFile(file, directoryName));
     }
 
     /**
@@ -74,6 +75,15 @@ public class DocumentAssetService {
         Long currentUserId = authService.currentUser().id();
         return documentAssetRepository.findByIdAndOwnerUser_Id(assetId, currentUserId)
                 .orElseThrow(() -> new NoSuchElementException("文档资产不存在"));
+    }
+
+    /**
+     * 按文件资产ID读取记录，不校验归属。
+     * 公开文件直链与受其它业务权限保护的下载入口会复用该方法。
+     */
+    public DocumentAssetEntity requireAsset(Long assetId) {
+        return documentAssetRepository.findById(assetId)
+                .orElseThrow(() -> new NoSuchElementException("文件资产不存在"));
     }
 
     /**
@@ -114,14 +124,36 @@ public class DocumentAssetService {
                 .orElseThrow(() -> new NoSuchElementException("当前用户不存在"));
     }
 
+    /**
+     * 将存储层返回的对象统一落到文件资产表，避免文档上传和通用文件上传各自维护一套实体映射。
+     */
+    private DocumentAssetEntity saveAsset(UserEntity currentUser,
+                                          DocumentAssetStorageService.StoredDocumentAsset stored) {
+        DocumentAssetEntity entity = new DocumentAssetEntity();
+        entity.setOwnerUser(currentUser);
+        entity.setFileName(stored.fileName());
+        entity.setContentType(stored.contentType());
+        entity.setFileSize(stored.fileSize());
+        entity.setObjectKey(stored.objectKey());
+        entity.setSourceFormat(stored.sourceFormat());
+        entity.setBindingStatus(BINDING_STATUS_TEMP);
+        entity.setBoundBizType("");
+        return documentAssetRepository.save(entity);
+    }
+
     private DocumentAssetSummary toSummary(DocumentAssetEntity entity) {
+        String url = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/common/files/")
+                .path(String.valueOf(entity.getId()))
+                .toUriString();
         return new DocumentAssetSummary(
                 entity.getId(),
                 entity.getFileName(),
                 entity.getContentType(),
                 entity.getFileSize(),
                 entity.getSourceFormat(),
-                entity.getBindingStatus()
+                entity.getBindingStatus(),
+                url
         );
     }
 }

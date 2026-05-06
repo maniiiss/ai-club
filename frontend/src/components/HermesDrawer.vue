@@ -264,6 +264,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
+import { openCommonFileDownload } from '@/api/common'
 import { archiveHermesConversationSession, createHermesConversationSession, deleteHermesConversationSession, getHermesConversationDetail, pageHermesConversationSessions, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat, streamHermesSessionChatWithFiles, transcribeHermesSpeech } from '@/api/hermes'
 import { createGitlabBindingScanTask } from '@/api/gitlab'
 import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
@@ -1417,10 +1418,10 @@ function removePendingFile(target: File) {
 }
 
 function handleDownloadAttachment(attachment: HermesAttachmentItem) {
-  if (!selectedSessionId.value || attachment.id == null) {
+  if (!attachment.assetId) {
     return
   }
-  window.open(`/api/hermes/sessions/${selectedSessionId.value}/attachments/${attachment.id}/download`, '_blank')
+  openCommonFileDownload(attachment.assetId)
 }
 
 function toAttachmentSummary(file: File): HermesAttachmentItem {

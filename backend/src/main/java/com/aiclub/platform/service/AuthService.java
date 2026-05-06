@@ -126,6 +126,9 @@ public class AuthService {
         user.setEmail(defaultString(request.email()));
         user.setPhone(defaultString(request.phone()));
         user.setGitlabUsername(defaultString(request.gitlabUsername()));
+        if (request.avatarUrl() != null) {
+            user.setAvatarUrl(defaultString(request.avatarUrl()));
+        }
 
         CurrentUserInfo currentUserInfo = toCurrentUserInfo(userRepository.save(user));
         refreshCurrentSession(authContext, currentUserInfo);

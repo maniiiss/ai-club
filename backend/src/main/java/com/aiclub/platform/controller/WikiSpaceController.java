@@ -2,7 +2,6 @@ package com.aiclub.platform.controller;
 
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
-import com.aiclub.platform.dto.UploadedFileSummary;
 import com.aiclub.platform.dto.WikiDirectorySummary;
 import com.aiclub.platform.dto.WikiDirectoryTreeNode;
 import com.aiclub.platform.dto.WikiSpaceDetail;
@@ -23,8 +22,6 @@ import com.aiclub.platform.dto.request.UpdateWikiSpacePageRequest;
 import com.aiclub.platform.dto.request.UpdateWikiSpaceRequest;
 import com.aiclub.platform.dto.request.WikiImportPreviewRequest;
 import com.aiclub.platform.service.DocumentAssetService;
-import com.aiclub.platform.service.DocumentAssetStorageService;
-import com.aiclub.platform.service.TaskCommentImageStorageService;
 import com.aiclub.platform.service.WikiSpaceService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -36,16 +33,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import java.time.Duration;
 import java.util.List;
 import java.util.NoSuchElementException;
-import org.springframework.http.CacheControl;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 
 /**
  * 空间化 Wiki 控制器，提供空间、目录、页面、版本和搜索能力。
@@ -55,14 +45,11 @@ import org.springframework.http.ResponseEntity;
 public class WikiSpaceController {
 
     private final WikiSpaceService wikiSpaceService;
-    private final TaskCommentImageStorageService taskCommentImageStorageService;
     private final DocumentAssetService documentAssetService;
 
     public WikiSpaceController(WikiSpaceService wikiSpaceService,
-                               TaskCommentImageStorageService taskCommentImageStorageService,
                                DocumentAssetService documentAssetService) {
         this.wikiSpaceService = wikiSpaceService;
-        this.taskCommentImageStorageService = taskCommentImageStorageService;
         this.documentAssetService = documentAssetService;
     }
 
@@ -317,43 +304,4 @@ public class WikiSpaceController {
         return ApiResponse.success(wikiSpaceService.relatedPages(spaceId, pageId, 8));
     }
 
-    /**
-     * 下载页面来源文档。
-     */
-    @GetMapping("/spaces/{spaceId}/pages/{pageId}/source/download")
-    @RequirePermission("wiki:view")
-    public ResponseEntity<byte[]> downloadPageSource(@PathVariable Long spaceId, @PathVariable Long pageId) {
-        WikiSpacePageDetail page = wikiSpaceService.getPageDetail(spaceId, pageId);
-        if (page.importSource() == null || page.importSource().assetId() == null) {
-            throw new NoSuchElementException("当前页面没有来源文档");
-        }
-        var asset = documentAssetService.requireAccessibleAsset(page.importSource().assetId());
-        var content = documentAssetService.loadContent(asset);
-        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
-        try {
-            mediaType = MediaType.parseMediaType(content.contentType());
-        } catch (Exception ignored) {
-        }
-        return ResponseEntity.ok()
-                .contentType(mediaType)
-                .cacheControl(CacheControl.maxAge(Duration.ofMinutes(5)).cachePrivate())
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + asset.getFileName() + "\"")
-                .body(content.bytes());
-    }
-
-    /**
-     * 上传空间 Wiki 图片。
-     */
-    @PostMapping("/spaces/{spaceId}/images")
-    @RequirePermission("wiki:view")
-    public ApiResponse<UploadedFileSummary> uploadImage(@PathVariable Long spaceId,
-                                                        @RequestParam("file") MultipartFile file) {
-        wikiSpaceService.assertCurrentUserCanEditSpace(spaceId);
-        TaskCommentImageStorageService.StoredCommentImage stored = taskCommentImageStorageService.store(file, "wiki-spaces/space-" + spaceId);
-        String url = ServletUriComponentsBuilder.fromCurrentContextPath()
-                .path("/comment-images")
-                .queryParam("key", stored.objectKey())
-                .toUriString();
-        return ApiResponse.success(new UploadedFileSummary(url, stored.fileName(), stored.size()));
-    }
 }

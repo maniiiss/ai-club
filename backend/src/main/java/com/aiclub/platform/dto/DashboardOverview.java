@@ -7,6 +7,7 @@ public record DashboardOverview(
         List<ProjectSummary> activeProjects,
         List<AgentSummary> onlineAgents,
         List<TaskSummary> recentTasks,
+        DashboardShortcutOverview shortcutOverview,
         String currentUserGitlabUsername,
         List<GitlabAutoMergeLogSummary> currentUserGitlabMergeLogs,
         List<TaskSummary> myTasks,

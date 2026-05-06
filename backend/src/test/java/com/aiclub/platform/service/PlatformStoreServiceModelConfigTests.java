@@ -80,6 +80,9 @@ class PlatformStoreServiceModelConfigTests {
     @Mock
     private TaskPrdService taskPrdService;
 
+    @Mock
+    private DashboardShortcutEntryService dashboardShortcutEntryService;
+
     private PlatformStoreService platformStoreService;
 
     @BeforeEach
@@ -100,7 +103,8 @@ class PlatformStoreServiceModelConfigTests {
                 knowledgeGraphService,
                 projectDataPermissionService,
                 requirementModuleOptionService,
-                taskPrdService
+                taskPrdService,
+                dashboardShortcutEntryService
         );
     }
 

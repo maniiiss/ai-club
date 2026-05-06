@@ -402,13 +402,12 @@ import {
   updateWikiDirectory,
   updateWikiSpace,
   updateWikiSpacePage,
-  uploadDocumentAsset,
-  uploadWikiImage,
   type WikiDirectoryPayload,
   type WikiSpaceMemberPayloadItem,
   type WikiSpacePagePayload,
   type WikiSpacePayload
 } from '@/api/platform'
+import { openCommonFileDownload, uploadCommonDocumentAsset, uploadCommonImage } from '@/api/common'
 import type {
   DocumentMarkdownResultItem,
   ProjectItem,
@@ -1131,7 +1130,7 @@ async function handleImportFileChange(fileEvent: any) {
   }
   importLoading.value = true
   try {
-    const asset = await uploadDocumentAsset(rawFile, `wiki-spaces/space-${spaceId.value}`)
+    const asset = await uploadCommonDocumentAsset(rawFile, `wiki-spaces/space-${spaceId.value}`)
     importPreview.value = await previewWikiImport(spaceId.value, asset.id)
     ElMessage.success('导入预览已生成')
   } catch (error: any) {
@@ -1350,15 +1349,15 @@ async function handleSubmitMembers() {
 }
 
 async function handleUploadImage(file: File) {
-  const uploaded = await uploadWikiImage(spaceId.value, file)
+  const uploaded = await uploadCommonImage(file, `wiki-spaces/space-${spaceId.value}`)
   return uploaded.url
 }
 
 function downloadCurrentSource() {
-  if (!currentPage.value?.importSource) {
+  if (!currentPage.value?.importSource?.assetId) {
     return
   }
-  window.open(`/api/wiki/spaces/${spaceId.value}/pages/${currentPage.value.id}/source/download`, '_blank')
+  openCommonFileDownload(currentPage.value.importSource.assetId)
 }
 
 function goBack() {

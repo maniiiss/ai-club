@@ -12,6 +12,8 @@ public record UpdateProfileRequest(
         @Size(max = 30, message = "Phone length must be <= 30")
         String phone,
         @Size(max = 100, message = "GitLab username length must be <= 100")
-        String gitlabUsername
+        String gitlabUsername,
+        @Size(max = 500, message = "Avatar URL length must be <= 500")
+        String avatarUrl
 ) {
 }

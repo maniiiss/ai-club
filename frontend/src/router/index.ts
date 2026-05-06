@@ -14,12 +14,14 @@ const GitlabCodeStructureView = () => import('@/views/GitlabCodeStructureView.vu
 import JenkinsServerView from '@/views/JenkinsServerView.vue'
 import PipelineBindingView from '@/views/PipelineBindingView.vue'
 import ModelView from '@/views/ModelView.vue'
+const ProjectApiManagementView = () => import('@/views/ProjectApiManagementView.vue')
 import LoginView from '@/views/LoginView.vue'
 import ForbiddenView from '@/views/ForbiddenView.vue'
 import UserView from '@/views/UserView.vue'
 import RoleView from '@/views/RoleView.vue'
 import PermissionView from '@/views/PermissionView.vue'
 import ToolConfigView from '@/views/ToolConfigView.vue'
+import ShortcutEntryManagementView from '@/views/ShortcutEntryManagementView.vue'
 import RepositoryScanRulesetView from '@/views/RepositoryScanRulesetView.vue'
 import OperationLogView from '@/views/OperationLogView.vue'
 import IterationView from '@/views/IterationView.vue'
@@ -62,6 +64,7 @@ const router = createRouter({
       children: [
         { path: 'dashboard', name: 'dashboard', component: DashboardView, meta: { title: '首页看板', permission: 'dashboard:view' } },
         { path: 'projects', name: 'projects', component: ProjectView, meta: { title: '项目管理', permission: 'project:view' } },
+        { path: 'apis', name: 'apis', component: ProjectApiManagementView, meta: { title: 'API 管理', permission: 'api:view' } },
         { path: 'wiki', name: 'wiki-home', component: WikiHomeView, meta: { title: 'Wiki 中心', permission: 'wiki:view' } },
         { path: 'wiki/spaces/:spaceId', name: 'wiki-space', component: WikiSpaceView, meta: { title: 'Wiki 空间', permission: 'wiki:view' } },
         { path: 'wiki/spaces/:spaceId/memory-fact-graph', name: 'wiki-space-memory-fact-graph', component: MemoryFactGraphView, meta: { title: '记忆事实图', permission: 'wiki:view' } },
@@ -86,6 +89,7 @@ const router = createRouter({
         { path: 'roles', name: 'roles', component: RoleView, meta: { title: '角色管理', permission: 'system:role:view' } },
         { path: 'permissions', name: 'permissions', component: PermissionView, meta: { title: '功能管理', permission: 'system:permission:view' } },
         { path: 'tools', name: 'tools', component: ToolConfigView, meta: { title: '工具配置', permission: 'system:tool:view' } },
+        { path: 'shortcuts', name: 'shortcuts', component: ShortcutEntryManagementView, meta: { title: '快捷入口管理', permission: 'system:shortcut:view' } },
         { path: 'scan-rulesets', name: 'scan-rulesets', component: RepositoryScanRulesetView, meta: { title: '扫描规则集', permission: 'scan:ruleset:view' } },
         { path: 'operation-logs', name: 'operation-logs', component: OperationLogView, meta: { title: '操作日志', permission: 'system:operation-log:view' } }
       ]

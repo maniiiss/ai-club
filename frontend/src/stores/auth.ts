@@ -101,6 +101,7 @@ export const useAuthStore = defineStore('auth', () => {
     email: string
     phone: string
     gitlabUsername: string
+    avatarUrl?: string
   }) => {
     const profile = await updateProfileApi(payload)
     user.value = profile
@@ -110,7 +111,14 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const uploadAvatar = async (file: File) => {
-    const profile = await uploadProfileAvatarApi(file)
+    const uploaded = await uploadProfileAvatarApi(file)
+    const profile = await updateProfileApi({
+      nickname: user.value?.nickname || '',
+      email: user.value?.email || '',
+      phone: user.value?.phone || '',
+      gitlabUsername: user.value?.gitlabUsername || '',
+      avatarUrl: uploaded.url
+    })
     user.value = profile
     profileLoaded.value = true
     localStorage.setItem(AUTH_USER_KEY, JSON.stringify(profile))

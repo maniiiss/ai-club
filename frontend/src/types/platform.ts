@@ -330,6 +330,7 @@ export interface DocumentAssetItem {
   fileSize: number
   sourceFormat: string
   bindingStatus: string
+  url: string
 }
 
 export interface DocumentMarkdownResultItem {
@@ -797,12 +798,45 @@ export interface DashboardOverview {
   activeProjects: ProjectItem[]
   onlineAgents: AgentItem[]
   recentTasks: TaskItem[]
+  shortcutOverview: DashboardShortcutOverviewItem
   currentUserGitlabUsername: string | null
   currentUserGitlabMergeLogs: GitlabAutoMergeLogItem[]
   myTasks?: TaskItem[]
   mergeAlerts?: GitlabAutoMergeLogItem[]
   focusIterationBoard?: IterationBoardItem | null
   focusProjectBurndown?: ProjectBurndownItem | null
+}
+
+export interface DashboardCardOverviewItem {
+  stats: DashboardStats
+  activeProjects: ProjectItem[]
+  onlineAgents: AgentItem[]
+  recentTasks: TaskItem[]
+  shortcutOverview: DashboardShortcutOverviewItem
+}
+
+export interface DashboardShortcutEntryItem {
+  /** 快捷入口主键ID。 */
+  id: number
+  /** 归属范围：SYSTEM / USER。 */
+  scopeType: 'SYSTEM' | 'USER' | string
+  /** 入口名称。 */
+  name: string
+  /** 跳转地址。 */
+  url: string
+  /** 图标名称或上传后的图片地址。 */
+  icon: string
+  /** 是否启用。 */
+  enabled: boolean
+  /** 当前展示顺序。 */
+  sortOrder: number
+}
+
+export interface DashboardShortcutOverviewItem {
+  /** 系统管理员统一维护的系统入口。 */
+  systemEntries: DashboardShortcutEntryItem[]
+  /** 当前登录用户自己的入口。 */
+  userEntries: DashboardShortcutEntryItem[]
 }
 
 export interface DashboardQuickTaskItem {

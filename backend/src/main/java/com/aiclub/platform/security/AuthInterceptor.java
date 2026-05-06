@@ -71,6 +71,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         // 登录、注册、健康检查等接口需要允许匿名访问，否则未登录用户无法完成注册和登录流程。
         return requestUri.startsWith("/api/auth/login")
                 || requestUri.startsWith("/api/auth/register")
+                || requestUri.startsWith("/api/common/public-files/")
                 || requestUri.startsWith("/actuator")
                 || requestUri.startsWith("/error");
     }

@@ -1,4 +1,5 @@
 import { http } from './http'
+import { uploadCommonImage } from './common'
 import type { ApiResponse, CurrentUserInfo, LoginResult } from '@/types/platform'
 
 export interface LoginPayload {
@@ -20,6 +21,7 @@ export interface UpdateProfilePayload {
   email: string
   phone: string
   gitlabUsername: string
+  avatarUrl?: string
 }
 
 export interface ChangePasswordPayload {
@@ -47,14 +49,7 @@ export const updateProfileApi = async (payload: UpdateProfilePayload) => {
 }
 
 export const uploadProfileAvatarApi = async (file: File) => {
-  const formData = new FormData()
-  formData.append('file', file)
-  const { data } = await http.post<ApiResponse<CurrentUserInfo>>('/api/auth/avatar', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
-  })
-  return data.data
+  return uploadCommonImage(file, 'profile-avatars')
 }
 
 export const changePasswordApi = async (payload: ChangePasswordPayload) => {

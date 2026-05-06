@@ -776,6 +776,7 @@ const openIterationBoard = (row: ProjectItem) => {
   router.push({ name: 'project-iterations', params: { projectId: row.id } })
 }
 
+
 const openRepoDialog = async (row: ProjectItem) => {
   if (!authStore.hasPermission('gitlab:view')) {
     ElMessage.warning('当前账号没有查看仓库列表的权限')

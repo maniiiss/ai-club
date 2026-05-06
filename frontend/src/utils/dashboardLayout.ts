@@ -99,6 +99,16 @@ export const DASHBOARD_WIDGET_DEFINITIONS: DashboardWidgetDefinition[] = [
     requiredPermissionsAll: ['dashboard:view', 'dashboard:widget:recent-tasks']
   },
   {
+    id: 'system-shortcut-entries',
+    title: '常用系统访问入口',
+    description: '聚合管理员统一配置的系统入口与当前账号自己的常用跳转。',
+    defaultWidth: 'half',
+    defaultHeight: 'double',
+    defaultVisible: true,
+    renderKey: 'system-shortcut-entries',
+    requiredPermissionsAll: ['dashboard:view', 'dashboard:widget:system-shortcuts']
+  },
+  {
     id: 'quick-task-checklist',
     title: '快捷任务',
     description: '记录当前账号在首页临时保存的快捷任务与便签。',

@@ -37,7 +37,8 @@ class DashboardWidgetPermissionIntegrationTests {
             "dashboard:widget:active-projects",
             "dashboard:widget:online-agents",
             "dashboard:widget:recent-tasks",
-            "dashboard:widget:quick-tasks"
+            "dashboard:widget:quick-tasks",
+            "dashboard:widget:system-shortcuts"
     );
 
     @Autowired

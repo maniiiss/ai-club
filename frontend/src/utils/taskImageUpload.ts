@@ -1,4 +1,4 @@
-import { uploadTaskImage } from '@/api/platform'
+import { uploadCommonImage } from '@/api/common'
 
 const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif']
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024
@@ -12,7 +12,7 @@ export const uploadMarkdownImage = async (file: File) => {
   }
 
   try {
-    const uploaded = await uploadTaskImage(file)
+    const uploaded = await uploadCommonImage(file, 'task-comments')
     return uploaded.url
   } catch (error: any) {
     throw new Error(error?.response?.data?.message || '图片上传失败')

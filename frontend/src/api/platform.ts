@@ -5,7 +5,11 @@ import type {
   AgentItem,
   AgentTestResult,
   ApiResponse,
+  DashboardCardOverviewItem,
   DashboardOverview,
+  DashboardStats,
+  DashboardShortcutOverviewItem,
+  DashboardShortcutEntryItem,
   DashboardQuickTaskItem,
   ExecutionArtifactItem,
   ExecutionRunDetailItem,
@@ -152,6 +156,19 @@ export interface DashboardQuickTaskPayloadItem {
   content: string
   /** 是否勾选完成。 */
   checked: boolean
+}
+
+export interface DashboardShortcutPayloadItem {
+  /** 已存在快捷入口ID；新增时传空。 */
+  id?: number | null
+  /** 当前快捷入口名称。 */
+  name: string
+  /** 当前快捷入口链接地址。 */
+  url: string
+  /** 图标名称。 */
+  icon: string
+  /** 是否启用。 */
+  enabled: boolean
 }
 
 export interface IterationPayload {
@@ -371,6 +388,36 @@ export const getDashboardOverview = async () => {
   return data.data
 }
 
+export const getDashboardCardOverview = async () => {
+  const { data } = await http.get<ApiResponse<DashboardCardOverviewItem>>('/api/dashboard/cards/overview')
+  return data.data
+}
+
+export const getDashboardStats = async () => {
+  const { data } = await http.get<ApiResponse<DashboardStats>>('/api/dashboard/cards/stats')
+  return data.data
+}
+
+export const getDashboardActiveProjects = async () => {
+  const { data } = await http.get<ApiResponse<ProjectItem[]>>('/api/dashboard/cards/active-projects')
+  return data.data
+}
+
+export const getDashboardOnlineAgents = async () => {
+  const { data } = await http.get<ApiResponse<AgentItem[]>>('/api/dashboard/cards/online-agents')
+  return data.data
+}
+
+export const getDashboardRecentTasks = async () => {
+  const { data } = await http.get<ApiResponse<TaskItem[]>>('/api/dashboard/cards/recent-tasks')
+  return data.data
+}
+
+export const getDashboardShortcutOverview = async () => {
+  const { data } = await http.get<ApiResponse<DashboardShortcutOverviewItem>>('/api/dashboard/cards/shortcut-overview')
+  return data.data
+}
+
 export const listDashboardQuickTasks = async () => {
   const { data } = await http.get<ApiResponse<DashboardQuickTaskItem[]>>('/api/dashboard/quick-tasks')
   return data.data
@@ -378,6 +425,16 @@ export const listDashboardQuickTasks = async () => {
 
 export const saveDashboardQuickTasks = async (items: DashboardQuickTaskPayloadItem[]) => {
   const { data } = await http.put<ApiResponse<DashboardQuickTaskItem[]>>('/api/dashboard/quick-tasks', { items })
+  return data.data
+}
+
+export const listDashboardShortcutEntries = async () => {
+  const { data } = await http.get<ApiResponse<DashboardShortcutEntryItem[]>>('/api/dashboard/shortcut-entries')
+  return data.data
+}
+
+export const saveDashboardShortcutEntries = async (items: DashboardShortcutPayloadItem[]) => {
+  const { data } = await http.put<ApiResponse<DashboardShortcutEntryItem[]>>('/api/dashboard/shortcut-entries', { items })
   return data.data
 }
 
@@ -510,28 +567,6 @@ export const analyzeTaskPrd = async (id: number, payload: { action: 'GAP_CHECK' 
 
 export const applyTaskPrdSuggestion = async (id: number, payload: { suggestionMarkdown: string; changeSummary?: string }) => {
   const { data } = await http.post<ApiResponse<TaskPrdDetailItem>>(`/api/tasks/${id}/prd/apply-suggestion`, payload)
-  return data.data
-}
-
-export const uploadTaskCommentImage = async (id: number, file: File) => {
-  const formData = new FormData()
-  formData.append('file', file)
-  const { data } = await http.post<ApiResponse<UploadedFileItem>>(`/api/tasks/${id}/comment-images`, formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
-  })
-  return data.data
-}
-
-export const uploadTaskImage = async (file: File) => {
-  const formData = new FormData()
-  formData.append('file', file)
-  const { data } = await http.post<ApiResponse<UploadedFileItem>>('/api/tasks/images', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
-  })
   return data.data
 }
 
@@ -948,31 +983,6 @@ export const semanticSearchWikiPages = async (query?: { query?: string; spaceId?
 
 export const listWikiRelatedPages = async (spaceId: number, pageId: number) => {
   const { data } = await http.get<ApiResponse<WikiSpacePageSummaryItem[]>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}/related`)
-  return data.data
-}
-
-export const uploadWikiImage = async (spaceId: number, file: File) => {
-  const formData = new FormData()
-  formData.append('file', file)
-  const { data } = await http.post<ApiResponse<UploadedFileItem>>(`/api/wiki/spaces/${spaceId}/images`, formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
-  })
-  return data.data
-}
-
-export const uploadDocumentAsset = async (file: File, directory?: string) => {
-  const formData = new FormData()
-  formData.append('file', file)
-  if (directory) {
-    formData.append('directory', directory)
-  }
-  const { data } = await http.post<ApiResponse<DocumentAssetItem>>('/api/document-assets', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
-  })
   return data.data
 }
 

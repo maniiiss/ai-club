@@ -9,7 +9,6 @@ import com.aiclub.platform.dto.TaskAgentRunSummary;
 import com.aiclub.platform.dto.TaskCommentSummary;
 import com.aiclub.platform.dto.TaskRequirementAiResult;
 import com.aiclub.platform.dto.TaskSummary;
-import com.aiclub.platform.dto.UploadedFileSummary;
 import com.aiclub.platform.dto.request.ApplyTaskPrdSuggestionRequest;
 import com.aiclub.platform.dto.request.TaskAgentRunRequest;
 import com.aiclub.platform.dto.request.TaskCommentRequest;
@@ -17,7 +16,6 @@ import com.aiclub.platform.dto.request.TaskPrdAnalyzeRequest;
 import com.aiclub.platform.dto.request.TaskRequirementAiRequest;
 import com.aiclub.platform.dto.request.TaskRequest;
 import com.aiclub.platform.service.PlatformStoreService;
-import com.aiclub.platform.service.TaskCommentImageStorageService;
 import com.aiclub.platform.service.TaskRequirementAiService;
 import com.aiclub.platform.service.TaskAgentRunService;
 import com.aiclub.platform.service.TaskPrdService;
@@ -31,8 +29,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.util.List;
 
@@ -42,18 +38,15 @@ public class TaskController {
 
     private final PlatformStoreService platformStoreService;
     private final TaskAgentRunService taskAgentRunService;
-    private final TaskCommentImageStorageService taskCommentImageStorageService;
     private final TaskRequirementAiService taskRequirementAiService;
     private final TaskPrdService taskPrdService;
 
     public TaskController(PlatformStoreService platformStoreService,
                           TaskAgentRunService taskAgentRunService,
-                          TaskCommentImageStorageService taskCommentImageStorageService,
                           TaskRequirementAiService taskRequirementAiService,
                           TaskPrdService taskPrdService) {
         this.platformStoreService = platformStoreService;
         this.taskAgentRunService = taskAgentRunService;
-        this.taskCommentImageStorageService = taskCommentImageStorageService;
         this.taskRequirementAiService = taskRequirementAiService;
         this.taskPrdService = taskPrdService;
     }
@@ -117,34 +110,11 @@ public class TaskController {
         return ApiResponse.success(platformStoreService.createTaskComment(id, request));
     }
 
-    @PostMapping("/{id}/comment-images")
-    @RequirePermission("task:view")
-    public ApiResponse<UploadedFileSummary> uploadCommentImage(@PathVariable Long id,
-                                                               @RequestParam("file") MultipartFile file) {
-        platformStoreService.getTask(id);
-        return ApiResponse.success(storeUploadedFile(file));
-    }
-
-    @PostMapping("/images")
-    @RequirePermission("task:view")
-    public ApiResponse<UploadedFileSummary> uploadImage(@RequestParam("file") MultipartFile file) {
-        return ApiResponse.success(storeUploadedFile(file));
-    }
-
     @PostMapping("/{id}/requirement-ai")
     @RequirePermission("task:view")
     public ApiResponse<TaskRequirementAiResult> generateRequirementAi(@PathVariable Long id,
                                                                       @Valid @RequestBody TaskRequirementAiRequest request) {
         return ApiResponse.success(taskRequirementAiService.generate(id, request));
-    }
-
-    private UploadedFileSummary storeUploadedFile(MultipartFile file) {
-        TaskCommentImageStorageService.StoredCommentImage stored = taskCommentImageStorageService.store(file);
-        String url = ServletUriComponentsBuilder.fromCurrentContextPath()
-                .path("/comment-images")
-                .queryParam("key", stored.objectKey())
-                .toUriString();
-        return new UploadedFileSummary(url, stored.fileName(), stored.size());
     }
 
     @PostMapping

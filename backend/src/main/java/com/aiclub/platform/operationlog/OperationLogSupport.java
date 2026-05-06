@@ -490,6 +490,7 @@ public final class OperationLogSupport {
         mapping.put("NOTIFICATION", "通知中心");
         mapping.put("HERMES", "Hermes 助手");
         mapping.put("OPERATION_LOG", "操作日志");
+        mapping.put("SHORTCUT", "快捷入口管理");
         return mapping;
     }
 

@@ -95,6 +95,47 @@ public class DocumentAssetStorageService {
     }
 
     /**
+     * 保存任意类型文件到对象存储。
+     * 通用文件入口不关心文件是否为图片或文档，只负责原样入桶并保留元信息。
+     */
+    public StoredDocumentAsset storeAnyFile(MultipartFile file, String directoryName) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("上传文件不能为空");
+        }
+        if (file.getSize() > maxDocumentSize.toBytes()) {
+            throw new IllegalArgumentException("文件大小不能超过" + maxDocumentSize.toMegabytes() + "MB");
+        }
+
+        String extension = resolveAnyExtension(file.getOriginalFilename());
+        String contentType = normalizeAnyContentType(file.getContentType(), extension);
+        byte[] bytes = readBytes(file);
+        ensureBucketReady();
+
+        String normalizedDirectory = normalizeDirectoryName(directoryName);
+        String objectKey = normalizedDirectory + "/" + PATH_DATE_FORMATTER.format(LocalDate.now()) + "/"
+                + UUID.randomUUID().toString().replace("-", "") + (extension.isBlank() ? "" : "." + extension);
+        try (ByteArrayInputStream inputStream = new ByteArrayInputStream(bytes)) {
+            minioClient.putObject(
+                    PutObjectArgs.builder()
+                            .bucket(bucketName)
+                            .object(objectKey)
+                            .stream(inputStream, bytes.length, -1)
+                            .contentType(contentType)
+                            .build()
+            );
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("保存上传文件失败");
+        }
+        return new StoredDocumentAsset(
+                objectKey,
+                defaultFileName(file.getOriginalFilename()),
+                contentType,
+                file.getSize(),
+                extension.isBlank() ? "FILE" : extension.toUpperCase(Locale.ROOT)
+        );
+    }
+
+    /**
      * 按对象键读取文档原始内容。
      */
     public StoredDocumentContent load(String objectKey) {
@@ -164,12 +205,40 @@ public class DocumentAssetStorageService {
         return normalized;
     }
 
+    private String resolveAnyExtension(String originalFilename) {
+        String extension = StringUtils.getFilenameExtension(originalFilename);
+        if (extension == null) {
+            return "";
+        }
+        return extension.trim().toLowerCase(Locale.ROOT);
+    }
+
     private String normalizeContentType(String contentType, String extension) {
         String normalized = contentType == null ? "" : contentType.trim().toLowerCase(Locale.ROOT);
         if (!normalized.isBlank()) {
             return normalized;
         }
         return switch (extension) {
+            case "pdf" -> "application/pdf";
+            case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            case "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            case "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            default -> "application/octet-stream";
+        };
+    }
+
+    private String normalizeAnyContentType(String contentType, String extension) {
+        String normalized = contentType == null ? "" : contentType.trim().toLowerCase(Locale.ROOT);
+        if (!normalized.isBlank()) {
+            return normalized;
+        }
+        if (extension.isBlank()) {
+            return "application/octet-stream";
+        }
+        return switch (extension) {
+            case "png" -> "image/png";
+            case "jpg", "jpeg" -> "image/jpeg";
+            case "gif" -> "image/gif";
             case "pdf" -> "application/pdf";
             case "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
             case "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";

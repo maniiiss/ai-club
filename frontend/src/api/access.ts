@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { ApiResponse, DataPermissionScopeValue, PageResponse, PermissionItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
+import type { ApiResponse, DashboardShortcutEntryItem, DataPermissionScopeValue, PageResponse, PermissionItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
 
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
@@ -79,6 +79,14 @@ export interface PlatformToolPayload {
   descriptionOverride?: string
   enabled: boolean
   allowAutoExecute: boolean
+}
+
+export interface DashboardShortcutAdminPayload {
+  name: string
+  url: string
+  icon: string
+  enabled: boolean
+  sortOrder: number
 }
 
 export interface RepositoryScanRulesetQuery {
@@ -201,6 +209,25 @@ export const getPlatformToolDetail = async (toolCode: string) => {
 export const updatePlatformTool = async (toolCode: string, payload: PlatformToolPayload) => {
   const { data } = await http.put<ApiResponse<PlatformToolItem>>(`/api/platform-tools/${encodeURIComponent(toolCode)}`, payload)
   return data.data
+}
+
+export const listDashboardShortcutEntries = async () => {
+  const { data } = await http.get<ApiResponse<DashboardShortcutEntryItem[]>>('/api/dashboard-shortcut-entries')
+  return data.data
+}
+
+export const createDashboardShortcutEntry = async (payload: DashboardShortcutAdminPayload) => {
+  const { data } = await http.post<ApiResponse<DashboardShortcutEntryItem>>('/api/dashboard-shortcut-entries', payload)
+  return data.data
+}
+
+export const updateDashboardShortcutEntry = async (id: number, payload: DashboardShortcutAdminPayload) => {
+  const { data } = await http.put<ApiResponse<DashboardShortcutEntryItem>>(`/api/dashboard-shortcut-entries/${id}`, payload)
+  return data.data
+}
+
+export const deleteDashboardShortcutEntry = async (id: number) => {
+  await http.delete<ApiResponse<null>>(`/api/dashboard-shortcut-entries/${id}`)
 }
 
 export const pageRepositoryScanRulesets = async (query: RepositoryScanRulesetQuery) => {

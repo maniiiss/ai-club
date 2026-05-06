@@ -10,6 +10,7 @@ export type DashboardWidgetId =
   | 'active-project-list'
   | 'online-agent-list'
   | 'recent-task-list'
+  | 'system-shortcut-entries'
   | 'quick-task-checklist'
 
 /**

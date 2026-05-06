@@ -9,20 +9,15 @@ import com.aiclub.platform.dto.request.LoginRequest;
 import com.aiclub.platform.dto.request.RegisterRequest;
 import com.aiclub.platform.dto.request.UpdateProfileRequest;
 import com.aiclub.platform.service.AuthService;
-import com.aiclub.platform.service.TaskCommentImageStorageService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.util.UriComponentsBuilder;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -30,12 +25,9 @@ import org.springframework.web.util.UriComponentsBuilder;
 public class AuthController {
 
     private final AuthService authService;
-    private final TaskCommentImageStorageService taskCommentImageStorageService;
 
-    public AuthController(AuthService authService,
-                          TaskCommentImageStorageService taskCommentImageStorageService) {
+    public AuthController(AuthService authService) {
         this.authService = authService;
-        this.taskCommentImageStorageService = taskCommentImageStorageService;
     }
 
     @PostMapping("/login")
@@ -60,20 +52,6 @@ public class AuthController {
     @OperationLog(actionCode = "AUTH_UPDATE_PROFILE", actionName = "修改个人资料")
     public ApiResponse<CurrentUserInfo> updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
         return ApiResponse.success(authService.updateProfile(request));
-    }
-
-    /**
-     * 上传当前登录用户头像，并同步刷新当前会话中的用户资料。
-     */
-    @PostMapping(value = "/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @OperationLog(actionCode = "AUTH_UPLOAD_AVATAR", actionName = "上传头像")
-    public ApiResponse<CurrentUserInfo> uploadAvatar(@RequestParam("file") MultipartFile file) {
-        TaskCommentImageStorageService.StoredCommentImage stored = taskCommentImageStorageService.store(file, "profile-avatars");
-        String avatarUrl = UriComponentsBuilder.fromPath("/profile-avatars")
-                .queryParam("key", stored.objectKey())
-                .build()
-                .toUriString();
-        return ApiResponse.success(authService.updateAvatar(avatarUrl));
     }
 
     @PostMapping("/change-password")

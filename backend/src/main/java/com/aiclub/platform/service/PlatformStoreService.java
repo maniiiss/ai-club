@@ -10,6 +10,7 @@ import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.domain.model.TaskPrdProjectionEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.AgentSummary;
+import com.aiclub.platform.dto.DashboardCardOverview;
 import com.aiclub.platform.dto.DashboardOverview;
 import com.aiclub.platform.dto.DashboardStats;
 import com.aiclub.platform.dto.IterationBoardSummary;
@@ -98,6 +99,7 @@ public class PlatformStoreService {
     private final ProjectDataPermissionService projectDataPermissionService;
     private final RequirementModuleOptionService requirementModuleOptionService;
     private final TaskPrdService taskPrdService;
+    private final DashboardShortcutEntryService dashboardShortcutEntryService;
     private final SecureRandom workItemCodeRandom = new SecureRandom();
 
     public PlatformStoreService(ProjectRepository projectRepository,
@@ -115,7 +117,8 @@ public class PlatformStoreService {
                                 KnowledgeGraphService knowledgeGraphService,
                                 ProjectDataPermissionService projectDataPermissionService,
                                 RequirementModuleOptionService requirementModuleOptionService,
-                                TaskPrdService taskPrdService) {
+                                TaskPrdService taskPrdService,
+                                DashboardShortcutEntryService dashboardShortcutEntryService) {
         this.projectRepository = projectRepository;
         this.projectGitlabBindingRepository = projectGitlabBindingRepository;
         this.agentRepository = agentRepository;
@@ -132,6 +135,7 @@ public class PlatformStoreService {
         this.projectDataPermissionService = projectDataPermissionService;
         this.requirementModuleOptionService = requirementModuleOptionService;
         this.taskPrdService = taskPrdService;
+        this.dashboardShortcutEntryService = dashboardShortcutEntryService;
     }
 
     public DashboardOverview getDashboardOverview() {
@@ -156,12 +160,40 @@ public class PlatformStoreService {
                 projectList,
                 agentList,
                 taskList.stream().limit(8).toList(),
+                dashboardShortcutEntryService.getCurrentUserShortcutOverview(),
                 null,
                 List.of(),
                 List.of(),
                 List.of(),
                 null,
                 null
+        );
+    }
+
+    /**
+     * 读取首页卡片基础概览，供前端按卡片维度并行加载。
+     */
+    public DashboardCardOverview getDashboardCardOverview() {
+        List<ProjectSummary> projectList = listAllProjects();
+        List<AgentSummary> agentList = listAllAgents();
+        List<TaskSummary> taskList = listAllTasks();
+        DashboardStats stats = new DashboardStats(
+                projectList.size(),
+                agentList.size(),
+                taskList.size(),
+                projectList.size(),
+                0,
+                0,
+                0,
+                0,
+                0
+        );
+        return new DashboardCardOverview(
+                stats,
+                projectList,
+                agentList,
+                taskList.stream().limit(8).toList(),
+                dashboardShortcutEntryService.getCurrentUserShortcutOverview()
         );
     }
 

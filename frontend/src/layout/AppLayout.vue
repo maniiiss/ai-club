@@ -629,6 +629,7 @@ import {
   Finished,
   Fold,
   FolderOpened,
+  Link,
   Management,
   Message,
   MoreFilled,
@@ -642,13 +643,14 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import { listPermissionOptions } from '@/api/access'
 import { createFeedbackApi } from '@/api/feedback'
 import HermesDrawer from '@/components/HermesDrawer.vue'
 import { HERMES_OPEN_EVENT_NAME, type HermesOpenEventDetail } from '@/constants/hermes'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
-import type { CreateFeedbackPayload, FeedbackType, NotificationItem } from '@/types/platform'
+import type { CreateFeedbackPayload, FeedbackType, NotificationItem, PermissionItem } from '@/types/platform'
 import { resolveAssetUrl } from '@/utils/asset'
 
 interface MenuItem {
@@ -671,6 +673,21 @@ interface HermesDrawerExpose {
   openWithQuestion: (question: string) => Promise<void>
 }
 
+interface MenuSeed {
+  /** 菜单权限码。 */
+  permission: string
+  /** 默认路径，后端未配置菜单路由时兜底。 */
+  fallbackPath: string
+  /** 默认文案，后端未配置名称时兜底。 */
+  fallbackLabel: string
+  /** 收起态短标签。 */
+  shortLabel: string
+  /** 默认图标组件。 */
+  fallbackIcon: unknown
+  /** 需要一并高亮的路由名称。 */
+  matchNames?: string[]
+}
+
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
@@ -687,6 +704,7 @@ const feedbackSubmitting = ref(false)
 const headerHermesQuestion = ref('')
 const hermesDrawerRef = ref<HermesDrawerExpose | null>(null)
 const feedbackFormRef = ref<FormInstance>()
+const permissionOptions = ref<PermissionItem[]>([])
 
 /**
  * 反馈表单固定采用结构化字段，方便后端后续按类型和标题检索问题。
@@ -718,34 +736,95 @@ const feedbackRules: FormRules<typeof feedbackForm> = {
   ]
 }
 
-const primaryMenuItems: MenuItem[] = [
-  { path: '/dashboard', label: '首页看板', shortLabel: '首页', permission: 'dashboard:view', icon: Odometer, matchNames: ['dashboard'] },
-  { path: '/projects', label: '项目管理', shortLabel: '项目', permission: 'project:view', icon: FolderOpened, matchNames: ['projects', 'project-iterations'] },
-  { path: '/wiki', label: 'Wiki 中心', shortLabel: 'Wiki', permission: 'wiki:view', icon: Document, matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page', 'wiki-space-memory-fact-graph', 'project-memory-fact-graph'] },
-  { path: '/agents', label: '智能体管理', shortLabel: '智能体', permission: 'agent:view', icon: Connection, matchNames: ['agents'] },
-  { path: '/tasks', label: '执行中心', shortLabel: '执行', permission: 'task:view', icon: Tickets, matchNames: ['tasks', 'execution-task-detail'] },
-  { path: '/self-upgrade', label: '自升级中心', shortLabel: '自升级', permission: 'self-upgrade:view', icon: Connection, matchNames: ['self-upgrade'] },
-  { path: '/tests', label: '测试管理', shortLabel: '测试', permission: 'test:view', icon: Finished, matchNames: ['tests', 'test-plan-detail'] },
-  { path: '/gitlab', label: '代码仓库', shortLabel: '仓库', permission: 'gitlab:view', icon: DocumentCopy, matchNames: ['gitlab'] }
+const iconRegistry: Record<string, unknown> = {
+  Bell,
+  ChatDotRound,
+  Connection,
+  Cpu,
+  DataAnalysis,
+  Document,
+  DocumentCopy,
+  Finished,
+  FolderOpened,
+  Link,
+  Management,
+  Odometer,
+  Search,
+  Setting,
+  Tickets,
+  UserFilled,
+  WarningFilled
+}
+
+const primaryMenuSeeds: MenuSeed[] = [
+  { permission: 'dashboard:view', fallbackPath: '/dashboard', fallbackLabel: '首页看板', shortLabel: '首页', fallbackIcon: Odometer, matchNames: ['dashboard'] },
+  { permission: 'project:view', fallbackPath: '/projects', fallbackLabel: '项目管理', shortLabel: '项目', fallbackIcon: FolderOpened, matchNames: ['projects', 'project-iterations'] },
+  { permission: 'api:view', fallbackPath: '/apis', fallbackLabel: 'API管理', shortLabel: 'API', fallbackIcon: Connection, matchNames: ['apis'] },
+  { permission: 'wiki:view', fallbackPath: '/wiki', fallbackLabel: 'Wiki 中心', shortLabel: 'Wiki', fallbackIcon: Document, matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page', 'wiki-space-memory-fact-graph', 'project-memory-fact-graph'] },
+  { permission: 'agent:view', fallbackPath: '/agents', fallbackLabel: '智能体管理', shortLabel: '智能体', fallbackIcon: Connection, matchNames: ['agents'] },
+  { permission: 'task:view', fallbackPath: '/tasks', fallbackLabel: '执行中心', shortLabel: '执行', fallbackIcon: Tickets, matchNames: ['tasks', 'execution-task-detail'] },
+  { permission: 'self-upgrade:view', fallbackPath: '/self-upgrade', fallbackLabel: '自升级中心', shortLabel: '自升级', fallbackIcon: Connection, matchNames: ['self-upgrade'] },
+  { permission: 'test:view', fallbackPath: '/tests', fallbackLabel: '测试管理', shortLabel: '测试', fallbackIcon: Finished, matchNames: ['tests', 'test-plan-detail'] },
+  { permission: 'gitlab:view', fallbackPath: '/gitlab', fallbackLabel: '代码仓库', shortLabel: '仓库', fallbackIcon: DocumentCopy, matchNames: ['gitlab'] }
 ]
 
-const integrationMenuItems: MenuItem[] = [
-  { path: '/cicd/jenkins-servers', label: 'Jenkins 服务', shortLabel: 'Jenkins', permission: 'cicd:view', icon: Connection, matchNames: ['cicd-servers'] },
-  { path: '/cicd/pipeline-bindings', label: '项目流水线', shortLabel: '流水线', permission: 'cicd:view', icon: DataAnalysis, matchNames: ['cicd-pipelines'] }
+const integrationMenuSeeds: MenuSeed[] = [
+  { permission: 'cicd:view', fallbackPath: '/cicd/jenkins-servers', fallbackLabel: 'Jenkins 服务', shortLabel: 'Jenkins', fallbackIcon: Connection, matchNames: ['cicd-servers'] },
+  { permission: 'cicd:view', fallbackPath: '/cicd/pipeline-bindings', fallbackLabel: '项目流水线', shortLabel: '流水线', fallbackIcon: DataAnalysis, matchNames: ['cicd-pipelines'] }
 ]
 
-const trailingMenuItems: MenuItem[] = [
-  { path: '/models', label: '模型管理', shortLabel: '模型', permission: 'model:view', icon: Cpu, matchNames: ['models'] }
+const trailingMenuSeeds: MenuSeed[] = [
+  { permission: 'model:view', fallbackPath: '/models', fallbackLabel: '模型管理', shortLabel: '模型', fallbackIcon: Cpu, matchNames: ['models'] }
 ]
 
-const systemMenuItems: MenuItem[] = [
-  { path: '/users', label: '用户管理', shortLabel: '用户', permission: 'system:user:view', icon: UserFilled, matchNames: ['users'] },
-  { path: '/roles', label: '角色管理', shortLabel: '角色', permission: 'system:role:view', icon: Management, matchNames: ['roles'] },
-  { path: '/permissions', label: '功能管理', shortLabel: '功能', permission: 'system:permission:view', icon: Setting, matchNames: ['permissions'] },
-  { path: '/tools', label: '工具配置', shortLabel: '工具', permission: 'system:tool:view', icon: Connection, matchNames: ['tools'] },
-  { path: '/scan-rulesets', label: '扫描规则集', shortLabel: '规则集', permission: 'scan:ruleset:view', icon: Search, matchNames: ['scan-rulesets'] },
-  { path: '/operation-logs', label: '操作日志', shortLabel: '日志', permission: 'system:operation-log:view', icon: Document, matchNames: ['operation-logs'] }
+const systemMenuSeeds: MenuSeed[] = [
+  { permission: 'system:user:view', fallbackPath: '/users', fallbackLabel: '用户管理', shortLabel: '用户', fallbackIcon: UserFilled, matchNames: ['users'] },
+  { permission: 'system:role:view', fallbackPath: '/roles', fallbackLabel: '角色管理', shortLabel: '角色', fallbackIcon: Management, matchNames: ['roles'] },
+  { permission: 'system:permission:view', fallbackPath: '/permissions', fallbackLabel: '功能管理', shortLabel: '功能', fallbackIcon: Setting, matchNames: ['permissions'] },
+  { permission: 'system:tool:view', fallbackPath: '/tools', fallbackLabel: '工具配置', shortLabel: '工具', fallbackIcon: Connection, matchNames: ['tools'] },
+  { permission: 'system:shortcut:view', fallbackPath: '/shortcuts', fallbackLabel: '快捷入口管理', shortLabel: '入口', fallbackIcon: Link, matchNames: ['shortcuts'] },
+  { permission: 'scan:ruleset:view', fallbackPath: '/scan-rulesets', fallbackLabel: '扫描规则集', shortLabel: '规则集', fallbackIcon: Search, matchNames: ['scan-rulesets'] },
+  { permission: 'system:operation-log:view', fallbackPath: '/operation-logs', fallbackLabel: '操作日志', shortLabel: '日志', fallbackIcon: Document, matchNames: ['operation-logs'] }
 ]
+
+const menuPermissionMap = computed(() => {
+  const map = new Map<string, PermissionItem>()
+  permissionOptions.value
+    .filter((item) => item.type === 'MENU' && item.enabled)
+    .forEach((item) => {
+      if (!map.has(item.code)) {
+        map.set(item.code, item)
+      }
+    })
+  return map
+})
+
+function resolveMenuIcon(iconName: string | null | undefined, fallbackIcon: unknown) {
+  if (iconName && iconRegistry[iconName]) {
+    return iconRegistry[iconName]
+  }
+  return fallbackIcon
+}
+
+function buildMenuItems(seeds: MenuSeed[]) {
+  return seeds.map<MenuItem>((seed) => {
+    const configured = menuPermissionMap.value.get(seed.permission)
+    const uniquePermissionSeed = seeds.filter((item) => item.permission === seed.permission).length === 1
+    return {
+      path: uniquePermissionSeed ? (configured?.path || seed.fallbackPath) : seed.fallbackPath,
+      label: uniquePermissionSeed ? (configured?.name || seed.fallbackLabel) : seed.fallbackLabel,
+      shortLabel: seed.shortLabel,
+      permission: seed.permission,
+      icon: uniquePermissionSeed ? resolveMenuIcon(configured?.icon, seed.fallbackIcon) : seed.fallbackIcon,
+      matchNames: seed.matchNames
+    }
+  })
+}
+
+const primaryMenuItems = computed(() => buildMenuItems(primaryMenuSeeds))
+const integrationMenuItems = computed(() => buildMenuItems(integrationMenuSeeds))
+const trailingMenuItems = computed(() => buildMenuItems(trailingMenuSeeds))
+const systemMenuItems = computed(() => buildMenuItems(systemMenuSeeds))
 
 const pageTitle = computed(() => {
   if (appStore.dynamicPageTitle && appStore.dynamicPageTitleRouteName === String(route.name || '')) {
@@ -753,10 +832,10 @@ const pageTitle = computed(() => {
   }
   return (route.meta.title as string) || 'AI代理工程管理平台'
 })
-const visiblePrimaryMenus = computed(() => primaryMenuItems.filter((item) => authStore.hasPermission(item.permission)))
-const visibleIntegrationMenus = computed(() => integrationMenuItems.filter((item) => authStore.hasPermission(item.permission)))
-const visibleTrailingMenus = computed(() => trailingMenuItems.filter((item) => authStore.hasPermission(item.permission)))
-const visibleSystemMenus = computed(() => systemMenuItems.filter((item) => authStore.hasPermission(item.permission)))
+const visiblePrimaryMenus = computed(() => primaryMenuItems.value.filter((item) => authStore.hasPermission(item.permission)))
+const visibleIntegrationMenus = computed(() => integrationMenuItems.value.filter((item) => authStore.hasPermission(item.permission)))
+const visibleTrailingMenus = computed(() => trailingMenuItems.value.filter((item) => authStore.hasPermission(item.permission)))
+const visibleSystemMenus = computed(() => systemMenuItems.value.filter((item) => authStore.hasPermission(item.permission)))
 const isDashboardRoute = computed(() => route.name === 'dashboard')
 const isIterationWorkspaceRoute = computed(() => route.name === 'project-iterations')
 const isWikiSpaceRoute = computed(() => route.name === 'wiki-space' || route.name === 'wiki-space-page')
@@ -814,7 +893,7 @@ const projectWorkspaceMenus = computed<MenuItem[]>(() => {
       permission: 'wiki:view',
       icon: Document,
       matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page', 'wiki-space-memory-fact-graph']
-    },
+    }
   ]
 })
 const visibleProjectWorkspaceMenus = computed(() => projectWorkspaceMenus.value.filter((item) => authStore.hasPermission(item.permission)))
@@ -1172,6 +1251,14 @@ const handleNotificationListScroll = async (event: Event) => {
   await notificationStore.loadNotifications(true)
 }
 
+async function loadMenuPermissions() {
+  try {
+    permissionOptions.value = await listPermissionOptions()
+  } catch {
+    permissionOptions.value = []
+  }
+}
+
 // 当用户进入系统管理子页时，展开态自动展开对应分组，避免丢失当前定位。
 watch(
   [
@@ -1203,6 +1290,7 @@ watch(
 
 onMounted(() => {
   notificationStore.bootstrap().catch(() => undefined)
+  loadMenuPermissions().catch(() => undefined)
   syncViewportMode()
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', syncViewportMode)

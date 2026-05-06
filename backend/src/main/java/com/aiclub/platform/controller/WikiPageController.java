@@ -2,7 +2,6 @@ package com.aiclub.platform.controller;
 
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
-import com.aiclub.platform.dto.UploadedFileSummary;
 import com.aiclub.platform.dto.WikiPageDetail;
 import com.aiclub.platform.dto.WikiPageSummary;
 import com.aiclub.platform.dto.WikiPageTreeNode;
@@ -10,7 +9,6 @@ import com.aiclub.platform.dto.WikiPageVersionSummary;
 import com.aiclub.platform.dto.WikiSemanticSearchResult;
 import com.aiclub.platform.dto.request.CreateWikiPageRequest;
 import com.aiclub.platform.dto.request.UpdateWikiPageRequest;
-import com.aiclub.platform.service.TaskCommentImageStorageService;
 import com.aiclub.platform.service.WikiPageService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -22,8 +20,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.util.List;
 
@@ -35,12 +31,9 @@ import java.util.List;
 public class WikiPageController {
 
     private final WikiPageService wikiPageService;
-    private final TaskCommentImageStorageService taskCommentImageStorageService;
 
-    public WikiPageController(WikiPageService wikiPageService,
-                              TaskCommentImageStorageService taskCommentImageStorageService) {
+    public WikiPageController(WikiPageService wikiPageService) {
         this.wikiPageService = wikiPageService;
-        this.taskCommentImageStorageService = taskCommentImageStorageService;
     }
 
     /**
@@ -171,18 +164,4 @@ public class WikiPageController {
         return ApiResponse.success(wikiPageService.relatedPages(projectId, pageId, 8));
     }
 
-    /**
-     * Wiki Markdown 图片上传，复用平台已有 MinIO 图片链路。
-     */
-    @PostMapping("/images")
-    @RequirePermission("wiki:view")
-    public ApiResponse<UploadedFileSummary> uploadImage(@PathVariable Long projectId,
-                                                        @RequestParam("file") MultipartFile file) {
-        TaskCommentImageStorageService.StoredCommentImage stored = taskCommentImageStorageService.store(file, "wiki-pages/project-" + projectId);
-        String url = ServletUriComponentsBuilder.fromCurrentContextPath()
-                .path("/comment-images")
-                .queryParam("key", stored.objectKey())
-                .toUriString();
-        return ApiResponse.success(new UploadedFileSummary(url, stored.fileName(), stored.size()));
-    }
 }
