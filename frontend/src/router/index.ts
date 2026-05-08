@@ -32,6 +32,7 @@ import WikiSpaceView from '@/views/WikiSpaceView.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const MemoryFactGraphView = () => import('@/views/MemoryFactGraphView.vue')
+const PrReviewStatsView = () => import('@/views/PrReviewStatsView.vue')
 
 const APP_TITLE = 'AI代理工程管理平台'
 
@@ -90,6 +91,7 @@ const router = createRouter({
         { path: 'permissions', name: 'permissions', component: PermissionView, meta: { title: '功能管理', permission: 'system:permission:view' } },
         { path: 'tools', name: 'tools', component: ToolConfigView, meta: { title: '工具配置', permission: 'system:tool:view' } },
         { path: 'shortcuts', name: 'shortcuts', component: ShortcutEntryManagementView, meta: { title: '快捷入口管理', permission: 'system:shortcut:view' } },
+        { path: 'pr-review-stats', name: 'pr-review-stats', component: PrReviewStatsView, meta: { title: 'PR评审统计', permission: 'system:pr-review:view' } },
         { path: 'scan-rulesets', name: 'scan-rulesets', component: RepositoryScanRulesetView, meta: { title: '扫描规则集', permission: 'scan:ruleset:view' } },
         { path: 'operation-logs', name: 'operation-logs', component: OperationLogView, meta: { title: '操作日志', permission: 'system:operation-log:view' } }
       ]

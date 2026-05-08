@@ -78,6 +78,11 @@ platform:
       client-secret: ${PLATFORM_GITLAB_OAUTH_CLIENT_SECRET:}
       redirect-uri: ${PLATFORM_GITLAB_OAUTH_REDIRECT_URI:http://localhost:5173/profile/gitlab-callback}
       state-expire-minutes: ${PLATFORM_GITLAB_OAUTH_STATE_EXPIRE_MINUTES:10}
+  pr-review:
+    oa-base-url: ${PLATFORM_PR_REVIEW_OA_BASE_URL:http://192.168.110.251:8082}
+    default-token: ${PLATFORM_PR_REVIEW_DEFAULT_TOKEN:bef46f6a-2d56-48f2-9aad-1ada59c4b106}
+    default-user-id: ${PLATFORM_PR_REVIEW_DEFAULT_USER_ID:mani}
+    default-dev-group-name: ${PLATFORM_PR_REVIEW_DEFAULT_DEV_GROUP_NAME:生态遥感事业部-产品中心}
   gitee:
     default-api-url: ${PLATFORM_GITEE_DEFAULT_API_URL:https://api.gitee.com/enterprises}
     binding:
@@ -116,6 +121,13 @@ platform:
       database-url: ${PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_URL:jdbc:postgresql://localhost:5432/hindsight}
       database-username: ${PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_USERNAME:${DB_USERNAME:aiclub}}
       database-password: ${PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_PASSWORD:${DB_PASSWORD:aiclub123}}
+  yaade:
+    base-url: ${PLATFORM_YAADE_BASE_URL:http://localhost:9339/api/yaade/proxy}
+    admin-username: ${PLATFORM_YAADE_ADMIN_USERNAME:admin}
+    admin-password: ${PLATFORM_YAADE_ADMIN_PASSWORD:password}
+    default-user-password: ${PLATFORM_YAADE_DEFAULT_USER_PASSWORD:password}
+    public-collection-name: ${PLATFORM_YAADE_PUBLIC_COLLECTION_NAME:未关联项目}
+    proxy-session-ttl-minutes: ${PLATFORM_YAADE_PROXY_SESSION_TTL_MINUTES:120}
   internal:
     allow-local-bypass: ${PLATFORM_INTERNAL_ALLOW_LOCAL_BYPASS:true}
     service-token: ${PLATFORM_INTERNAL_SERVICE_TOKEN:git-ai-club-internal-service-token}

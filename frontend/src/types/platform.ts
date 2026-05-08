@@ -1598,3 +1598,61 @@ export interface PlatformToolItem {
   displayNameOverride: string
   descriptionOverride: string
 }
+
+export interface PrReviewStatsGroupItem {
+  id: number
+  name: string
+}
+
+export interface PrReviewStatsConfigItem {
+  oaBaseUrl: string
+  defaultToken: string
+  defaultUserId: string
+  defaultDevGroupName: string
+  groups: PrReviewStatsGroupItem[]
+}
+
+export interface PrReviewStatsPendingTaskItem {
+  ident: string
+  title: string
+  assigneeRemark: string
+  projectName: string
+  prTitle: string
+  prState: string
+}
+
+export interface PrReviewStatsPendingTaskGroupItem {
+  assigneeRemark: string
+  count: number
+  issueBracketText: string
+  tasks: PrReviewStatsPendingTaskItem[]
+}
+
+export interface PrReviewStatsSummaryItem {
+  startTime: string
+  endTime: string
+  groupId: number
+  groupName: string
+  token: string
+  userId: string
+  totalPrCount: number
+  closedPrCount: number
+  mergedOrClosedDevelopmentCount: number
+  unmergedDevelopmentCount: number
+  rejectRate: number
+  rejectTargetRate: number
+  rejectRateQualified: boolean
+  allMerged: boolean
+  issueBracketSuggestion: string
+  summaryMarkdown: string
+  pendingTaskGroups: PrReviewStatsPendingTaskGroupItem[]
+}
+
+export interface PrReviewStatsQueryPayload {
+  startTime: string
+  endTime: string
+  userId: string
+  token: string
+  groupId: number
+  groupName?: string
+}

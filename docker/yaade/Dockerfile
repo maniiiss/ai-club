@@ -1,0 +1,54 @@
+FROM alpine/git:2.47.2 AS source
+
+ARG YAADE_REF=main
+
+WORKDIR /workspace
+
+RUN git clone --depth 1 --branch "${YAADE_REF}" https://github.com/EsperoTech/yaade.git yaade
+
+
+FROM node:20-bullseye AS client-builder
+
+WORKDIR /workspace/yaade
+
+COPY --from=source /workspace/yaade /workspace/yaade
+COPY docker/yaade/scripts/apply-zh-cn.mjs /opt/aiclub-yaade/apply-zh-cn.mjs
+
+# 在 client 构建前注入中文文案补丁，保持服务端逻辑不变，只替换前端高频界面文案。
+RUN node /opt/aiclub-yaade/apply-zh-cn.mjs /workspace/yaade
+
+WORKDIR /workspace/yaade/client
+
+RUN npm install
+RUN npm run build
+
+
+FROM gradle:8.10.2-jdk17 AS server-builder
+
+WORKDIR /workspace/yaade
+
+COPY --from=source /workspace/yaade /workspace/yaade
+COPY --from=client-builder /workspace/yaade/client/dist /workspace/yaade/server/src/main/resources/webroot
+
+WORKDIR /workspace/yaade/server
+
+RUN chmod +x gradlew
+RUN ./gradlew clean build
+
+
+FROM amazoncorretto:17
+
+WORKDIR /app
+
+EXPOSE 9339
+
+COPY --from=server-builder /workspace/yaade/server/build/libs/dependencies/*.jar /app/libs/
+COPY --from=server-builder /workspace/yaade/server/build/resources/main /app/resources
+COPY --from=server-builder /workspace/yaade/server/build/classes/kotlin/main /app/classes
+COPY --from=server-builder /workspace/yaade/server/build/classes/java/main /app/classes
+COPY --from=server-builder /workspace/yaade/server/build/libs/*.jar /app/libs/
+
+ENV CLASSPATH=/app/classes:/app/resources:/app/libs/*
+ENV YAADE_HEAP_SIZE=""
+
+ENTRYPOINT ["sh", "-c", "if [ -z \"$YAADE_HEAP_SIZE\" ]; then java com.espero.yaade.MainKt; else java -Xmx${YAADE_HEAP_SIZE} com.espero.yaade.MainKt; fi"]

@@ -293,10 +293,10 @@
       </div>
     </el-aside>
 
-    <el-container
-      class="layout-main-shell"
-      :class="{ 'mobile-main-shell': isMobileViewport && !isIterationWorkspaceRoute, 'wiki-space-main-shell': isWikiSpaceRoute }"
-    >
+      <el-container
+        class="layout-main-shell"
+        :class="{ 'mobile-main-shell': isMobileViewport && !isIterationWorkspaceRoute, 'wiki-space-main-shell': isWikiSpaceRoute }"
+      >
       <el-header v-if="!isIterationWorkspaceRoute" class="layout-header">
         <div class="header-search-group">
           <h1 class="header-page-title" :title="pageTitle">{{ pageTitle }}</h1>
@@ -774,7 +774,8 @@ const integrationMenuSeeds: MenuSeed[] = [
 ]
 
 const trailingMenuSeeds: MenuSeed[] = [
-  { permission: 'model:view', fallbackPath: '/models', fallbackLabel: '模型管理', shortLabel: '模型', fallbackIcon: Cpu, matchNames: ['models'] }
+  { permission: 'model:view', fallbackPath: '/models', fallbackLabel: '模型管理', shortLabel: '模型', fallbackIcon: Cpu, matchNames: ['models'] },
+  { permission: 'system:pr-review:view', fallbackPath: '/pr-review-stats', fallbackLabel: 'PR评审统计', shortLabel: 'PR评审', fallbackIcon: DataAnalysis, matchNames: ['pr-review-stats'] }
 ]
 
 const systemMenuSeeds: MenuSeed[] = [

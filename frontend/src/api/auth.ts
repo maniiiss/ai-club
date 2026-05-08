@@ -57,5 +57,5 @@ export const changePasswordApi = async (payload: ChangePasswordPayload) => {
 }
 
 export const logoutApi = async () => {
-  await http.post<ApiResponse<null>>('/api/auth/logout')
+  await http.post<ApiResponse<null>>('/api/auth/logout', null, { withCredentials: true })
 }

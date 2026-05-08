@@ -51,6 +51,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -76,6 +78,8 @@ import java.util.Set;
 @Transactional(readOnly = true)
 public class PlatformStoreService {
 
+    private static final Logger log = LoggerFactory.getLogger(PlatformStoreService.class);
+
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final String WORK_ITEM_CODE_PREFIX = "#";
@@ -100,6 +104,7 @@ public class PlatformStoreService {
     private final RequirementModuleOptionService requirementModuleOptionService;
     private final TaskPrdService taskPrdService;
     private final DashboardShortcutEntryService dashboardShortcutEntryService;
+    private final YaadeProjectSyncService yaadeProjectSyncService;
     private final SecureRandom workItemCodeRandom = new SecureRandom();
 
     public PlatformStoreService(ProjectRepository projectRepository,
@@ -118,7 +123,8 @@ public class PlatformStoreService {
                                 ProjectDataPermissionService projectDataPermissionService,
                                 RequirementModuleOptionService requirementModuleOptionService,
                                 TaskPrdService taskPrdService,
-                                DashboardShortcutEntryService dashboardShortcutEntryService) {
+                                DashboardShortcutEntryService dashboardShortcutEntryService,
+                                YaadeProjectSyncService yaadeProjectSyncService) {
         this.projectRepository = projectRepository;
         this.projectGitlabBindingRepository = projectGitlabBindingRepository;
         this.agentRepository = agentRepository;
@@ -136,6 +142,7 @@ public class PlatformStoreService {
         this.requirementModuleOptionService = requirementModuleOptionService;
         this.taskPrdService = taskPrdService;
         this.dashboardShortcutEntryService = dashboardShortcutEntryService;
+        this.yaadeProjectSyncService = yaadeProjectSyncService;
     }
 
     public DashboardOverview getDashboardOverview() {
@@ -406,6 +413,11 @@ public class PlatformStoreService {
         entity.setMembers(members);
         ProjectSummary summary = toProjectSummary(projectRepository.save(entity));
         knowledgeGraphService.rebuildProjectGraph(summary.id());
+        try {
+            yaadeProjectSyncService.ensureProjectBinding(entity);
+        } catch (RuntimeException ex) {
+            log.warn("创建项目后同步 Yaade 绑定失败, projectId={}", summary.id(), ex);
+        }
         return summary;
     }
 
@@ -427,6 +439,11 @@ public class PlatformStoreService {
         entity.setDescription(defaultString(request.description()));
         ProjectSummary summary = toProjectSummary(projectRepository.save(entity));
         knowledgeGraphService.rebuildProjectGraph(id);
+        try {
+            yaadeProjectSyncService.syncProjectRename(entity);
+        } catch (RuntimeException ex) {
+            log.warn("更新项目后同步 Yaade 绑定失败, projectId={}", id, ex);
+        }
         return summary;
     }
 
@@ -434,6 +451,11 @@ public class PlatformStoreService {
     public void deleteProject(Long id) {
         ProjectEntity entity = requireProject(id);
         projectDataPermissionService.requireProjectEditable(entity);
+        try {
+            yaadeProjectSyncService.archiveProjectBinding(id, entity.getName());
+        } catch (RuntimeException ex) {
+            log.warn("删除项目前归档 Yaade collection 失败, projectId={}", id, ex);
+        }
         projectRepository.delete(entity);
     }
 

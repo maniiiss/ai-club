@@ -83,6 +83,9 @@ class PlatformStoreServiceModelConfigTests {
     @Mock
     private DashboardShortcutEntryService dashboardShortcutEntryService;
 
+    @Mock
+    private YaadeProjectSyncService yaadeProjectSyncService;
+
     private PlatformStoreService platformStoreService;
 
     @BeforeEach
@@ -104,7 +107,8 @@ class PlatformStoreServiceModelConfigTests {
                 projectDataPermissionService,
                 requirementModuleOptionService,
                 taskPrdService,
-                dashboardShortcutEntryService
+                dashboardShortcutEntryService,
+                yaadeProjectSyncService
         );
     }
 
