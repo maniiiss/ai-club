@@ -44,6 +44,9 @@ git-ai-club/
 7. Hindsight 向量重建：
    `python .\scripts\rebuild_hindsight_vectors.py`
    作用：备份 `hindsight` 数据库、清理旧向量快照，并按当前 Wiki 页面重新回灌平台托管的记忆数据。
+8. 环境变量升级：
+   `bash ./scripts/upgrade-env.sh`
+   作用：将 `.env.example` / `.env.server.example` 中新增的配置项增量补齐到对应环境文件，并提示仍需人工补全的字段。
 
 ### Linux 脚本入口
 
@@ -66,6 +69,9 @@ git-ai-club/
 7. Hindsight 向量重建：
    `python ./scripts/rebuild_hindsight_vectors.py`
    作用：备份 `hindsight` 数据库、清理旧向量快照，并按当前 Wiki 页面重新回灌平台托管的记忆数据。
+8. 环境变量升级：
+   `bash ./scripts/upgrade-env.sh`
+   作用：将 `.env.example` / `.env.server.example` 中新增的配置项增量补齐到对应环境文件，并提示仍需人工补全的字段。
 
 源码模式脚本会自动完成以下动作：
 
