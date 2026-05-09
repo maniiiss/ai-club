@@ -15,7 +15,6 @@ import com.aiclub.platform.repository.TestCaseRepository;
 import com.aiclub.platform.repository.TestCaseGiteeBindingRepository;
 import com.aiclub.platform.repository.TestPlanGiteeBindingRepository;
 import com.aiclub.platform.repository.TestPlanRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,15 +56,12 @@ public class GiteeTestPlanPushService {
     private final ProjectDataPermissionService projectDataPermissionService;
     private final GiteeApiService giteeApiService;
     private final TokenCipherService tokenCipherService;
+    private final PlatformEnvVarResolver platformEnvVarResolver;
     private final long testPlanAssigneeId;
     private final long testCaseModuleId;
     private final int testCaseType;
-    @Value("${platform.gitee.default-api-url:https://api.gitee.com/enterprises}")
+    @org.springframework.beans.factory.annotation.Value("${platform.gitee.default-api-url:https://api.gitee.com/enterprises}")
     private String defaultApiUrl = "";
-    @Value("${platform.gitee.binding.enterprise-id:0}")
-    private long configuredEnterpriseId = 0L;
-    @Value("${platform.gitee.binding.access-token:}")
-    private String configuredAccessToken = "";
 
     public GiteeTestPlanPushService(TestPlanRepository testPlanRepository,
                                     TestCaseRepository testCaseRepository,
@@ -76,9 +72,10 @@ public class GiteeTestPlanPushService {
                                     ProjectDataPermissionService projectDataPermissionService,
                                     GiteeApiService giteeApiService,
                                     TokenCipherService tokenCipherService,
-                                    @Value("${platform.gitee.test-push.test-plan-assignee-id:9917662}") long testPlanAssigneeId,
-                                    @Value("${platform.gitee.test-push.test-case-module-id:229413}") long testCaseModuleId,
-                                    @Value("${platform.gitee.test-push.test-case-type:2}") int testCaseType) {
+                                    PlatformEnvVarResolver platformEnvVarResolver,
+                                    @org.springframework.beans.factory.annotation.Value("${platform.gitee.test-push.test-plan-assignee-id:9917662}") long testPlanAssigneeId,
+                                    @org.springframework.beans.factory.annotation.Value("${platform.gitee.test-push.test-case-module-id:229413}") long testCaseModuleId,
+                                    @org.springframework.beans.factory.annotation.Value("${platform.gitee.test-push.test-case-type:2}") int testCaseType) {
         this.testPlanRepository = testPlanRepository;
         this.testCaseRepository = testCaseRepository;
         this.projectGiteeBindingRepository = projectGiteeBindingRepository;
@@ -88,6 +85,7 @@ public class GiteeTestPlanPushService {
         this.projectDataPermissionService = projectDataPermissionService;
         this.giteeApiService = giteeApiService;
         this.tokenCipherService = tokenCipherService;
+        this.platformEnvVarResolver = platformEnvVarResolver;
         this.testPlanAssigneeId = testPlanAssigneeId;
         this.testCaseModuleId = testCaseModuleId;
         this.testCaseType = testCaseType;
@@ -224,8 +222,8 @@ public class GiteeTestPlanPushService {
         if (!Boolean.TRUE.equals(binding.getEnabled())) {
             throw new IllegalStateException("当前项目的 Gitee 绑定已停用");
         }
-        if (!hasText(configuredAccessToken) && !hasText(binding.getAccessTokenCiphertext())) {
-            throw new IllegalStateException("当前项目的 Gitee 绑定缺少 Access Token");
+        if (!canResolveAccessToken(binding)) {
+            throw new IllegalStateException("请先在系统设置-环境变量管理中配置 Gitee Access Token");
         }
         return binding;
     }
@@ -246,8 +244,8 @@ public class GiteeTestPlanPushService {
         if (!Boolean.TRUE.equals(projectBinding.getEnabled())) {
             return "当前项目的 Gitee 绑定已停用";
         }
-        if (!hasText(configuredAccessToken) && !hasText(projectBinding.getAccessTokenCiphertext())) {
-            return "当前项目的 Gitee 绑定缺少 Access Token";
+        if (!canResolveAccessToken(projectBinding)) {
+            return "请先在系统设置-环境变量管理中配置 Gitee Access Token";
         }
         if (iterationGiteeBindingRepository.findByIteration_Id(testPlan.getIteration().getId()).isEmpty()) {
             return "当前测试计划所属迭代尚未绑定 Gitee 迭代";
@@ -274,23 +272,28 @@ public class GiteeTestPlanPushService {
     }
 
     private Long resolveEnterpriseId(ProjectGiteeBindingEntity projectBinding) {
-        if (configuredEnterpriseId > 0) {
-            return configuredEnterpriseId;
+        try {
+            String resolved = platformEnvVarResolver.resolve(
+                    PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID,
+                    () -> projectBinding.getEnterpriseId() == null ? null : String.valueOf(projectBinding.getEnterpriseId())
+            ).value();
+            return Long.parseLong(resolved);
+        } catch (RuntimeException exception) {
+            throw buildEnvVarException("Gitee 企业ID", exception);
         }
-        if (projectBinding.getEnterpriseId() != null) {
-            return projectBinding.getEnterpriseId();
-        }
-        throw new IllegalStateException("当前项目的 Gitee 绑定缺少企业 ID 配置");
     }
 
     private String resolveAccessToken(ProjectGiteeBindingEntity projectBinding) {
-        if (hasText(configuredAccessToken)) {
-            return configuredAccessToken.trim();
+        try {
+            return platformEnvVarResolver.resolve(
+                    PlatformEnvVarRegistry.KEY_GITEE_BINDING_ACCESS_TOKEN,
+                    () -> hasText(projectBinding.getAccessTokenCiphertext())
+                            ? tokenCipherService.decrypt(projectBinding.getAccessTokenCiphertext())
+                            : null
+            ).value();
+        } catch (RuntimeException exception) {
+            throw buildEnvVarException("Gitee Access Token", exception);
         }
-        if (hasText(projectBinding.getAccessTokenCiphertext())) {
-            return tokenCipherService.decrypt(projectBinding.getAccessTokenCiphertext());
-        }
-        throw new IllegalStateException("当前项目的 Gitee 绑定缺少 Access Token 配置");
     }
 
     private GiteeApiService.GiteeTestPlanRequest buildPlanRequest(TestPlanEntity testPlan, ProjectGiteeBindingEntity projectBinding) {
@@ -468,5 +471,21 @@ public class GiteeTestPlanPushService {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private boolean canResolveAccessToken(ProjectGiteeBindingEntity projectBinding) {
+        try {
+            return hasText(resolveAccessToken(projectBinding));
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private IllegalStateException buildEnvVarException(String label, RuntimeException exception) {
+        String message = hasText(exception.getMessage()) ? exception.getMessage().trim() : label + "配置异常";
+        if (message.contains("未配置")) {
+            return new IllegalStateException("请先在系统设置-环境变量管理中配置 " + label, exception);
+        }
+        return new IllegalStateException("系统设置-环境变量管理中的" + label + "配置无效：" + message, exception);
     }
 }

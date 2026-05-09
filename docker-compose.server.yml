@@ -24,7 +24,11 @@ services:
       - /bin/sh
       - /opt/git-ai-club/postgres/bin/start-postgres-with-auto-pgdata.sh
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiclub} -d ${POSTGRES_DB:-ai_agent_platform}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-aiclub} -d ${POSTGRES_DB:-ai_agent_platform}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -69,7 +73,11 @@ services:
     volumes:
       - "${REDIS_DATA_DIR:-/data/git-ai-club/redis}:/data"
     healthcheck:
-      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
+      test:
+        [
+          "CMD-SHELL",
+          'if [ -n "$$REDIS_PASSWORD" ]; then redis-cli -a "$$REDIS_PASSWORD" ping; else redis-cli ping; fi',
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -203,11 +211,11 @@ services:
         import time
         import urllib.error
         import urllib.request
-        
+
         base_url = os.getenv("HERMES_MEMORY_HINDSIGHT_URL", "http://hindsight:8888").rstrip("/")
         deadline = time.time() + 120
         last_error = "未知错误"
-        
+
         while time.time() < deadline:
             try:
                 with urllib.request.urlopen(f"{base_url}/health", timeout=3) as response:
@@ -222,7 +230,7 @@ services:
             except Exception as exc:
                 last_error = str(exc)
             time.sleep(2)
-        
+
         print(f"Hindsight 在 120 秒内仍未就绪，最后一次错误：{last_error}", file=sys.stderr)
         sys.exit(1)
         PY
@@ -314,6 +322,8 @@ services:
       PLATFORM_MINIO_ACCESS_KEY: ${PLATFORM_MINIO_ACCESS_KEY:-minioadmin}
       PLATFORM_MINIO_SECRET_KEY: ${PLATFORM_MINIO_SECRET_KEY:-minioadmin}
       PLATFORM_MINIO_BUCKET: ${PLATFORM_MINIO_BUCKET:-ai-club-assets}
+      PLATFORM_GITEE_BINDING_ENTERPRISE_ID: ${PLATFORM_GITEE_BINDING_ENTERPRISE_ID:-}
+      PLATFORM_GITEE_BINDING_ACCESS_TOKEN: ${PLATFORM_GITEE_BINDING_ACCESS_TOKEN:-}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
 

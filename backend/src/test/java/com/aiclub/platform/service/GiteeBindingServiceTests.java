@@ -17,10 +17,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -54,6 +54,9 @@ class GiteeBindingServiceTests {
     @Mock
     private TokenCipherService tokenCipherService;
 
+    @Mock
+    private PlatformEnvVarResolver platformEnvVarResolver;
+
     private GiteeBindingService giteeBindingService;
 
     @BeforeEach
@@ -66,10 +69,15 @@ class GiteeBindingServiceTests {
                 projectDataPermissionService,
                 giteeApiService,
                 tokenCipherService,
+                platformEnvVarResolver,
                 "https://api.gitee.com/enterprises"
         );
         lenient().when(giteeApiService.normalizeEnterpriseApiBaseUrl(anyString()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(platformEnvVarResolver.resolve(org.mockito.ArgumentMatchers.eq(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> resolveFromLegacy(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID, invocation.getArgument(1)));
+        lenient().when(platformEnvVarResolver.resolve(org.mockito.ArgumentMatchers.eq(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ACCESS_TOKEN), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> resolveFromLegacy(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ACCESS_TOKEN, invocation.getArgument(1)));
     }
 
     @Test
@@ -123,7 +131,6 @@ class GiteeBindingServiceTests {
 
     @Test
     void shouldNormalizeLegacyPublicApiUrlWhenListingProjectPrograms() {
-        configureGlobalBinding(99L, "plain-token");
         giteeBindingService = new GiteeBindingService(
                 projectRepository,
                 iterationRepository,
@@ -132,6 +139,7 @@ class GiteeBindingServiceTests {
                 projectDataPermissionService,
                 giteeApiService,
                 tokenCipherService,
+                platformEnvVarResolver,
                 "https://gitee.com/api/v8"
         );
         configureGlobalBinding(99L, "plain-token");
@@ -233,7 +241,31 @@ class GiteeBindingServiceTests {
     }
 
     private void configureGlobalBinding(long enterpriseId, String accessToken) {
-        ReflectionTestUtils.setField(giteeBindingService, "configuredEnterpriseId", enterpriseId);
-        ReflectionTestUtils.setField(giteeBindingService, "configuredAccessToken", accessToken);
+        when(platformEnvVarResolver.resolve(org.mockito.ArgumentMatchers.eq(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new PlatformEnvVarResolver.PlatformEnvVarResolvedValue(
+                        PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID,
+                        String.valueOf(enterpriseId),
+                        PlatformEnvVarRegistry.SOURCE_TYPE_STATIC
+                ));
+        when(platformEnvVarResolver.resolve(org.mockito.ArgumentMatchers.eq(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ACCESS_TOKEN), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new PlatformEnvVarResolver.PlatformEnvVarResolvedValue(
+                        PlatformEnvVarRegistry.KEY_GITEE_BINDING_ACCESS_TOKEN,
+                        accessToken,
+                        PlatformEnvVarRegistry.SOURCE_TYPE_STATIC
+                ));
+    }
+
+    @SuppressWarnings("unchecked")
+    private PlatformEnvVarResolver.PlatformEnvVarResolvedValue resolveFromLegacy(String envKey, Object supplierArg) {
+        Supplier<String> supplier = (Supplier<String>) supplierArg;
+        String value = supplier == null ? null : supplier.get();
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalStateException(envKey + "未配置");
+        }
+        return new PlatformEnvVarResolver.PlatformEnvVarResolvedValue(
+                envKey,
+                value,
+                PlatformEnvVarRegistry.EFFECTIVE_SOURCE_TYPE_LEGACY
+        );
     }
 }

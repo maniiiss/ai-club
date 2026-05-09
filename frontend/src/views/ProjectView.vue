@@ -348,6 +348,7 @@
           <section v-if="showGiteeBindingSection" class="platform-form-section">
             <div class="platform-form-section-head">
               <div class="platform-form-section-title">Gitee 绑定</div>
+              <div class="platform-form-section-subtitle">企业 ID 与 Access Token 统一由系统设置中的环境变量管理维护，这里只选择 Gitee 项目和启用状态。</div>
             </div>
             <div v-loading="giteeBindingLoading" class="project-dialog-form-grid">
               <el-form-item label="Gitee 项目" class="project-dialog-span-2">

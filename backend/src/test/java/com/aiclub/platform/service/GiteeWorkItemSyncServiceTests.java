@@ -25,9 +25,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -113,6 +115,9 @@ class GiteeWorkItemSyncServiceTests {
     @Mock
     private KnowledgeGraphService knowledgeGraphService;
 
+    @Mock
+    private PlatformEnvVarResolver platformEnvVarResolver;
+
     private GiteeWorkItemSyncService giteeWorkItemSyncService;
 
     @BeforeEach
@@ -128,8 +133,14 @@ class GiteeWorkItemSyncServiceTests {
                 projectDataPermissionService,
                 giteeApiService,
                 tokenCipherService,
-                knowledgeGraphService
+                knowledgeGraphService,
+                platformEnvVarResolver
         );
+        lenient().when(platformEnvVarResolver.resolve(org.mockito.ArgumentMatchers.eq(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> resolveFromLegacy(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID, invocation.getArgument(1)));
+        lenient().when(platformEnvVarResolver.resolve(org.mockito.ArgumentMatchers.eq(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ACCESS_TOKEN), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> resolveFromLegacy(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ACCESS_TOKEN, invocation.getArgument(1)));
+        lenient().when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
     }
 
     @Test
@@ -481,5 +492,19 @@ class GiteeWorkItemSyncServiceTests {
         assertThat(existingTask.getDescription()).isEqualTo("详情正文");
         assertThat(existingTask.getPriority()).isEqualTo("低");
         verify(giteeApiService).fetchIssueDetail("https://api.gitee.com/enterprises", "plain-token", 99L, 101L);
+    }
+
+    @SuppressWarnings("unchecked")
+    private PlatformEnvVarResolver.PlatformEnvVarResolvedValue resolveFromLegacy(String envKey, Object supplierArg) {
+        Supplier<String> supplier = (Supplier<String>) supplierArg;
+        String value = supplier == null ? null : supplier.get();
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalStateException(envKey + "未配置");
+        }
+        return new PlatformEnvVarResolver.PlatformEnvVarResolvedValue(
+                envKey,
+                value,
+                PlatformEnvVarRegistry.EFFECTIVE_SOURCE_TYPE_LEGACY
+        );
     }
 }

@@ -629,6 +629,7 @@ import {
   Finished,
   Fold,
   FolderOpened,
+  Key,
   Link,
   Management,
   Message,
@@ -783,6 +784,7 @@ const systemMenuSeeds: MenuSeed[] = [
   { permission: 'system:role:view', fallbackPath: '/roles', fallbackLabel: '角色管理', shortLabel: '角色', fallbackIcon: Management, matchNames: ['roles'] },
   { permission: 'system:permission:view', fallbackPath: '/permissions', fallbackLabel: '功能管理', shortLabel: '功能', fallbackIcon: Setting, matchNames: ['permissions'] },
   { permission: 'system:tool:view', fallbackPath: '/tools', fallbackLabel: '工具配置', shortLabel: '工具', fallbackIcon: Connection, matchNames: ['tools'] },
+  { permission: 'system:env:view', fallbackPath: '/env-vars', fallbackLabel: '环境变量管理', shortLabel: '变量', fallbackIcon: Key, matchNames: ['env-vars'] },
   { permission: 'system:shortcut:view', fallbackPath: '/shortcuts', fallbackLabel: '快捷入口管理', shortLabel: '入口', fallbackIcon: Link, matchNames: ['shortcuts'] },
   { permission: 'scan:ruleset:view', fallbackPath: '/scan-rulesets', fallbackLabel: '扫描规则集', shortLabel: '规则集', fallbackIcon: Search, matchNames: ['scan-rulesets'] },
   { permission: 'system:operation-log:view', fallbackPath: '/operation-logs', fallbackLabel: '操作日志', shortLabel: '日志', fallbackIcon: Document, matchNames: ['operation-logs'] }

@@ -87,6 +87,8 @@ class OperationLogSupportTests {
         assertThat(OperationLogSupport.isSensitiveField("newPassword")).isTrue();
         assertThat(OperationLogSupport.isSensitiveField("api_key")).isTrue();
         assertThat(OperationLogSupport.isSensitiveField("Authorization")).isTrue();
+        assertThat(OperationLogSupport.isSensitiveField("staticValue")).isTrue();
+        assertThat(OperationLogSupport.isSensitiveField("httpHeadersJson")).isTrue();
         assertThat(OperationLogSupport.isSensitiveField("username")).isFalse();
     }
 }

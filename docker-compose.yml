@@ -24,7 +24,11 @@ services:
       - /bin/sh
       - /opt/git-ai-club/postgres/bin/start-postgres-with-auto-pgdata.sh
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiclub} -d ${POSTGRES_DB:-ai_agent_platform}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-aiclub} -d ${POSTGRES_DB:-ai_agent_platform}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -99,7 +103,11 @@ services:
     volumes:
       - "${REDIS_DATA_DIR:-./.data/redis}:/data"
     healthcheck:
-      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
+      test:
+        [
+          "CMD-SHELL",
+          'if [ -n "$$REDIS_PASSWORD" ]; then redis-cli -a "$$REDIS_PASSWORD" ping; else redis-cli ping; fi',
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -283,6 +291,8 @@ services:
       PLATFORM_MINIO_ACCESS_KEY: ${PLATFORM_MINIO_ACCESS_KEY:-minioadmin}
       PLATFORM_MINIO_SECRET_KEY: ${PLATFORM_MINIO_SECRET_KEY:-minioadmin}
       PLATFORM_MINIO_BUCKET: ${PLATFORM_MINIO_BUCKET:-ai-club-assets}
+      PLATFORM_GITEE_BINDING_ENTERPRISE_ID: ${PLATFORM_GITEE_BINDING_ENTERPRISE_ID:-}
+      PLATFORM_GITEE_BINDING_ACCESS_TOKEN: ${PLATFORM_GITEE_BINDING_ACCESS_TOKEN:-}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
 

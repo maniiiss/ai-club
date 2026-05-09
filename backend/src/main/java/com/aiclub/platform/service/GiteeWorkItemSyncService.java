@@ -18,7 +18,6 @@ import com.aiclub.platform.repository.TaskRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.security.AuthContextHolder;
 import com.aiclub.platform.util.RequirementDocumentUtils;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -72,13 +71,10 @@ public class GiteeWorkItemSyncService {
     private final GiteeApiService giteeApiService;
     private final TokenCipherService tokenCipherService;
     private final KnowledgeGraphService knowledgeGraphService;
+    private final PlatformEnvVarResolver platformEnvVarResolver;
     private final SecureRandom workItemCodeRandom = new SecureRandom();
-    @Value("${platform.gitee.default-api-url:https://api.gitee.com/enterprises}")
+    @org.springframework.beans.factory.annotation.Value("${platform.gitee.default-api-url:https://api.gitee.com/enterprises}")
     private String defaultApiUrl = "";
-    @Value("${platform.gitee.binding.enterprise-id:0}")
-    private long configuredEnterpriseId = 0L;
-    @Value("${platform.gitee.binding.access-token:}")
-    private String configuredAccessToken = "";
 
     public GiteeWorkItemSyncService(IterationRepository iterationRepository,
                                     IterationGiteeBindingRepository iterationGiteeBindingRepository,
@@ -90,7 +86,8 @@ public class GiteeWorkItemSyncService {
                                     ProjectDataPermissionService projectDataPermissionService,
                                     GiteeApiService giteeApiService,
                                     TokenCipherService tokenCipherService,
-                                    KnowledgeGraphService knowledgeGraphService) {
+                                    KnowledgeGraphService knowledgeGraphService,
+                                    PlatformEnvVarResolver platformEnvVarResolver) {
         this.iterationRepository = iterationRepository;
         this.iterationGiteeBindingRepository = iterationGiteeBindingRepository;
         this.projectGiteeBindingRepository = projectGiteeBindingRepository;
@@ -102,6 +99,7 @@ public class GiteeWorkItemSyncService {
         this.giteeApiService = giteeApiService;
         this.tokenCipherService = tokenCipherService;
         this.knowledgeGraphService = knowledgeGraphService;
+        this.platformEnvVarResolver = platformEnvVarResolver;
     }
 
     @Transactional
@@ -421,23 +419,28 @@ public class GiteeWorkItemSyncService {
     }
 
     private Long resolveEnterpriseId(ProjectGiteeBindingEntity projectBinding) {
-        if (configuredEnterpriseId > 0) {
-            return configuredEnterpriseId;
+        try {
+            String resolved = platformEnvVarResolver.resolve(
+                    PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID,
+                    () -> projectBinding.getEnterpriseId() == null ? null : String.valueOf(projectBinding.getEnterpriseId())
+            ).value();
+            return Long.parseLong(resolved);
+        } catch (RuntimeException exception) {
+            throw buildEnvVarException("Gitee 企业ID", exception);
         }
-        if (projectBinding.getEnterpriseId() != null) {
-            return projectBinding.getEnterpriseId();
-        }
-        throw new IllegalStateException("当前项目的 Gitee 绑定缺少企业 ID 配置");
     }
 
     private String resolveAccessToken(ProjectGiteeBindingEntity projectBinding) {
-        if (hasText(configuredAccessToken)) {
-            return configuredAccessToken.trim();
+        try {
+            return platformEnvVarResolver.resolve(
+                    PlatformEnvVarRegistry.KEY_GITEE_BINDING_ACCESS_TOKEN,
+                    () -> hasText(projectBinding.getAccessTokenCiphertext())
+                            ? tokenCipherService.decrypt(projectBinding.getAccessTokenCiphertext())
+                            : null
+            ).value();
+        } catch (RuntimeException exception) {
+            throw buildEnvVarException("Gitee Access Token", exception);
         }
-        if (hasText(projectBinding.getAccessTokenCiphertext())) {
-            return tokenCipherService.decrypt(projectBinding.getAccessTokenCiphertext());
-        }
-        throw new IllegalStateException("当前项目的 Gitee 绑定缺少 Access Token 配置");
     }
 
     private UserEntity currentUserOrNull() {
@@ -560,5 +563,13 @@ public class GiteeWorkItemSyncService {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private IllegalStateException buildEnvVarException(String label, RuntimeException exception) {
+        String message = hasText(exception.getMessage()) ? exception.getMessage().trim() : label + "配置异常";
+        if (message.contains("未配置")) {
+            return new IllegalStateException("请先在系统设置-环境变量管理中配置 " + label, exception);
+        }
+        return new IllegalStateException("系统设置-环境变量管理中的" + label + "配置无效：" + message, exception);
     }
 }

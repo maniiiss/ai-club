@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { ApiResponse, DashboardShortcutEntryItem, DataPermissionScopeValue, PageResponse, PermissionItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
+import type { ApiResponse, DashboardShortcutEntryItem, DataPermissionScopeValue, PageResponse, PermissionItem, PlatformEnvVarDetailItem, PlatformEnvVarItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
 
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
@@ -79,6 +79,13 @@ export interface PlatformToolPayload {
   descriptionOverride?: string
   enabled: boolean
   allowAutoExecute: boolean
+}
+
+export interface PlatformEnvVarPayload {
+  sourceType: 'STATIC' | 'HTTP'
+  staticValue?: string
+  httpUrl?: string | null
+  httpHeadersJson?: string | null
 }
 
 export interface DashboardShortcutAdminPayload {
@@ -208,6 +215,21 @@ export const getPlatformToolDetail = async (toolCode: string) => {
 
 export const updatePlatformTool = async (toolCode: string, payload: PlatformToolPayload) => {
   const { data } = await http.put<ApiResponse<PlatformToolItem>>(`/api/platform-tools/${encodeURIComponent(toolCode)}`, payload)
+  return data.data
+}
+
+export const listPlatformEnvVars = async () => {
+  const { data } = await http.get<ApiResponse<PlatformEnvVarItem[]>>('/api/platform-env-vars')
+  return data.data
+}
+
+export const getPlatformEnvVarDetail = async (envKey: string) => {
+  const { data } = await http.get<ApiResponse<PlatformEnvVarDetailItem>>(`/api/platform-env-vars/${encodeURIComponent(envKey)}`)
+  return data.data
+}
+
+export const updatePlatformEnvVar = async (envKey: string, payload: PlatformEnvVarPayload) => {
+  const { data } = await http.put<ApiResponse<PlatformEnvVarDetailItem>>(`/api/platform-env-vars/${encodeURIComponent(envKey)}`, payload)
   return data.data
 }
 

@@ -93,7 +93,9 @@ public final class OperationLogSupport {
             "secret",
             "apikey",
             "authorization",
-            "cookie"
+            "cookie",
+            "staticvalue",
+            "httpheadersjson"
     );
     private static final Map<String, String> MODULE_NAME_MAPPING = createModuleNameMapping();
 
@@ -491,6 +493,7 @@ public final class OperationLogSupport {
         mapping.put("HERMES", "Hermes 助手");
         mapping.put("OPERATION_LOG", "操作日志");
         mapping.put("SHORTCUT", "快捷入口管理");
+        mapping.put("ENV_VAR", "环境变量管理");
         return mapping;
     }
 

@@ -14,7 +14,6 @@ import com.aiclub.platform.repository.IterationGiteeBindingRepository;
 import com.aiclub.platform.repository.IterationRepository;
 import com.aiclub.platform.repository.ProjectGiteeBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -42,17 +41,8 @@ public class GiteeBindingService {
     private final ProjectDataPermissionService projectDataPermissionService;
     private final GiteeApiService giteeApiService;
     private final TokenCipherService tokenCipherService;
+    private final PlatformEnvVarResolver platformEnvVarResolver;
     private final String defaultApiUrl;
-    /**
-     * 项目级 Gitee 绑定先统一复用全局企业配置，避免每个项目重复录入企业凭据。
-     */
-    @Value("${platform.gitee.binding.enterprise-id:0}")
-    private long configuredEnterpriseId = 0L;
-    /**
-     * Access Token 先收敛到配置文件，项目级绑定只维护 program 选择和启用状态。
-     */
-    @Value("${platform.gitee.binding.access-token:}")
-    private String configuredAccessToken = "";
 
     public GiteeBindingService(ProjectRepository projectRepository,
                                IterationRepository iterationRepository,
@@ -61,7 +51,8 @@ public class GiteeBindingService {
                                ProjectDataPermissionService projectDataPermissionService,
                                GiteeApiService giteeApiService,
                                TokenCipherService tokenCipherService,
-                               @Value("${platform.gitee.default-api-url:https://api.gitee.com/enterprises}") String defaultApiUrl) {
+                               PlatformEnvVarResolver platformEnvVarResolver,
+                               @org.springframework.beans.factory.annotation.Value("${platform.gitee.default-api-url:https://api.gitee.com/enterprises}") String defaultApiUrl) {
         this.projectRepository = projectRepository;
         this.iterationRepository = iterationRepository;
         this.projectGiteeBindingRepository = projectGiteeBindingRepository;
@@ -69,6 +60,7 @@ public class GiteeBindingService {
         this.projectDataPermissionService = projectDataPermissionService;
         this.giteeApiService = giteeApiService;
         this.tokenCipherService = tokenCipherService;
+        this.platformEnvVarResolver = platformEnvVarResolver;
         this.defaultApiUrl = defaultApiUrl;
     }
 
@@ -254,26 +246,33 @@ public class GiteeBindingService {
     }
 
     private Long resolveEnterpriseId(ProjectGiteeBindingEntity existingBinding) {
-        if (configuredEnterpriseId > 0) {
-            return configuredEnterpriseId;
+        try {
+            String resolved = platformEnvVarResolver.resolve(
+                    PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID,
+                    () -> existingBinding != null && existingBinding.getEnterpriseId() != null
+                            ? String.valueOf(existingBinding.getEnterpriseId())
+                            : null
+            ).value();
+            return Long.parseLong(resolved);
+        } catch (RuntimeException exception) {
+            throw buildEnvVarException("Gitee 企业ID", exception);
         }
-        if (existingBinding != null && existingBinding.getEnterpriseId() != null) {
-            return existingBinding.getEnterpriseId();
-        }
-        throw new IllegalArgumentException("请先在配置文件中设置 Gitee 企业ID");
     }
 
     private String resolveAccessToken(ProjectGiteeBindingEntity existingBinding, boolean requiredForCreate) {
-        if (hasText(configuredAccessToken)) {
-            return configuredAccessToken.trim();
+        try {
+            return platformEnvVarResolver.resolve(
+                    PlatformEnvVarRegistry.KEY_GITEE_BINDING_ACCESS_TOKEN,
+                    () -> existingBinding != null && hasText(existingBinding.getAccessTokenCiphertext())
+                            ? tokenCipherService.decrypt(existingBinding.getAccessTokenCiphertext())
+                            : null
+            ).value();
+        } catch (RuntimeException exception) {
+            if (requiredForCreate) {
+                throw buildEnvVarException("Gitee Access Token", exception);
+            }
+            throw new IllegalArgumentException("当前项目缺少可用的 Gitee Access Token，请先到系统设置-环境变量管理补齐配置", exception);
         }
-        if (existingBinding != null && hasText(existingBinding.getAccessTokenCiphertext())) {
-            return tokenCipherService.decrypt(existingBinding.getAccessTokenCiphertext());
-        }
-        if (requiredForCreate) {
-            throw new IllegalArgumentException("请先在配置文件中设置 Gitee Access Token");
-        }
-        throw new IllegalArgumentException("当前项目缺少可用的 Gitee Access Token，请先补齐配置文件");
     }
 
     private ProjectGiteeBindingSummary toProjectBindingSummary(ProjectGiteeBindingEntity entity) {
@@ -281,11 +280,11 @@ public class GiteeBindingService {
                 entity.getId(),
                 entity.getProject().getId(),
                 entity.getProject().getName(),
-                resolveEnterpriseId(entity),
+                entity.getEnterpriseId(),
                 resolveApiBaseUrl(entity),
                 entity.getGiteeProgramId(),
                 entity.getGiteeProgramName(),
-                hasText(configuredAccessToken) || hasText(entity.getAccessTokenCiphertext()),
+                canResolveAccessToken(entity),
                 defaultBoolean(entity.getEnabled(), true),
                 entity.getLastTestStatus(),
                 entity.getLastTestMessage(),
@@ -323,5 +322,25 @@ public class GiteeBindingService {
 
     private boolean defaultBoolean(Boolean value, boolean defaultValue) {
         return value == null ? defaultValue : value;
+    }
+
+    private boolean canResolveAccessToken(ProjectGiteeBindingEntity existingBinding) {
+        try {
+            return hasText(resolveAccessToken(existingBinding, false));
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private IllegalArgumentException buildEnvVarException(String label, RuntimeException exception) {
+        String message = trimToDefault(exception.getMessage(), label + "配置异常");
+        if (message.contains("未配置")) {
+            return new IllegalArgumentException("请先在系统设置-环境变量管理中配置 " + label, exception);
+        }
+        return new IllegalArgumentException("系统设置-环境变量管理中的" + label + "配置无效：" + message, exception);
+    }
+
+    private String trimToDefault(String value, String fallback) {
+        return hasText(value) ? value.trim() : fallback;
     }
 }

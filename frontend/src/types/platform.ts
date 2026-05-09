@@ -1599,6 +1599,28 @@ export interface PlatformToolItem {
   descriptionOverride: string
 }
 
+export interface PlatformEnvVarItem {
+  envKey: string
+  displayName: string
+  description: string
+  sensitive: boolean
+  sourceType: string | null
+  effectiveSourceType: string
+  configured: boolean
+  effectiveStatus: 'ACTIVE' | 'ERROR' | 'MISSING' | string
+  effectiveStatusMessage: string
+  updatedAt: string | null
+}
+
+export interface PlatformEnvVarDetailItem extends PlatformEnvVarItem {
+  staticValue: string
+  staticValueConfigured: boolean
+  httpUrl: string
+  httpHeadersJson: string
+  httpHeadersConfigured: boolean
+  resolvedValuePreview: string
+}
+
 export interface PrReviewStatsGroupItem {
   id: number
   name: string

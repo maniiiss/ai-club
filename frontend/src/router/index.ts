@@ -21,6 +21,7 @@ import UserView from '@/views/UserView.vue'
 import RoleView from '@/views/RoleView.vue'
 import PermissionView from '@/views/PermissionView.vue'
 import ToolConfigView from '@/views/ToolConfigView.vue'
+import EnvironmentVariableManagementView from '@/views/EnvironmentVariableManagementView.vue'
 import ShortcutEntryManagementView from '@/views/ShortcutEntryManagementView.vue'
 import RepositoryScanRulesetView from '@/views/RepositoryScanRulesetView.vue'
 import OperationLogView from '@/views/OperationLogView.vue'
@@ -90,6 +91,7 @@ const router = createRouter({
         { path: 'roles', name: 'roles', component: RoleView, meta: { title: '角色管理', permission: 'system:role:view' } },
         { path: 'permissions', name: 'permissions', component: PermissionView, meta: { title: '功能管理', permission: 'system:permission:view' } },
         { path: 'tools', name: 'tools', component: ToolConfigView, meta: { title: '工具配置', permission: 'system:tool:view' } },
+        { path: 'env-vars', name: 'env-vars', component: EnvironmentVariableManagementView, meta: { title: '环境变量管理', permission: 'system:env:view' } },
         { path: 'shortcuts', name: 'shortcuts', component: ShortcutEntryManagementView, meta: { title: '快捷入口管理', permission: 'system:shortcut:view' } },
         { path: 'pr-review-stats', name: 'pr-review-stats', component: PrReviewStatsView, meta: { title: 'PR评审统计', permission: 'system:pr-review:view' } },
         { path: 'scan-rulesets', name: 'scan-rulesets', component: RepositoryScanRulesetView, meta: { title: '扫描规则集', permission: 'scan:ruleset:view' } },
