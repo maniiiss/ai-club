@@ -124,7 +124,7 @@ services:
       HINDSIGHT_API_RERANKER_LITELLM_API_KEY: ${HINDSIGHT_API_RERANKER_LITELLM_API_KEY:-}
       HINDSIGHT_API_RERANKER_LITELLM_MODEL: ${HINDSIGHT_API_RERANKER_LITELLM_MODEL:-cohere/rerank-english-v3.0}
       # Hindsight 固定连接独立数据库，避免与业务库 ai_agent_platform 混用。
-      HINDSIGHT_API_DATABASE_URL: postgresql://${POSTGRES_USER:-aiclub}:${POSTGRES_PASSWORD:-aiclub123}@postgres:${POSTGRES_PORT:-5432}/${HINDSIGHT_POSTGRES_DB:-hindsight}
+      HINDSIGHT_API_DATABASE_URL: postgresql://${POSTGRES_USER:-aiclub}:${POSTGRES_PASSWORD:-aiclub123}@${SERVER_HOST:-postgres}:${POSTGRES_PORT:-5432}/${HINDSIGHT_POSTGRES_DB:-hindsight}
       HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvectorscale}
       # 在 bridge 网络内固定监听容器端口，避免服务只绑定到容器回环地址导致 Hermes 无法访问。
       HINDSIGHT_API_HOST: 0.0.0.0
