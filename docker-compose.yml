@@ -154,7 +154,7 @@ services:
       HINDSIGHT_API_RERANKER_LITELLM_API_KEY: ${HINDSIGHT_API_RERANKER_LITELLM_API_KEY:-}
       HINDSIGHT_API_RERANKER_LITELLM_MODEL: ${HINDSIGHT_API_RERANKER_LITELLM_MODEL:-cohere/rerank-english-v3.0}
       # Hindsight 与业务后端共用同一 PostgreSQL 服务，通过独立数据库名隔离数据。
-      HINDSIGHT_API_DATABASE_URL: postgresql://${POSTGRES_USER:-aiclub}:${POSTGRES_PASSWORD:-aiclub123}@postgres:5432/${HINDSIGHT_POSTGRES_DB:-hindsight}
+      HINDSIGHT_API_DATABASE_URL: postgresql://${POSTGRES_USER:-aiclub}:${POSTGRES_PASSWORD:-aiclub123}@postgres:${POSTGRES_PORT:-5432}/${HINDSIGHT_POSTGRES_DB:-hindsight}
       HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvectorscale}
       HF_ENDPOINT: https://hf-mirror.com
     ports:
