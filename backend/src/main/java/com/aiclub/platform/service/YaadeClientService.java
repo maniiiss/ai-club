@@ -10,6 +10,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -278,10 +279,28 @@ public class YaadeClientService {
             );
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("调用 Yaade 失败: " + ex.getMessage(), ex);
+            throw buildTransportException(method, relativePathWithQuery, ex);
         } catch (IOException ex) {
-            throw new IllegalStateException("调用 Yaade 失败: " + ex.getMessage(), ex);
+            throw buildTransportException(method, relativePathWithQuery, ex);
         }
+    }
+
+    /**
+     * JDK HttpClient 在连接失败时经常只返回空 message，这里统一补全成可读提示，避免前端直接看到 `null`。
+     */
+    private IllegalStateException buildTransportException(String method, String relativePathWithQuery, Exception ex) {
+        String requestSummary = method + " " + buildUrl(relativePathWithQuery);
+        Throwable rootCause = rootCause(ex);
+        if (ex instanceof ConnectException || rootCause instanceof ConnectException) {
+            return new IllegalStateException("调用 Yaade 失败，无法连接 Yaade 服务: " + requestSummary, ex);
+        }
+        String detail = firstNonBlank(
+                ex.getMessage(),
+                rootCause == null ? null : rootCause.getMessage(),
+                rootCause == null ? null : rootCause.getClass().getSimpleName(),
+                ex.getClass().getSimpleName()
+        );
+        return new IllegalStateException("调用 Yaade 失败，" + requestSummary + "，原因: " + detail, ex);
     }
 
     private String buildUrl(String relativePathWithQuery) {
@@ -293,6 +312,14 @@ public class YaadeClientService {
             normalizedPath = "/" + normalizedPath;
         }
         return yaadeProperties.getBaseUrl() + normalizedPath;
+    }
+
+    private Throwable rootCause(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null && current.getCause() != null && current.getCause() != current) {
+            current = current.getCause();
+        }
+        return current;
     }
 
     private JsonNode readTree(byte[] body) {
@@ -333,6 +360,18 @@ public class YaadeClientService {
                 .map(entry -> entry.getKey() + "=" + entry.getValue())
                 .reduce((left, right) -> left + "; " + right)
                 .orElse("");
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null || values.length == 0) {
+            return "";
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
     }
 
     private void flattenCollection(JsonNode node, List<YaadeRemoteCollection> result) {

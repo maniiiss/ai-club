@@ -199,7 +199,7 @@ services:
           echo "    - git_ai_club"
           echo "mcp_servers:"
           echo "  git_ai_club:"
-          echo "    url: http://code-processing:9000/mcp/"
+          echo "    url: http://${SERVER_HOST:-code-processing}:${CODE_PROCESSING_PORT:-9000}/mcp/"
           echo "    headers:"
           echo "      Authorization: Bearer ${PLATFORM_HERMES_MCP_SHARED_TOKEN:-git-ai-club-hermes-mcp-token}"
           echo "    enabled: true"
@@ -299,7 +299,7 @@ services:
       REDIS_PORT: 6379
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      PLATFORM_CODE_PROCESSING_BASE_URL: http://code-processing:9000
+      PLATFORM_CODE_PROCESSING_BASE_URL: http://${SERVER_HOST:-code-processing}:${CODE_PROCESSING_PORT:-9000}
       PLATFORM_HERMES_BASE_URL: http://hermes:18080/v1
       PLATFORM_HERMES_API_KEY: ${PLATFORM_HERMES_API_KEY:-}
       PLATFORM_HERMES_MODEL: ${PLATFORM_HERMES_MODEL:-hermes-agent}

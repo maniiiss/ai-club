@@ -9,12 +9,14 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpHeaders;
 
+import java.net.ConnectException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
@@ -101,5 +103,17 @@ class YaadeClientServiceTests {
         );
 
         assertThat(response.isUnauthorized()).isTrue();
+    }
+
+    @Test
+    void shouldExposeReadableMessageWhenConnectExceptionHasNoMessage() throws Exception {
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenThrow(new ConnectException());
+
+        assertThatThrownBy(() -> yaadeClientService.login("alice", "secret"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("无法连接 Yaade 服务")
+                .hasMessageContaining("POST")
+                .hasMessageContaining("/api/login");
     }
 }
