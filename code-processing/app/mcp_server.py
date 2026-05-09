@@ -18,11 +18,17 @@ mcp_server = FastMCP(
             "127.0.0.1:*",
             "localhost:*",
             "host.docker.internal:*",
+            "code-processing:*",
+            "backend:*",
+            "hermes:*",
         ],
         allowed_origins=[
             "http://127.0.0.1:*",
             "http://localhost:*",
             "http://host.docker.internal:*",
+            "http://code-processing:*",
+            "http://backend:*",
+            "http://hermes:*",
         ],
     ),
 )

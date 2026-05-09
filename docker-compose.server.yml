@@ -124,7 +124,8 @@ services:
       HINDSIGHT_API_RERANKER_LITELLM_API_KEY: ${HINDSIGHT_API_RERANKER_LITELLM_API_KEY:-}
       HINDSIGHT_API_RERANKER_LITELLM_MODEL: ${HINDSIGHT_API_RERANKER_LITELLM_MODEL:-cohere/rerank-english-v3.0}
       # Hindsight 固定连接独立数据库，避免与业务库 ai_agent_platform 混用。
-      HINDSIGHT_API_DATABASE_URL: postgresql://${POSTGRES_USER:-aiclub}:${POSTGRES_PASSWORD:-aiclub123}@${SERVER_HOST:-postgres}:${POSTGRES_PORT:-5432}/${HINDSIGHT_POSTGRES_DB:-hindsight}
+      # 容器间固定通过 compose 服务名访问 PostgreSQL，避免误走宿主机映射端口导致联通性抖动。
+      HINDSIGHT_API_DATABASE_URL: postgresql://${POSTGRES_USER:-aiclub}:${POSTGRES_PASSWORD:-aiclub123}@postgres:5432/${HINDSIGHT_POSTGRES_DB:-hindsight}
       HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvectorscale}
       # 在 bridge 网络内固定监听容器端口，避免服务只绑定到容器回环地址导致 Hermes 无法访问。
       HINDSIGHT_API_HOST: 0.0.0.0
@@ -154,16 +155,17 @@ services:
       HERMES_LLM_API_KEY: ${HERMES_LLM_API_KEY:-}
       HERMES_LLM_BASE_URL: ${HERMES_LLM_BASE_URL:-}
       HERMES_MEMORY_PROVIDER: hindsight
-      HERMES_MEMORY_HINDSIGHT_URL: "http://${SERVER_HOST:-hindsight}:${HINDSIGHT_PORT:-8888}"
-      HINDSIGHT_API_URL: "http://${SERVER_HOST:-hindsight}:${HINDSIGHT_PORT:-8888}"
-      HINDSIGHT_API_KEY: local
+      # 容器内调用 Hindsight 必须走服务名，不能复用面向浏览器的 SERVER_HOST。
+      HERMES_MEMORY_HINDSIGHT_URL: http://hindsight:8888
+      HINDSIGHT_API_URL: http://hindsight:8888
+      HINDSIGHT_API_KEY: ${HINDSIGHT_API_KEY:-local}
       HINDSIGHT_LLM_API_KEY: ${HERMES_LLM_API_KEY:-}
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: 18080
       API_SERVER_KEY: ${PLATFORM_HERMES_API_KEY:-}
       API_SERVER_MODEL_NAME: ${PLATFORM_HERMES_MODEL:-hermes-agent}
-      HONCHO_BASE_URL: "http://${SERVER_HOST:-hindsight}:${HINDSIGHT_PORT:-8888}"
+      HONCHO_BASE_URL: http://hindsight:8888
       PLATFORM_HERMES_MCP_SHARED_TOKEN: ${PLATFORM_HERMES_MCP_SHARED_TOKEN:-git-ai-club-hermes-mcp-token}
     entrypoint:
       - /bin/sh
@@ -199,7 +201,7 @@ services:
           echo "    - git_ai_club"
           echo "mcp_servers:"
           echo "  git_ai_club:"
-          echo "    url: http://${SERVER_HOST:-code-processing}:${CODE_PROCESSING_PORT:-9000}/mcp/"
+          echo "    url: http://code-processing:9000/mcp/"
           echo "    headers:"
           echo "      Authorization: Bearer ${PLATFORM_HERMES_MCP_SHARED_TOKEN:-git-ai-club-hermes-mcp-token}"
           echo "    enabled: true"
@@ -299,7 +301,8 @@ services:
       REDIS_PORT: 6379
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      PLATFORM_CODE_PROCESSING_BASE_URL: http://${SERVER_HOST:-code-processing}:${CODE_PROCESSING_PORT:-9000}
+      # backend 调用 code-processing 走容器内服务名，避免被 MCP Host 校验或宿主机防火墙拦截。
+      PLATFORM_CODE_PROCESSING_BASE_URL: http://code-processing:9000
       PLATFORM_HERMES_BASE_URL: http://hermes:18080/v1
       PLATFORM_HERMES_API_KEY: ${PLATFORM_HERMES_API_KEY:-}
       PLATFORM_HERMES_MODEL: ${PLATFORM_HERMES_MODEL:-hermes-agent}
@@ -307,6 +310,12 @@ services:
       PLATFORM_HERMES_SESSION_PREFIX: ${PLATFORM_HERMES_SESSION_PREFIX:-ai-club:hermes}
       PLATFORM_HERMES_MAX_CONTEXT_MESSAGES: ${PLATFORM_HERMES_MAX_CONTEXT_MESSAGES:-6}
       PLATFORM_HERMES_GROUNDING_TTL_SECONDS: ${PLATFORM_HERMES_GROUNDING_TTL_SECONDS:-86400}
+      # backend 访问 Hindsight HTTP 接口与库内回退时，都固定走 docker bridge 内地址。
+      HINDSIGHT_API_URL: http://hindsight:8888
+      HINDSIGHT_API_KEY: ${HINDSIGHT_API_KEY:-}
+      PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_URL: jdbc:postgresql://postgres:5432/${HINDSIGHT_POSTGRES_DB:-hindsight}
+      PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_USERNAME: ${POSTGRES_USER:-aiclub}
+      PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
       PLATFORM_INTERNAL_SERVICE_TOKEN: ${PLATFORM_INTERNAL_SERVICE_TOKEN:-git-ai-club-internal-service-token}
       PLATFORM_GITLAB_DEFAULT_API_URL: ${PLATFORM_GITLAB_DEFAULT_API_URL:-http://192.168.110.138:30080/api/v4}
       PLATFORM_GITLAB_OAUTH_CLIENT_ID: ${PLATFORM_GITLAB_OAUTH_CLIENT_ID:-}
