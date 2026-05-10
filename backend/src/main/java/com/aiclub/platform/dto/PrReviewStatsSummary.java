@@ -10,8 +10,6 @@ public record PrReviewStatsSummary(
         String endTime,
         Long groupId,
         String groupName,
-        String token,
-        String userId,
         int totalPrCount,
         int closedPrCount,
         int mergedOrClosedDevelopmentCount,

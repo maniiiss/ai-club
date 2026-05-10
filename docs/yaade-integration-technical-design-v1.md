@@ -37,7 +37,9 @@
   - `YAADE_DEFAULT_PASSWORD`
   - `YAADE_BASE_PATH=/api/yaade/proxy`
   - `YAADE_REF`：上游 Yaade 源码版本，默认 `main`
-- 自定义镜像在 client 构建前会执行 `docker/yaade/scripts/apply-zh-cn.mjs`，把高频界面文案翻译成中文，再按 Yaade 官方链路继续执行 `client build -> server build`
+- 自定义镜像在 client 构建前会依次执行两个补丁脚本，再按 Yaade 官方链路继续执行 `client build -> server build`
+  - `docker/yaade/scripts/apply-zh-cn.mjs`：只负责把高频界面文案翻译成中文
+  - `docker/yaade/scripts/apply-aiclub-branding.mjs`：只负责注入 AI Club 品牌标题、登录页标识、嵌入态顶栏隐藏、嵌入态单点登录 loading、平台主题桥接和平台主题色映射
 - 主平台 backend 新增连接配置：
   - `platform.yaade.base-url`
   - `platform.yaade.admin-username`
@@ -71,6 +73,10 @@
 - 前端不直接访问 Yaade 原始地址，只访问平台后端 `/api/yaade/proxy/**`
 - 后端在 `POST /api/yaade/embed-sessions` 中写入平台自己的 HttpOnly cookie
 - iframe 后续请求只依赖该 cookie，由后端代发 Yaade 远端 session cookie
+- `/apis` 页面创建 iframe URL 时会附加嵌入态标记和当前平台主题 ID，并在 iframe 加载或平台主题变化时通过 `AI_CLUB_THEME_CHANGED` 消息通知 Yaade
+- 平台 `/apis` 页面保留 `AppLayout` 的真实顶栏，Hermes 助手、消息中心、用户头像菜单等能力继续由平台壳承载；Yaade 品牌补丁只在 `aiclubEmbedded=1` 时隐藏 Yaade 原生顶栏并释放工作区高度
+- Yaade 嵌入态登录页会先显示单点登录 loading，并等待 `/api/user` 会话确认；只有平台代理会话失效或代登失败时，才展示 Yaade 原生账密登录页
+- Yaade 品牌补丁在运行时读取 `aiclubTheme` 参数、`git-ai-club:theme` 本地缓存或主题消息，把 `sunset-orange`、`ocean-blue`、`forest-green` 映射为 Yaade 浅色工作台背景和强调色变量
 - 平台登出时同步清理本地 Yaade 代理 cookie
 - 嵌入模式下拦截 Yaade 原生 `/api/logout` 与本地密码修改接口，避免用户把 iframe 工作台踢回 Yaade 自己登录页或改坏平台托管密码
 
@@ -94,3 +100,5 @@
 - 平台代登依赖 Yaade 本地密码托管；若用户绕过代理直接修改 Yaade 本地密码，平台需要通过“重置到默认密码 + 旋转随机密码”恢复
 - Yaade 独立不可用时，`/apis` 会报错，但项目管理、测试管理等其它菜单不应受影响
 - 当前中文化采用“高频界面文案补丁”方案，不是 Yaade 官方内建 i18n；升级 `YAADE_REF` 后若上游组件文案变化，构建期补丁会主动失败并提示重新对齐
+- AI Club 品牌适配独立于中文化补丁维护，避免品牌主题和翻译文案耦合；升级 `YAADE_REF` 后若上游登录页、顶栏或主题文件结构变化，品牌补丁会主动失败并提示重新对齐
+- 平台新增主题预设时，需要同步扩展 Yaade 品牌补丁中的主题 ID 白名单与 CSS 变量映射，否则 Yaade 会回退到默认 `sunset-orange` 主题

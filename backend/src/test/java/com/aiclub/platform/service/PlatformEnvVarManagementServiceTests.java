@@ -156,4 +156,24 @@ class PlatformEnvVarManagementServiceTests {
         )).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("企业ID");
     }
+
+    @Test
+    void shouldListPrReviewOaCredentialsAsManagedEnvVars() {
+        when(platformEnvVarConfigRepository.findAll()).thenReturn(java.util.List.of());
+
+        java.util.List<com.aiclub.platform.dto.PlatformEnvVarSummary> summaries = platformEnvVarManagementService.listEnvVars().stream()
+                .filter(item -> PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_USER_ID.equals(item.envKey())
+                        || PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_TOKEN.equals(item.envKey()))
+                .toList();
+
+        assertThat(summaries).extracting(com.aiclub.platform.dto.PlatformEnvVarSummary::envKey)
+                .containsExactlyInAnyOrder(
+                        PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_USER_ID,
+                        PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_TOKEN
+                );
+        assertThat(summaries).filteredOn(item -> PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_TOKEN.equals(item.envKey()))
+                .first()
+                .extracting(com.aiclub.platform.dto.PlatformEnvVarSummary::sensitive)
+                .isEqualTo(true);
+    }
 }

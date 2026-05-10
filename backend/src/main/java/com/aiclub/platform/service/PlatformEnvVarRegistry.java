@@ -18,6 +18,8 @@ public class PlatformEnvVarRegistry {
 
     public static final String KEY_GITEE_BINDING_ENTERPRISE_ID = "PLATFORM_GITEE_BINDING_ENTERPRISE_ID";
     public static final String KEY_GITEE_BINDING_ACCESS_TOKEN = "PLATFORM_GITEE_BINDING_ACCESS_TOKEN";
+    public static final String KEY_PR_REVIEW_OA_USER_ID = "PLATFORM_PR_REVIEW_OA_USER_ID";
+    public static final String KEY_PR_REVIEW_OA_TOKEN = "PLATFORM_PR_REVIEW_OA_TOKEN";
 
     public static final String SOURCE_TYPE_STATIC = "STATIC";
     public static final String SOURCE_TYPE_HTTP = "HTTP";
@@ -56,6 +58,22 @@ public class PlatformEnvVarRegistry {
                 "项目管理、迭代同步与测试推送共用的全局访问令牌。",
                 true,
                 value -> requireText(value, "Gitee Access Token不能为空")
+        ));
+        register(new PlatformEnvVarDefinition(
+                KEY_PR_REVIEW_OA_USER_ID,
+                "",
+                "PR评审统计 OA 用户ID",
+                "PR 评审统计访问 OA 接口时使用的全局用户 ID。",
+                false,
+                value -> requireText(value, "PR评审统计 OA 用户ID不能为空")
+        ));
+        register(new PlatformEnvVarDefinition(
+                KEY_PR_REVIEW_OA_TOKEN,
+                "",
+                "PR评审统计 OA 令牌",
+                "PR 评审统计访问 OA 接口时使用的全局认证令牌。",
+                true,
+                value -> requireText(value, "PR评审统计 OA 令牌不能为空")
         ));
     }
 

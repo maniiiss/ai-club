@@ -16,14 +16,6 @@ public record PrReviewStatsQueryRequest(
         @Size(max = 32, message = "结束时间长度不能超过32")
         String endTime,
 
-        @NotBlank(message = "userId不能为空")
-        @Size(max = 100, message = "userId长度不能超过100")
-        String userId,
-
-        @NotBlank(message = "token不能为空")
-        @Size(max = 255, message = "token长度不能超过255")
-        String token,
-
         @NotNull(message = "开发组ID不能为空")
         Long groupId,
 

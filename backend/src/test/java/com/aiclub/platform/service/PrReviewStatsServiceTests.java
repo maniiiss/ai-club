@@ -16,9 +16,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -32,6 +34,9 @@ class PrReviewStatsServiceTests {
     @Mock
     private HttpResponse<String> httpResponse;
 
+    @Mock
+    private PlatformEnvVarResolver platformEnvVarResolver;
+
     private PrReviewStatsService prReviewStatsService;
 
     @BeforeEach
@@ -39,12 +44,14 @@ class PrReviewStatsServiceTests {
         prReviewStatsService = new PrReviewStatsService(
                 new ObjectMapper(),
                 buildProperties(),
+                platformEnvVarResolver,
                 httpClient
         );
     }
 
     @Test
     void shouldReturnDefaultConfigAndDecodeGroupName() throws Exception {
+        mockManagedOaCredentials("managed-user", "managed-token");
         mockResponses(List.of("""
                 {"code":200,"data":[{"id":16395347,"name":"çæé¥æäºä¸é¨-äº§åä¸­å¿"}],"msg":null}
                 """));
@@ -54,14 +61,13 @@ class PrReviewStatsServiceTests {
                 "2026-04-30 23:59:59"
         );
 
-        assertThat(config.defaultToken()).isEqualTo("default-token");
-        assertThat(config.defaultUserId()).isEqualTo("mani");
         assertThat(config.groups()).hasSize(1);
         assertThat(config.groups().get(0).name()).isEqualTo("生态遥感事业部-产品中心");
     }
 
     @Test
     void shouldCalculateRejectRateAndPendingIssueSuggestion() throws Exception {
+        mockManagedOaCredentials("managed-user", "managed-token");
         mockResponses(List.of(
                 """
                 {"code":200,"data":[
@@ -83,8 +89,6 @@ class PrReviewStatsServiceTests {
         PrReviewStatsSummary summary = prReviewStatsService.queryStats(new PrReviewStatsQueryRequest(
                 "2026-04-01 00:00:00",
                 "2026-04-30 23:59:59",
-                "mani",
-                "test-token",
                 16395347L,
                 "生态遥感事业部-产品中心"
         ));
@@ -103,7 +107,8 @@ class PrReviewStatsServiceTests {
     }
 
     @Test
-    void shouldPassHeadersWhenCallingOa() throws Exception {
+    void shouldPassManagedHeadersWhenCallingOa() throws Exception {
+        mockManagedOaCredentials("managed-user", "managed-token");
         mockResponses(List.of(
                 """
                 {"code":200,"data":[],"msg":null}
@@ -116,8 +121,6 @@ class PrReviewStatsServiceTests {
         prReviewStatsService.queryStats(new PrReviewStatsQueryRequest(
                 "2026-04-01 00:00:00",
                 "2026-04-30 23:59:59",
-                "mani",
-                "test-token",
                 16395347L,
                 "生态遥感事业部-产品中心"
         ));
@@ -125,13 +128,53 @@ class PrReviewStatsServiceTests {
         ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
         verify(httpClient, times(2)).send(requestCaptor.capture(), any(HttpResponse.BodyHandler.class));
         List<HttpRequest> requests = requestCaptor.getAllValues();
-        assertThat(requests.get(0).headers().firstValue("Qw-user-id")).contains("mani");
-        assertThat(requests.get(0).headers().firstValue("Qw-token")).contains("test-token");
+        assertThat(requests.get(0).headers().firstValue("Qw-user-id")).contains("managed-user");
+        assertThat(requests.get(0).headers().firstValue("Qw-token")).contains("managed-token");
         assertThat(requests.get(1).uri().toString()).contains("dev_group_id=16395347");
     }
 
     @Test
+    void shouldNotUsePropertiesAsCredentialFallback() throws Exception {
+        when(platformEnvVarResolver.resolve(eq(PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_USER_ID), any()))
+                .thenAnswer(invocation -> {
+                    Supplier<String> fallbackSupplier = invocation.getArgument(1);
+                    assertThat(fallbackSupplier.get()).isNull();
+                    return new PlatformEnvVarResolver.PlatformEnvVarResolvedValue(
+                            PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_USER_ID,
+                            "managed-user",
+                            PlatformEnvVarRegistry.SOURCE_TYPE_STATIC
+                    );
+                });
+        when(platformEnvVarResolver.resolve(eq(PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_TOKEN), any()))
+                .thenAnswer(invocation -> {
+                    Supplier<String> fallbackSupplier = invocation.getArgument(1);
+                    assertThat(fallbackSupplier.get()).isNull();
+                    return new PlatformEnvVarResolver.PlatformEnvVarResolvedValue(
+                            PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_TOKEN,
+                            "managed-token",
+                            PlatformEnvVarRegistry.SOURCE_TYPE_STATIC
+                    );
+                });
+        mockResponses(List.of(
+                """
+                {"code":200,"data":[],"msg":null}
+                """,
+                """
+                {"code":200,"data":[],"msg":null}
+                """
+        ));
+
+        prReviewStatsService.queryStats(new PrReviewStatsQueryRequest(
+                "2026-04-01 00:00:00",
+                "2026-04-30 23:59:59",
+                16395347L,
+                "生态遥感事业部-产品中心"
+        ));
+    }
+
+    @Test
     void shouldExpandDayRangeToFullDayWhenQueryUsesDateOnly() throws Exception {
+        mockManagedOaCredentials("managed-user", "managed-token");
         mockResponses(List.of(
                 """
                 {"code":200,"data":[],"msg":null}
@@ -144,8 +187,6 @@ class PrReviewStatsServiceTests {
         prReviewStatsService.queryStats(new PrReviewStatsQueryRequest(
                 "2026-04-01",
                 "2026-04-30",
-                "mani",
-                "test-token",
                 16395347L,
                 "生态遥感事业部-产品中心"
         ));
@@ -169,9 +210,22 @@ class PrReviewStatsServiceTests {
     private PrReviewStatsProperties buildProperties() {
         PrReviewStatsProperties properties = new PrReviewStatsProperties();
         properties.setOaBaseUrl("http://192.168.110.251:8082");
-        properties.setDefaultToken("default-token");
-        properties.setDefaultUserId("mani");
         properties.setDefaultDevGroupName("生态遥感事业部-产品中心");
         return properties;
+    }
+
+    private void mockManagedOaCredentials(String userId, String token) {
+        when(platformEnvVarResolver.resolve(eq(PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_USER_ID), any()))
+                .thenReturn(new PlatformEnvVarResolver.PlatformEnvVarResolvedValue(
+                        PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_USER_ID,
+                        userId,
+                        PlatformEnvVarRegistry.SOURCE_TYPE_STATIC
+                ));
+        when(platformEnvVarResolver.resolve(eq(PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_TOKEN), any()))
+                .thenReturn(new PlatformEnvVarResolver.PlatformEnvVarResolvedValue(
+                        PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_TOKEN,
+                        token,
+                        PlatformEnvVarRegistry.SOURCE_TYPE_STATIC
+                ));
     }
 }

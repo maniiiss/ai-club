@@ -15,7 +15,7 @@ class PrReviewStatsControllerPermissionTests {
     @Test
     void shouldUseViewPermissionForAllEndpoints() throws NoSuchMethodException {
         Method config = PrReviewStatsController.class.getMethod("config", String.class, String.class);
-        Method groups = PrReviewStatsController.class.getMethod("groups", String.class, String.class, String.class, String.class);
+        Method groups = PrReviewStatsController.class.getMethod("groups", String.class, String.class);
         Method query = PrReviewStatsController.class.getMethod("query", com.aiclub.platform.dto.request.PrReviewStatsQueryRequest.class);
 
         assertThat(config.getAnnotation(RequirePermission.class).value()).isEqualTo("system:pr-review:view");

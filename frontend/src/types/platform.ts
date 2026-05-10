@@ -1628,8 +1628,6 @@ export interface PrReviewStatsGroupItem {
 
 export interface PrReviewStatsConfigItem {
   oaBaseUrl: string
-  defaultToken: string
-  defaultUserId: string
   defaultDevGroupName: string
   groups: PrReviewStatsGroupItem[]
 }
@@ -1655,8 +1653,6 @@ export interface PrReviewStatsSummaryItem {
   endTime: string
   groupId: number
   groupName: string
-  token: string
-  userId: string
   totalPrCount: number
   closedPrCount: number
   mergedOrClosedDevelopmentCount: number
@@ -1673,8 +1669,6 @@ export interface PrReviewStatsSummaryItem {
 export interface PrReviewStatsQueryPayload {
   startTime: string
   endTime: string
-  userId: string
-  token: string
   groupId: number
   groupName?: string
 }

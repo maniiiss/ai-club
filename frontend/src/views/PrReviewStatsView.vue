@@ -45,24 +45,6 @@
       </div>
 
       <div class="pr-review-toolbar-actions">
-        <el-popover trigger="click" placement="bottom-end" :width="320" popper-class="management-list-popper">
-          <template #reference>
-            <el-button>
-              <el-icon><Setting /></el-icon>
-              <span>设置</span>
-            </el-button>
-          </template>
-          <div class="pr-review-setting-panel">
-            <label class="pr-review-form-item">
-              <span>OA 用户ID</span>
-              <el-input v-model="form.userId" placeholder="请输入 OA 用户ID" />
-            </label>
-            <label class="pr-review-form-item">
-              <span>OA 令牌</span>
-              <el-input v-model="form.token" placeholder="请输入 OA 令牌" show-password />
-            </label>
-          </div>
-        </el-popover>
         <el-button :disabled="groupLoading || !canLoadGroups" @click="handleLoadGroups">
           <el-icon><RefreshRight /></el-icon>
           <span>刷新开发组</span>
@@ -187,14 +169,12 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { MdPreview } from 'md-editor-v3'
-import { CopyDocument, DataAnalysis, DocumentCopy, RefreshRight, Setting } from '@element-plus/icons-vue'
+import { CopyDocument, DataAnalysis, DocumentCopy, RefreshRight } from '@element-plus/icons-vue'
 import { getPrReviewStatsConfig, listPrReviewStatsGroups, queryPrReviewStats } from '@/api/pr-review'
 import type { PrReviewStatsGroupItem, PrReviewStatsSummaryItem } from '@/types/platform'
 
 const form = reactive({
   timeRange: [] as string[],
-  userId: '',
-  token: '',
   groupId: null as number | null
 })
 
@@ -203,21 +183,19 @@ const groupLoading = ref(false)
 const summary = ref<PrReviewStatsSummaryItem | null>(null)
 const groupOptions = ref<PrReviewStatsGroupItem[]>([])
 
-const canLoadGroups = computed(() => form.timeRange.length === 2 && Boolean(form.userId.trim()) && Boolean(form.token.trim()))
+const canLoadGroups = computed(() => form.timeRange.length === 2)
 const canQuery = computed(() => canLoadGroups.value && form.groupId !== null)
 
 const handleLoadGroups = async () => {
   if (!canLoadGroups.value) {
-    ElMessage.warning('请先补齐统计时间、OA 用户ID和 OA 令牌')
+    ElMessage.warning('请先选择统计时间')
     return
   }
   groupLoading.value = true
   try {
     groupOptions.value = await listPrReviewStatsGroups({
       startTime: form.timeRange[0],
-      endTime: form.timeRange[1],
-      userId: form.userId.trim(),
-      token: form.token.trim()
+      endTime: form.timeRange[1]
     })
     if (groupOptions.value.length && !groupOptions.value.some((item) => item.id === form.groupId)) {
       form.groupId = groupOptions.value[0].id
@@ -238,8 +216,6 @@ const handleQuery = async () => {
     summary.value = await queryPrReviewStats({
       startTime: form.timeRange[0],
       endTime: form.timeRange[1],
-      userId: form.userId.trim(),
-      token: form.token.trim(),
       groupId: form.groupId,
       groupName: selectedGroup?.name || ''
     })
@@ -277,15 +253,10 @@ onMounted(async () => {
     startTime: form.timeRange[0],
     endTime: form.timeRange[1]
   })
-  form.userId = config.defaultUserId
-  form.token = config.defaultToken
   groupOptions.value = config.groups
   const matchedGroup = config.groups.find((item) => item.name === config.defaultDevGroupName)
   form.groupId = matchedGroup?.id ?? config.groups[0]?.id ?? null
 
-  if (!groupOptions.value.length && canLoadGroups.value) {
-    await handleLoadGroups()
-  }
   if (canQuery.value) {
     await handleQuery()
   }
@@ -376,12 +347,6 @@ onMounted(async () => {
   justify-content: flex-end;
   align-items: center;
   gap: 8px;
-}
-
-.pr-review-setting-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 
 .pr-review-metrics {

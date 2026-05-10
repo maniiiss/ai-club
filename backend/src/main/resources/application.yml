@@ -80,8 +80,6 @@ platform:
       state-expire-minutes: ${PLATFORM_GITLAB_OAUTH_STATE_EXPIRE_MINUTES:10}
   pr-review:
     oa-base-url: ${PLATFORM_PR_REVIEW_OA_BASE_URL:http://192.168.110.251:8082}
-    default-token: ${PLATFORM_PR_REVIEW_DEFAULT_TOKEN:bef46f6a-2d56-48f2-9aad-1ada59c4b106}
-    default-user-id: ${PLATFORM_PR_REVIEW_DEFAULT_USER_ID:mani}
     default-dev-group-name: ${PLATFORM_PR_REVIEW_DEFAULT_DEV_GROUP_NAME:生态遥感事业部-产品中心}
   gitee:
     default-api-url: ${PLATFORM_GITEE_DEFAULT_API_URL:https://api.gitee.com/enterprises}

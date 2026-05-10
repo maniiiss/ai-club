@@ -31,8 +31,6 @@ export const getPrReviewStatsConfig = async (payload: {
 export const listPrReviewStatsGroups = async (payload: {
   startTime: string
   endTime: string
-  userId: string
-  token: string
 }) => {
   const { data } = await http.get<ApiResponse<PrReviewStatsGroupItem[]>>('/api/pr-review-stats/groups', {
     params: cleanParams(payload)

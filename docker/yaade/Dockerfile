@@ -13,9 +13,12 @@ WORKDIR /workspace/yaade
 
 COPY --from=source /workspace/yaade /workspace/yaade
 COPY docker/yaade/scripts/apply-zh-cn.mjs /opt/aiclub-yaade/apply-zh-cn.mjs
+COPY docker/yaade/scripts/apply-aiclub-branding.mjs /opt/aiclub-yaade/apply-aiclub-branding.mjs
 
 # 在 client 构建前注入中文文案补丁，保持服务端逻辑不变，只替换前端高频界面文案。
 RUN node /opt/aiclub-yaade/apply-zh-cn.mjs /workspace/yaade
+# 在中文化之后单独注入 AI Club 品牌与主题补丁，避免品牌适配和翻译补丁耦合。
+RUN node /opt/aiclub-yaade/apply-aiclub-branding.mjs /workspace/yaade
 
 WORKDIR /workspace/yaade/client
 

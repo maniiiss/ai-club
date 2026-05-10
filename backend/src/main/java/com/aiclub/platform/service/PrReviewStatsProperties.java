@@ -5,15 +5,13 @@ import org.springframework.stereotype.Component;
 
 /**
  * PR 评审统计页面所需的 OA 默认配置。
- * 统一收敛默认地址与预填认证信息，避免前后端分别维护一份硬编码。
+ * OA 认证信息已收敛到环境变量管理，这里仅保留地址与默认开发组。
  */
 @Component
 @ConfigurationProperties(prefix = "platform.pr-review")
 public class PrReviewStatsProperties {
 
     private String oaBaseUrl = "http://192.168.110.251:8082";
-    private String defaultToken = "";
-    private String defaultUserId = "";
     private String defaultDevGroupName = "";
 
     public String getOaBaseUrl() {
@@ -22,22 +20,6 @@ public class PrReviewStatsProperties {
 
     public void setOaBaseUrl(String oaBaseUrl) {
         this.oaBaseUrl = oaBaseUrl;
-    }
-
-    public String getDefaultToken() {
-        return normalize(defaultToken, "");
-    }
-
-    public void setDefaultToken(String defaultToken) {
-        this.defaultToken = defaultToken;
-    }
-
-    public String getDefaultUserId() {
-        return normalize(defaultUserId, "");
-    }
-
-    public void setDefaultUserId(String defaultUserId) {
-        this.defaultUserId = defaultUserId;
     }
 
     public String getDefaultDevGroupName() {

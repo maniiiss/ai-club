@@ -43,12 +43,16 @@ public class PrReviewStatsService {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final PrReviewStatsProperties properties;
+    private final PlatformEnvVarResolver platformEnvVarResolver;
 
     @Autowired
-    public PrReviewStatsService(ObjectMapper objectMapper, PrReviewStatsProperties properties) {
+    public PrReviewStatsService(ObjectMapper objectMapper,
+                                PrReviewStatsProperties properties,
+                                PlatformEnvVarResolver platformEnvVarResolver) {
         this(
                 objectMapper,
                 properties,
+                platformEnvVarResolver,
                 HttpClient.newBuilder()
                         .connectTimeout(Duration.ofSeconds(10))
                         .followRedirects(HttpClient.Redirect.NORMAL)
@@ -58,9 +62,11 @@ public class PrReviewStatsService {
 
     PrReviewStatsService(ObjectMapper objectMapper,
                          PrReviewStatsProperties properties,
+                         PlatformEnvVarResolver platformEnvVarResolver,
                          HttpClient httpClient) {
         this.objectMapper = objectMapper;
         this.properties = properties;
+        this.platformEnvVarResolver = platformEnvVarResolver;
         this.httpClient = httpClient;
     }
 
@@ -69,13 +75,12 @@ public class PrReviewStatsService {
      */
     public PrReviewStatsConfigSummary getDefaultConfig(String startTime, String endTime) {
         List<PrReviewStatsGroupSummary> groups = List.of();
-        if (hasText(properties.getDefaultUserId()) && hasText(properties.getDefaultToken())) {
-            groups = listGroups(startTime, endTime, properties.getDefaultUserId(), properties.getDefaultToken());
+        OaCredential credential = tryResolveOaCredential();
+        if (credential != null) {
+            groups = listGroups(startTime, endTime, credential);
         }
         return new PrReviewStatsConfigSummary(
                 properties.getOaBaseUrl(),
-                properties.getDefaultToken(),
-                properties.getDefaultUserId(),
                 properties.getDefaultDevGroupName(),
                 groups
         );
@@ -84,7 +89,11 @@ public class PrReviewStatsService {
     /**
      * 读取 OA 可选开发组。
      */
-    public List<PrReviewStatsGroupSummary> listGroups(String startTime, String endTime, String userId, String token) {
+    public List<PrReviewStatsGroupSummary> listGroups(String startTime, String endTime) {
+        return listGroups(startTime, endTime, resolveOaCredential());
+    }
+
+    private List<PrReviewStatsGroupSummary> listGroups(String startTime, String endTime, OaCredential credential) {
         String normalizedStartTime = normalizeStartTime(startTime);
         String normalizedEndTime = normalizeEndTime(endTime);
         JsonNode root = sendJsonRequest(
@@ -94,8 +103,7 @@ public class PrReviewStatsService {
                         "start_time", normalizedStartTime,
                         "end_time", normalizedEndTime
                 ),
-                userId,
-                token
+                credential
         );
         List<PrReviewStatsGroupSummary> groups = new ArrayList<>();
         JsonNode dataNode = root.path("data");
@@ -118,7 +126,8 @@ public class PrReviewStatsService {
     public PrReviewStatsSummary queryStats(PrReviewStatsQueryRequest request) {
         String normalizedStartTime = normalizeStartTime(request.startTime());
         String normalizedEndTime = normalizeEndTime(request.endTime());
-        List<OaIssueItem> issues = queryIssues(normalizedStartTime, normalizedEndTime, request.groupId(), request.userId(), request.token());
+        OaCredential credential = resolveOaCredential();
+        List<OaIssueItem> issues = queryIssues(normalizedStartTime, normalizedEndTime, request.groupId(), credential);
         List<OaIssueItem> developmentTasks = issues.stream()
                 .filter(item -> "开发任务".equals(item.issueType()))
                 .toList();
@@ -127,7 +136,7 @@ public class PrReviewStatsService {
                 .filter(item -> !shouldIgnoreByDevContent(item.devContent()))
                 .toList();
 
-        List<OaPrItem> prs = queryPrs(normalizedStartTime, normalizedEndTime, request.groupId(), request.userId(), request.token());
+        List<OaPrItem> prs = queryPrs(normalizedStartTime, normalizedEndTime, request.groupId(), credential);
         int closedPrCount = (int) prs.stream()
                 .filter(item -> "closed".equalsIgnoreCase(item.state()))
                 .count();
@@ -145,7 +154,7 @@ public class PrReviewStatsService {
                 .filter(this::hasText)
                 .collect(Collectors.joining(","));
 
-        String groupName = resolveGroupName(request.groupId(), request.groupName(), normalizedStartTime, normalizedEndTime, request.userId(), request.token());
+        String groupName = resolveGroupName(request.groupId(), request.groupName(), normalizedStartTime, normalizedEndTime, credential);
         String summaryMarkdown = buildSummaryMarkdown(
                 request.startTime(),
                 request.endTime(),
@@ -163,8 +172,6 @@ public class PrReviewStatsService {
                 request.endTime(),
                 request.groupId(),
                 groupName,
-                request.token(),
-                request.userId(),
                 prs.size(),
                 closedPrCount,
                 mergedOrClosedDevelopmentCount,
@@ -212,15 +219,14 @@ public class PrReviewStatsService {
                 .toList();
     }
 
-    private List<OaPrItem> queryPrs(String startTime, String endTime, Long groupId, String userId, String token) {
+    private List<OaPrItem> queryPrs(String startTime, String endTime, Long groupId, OaCredential credential) {
         JsonNode root = sendJsonRequest(
                 "GET",
                 "/zz/oa/rs/get_pr?start_time=" + urlEncode(startTime)
                         + "&end_time=" + urlEncode(endTime)
                         + "&dev_group_id=" + groupId,
                 null,
-                userId,
-                token
+                credential
         );
         List<OaPrItem> result = new ArrayList<>();
         JsonNode dataNode = root.path("data");
@@ -237,7 +243,7 @@ public class PrReviewStatsService {
         return result;
     }
 
-    private List<OaIssueItem> queryIssues(String startTime, String endTime, Long groupId, String userId, String token) {
+    private List<OaIssueItem> queryIssues(String startTime, String endTime, Long groupId, OaCredential credential) {
         JsonNode root = sendJsonRequest(
                 "GET",
                 "/zz/oa/rs/get_issue?dev_group_id=" + groupId
@@ -245,8 +251,7 @@ public class PrReviewStatsService {
                         + "&start_time=" + urlEncode(startTime)
                         + "&end_time=" + urlEncode(endTime),
                 null,
-                userId,
-                token
+                credential
         );
         List<OaIssueItem> result = new ArrayList<>();
         JsonNode dataNode = root.path("data");
@@ -270,8 +275,7 @@ public class PrReviewStatsService {
     private JsonNode sendJsonRequest(String method,
                                      String pathOrUrl,
                                      Object requestBody,
-                                     String userId,
-                                     String token) {
+                                     OaCredential credential) {
         try {
             String url = pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")
                     ? pathOrUrl
@@ -279,8 +283,8 @@ public class PrReviewStatsService {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(Duration.ofSeconds(30))
-                    .header("Qw-user-id", defaultString(userId))
-                    .header("Qw-token", defaultString(token))
+                    .header("Qw-user-id", credential.userId())
+                    .header("Qw-token", credential.token())
                     .header(HttpHeaders.ACCEPT, "application/json");
 
             if ("POST".equalsIgnoreCase(method)) {
@@ -313,12 +317,11 @@ public class PrReviewStatsService {
                                     String preferredName,
                                     String startTime,
                                     String endTime,
-                                    String userId,
-                                    String token) {
+                                    OaCredential credential) {
         if (hasText(preferredName)) {
             return preferredName.trim();
         }
-        return listGroups(startTime, endTime, userId, token).stream()
+        return listGroups(startTime, endTime, credential).stream()
                 .filter(item -> item.id().equals(groupId))
                 .map(PrReviewStatsGroupSummary::name)
                 .findFirst()
@@ -441,6 +444,33 @@ public class PrReviewStatsService {
 
     private String defaultString(String value) {
         return value == null ? "" : value;
+    }
+
+    private OaCredential resolveOaCredential() {
+        return new OaCredential(
+                platformEnvVarResolver.resolve(
+                        PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_USER_ID,
+                        () -> null
+                ).value(),
+                platformEnvVarResolver.resolve(
+                        PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_TOKEN,
+                        () -> null
+                ).value()
+        );
+    }
+
+    private OaCredential tryResolveOaCredential() {
+        try {
+            return resolveOaCredential();
+        } catch (RuntimeException exception) {
+            return null;
+        }
+    }
+
+    /**
+     * OA 接口认证信息由环境变量管理统一托管，页面只负责选择统计条件。
+     */
+    private record OaCredential(String userId, String token) {
     }
 
     private record OaPrItem(

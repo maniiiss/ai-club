@@ -125,6 +125,19 @@ class PlatformEnvVarResolverTests {
     }
 
     @Test
+    void shouldNotResolvePrReviewOaTokenFromSpringValue() {
+        when(platformEnvVarConfigRepository.findByEnvKey(PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_TOKEN))
+                .thenReturn(Optional.empty());
+        environment.setProperty("platform.pr-review.oa-token", "spring-oa-token");
+
+        assertThatThrownBy(() -> platformEnvVarResolver.resolve(
+                PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_TOKEN,
+                () -> null
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("PR评审统计 OA 令牌未配置");
+    }
+
+    @Test
     void shouldFallBackToLegacyValueWhenRuntimeAndSpringValuesAreMissing() {
         when(platformEnvVarConfigRepository.findByEnvKey(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID))
                 .thenReturn(Optional.empty());

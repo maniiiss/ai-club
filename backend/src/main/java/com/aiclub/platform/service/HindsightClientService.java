@@ -64,7 +64,7 @@ public class HindsightClientService {
                     buildRecallPayload(query, limit, List.of("wiki", "project:" + projectId))
             );
             JsonNode root = objectMapper.readTree(response.body());
-            return extractRecallHits(root);
+            return limitResults(extractRecallHits(root), limit, 20);
         } catch (IOException exception) {
             throw new IllegalStateException("解析 Hindsight 召回结果失败", exception);
         }
@@ -116,7 +116,7 @@ public class HindsightClientService {
                     buildRecallPayload(query, limit, List.of("wiki", "space:" + spaceId))
             );
             JsonNode root = objectMapper.readTree(response.body());
-            return extractRecallHits(root);
+            return limitResults(extractRecallHits(root), limit, 20);
         } catch (IOException exception) {
             throw new IllegalStateException("解析空间 Wiki Hindsight 召回结果失败", exception);
         }
@@ -134,7 +134,7 @@ public class HindsightClientService {
                     buildRecallPayload(query, limit, tags)
             );
             JsonNode root = objectMapper.readTree(response.body());
-            return extractRecallHits(root).stream()
+            return limitResults(extractRecallHits(root), limit, 20).stream()
                     .map(hit -> new MemoryRecallHit(hit.documentId(), hit.title(), hit.snippet(), hit.score()))
                     .toList();
         } catch (IOException exception) {
@@ -204,7 +204,7 @@ public class HindsightClientService {
                     buildWorldFactRecallPayload(query, limit, tags)
             );
             JsonNode root = objectMapper.readTree(response.body());
-            return extractWorldFacts(root, bankId);
+            return limitResults(extractWorldFacts(root, bankId), limit, 200);
         } catch (IOException exception) {
             throw new IllegalStateException("解析 Hindsight 事实召回结果失败", exception);
         }
@@ -278,7 +278,6 @@ public class HindsightClientService {
                                           String context,
                                           String source) {
         ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("async", false);
         ArrayNode items = payload.putArray("items");
         ObjectNode item = items.addObject();
         item.put("content", content == null ? "" : content);
@@ -310,7 +309,6 @@ public class HindsightClientService {
     private ObjectNode buildRecallPayload(String query, int limit, List<String> tags) {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("query", defaultString(query));
-        payload.put("limit", Math.max(1, Math.min(limit, 20)));
         payload.put("budget", properties.getRecallBudget());
         ArrayNode tagArray = payload.putArray("tags");
         for (String tag : normalizeTags(tags)) {
@@ -323,7 +321,7 @@ public class HindsightClientService {
      * 事实召回显式限制 world 类型，避免面板混入 chunk 结果。
      */
     private ObjectNode buildWorldFactRecallPayload(String query, int limit, List<String> tags) {
-        ObjectNode payload = buildRecallPayload(query, Math.max(1, Math.min(limit, 200)), tags);
+        ObjectNode payload = buildRecallPayload(query, limit, tags);
         ArrayNode types = payload.putArray("types");
         types.add("world");
         return payload;
@@ -649,6 +647,20 @@ public class HindsightClientService {
             }
         }
         return List.copyOf(result.values());
+    }
+
+    /**
+     * Hindsight 0.5.x 的 recall 接口由 budget 控制召回规模，平台侧再按调用场景截断展示数量。
+     */
+    private <T> List<T> limitResults(List<T> values, int limit, int maxLimit) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        int effectiveLimit = Math.max(1, Math.min(limit, maxLimit));
+        if (values.size() <= effectiveLimit) {
+            return values;
+        }
+        return values.stream().limit(effectiveLimit).toList();
     }
 
     private List<MemoryWorldFact> deduplicateWorldFacts(List<MemoryWorldFact> facts) {

@@ -112,6 +112,7 @@ class HindsightClientServiceTests {
         assertThat(facts.get(0).tags()).contains("project:12", "source:wiki");
         assertThat(lastRequestBody.get()).contains("\"types\":[\"world\"]");
         assertThat(lastRequestBody.get()).contains("\"tags\":[\"project:12\",\"source:wiki\"]");
+        assertThat(lastRequestBody.get()).doesNotContain("\"limit\"");
     }
 
     @Test
@@ -132,6 +133,7 @@ class HindsightClientServiceTests {
         assertThat(lastRequestBody.get()).contains("\"source\":\"hermes\"");
         assertThat(lastRequestBody.get()).contains("\"document_id\":\"hermes-conversation:conversation-1:turn:1\"");
         assertThat(lastRequestBody.get()).contains("\"tags\":[\"hermes\",\"source:hermes\",\"user:7\",\"project:12\"]");
+        assertThat(lastRequestBody.get()).doesNotContain("\"async\"");
     }
 
     @Test
@@ -142,7 +144,7 @@ class HindsightClientServiceTests {
                 "git-ai-club:hermes:user:7",
                 "我明天有什么事情",
                 List.of("project:12"),
-                3
+                1
         );
 
         assertThat(hits).hasSize(1);
@@ -150,6 +152,8 @@ class HindsightClientServiceTests {
         assertThat(hits.get(0).title()).isEqualTo("Hermes 会话记忆：明天安排");
         assertThat(hits.get(0).snippet()).contains("我明天要去趟公司");
         assertThat(lastRequestUri.get()).contains("/git-ai-club%3Ahermes%3Auser%3A7/memories/recall");
+        assertThat(lastRequestBody.get()).doesNotContain("\"limit\"");
+        assertThat(lastRequestBody.get()).contains("\"budget\":\"mid\"");
     }
 
     private HindsightClientService createService() throws Exception {
@@ -282,6 +286,12 @@ class HindsightClientServiceTests {
                           "title": "Hermes 会话记忆：明天安排",
                           "snippet": "我明天要去趟公司，拿一下电脑。",
                           "score": 0.96
+                        },
+                        {
+                          "document_id": "hermes-conversation:conversation-2:turn:1",
+                          "title": "Hermes 会话记忆：后天安排",
+                          "snippet": "后天同步发布计划。",
+                          "score": 0.72
                         }
                       ]
                     }

@@ -7,8 +7,6 @@ import java.util.List;
  */
 public record PrReviewStatsConfigSummary(
         String oaBaseUrl,
-        String defaultToken,
-        String defaultUserId,
         String defaultDevGroupName,
         List<PrReviewStatsGroupSummary> groups
 ) {

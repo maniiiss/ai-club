@@ -43,10 +43,8 @@ public class PrReviewStatsController {
     @GetMapping("/groups")
     @RequirePermission("system:pr-review:view")
     public ApiResponse<List<PrReviewStatsGroupSummary>> groups(@RequestParam String startTime,
-                                                               @RequestParam String endTime,
-                                                               @RequestParam String userId,
-                                                               @RequestParam String token) {
-        return ApiResponse.success(prReviewStatsService.listGroups(startTime, endTime, userId, token));
+                                                               @RequestParam String endTime) {
+        return ApiResponse.success(prReviewStatsService.listGroups(startTime, endTime));
     }
 
     @PostMapping("/query")
