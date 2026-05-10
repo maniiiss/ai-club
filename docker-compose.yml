@@ -178,11 +178,9 @@ services:
       HERMES_LLM_MODEL: ${HERMES_LLM_MODEL:-MiniMax-M2.5}
       HERMES_LLM_API_KEY: ${HERMES_LLM_API_KEY:-}
       HERMES_LLM_BASE_URL: ${HERMES_LLM_BASE_URL:-}
-      HERMES_MEMORY_PROVIDER: hindsight
+      # 默认关闭 Hermes 自带的外部 Hindsight memory provider，避免与平台后端的用户会话记忆重复写入。
+      HERMES_MEMORY_PROVIDER: ${HERMES_MEMORY_PROVIDER:-}
       HERMES_MEMORY_HINDSIGHT_URL: "http://${SERVER_HOST:-hindsight}:${HINDSIGHT_PORT:-8888}"
-      HINDSIGHT_API_URL: "http://${SERVER_HOST:-hindsight}:${HINDSIGHT_PORT:-8888}"
-      HINDSIGHT_API_KEY: local
-      HINDSIGHT_LLM_API_KEY: ${HERMES_LLM_API_KEY:-}
       CODE_PROCESSING_IP: ${CODE_PROCESSING_IP:-host.docker.internal}
       CODE_PROCESSING_PORT: ${CODE_PROCESSING_PORT:-9000}
       API_SERVER_ENABLED: "true"
@@ -198,6 +196,7 @@ services:
         mkdir -p /opt/data
         # 兼容第三方 OpenAI 兼容网关：只要配置了 base_url，就自动切换成 custom provider。
         MODEL_PROVIDER="$${HERMES_LLM_PROVIDER:-}"
+        MEMORY_PROVIDER="$${HERMES_MEMORY_PROVIDER:-}"
         if [ -z "$$MODEL_PROVIDER" ]; then
           if [ -n "$${HERMES_LLM_BASE_URL:-}" ]; then
             MODEL_PROVIDER="custom"
@@ -217,10 +216,12 @@ services:
           if [ -n "$${HERMES_LLM_API_KEY:-}" ]; then
             echo "  api_key: $${HERMES_LLM_API_KEY}"
           fi
-          echo "memory:"
-          echo "  provider: $${HERMES_MEMORY_PROVIDER:-hindsight}"
-          if [ -n "$${HERMES_MEMORY_HINDSIGHT_URL:-}" ]; then
-            echo "  hindsight_url: $${HERMES_MEMORY_HINDSIGHT_URL}"
+          if [ -n "$$MEMORY_PROVIDER" ]; then
+            echo "memory:"
+            echo "  provider: $$MEMORY_PROVIDER"
+            if [ "$$MEMORY_PROVIDER" = "hindsight" ] && [ -n "$${HERMES_MEMORY_HINDSIGHT_URL:-}" ]; then
+              echo "  hindsight_url: $${HERMES_MEMORY_HINDSIGHT_URL}"
+            fi
           fi
           echo "platform_toolsets:"
           echo "  api_server:"

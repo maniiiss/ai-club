@@ -47,6 +47,9 @@ git-ai-club/
 8. 环境变量升级：
    `bash ./scripts/upgrade-env.sh`
    作用：将 `.env.example` / `.env.server.example` 中新增的配置项增量补齐到对应环境文件，并提示仍需人工补全的字段。
+9. PostgreSQL 排序规则检查：
+   `python .\scripts\check_postgres_collation.py`
+   作用：检查 `ai_agent_platform` / `hindsight` 的 collation version mismatch；默认只检查，显式追加 `--apply` 才执行备份、`REINDEX DATABASE` 和 `ALTER DATABASE ... REFRESH COLLATION VERSION`。
 
 ### Linux 脚本入口
 
@@ -72,6 +75,9 @@ git-ai-club/
 8. 环境变量升级：
    `bash ./scripts/upgrade-env.sh`
    作用：将 `.env.example` / `.env.server.example` 中新增的配置项增量补齐到对应环境文件，并提示仍需人工补全的字段。
+9. PostgreSQL 排序规则检查：
+   `python ./scripts/check_postgres_collation.py`
+   作用：检查 `ai_agent_platform` / `hindsight` 的 collation version mismatch；默认只检查，显式追加 `--apply` 才执行备份、`REINDEX DATABASE` 和 `ALTER DATABASE ... REFRESH COLLATION VERSION`。
 
 源码模式脚本会自动完成以下动作：
 
