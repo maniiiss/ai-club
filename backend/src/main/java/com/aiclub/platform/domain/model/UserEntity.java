@@ -38,8 +38,17 @@ public class UserEntity {
     @Column(nullable = false, length = 30)
     private String phone = "";
 
+    /** 绑定的 GitLab 用户ID，空值表示仅保留历史手填用户名或尚未绑定远端用户。 */
+    @Column(name = "gitlab_user_id")
+    private Long gitlabUserId;
+
+    /** 绑定的 GitLab 用户登录名，兼容历史手填字段并供通知按用户名反查本地用户。 */
     @Column(name = "gitlab_username", nullable = false, length = 100)
     private String gitlabUsername = "";
+
+    /** 绑定的 GitLab 用户展示名快照，用于用户管理列表和关键字检索。 */
+    @Column(name = "gitlab_name", nullable = false, length = 100)
+    private String gitlabName = "";
 
     /** 绑定的 Gitee 企业成员ID，空值表示尚未建立远端成员映射。 */
     @Column(name = "gitee_member_id")
@@ -129,8 +138,24 @@ public class UserEntity {
         return gitlabUsername;
     }
 
+    public Long getGitlabUserId() {
+        return gitlabUserId;
+    }
+
+    public void setGitlabUserId(Long gitlabUserId) {
+        this.gitlabUserId = gitlabUserId;
+    }
+
     public void setGitlabUsername(String gitlabUsername) {
         this.gitlabUsername = gitlabUsername;
+    }
+
+    public String getGitlabName() {
+        return gitlabName;
+    }
+
+    public void setGitlabName(String gitlabName) {
+        this.gitlabName = gitlabName;
     }
 
     public Long getGiteeMemberId() {

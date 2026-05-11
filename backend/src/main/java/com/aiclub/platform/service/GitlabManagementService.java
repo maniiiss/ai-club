@@ -36,6 +36,7 @@ import com.aiclub.platform.dto.GitlabProductBranchSyncLogSummary;
 import com.aiclub.platform.dto.GitlabProductBranchSyncRunItem;
 import com.aiclub.platform.dto.GitlabProductBranchSyncRunResult;
 import com.aiclub.platform.dto.GitlabTagCreateResult;
+import com.aiclub.platform.dto.GitlabUserSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
 import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
@@ -349,6 +350,27 @@ public class GitlabManagementService {
         return gitlabApiService.listBranches(resolved.apiBaseUrl(), resolved.token(), resolved.projectRef(), search)
                 .stream()
                 .map(branch -> toBranchSummary(entity, branch))
+                .toList();
+    }
+
+    /**
+     * 用户管理绑定 GitLab 账号时，从已启用的仓库绑定中复用一份可用凭据读取远端用户候选。
+     */
+    public List<GitlabUserSummary> listGitlabUsers(String keyword) {
+        ProjectGitlabBindingEntity binding = bindingRepository.findAll(Sort.by(Sort.Direction.ASC, "id")).stream()
+                .filter(item -> Boolean.TRUE.equals(item.getEnabled()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("请先在 GitLab 管理中创建并启用一个仓库绑定"));
+        String token = tokenCipherService.decrypt(binding.getTokenCiphertext());
+        return gitlabApiService.listUsers(binding.getApiBaseUrl(), token, keyword).stream()
+                .map(item -> new GitlabUserSummary(
+                        item.id(),
+                        item.username(),
+                        item.name(),
+                        item.email(),
+                        item.avatarUrl(),
+                        item.webUrl()
+                ))
                 .toList();
     }
 

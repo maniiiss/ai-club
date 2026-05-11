@@ -124,7 +124,9 @@ class GitlabUserOauthServiceTests {
         assertThat(summary.gitlabUserId()).isEqualTo(99L);
         assertThat(summary.gitlabUsername()).isEqualTo("alice");
         assertThat(summary.gitlabName()).isEqualTo("Alice");
+        assertThat(currentUser.getGitlabUserId()).isEqualTo(99L);
         assertThat(currentUser.getGitlabUsername()).isEqualTo("alice");
+        assertThat(currentUser.getGitlabName()).isEqualTo("Alice");
         verify(bindingRepository).save(any(GitlabUserOauthBindingEntity.class));
         verify(authService).refreshCurrentUserSessionSnapshot();
     }
@@ -224,6 +226,29 @@ class GitlabUserOauthServiceTests {
 
         assertThat(summary.connected()).isFalse();
         assertThat(summary.apiBaseUrl()).isEqualTo("http://gitlab.example.com/api/v4");
+    }
+
+    /**
+     * 用户管理中已绑定 GitLab 用户但尚未 OAuth 授权时，个人中心仍应展示远端用户快照。
+     */
+    @Test
+    void shouldReturnDisconnectedSummaryWithUserManagementGitlabSnapshot() {
+        UserEntity currentUser = buildCurrentUser(1L);
+        currentUser.setGitlabUserId(99L);
+        currentUser.setGitlabUsername("alice");
+        currentUser.setGitlabName("Alice");
+        AuthContextHolder.set(new AuthContext(1L, "platform-user", "平台用户", Set.of(), Set.of()));
+        when(userRepository.findById(1L)).thenReturn(Optional.of(currentUser));
+        when(bindingRepository.findByUser_Id(1L)).thenReturn(Optional.empty());
+
+        GitlabUserOauthBindingSummary summary = gitlabUserOauthService.getCurrentUserBindingSummary();
+
+        assertThat(summary.connected()).isFalse();
+        assertThat(summary.apiBaseUrl()).isEqualTo("http://gitlab.example.com/api/v4");
+        assertThat(summary.gitlabUserId()).isEqualTo(99L);
+        assertThat(summary.gitlabUsername()).isEqualTo("alice");
+        assertThat(summary.gitlabName()).isEqualTo("Alice");
+        assertThat(summary.expiresAt()).isNull();
     }
 
     /**

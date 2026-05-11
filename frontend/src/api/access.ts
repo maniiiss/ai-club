@@ -11,7 +11,9 @@ export interface UserPayload {
   nickname: string
   email: string
   phone: string
+  gitlabUserId?: number | null
   gitlabUsername: string
+  gitlabName?: string
   giteeMemberId?: number | null
   giteeUsername?: string
   giteeName?: string

@@ -1535,7 +1535,11 @@ export interface UserItem {
   nickname: string
   email: string
   phone: string
+  /** 用户管理中绑定的 GitLab 用户ID，供跨系统人员映射复用。 */
+  gitlabUserId: number | null
   gitlabUsername: string
+  /** GitLab 展示名快照，用于列表展示与关键字检索。 */
+  gitlabName: string
   giteeMemberId: number | null
   giteeUsername: string
   giteeName: string
@@ -1545,6 +1549,15 @@ export interface UserItem {
   roleIds: number[]
   roleCodes: string[]
   roleNames: string[]
+}
+
+export interface GitlabUserItem {
+  id: number
+  username: string
+  name: string
+  email: string
+  avatarUrl: string | null
+  webUrl: string | null
 }
 
 export interface UserOptionItem {

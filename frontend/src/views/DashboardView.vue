@@ -591,12 +591,19 @@ const quickMergeBindingSupportsOauth = computed(() => {
   }
   return currentQuickMergeBinding.value.apiBaseUrl === quickMergeOauthBinding.value.apiBaseUrl
 })
+// 用户管理绑定只证明本地用户和 GitLab 用户有关联；真正发起 MR 仍需要 OAuth token。
+const quickMergeGitlabAccountBound = computed(() =>
+  Boolean(quickMergeOauthBinding.value.gitlabUserId || quickMergeOauthBinding.value.gitlabUsername || quickMergeOauthBinding.value.gitlabName)
+)
 const quickMergeActorDisplay = computed(() => {
-  if (!quickMergeOauthBinding.value.connected) {
-    return '当前尚未绑定 GitLab 用户身份'
-  }
   const actorName = quickMergeOauthBinding.value.gitlabName || '-'
   const actorUsername = quickMergeOauthBinding.value.gitlabUsername || '-'
+  if (!quickMergeOauthBinding.value.connected) {
+    if (quickMergeGitlabAccountBound.value) {
+      return `已绑定 ${actorName}（${actorUsername}），授权后可发起 MR`
+    }
+    return '当前尚未绑定 GitLab 用户身份'
+  }
   return `将以 ${actorName}（${actorUsername}）身份发起`
 })
 const quickMergeSubmitDisabledReason = computed(() => {
@@ -607,7 +614,10 @@ const quickMergeSubmitDisabledReason = computed(() => {
     return '当前仓库实例暂不支持使用个人 GitLab 授权发起 MR'
   }
   if (!quickMergeOauthBinding.value.connected) {
-    return '当前用户尚未绑定 GitLab 账户，请先前往个人中心完成授权'
+    if (quickMergeGitlabAccountBound.value) {
+      return '当前 GitLab 用户尚未完成 OAuth 授权，请先前往个人中心授权后发起 MR'
+    }
+    return '当前用户尚未绑定 GitLab 用户或 OAuth 授权，请先前往个人中心完成授权'
   }
   return ''
 })

@@ -95,7 +95,7 @@ public class AccessManagementService {
         entity.setNickname(request.nickname().trim());
         entity.setEmail(defaultString(request.email()));
         entity.setPhone(defaultString(request.phone()));
-        entity.setGitlabUsername(defaultString(request.gitlabUsername()));
+        applyGitlabUserBinding(entity, request);
         applyGiteeMemberBinding(entity, request);
         entity.setEnabled(Boolean.TRUE.equals(request.enabled()));
         entity.setPasswordHash(passwordEncoder.encode(request.password().trim()));
@@ -113,7 +113,7 @@ public class AccessManagementService {
         entity.setNickname(request.nickname().trim());
         entity.setEmail(defaultString(request.email()));
         entity.setPhone(defaultString(request.phone()));
-        entity.setGitlabUsername(defaultString(request.gitlabUsername()));
+        applyGitlabUserBinding(entity, request);
         applyGiteeMemberBinding(entity, request);
         entity.setEnabled(Boolean.TRUE.equals(request.enabled()));
         entity.setRoles(resolveRoles(request.roleIds()));
@@ -328,6 +328,7 @@ public class AccessManagementService {
                         cb.like(cb.lower(root.get("email")), pattern),
                         cb.like(cb.lower(root.get("phone")), pattern),
                         cb.like(cb.lower(root.get("gitlabUsername")), pattern),
+                        cb.like(cb.lower(root.get("gitlabName")), pattern),
                         cb.like(cb.lower(root.get("giteeUsername")), pattern),
                         cb.like(cb.lower(root.get("giteeName")), pattern)
                 ));
@@ -391,7 +392,9 @@ public class AccessManagementService {
                 entity.getNickname(),
                 entity.getEmail(),
                 entity.getPhone(),
+                entity.getGitlabUserId(),
                 entity.getGitlabUsername(),
+                entity.getGitlabName(),
                 entity.getGiteeMemberId(),
                 entity.getGiteeUsername(),
                 entity.getGiteeName(),
@@ -415,6 +418,21 @@ public class AccessManagementService {
                 entity.getAvatarUrl(),
                 entity.isEnabled()
         );
+    }
+
+    /**
+     * 保存用户与 GitLab 用户的快照映射；未选择远端用户时保留历史手填用户名兼容旧通知映射。
+     */
+    private void applyGitlabUserBinding(UserEntity entity, UserRequest request) {
+        if (request.gitlabUserId() == null) {
+            entity.setGitlabUserId(null);
+            entity.setGitlabUsername(defaultString(request.gitlabUsername()));
+            entity.setGitlabName("");
+            return;
+        }
+        entity.setGitlabUserId(request.gitlabUserId());
+        entity.setGitlabUsername(defaultString(request.gitlabUsername()));
+        entity.setGitlabName(defaultString(request.gitlabName()));
     }
 
     /**

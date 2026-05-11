@@ -2,6 +2,7 @@ package com.aiclub.platform.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -25,11 +26,17 @@ public class GitlabApiService {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
 
+    @Autowired
     public GitlabApiService(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
+    }
+
+    GitlabApiService(ObjectMapper objectMapper, HttpClient httpClient) {
+        this.objectMapper = objectMapper;
+        this.httpClient = httpClient;
     }
 
     public GitlabUser fetchCurrentUser(String apiBaseUrl, String token) {
@@ -41,11 +48,7 @@ public class GitlabApiService {
      */
     public GitlabUser fetchCurrentUser(String apiBaseUrl, GitlabAuthorization authorization) {
         JsonNode node = sendJsonRequest("GET", normalizeBaseUrl(apiBaseUrl) + "/user", authorization, null, null);
-        return new GitlabUser(
-                node.path("id").asLong(),
-                node.path("username").asText(""),
-                node.path("name").asText("")
-        );
+        return toGitlabUser(node);
     }
 
     public GitlabProject fetchProject(String apiBaseUrl, String token, String projectRef) {
@@ -74,6 +77,32 @@ public class GitlabApiService {
      */
     public List<GitlabBranch> listBranches(String apiBaseUrl, String token, String projectRef, String search) {
         return listBranches(apiBaseUrl, GitlabAuthorization.privateToken(token), projectRef, search);
+    }
+
+    /**
+     * 查询 GitLab 用户，供平台用户管理绑定远端账号时远程搜索。
+     */
+    public List<GitlabUser> listUsers(String apiBaseUrl, String token, String search) {
+        return listUsers(apiBaseUrl, GitlabAuthorization.privateToken(token), search);
+    }
+
+    /**
+     * 查询 GitLab 用户，支持项目 token 与用户 Bearer token 两种鉴权方式。
+     */
+    public List<GitlabUser> listUsers(String apiBaseUrl, GitlabAuthorization authorization, String search) {
+        StringBuilder url = new StringBuilder(normalizeBaseUrl(apiBaseUrl))
+                .append("/users?per_page=100");
+        if (hasText(search)) {
+            url.append("&search=").append(urlEncode(search.trim()));
+        }
+        JsonNode arrayNode = sendJsonRequest("GET", url.toString(), authorization, null, null);
+        List<GitlabUser> items = new ArrayList<>();
+        if (arrayNode.isArray()) {
+            for (JsonNode node : arrayNode) {
+                items.add(toGitlabUser(node));
+            }
+        }
+        return items;
     }
 
     /**
@@ -637,6 +666,17 @@ public class GitlabApiService {
         );
     }
 
+    private GitlabUser toGitlabUser(JsonNode node) {
+        return new GitlabUser(
+                node.path("id").asLong(),
+                node.path("username").asText(""),
+                node.path("name").asText(""),
+                firstText(node.path("public_email"), node.path("email")),
+                node.path("avatar_url").asText(""),
+                node.path("web_url").asText("")
+        );
+    }
+
     private GitlabOAuthToken toGitlabOAuthToken(JsonNode node) {
         JsonNode expiresInNode = node.get("expires_in");
         Integer expiresInSeconds = expiresInNode == null || expiresInNode.isNull() ? null : expiresInNode.asInt();
@@ -648,7 +688,24 @@ public class GitlabApiService {
         );
     }
 
-    public record GitlabUser(Long id, String username, String name) {
+    private String firstText(JsonNode... nodes) {
+        for (JsonNode node : nodes) {
+            if (node == null || node.isMissingNode() || node.isNull()) {
+                continue;
+            }
+            String value = node.asText("");
+            if (hasText(value)) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    public record GitlabUser(Long id, String username, String name, String email, String avatarUrl, String webUrl) {
+
+        public GitlabUser(Long id, String username, String name) {
+            this(id, username, name, "", "", "");
+        }
     }
 
     /**

@@ -18,6 +18,7 @@ import com.aiclub.platform.dto.GitlabProductBranchSyncRunResult;
 import com.aiclub.platform.dto.GitlabTagCreateResult;
 import com.aiclub.platform.dto.GitlabUserOauthAuthorizeResult;
 import com.aiclub.platform.dto.GitlabUserOauthBindingSummary;
+import com.aiclub.platform.dto.GitlabUserSummary;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
@@ -175,6 +176,15 @@ public class GitlabController {
     public ApiResponse<List<GitlabBranchSummary>> listBindingBranches(@PathVariable Long id,
                                                                       @RequestParam(required = false) String search) {
         return ApiResponse.success(gitlabManagementService.listBindingBranches(id, search));
+    }
+
+    /**
+     * 用户管理页绑定 GitLab 账号时远程搜索用户候选。
+     */
+    @GetMapping("/users")
+    @RequirePermission("system:user:manage")
+    public ApiResponse<List<GitlabUserSummary>> listUsers(@RequestParam(required = false) String keyword) {
+        return ApiResponse.success(gitlabManagementService.listGitlabUsers(keyword));
     }
 
     /**

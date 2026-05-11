@@ -90,7 +90,7 @@
                 </button>
               </td>
               <td class="user-col-gitlab" data-label="GitLab">
-                <span class="management-list-empty">{{ row.gitlabUsername || '-' }}</span>
+                <span class="management-list-empty">{{ formatGitlabUser(row) }}</span>
               </td>
               <td class="user-col-gitee" data-label="Gitee">
                 <span class="management-list-empty">{{ formatGiteeMember(row) }}</span>
@@ -153,7 +153,7 @@
                   <div class="mobile-entity-field">
                     <span class="mobile-entity-field-label">GitLab</span>
                     <div class="mobile-entity-field-content">
-                      <span class="mobile-entity-empty-text">{{ row.gitlabUsername || '-' }}</span>
+                      <span class="mobile-entity-empty-text">{{ formatGitlabUser(row) }}</span>
                     </div>
                   </div>
                   <div class="mobile-entity-field">
@@ -270,8 +270,32 @@
         <el-form-item label="昵称" prop="nickname">
           <el-input v-model="form.nickname" placeholder="请输入昵称" />
         </el-form-item>
-        <el-form-item label="GitLab 用户名">
-          <el-input v-model="form.gitlabUsername" placeholder="用于关联个人 GitLab MR，例如：zhangsan" />
+        <el-form-item label="GitLab 用户">
+          <el-select
+            v-model="form.gitlabUserId"
+            clearable
+            filterable
+            remote
+            reserve-keyword
+            :remote-method="searchGitlabUsers"
+            :loading="gitlabUserLoading"
+            placeholder="输入姓名、用户名或邮箱搜索 GitLab 用户"
+            style="width: 100%"
+            @change="handleGitlabUserChange"
+            @clear="clearGitlabUser"
+          >
+            <el-option
+              v-for="item in gitlabUserOptions"
+              :key="item.id"
+              :label="formatGitlabUserOption(item)"
+              :value="item.id"
+            >
+              <div class="user-external-option">
+                <span class="user-external-option-main">{{ item.name || item.username }}</span>
+                <span class="user-external-option-sub">{{ [item.username, item.email].filter(Boolean).join(' · ') }}</span>
+              </div>
+            </el-option>
+          </el-select>
         </el-form-item>
         <el-form-item label="Gitee 成员">
           <el-select
@@ -293,9 +317,9 @@
               :label="formatGiteeMemberOption(item)"
               :value="item.id"
             >
-              <div class="user-gitee-option">
-                <span class="user-gitee-option-main">{{ item.name || item.username }}</span>
-                <span class="user-gitee-option-sub">{{ [item.username, item.email].filter(Boolean).join(' · ') }}</span>
+              <div class="user-external-option">
+                <span class="user-external-option-main">{{ item.name || item.username }}</span>
+                <span class="user-external-option-sub">{{ [item.username, item.email].filter(Boolean).join(' · ') }}</span>
               </div>
             </el-option>
           </el-select>
@@ -337,8 +361,9 @@ import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Key, Plus, RefreshRight
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { createUser, deleteUser, listRoleOptions, pageUsers, resetUserPassword, updateUser } from '@/api/access'
 import { listGiteeMembers } from '@/api/gitee'
+import { listGitlabUsers } from '@/api/gitlab'
 import { useAuthStore } from '@/stores/auth'
-import type { GiteeMemberItem, RoleItem, UserItem } from '@/types/platform'
+import type { GiteeMemberItem, GitlabUserItem, RoleItem, UserItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
@@ -347,7 +372,9 @@ interface UserForm {
   nickname: string
   email: string
   phone: string
+  gitlabUserId: number | null
   gitlabUsername: string
+  gitlabName: string
   giteeMemberId: number | null
   giteeUsername: string
   giteeName: string
@@ -368,6 +395,8 @@ const currentId = ref<number | null>(null)
 const currentBuiltIn = ref(false)
 const userList = ref<UserItem[]>([])
 const roleOptions = ref<RoleItem[]>([])
+const gitlabUserOptions = ref<GitlabUserItem[]>([])
+const gitlabUserLoading = ref(false)
 const giteeMemberOptions = ref<GiteeMemberItem[]>([])
 const giteeMemberLoading = ref(false)
 const formRef = ref<FormInstance>()
@@ -403,7 +432,9 @@ const form = reactive<UserForm>({
   nickname: '',
   email: '',
   phone: '',
+  gitlabUserId: null,
   gitlabUsername: '',
+  gitlabName: '',
   giteeMemberId: null,
   giteeUsername: '',
   giteeName: '',
@@ -430,7 +461,10 @@ const resetForm = () => {
   form.nickname = ''
   form.email = ''
   form.phone = ''
+  form.gitlabUserId = null
   form.gitlabUsername = ''
+  form.gitlabName = ''
+  gitlabUserOptions.value = []
   form.giteeMemberId = null
   form.giteeUsername = ''
   form.giteeName = ''
@@ -483,6 +517,16 @@ const handleSizeChange = async () => {
 
 const userInitial = (value?: string | null) => (value || 'UN').slice(0, 2).toUpperCase()
 
+const formatGitlabUser = (row: UserItem) => {
+  const displayName = row.gitlabName || row.gitlabUsername
+  return displayName ? `${displayName}${row.gitlabUsername && row.gitlabUsername !== displayName ? `（${row.gitlabUsername}）` : ''}` : '-'
+}
+
+const formatGitlabUserOption = (item: GitlabUserItem) => {
+  const displayName = item.name || item.username
+  return displayName ? `${displayName}${item.username && item.username !== displayName ? `（${item.username}）` : ''}` : `用户 #${item.id}`
+}
+
 const formatGiteeMember = (row: UserItem) => {
   const displayName = row.giteeName || row.giteeUsername
   return displayName ? `${displayName}${row.giteeUsername && row.giteeUsername !== displayName ? `（${row.giteeUsername}）` : ''}` : '-'
@@ -510,6 +554,7 @@ const openCreateDialog = () => {
   isEditing.value = false
   resetForm()
   dialogVisible.value = true
+  searchGitlabUsers('')
   searchGiteeMembers('')
 }
 
@@ -521,7 +566,12 @@ const fillForm = (row: UserItem) => {
   form.nickname = row.nickname
   form.email = row.email
   form.phone = row.phone
+  form.gitlabUserId = row.gitlabUserId
   form.gitlabUsername = row.gitlabUsername || ''
+  form.gitlabName = row.gitlabName || ''
+  gitlabUserOptions.value = row.gitlabUserId
+    ? [{ id: row.gitlabUserId, username: row.gitlabUsername || '', name: row.gitlabName || row.gitlabUsername || '', email: '', avatarUrl: null, webUrl: null }]
+    : []
   form.giteeMemberId = row.giteeMemberId
   form.giteeUsername = row.giteeUsername || ''
   form.giteeName = row.giteeName || ''
@@ -543,7 +593,29 @@ const openEditDialog = (row: UserItem) => {
   readonlyMode.value = false
   fillForm(row)
   dialogVisible.value = true
+  searchGitlabUsers(row.gitlabName || row.gitlabUsername || '')
   searchGiteeMembers(row.giteeName || row.giteeUsername || '')
+}
+
+const searchGitlabUsers = async (keyword: string) => {
+  if (!canManage.value || readonlyMode.value) {
+    return
+  }
+  gitlabUserLoading.value = true
+  try {
+    const remoteItems = await listGitlabUsers(keyword)
+    const selectedItem = form.gitlabUserId
+      ? gitlabUserOptions.value.find((item) => item.id === form.gitlabUserId)
+      : null
+    const merged = selectedItem && !remoteItems.some((item) => item.id === selectedItem.id)
+      ? [selectedItem, ...remoteItems]
+      : remoteItems
+    gitlabUserOptions.value = merged
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载 GitLab 用户失败')
+  } finally {
+    gitlabUserLoading.value = false
+  }
 }
 
 const searchGiteeMembers = async (keyword: string) => {
@@ -565,6 +637,23 @@ const searchGiteeMembers = async (keyword: string) => {
   } finally {
     giteeMemberLoading.value = false
   }
+}
+
+const clearGitlabUser = () => {
+  form.gitlabUserId = null
+  form.gitlabUsername = ''
+  form.gitlabName = ''
+}
+
+const handleGitlabUserChange = (value: number | null) => {
+  const selected = value === null ? null : gitlabUserOptions.value.find((item) => item.id === value)
+  if (!selected) {
+    clearGitlabUser()
+    return
+  }
+  form.gitlabUserId = selected.id
+  form.gitlabUsername = selected.username || ''
+  form.gitlabName = selected.name || selected.username || ''
 }
 
 const clearGiteeMember = () => {
@@ -595,7 +684,9 @@ const handleSubmit = async () => {
       nickname: form.nickname,
       email: form.email,
       phone: form.phone,
+      gitlabUserId: form.gitlabUserId,
       gitlabUsername: form.gitlabUsername,
+      gitlabName: form.gitlabName,
       giteeMemberId: form.giteeMemberId,
       giteeUsername: form.giteeUsername,
       giteeName: form.giteeName,
@@ -699,7 +790,7 @@ onMounted(async () => {
   width: 10%;
 }
 
-.user-gitee-option {
+.user-external-option {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -707,18 +798,18 @@ onMounted(async () => {
   line-height: 1.35;
 }
 
-.user-gitee-option-main,
-.user-gitee-option-sub {
+.user-external-option-main,
+.user-external-option-sub {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.user-gitee-option-main {
+.user-external-option-main {
   font-weight: 650;
 }
 
-.user-gitee-option-sub {
+.user-external-option-sub {
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }

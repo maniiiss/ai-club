@@ -83,8 +83,8 @@
 
         <section class="platform-form-section">
           <div class="platform-form-section-head">
-            <div class="platform-form-section-title">GitLab 账户绑定</div>
-            <div class="platform-form-section-subtitle">使用 GitLab OAuth 绑定当前平台账号，首页快速发起 MR 时会以你自己的 GitLab 身份提交。</div>
+            <div class="platform-form-section-title">GitLab 身份与授权</div>
+            <div class="platform-form-section-subtitle">用户管理绑定用于识别 GitLab 身份；首页快速发起 MR 还需要 OAuth 授权，以你自己的 GitLab 身份提交。</div>
           </div>
 
           <div v-loading="gitlabOauthBindingLoading" class="profile-gitlab-binding-card">
@@ -93,8 +93,8 @@
                 <div class="profile-gitlab-binding-title">默认 GitLab 实例</div>
                 <div class="profile-gitlab-binding-url">{{ gitlabOauthBinding.apiBaseUrl || '-' }}</div>
               </div>
-              <span class="profile-gitlab-binding-pill" :class="{ connected: gitlabOauthBinding.connected }">
-                {{ gitlabOauthBinding.connected ? '已绑定' : '未绑定' }}
+              <span class="profile-gitlab-binding-pill" :class="{ connected: gitlabOauthBinding.connected, bound: gitlabAccountBound && !gitlabOauthBinding.connected }">
+                {{ gitlabBindingStatusLabel }}
               </span>
             </div>
 
@@ -109,17 +109,17 @@
               </div>
               <div class="profile-gitlab-binding-item profile-gitlab-binding-item-full">
                 <span class="profile-gitlab-binding-label">过期时间</span>
-                <span class="profile-gitlab-binding-value">{{ gitlabOauthBinding.expiresAt || '未返回过期时间' }}</span>
+                <span class="profile-gitlab-binding-value">{{ gitlabOauthExpiresDisplay }}</span>
               </div>
             </div>
 
             <div class="profile-gitlab-binding-note">
-              未绑定时，首页“快速发起 MR”会直接阻断并提示前往个人中心完成授权。
+              {{ gitlabOauthBindingNote }}
             </div>
 
             <div class="profile-actions">
               <el-button type="primary" :loading="gitlabOauthAuthorizing" @click="handleGitlabOauthAuthorize">
-                {{ gitlabOauthBinding.connected ? '重新授权' : '授权绑定' }}
+                {{ gitlabOauthAuthorizeLabel }}
               </el-button>
               <el-button v-if="gitlabOauthBinding.connected" :loading="gitlabOauthUnbinding" @click="handleGitlabOauthUnbind">解绑</el-button>
             </div>
@@ -256,6 +256,37 @@ const passwordRules: FormRules<typeof passwordForm> = {
 const activeTheme = computed(() => appStore.currentTheme)
 const profileAvatarUrl = computed(() => resolveAssetUrl(authStore.user?.avatarUrl))
 const profileAvatarInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
+// GitLab 身份绑定和 OAuth 授权是两个状态：有身份快照不代表已有可发起 MR 的个人 token。
+const gitlabAccountBound = computed(() =>
+  Boolean(gitlabOauthBinding.value.gitlabUserId || gitlabOauthBinding.value.gitlabUsername || gitlabOauthBinding.value.gitlabName)
+)
+const gitlabBindingStatusLabel = computed(() => {
+  if (gitlabOauthBinding.value.connected) {
+    return '已授权'
+  }
+  return gitlabAccountBound.value ? '已绑定未授权' : '未绑定'
+})
+const gitlabOauthExpiresDisplay = computed(() => {
+  if (!gitlabOauthBinding.value.connected) {
+    return '尚未授权'
+  }
+  return gitlabOauthBinding.value.expiresAt || '未返回过期时间'
+})
+const gitlabOauthBindingNote = computed(() => {
+  if (gitlabOauthBinding.value.connected) {
+    return '首页“快速发起 MR”会使用当前 OAuth 授权创建 MR。'
+  }
+  if (gitlabAccountBound.value) {
+    return '已识别到用户管理中的 GitLab 绑定；发起 MR 还需要点击授权获取个人 token。'
+  }
+  return '未绑定时，首页“快速发起 MR”会阻断；可由管理员绑定 GitLab 用户，或在此完成 GitLab OAuth 授权。'
+})
+const gitlabOauthAuthorizeLabel = computed(() => {
+  if (gitlabOauthBinding.value.connected) {
+    return '重新授权'
+  }
+  return gitlabAccountBound.value ? '授权发起 MR' : '授权绑定'
+})
 
 const syncFromUser = () => {
   profileForm.nickname = authStore.user?.nickname || ''
@@ -742,6 +773,11 @@ onMounted(() => {
 .profile-gitlab-binding-pill.connected {
   background: rgba(34, 197, 94, 0.12);
   color: #15803d;
+}
+
+.profile-gitlab-binding-pill.bound {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
 }
 
 .profile-gitlab-binding-grid {

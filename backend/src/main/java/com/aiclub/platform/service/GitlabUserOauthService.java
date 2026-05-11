@@ -70,7 +70,7 @@ public class GitlabUserOauthService {
         UserEntity currentUser = requireCurrentUser();
         return bindingRepository.findByUser_Id(currentUser.getId())
                 .map(this::toSummary)
-                .orElseGet(() -> new GitlabUserOauthBindingSummary(false, defaultApiUrl, null, null, null, null));
+                .orElseGet(() -> toDisconnectedSummary(currentUser));
     }
 
     /**
@@ -125,8 +125,10 @@ public class GitlabUserOauthService {
         applyOauthToken(entity, oauthToken);
         bindingRepository.save(entity);
 
-        // OAuth 绑定成功后同步回写兼容字段，保留现有个人资料与告警归属能力。
+        // OAuth 绑定成功后同步回写用户管理快照，保留个人资料、告警归属和跨系统人员映射能力。
+        currentUser.setGitlabUserId(gitlabUser.id());
         currentUser.setGitlabUsername(defaultString(gitlabUser.username()));
+        currentUser.setGitlabName(defaultString(gitlabUser.name()));
         userRepository.save(currentUser);
         authService.refreshCurrentUserSessionSnapshot();
         return toSummary(entity);
@@ -209,6 +211,20 @@ public class GitlabUserOauthService {
         );
     }
 
+    /**
+     * 尚未完成 OAuth 授权时，仍返回用户管理中保存的 GitLab 用户快照，避免前端把“已绑定用户但未授权”误判为“未绑定用户”。
+     */
+    private GitlabUserOauthBindingSummary toDisconnectedSummary(UserEntity currentUser) {
+        return new GitlabUserOauthBindingSummary(
+                false,
+                defaultApiUrl,
+                currentUser.getGitlabUserId(),
+                nullableString(currentUser.getGitlabUsername()),
+                nullableString(currentUser.getGitlabName()),
+                null
+        );
+    }
+
     private boolean shouldRefreshAccessToken(GitlabUserOauthBindingEntity entity) {
         if (entity.getExpiresAt() == null) {
             return false;
@@ -272,6 +288,11 @@ public class GitlabUserOauthService {
 
     private String defaultString(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private String nullableString(String value) {
+        String normalized = defaultString(value);
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private boolean hasText(String value) {

@@ -18,6 +18,7 @@ import type {
   GitlabGitnexusLaunchRequestItem,
   GitlabGitnexusLaunchResultItem,
   GitlabTagCreateResultItem,
+  GitlabUserItem,
   GitlabUserOauthBindingItem,
   PageResponse,
   ProjectGitlabBindingItem,
@@ -81,6 +82,13 @@ export interface GitlabAutoMergeLogQuery {
   configId?: number
   result?: string
   triggerType?: 'MANUAL' | 'SCHEDULED'
+}
+
+export const listGitlabUsers = async (keyword?: string) => {
+  const { data } = await http.get<ApiResponse<GitlabUserItem[]>>('/api/gitlab/users', {
+    params: keyword?.trim() ? { keyword: keyword.trim() } : undefined
+  })
+  return data.data
 }
 
 /**

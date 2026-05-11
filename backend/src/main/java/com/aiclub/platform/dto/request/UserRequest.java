@@ -17,8 +17,11 @@ public record UserRequest(
         String email,
         @Size(max = 30, message = "Phone length must be <= 30")
         String phone,
+        Long gitlabUserId,
         @Size(max = 100, message = "GitLab username length must be <= 100")
         String gitlabUsername,
+        @Size(max = 100, message = "GitLab name length must be <= 100")
+        String gitlabName,
         Long giteeMemberId,
         @Size(max = 100, message = "Gitee username length must be <= 100")
         String giteeUsername,
@@ -30,4 +33,32 @@ public record UserRequest(
         @Size(min = 6, max = 100, message = "Password length must be between 6 and 100")
         String password
 ) {
+
+    public UserRequest(String username,
+                       String nickname,
+                       String email,
+                       String phone,
+                       String gitlabUsername,
+                       Long giteeMemberId,
+                       String giteeUsername,
+                       String giteeName,
+                       Boolean enabled,
+                       List<Long> roleIds,
+                       String password) {
+        this(
+                username,
+                nickname,
+                email,
+                phone,
+                null,
+                gitlabUsername,
+                "",
+                giteeMemberId,
+                giteeUsername,
+                giteeName,
+                enabled,
+                roleIds,
+                password
+        );
+    }
 }

@@ -33,7 +33,9 @@ class AccessManagementServiceIntegrationTests {
                 "Gitee 绑定用户",
                 "bound@example.com",
                 "13800000000",
+                881L,
                 "gitlab-user",
+                "GitLab 用户",
                 991L,
                 "zhangsan",
                 "张三",
@@ -47,7 +49,9 @@ class AccessManagementServiceIntegrationTests {
                 "Gitee 绑定用户",
                 "bound@example.com",
                 "13800000000",
-                "gitlab-user",
+                882L,
+                "gitlab-lisi",
+                "GitLab 李四",
                 992L,
                 "lisi",
                 "李四",
@@ -58,11 +62,15 @@ class AccessManagementServiceIntegrationTests {
         PageResponse<UserSummary> pageData = accessManagementService.pageUsers(1, 10, "李四", true, null);
 
         assertThat(updated.giteeMemberId()).isEqualTo(992L);
+        assertThat(updated.gitlabUserId()).isEqualTo(882L);
         assertThat(updated.giteeUsername()).isEqualTo("lisi");
         assertThat(updated.giteeName()).isEqualTo("李四");
+        assertThat(updated.gitlabUsername()).isEqualTo("gitlab-lisi");
+        assertThat(updated.gitlabName()).isEqualTo("GitLab 李四");
         assertThat(pageData.records())
                 .extracting(UserSummary::id)
                 .contains(updated.id());
         assertThat(userRepository.findById(updated.id()).orElseThrow().getGiteeUsername()).isEqualTo("lisi");
+        assertThat(userRepository.findById(updated.id()).orElseThrow().getGitlabUserId()).isEqualTo(882L);
     }
 }
