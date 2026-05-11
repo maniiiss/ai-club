@@ -12,6 +12,9 @@ export interface UserPayload {
   email: string
   phone: string
   gitlabUsername: string
+  giteeMemberId?: number | null
+  giteeUsername?: string
+  giteeName?: string
   enabled: boolean
   roleIds: number[]
   password?: string

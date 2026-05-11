@@ -8,7 +8,7 @@
             v-model="filters.keyword"
             class="management-list-search-input"
             type="text"
-            placeholder="搜索用户名、昵称、邮箱、手机号或 GitLab 用户名..."
+            placeholder="搜索用户名、昵称、邮箱、手机号、GitLab 或 Gitee..."
             @keyup.enter="handleSearch"
           />
         </div>
@@ -66,6 +66,7 @@
             <tr>
               <th class="user-col-main">用户</th>
               <th class="user-col-gitlab">GitLab</th>
+              <th class="user-col-gitee">Gitee</th>
               <th class="user-col-role">角色</th>
               <th class="user-col-email">邮箱</th>
               <th class="user-col-phone">手机号</th>
@@ -90,6 +91,9 @@
               </td>
               <td class="user-col-gitlab" data-label="GitLab">
                 <span class="management-list-empty">{{ row.gitlabUsername || '-' }}</span>
+              </td>
+              <td class="user-col-gitee" data-label="Gitee">
+                <span class="management-list-empty">{{ formatGiteeMember(row) }}</span>
               </td>
               <td class="user-col-role" data-label="角色">
                 <div v-if="row.roleNames.length" class="management-list-stack">
@@ -150,6 +154,12 @@
                     <span class="mobile-entity-field-label">GitLab</span>
                     <div class="mobile-entity-field-content">
                       <span class="mobile-entity-empty-text">{{ row.gitlabUsername || '-' }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">Gitee</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="mobile-entity-empty-text">{{ formatGiteeMember(row) }}</span>
                     </div>
                   </div>
                   <div class="mobile-entity-field">
@@ -263,6 +273,33 @@
         <el-form-item label="GitLab 用户名">
           <el-input v-model="form.gitlabUsername" placeholder="用于关联个人 GitLab MR，例如：zhangsan" />
         </el-form-item>
+        <el-form-item label="Gitee 成员">
+          <el-select
+            v-model="form.giteeMemberId"
+            clearable
+            filterable
+            remote
+            reserve-keyword
+            :remote-method="searchGiteeMembers"
+            :loading="giteeMemberLoading"
+            placeholder="输入姓名、用户名或邮箱搜索 Gitee 成员"
+            style="width: 100%"
+            @change="handleGiteeMemberChange"
+            @clear="clearGiteeMember"
+          >
+            <el-option
+              v-for="item in giteeMemberOptions"
+              :key="item.id"
+              :label="formatGiteeMemberOption(item)"
+              :value="item.id"
+            >
+              <div class="user-gitee-option">
+                <span class="user-gitee-option-main">{{ item.name || item.username }}</span>
+                <span class="user-gitee-option-sub">{{ [item.username, item.email].filter(Boolean).join(' · ') }}</span>
+              </div>
+            </el-option>
+          </el-select>
+        </el-form-item>
         <el-form-item v-if="!isEditing" label="初始密码" prop="password">
           <el-input v-model="form.password" type="password" show-password placeholder="至少 6 位" />
         </el-form-item>
@@ -299,8 +336,9 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Key, Plus, RefreshRight, Search, UserFilled } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { createUser, deleteUser, listRoleOptions, pageUsers, resetUserPassword, updateUser } from '@/api/access'
+import { listGiteeMembers } from '@/api/gitee'
 import { useAuthStore } from '@/stores/auth'
-import type { RoleItem, UserItem } from '@/types/platform'
+import type { GiteeMemberItem, RoleItem, UserItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
@@ -310,6 +348,9 @@ interface UserForm {
   email: string
   phone: string
   gitlabUsername: string
+  giteeMemberId: number | null
+  giteeUsername: string
+  giteeName: string
   enabled: boolean
   roleIds: number[]
   password: string
@@ -327,6 +368,8 @@ const currentId = ref<number | null>(null)
 const currentBuiltIn = ref(false)
 const userList = ref<UserItem[]>([])
 const roleOptions = ref<RoleItem[]>([])
+const giteeMemberOptions = ref<GiteeMemberItem[]>([])
+const giteeMemberLoading = ref(false)
 const formRef = ref<FormInstance>()
 
 const pagination = reactive({ page: 1, size: 10, total: 0 })
@@ -361,6 +404,9 @@ const form = reactive<UserForm>({
   email: '',
   phone: '',
   gitlabUsername: '',
+  giteeMemberId: null,
+  giteeUsername: '',
+  giteeName: '',
   enabled: true,
   roleIds: [],
   password: ''
@@ -385,6 +431,10 @@ const resetForm = () => {
   form.email = ''
   form.phone = ''
   form.gitlabUsername = ''
+  form.giteeMemberId = null
+  form.giteeUsername = ''
+  form.giteeName = ''
+  giteeMemberOptions.value = []
   form.enabled = true
   form.roleIds = []
   form.password = ''
@@ -433,6 +483,16 @@ const handleSizeChange = async () => {
 
 const userInitial = (value?: string | null) => (value || 'UN').slice(0, 2).toUpperCase()
 
+const formatGiteeMember = (row: UserItem) => {
+  const displayName = row.giteeName || row.giteeUsername
+  return displayName ? `${displayName}${row.giteeUsername && row.giteeUsername !== displayName ? `（${row.giteeUsername}）` : ''}` : '-'
+}
+
+const formatGiteeMemberOption = (item: GiteeMemberItem) => {
+  const displayName = item.name || item.username
+  return displayName ? `${displayName}${item.username && item.username !== displayName ? `（${item.username}）` : ''}` : `成员 #${item.id}`
+}
+
 const handlePrevPage = async () => {
   if (pagination.page <= 1) return
   pagination.page -= 1
@@ -450,6 +510,7 @@ const openCreateDialog = () => {
   isEditing.value = false
   resetForm()
   dialogVisible.value = true
+  searchGiteeMembers('')
 }
 
 const fillForm = (row: UserItem) => {
@@ -461,6 +522,12 @@ const fillForm = (row: UserItem) => {
   form.email = row.email
   form.phone = row.phone
   form.gitlabUsername = row.gitlabUsername || ''
+  form.giteeMemberId = row.giteeMemberId
+  form.giteeUsername = row.giteeUsername || ''
+  form.giteeName = row.giteeName || ''
+  giteeMemberOptions.value = row.giteeMemberId
+    ? [{ id: row.giteeMemberId, username: row.giteeUsername || '', name: row.giteeName || row.giteeUsername || '', email: '', avatarUrl: null }]
+    : []
   form.enabled = row.enabled
   form.roleIds = [...row.roleIds]
   form.password = ''
@@ -476,6 +543,45 @@ const openEditDialog = (row: UserItem) => {
   readonlyMode.value = false
   fillForm(row)
   dialogVisible.value = true
+  searchGiteeMembers(row.giteeName || row.giteeUsername || '')
+}
+
+const searchGiteeMembers = async (keyword: string) => {
+  if (!canManage.value || readonlyMode.value) {
+    return
+  }
+  giteeMemberLoading.value = true
+  try {
+    const remoteItems = await listGiteeMembers(keyword)
+    const selectedItem = form.giteeMemberId
+      ? giteeMemberOptions.value.find((item) => item.id === form.giteeMemberId)
+      : null
+    const merged = selectedItem && !remoteItems.some((item) => item.id === selectedItem.id)
+      ? [selectedItem, ...remoteItems]
+      : remoteItems
+    giteeMemberOptions.value = merged
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载 Gitee 成员失败')
+  } finally {
+    giteeMemberLoading.value = false
+  }
+}
+
+const clearGiteeMember = () => {
+  form.giteeMemberId = null
+  form.giteeUsername = ''
+  form.giteeName = ''
+}
+
+const handleGiteeMemberChange = (value: number | null) => {
+  const selected = value === null ? null : giteeMemberOptions.value.find((item) => item.id === value)
+  if (!selected) {
+    clearGiteeMember()
+    return
+  }
+  form.giteeMemberId = selected.id
+  form.giteeUsername = selected.username || ''
+  form.giteeName = selected.name || selected.username || ''
 }
 
 const handleSubmit = async () => {
@@ -490,6 +596,9 @@ const handleSubmit = async () => {
       email: form.email,
       phone: form.phone,
       gitlabUsername: form.gitlabUsername,
+      giteeMemberId: form.giteeMemberId,
+      giteeUsername: form.giteeUsername,
+      giteeName: form.giteeName,
       enabled: form.enabled,
       roleIds: form.roleIds,
       password: isEditing.value ? undefined : form.password
@@ -551,19 +660,23 @@ onMounted(async () => {
 }
 
 .user-col-main {
-  width: 18%;
+  width: 16%;
 }
 
 .user-col-gitlab {
+  width: 10%;
+}
+
+.user-col-gitee {
   width: 12%;
 }
 
 .user-col-role {
-  width: 18%;
+  width: 16%;
 }
 
 .user-col-email {
-  width: 16%;
+  width: 15%;
 }
 
 .user-col-phone {
@@ -584,5 +697,29 @@ onMounted(async () => {
 
 .user-col-actions {
   width: 10%;
+}
+
+.user-gitee-option {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+}
+
+.user-gitee-option-main,
+.user-gitee-option-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-gitee-option-main {
+  font-weight: 650;
+}
+
+.user-gitee-option-sub {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>

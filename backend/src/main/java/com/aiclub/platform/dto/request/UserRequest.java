@@ -19,6 +19,11 @@ public record UserRequest(
         String phone,
         @Size(max = 100, message = "GitLab username length must be <= 100")
         String gitlabUsername,
+        Long giteeMemberId,
+        @Size(max = 100, message = "Gitee username length must be <= 100")
+        String giteeUsername,
+        @Size(max = 100, message = "Gitee name length must be <= 100")
+        String giteeName,
         @NotNull(message = "Enabled flag cannot be null")
         Boolean enabled,
         List<Long> roleIds,

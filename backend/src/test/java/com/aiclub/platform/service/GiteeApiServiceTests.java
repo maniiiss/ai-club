@@ -76,6 +76,51 @@ class GiteeApiServiceTests {
     }
 
     @Test
+    void shouldListMembersWithSearchKeywordAndParseNestedUserSnapshot() throws Exception {
+        mockSuccessResponse("""
+                {
+                  "data": [
+                    {
+                      "id": 991,
+                      "username": "zhangsan",
+                      "remark": "张三",
+                      "email": "zhangsan@example.com",
+                      "user": {
+                        "id": 1991,
+                        "username": "zhangsan",
+                        "name": "张三用户",
+                        "avatar_url": "https://gitee.com/avatar/zhangsan.png"
+                      }
+                    }
+                  ]
+                }
+                """);
+
+        List<GiteeApiService.GiteeMember> members = giteeApiService.listMembers(
+                "https://gitee.com/api/v8/swagger#/getEnterpriseIdMembers",
+                "plain-token",
+                4856171L,
+                "张三"
+        );
+
+        assertThat(members).hasSize(1);
+        assertThat(members.get(0).id()).isEqualTo(991L);
+        assertThat(members.get(0).username()).isEqualTo("zhangsan");
+        assertThat(members.get(0).name()).isEqualTo("张三");
+        assertThat(members.get(0).email()).isEqualTo("zhangsan@example.com");
+        assertThat(members.get(0).avatarUrl()).isEqualTo("https://gitee.com/avatar/zhangsan.png");
+
+        ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(requestCaptor.capture(), any(HttpResponse.BodyHandler.class));
+        String requestUrl = requestCaptor.getValue().uri().toString();
+        assertThat(requestUrl).startsWith("https://api.gitee.com/enterprises/4856171/members?");
+        assertThat(requestUrl).contains("access_token=plain-token");
+        assertThat(requestUrl).contains("search=%E5%BC%A0%E4%B8%89");
+        assertThat(requestUrl).contains("page=1");
+        assertThat(requestUrl).contains("per_page=100");
+    }
+
+    @Test
     void shouldFailFastWhenProgramsPayloadDoesNotContainListField() throws Exception {
         mockSuccessResponse("""
                 {
@@ -172,6 +217,59 @@ class GiteeApiServiceTests {
         assertThat(requestUrl).startsWith("https://api.gitee.com/enterprises/4856171/issues?");
         assertThat(requestUrl).contains("program_id=1001");
         assertThat(requestUrl).contains("scrum_sprint_ids=5001");
+    }
+
+    @Test
+    void shouldParseIssueAssigneeAndCreatorSnapshotsSeparately() throws Exception {
+        mockSuccessResponse("""
+                {
+                  "issues": [
+                    {
+                      "id": 9002,
+                      "title": "远端任务",
+                      "content": "同步描述",
+                      "assignee": {
+                        "id": 701,
+                        "username": "gitee_assignee",
+                        "name": "远端负责人"
+                      },
+                      "user": {
+                        "id": 801,
+                        "username": "gitee_creator",
+                        "name": "远端创建人"
+                      }
+                    },
+                    {
+                      "id": 9003,
+                      "title": "只有创建人的任务",
+                      "content": "同步描述",
+                      "user": {
+                        "id": 802,
+                        "username": "creator_only",
+                        "name": "仅创建人"
+                      }
+                    }
+                  ]
+                }
+                """);
+
+        List<GiteeApiService.GiteeIssue> issues = giteeApiService.listIssues(
+                "https://api.gitee.com/enterprises",
+                "plain-token",
+                4856171L,
+                1001L,
+                5001L
+        );
+
+        assertThat(issues).hasSize(2);
+        assertThat(issues.get(0).assigneeName()).isEqualTo("远端负责人");
+        assertThat(issues.get(0).assigneeMemberId()).isEqualTo(701L);
+        assertThat(issues.get(0).assigneeUsername()).isEqualTo("gitee_assignee");
+        assertThat(issues.get(0).creatorMemberId()).isEqualTo(801L);
+        assertThat(issues.get(0).creatorUsername()).isEqualTo("gitee_creator");
+        assertThat(issues.get(1).assigneeName()).isEmpty();
+        assertThat(issues.get(1).creatorMemberId()).isEqualTo(802L);
+        assertThat(issues.get(1).creatorUsername()).isEqualTo("creator_only");
     }
 
     @Test

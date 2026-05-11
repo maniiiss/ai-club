@@ -165,6 +165,28 @@ class GiteeBindingServiceTests {
     }
 
     @Test
+    void shouldListEnterpriseMembersUsingGlobalGiteeCredential() {
+        configureGlobalBinding(99L, "plain-token");
+        when(giteeApiService.listMembers("https://api.gitee.com/enterprises", "plain-token", 99L, "张三"))
+                .thenReturn(List.of(new GiteeApiService.GiteeMember(
+                        991L,
+                        "zhangsan",
+                        "张三",
+                        "zhangsan@example.com",
+                        "https://gitee.com/avatar/zhangsan.png"
+                )));
+
+        var result = giteeBindingService.listEnterpriseMembers("张三");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).id()).isEqualTo(991L);
+        assertThat(result.get(0).username()).isEqualTo("zhangsan");
+        assertThat(result.get(0).name()).isEqualTo("张三");
+        assertThat(result.get(0).email()).isEqualTo("zhangsan@example.com");
+        assertThat(result.get(0).avatarUrl()).isEqualTo("https://gitee.com/avatar/zhangsan.png");
+    }
+
+    @Test
     void shouldRejectIterationBindingWhenRemoteIterationNotBelongToProgram() {
         ProjectEntity project = buildProject(7L, "项目A");
         IterationEntity iteration = new IterationEntity();

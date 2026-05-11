@@ -130,6 +130,7 @@ public class GiteeWorkItemSyncService {
                     iterationBinding.getGiteeMilestoneId()
             );
             totalIssueCount = remoteIssues.size();
+            GiteeUserBindingIndex userBindingIndex = buildGiteeUserBindingIndex();
 
             Map<Long, TaskGiteeBindingEntity> existingBindingsByIssueId = new LinkedHashMap<>();
             List<Long> remoteIssueIds = remoteIssues.stream().map(GiteeApiService.GiteeIssue::id).toList();
@@ -145,7 +146,7 @@ public class GiteeWorkItemSyncService {
                 try {
                     TaskGiteeBindingEntity existingBinding = existingBindingsByIssueId.get(remoteIssue.id());
                     if (existingBinding == null) {
-                        TaskEntity createdTask = createTaskFromRemoteIssue(iteration, remoteIssue, operator);
+                        TaskEntity createdTask = createTaskFromRemoteIssue(iteration, remoteIssue, userBindingIndex);
                         TaskGiteeBindingEntity binding = new TaskGiteeBindingEntity();
                         binding.setTask(createdTask);
                         binding.setProject(iteration.getProject());
@@ -163,7 +164,7 @@ public class GiteeWorkItemSyncService {
                         if (!existingBinding.getProject().getId().equals(iteration.getProject().getId())) {
                             throw new IllegalArgumentException("远端工作项已绑定到其他本地项目，无法跨项目复用");
                         }
-                        updateTaskFromRemoteIssue(existingBinding.getTask(), iteration, remoteIssue);
+                        updateTaskFromRemoteIssue(existingBinding.getTask(), iteration, remoteIssue, userBindingIndex);
                         existingBinding.setProject(iteration.getProject());
                         existingBinding.setIteration(iteration);
                         existingBinding.setGiteeProgramId(projectBinding.getGiteeProgramId());
@@ -258,18 +259,16 @@ public class GiteeWorkItemSyncService {
      */
     private TaskEntity createTaskFromRemoteIssue(IterationEntity iteration,
                                                  GiteeApiService.GiteeIssue remoteIssue,
-                                                 UserEntity operator) {
+                                                 GiteeUserBindingIndex userBindingIndex) {
         TaskEntity entity = new TaskEntity();
         entity.setName(resolveTaskName(remoteIssue.title()));
         entity.setWorkItemCode(generateUniqueWorkItemCode());
         entity.setWorkItemType(resolveWorkItemType(remoteIssue.workItemType()));
         entity.setStatus(resolveStatus(remoteIssue.status()));
         entity.setPriority(resolvePriority(remoteIssue.priority()));
-        entity.setAssignee(resolveAssignee(remoteIssue.assigneeName()));
-        entity.setAssigneeUser(null);
+        applyRemoteUsers(entity, remoteIssue, userBindingIndex);
         entity.setCollaborators(new LinkedHashSet<>());
         entity.setProject(iteration.getProject());
-        entity.setCreatorUser(operator);
         entity.setAgent(null);
         entity.setIteration(iteration);
         entity.setRequirementTask(null);
@@ -282,15 +281,17 @@ public class GiteeWorkItemSyncService {
         return taskRepository.save(entity);
     }
 
-    private void updateTaskFromRemoteIssue(TaskEntity entity, IterationEntity iteration, GiteeApiService.GiteeIssue remoteIssue) {
+    private void updateTaskFromRemoteIssue(TaskEntity entity,
+                                           IterationEntity iteration,
+                                           GiteeApiService.GiteeIssue remoteIssue,
+                                           GiteeUserBindingIndex userBindingIndex) {
         String previousDescription = defaultString(entity.getDescription());
         String previousRequirementMarkdown = defaultString(entity.getRequirementMarkdown());
         entity.setName(resolveTaskName(remoteIssue.title()));
         entity.setWorkItemType(resolveWorkItemType(remoteIssue.workItemType()));
         entity.setStatus(resolveStatus(remoteIssue.status()));
         entity.setPriority(resolvePriority(remoteIssue.priority()));
-        entity.setAssignee(resolveAssignee(remoteIssue.assigneeName()));
-        entity.setAssigneeUser(null);
+        applyRemoteUsers(entity, remoteIssue, userBindingIndex);
         entity.setProject(iteration.getProject());
         entity.setIteration(iteration);
         applyRemoteContentForUpdate(entity, remoteIssue, previousDescription, previousRequirementMarkdown);
@@ -360,10 +361,34 @@ public class GiteeWorkItemSyncService {
                     resolveEnterpriseId(projectBinding),
                     remoteIssue.id()
             );
-            return hasText(detailedIssue.description()) ? detailedIssue : remoteIssue;
+            return hasText(detailedIssue.description()) ? mergeIssueDetail(remoteIssue, detailedIssue) : remoteIssue;
         } catch (RuntimeException ignored) {
             return remoteIssue;
         }
+    }
+
+    /**
+     * 详情接口可能只返回正文等少数字段，这里用详情补齐正文，同时保留列表接口中的人员快照。
+     */
+    private GiteeApiService.GiteeIssue mergeIssueDetail(GiteeApiService.GiteeIssue listIssue,
+                                                        GiteeApiService.GiteeIssue detailedIssue) {
+        return new GiteeApiService.GiteeIssue(
+                firstLongValue(detailedIssue.id(), listIssue.id()),
+                firstTextValue(detailedIssue.title(), listIssue.title()),
+                firstTextValue(detailedIssue.description(), listIssue.description()),
+                firstTextValue(detailedIssue.workItemType(), listIssue.workItemType()),
+                firstTextValue(detailedIssue.status(), listIssue.status()),
+                firstTextValue(detailedIssue.priority(), listIssue.priority()),
+                firstTextValue(detailedIssue.assigneeName(), listIssue.assigneeName()),
+                firstLongValue(detailedIssue.assigneeMemberId(), listIssue.assigneeMemberId()),
+                firstTextValue(detailedIssue.assigneeUsername(), listIssue.assigneeUsername()),
+                firstLongValue(detailedIssue.creatorMemberId(), listIssue.creatorMemberId()),
+                firstTextValue(detailedIssue.creatorUsername(), listIssue.creatorUsername()),
+                firstTextValue(detailedIssue.creatorName(), listIssue.creatorName()),
+                firstTextValue(detailedIssue.planStartDate(), listIssue.planStartDate()),
+                firstTextValue(detailedIssue.planEndDate(), listIssue.planEndDate()),
+                firstTextValue(detailedIssue.webUrl(), listIssue.webUrl())
+        );
     }
 
     private boolean shouldBackfillRequirementMarkdown(String previousDescription, String previousRequirementMarkdown) {
@@ -451,6 +476,56 @@ public class GiteeWorkItemSyncService {
         return userRepository.findById(userId).orElse(null);
     }
 
+    /**
+     * Gitee 导入人员只通过用户管理维护的远端成员绑定落到本地用户；
+     * 远端自由文本不再作为负责人兜底，避免把未确认身份写成本地责任人。
+     */
+    private void applyRemoteUsers(TaskEntity entity,
+                                  GiteeApiService.GiteeIssue remoteIssue,
+                                  GiteeUserBindingIndex userBindingIndex) {
+        UserEntity assigneeUser = resolveGiteeUser(userBindingIndex, remoteIssue.assigneeMemberId(), remoteIssue.assigneeUsername());
+        UserEntity creatorUser = resolveGiteeUser(userBindingIndex, remoteIssue.creatorMemberId(), remoteIssue.creatorUsername());
+        entity.setAssigneeUser(assigneeUser);
+        entity.setAssignee(assigneeUser == null ? "" : displayName(assigneeUser));
+        entity.setCreatorUser(creatorUser);
+    }
+
+    /**
+     * 每轮同步只加载一次用户绑定，后续按 Gitee 成员ID优先、登录名兜底做内存匹配。
+     */
+    private GiteeUserBindingIndex buildGiteeUserBindingIndex() {
+        Map<Long, UserEntity> byMemberId = new LinkedHashMap<>();
+        Map<String, UserEntity> byUsername = new LinkedHashMap<>();
+        List<UserEntity> users = userRepository.findAll();
+        if (users == null) {
+            users = List.of();
+        }
+        for (UserEntity user : users) {
+            if (user == null) {
+                continue;
+            }
+            if (user.getGiteeMemberId() != null) {
+                byMemberId.putIfAbsent(user.getGiteeMemberId(), user);
+            }
+            String usernameKey = normalizeUsernameKey(user.getGiteeUsername());
+            if (usernameKey != null) {
+                byUsername.putIfAbsent(usernameKey, user);
+            }
+        }
+        return new GiteeUserBindingIndex(byMemberId, byUsername);
+    }
+
+    private UserEntity resolveGiteeUser(GiteeUserBindingIndex userBindingIndex, Long memberId, String username) {
+        if (memberId != null) {
+            UserEntity matchedUser = userBindingIndex.byMemberId().get(memberId);
+            if (matchedUser != null) {
+                return matchedUser;
+            }
+        }
+        String usernameKey = normalizeUsernameKey(username);
+        return usernameKey == null ? null : userBindingIndex.byUsername().get(usernameKey);
+    }
+
     private String resolveTaskName(String value) {
         String normalized = trimToNull(value);
         return normalized == null ? "未命名工作项" : normalized;
@@ -492,11 +567,6 @@ public class GiteeWorkItemSyncService {
             return mappedPriority;
         }
         return normalized;
-    }
-
-    private String resolveAssignee(String value) {
-        String normalized = trimToNull(value);
-        return normalized == null ? "未分配" : normalized;
     }
 
     private LocalDate parseDate(String value) {
@@ -553,6 +623,25 @@ public class GiteeWorkItemSyncService {
         return value == null ? "" : value.trim();
     }
 
+    private String firstTextValue(String primary, String fallback) {
+        String normalizedPrimary = trimToNull(primary);
+        return normalizedPrimary == null ? defaultString(fallback) : normalizedPrimary;
+    }
+
+    private Long firstLongValue(Long primary, Long fallback) {
+        return primary == null ? fallback : primary;
+    }
+
+    private String displayName(UserEntity user) {
+        String nickname = defaultString(user.getNickname());
+        return nickname.isBlank() ? defaultString(user.getUsername()) : nickname;
+    }
+
+    private String normalizeUsernameKey(String value) {
+        String normalized = trimToNull(value);
+        return normalized == null ? null : normalized.toLowerCase(Locale.ROOT);
+    }
+
     private String trimToNull(String value) {
         if (value == null) {
             return null;
@@ -571,5 +660,9 @@ public class GiteeWorkItemSyncService {
             return new IllegalStateException("请先在系统设置-环境变量管理中配置 " + label, exception);
         }
         return new IllegalStateException("系统设置-环境变量管理中的" + label + "配置无效：" + message, exception);
+    }
+
+    private record GiteeUserBindingIndex(Map<Long, UserEntity> byMemberId,
+                                         Map<String, UserEntity> byUsername) {
     }
 }

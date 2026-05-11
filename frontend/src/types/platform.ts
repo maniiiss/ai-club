@@ -1113,6 +1113,14 @@ export interface GiteeMilestoneItem {
   endDate: string | null
 }
 
+export interface GiteeMemberItem {
+  id: number
+  username: string
+  name: string
+  email: string
+  avatarUrl: string | null
+}
+
 export interface ProjectGiteeBindingItem {
   id: number
   projectId: number
@@ -1528,6 +1536,9 @@ export interface UserItem {
   email: string
   phone: string
   gitlabUsername: string
+  giteeMemberId: number | null
+  giteeUsername: string
+  giteeName: string
   enabled: boolean
   builtIn: boolean
   lastLoginAt: string | null

@@ -96,6 +96,7 @@ public class AccessManagementService {
         entity.setEmail(defaultString(request.email()));
         entity.setPhone(defaultString(request.phone()));
         entity.setGitlabUsername(defaultString(request.gitlabUsername()));
+        applyGiteeMemberBinding(entity, request);
         entity.setEnabled(Boolean.TRUE.equals(request.enabled()));
         entity.setPasswordHash(passwordEncoder.encode(request.password().trim()));
         entity.setRoles(resolveRoles(request.roleIds()));
@@ -113,6 +114,7 @@ public class AccessManagementService {
         entity.setEmail(defaultString(request.email()));
         entity.setPhone(defaultString(request.phone()));
         entity.setGitlabUsername(defaultString(request.gitlabUsername()));
+        applyGiteeMemberBinding(entity, request);
         entity.setEnabled(Boolean.TRUE.equals(request.enabled()));
         entity.setRoles(resolveRoles(request.roleIds()));
 
@@ -325,7 +327,9 @@ public class AccessManagementService {
                         cb.like(cb.lower(root.get("nickname")), pattern),
                         cb.like(cb.lower(root.get("email")), pattern),
                         cb.like(cb.lower(root.get("phone")), pattern),
-                        cb.like(cb.lower(root.get("gitlabUsername")), pattern)
+                        cb.like(cb.lower(root.get("gitlabUsername")), pattern),
+                        cb.like(cb.lower(root.get("giteeUsername")), pattern),
+                        cb.like(cb.lower(root.get("giteeName")), pattern)
                 ));
             }
             if (enabled != null) {
@@ -388,6 +392,9 @@ public class AccessManagementService {
                 entity.getEmail(),
                 entity.getPhone(),
                 entity.getGitlabUsername(),
+                entity.getGiteeMemberId(),
+                entity.getGiteeUsername(),
+                entity.getGiteeName(),
                 entity.isEnabled(),
                 entity.isBuiltIn(),
                 entity.getLastLoginAt() == null ? null : entity.getLastLoginAt().format(TIME_FORMATTER),
@@ -408,6 +415,21 @@ public class AccessManagementService {
                 entity.getAvatarUrl(),
                 entity.isEnabled()
         );
+    }
+
+    /**
+     * 保存用户与 Gitee 企业成员的快照映射；清空成员ID时同步清空展示字段。
+     */
+    private void applyGiteeMemberBinding(UserEntity entity, UserRequest request) {
+        if (request.giteeMemberId() == null) {
+            entity.setGiteeMemberId(null);
+            entity.setGiteeUsername("");
+            entity.setGiteeName("");
+            return;
+        }
+        entity.setGiteeMemberId(request.giteeMemberId());
+        entity.setGiteeUsername(defaultString(request.giteeUsername()));
+        entity.setGiteeName(defaultString(request.giteeName()));
     }
 
     private RoleSummary toRoleSummary(RoleEntity entity) {

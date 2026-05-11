@@ -3,6 +3,7 @@ package com.aiclub.platform.controller;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.GiteeMilestoneSummary;
+import com.aiclub.platform.dto.GiteeMemberSummary;
 import com.aiclub.platform.dto.GiteeProgramSummary;
 import com.aiclub.platform.dto.GiteeTestPlanPushContextSummary;
 import com.aiclub.platform.dto.GiteeTestPlanPushResult;
@@ -52,6 +53,13 @@ public class GiteeController {
     @RequirePermission("gitee:binding:manage")
     public ApiResponse<List<GiteeProgramSummary>> listProjectPrograms() {
         return ApiResponse.success(giteeBindingService.listProjectPrograms());
+    }
+
+    @GetMapping("/members")
+    @RequirePermission("system:user:manage")
+    public ApiResponse<List<GiteeMemberSummary>> listEnterpriseMembers(
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String keyword) {
+        return ApiResponse.success(giteeBindingService.listEnterpriseMembers(keyword));
     }
 
     @PostMapping("/projects/{projectId}/binding")

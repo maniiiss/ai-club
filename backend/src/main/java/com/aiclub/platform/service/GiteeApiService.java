@@ -78,6 +78,38 @@ public class GiteeApiService {
         }
     }
 
+    public List<GiteeMember> listMembers(String apiBaseUrl, String accessToken, Long enterpriseId, String search) {
+        List<GiteeMember> items = new ArrayList<>();
+        int page = 1;
+        while (true) {
+            Map<String, String> params = new java.util.LinkedHashMap<>();
+            params.put("access_token", accessToken);
+            params.put("page", String.valueOf(page));
+            params.put("per_page", String.valueOf(PAGE_SIZE));
+            if (hasText(search)) {
+                params.put("search", search.trim());
+            }
+            JsonNode arrayNode = extractArrayNode(
+                    sendJsonGet(buildUrl(
+                            normalizeEnterpriseApiBaseUrl(apiBaseUrl) + "/" + enterpriseId + "/members",
+                            params
+                    )),
+                    "members",
+                    "data",
+                    "items"
+            );
+            int currentSize = 0;
+            for (JsonNode node : arrayNode) {
+                items.add(toMember(node));
+                currentSize++;
+            }
+            if (currentSize < PAGE_SIZE) {
+                return items;
+            }
+            page++;
+        }
+    }
+
     public GiteeProgram fetchProgram(String apiBaseUrl, String accessToken, Long enterpriseId, Long programId) {
         JsonNode node = sendJsonGet(buildUrl(
                 normalizeEnterpriseApiBaseUrl(apiBaseUrl) + "/" + enterpriseId + "/programs/" + programId,
@@ -298,6 +330,20 @@ public class GiteeApiService {
     }
 
     /**
+     * 企业成员接口会同时返回成员记录和嵌套 user 对象，这里优先保留成员侧备注名。
+     */
+    private GiteeMember toMember(JsonNode node) {
+        JsonNode userNode = node.path("user");
+        return new GiteeMember(
+                node.path("id").asLong(),
+                firstText(node.path("username"), userNode.path("username"), userNode.path("login")),
+                firstText(node.path("remark"), node.path("name"), userNode.path("name"), userNode.path("nickname"), userNode.path("username")),
+                firstText(node.path("email"), userNode.path("email")),
+                firstText(node.path("avatar_url"), node.path("avatarUrl"), userNode.path("avatar_url"), userNode.path("avatarUrl"))
+        );
+    }
+
+    /**
      * Gitee 企业项目相关接口的入口和 Swagger 文档地址经常被用户混填。
      * 这里把公开云版常见地址统一折算到 `/enterprises` 前缀，避免列表请求命中错误路径。
      */
@@ -353,6 +399,18 @@ public class GiteeApiService {
      * 这里统一做多字段兜底，避免接口升级后同步链路脆断。
      */
     private GiteeIssue toIssue(JsonNode node) {
+        JsonNode assigneeNode = firstPresentNode(
+                node.path("assignee"),
+                node.path("assigned_to"),
+                node.path("assignee_user"),
+                node.path("assigned_user")
+        );
+        JsonNode creatorNode = firstPresentNode(
+                node.path("author"),
+                node.path("creator"),
+                node.path("created_by"),
+                node.path("user")
+        );
         return new GiteeIssue(
                 node.path("id").asLong(),
                 firstText(node.path("title"), node.path("subject")),
@@ -378,7 +436,12 @@ public class GiteeApiService {
                         node.path("status")
                 ),
                 firstText(node.path("priority_human"), node.path("priority_name"), node.path("priority")),
-                resolveUserDisplayName(node.path("assignee"), node.path("assigned_to"), node.path("user")),
+                resolveUserDisplayName(assigneeNode),
+                resolveUserMemberId(assigneeNode),
+                resolveUserUsername(assigneeNode),
+                resolveUserMemberId(creatorNode),
+                resolveUserUsername(creatorNode),
+                resolveUserDisplayName(creatorNode),
                 normalizeDateText(firstText(node.path("plan_started_at"), node.path("start_date"))),
                 normalizeDateText(firstText(node.path("deadline"), node.path("due_date"), node.path("end_date"))),
                 firstText(node.path("html_url"), node.path("web_url"), node.path("url"))
@@ -406,12 +469,60 @@ public class GiteeApiService {
             if (node == null || node.isMissingNode() || node.isNull()) {
                 continue;
             }
-            String value = firstText(node.path("name"), node.path("nickname"), node.path("username"), node.path("login"));
+            if (node.isTextual()) {
+                String textValue = node.asText("");
+                if (hasText(textValue)) {
+                    return textValue.trim();
+                }
+            }
+            String value = firstText(
+                    node.path("remark"),
+                    node.path("name"),
+                    node.path("nickname"),
+                    node.path("username"),
+                    node.path("login"),
+                    node.path("user").path("remark"),
+                    node.path("user").path("name"),
+                    node.path("user").path("nickname"),
+                    node.path("user").path("username"),
+                    node.path("user").path("login")
+            );
             if (hasText(value)) {
                 return value;
             }
         }
         return "";
+    }
+
+    private Long resolveUserMemberId(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        return firstLong(
+                node.path("id"),
+                node.path("member_id"),
+                node.path("memberId"),
+                node.path("enterprise_member_id"),
+                node.path("enterpriseMemberId")
+        );
+    }
+
+    private String resolveUserUsername(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return "";
+        }
+        if (node.isTextual()) {
+            String textValue = node.asText("");
+            return hasText(textValue) ? textValue.trim() : "";
+        }
+        return firstText(
+                node.path("username"),
+                node.path("login"),
+                node.path("ident"),
+                node.path("user").path("username"),
+                node.path("user").path("login"),
+                node.path("user").path("ident")
+        );
     }
 
     private String normalizeDateText(String value) {
@@ -520,6 +631,15 @@ public class GiteeApiService {
         throw new IllegalStateException("Gitee 接口返回格式不符合预期，未找到对象字段");
     }
 
+    private JsonNode firstPresentNode(JsonNode... nodes) {
+        for (JsonNode node : nodes) {
+            if (node != null && !node.isMissingNode() && !node.isNull()) {
+                return node;
+            }
+        }
+        return objectMapper.missingNode();
+    }
+
     private Long requiredLong(JsonNode node, String... candidateFields) {
         for (String candidateField : candidateFields) {
             JsonNode valueNode = node.path(candidateField);
@@ -568,6 +688,26 @@ public class GiteeApiService {
         return "";
     }
 
+    private Long firstLong(JsonNode... nodes) {
+        for (JsonNode node : nodes) {
+            if (node == null || node.isMissingNode() || node.isNull()) {
+                continue;
+            }
+            if (node.isIntegralNumber()) {
+                return node.asLong();
+            }
+            String value = node.asText("");
+            if (hasText(value)) {
+                try {
+                    return Long.parseLong(value.trim());
+                } catch (NumberFormatException ignored) {
+                    // 继续尝试其它字段。
+                }
+            }
+        }
+        return null;
+    }
+
     private String urlEncode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
@@ -577,6 +717,9 @@ public class GiteeApiService {
     }
 
     public record GiteeProgram(Long id, String name, String ident) {
+    }
+
+    public record GiteeMember(Long id, String username, String name, String email, String avatarUrl) {
     }
 
     public record GiteeMilestone(Long id, String title, String state, String startDate, String endDate) {
@@ -589,9 +732,43 @@ public class GiteeApiService {
                              String status,
                              String priority,
                              String assigneeName,
+                             Long assigneeMemberId,
+                             String assigneeUsername,
+                             Long creatorMemberId,
+                             String creatorUsername,
+                             String creatorName,
                              String planStartDate,
                              String planEndDate,
                              String webUrl) {
+
+        public GiteeIssue(Long id,
+                          String title,
+                          String description,
+                          String workItemType,
+                          String status,
+                          String priority,
+                          String assigneeName,
+                          String planStartDate,
+                          String planEndDate,
+                          String webUrl) {
+            this(
+                    id,
+                    title,
+                    description,
+                    workItemType,
+                    status,
+                    priority,
+                    assigneeName,
+                    null,
+                    "",
+                    null,
+                    "",
+                    "",
+                    planStartDate,
+                    planEndDate,
+                    webUrl
+            );
+        }
     }
 
     public record GiteeTestPlanRequest(String title,

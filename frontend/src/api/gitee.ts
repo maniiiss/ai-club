@@ -1,6 +1,7 @@
 import { http } from './http'
 import type {
   ApiResponse,
+  GiteeMemberItem,
   GiteeMilestoneItem,
   GiteeProgramItem,
   GiteeTestPlanPushContextItem,
@@ -27,6 +28,13 @@ export const getProjectGiteeBinding = async (projectId: number) => {
 
 export const listProjectGiteePrograms = async () => {
   const { data } = await http.get<ApiResponse<GiteeProgramItem[]>>('/api/gitee/project-programs')
+  return data.data
+}
+
+export const listGiteeMembers = async (keyword?: string) => {
+  const { data } = await http.get<ApiResponse<GiteeMemberItem[]>>('/api/gitee/members', {
+    params: keyword?.trim() ? { keyword: keyword.trim() } : undefined
+  })
   return data.data
 }
 

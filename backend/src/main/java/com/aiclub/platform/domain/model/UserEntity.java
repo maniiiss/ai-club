@@ -41,6 +41,18 @@ public class UserEntity {
     @Column(name = "gitlab_username", nullable = false, length = 100)
     private String gitlabUsername = "";
 
+    /** 绑定的 Gitee 企业成员ID，空值表示尚未建立远端成员映射。 */
+    @Column(name = "gitee_member_id")
+    private Long giteeMemberId;
+
+    /** 绑定的 Gitee 成员登录名快照，用于列表展示和关键字检索。 */
+    @Column(name = "gitee_username", nullable = false, length = 100)
+    private String giteeUsername = "";
+
+    /** 绑定的 Gitee 成员姓名快照，避免远端成员改名后本地列表无可读展示。 */
+    @Column(name = "gitee_name", nullable = false, length = 100)
+    private String giteeName = "";
+
     /** 用户头像访问地址，默认空字符串表示使用前端回退头像。 */
     @Column(name = "avatar_url", nullable = false, length = 255)
     private String avatarUrl = "";
@@ -119,6 +131,30 @@ public class UserEntity {
 
     public void setGitlabUsername(String gitlabUsername) {
         this.gitlabUsername = gitlabUsername;
+    }
+
+    public Long getGiteeMemberId() {
+        return giteeMemberId;
+    }
+
+    public void setGiteeMemberId(Long giteeMemberId) {
+        this.giteeMemberId = giteeMemberId;
+    }
+
+    public String getGiteeUsername() {
+        return giteeUsername;
+    }
+
+    public void setGiteeUsername(String giteeUsername) {
+        this.giteeUsername = giteeUsername;
+    }
+
+    public String getGiteeName() {
+        return giteeName;
+    }
+
+    public void setGiteeName(String giteeName) {
+        this.giteeName = giteeName;
     }
 
     public String getAvatarUrl() {

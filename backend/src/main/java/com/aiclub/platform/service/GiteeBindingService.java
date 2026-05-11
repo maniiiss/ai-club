@@ -5,6 +5,7 @@ import com.aiclub.platform.domain.model.IterationGiteeBindingEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGiteeBindingEntity;
 import com.aiclub.platform.dto.GiteeMilestoneSummary;
+import com.aiclub.platform.dto.GiteeMemberSummary;
 import com.aiclub.platform.dto.GiteeProgramSummary;
 import com.aiclub.platform.dto.IterationGiteeBindingSummary;
 import com.aiclub.platform.dto.ProjectGiteeBindingSummary;
@@ -77,6 +78,21 @@ public class GiteeBindingService {
         String accessToken = resolveAccessToken(null, true);
         return giteeApiService.listPrograms(apiBaseUrl, accessToken, enterpriseId).stream()
                 .map(item -> new GiteeProgramSummary(item.id(), item.name(), item.ident()))
+                .toList();
+    }
+
+    public List<GiteeMemberSummary> listEnterpriseMembers(String keyword) {
+        String apiBaseUrl = resolveApiBaseUrl(null);
+        Long enterpriseId = resolveEnterpriseId(null);
+        String accessToken = resolveAccessToken(null, true);
+        return giteeApiService.listMembers(apiBaseUrl, accessToken, enterpriseId, keyword).stream()
+                .map(item -> new GiteeMemberSummary(
+                        item.id(),
+                        item.username(),
+                        item.name(),
+                        item.email(),
+                        item.avatarUrl()
+                ))
                 .toList();
     }
 
