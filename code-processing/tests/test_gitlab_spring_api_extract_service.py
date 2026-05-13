@@ -27,7 +27,7 @@ class GitlabSpringApiExtractServiceTests(unittest.TestCase):
             authToken="token-1",
         )
 
-    def test_should_extract_controller_comments_params_body_and_enum_values(self):
+    def test_should_extract_controller_comments_params_body_enum_values_and_controller_metadata(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_dir = Path(temp_dir) / "repo"
             source_dir = repo_dir / "src" / "main" / "java" / "com" / "demo"
@@ -36,9 +36,16 @@ class GitlabSpringApiExtractServiceTests(unittest.TestCase):
                 """
                 package com.demo;
 
+                import io.swagger.v3.oas.annotations.Parameter;
+                import io.swagger.v3.oas.annotations.media.Schema;
+                import io.swagger.v3.oas.annotations.tags.Tag;
                 import org.springframework.web.bind.annotation.*;
 
+                /**
+                 * 用户管理控制器。
+                 */
                 @RestController
+                @Tag(name = "用户管理")
                 @RequestMapping("/api/users")
                 public class UserController {
                     /**
@@ -47,9 +54,9 @@ class GitlabSpringApiExtractServiceTests(unittest.TestCase):
                      * @param keyword 搜索关键词
                      */
                     @GetMapping("/{id}")
-                    public UserRequest detail(@PathVariable Long id,
-                                              @RequestParam(required = false) String keyword,
-                                              @RequestHeader(name = "X-Tenant", required = false) String tenant) {
+                    public UserRequest detail(@Parameter(description = "用户主键") @PathVariable Long id,
+                                              @Parameter(description = "关键字检索词") @RequestParam(required = false) String keyword,
+                                              @Parameter(description = "租户编码", schema = @Schema(description = "租户编码枚举")) @RequestHeader(name = "X-Tenant", required = false) String tenant) {
                         return null;
                     }
 
@@ -67,15 +74,72 @@ class GitlabSpringApiExtractServiceTests(unittest.TestCase):
                 """,
                 encoding="utf-8",
             )
+            (source_dir / "OrderController.java").write_text(
+                """
+                package com.demo;
+
+                import io.swagger.annotations.Api;
+                import org.springframework.web.bind.annotation.*;
+
+                @RestController
+                @Api(tags = {"订单中心"})
+                @RequestMapping("/api/orders")
+                public class OrderController {
+                    /** 查询订单详情。 */
+                    @GetMapping("/{id}")
+                    public void detail(@PathVariable Long id) {
+                    }
+                }
+                """,
+                encoding="utf-8",
+            )
+            (source_dir / "AuditController.java").write_text(
+                """
+                package com.demo;
+
+                import org.springframework.web.bind.annotation.*;
+
+                /**
+                 * 审计日志
+                 * 用于追踪关键事件。
+                 */
+                @RestController
+                @RequestMapping("/api/audits")
+                public class AuditController {
+                    @GetMapping
+                    public void page() {
+                    }
+                }
+                """,
+                encoding="utf-8",
+            )
+            (source_dir / "PlainController.java").write_text(
+                """
+                package com.demo;
+
+                import org.springframework.web.bind.annotation.*;
+
+                @RestController
+                @RequestMapping("/api/plain")
+                public class PlainController {
+                    @GetMapping
+                    public void page() {
+                    }
+                }
+                """,
+                encoding="utf-8",
+            )
             (source_dir / "UserRequest.java").write_text(
                 """
                 package com.demo;
 
+                import io.swagger.v3.oas.annotations.media.Schema;
+
                 public class UserRequest {
-                    /** 用户姓名 */
+                    @Schema(description = "用户姓名")
                     private String name;
 
-                    /** 用户状态 */
+                    @Schema(description = "用户状态")
                     private UserStatus status;
                 }
                 """,
@@ -107,19 +171,35 @@ class GitlabSpringApiExtractServiceTests(unittest.TestCase):
 
         self.assertEqual("main", response.branchName)
         self.assertEqual("fixed-sha", response.commitSha)
-        self.assertEqual(3, response.scannedCount)
-        self.assertEqual(2, len(response.endpoints))
-        detail = next(item for item in response.endpoints if item.method == "GET")
+        self.assertEqual(6, response.scannedCount)
+        self.assertEqual(5, len(response.endpoints))
+        detail = next(item for item in response.endpoints if item.path == "/api/users/{id}")
         self.assertEqual("/api/users/{id}", detail.path)
         self.assertEqual("查询用户详情", detail.name)
         self.assertEqual("id", detail.pathParams[0].name)
+        self.assertEqual("用户主键", detail.pathParams[0].description)
         self.assertEqual("keyword", detail.queryParams[0].name)
         self.assertFalse(detail.queryParams[0].required)
+        self.assertEqual("关键字检索词", detail.queryParams[0].description)
         self.assertEqual("X-Tenant", detail.headers[0].name)
-        create = next(item for item in response.endpoints if item.method == "POST")
+        self.assertEqual("租户编码", detail.headers[0].description)
+        self.assertEqual("com.demo.UserController", detail.controllerSignature)
+        self.assertEqual("UserController", detail.controllerClassName)
+        self.assertEqual("用户管理", detail.controllerDisplayName)
+        create = next(item for item in response.endpoints if item.path == "/api/users")
         body = json.loads(create.bodyExample)
         self.assertEqual("", body["name"])
         self.assertEqual("ENABLED", body["status"])
+        self.assertEqual("name", create.bodyFields[0].name)
+        self.assertEqual("用户姓名", create.bodyFields[0].description)
+        self.assertEqual("用户状态", create.bodyFields[1].description)
+        self.assertEqual(detail.controllerSignature, create.controllerSignature)
+        order = next(item for item in response.endpoints if item.path == "/api/orders/{id}")
+        self.assertEqual("订单中心", order.controllerDisplayName)
+        audit = next(item for item in response.endpoints if item.path == "/api/audits")
+        self.assertEqual("审计日志", audit.controllerDisplayName)
+        plain = next(item for item in response.endpoints if item.path == "/api/plain")
+        self.assertEqual("PlainController", plain.controllerDisplayName)
         self.assertTrue(any("接口重复" in warning for warning in response.warnings))
 
 

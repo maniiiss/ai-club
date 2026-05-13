@@ -49,6 +49,17 @@ class JavaMethodDoc:
     line_no: int
 
 
+@dataclass(frozen=True)
+class JavaControllerDoc:
+    """Spring Controller 类解析后的中间结构。"""
+
+    class_name: str
+    comment: str
+    annotations: str
+    body: str
+    body_line_offset: int
+
+
 def extract_gitlab_spring_apis(request: GitlabSpringApiExtractRequest) -> GitlabSpringApiExtractResponse:
     """拉取 GitLab 仓库并抽取 Spring REST 接口说明。"""
     workspace = _workspace_for(request.repository.bindingId, request.repository.targetBranch)
@@ -128,19 +139,18 @@ def _extract_controller_file(repo_dir: Path,
     if "@RestController" not in text:
         return []
     package_prefix = _detect_package(text)
+    source_file = _relative_path(repo_dir, java_file)
     endpoints: list[GitlabSpringApiEndpoint] = []
-    for class_match in re.finditer(r"\b(?:public\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)[^{]*\{", text):
-        class_name = class_match.group(1)
-        class_start = class_match.start()
-        class_open = text.find("{", class_match.start())
-        class_close = _find_matching(text, class_open, "{", "}")
-        if class_close <= class_open:
-            continue
-        class_prefixes = _parse_mapping_paths(_nearby_annotations(text, class_start), default_path="")
+    for controller_doc in _extract_controller_classes(text):
+        class_prefixes = _parse_class_mappings(controller_doc.annotations)
         class_prefixes = class_prefixes or [""]
-        class_body = text[class_open + 1:class_close]
-        body_line_offset = text[:class_open + 1].count("\n")
-        for method_doc in _extract_controller_methods(class_body, body_line_offset):
+        controller_signature = _controller_signature(package_prefix, source_file, controller_doc.class_name)
+        controller_display_name = _controller_display_name(
+            controller_doc.class_name,
+            controller_doc.annotations,
+            controller_doc.comment,
+        )
+        for method_doc in _extract_controller_methods(controller_doc.body, controller_doc.body_line_offset):
             mappings = _parse_method_mappings(method_doc.annotations)
             if not mappings:
                 continue
@@ -158,9 +168,13 @@ def _extract_controller_file(repo_dir: Path,
                 summary,
             )
             param_docs = _extract_javadoc_params(method_doc.comment)
-            params, header_params, body_type = _extract_method_parameters(method_doc.signature, param_docs, enum_values)
+            params, header_params, body_fields, body_type = _extract_method_parameters(
+                method_doc.signature,
+                param_docs,
+                dto_fields,
+                enum_values,
+            )
             body_example = _build_body_example(body_type, dto_fields, enum_values)
-            source_file = _relative_path(repo_dir, java_file)
             for http_method, method_path in mappings:
                 for class_prefix in class_prefixes:
                     path = _join_paths(class_prefix, method_path)
@@ -170,17 +184,44 @@ def _extract_controller_file(repo_dir: Path,
                         path=path,
                         name=summary,
                         description=description,
+                        controllerSignature=controller_signature,
+                        controllerClassName=controller_doc.class_name,
+                        controllerDisplayName=controller_display_name,
                         headers=header_params,
                         queryParams=[item for item in params if item.name not in path_names],
                         pathParams=[item for item in params if item.name in path_names],
+                        bodyFields=body_fields,
                         requestContentType="application/json" if body_type else "none",
                         bodyExample=body_example,
                         sourceFile=source_file,
                         sourceLine=method_doc.line_no,
-                        sourceSignature=_source_signature(package_prefix, class_name, method_doc.name, http_method, path),
+                        sourceSignature=_source_signature(package_prefix, controller_doc.class_name, method_doc.name, http_method, path),
                     )
                     endpoints.append(endpoint)
     return endpoints
+
+
+def _extract_controller_classes(text: str) -> list[JavaControllerDoc]:
+    """抽取文件内所有 `@RestController` 类，避免把普通内部类误当成接口控制器。"""
+    controllers: list[JavaControllerDoc] = []
+    for class_match in re.finditer(r"\b(?:public\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)[^{]*\{", text):
+        class_name = class_match.group(1)
+        class_start = class_match.start()
+        annotations = _nearby_annotations(text, class_start)
+        if "@RestController" not in annotations:
+            continue
+        class_open = text.find("{", class_match.start())
+        class_close = _find_matching(text, class_open, "{", "}")
+        if class_close <= class_open:
+            continue
+        controllers.append(JavaControllerDoc(
+            class_name=class_name,
+            comment=_nearby_comment(text, class_start),
+            annotations=annotations,
+            body=text[class_open + 1:class_close],
+            body_line_offset=text[:class_open + 1].count("\n"),
+        ))
+    return controllers
 
 
 def _extract_controller_methods(class_body: str, body_line_offset: int) -> list[JavaMethodDoc]:
@@ -241,20 +282,21 @@ def _extract_controller_methods(class_body: str, body_line_offset: int) -> list[
 
 def _extract_method_parameters(signature: str,
                                param_docs: dict[str, str],
-                               enum_values: dict[str, list[str]]) -> tuple[list[GitlabSpringApiParameter], list[GitlabSpringApiParameter], str]:
+                               dto_fields: dict[str, list[JavaFieldDoc]],
+                               enum_values: dict[str, list[str]]) -> tuple[list[GitlabSpringApiParameter], list[GitlabSpringApiParameter], list[GitlabSpringApiParameter], str]:
     """解析方法参数，识别路径、查询、请求头和请求体。"""
     parameter_text = _between_matching(signature, "(", ")")
     if not parameter_text:
-        return [], [], ""
+        return [], [], [], ""
     params: list[GitlabSpringApiParameter] = []
     header_params: list[GitlabSpringApiParameter] = []
+    body_fields: list[GitlabSpringApiParameter] = []
     body_type = ""
     for raw_param in _split_top_level(parameter_text, ","):
         param = raw_param.strip()
         if not param:
             continue
-        annotations = "\n".join(re.findall(r"@\w+(?:\([^)]*\))?", param, flags=re.DOTALL))
-        declaration = re.sub(r"@\w+(?:\([^)]*\))?", " ", param, flags=re.DOTALL)
+        annotations, declaration = _split_leading_annotations(param)
         declaration = re.sub(r"\bfinal\b", " ", declaration).strip()
         parts = declaration.split()
         if len(parts) < 2:
@@ -271,7 +313,7 @@ def _extract_method_parameters(signature: str,
         if default_value:
             required = False
         description = _first_non_blank(
-            _extract_annotation_attr(annotations, "description"),
+            _annotation_description(annotations),
             _extract_annotation_attr(annotations, "value") if "@ApiParam" in annotations else "",
             param_docs.get(name),
             param_docs.get(resolved_name),
@@ -280,6 +322,7 @@ def _extract_method_parameters(signature: str,
         )
         if "@RequestBody" in annotations:
             body_type = _simple_type(java_type)
+            body_fields = _body_field_parameters(body_type, dto_fields, enum_values)
         elif "@RequestHeader" in annotations:
             header_params.append(GitlabSpringApiParameter(
                 name=resolved_name,
@@ -296,7 +339,7 @@ def _extract_method_parameters(signature: str,
                 defaultValue=default_value,
                 description=description,
             ))
-    return params, header_params, body_type
+    return params, header_params, body_fields, body_type
 
 
 def _extract_enum_values(text: str) -> dict[str, list[str]]:
@@ -374,7 +417,7 @@ def _extract_class_fields(text: str) -> dict[str, list[JavaFieldDoc]]:
                 continue
             description = _first_non_blank(
                 _clean_comment("\n".join(pending_comment)),
-                _extract_annotation_attr("\n".join(pending_annotations), "description"),
+                _annotation_description("\n".join(pending_annotations)),
                 _extract_annotation_attr("\n".join(pending_annotations), "value"),
                 "",
             )
@@ -397,10 +440,15 @@ def _extract_record_components(text: str) -> dict[str, list[JavaFieldDoc]]:
             continue
         components: list[JavaFieldDoc] = []
         for component in _split_top_level(text[open_index + 1:close_index], ","):
-            cleaned = re.sub(r"@\w+(?:\([^)]*\))?", " ", component, flags=re.DOTALL).strip()
+            annotations, cleaned = _split_leading_annotations(component)
             parts = cleaned.split()
             if len(parts) >= 2:
-                components.append(JavaFieldDoc(parts[-1], " ".join(parts[:-1]), "", []))
+                components.append(JavaFieldDoc(
+                    parts[-1],
+                    " ".join(parts[:-1]),
+                    _annotation_description(annotations),
+                    [],
+                ))
         if components:
             result[record_name] = components
     return result
@@ -422,6 +470,15 @@ def _parse_method_mappings(annotations: str) -> list[tuple[str, str]]:
     return mappings
 
 
+def _parse_class_mappings(annotations: str) -> list[str]:
+    """只解析类级 Mapping 注解，避免把 `@Tag/@Api` 的 value 误当成路径前缀。"""
+    prefixes: list[str] = []
+    for name, segment in _annotation_segments(annotations):
+        if name in SPRING_MAPPING_ANNOTATIONS or name == "RequestMapping":
+            prefixes.extend(_parse_mapping_paths(segment, default_path=""))
+    return list(dict.fromkeys(prefixes))
+
+
 def _parse_mapping_paths(annotation_text: str, default_path: str) -> list[str]:
     """从 Mapping 注解中解析 path/value。"""
     paths: list[str] = []
@@ -437,8 +494,9 @@ def _parse_mapping_paths(annotation_text: str, default_path: str) -> list[str]:
 def _annotation_segments(text: str) -> list[tuple[str, str]]:
     """按注解名称切分注解文本，避免多行注解互相干扰。"""
     result: list[tuple[str, str]] = []
-    for match in re.finditer(r"@([A-Za-z_$][\w$]*)", text):
-        name = match.group(1)
+    for match in re.finditer(r"@([A-Za-z_$][\w$.]*)", text):
+        raw_name = match.group(1)
+        name = raw_name.rsplit(".", 1)[-1]
         start = match.start()
         paren_start = text.find("(", match.end())
         if paren_start < 0:
@@ -454,6 +512,47 @@ def _annotation_segments(text: str) -> list[tuple[str, str]]:
     return result
 
 
+def _split_leading_annotations(text: str) -> tuple[str, str]:
+    """拆出参数或 record 组件前缀的注解，支持嵌套括号的 OpenAPI 注解。"""
+    source = text or ""
+    index = 0
+    annotations: list[str] = []
+    length = len(source)
+    while index < length:
+        while index < length and source[index].isspace():
+            index += 1
+        if index >= length or source[index] != "@":
+            break
+        end = _annotation_end(source, index)
+        if end <= index:
+            break
+        annotations.append(source[index:end].strip())
+        index = end
+    return "\n".join(annotations), source[index:].strip()
+
+
+def _annotation_end(text: str, start: int) -> int:
+    """返回单个注解的结束位置（切片上界）。"""
+    if start < 0 or start >= len(text) or text[start] != "@":
+        return start
+    cursor = start + 1
+    while cursor < len(text) and (text[cursor].isalnum() or text[cursor] in {"_", "$", "."}):
+        cursor += 1
+    if cursor < len(text) and text[cursor] == "(":
+        end = _find_matching(text, cursor, "(", ")")
+        return end + 1 if end >= cursor else cursor
+    return cursor
+
+
+def _extract_annotation_string_list(annotation_text: str, attr_name: str) -> list[str]:
+    """读取注解里字符串数组或单字符串属性，例如 `tags={"用户管理"}`。"""
+    pattern = rf"\b{re.escape(attr_name)}\s*=\s*(\{{[^}}]*\}}|\"[^\"]*\")"
+    match = re.search(pattern, annotation_text, flags=re.DOTALL)
+    if not match:
+        return []
+    return [item.strip() for item in re.findall(r"\"([^\"]*)\"", match.group(1)) if item.strip()]
+
+
 def _extract_annotation_attr(annotations: str, attr_name: str) -> str:
     """读取注解里的字符串属性。"""
     pattern = rf"\b{re.escape(attr_name)}\s*=\s*\"([^\"]*)\""
@@ -461,6 +560,61 @@ def _extract_annotation_attr(annotations: str, attr_name: str) -> str:
     if match:
         return match.group(1).strip()
     return ""
+
+
+def _annotation_description(annotations: str) -> str:
+    """统一读取 OpenAPI / Swagger 注解里的说明文本。"""
+    for annotation_name, segment in _annotation_segments(annotations):
+        if annotation_name == "Parameter":
+            description = _extract_annotation_attr(segment, "description")
+            if description:
+                return description
+        elif annotation_name == "Schema":
+            description = _extract_annotation_attr(segment, "description")
+            if description:
+                return description
+        elif annotation_name == "ApiParam":
+            description = _first_non_blank(
+                _extract_annotation_attr(segment, "description"),
+                _extract_annotation_attr(segment, "value"),
+            )
+            if description:
+                return description
+        elif annotation_name == "ApiModelProperty":
+            description = _first_non_blank(
+                _extract_annotation_attr(segment, "notes"),
+                _extract_annotation_attr(segment, "value"),
+            )
+            if description:
+                return description
+    return ""
+
+
+def _controller_display_name(class_name: str, annotations: str, comment: str) -> str:
+    """按约定解析 Controller 目录显示名：显式注解优先，再退回类注释和类名。"""
+    explicit_name = ""
+    for annotation_name, segment in _annotation_segments(annotations):
+        if annotation_name == "Tag":
+            explicit_name = _first_non_blank(
+                _extract_annotation_attr(segment, "name"),
+                _extract_annotation_attr(segment, "value"),
+            )
+        elif annotation_name == "Api":
+            tags = _extract_annotation_string_list(segment, "tags")
+            explicit_name = _first_non_blank(
+                tags[0] if tags else "",
+                _extract_annotation_attr(segment, "value"),
+            )
+        if explicit_name:
+            return explicit_name
+    return _first_non_blank(_first_sentence(_clean_comment(comment)), class_name)
+
+
+def _controller_signature(package_prefix: str, source_file: str, class_name: str) -> str:
+    """生成单个 Controller 的稳定签名，供下游目录复用与追踪。"""
+    if package_prefix:
+        return f"{package_prefix}.{class_name}"
+    return f"{source_file}#{class_name}"
 
 
 def _annotation_has_required_false(annotations: str) -> bool:
@@ -474,6 +628,25 @@ def _extract_javadoc_params(comment: str) -> dict[str, str]:
         match = re.match(r"@param\s+([A-Za-z_$][\w$]*)\s+(.+)", line.strip())
         if match:
             result[match.group(1)] = match.group(2).strip()
+    return result
+
+
+def _body_field_parameters(body_type: str,
+                           dto_fields: dict[str, list[JavaFieldDoc]],
+                           enum_values: dict[str, list[str]]) -> list[GitlabSpringApiParameter]:
+    """把 DTO 字段说明转换成统一参数结构，供下游写入 Yaade 描述。"""
+    result: list[GitlabSpringApiParameter] = []
+    for field in dto_fields.get(_simple_type(body_type), []):
+        result.append(GitlabSpringApiParameter(
+            name=field.name,
+            type=field.type,
+            required=False,
+            defaultValue="",
+            description=_first_non_blank(
+                field.description,
+                _enum_description(field.type, enum_values),
+            ),
+        ))
     return result
 
 
@@ -533,6 +706,34 @@ def _nearby_annotations(text: str, position: int) -> str:
             continue
         break
     return "\n".join(reversed(annotations))
+
+
+def _nearby_comment(text: str, position: int) -> str:
+    """读取类声明前紧邻的注释块，允许注释位于注解之上。"""
+    prefix = text[:position].splitlines()
+    index = len(prefix) - 1
+    while index >= 0 and not prefix[index].strip():
+        index -= 1
+    while index >= 0:
+        stripped = prefix[index].strip()
+        if stripped.startswith("@") or stripped.startswith(")") or stripped.startswith("\""):
+            index -= 1
+            continue
+        break
+    comments: list[str] = []
+    while index >= 0:
+        stripped = prefix[index].strip()
+        if not stripped:
+            if comments:
+                break
+            index -= 1
+            continue
+        if stripped.startswith("/**") or stripped.startswith("*/") or stripped.startswith("*") or stripped.startswith("//"):
+            comments.append(prefix[index])
+            index -= 1
+            continue
+        break
+    return "\n".join(reversed(comments))
 
 
 def _contains_mapping_annotation(annotations: str) -> bool:
@@ -675,7 +876,7 @@ def _first_sentence(text: str) -> str:
     if not normalized:
         return ""
     first_line = normalized.splitlines()[0].strip()
-    return re.split(r"[。.!！?？]", first_line, 1)[0].strip() or first_line
+    return re.split(r"[。.!！?？]", first_line, maxsplit=1)[0].strip() or first_line
 
 
 def _humanize_name(name: str) -> str:

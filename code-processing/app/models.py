@@ -397,9 +397,13 @@ class GitlabSpringApiEndpoint(BaseModel):
     path: str = ""
     name: str = ""
     description: str = ""
+    controllerSignature: str = ""
+    controllerClassName: str = ""
+    controllerDisplayName: str = ""
     headers: list[GitlabSpringApiParameter] = Field(default_factory=list)
     queryParams: list[GitlabSpringApiParameter] = Field(default_factory=list)
     pathParams: list[GitlabSpringApiParameter] = Field(default_factory=list)
+    bodyFields: list[GitlabSpringApiParameter] = Field(default_factory=list)
     requestContentType: str = "none"
     bodyExample: str = ""
     sourceFile: str = ""

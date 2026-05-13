@@ -1,6 +1,7 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.dto.YaadeEmbedSessionSummary;
+import com.aiclub.platform.dto.YaadeProjectContextSummary;
 import com.aiclub.platform.dto.YaadeHealthSummary;
 import com.aiclub.platform.dto.YaadeProjectBindingSummary;
 import com.aiclub.platform.exception.UnauthorizedException;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -50,6 +52,7 @@ public class YaadeEmbedSessionService {
         Long userId = AuthContextHolder.get()
                 .map(authContext -> authContext.userId())
                 .orElseThrow(() -> new UnauthorizedException("Not logged in"));
+        List<YaadeProjectContextSummary> projectContexts = yaadeProjectSyncService.listVisibleProjectContextsEnsuringBindings();
         var selectedProject = projectId == null ? null : yaadeProjectSyncService.requireVisibleProject(projectId);
         YaadeProjectSyncService.EnsureProjectBindingResult bindingResult = projectId == null
                 ? yaadeProjectSyncService.ensurePublicCollection()
@@ -67,7 +70,7 @@ public class YaadeEmbedSessionService {
         );
         writeProxyCookie(response, sessionId, false, isSecureRequest(request));
         String iframePath = buildIframePath(bindingResult.summary());
-        return new YaadeEmbedSessionSummary(bindingResult.summary(), iframePath, bindingResult.created());
+        return new YaadeEmbedSessionSummary(bindingResult.summary(), iframePath, bindingResult.created(), projectContexts);
     }
 
     public YaadeProjectBindingSummary getProjectBindingSummary(Long projectId) {

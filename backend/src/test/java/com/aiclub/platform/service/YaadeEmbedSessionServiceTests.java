@@ -1,5 +1,6 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.dto.YaadeProjectContextSummary;
 import com.aiclub.platform.dto.YaadeProjectBindingSummary;
 import com.aiclub.platform.security.AuthContext;
 import com.aiclub.platform.security.AuthContextHolder;
@@ -15,6 +16,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,6 +81,10 @@ class YaadeEmbedSessionServiceTests {
         );
         when(yaadeProjectSyncService.ensurePublicCollection())
                 .thenReturn(new YaadeProjectSyncService.EnsureProjectBindingResult(binding, true));
+        when(yaadeProjectSyncService.listVisibleProjectContextsEnsuringBindings())
+                .thenReturn(List.of(
+                        new YaadeProjectContextSummary(7L, "CRM项目", 51L, "aiclub-project-7")
+                ));
         when(yaadeUserSyncService.loginCurrentUserWithSyncedGroups(null))
                 .thenReturn(new YaadeUserSyncService.YaadeAuthenticatedUserSession(
                         "aiclub-18",
@@ -91,6 +97,8 @@ class YaadeEmbedSessionServiceTests {
 
         assertThat(summary.binding().yaadeCollectionId()).isEqualTo(88L);
         assertThat(summary.iframePath()).isEqualTo("/api/yaade/proxy/#/88");
+        assertThat(summary.projectContexts()).hasSize(1);
+        assertThat(summary.projectContexts().get(0).projectId()).isEqualTo(7L);
         assertThat(response.getHeader("Set-Cookie")).contains(YaadeProxySessionStore.COOKIE_NAME);
         verify(yaadeProxySessionStore).save(anyString(), any(YaadeProxySessionStore.ProxySessionSnapshot.class), any());
     }

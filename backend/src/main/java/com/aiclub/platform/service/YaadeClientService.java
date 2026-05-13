@@ -196,8 +196,16 @@ public class YaadeClientService {
     }
 
     public YaadeRemoteCollection createCollection(YaadeSession adminSession, String name, List<String> groups) {
+        return createCollection(adminSession, name, null, groups);
+    }
+
+    /**
+     * 创建 Yaade collection，可选挂到某个父 collection 之下。
+     * 目录化同步 API 会用这个能力在项目根 collection 下创建 Controller 子目录。
+     */
+    public YaadeRemoteCollection createCollection(YaadeSession adminSession, String name, Long parentId, List<String> groups) {
         int nextRank = listCollections(adminSession).stream()
-                .filter(collection -> collection.parentId() == null)
+                .filter(collection -> Objects.equals(collection.parentId(), parentId))
                 .map(YaadeRemoteCollection::rank)
                 .filter(Objects::nonNull)
                 .max(Integer::compareTo)
@@ -205,6 +213,9 @@ public class YaadeClientService {
         ObjectNode payload = objectMapper.createObjectNode()
                 .put("name", name)
                 .put("rank", nextRank);
+        if (parentId != null) {
+            payload.put("parentId", parentId);
+        }
         ArrayNode groupArray = payload.putArray("groups");
         groups.forEach(groupArray::add);
         RawResponse response = send(
@@ -218,7 +229,16 @@ public class YaadeClientService {
         if (!response.isSuccess()) {
             throw new IllegalStateException("创建 Yaade collection 失败，状态码: " + response.statusCode());
         }
-        return toRemoteCollection((ObjectNode) readTree(response.body()));
+        ObjectNode responseNode = readObjectNode(response.body());
+        if (responseNode != null) {
+            return toRemoteCollection(responseNode);
+        }
+        return listCollections(adminSession).stream()
+                .filter(collection -> Objects.equals(collection.parentId(), parentId))
+                .filter(collection -> Objects.equals(collection.rank(), nextRank))
+                .filter(collection -> name.equals(collection.name()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("创建 Yaade collection 成功，但响应体为空且无法重新定位新目录"));
     }
 
     public YaadeRemoteCollection updateCollection(YaadeSession adminSession, YaadeRemoteCollection collection) {
@@ -241,6 +261,22 @@ public class YaadeClientService {
                 .filter(collection -> Objects.equals(collection.id(), collectionId))
                 .findFirst()
                 .orElseThrow(() -> new NoSuchElementException("Yaade collection 不存在: " + collectionId));
+    }
+
+    /**
+     * 返回指定根 collection 及其所有子孙节点，供同步 API 在项目目录下查找 Controller 子目录。
+     */
+    public List<YaadeRemoteCollection> listCollectionsInSubtree(YaadeSession session, Long rootCollectionId) {
+        List<YaadeRemoteCollection> collections = listCollections(session);
+        Map<Long, YaadeRemoteCollection> collectionById = new LinkedHashMap<>();
+        collections.forEach(collection -> collectionById.put(collection.id(), collection));
+        List<YaadeRemoteCollection> result = new ArrayList<>();
+        for (YaadeRemoteCollection collection : collections) {
+            if (Objects.equals(collection.id(), rootCollectionId) || hasAncestor(collection, rootCollectionId, collectionById)) {
+                result.add(collection);
+            }
+        }
+        return result;
     }
 
     /**
@@ -279,7 +315,16 @@ public class YaadeClientService {
         if (!response.isSuccess()) {
             throw new IllegalStateException("创建 Yaade request 失败，状态码: " + response.statusCode());
         }
-        return toRemoteRequest((ObjectNode) readTree(response.body()));
+        ObjectNode responseNode = readObjectNode(response.body());
+        if (responseNode != null) {
+            return toRemoteRequest(responseNode);
+        }
+        return listCollectionRequests(findCollectionById(session, collectionId)).stream()
+                .filter(request -> Objects.equals(request.collectionId(), collectionId))
+                .filter(request -> Objects.equals(request.type(), "REST"))
+                .filter(request -> jsonEquals(request.data(), data))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("创建 Yaade request 成功，但响应体为空且无法重新定位新请求"));
     }
 
     /**
@@ -297,7 +342,11 @@ public class YaadeClientService {
         if (!response.isSuccess()) {
             throw new IllegalStateException("更新 Yaade request 失败，状态码: " + response.statusCode());
         }
-        return toRemoteRequest((ObjectNode) readTree(response.body()));
+        ObjectNode responseNode = readObjectNode(response.body());
+        if (responseNode != null) {
+            return toRemoteRequest(responseNode);
+        }
+        return request;
     }
 
     /**
@@ -314,6 +363,23 @@ public class YaadeClientService {
         );
         if (!response.isSuccess()) {
             throw new IllegalStateException("删除 Yaade request 失败，状态码: " + response.statusCode());
+        }
+    }
+
+    /**
+     * 删除指定 collection，仅在确认目录为空且没有人工内容时由平台调用。
+     */
+    public void deleteCollection(YaadeSession session, Long collectionId) {
+        RawResponse response = send(
+                "DELETE",
+                "/api/collection/" + collectionId,
+                session.cookieHeader(),
+                Map.of(),
+                null,
+                DEFAULT_TIMEOUT
+        );
+        if (!response.isSuccess()) {
+            throw new IllegalStateException("删除 Yaade collection 失败，状态码: " + response.statusCode());
         }
     }
 
@@ -404,6 +470,11 @@ public class YaadeClientService {
         }
     }
 
+    private ObjectNode readObjectNode(byte[] body) {
+        JsonNode node = readTree(body);
+        return node instanceof ObjectNode objectNode ? objectNode : null;
+    }
+
     private byte[] bodyBytes(JsonNode payload) {
         try {
             return objectMapper.writeValueAsBytes(payload);
@@ -446,6 +517,20 @@ public class YaadeClientService {
             }
         }
         return "";
+    }
+
+    private boolean hasAncestor(YaadeRemoteCollection collection,
+                                Long ancestorId,
+                                Map<Long, YaadeRemoteCollection> collectionById) {
+        Long parentId = collection.parentId();
+        while (parentId != null) {
+            if (Objects.equals(parentId, ancestorId)) {
+                return true;
+            }
+            YaadeRemoteCollection parent = collectionById.get(parentId);
+            parentId = parent == null ? null : parent.parentId();
+        }
+        return false;
     }
 
     private void flattenCollection(JsonNode node, List<YaadeRemoteCollection> result) {
@@ -519,6 +604,10 @@ public class YaadeClientService {
                 .filter(item -> item != null && !item.isBlank())
                 .distinct()
                 .toList();
+    }
+
+    private boolean jsonEquals(ObjectNode left, ObjectNode right) {
+        return left != null && right != null && left.equals(right);
     }
 
     public record YaadeSession(String cookieHeader) {

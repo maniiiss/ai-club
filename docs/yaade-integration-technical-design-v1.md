@@ -60,7 +60,7 @@
 ### 3.3 用户与项目同步
 
 - 平台项目映射到 Yaade 顶级 collection，group 名称固定为 `aiclub-project-{projectId}`
-- 公共空间固定使用 `aiclub-api-public` group，并绑定到 `未关联项目` collection
+- 公共空间固定使用 `aiclub-api-public` group，并绑定到 `未关联项目` collection；公共 collection 继续保留在数据层，但嵌入态 UI 不再提供入口
 - 平台用户映射到 Yaade 本地账号 `aiclub-{userId}`
 - 每次进入 `/apis` 或切换项目时：
   1. 平台读取当前用户可见项目
@@ -74,7 +74,10 @@
 - 后端在 `POST /api/yaade/embed-sessions` 中写入平台自己的 HttpOnly cookie
 - iframe 后续请求只依赖该 cookie，由后端代发 Yaade 远端 session cookie
 - `/apis` 页面创建 iframe URL 时会附加嵌入态标记和当前平台主题 ID，并在 iframe 加载或平台主题变化时通过 `AI_CLUB_THEME_CHANGED` 消息通知 Yaade
+- 平台还会通过 `AI_CLUB_PROJECT_CONTEXT` 消息把“当前项目 + 可见项目列表 + 项目到 Yaade group/root collection 的映射”传给 Yaade；Yaade 内部项目下拉切换后会反向发送 `AI_CLUB_PROJECT_CHANGED`，平台只同步更新路由 `projectId`，不重建 iframe
 - 平台 `/apis` 页面保留 `AppLayout` 的真实顶栏，Hermes 助手、消息中心、用户头像菜单等能力继续由平台壳承载；Yaade 品牌补丁只在 `aiclubEmbedded=1` 时隐藏 Yaade 原生顶栏并释放工作区高度
+- Yaade 嵌入态采用“项目优先”视角：先选项目，再显示该项目下的集合与接口；左侧搜索只检索当前项目
+- 嵌入态新建/编辑集合时，原始 `groups` 输入收口为“所属项目”单选下拉，底层仍写入对应 `aiclub-project-{projectId}` group
 - Yaade 嵌入态登录页会先显示单点登录 loading，并等待 `/api/user` 会话确认；只有平台代理会话失效或代登失败时，才展示 Yaade 原生账密登录页
 - Yaade 品牌补丁在运行时读取 `aiclubTheme` 参数、`git-ai-club:theme` 本地缓存或主题消息，把 `sunset-orange`、`ocean-blue`、`forest-green` 映射为 Yaade 浅色工作台背景和强调色变量
 - 平台登出时同步清理本地 Yaade 代理 cookie

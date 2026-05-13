@@ -1,6 +1,13 @@
 import { http } from './http'
 import type { ApiResponse } from '@/types/platform'
 
+export interface YaadeProjectContextItem {
+  projectId: number
+  projectName: string
+  yaadeCollectionId: number
+  yaadeGroupName: string
+}
+
 export interface YaadeProjectBindingItem {
   projectId: number | null
   publicSpace: boolean
@@ -17,6 +24,7 @@ export interface YaadeEmbedSessionItem {
   binding: YaadeProjectBindingItem
   iframePath: string
   createdBinding: boolean
+  projectContexts: YaadeProjectContextItem[]
 }
 
 export interface YaadeHealthItem {

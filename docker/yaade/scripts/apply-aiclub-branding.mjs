@@ -25,6 +25,13 @@ function patchFile(rootDir, { file, replacements }) {
   console.log(`patched ${file}`)
 }
 
+function writeGeneratedFile(rootDir, { file, content }) {
+  const fullPath = path.join(rootDir, file)
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true })
+  fs.writeFileSync(fullPath, content.replace(/\r\n/g, '\n'), 'utf8')
+  console.log(`generated ${file}`)
+}
+
 const platformThemeBridge = `<script>
       (() => {
         const themeStorageKey = 'git-ai-club:theme'
@@ -543,7 +550,590 @@ function Login() {
   }
 ]
 
+const projectFirstReplacements = [
+  {
+    file: 'client/src/components/sidebar/Sidebar.tsx',
+    replacements: [
+      [
+        `import api from '../../api';`,
+        `import api from '../../api';
+import { useAiclubProjectContext } from '../../aiclub/projectContext';`
+      ],
+      [
+        `  const { isOpen, onOpen, onClose } = useDisclosure();`,
+        `  const { isOpen, onOpen, onClose } = useDisclosure();
+  const { currentProject, currentProjectId, projects, changeCurrentProject, isEmbedded } =
+    useAiclubProjectContext();`
+      ],
+      [
+        `  const [state, setState] = useState<StateProps>({
+    clickedCollectionId: -1,
+    name: '',
+    groups: user?.data?.groups ?? [],
+    searchTerm: '',
+    uploadFile: undefined,
+    basePath: '',
+    selectedImport: 'openapi',
+  });`,
+        `  const [state, setState] = useState<StateProps>({
+    clickedCollectionId: -1,
+    name: '',
+    groups:
+      isEmbedded && currentProject ? [currentProject.yaadeGroupName] : user?.data?.groups ?? [],
+    searchTerm: '',
+    uploadFile: undefined,
+    basePath: '',
+    selectedImport: 'openapi',
+  });`
+      ],
+      [
+        `  const { colorMode } = useColorMode();
+  const initialRef = useRef(null);`,
+        `  const { colorMode } = useColorMode();
+  const initialRef = useRef(null);
+
+  React.useEffect(() => {
+    if (!isEmbedded || !currentProject) {
+      return;
+    }
+    setState((currentState) => ({
+      ...currentState,
+      groups: [currentProject.yaadeGroupName],
+    }));
+  }, [currentProject?.projectId, isEmbedded]);`
+      ],
+      [
+        `  function onCloseClear() {
+    setState({
+      ...state,
+      name: '',
+      groups: user?.data?.groups ?? [],
+      uploadFile: undefined,
+      basePath: '',
+      selectedImport: 'openapi',
+    });
+    onClose();
+  }`,
+        `  function onCloseClear() {
+    setState({
+      ...state,
+      name: '',
+      groups:
+        isEmbedded && currentProject ? [currentProject.yaadeGroupName] : user?.data?.groups ?? [],
+      uploadFile: undefined,
+      basePath: '',
+      selectedImport: 'openapi',
+    });
+    onClose();
+  }`
+      ],
+      [
+        `  return (
+    <Box className={styles.box} bg="panelBg" h="100%" w="100%">
+      <div className={cn(styles, 'searchContainer', [colorMode])}>`,
+        `  return (
+    <Box className={styles.box} bg="panelBg" h="100%" w="100%">
+      {isEmbedded && projects.length > 0 ? (
+        <Box px="3" pt="3">
+          <Select
+            size="sm"
+            borderRadius="16px"
+            backgroundColor={colorMode === 'light' ? 'white' : undefined}
+            value={currentProjectId ? String(currentProjectId) : ''}
+            onChange={(e) => changeCurrentProject(Number(e.target.value))}
+          >
+            {projects.map((project) => (
+              <option key={'aiclub-project-option-' + project.projectId} value={project.projectId}>
+                {project.projectName}
+              </option>
+            ))}
+          </Select>
+        </Box>
+      ) : null}
+      <div className={cn(styles, 'searchContainer', [colorMode])}>`
+      ]
+    ]
+  },
+  {
+    file: 'client/src/pages/dashboard/Dashboard.tsx',
+    replacements: [
+      [
+        `import api from '../../api';`,
+        `import api from '../../api';
+import {
+  filterCollectionsForProject,
+  isCollectionVisibleForProject,
+  useAiclubProjectContext,
+} from '../../aiclub/projectContext';`
+      ],
+      [
+        `  const toast = useToast();
+  const sidebarCollections: SidebarCollection[] = useMemo(() => {
+    return collections.map((col, i) => mapCollectionToSidebarCollection(col, i));
+  }, [collections]);`,
+        `  const toast = useToast();
+  const { currentProject, isEmbedded } = useAiclubProjectContext();
+  const visibleCollections = useMemo(() => {
+    return isEmbedded ? filterCollectionsForProject(collections, currentProject) : collections;
+  }, [collections, currentProject, isEmbedded]);
+  const sidebarCollections: SidebarCollection[] = useMemo(() => {
+    return visibleCollections.map((col, i) => mapCollectionToSidebarCollection(col, i));
+  }, [visibleCollections]);`
+      ],
+      [
+        `  useEffect(() => {
+    selectScriptRef.current = selectScript;
+  }, [selectScript]);
+
+  const renameRequest = useCallback(`,
+        `  useEffect(() => {
+    selectScriptRef.current = selectScript;
+  }, [selectScript]);
+
+  useEffect(() => {
+    if (!isEmbedded || !currentProject) {
+      return;
+    }
+    const rootCollection = visibleCollections[0];
+    if (!rootCollection) {
+      return;
+    }
+    const currentCollectionVisible = currentCollection
+      ? isCollectionVisibleForProject(collections, currentCollection.id, currentProject)
+      : false;
+    const currentRequestVisible = currentRequest
+      ? isCollectionVisibleForProject(collections, currentRequest.collectionId, currentProject)
+      : false;
+    const currentScriptVisible = currentScript
+      ? isCollectionVisibleForProject(collections, currentScript.collectionId, currentProject)
+      : false;
+    if (currentCollectionVisible || currentRequestVisible || currentScriptVisible) {
+      return;
+    }
+    navigate('/' + rootCollection.id);
+    dispatchCurrentCollection({
+      type: CurrentCollectionActionType.SET,
+      collection: rootCollection,
+    });
+    dispatchCurrentRequest({
+      type: CurrentRequestActionType.UNSET,
+    });
+    dispatchCurrentScript({
+      type: CurrentScriptActionType.UNSET,
+    });
+  }, [
+    collections,
+    currentCollection,
+    currentProject,
+    currentRequest,
+    currentScript,
+    isEmbedded,
+    navigate,
+    visibleCollections,
+  ]);
+
+  const renameRequest = useCallback(`
+      ],
+      [
+        `  let panel = <div>请选择请求或集合</div>;`,
+        `  let panel = (
+    <div>
+      {isEmbedded && !currentProject
+        ? '请先选择项目'
+        : isEmbedded && visibleCollections.length === 0
+          ? '当前项目暂无集合或接口'
+          : '请选择请求或集合'}
+    </div>
+  );`
+      ]
+    ]
+  },
+  {
+    file: 'client/src/components/collectionPanel/CollectionSettingsTab/CollectionSettingsTab.tsx',
+    replacements: [['<div>可见组</div>', '<div>所属项目</div>']]
+  }
+]
+
+const generatedFiles = [
+  {
+    file: 'client/src/aiclub/projectContext.ts',
+    content: `import { useEffect, useMemo, useState } from 'react';
+
+import Collection from '../model/Collection';
+
+export type AiclubProjectContextItem = {
+  projectId: number;
+  projectName: string;
+  yaadeCollectionId: number;
+  yaadeGroupName: string;
+};
+
+type AiclubProjectContextSnapshot = {
+  currentProjectId: number | null;
+  projects: AiclubProjectContextItem[];
+};
+
+const STORAGE_KEY = 'git-ai-club:yaade-project-context';
+const PROJECT_CONTEXT_TYPE = 'AI_CLUB_PROJECT_CONTEXT';
+const PROJECT_CONTEXT_REQUEST_TYPE = 'AI_CLUB_PROJECT_CONTEXT_REQUEST';
+const PROJECT_CHANGED_TYPE = 'AI_CLUB_PROJECT_CHANGED';
+
+let snapshot: AiclubProjectContextSnapshot = readStoredSnapshot();
+let listenerRegistered = false;
+const listeners = new Set<() => void>();
+
+function isNumberLike(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function normalizeProject(raw: unknown): AiclubProjectContextItem | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+  const value = raw as Record<string, unknown>;
+  const projectId = Number(value.projectId ?? 0);
+  const yaadeCollectionId = Number(value.yaadeCollectionId ?? 0);
+  const projectName = String(value.projectName ?? '').trim();
+  const yaadeGroupName = String(value.yaadeGroupName ?? '').trim();
+  if (!isNumberLike(projectId) || !isNumberLike(yaadeCollectionId) || !projectName || !yaadeGroupName) {
+    return null;
+  }
+  return {
+    projectId,
+    projectName,
+    yaadeCollectionId,
+    yaadeGroupName,
+  };
+}
+
+function normalizeSnapshot(raw: { currentProjectId?: unknown; projects?: unknown }) {
+  const projects = Array.isArray(raw.projects)
+    ? raw.projects.map(normalizeProject).filter(Boolean) as AiclubProjectContextItem[]
+    : [];
+  const requestedProjectId = Number(raw.currentProjectId ?? 0);
+  const currentProjectId = projects.some((item) => item.projectId === requestedProjectId)
+    ? requestedProjectId
+    : (projects[0]?.projectId ?? null);
+  return {
+    currentProjectId,
+    projects,
+  } as AiclubProjectContextSnapshot;
+}
+
+function readStoredSnapshot(): AiclubProjectContextSnapshot {
+  if (typeof window === 'undefined') {
+    return { currentProjectId: null, projects: [] };
+  }
+  try {
+    const querySnapshot = readQuerySnapshot();
+    if (querySnapshot.projects.length > 0) {
+      return querySnapshot;
+    }
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return { currentProjectId: null, projects: [] };
+    }
+    return normalizeSnapshot(JSON.parse(raw));
+  } catch {
+    return { currentProjectId: null, projects: [] };
+  }
+}
+
+function readQuerySnapshot(): AiclubProjectContextSnapshot {
+  if (typeof window === 'undefined') {
+    return { currentProjectId: null, projects: [] };
+  }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const contextFromQuery = params.get('aiclubProjectContext');
+    if (!contextFromQuery) {
+      return { currentProjectId: null, projects: [] };
+    }
+    return normalizeSnapshot(JSON.parse(contextFromQuery));
+  } catch {
+    return { currentProjectId: null, projects: [] };
+  }
+}
+
+function persistSnapshot() {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // ignore storage failures in embedded mode
+  }
+}
+
+function notifyListeners() {
+  listeners.forEach((listener) => listener());
+}
+
+function commitSnapshot(next: { currentProjectId?: unknown; projects?: unknown }) {
+  snapshot = normalizeSnapshot({
+    currentProjectId: next.currentProjectId ?? snapshot.currentProjectId,
+    projects: next.projects ?? snapshot.projects,
+  });
+  persistSnapshot();
+  notifyListeners();
+}
+
+function handleProjectContextMessage(event: MessageEvent) {
+  const data = event.data;
+  if (!data || typeof data !== 'object') {
+    return;
+  }
+  if ((data as { type?: string }).type !== PROJECT_CONTEXT_TYPE) {
+    return;
+  }
+  commitSnapshot({
+    currentProjectId: Number((data as { currentProjectId?: number }).currentProjectId ?? 0) || null,
+    projects: Array.isArray((data as { projects?: unknown[] }).projects)
+      ? (data as { projects?: unknown[] }).projects ?? []
+      : [],
+  });
+}
+
+export function isAiclubEmbedded() {
+  return typeof document !== 'undefined' && document.documentElement.dataset.aiclubEmbedded === 'true';
+}
+
+function ensureProjectContextListener() {
+  if (typeof window === 'undefined' || listenerRegistered) {
+    return;
+  }
+  listenerRegistered = true;
+  window.addEventListener('message', handleProjectContextMessage);
+  if (isAiclubEmbedded()) {
+    window.parent?.postMessage({ type: PROJECT_CONTEXT_REQUEST_TYPE }, '*');
+  }
+}
+
+export function useAiclubProjectContext() {
+  const [state, setState] = useState<AiclubProjectContextSnapshot>(snapshot);
+  const querySnapshot = useMemo(() => readQuerySnapshot(), []);
+  const effectiveProjects = state.projects.length > 0 ? state.projects : querySnapshot.projects;
+  const effectiveCurrentProjectId =
+    state.currentProjectId ?? querySnapshot.currentProjectId;
+
+  useEffect(() => {
+    ensureProjectContextListener();
+    const listener = () => setState({ ...snapshot, projects: [...snapshot.projects] });
+    listeners.add(listener);
+    listener();
+    return () => {
+      listeners.delete(listener);
+    };
+  }, []);
+
+  const currentProject = useMemo(() => {
+    return effectiveProjects.find((item) => item.projectId === effectiveCurrentProjectId) ?? null;
+  }, [effectiveCurrentProjectId, effectiveProjects]);
+
+  function changeCurrentProject(projectId: number) {
+    if (!effectiveProjects.some((item) => item.projectId === projectId)) {
+      return;
+    }
+    if (effectiveCurrentProjectId === projectId) {
+      return;
+    }
+    commitSnapshot({ currentProjectId: projectId });
+    if (typeof window !== 'undefined') {
+      window.parent?.postMessage({ type: PROJECT_CHANGED_TYPE, projectId }, '*');
+    }
+  }
+
+  return {
+    currentProject,
+    currentProjectId: effectiveCurrentProjectId,
+    projects: effectiveProjects,
+    changeCurrentProject,
+    isEmbedded: isAiclubEmbedded(),
+  };
+}
+
+export function resolveProjectForGroups(
+  projects: AiclubProjectContextItem[],
+  groups: string[] | undefined,
+) {
+  if (!groups || groups.length !== 1) {
+    return null;
+  }
+  return projects.find((item) => item.yaadeGroupName === groups[0]) ?? null;
+}
+
+export function normalizeProjectGroups(project: AiclubProjectContextItem | null | undefined) {
+  return project ? [project.yaadeGroupName] : [];
+}
+
+export function projectGroupMatches(
+  groups: string[] | undefined,
+  project: AiclubProjectContextItem | null | undefined,
+) {
+  return !!project && Array.isArray(groups) && groups.includes(project.yaadeGroupName);
+}
+
+export function filterCollectionsForProject(
+  collections: Collection[],
+  project: AiclubProjectContextItem | null | undefined,
+) {
+  if (!project) {
+    return [];
+  }
+  const rootCollection =
+    collections.find((collection) => collection.id === project.yaadeCollectionId) ??
+    collections.find(
+      (collection) =>
+        !collection.data.parentId && projectGroupMatches(collection.data.groups, project),
+    );
+  return rootCollection ? [rootCollection] : [];
+}
+
+function containsCollectionId(collections: Collection[], collectionId: number) {
+  for (const collection of collections) {
+    if (collection.id === collectionId) {
+      return true;
+    }
+    if (containsCollectionId(collection.children ?? [], collectionId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function isCollectionVisibleForProject(
+  collections: Collection[],
+  collectionId: number | undefined,
+  project: AiclubProjectContextItem | null | undefined,
+) {
+  if (!collectionId || !project) {
+    return false;
+  }
+  return containsCollectionId(filterCollectionsForProject(collections, project), collectionId);
+}
+`
+  },
+  {
+    file: 'client/src/components/groupsInput/GroupsInput.tsx',
+    content: `import { Input, Select, useColorMode, VStack } from '@chakra-ui/react';
+import { FunctionComponent, useEffect, useMemo, useState } from 'react';
+
+import {
+  normalizeProjectGroups,
+  resolveProjectForGroups,
+  useAiclubProjectContext,
+} from '../../aiclub/projectContext';
+
+type GroupsInputProps = {
+  groups: string[];
+  setGroups: (groups: string[]) => void;
+  isRounded?: boolean;
+  className?: string;
+};
+
+const GroupsInput: FunctionComponent<GroupsInputProps> = ({
+  groups,
+  setGroups,
+  isRounded,
+  className,
+}) => {
+  const [newGroup, setNewGroup] = useState('');
+  const { colorMode } = useColorMode();
+  const { currentProject, currentProjectId, isEmbedded, projects } = useAiclubProjectContext();
+
+  const selectedProject = useMemo(() => {
+    return resolveProjectForGroups(projects, groups);
+  }, [groups, projects]);
+
+  useEffect(() => {
+    if (!isEmbedded || !currentProject) {
+      return;
+    }
+    if (selectedProject) {
+      return;
+    }
+    setGroups(normalizeProjectGroups(currentProject));
+  }, [currentProject, isEmbedded, selectedProject, setGroups]);
+
+  function setNewGroupInput(value: string, force = false) {
+    if (value.endsWith(' ') || force) {
+      const removedDuplicates = Array.from(new Set([...groups, value.trim()]));
+      if (value !== ' ') {
+        setGroups(removedDuplicates);
+      }
+      setNewGroup('');
+    } else {
+      setNewGroup(value);
+    }
+  }
+
+  if (isEmbedded && projects.length > 0) {
+    return (
+      <VStack alignItems="start" width="100%" className={className}>
+        <Select
+          size={isRounded ? 'md' : 'sm'}
+          borderRadius={isRounded ? '20px' : undefined}
+          placeholder="选择所属项目"
+          value={
+            selectedProject?.projectId
+              ? String(selectedProject.projectId)
+              : currentProjectId
+                ? String(currentProjectId)
+                : ''
+          }
+          backgroundColor={colorMode === 'light' ? 'white' : undefined}
+          onChange={(event) => {
+            const nextProject = projects.find(
+              (project) => project.projectId === Number(event.target.value),
+            );
+            setGroups(normalizeProjectGroups(nextProject ?? currentProject));
+          }}
+        >
+          {projects.map((project) => (
+            <option
+              key={'collection-project-option-' + project.projectId}
+              value={project.projectId}
+            >
+              {project.projectName}
+            </option>
+          ))}
+        </Select>
+      </VStack>
+    );
+  }
+
+  return (
+    <VStack alignItems="start" width="100%" className={className}>
+      <Input
+        size={isRounded ? 'md' : 'sm'}
+        borderRadius={isRounded ? '20px' : undefined}
+        placeholder="分组"
+        value={newGroup}
+        onChange={(e) => setNewGroupInput(e.target.value)}
+        backgroundColor={colorMode === 'light' ? 'white' : undefined}
+        onKeyPress={(e) => {
+          if (e.key === 'Enter') {
+            setNewGroupInput(newGroup, true);
+          }
+        }}
+      />
+    </VStack>
+  );
+};
+
+export default GroupsInput;
+`
+  }
+]
+
 // 品牌补丁只负责 AI Club 标识和主题色，不承载中文翻译，便于后续独立升级和回滚。
 for (const entry of fileReplacements) {
   patchFile(sourceRoot, entry)
+}
+for (const entry of projectFirstReplacements) {
+  patchFile(sourceRoot, entry)
+}
+for (const entry of generatedFiles) {
+  writeGeneratedFile(sourceRoot, entry)
 }

@@ -2,6 +2,7 @@ package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.PlatformYaadeProjectBindingEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
+import com.aiclub.platform.dto.YaadeProjectContextSummary;
 import com.aiclub.platform.dto.YaadeProjectBindingSummary;
 import com.aiclub.platform.repository.PlatformYaadeProjectBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
@@ -68,6 +69,26 @@ public class YaadeProjectSyncService {
 
     public PlatformYaadeProjectBindingEntity findBindingByProjectId(Long projectId) {
         return projectBindingRepository.findByProjectId(projectId).orElse(null);
+    }
+
+    /**
+     * 返回当前用户可见项目的 Yaade 上下文，并在缺失时补建 collection 绑定。
+     * 嵌入态项目下拉会依赖这里拿到稳定的 project -> group -> root collection 映射。
+     */
+    @Transactional
+    public List<YaadeProjectContextSummary> listVisibleProjectContextsEnsuringBindings() {
+        ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.requireCurrentScope();
+        return projectRepository.findAll(Sort.by(Sort.Direction.ASC, "id")).stream()
+                .filter(project -> projectDataPermissionService.isProjectVisible(project, scope))
+                .map(this::ensureProjectBinding)
+                .map(EnsureProjectBindingResult::summary)
+                .map(summary -> new YaadeProjectContextSummary(
+                        summary.projectId(),
+                        summary.collectionName(),
+                        summary.yaadeCollectionId(),
+                        summary.yaadeGroupName()
+                ))
+                .toList();
     }
 
     @Transactional

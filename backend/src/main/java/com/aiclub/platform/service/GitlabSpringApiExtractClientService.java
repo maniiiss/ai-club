@@ -167,6 +167,18 @@ public class GitlabSpringApiExtractClientService {
              */
             String description,
             /**
+             * Controller 稳定签名，供 backend 识别目录归属。
+             */
+            String controllerSignature,
+            /**
+             * Controller 原始类名。
+             */
+            String controllerClassName,
+            /**
+             * Controller 展示名，供 Yaade 子目录命名。
+             */
+            String controllerDisplayName,
+            /**
              * 请求头参数。
              */
             List<ExtractedParameter> headers,
@@ -178,6 +190,10 @@ public class GitlabSpringApiExtractClientService {
              * 路径参数。
              */
             List<ExtractedParameter> pathParams,
+            /**
+             * 请求体 DTO 字段说明。
+             */
+            List<ExtractedParameter> bodyFields,
             /**
              * 请求体内容类型。
              */

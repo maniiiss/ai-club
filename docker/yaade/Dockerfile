@@ -36,7 +36,7 @@ COPY --from=client-builder /workspace/yaade/client/dist /workspace/yaade/server/
 WORKDIR /workspace/yaade/server
 
 RUN chmod +x gradlew
-RUN ./gradlew clean build
+RUN gradle clean build --no-daemon
 
 
 FROM amazoncorretto:17

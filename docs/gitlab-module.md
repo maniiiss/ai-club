@@ -10,7 +10,7 @@
 - 平台项目可绑定一个 GitLab 项目
 - 每个项目独立配置 API Token
 - 绑定后可同步 GitLab 项目名称、路径、默认分支、仓库地址
-- 绑定的 `testProfileJson.repoKind` 为 `BACKEND` 或 `MIXED` 时，可在绑定页发起“同步 API”，把 Spring 接口注释同步为项目 Yaade API 请求
+- 绑定的 `testProfileJson.repoKind` 为 `BACKEND` 或 `MIXED` 时，可在绑定页发起“同步 API”，把 Spring 接口注释同步为项目 Yaade API 请求，并按 Controller 写入子目录
 
 ### 2. 任务与代码交付链路（后续可继续扩展）
 - 任务可继续扩展关联分支、Merge Request、Pipeline
@@ -127,7 +127,9 @@
 - 可用范围：`testProfileJson.repoKind` 必须为 `BACKEND` 或 `MIXED`
 - 抽取来源：当前 GitLab 绑定仓库的指定分支，分支为空时使用绑定默认分支，最后回退 `main`
 - 抽取内容：Spring Controller Mapping、方法注释、参数注释、DTO 字段注释和枚举常量注释
-- 写入目标：项目对应的 Yaade 顶级 collection
+- 写入目标：项目对应的 Yaade 顶级 collection，以及其下按 Controller 创建的子 collection
+- 目录规则：每个 Controller 一个目录，目录名优先读取类上的 `@Tag(name/value)` 或 `@Api(tags/value)`，缺失时回退类注释首句，再回退类名；同名目录追加 `（类名）` 消歧
+- 兼容策略：历史已生成的平铺请求保持原位置，只对新生成请求使用 Controller 子目录
 - 幂等策略：只创建、更新或删除带 `aiclubSync.source=GITLAB_SPRING_API` 标记的平台生成项，人工在 Yaade 中维护的请求不会被删除或覆盖
 
 ## 建议的下一步

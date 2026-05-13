@@ -26,7 +26,7 @@ import java.util.Objects;
 
 /**
  * GitLab 绑定仓库同步 API 编排服务。
- * 负责校验仓库类型、调用 code-processing 抽取 Spring 接口，并把平台生成项幂等写入 Yaade。
+ * 负责校验仓库类型、调用 code-processing 抽取 Spring 接口，并把平台生成项按 Controller 目录幂等写入 Yaade。
  */
 @Service
 public class GitlabApiSyncService {
@@ -99,41 +99,60 @@ public class GitlabApiSyncService {
         );
     }
 
+    /**
+     * 同步时兼容两种形态：
+     * 1. 历史平铺生成项：继续在项目根 collection 原位更新/删除，不主动搬家
+     * 2. 新目录化生成项：按 Controller 子目录创建、更新和清理
+     */
     private SyncCounters syncYaadeRequests(ProjectGitlabBindingEntity binding,
                                            String branch,
                                            GitlabSpringApiExtractClientService.ExtractResponse extractResponse) {
         ProjectEntity project = binding.getProject();
         YaadeProjectBindingSummary projectBinding = yaadeProjectSyncService.ensureProjectBinding(project).summary();
         YaadeClientService.YaadeSession adminSession = yaadeClientService.loginAdmin();
-        YaadeClientService.YaadeRemoteCollection collection = yaadeClientService.findCollectionById(adminSession, projectBinding.yaadeCollectionId());
-        List<YaadeClientService.YaadeRemoteRequest> existingRequests = yaadeClientService.listCollectionRequests(collection);
-        Map<String, YaadeClientService.YaadeRemoteRequest> generatedByKey = new LinkedHashMap<>();
-        List<YaadeClientService.YaadeRemoteRequest> generatedRequests = new ArrayList<>();
+        YaadeClientService.YaadeRemoteCollection rootCollection = yaadeClientService.findCollectionById(adminSession, projectBinding.yaadeCollectionId());
+        List<CollectionScope> collectionScopes = loadCollectionScopes(adminSession, rootCollection);
+
+        Map<String, GeneratedRequestRef> generatedByKey = new LinkedHashMap<>();
+        Map<String, YaadeClientService.YaadeRemoteCollection> existingControllerCollections = new LinkedHashMap<>();
+        Map<Long, Integer> nextRankByCollectionId = new LinkedHashMap<>();
+        List<GeneratedRequestRef> generatedRequests = new ArrayList<>();
         List<String> warnings = new ArrayList<>(extractResponse.warnings() == null ? List.of() : extractResponse.warnings());
-        for (YaadeClientService.YaadeRemoteRequest request : existingRequests) {
-            if (!isGeneratedFor(request, binding.getId(), branch)) {
-                continue;
+
+        for (CollectionScope scope : collectionScopes) {
+            nextRankByCollectionId.put(scope.collection().id(), nextRequestRank(scope.requests()));
+            for (YaadeClientService.YaadeRemoteRequest request : scope.requests()) {
+                if (!isGeneratedFor(request, binding.getId(), branch)) {
+                    continue;
+                }
+                GeneratedRequestRef reference = new GeneratedRequestRef(scope.collection(), request);
+                generatedRequests.add(reference);
+                if (!scope.rootCollection()) {
+                    String controllerSignature = requestControllerSignature(request);
+                    if (hasText(controllerSignature) && !existingControllerCollections.containsKey(controllerSignature)) {
+                        existingControllerCollections.put(controllerSignature, scope.collection());
+                    }
+                }
+                String key = requestKey(request);
+                if (key.isBlank()) {
+                    warnings.add("发现缺少 method/path 标记的历史生成请求，已保留：" + request.id());
+                    continue;
+                }
+                if (generatedByKey.containsKey(key)) {
+                    warnings.add("发现重复的历史生成请求，已保留第一条：" + key);
+                    continue;
+                }
+                generatedByKey.put(key, reference);
             }
-            generatedRequests.add(request);
-            String key = requestKey(request);
-            if (key.isBlank()) {
-                warnings.add("发现缺少 method/path 标记的历史生成请求，已保留：" + request.id());
-                continue;
-            }
-            if (generatedByKey.containsKey(key)) {
-                warnings.add("发现重复的历史生成请求，已保留第一条：" + key);
-                continue;
-            }
-            generatedByKey.put(key, request);
         }
 
         SyncCounters counters = new SyncCounters(warnings);
         LinkedHashSet<String> currentKeys = new LinkedHashSet<>();
-        int baseRank = nextGeneratedRank(existingRequests, binding.getId(), branch);
         List<GitlabSpringApiExtractClientService.ExtractedEndpoint> endpoints = extractResponse.endpoints() == null
                 ? List.of()
                 : extractResponse.endpoints();
-        int order = 0;
+        Map<String, ControllerDirectoryPlan> directoryPlans = buildControllerDirectoryPlans(endpoints);
+
         for (GitlabSpringApiExtractClientService.ExtractedEndpoint endpoint : endpoints) {
             String key = endpointKey(endpoint);
             if (!currentKeys.add(key)) {
@@ -141,30 +160,148 @@ public class GitlabApiSyncService {
                 counters.warnings.add("接口重复，已跳过：" + key);
                 continue;
             }
-            ObjectNode data = buildYaadeRequestData(binding, branch, endpoint, baseRank + order);
-            order++;
-            YaadeClientService.YaadeRemoteRequest existing = generatedByKey.get(key);
+            GeneratedRequestRef existing = generatedByKey.get(key);
+            YaadeClientService.YaadeRemoteCollection targetCollection;
+            int rank;
+            if (existing != null) {
+                targetCollection = existing.collection();
+                rank = requestRank(existing.request());
+            } else {
+                String controllerSignature = resolveControllerSignature(endpoint);
+                ControllerDirectoryPlan directoryPlan = directoryPlans.get(controllerSignature);
+                targetCollection = resolveControllerCollection(
+                        adminSession,
+                        rootCollection,
+                        directoryPlan,
+                        existingControllerCollections,
+                        nextRankByCollectionId
+                );
+                rank = nextRankByCollectionId.getOrDefault(targetCollection.id(), 0);
+                nextRankByCollectionId.put(targetCollection.id(), rank + 1);
+            }
+            ObjectNode data = buildYaadeRequestData(binding, branch, endpoint, rank);
             if (existing == null) {
-                yaadeClientService.createRestRequest(adminSession, collection.id(), data);
+                yaadeClientService.createRestRequest(adminSession, targetCollection.id(), data);
                 counters.createdCount++;
                 continue;
             }
-            if (jsonEquals(existing.data(), data)) {
+            if (jsonEquals(existing.request().data(), data)) {
                 counters.skippedCount++;
                 continue;
             }
-            yaadeClientService.updateRequest(adminSession, existing.withData(data));
+            yaadeClientService.updateRequest(adminSession, existing.request().withData(data));
             counters.updatedCount++;
         }
 
-        for (YaadeClientService.YaadeRemoteRequest generatedRequest : generatedRequests) {
-            String key = requestKey(generatedRequest);
+        LinkedHashSet<Long> maybeEmptyCollectionIds = new LinkedHashSet<>();
+        for (GeneratedRequestRef reference : generatedRequests) {
+            String key = requestKey(reference.request());
             if (!key.isBlank() && !currentKeys.contains(key)) {
-                yaadeClientService.deleteRequest(adminSession, generatedRequest.id());
+                yaadeClientService.deleteRequest(adminSession, reference.request().id());
                 counters.deletedCount++;
+                if (!Objects.equals(reference.collection().id(), rootCollection.id())) {
+                    maybeEmptyCollectionIds.add(reference.collection().id());
+                }
             }
         }
+        cleanupEmptyControllerCollections(adminSession, rootCollection.id(), maybeEmptyCollectionIds);
         return counters;
+    }
+
+    /**
+     * 拉平成“项目根 + 全部子孙目录”的扫描视图，便于同时兼容旧平铺接口和新的 Controller 子目录。
+     */
+    private List<CollectionScope> loadCollectionScopes(YaadeClientService.YaadeSession adminSession,
+                                                       YaadeClientService.YaadeRemoteCollection rootCollection) {
+        List<CollectionScope> scopes = new ArrayList<>();
+        for (YaadeClientService.YaadeRemoteCollection collection : yaadeClientService.listCollectionsInSubtree(adminSession, rootCollection.id())) {
+            boolean root = Objects.equals(collection.id(), rootCollection.id());
+            scopes.add(new CollectionScope(
+                    collection,
+                    yaadeClientService.listCollectionRequests(collection),
+                    root
+            ));
+        }
+        scopes.sort(Comparator
+                .comparing(CollectionScope::rootCollection)
+                .reversed()
+                .thenComparing(scope -> scope.collection().rank() == null ? Integer.MAX_VALUE : scope.collection().rank()));
+        return scopes;
+    }
+
+    /**
+     * 为本次抽取结果计算目录名冲突后的最终子目录名称，保证“每个 Controller 一个目录”。
+     */
+    private Map<String, ControllerDirectoryPlan> buildControllerDirectoryPlans(List<GitlabSpringApiExtractClientService.ExtractedEndpoint> endpoints) {
+        Map<String, GitlabSpringApiExtractClientService.ExtractedEndpoint> firstEndpointByController = new LinkedHashMap<>();
+        Map<String, Integer> displayNameCounts = new LinkedHashMap<>();
+        for (GitlabSpringApiExtractClientService.ExtractedEndpoint endpoint : endpoints) {
+            String controllerSignature = resolveControllerSignature(endpoint);
+            if (firstEndpointByController.containsKey(controllerSignature)) {
+                continue;
+            }
+            firstEndpointByController.put(controllerSignature, endpoint);
+            String displayName = resolveControllerDisplayName(endpoint);
+            displayNameCounts.put(displayName, displayNameCounts.getOrDefault(displayName, 0) + 1);
+        }
+
+        Map<String, ControllerDirectoryPlan> result = new LinkedHashMap<>();
+        for (Map.Entry<String, GitlabSpringApiExtractClientService.ExtractedEndpoint> entry : firstEndpointByController.entrySet()) {
+            GitlabSpringApiExtractClientService.ExtractedEndpoint endpoint = entry.getValue();
+            String displayName = resolveControllerDisplayName(endpoint);
+            String className = resolveControllerClassName(endpoint);
+            String directoryName = displayNameCounts.getOrDefault(displayName, 0) > 1
+                    ? displayName + "（" + className + "）"
+                    : displayName;
+            result.put(entry.getKey(), new ControllerDirectoryPlan(entry.getKey(), className, directoryName));
+        }
+        return result;
+    }
+
+    /**
+     * 优先复用已有目录；只有首次出现的 Controller 才在项目根 collection 下新建一个子目录。
+     */
+    private YaadeClientService.YaadeRemoteCollection resolveControllerCollection(
+            YaadeClientService.YaadeSession adminSession,
+            YaadeClientService.YaadeRemoteCollection rootCollection,
+            ControllerDirectoryPlan directoryPlan,
+            Map<String, YaadeClientService.YaadeRemoteCollection> existingControllerCollections,
+            Map<Long, Integer> nextRankByCollectionId) {
+        YaadeClientService.YaadeRemoteCollection existing = existingControllerCollections.get(directoryPlan.controllerSignature());
+        if (existing != null) {
+            return existing;
+        }
+        YaadeClientService.YaadeRemoteCollection created = yaadeClientService.createCollection(
+                adminSession,
+                directoryPlan.directoryName(),
+                rootCollection.id(),
+                rootCollection.groups()
+        );
+        existingControllerCollections.put(directoryPlan.controllerSignature(), created);
+        nextRankByCollectionId.put(created.id(), 0);
+        return created;
+    }
+
+    /**
+     * 仅在本次同步确认某个 Controller 目录已经没有任何请求或子目录时，才删除空目录。
+     */
+    private void cleanupEmptyControllerCollections(YaadeClientService.YaadeSession adminSession,
+                                                   Long rootCollectionId,
+                                                   LinkedHashSet<Long> maybeEmptyCollectionIds) {
+        for (Long collectionId : maybeEmptyCollectionIds) {
+            List<YaadeClientService.YaadeRemoteCollection> subtree = yaadeClientService.listCollectionsInSubtree(adminSession, collectionId);
+            if (subtree.size() != 1) {
+                continue;
+            }
+            YaadeClientService.YaadeRemoteCollection collection = subtree.get(0);
+            if (Objects.equals(collection.id(), rootCollectionId)) {
+                continue;
+            }
+            if (!yaadeClientService.listCollectionRequests(collection).isEmpty()) {
+                continue;
+            }
+            yaadeClientService.deleteCollection(adminSession, collection.id());
+        }
     }
 
     private ObjectNode buildYaadeRequestData(ProjectGitlabBindingEntity binding,
@@ -190,6 +327,9 @@ public class GitlabApiSyncService {
         syncMarker.put("method", defaultString(endpoint.method(), "GET").toUpperCase(Locale.ROOT));
         syncMarker.put("path", normalizePath(endpoint.path()));
         syncMarker.put("sourceSignature", defaultString(endpoint.sourceSignature(), ""));
+        syncMarker.put("controllerSignature", resolveControllerSignature(endpoint));
+        syncMarker.put("controllerClassName", resolveControllerClassName(endpoint));
+        syncMarker.put("controllerDisplayName", resolveControllerDisplayName(endpoint));
         return data;
     }
 
@@ -202,6 +342,7 @@ public class GitlabApiSyncService {
         appendParameterSection(lines, "路径参数", endpoint.pathParams());
         appendParameterSection(lines, "查询参数", endpoint.queryParams());
         appendParameterSection(lines, "请求头", endpoint.headers());
+        appendParameterSection(lines, "请求体字段", endpoint.bodyFields());
         if (hasText(endpoint.sourceFile())) {
             lines.add("来源：" + endpoint.sourceFile() + (endpoint.sourceLine() == null ? "" : ":" + endpoint.sourceLine()));
         }
@@ -240,6 +381,35 @@ public class GitlabApiSyncService {
             array.add(item);
         }
         return array;
+    }
+
+    private String resolveControllerSignature(GitlabSpringApiExtractClientService.ExtractedEndpoint endpoint) {
+        String controllerSignature = trimToNull(endpoint.controllerSignature());
+        if (controllerSignature != null) {
+            return controllerSignature;
+        }
+        String sourceFile = defaultString(endpoint.sourceFile(), "");
+        String className = resolveControllerClassName(endpoint);
+        return hasText(sourceFile) ? sourceFile + "#" + className : className;
+    }
+
+    private String resolveControllerClassName(GitlabSpringApiExtractClientService.ExtractedEndpoint endpoint) {
+        String controllerClassName = trimToNull(endpoint.controllerClassName());
+        if (controllerClassName != null) {
+            return controllerClassName;
+        }
+        String sourceFile = trimToNull(endpoint.sourceFile());
+        if (sourceFile != null && sourceFile.contains("/")) {
+            String fileName = sourceFile.substring(sourceFile.lastIndexOf('/') + 1);
+            if (fileName.endsWith(".java")) {
+                return fileName.substring(0, fileName.length() - 5);
+            }
+        }
+        return "UnknownController";
+    }
+
+    private String resolveControllerDisplayName(GitlabSpringApiExtractClientService.ExtractedEndpoint endpoint) {
+        return defaultString(trimToNull(endpoint.controllerDisplayName()), resolveControllerClassName(endpoint));
     }
 
     private String resolveRepoKind(ProjectGitlabBindingEntity binding) {
@@ -317,9 +487,8 @@ public class GitlabApiSyncService {
         return null;
     }
 
-    private int nextGeneratedRank(List<YaadeClientService.YaadeRemoteRequest> existingRequests, Long bindingId, String branch) {
-        return existingRequests.stream()
-                .filter(request -> !isGeneratedFor(request, bindingId, branch))
+    private int nextRequestRank(List<YaadeClientService.YaadeRemoteRequest> requests) {
+        return requests.stream()
                 .map(request -> request.data().path("rank"))
                 .filter(JsonNode::isNumber)
                 .map(JsonNode::asInt)
@@ -327,11 +496,19 @@ public class GitlabApiSyncService {
                 .orElse(-1) + 1;
     }
 
+    private int requestRank(YaadeClientService.YaadeRemoteRequest request) {
+        return request.data().path("rank").isNumber() ? request.data().path("rank").asInt() : 0;
+    }
+
     private boolean isGeneratedFor(YaadeClientService.YaadeRemoteRequest request, Long bindingId, String branch) {
         JsonNode marker = request.data().path("aiclubSync");
         return SYNC_SOURCE.equals(marker.path("source").asText(""))
                 && String.valueOf(bindingId).equals(marker.path("bindingId").asText(""))
                 && Objects.equals(branch, marker.path("branch").asText(""));
+    }
+
+    private String requestControllerSignature(YaadeClientService.YaadeRemoteRequest request) {
+        return trimToNull(request.data().path("aiclubSync").path("controllerSignature").asText(""));
     }
 
     private String requestKey(YaadeClientService.YaadeRemoteRequest request) {
@@ -374,6 +551,31 @@ public class GitlabApiSyncService {
 
     private String defaultString(String value, String defaultValue) {
         return value == null || value.isBlank() ? defaultValue : value;
+    }
+
+    /**
+     * collection 视图快照：同步期间不落库，只为本轮目录与请求归属判断服务。
+     */
+    private record CollectionScope(YaadeClientService.YaadeRemoteCollection collection,
+                                   List<YaadeClientService.YaadeRemoteRequest> requests,
+                                   boolean rootCollection) {
+    }
+
+    /**
+     * 已存在的生成请求及其所在 collection。
+     * 这样可以在匹配到历史平铺接口时继续原位更新，而不是强行搬进新目录。
+     */
+    private record GeneratedRequestRef(YaadeClientService.YaadeRemoteCollection collection,
+                                       YaadeClientService.YaadeRemoteRequest request) {
+    }
+
+    /**
+     * Controller 对应的目录规划结果。
+     * 一个 Controller 只对应一个目录，同名展示名通过追加类名消歧。
+     */
+    private record ControllerDirectoryPlan(String controllerSignature,
+                                           String controllerClassName,
+                                           String directoryName) {
     }
 
     private static final class SyncCounters {
