@@ -380,6 +380,49 @@ class GitnexusLaunchContextResponse(BaseModel):
     serveReady: bool = False
 
 
+class GitlabSpringApiParameter(BaseModel):
+    """从 Spring 接口源码中抽取出的单个参数说明。"""
+
+    name: str = ""
+    type: str = ""
+    required: bool = False
+    defaultValue: str = ""
+    description: str = ""
+
+
+class GitlabSpringApiEndpoint(BaseModel):
+    """从 GitLab 仓库源码中抽取出的单个 Spring REST 接口。"""
+
+    method: str = ""
+    path: str = ""
+    name: str = ""
+    description: str = ""
+    headers: list[GitlabSpringApiParameter] = Field(default_factory=list)
+    queryParams: list[GitlabSpringApiParameter] = Field(default_factory=list)
+    pathParams: list[GitlabSpringApiParameter] = Field(default_factory=list)
+    requestContentType: str = "none"
+    bodyExample: str = ""
+    sourceFile: str = ""
+    sourceLine: int | None = None
+    sourceSignature: str = ""
+
+
+class GitlabSpringApiExtractRequest(BaseModel):
+    """供 backend 调用的 GitLab Spring 接口抽取请求。"""
+
+    repository: GitlabCodeStructureRepository
+
+
+class GitlabSpringApiExtractResponse(BaseModel):
+    """GitLab Spring 接口抽取结果。"""
+
+    branchName: str = ""
+    commitSha: str = ""
+    scannedCount: int = 0
+    endpoints: list[GitlabSpringApiEndpoint] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class CodexExecutionRepository(BaseModel):
     """开发执行桥接所需的单仓库上下文。"""
 

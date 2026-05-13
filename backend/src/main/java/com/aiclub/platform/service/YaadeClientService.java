@@ -243,6 +243,80 @@ public class YaadeClientService {
                 .orElseThrow(() -> new NoSuchElementException("Yaade collection 不存在: " + collectionId));
     }
 
+    /**
+     * 解析 collection 内嵌的 request 列表，供平台同步接口时识别已有 Yaade 请求。
+     */
+    public List<YaadeRemoteRequest> listCollectionRequests(YaadeRemoteCollection collection) {
+        List<YaadeRemoteRequest> result = new ArrayList<>();
+        JsonNode requests = collection == null ? null : collection.raw().path("requests");
+        if (requests != null && requests.isArray()) {
+            requests.forEach(node -> {
+                if (node instanceof ObjectNode objectNode) {
+                    result.add(toRemoteRequest(objectNode));
+                }
+            });
+        }
+        return result;
+    }
+
+    /**
+     * 在指定 collection 下创建 REST 请求。
+     */
+    public YaadeRemoteRequest createRestRequest(YaadeSession session, Long collectionId, ObjectNode data) {
+        ObjectNode payload = objectMapper.createObjectNode()
+                .put("collectionId", collectionId)
+                .put("type", "REST")
+                .put("version", "1.0.0");
+        payload.set("data", data == null ? objectMapper.createObjectNode() : data.deepCopy());
+        RawResponse response = send(
+                "POST",
+                "/api/request",
+                session.cookieHeader(),
+                Map.of(HttpHeaders.CONTENT_TYPE, "application/json"),
+                bodyBytes(payload),
+                DEFAULT_TIMEOUT
+        );
+        if (!response.isSuccess()) {
+            throw new IllegalStateException("创建 Yaade request 失败，状态码: " + response.statusCode());
+        }
+        return toRemoteRequest((ObjectNode) readTree(response.body()));
+    }
+
+    /**
+     * 使用完整 request 对象更新 Yaade 请求。
+     */
+    public YaadeRemoteRequest updateRequest(YaadeSession session, YaadeRemoteRequest request) {
+        RawResponse response = send(
+                "PUT",
+                "/api/request",
+                session.cookieHeader(),
+                Map.of(HttpHeaders.CONTENT_TYPE, "application/json"),
+                bodyBytes(request.raw()),
+                DEFAULT_TIMEOUT
+        );
+        if (!response.isSuccess()) {
+            throw new IllegalStateException("更新 Yaade request 失败，状态码: " + response.statusCode());
+        }
+        return toRemoteRequest((ObjectNode) readTree(response.body()));
+    }
+
+    /**
+     * 删除指定 Yaade 请求，通常只用于清理平台生成且源码已消失的接口。
+     */
+    public void deleteRequest(YaadeSession session, Long requestId) {
+        RawResponse response = send(
+                "DELETE",
+                "/api/request/" + requestId,
+                session.cookieHeader(),
+                Map.of(),
+                null,
+                DEFAULT_TIMEOUT
+        );
+        if (!response.isSuccess()) {
+            throw new IllegalStateException("删除 Yaade request 失败，状态码: " + response.statusCode());
+        }
+    }
+
     public RawResponse forwardProxyRequest(String method,
                                            String relativePathWithQuery,
                                            String cookieHeader,
@@ -422,6 +496,20 @@ public class YaadeClientService {
         );
     }
 
+    private YaadeRemoteRequest toRemoteRequest(ObjectNode raw) {
+        ObjectNode data = raw.path("data") instanceof ObjectNode dataNode ? dataNode.deepCopy() : objectMapper.createObjectNode();
+        ObjectNode normalized = raw.deepCopy();
+        normalized.set("data", data.deepCopy());
+        return new YaadeRemoteRequest(
+                raw.path("id").asLong(),
+                raw.path("collectionId").isMissingNode() || raw.path("collectionId").isNull() ? null : raw.path("collectionId").asLong(),
+                raw.path("type").asText("REST"),
+                raw.path("version").asText("1.0.0"),
+                data,
+                normalized
+        );
+    }
+
     private List<String> groupsToList(JsonNode groupsNode) {
         List<String> result = new ArrayList<>();
         if (groupsNode != null && groupsNode.isArray()) {
@@ -471,6 +559,34 @@ public class YaadeClientService {
                     parentId,
                     rank,
                     newGroups,
+                    copied
+            );
+        }
+    }
+
+    /**
+     * Yaade request 远端对象。
+     * data 保存接口正文，raw 保存 Yaade 更新接口需要的完整原始结构。
+     */
+    public record YaadeRemoteRequest(Long id,
+                                     Long collectionId,
+                                     String type,
+                                     String version,
+                                     ObjectNode data,
+                                     ObjectNode raw) {
+
+        /**
+         * 返回替换 data 后的完整 request 对象，供 Yaade PUT /api/request 使用。
+         */
+        public YaadeRemoteRequest withData(ObjectNode newData) {
+            ObjectNode copied = raw.deepCopy();
+            copied.set("data", newData == null ? data.deepCopy() : newData.deepCopy());
+            return new YaadeRemoteRequest(
+                    id,
+                    collectionId,
+                    type,
+                    version,
+                    newData == null ? data.deepCopy() : newData.deepCopy(),
                     copied
             );
         }

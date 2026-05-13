@@ -4,6 +4,7 @@ import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.GitlabAutoMergeConfigSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
+import com.aiclub.platform.dto.GitlabApiSyncResult;
 import com.aiclub.platform.dto.GitlabAutoMergeRunResult;
 import com.aiclub.platform.dto.GitlabBranchSummary;
 import com.aiclub.platform.dto.GitlabCodeStructureQueryResult;
@@ -24,6 +25,7 @@ import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
 import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabApiSyncRequest;
 import com.aiclub.platform.dto.request.GitlabCreateProductBranchSyncRequest;
 import com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest;
 import com.aiclub.platform.dto.request.GitlabCodeStructureQueryRequest;
@@ -35,6 +37,7 @@ import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
 import com.aiclub.platform.dto.request.GitlabUserOauthAuthorizeRequest;
 import com.aiclub.platform.dto.request.GitlabUserOauthCallbackRequest;
 import com.aiclub.platform.dto.request.ProjectGitlabBindingRequest;
+import com.aiclub.platform.service.GitlabApiSyncService;
 import com.aiclub.platform.service.GitlabManagementService;
 import com.aiclub.platform.service.GitlabUserOauthService;
 import jakarta.validation.Valid;
@@ -57,11 +60,14 @@ public class GitlabController {
 
     private final GitlabManagementService gitlabManagementService;
     private final GitlabUserOauthService gitlabUserOauthService;
+    private final GitlabApiSyncService gitlabApiSyncService;
 
     public GitlabController(GitlabManagementService gitlabManagementService,
-                            GitlabUserOauthService gitlabUserOauthService) {
+                            GitlabUserOauthService gitlabUserOauthService,
+                            GitlabApiSyncService gitlabApiSyncService) {
         this.gitlabManagementService = gitlabManagementService;
         this.gitlabUserOauthService = gitlabUserOauthService;
+        this.gitlabApiSyncService = gitlabApiSyncService;
     }
 
     /**
@@ -159,6 +165,16 @@ public class GitlabController {
     public ApiResponse<ExecutionTaskSummary> createBindingScanTask(@PathVariable Long id,
                                                                    @Valid @RequestBody GitlabBindingScanTaskRequest request) {
         return ApiResponse.success(gitlabManagementService.createBindingScanTask(id, request));
+    }
+
+    /**
+     * 从后端或混合仓库抽取 Spring 接口，并同步为 Yaade API 请求。
+     */
+    @PostMapping("/bindings/{id}/api-sync")
+    @RequirePermission("gitlab:manage")
+    public ApiResponse<GitlabApiSyncResult> syncBindingApi(@PathVariable Long id,
+                                                           @Valid @RequestBody(required = false) GitlabApiSyncRequest request) {
+        return ApiResponse.success(gitlabApiSyncService.syncBindingApi(id, request));
     }
 
     @GetMapping("/bindings/{id}/merge-requests")

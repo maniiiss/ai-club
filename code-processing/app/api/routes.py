@@ -33,6 +33,8 @@ from app.models import (
     GitlabCodeStructureOverviewResponse,
     GitlabCodeStructureQueryRequest,
     GitlabCodeStructureQueryResponse,
+    GitlabSpringApiExtractRequest,
+    GitlabSpringApiExtractResponse,
     RepositoryStructuringRequest,
     RepositoryStructuringResponse,
 )
@@ -43,6 +45,7 @@ from app.services.gitlab_code_structure_service import (
     build_gitnexus_launch_context,
     query_gitlab_code_structure,
 )
+from app.services.gitlab_spring_api_extract_service import extract_gitlab_spring_apis
 from app.services.repo_structuring_service import execute_repo_structuring, start_repo_structuring
 from app.services.repository_service import build_summary
 from app.services.document_service import convert_document_to_markdown
@@ -294,6 +297,19 @@ def gitnexus_launch_context(request_http: Request,
     _require_internal_service_auth(request_http)
     try:
         return build_gitnexus_launch_context(payload)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+
+
+@router.post("/gitlab-spring-apis/extract", response_model=GitlabSpringApiExtractResponse)
+def gitlab_spring_api_extract(request_http: Request,
+                              payload: GitlabSpringApiExtractRequest) -> GitlabSpringApiExtractResponse:
+    """供 backend 同步抽取 GitLab 仓库里的 Spring REST 接口说明。"""
+    _require_internal_service_auth(request_http)
+    try:
+        return extract_gitlab_spring_apis(payload)
     except ValueError as exception:
         raise HTTPException(status_code=400, detail=str(exception)) from exception
     except RuntimeError as exception:

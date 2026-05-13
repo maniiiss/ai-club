@@ -10,6 +10,7 @@
 - 平台项目可绑定一个 GitLab 项目
 - 每个项目独立配置 API Token
 - 绑定后可同步 GitLab 项目名称、路径、默认分支、仓库地址
+- 绑定的 `testProfileJson.repoKind` 为 `BACKEND` 或 `MIXED` 时，可在绑定页发起“同步 API”，把 Spring 接口注释同步为项目 Yaade API 请求
 
 ### 2. 任务与代码交付链路（后续可继续扩展）
 - 任务可继续扩展关联分支、Merge Request、Pipeline
@@ -65,6 +66,7 @@
 - `PUT /api/gitlab/bindings/{id}`
 - `DELETE /api/gitlab/bindings/{id}`
 - `POST /api/gitlab/bindings/{id}/test`
+- `POST /api/gitlab/bindings/{id}/api-sync`
 - `GET /api/gitlab/bindings/{id}/merge-requests`
 - `GET /api/gitlab/bindings/{id}/product-branches`
 - `POST /api/gitlab/bindings/{id}/product-branches`
@@ -117,6 +119,16 @@
 - 定时同步调度
 - 与现有自动合并策略的自动联动
 - 独立于仓库绑定之外的多主线或任意上下游图模型
+
+## 同步 API 到 Yaade
+
+“同步 API”属于项目绑定仓库的扩展动作，只对后端仓库和混合仓库开放。
+
+- 可用范围：`testProfileJson.repoKind` 必须为 `BACKEND` 或 `MIXED`
+- 抽取来源：当前 GitLab 绑定仓库的指定分支，分支为空时使用绑定默认分支，最后回退 `main`
+- 抽取内容：Spring Controller Mapping、方法注释、参数注释、DTO 字段注释和枚举常量注释
+- 写入目标：项目对应的 Yaade 顶级 collection
+- 幂等策略：只创建、更新或删除带 `aiclubSync.source=GITLAB_SPRING_API` 标记的平台生成项，人工在 Yaade 中维护的请求不会被删除或覆盖
 
 ## 建议的下一步
 

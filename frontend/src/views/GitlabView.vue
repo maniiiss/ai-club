@@ -145,6 +145,11 @@
                             <el-icon><Search /></el-icon>
                           </button>
                         </el-tooltip>
+                        <el-tooltip v-if="canSyncBindingApi(row)" content="同步 API" placement="top">
+                          <button class="management-list-row-button gitlab-action-button api-sync" type="button" aria-label="同步 API" @click="openApiSyncDialog(row)">
+                            <el-icon><Connection /></el-icon>
+                          </button>
+                        </el-tooltip>
                         <el-tooltip content="代码结构" placement="top">
                           <button class="management-list-row-button gitlab-action-button preview" type="button" aria-label="查看仓库代码结构" @click="openBindingCodeStructure(row)">
                             <el-icon><Share /></el-icon>
@@ -233,6 +238,10 @@
                         <button class="mobile-entity-action-button info" type="button" @click="openBindingScanDialog(row)">
                           <el-icon><Search /></el-icon>
                           <span>发起扫描</span>
+                        </button>
+                        <button v-if="canSyncBindingApi(row)" class="mobile-entity-action-button info" type="button" @click="openApiSyncDialog(row)">
+                          <el-icon><Connection /></el-icon>
+                          <span>同步 API</span>
                         </button>
                         <button class="mobile-entity-action-button info" type="button" @click="openBindingCodeStructure(row)">
                           <el-icon><Share /></el-icon>
@@ -1261,6 +1270,78 @@
     </template>
   </el-dialog>
 
+  <el-dialog v-model="apiSyncDialogVisible" title="同步 API" width="680px" class="platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader title="同步 API" :subtitle="apiSyncDialogSubtitle" :icon="Connection" />
+    </template>
+    <el-form label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">同步配置</div>
+          <div class="platform-form-section-subtitle">系统会读取后端或混合仓库中的 Spring 接口，并写入当前项目的 API 工作台。</div>
+        </div>
+        <el-form-item label="当前仓库">
+          <el-input :model-value="currentApiSyncBinding ? `${currentApiSyncBinding.projectName} / ${currentApiSyncBinding.gitlabProjectPath || currentApiSyncBinding.gitlabProjectRef}` : ''" disabled />
+        </el-form-item>
+        <el-form-item label="同步分支">
+          <el-select
+            v-model="apiSyncForm.branch"
+            filterable
+            remote
+            reserve-keyword
+            placeholder="请输入关键字搜索分支"
+            style="width: 100%"
+            :remote-method="handleApiSyncBranchSearch"
+            :loading="apiSyncBranchLoading"
+          >
+            <el-option
+              v-for="branch in apiSyncBranchOptions"
+              :key="branch.name"
+              :label="branch.defaultBranch ? `${branch.name}（默认）` : branch.name"
+              :value="branch.name"
+            />
+          </el-select>
+          <div class="form-tip">同步会覆盖平台生成的 API 项，并保留人工在 API 工作台维护的内容。</div>
+        </el-form-item>
+      </section>
+    </el-form>
+    <template #footer>
+      <div class="platform-dialog-footer">
+        <el-button @click="apiSyncDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="apiSyncSubmitting" @click="handleApiSyncSubmit">同步 API</el-button>
+      </div>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="apiSyncResultVisible" title="同步 API 结果" width="760px">
+    <el-descriptions v-if="apiSyncResult" :column="3" border>
+      <el-descriptions-item label="分支">{{ apiSyncResult.branch }}</el-descriptions-item>
+      <el-descriptions-item label="提交">{{ apiSyncResult.commitSha || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="扫描文件">{{ apiSyncResult.scannedCount }}</el-descriptions-item>
+      <el-descriptions-item label="新增">{{ apiSyncResult.createdCount }}</el-descriptions-item>
+      <el-descriptions-item label="更新">{{ apiSyncResult.updatedCount }}</el-descriptions-item>
+      <el-descriptions-item label="删除">{{ apiSyncResult.deletedCount }}</el-descriptions-item>
+      <el-descriptions-item label="跳过">{{ apiSyncResult.skippedCount }}</el-descriptions-item>
+      <el-descriptions-item label="完成时间">{{ formatDateTimeText(apiSyncResult.syncedAt) }}</el-descriptions-item>
+      <el-descriptions-item label="API 工作台">
+        <el-button link type="primary" @click="openApiWorkspace(apiSyncResult.projectId)">打开</el-button>
+      </el-descriptions-item>
+    </el-descriptions>
+    <el-alert
+      v-if="apiSyncResult?.warnings?.length"
+      class="gitlab-alert"
+      type="warning"
+      show-icon
+      :closable="false"
+      style="margin-top: 16px"
+    >
+      <template #title>同步完成但存在 {{ apiSyncResult.warnings.length }} 条提示</template>
+      <ul class="gitlab-api-sync-warning-list">
+        <li v-for="(warning, index) in apiSyncResult.warnings" :key="`api-sync-warning-${index}`">{{ warning }}</li>
+      </ul>
+    </el-alert>
+  </el-dialog>
+
   <el-dialog v-model="autoMergeDialogVisible" :title="autoMergeDialogTitle" width="760px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="autoMergeDialogTitle" :subtitle="autoMergeDialogSubtitle" :icon="Connection" />
@@ -1592,6 +1673,7 @@ import {
   previewAutoMergeConfigMergeRequests,
   previewBindingMergeRequests,
   runAutoMergeConfig,
+  syncGitlabBindingApi,
   testGitlabAutoMergeConfig,
   testGitlabBinding,
   updateGitlabAutoMergeConfig,
@@ -1603,6 +1685,7 @@ import type {
   GitlabAutoMergeConfigItem,
   GitlabAutoMergeLogItem,
   GitlabAutoMergeRunResult,
+  GitlabApiSyncResultItem,
   GitlabBranchItem,
   GitlabMergeRequestItem,
   GitlabProductBranchItem,
@@ -1644,6 +1727,8 @@ interface BindingForm {
 interface TagForm { tagName: string; branchName: string; message: string }
 /** 仓库规范扫描表单。 */
 interface ScanTaskForm { branch: string; rulesetCode: string; planAgentId: number | null }
+/** 同步 API 表单只需要确认目标分支。 */
+interface ApiSyncForm { branch: string }
 interface AutoMergeForm { name: string; executionMode: 'PROJECT_BOUND' | 'STANDALONE'; description: string; bindingId: number | null; apiBaseUrl: string; gitlabProjectRef: string; apiToken: string; sourceBranch: string; targetBranch: string; titleKeyword: string; schedulerEnabled: boolean; schedulerCron: string; enabled: boolean; autoMerge: boolean; squashOnMerge: boolean; removeSourceBranch: boolean; triggerPipelineAfterMerge: boolean; requirePipelineSuccess: boolean; reviewAgentId: number | null; aiReviewEnabled: boolean; aiReviewPrompt: string }
 interface ProductBranchForm { lineCode: string; lineName: string; branchName: string; enabled: boolean }
 
@@ -1714,6 +1799,14 @@ const scanForm = reactive<ScanTaskForm>({ branch: '', rulesetCode: '', planAgent
 const scanBranchOptions = ref<GitlabBranchItem[]>([])
 const scanBranchLoading = ref(false)
 const scanRulesetOptions = ref<RepositoryScanRulesetItem[]>([])
+const apiSyncDialogVisible = ref(false)
+const apiSyncSubmitting = ref(false)
+const apiSyncResultVisible = ref(false)
+const currentApiSyncBinding = ref<ProjectGitlabBindingItem | null>(null)
+const apiSyncForm = reactive<ApiSyncForm>({ branch: '' })
+const apiSyncBranchOptions = ref<GitlabBranchItem[]>([])
+const apiSyncBranchLoading = ref(false)
+const apiSyncResult = ref<GitlabApiSyncResultItem | null>(null)
 const productBranchLoading = ref(false)
 const currentProductBindingId = ref<number | null>(null)
 const productBranchList = ref<GitlabProductBranchItem[]>([])
@@ -1811,10 +1904,24 @@ const productBranchDialogSubtitle = computed(() =>
 )
 const tagDialogSubtitle = computed(() => '基于当前仓库分支创建新的 GitLab Tag。')
 const scanDialogSubtitle = computed(() => '选择扫描分支和规则集后，系统会在执行中心创建一条仓库规范扫描任务。')
+const apiSyncDialogSubtitle = computed(() => '选择分支后，系统会覆盖平台生成的 API 项并保留人工维护内容。')
 const showFrontendTestProfile = computed(() => ['FRONTEND', 'MIXED'].includes(bindingForm.repoKind))
 const showBackendTestProfile = computed(() => ['BACKEND', 'MIXED'].includes(bindingForm.repoKind))
 const canManageProductBranches = computed(() => !!currentProductBinding.value && !!currentProductBinding.value.productMainBranch)
 const enabledProductBranches = computed(() => productBranchList.value.filter((item) => item.enabled))
+
+const resolveBindingRepoKind = (row: ProjectGitlabBindingItem): BindingRepoKind => {
+  if (!row.testProfileJson) return ''
+  try {
+    const parsed = JSON.parse(row.testProfileJson) as Record<string, any>
+    const repoKind = String(parsed.repoKind || '').trim().toUpperCase()
+    return ['FRONTEND', 'BACKEND', 'MIXED'].includes(repoKind) ? (repoKind as BindingRepoKind) : ''
+  } catch (error) {
+    return ''
+  }
+}
+
+const canSyncBindingApi = (row: ProjectGitlabBindingItem) => ['BACKEND', 'MIXED'].includes(resolveBindingRepoKind(row))
 
 const createBindingHttpCheck = (): BindingHttpCheckForm => ({
   name: '',
@@ -2253,6 +2360,60 @@ const handleScanSubmit = async () => {
     scanSubmitting.value = false
   }
 }
+const resetApiSyncForm = () => {
+  apiSyncForm.branch = ''
+  apiSyncBranchOptions.value = []
+  apiSyncResult.value = null
+}
+const loadApiSyncBranches = async (keyword = '') => {
+  if (!currentApiSyncBinding.value) return
+  apiSyncBranchLoading.value = true
+  try {
+    apiSyncBranchOptions.value = await listGitlabBranches(currentApiSyncBinding.value.id, keyword || undefined)
+    if (!apiSyncForm.branch) {
+      const defaultBranch = apiSyncBranchOptions.value.find((item) => item.defaultBranch)?.name || currentApiSyncBinding.value.defaultTargetBranch || apiSyncBranchOptions.value[0]?.name || ''
+      apiSyncForm.branch = defaultBranch
+    }
+  } finally {
+    apiSyncBranchLoading.value = false
+  }
+}
+const handleApiSyncBranchSearch = async (keyword: string) => { await loadApiSyncBranches(keyword) }
+const openApiSyncDialog = async (row: ProjectGitlabBindingItem) => {
+  if (!canSyncBindingApi(row)) {
+    ElMessage.warning('仅后端仓库和混合仓库支持同步 API')
+    return
+  }
+  currentApiSyncBinding.value = row
+  resetApiSyncForm()
+  apiSyncDialogVisible.value = true
+  apiSyncForm.branch = row.defaultTargetBranch || ''
+  try {
+    await loadApiSyncBranches(row.defaultTargetBranch || '')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载同步分支失败')
+  }
+}
+const handleApiSyncSubmit = async () => {
+  if (!currentApiSyncBinding.value) return
+  apiSyncSubmitting.value = true
+  try {
+    const result = await syncGitlabBindingApi(currentApiSyncBinding.value.id, {
+      branch: apiSyncForm.branch.trim() || undefined
+    })
+    apiSyncResult.value = result
+    apiSyncDialogVisible.value = false
+    apiSyncResultVisible.value = true
+    ElMessage.success(`同步 API 完成：新增 ${result.createdCount}，更新 ${result.updatedCount}，删除 ${result.deletedCount}`)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '同步 API 失败')
+  } finally {
+    apiSyncSubmitting.value = false
+  }
+}
+const openApiWorkspace = async (projectId: number) => {
+  await router.push({ path: '/apis', query: { projectId: String(projectId) } })
+}
 const openBindingMergeRequests = async (row: ProjectGitlabBindingItem) => { mergeRequestDrawerTitle.value = `绑定仓库 MR 预览 - ${row.projectName} / ${row.gitlabProjectPath || row.gitlabProjectRef}`; mergeRequestDrawerVisible.value = true; mergeRequestLoading.value = true; try { mergeRequestList.value = await previewBindingMergeRequests(row.id, row.defaultTargetBranch || undefined) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '加载 MR 失败') } finally { mergeRequestLoading.value = false } }
 const openBindingCodeStructure = (row: ProjectGitlabBindingItem) => {
   const targetRoute = router.resolve({
@@ -2641,8 +2802,20 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
   color: #0f766e;
 }
 
+.gitlab-action-button.api-sync:hover {
+  color: #7c3aed;
+}
+
 .gitlab-action-button.run:hover {
   color: #8b5e34;
+}
+
+.gitlab-api-sync-warning-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #92400e;
+  font-size: 12px;
+  line-height: 1.7;
 }
 
 .gitlab-empty-row {

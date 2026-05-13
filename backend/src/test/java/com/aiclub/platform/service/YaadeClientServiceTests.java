@@ -1,6 +1,7 @@
 package com.aiclub.platform.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -91,6 +92,33 @@ class YaadeClientServiceTests {
         verify(httpClient).send(requestCaptor.capture(), any(HttpResponse.BodyHandler.class));
         assertThat(requestCaptor.getValue().headers().firstValue(HttpHeaders.COOKIE)).contains("vertx-web.session=session-a");
         assertThat(requestCaptor.getValue().uri().toString()).endsWith("/api/users");
+    }
+
+    @Test
+    void shouldCreateRestRequestAgainstYaadeApi() throws Exception {
+        when(httpResponse.statusCode()).thenReturn(200);
+        when(httpResponse.body()).thenReturn("""
+                {"id":21,"collectionId":51,"type":"REST","version":"1.0.0","data":{"name":"查询用户","uri":"/api/users","method":"GET"}}
+                """.getBytes());
+        when(httpResponse.headers()).thenReturn(java.net.http.HttpHeaders.of(Map.of(), (left, right) -> true));
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenReturn(httpResponse);
+        ObjectNode requestData = new ObjectMapper().createObjectNode()
+                .put("name", "查询用户")
+                .put("uri", "/api/users")
+                .put("method", "GET");
+
+        YaadeClientService.YaadeRemoteRequest request = yaadeClientService.createRestRequest(
+                new YaadeClientService.YaadeSession("vertx-web.session=session-a"),
+                51L,
+                requestData
+        );
+
+        assertThat(request.id()).isEqualTo(21L);
+        assertThat(request.data().path("uri").asText()).isEqualTo("/api/users");
+        ArgumentCaptor<HttpRequest> requestCaptor = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(httpClient).send(requestCaptor.capture(), any(HttpResponse.BodyHandler.class));
+        assertThat(requestCaptor.getValue().method()).isEqualTo("POST");
+        assertThat(requestCaptor.getValue().uri().toString()).endsWith("/api/request");
     }
 
     @Test

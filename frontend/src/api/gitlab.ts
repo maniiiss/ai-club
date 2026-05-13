@@ -5,6 +5,8 @@ import type {
   GitlabAutoMergeConfigItem,
   GitlabAutoMergeLogItem,
   GitlabAutoMergeRunResult,
+  GitlabApiSyncRequestItem,
+  GitlabApiSyncResultItem,
   GitlabBranchItem,
   GitlabCreateMergeRequestResultItem,
   GitlabMergeRequestItem,
@@ -225,6 +227,11 @@ export const queryGitlabCodeStructure = async (id: number, payload: GitlabCodeSt
 
 export const launchGitlabBindingGitnexus = async (id: number, payload: GitlabGitnexusLaunchRequestItem = {}) => {
   const { data } = await http.post<ApiResponse<GitlabGitnexusLaunchResultItem>>(`/api/gitlab/bindings/${id}/gitnexus-launch`, payload)
+  return data.data
+}
+
+export const syncGitlabBindingApi = async (id: number, payload: GitlabApiSyncRequestItem = {}) => {
+  const { data } = await http.post<ApiResponse<GitlabApiSyncResultItem>>(`/api/gitlab/bindings/${id}/api-sync`, payload)
   return data.data
 }
 

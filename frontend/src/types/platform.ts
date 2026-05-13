@@ -1099,6 +1099,24 @@ export interface GitlabGitnexusLaunchResultItem {
   serveReady: boolean
 }
 
+export interface GitlabApiSyncRequestItem {
+  branch?: string
+}
+
+export interface GitlabApiSyncResultItem {
+  bindingId: number
+  projectId: number
+  branch: string
+  commitSha: string
+  scannedCount: number
+  createdCount: number
+  updatedCount: number
+  deletedCount: number
+  skippedCount: number
+  warnings: string[]
+  syncedAt: string
+}
+
 export interface GiteeProgramItem {
   id: number
   name: string
