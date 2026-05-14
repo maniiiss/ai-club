@@ -299,6 +299,10 @@
       >
       <el-header v-if="!isIterationWorkspaceRoute" class="layout-header">
         <div class="header-search-group">
+          <button v-if="isApiProjectDetailRoute" class="header-back-link" type="button" @click="goBackToApiGroups">
+            <el-icon><ArrowLeft /></el-icon>
+            <span>返回 API 项目</span>
+          </button>
           <h1 class="header-page-title" :title="pageTitle">{{ pageTitle }}</h1>
         </div>
 
@@ -617,6 +621,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowRight,
   Bell,
   ChatDotRound,
@@ -760,7 +765,7 @@ const iconRegistry: Record<string, unknown> = {
 const primaryMenuSeeds: MenuSeed[] = [
   { permission: 'dashboard:view', fallbackPath: '/dashboard', fallbackLabel: '首页看板', shortLabel: '首页', fallbackIcon: Odometer, matchNames: ['dashboard'] },
   { permission: 'project:view', fallbackPath: '/projects', fallbackLabel: '项目管理', shortLabel: '项目', fallbackIcon: FolderOpened, matchNames: ['projects', 'project-iterations'] },
-  { permission: 'api:view', fallbackPath: '/apis', fallbackLabel: 'API管理', shortLabel: 'API', fallbackIcon: Connection, matchNames: ['apis'] },
+  { permission: 'api:view', fallbackPath: '/apis', fallbackLabel: 'API管理', shortLabel: 'API', fallbackIcon: Connection, matchNames: ['api-groups', 'api-project-detail'] },
   { permission: 'wiki:view', fallbackPath: '/wiki', fallbackLabel: 'Wiki 中心', shortLabel: 'Wiki', fallbackIcon: Document, matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page', 'wiki-space-memory-fact-graph', 'project-memory-fact-graph'] },
   { permission: 'agent:view', fallbackPath: '/agents', fallbackLabel: '智能体管理', shortLabel: '智能体', fallbackIcon: Connection, matchNames: ['agents'] },
   { permission: 'task:view', fallbackPath: '/tasks', fallbackLabel: '执行中心', shortLabel: '执行', fallbackIcon: Tickets, matchNames: ['tasks', 'execution-task-detail'] },
@@ -842,6 +847,7 @@ const visibleSystemMenus = computed(() => systemMenuItems.value.filter((item) =>
 const isDashboardRoute = computed(() => route.name === 'dashboard')
 const isIterationWorkspaceRoute = computed(() => route.name === 'project-iterations')
 const isWikiSpaceRoute = computed(() => route.name === 'wiki-space' || route.name === 'wiki-space-page')
+const isApiProjectDetailRoute = computed(() => route.name === 'api-project-detail')
 const effectiveSidebarCollapsed = computed(() => isMobileViewport.value || appStore.sidebarCollapsed)
 const asideWidth = computed(() => (effectiveSidebarCollapsed.value ? '80px' : '256px'))
 const userInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
@@ -908,6 +914,8 @@ const hermesQuickPrompts = computed(() => {
       ? ['帮我总结当前迭代发版内容', '当前迭代修复了多少缺陷', '当前迭代开发了哪些需求']
       : ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个任务为什么延期了'],
     'project-memory-fact-graph': ['这个项目里最近形成了哪些稳定事实', '哪些实体和当前项目关系最紧密', '从这些事实里能看出什么风险或机会'],
+    'api-groups': ['哪些项目还没初始化 API 工作台', '帮我找某个项目的 API GROUP', '最近哪个项目接口最需要同步'],
+    'api-project-detail': ['帮我总结当前项目的接口资产', '这个项目有哪些接口同步风险', '当前 API 工作台下一步该检查什么'],
     'wiki-home': ['有哪些空间与当前项目相关', '帮我找某个项目关联的知识目录', '当前最值得看的空间是哪个'],
     'wiki-space': ['这个空间最近有哪些知识更新', '帮我梳理这个空间里的重点内容', '这个空间目前最值得关注的页面是什么'],
     'wiki-space-memory-fact-graph': ['这个空间里最近形成了哪些稳定事实', '哪些实体和当前空间关系最紧密', '从这些事实里能看出什么风险或机会'],
@@ -970,6 +978,10 @@ async function handleNavigate(path: string) {
     return
   }
   await router.push(path)
+}
+
+async function goBackToApiGroups() {
+  await router.push({ name: 'api-groups' })
 }
 
 /**
@@ -1643,6 +1655,27 @@ watch(
   gap: 20px;
   min-width: 0;
   flex: 1 1 auto;
+}
+
+.header-back-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(243, 244, 245, 0.96);
+  color: #516072;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.header-back-link:hover,
+.header-back-link:focus-visible {
+  background: rgba(var(--app-primary-container-rgb), 0.14);
+  color: var(--app-primary);
 }
 
 .header-page-title {

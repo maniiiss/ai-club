@@ -105,6 +105,12 @@ public class YaadeUserSyncService {
         groups.add(yaadeProperties.getPublicGroupName());
         if (selectedProject != null) {
             projectDataPermissionService.requireProjectVisible(selectedProject, scope);
+            projectBindingRepository.findByProjectId(selectedProject.getId())
+                    .filter(binding -> YaadeProjectSyncService.STATUS_ACTIVE.equalsIgnoreCase(binding.getStatus()))
+                    .map(PlatformYaadeProjectBindingEntity::getYaadeGroupName)
+                    .filter(groupName -> groupName != null && !groupName.isBlank())
+                    .ifPresent(groups::add);
+            return groups;
         }
         List<ProjectEntity> projects = projectRepository.findAll(Sort.by(Sort.Direction.ASC, "id"));
         List<PlatformYaadeProjectBindingEntity> bindings = projectBindingRepository.findAllByStatusOrderByProjectIdAsc(YaadeProjectSyncService.STATUS_ACTIVE);

@@ -14,6 +14,7 @@ const GitlabCodeStructureView = () => import('@/views/GitlabCodeStructureView.vu
 import JenkinsServerView from '@/views/JenkinsServerView.vue'
 import PipelineBindingView from '@/views/PipelineBindingView.vue'
 import ModelView from '@/views/ModelView.vue'
+const ApiGroupHomeView = () => import('@/views/ApiGroupHomeView.vue')
 const ProjectApiManagementView = () => import('@/views/ProjectApiManagementView.vue')
 import LoginView from '@/views/LoginView.vue'
 import ForbiddenView from '@/views/ForbiddenView.vue'
@@ -66,7 +67,20 @@ const router = createRouter({
       children: [
         { path: 'dashboard', name: 'dashboard', component: DashboardView, meta: { title: '首页看板', permission: 'dashboard:view' } },
         { path: 'projects', name: 'projects', component: ProjectView, meta: { title: '项目管理', permission: 'project:view' } },
-        { path: 'apis', name: 'apis', component: ProjectApiManagementView, meta: { title: 'API 管理', permission: 'api:view' } },
+        {
+          path: 'apis',
+          name: 'api-groups',
+          component: ApiGroupHomeView,
+          meta: { title: 'API 项目', permission: 'api:view' },
+          beforeEnter: (to) => {
+            const projectId = Number(to.query.projectId ?? '')
+            if (Number.isFinite(projectId) && projectId > 0) {
+              return { name: 'api-project-detail', params: { projectId: String(projectId) } }
+            }
+            return true
+          }
+        },
+        { path: 'apis/projects/:projectId', name: 'api-project-detail', component: ProjectApiManagementView, meta: { title: 'API 工作台', permission: 'api:view', activeMenu: '/apis' } },
         { path: 'wiki', name: 'wiki-home', component: WikiHomeView, meta: { title: 'Wiki 中心', permission: 'wiki:view' } },
         { path: 'wiki/spaces/:spaceId', name: 'wiki-space', component: WikiSpaceView, meta: { title: 'Wiki 空间', permission: 'wiki:view' } },
         { path: 'wiki/spaces/:spaceId/memory-fact-graph', name: 'wiki-space-memory-fact-graph', component: MemoryFactGraphView, meta: { title: '记忆事实图', permission: 'wiki:view' } },
