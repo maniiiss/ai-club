@@ -2412,7 +2412,7 @@ const handleApiSyncSubmit = async () => {
   }
 }
 const openApiWorkspace = async (projectId: number) => {
-  await router.push({ path: '/apis', query: { projectId: String(projectId) } })
+  await router.push({ name: 'api-project-detail', params: { projectId } })
 }
 const openBindingMergeRequests = async (row: ProjectGitlabBindingItem) => { mergeRequestDrawerTitle.value = `绑定仓库 MR 预览 - ${row.projectName} / ${row.gitlabProjectPath || row.gitlabProjectRef}`; mergeRequestDrawerVisible.value = true; mergeRequestLoading.value = true; try { mergeRequestList.value = await previewBindingMergeRequests(row.id, row.defaultTargetBranch || undefined) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '加载 MR 失败') } finally { mergeRequestLoading.value = false } }
 const openBindingCodeStructure = (row: ProjectGitlabBindingItem) => {

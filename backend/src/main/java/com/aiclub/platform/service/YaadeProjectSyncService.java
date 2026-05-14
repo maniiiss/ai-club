@@ -73,7 +73,7 @@ public class YaadeProjectSyncService {
 
     /**
      * 返回当前用户可见项目的 Yaade 上下文，并在缺失时补建 collection 绑定。
-     * 嵌入态项目下拉会依赖这里拿到稳定的 project -> group -> root collection 映射。
+     * 嵌入态按平台当前项目过滤集合时，依赖这里拿到稳定的 project -> group -> root collection 映射。
      */
     @Transactional
     public List<YaadeProjectContextSummary> listVisibleProjectContextsEnsuringBindings() {

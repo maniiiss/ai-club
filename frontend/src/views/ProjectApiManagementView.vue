@@ -1,34 +1,36 @@
 <template>
-  <div class="yaade-page" v-loading="loading">
-    <iframe
-      v-if="iframeSrc"
-      ref="yaadeFrame"
-      :key="iframeKey"
-      :src="iframeSrc"
-      class="yaade-iframe"
-      title="Yaade API Studio"
-      allowfullscreen
-      @load="handleIframeLoad"
-    />
-
-    <div v-else-if="errorMessage" class="yaade-empty-state">
-      <el-result
-        icon="warning"
-        title="Yaade 暂时不可用"
-        :sub-title="errorMessage"
-      >
-        <template #extra>
-          <el-button type="primary" :icon="RefreshRight" @click="initializePage">重新载入</el-button>
-        </template>
-      </el-result>
-    </div>
-
-    <div v-else-if="emptyStateMessage" class="yaade-empty-state">
-      <el-result
-        icon="info"
-        title="暂无可访问项目"
-        :sub-title="emptyStateMessage"
+  <div class="yaade-page-shell">
+    <div class="yaade-page" v-loading="loading">
+      <iframe
+        v-if="iframeSrc"
+        ref="yaadeFrame"
+        :key="iframeKey"
+        :src="iframeSrc"
+        class="yaade-iframe"
+        title="Yaade API Studio"
+        allowfullscreen
+        @load="handleIframeLoad"
       />
+
+      <div v-else-if="errorMessage" class="yaade-empty-state">
+        <el-result
+          icon="warning"
+          title="Yaade 暂时不可用"
+          :sub-title="errorMessage"
+        >
+          <template #extra>
+            <el-button type="primary" :icon="RefreshRight" @click="initializePage">重新载入</el-button>
+          </template>
+        </el-result>
+      </div>
+
+      <div v-else-if="emptyStateMessage" class="yaade-empty-state">
+        <el-result
+          icon="info"
+          title="暂无可访问项目"
+          :sub-title="emptyStateMessage"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -78,16 +80,11 @@ watch(
 )
 
 watch(
-  () => route.query.projectId,
-  () => {
+  () => route.params.projectId,
+  async () => {
     const nextProjectId = resolveRequestedProjectId()
     if (nextProjectId === currentProjectId.value) return
-    if (nextProjectId !== null && !projectContexts.value.some((item) => item.projectId === nextProjectId)) {
-      return
-    }
-    currentProjectId.value = nextProjectId
-    notifyYaadeProjectContext()
-    startBootstrapBroadcast()
+    await initializePage()
   }
 )
 
@@ -107,8 +104,9 @@ async function initializePage() {
     }
     const projectId = resolveInitialProjectId(projectOptions.map((item) => item.id))
     const session = await createYaadeEmbedSession(projectId)
-    projectContexts.value = await resolveProjectContexts(session.projectContexts ?? [], projectOptions)
-    currentProjectId.value = resolveInitialProjectId(projectContexts.value.map((item) => item.projectId))
+    const resolvedContexts = await resolveProjectContexts(session.projectContexts ?? [], projectOptions)
+    projectContexts.value = resolveDetailProjectContexts(resolvedContexts, projectId)
+    currentProjectId.value = projectContexts.value[0]?.projectId ?? null
     if (currentProjectId.value !== resolveRequestedProjectId()) {
       await syncRouteProjectId(currentProjectId.value)
     }
@@ -162,12 +160,20 @@ async function resolveProjectContexts(sessionContexts: YaadeProjectContextItem[]
   return bindings.filter((item): item is YaadeProjectContextItem => item !== null)
 }
 
+function resolveDetailProjectContexts(contexts: YaadeProjectContextItem[], requestedProjectId: number | null) {
+  // 详情页只把当前项目上下文交给 Yaade，避免嵌入态左侧目录继续暴露其它可见项目。
+  if (requestedProjectId === null) {
+    return contexts.slice(0, 1)
+  }
+  return contexts.filter((item) => item.projectId === requestedProjectId)
+}
+
 function resolveRequestedProjectId() {
-  const queryProjectId = Number(route.query.projectId ?? '')
-  if (Number.isNaN(queryProjectId) || queryProjectId <= 0) {
+  const routeProjectId = Number(route.params.projectId ?? '')
+  if (Number.isNaN(routeProjectId) || routeProjectId <= 0) {
     return null
   }
-  return queryProjectId
+  return routeProjectId
 }
 
 function resolveInitialProjectId(candidates: number[]) {
@@ -214,6 +220,10 @@ function handleYaadeMessage(event: MessageEvent) {
     notifyYaadeProjectContext()
     return
   }
+  if (data.type === 'AI_CLUB_BACK_TO_API_GROUPS') {
+    void router.push({ name: 'api-groups' })
+    return
+  }
   if (data.type === 'AI_CLUB_PROJECT_CHANGED') {
     const nextProjectId = Number((data as { projectId?: number }).projectId ?? 0)
     if (!Number.isFinite(nextProjectId) || nextProjectId <= 0) return
@@ -247,13 +257,11 @@ function stopBootstrapBroadcast() {
 }
 
 async function syncRouteProjectId(projectId: number | null) {
-  const nextQuery = { ...route.query }
   if (projectId === null) {
-    delete nextQuery.projectId
+    await router.replace({ name: 'api-groups' })
   } else {
-    nextQuery.projectId = String(projectId)
+    await router.replace({ name: 'api-project-detail', params: { projectId: String(projectId) } })
   }
-  await router.replace({ query: nextQuery })
 }
 
 function resolveIframeOrigin() {
@@ -272,9 +280,19 @@ function extractErrorMessage(error: unknown, fallback: string) {
 </script>
 
 <style scoped>
-.yaade-page {
+.yaade-page-shell {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
+  min-height: 0;
+  background: var(--app-page-gradient-start, #f8f9fa);
+}
+
+.yaade-page {
+  flex: 1 1 auto;
+  width: 100%;
+  height: auto;
   min-height: 0;
   margin: 0;
   padding: 0;
@@ -329,6 +347,10 @@ body.api-yaade-embed .layout-main {
   padding: 0 !important;
   overflow: hidden;
   background: var(--app-page-gradient-start, #f8f9fa);
+}
+
+body.api-yaade-embed .layout-main > * {
+  margin: 0 !important;
 }
 
 body.api-yaade-embed .layout-main.mobile-main {

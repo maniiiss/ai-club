@@ -562,8 +562,7 @@ import { useAiclubProjectContext } from '../../aiclub/projectContext';`
       [
         `  const { isOpen, onOpen, onClose } = useDisclosure();`,
         `  const { isOpen, onOpen, onClose } = useDisclosure();
-  const { currentProject, currentProjectId, projects, changeCurrentProject, isEmbedded } =
-    useAiclubProjectContext();`
+  const { currentProject, isEmbedded } = useAiclubProjectContext();`
       ],
       [
         `  const [state, setState] = useState<StateProps>({
@@ -633,21 +632,31 @@ import { useAiclubProjectContext } from '../../aiclub/projectContext';`
       <div className={cn(styles, 'searchContainer', [colorMode])}>`,
         `  return (
     <Box className={styles.box} bg="panelBg" h="100%" w="100%">
-      {isEmbedded && projects.length > 0 ? (
+      {isEmbedded ? (
         <Box px="3" pt="3">
-          <Select
-            size="sm"
-            borderRadius="16px"
-            backgroundColor={colorMode === 'light' ? 'white' : undefined}
-            value={currentProjectId ? String(currentProjectId) : ''}
-            onChange={(e) => changeCurrentProject(Number(e.target.value))}
+          <button
+            type="button"
+            style={{
+              width: '100%',
+              minHeight: '38px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '0 14px',
+              border: '1px solid rgba(var(--aiclub-outline-rgb), 0.18)',
+              borderRadius: '14px',
+              background: colorMode === 'light' ? 'rgba(255, 255, 255, 0.92)' : 'transparent',
+              color: 'var(--aiclub-ink)',
+              fontSize: '14px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              boxShadow: '0 8px 18px rgba(var(--aiclub-primary-rgb), 0.08)',
+            }}
+            onClick={() => window.parent?.postMessage({ type: 'AI_CLUB_BACK_TO_API_GROUPS' }, '*')}
           >
-            {projects.map((project) => (
-              <option key={'aiclub-project-option-' + project.projectId} value={project.projectId}>
-                {project.projectName}
-              </option>
-            ))}
-          </Select>
+            <span aria-hidden="true">‹</span>
+            返回 API 项目
+          </button>
         </Box>
       ) : null}
       <div className={cn(styles, 'searchContainer', [colorMode])}>`
@@ -1016,7 +1025,7 @@ export function isCollectionVisibleForProject(
   },
   {
     file: 'client/src/components/groupsInput/GroupsInput.tsx',
-    content: `import { Input, Select, useColorMode, VStack } from '@chakra-ui/react';
+    content: `import { Box, Input, Text, useColorMode, VStack } from '@chakra-ui/react';
 import { FunctionComponent, useEffect, useMemo, useState } from 'react';
 
 import {
@@ -1040,7 +1049,7 @@ const GroupsInput: FunctionComponent<GroupsInputProps> = ({
 }) => {
   const [newGroup, setNewGroup] = useState('');
   const { colorMode } = useColorMode();
-  const { currentProject, currentProjectId, isEmbedded, projects } = useAiclubProjectContext();
+  const { currentProject, isEmbedded, projects } = useAiclubProjectContext();
 
   const selectedProject = useMemo(() => {
     return resolveProjectForGroups(projects, groups);
@@ -1071,34 +1080,21 @@ const GroupsInput: FunctionComponent<GroupsInputProps> = ({
   if (isEmbedded && projects.length > 0) {
     return (
       <VStack alignItems="start" width="100%" className={className}>
-        <Select
-          size={isRounded ? 'md' : 'sm'}
-          borderRadius={isRounded ? '20px' : undefined}
-          placeholder="选择所属项目"
-          value={
-            selectedProject?.projectId
-              ? String(selectedProject.projectId)
-              : currentProjectId
-                ? String(currentProjectId)
-                : ''
-          }
+        <Box
+          width="100%"
+          borderRadius={isRounded ? '20px' : '8px'}
+          border="1px solid rgba(var(--aiclub-outline-rgb), 0.18)"
           backgroundColor={colorMode === 'light' ? 'white' : undefined}
-          onChange={(event) => {
-            const nextProject = projects.find(
-              (project) => project.projectId === Number(event.target.value),
-            );
-            setGroups(normalizeProjectGroups(nextProject ?? currentProject));
-          }}
+          px="3"
+          py="2"
         >
-          {projects.map((project) => (
-            <option
-              key={'collection-project-option-' + project.projectId}
-              value={project.projectId}
-            >
-              {project.projectName}
-            </option>
-          ))}
-        </Select>
+          <Text fontSize="xs" color="gray.500" fontWeight="700">
+            所属项目
+          </Text>
+          <Text mt="1" fontSize="sm" fontWeight="800" noOfLines={1}>
+            {selectedProject?.projectName ?? currentProject?.projectName ?? '当前 API 项目'}
+          </Text>
+        </Box>
       </VStack>
     );
   }
