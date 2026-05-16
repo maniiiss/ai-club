@@ -27,7 +27,7 @@ git-ai-club/
 
 1. 源码模式启动：
    `powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1`
-   作用：`hermes / hindsight / postgres / redis / minio` 走 Docker，`code-processing / backend / frontend` 走源码启动。
+   作用：`hermes / hindsight / gitnexus-web / postgres / redis / minio` 走 Docker，`code-processing / backend / frontend` 走源码启动。
 2. 源码模式停止：
    `powershell -ExecutionPolicy Bypass -File .\scripts\stop-windows.ps1`
    作用：先停源码服务，再停源码模式依赖容器。
@@ -55,7 +55,7 @@ git-ai-club/
 
 1. 源码模式启动：
    `bash ./scripts/start-linux.sh`
-   作用：`hermes / hindsight / postgres / redis / minio` 走 Docker，`code-processing / backend / frontend` 走源码启动。
+   作用：`hermes / hindsight / gitnexus-web / postgres / redis / minio` 走 Docker，`code-processing / backend / frontend` 走源码启动。
 2. 源码模式停止：
    `bash ./scripts/stop-linux.sh`
    作用：先停源码服务，再停源码模式依赖容器。
@@ -81,7 +81,7 @@ git-ai-club/
 
 源码模式脚本会自动完成以下动作：
 
-1. 启动 `postgres`、`redis`、`minio`、`hindsight`、`hermes` 容器
+1. 启动 `postgres`、`redis`、`minio`、`hindsight`、`gitnexus-web`、`hermes` 容器
 2. 安装前端依赖
 3. 检查并创建 `code-processing/.venv`
 4. 启动 `code-processing`、`backend`、`frontend`
@@ -97,6 +97,9 @@ git-ai-club/
 - Code Processing: `http://localhost:9000`
 - Hermes: `http://localhost:18080`
 - Hindsight: `http://localhost:18888`
+- GitNexus Web UI: `http://localhost:5174`
+
+GitNexus Web UI 会通过 `docker/gitnexus-web` 基于官方镜像构建本地中文镜像，页面端口仍保持 `5174`；`4747` 的 `gitnexus serve` 仍由 `code-processing` 在代码结构跳转时按需接入。
 
 ## Harness 验证
 

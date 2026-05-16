@@ -33,6 +33,44 @@ export interface YaadeHealthItem {
   message: string
 }
 
+export interface YaadeApiRequestItem {
+  requestId: number
+  collectionId: number
+  collectionPath: string
+  name: string
+  method: string
+  path: string
+}
+
+export interface ApiTestAssertionSuggestionItem {
+  type: string
+  target: string
+  operator: string
+  expected: string
+  description: string
+}
+
+export interface ApiTestCaseSuggestionItem {
+  title: string
+  caseType: string
+  priority: string
+  precondition: string
+  requestExample: string
+  assertions: ApiTestAssertionSuggestionItem[]
+  riskNotes: string
+}
+
+export interface ApiTestCaseAiResultItem {
+  requestId: number
+  requestName: string
+  method: string
+  path: string
+  markdown: string
+  modelConfigId: number
+  modelConfigName: string
+  testCases: ApiTestCaseSuggestionItem[]
+}
+
 export const getYaadeHealth = async () => {
   const { data } = await http.get<ApiResponse<YaadeHealthItem>>('/api/yaade/health')
   return data.data
@@ -54,5 +92,18 @@ export const getYaadeProjectBinding = async (projectId: number) => {
 
 export const repairYaadeProjectBinding = async (projectId: number) => {
   const { data } = await http.post<ApiResponse<YaadeProjectBindingItem>>(`/api/yaade/projects/${projectId}/repair-sync`)
+  return data.data
+}
+
+export const listYaadeProjectRequests = async (projectId: number) => {
+  const { data } = await http.get<ApiResponse<YaadeApiRequestItem[]>>(`/api/yaade/projects/${projectId}/requests`)
+  return data.data
+}
+
+export const generateYaadeApiTestCases = async (projectId: number, requestId: number, modelConfigId?: number | null) => {
+  const { data } = await http.post<ApiResponse<ApiTestCaseAiResultItem>>(
+    `/api/yaade/projects/${projectId}/requests/${requestId}/ai-test-cases`,
+    { modelConfigId: modelConfigId ?? null }
+  )
   return data.data
 }

@@ -32,6 +32,7 @@ Write-Step "准备 Docker 打包目录：$packageDir"
 New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
 Copy-Item $context.FullDockerComposeFile (Join-Path $packageDir 'docker-compose.yml') -Force
 Copy-Item $context.FullDockerEnvExampleFile (Join-Path $packageDir '.env.example') -Force
+Copy-Item $context.DockerDir (Join-Path $packageDir 'docker') -Recurse -Force
 Copy-Item $context.PostgresInitDir (Join-Path $packageDir 'postgres-init') -Recurse -Force
 
 $images = Get-ComposeImages -ComposeFile $context.FullDockerComposeFile -EnvFile $context.FullDockerEnvFile
@@ -65,6 +66,7 @@ AI Club Docker 打包说明
 - Code processing: http://localhost:$($ports.CodeProcessing)
 - Hermes: http://localhost:$($ports.Hermes)
 - Hindsight: http://localhost:$($ports.Hindsight)
+- GitNexus Web UI: http://localhost:$($ports.GitNexusUi)
 - PostgreSQL: localhost:$($ports.Postgres)
 - Redis: localhost:$($ports.Redis)
 - MinIO: http://localhost:$($ports.Minio)

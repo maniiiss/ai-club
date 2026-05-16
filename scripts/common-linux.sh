@@ -15,6 +15,7 @@ FULL_DOCKER_ENV_FILE="${REPO_ROOT}/.env.server"
 FULL_DOCKER_ENV_EXAMPLE_FILE="${REPO_ROOT}/.env.server.example"
 HYBRID_COMPOSE_FILE="${REPO_ROOT}/docker-compose.yml"
 FULL_DOCKER_COMPOSE_FILE="${REPO_ROOT}/docker-compose.server.yml"
+DOCKER_DIR="${REPO_ROOT}/docker"
 POSTGRES_INIT_DIR="${REPO_ROOT}/docker/postgres/init"
 COMPOSE_PROJECT_NAME="$(basename "${REPO_ROOT}")"
 
@@ -202,6 +203,7 @@ load_ports() {
   MINIO_PORT="$(get_env_or_default 'MINIO_PORT' '19000')"
   HERMES_PORT="$(get_env_or_default 'HERMES_PORT' '18080')"
   HINDSIGHT_PORT="$(get_env_or_default 'HINDSIGHT_PORT' '18888')"
+  GITNEXUS_UI_PORT="$(get_env_or_default 'PLATFORM_GITNEXUS_UI_PUBLIC_PORT' '5174')"
 }
 
 ensure_compose_cmd() {
@@ -599,7 +601,7 @@ start_source_stack() {
 
   if [[ "${skip_infrastructure}" != 'true' ]]; then
     invoke_compose "${HYBRID_COMPOSE_FILE}" "${DEFAULT_ENV_FILE}" '启动源码模式依赖容器（PostgreSQL / Redis / MinIO / Hindsight）' \
-      up -d postgres redis minio hindsight
+      up -d postgres redis minio hindsight gitnexus-web
 
     local hybrid_code_processing_host
     hybrid_code_processing_host="$(get_linux_hybrid_code_processing_host)"
@@ -612,6 +614,7 @@ start_source_stack() {
     wait_port "${REDIS_PORT}" 120 'Redis'
     wait_port "${MINIO_PORT}" 120 'MinIO'
     wait_port "${HINDSIGHT_PORT}" 120 'Hindsight'
+    wait_port "${GITNEXUS_UI_PORT}" 120 'GitNexus Web UI'
     wait_port "${HERMES_PORT}" 120 'Hermes'
     ok "Hermes 将通过 ${hybrid_code_processing_host} 访问宿主机 code-processing"
   fi
@@ -631,7 +634,7 @@ stop_source_stack() {
   fi
 
   invoke_compose "${HYBRID_COMPOSE_FILE}" "${env_file}" '停止源码模式依赖容器' \
-    stop postgres redis minio hindsight hermes
+    stop postgres redis minio hindsight gitnexus-web hermes
 
   printf '\n'
   ok '源码模式项目已停止'
@@ -670,6 +673,7 @@ start_full_docker_stack() {
   wait_port "${CODE_PROCESSING_PORT}" 180 'Code processing'
   wait_port "${HINDSIGHT_PORT}" 180 'Hindsight'
   wait_port "${HERMES_PORT}" 180 'Hermes'
+  wait_port "${GITNEXUS_UI_PORT}" 180 'GitNexus Web UI'
   wait_port "${BACKEND_PORT}" 180 'Backend'
   wait_port "${FRONTEND_PORT}" 180 'Frontend'
 
@@ -680,6 +684,7 @@ start_full_docker_stack() {
   printf 'Code processing: http://localhost:%s\n' "${CODE_PROCESSING_PORT}"
   printf 'Hermes: http://localhost:%s\n' "${HERMES_PORT}"
   printf 'Hindsight: http://localhost:%s\n' "${HINDSIGHT_PORT}"
+  printf 'GitNexus Web UI: http://localhost:%s\n' "${GITNEXUS_UI_PORT}"
 }
 
 stop_full_docker_stack() {
@@ -721,6 +726,7 @@ package_full_docker_stack() {
   mkdir -p "${package_dir}"
   cp "${FULL_DOCKER_COMPOSE_FILE}" "${package_dir}/docker-compose.yml"
   cp "${FULL_DOCKER_ENV_EXAMPLE_FILE}" "${package_dir}/.env.example"
+  cp -R "${DOCKER_DIR}" "${package_dir}/docker"
   cp -R "${POSTGRES_INIT_DIR}" "${package_dir}/postgres-init"
 
   local images=()
@@ -739,6 +745,7 @@ package_full_docker_stack() {
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'MINIO_IMAGE' 'minio/minio:RELEASE.2025-02-28T09-55-16Z')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HERMES_IMAGE' 'ghcr.io/nousresearch/hermes-agent:latest')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HINDSIGHT_IMAGE' 'ghcr.io/vectorize-io/hindsight:latest')"
+      "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'GITNEXUS_WEB_IMAGE' 'git-ai-club-gitnexus-web:latest')"
     )
   fi
 
@@ -769,6 +776,7 @@ AI Club Docker 打包说明
 - Code processing: http://localhost:${CODE_PROCESSING_PORT}
 - Hermes: http://localhost:${HERMES_PORT}
 - Hindsight: http://localhost:${HINDSIGHT_PORT}
+- GitNexus Web UI: http://localhost:${GITNEXUS_UI_PORT}
 - PostgreSQL: localhost:${POSTGRES_PORT}
 - Redis: localhost:${REDIS_PORT}
 - MinIO: http://localhost:${MINIO_PORT}

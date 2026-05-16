@@ -21,6 +21,7 @@ $script:AiClubScriptContext = @{
     FullDockerEnvExampleFile = Join-Path $repoRoot '.env.server.example'
     HybridComposeFile        = Join-Path $repoRoot 'docker-compose.yml'
     FullDockerComposeFile    = Join-Path $repoRoot 'docker-compose.server.yml'
+    DockerDir                = Join-Path $repoRoot 'docker'
     PostgresInitDir          = Join-Path $repoRoot 'docker\postgres\init'
 }
 
@@ -215,6 +216,7 @@ function Get-PortConfiguration {
         Minio          = [int](Get-EnvOrDefault -Name 'MINIO_PORT' -DefaultValue '19000')
         Hermes         = [int](Get-EnvOrDefault -Name 'HERMES_PORT' -DefaultValue '18080')
         Hindsight      = [int](Get-EnvOrDefault -Name 'HINDSIGHT_PORT' -DefaultValue '18888')
+        GitNexusUi     = [int](Get-EnvOrDefault -Name 'PLATFORM_GITNEXUS_UI_PUBLIC_PORT' -DefaultValue '5174')
     }
 }
 
@@ -823,6 +825,7 @@ function Get-ComposeImages([string]$ComposeFile, [string]$EnvFile) {
         (Get-DotEnvValue -Path $EnvFile -Name 'REDIS_IMAGE' -DefaultValue 'redis:7-alpine'),
         (Get-DotEnvValue -Path $EnvFile -Name 'MINIO_IMAGE' -DefaultValue 'minio/minio:RELEASE.2025-02-28T09-55-16Z'),
         (Get-DotEnvValue -Path $EnvFile -Name 'HERMES_IMAGE' -DefaultValue 'ghcr.io/nousresearch/hermes-agent:latest'),
-        (Get-DotEnvValue -Path $EnvFile -Name 'HINDSIGHT_IMAGE' -DefaultValue 'ghcr.io/vectorize-io/hindsight:latest')
+        (Get-DotEnvValue -Path $EnvFile -Name 'HINDSIGHT_IMAGE' -DefaultValue 'ghcr.io/vectorize-io/hindsight:latest'),
+        (Get-DotEnvValue -Path $EnvFile -Name 'GITNEXUS_WEB_IMAGE' -DefaultValue 'git-ai-club-gitnexus-web:latest')
     ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
 }

@@ -3,11 +3,17 @@ package com.aiclub.platform.controller;
 import com.aiclub.platform.annotation.OperationLog;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
+import com.aiclub.platform.dto.ApiTestCaseAiResult;
+import com.aiclub.platform.dto.YaadeApiRequestSummary;
 import com.aiclub.platform.dto.YaadeEmbedSessionSummary;
 import com.aiclub.platform.dto.YaadeHealthSummary;
 import com.aiclub.platform.dto.YaadeProjectBindingSummary;
+import com.aiclub.platform.dto.request.YaadeApiTestCaseGenerationRequest;
 import com.aiclub.platform.dto.request.YaadeEmbedSessionRequest;
+import com.aiclub.platform.service.ApiTestCaseAiService;
+import com.aiclub.platform.service.YaadeApiCatalogService;
 import com.aiclub.platform.service.YaadeEmbedSessionService;
+import jakarta.validation.Valid;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,6 +22,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 /**
  * Yaade 集成控制器。
@@ -26,9 +34,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class YaadeController {
 
     private final YaadeEmbedSessionService yaadeEmbedSessionService;
+    private final YaadeApiCatalogService yaadeApiCatalogService;
+    private final ApiTestCaseAiService apiTestCaseAiService;
 
-    public YaadeController(YaadeEmbedSessionService yaadeEmbedSessionService) {
+    public YaadeController(YaadeEmbedSessionService yaadeEmbedSessionService,
+                           YaadeApiCatalogService yaadeApiCatalogService,
+                           ApiTestCaseAiService apiTestCaseAiService) {
         this.yaadeEmbedSessionService = yaadeEmbedSessionService;
+        this.yaadeApiCatalogService = yaadeApiCatalogService;
+        this.apiTestCaseAiService = apiTestCaseAiService;
     }
 
     @GetMapping("/health")
@@ -50,6 +64,21 @@ public class YaadeController {
     @RequirePermission("api:view")
     public ApiResponse<YaadeProjectBindingSummary> projectBinding(@PathVariable Long projectId) {
         return ApiResponse.success(yaadeEmbedSessionService.getProjectBindingSummary(projectId));
+    }
+
+    @GetMapping("/projects/{projectId}/requests")
+    @RequirePermission("api:view")
+    public ApiResponse<List<YaadeApiRequestSummary>> listProjectRequests(@PathVariable Long projectId) {
+        return ApiResponse.success(yaadeApiCatalogService.listRequests(projectId));
+    }
+
+    @PostMapping("/projects/{projectId}/requests/{requestId}/ai-test-cases")
+    @RequirePermission("api:view")
+    @OperationLog(actionCode = "YAADE_API_TEST_CASE_AI_GENERATE", actionName = "生成 API AI 测试用例")
+    public ApiResponse<ApiTestCaseAiResult> generateApiTestCases(@PathVariable Long projectId,
+                                                                 @PathVariable Long requestId,
+                                                                 @Valid @RequestBody(required = false) YaadeApiTestCaseGenerationRequest request) {
+        return ApiResponse.success(apiTestCaseAiService.generate(projectId, requestId, request));
     }
 
     @PostMapping("/projects/{projectId}/repair-sync")

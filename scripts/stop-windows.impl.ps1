@@ -12,7 +12,7 @@ $envFile = if (Test-Path $context.DefaultEnvFile) { $context.DefaultEnvFile } el
 
 Invoke-Compose -ComposeFile $context.HybridComposeFile `
     -EnvFile $envFile `
-    -Arguments @('stop', 'postgres', 'redis', 'minio', 'hindsight', 'hermes') `
+    -Arguments @('stop', 'postgres', 'redis', 'minio', 'hindsight', 'gitnexus-web', 'hermes') `
     -Description '停止源码模式依赖容器'
 
 Write-Host ''
