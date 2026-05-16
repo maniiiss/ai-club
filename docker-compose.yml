@@ -85,6 +85,45 @@ services:
     volumes:
       - "${PLATFORM_SCAN_HOST_PATH:-./.data/scans}:${PLATFORM_SCAN_WORKSPACE_ROOT:-/tmp/git-ai-club-scans}"
 
+  gitnexus-web:
+    build:
+      context: ./docker/gitnexus-web
+      args:
+        GITNEXUS_WEB_BASE_IMAGE: ${GITNEXUS_WEB_BASE_IMAGE:-ghcr.io/abhigyanpatwari/gitnexus-web:latest}
+    image: ${GITNEXUS_WEB_IMAGE:-git-ai-club-gitnexus-web:latest}
+    container_name: git-ai-club-gitnexus-web
+    restart: unless-stopped
+    environment:
+      # GitNexus Nexus AI 是浏览器侧能力，默认从 Hermes LLM 配置生成前端可读取的 AI 设置。
+      GITNEXUS_AI_AUTO_CONFIG_ENABLED: ${GITNEXUS_AI_AUTO_CONFIG_ENABLED:-true}
+      GITNEXUS_AI_PROXY_ENABLED: ${GITNEXUS_AI_PROXY_ENABLED:-true}
+      GITNEXUS_AI_FALLBACK_TO_HERMES: ${GITNEXUS_AI_FALLBACK_TO_HERMES:-true}
+      GITNEXUS_AI_FORCE_CHINESE: ${GITNEXUS_AI_FORCE_CHINESE:-true}
+      GITNEXUS_AI_SYSTEM_PROMPT: ${GITNEXUS_AI_SYSTEM_PROMPT:-}
+      GITNEXUS_AI_FORCE_CONFIG: ${GITNEXUS_AI_FORCE_CONFIG:-false}
+      GITNEXUS_AI_PROVIDER: ${GITNEXUS_AI_PROVIDER:-}
+      GITNEXUS_AI_BASE_URL: ${GITNEXUS_AI_BASE_URL:-}
+      GITNEXUS_AI_API_KEY: ${GITNEXUS_AI_API_KEY:-}
+      GITNEXUS_AI_MODEL: ${GITNEXUS_AI_MODEL:-}
+      GITNEXUS_AI_TEMPERATURE: ${GITNEXUS_AI_TEMPERATURE:-0.1}
+      GITNEXUS_AI_MAX_TOKENS: ${GITNEXUS_AI_MAX_TOKENS:-}
+      GITNEXUS_AI_AZURE_ENDPOINT: ${GITNEXUS_AI_AZURE_ENDPOINT:-}
+      GITNEXUS_AI_AZURE_DEPLOYMENT: ${GITNEXUS_AI_AZURE_DEPLOYMENT:-}
+      GITNEXUS_AI_AZURE_API_VERSION: ${GITNEXUS_AI_AZURE_API_VERSION:-}
+      HERMES_LLM_PROVIDER: ${HERMES_LLM_PROVIDER:-}
+      HERMES_LLM_BASE_URL: ${HERMES_LLM_BASE_URL:-}
+      HERMES_LLM_API_KEY: ${HERMES_LLM_API_KEY:-}
+      HERMES_LLM_MODEL: ${HERMES_LLM_MODEL:-}
+    # 只托管 GitNexus Web UI；4747 的 gitnexus serve 仍由 code-processing 在 launch 时按需启动。
+    ports:
+      - "${PLATFORM_GITNEXUS_UI_PUBLIC_PORT:-5174}:4173"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4173/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   redis:
     image: ${REDIS_IMAGE:-redis:7.4.8}
     container_name: git-ai-club-redis
@@ -298,6 +337,9 @@ services:
       PLATFORM_MINIO_BUCKET: ${PLATFORM_MINIO_BUCKET:-ai-club-assets}
       PLATFORM_GITEE_BINDING_ENTERPRISE_ID: ${PLATFORM_GITEE_BINDING_ENTERPRISE_ID:-}
       PLATFORM_GITEE_BINDING_ACCESS_TOKEN: ${PLATFORM_GITEE_BINDING_ACCESS_TOKEN:-}
+      PLATFORM_GITNEXUS_ENABLED: ${PLATFORM_GITNEXUS_ENABLED:-true}
+      PLATFORM_GITNEXUS_UI_PUBLIC_PORT: ${PLATFORM_GITNEXUS_UI_PUBLIC_PORT:-5174}
+      PLATFORM_GITNEXUS_SERVE_PUBLIC_PORT: ${PLATFORM_GITNEXUS_SERVE_PUBLIC_PORT:-4747}
     ports:
       - "${BACKEND_PORT:-8080}:8080"
 

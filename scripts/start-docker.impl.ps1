@@ -27,6 +27,7 @@ Wait-Port -Port $ports.Minio -TimeoutSeconds 180 -ServiceName 'MinIO'
 Wait-Port -Port $ports.CodeProcessing -TimeoutSeconds 180 -ServiceName 'Code processing'
 Wait-Port -Port $ports.Hindsight -TimeoutSeconds 180 -ServiceName 'Hindsight'
 Wait-Port -Port $ports.Hermes -TimeoutSeconds 180 -ServiceName 'Hermes'
+Wait-Port -Port $ports.GitNexusUi -TimeoutSeconds 180 -ServiceName 'GitNexus Web UI'
 Wait-Port -Port $ports.Backend -TimeoutSeconds 180 -ServiceName 'Backend'
 Wait-Port -Port $ports.Frontend -TimeoutSeconds 180 -ServiceName 'Frontend'
 
@@ -37,3 +38,4 @@ Write-Host "Backend: http://localhost:$($ports.Backend)"
 Write-Host "Code processing: http://localhost:$($ports.CodeProcessing)"
 Write-Host "Hermes: http://localhost:$($ports.Hermes)"
 Write-Host "Hindsight: http://localhost:$($ports.Hindsight)"
+Write-Host "GitNexus Web UI: http://localhost:$($ports.GitNexusUi)"
