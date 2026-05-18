@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.function.Supplier;
 
 /**
  * 向 Gitee 单向推送测试计划与测试用例。
@@ -57,10 +58,10 @@ public class GiteeTestPlanPushService {
     private final GiteeApiService giteeApiService;
     private final TokenCipherService tokenCipherService;
     private final PlatformEnvVarResolver platformEnvVarResolver;
-    private final long testPlanAssigneeId;
-    private final long testCaseModuleId;
-    private final int testCaseType;
-    @org.springframework.beans.factory.annotation.Value("${platform.gitee.default-api-url:https://api.gitee.com/enterprises}")
+    private final String testPlanAssigneeId;
+    private final String testCaseModuleId;
+    private final String testCaseType;
+    @org.springframework.beans.factory.annotation.Value("${platform.gitee.default-api-url:}")
     private String defaultApiUrl = "";
 
     public GiteeTestPlanPushService(TestPlanRepository testPlanRepository,
@@ -73,9 +74,9 @@ public class GiteeTestPlanPushService {
                                     GiteeApiService giteeApiService,
                                     TokenCipherService tokenCipherService,
                                     PlatformEnvVarResolver platformEnvVarResolver,
-                                    @org.springframework.beans.factory.annotation.Value("${platform.gitee.test-push.test-plan-assignee-id:9917662}") long testPlanAssigneeId,
-                                    @org.springframework.beans.factory.annotation.Value("${platform.gitee.test-push.test-case-module-id:229413}") long testCaseModuleId,
-                                    @org.springframework.beans.factory.annotation.Value("${platform.gitee.test-push.test-case-type:2}") int testCaseType) {
+                                    @org.springframework.beans.factory.annotation.Value("${platform.gitee.test-push.test-plan-assignee-id:}") String testPlanAssigneeId,
+                                    @org.springframework.beans.factory.annotation.Value("${platform.gitee.test-push.test-case-module-id:}") String testCaseModuleId,
+                                    @org.springframework.beans.factory.annotation.Value("${platform.gitee.test-push.test-case-type:}") String testCaseType) {
         this.testPlanRepository = testPlanRepository;
         this.testCaseRepository = testCaseRepository;
         this.projectGiteeBindingRepository = projectGiteeBindingRepository;
@@ -260,15 +261,18 @@ public class GiteeTestPlanPushService {
      * 测试计划推送与项目管理页共用同一套企业级 Gitee 配置，避免项目保存后推送链路仍继续读旧库数据。
      */
     private String resolveApiBaseUrl(ProjectGiteeBindingEntity projectBinding) {
-        boolean useConfiguredApiBaseUrl = hasText(defaultApiUrl);
-        String resolved = useConfiguredApiBaseUrl ? defaultApiUrl.trim() : projectBinding.getApiBaseUrl();
+        String resolved = platformEnvVarResolver.resolveOrDefault(
+                PlatformEnvVarRegistry.KEY_GITEE_DEFAULT_API_URL,
+                () -> projectBinding.getApiBaseUrl(),
+                defaultApiUrl
+        );
         if (!hasText(resolved)) {
             throw new IllegalStateException("当前项目的 Gitee 绑定缺少 API 地址配置");
         }
         while (resolved.endsWith("/")) {
             resolved = resolved.substring(0, resolved.length() - 1);
         }
-        return useConfiguredApiBaseUrl ? giteeApiService.normalizeEnterpriseApiBaseUrl(resolved) : resolved;
+        return giteeApiService.normalizeEnterpriseApiBaseUrl(resolved);
     }
 
     private Long resolveEnterpriseId(ProjectGiteeBindingEntity projectBinding) {
@@ -306,7 +310,7 @@ public class GiteeTestPlanPushService {
                 resolveTitle(testPlan.getName(), "未命名测试计划"),
                 PLAN_REF_TYPE,
                 projectBinding.getGiteeProgramId(),
-                testPlanAssigneeId,
+                resolveTestPlanAssigneeId(),
                 defaultString(testPlan.getDescription()),
                 formatRemoteDateTime(startDate, false),
                 formatRemoteDateTime(endDate, true)
@@ -336,11 +340,35 @@ public class GiteeTestPlanPushService {
         return testPlan.getIteration().getEndDate();
     }
 
+    private long resolveTestPlanAssigneeId() {
+        return resolveRequiredLong(
+                PlatformEnvVarRegistry.KEY_GITEE_TEST_PUSH_TEST_PLAN_ASSIGNEE_ID,
+                () -> testPlanAssigneeId,
+                "Gitee 测试计划负责人ID"
+        );
+    }
+
+    private long resolveTestCaseModuleId() {
+        return resolveRequiredLong(
+                PlatformEnvVarRegistry.KEY_GITEE_TEST_PUSH_TEST_CASE_MODULE_ID,
+                () -> testCaseModuleId,
+                "Gitee 测试用例模块ID"
+        );
+    }
+
+    private int resolveTestCaseType() {
+        return resolveRequiredInt(
+                PlatformEnvVarRegistry.KEY_GITEE_TEST_PUSH_TEST_CASE_TYPE,
+                () -> testCaseType,
+                "Gitee 测试用例类型"
+        );
+    }
+
     private GiteeApiService.GiteeTestCaseRequest buildTestCaseRequest(TestCaseEntity testCase, ProjectGiteeBindingEntity projectBinding) {
         List<GiteeApiService.GiteeTestCaseStepRequest> steps = buildStepRequests(testCase.getSteps());
         return new GiteeApiService.GiteeTestCaseRequest(
-                testCaseModuleId,
-                testCaseType,
+                resolveTestCaseModuleId(),
+                resolveTestCaseType(),
                 resolveTitle(testCase.getTitle(), "未命名测试用例"),
                 defaultString(testCase.getPrecondition()),
                 steps,
@@ -471,6 +499,44 @@ public class GiteeTestPlanPushService {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private long resolveRequiredLong(String envKey, Supplier<String> fallbackSupplier, String label) {
+        try {
+            String resolved = platformEnvVarResolver.resolveOrDefault(envKey, fallbackSupplier, "");
+            String normalized = trimToNull(resolved);
+            if (normalized == null) {
+                throw new IllegalStateException(label + "未配置");
+            }
+            long parsed = Long.parseLong(normalized);
+            if (parsed <= 0L) {
+                throw new NumberFormatException(label + "必须为正整数");
+            }
+            return parsed;
+        } catch (NumberFormatException exception) {
+            throw new IllegalStateException("系统设置-环境变量管理中的" + label + "配置无效：" + label + "必须为正整数", exception);
+        } catch (RuntimeException exception) {
+            throw buildEnvVarException(label, exception);
+        }
+    }
+
+    private int resolveRequiredInt(String envKey, Supplier<String> fallbackSupplier, String label) {
+        try {
+            String resolved = platformEnvVarResolver.resolveOrDefault(envKey, fallbackSupplier, "");
+            String normalized = trimToNull(resolved);
+            if (normalized == null) {
+                throw new IllegalStateException(label + "未配置");
+            }
+            int parsed = Integer.parseInt(normalized);
+            if (parsed <= 0) {
+                throw new NumberFormatException(label + "必须为正整数");
+            }
+            return parsed;
+        } catch (NumberFormatException exception) {
+            throw new IllegalStateException("系统设置-环境变量管理中的" + label + "配置无效：" + label + "必须为正整数", exception);
+        } catch (RuntimeException exception) {
+            throw buildEnvVarException(label, exception);
+        }
     }
 
     private boolean canResolveAccessToken(ProjectGiteeBindingEntity projectBinding) {

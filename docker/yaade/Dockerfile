@@ -53,5 +53,9 @@ COPY --from=server-builder /workspace/yaade/server/build/libs/*.jar /app/libs/
 
 ENV CLASSPATH=/app/classes:/app/resources:/app/libs/*
 ENV YAADE_HEAP_SIZE=""
+# Yaade 上游默认把 H2 与文件存储写到 ./app/data/*，在我们的镜像工作目录 /app 下会解析成 /app/app/data。
+# 这里显式改到 /app/data，确保 docker-compose.yaade.yml 挂载的宿主机目录能真正持久化数据库和附件。
+ENV YAADE_JDBC_URL=jdbc:h2:file:/app/data/yaade-db
+ENV YAADE_FILE_STORAGE_PATH=/app/data/files
 
 ENTRYPOINT ["sh", "-c", "if [ -z \"$YAADE_HEAP_SIZE\" ]; then java com.espero.yaade.MainKt; else java -Xmx${YAADE_HEAP_SIZE} com.espero.yaade.MainKt; fi"]

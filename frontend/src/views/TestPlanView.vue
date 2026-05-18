@@ -356,6 +356,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { IterationItem, ProjectItem, TestCaseItem, TestPlanItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
+import { automationStatusTone, formatAutomationStatus } from '@/utils/testPlanAutomationStatus'
 
 interface PlanForm {
   name: string
@@ -785,22 +786,6 @@ const testPlanStatusTone = (status?: string | null) => {
   if (status === '已完成') return 'success'
   if (status === '执行中') return 'warning'
   if (status === '待执行') return 'info'
-  return 'neutral'
-}
-
-const formatAutomationStatus = (status?: string | null) => {
-  const normalized = String(status || '').trim().toUpperCase()
-  if (normalized === 'PENDING') return '待执行'
-  if (normalized === 'SUCCESS') return '成功'
-  if (normalized === 'FAILED') return '失败'
-  return '未配置'
-}
-
-const automationStatusTone = (status?: string | null) => {
-  const normalized = String(status || '').trim().toUpperCase()
-  if (normalized === 'SUCCESS') return 'success'
-  if (normalized === 'FAILED') return 'danger'
-  if (normalized === 'PENDING') return 'warning'
   return 'neutral'
 }
 

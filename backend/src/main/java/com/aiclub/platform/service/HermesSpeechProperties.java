@@ -1,6 +1,7 @@
 package com.aiclub.platform.service;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.util.unit.DataSize;
 
@@ -16,33 +17,60 @@ public class HermesSpeechProperties {
     private final String model;
     private final int timeoutSeconds;
     private final DataSize maxFileSize;
+    private final PlatformEnvVarResolver platformEnvVarResolver;
 
+    @Autowired
     public HermesSpeechProperties(@Value("${platform.hermes.speech.base-url:https://api.openai.com/v1}") String baseUrl,
                                   @Value("${platform.hermes.speech.api-key:}") String apiKey,
                                   @Value("${platform.hermes.speech.model:gpt-4o-mini-transcribe}") String model,
-                                  @Value("${platform.hermes.speech.timeout-seconds:60}") int timeoutSeconds,
-                                  @Value("${spring.servlet.multipart.max-file-size:20MB}") DataSize maxFileSize) {
-        this.baseUrl = trimTrailingSlash(baseUrl);
+                                  @Value("${platform.hermes.speech.timeout-seconds:60}") String timeoutSeconds,
+                                  @Value("${spring.servlet.multipart.max-file-size:20MB}") DataSize maxFileSize,
+                                  PlatformEnvVarResolver platformEnvVarResolver) {
+        this(baseUrl, apiKey, model, timeoutSeconds, maxFileSize, platformEnvVarResolver, true);
+    }
+
+    public HermesSpeechProperties(String baseUrl,
+                                  String apiKey,
+                                  String model,
+                                  int timeoutSeconds,
+                                  DataSize maxFileSize) {
+        this(baseUrl, apiKey, model, String.valueOf(timeoutSeconds), maxFileSize, null, true);
+    }
+
+    private HermesSpeechProperties(String baseUrl,
+                                   String apiKey,
+                                   String model,
+                                   String timeoutSeconds,
+                                   DataSize maxFileSize,
+                                   PlatformEnvVarResolver platformEnvVarResolver,
+                                   boolean normalizedConstructor) {
+        this.baseUrl = trimTrailingSlash(hasText(baseUrl) ? baseUrl : "https://api.openai.com/v1");
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.model = model == null || model.trim().isEmpty() ? "gpt-4o-mini-transcribe" : model.trim();
-        this.timeoutSeconds = Math.max(10, Math.min(timeoutSeconds, 300));
+        this.timeoutSeconds = normalizeTimeoutSeconds(timeoutSeconds);
         this.maxFileSize = maxFileSize == null ? DataSize.ofMegabytes(20) : maxFileSize;
+        this.platformEnvVarResolver = platformEnvVarResolver;
     }
 
     public String getBaseUrl() {
-        return baseUrl;
+        return trimTrailingSlash(resolveOrDefault(PlatformEnvVarRegistry.KEY_HERMES_SPEECH_BASE_URL, baseUrl));
     }
 
     public String getApiKey() {
-        return apiKey;
+        return resolveOptional(PlatformEnvVarRegistry.KEY_HERMES_SPEECH_API_KEY, apiKey);
     }
 
     public String getModel() {
-        return model;
+        return resolveOrDefault(PlatformEnvVarRegistry.KEY_HERMES_SPEECH_MODEL, model);
     }
 
     public int getTimeoutSeconds() {
-        return timeoutSeconds;
+        String resolved = resolveOrDefault(PlatformEnvVarRegistry.KEY_HERMES_SPEECH_TIMEOUT_SECONDS, String.valueOf(timeoutSeconds));
+        try {
+            return Math.max(10, Math.min(Integer.parseInt(resolved), 300));
+        } catch (NumberFormatException exception) {
+            return timeoutSeconds;
+        }
     }
 
     public DataSize getMaxFileSize() {
@@ -58,5 +86,34 @@ public class HermesSpeechProperties {
             result = result.substring(0, result.length() - 1);
         }
         return result;
+    }
+
+    private String resolveOptional(String envKey, String fallback) {
+        if (platformEnvVarResolver == null) {
+            return fallback == null ? "" : fallback.trim();
+        }
+        return platformEnvVarResolver.resolveOptional(envKey, () -> fallback);
+    }
+
+    private String resolveOrDefault(String envKey, String fallback) {
+        if (platformEnvVarResolver == null) {
+            return fallback == null ? "" : fallback.trim();
+        }
+        return platformEnvVarResolver.resolveOrDefault(envKey, () -> fallback, fallback);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
+    private int normalizeTimeoutSeconds(String value) {
+        if (!hasText(value)) {
+            return 60;
+        }
+        try {
+            return Math.max(10, Math.min(Integer.parseInt(value.trim()), 300));
+        } catch (NumberFormatException exception) {
+            return 60;
+        }
     }
 }

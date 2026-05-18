@@ -74,6 +74,7 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || requestUri.startsWith("/api/yaade/health")
                 || requestUri.startsWith("/api/yaade/proxy")
                 || requestUri.startsWith("/api/common/public-files/")
+                || requestUri.startsWith("/comment-images")
                 || requestUri.startsWith("/actuator")
                 || requestUri.startsWith("/error");
     }

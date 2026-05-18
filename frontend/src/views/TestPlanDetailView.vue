@@ -530,6 +530,7 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import type { GiteeTestPlanPushContextItem, ProjectGitlabBindingItem, TestPlanItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
+import { automationStatusTone, formatAutomationStatus } from '@/utils/testPlanAutomationStatus'
 
 interface StepForm {
   /** 前端抽屉中用于稳定渲染步骤行的本地键。 */
@@ -1052,22 +1053,6 @@ const handleSaveActiveCase = async () => {
 
 const goBack = async () => {
   await router.push({ name: 'tests' })
-}
-
-const formatAutomationStatus = (status?: string | null) => {
-  const normalized = String(status || '').trim().toUpperCase()
-  if (normalized === 'PENDING') return '待执行'
-  if (normalized === 'SUCCESS') return '成功'
-  if (normalized === 'FAILED') return '失败'
-  return '未配置'
-}
-
-const automationStatusTone = (status?: string | null) => {
-  const normalized = String(status || '').trim().toUpperCase()
-  if (normalized === 'SUCCESS') return 'success'
-  if (normalized === 'FAILED') return 'danger'
-  if (normalized === 'PENDING') return 'warning'
-  return 'neutral'
 }
 
 const formatGiteePushStatus = (status?: string | null) => {

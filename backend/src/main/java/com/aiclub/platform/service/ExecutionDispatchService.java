@@ -69,6 +69,7 @@ public class ExecutionDispatchService {
     private final ExecutionEventService executionEventService;
     private final ExecutionAsyncSessionService executionAsyncSessionService;
     private final ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
+    private final TestPlanAutomationPersistenceService testPlanAutomationPersistenceService;
     private final Executor executionTaskExecutor;
     private final Set<Long> dispatchingTaskIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
@@ -87,6 +88,7 @@ public class ExecutionDispatchService {
                                     ExecutionEventService executionEventService,
                                     ExecutionAsyncSessionService executionAsyncSessionService,
                                     ExecutionWorkspaceCleanupService executionWorkspaceCleanupService,
+                                    TestPlanAutomationPersistenceService testPlanAutomationPersistenceService,
                                     @Qualifier("executionTaskExecutor") Executor executionTaskExecutor) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
@@ -103,6 +105,7 @@ public class ExecutionDispatchService {
         this.executionEventService = executionEventService;
         this.executionAsyncSessionService = executionAsyncSessionService;
         this.executionWorkspaceCleanupService = executionWorkspaceCleanupService;
+        this.testPlanAutomationPersistenceService = testPlanAutomationPersistenceService;
         this.executionTaskExecutor = executionTaskExecutor;
     }
 
@@ -174,6 +177,9 @@ public class ExecutionDispatchService {
             executionTask.setStatus("CANCELED");
             executionTask.setLatestSummary("执行已取消");
             executionTaskRepository.save(executionTask);
+            // 业务意图：任务还没真正开跑就被取消时，仍要把测试计划的最近状态收敛到 CANCELED，
+            // 否则会一直停留在 PENDING，让用户以为还在排队。
+            writeBackTestPlanCanceledIfNeeded(executionTask, executionTask.getCurrentRun(), "执行已取消");
             return executionTask.getCurrentRun();
         }
 
@@ -560,6 +566,9 @@ public class ExecutionDispatchService {
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "FAILED");
         boolean hasCleanupWorkspace = scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_FAILED) > 0;
         notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_FAILED, hasCleanupWorkspace);
+        // 业务意图：通用步骤失败兜底也要把测试计划状态收敛，
+        // 即使 TestAutomationExecutionService 已经写过一遍，这里再写一次只会刷新摘要，无副作用。
+        writeBackTestPlanFailedIfNeeded(executionTask, executionRun, executionRun.getErrorMessage());
         return executionRun;
     }
 
@@ -595,6 +604,7 @@ public class ExecutionDispatchService {
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "FAILED");
         boolean hasCleanupWorkspace = scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_FAILED) > 0;
         notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_FAILED, hasCleanupWorkspace);
+        writeBackTestPlanFailedIfNeeded(executionTask, executionRun, executionRun.getErrorMessage());
         return executionRun;
     }
 
@@ -628,7 +638,80 @@ public class ExecutionDispatchService {
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "CANCELED");
         boolean hasCleanupWorkspace = scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_CANCELED) > 0;
         notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_CANCELED, hasCleanupWorkspace);
+        writeBackTestPlanCanceledIfNeeded(executionTask, executionRun, "执行任务已取消，未继续后续步骤");
         return executionRun;
+    }
+
+    /**
+     * 业务意图：测试计划自动化任务在调度层取消时，把测试计划的最近状态同步收敛为 CANCELED，
+     * 让前端不再停留在 PENDING/RUNNING 假象。非自动化任务直接跳过。
+     */
+    private void writeBackTestPlanCanceledIfNeeded(ExecutionTaskEntity executionTask,
+                                                   ExecutionRunEntity executionRun,
+                                                   String summary) {
+        Long planId = resolveTestPlanId(executionTask);
+        if (planId == null) {
+            return;
+        }
+        Long runId = executionRun == null ? null : executionRun.getId();
+        try {
+            testPlanAutomationPersistenceService.markFinished(
+                    planId,
+                    executionTask.getId(),
+                    runId,
+                    "CANCELED",
+                    summary,
+                    null
+            );
+        } catch (RuntimeException exception) {
+            log.warn("回写测试计划取消状态失败: planId={}, taskId={}, message={}",
+                    planId, executionTask.getId(), exception.getMessage(), exception);
+        }
+    }
+
+    /**
+     * 业务意图：通用失败收口时，如果任务来源是测试计划自动化，也要兜底回写一次测试计划状态。
+     * 与 TestAutomationExecutionService.markFinished 形成幂等覆盖，避免任何分支遗漏。
+     */
+    private void writeBackTestPlanFailedIfNeeded(ExecutionTaskEntity executionTask,
+                                                 ExecutionRunEntity executionRun,
+                                                 String errorMessage) {
+        Long planId = resolveTestPlanId(executionTask);
+        if (planId == null) {
+            return;
+        }
+        Long runId = executionRun == null ? null : executionRun.getId();
+        String summary = defaultString(errorMessage).isBlank() ? "自动化执行失败" : errorMessage;
+        try {
+            testPlanAutomationPersistenceService.markFinished(
+                    planId,
+                    executionTask.getId(),
+                    runId,
+                    "FAILED",
+                    summary,
+                    null
+            );
+        } catch (RuntimeException exception) {
+            log.warn("回写测试计划失败状态失败: planId={}, taskId={}, message={}",
+                    planId, executionTask.getId(), exception.getMessage(), exception);
+        }
+    }
+
+    /**
+     * 仅当任务来自"测试计划自动化"入口时，才把回写动作落到测试计划上，
+     * 避免把别的执行任务（开发执行、仓库扫描等）误染色到测试计划状态机。
+     */
+    private Long resolveTestPlanId(ExecutionTaskEntity executionTask) {
+        if (executionTask == null) {
+            return null;
+        }
+        if (!ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION.equalsIgnoreCase(defaultString(executionTask.getScenarioCode()))) {
+            return null;
+        }
+        if (!"TEST_PLAN_AUTOMATION".equalsIgnoreCase(defaultString(executionTask.getSourceType()))) {
+            return null;
+        }
+        return executionTask.getSourceId();
     }
 
     /**

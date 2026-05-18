@@ -36,6 +36,7 @@ public class GitlabUserOauthService {
     private final GitlabApiService gitlabApiService;
     private final GitlabOauthStateService gitlabOauthStateService;
     private final AuthService authService;
+    private final PlatformEnvVarResolver platformEnvVarResolver;
     private final String defaultApiUrl;
     private final String oauthClientId;
     private final String oauthClientSecret;
@@ -47,6 +48,7 @@ public class GitlabUserOauthService {
                                   GitlabApiService gitlabApiService,
                                   GitlabOauthStateService gitlabOauthStateService,
                                   AuthService authService,
+                                  PlatformEnvVarResolver platformEnvVarResolver,
                                   @Value("${platform.gitlab.default-api-url}") String defaultApiUrl,
                                   @Value("${platform.gitlab.oauth.client-id:}") String oauthClientId,
                                   @Value("${platform.gitlab.oauth.client-secret:}") String oauthClientSecret,
@@ -57,6 +59,7 @@ public class GitlabUserOauthService {
         this.gitlabApiService = gitlabApiService;
         this.gitlabOauthStateService = gitlabOauthStateService;
         this.authService = authService;
+        this.platformEnvVarResolver = platformEnvVarResolver;
         this.defaultApiUrl = normalizeApiBaseUrl(defaultApiUrl);
         this.oauthClientId = oauthClientId == null ? "" : oauthClientId.trim();
         this.oauthClientSecret = oauthClientSecret == null ? "" : oauthClientSecret.trim();
@@ -82,8 +85,8 @@ public class GitlabUserOauthService {
         String apiBaseUrl = requireDefaultGitlabApiUrl(request == null ? null : request.apiBaseUrl());
         String state = gitlabOauthStateService.generateState(currentUser.getId(), apiBaseUrl);
         String authorizeUrl = resolveGitlabSiteBaseUrl(apiBaseUrl)
-                + "/oauth/authorize?client_id=" + urlEncode(oauthClientId)
-                + "&redirect_uri=" + urlEncode(oauthRedirectUri)
+                + "/oauth/authorize?client_id=" + urlEncode(resolveOauthClientId())
+                + "&redirect_uri=" + urlEncode(resolveOauthRedirectUri())
                 + "&response_type=code"
                 + "&scope=" + urlEncode("api")
                 + "&state=" + urlEncode(state);
@@ -105,10 +108,10 @@ public class GitlabUserOauthService {
         String apiBaseUrl = requireDefaultGitlabApiUrl(statePayload.apiBaseUrl());
         GitlabApiService.GitlabOAuthToken oauthToken = gitlabApiService.exchangeAuthorizationCode(
                 apiBaseUrl,
-                oauthClientId,
-                oauthClientSecret,
+                resolveOauthClientId(),
+                resolveOauthClientSecret(),
                 request.code().trim(),
-                oauthRedirectUri
+                resolveOauthRedirectUri()
         );
         GitlabApiService.GitlabUser gitlabUser = gitlabApiService.fetchCurrentUser(
                 apiBaseUrl,
@@ -149,7 +152,7 @@ public class GitlabUserOauthService {
     @Transactional
     public CurrentGitlabOauthAccess requireCurrentUserAccess(String apiBaseUrl) {
         String normalizedApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
-        if (!defaultApiUrl.equals(normalizedApiBaseUrl)) {
+        if (!resolveDefaultApiUrl().equals(normalizedApiBaseUrl)) {
             throw new IllegalArgumentException("当前仓库实例暂不支持使用个人 GitLab 授权发起 MR");
         }
         UserEntity currentUser = requireCurrentUser();
@@ -177,10 +180,10 @@ public class GitlabUserOauthService {
         try {
             GitlabApiService.GitlabOAuthToken oauthToken = gitlabApiService.refreshOAuthToken(
                     normalizeApiBaseUrl(entity.getApiBaseUrl()),
-                    oauthClientId,
-                    oauthClientSecret,
+                    resolveOauthClientId(),
+                    resolveOauthClientSecret(),
                     tokenCipherService.decrypt(refreshTokenCiphertext),
-                    oauthRedirectUri
+                    resolveOauthRedirectUri()
             );
             applyOauthToken(entity, oauthToken);
             bindingRepository.save(entity);
@@ -217,7 +220,7 @@ public class GitlabUserOauthService {
     private GitlabUserOauthBindingSummary toDisconnectedSummary(UserEntity currentUser) {
         return new GitlabUserOauthBindingSummary(
                 false,
-                defaultApiUrl,
+                resolveDefaultApiUrl(),
                 currentUser.getGitlabUserId(),
                 nullableString(currentUser.getGitlabUsername()),
                 nullableString(currentUser.getGitlabName()),
@@ -248,14 +251,15 @@ public class GitlabUserOauthService {
     }
 
     private void ensureOauthClientConfigured() {
-        if (!hasText(oauthClientId) || !hasText(oauthClientSecret) || !hasText(oauthRedirectUri)) {
+        if (!hasText(resolveOauthClientId()) || !hasText(resolveOauthClientSecret()) || !hasText(resolveOauthRedirectUri())) {
             throw new IllegalStateException("当前环境未配置 GitLab OAuth 参数，请联系管理员");
         }
     }
 
     private String requireDefaultGitlabApiUrl(String apiBaseUrl) {
-        String normalized = hasText(apiBaseUrl) ? normalizeApiBaseUrl(apiBaseUrl) : defaultApiUrl;
-        if (!defaultApiUrl.equals(normalized)) {
+        String resolvedDefaultApiUrl = resolveDefaultApiUrl();
+        String normalized = hasText(apiBaseUrl) ? normalizeApiBaseUrl(apiBaseUrl) : resolvedDefaultApiUrl;
+        if (!resolvedDefaultApiUrl.equals(normalized)) {
             throw new IllegalArgumentException("当前仅支持绑定默认 GitLab 实例");
         }
         return normalized;
@@ -297,6 +301,38 @@ public class GitlabUserOauthService {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private String resolveDefaultApiUrl() {
+        return normalizeApiBaseUrl(platformEnvVarResolver.resolveOrDefault(
+                PlatformEnvVarRegistry.KEY_GITLAB_DEFAULT_API_URL,
+                () -> null,
+                defaultApiUrl
+        ));
+    }
+
+    private String resolveOauthClientId() {
+        return platformEnvVarResolver.resolveOrDefault(
+                PlatformEnvVarRegistry.KEY_GITLAB_OAUTH_CLIENT_ID,
+                () -> null,
+                oauthClientId
+        );
+    }
+
+    private String resolveOauthClientSecret() {
+        return platformEnvVarResolver.resolveOrDefault(
+                PlatformEnvVarRegistry.KEY_GITLAB_OAUTH_CLIENT_SECRET,
+                () -> null,
+                oauthClientSecret
+        );
+    }
+
+    private String resolveOauthRedirectUri() {
+        return platformEnvVarResolver.resolveOrDefault(
+                PlatformEnvVarRegistry.KEY_GITLAB_OAUTH_REDIRECT_URI,
+                () -> null,
+                oauthRedirectUri
+        );
     }
 
     /**

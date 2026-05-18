@@ -75,13 +75,14 @@ public class PrReviewStatsService {
      */
     public PrReviewStatsConfigSummary getDefaultConfig(String startTime, String endTime) {
         List<PrReviewStatsGroupSummary> groups = List.of();
+        String oaBaseUrl = resolveOaBaseUrl();
         OaCredential credential = tryResolveOaCredential();
-        if (credential != null) {
+        if (credential != null && hasText(oaBaseUrl)) {
             groups = listGroups(startTime, endTime, credential);
         }
         return new PrReviewStatsConfigSummary(
-                properties.getOaBaseUrl(),
-                properties.getDefaultDevGroupName(),
+                oaBaseUrl,
+                resolveDefaultDevGroupName(),
                 groups
         );
     }
@@ -279,7 +280,7 @@ public class PrReviewStatsService {
         try {
             String url = pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")
                     ? pathOrUrl
-                    : normalizeBaseUrl(properties.getOaBaseUrl()) + pathOrUrl;
+                    : normalizeBaseUrl(requireOaBaseUrl()) + pathOrUrl;
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(Duration.ofSeconds(30))
@@ -465,6 +466,30 @@ public class PrReviewStatsService {
         } catch (RuntimeException exception) {
             return null;
         }
+    }
+
+    private String resolveOaBaseUrl() {
+        return platformEnvVarResolver.resolveOrDefault(
+                PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_BASE_URL,
+                properties::getOaBaseUrl,
+                properties.getOaBaseUrl()
+        );
+    }
+
+    private String requireOaBaseUrl() {
+        String oaBaseUrl = resolveOaBaseUrl();
+        if (!hasText(oaBaseUrl)) {
+            throw new IllegalStateException("请先在系统设置-环境变量管理中配置 PR评审统计 OA 地址");
+        }
+        return oaBaseUrl;
+    }
+
+    private String resolveDefaultDevGroupName() {
+        return platformEnvVarResolver.resolveOrDefault(
+                PlatformEnvVarRegistry.KEY_PR_REVIEW_DEFAULT_DEV_GROUP_NAME,
+                properties::getDefaultDevGroupName,
+                properties.getDefaultDevGroupName()
+        );
     }
 
     /**

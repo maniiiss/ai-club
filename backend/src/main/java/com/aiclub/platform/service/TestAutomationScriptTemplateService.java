@@ -22,6 +22,25 @@ import java.util.Map;
 @Service
 public class TestAutomationScriptTemplateService {
 
+    /**
+     * 业务意图：模板生成与 RUN_ONLY 前置校验需要使用同一组仓库路径，
+     * 抽出常量后避免两边路径漂移导致脚本生成位置和校验位置不一致。
+     */
+    public static final String AUTOMATION_ROOT = ".ai-club/automation/playwright";
+    public static final String CONFIG_PATH = AUTOMATION_ROOT + "/playwright.config.ts";
+    public static final String MANIFEST_PATH = AUTOMATION_ROOT + "/ai-club.manifest.json";
+
+    /**
+     * 当前测试计划在仓库内对应的 spec 路径，命名规则与生成脚本保持一致。
+     */
+    public static String specPathFor(Long planId) {
+        return AUTOMATION_ROOT + "/plans/" + planSlugFor(planId) + ".spec.ts";
+    }
+
+    public static String planSlugFor(Long planId) {
+        return "test-plan-" + planId;
+    }
+
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final ObjectMapper objectMapper;
@@ -43,10 +62,10 @@ public class TestAutomationScriptTemplateService {
             throw new IllegalArgumentException("当前测试计划没有可自动化的 Playwright 用例");
         }
 
-        String planSlug = "test-plan-" + plan.getId();
-        String configPath = ".ai-club/automation/playwright/playwright.config.ts";
-        String specPath = ".ai-club/automation/playwright/plans/" + planSlug + ".spec.ts";
-        String manifestPath = ".ai-club/automation/playwright/ai-club.manifest.json";
+        String planSlug = planSlugFor(plan.getId());
+        String configPath = CONFIG_PATH;
+        String specPath = specPathFor(plan.getId());
+        String manifestPath = MANIFEST_PATH;
 
         Map<String, String> files = new LinkedHashMap<>();
         files.put(configPath, buildPlaywrightConfig());

@@ -17,6 +17,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.LocalDateTime;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -175,5 +176,19 @@ class PlatformEnvVarManagementServiceTests {
                 .first()
                 .extracting(com.aiclub.platform.dto.PlatformEnvVarSummary::sensitive)
                 .isEqualTo(true);
+    }
+
+    @Test
+    void shouldHideYaadeDefaultUserPasswordFromEnvVarManagement() {
+        when(platformEnvVarConfigRepository.findAll()).thenReturn(java.util.List.of());
+
+        assertThat(platformEnvVarManagementService.listEnvVars())
+                .extracting(com.aiclub.platform.dto.PlatformEnvVarSummary::envKey)
+                .doesNotContain(PlatformEnvVarRegistry.KEY_YAADE_DEFAULT_USER_PASSWORD);
+
+        assertThatThrownBy(() -> platformEnvVarManagementService.getEnvVarDetail(
+                PlatformEnvVarRegistry.KEY_YAADE_DEFAULT_USER_PASSWORD
+        )).isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining(PlatformEnvVarRegistry.KEY_YAADE_DEFAULT_USER_PASSWORD);
     }
 }

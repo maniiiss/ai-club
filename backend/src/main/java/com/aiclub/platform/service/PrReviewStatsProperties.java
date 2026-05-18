@@ -15,7 +15,7 @@ public class PrReviewStatsProperties {
     private String defaultDevGroupName = "";
 
     public String getOaBaseUrl() {
-        return normalize(oaBaseUrl, "http://192.168.110.251:8082");
+        return normalize(oaBaseUrl, "");
     }
 
     public void setOaBaseUrl(String oaBaseUrl) {

@@ -201,6 +201,257 @@ class TestAutomationExecutionServiceTests {
                 eq("CLI"),
                 eq("C:/workspace/test-automation")
         );
+        // 业务意图：任务真正开始执行时必须把测试计划状态推进到 RUNNING，
+        // 否则前端会看到一直停留在 PENDING 假象。
+        verify(automationPersistenceService).markRunning(
+                eq(501L),
+                eq(99L),
+                eq(701L),
+                org.mockito.ArgumentMatchers.contains("已接入")
+        );
+    }
+
+    /**
+     * 业务意图：runner 主动汇报 CANCELED 时，编排器必须把整体结果收敛为 canceled，
+     * 同时把测试计划状态以 CANCELED 写回，避免被错误标记为失败。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldWriteBackTestPlanCanceledWhenRunnerReportsCanceled() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION,
+                "自动化测试",
+                List.of(
+                        new ExecutionWorkflowService.ExecutionStepPlan(1, "PLAN", "自动化规划", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(2, "IMPLEMENT", "生成脚本", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(3, "TEST", "执行自动化", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(4, "REPORT", "结果回写", null, null, null, null)
+                )
+        );
+
+        TestPlanEntity plan = buildTestPlan();
+        TestCaseEntity automatedCase = buildAutomatedCase(plan);
+        ProjectGitlabBindingEntity binding = buildBinding();
+        TestAutomationProfileService.AutomationProfile profile = new TestAutomationProfileService.AutomationProfile(
+                "FRONTEND",
+                "frontend",
+                "npm",
+                "npm run dev",
+                "http://127.0.0.1:4173",
+                "#app",
+                List.of("/")
+        );
+        TestAutomationScriptTemplateService.GeneratedScriptBundle scriptBundle =
+                new TestAutomationScriptTemplateService.GeneratedScriptBundle(
+                        "test-plan-501",
+                        "playwright.config.ts",
+                        "tests/generated/demo.spec.ts",
+                        "manifest.json",
+                        Map.of("manifest.json", "{\"generated\":true}"),
+                        1
+                );
+
+        when(automationPersistenceService.requirePlanWithAutomationContext(501L)).thenReturn(plan);
+        when(automationPersistenceService.listCasesWithSteps(501L)).thenReturn(List.of(automatedCase));
+        when(projectGitlabBindingRepository.findById(601L)).thenReturn(Optional.of(binding));
+        when(profileService.resolveProfile(binding)).thenReturn(profile);
+        when(profileService.resolveDefaultPath(profile)).thenReturn("/");
+        when(profileService.resolveReadySelector(profile)).thenReturn("#app");
+        when(templateService.generate(plan, binding, profile, "main", "ai-club/test-automation/plan-501-run-701", List.of(automatedCase)))
+                .thenReturn(scriptBundle);
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> {
+            ExecutionStepEntity step = invocation.getArgument(0);
+            if (step.getId() == null) {
+                step.setId(8000L + step.getStepNo());
+            }
+            return step;
+        });
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            if (artifact.getId() == null) {
+                artifact.setId(9000L);
+            }
+            return artifact;
+        });
+        when(tokenCipherService.decrypt("cipher-automation")).thenReturn("token-automation");
+        when(executionAsyncSessionService.maxRuntimeSeconds("TEST")).thenReturn(600);
+        when(cliExecutionClientService.startExecution(any(Map.class))).thenReturn(
+                new CodeProcessingCliExecutionClientService.ExecutionSessionAcceptedResponse(
+                        "repo-suite-session-canceled",
+                        true,
+                        "CLI",
+                        "C:/workspace/test-automation",
+                        "2026-05-04T14:30:00Z"
+                )
+        );
+        when(executionAsyncSessionService.awaitTerminalStep(anyLong(), eq(600))).thenAnswer(invocation -> {
+            ExecutionStepEntity step = new ExecutionStepEntity();
+            step.setId(invocation.getArgument(0));
+            step.setStatus("CANCELED");
+            step.setOutputSnapshot("");
+            return step;
+        });
+
+        TestAutomationExecutionService.TestAutomationExecutionResult result =
+                testAutomationExecutionService.executeAutomationTask(executionTask, executionRun, workflowPlan);
+
+        assertThat(result.canceled()).isTrue();
+        verify(automationPersistenceService).markFinished(
+                eq(501L),
+                eq(99L),
+                eq(701L),
+                eq("CANCELED"),
+                org.mockito.ArgumentMatchers.contains("已取消"),
+                eq(null)
+        );
+    }
+
+    /**
+     * 业务意图：GENERATE_AND_RUN 模式下，脚本生成并提交后必须立刻创建 MR，
+     * 让用户可以在执行详情页看到"提交 MR"按钮和链接，而不是需要手动操作。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldCreateMergeRequestAfterCommittingGeneratedScripts() {
+        ExecutionTaskEntity executionTask = buildExecutionTaskForGenerateAndRun();
+        ExecutionRunEntity executionRun = buildExecutionRun(executionTask);
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION,
+                "自动化测试",
+                List.of(
+                        new ExecutionWorkflowService.ExecutionStepPlan(1, "PLAN", "自动化规划", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(2, "IMPLEMENT", "生成脚本", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(3, "TEST", "执行自动化", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(4, "REPORT", "结果回写", null, null, null, null)
+                )
+        );
+
+        TestPlanEntity plan = buildTestPlan();
+        TestCaseEntity automatedCase = buildAutomatedCase(plan);
+        ProjectGitlabBindingEntity binding = buildBinding();
+        TestAutomationProfileService.AutomationProfile profile = new TestAutomationProfileService.AutomationProfile(
+                "FRONTEND",
+                "frontend",
+                "npm",
+                "npm run dev",
+                "http://127.0.0.1:4173",
+                "#app",
+                List.of("/")
+        );
+        TestAutomationScriptTemplateService.GeneratedScriptBundle scriptBundle =
+                new TestAutomationScriptTemplateService.GeneratedScriptBundle(
+                        "test-plan-501",
+                        "playwright.config.ts",
+                        "tests/generated/demo.spec.ts",
+                        "manifest.json",
+                        Map.of("manifest.json", "{\"generated\":true}"),
+                        1
+                );
+
+        when(automationPersistenceService.requirePlanWithAutomationContext(501L)).thenReturn(plan);
+        when(automationPersistenceService.listCasesWithSteps(501L)).thenReturn(List.of(automatedCase));
+        when(projectGitlabBindingRepository.findById(601L)).thenReturn(Optional.of(binding));
+        when(profileService.resolveProfile(binding)).thenReturn(profile);
+        when(profileService.resolveDefaultPath(profile)).thenReturn("/");
+        when(profileService.resolveReadySelector(profile)).thenReturn("#app");
+        when(templateService.generate(plan, binding, profile, "main", "ai-club/test-automation/plan-501-run-701", List.of(automatedCase)))
+                .thenReturn(scriptBundle);
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> {
+            ExecutionStepEntity step = invocation.getArgument(0);
+            if (step.getId() == null) {
+                step.setId(8000L + step.getStepNo());
+            }
+            return step;
+        });
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            if (artifact.getId() == null) {
+                artifact.setId(9000L);
+            }
+            return artifact;
+        });
+        when(tokenCipherService.decrypt("cipher-automation")).thenReturn("token-automation");
+        when(gitlabApiService.repositoryFileExists(
+                "http://gitlab.example.com/api/v4",
+                "token-automation",
+                "group/frontend",
+                "ai-club/test-automation/plan-501-run-701",
+                "manifest.json"
+        )).thenReturn(false);
+        when(gitlabApiService.createCommit(
+                eq("http://gitlab.example.com/api/v4"),
+                eq("token-automation"),
+                eq("group/frontend"),
+                eq("ai-club/test-automation/plan-501-run-701"),
+                org.mockito.ArgumentMatchers.contains("test: add automation for plan #501"),
+                any(List.class)
+        )).thenReturn(new GitlabApiService.GitlabCreatedCommit(
+                "abc123def456",
+                "abc123de",
+                "test: add automation for plan #501",
+                "http://gitlab.example.com/group/frontend/-/commit/abc123def456"
+        ));
+        when(gitlabApiService.createMergeRequest(
+                eq("http://gitlab.example.com/api/v4"),
+                eq("token-automation"),
+                eq("group/frontend"),
+                eq("ai-club/test-automation/plan-501-run-701"),
+                eq("main"),
+                org.mockito.ArgumentMatchers.contains("test: automation for plan #501"),
+                org.mockito.ArgumentMatchers.contains("自动化测试脚本生成 MR")
+        )).thenReturn(new GitlabApiService.GitlabCreatedMergeRequest(
+                1L,
+                "test: automation for plan #501",
+                "ai-club/test-automation/plan-501-run-701",
+                "main",
+                "opened",
+                "http://gitlab.example.com/group/frontend/-/merge_requests/1",
+                "2026-05-04T14:30:00Z"
+        ));
+        when(executionAsyncSessionService.maxRuntimeSeconds("TEST")).thenReturn(600);
+        when(cliExecutionClientService.startExecution(any(Map.class))).thenReturn(
+                new CodeProcessingCliExecutionClientService.ExecutionSessionAcceptedResponse(
+                        "repo-suite-session-mr",
+                        true,
+                        "CLI",
+                        "C:/workspace/test-automation",
+                        "2026-05-04T14:30:00Z"
+                )
+        );
+        when(executionAsyncSessionService.awaitTerminalStep(anyLong(), eq(600))).thenAnswer(invocation -> {
+            ExecutionStepEntity step = new ExecutionStepEntity();
+            step.setId(invocation.getArgument(0));
+            step.setStatus("SUCCESS");
+            step.setOutputSnapshot("""
+                    {
+                      "status": "SUCCESS",
+                      "summary": "自动化执行完成",
+                      "suiteResults": []
+                    }
+                    """);
+            return step;
+        });
+
+        TestAutomationExecutionService.TestAutomationExecutionResult result =
+                testAutomationExecutionService.executeAutomationTask(executionTask, executionRun, workflowPlan);
+
+        assertThat(result.canceled()).isFalse();
+        // 业务意图：MR 创建成功后，必须把 MR URL 回写到测试计划状态，
+        // 这样前端可以从执行详情页直接打开 MR。
+        verify(automationPersistenceService).markFinished(
+                eq(501L),
+                eq(99L),
+                eq(701L),
+                eq("SUCCESS"),
+                org.mockito.ArgumentMatchers.any(),
+                eq("http://gitlab.example.com/group/frontend/-/merge_requests/1")
+        );
     }
 
     private ExecutionTaskEntity buildExecutionTask() {
@@ -215,6 +466,26 @@ class TestAutomationExecutionServiceTests {
         executionTask.setInputPayload("""
                 {
                   "mode": "RUN_ONLY",
+                  "testPlanId": 501,
+                  "bindingId": 601,
+                  "targetBranch": "main"
+                }
+                """);
+        return executionTask;
+    }
+
+    private ExecutionTaskEntity buildExecutionTaskForGenerateAndRun() {
+        ProjectEntity project = new ProjectEntity("自动化项目", "李四", "进行中", "用于自动化执行测试");
+        project.setId(11L);
+
+        ExecutionTaskEntity executionTask = new ExecutionTaskEntity();
+        executionTask.setId(99L);
+        executionTask.setProject(project);
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION);
+        executionTask.setTitle("自动化测试执行");
+        executionTask.setInputPayload("""
+                {
+                  "mode": "GENERATE_AND_RUN",
                   "testPlanId": 501,
                   "bindingId": 601,
                   "targetBranch": "main"

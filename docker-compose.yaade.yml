@@ -13,6 +13,8 @@ services:
       YAADE_ADMIN_USERNAME: ${YAADE_ADMIN_USERNAME:-admin}
       YAADE_DEFAULT_PASSWORD: ${YAADE_DEFAULT_PASSWORD:-password}
       YAADE_BASE_PATH: ${YAADE_BASE_PATH:-/api/yaade/proxy}
+      YAADE_JDBC_URL: ${YAADE_JDBC_URL:-jdbc:h2:file:/app/data/yaade-db}
+      YAADE_FILE_STORAGE_PATH: ${YAADE_FILE_STORAGE_PATH:-/app/data/files}
     ports:
       - "${YAADE_PORT:-9339}:9339"
     volumes:

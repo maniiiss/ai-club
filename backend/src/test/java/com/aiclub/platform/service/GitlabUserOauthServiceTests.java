@@ -52,10 +52,18 @@ class GitlabUserOauthServiceTests {
     @Mock
     private AuthService authService;
 
+    @Mock
+    private PlatformEnvVarResolver platformEnvVarResolver;
+
     private GitlabUserOauthService gitlabUserOauthService;
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(platformEnvVarResolver.resolveOrDefault(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString()
+        )).thenAnswer(invocation -> invocation.getArgument(2));
         gitlabUserOauthService = new GitlabUserOauthService(
                 bindingRepository,
                 userRepository,
@@ -63,6 +71,7 @@ class GitlabUserOauthServiceTests {
                 gitlabApiService,
                 gitlabOauthStateService,
                 authService,
+                platformEnvVarResolver,
                 "http://gitlab.example.com/api/v4",
                 "client-id",
                 "client-secret",

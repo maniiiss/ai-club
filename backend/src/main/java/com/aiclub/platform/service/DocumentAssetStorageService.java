@@ -264,6 +264,21 @@ public class DocumentAssetStorageService {
         if (lowerCaseKey.endsWith(".xlsx")) {
             return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
         }
+        if (lowerCaseKey.endsWith(".png")) {
+            return "image/png";
+        }
+        if (lowerCaseKey.endsWith(".jpg") || lowerCaseKey.endsWith(".jpeg")) {
+            return "image/jpeg";
+        }
+        if (lowerCaseKey.endsWith(".gif")) {
+            return "image/gif";
+        }
+        if (lowerCaseKey.endsWith(".webp")) {
+            return "image/webp";
+        }
+        if (lowerCaseKey.endsWith(".svg")) {
+            return "image/svg+xml";
+        }
         return "application/octet-stream";
     }
 

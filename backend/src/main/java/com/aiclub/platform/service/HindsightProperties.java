@@ -52,12 +52,14 @@ public class HindsightProperties {
     /** Hindsight 数据库密码。 */
     private final String memoryFactDatabasePassword;
 
+    private final PlatformEnvVarResolver platformEnvVarResolver;
+
     @Autowired
     public HindsightProperties(@Value("${platform.hindsight.base-url:http://localhost:18888}") String baseUrl,
                                @Value("${platform.hindsight.api-key:}") String apiKey,
                                @Value("${platform.hindsight.bank-prefix:git-ai-club}") String bankPrefix,
                                @Value("${platform.hindsight.recall-budget:mid}") String recallBudget,
-                               @Value("${platform.hindsight.timeout-seconds:30}") int timeoutSeconds,
+                               @Value("${platform.hindsight.timeout-seconds:30}") String timeoutSeconds,
                                @Value("${platform.hindsight.memory-fact.project-bank-template:}") String memoryFactProjectBankTemplate,
                                @Value("${platform.hindsight.memory-fact.shared-bank-id:}") String memoryFactSharedBankId,
                                @Value("${platform.hindsight.memory-fact.entity-graph-path-template:/v1/default/banks/{bankId}/graph}") String memoryFactEntityGraphPathTemplate,
@@ -66,12 +68,83 @@ public class HindsightProperties {
                                @Value("${platform.hindsight.memory-fact.database-fallback-enabled:true}") boolean memoryFactDatabaseFallbackEnabled,
                                @Value("${platform.hindsight.memory-fact.database-url:jdbc:postgresql://localhost:5432/hindsight}") String memoryFactDatabaseUrl,
                                @Value("${platform.hindsight.memory-fact.database-username:${DB_USERNAME:aiclub}}") String memoryFactDatabaseUsername,
-                               @Value("${platform.hindsight.memory-fact.database-password:${DB_PASSWORD:aiclub123}}") String memoryFactDatabasePassword) {
-        this.baseUrl = trimTrailingSlash(baseUrl);
+                               @Value("${platform.hindsight.memory-fact.database-password:${DB_PASSWORD:aiclub123}}") String memoryFactDatabasePassword,
+                               PlatformEnvVarResolver platformEnvVarResolver) {
+        this(
+                baseUrl,
+                apiKey,
+                bankPrefix,
+                recallBudget,
+                timeoutSeconds,
+                memoryFactProjectBankTemplate,
+                memoryFactSharedBankId,
+                memoryFactEntityGraphPathTemplate,
+                memoryFactEntityDetailPathTemplate,
+                memoryFactRecallPathTemplate,
+                memoryFactDatabaseFallbackEnabled,
+                memoryFactDatabaseUrl,
+                memoryFactDatabaseUsername,
+                memoryFactDatabasePassword,
+                platformEnvVarResolver,
+                true
+        );
+    }
+
+    public HindsightProperties(String baseUrl,
+                               String apiKey,
+                               String bankPrefix,
+                               String recallBudget,
+                               int timeoutSeconds,
+                               String memoryFactProjectBankTemplate,
+                               String memoryFactSharedBankId,
+                               String memoryFactEntityGraphPathTemplate,
+                               String memoryFactEntityDetailPathTemplate,
+                               String memoryFactRecallPathTemplate,
+                               boolean memoryFactDatabaseFallbackEnabled,
+                               String memoryFactDatabaseUrl,
+                               String memoryFactDatabaseUsername,
+                               String memoryFactDatabasePassword) {
+        this(
+                baseUrl,
+                apiKey,
+                bankPrefix,
+                recallBudget,
+                String.valueOf(timeoutSeconds),
+                memoryFactProjectBankTemplate,
+                memoryFactSharedBankId,
+                memoryFactEntityGraphPathTemplate,
+                memoryFactEntityDetailPathTemplate,
+                memoryFactRecallPathTemplate,
+                memoryFactDatabaseFallbackEnabled,
+                memoryFactDatabaseUrl,
+                memoryFactDatabaseUsername,
+                memoryFactDatabasePassword,
+                null,
+                true
+        );
+    }
+
+    private HindsightProperties(String baseUrl,
+                                String apiKey,
+                                String bankPrefix,
+                                String recallBudget,
+                                String timeoutSeconds,
+                                String memoryFactProjectBankTemplate,
+                                String memoryFactSharedBankId,
+                                String memoryFactEntityGraphPathTemplate,
+                                String memoryFactEntityDetailPathTemplate,
+                                String memoryFactRecallPathTemplate,
+                                boolean memoryFactDatabaseFallbackEnabled,
+                                String memoryFactDatabaseUrl,
+                                String memoryFactDatabaseUsername,
+                                String memoryFactDatabasePassword,
+                                PlatformEnvVarResolver platformEnvVarResolver,
+                                boolean normalizedConstructor) {
+        this.baseUrl = trimTrailingSlash(hasText(baseUrl) ? baseUrl : "http://localhost:18888");
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.bankPrefix = hasText(bankPrefix) ? bankPrefix.trim() : "git-ai-club";
         this.recallBudget = hasText(recallBudget) ? recallBudget.trim() : "mid";
-        this.timeoutSeconds = Math.max(5, Math.min(timeoutSeconds, 120));
+        this.timeoutSeconds = normalizeTimeoutSeconds(timeoutSeconds);
         this.memoryFactProjectBankTemplate = defaultString(memoryFactProjectBankTemplate);
         this.memoryFactSharedBankId = defaultString(memoryFactSharedBankId);
         this.memoryFactEntityGraphPathTemplate = hasText(memoryFactEntityGraphPathTemplate)
@@ -87,6 +160,7 @@ public class HindsightProperties {
         this.memoryFactDatabaseUrl = defaultString(memoryFactDatabaseUrl);
         this.memoryFactDatabaseUsername = defaultString(memoryFactDatabaseUsername);
         this.memoryFactDatabasePassword = memoryFactDatabasePassword == null ? "" : memoryFactDatabasePassword;
+        this.platformEnvVarResolver = platformEnvVarResolver;
     }
 
     /**
@@ -116,23 +190,24 @@ public class HindsightProperties {
     }
 
     public String getBaseUrl() {
-        return baseUrl;
+        return trimTrailingSlash(resolveOrDefault(PlatformEnvVarRegistry.KEY_HINDSIGHT_API_URL, baseUrl));
     }
 
     public String getApiKey() {
-        return apiKey;
+        return resolveOptional(PlatformEnvVarRegistry.KEY_HINDSIGHT_API_KEY, apiKey);
     }
 
     public String getBankPrefix() {
-        return bankPrefix;
+        return resolveOrDefault(PlatformEnvVarRegistry.KEY_HERMES_HINDSIGHT_BANK_ID, bankPrefix);
     }
 
     public String getRecallBudget() {
-        return recallBudget;
+        return resolveOrDefault(PlatformEnvVarRegistry.KEY_HERMES_HINDSIGHT_BUDGET, recallBudget);
     }
 
     public int getTimeoutSeconds() {
-        return timeoutSeconds;
+        String resolved = resolveOrDefault(PlatformEnvVarRegistry.KEY_HINDSIGHT_TIMEOUT_SECONDS, String.valueOf(timeoutSeconds));
+        return normalizeTimeoutSeconds(resolved);
     }
 
     public String getMemoryFactProjectBankTemplate() {
@@ -175,21 +250,21 @@ public class HindsightProperties {
      * 根据项目 ID 生成独立 bank，避免跨项目语义召回串数据。
      */
     public String wikiBankId(Long projectId) {
-        return bankPrefix + ":wiki:project:" + projectId;
+        return getBankPrefix() + ":wiki:project:" + projectId;
     }
 
     /**
      * 根据空间 ID 生成独立 bank，避免跨空间语义召回串数据。
      */
     public String wikiSpaceBankId(Long spaceId) {
-        return bankPrefix + ":wiki:space:" + spaceId;
+        return getBankPrefix() + ":wiki:space:" + spaceId;
     }
 
     /**
      * Hermes 用户会话记忆按用户独立分 bank，避免不同用户的私人记忆互相污染。
      */
     public String hermesUserMemoryBankId(Long userId) {
-        return bankPrefix + ":hermes:user:" + userId;
+        return getBankPrefix() + ":hermes:user:" + userId;
     }
 
     /**
@@ -198,9 +273,9 @@ public class HindsightProperties {
     public String memoryFactProjectBankId(Long projectId) {
         String template = hasText(memoryFactProjectBankTemplate)
                 ? memoryFactProjectBankTemplate
-                : bankPrefix + ":wiki:project:{projectId}";
+                : getBankPrefix() + ":wiki:project:{projectId}";
         return template
-                .replace("{bankPrefix}", bankPrefix)
+                .replace("{bankPrefix}", getBankPrefix())
                 .replace("{projectId}", projectId == null ? "" : String.valueOf(projectId));
     }
 
@@ -212,19 +287,19 @@ public class HindsightProperties {
     }
 
     public String memoryFactSharedBankId() {
-        return memoryFactSharedBankId.replace("{bankPrefix}", bankPrefix);
+        return memoryFactSharedBankId.replace("{bankPrefix}", getBankPrefix());
     }
 
     public String memoryFactEntityGraphUrl(String bankId) {
-        return baseUrl + renderPath(memoryFactEntityGraphPathTemplate, bankId, null);
+        return getBaseUrl() + renderPath(memoryFactEntityGraphPathTemplate, bankId, null);
     }
 
     public String memoryFactEntityDetailUrl(String bankId, String entityId) {
-        return baseUrl + renderPath(memoryFactEntityDetailPathTemplate, bankId, entityId);
+        return getBaseUrl() + renderPath(memoryFactEntityDetailPathTemplate, bankId, entityId);
     }
 
     public String memoryFactRecallUrl(String bankId) {
-        return baseUrl + renderPath(memoryFactRecallPathTemplate, bankId, null);
+        return getBaseUrl() + renderPath(memoryFactRecallPathTemplate, bankId, null);
     }
 
     private String trimTrailingSlash(String value) {
@@ -255,5 +330,30 @@ public class HindsightProperties {
 
     private String urlEncode(String value) {
         return java.net.URLEncoder.encode(defaultString(value), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private String resolveOptional(String envKey, String fallback) {
+        if (platformEnvVarResolver == null) {
+            return defaultString(fallback);
+        }
+        return platformEnvVarResolver.resolveOptional(envKey, () -> fallback);
+    }
+
+    private String resolveOrDefault(String envKey, String fallback) {
+        if (platformEnvVarResolver == null) {
+            return defaultString(fallback);
+        }
+        return platformEnvVarResolver.resolveOrDefault(envKey, () -> fallback, fallback);
+    }
+
+    private int normalizeTimeoutSeconds(String value) {
+        if (!hasText(value)) {
+            return 30;
+        }
+        try {
+            return Math.max(5, Math.min(Integer.parseInt(value.trim()), 120));
+        } catch (NumberFormatException exception) {
+            return 30;
+        }
     }
 }

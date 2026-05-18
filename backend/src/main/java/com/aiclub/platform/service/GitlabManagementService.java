@@ -139,6 +139,7 @@ public class GitlabManagementService {
     private final RepositoryScanRulesetService repositoryScanRulesetService;
     private final GitlabCodeStructureClientService gitlabCodeStructureClientService;
     private final GitnexusProperties gitnexusProperties;
+    private final PlatformEnvVarResolver platformEnvVarResolver;
     private final ObjectMapper objectMapper;
     private final String defaultApiUrl;
     private final Executor executionTaskExecutor;
@@ -167,6 +168,7 @@ public class GitlabManagementService {
                                    RepositoryScanRulesetService repositoryScanRulesetService,
                                    GitlabCodeStructureClientService gitlabCodeStructureClientService,
                                    GitnexusProperties gitnexusProperties,
+                                   PlatformEnvVarResolver platformEnvVarResolver,
                                    ObjectMapper objectMapper,
                                    @Value("${platform.gitlab.default-api-url}") String defaultApiUrl,
                                    PlatformTransactionManager transactionManager,
@@ -194,6 +196,7 @@ public class GitlabManagementService {
         this.repositoryScanRulesetService = repositoryScanRulesetService;
         this.gitlabCodeStructureClientService = gitlabCodeStructureClientService;
         this.gitnexusProperties = gitnexusProperties;
+        this.platformEnvVarResolver = platformEnvVarResolver;
         this.objectMapper = objectMapper;
         this.defaultApiUrl = defaultApiUrl;
         this.executionTaskExecutor = executionTaskExecutor;
@@ -2491,7 +2494,13 @@ public class GitlabManagementService {
     }
 
     private String resolveApiBaseUrl(String value) {
-        String apiBaseUrl = hasText(value) ? value.trim() : defaultApiUrl;
+        String apiBaseUrl = hasText(value)
+                ? value.trim()
+                : platformEnvVarResolver.resolveOrDefault(
+                PlatformEnvVarRegistry.KEY_GITLAB_DEFAULT_API_URL,
+                () -> null,
+                defaultApiUrl
+        );
         while (apiBaseUrl.endsWith("/")) {
             apiBaseUrl = apiBaseUrl.substring(0, apiBaseUrl.length() - 1);
         }

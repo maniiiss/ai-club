@@ -79,8 +79,27 @@ public class TestPlanAutomationPersistenceService {
     public void markQueued(Long planId, Long taskId, String summary) {
         TestPlanEntity plan = requirePlan(planId);
         plan.setLastAutomationTaskId(taskId);
+        // 业务意图：新一次提交还没拿到 runId，先置空旧引用，等 markRunning 时再回填，
+        // 避免页面误以为"还在跑的是上一次的 run"。
         plan.setLastAutomationRunId(null);
         plan.setLastAutomationStatus("PENDING");
+        plan.setLastAutomationSummary(limit(summary, 1000));
+        plan.setLastAutomationAt(LocalDateTime.now());
+        testPlanRepository.save(plan);
+    }
+
+    /**
+     * 自动化任务真正开始执行时回写 RUNNING 与当前 runId，
+     * 让前端在调度落地与终态之间也能感知到"执行中"，而不是从 PENDING 直接跳到 SUCCESS/FAILED。
+     */
+    @Transactional
+    public void markRunning(Long planId, Long taskId, Long runId, String summary) {
+        TestPlanEntity plan = requirePlan(planId);
+        plan.setLastAutomationTaskId(taskId);
+        if (runId != null) {
+            plan.setLastAutomationRunId(runId);
+        }
+        plan.setLastAutomationStatus("RUNNING");
         plan.setLastAutomationSummary(limit(summary, 1000));
         plan.setLastAutomationAt(LocalDateTime.now());
         testPlanRepository.save(plan);
@@ -107,10 +126,14 @@ public class TestPlanAutomationPersistenceService {
         testPlanRepository.save(plan);
     }
 
+    /**
+     * 业务意图：状态机里同时承载 PENDING/RUNNING 中间态和 SUCCESS/FAILED/CANCELED/IDLE 终态，
+     * 任意未识别值降级为 FAILED，避免数据库里出现脏值。
+     */
     private String normalizeStatus(String value) {
         String normalized = defaultString(value).trim().toUpperCase();
         return switch (normalized) {
-            case "SUCCESS", "FAILED", "PENDING", "IDLE" -> normalized;
+            case "SUCCESS", "FAILED", "PENDING", "RUNNING", "CANCELED", "IDLE" -> normalized;
             default -> "FAILED";
         };
     }

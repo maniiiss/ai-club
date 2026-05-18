@@ -73,7 +73,7 @@ public class GiteeWorkItemSyncService {
     private final KnowledgeGraphService knowledgeGraphService;
     private final PlatformEnvVarResolver platformEnvVarResolver;
     private final SecureRandom workItemCodeRandom = new SecureRandom();
-    @org.springframework.beans.factory.annotation.Value("${platform.gitee.default-api-url:https://api.gitee.com/enterprises}")
+    @org.springframework.beans.factory.annotation.Value("${platform.gitee.default-api-url:}")
     private String defaultApiUrl = "";
 
     public GiteeWorkItemSyncService(IterationRepository iterationRepository,
@@ -432,15 +432,18 @@ public class GiteeWorkItemSyncService {
      * 项目级 Gitee 绑定已经切到全局企业配置优先，工作项同步也必须走同一套运行时取值规则。
      */
     private String resolveApiBaseUrl(ProjectGiteeBindingEntity projectBinding) {
-        boolean useConfiguredApiBaseUrl = hasText(defaultApiUrl);
-        String resolved = useConfiguredApiBaseUrl ? defaultApiUrl.trim() : projectBinding.getApiBaseUrl();
+        String resolved = platformEnvVarResolver.resolveOrDefault(
+                PlatformEnvVarRegistry.KEY_GITEE_DEFAULT_API_URL,
+                () -> projectBinding.getApiBaseUrl(),
+                defaultApiUrl
+        );
         if (!hasText(resolved)) {
             throw new IllegalStateException("当前项目的 Gitee 绑定缺少 API 地址配置");
         }
         while (resolved.endsWith("/")) {
             resolved = resolved.substring(0, resolved.length() - 1);
         }
-        return useConfiguredApiBaseUrl ? giteeApiService.normalizeEnterpriseApiBaseUrl(resolved) : resolved;
+        return giteeApiService.normalizeEnterpriseApiBaseUrl(resolved);
     }
 
     private Long resolveEnterpriseId(ProjectGiteeBindingEntity projectBinding) {

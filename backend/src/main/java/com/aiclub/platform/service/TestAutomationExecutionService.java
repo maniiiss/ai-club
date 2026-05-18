@@ -110,9 +110,21 @@ public class TestAutomationExecutionService {
         String generatedBranch = buildGeneratedBranch(plan.getId(), executionRun.getId());
         String mergeRequestUrl = null;
         FailureContext failureContext = null;
+        boolean canceled = false;
         String reportSummary = "";
         JsonNode testResultPayload = objectMapper.createObjectNode();
         int totalSteps = Math.max(workflowPlan.steps().size(), 1);
+
+        // 业务意图：任务真正开跑时立刻把测试计划的最近状态从 PENDING 推进到 RUNNING，
+        // 让用户在自动化对话框上能看到"执行中"，而不是停留在"待执行"假象。
+        automationPersistenceService.markRunning(
+                plan.getId(),
+                executionTask.getId(),
+                executionRun.getId(),
+                MODE_RUN_ONLY.equalsIgnoreCase(payload.mode())
+                        ? "正在执行已接入的自动化脚本"
+                        : "正在生成并验证自动化脚本"
+        );
 
         ExecutionWorkflowService.ExecutionStepPlan planStep = workflowPlan.steps().get(0);
         String planMarkdown = buildAutomationPlanMarkdown(plan, binding, profile, payload.mode(), payload.targetBranch(), automatedCases);
@@ -171,6 +183,11 @@ public class TestAutomationExecutionService {
                 if (!"SUCCESS".equalsIgnoreCase(testResult.status())) {
                     failureContext = markFailure(executionTask, executionRun, createdTestStep, totalSteps, new IllegalStateException(testResult.summary()));
                 }
+            } catch (AutomationCanceledException cancelException) {
+                // 业务意图：runner 主动汇报取消时，要把测试步骤、执行 run 都收敛到 CANCELED 终态，
+                // 这样上层调度可以据此走 finishCanceled 路径，避免回写"失败"。
+                markCanceled(executionTask, executionRun, createdTestStep, totalSteps, cancelException.getMessage());
+                canceled = true;
             } catch (RuntimeException exception) {
                 failureContext = markFailure(executionTask, executionRun, createdTestStep, totalSteps, exception);
             }
@@ -178,20 +195,32 @@ public class TestAutomationExecutionService {
 
         ExecutionWorkflowService.ExecutionStepPlan reportStep = workflowPlan.steps().get(3);
         ExecutionStepEntity createdReportStep = beginStep(executionTask, executionRun, reportStep, totalSteps, "汇总自动化结果并回写测试计划");
-        try {
-            String reportMarkdown = buildReportMarkdown(plan, payload.mode(), payload.targetBranch(), generatedBranch, mergeRequestUrl, testResultPayload, failureContext);
-            reportSummary = extractReportSummary(reportMarkdown);
-            completeStep(executionTask, executionRun, reportStep, totalSteps, createdReportStep, reportMarkdown, "自动化执行报告已生成");
-            artifacts.add(saveArtifact(executionTask, executionRun, createdReportStep, REPORT_ARTIFACT_TYPE, REPORT_ARTIFACT_TITLE, reportMarkdown));
-        } catch (RuntimeException exception) {
-            failureContext = markFailure(executionTask, executionRun, createdReportStep, totalSteps, exception);
-            reportSummary = resolveMessage(exception, "自动化执行报告生成失败");
+        if (canceled) {
+            // 业务意图：取消优先于失败和成功；REPORT 直接收敛为 SKIPPED，
+            // 不再生成完整报告，避免取消语义被覆盖。
+            String canceledSummary = "执行任务已取消，已跳过报告生成";
+            markSkipped(executionTask, executionRun, createdReportStep, totalSteps, canceledSummary);
+            reportSummary = canceledSummary;
+        } else {
+            try {
+                String reportMarkdown = buildReportMarkdown(plan, payload.mode(), payload.targetBranch(), generatedBranch, mergeRequestUrl, testResultPayload, failureContext);
+                reportSummary = extractReportSummary(reportMarkdown);
+                completeStep(executionTask, executionRun, reportStep, totalSteps, createdReportStep, reportMarkdown, "自动化执行报告已生成");
+                artifacts.add(saveArtifact(executionTask, executionRun, createdReportStep, REPORT_ARTIFACT_TYPE, REPORT_ARTIFACT_TITLE, reportMarkdown));
+            } catch (RuntimeException exception) {
+                failureContext = markFailure(executionTask, executionRun, createdReportStep, totalSteps, exception);
+                reportSummary = resolveMessage(exception, "自动化执行报告生成失败");
+            }
         }
 
         executionRun.setOutputSummary(reportSummary);
         executionRun.setUpdatedAt(LocalDateTime.now());
         executionRunRepository.save(executionRun);
 
+        if (canceled) {
+            automationPersistenceService.markFinished(plan.getId(), executionTask.getId(), executionRun.getId(), "CANCELED", reportSummary, mergeRequestUrl);
+            return new TestAutomationExecutionResult(reportSummary, artifacts, true);
+        }
         if (failureContext != null) {
             automationPersistenceService.markFinished(plan.getId(), executionTask.getId(), executionRun.getId(), "FAILED", reportSummary, mergeRequestUrl);
             throw new TestAutomationExecutionStepException(failureContext.failedStep(), failureContext.exception(), artifacts, reportSummary);
@@ -226,9 +255,25 @@ public class TestAutomationExecutionService {
                 "test: add automation for plan #" + plan.getId(),
                 actions
         );
+
+        // 业务意图：脚本提交成功后立刻创建 MR，让用户可以直接在页面上看到"提交 MR"按钮和链接。
+        // MR 标题包含测试计划 ID，便于后续追踪和关联。
+        String mrTitle = "test: automation for plan #" + plan.getId();
+        String mrDescription = "自动化测试脚本生成 MR\n\n- 测试计划：" + defaultString(plan.getName()).trim() + "\n- 生成分支：" + generatedBranch;
+        GitlabApiService.GitlabCreatedMergeRequest mergeRequest = gitlabApiService.createMergeRequest(
+                binding.getApiBaseUrl(),
+                token,
+                binding.getGitlabProjectRef(),
+                generatedBranch,
+                payload.targetBranch(),
+                mrTitle,
+                mrDescription
+        );
+        String mergeRequestUrl = mergeRequest.webUrl();
+
         return new ImplementResult(
-                buildImplementMarkdown(plan, binding, payload.targetBranch(), generatedBranch, commit, scriptBundle),
-                null
+                buildImplementMarkdown(plan, binding, payload.targetBranch(), generatedBranch, commit, scriptBundle, mergeRequestUrl),
+                mergeRequestUrl
         );
     }
 
@@ -264,7 +309,9 @@ public class TestAutomationExecutionService {
         );
         ExecutionStepEntity completedStep = executionAsyncSessionService.awaitTerminalStep(step.getId(), executionAsyncSessionService.maxRuntimeSeconds(step.getStepCode()));
         if ("CANCELED".equalsIgnoreCase(completedStep.getStatus())) {
-            throw new IllegalStateException("自动化执行已取消");
+            // 业务意图：runner 已经主动收敛到 CANCELED，这里改成专用异常往上抛，
+            // 上层据此把测试计划状态机推向"已取消"，而不是误报失败。
+            throw new AutomationCanceledException("自动化执行已取消");
         }
         TestExecutionResult result = parseTestExecutionResult(defaultString(completedStep.getOutputSnapshot()), prettyJson(testPlanPayload));
         completedStep.setLatestMessage(limit(result.summary(), 1000));
@@ -364,37 +411,30 @@ public class TestAutomationExecutionService {
                                           String targetBranch,
                                           String generatedBranch,
                                           GitlabApiService.GitlabCreatedCommit commit,
-                                          TestAutomationScriptTemplateService.GeneratedScriptBundle scriptBundle) {
-        return """
-                # 自动化脚本生成结果
+                                          TestAutomationScriptTemplateService.GeneratedScriptBundle scriptBundle,
+                                          String mergeRequestUrl) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("# 自动化脚本生成结果\n\n")
+                .append("- 测试计划：").append(defaultString(plan.getName()).trim()).append('\n')
+                .append("- 仓库：").append(resolveBindingDisplayName(binding)).append('\n')
+                .append("- 目标分支：").append(targetBranch).append('\n')
+                .append("- 生成分支：").append(generatedBranch).append('\n')
+                .append("- Commit：").append(defaultString(commit.shortId()).trim()).append('\n');
 
-                - 测试计划：%s
-                - 仓库：%s
-                - 目标分支：%s
-                - 生成分支：%s
-                - Commit：%s
+        if (hasText(mergeRequestUrl)) {
+            builder.append("- Merge Request：").append(mergeRequestUrl.trim()).append('\n');
+        }
 
-                ## 生成文件
+        builder.append("\n## 生成文件\n\n")
+                .append("- ").append(scriptBundle.configPath()).append('\n')
+                .append("- ").append(scriptBundle.specPath()).append('\n')
+                .append("- ").append(scriptBundle.manifestPath()).append('\n')
+                .append("\n## 说明\n\n")
+                .append("- 本次采用平台模板生成 Playwright 自动化资产。\n")
+                .append("- 自动化脚本已提交到生成分支，并创建了 Merge Request。\n")
+                .append("- 后续如宿主环境接入 Playwright MCP，可在失败修复阶段增强页面理解与定位能力。\n");
 
-                - %s
-                - %s
-                - %s
-
-                ## 说明
-
-                - 本次采用平台模板生成 Playwright 自动化资产。
-                - 当前仅提交生成分支，不自动创建 Merge Request；如需提 MR，请通过页面右上角入口手动提交。
-                - 后续如宿主环境接入 Playwright MCP，可在失败修复阶段增强页面理解与定位能力。
-                """.formatted(
-                defaultString(plan.getName()).trim(),
-                resolveBindingDisplayName(binding),
-                targetBranch,
-                generatedBranch,
-                defaultString(commit.shortId()).trim(),
-                scriptBundle.configPath(),
-                scriptBundle.specPath(),
-                scriptBundle.manifestPath()
-        ).trim();
+        return builder.toString().trim();
     }
 
     private String buildReportMarkdown(TestPlanEntity plan,
@@ -599,6 +639,32 @@ public class TestAutomationExecutionService {
         return new FailureContext(step, exception);
     }
 
+    /**
+     * 业务意图：自动化场景里 runner 主动取消时，把当前步骤、run、task 摘要统一收敛到 CANCELED 文案，
+     * 这样上层调度可以基于 result.canceled() 走 finishCanceled，避免被错误标记为 FAILED。
+     */
+    private void markCanceled(ExecutionTaskEntity executionTask,
+                              ExecutionRunEntity executionRun,
+                              ExecutionStepEntity step,
+                              int totalSteps,
+                              String reason) {
+        String summary = hasText(reason) ? reason.trim() : "自动化执行已取消";
+        step.setStatus("CANCELED");
+        step.setLatestMessage(limit(summary, 1000));
+        step.setProgressPercent(Math.max(step.getProgressPercent(), 1));
+        step.setFinishedAt(LocalDateTime.now());
+        executionStepRepository.save(step);
+
+        executionRun.setProgressPercent(Math.max((step.getStepNo() - 1) * 100 / totalSteps, executionRun.getProgressPercent()));
+        executionRun.setUpdatedAt(LocalDateTime.now());
+        executionRunRepository.save(executionRun);
+
+        executionTask.setLatestSummary(limit(summary, 1000));
+        executionTaskRepository.save(executionTask);
+        executionEventService.recordSummary(executionTask, executionRun, step, summary);
+        executionEventService.recordStepFinished(executionTask, executionRun, step, summary);
+    }
+
     private ExecutionArtifactEntity saveArtifact(ExecutionTaskEntity executionTask,
                                                  ExecutionRunEntity executionRun,
                                                  ExecutionStepEntity step,
@@ -738,6 +804,17 @@ public class TestAutomationExecutionService {
     }
 
     private record FailureContext(ExecutionStepEntity failedStep, RuntimeException exception) {
+    }
+
+    /**
+     * 业务意图：runner 主动取消的语义需要与"步骤异常失败"区分，
+     * 通过专用异常类型把取消信号一路抛到顶层，避免被通用 RuntimeException 收敛成失败。
+     */
+    private static class AutomationCanceledException extends RuntimeException {
+
+        AutomationCanceledException(String message) {
+            super(message);
+        }
     }
 
     private record ImplementResult(String markdown, String mergeRequestUrl) {

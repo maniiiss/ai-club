@@ -33,6 +33,13 @@ import java.util.Set;
 public class YaadeUserSyncService {
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    /**
+     * Yaade 管理端 resetpassword 会把用户密码重置为服务端自己的 YAADE_DEFAULT_PASSWORD。
+     * 平台随后还会用 PLATFORM_YAADE_DEFAULT_USER_PASSWORD 去登录并旋转随机密码，
+     * 因此两边配置必须保持一致，否则嵌入态会在代登阶段持续报 500。
+     */
+    private static final String DEFAULT_PASSWORD_MISMATCH_MESSAGE =
+            "Yaade 受管用户密码修复失败：请保持 PLATFORM_YAADE_DEFAULT_USER_PASSWORD 与 Yaade 服务端 YAADE_DEFAULT_PASSWORD 一致";
 
     private final UserRepository userRepository;
     private final ProjectRepository projectRepository;
@@ -87,7 +94,7 @@ public class YaadeUserSyncService {
         } catch (RuntimeException ex) {
             YaadeClientService.YaadeSession adminSession = yaadeClientService.loginAdmin();
             yaadeClientService.resetUserPassword(adminSession, binding.getYaadeUserId());
-            String rotatedPassword = rotateManagedPassword(binding.getYaadeUsername(), yaadeProperties.getDefaultUserPassword());
+            String rotatedPassword = rotateManagedPasswordAfterReset(binding.getYaadeUsername(), yaadeProperties.getDefaultUserPassword(), ex);
             binding.setPasswordCiphertext(tokenCipherService.encrypt(rotatedPassword));
             binding.setLastSyncedAt(LocalDateTime.now());
             userBindingRepository.save(binding);
@@ -137,7 +144,7 @@ public class YaadeUserSyncService {
         String password = binding == null ? null : tokenCipherService.decrypt(binding.getPasswordCiphertext());
         if (password == null || password.isBlank()) {
             yaadeClientService.resetUserPassword(adminSession, remoteUser.id());
-            password = rotateManagedPassword(managedUsername, yaadeProperties.getDefaultUserPassword());
+            password = rotateManagedPasswordAfterReset(managedUsername, yaadeProperties.getDefaultUserPassword(), null);
         }
 
         YaadeClientService.YaadeSession userSession;
@@ -145,7 +152,7 @@ public class YaadeUserSyncService {
             userSession = yaadeClientService.login(managedUsername, password);
         } catch (RuntimeException ex) {
             yaadeClientService.resetUserPassword(adminSession, remoteUser.id());
-            password = rotateManagedPassword(managedUsername, yaadeProperties.getDefaultUserPassword());
+            password = rotateManagedPasswordAfterReset(managedUsername, yaadeProperties.getDefaultUserPassword(), ex);
             userSession = yaadeClientService.login(managedUsername, password);
         }
 
@@ -199,6 +206,22 @@ public class YaadeUserSyncService {
         YaadeClientService.YaadeSession session = yaadeClientService.login(username, currentPassword);
         yaadeClientService.changeOwnPassword(session, currentPassword, nextPassword);
         return nextPassword;
+    }
+
+    /**
+     * 只有在 Yaade 管理员已执行 resetpassword 之后才会调用这里。
+     * 如果此时仍无法用默认密码登录，基本可以判定为平台侧默认密码与 Yaade 服务端默认密码不一致。
+     */
+    private String rotateManagedPasswordAfterReset(String username, String currentPassword, RuntimeException cause) {
+        try {
+            return rotateManagedPassword(username, currentPassword);
+        } catch (RuntimeException exception) {
+            IllegalStateException mismatch = new IllegalStateException(DEFAULT_PASSWORD_MISMATCH_MESSAGE, exception);
+            if (cause != null) {
+                mismatch.addSuppressed(cause);
+            }
+            throw mismatch;
+        }
     }
 
     private String randomPassword() {

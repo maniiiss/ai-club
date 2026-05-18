@@ -99,6 +99,28 @@ public class PlatformEnvVarResolver {
     }
 
     /**
+     * 解析允许为空的环境变量，常用于 API Key 这类本地开发可留空、生产环境再补齐的集成参数。
+     */
+    public String resolveOptional(String envKey, Supplier<String> legacyFallbackSupplier) {
+        try {
+            return resolve(envKey, legacyFallbackSupplier).value();
+        } catch (IllegalStateException exception) {
+            return "";
+        }
+    }
+
+    /**
+     * 解析带业务默认值的环境变量，后台未配置且 Spring 配置为空时返回调用方显式默认值。
+     */
+    public String resolveOrDefault(String envKey, Supplier<String> legacyFallbackSupplier, String defaultValue) {
+        try {
+            return resolve(envKey, legacyFallbackSupplier).value();
+        } catch (IllegalStateException exception) {
+            return defaultString(defaultValue, "");
+        }
+    }
+
+    /**
      * 解析一条待保存或已保存配置本身的实际值。
      * 管理后台保存时会调用这里做即时校验，避免脏配置进入运行时。
      */
@@ -213,10 +235,18 @@ public class PlatformEnvVarResolver {
         if (normalized == null) {
             return null;
         }
+        if (isPrReviewOaCredential(definition.envKey())) {
+            return null;
+        }
         if (PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID.equals(definition.envKey()) && "0".equals(normalized)) {
             return null;
         }
         return normalized;
+    }
+
+    private boolean isPrReviewOaCredential(String envKey) {
+        return PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_USER_ID.equals(envKey)
+                || PlatformEnvVarRegistry.KEY_PR_REVIEW_OA_TOKEN.equals(envKey);
     }
 
     private String trimToNull(String value) {

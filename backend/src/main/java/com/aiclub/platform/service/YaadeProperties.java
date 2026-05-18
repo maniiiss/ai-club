@@ -1,6 +1,7 @@
 package com.aiclub.platform.service;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,43 +16,72 @@ public class YaadeProperties {
     private final String defaultUserPassword;
     private final String publicCollectionName;
     private final int proxySessionTtlMinutes;
+    private final PlatformEnvVarResolver platformEnvVarResolver;
 
+    @Autowired
     public YaadeProperties(@Value("${platform.yaade.base-url:http://localhost:9339/api/yaade/proxy}") String baseUrl,
                            @Value("${platform.yaade.admin-username:admin}") String adminUsername,
                            @Value("${platform.yaade.admin-password:password}") String adminPassword,
                            @Value("${platform.yaade.default-user-password:password}") String defaultUserPassword,
                            @Value("${platform.yaade.public-collection-name:未关联项目}") String publicCollectionName,
-                           @Value("${platform.yaade.proxy-session-ttl-minutes:120}") int proxySessionTtlMinutes) {
-        this.baseUrl = trimTrailingSlash(baseUrl);
+                           @Value("${platform.yaade.proxy-session-ttl-minutes:120}") String proxySessionTtlMinutes,
+                           PlatformEnvVarResolver platformEnvVarResolver) {
+        this(baseUrl, adminUsername, adminPassword, defaultUserPassword, publicCollectionName, proxySessionTtlMinutes, platformEnvVarResolver, true);
+    }
+
+    public YaadeProperties(String baseUrl,
+                           String adminUsername,
+                           String adminPassword,
+                           String defaultUserPassword,
+                           String publicCollectionName,
+                           int proxySessionTtlMinutes) {
+        this(baseUrl, adminUsername, adminPassword, defaultUserPassword, publicCollectionName, String.valueOf(proxySessionTtlMinutes), null, true);
+    }
+
+    private YaadeProperties(String baseUrl,
+                            String adminUsername,
+                            String adminPassword,
+                            String defaultUserPassword,
+                            String publicCollectionName,
+                            String proxySessionTtlMinutes,
+                            PlatformEnvVarResolver platformEnvVarResolver,
+                            boolean normalizedConstructor) {
+        this.baseUrl = trimTrailingSlash(hasText(baseUrl) ? baseUrl : "http://localhost:9339/api/yaade/proxy");
         this.adminUsername = hasText(adminUsername) ? adminUsername.trim() : "admin";
         this.adminPassword = adminPassword == null ? "" : adminPassword.trim();
         this.defaultUserPassword = defaultUserPassword == null ? "" : defaultUserPassword.trim();
         this.publicCollectionName = hasText(publicCollectionName) ? publicCollectionName.trim() : "未关联项目";
-        this.proxySessionTtlMinutes = Math.max(10, Math.min(proxySessionTtlMinutes, 720));
+        this.proxySessionTtlMinutes = normalizeProxySessionTtlMinutes(proxySessionTtlMinutes);
+        this.platformEnvVarResolver = platformEnvVarResolver;
     }
 
     public String getBaseUrl() {
-        return baseUrl;
+        return trimTrailingSlash(resolveOrDefault(PlatformEnvVarRegistry.KEY_YAADE_BASE_URL, baseUrl));
     }
 
     public String getAdminUsername() {
-        return adminUsername;
+        return resolveOrDefault(PlatformEnvVarRegistry.KEY_YAADE_ADMIN_USERNAME, adminUsername);
     }
 
     public String getAdminPassword() {
-        return adminPassword;
+        return resolveOrDefault(PlatformEnvVarRegistry.KEY_YAADE_ADMIN_PASSWORD, adminPassword);
     }
 
     public String getDefaultUserPassword() {
-        return defaultUserPassword;
+        return defaultUserPassword == null ? "" : defaultUserPassword.trim();
     }
 
     public String getPublicCollectionName() {
-        return publicCollectionName;
+        return resolveOrDefault(PlatformEnvVarRegistry.KEY_YAADE_PUBLIC_COLLECTION_NAME, publicCollectionName);
     }
 
     public int getProxySessionTtlMinutes() {
-        return proxySessionTtlMinutes;
+        String resolved = resolveOrDefault(PlatformEnvVarRegistry.KEY_YAADE_PROXY_SESSION_TTL_MINUTES, String.valueOf(proxySessionTtlMinutes));
+        try {
+            return Math.max(10, Math.min(Integer.parseInt(resolved), 720));
+        } catch (NumberFormatException exception) {
+            return proxySessionTtlMinutes;
+        }
     }
 
     /**
@@ -85,5 +115,23 @@ public class YaadeProperties {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private String resolveOrDefault(String envKey, String fallback) {
+        if (platformEnvVarResolver == null) {
+            return fallback == null ? "" : fallback.trim();
+        }
+        return platformEnvVarResolver.resolveOrDefault(envKey, () -> fallback, fallback);
+    }
+
+    private int normalizeProxySessionTtlMinutes(String value) {
+        if (!hasText(value)) {
+            return 120;
+        }
+        try {
+            return Math.max(10, Math.min(Integer.parseInt(value.trim()), 720));
+        } catch (NumberFormatException exception) {
+            return 120;
+        }
     }
 }

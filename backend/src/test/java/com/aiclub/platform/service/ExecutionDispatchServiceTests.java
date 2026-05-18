@@ -84,6 +84,9 @@ class ExecutionDispatchServiceTests {
     @Mock
     private ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
 
+    @Mock
+    private TestPlanAutomationPersistenceService testPlanAutomationPersistenceService;
+
     private ExecutionDispatchService executionDispatchService;
 
     @BeforeEach
@@ -104,6 +107,7 @@ class ExecutionDispatchServiceTests {
                 executionEventService,
                 executionAsyncSessionService,
                 executionWorkspaceCleanupService,
+                testPlanAutomationPersistenceService,
                 Runnable::run
         );
     }
@@ -1185,6 +1189,88 @@ class ExecutionDispatchServiceTests {
                 eq("/tasks/99"),
                 eq("EXECUTION_COMPLETED"),
                 eq(99L)
+        );
+    }
+
+    /**
+     * 业务意图：测试计划自动化任务在终态收口时被取消，调度层必须把测试计划的 lastAutomationStatus 同步收敛为 CANCELED，
+     * 避免页面上一直停留在 PENDING/RUNNING 假象。
+     */
+    @Test
+    void shouldWriteBackTestPlanCanceledWhenAutomationTaskCanceled() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION);
+        executionTask.setSourceType("TEST_PLAN_AUTOMATION");
+        executionTask.setSourceId(501L);
+
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(720L);
+        executionRun.setExecutionTask(executionTask);
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(1101L);
+            return artifact;
+        });
+
+        executionDispatchService.finishCanceled(executionTask, executionRun, new java.util.ArrayList<>());
+
+        verify(testPlanAutomationPersistenceService).markFinished(
+                eq(501L),
+                eq(99L),
+                eq(720L),
+                eq("CANCELED"),
+                eq("执行任务已取消，未继续后续步骤"),
+                eq(null)
+        );
+    }
+
+    /**
+     * 业务意图：自动化任务在通用失败收口路径上同样需要把测试计划状态推进为 FAILED，
+     * 这样 TestAutomationExecutionService 内部的 markFinished 与调度层的兜底回写形成幂等覆盖。
+     */
+    @Test
+    void shouldWriteBackTestPlanFailedWhenAutomationTaskFails() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_TEST_AUTOMATION);
+        executionTask.setSourceType("TEST_PLAN_AUTOMATION");
+        executionTask.setSourceId(502L);
+
+        ExecutionRunEntity executionRun = new ExecutionRunEntity();
+        executionRun.setId(721L);
+        executionRun.setExecutionTask(executionTask);
+
+        ExecutionStepEntity failedStep = new ExecutionStepEntity();
+        failedStep.setId(8101L);
+        failedStep.setRun(executionRun);
+        failedStep.setStepName("执行自动化");
+
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionStepRepository.save(any(ExecutionStepEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(1102L);
+            return artifact;
+        });
+
+        executionDispatchService.finishFailed(
+                executionTask,
+                executionRun,
+                failedStep,
+                new IllegalStateException("Playwright 启动失败"),
+                new java.util.ArrayList<>()
+        );
+
+        verify(testPlanAutomationPersistenceService).markFinished(
+                eq(502L),
+                eq(99L),
+                eq(721L),
+                eq("FAILED"),
+                eq("Playwright 启动失败"),
+                eq(null)
         );
     }
 

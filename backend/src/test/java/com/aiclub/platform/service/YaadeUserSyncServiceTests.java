@@ -24,6 +24,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -137,5 +138,43 @@ class YaadeUserSyncServiceTests {
         verify(yaadeClientService).updateUserGroups(eq(adminSession), eq(101L), userDataCaptor.capture());
         assertThat(userDataCaptor.getValue().withArray("groups")).extracting(node -> node.asText())
                 .containsExactly("aiclub-api-public", "aiclub-project-7");
+    }
+
+    @Test
+    void shouldReportClearMessageWhenPlatformDefaultPasswordDiffersFromYaadeResetPassword() {
+        UserEntity user = new UserEntity();
+        user.setId(18L);
+        when(userRepository.findWithDetailsById(18L)).thenReturn(Optional.of(user));
+        var scope = new ProjectDataPermissionService.ProjectDataScope(
+                18L,
+                false,
+                new ProjectDataPermissionService.DataPermissionPolicy(
+                        DataPermissionScopeType.ALL,
+                        DataPermissionScopeType.ALL,
+                        DataPermissionScopeType.ALL,
+                        DataPermissionScopeType.ALL
+                )
+        );
+        when(projectDataPermissionService.requireCurrentScope()).thenReturn(scope);
+        when(projectRepository.findAll(any(org.springframework.data.domain.Sort.class))).thenReturn(List.of());
+
+        YaadeClientService.YaadeSession adminSession = new YaadeClientService.YaadeSession("admin-cookie");
+        when(yaadeClientService.loginAdmin()).thenReturn(adminSession);
+        ObjectMapper objectMapper = new ObjectMapper();
+        var remoteUser = new YaadeClientService.YaadeRemoteUser(
+                102L,
+                "aiclub-18",
+                objectMapper.createObjectNode().put("username", "aiclub-18"),
+                List.of("aiclub-api-public")
+        );
+        when(yaadeClientService.listUsers(adminSession)).thenReturn(List.of(remoteUser));
+        when(userBindingRepository.findByUserId(18L)).thenReturn(Optional.empty());
+        when(yaadeClientService.login("aiclub-18", "default-password"))
+                .thenThrow(new IllegalStateException("Yaade 登录失败，状态码: 500"));
+
+        assertThatThrownBy(() -> yaadeUserSyncService.loginCurrentUserWithSyncedGroups(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("PLATFORM_YAADE_DEFAULT_USER_PASSWORD")
+                .hasMessageContaining("YAADE_DEFAULT_PASSWORD");
     }
 }

@@ -72,43 +72,45 @@ platform:
     serve-public-base-url: ${PLATFORM_GITNEXUS_SERVE_PUBLIC_BASE_URL:}
     serve-public-port: ${PLATFORM_GITNEXUS_SERVE_PUBLIC_PORT:4747}
   gitlab:
-    default-api-url: http://192.168.110.138:30080/api/v4
+    default-api-url: ${PLATFORM_GITLAB_DEFAULT_API_URL:}
     oauth:
       client-id: ${PLATFORM_GITLAB_OAUTH_CLIENT_ID:}
       client-secret: ${PLATFORM_GITLAB_OAUTH_CLIENT_SECRET:}
-      redirect-uri: ${PLATFORM_GITLAB_OAUTH_REDIRECT_URI:http://localhost:5173/profile/gitlab-callback}
+      redirect-uri: ${PLATFORM_GITLAB_OAUTH_REDIRECT_URI:}
       state-expire-minutes: ${PLATFORM_GITLAB_OAUTH_STATE_EXPIRE_MINUTES:10}
   pr-review:
-    oa-base-url: ${PLATFORM_PR_REVIEW_OA_BASE_URL:http://192.168.110.251:8082}
-    default-dev-group-name: ${PLATFORM_PR_REVIEW_DEFAULT_DEV_GROUP_NAME:生态遥感事业部-产品中心}
+    oa-base-url: ${PLATFORM_PR_REVIEW_OA_BASE_URL:}
+    default-dev-group-name: ${PLATFORM_PR_REVIEW_DEFAULT_DEV_GROUP_NAME:}
+    oa-user-id: ${PLATFORM_PR_REVIEW_OA_USER_ID:}
+    oa-token: ${PLATFORM_PR_REVIEW_OA_TOKEN:}
   gitee:
-    default-api-url: ${PLATFORM_GITEE_DEFAULT_API_URL:https://api.gitee.com/enterprises}
+    default-api-url: ${PLATFORM_GITEE_DEFAULT_API_URL:}
     binding:
-      enterprise-id: ${PLATFORM_GITEE_BINDING_ENTERPRISE_ID:0}
+      enterprise-id: ${PLATFORM_GITEE_BINDING_ENTERPRISE_ID:}
       access-token: ${PLATFORM_GITEE_BINDING_ACCESS_TOKEN:}
     test-push:
-      test-plan-assignee-id: ${PLATFORM_GITEE_TEST_PUSH_TEST_PLAN_ASSIGNEE_ID:9917662}
-      test-case-module-id: ${PLATFORM_GITEE_TEST_PUSH_TEST_CASE_MODULE_ID:229413}
-      test-case-type: ${PLATFORM_GITEE_TEST_PUSH_TEST_CASE_TYPE:2}
+      test-plan-assignee-id: ${PLATFORM_GITEE_TEST_PUSH_TEST_PLAN_ASSIGNEE_ID:}
+      test-case-module-id: ${PLATFORM_GITEE_TEST_PUSH_TEST_CASE_MODULE_ID:}
+      test-case-type: ${PLATFORM_GITEE_TEST_PUSH_TEST_CASE_TYPE:}
   hermes:
-    base-url: ${PLATFORM_HERMES_BASE_URL:http://localhost:18080/v1}
+    base-url: ${PLATFORM_HERMES_BASE_URL:}
     api-key: ${PLATFORM_HERMES_API_KEY:}
-    model: ${PLATFORM_HERMES_MODEL:hermes-agent}
-    timeout-seconds: ${PLATFORM_HERMES_TIMEOUT_SECONDS:180}
+    model: ${PLATFORM_HERMES_MODEL:}
+    timeout-seconds: ${PLATFORM_HERMES_TIMEOUT_SECONDS:}
     session-prefix: ${PLATFORM_HERMES_SESSION_PREFIX:ai-club:hermes}
     max-context-messages: ${PLATFORM_HERMES_MAX_CONTEXT_MESSAGES:6}
     grounding-ttl-seconds: ${PLATFORM_HERMES_GROUNDING_TTL_SECONDS:86400}
     speech:
-      base-url: ${PLATFORM_HERMES_SPEECH_BASE_URL:https://api.openai.com/v1}
+      base-url: ${PLATFORM_HERMES_SPEECH_BASE_URL:}
       api-key: ${PLATFORM_HERMES_SPEECH_API_KEY:}
-      model: ${PLATFORM_HERMES_SPEECH_MODEL:gpt-4o-mini-transcribe}
-      timeout-seconds: ${PLATFORM_HERMES_SPEECH_TIMEOUT_SECONDS:60}
+      model: ${PLATFORM_HERMES_SPEECH_MODEL:}
+      timeout-seconds: ${PLATFORM_HERMES_SPEECH_TIMEOUT_SECONDS:}
   hindsight:
-    base-url: ${HINDSIGHT_API_URL:http://localhost:18888}
+    base-url: ${HINDSIGHT_API_URL:}
     api-key: ${HINDSIGHT_API_KEY:}
-    bank-prefix: ${HERMES_HINDSIGHT_BANK_ID:git-ai-club}
-    recall-budget: ${HERMES_HINDSIGHT_BUDGET:mid}
-    timeout-seconds: ${PLATFORM_HINDSIGHT_TIMEOUT_SECONDS:30}
+    bank-prefix: ${HERMES_HINDSIGHT_BANK_ID:}
+    recall-budget: ${HERMES_HINDSIGHT_BUDGET:}
+    timeout-seconds: ${PLATFORM_HINDSIGHT_TIMEOUT_SECONDS:}
     memory-fact:
       project-bank-template: ${PLATFORM_HINDSIGHT_MEMORY_FACT_PROJECT_BANK_TEMPLATE:}
       shared-bank-id: ${PLATFORM_HINDSIGHT_MEMORY_FACT_SHARED_BANK_ID:}
@@ -120,12 +122,12 @@ platform:
       database-username: ${PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_USERNAME:${DB_USERNAME:aiclub}}
       database-password: ${PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_PASSWORD:${DB_PASSWORD:aiclub123}}
   yaade:
-    base-url: ${PLATFORM_YAADE_BASE_URL:http://localhost:9339/api/yaade/proxy}
-    admin-username: ${PLATFORM_YAADE_ADMIN_USERNAME:admin}
-    admin-password: ${PLATFORM_YAADE_ADMIN_PASSWORD:password}
-    default-user-password: ${PLATFORM_YAADE_DEFAULT_USER_PASSWORD:password}
-    public-collection-name: ${PLATFORM_YAADE_PUBLIC_COLLECTION_NAME:未关联项目}
-    proxy-session-ttl-minutes: ${PLATFORM_YAADE_PROXY_SESSION_TTL_MINUTES:120}
+    base-url: ${PLATFORM_YAADE_BASE_URL:}
+    admin-username: ${PLATFORM_YAADE_ADMIN_USERNAME:}
+    admin-password: ${PLATFORM_YAADE_ADMIN_PASSWORD:}
+    default-user-password: ${PLATFORM_YAADE_DEFAULT_USER_PASSWORD:}
+    public-collection-name: ${PLATFORM_YAADE_PUBLIC_COLLECTION_NAME:}
+    proxy-session-ttl-minutes: ${PLATFORM_YAADE_PROXY_SESSION_TTL_MINUTES:}
   internal:
     allow-local-bypass: ${PLATFORM_INTERNAL_ALLOW_LOCAL_BYPASS:true}
     service-token: ${PLATFORM_INTERNAL_SERVICE_TOKEN:git-ai-club-internal-service-token}

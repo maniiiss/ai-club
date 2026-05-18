@@ -53,7 +53,7 @@ public class GiteeBindingService {
                                GiteeApiService giteeApiService,
                                TokenCipherService tokenCipherService,
                                PlatformEnvVarResolver platformEnvVarResolver,
-                               @org.springframework.beans.factory.annotation.Value("${platform.gitee.default-api-url:https://api.gitee.com/enterprises}") String defaultApiUrl) {
+                               @org.springframework.beans.factory.annotation.Value("${platform.gitee.default-api-url:}") String defaultApiUrl) {
         this.projectRepository = projectRepository;
         this.iterationRepository = iterationRepository;
         this.projectGiteeBindingRepository = projectGiteeBindingRepository;
@@ -249,9 +249,11 @@ public class GiteeBindingService {
     }
 
     private String resolveApiBaseUrl(ProjectGiteeBindingEntity existingBinding) {
-        String resolved = hasText(defaultApiUrl)
-                ? defaultApiUrl.trim()
-                : existingBinding == null ? null : existingBinding.getApiBaseUrl();
+        String resolved = platformEnvVarResolver.resolveOrDefault(
+                PlatformEnvVarRegistry.KEY_GITEE_DEFAULT_API_URL,
+                () -> existingBinding == null ? null : existingBinding.getApiBaseUrl(),
+                defaultApiUrl
+        );
         if (!hasText(resolved)) {
             throw new IllegalArgumentException("Gitee API 地址不能为空");
         }

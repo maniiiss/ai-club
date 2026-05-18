@@ -22,9 +22,12 @@ import java.time.Duration;
 public class CommonFileService {
 
     private final DocumentAssetService documentAssetService;
+    private final TaskCommentImageStorageService legacyPublicImageStorageService;
 
-    public CommonFileService(DocumentAssetService documentAssetService) {
+    public CommonFileService(DocumentAssetService documentAssetService,
+                             TaskCommentImageStorageService legacyPublicImageStorageService) {
         this.documentAssetService = documentAssetService;
+        this.legacyPublicImageStorageService = legacyPublicImageStorageService;
     }
 
     /**
@@ -72,6 +75,23 @@ public class CommonFileService {
                 .contentType(mediaType)
                 .cacheControl(CacheControl.maxAge(Duration.ofDays(30)).cachePublic())
                 .header(HttpHeaders.CONTENT_DISPOSITION, dispositionType + "; filename=\"" + asset.getFileName() + "\"")
+                .body(content.bytes());
+    }
+
+    /**
+     * 兼容旧 Markdown 图片直链。
+     * 历史 Wiki 导入内容中保存的是对象键 URL，无法反推文件资产ID，因此保留公开读取入口。
+     */
+    public ResponseEntity<byte[]> downloadLegacyPublicImage(String objectKey) {
+        var content = legacyPublicImageStorageService.load(objectKey);
+        MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        try {
+            mediaType = MediaType.parseMediaType(content.contentType());
+        } catch (Exception ignored) {
+        }
+        return ResponseEntity.ok()
+                .contentType(mediaType)
+                .cacheControl(CacheControl.maxAge(Duration.ofDays(30)).cachePublic())
                 .body(content.bytes());
     }
 

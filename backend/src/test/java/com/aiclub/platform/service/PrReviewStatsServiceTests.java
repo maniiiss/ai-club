@@ -47,6 +47,16 @@ class PrReviewStatsServiceTests {
                 platformEnvVarResolver,
                 httpClient
         );
+        org.mockito.Mockito.lenient().when(platformEnvVarResolver.resolveOrDefault(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString()
+        )).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Supplier<String> fallbackSupplier = invocation.getArgument(1);
+            String fallback = fallbackSupplier == null ? null : fallbackSupplier.get();
+            return fallback == null ? invocation.getArgument(2) : fallback;
+        });
     }
 
     @Test

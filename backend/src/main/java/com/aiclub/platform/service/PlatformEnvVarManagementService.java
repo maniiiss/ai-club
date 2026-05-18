@@ -53,7 +53,7 @@ public class PlatformEnvVarManagementService {
     }
 
     public PlatformEnvVarDetail getEnvVarDetail(String envKey) {
-        PlatformEnvVarRegistry.PlatformEnvVarDefinition definition = platformEnvVarRegistry.requireDefinition(envKey);
+        PlatformEnvVarRegistry.PlatformEnvVarDefinition definition = platformEnvVarRegistry.requireManageableDefinition(envKey);
         PlatformEnvVarConfigEntity entity = platformEnvVarConfigRepository.findByEnvKey(definition.envKey()).orElse(null);
         ResolutionView resolutionView = resolveForView(definition, entity);
         return new PlatformEnvVarDetail(
@@ -78,7 +78,7 @@ public class PlatformEnvVarManagementService {
 
     @Transactional
     public PlatformEnvVarDetail updateEnvVar(String envKey, PlatformEnvVarUpdateRequest request) {
-        PlatformEnvVarRegistry.PlatformEnvVarDefinition definition = platformEnvVarRegistry.requireDefinition(envKey);
+        PlatformEnvVarRegistry.PlatformEnvVarDefinition definition = platformEnvVarRegistry.requireManageableDefinition(envKey);
         PlatformEnvVarConfigEntity existing = platformEnvVarConfigRepository.findByEnvKey(definition.envKey()).orElse(null);
         PlatformEnvVarConfigEntity entity = existing == null ? new PlatformEnvVarConfigEntity() : existing;
         entity.setEnvKey(definition.envKey());

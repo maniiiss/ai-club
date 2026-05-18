@@ -103,6 +103,9 @@ class GitlabUserLookupServiceTests {
     private GitnexusProperties gitnexusProperties;
 
     @Mock
+    private PlatformEnvVarResolver platformEnvVarResolver;
+
+    @Mock
     private PlatformTransactionManager transactionManager;
 
     @Mock
@@ -112,6 +115,11 @@ class GitlabUserLookupServiceTests {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(platformEnvVarResolver.resolveOrDefault(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString()
+        )).thenAnswer(invocation -> invocation.getArgument(2));
         gitlabManagementService = new GitlabManagementService(
                 projectRepository,
                 bindingRepository,
@@ -136,6 +144,7 @@ class GitlabUserLookupServiceTests {
                 repositoryScanRulesetService,
                 gitlabCodeStructureClientService,
                 gitnexusProperties,
+                platformEnvVarResolver,
                 new ObjectMapper(),
                 "http://gitlab.example.com/api/v4",
                 transactionManager,

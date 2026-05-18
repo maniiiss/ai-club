@@ -36,7 +36,10 @@
   - `YAADE_ADMIN_USERNAME`
   - `YAADE_DEFAULT_PASSWORD`
   - `YAADE_BASE_PATH=/api/yaade/proxy`
+  - `YAADE_JDBC_URL=jdbc:h2:file:/app/data/yaade-db`
+  - `YAADE_FILE_STORAGE_PATH=/app/data/files`
   - `YAADE_REF`：上游 Yaade 源码版本，默认 `main`
+- 由于 Yaade 上游默认把 H2 与文件存储写到 `./app/data/*`，而我们的运行镜像 `WORKDIR` 是 `/app`，因此必须显式把数据库与附件目录改到 `/app/data/*`，这样宿主机卷 `${YAADE_DATA_DIR}` 才会真正持久化数据。
 - 自定义镜像在 client 构建前会依次执行两个补丁脚本，再按 Yaade 官方链路继续执行 `client build -> server build`
   - `docker/yaade/scripts/apply-zh-cn.mjs`：只负责把高频界面文案翻译成中文
   - `docker/yaade/scripts/apply-aiclub-branding.mjs`：只负责注入 AI Club 品牌标题、登录页标识、嵌入态顶栏隐藏、嵌入态单点登录 loading、平台主题桥接和平台主题色映射
@@ -47,6 +50,7 @@
   - `platform.yaade.default-user-password`
   - `platform.yaade.public-collection-name`
   - `platform.yaade.proxy-session-ttl-minutes`
+- 其中 `platform.yaade.default-user-password` 只作为部署配置使用，不再通过后台“环境变量管理”做运行时覆盖；它必须与 Yaade 服务端 `YAADE_DEFAULT_PASSWORD` 保持一致。
 
 ### 3.2 平台元数据
 
@@ -96,11 +100,13 @@
 - `python scripts/check_encoding.py`
 - `cd backend && mvn -q -Dtest=YaadeClientServiceTests,YaadeEmbedSessionServiceTests,YaadeProjectSyncServiceTests test`
 - `cd frontend && npm run build`
+- 手工回归：`POST http://localhost:9339/api/yaade/proxy/api/login` 使用当前 admin 账号应返回 `200`
 
 ## 6. 风险与约束
 
 - Yaade 的 group 是纯字符串，不存在独立 group 实体，因此平台绑定表保存的是 `group name` 而不是 `group id`
 - 平台代登依赖 Yaade 本地密码托管；若用户绕过代理直接修改 Yaade 本地密码，平台需要通过“重置到默认密码 + 旋转随机密码”恢复
+- 若人工修改了 Yaade `admin` 本地密码，需要同步更新 `PLATFORM_YAADE_ADMIN_PASSWORD`（或系统设置中的环境变量管理覆盖值）；否则平台创建嵌入会话时会在 `loginAdmin()` 阶段失败
 - Yaade 独立不可用时，`/apis` 会报错，但项目管理、测试管理等其它菜单不应受影响
 - 当前中文化采用“高频界面文案补丁”方案，不是 Yaade 官方内建 i18n；升级 `YAADE_REF` 后若上游组件文案变化，构建期补丁会主动失败并提示重新对齐
 - AI Club 品牌适配独立于中文化补丁维护，避免品牌主题和翻译文案耦合；升级 `YAADE_REF` 后若上游登录页、顶栏或主题文件结构变化，品牌补丁会主动失败并提示重新对齐

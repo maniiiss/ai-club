@@ -30,6 +30,7 @@ import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -141,6 +142,18 @@ class GiteeWorkItemSyncServiceTests {
                 .thenAnswer(invocation -> resolveFromLegacy(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID, invocation.getArgument(1)));
         lenient().when(platformEnvVarResolver.resolve(org.mockito.ArgumentMatchers.eq(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ACCESS_TOKEN), org.mockito.ArgumentMatchers.any()))
                 .thenAnswer(invocation -> resolveFromLegacy(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ACCESS_TOKEN, invocation.getArgument(1)));
+        lenient().when(platformEnvVarResolver.resolveOrDefault(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString()
+        )).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Supplier<String> fallbackSupplier = invocation.getArgument(1);
+            String fallback = fallbackSupplier == null ? null : fallbackSupplier.get();
+            return fallback == null ? invocation.getArgument(2) : fallback;
+        });
+        lenient().when(giteeApiService.normalizeEnterpriseApiBaseUrl(anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
     }
 

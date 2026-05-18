@@ -5,17 +5,17 @@
         <el-icon><ArrowLeft /></el-icon>
         <span>返回执行中心</span>
       </button>
-      <div class="execution-detail-heading">
-        <div>
-          <h1>{{ taskDetail.title }}</h1>
+        <div class="execution-detail-heading">
+          <div>
+            <h1>{{ taskDetail.title }}</h1>
+          </div>
+          <div class="execution-detail-actions">
+            <el-button v-if="showImplementationChangeReviewSection" type="primary" plain @click="changeReviewDialogVisible = true">查看变更审查</el-button>
+            <el-button v-if="canSubmitMergeRequest" type="success" @click="openQuickMergeDialog">提交MR</el-button>
+            <el-button v-if="canCancelExecution && canCancel(taskDetail.status)" type="success" @click="handleCancel">取消</el-button>
+            <el-button v-if="canRetryExecution && canRetry(taskDetail.status) && canRetryCurrentScenario" type="success" @click="handleRetry">重试</el-button>
+          </div>
         </div>
-        <div class="execution-detail-actions">
-          <el-button v-if="showImplementationChangeReviewSection" type="primary" plain @click="changeReviewDialogVisible = true">变更审查</el-button>
-          <el-button v-if="canSubmitMergeRequest" type="success" @click="openQuickMergeDialog">提交MR</el-button>
-          <el-button v-if="canCancelExecution && canCancel(taskDetail.status)" type="success" @click="handleCancel">取消</el-button>
-          <el-button v-if="canRetryExecution && canRetry(taskDetail.status) && canRetryCurrentScenario" type="success" @click="handleRetry">重试</el-button>
-        </div>
-      </div>
 
       <div class="execution-detail-meta">
         <span>{{ taskDetail.scenarioName }}</span>
@@ -857,6 +857,16 @@ const taskWorkspaceCleanupAlert = computed<{
     type: resolveWorkspaceCleanupAlertType(workspaceCleanup)
   }
 })
+const workspaceCleanupStatus = computed(() =>
+  String(taskDetail.value?.workspaceCleanup?.status || '').trim().toUpperCase()
+)
+/**
+ * 工作区还在保留期或删除失败时，说明本地改动理论上仍可继续利用；
+ * 这里把右上角动作区放宽到这两种状态，避免测试失败后找不到“提交 MR”入口。
+ */
+const hasRetainedWorkspaceFollowUpWindow = computed(() =>
+  ['SCHEDULED', 'DELETE_FAILED'].includes(workspaceCleanupStatus.value)
+)
 const parsedInputPayload = computed<Record<string, any>>(() => {
   if (!taskDetail.value?.inputPayload) {
     return {}
@@ -1088,8 +1098,16 @@ const canSubmitMergeRequest = computed(() =>
   Boolean(
     canManageGitlab.value
       && taskDetail.value?.scenarioCode === 'DEVELOPMENT_IMPLEMENTATION'
-      && runDetail.value?.status === 'SUCCESS'
       && developmentQuickMergeRepositories.value.length
+      && (
+        runDetail.value?.status === 'SUCCESS'
+        || (
+          hasRetainedWorkspaceFollowUpWindow.value
+          && developmentQuickMergeRepositories.value.some((repository) =>
+            hasText(repository.sourceBranch) || hasText(repository.mergeRequestUrl)
+          )
+        )
+      )
   )
 )
 const showPlanConfirmationSection = computed(() =>
@@ -1289,18 +1307,35 @@ const resolveWorkspaceCleanupAlertType = (
   return 'warning'
 }
 
+/**
+ * 自动化测试场景会落独立的 AUTOMATION_* 产物类型；
+ * 这里统一纳入 Markdown 预览白名单，避免详情页把 Markdown 回退成纯文本。
+ */
+const MARKDOWN_ARTIFACT_TYPES = [
+  'PLAN_MARKDOWN',
+  'REPORT_MARKDOWN',
+  'FIX_PLAN_MARKDOWN',
+  'FIX_SHARDS_MARKDOWN',
+  'EXEC_PLAN_MARKDOWN',
+  'IMPLEMENT_RESULT_MARKDOWN',
+  'TEST_RESULT_MARKDOWN',
+  'REPO_STRUCTURE_MARKDOWN',
+  'CROSS_REPO_CONTEXT_MARKDOWN',
+  'AUTOMATION_PLAN_MARKDOWN',
+  'AUTOMATION_SCRIPT_PREVIEW_MARKDOWN',
+  'AUTOMATION_TEST_RESULT_MARKDOWN',
+  'AUTOMATION_REPORT_MARKDOWN'
+]
+
+const STRUCTURED_EXECUTION_ARTIFACT_TYPES = [
+  'TEST_RESULT_MARKDOWN',
+  'TEST_RESULT_JSON',
+  'AUTOMATION_TEST_RESULT_MARKDOWN',
+  'AUTOMATION_TEST_RESULT_JSON'
+]
+
 const isMarkdownArtifact = (artifact: ExecutionArtifactItem) =>
-  [
-    'PLAN_MARKDOWN',
-    'REPORT_MARKDOWN',
-    'FIX_PLAN_MARKDOWN',
-    'FIX_SHARDS_MARKDOWN',
-    'EXEC_PLAN_MARKDOWN',
-    'IMPLEMENT_RESULT_MARKDOWN',
-    'TEST_RESULT_MARKDOWN',
-    'REPO_STRUCTURE_MARKDOWN',
-    'CROSS_REPO_CONTEXT_MARKDOWN'
-  ].includes(artifact.artifactType)
+  MARKDOWN_ARTIFACT_TYPES.includes(artifact.artifactType)
 
 const isImageArtifact = (artifact: ExecutionArtifactItem) => artifact.artifactType === 'PLAYWRIGHT_SCREENSHOT'
 
@@ -1312,7 +1347,7 @@ const isStructuringArtifact = (artifact: ExecutionArtifactItem) =>
  * 这里只保留测试结果的折叠态，避免把整块测试回显直接铺满页面。
  */
 const isStructuredExecutionArtifact = (artifact: ExecutionArtifactItem) =>
-  ['TEST_RESULT_MARKDOWN', 'TEST_RESULT_JSON'].includes(artifact.artifactType)
+  STRUCTURED_EXECUTION_ARTIFACT_TYPES.includes(artifact.artifactType)
 
 const isLogArtifact = (artifact: ExecutionArtifactItem) =>
   ['STEP_RAW_LOG', 'STEP_STDOUT_LOG', 'STEP_STDERR_LOG'].includes(artifact.artifactType) || artifact.artifactType.endsWith('_LOG')
@@ -1331,6 +1366,9 @@ const shouldHideArtifactFromDisplay = (artifact: ExecutionArtifactItem, artifact
   }
   if (artifact.artifactType === 'TEST_RESULT_JSON') {
     return artifacts.some((item) => item.stepId === artifact.stepId && item.artifactType === 'TEST_RESULT_MARKDOWN')
+  }
+  if (artifact.artifactType === 'AUTOMATION_TEST_RESULT_JSON') {
+    return artifacts.some((item) => item.stepId === artifact.stepId && item.artifactType === 'AUTOMATION_TEST_RESULT_MARKDOWN')
   }
   return false
 }

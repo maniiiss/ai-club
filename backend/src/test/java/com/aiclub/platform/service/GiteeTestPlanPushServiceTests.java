@@ -85,10 +85,20 @@ class GiteeTestPlanPushServiceTests {
                 giteeApiService,
                 tokenCipherService,
                 platformEnvVarResolver,
-                9917662L,
-                229413L,
-                2
+                "9917662",
+                "229413",
+                "2"
         );
+        lenient().when(platformEnvVarResolver.resolveOrDefault(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyString()
+        )).thenAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            Supplier<String> fallbackSupplier = invocation.getArgument(1);
+            String fallback = fallbackSupplier == null ? null : fallbackSupplier.get();
+            return fallback == null ? invocation.getArgument(2) : fallback;
+        });
         lenient().when(platformEnvVarResolver.resolve(org.mockito.ArgumentMatchers.eq(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID), org.mockito.ArgumentMatchers.any()))
                 .thenAnswer(invocation -> resolveFromLegacy(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ENTERPRISE_ID, invocation.getArgument(1)));
         lenient().when(platformEnvVarResolver.resolve(org.mockito.ArgumentMatchers.eq(PlatformEnvVarRegistry.KEY_GITEE_BINDING_ACCESS_TOKEN), org.mockito.ArgumentMatchers.any()))
