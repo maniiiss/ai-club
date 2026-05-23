@@ -617,7 +617,7 @@
                     <div class="gitlab-meta-stack">
                       <span>{{ row.schedulerEnabled ? `Cron：${row.schedulerCron || '-'}` : '未启用调度' }}</span>
                       <span>AI 审核：{{ row.aiReviewEnabled ? (row.reviewAgentName || '已启用') : '关闭' }}</span>
-                      <span>合并后 Jenkins：{{ row.triggerPipelineAfterMerge ? '开启' : '关闭' }}</span>
+                      <span>合并后流水线：{{ row.triggerPipelineAfterMerge ? '开启' : '关闭' }}</span>
                     </div>
                   </td>
                   <td class="center gitlab-auto-col-enabled" data-label="启用">
@@ -701,7 +701,7 @@
                           <div class="mobile-entity-meta-stack">
                             <span class="mobile-entity-empty-text">{{ row.schedulerEnabled ? `Cron：${row.schedulerCron || '-'}` : '未启用调度' }}</span>
                             <span class="mobile-entity-empty-text">AI 审核：{{ row.aiReviewEnabled ? (row.reviewAgentName || '已启用') : '关闭' }}</span>
-                            <span class="mobile-entity-empty-text">合并后 Jenkins：{{ row.triggerPipelineAfterMerge ? '开启' : '关闭' }}</span>
+                            <span class="mobile-entity-empty-text">合并后流水线：{{ row.triggerPipelineAfterMerge ? '开启' : '关闭' }}</span>
                           </div>
                         </div>
                       </div>
@@ -1449,9 +1449,9 @@
         <el-form-item label="删除源分支">
           <el-switch v-model="autoMergeForm.removeSourceBranch" />
         </el-form-item>
-        <el-form-item label="合并后触发 Jenkins" class="span-2">
+        <el-form-item label="合并后触发流水线" class="span-2">
           <el-switch v-model="autoMergeForm.triggerPipelineAfterMerge" :disabled="autoMergeForm.executionMode !== 'PROJECT_BOUND'" />
-          <div class="form-tip">仅关联业务项目模式可用，合并成功后会按项目流水线绑定自动触发 Jenkins。</div>
+          <div class="form-tip">仅关联业务项目模式可用，合并成功后会按项目默认流水线自动触发。</div>
         </el-form-item>
         </div>
       </section>
@@ -2540,7 +2540,7 @@ const openAutoMergeCreateDialog = () => { autoMergeReadonlyMode.value = false; a
 const fillAutoMergeForm = (row: GitlabAutoMergeConfigItem) => { autoMergeIsEditing.value = true; currentAutoMergeId.value = row.id; autoMergeForm.name = row.name; autoMergeForm.executionMode = row.executionMode; autoMergeForm.description = row.description; autoMergeForm.bindingId = row.bindingId; autoMergeForm.apiBaseUrl = row.apiBaseUrl; autoMergeForm.gitlabProjectRef = row.executionMode === 'STANDALONE' ? row.gitlabProjectRef : ''; autoMergeForm.apiToken = ''; autoMergeForm.sourceBranch = row.sourceBranch || ''; autoMergeForm.targetBranch = row.targetBranch || ''; autoMergeForm.titleKeyword = row.titleKeyword || ''; autoMergeForm.schedulerEnabled = row.schedulerEnabled; autoMergeForm.schedulerCron = row.schedulerCron || '0 */5 * * * *'; autoMergeForm.enabled = row.enabled; autoMergeForm.autoMerge = row.autoMerge; autoMergeForm.squashOnMerge = row.squashOnMerge; autoMergeForm.removeSourceBranch = row.removeSourceBranch; autoMergeForm.triggerPipelineAfterMerge = row.triggerPipelineAfterMerge; autoMergeForm.requirePipelineSuccess = row.requirePipelineSuccess; autoMergeForm.reviewAgentId = row.reviewAgentId; autoMergeForm.aiReviewEnabled = row.aiReviewEnabled; autoMergeForm.aiReviewPrompt = row.aiReviewPrompt || ''; cronTemplate.value = '' }
 const openAutoMergeDetailDialog = (row: GitlabAutoMergeConfigItem) => { autoMergeReadonlyMode.value = true; fillAutoMergeForm(row); autoMergeDialogVisible.value = true }
 const openAutoMergeEditDialog = (row: GitlabAutoMergeConfigItem) => { autoMergeReadonlyMode.value = false; fillAutoMergeForm(row); autoMergeDialogVisible.value = true }
-const handleAutoMergeSubmit = async () => { const valid = await autoMergeFormRef.value?.validate().catch(() => false); if (!valid) return; if (autoMergeForm.executionMode === 'PROJECT_BOUND' && !autoMergeForm.bindingId) { ElMessage.warning('关联业务项目模式必须选择 GitLab 绑定'); return } if (autoMergeForm.executionMode === 'STANDALONE') { if (!autoMergeForm.apiBaseUrl.trim() || !autoMergeForm.gitlabProjectRef.trim()) { ElMessage.warning('独立运行模式必须填写 GitLab API 和项目标识'); return } if (!autoMergeIsEditing.value && !autoMergeForm.apiToken.trim()) { ElMessage.warning('独立运行模式新增时必须填写 APIToken'); return } if (autoMergeForm.triggerPipelineAfterMerge) { ElMessage.warning('独立运行模式不支持合并后自动触发 Jenkins'); return } } if (autoMergeForm.schedulerEnabled && !autoMergeForm.schedulerCron.trim()) { ElMessage.warning('启用调度时必须填写 Cron 表达式'); return } if (autoMergeForm.aiReviewEnabled && !autoMergeForm.reviewAgentId) { ElMessage.warning('启用 AI Review 时必须选择模型'); return } autoMergeSubmitting.value = true; try { const payload = { ...autoMergeForm, schedulerCron: autoMergeForm.schedulerCron.trim() }; if (autoMergeIsEditing.value && currentAutoMergeId.value !== null) { await updateGitlabAutoMergeConfig(currentAutoMergeId.value, payload); ElMessage.success('自动合并策略已更新') } else { await createGitlabAutoMergeConfig(payload); ElMessage.success('自动合并策略已创建') } autoMergeDialogVisible.value = false; await refreshAll() } catch (error: any) { ElMessage.error(error?.response?.data?.message || '保存失败') } finally { autoMergeSubmitting.value = false } }
+const handleAutoMergeSubmit = async () => { const valid = await autoMergeFormRef.value?.validate().catch(() => false); if (!valid) return; if (autoMergeForm.executionMode === 'PROJECT_BOUND' && !autoMergeForm.bindingId) { ElMessage.warning('关联业务项目模式必须选择 GitLab 绑定'); return } if (autoMergeForm.executionMode === 'STANDALONE') { if (!autoMergeForm.apiBaseUrl.trim() || !autoMergeForm.gitlabProjectRef.trim()) { ElMessage.warning('独立运行模式必须填写 GitLab API 和项目标识'); return } if (!autoMergeIsEditing.value && !autoMergeForm.apiToken.trim()) { ElMessage.warning('独立运行模式新增时必须填写 APIToken'); return } if (autoMergeForm.triggerPipelineAfterMerge) { ElMessage.warning('独立运行模式不支持合并后自动触发流水线'); return } } if (autoMergeForm.schedulerEnabled && !autoMergeForm.schedulerCron.trim()) { ElMessage.warning('启用调度时必须填写 Cron 表达式'); return } if (autoMergeForm.aiReviewEnabled && !autoMergeForm.reviewAgentId) { ElMessage.warning('启用 AI Review 时必须选择模型'); return } autoMergeSubmitting.value = true; try { const payload = { ...autoMergeForm, schedulerCron: autoMergeForm.schedulerCron.trim() }; if (autoMergeIsEditing.value && currentAutoMergeId.value !== null) { await updateGitlabAutoMergeConfig(currentAutoMergeId.value, payload); ElMessage.success('自动合并策略已更新') } else { await createGitlabAutoMergeConfig(payload); ElMessage.success('自动合并策略已创建') } autoMergeDialogVisible.value = false; await refreshAll() } catch (error: any) { ElMessage.error(error?.response?.data?.message || '保存失败') } finally { autoMergeSubmitting.value = false } }
 const handleAutoMergeDelete = async (id: number) => { try { await ElMessageBox.confirm('确认删除该自动合并策略吗？', '提示', { type: 'warning' }); await deleteGitlabAutoMergeConfig(id); ElMessage.success('自动合并策略已删除'); await refreshAll() } catch (error: any) { if (error !== 'cancel') ElMessage.error(error?.response?.data?.message || '删除失败') } }
 const handleAutoMergeTest = async (id: number) => { try { await testGitlabAutoMergeConfig(id); ElMessage.success('策略测试成功') } catch (error: any) { ElMessage.error(error?.response?.data?.message || '策略测试失败') } }
 const openAutoMergeMergeRequests = async (row: GitlabAutoMergeConfigItem) => { mergeRequestDrawerTitle.value = `自动合并 MR 预览 - ${row.name}`; mergeRequestDrawerVisible.value = true; mergeRequestLoading.value = true; try { mergeRequestList.value = await previewAutoMergeConfigMergeRequests(row.id) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '加载 MR 失败') } finally { mergeRequestLoading.value = false } }

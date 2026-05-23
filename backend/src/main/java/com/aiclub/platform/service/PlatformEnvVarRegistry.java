@@ -212,12 +212,14 @@ public class PlatformEnvVarRegistry {
                 false
         ), 10, 720);
 
-        // AI 助手与记忆服务连接参数属于部署侧差异配置，放入后台后可按环境切换网关与模型。
+        // Hermes / Hindsight 的基础连接地址与鉴权密钥继续固定走部署配置，
+        // 避免后台覆盖值与容器真实接入参数漂移；模型、预算、超时这类调优项仍允许后台维护。
         registerUrl(new PlatformEnvVarDefinition(
                 KEY_HERMES_BASE_URL,
                 "platform.hermes.base-url",
                 "Hermes API 地址",
                 "平台内置助手调用 Hermes Gateway 的 OpenAI 兼容接口基础地址。",
+                false,
                 false
         ));
         registerText(new PlatformEnvVarDefinition(
@@ -225,7 +227,8 @@ public class PlatformEnvVarRegistry {
                 "platform.hermes.api-key",
                 "Hermes API Key",
                 "平台内置助手调用 Hermes Gateway 时携带的鉴权密钥。",
-                true
+                true,
+                false
         ));
         registerText(new PlatformEnvVarDefinition(
                 KEY_HERMES_MODEL,
@@ -274,6 +277,7 @@ public class PlatformEnvVarRegistry {
                 "platform.hindsight.base-url",
                 "Hindsight API 地址",
                 "平台 Wiki 语义索引、用户记忆和事实图检索访问 Hindsight 的基础地址。",
+                false,
                 false
         ));
         registerText(new PlatformEnvVarDefinition(
@@ -281,7 +285,8 @@ public class PlatformEnvVarRegistry {
                 "platform.hindsight.api-key",
                 "Hindsight API Key",
                 "平台访问 Hindsight API 时携带的鉴权密钥。",
-                true
+                true,
+                false
         ));
         registerText(new PlatformEnvVarDefinition(
                 KEY_HERMES_HINDSIGHT_BANK_ID,
@@ -349,6 +354,10 @@ public class PlatformEnvVarRegistry {
         register(definition.withValidator(value -> requireHttpUrl(value, definition.displayName() + "必须是 http 或 https 地址")));
     }
 
+    private void registerBoolean(PlatformEnvVarDefinition definition) {
+        register(definition.withValidator(value -> requireBoolean(value, definition.displayName() + "仅支持 true 或 false")));
+    }
+
     private void registerPositiveLong(PlatformEnvVarDefinition definition) {
         register(definition.withValidator(value -> requirePositiveLong(value, definition.displayName() + "必须为正整数")));
     }
@@ -398,6 +407,14 @@ public class PlatformEnvVarRegistry {
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException(message, exception);
         }
+    }
+
+    private static String requireBoolean(String value, String message) {
+        String normalized = requireText(value, message).toLowerCase(Locale.ROOT);
+        if (!"true".equals(normalized) && !"false".equals(normalized)) {
+            throw new IllegalArgumentException(message);
+        }
+        return normalized;
     }
 
     private static String requirePositiveLong(String value, String message) {

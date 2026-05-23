@@ -190,11 +190,13 @@ public class HindsightProperties {
     }
 
     public String getBaseUrl() {
-        return trimTrailingSlash(resolveOrDefault(PlatformEnvVarRegistry.KEY_HINDSIGHT_API_URL, baseUrl));
+        // Hindsight 基础地址改回部署配置维护，避免后台覆盖值与实际记忆服务接入参数不一致。
+        return trimTrailingSlash(baseUrl);
     }
 
     public String getApiKey() {
-        return resolveOptional(PlatformEnvVarRegistry.KEY_HINDSIGHT_API_KEY, apiKey);
+        // Hindsight API Key 同样只认部署配置，后台环境变量管理不再覆盖这里。
+        return defaultString(apiKey);
     }
 
     public String getBankPrefix() {

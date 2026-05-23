@@ -61,11 +61,13 @@ public class HermesProperties {
     }
 
     public String getBaseUrl() {
-        return trimTrailingSlash(resolveOrDefault(PlatformEnvVarRegistry.KEY_HERMES_BASE_URL, baseUrl));
+        // Hermes 网关地址改回部署配置维护，避免后台运行时覆盖与容器接入参数漂移。
+        return trimTrailingSlash(baseUrl);
     }
 
     public String getApiKey() {
-        return resolveOptional(PlatformEnvVarRegistry.KEY_HERMES_API_KEY, apiKey);
+        // Hermes 网关鉴权密钥同样只认部署配置，后台环境变量管理不再覆盖这里。
+        return apiKey == null ? "" : apiKey.trim();
     }
 
     public String getModel() {

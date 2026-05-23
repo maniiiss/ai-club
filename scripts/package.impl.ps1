@@ -20,12 +20,17 @@ $readmePath = Join-Path $packageDir 'README.txt'
 
 Invoke-Compose -ComposeFile $context.FullDockerComposeFile `
     -EnvFile $context.FullDockerEnvFile `
-    -Arguments @('build', '--pull') `
+    -Arguments (Add-WoodpeckerProfileIfEnabled -Arguments @('build', '--pull')) `
     -Description '构建全量 Docker 业务镜像'
+
+$middlewareServices = @('postgres', 'redis', 'minio', 'hindsight', 'hermes')
+if (Test-WoodpeckerEnabled) {
+    $middlewareServices += @('woodpecker-server', 'woodpecker-agent')
+}
 
 Invoke-Compose -ComposeFile $context.FullDockerComposeFile `
     -EnvFile $context.FullDockerEnvFile `
-    -Arguments @('pull', 'postgres', 'redis', 'minio', 'hindsight', 'hermes') `
+    -Arguments (Add-WoodpeckerProfileIfEnabled -Arguments (@('pull') + $middlewareServices)) `
     -Description '拉取全量 Docker 中间件镜像'
 
 Write-Step "准备 Docker 打包目录：$packageDir"
@@ -67,6 +72,7 @@ AI Club Docker 打包说明
 - Hermes: http://localhost:$($ports.Hermes)
 - Hindsight: http://localhost:$($ports.Hindsight)
 - GitNexus Web UI: http://localhost:$($ports.GitNexusUi)
+$(@(if (Test-WoodpeckerEnabled) { "- Woodpecker: http://localhost:$($ports.Woodpecker)" }) -join [Environment]::NewLine)
 - PostgreSQL: localhost:$($ports.Postgres)
 - Redis: localhost:$($ports.Redis)
 - MinIO: http://localhost:$($ports.Minio)

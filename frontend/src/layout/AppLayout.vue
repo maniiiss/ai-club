@@ -775,8 +775,8 @@ const primaryMenuSeeds: MenuSeed[] = [
 ]
 
 const integrationMenuSeeds: MenuSeed[] = [
-  { permission: 'cicd:view', fallbackPath: '/cicd/jenkins-servers', fallbackLabel: 'Jenkins 服务', shortLabel: 'Jenkins', fallbackIcon: Connection, matchNames: ['cicd-servers'] },
-  { permission: 'cicd:view', fallbackPath: '/cicd/pipeline-bindings', fallbackLabel: '项目流水线', shortLabel: '流水线', fallbackIcon: DataAnalysis, matchNames: ['cicd-pipelines'] }
+  { permission: 'cicd:view', fallbackPath: '/cicd/pipeline-bindings', fallbackLabel: '流水线中心', shortLabel: '流水线', fallbackIcon: DataAnalysis, matchNames: ['cicd-pipelines'] },
+  { permission: 'cicd:view', fallbackPath: '/cicd/jenkins-servers', fallbackLabel: '外部 Jenkins', shortLabel: 'Jenkins', fallbackIcon: Connection, matchNames: ['cicd-servers'] }
 ]
 
 const trailingMenuSeeds: MenuSeed[] = [
@@ -1121,7 +1121,8 @@ const NOTIFICATION_BIZ_TYPE_LABELS: Record<string, string> = {
   TASK_COLLABORATOR_ADDED: '协作通知',
   TASK_OVERDUE: '逾期提醒',
   CHANGE_REQUEST: '变更申请',
-  PIPELINE_BINDING: '流水线绑定',
+  AI_CLUB_PIPELINE: 'AI Club Pipeline',
+  PIPELINE_BINDING: '外部 Jenkins 绑定',
   GITLAB_MERGED: '自动合并成功',
   GITLAB_AI_REJECTED: 'AI 审核拒绝',
   GITLAB_BRANCH_BEHIND: '分支落后提醒',
@@ -1156,7 +1157,7 @@ const resolveNotificationSource = (item: NotificationItem) => {
     return item.senderName.trim()
   }
   if (item.type === 'GITLAB') return '代码仓库协作'
-  if (item.type === 'CICD') return '持续集成流水线'
+  if (item.type === 'CICD') return '流水线中心'
   if (item.type === 'TASK') return '任务中心'
   return '系统消息'
 }

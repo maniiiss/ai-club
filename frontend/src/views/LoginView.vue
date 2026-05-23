@@ -16,7 +16,7 @@
           <div class="showcase-panel">
             <div class="showcase-icon">⌘</div>
             <h1>AI 代理工程管理平台</h1>
-            <p>面向项目、智能体、任务、代码仓库与持续集成的一体化智能工作坊，帮助团队在高密度协作中保持稳定节奏。</p>
+            <p>面向项目、智能体、任务、代码仓库与流水线的一体化智能工作坊，帮助团队在高密度协作中保持稳定节奏。</p>
           </div>
 
           <div class="showcase-metrics">

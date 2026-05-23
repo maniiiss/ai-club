@@ -17,7 +17,7 @@ git-ai-club/
 ├─ backend/                   # Spring Boot 后端
 │  └─ src/main/resources/db/migration/  # Flyway 数据库迁移脚本
 ├─ code-processing/           # Python 代码处理服务
-├─ docker-compose.yml         # PostgreSQL 容器编排
+├─ docker-compose.yml         # 源码模式依赖容器编排，含可选 Woodpecker profile
 └─ README.md
 ```
 
@@ -27,7 +27,7 @@ git-ai-club/
 
 1. 源码模式启动：
    `powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1`
-   作用：`hermes / hindsight / gitnexus-web / postgres / redis / minio` 走 Docker，`code-processing / backend / frontend` 走源码启动。
+   作用：`hermes / hindsight / gitnexus-web / postgres / redis / minio / woodpecker-server / woodpecker-agent` 走 Docker，`code-processing / backend / frontend` 走源码启动；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker。
 2. 源码模式停止：
    `powershell -ExecutionPolicy Bypass -File .\scripts\stop-windows.ps1`
    作用：先停源码服务，再停源码模式依赖容器。
@@ -55,7 +55,7 @@ git-ai-club/
 
 1. 源码模式启动：
    `bash ./scripts/start-linux.sh`
-   作用：`hermes / hindsight / gitnexus-web / postgres / redis / minio` 走 Docker，`code-processing / backend / frontend` 走源码启动。
+   作用：`hermes / hindsight / gitnexus-web / postgres / redis / minio / woodpecker-server / woodpecker-agent` 走 Docker，`code-processing / backend / frontend` 走源码启动；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker。
 2. 源码模式停止：
    `bash ./scripts/stop-linux.sh`
    作用：先停源码服务，再停源码模式依赖容器。
@@ -81,7 +81,7 @@ git-ai-club/
 
 源码模式脚本会自动完成以下动作：
 
-1. 启动 `postgres`、`redis`、`minio`、`hindsight`、`gitnexus-web`、`hermes` 容器
+1. 启动 `postgres`、`redis`、`minio`、`hindsight`、`gitnexus-web`、`hermes`、`woodpecker-server`、`woodpecker-agent` 容器；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker
 2. 安装前端依赖
 3. 检查并创建 `code-processing/.venv`
 4. 启动 `code-processing`、`backend`、`frontend`
@@ -98,8 +98,27 @@ git-ai-club/
 - Hermes: `http://localhost:18080`
 - Hindsight: `http://localhost:18888`
 - GitNexus Web UI: `http://localhost:5174`
+- Woodpecker（默认启用）: `http://localhost:18000`
 
 GitNexus Web UI 会通过 `docker/gitnexus-web` 基于官方镜像构建本地中文镜像，页面端口仍保持 `5174`；`4747` 的 `gitnexus serve` 仍由 `code-processing` 在代码结构跳转时按需接入。
+
+## AI Club Pipeline / Woodpecker
+
+平台内置 Woodpecker 作为默认流水线 provider，前端入口是“流水线中心”。业务用户只登录 AI Club，不需要登录 Woodpecker；Woodpecker UI 仅作为管理员排障入口。Woodpecker 不需要在页面里新增服务实例；默认启用，管理员只需要在 `.env` 或 `.env.server` 中补齐部署级配置：
+
+- `WOODPECKER_HOST=http://localhost:18000`
+- `WOODPECKER_AGENT_SECRET=<随机强密钥>`
+- `PLATFORM_WOODPECKER_API_TOKEN=<Woodpecker 访问 Token>`
+
+AI Club 不再在 `.env` 中承载 Woodpecker 的 GitLab OAuth 配置。GitLab 仓库身份、MR 和自动合并仍走平台已有 GitLab 配置；Woodpecker 只作为后台执行底座，由 `PLATFORM_WOODPECKER_API_TOKEN` 授权平台调用。Woodpecker 运行时如果仍需要底座 forge 兼容配置，应放在 `.data/woodpecker/forge.env` 这类运行数据文件里，不进入 AI Club 平台配置。源码模式下平台后端默认通过 `http://localhost:18000` 调用 Woodpecker；全量 Docker 下默认通过 `http://woodpecker-server:8000` 调用。若需要临时关闭内置 provider，可设置 `WOODPECKER_ENABLED=false`。若手工运行 Compose，需要带上 profile：
+
+目标分支缺少 `.woodpecker.yml` 时，流水线中心的“补全配置”会以模板参数表单生成配置：用户可在页面里填写项目根目录、推送服务器地址、分支、Docker 凭据、SSH 主机和私钥等元素，平台创建 GitLab MR；敏感值写入 Woodpecker repo secrets。`部署到服务器` 作为共享后置动作挂在 Java、Node、Python、Docker 等模板里，打开开关后可在构建完成后自动上传产物并执行远程重启脚本；如果产物已经在 registry，只保留远程重启脚本也可以。对于 monorepo 或多模块仓库，可通过“项目根目录”指定实际包含 `pom.xml`、`package.json` 或应用代码的子目录。高级用户仍可切换到手动 YAML 模式继续自定义配置文件。
+
+```bash
+docker compose --env-file .env --profile woodpecker -f docker-compose.yml up -d woodpecker-server woodpecker-agent
+```
+
+详细设计见 `docs/pipeline-woodpecker-provider-technical-design-v1.md`。
 
 ## Harness 验证
 

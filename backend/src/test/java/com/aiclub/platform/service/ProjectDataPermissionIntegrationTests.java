@@ -209,7 +209,7 @@ class ProjectDataPermissionIntegrationTests {
                 member.getId(),
                 List.of()
         ));
-        assertThat(updatedTask.status()).isEqualTo("处理中");
+        assertThat(updatedTask.status()).isEqualTo("进行中");
         assertThat(updatedTask.assigneeUserId()).isEqualTo(member.getId());
 
         assertThatThrownBy(() -> platformStoreService.updateProject(project.getId(), new ProjectRequest(

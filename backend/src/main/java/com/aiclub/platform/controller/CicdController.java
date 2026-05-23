@@ -2,6 +2,14 @@ package com.aiclub.platform.controller;
 
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
+import com.aiclub.platform.dto.AiClubPipelineConfigCompleteResult;
+import com.aiclub.platform.dto.AiClubPipelineConfigPreviewResult;
+import com.aiclub.platform.dto.AiClubPipelineConfigStatusItem;
+import com.aiclub.platform.dto.AiClubPipelineConfigTemplateItem;
+import com.aiclub.platform.dto.AiClubPipelineRunLogDetail;
+import com.aiclub.platform.dto.AiClubPipelineRunSummary;
+import com.aiclub.platform.dto.AiClubPipelineSummary;
+import com.aiclub.platform.dto.AiClubPipelineTriggerResult;
 import com.aiclub.platform.dto.JenkinsBuildLogDetail;
 import com.aiclub.platform.dto.JenkinsBuildSummary;
 import com.aiclub.platform.dto.JenkinsBuildTriggerResult;
@@ -9,6 +17,10 @@ import com.aiclub.platform.dto.JenkinsJobSummary;
 import com.aiclub.platform.dto.JenkinsServerSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectPipelineBindingSummary;
+import com.aiclub.platform.dto.WoodpeckerHealthSummary;
+import com.aiclub.platform.dto.request.AiClubPipelineConfigCompleteRequest;
+import com.aiclub.platform.dto.request.AiClubPipelineConfigPreviewRequest;
+import com.aiclub.platform.dto.request.AiClubPipelineRequest;
 import com.aiclub.platform.dto.request.JenkinsServerRequest;
 import com.aiclub.platform.dto.request.ProjectPipelineBindingRequest;
 import com.aiclub.platform.service.CicdManagementService;
@@ -33,6 +45,108 @@ public class CicdController {
 
     public CicdController(CicdManagementService cicdManagementService) {
         this.cicdManagementService = cicdManagementService;
+    }
+
+    @GetMapping("/woodpecker/health")
+    @RequirePermission("cicd:view")
+    public ApiResponse<WoodpeckerHealthSummary> getWoodpeckerHealth() {
+        return ApiResponse.success(cicdManagementService.getWoodpeckerHealth());
+    }
+
+    @GetMapping("/pipeline-config-templates")
+    @RequirePermission("cicd:view")
+    public ApiResponse<List<AiClubPipelineConfigTemplateItem>> listAiClubPipelineConfigTemplates() {
+        return ApiResponse.success(cicdManagementService.listAiClubPipelineConfigTemplates());
+    }
+
+    @GetMapping("/pipelines/{id}/config/templates")
+    @RequirePermission("cicd:view")
+    public ApiResponse<List<AiClubPipelineConfigTemplateItem>> listAiClubPipelineConfigTemplates(@PathVariable Long id) {
+        return ApiResponse.success(cicdManagementService.listAiClubPipelineConfigTemplates(id));
+    }
+
+    @GetMapping("/pipelines")
+    @RequirePermission("cicd:view")
+    public ApiResponse<PageResponse<AiClubPipelineSummary>> pageAiClubPipelines(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) Boolean enabled
+    ) {
+        return ApiResponse.success(cicdManagementService.pageAiClubPipelines(page, size, keyword, projectId, enabled));
+    }
+
+    @GetMapping("/pipelines/{id}")
+    @RequirePermission("cicd:view")
+    public ApiResponse<AiClubPipelineSummary> getAiClubPipeline(@PathVariable Long id) {
+        return ApiResponse.success(cicdManagementService.getAiClubPipeline(id));
+    }
+
+    @PostMapping("/pipelines")
+    @RequirePermission("cicd:manage")
+    public ApiResponse<AiClubPipelineSummary> createAiClubPipeline(@Valid @RequestBody AiClubPipelineRequest request) {
+        return ApiResponse.success(cicdManagementService.createAiClubPipeline(request));
+    }
+
+    @PutMapping("/pipelines/{id}")
+    @RequirePermission("cicd:manage")
+    public ApiResponse<AiClubPipelineSummary> updateAiClubPipeline(@PathVariable Long id,
+                                                                   @Valid @RequestBody AiClubPipelineRequest request) {
+        return ApiResponse.success(cicdManagementService.updateAiClubPipeline(id, request));
+    }
+
+    @DeleteMapping("/pipelines/{id}")
+    @RequirePermission("cicd:manage")
+    public ApiResponse<Void> deleteAiClubPipeline(@PathVariable Long id) {
+        cicdManagementService.deleteAiClubPipeline(id);
+        return new ApiResponse<>(true, "Deleted successfully", null);
+    }
+
+    @PostMapping("/pipelines/{id}/sync-repository")
+    @RequirePermission("cicd:manage")
+    public ApiResponse<AiClubPipelineSummary> syncAiClubPipelineRepository(@PathVariable Long id) {
+        return ApiResponse.success(cicdManagementService.syncAiClubPipelineRepository(id));
+    }
+
+    @PostMapping("/pipelines/{id}/trigger")
+    @RequirePermission("cicd:build")
+    public ApiResponse<AiClubPipelineTriggerResult> triggerAiClubPipeline(@PathVariable Long id) {
+        return ApiResponse.success(cicdManagementService.triggerAiClubPipeline(id));
+    }
+
+    @GetMapping("/pipelines/{id}/config/status")
+    @RequirePermission("cicd:view")
+    public ApiResponse<AiClubPipelineConfigStatusItem> getAiClubPipelineConfigStatus(@PathVariable Long id) {
+        return ApiResponse.success(cicdManagementService.getAiClubPipelineConfigStatus(id));
+    }
+
+    @PostMapping("/pipelines/{id}/config/preview")
+    @RequirePermission("cicd:manage")
+    public ApiResponse<AiClubPipelineConfigPreviewResult> previewAiClubPipelineConfig(@PathVariable Long id,
+                                                                                     @Valid @RequestBody AiClubPipelineConfigPreviewRequest request) {
+        return ApiResponse.success(cicdManagementService.previewAiClubPipelineConfig(id, request));
+    }
+
+    @PostMapping("/pipelines/{id}/config/complete")
+    @RequirePermission("cicd:manage")
+    public ApiResponse<AiClubPipelineConfigCompleteResult> completeAiClubPipelineConfig(@PathVariable Long id,
+                                                                                       @Valid @RequestBody AiClubPipelineConfigCompleteRequest request) {
+        return ApiResponse.success(cicdManagementService.completeAiClubPipelineConfig(id, request));
+    }
+
+    @GetMapping("/pipelines/{id}/runs")
+    @RequirePermission("cicd:view")
+    public ApiResponse<List<AiClubPipelineRunSummary>> listAiClubPipelineRuns(@PathVariable Long id,
+                                                                              @RequestParam(defaultValue = "20") int limit) {
+        return ApiResponse.success(cicdManagementService.listAiClubPipelineRuns(id, limit));
+    }
+
+    @GetMapping("/pipelines/{id}/runs/{runNumber}/log")
+    @RequirePermission("cicd:view")
+    public ApiResponse<AiClubPipelineRunLogDetail> getAiClubPipelineRunLog(@PathVariable Long id,
+                                                                           @PathVariable int runNumber) {
+        return ApiResponse.success(cicdManagementService.getAiClubPipelineRunLog(id, runNumber));
     }
 
     @GetMapping("/jenkins-servers")

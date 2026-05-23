@@ -959,7 +959,7 @@ public class GitlabManagementService {
             entity.setTokenCiphertext(null);
         } else {
             if (Boolean.TRUE.equals(entity.getTriggerPipelineAfterMerge())) {
-                throw new IllegalArgumentException("?????????????????? Jenkins ???");
+                throw new IllegalArgumentException("独立运行模式不支持合并后自动触发流水线");
             }
             entity.setBinding(null);
             entity.setApiBaseUrl(resolveApiBaseUrl(request.apiBaseUrl()));
@@ -2618,10 +2618,10 @@ public class GitlabManagementService {
         }
         boolean multipleBindings = pipelineOutcome.bindingOutcomes() != null && pipelineOutcome.bindingOutcomes().size() > 1;
         return switch (pipelineOutcome.status()) {
-            case "SUCCESS" -> limitMessage(mergeMessage + "；" + (multipleBindings ? defaultString(pipelineOutcome.message()) : "已触发 Jenkins 流水线"));
-            case "SKIPPED" -> limitMessage(mergeMessage + "；未触发 Jenkins：" + defaultString(pipelineOutcome.message()));
-            case "FAILED" -> limitMessage(mergeMessage + "；Jenkins 触发失败：" + defaultString(pipelineOutcome.message()));
-            case "PARTIAL" -> limitMessage(mergeMessage + "；Jenkins 部分触发：" + defaultString(pipelineOutcome.message()));
+            case "SUCCESS" -> limitMessage(mergeMessage + "；" + (multipleBindings ? defaultString(pipelineOutcome.message()) : "已触发流水线"));
+            case "SKIPPED" -> limitMessage(mergeMessage + "；未触发流水线：" + defaultString(pipelineOutcome.message()));
+            case "FAILED" -> limitMessage(mergeMessage + "；流水线触发失败：" + defaultString(pipelineOutcome.message()));
+            case "PARTIAL" -> limitMessage(mergeMessage + "；流水线部分触发：" + defaultString(pipelineOutcome.message()));
             default -> limitMessage(mergeMessage);
         };
     }
@@ -2631,7 +2631,7 @@ public class GitlabManagementService {
             return null;
         }
         StringBuilder builder = new StringBuilder();
-        builder.append("## Jenkins 流水线触发结果\n\n");
+        builder.append("## 流水线触发结果\n\n");
         builder.append("- 状态：").append(formatPipelineTriggerStatusText(pipelineOutcome.status())).append("\n");
         if (hasText(pipelineOutcome.message())) {
             builder.append("- 摘要：").append(pipelineOutcome.message().trim()).append("\n");
@@ -2640,18 +2640,18 @@ public class GitlabManagementService {
             return builder.toString();
         }
         builder.append("\n");
-        // 多条 Jenkins 绑定需要逐条输出状态，方便在合并日志中定位具体哪一条失败或被跳过。
+        // 多条流水线需要逐条输出状态，方便在合并日志中定位具体哪一条失败或被跳过。
         for (int index = 0; index < pipelineOutcome.bindingOutcomes().size(); index++) {
             CicdManagementService.PipelineBindingOutcome bindingOutcome = pipelineOutcome.bindingOutcomes().get(index);
             if (pipelineOutcome.bindingOutcomes().size() > 1) {
-                builder.append("### 绑定 ").append(index + 1).append("\n\n");
+                builder.append("### 流水线 ").append(index + 1).append("\n\n");
             }
             builder.append("- 状态：").append(formatPipelineTriggerStatusText(bindingOutcome.status())).append("\n");
             if (hasText(bindingOutcome.jenkinsServerName())) {
-                builder.append("- Jenkins 服务：").append(bindingOutcome.jenkinsServerName().trim()).append("\n");
+                builder.append("- Provider：").append(bindingOutcome.jenkinsServerName().trim()).append("\n");
             }
             if (hasText(bindingOutcome.jobName())) {
-                builder.append("- Job：").append(bindingOutcome.jobName().trim()).append("\n");
+                builder.append("- 名称：").append(bindingOutcome.jobName().trim()).append("\n");
             }
             if (hasText(bindingOutcome.message())) {
                 builder.append("- 说明：").append(bindingOutcome.message().trim()).append("\n");

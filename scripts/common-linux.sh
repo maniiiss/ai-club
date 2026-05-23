@@ -92,6 +92,21 @@ get_env_or_default() {
   fi
 }
 
+is_env_flag_enabled() {
+  local name="$1"
+  local default_value="${2:-false}"
+  local value
+  value="$(get_env_or_default "${name}" "${default_value}")"
+  case "${value,,}" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+woodpecker_enabled() {
+  is_env_flag_enabled 'WOODPECKER_ENABLED' 'true'
+}
+
 get_dotenv_value() {
   local env_path="$1"
   local name="$2"
@@ -190,6 +205,21 @@ ensure_full_docker_env_file() {
   if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_SCAN_HOST_PATH' '')" ]]; then
     set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_SCAN_HOST_PATH' './.data/scans'
   fi
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'WOODPECKER_PORT' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'WOODPECKER_PORT' '18000'
+  fi
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'WOODPECKER_DATA_DIR' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'WOODPECKER_DATA_DIR' './.data/woodpecker'
+  fi
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'WOODPECKER_AGENT_DATA_DIR' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'WOODPECKER_AGENT_DATA_DIR' './.data/woodpecker-agent'
+  fi
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_WOODPECKER_INTERNAL_BASE_URL' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_WOODPECKER_INTERNAL_BASE_URL' 'http://woodpecker-server:8000'
+  fi
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_WOODPECKER_PUBLIC_BASE_URL' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_WOODPECKER_PUBLIC_BASE_URL' 'http://localhost:18000'
+  fi
 
   ok "已准备全量 Docker 环境文件：${FULL_DOCKER_ENV_FILE}"
 }
@@ -204,6 +234,7 @@ load_ports() {
   HERMES_PORT="$(get_env_or_default 'HERMES_PORT' '18080')"
   HINDSIGHT_PORT="$(get_env_or_default 'HINDSIGHT_PORT' '18888')"
   GITNEXUS_UI_PORT="$(get_env_or_default 'PLATFORM_GITNEXUS_UI_PUBLIC_PORT' '5174')"
+  WOODPECKER_PORT="$(get_env_or_default 'WOODPECKER_PORT' '18000')"
 }
 
 ensure_compose_cmd() {
@@ -600,8 +631,15 @@ start_source_stack() {
   require_cmd docker 'Docker Engine / Docker Desktop'
 
   if [[ "${skip_infrastructure}" != 'true' ]]; then
+    local profile_args=()
+    local infrastructure_services=(postgres redis minio hindsight gitnexus-web hermes)
+    if woodpecker_enabled; then
+      profile_args+=(--profile woodpecker)
+      infrastructure_services+=(woodpecker-server woodpecker-agent)
+    fi
+
     invoke_compose "${HYBRID_COMPOSE_FILE}" "${DEFAULT_ENV_FILE}" '启动源码模式依赖容器（PostgreSQL / Redis / MinIO / Hindsight）' \
-      up -d postgres redis minio hindsight gitnexus-web
+      "${profile_args[@]}" up -d "${infrastructure_services[@]}"
 
     local hybrid_code_processing_host
     hybrid_code_processing_host="$(get_linux_hybrid_code_processing_host)"
@@ -616,6 +654,9 @@ start_source_stack() {
     wait_port "${HINDSIGHT_PORT}" 120 'Hindsight'
     wait_port "${GITNEXUS_UI_PORT}" 120 'GitNexus Web UI'
     wait_port "${HERMES_PORT}" 120 'Hermes'
+    if woodpecker_enabled; then
+      wait_port "${WOODPECKER_PORT}" 120 'Woodpecker'
+    fi
     ok "Hermes 将通过 ${hybrid_code_processing_host} 访问宿主机 code-processing"
   fi
 
@@ -634,7 +675,7 @@ stop_source_stack() {
   fi
 
   invoke_compose "${HYBRID_COMPOSE_FILE}" "${env_file}" '停止源码模式依赖容器' \
-    stop postgres redis minio hindsight gitnexus-web hermes
+    --profile woodpecker stop postgres redis minio hindsight gitnexus-web hermes woodpecker-server woodpecker-agent
 
   printf '\n'
   ok '源码模式项目已停止'
@@ -658,7 +699,11 @@ start_full_docker_stack() {
   import_dotenv "${FULL_DOCKER_ENV_FILE}"
   load_ports
 
-  local compose_args=(up -d)
+  local compose_args=()
+  if woodpecker_enabled; then
+    compose_args+=(--profile woodpecker)
+  fi
+  compose_args+=(up -d)
   if [[ "${skip_build}" != 'true' ]]; then
     compose_args+=(--build)
   fi
@@ -674,6 +719,9 @@ start_full_docker_stack() {
   wait_port "${HINDSIGHT_PORT}" 180 'Hindsight'
   wait_port "${HERMES_PORT}" 180 'Hermes'
   wait_port "${GITNEXUS_UI_PORT}" 180 'GitNexus Web UI'
+  if woodpecker_enabled; then
+    wait_port "${WOODPECKER_PORT}" 180 'Woodpecker'
+  fi
   wait_port "${BACKEND_PORT}" 180 'Backend'
   wait_port "${FRONTEND_PORT}" 180 'Frontend'
 
@@ -685,6 +733,9 @@ start_full_docker_stack() {
   printf 'Hermes: http://localhost:%s\n' "${HERMES_PORT}"
   printf 'Hindsight: http://localhost:%s\n' "${HINDSIGHT_PORT}"
   printf 'GitNexus Web UI: http://localhost:%s\n' "${GITNEXUS_UI_PORT}"
+  if woodpecker_enabled; then
+    printf 'Woodpecker: http://localhost:%s\n' "${WOODPECKER_PORT}"
+  fi
 }
 
 stop_full_docker_stack() {
@@ -709,6 +760,11 @@ package_full_docker_stack() {
   import_dotenv "${FULL_DOCKER_ENV_FILE}"
   load_ports
 
+  local compose_profile_args=()
+  if woodpecker_enabled; then
+    compose_profile_args+=(--profile woodpecker)
+  fi
+
   local timestamp
   timestamp="$(date '+%Y%m%d-%H%M%S')"
   local package_dir="${REPO_ROOT}/${output_root}/${timestamp}"
@@ -717,10 +773,15 @@ package_full_docker_stack() {
   local readme_path="${package_dir}/README.txt"
 
   invoke_compose "${FULL_DOCKER_COMPOSE_FILE}" "${FULL_DOCKER_ENV_FILE}" '构建全量 Docker 业务镜像' \
-    build --pull
+    "${compose_profile_args[@]}" build --pull
+
+  local middleware_services=(postgres redis minio hindsight hermes)
+  if woodpecker_enabled; then
+    middleware_services+=(woodpecker-server woodpecker-agent)
+  fi
 
   invoke_compose "${FULL_DOCKER_COMPOSE_FILE}" "${FULL_DOCKER_ENV_FILE}" '拉取全量 Docker 中间件镜像' \
-    pull postgres redis minio hindsight hermes
+    "${compose_profile_args[@]}" pull "${middleware_services[@]}"
 
   log "准备 Docker 打包目录：${package_dir}"
   mkdir -p "${package_dir}"
@@ -730,7 +791,7 @@ package_full_docker_stack() {
   cp -R "${POSTGRES_INIT_DIR}" "${package_dir}/postgres-init"
 
   local images=()
-  if mapfile -t images < <(capture_compose_output "${FULL_DOCKER_COMPOSE_FILE}" "${FULL_DOCKER_ENV_FILE}" config --images 2>/dev/null); then
+  if mapfile -t images < <(capture_compose_output "${FULL_DOCKER_COMPOSE_FILE}" "${FULL_DOCKER_ENV_FILE}" "${compose_profile_args[@]}" config --images 2>/dev/null); then
     :
   fi
 
@@ -746,6 +807,8 @@ package_full_docker_stack() {
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HERMES_IMAGE' 'ghcr.io/nousresearch/hermes-agent:latest')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HINDSIGHT_IMAGE' 'ghcr.io/vectorize-io/hindsight:latest')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'GITNEXUS_WEB_IMAGE' 'git-ai-club-gitnexus-web:latest')"
+      "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'WOODPECKER_IMAGE' 'woodpeckerci/woodpecker-server:v3')"
+      "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'WOODPECKER_AGENT_IMAGE' 'woodpeckerci/woodpecker-agent:v3')"
     )
   fi
 
@@ -777,6 +840,7 @@ AI Club Docker 打包说明
 - Hermes: http://localhost:${HERMES_PORT}
 - Hindsight: http://localhost:${HINDSIGHT_PORT}
 - GitNexus Web UI: http://localhost:${GITNEXUS_UI_PORT}
+$(if woodpecker_enabled; then printf -- '- Woodpecker: http://localhost:%s\n' "${WOODPECKER_PORT}"; fi)
 - PostgreSQL: localhost:${POSTGRES_PORT}
 - Redis: localhost:${REDIS_PORT}
 - MinIO: http://localhost:${MINIO_PORT}

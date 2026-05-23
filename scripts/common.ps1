@@ -162,6 +162,11 @@ function Ensure-FullDockerEnvFile {
         HINDSIGHT_PORT = '18888'
         HINDSIGHT_CONSOLE_PORT = '19999'
         PLATFORM_SCAN_HOST_PATH = './.data/scans'
+        WOODPECKER_PORT = '18000'
+        WOODPECKER_DATA_DIR = './.data/woodpecker'
+        WOODPECKER_AGENT_DATA_DIR = './.data/woodpecker-agent'
+        PLATFORM_WOODPECKER_INTERNAL_BASE_URL = 'http://woodpecker-server:8000'
+        PLATFORM_WOODPECKER_PUBLIC_BASE_URL = 'http://localhost:18000'
     }
 
     foreach ($entry in $fullDockerDefaults.GetEnumerator()) {
@@ -206,6 +211,22 @@ function Get-EnvOrDefault([string]$Name, [string]$DefaultValue) {
     return $value
 }
 
+function Test-EnvFlagEnabled([string]$Name, [string]$DefaultValue = 'false') {
+    $value = (Get-EnvOrDefault -Name $Name -DefaultValue $DefaultValue).Trim().ToLowerInvariant()
+    return @('1', 'true', 'yes', 'on') -contains $value
+}
+
+function Test-WoodpeckerEnabled {
+    return Test-EnvFlagEnabled -Name 'WOODPECKER_ENABLED' -DefaultValue 'true'
+}
+
+function Add-WoodpeckerProfileIfEnabled([string[]]$Arguments) {
+    if (Test-WoodpeckerEnabled) {
+        return @('--profile', 'woodpecker') + $Arguments
+    }
+    return $Arguments
+}
+
 function Get-PortConfiguration {
     return @{
         Backend        = [int](Get-EnvOrDefault -Name 'BACKEND_PORT' -DefaultValue '8080')
@@ -217,6 +238,7 @@ function Get-PortConfiguration {
         Hermes         = [int](Get-EnvOrDefault -Name 'HERMES_PORT' -DefaultValue '18080')
         Hindsight      = [int](Get-EnvOrDefault -Name 'HINDSIGHT_PORT' -DefaultValue '18888')
         GitNexusUi     = [int](Get-EnvOrDefault -Name 'PLATFORM_GITNEXUS_UI_PUBLIC_PORT' -DefaultValue '5174')
+        Woodpecker     = [int](Get-EnvOrDefault -Name 'WOODPECKER_PORT' -DefaultValue '18000')
     }
 }
 
@@ -800,7 +822,7 @@ function Get-ComposeImages([string]$ComposeFile, [string]$EnvFile) {
     try {
         $resolvedImages = Invoke-ComposeCapture -ComposeFile $ComposeFile `
             -EnvFile $EnvFile `
-            -Arguments @('config', '--images') `
+            -Arguments (Add-WoodpeckerProfileIfEnabled -Arguments @('config', '--images')) `
             -Description '解析全量 Docker 镜像清单'
 
         $images = @(
@@ -826,6 +848,8 @@ function Get-ComposeImages([string]$ComposeFile, [string]$EnvFile) {
         (Get-DotEnvValue -Path $EnvFile -Name 'MINIO_IMAGE' -DefaultValue 'minio/minio:RELEASE.2025-02-28T09-55-16Z'),
         (Get-DotEnvValue -Path $EnvFile -Name 'HERMES_IMAGE' -DefaultValue 'ghcr.io/nousresearch/hermes-agent:latest'),
         (Get-DotEnvValue -Path $EnvFile -Name 'HINDSIGHT_IMAGE' -DefaultValue 'ghcr.io/vectorize-io/hindsight:latest'),
-        (Get-DotEnvValue -Path $EnvFile -Name 'GITNEXUS_WEB_IMAGE' -DefaultValue 'git-ai-club-gitnexus-web:latest')
+        (Get-DotEnvValue -Path $EnvFile -Name 'GITNEXUS_WEB_IMAGE' -DefaultValue 'git-ai-club-gitnexus-web:latest'),
+        (Get-DotEnvValue -Path $EnvFile -Name 'WOODPECKER_IMAGE' -DefaultValue 'woodpeckerci/woodpecker-server:v3'),
+        (Get-DotEnvValue -Path $EnvFile -Name 'WOODPECKER_AGENT_IMAGE' -DefaultValue 'woodpeckerci/woodpecker-agent:v3')
     ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
 }

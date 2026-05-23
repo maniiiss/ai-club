@@ -191,4 +191,35 @@ class PlatformEnvVarManagementServiceTests {
         )).isInstanceOf(NoSuchElementException.class)
                 .hasMessageContaining(PlatformEnvVarRegistry.KEY_YAADE_DEFAULT_USER_PASSWORD);
     }
+
+    @Test
+    void shouldHideHermesAndHindsightConnectionSettingsFromEnvVarManagement() {
+        when(platformEnvVarConfigRepository.findAll()).thenReturn(java.util.List.of());
+
+        assertThat(platformEnvVarManagementService.listEnvVars())
+                .extracting(com.aiclub.platform.dto.PlatformEnvVarSummary::envKey)
+                .doesNotContain(
+                        PlatformEnvVarRegistry.KEY_HERMES_BASE_URL,
+                        PlatformEnvVarRegistry.KEY_HERMES_API_KEY,
+                        PlatformEnvVarRegistry.KEY_HINDSIGHT_API_URL,
+                        PlatformEnvVarRegistry.KEY_HINDSIGHT_API_KEY
+                );
+
+        assertThatThrownBy(() -> platformEnvVarManagementService.getEnvVarDetail(
+                PlatformEnvVarRegistry.KEY_HERMES_BASE_URL
+        )).isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining(PlatformEnvVarRegistry.KEY_HERMES_BASE_URL);
+        assertThatThrownBy(() -> platformEnvVarManagementService.getEnvVarDetail(
+                PlatformEnvVarRegistry.KEY_HERMES_API_KEY
+        )).isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining(PlatformEnvVarRegistry.KEY_HERMES_API_KEY);
+        assertThatThrownBy(() -> platformEnvVarManagementService.getEnvVarDetail(
+                PlatformEnvVarRegistry.KEY_HINDSIGHT_API_URL
+        )).isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining(PlatformEnvVarRegistry.KEY_HINDSIGHT_API_URL);
+        assertThatThrownBy(() -> platformEnvVarManagementService.getEnvVarDetail(
+                PlatformEnvVarRegistry.KEY_HINDSIGHT_API_KEY
+        )).isInstanceOf(NoSuchElementException.class)
+                .hasMessageContaining(PlatformEnvVarRegistry.KEY_HINDSIGHT_API_KEY);
+    }
 }

@@ -1263,6 +1263,134 @@ export interface ProjectPipelineBindingItem {
   lastTriggerUrl: string | null
 }
 
+export interface AiClubPipelineItem {
+  id: number
+  projectId: number
+  projectName: string
+  gitlabBindingId: number
+  gitlabProjectName: string | null
+  gitlabProjectPath: string | null
+  gitlabProjectWebUrl: string | null
+  name: string
+  providerCode: string
+  defaultBranch: string | null
+  configPath: string
+  woodpeckerRepoId: number | null
+  woodpeckerRepoFullName: string | null
+  woodpeckerRepoUrl: string | null
+  enabled: boolean
+  lastRunStatus: string | null
+  lastRunMessage: string | null
+  lastRunNumber: number | null
+  lastRunUrl: string | null
+  lastTriggeredAt: string | null
+}
+
+export interface AiClubPipelineTriggerResult {
+  pipelineId: number
+  projectName: string
+  pipelineName: string
+  providerCode: string
+  runNumber: number | null
+  status: string
+  triggerUrl: string | null
+  message: string
+  triggeredAt: string
+}
+
+export interface AiClubPipelineConfigTemplateParameterItem {
+  key: string
+  label: string
+  type: 'text' | 'password' | 'textarea' | 'switch' | string
+  required: boolean
+  defaultValue: string
+  placeholder: string
+  helpText: string
+  options: string[]
+  secret: boolean
+  dependsOnKey: string | null
+  dependsOnValue: string | null
+}
+
+export interface AiClubPipelineConfigTemplateItem {
+  code: string
+  name: string
+  description: string
+  category: string
+  defaultConfigPath: string
+  contentPreview: string
+  requirements: string[]
+  readyToUse: boolean
+  available: boolean
+  unavailableReason: string
+  requiresRegistry: boolean
+  imageRepoPreview: string | null
+  parameters: AiClubPipelineConfigTemplateParameterItem[]
+}
+
+export interface AiClubPipelineConfigStatusItem {
+  status: 'PRESENT' | 'MISSING' | 'UNKNOWN'
+  branch: string
+  configPath: string
+  message: string
+  checkedAt: string | null
+}
+
+export interface AiClubPipelineConfigPreviewResult {
+  templateCode: string
+  content: string
+  branch: string
+  configPath: string
+}
+
+export interface AiClubPipelineConfigCompleteResult {
+  branchName: string
+  commitId: string | null
+  commitUrl: string | null
+  mergeRequestIid: number | null
+  mergeRequestUrl: string | null
+  message: string
+}
+
+export interface AiClubPipelineRunItem {
+  number: number
+  status: string | null
+  branch: string | null
+  event: string | null
+  message: string | null
+  commit: string | null
+  url: string | null
+  createdAt: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  durationMillis: number | null
+  durationText: string
+}
+
+export interface AiClubPipelineRunLogDetailItem {
+  projectName: string
+  pipelineName: string
+  repoFullName: string | null
+  runNumber: number
+  status: string | null
+  branch: string | null
+  url: string | null
+  startedAt: string | null
+  finishedAt: string | null
+  consoleLog: string
+}
+
+export interface WoodpeckerHealthItem {
+  enabled: boolean
+  configured: boolean
+  available: boolean
+  internalBaseUrl: string
+  publicBaseUrl: string
+  message: string
+  checkedAt: string | null
+  userName: string | null
+}
+
 export interface JenkinsBuildTriggerResult {
   bindingId: number
   projectName: string

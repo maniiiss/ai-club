@@ -313,6 +313,43 @@ services:
       retries: 3
       start_period: 10s
 
+  woodpecker-server:
+    profiles:
+      - woodpecker
+    image: ${WOODPECKER_IMAGE:-woodpeckerci/woodpecker-server:v3}
+    container_name: git-ai-club-server-woodpecker-server
+    restart: unless-stopped
+    env_file:
+      - path: ${WOODPECKER_FORGE_ENV_FILE:-/data/git-ai-club/woodpecker/forge.env}
+        required: false
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      WOODPECKER_LOG_LEVEL: ${WOODPECKER_LOG_LEVEL:-info}
+      WOODPECKER_HOST: ${WOODPECKER_HOST:-http://localhost:18000}
+      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET:-change-me-woodpecker-agent-secret}
+    ports:
+      - "${WOODPECKER_PORT:-18000}:8000"
+    volumes:
+      - "${WOODPECKER_DATA_DIR:-/data/git-ai-club/woodpecker}:/var/lib/woodpecker/"
+
+  woodpecker-agent:
+    profiles:
+      - woodpecker
+    image: ${WOODPECKER_AGENT_IMAGE:-woodpeckerci/woodpecker-agent:v3}
+    container_name: git-ai-club-server-woodpecker-agent
+    restart: unless-stopped
+    command: agent
+    depends_on:
+      woodpecker-server:
+        condition: service_started
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      WOODPECKER_SERVER: woodpecker-server:9000
+      WOODPECKER_AGENT_SECRET: ${WOODPECKER_AGENT_SECRET:-change-me-woodpecker-agent-secret}
+    volumes:
+      - "${WOODPECKER_AGENT_DATA_DIR:-/data/git-ai-club/woodpecker-agent}:/etc/woodpecker"
+      - /var/run/docker.sock:/var/run/docker.sock
+
   backend:
     build:
       context: ./backend
@@ -361,9 +398,15 @@ services:
       PLATFORM_GITLAB_OAUTH_CLIENT_ID: ${PLATFORM_GITLAB_OAUTH_CLIENT_ID:-}
       PLATFORM_GITLAB_OAUTH_CLIENT_SECRET: ${PLATFORM_GITLAB_OAUTH_CLIENT_SECRET:-}
       PLATFORM_GITLAB_OAUTH_REDIRECT_URI: ${PLATFORM_GITLAB_OAUTH_REDIRECT_URI:-http://localhost:5173/profile/gitlab-callback}
+      WOODPECKER_ENABLED: ${WOODPECKER_ENABLED:-true}
+      PLATFORM_WOODPECKER_INTERNAL_BASE_URL: ${PLATFORM_WOODPECKER_INTERNAL_BASE_URL:-http://woodpecker-server:8000}
+      PLATFORM_WOODPECKER_PUBLIC_BASE_URL: ${PLATFORM_WOODPECKER_PUBLIC_BASE_URL:-http://localhost:18000}
+      PLATFORM_WOODPECKER_API_TOKEN: ${PLATFORM_WOODPECKER_API_TOKEN:-}
+      PLATFORM_WOODPECKER_TIMEOUT_SECONDS: ${PLATFORM_WOODPECKER_TIMEOUT_SECONDS:-20}
       PLATFORM_TOKEN_SECRET: ${PLATFORM_TOKEN_SECRET:-ai-club-demo-token-secret}
       PLATFORM_TOKEN_EXPIRE_HOURS: ${PLATFORM_TOKEN_EXPIRE_HOURS:-12}
       PLATFORM_SECURITY_SESSION_KEY_PREFIX: ${PLATFORM_SECURITY_SESSION_KEY_PREFIX:-ai-club:login:token:}
+      PLATFORM_SECURITY_CORS_ALLOWED_ORIGIN_PATTERNS: "${PLATFORM_SECURITY_CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:*,http://127.0.0.1:*,http://192.168.*:*,http://10.*:*}"
       PLATFORM_YAADE_BASE_URL: ${PLATFORM_YAADE_BASE_URL:-http://host.docker.internal:9339/api/yaade/proxy}
       PLATFORM_YAADE_ADMIN_USERNAME: ${PLATFORM_YAADE_ADMIN_USERNAME:-admin}
       PLATFORM_YAADE_ADMIN_PASSWORD: ${PLATFORM_YAADE_ADMIN_PASSWORD:-password}

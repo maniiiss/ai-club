@@ -13,6 +13,7 @@ import GitlabView from '@/views/GitlabView.vue'
 const GitlabCodeStructureView = () => import('@/views/GitlabCodeStructureView.vue')
 import JenkinsServerView from '@/views/JenkinsServerView.vue'
 import PipelineBindingView from '@/views/PipelineBindingView.vue'
+const AiClubPipelineDetailView = () => import('@/views/AiClubPipelineDetailView.vue')
 import ModelView from '@/views/ModelView.vue'
 const ApiGroupHomeView = () => import('@/views/ApiGroupHomeView.vue')
 const ProjectApiManagementView = () => import('@/views/ProjectApiManagementView.vue')
@@ -96,9 +97,10 @@ const router = createRouter({
         { path: 'tests/:planId', name: 'test-plan-detail', component: TestPlanDetailView, meta: { title: '测试计划详情', permission: 'test:view', activeMenu: '/tests' } },
         { path: 'models', name: 'models', component: ModelView, meta: { title: '模型管理', permission: 'model:view' } },
         { path: 'gitlab', name: 'gitlab', component: GitlabView, meta: { title: '代码仓库管理', permission: 'gitlab:view' } },
-        { path: 'cicd', redirect: { name: 'cicd-servers' } },
-        { path: 'cicd/jenkins-servers', name: 'cicd-servers', component: JenkinsServerView, meta: { title: 'Jenkins 服务', permission: 'cicd:view' } },
-        { path: 'cicd/pipeline-bindings', name: 'cicd-pipelines', component: PipelineBindingView, meta: { title: '项目流水线', permission: 'cicd:view' } },
+        { path: 'cicd', redirect: { name: 'cicd-pipelines' } },
+        { path: 'cicd/jenkins-servers', name: 'cicd-servers', component: JenkinsServerView, meta: { title: '外部 Jenkins', permission: 'cicd:view' } },
+        { path: 'cicd/pipeline-bindings', name: 'cicd-pipelines', component: PipelineBindingView, meta: { title: '流水线中心', permission: 'cicd:view' } },
+        { path: 'cicd/pipelines/:pipelineId', name: 'cicd-pipeline-detail', component: AiClubPipelineDetailView, meta: { title: '流水线详情', permission: 'cicd:view', activeMenu: '/cicd/pipeline-bindings' } },
         { path: 'profile', name: 'profile', component: ProfileView, meta: { title: '个人中心' } },
         { path: 'profile/gitlab-callback', name: 'profile-gitlab-callback', component: GitlabOauthCallbackView, meta: { title: 'GitLab 授权回调' } },
         { path: 'users', name: 'users', component: UserView, meta: { title: '用户管理', permission: 'system:user:view' } },

@@ -78,6 +78,12 @@ platform:
       client-secret: ${PLATFORM_GITLAB_OAUTH_CLIENT_SECRET:}
       redirect-uri: ${PLATFORM_GITLAB_OAUTH_REDIRECT_URI:}
       state-expire-minutes: ${PLATFORM_GITLAB_OAUTH_STATE_EXPIRE_MINUTES:10}
+  woodpecker:
+    enabled: ${WOODPECKER_ENABLED:true}
+    internal-base-url: ${PLATFORM_WOODPECKER_INTERNAL_BASE_URL:http://localhost:18000}
+    public-base-url: ${PLATFORM_WOODPECKER_PUBLIC_BASE_URL:http://localhost:18000}
+    api-token: ${PLATFORM_WOODPECKER_API_TOKEN:}
+    timeout-seconds: ${PLATFORM_WOODPECKER_TIMEOUT_SECONDS:20}
   pr-review:
     oa-base-url: ${PLATFORM_PR_REVIEW_OA_BASE_URL:}
     default-dev-group-name: ${PLATFORM_PR_REVIEW_DEFAULT_DEV_GROUP_NAME:}
@@ -135,6 +141,8 @@ platform:
     token-secret: ${PLATFORM_TOKEN_SECRET:ai-club-demo-token-secret}
     token-expire-hours: ${PLATFORM_TOKEN_EXPIRE_HOURS:12}
     session-key-prefix: ${PLATFORM_SECURITY_SESSION_KEY_PREFIX:ai-club:login:token:}
+    cors:
+      allowed-origin-patterns: '${PLATFORM_SECURITY_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:*,http://127.0.0.1:*,http://192.168.*:*,http://10.*:*}'
   upload:
     max-image-size: 5MB
     max-document-size: 20MB

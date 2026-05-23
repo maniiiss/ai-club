@@ -1,9 +1,19 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.common.DataPermissionScopeType;
+import com.aiclub.platform.domain.model.AiClubPipelineEntity;
 import com.aiclub.platform.domain.model.JenkinsServerEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
+import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
 import com.aiclub.platform.domain.model.ProjectPipelineBindingEntity;
+import com.aiclub.platform.dto.AiClubPipelineRunLogDetail;
+import com.aiclub.platform.dto.AiClubPipelineRunSummary;
+import com.aiclub.platform.dto.AiClubPipelineConfigCompleteResult;
+import com.aiclub.platform.dto.AiClubPipelineConfigPreviewResult;
+import com.aiclub.platform.dto.AiClubPipelineConfigStatusItem;
+import com.aiclub.platform.dto.AiClubPipelineConfigTemplateItem;
+import com.aiclub.platform.dto.AiClubPipelineSummary;
+import com.aiclub.platform.dto.AiClubPipelineTriggerResult;
 import com.aiclub.platform.dto.JenkinsBuildTriggerResult;
 import com.aiclub.platform.dto.JenkinsBuildLogDetail;
 import com.aiclub.platform.dto.JenkinsBuildSummary;
@@ -11,9 +21,15 @@ import com.aiclub.platform.dto.JenkinsJobSummary;
 import com.aiclub.platform.dto.JenkinsServerSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectPipelineBindingSummary;
+import com.aiclub.platform.dto.WoodpeckerHealthSummary;
+import com.aiclub.platform.dto.request.AiClubPipelineConfigCompleteRequest;
+import com.aiclub.platform.dto.request.AiClubPipelineConfigPreviewRequest;
+import com.aiclub.platform.dto.request.AiClubPipelineRequest;
 import com.aiclub.platform.dto.request.JenkinsServerRequest;
 import com.aiclub.platform.dto.request.ProjectPipelineBindingRequest;
+import com.aiclub.platform.repository.AiClubPipelineRepository;
 import com.aiclub.platform.repository.JenkinsServerRepository;
+import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
 import com.aiclub.platform.repository.ProjectPipelineBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.aiclub.platform.security.AuthContextHolder;
@@ -44,32 +60,236 @@ import java.util.NoSuchElementException;
 public class CicdManagementService {
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter PIPELINE_CONFIG_BRANCH_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final ProjectRepository projectRepository;
+    private final ProjectGitlabBindingRepository projectGitlabBindingRepository;
+    private final AiClubPipelineRepository aiClubPipelineRepository;
     private final JenkinsServerRepository jenkinsServerRepository;
     private final ProjectPipelineBindingRepository projectPipelineBindingRepository;
     private final TokenCipherService tokenCipherService;
     private final JenkinsApiService jenkinsApiService;
+    private final GitlabApiService gitlabApiService;
+    private final AiClubPipelineConfigTemplateService pipelineConfigTemplateService;
+    private final WoodpeckerPipelineProvider woodpeckerPipelineProvider;
+    private final WoodpeckerApiService woodpeckerApiService;
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
     private final ProjectDataPermissionService projectDataPermissionService;
 
     public CicdManagementService(ProjectRepository projectRepository,
+                                 ProjectGitlabBindingRepository projectGitlabBindingRepository,
+                                 AiClubPipelineRepository aiClubPipelineRepository,
                                  JenkinsServerRepository jenkinsServerRepository,
                                  ProjectPipelineBindingRepository projectPipelineBindingRepository,
                                  TokenCipherService tokenCipherService,
                                  JenkinsApiService jenkinsApiService,
+                                 GitlabApiService gitlabApiService,
+                                 AiClubPipelineConfigTemplateService pipelineConfigTemplateService,
+                                 WoodpeckerPipelineProvider woodpeckerPipelineProvider,
+                                 WoodpeckerApiService woodpeckerApiService,
                                  ObjectMapper objectMapper,
                                  NotificationService notificationService,
                                  ProjectDataPermissionService projectDataPermissionService) {
         this.projectRepository = projectRepository;
+        this.projectGitlabBindingRepository = projectGitlabBindingRepository;
+        this.aiClubPipelineRepository = aiClubPipelineRepository;
         this.jenkinsServerRepository = jenkinsServerRepository;
         this.projectPipelineBindingRepository = projectPipelineBindingRepository;
         this.tokenCipherService = tokenCipherService;
         this.jenkinsApiService = jenkinsApiService;
+        this.gitlabApiService = gitlabApiService;
+        this.pipelineConfigTemplateService = pipelineConfigTemplateService;
+        this.woodpeckerPipelineProvider = woodpeckerPipelineProvider;
+        this.woodpeckerApiService = woodpeckerApiService;
         this.objectMapper = objectMapper;
         this.notificationService = notificationService;
         this.projectDataPermissionService = projectDataPermissionService;
+    }
+
+    public WoodpeckerHealthSummary getWoodpeckerHealth() {
+        return woodpeckerPipelineProvider.health();
+    }
+
+    public List<AiClubPipelineConfigTemplateItem> listAiClubPipelineConfigTemplates() {
+        return pipelineConfigTemplateService.listTemplates();
+    }
+
+    public List<AiClubPipelineConfigTemplateItem> listAiClubPipelineConfigTemplates(Long id) {
+        return pipelineConfigTemplateService.listTemplates(buildTemplateRenderContext(requireAiClubPipeline(id)));
+    }
+
+    public AiClubPipelineConfigStatusItem getAiClubPipelineConfigStatus(Long id) {
+        AiClubPipelineEntity entity = requireAiClubPipeline(id);
+        String branch = resolveAiClubPipelineBranch(entity, null);
+        String configPath = defaultString(trimToNull(entity.getConfigPath()), ".woodpecker.yml");
+        try {
+            boolean exists = repositoryFileExists(entity, branch, configPath);
+            if (exists) {
+                return new AiClubPipelineConfigStatusItem(
+                        "PRESENT",
+                        branch,
+                        configPath,
+                        "目标分支 " + branch + " 已配置流水线文件 " + configPath,
+                        formatTime(LocalDateTime.now())
+                );
+            }
+            return new AiClubPipelineConfigStatusItem(
+                    "MISSING",
+                    branch,
+                    configPath,
+                    "目标分支 " + branch + " 尚未配置流水线文件 " + configPath + "，可使用平台模板创建 MR 补全配置。",
+                    formatTime(LocalDateTime.now())
+            );
+        } catch (RuntimeException exception) {
+            return new AiClubPipelineConfigStatusItem(
+                    "UNKNOWN",
+                    branch,
+                    configPath,
+                    limitMessage(exception.getMessage()),
+                    formatTime(LocalDateTime.now())
+            );
+        }
+    }
+
+    public AiClubPipelineConfigPreviewResult previewAiClubPipelineConfig(Long id, AiClubPipelineConfigPreviewRequest request) {
+        AiClubPipelineEntity entity = requireAiClubPipeline(id);
+        String branch = resolveAiClubPipelineBranch(entity, null);
+        String configPath = defaultString(trimToNull(entity.getConfigPath()), ".woodpecker.yml");
+        String content = request.manualEdit()
+                ? defaultString(request.content())
+                : pipelineConfigTemplateService.renderTemplate(
+                request.templateCode(),
+                buildTemplateRenderContext(entity),
+                request.parameters()
+        );
+        return new AiClubPipelineConfigPreviewResult(
+                request.templateCode().trim().toUpperCase(),
+                content,
+                branch,
+                configPath
+        );
+    }
+
+    @Transactional(noRollbackFor = RuntimeException.class)
+    public AiClubPipelineConfigCompleteResult completeAiClubPipelineConfig(Long id, AiClubPipelineConfigCompleteRequest request) {
+        AiClubPipelineEntity entity = requireAiClubPipeline(id);
+        pipelineConfigTemplateService.requireTemplateItem(request.templateCode(), buildTemplateRenderContext(entity));
+        String branch = resolveAiClubPipelineBranch(entity, null);
+        String configPath = defaultString(trimToNull(entity.getConfigPath()), ".woodpecker.yml");
+        if (repositoryFileExists(entity, branch, configPath)) {
+            throw new IllegalArgumentException("目标分支 " + branch + " 已存在流水线文件 " + configPath + "，平台不会覆盖已有配置");
+        }
+        String renderedContent = resolvePipelineConfigContent(entity, request);
+        prepareTemplateSecrets(entity, request);
+
+        ProjectGitlabBindingEntity binding = entity.getGitlabBinding();
+        String token = tokenCipherService.decrypt(binding.getTokenCiphertext());
+        String projectRef = resolveAiClubPipelineProjectRef(binding);
+        String generatedBranch = "ai-club/pipeline-config/" + entity.getId() + "-" + LocalDateTime.now().format(PIPELINE_CONFIG_BRANCH_FORMATTER);
+        gitlabApiService.createBranch(binding.getApiBaseUrl(), token, projectRef, generatedBranch, branch);
+        GitlabApiService.GitlabCreatedCommit commit = gitlabApiService.createCommit(
+                binding.getApiBaseUrl(),
+                token,
+                projectRef,
+                generatedBranch,
+                "ci: add AI Club Pipeline config",
+                List.of(new GitlabApiService.GitlabCommitAction("create", configPath, normalizeConfigContent(renderedContent)))
+        );
+        GitlabApiService.GitlabCreatedMergeRequest mergeRequest = gitlabApiService.createMergeRequest(
+                binding.getApiBaseUrl(),
+                token,
+                projectRef,
+                generatedBranch,
+                branch,
+                "ci: add AI Club Pipeline config for " + entity.getName(),
+                buildPipelineConfigMergeRequestDescription(entity, branch, configPath, request.templateCode())
+        );
+        return new AiClubPipelineConfigCompleteResult(
+                generatedBranch,
+                trimToNull(commit.id()),
+                trimToNull(commit.webUrl()),
+                mergeRequest.iid(),
+                trimToNull(mergeRequest.webUrl()),
+                "已创建流水线配置 MR，合并后即可触发 AI Club Pipeline"
+        );
+    }
+
+    public PageResponse<AiClubPipelineSummary> pageAiClubPipelines(int page, int size, String keyword, Long projectId, Boolean enabled) {
+        ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.requireCurrentScope();
+        Pageable pageable = buildPageable(page, size, Sort.by(Sort.Direction.ASC, "id"));
+        Page<AiClubPipelineSummary> pageData = aiClubPipelineRepository
+                .findAll(aiClubPipelineSpecification(keyword, projectId, enabled, scope), pageable)
+                .map(this::toAiClubPipelineSummary);
+        return PageResponse.from(pageData);
+    }
+
+    public AiClubPipelineSummary getAiClubPipeline(Long id) {
+        return toAiClubPipelineSummary(requireAiClubPipeline(id));
+    }
+
+    @Transactional
+    public AiClubPipelineSummary createAiClubPipeline(AiClubPipelineRequest request) {
+        AiClubPipelineEntity entity = new AiClubPipelineEntity();
+        fillAiClubPipelineEntity(entity, request, true);
+        syncWoodpeckerRepository(entity);
+        return toAiClubPipelineSummary(aiClubPipelineRepository.save(entity));
+    }
+
+    @Transactional
+    public AiClubPipelineSummary updateAiClubPipeline(Long id, AiClubPipelineRequest request) {
+        AiClubPipelineEntity entity = requireAiClubPipeline(id);
+        fillAiClubPipelineEntity(entity, request, false);
+        syncWoodpeckerRepository(entity);
+        return toAiClubPipelineSummary(aiClubPipelineRepository.save(entity));
+    }
+
+    @Transactional
+    public void deleteAiClubPipeline(Long id) {
+        aiClubPipelineRepository.delete(requireAiClubPipeline(id));
+    }
+
+    @Transactional(noRollbackFor = RuntimeException.class)
+    public AiClubPipelineSummary syncAiClubPipelineRepository(Long id) {
+        AiClubPipelineEntity entity = requireAiClubPipeline(id);
+        syncWoodpeckerRepository(entity);
+        return toAiClubPipelineSummary(aiClubPipelineRepository.save(entity));
+    }
+
+    @Transactional(noRollbackFor = RuntimeException.class)
+    public AiClubPipelineTriggerResult triggerAiClubPipeline(Long id) {
+        return triggerAiClubPipeline(requireAiClubPipeline(id), null, "手动触发");
+    }
+
+    public List<AiClubPipelineRunSummary> listAiClubPipelineRuns(Long id, int limit) {
+        AiClubPipelineEntity entity = requireAiClubPipeline(id);
+        if (entity.getWoodpeckerRepoId() == null) {
+            throw new IllegalArgumentException("流水线尚未同步 Woodpecker 仓库");
+        }
+        return woodpeckerApiService.listPipelines(entity.getWoodpeckerRepoId(), limit).stream()
+                .map(this::toAiClubPipelineRunSummary)
+                .toList();
+    }
+
+    public AiClubPipelineRunLogDetail getAiClubPipelineRunLog(Long id, int runNumber) {
+        AiClubPipelineEntity entity = requireAiClubPipeline(id);
+        if (entity.getWoodpeckerRepoId() == null) {
+            throw new IllegalArgumentException("流水线尚未同步 Woodpecker 仓库");
+        }
+        WoodpeckerApiService.WoodpeckerPipeline run = woodpeckerApiService.fetchPipeline(entity.getWoodpeckerRepoId(), runNumber);
+        String consoleLog = woodpeckerApiService.fetchAggregatedLogs(entity.getWoodpeckerRepoId(), runNumber);
+        return new AiClubPipelineRunLogDetail(
+                entity.getProject().getName(),
+                entity.getName(),
+                entity.getWoodpeckerRepoFullName(),
+                run.number(),
+                trimToNull(run.status()),
+                trimToNull(run.branch()),
+                trimToNull(woodpeckerPipelineProvider.resolveRunUrl(entity, run)),
+                formatTime(run.startedAt()),
+                formatTime(run.finishedAt()),
+                consoleLog == null ? "" : consoleLog
+        );
     }
 
     public PageResponse<JenkinsServerSummary> pageJenkinsServers(int page, int size, String keyword, Boolean enabled) {
@@ -249,17 +469,41 @@ public class CicdManagementService {
 
     @Transactional(noRollbackFor = RuntimeException.class)
     public PipelineTriggerOutcome tryTriggerProjectPipeline(Long projectId, String branchOverride, String sourceDescription) {
-        List<ProjectPipelineBindingEntity> bindings = projectPipelineBindingRepository.findByProject_IdOrderByIdAsc(projectId);
-        if (bindings.isEmpty()) {
-            return PipelineTriggerOutcome.skipped("当前项目未配置 Jenkins 流水线绑定");
+        List<PipelineBindingOutcome> bindingOutcomes = new ArrayList<>();
+        List<AiClubPipelineEntity> aiClubPipelines = aiClubPipelineRepository.findByProject_IdOrderByIdAsc(projectId);
+        // AI Club Pipeline 是默认内置 provider，项目级触发时优先走 Woodpecker。
+        for (AiClubPipelineEntity entity : aiClubPipelines) {
+            if (!Boolean.TRUE.equals(entity.getEnabled())) {
+                bindingOutcomes.add(PipelineBindingOutcome.skipped(
+                        "AI Club Pipeline 未启用",
+                        entity.getName(),
+                        entity.getProviderCode()
+                ));
+                continue;
+            }
+            try {
+                AiClubPipelineTriggerResult result = triggerAiClubPipeline(entity, branchOverride, sourceDescription);
+                bindingOutcomes.add(PipelineBindingOutcome.success(
+                        result.message(),
+                        result.triggerUrl(),
+                        result.pipelineName(),
+                        result.providerCode()
+                ));
+            } catch (RuntimeException exception) {
+                bindingOutcomes.add(PipelineBindingOutcome.failed(
+                        limitMessage(exception.getMessage()),
+                        entity.getName(),
+                        entity.getProviderCode()
+                ));
+            }
         }
 
-        List<PipelineBindingOutcome> bindingOutcomes = new ArrayList<>();
-        // 同一项目下的多条 Jenkins 绑定需要逐条触发，并分别记录结果，避免只命中首条绑定。
+        List<ProjectPipelineBindingEntity> bindings = projectPipelineBindingRepository.findByProject_IdOrderByIdAsc(projectId);
+        // Jenkins 绑定保留为外部兼容链路，继续逐条触发并参与聚合。
         for (ProjectPipelineBindingEntity entity : bindings) {
             if (!Boolean.TRUE.equals(entity.getEnabled())) {
                 bindingOutcomes.add(PipelineBindingOutcome.skipped(
-                        "项目流水线绑定未启用",
+                        "外部 Jenkins 绑定未启用",
                         entity.getJobName(),
                         entity.getJenkinsServer().getName()
                 ));
@@ -290,6 +534,242 @@ public class CicdManagementService {
             }
         }
         return buildProjectPipelineOutcome(bindingOutcomes);
+    }
+
+    private void fillAiClubPipelineEntity(AiClubPipelineEntity entity, AiClubPipelineRequest request, boolean createMode) {
+        ProjectEntity project = requireProject(request.projectId());
+        ProjectGitlabBindingEntity gitlabBinding = requireGitlabBinding(request.gitlabBindingId());
+        if (!gitlabBinding.getProject().getId().equals(project.getId())) {
+            throw new IllegalArgumentException("GitLab 绑定不属于当前项目");
+        }
+
+        String name = request.name().trim();
+        boolean duplicated = createMode
+                ? aiClubPipelineRepository.existsByProject_IdAndName(project.getId(), name)
+                : aiClubPipelineRepository.existsByProject_IdAndNameAndIdNot(project.getId(), name, entity.getId());
+        if (duplicated) {
+            throw new IllegalArgumentException("同一项目下已存在同名流水线");
+        }
+
+        entity.setProject(project);
+        entity.setGitlabBinding(gitlabBinding);
+        entity.setName(name);
+        entity.setProviderCode(AiClubPipelineEntity.PROVIDER_WOODPECKER);
+        entity.setDefaultBranch(trimToNull(request.defaultBranch()));
+        entity.setConfigPath(normalizeConfigPath(request.configPath()));
+        entity.setEnabled(Boolean.TRUE.equals(request.enabled()));
+    }
+
+    /**
+     * 创建或更新 AI Club Pipeline 时立即同步 Woodpecker 仓库，确保页面不需要维护独立服务实例。
+     */
+    private void syncWoodpeckerRepository(AiClubPipelineEntity entity) {
+        WoodpeckerApiService.WoodpeckerRepository repository = woodpeckerPipelineProvider.syncRepository(entity.getGitlabBinding());
+        entity.setWoodpeckerRepoId(repository.id());
+        entity.setWoodpeckerRepoFullName(trimToNull(repository.fullName()));
+        entity.setWoodpeckerRepoUrl(trimToNull(woodpeckerPipelineProvider.resolveRepoUrl(repository, entity.getGitlabBinding())));
+    }
+
+    private AiClubPipelineTriggerResult triggerAiClubPipeline(AiClubPipelineEntity entity, String branchOverride, String sourceDescription) {
+        LocalDateTime now = LocalDateTime.now();
+        try {
+            String branch = resolveAiClubPipelineBranch(entity, branchOverride);
+            ensureAiClubPipelineConfigPresent(entity, branch);
+            WoodpeckerApiService.WoodpeckerPipeline run = woodpeckerPipelineProvider.triggerPipeline(entity, branch, sourceDescription);
+            String triggerUrl = trimToNull(woodpeckerPipelineProvider.resolveRunUrl(entity, run));
+            String message = buildAiClubPipelineTriggeredMessage(run, sourceDescription);
+            entity.setLastRunStatus(defaultString(trimToNull(run.status()), "QUEUED"));
+            entity.setLastRunMessage(limitMessage(message));
+            entity.setLastRunNumber(run.number());
+            entity.setLastRunUrl(triggerUrl);
+            entity.setLastTriggeredAt(now);
+            aiClubPipelineRepository.save(entity);
+            notifyCurrentUserAiClubPipelineQueued(entity);
+            return new AiClubPipelineTriggerResult(
+                    entity.getId(),
+                    entity.getProject().getName(),
+                    entity.getName(),
+                    entity.getProviderCode(),
+                    run.number(),
+                    defaultString(trimToNull(run.status()), "QUEUED"),
+                    triggerUrl,
+                    message,
+                    formatTime(now)
+            );
+        } catch (RuntimeException exception) {
+            entity.setLastRunStatus("FAILED");
+            entity.setLastRunMessage(limitMessage(exception.getMessage()));
+            entity.setLastTriggeredAt(now);
+            aiClubPipelineRepository.save(entity);
+            notifyCurrentUserAiClubPipelineFailed(entity, exception.getMessage());
+            throw exception;
+        }
+    }
+
+    /**
+     * 触发前校验目标分支已经提交 Woodpecker 配置文件，避免“只同步仓库”被误认为“流水线已配置”。
+     */
+    private void ensureAiClubPipelineConfigPresent(AiClubPipelineEntity entity, String branch) {
+        ProjectGitlabBindingEntity binding = entity.getGitlabBinding();
+        String configPath = defaultString(trimToNull(entity.getConfigPath()), ".woodpecker.yml");
+        boolean exists = repositoryFileExists(entity, branch, configPath);
+        if (!exists) {
+            throw new IllegalArgumentException("目标分支 " + branch + " 尚未配置流水线文件 " + configPath + "，请先在仓库提交配置文件，或使用补全配置创建 MR 后再触发");
+        }
+    }
+
+    private String resolveAiClubPipelineBranch(AiClubPipelineEntity pipeline, String branchOverride) {
+        String branch = firstText(
+                branchOverride,
+                pipeline.getDefaultBranch(),
+                pipeline.getGitlabBinding().getDefaultTargetBranch(),
+                pipeline.getGitlabBinding().getProductMainBranch()
+        );
+        return hasText(branch) ? branch.trim() : "main";
+    }
+
+    private boolean repositoryFileExists(AiClubPipelineEntity entity, String branch, String configPath) {
+        ProjectGitlabBindingEntity binding = entity.getGitlabBinding();
+        String apiToken = tokenCipherService.decrypt(binding.getTokenCiphertext());
+        return gitlabApiService.repositoryFileExists(
+                binding.getApiBaseUrl(),
+                apiToken,
+                resolveAiClubPipelineProjectRef(binding),
+                branch,
+                configPath
+        );
+    }
+
+    private AiClubPipelineConfigTemplateService.TemplateRenderContext buildTemplateRenderContext(AiClubPipelineEntity entity) {
+        if (entity == null) {
+            return AiClubPipelineConfigTemplateService.TemplateRenderContext.defaultPreview();
+        }
+        return new AiClubPipelineConfigTemplateService.TemplateRenderContext(
+                entity.getId(),
+                entity.getName(),
+                resolveAiClubPipelineBranch(entity, null),
+                trimToNull(entity.getGitlabBinding().getGitlabProjectPath())
+        );
+    }
+
+    private String resolvePipelineConfigContent(AiClubPipelineEntity entity, AiClubPipelineConfigCompleteRequest request) {
+        if (request.manualEdit()) {
+            if (!hasText(request.content())) {
+                throw new IllegalArgumentException("手动编辑的流水线配置内容不能为空");
+            }
+            return request.content();
+        }
+        return pipelineConfigTemplateService.renderTemplate(
+                request.templateCode(),
+                buildTemplateRenderContext(entity),
+                request.parameters()
+        );
+    }
+
+    /**
+     * 参数化模板中的敏感字段只写入 Woodpecker repo secrets，
+     * YAML 和 GitLab MR 中只保留 from_secret 引用。
+     */
+    private void prepareTemplateSecrets(AiClubPipelineEntity entity, AiClubPipelineConfigCompleteRequest request) {
+        List<AiClubPipelineConfigTemplateService.TemplateSecret> secrets = pipelineConfigTemplateService.collectSecrets(
+                request.templateCode(),
+                buildTemplateRenderContext(entity),
+                request.parameters(),
+                !request.manualEdit()
+        );
+        if (secrets.isEmpty()) {
+            return;
+        }
+        if (entity.getWoodpeckerRepoId() == null || entity.getWoodpeckerRepoId() <= 0L) {
+            syncWoodpeckerRepository(entity);
+            aiClubPipelineRepository.save(entity);
+        }
+        if (entity.getWoodpeckerRepoId() == null || entity.getWoodpeckerRepoId() <= 0L) {
+            throw new IllegalArgumentException("流水线尚未同步 Woodpecker 仓库，无法写入模板凭据");
+        }
+        for (AiClubPipelineConfigTemplateService.TemplateSecret secret : secrets) {
+            woodpeckerApiService.upsertRepositorySecret(
+                    entity.getWoodpeckerRepoId(),
+                    secret.name(),
+                    secret.value(),
+                    secret.note(),
+                    secret.events(),
+                    secret.images()
+            );
+        }
+    }
+
+    private String resolveAiClubPipelineProjectRef(ProjectGitlabBindingEntity binding) {
+        String projectRef = firstText(binding.getGitlabProjectRef(), binding.getGitlabProjectPath(), binding.getGitlabProjectId());
+        if (!hasText(projectRef)) {
+            throw new IllegalArgumentException("GitLab 绑定缺少项目标识，无法校验流水线配置文件");
+        }
+        return projectRef;
+    }
+
+    private String normalizeConfigContent(String content) {
+        String normalized = (content == null ? "" : content).replace("\r\n", "\n").replace('\r', '\n');
+        return normalized.endsWith("\n") ? normalized : normalized + "\n";
+    }
+
+    private String buildPipelineConfigMergeRequestDescription(AiClubPipelineEntity entity,
+                                                              String branch,
+                                                              String configPath,
+                                                              String templateCode) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("AI Club Pipeline 配置文件补全 MR\n\n")
+                .append("- 平台项目：").append(entity.getProject().getName()).append('\n')
+                .append("- 流水线：").append(entity.getName()).append('\n')
+                .append("- 目标分支：").append(branch).append('\n')
+                .append("- 配置文件：").append(configPath).append('\n')
+                .append("- 模板：").append(defaultString(templateCode).trim().toUpperCase()).append("\n\n")
+                .append("合并后可回到 AI Club 流水线中心触发运行。");
+        return builder.toString();
+    }
+
+    private String buildAiClubPipelineTriggeredMessage(WoodpeckerApiService.WoodpeckerPipeline run, String sourceDescription) {
+        StringBuilder builder = new StringBuilder("已触发 AI Club Pipeline");
+        if (run != null && run.number() != null) {
+            builder.append(" #").append(run.number());
+        }
+        if (hasText(sourceDescription)) {
+            builder.append("（来源：").append(sourceDescription.trim()).append("）");
+        }
+        return builder.toString();
+    }
+
+    private void notifyCurrentUserAiClubPipelineQueued(AiClubPipelineEntity entity) {
+        Long currentUserId = AuthContextHolder.get().map(authContext -> authContext.userId()).orElse(null);
+        if (currentUserId == null) {
+            return;
+        }
+        notificationService.sendToUser(
+                currentUserId,
+                NotificationService.TYPE_CICD,
+                NotificationService.LEVEL_INFO,
+                "流水线已触发",
+                "项目《" + entity.getProject().getName() + "》的 AI Club Pipeline《" + entity.getName() + "》已提交。",
+                "/cicd/pipeline-bindings",
+                "AI_CLUB_PIPELINE",
+                entity.getId()
+        );
+    }
+
+    private void notifyCurrentUserAiClubPipelineFailed(AiClubPipelineEntity entity, String reason) {
+        Long currentUserId = AuthContextHolder.get().map(authContext -> authContext.userId()).orElse(null);
+        if (currentUserId == null) {
+            return;
+        }
+        notificationService.sendToUser(
+                currentUserId,
+                NotificationService.TYPE_CICD,
+                NotificationService.LEVEL_ERROR,
+                "流水线触发失败",
+                limitMessage("项目《" + entity.getProject().getName() + "》的 AI Club Pipeline《" + entity.getName() + "》触发失败：" + defaultString(reason)),
+                "/cicd/pipeline-bindings",
+                "AI_CLUB_PIPELINE",
+                entity.getId()
+        );
     }
 
     private void fillJenkinsServerEntity(JenkinsServerEntity entity, JenkinsServerRequest request, boolean createMode) {
@@ -440,11 +920,11 @@ public class CicdManagementService {
     }
 
     /**
-     * 汇总同一项目下多条 Jenkins 绑定的触发结果，兼容全成功、全失败、全跳过和部分成功场景。
+     * 汇总同一项目下多条流水线的触发结果，兼容 AI Club Pipeline 与 Jenkins legacy 混合场景。
      */
     private PipelineTriggerOutcome buildProjectPipelineOutcome(List<PipelineBindingOutcome> bindingOutcomes) {
         if (bindingOutcomes == null || bindingOutcomes.isEmpty()) {
-            return PipelineTriggerOutcome.skipped("当前项目未配置 Jenkins 流水线绑定");
+            return PipelineTriggerOutcome.skipped("当前项目未配置可触发的流水线");
         }
         if (bindingOutcomes.size() == 1) {
             PipelineBindingOutcome bindingOutcome = bindingOutcomes.get(0);
@@ -460,13 +940,13 @@ public class CicdManagementService {
         long skippedCount = bindingOutcomes.size() - successCount - failedCount;
 
         if (successCount == bindingOutcomes.size()) {
-            return PipelineTriggerOutcome.success("已触发 " + successCount + " 条 Jenkins 流水线", bindingOutcomes);
+            return PipelineTriggerOutcome.success("已触发 " + successCount + " 条流水线", bindingOutcomes);
         }
         if (failedCount == bindingOutcomes.size()) {
-            return PipelineTriggerOutcome.failed("共 " + failedCount + " 条 Jenkins 流水线触发失败", bindingOutcomes);
+            return PipelineTriggerOutcome.failed("共 " + failedCount + " 条流水线触发失败", bindingOutcomes);
         }
         if (skippedCount == bindingOutcomes.size()) {
-            return PipelineTriggerOutcome.skipped("共 " + skippedCount + " 条 Jenkins 流水线未触发", bindingOutcomes);
+            return PipelineTriggerOutcome.skipped("共 " + skippedCount + " 条流水线未触发", bindingOutcomes);
         }
         return PipelineTriggerOutcome.partial(
                 "共 " + bindingOutcomes.size() + " 条绑定，成功 " + successCount + " 条，失败 " + failedCount + " 条，跳过 " + skippedCount + " 条",
@@ -529,6 +1009,50 @@ public class CicdManagementService {
         }
         builder.append("，Job 数：").append(info.jobCount());
         return limitMessage(builder.toString());
+    }
+
+    private AiClubPipelineSummary toAiClubPipelineSummary(AiClubPipelineEntity entity) {
+        ProjectGitlabBindingEntity binding = entity.getGitlabBinding();
+        return new AiClubPipelineSummary(
+                entity.getId(),
+                entity.getProject().getId(),
+                entity.getProject().getName(),
+                binding.getId(),
+                firstText(binding.getGitlabProjectName(), binding.getGitlabProjectRef()),
+                firstText(binding.getGitlabProjectPath(), binding.getGitlabProjectRef()),
+                trimToNull(binding.getGitlabProjectWebUrl()),
+                entity.getName(),
+                entity.getProviderCode(),
+                entity.getDefaultBranch(),
+                entity.getConfigPath(),
+                entity.getWoodpeckerRepoId(),
+                entity.getWoodpeckerRepoFullName(),
+                entity.getWoodpeckerRepoUrl(),
+                defaultBoolean(entity.getEnabled(), true),
+                entity.getLastRunStatus(),
+                entity.getLastRunMessage(),
+                entity.getLastRunNumber(),
+                entity.getLastRunUrl(),
+                formatTime(entity.getLastTriggeredAt())
+        );
+    }
+
+    private AiClubPipelineRunSummary toAiClubPipelineRunSummary(WoodpeckerApiService.WoodpeckerPipeline run) {
+        Long durationMillis = calculateDurationMillis(run.startedAt(), run.finishedAt());
+        return new AiClubPipelineRunSummary(
+                run.number(),
+                trimToNull(run.status()),
+                trimToNull(run.branch()),
+                trimToNull(run.event()),
+                trimToNull(run.message()),
+                trimToNull(run.commit()),
+                trimToNull(run.forgeUrl()),
+                formatTime(run.createdAt()),
+                formatTime(run.startedAt()),
+                formatTime(run.finishedAt()),
+                durationMillis,
+                formatDuration(durationMillis == null ? 0L : durationMillis)
+        );
     }
 
     private JenkinsServerSummary toJenkinsServerSummary(JenkinsServerEntity entity) {
@@ -643,6 +1167,36 @@ public class CicdManagementService {
         };
     }
 
+    private Specification<AiClubPipelineEntity> aiClubPipelineSpecification(String keyword, Long projectId, Boolean enabled,
+                                                                            ProjectDataPermissionService.ProjectDataScope scope) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            jakarta.persistence.criteria.Join<AiClubPipelineEntity, ProjectEntity> projectJoin = root.join("project", JoinType.INNER);
+            var bindingJoin = root.join("gitlabBinding", JoinType.LEFT);
+            appendProjectVisibilityPredicate(predicates, projectJoin, query, cb, scope);
+            if (projectId != null) {
+                predicates.add(cb.equal(projectJoin.get("id"), projectId));
+            }
+            if (hasText(keyword)) {
+                String pattern = "%" + keyword.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(projectJoin.get("name")), pattern),
+                        cb.like(cb.lower(bindingJoin.get("gitlabProjectRef")), pattern),
+                        cb.like(cb.lower(bindingJoin.get("gitlabProjectName")), pattern),
+                        cb.like(cb.lower(bindingJoin.get("gitlabProjectPath")), pattern),
+                        cb.like(cb.lower(root.get("name")), pattern),
+                        cb.like(cb.lower(root.get("defaultBranch")), pattern),
+                        cb.like(cb.lower(root.get("configPath")), pattern),
+                        cb.like(cb.lower(root.get("woodpeckerRepoFullName")), pattern)
+                ));
+            }
+            if (enabled != null) {
+                predicates.add(cb.equal(root.get("enabled"), enabled));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+    }
+
     /**
      * 为项目流水线查询统一追加项目可见范围条件。
      */
@@ -690,6 +1244,24 @@ public class CicdManagementService {
         return jenkinsServerRepository.findById(id).orElseThrow(() -> new NoSuchElementException("Jenkins 服务不存在: " + id));
     }
 
+    private ProjectGitlabBindingEntity requireGitlabBinding(Long id) {
+        ProjectGitlabBindingEntity binding = projectGitlabBindingRepository.findById(id).orElseThrow(() -> new NoSuchElementException("GitLab 绑定不存在: " + id));
+        ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.currentScopeOrNull();
+        if (scope != null) {
+            projectDataPermissionService.requireProjectVisible(binding.getProject(), scope);
+        }
+        return binding;
+    }
+
+    private AiClubPipelineEntity requireAiClubPipeline(Long id) {
+        AiClubPipelineEntity pipeline = aiClubPipelineRepository.findById(id).orElseThrow(() -> new NoSuchElementException("AI Club Pipeline 不存在: " + id));
+        ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.currentScopeOrNull();
+        if (scope != null) {
+            projectDataPermissionService.requireProjectVisible(pipeline.getProject(), scope);
+        }
+        return pipeline;
+    }
+
     private ProjectPipelineBindingEntity requirePipelineBinding(Long id) {
         ProjectPipelineBindingEntity binding = projectPipelineBindingRepository.findById(id).orElseThrow(() -> new NoSuchElementException("项目流水线绑定不存在: " + id));
         ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.currentScopeOrNull();
@@ -719,6 +1291,22 @@ public class CicdManagementService {
 
     private String defaultString(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private String defaultString(String value, String fallback) {
+        return hasText(value) ? value.trim() : fallback;
+    }
+
+    private String firstText(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (hasText(value)) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 
     private String trimToNull(String value) {
@@ -760,6 +1348,28 @@ public class CicdManagementService {
             parts.add(seconds + "秒");
         }
         return String.join("", parts);
+    }
+
+    private Long calculateDurationMillis(LocalDateTime startedAt, LocalDateTime finishedAt) {
+        if (startedAt == null || finishedAt == null || finishedAt.isBefore(startedAt)) {
+            return null;
+        }
+        return java.time.Duration.between(startedAt, finishedAt).toMillis();
+    }
+
+    private String normalizeConfigPath(String value) {
+        String configPath = trimToNull(value);
+        if (configPath == null) {
+            return ".woodpecker.yml";
+        }
+        String normalized = configPath.replace('\\', '/');
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.contains("..")) {
+            throw new IllegalArgumentException("流水线配置路径不能包含 ..");
+        }
+        return normalized;
     }
 
     private String limitMessage(String message) {
@@ -846,7 +1456,7 @@ public class CicdManagementService {
     }
 
     /**
-     * 单条 Jenkins 绑定的触发结果，用于多绑定场景逐条回显。
+     * 单条流水线触发结果，用于 AI Club Pipeline 与 Jenkins legacy 混合触发时逐条回显。
      */
     public record PipelineBindingOutcome(
             String status,

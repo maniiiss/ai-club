@@ -117,16 +117,16 @@
 
 ### 项目绑定的 CI/CD 能力
 
-- 项目流水线绑定
-- 流水线构建列表
-- 构建日志
+- AI Club Pipeline 流水线定义
+- Woodpecker 运行历史与聚合日志
+- 外部 Jenkins 兼容绑定、构建列表与构建日志
 - 手动触发流水线
 
 其中当前已明确拆分为两层功能权限：
 
-- `cicd:view`：查看 Jenkins 服务、项目流水线、构建历史与构建日志
-- `cicd:build`：触发 Jenkins Job 或项目流水线构建
-- `cicd:manage`：维护 Jenkins 服务与项目流水线配置
+- `cicd:view`：查看 AI Club Pipeline、外部 Jenkins、运行历史与日志
+- `cicd:build`：触发 AI Club Pipeline 或外部 Jenkins 构建
+- `cicd:manage`：维护 AI Club Pipeline 与外部 Jenkins 兼容配置
 
 ## 4.2 独立域资源
 

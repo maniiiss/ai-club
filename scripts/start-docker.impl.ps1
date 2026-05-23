@@ -10,7 +10,7 @@ Ensure-FullDockerEnvFile
 Import-DotEnv -Path $context.FullDockerEnvFile
 $ports = Get-PortConfiguration
 
-$composeArguments = @('up', '-d')
+$composeArguments = Add-WoodpeckerProfileIfEnabled -Arguments @('up', '-d')
 if (-not $SkipBuild) {
     $composeArguments += '--build'
 }
@@ -28,6 +28,9 @@ Wait-Port -Port $ports.CodeProcessing -TimeoutSeconds 180 -ServiceName 'Code pro
 Wait-Port -Port $ports.Hindsight -TimeoutSeconds 180 -ServiceName 'Hindsight'
 Wait-Port -Port $ports.Hermes -TimeoutSeconds 180 -ServiceName 'Hermes'
 Wait-Port -Port $ports.GitNexusUi -TimeoutSeconds 180 -ServiceName 'GitNexus Web UI'
+if (Test-WoodpeckerEnabled) {
+    Wait-Port -Port $ports.Woodpecker -TimeoutSeconds 180 -ServiceName 'Woodpecker'
+}
 Wait-Port -Port $ports.Backend -TimeoutSeconds 180 -ServiceName 'Backend'
 Wait-Port -Port $ports.Frontend -TimeoutSeconds 180 -ServiceName 'Frontend'
 
@@ -39,3 +42,6 @@ Write-Host "Code processing: http://localhost:$($ports.CodeProcessing)"
 Write-Host "Hermes: http://localhost:$($ports.Hermes)"
 Write-Host "Hindsight: http://localhost:$($ports.Hindsight)"
 Write-Host "GitNexus Web UI: http://localhost:$($ports.GitNexusUi)"
+if (Test-WoodpeckerEnabled) {
+    Write-Host "Woodpecker: http://localhost:$($ports.Woodpecker)"
+}
