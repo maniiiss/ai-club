@@ -4,6 +4,8 @@ import com.aiclub.platform.domain.model.AiClubPipelineEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
 import com.aiclub.platform.domain.model.ProjectPipelineBindingEntity;
+import com.aiclub.platform.domain.model.RoleEntity;
+import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.AiClubPipelineConfigCompleteResult;
 import com.aiclub.platform.dto.AiClubPipelineConfigPreviewResult;
 import com.aiclub.platform.dto.AiClubPipelineConfigStatusItem;
@@ -11,6 +13,8 @@ import com.aiclub.platform.dto.AiClubPipelineConfigTemplateItem;
 import com.aiclub.platform.dto.AiClubPipelineSummary;
 import com.aiclub.platform.dto.AiClubPipelineTriggerResult;
 import com.aiclub.platform.dto.JenkinsServerSummary;
+import com.aiclub.platform.dto.PageResponse;
+import com.aiclub.platform.dto.PipelineCenterEntrySummary;
 import com.aiclub.platform.dto.ProjectPipelineBindingSummary;
 import com.aiclub.platform.dto.request.AiClubPipelineConfigCompleteRequest;
 import com.aiclub.platform.dto.request.AiClubPipelineConfigPreviewRequest;
@@ -21,6 +25,11 @@ import com.aiclub.platform.repository.AiClubPipelineRepository;
 import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
 import com.aiclub.platform.repository.ProjectPipelineBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
+import com.aiclub.platform.repository.RoleRepository;
+import com.aiclub.platform.repository.UserRepository;
+import com.aiclub.platform.security.AuthContext;
+import com.aiclub.platform.security.AuthContextHolder;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +41,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -69,6 +80,12 @@ class CicdManagementServiceTests {
     @Autowired
     private AiClubPipelineRepository aiClubPipelineRepository;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private RoleRepository roleRepository;
+
     @MockBean
     private JenkinsApiService jenkinsApiService;
 
@@ -80,6 +97,11 @@ class CicdManagementServiceTests {
 
     @Autowired
     private TokenCipherService tokenCipherService;
+
+    @AfterEach
+    void clearAuthContext() {
+        AuthContextHolder.clear();
+    }
 
     /**
      * 验证同一个业务项目可以同时绑定多条 Jenkins 流水线。
@@ -435,6 +457,59 @@ class CicdManagementServiceTests {
         assertThat(status.message()).contains("timeout");
     }
 
+    @Test
+    void shouldPagePipelineCenterEntriesWithAiClubAndJenkinsBindings() {
+        loginAsSuperAdmin();
+        ProjectEntity project = projectRepository.save(new ProjectEntity("混合流水线项目", "沈十六", "进行中", "验证统一流水线中心"));
+        ProjectGitlabBindingEntity gitlabBinding = projectGitlabBindingRepository.save(createGitlabBinding(project));
+        AiClubPipelineEntity aiPipeline = createAiClubPipeline(project, gitlabBinding);
+        aiPipeline.setLastTriggeredAt(LocalDateTime.now().minusMinutes(5));
+        aiPipeline.setLastRunStatus("FAILED");
+        aiPipeline.setLastRunMessage("AI 流水线失败");
+        aiClubPipelineRepository.save(aiPipeline);
+        when(gitlabApiService.repositoryFileExists(
+                eq("http://gitlab.example.com/api/v4"),
+                anyString(),
+                eq("group/repo"),
+                eq("main"),
+                eq(".woodpecker.yml")
+        )).thenReturn(true);
+
+        JenkinsServerSummary server = createJenkinsServer();
+        mockFetchJob("backend/build");
+        ProjectPipelineBindingSummary jenkinsBinding = cicdManagementService.createPipelineBinding(new ProjectPipelineBindingRequest(
+                project.getId(),
+                server.id(),
+                "backend/build",
+                "release",
+                "{\"env\":\"test\"}",
+                true
+        ));
+        ProjectPipelineBindingEntity bindingEntity = projectPipelineBindingRepository.findById(jenkinsBinding.id()).orElseThrow();
+        bindingEntity.setLastTriggerStatus("SUCCESS");
+        bindingEntity.setLastTriggerMessage("Jenkins 触发成功");
+        bindingEntity.setLastTriggeredAt(LocalDateTime.now());
+        projectPipelineBindingRepository.save(bindingEntity);
+
+        PageResponse<PipelineCenterEntrySummary> result = cicdManagementService.pagePipelineCenterEntries(1, 20, null, project.getId(), true, null);
+
+        assertThat(result.records()).hasSize(2);
+        assertThat(result.records()).extracting(PipelineCenterEntrySummary::entryType)
+                .containsExactly("JENKINS", "AI_CLUB");
+        assertThat(result.records()).filteredOn(item -> "AI_CLUB".equals(item.entryType())).singleElement().satisfies(item -> {
+            assertThat(item.displayName()).isEqualTo("后端发布");
+            assertThat(item.primaryLabel()).isEqualTo("仓库");
+            assertThat(item.secondaryLabel()).isEqualTo("配置");
+            assertThat(item.configStatus()).isNull();
+        });
+        assertThat(result.records()).filteredOn(item -> "JENKINS".equals(item.entryType())).singleElement().satisfies(item -> {
+            assertThat(item.displayName()).isEqualTo("backend/build");
+            assertThat(item.primaryLabel()).isEqualTo("Jenkins Job");
+            assertThat(item.secondaryLabel()).isEqualTo("Jenkins 服务");
+            assertThat(item.configStatus()).isNull();
+        });
+    }
+
     /**
      * 详情页会复用与列表相同的摘要字段，不额外暴露新的 provider 视图模型。
      */
@@ -451,6 +526,28 @@ class CicdManagementServiceTests {
         assertThat(result.name()).isEqualTo("后端发布");
         assertThat(result.gitlabProjectPath()).isEqualTo("group/repo");
         assertThat(result.providerCode()).isEqualTo(AiClubPipelineEntity.PROVIDER_WOODPECKER);
+    }
+
+    @Test
+    void shouldGetJenkinsPipelineBindingDetail() {
+        ProjectEntity project = projectRepository.save(new ProjectEntity("Jenkins 详情项目", "郑十七", "进行中", "验证 Jenkins 绑定详情"));
+        JenkinsServerSummary server = createJenkinsServer();
+        mockFetchJob("backend/build");
+        ProjectPipelineBindingSummary binding = cicdManagementService.createPipelineBinding(new ProjectPipelineBindingRequest(
+                project.getId(),
+                server.id(),
+                "backend/build",
+                "main",
+                "{\"env\":\"test\"}",
+                true
+        ));
+
+        ProjectPipelineBindingSummary result = cicdManagementService.getPipelineBinding(binding.id());
+
+        assertThat(result.id()).isEqualTo(binding.id());
+        assertThat(result.projectName()).isEqualTo("Jenkins 详情项目");
+        assertThat(result.jenkinsServerName()).isEqualTo("测试 Jenkins");
+        assertThat(result.jobName()).isEqualTo("backend/build");
     }
 
     /**
@@ -844,6 +941,33 @@ class CicdManagementServiceTests {
                 .hasMessageContaining("不会覆盖已有配置");
 
         verify(gitlabApiService, never()).createBranch(anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    /**
+     * 创建测试用 Jenkins 服务，复用真实的加密与持久化流程。
+     */
+    private void loginAsSuperAdmin() {
+        RoleEntity role = new RoleEntity();
+        role.setName("SUPER_ADMIN");
+        role.setCode("SUPER_ADMIN");
+        role.setEnabled(true);
+        role.setDescription("super admin");
+        RoleEntity savedRole = roleRepository.save(role);
+
+        UserEntity user = new UserEntity();
+        user.setUsername("cicd-admin");
+        user.setNickname("流水线管理员");
+        user.setPasswordHash("test-password-hash");
+        user.setEnabled(true);
+        user.setRoles(new java.util.LinkedHashSet<>(List.of(savedRole)));
+        UserEntity savedUser = userRepository.save(user);
+        AuthContextHolder.set(new AuthContext(
+                savedUser.getId(),
+                savedUser.getUsername(),
+                savedUser.getNickname(),
+                savedUser.getRoles().stream().map(RoleEntity::getCode).collect(Collectors.toSet()),
+                Set.of()
+        ));
     }
 
     /**

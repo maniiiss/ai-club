@@ -15,6 +15,7 @@ import type {
   JenkinsJobItem,
   JenkinsServerItem,
   PageResponse,
+  PipelineCenterEntryItem,
   ProjectPipelineBindingItem,
   WoodpeckerHealthItem
 } from '@/types/platform'
@@ -69,6 +70,15 @@ export interface AiClubPipelineQuery {
   enabled?: boolean
 }
 
+export interface PipelineCenterEntryQuery {
+  page: number
+  size: number
+  keyword?: string
+  projectId?: number
+  enabled?: boolean
+  entryType?: string
+}
+
 export interface AiClubPipelineConfigPreviewPayload {
   templateCode: string
   parameters?: Record<string, string>
@@ -110,8 +120,20 @@ export const pageAiClubPipelines = async (query: AiClubPipelineQuery) => {
   return data.data
 }
 
+export const pagePipelineCenterEntries = async (query: PipelineCenterEntryQuery) => {
+  const { data } = await http.get<ApiResponse<PageResponse<PipelineCenterEntryItem>>>('/api/cicd/pipeline-center/entries', {
+    params: cleanParams(query)
+  })
+  return data.data
+}
+
 export const getAiClubPipeline = async (id: number) => {
   const { data } = await http.get<ApiResponse<AiClubPipelineItem>>(`/api/cicd/pipelines/${id}`)
+  return data.data
+}
+
+export const getPipelineBinding = async (id: number) => {
+  const { data } = await http.get<ApiResponse<ProjectPipelineBindingItem>>(`/api/cicd/pipeline-bindings/${id}`)
   return data.data
 }
 

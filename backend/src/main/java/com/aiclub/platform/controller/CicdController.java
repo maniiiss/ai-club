@@ -16,6 +16,7 @@ import com.aiclub.platform.dto.JenkinsBuildTriggerResult;
 import com.aiclub.platform.dto.JenkinsJobSummary;
 import com.aiclub.platform.dto.JenkinsServerSummary;
 import com.aiclub.platform.dto.PageResponse;
+import com.aiclub.platform.dto.PipelineCenterEntrySummary;
 import com.aiclub.platform.dto.ProjectPipelineBindingSummary;
 import com.aiclub.platform.dto.WoodpeckerHealthSummary;
 import com.aiclub.platform.dto.request.AiClubPipelineConfigCompleteRequest;
@@ -75,6 +76,19 @@ public class CicdController {
             @RequestParam(required = false) Boolean enabled
     ) {
         return ApiResponse.success(cicdManagementService.pageAiClubPipelines(page, size, keyword, projectId, enabled));
+    }
+
+    @GetMapping("/pipeline-center/entries")
+    @RequirePermission("cicd:view")
+    public ApiResponse<PageResponse<PipelineCenterEntrySummary>> pagePipelineCenterEntries(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) Boolean enabled,
+            @RequestParam(required = false) String entryType
+    ) {
+        return ApiResponse.success(cicdManagementService.pagePipelineCenterEntries(page, size, keyword, projectId, enabled, entryType));
     }
 
     @GetMapping("/pipelines/{id}")
@@ -221,6 +235,12 @@ public class CicdController {
     @RequirePermission("cicd:manage")
     public ApiResponse<ProjectPipelineBindingSummary> createPipelineBinding(@Valid @RequestBody ProjectPipelineBindingRequest request) {
         return ApiResponse.success(cicdManagementService.createPipelineBinding(request));
+    }
+
+    @GetMapping("/pipeline-bindings/{id}")
+    @RequirePermission("cicd:view")
+    public ApiResponse<ProjectPipelineBindingSummary> getPipelineBinding(@PathVariable Long id) {
+        return ApiResponse.success(cicdManagementService.getPipelineBinding(id));
     }
 
     @GetMapping("/pipeline-bindings/{id}/builds")

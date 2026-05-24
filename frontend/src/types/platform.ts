@@ -1263,6 +1263,26 @@ export interface ProjectPipelineBindingItem {
   lastTriggerUrl: string | null
 }
 
+export interface PipelineCenterEntryItem {
+  entryType: 'AI_CLUB' | 'JENKINS' | string
+  entryId: number
+  projectId: number
+  projectName: string
+  displayName: string
+  providerCode: string
+  defaultBranch: string | null
+  enabled: boolean
+  lastRunStatus: string | null
+  lastRunMessage: string | null
+  lastTriggeredAt: string | null
+  primaryLabel: string
+  primaryValue: string | null
+  primaryUrl: string | null
+  secondaryLabel: string | null
+  secondaryValue: string | null
+  configStatus: string | null
+}
+
 export interface AiClubPipelineItem {
   id: number
   projectId: number

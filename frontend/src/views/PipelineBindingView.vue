@@ -44,14 +44,14 @@
           <el-icon><RefreshRight /></el-icon>
           <span>重置</span>
         </button>
-        <button v-if="canManage && isMobileViewport" class="work-list-create-button" type="button" @click="formDialogVisible = true">
+        <button v-if="canManage && isMobileViewport" class="work-list-create-button" type="button" @click="handleCreatePipeline">
           <el-icon><Plus /></el-icon>
           <span>新建流水线</span>
         </button>
       </div>
 
       <div v-if="canManage && !isMobileViewport" class="work-list-toolbar-side">
-        <button class="work-list-create-button" type="button" @click="formDialogVisible = true">
+        <button class="work-list-create-button" type="button" @click="handleCreatePipeline">
           <el-icon><Plus /></el-icon>
           <span>新建流水线</span>
         </button>
@@ -63,16 +63,16 @@
         <section v-if="pipelineList.length" class="pipeline-card-grid">
           <article
             v-for="row in pipelineList"
-            :key="row.id"
+            :key="`${row.entryType}-${row.entryId}`"
             class="pipeline-card"
             role="button"
             tabindex="0"
-            @click="openPipelineDetail(row.id)"
-            @keyup.enter="openPipelineDetail(row.id)"
+            @click="openPipelineDetail(row)"
+            @keyup.enter="openPipelineDetail(row)"
           >
             <header class="pipeline-card-head">
               <div class="pipeline-card-heading">
-                <h2>{{ row.name }}</h2>
+                <h2>{{ row.displayName }}</h2>
                 <div class="pipeline-card-subtitle">{{ row.projectName }}</div>
               </div>
               <div class="pipeline-card-tag-group">
@@ -93,36 +93,33 @@
 
             <div class="pipeline-card-info-grid">
               <div class="pipeline-card-info-item pipeline-card-info-item-full">
-                <span class="pipeline-card-info-label">仓库</span>
+                <span class="pipeline-card-info-label">{{ row.primaryLabel }}</span>
                 <div class="pipeline-card-info-value">
                   <el-link
-                    v-if="row.gitlabProjectWebUrl || row.woodpeckerRepoUrl"
-                    :href="row.gitlabProjectWebUrl || row.woodpeckerRepoUrl || ''"
+                    v-if="row.primaryUrl"
+                    :href="row.primaryUrl"
                     target="_blank"
                     type="primary"
                     class="pipeline-job-link"
                     @click.stop
                   >
-                    {{ row.gitlabProjectPath || row.woodpeckerRepoFullName || '-' }}
+                    {{ row.primaryValue || '-' }}
                   </el-link>
-                  <span v-else class="management-list-empty">{{ row.gitlabProjectPath || row.woodpeckerRepoFullName || '-' }}</span>
+                  <span v-else class="management-list-empty">{{ row.primaryValue || '-' }}</span>
                 </div>
               </div>
 
-              <div class="pipeline-card-info-item pipeline-card-info-item-full">
-                <span class="pipeline-card-info-label">配置</span>
+              <div v-if="row.secondaryLabel" class="pipeline-card-info-item pipeline-card-info-item-full">
+                <span class="pipeline-card-info-label">{{ row.secondaryLabel }}</span>
                 <div class="pipeline-card-info-value pipeline-config-cell">
-                  <span class="management-list-empty">{{ row.configPath }}</span>
-                  <span class="management-list-pill" :class="aiClubPipelineConfigStatusTone(configStatusOf(row)?.status)">
-                    {{ formatAiClubPipelineConfigStatus(configStatusOf(row)?.status) }}
-                  </span>
+                  <span class="management-list-empty">{{ row.secondaryValue || '-' }}</span>
                 </div>
               </div>
             </div>
 
             <div v-if="canView" class="pipeline-card-actions-shell">
               <div class="pipeline-card-actions">
-                <el-button v-if="canBuild" type="primary" @click.stop="handleTriggerPipeline(row.id)">
+                <el-button v-if="canBuild" type="primary" @click.stop="handleTriggerPipeline(row)">
                   <el-icon><VideoPlay /></el-icon>
                   <span>触发</span>
                 </el-button>
@@ -132,7 +129,7 @@
         </section>
         <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
         <div v-if="!pipelineList.length" class="work-list-empty-state">
-          <el-empty description="当前筛选条件下暂无 AI Club Pipeline" />
+          <el-empty description="当前筛选条件下暂无流水线" />
         </div>
       </div>
 
@@ -165,39 +162,35 @@
 
     <AiClubPipelineFormDialog
       v-model="formDialogVisible"
+      :entry-type="currentFormEntryType"
+      :ai-pipeline="currentFormAiPipeline"
+      :jenkins-binding="currentFormJenkinsBinding"
       @saved="handlePipelineSaved"
-    />
-    <AiClubPipelineConfigCompletionDialog
-      v-model="configDialogVisible"
-      :pipeline="selectedConfigPipeline"
-      @completed="handleConfigCompleted"
     />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { Connection, DataAnalysis, Filter, Plus, RefreshRight, Search, VideoPlay, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { Filter, Plus, RefreshRight, Search, VideoPlay, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
-import AiClubPipelineConfigCompletionDialog from '@/components/AiClubPipelineConfigCompletionDialog.vue'
 import AiClubPipelineFormDialog from '@/components/AiClubPipelineFormDialog.vue'
 import {
-  getAiClubPipelineConfigStatus,
-  pageAiClubPipelines,
-  triggerAiClubPipeline
+  pagePipelineCenterEntries,
+  triggerAiClubPipeline,
+  triggerPipelineBuild
 } from '@/api/cicd'
 import { listProjectOptions } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import type {
-  AiClubPipelineConfigStatusItem,
   AiClubPipelineItem,
+  PipelineCenterEntryItem,
+  ProjectPipelineBindingItem,
   ProjectItem
 } from '@/types/platform'
 import {
-  aiClubPipelineConfigStatusTone,
   aiClubPipelineStatusTone,
-  formatAiClubPipelineConfigStatus,
   formatAiClubPipelineDateTime,
   formatAiClubPipelineStatus
 } from '@/utils/aiClubPipeline'
@@ -212,12 +205,12 @@ const canView = computed(() => authStore.hasPermission('cicd:view'))
 const { isMobileViewport } = useMobileViewport()
 
 const projectOptions = ref<ProjectItem[]>([])
-const pipelineList = ref<AiClubPipelineItem[]>([])
+const pipelineList = ref<PipelineCenterEntryItem[]>([])
 const pipelineLoading = ref(false)
-const configStatusMap = reactive<Record<number, AiClubPipelineConfigStatusItem | undefined>>({})
 const formDialogVisible = ref(false)
-const configDialogVisible = ref(false)
-const selectedConfigPipeline = ref<AiClubPipelineItem | null>(null)
+const currentFormEntryType = ref<'AI_CLUB' | 'JENKINS' | null>(null)
+const currentFormAiPipeline = ref<AiClubPipelineItem | null>(null)
+const currentFormJenkinsBinding = ref<ProjectPipelineBindingItem | null>(null)
 
 const pipelinePagination = reactive({ page: 1, size: 10, total: 0 })
 const pipelineFilters = reactive<{ keyword: string; projectId: number | undefined; enabled: boolean | undefined }>({
@@ -236,8 +229,6 @@ const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMob
   loadPage: async () => loadPipelines()
 })
 
-const configStatusOf = (row?: AiClubPipelineItem | null) => (row ? configStatusMap[row.id] : undefined)
-
 async function loadBaseOptions() {
   projectOptions.value = await listProjectOptions()
 }
@@ -245,7 +236,7 @@ async function loadBaseOptions() {
 async function loadPipelines() {
   pipelineLoading.value = true
   try {
-    const pageData = await pageAiClubPipelines({
+    const pageData = await pagePipelineCenterEntries({
       page: requestPage.value,
       size: requestSize.value,
       keyword: pipelineFilters.keyword,
@@ -254,32 +245,9 @@ async function loadPipelines() {
     })
     pipelineList.value = pageData.records
     pipelinePagination.total = pageData.total
-    void loadVisibleConfigStatuses(pageData.records)
   } finally {
     pipelineLoading.value = false
   }
-}
-
-async function refreshPipelineConfigStatus(pipelineId: number) {
-  try {
-    const status = await getAiClubPipelineConfigStatus(pipelineId)
-    configStatusMap[pipelineId] = status
-    return status
-  } catch (error: any) {
-    const fallback: AiClubPipelineConfigStatusItem = {
-      status: 'UNKNOWN',
-      branch: '-',
-      configPath: '-',
-      message: error?.response?.data?.message || '配置文件状态检查失败',
-      checkedAt: null
-    }
-    configStatusMap[pipelineId] = fallback
-    return fallback
-  }
-}
-
-async function loadVisibleConfigStatuses(rows = pipelineList.value) {
-  await Promise.all(rows.map((row) => refreshPipelineConfigStatus(row.id)))
 }
 
 async function handlePipelineSearch() {
@@ -313,36 +281,35 @@ async function handlePipelineNextPage() {
   await loadPipelines()
 }
 
-function openPipelineDetail(id: number) {
-  router.push({ name: 'cicd-pipeline-detail', params: { pipelineId: String(id) } })
+function openPipelineDetail(row: PipelineCenterEntryItem) {
+  router.push({ name: 'cicd-pipeline-detail', params: { entryType: row.entryType, entryId: String(row.entryId) } })
 }
 
-async function handleTriggerPipeline(id: number) {
+async function handleTriggerPipeline(row: PipelineCenterEntryItem) {
   try {
-    const result = await triggerAiClubPipeline(id)
+    const result = row.entryType === 'AI_CLUB'
+      ? await triggerAiClubPipeline(row.entryId)
+      : await triggerPipelineBuild(row.entryId)
     ElMessage.success(result.message)
     await loadPipelines()
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '触发流水线失败')
-    await Promise.all([loadPipelines(), refreshPipelineConfigStatus(id)])
+    await loadPipelines()
   }
 }
 
-async function handlePipelineSaved(saved: AiClubPipelineItem) {
+async function handlePipelineSaved(payload: { entryType: 'AI_CLUB' | 'JENKINS'; entry: AiClubPipelineItem | ProjectPipelineBindingItem }) {
   await loadPipelines()
-  const status = await refreshPipelineConfigStatus(saved.id)
-  if (status.status === 'MISSING') {
-    selectedConfigPipeline.value = saved
-    configDialogVisible.value = true
-    ElMessage.warning('目标分支缺少流水线配置文件，请继续补全配置。')
+  if (payload.entryType === 'AI_CLUB') {
+    ElMessage.info('AI 流水线已保存，可进入详情页补全配置。')
   }
 }
 
-async function handleConfigCompleted() {
-  if (selectedConfigPipeline.value) {
-    await refreshPipelineConfigStatus(selectedConfigPipeline.value.id)
-  }
-  await loadPipelines()
+function handleCreatePipeline() {
+  currentFormEntryType.value = null
+  currentFormAiPipeline.value = null
+  currentFormJenkinsBinding.value = null
+  formDialogVisible.value = true
 }
 
 onMounted(async () => {

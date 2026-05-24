@@ -775,8 +775,8 @@ const primaryMenuSeeds: MenuSeed[] = [
 ]
 
 const integrationMenuSeeds: MenuSeed[] = [
-  { permission: 'cicd:view', fallbackPath: '/cicd/pipeline-bindings', fallbackLabel: '流水线中心', shortLabel: '流水线', fallbackIcon: DataAnalysis, matchNames: ['cicd-pipelines'] },
-  { permission: 'cicd:view', fallbackPath: '/cicd/jenkins-servers', fallbackLabel: '外部 Jenkins', shortLabel: 'Jenkins', fallbackIcon: Connection, matchNames: ['cicd-servers'] }
+  { permission: 'cicd:view', fallbackPath: '/cicd/pipeline-bindings', fallbackLabel: '流水线中心', shortLabel: '流水线', fallbackIcon: DataAnalysis, matchNames: ['cicd-pipelines', 'cicd-pipeline-detail'] },
+  { permission: 'cicd:view', fallbackPath: '/cicd/jenkins-servers', fallbackLabel: 'Jenkins 服务管理', shortLabel: 'Jenkins', fallbackIcon: DataAnalysis, matchNames: ['cicd-servers'] }
 ]
 
 const trailingMenuSeeds: MenuSeed[] = [

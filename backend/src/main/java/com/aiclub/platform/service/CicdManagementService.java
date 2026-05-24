@@ -20,6 +20,7 @@ import com.aiclub.platform.dto.JenkinsBuildSummary;
 import com.aiclub.platform.dto.JenkinsJobSummary;
 import com.aiclub.platform.dto.JenkinsServerSummary;
 import com.aiclub.platform.dto.PageResponse;
+import com.aiclub.platform.dto.PipelineCenterEntrySummary;
 import com.aiclub.platform.dto.ProjectPipelineBindingSummary;
 import com.aiclub.platform.dto.WoodpeckerHealthSummary;
 import com.aiclub.platform.dto.request.AiClubPipelineConfigCompleteRequest;
@@ -50,6 +51,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +60,9 @@ import java.util.NoSuchElementException;
 @Service
 @Transactional(readOnly = true)
 public class CicdManagementService {
+
+    public static final String PIPELINE_CENTER_ENTRY_AI_CLUB = "AI_CLUB";
+    public static final String PIPELINE_CENTER_ENTRY_JENKINS = "JENKINS";
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter PIPELINE_CONFIG_BRANCH_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
@@ -224,8 +229,51 @@ public class CicdManagementService {
         return PageResponse.from(pageData);
     }
 
+    public PageResponse<PipelineCenterEntrySummary> pagePipelineCenterEntries(int page,
+                                                                              int size,
+                                                                              String keyword,
+                                                                              Long projectId,
+                                                                              Boolean enabled,
+                                                                              String entryType) {
+        ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.requireCurrentScope();
+        List<PipelineCenterEntryEnvelope> allEntries = new ArrayList<>();
+        String normalizedEntryType = normalizePipelineCenterEntryType(entryType);
+
+        if (normalizedEntryType == null || PIPELINE_CENTER_ENTRY_AI_CLUB.equals(normalizedEntryType)) {
+            aiClubPipelineRepository.findAll(aiClubPipelineSpecification(keyword, projectId, enabled, scope)).stream()
+                    .map(this::toPipelineCenterAiClubEntry)
+                    .forEach(allEntries::add);
+        }
+        if (normalizedEntryType == null || PIPELINE_CENTER_ENTRY_JENKINS.equals(normalizedEntryType)) {
+            projectPipelineBindingRepository.findAll(pipelineBindingSpecification(keyword, null, enabled, scope)).stream()
+                    .filter(binding -> projectId == null || binding.getProject().getId().equals(projectId))
+                    .map(this::toPipelineCenterJenkinsEntry)
+                    .forEach(allEntries::add);
+        }
+
+        allEntries.sort(Comparator
+                .comparing(PipelineCenterEntryEnvelope::lastTriggeredAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(PipelineCenterEntryEnvelope::entryType)
+                .thenComparing(PipelineCenterEntryEnvelope::entryId, Comparator.reverseOrder())
+        );
+
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.max(1, Math.min(size, 100));
+        int fromIndex = Math.min((safePage - 1) * safeSize, allEntries.size());
+        int toIndex = Math.min(fromIndex + safeSize, allEntries.size());
+        List<PipelineCenterEntrySummary> records = allEntries.subList(fromIndex, toIndex).stream()
+                .map(PipelineCenterEntryEnvelope::summary)
+                .toList();
+        int totalPages = allEntries.isEmpty() ? 0 : (int) Math.ceil(allEntries.size() / (double) safeSize);
+        return new PageResponse<>(records, allEntries.size(), safePage, safeSize, totalPages);
+    }
+
     public AiClubPipelineSummary getAiClubPipeline(Long id) {
         return toAiClubPipelineSummary(requireAiClubPipeline(id));
+    }
+
+    public ProjectPipelineBindingSummary getPipelineBinding(Long id) {
+        return toPipelineBindingSummary(requirePipelineBinding(id));
     }
 
     @Transactional
@@ -1097,6 +1145,61 @@ public class CicdManagementService {
         );
     }
 
+    private PipelineCenterEntryEnvelope toPipelineCenterAiClubEntry(AiClubPipelineEntity entity) {
+        ProjectGitlabBindingEntity binding = entity.getGitlabBinding();
+        return new PipelineCenterEntryEnvelope(
+                PIPELINE_CENTER_ENTRY_AI_CLUB,
+                entity.getId(),
+                entity.getLastTriggeredAt(),
+                new PipelineCenterEntrySummary(
+                        PIPELINE_CENTER_ENTRY_AI_CLUB,
+                        entity.getId(),
+                        entity.getProject().getId(),
+                        entity.getProject().getName(),
+                        entity.getName(),
+                        entity.getProviderCode(),
+                        entity.getDefaultBranch(),
+                        defaultBoolean(entity.getEnabled(), true),
+                        entity.getLastRunStatus(),
+                        entity.getLastRunMessage(),
+                        formatTime(entity.getLastTriggeredAt()),
+                        "仓库",
+                        firstText(binding.getGitlabProjectPath(), binding.getGitlabProjectRef()),
+                        trimToNull(firstText(binding.getGitlabProjectWebUrl(), entity.getWoodpeckerRepoUrl())),
+                        "配置",
+                        entity.getConfigPath(),
+                        null
+                )
+        );
+    }
+
+    private PipelineCenterEntryEnvelope toPipelineCenterJenkinsEntry(ProjectPipelineBindingEntity entity) {
+        return new PipelineCenterEntryEnvelope(
+                PIPELINE_CENTER_ENTRY_JENKINS,
+                entity.getId(),
+                entity.getLastTriggeredAt(),
+                new PipelineCenterEntrySummary(
+                        PIPELINE_CENTER_ENTRY_JENKINS,
+                        entity.getId(),
+                        entity.getProject().getId(),
+                        entity.getProject().getName(),
+                        entity.getJobName(),
+                        "JENKINS",
+                        entity.getDefaultBranch(),
+                        defaultBoolean(entity.getEnabled(), true),
+                        entity.getLastTriggerStatus(),
+                        entity.getLastTriggerMessage(),
+                        formatTime(entity.getLastTriggeredAt()),
+                        "Jenkins Job",
+                        entity.getJobName(),
+                        trimToNull(entity.getJobUrl()),
+                        "Jenkins 服务",
+                        entity.getJenkinsServer().getName(),
+                        null
+                )
+        );
+    }
+
     private ProjectPipelineBindingSummary toPipelineBindingSummary(ProjectPipelineBindingEntity entity) {
         return new ProjectPipelineBindingSummary(
                 entity.getId(),
@@ -1269,6 +1372,18 @@ public class CicdManagementService {
             projectDataPermissionService.requirePipelineBindingVisible(binding);
         }
         return binding;
+    }
+
+    private String normalizePipelineCenterEntryType(String entryType) {
+        String normalized = trimToNull(entryType);
+        if (normalized == null) {
+            return null;
+        }
+        normalized = normalized.toUpperCase();
+        if (!PIPELINE_CENTER_ENTRY_AI_CLUB.equals(normalized) && !PIPELINE_CENTER_ENTRY_JENKINS.equals(normalized)) {
+            throw new IllegalArgumentException("entryType 仅支持 AI_CLUB 或 JENKINS");
+        }
+        return normalized;
     }
 
     private LocalDateTime toLocalDateTime(long timestamp) {
@@ -1485,5 +1600,13 @@ public class CicdManagementService {
         public static PipelineBindingOutcome skipped(String message, String jobName, String jenkinsServerName) {
             return new PipelineBindingOutcome("SKIPPED", message, null, jobName, jenkinsServerName);
         }
+    }
+
+    private record PipelineCenterEntryEnvelope(
+            String entryType,
+            Long entryId,
+            LocalDateTime lastTriggeredAt,
+            PipelineCenterEntrySummary summary
+    ) {
     }
 }
