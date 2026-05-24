@@ -95,7 +95,9 @@ public final class OperationLogSupport {
             "authorization",
             "cookie",
             "staticvalue",
-            "httpheadersjson"
+            "httpheadersjson",
+            "privatekey",
+            "passphrase"
     );
     private static final Map<String, String> MODULE_NAME_MAPPING = createModuleNameMapping();
 
@@ -494,6 +496,7 @@ public final class OperationLogSupport {
         mapping.put("OPERATION_LOG", "操作日志");
         mapping.put("SHORTCUT", "快捷入口管理");
         mapping.put("ENV_VAR", "环境变量管理");
+        mapping.put("SERVER", "服务器管理");
         return mapping;
     }
 

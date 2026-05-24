@@ -13,6 +13,8 @@ import GitlabView from '@/views/GitlabView.vue'
 const GitlabCodeStructureView = () => import('@/views/GitlabCodeStructureView.vue')
 import JenkinsServerView from '@/views/JenkinsServerView.vue'
 import PipelineBindingView from '@/views/PipelineBindingView.vue'
+const ServerManagementView = () => import('@/views/ServerManagementView.vue')
+const ServerDetailView = () => import('@/views/ServerDetailView.vue')
 const AiClubPipelineDetailView = () => import('@/views/AiClubPipelineDetailView.vue')
 import ModelView from '@/views/ModelView.vue'
 const ApiGroupHomeView = () => import('@/views/ApiGroupHomeView.vue')
@@ -33,6 +35,7 @@ import GitlabOauthCallbackView from '@/views/GitlabOauthCallbackView.vue'
 import WikiHomeView from '@/views/WikiHomeView.vue'
 import WikiSpaceView from '@/views/WikiSpaceView.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useAppStore } from '@/stores/app'
 
 const MemoryFactGraphView = () => import('@/views/MemoryFactGraphView.vue')
 const PrReviewStatsView = () => import('@/views/PrReviewStatsView.vue')
@@ -97,6 +100,8 @@ const router = createRouter({
         { path: 'tests/:planId', name: 'test-plan-detail', component: TestPlanDetailView, meta: { title: '测试计划详情', permission: 'test:view', activeMenu: '/tests' } },
         { path: 'models', name: 'models', component: ModelView, meta: { title: '模型管理', permission: 'model:view' } },
         { path: 'gitlab', name: 'gitlab', component: GitlabView, meta: { title: '代码仓库管理', permission: 'gitlab:view' } },
+        { path: 'servers', name: 'servers', component: ServerManagementView, meta: { title: '服务器管理', permission: 'server:view', requiresServerManagement: true } },
+        { path: 'servers/:serverId', name: 'server-detail', component: ServerDetailView, meta: { title: '服务器详情', permission: 'server:view', activeMenu: '/servers', requiresServerManagement: true } },
         { path: 'cicd', redirect: { name: 'cicd-pipelines' } },
         { path: 'cicd/jenkins-servers', name: 'cicd-servers', component: JenkinsServerView, meta: { title: 'Jenkins 服务管理', permission: 'cicd:view' } },
         { path: 'cicd/pipeline-bindings', name: 'cicd-pipelines', component: PipelineBindingView, meta: { title: '流水线中心', permission: 'cicd:view' } },
@@ -119,6 +124,7 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
+  const appStore = useAppStore()
   const requiresAuth = to.meta.requiresAuth !== false
 
   if (!requiresAuth) {
@@ -143,6 +149,17 @@ router.beforeEach(async (to) => {
   if (permission && !authStore.hasPermission(permission)) {
     ElMessage.warning('当前账号没有访问该页面的权限')
     return '/403'
+  }
+
+  try {
+    await appStore.refreshRuntimeCapabilities()
+  } catch {
+    // 忽略运行时能力拉取失败，默认沿用上一次能力状态或回退值。
+  }
+
+  if (to.meta.requiresServerManagement && !appStore.serverManagementEnabled) {
+    ElMessage.warning('服务器管理模块当前已关闭')
+    return '/dashboard'
   }
 
   return true

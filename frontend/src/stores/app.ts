@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { applyThemePreset, readStoredThemeId, resolveThemePreset, THEME_PRESETS, THEME_STORAGE_KEY } from '@/constants/theme'
+import { getRuntimeCapabilities } from '@/api/runtime'
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'git-ai-club:sidebar-collapsed'
 
@@ -20,6 +21,8 @@ export const useAppStore = defineStore('app', () => {
   const sidebarCollapsed = ref(readSidebarCollapsedPreference())
   const currentThemeId = ref(readStoredThemeId())
   const currentTheme = computed(() => resolveThemePreset(currentThemeId.value))
+  const runtimeCapabilitiesLoaded = ref(false)
+  const serverManagementEnabled = ref(true)
 
   const setDynamicPageTitle = (title: string, routeName: string) => {
     // 为需要运行时标题的页面提供统一入口，例如测试计划详情按计划名称显示。
@@ -62,6 +65,20 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  const refreshRuntimeCapabilities = async () => {
+    const capabilities = await getRuntimeCapabilities()
+    serverManagementEnabled.value = capabilities.serverManagementEnabled
+    runtimeCapabilitiesLoaded.value = true
+    return capabilities
+  }
+
+  const ensureRuntimeCapabilities = async () => {
+    if (runtimeCapabilitiesLoaded.value) {
+      return { serverManagementEnabled: serverManagementEnabled.value }
+    }
+    return refreshRuntimeCapabilities()
+  }
+
   return {
     systemName,
     currentProject,
@@ -70,12 +87,16 @@ export const useAppStore = defineStore('app', () => {
     sidebarCollapsed,
     currentThemeId,
     currentTheme,
+    runtimeCapabilitiesLoaded,
+    serverManagementEnabled,
     themePresets: THEME_PRESETS,
     setDynamicPageTitle,
     clearDynamicPageTitle,
     setSidebarCollapsed,
     toggleSidebarCollapsed,
     initializeAppearance,
-    setTheme
+    setTheme,
+    refreshRuntimeCapabilities,
+    ensureRuntimeCapabilities
   }
 })

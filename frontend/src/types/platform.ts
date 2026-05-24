@@ -1811,6 +1811,86 @@ export interface PlatformEnvVarDetailItem extends PlatformEnvVarItem {
   resolvedValuePreview: string
 }
 
+export interface RuntimeCapabilitiesItem {
+  serverManagementEnabled: boolean
+}
+
+export interface ServerAlertConfigItem {
+  connectivityAlertEnabled: boolean
+  connectivityAlertEnabledOverride: boolean | null
+  cpuThresholdPercent: number
+  cpuThresholdPercentOverride: number | null
+  memoryThresholdPercent: number
+  memoryThresholdPercentOverride: number | null
+  diskThresholdPercent: number
+  diskThresholdPercentOverride: number | null
+  consecutiveBreaches: number
+  consecutiveBreachesOverride: number | null
+  cooldownMinutes: number
+  cooldownMinutesOverride: number | null
+  recipientUsers: UserOptionItem[]
+}
+
+export interface ServerAlertStateItem {
+  alertCode: string
+  alertName: string
+  active: boolean
+  lastObservedValue: number | null
+  consecutiveBreachCount: number | null
+  lastNotifiedAt: string | null
+  lastTriggeredAt: string | null
+  lastRecoveredAt: string | null
+  lastMessage: string
+}
+
+export interface ServerMetricSampleItem {
+  probeStatus: string
+  probeMessage: string
+  cpuUsagePercent: number | null
+  memoryUsagePercent: number | null
+  diskUsagePercent: number | null
+  sampledAt: string
+}
+
+export interface ServerSummaryItem {
+  id: number
+  name: string
+  description: string
+  host: string
+  port: number
+  username: string
+  osType: string
+  authType: string
+  enabled: boolean
+  jumpHostEnabled: boolean
+  passwordConfigured: boolean
+  privateKeyConfigured: boolean
+  jumpPasswordConfigured: boolean
+  jumpPrivateKeyConfigured: boolean
+  lastProbeStatus: string | null
+  lastProbeMessage: string | null
+  lastProbedAt: string | null
+  lastCpuUsagePercent: number | null
+  lastMemoryUsagePercent: number | null
+  lastDiskUsagePercent: number | null
+  activeAlertCount: number
+}
+
+export interface ServerDetailItem extends ServerSummaryItem {
+  jumpHost: string | null
+  jumpPort: number | null
+  jumpUsername: string | null
+  jumpAuthType: string | null
+  effectiveAlertConfig: ServerAlertConfigItem
+  alertStates: ServerAlertStateItem[]
+}
+
+export interface ServerTerminalSessionCreatedItem {
+  sessionId: string
+  cols: number
+  rows: number
+}
+
 export interface PrReviewStatsGroupItem {
   id: number
   name: string

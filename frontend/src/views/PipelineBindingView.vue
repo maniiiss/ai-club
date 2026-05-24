@@ -319,6 +319,35 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.work-list-shell,
+.work-list-scroll,
+.work-list-footer {
+  background: transparent;
+  box-shadow: none;
+}
+
+.work-list-shell {
+  border-radius: 0;
+  overflow: visible;
+}
+
+.work-list-scroll {
+  min-height: 0;
+}
+
+.work-list-footer {
+  border-top: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.work-list-empty-state {
+  min-height: calc(100vh - 320px);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+}
+
 .pipeline-card-grid {
   --pipeline-card-width: 360px;
   --pipeline-card-min-height: 260px;

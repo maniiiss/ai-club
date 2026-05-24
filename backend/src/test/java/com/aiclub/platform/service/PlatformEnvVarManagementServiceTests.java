@@ -58,7 +58,8 @@ class PlatformEnvVarManagementServiceTests {
                 platformEnvVarConfigRepository,
                 new PlatformEnvVarRegistry(),
                 platformEnvVarResolver,
-                tokenCipherService
+                tokenCipherService,
+                java.util.List.of()
         );
     }
 

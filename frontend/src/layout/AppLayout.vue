@@ -775,6 +775,7 @@ const primaryMenuSeeds: MenuSeed[] = [
 ]
 
 const integrationMenuSeeds: MenuSeed[] = [
+  { permission: 'server:view', fallbackPath: '/servers', fallbackLabel: '服务器管理', shortLabel: '服务器', fallbackIcon: Connection, matchNames: ['servers', 'server-detail'] },
   { permission: 'cicd:view', fallbackPath: '/cicd/pipeline-bindings', fallbackLabel: '流水线中心', shortLabel: '流水线', fallbackIcon: DataAnalysis, matchNames: ['cicd-pipelines', 'cicd-pipeline-detail'] },
   { permission: 'cicd:view', fallbackPath: '/cicd/jenkins-servers', fallbackLabel: 'Jenkins 服务管理', shortLabel: 'Jenkins', fallbackIcon: DataAnalysis, matchNames: ['cicd-servers'] }
 ]
@@ -841,7 +842,17 @@ const pageTitle = computed(() => {
   return (route.meta.title as string) || 'AI代理工程管理平台'
 })
 const visiblePrimaryMenus = computed(() => primaryMenuItems.value.filter((item) => authStore.hasPermission(item.permission)))
-const visibleIntegrationMenus = computed(() => integrationMenuItems.value.filter((item) => authStore.hasPermission(item.permission)))
+const visibleIntegrationMenus = computed(() =>
+  integrationMenuItems.value.filter((item) => {
+    if (!authStore.hasPermission(item.permission)) {
+      return false
+    }
+    if (item.permission === 'server:view' && !appStore.serverManagementEnabled) {
+      return false
+    }
+    return true
+  })
+)
 const visibleTrailingMenus = computed(() => trailingMenuItems.value.filter((item) => authStore.hasPermission(item.permission)))
 const visibleSystemMenus = computed(() => systemMenuItems.value.filter((item) => authStore.hasPermission(item.permission)))
 const isDashboardRoute = computed(() => route.name === 'dashboard')
@@ -948,6 +959,7 @@ const isMobileMoreActive = computed(() =>
   || mobileWorkspaceMoreItems.value.some((item) => isMenuActive(item))
   || mobileSystemMoreItems.value.some((item) => isMenuActive(item))
 )
+let runtimeCapabilityTimer: number | null = null
 
 const isProjectWorkspaceActive = computed(() => visibleProjectWorkspaceMenus.value.some((item) => isMenuActive(item)))
 const isIntegrationSectionActive = computed(() => visibleIntegrationMenus.value.some((item) => isMenuActive(item)))
@@ -1275,6 +1287,14 @@ async function loadMenuPermissions() {
   }
 }
 
+async function refreshRuntimeCapabilities() {
+  try {
+    await appStore.refreshRuntimeCapabilities()
+  } catch {
+    // ignore
+  }
+}
+
 // 当用户进入系统管理子页时，展开态自动展开对应分组，避免丢失当前定位。
 watch(
   [
@@ -1307,10 +1327,14 @@ watch(
 onMounted(() => {
   notificationStore.bootstrap().catch(() => undefined)
   loadMenuPermissions().catch(() => undefined)
+  refreshRuntimeCapabilities().catch(() => undefined)
   syncViewportMode()
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', syncViewportMode)
     window.addEventListener(HERMES_OPEN_EVENT_NAME, handleExternalHermesOpen as EventListener)
+    runtimeCapabilityTimer = window.setInterval(() => {
+      refreshRuntimeCapabilities().catch(() => undefined)
+    }, 15000)
   }
 })
 
@@ -1318,6 +1342,10 @@ onUnmounted(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', syncViewportMode)
     window.removeEventListener(HERMES_OPEN_EVENT_NAME, handleExternalHermesOpen as EventListener)
+    if (runtimeCapabilityTimer !== null) {
+      window.clearInterval(runtimeCapabilityTimer)
+      runtimeCapabilityTimer = null
+    }
   }
 })
 
@@ -1327,6 +1355,17 @@ watch(
     if (!token) {
       notificationStore.disconnect()
     }
+  }
+)
+
+watch(
+  [() => appStore.serverManagementEnabled, () => route.name],
+  ([enabled, routeName]) => {
+    if (enabled || (routeName !== 'servers' && routeName !== 'server-detail')) {
+      return
+    }
+    ElMessage.warning('服务器管理模块当前已关闭')
+    void router.replace('/dashboard')
   }
 )
 

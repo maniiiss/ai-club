@@ -51,6 +51,14 @@ public class PlatformEnvVarRegistry {
     public static final String KEY_HERMES_HINDSIGHT_BANK_ID = "HERMES_HINDSIGHT_BANK_ID";
     public static final String KEY_HERMES_HINDSIGHT_BUDGET = "HERMES_HINDSIGHT_BUDGET";
     public static final String KEY_HINDSIGHT_TIMEOUT_SECONDS = "PLATFORM_HINDSIGHT_TIMEOUT_SECONDS";
+    public static final String KEY_SERVER_MODULE_ENABLED = "PLATFORM_SERVER_MODULE_ENABLED";
+    public static final String KEY_SERVER_MONITOR_INTERVAL_SECONDS = "PLATFORM_SERVER_MONITOR_INTERVAL_SECONDS";
+    public static final String KEY_SERVER_ALERT_CONNECTIVITY_ENABLED = "PLATFORM_SERVER_ALERT_CONNECTIVITY_ENABLED";
+    public static final String KEY_SERVER_ALERT_CPU_THRESHOLD_PERCENT = "PLATFORM_SERVER_ALERT_CPU_THRESHOLD_PERCENT";
+    public static final String KEY_SERVER_ALERT_MEMORY_THRESHOLD_PERCENT = "PLATFORM_SERVER_ALERT_MEMORY_THRESHOLD_PERCENT";
+    public static final String KEY_SERVER_ALERT_DISK_THRESHOLD_PERCENT = "PLATFORM_SERVER_ALERT_DISK_THRESHOLD_PERCENT";
+    public static final String KEY_SERVER_ALERT_CONSECUTIVE_BREACHES = "PLATFORM_SERVER_ALERT_CONSECUTIVE_BREACHES";
+    public static final String KEY_SERVER_ALERT_COOLDOWN_MINUTES = "PLATFORM_SERVER_ALERT_COOLDOWN_MINUTES";
 
     public static final String SOURCE_TYPE_STATIC = "STATIC";
     public static final String SOURCE_TYPE_HTTP = "HTTP";
@@ -309,6 +317,64 @@ public class PlatformEnvVarRegistry {
                 "平台访问 Hindsight API 时等待响应的最长秒数。",
                 false
         ), 5, 120);
+
+        // 服务器管理模块是高风险能力，运行期开关和告警默认阈值统一收敛到固定注册表，便于即时停用且不影响其他业务。
+        registerBoolean(new PlatformEnvVarDefinition(
+                KEY_SERVER_MODULE_ENABLED,
+                "platform.server.module.enabled",
+                "服务器管理模块开关",
+                "控制服务器管理模块是否可用；关闭后前端入口、SSH 终端、监控与告警都会立即停用。",
+                false
+        ));
+        registerIntegerRange(new PlatformEnvVarDefinition(
+                KEY_SERVER_MONITOR_INTERVAL_SECONDS,
+                "platform.server.monitor.interval-seconds",
+                "服务器监控采样间隔秒数",
+                "后台轮询服务器资源的默认采样周期，服务器详情页短趋势与告警评估共用该节奏。",
+                false
+        ), 15, 3600);
+        registerBoolean(new PlatformEnvVarDefinition(
+                KEY_SERVER_ALERT_CONNECTIVITY_ENABLED,
+                "platform.server.alert.connectivity-enabled",
+                "服务器连通性告警开关",
+                "控制服务器探活失败时是否评估并发送连通性告警。",
+                false
+        ));
+        registerIntegerRange(new PlatformEnvVarDefinition(
+                KEY_SERVER_ALERT_CPU_THRESHOLD_PERCENT,
+                "platform.server.alert.cpu-threshold-percent",
+                "服务器 CPU 告警阈值",
+                "当 CPU 使用率达到该百分比及以上时触发告警评估。",
+                false
+        ), 1, 100);
+        registerIntegerRange(new PlatformEnvVarDefinition(
+                KEY_SERVER_ALERT_MEMORY_THRESHOLD_PERCENT,
+                "platform.server.alert.memory-threshold-percent",
+                "服务器内存告警阈值",
+                "当内存使用率达到该百分比及以上时触发告警评估。",
+                false
+        ), 1, 100);
+        registerIntegerRange(new PlatformEnvVarDefinition(
+                KEY_SERVER_ALERT_DISK_THRESHOLD_PERCENT,
+                "platform.server.alert.disk-threshold-percent",
+                "服务器磁盘告警阈值",
+                "当根分区磁盘使用率达到该百分比及以上时触发告警评估。",
+                false
+        ), 1, 100);
+        registerIntegerRange(new PlatformEnvVarDefinition(
+                KEY_SERVER_ALERT_CONSECUTIVE_BREACHES,
+                "platform.server.alert.consecutive-breaches",
+                "服务器连续越线次数",
+                "同一指标连续多少次越过阈值后才真正触发一次告警。",
+                false
+        ), 1, 20);
+        registerIntegerRange(new PlatformEnvVarDefinition(
+                KEY_SERVER_ALERT_COOLDOWN_MINUTES,
+                "platform.server.alert.cooldown-minutes",
+                "服务器告警冷却分钟数",
+                "同一服务器同一指标在告警后至少间隔多少分钟才能再次发送提醒。",
+                false
+        ), 1, 1440);
     }
 
     public List<PlatformEnvVarDefinition> listDefinitions() {

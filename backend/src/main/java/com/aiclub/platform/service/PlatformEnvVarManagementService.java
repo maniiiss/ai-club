@@ -5,6 +5,8 @@ import com.aiclub.platform.dto.PlatformEnvVarDetail;
 import com.aiclub.platform.dto.PlatformEnvVarSummary;
 import com.aiclub.platform.dto.request.PlatformEnvVarUpdateRequest;
 import com.aiclub.platform.repository.PlatformEnvVarConfigRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +25,8 @@ import java.util.Optional;
 @Transactional(readOnly = true)
 public class PlatformEnvVarManagementService {
 
+    private static final Logger log = LoggerFactory.getLogger(PlatformEnvVarManagementService.class);
+
     static final String STATUS_ACTIVE = "ACTIVE";
     static final String STATUS_ERROR = "ERROR";
     static final String STATUS_MISSING = "MISSING";
@@ -33,15 +37,18 @@ public class PlatformEnvVarManagementService {
     private final PlatformEnvVarRegistry platformEnvVarRegistry;
     private final PlatformEnvVarResolver platformEnvVarResolver;
     private final TokenCipherService tokenCipherService;
+    private final List<PlatformEnvVarChangeListener> changeListeners;
 
     public PlatformEnvVarManagementService(PlatformEnvVarConfigRepository platformEnvVarConfigRepository,
                                            PlatformEnvVarRegistry platformEnvVarRegistry,
                                            PlatformEnvVarResolver platformEnvVarResolver,
-                                           TokenCipherService tokenCipherService) {
+                                           TokenCipherService tokenCipherService,
+                                           List<PlatformEnvVarChangeListener> changeListeners) {
         this.platformEnvVarConfigRepository = platformEnvVarConfigRepository;
         this.platformEnvVarRegistry = platformEnvVarRegistry;
         this.platformEnvVarResolver = platformEnvVarResolver;
         this.tokenCipherService = tokenCipherService;
+        this.changeListeners = changeListeners == null ? List.of() : List.copyOf(changeListeners);
     }
 
     public List<PlatformEnvVarSummary> listEnvVars() {
@@ -108,7 +115,18 @@ public class PlatformEnvVarManagementService {
         // 保存前先用待生效配置做即时校验，避免异常配置进入运行时。
         platformEnvVarResolver.resolveConfigured(entity);
         PlatformEnvVarConfigEntity saved = platformEnvVarConfigRepository.save(entity);
+        notifyChangeListeners(definition.envKey());
         return toDetail(definition, saved);
+    }
+
+    private void notifyChangeListeners(String envKey) {
+        for (PlatformEnvVarChangeListener changeListener : changeListeners) {
+            try {
+                changeListener.onEnvVarUpdated(envKey);
+            } catch (RuntimeException exception) {
+                log.warn("忽略环境变量变更监听异常 envKey={}", envKey, exception);
+            }
+        }
     }
 
     private PlatformEnvVarSummary toSummary(PlatformEnvVarRegistry.PlatformEnvVarDefinition definition,

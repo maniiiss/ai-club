@@ -7,7 +7,6 @@
     <section v-if="!isEditing" class="platform-form-section">
       <div class="platform-form-section-head">
         <div class="platform-form-section-title">流水线类型</div>
-        <div class="platform-form-section-subtitle">选择内置 AI Club Pipeline，或复用外部 Jenkins 兼容绑定。</div>
       </div>
       <el-radio-group v-model="providerType" class="pipeline-provider-group">
         <el-radio-button label="AI_CLUB">AI Club Pipeline</el-radio-button>
