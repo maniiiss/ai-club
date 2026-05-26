@@ -11,6 +11,8 @@ import com.aiclub.platform.dto.ServerDetail;
 import com.aiclub.platform.dto.ServerMetricSampleItem;
 import com.aiclub.platform.dto.ServerSummary;
 import com.aiclub.platform.dto.ServerTerminalSessionCreated;
+import com.aiclub.platform.dto.SftpDownloadTicket;
+import com.aiclub.platform.dto.SftpLsResult;
 import com.aiclub.platform.dto.UserOptionSummary;
 import com.aiclub.platform.dto.request.ServerAlertConfigUpdateRequest;
 import com.aiclub.platform.dto.request.ServerRequest;
@@ -29,6 +31,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -59,6 +62,7 @@ public class ServerManagementService {
     private final ServerAlertSettingsService serverAlertSettingsService;
     private final ServerAlertService serverAlertService;
     private final ServerSshGateway serverSshGateway;
+    private final SftpDownloadTicketService sftpDownloadTicketService;
     private final ServerTerminalSessionManager serverTerminalSessionManager;
 
     public ServerManagementService(ServerInfoRepository serverInfoRepository,
@@ -69,6 +73,7 @@ public class ServerManagementService {
                                    ServerAlertSettingsService serverAlertSettingsService,
                                    ServerAlertService serverAlertService,
                                    ServerSshGateway serverSshGateway,
+                                   SftpDownloadTicketService sftpDownloadTicketService,
                                    ServerTerminalSessionManager serverTerminalSessionManager) {
         this.serverInfoRepository = serverInfoRepository;
         this.serverMetricSampleRepository = serverMetricSampleRepository;
@@ -78,6 +83,7 @@ public class ServerManagementService {
         this.serverAlertSettingsService = serverAlertSettingsService;
         this.serverAlertService = serverAlertService;
         this.serverSshGateway = serverSshGateway;
+        this.sftpDownloadTicketService = sftpDownloadTicketService;
         this.serverTerminalSessionManager = serverTerminalSessionManager;
     }
 
@@ -212,6 +218,81 @@ public class ServerManagementService {
     public void closeTerminalSession(String sessionId) {
         serverModuleGateService.requireEnabled();
         serverTerminalSessionManager.closeOwnedSession(sessionId, requireCurrentUserId(), ServerTerminalSessionManager.REASON_CLIENT_CLOSED);
+    }
+
+    /** SFTP 列出远程目录内容 */
+    public SftpLsResult sftpLs(Long serverId, String path) {
+        serverModuleGateService.requireEnabled();
+        requireServerTerminalPermission();
+        ServerInfoEntity server = requireServer(serverId);
+        String normalizedPath = normalizeSftpPath(path);
+        return serverSshGateway.listDirectory(server, normalizedPath);
+    }
+
+    /** SFTP 上传文件到远程路径 */
+    public void sftpUpload(Long serverId, String remotePath, MultipartFile file) {
+        serverModuleGateService.requireEnabled();
+        requireServerTerminalPermission();
+        if (file.getSize() > 512L * 1024 * 1024) {
+            throw new IllegalArgumentException("上传文件大小不能超过 512MB");
+        }
+        ServerInfoEntity server = requireServer(serverId);
+        String normalizedPath = normalizeSftpPath(remotePath);
+        try {
+            serverSshGateway.uploadFile(server, normalizedPath, file.getInputStream(), file.getSize());
+        } catch (java.io.IOException exception) {
+            throw new IllegalStateException("读取上传文件失败：" + exception.getMessage(), exception);
+        }
+    }
+
+    /** SFTP 下载远程文件 */
+    public void sftpDownload(Long serverId, String path, java.io.OutputStream outputStream) {
+        serverModuleGateService.requireEnabled();
+        requireServerTerminalPermission();
+        ServerInfoEntity server = requireServer(serverId);
+        String normalizedPath = normalizeSftpPath(path);
+        serverSshGateway.downloadFile(server, normalizedPath, outputStream);
+    }
+
+    /** 创建短期下载票据，让浏览器使用原生下载流处理大文件。 */
+    public SftpDownloadTicket createSftpDownloadTicket(Long serverId, String path) {
+        serverModuleGateService.requireEnabled();
+        requireServerTerminalPermission();
+        requireServer(serverId);
+        String normalizedPath = normalizeSftpPath(path);
+        SftpDownloadTicketService.TicketPayload payload = sftpDownloadTicketService.createTicket(
+                requireCurrentUserId(),
+                serverId,
+                normalizedPath
+        );
+        return new SftpDownloadTicket(payload.ticket(), formatTime(LocalDateTime.ofInstant(payload.expiresAt(), java.time.ZoneId.systemDefault())));
+    }
+
+    /** 使用短期票据下载远程文件，供无 Authorization 头的浏览器原生下载请求调用。 */
+    public void sftpDownloadByTicket(Long serverId, String path, String ticket, java.io.OutputStream outputStream) {
+        serverModuleGateService.requireEnabled();
+        ServerInfoEntity server = requireServer(serverId);
+        String normalizedPath = normalizeSftpPath(path);
+        sftpDownloadTicketService.validateTicket(ticket, serverId, normalizedPath);
+        serverSshGateway.downloadFile(server, normalizedPath, outputStream);
+    }
+
+    /** SFTP 删除远程文件或目录 */
+    public void sftpDelete(Long serverId, String path, boolean recursive) {
+        serverModuleGateService.requireEnabled();
+        requireServerTerminalPermission();
+        ServerInfoEntity server = requireServer(serverId);
+        String normalizedPath = normalizeSftpPath(path);
+        serverSshGateway.delete(server, normalizedPath, recursive);
+    }
+
+    /** SFTP 创建远程目录 */
+    public void sftpMkdir(Long serverId, String path) {
+        serverModuleGateService.requireEnabled();
+        requireServerTerminalPermission();
+        ServerInfoEntity server = requireServer(serverId);
+        String normalizedPath = normalizeSftpPath(path);
+        serverSshGateway.mkdir(server, normalizedPath);
     }
 
     @Transactional
@@ -547,6 +628,23 @@ public class ServerManagementService {
 
     private boolean currentUserHasPermission(String permissionCode) {
         return AuthContextHolder.get().map(authContext -> authContext.hasPermission(permissionCode)).orElse(false);
+    }
+
+    /** 校验当前用户是否拥有 server:terminal 权限 */
+    private void requireServerTerminalPermission() {
+        if (!currentUserHasPermission("server:terminal")) {
+            throw new UnauthorizedException("无权使用服务器 SFTP 功能");
+        }
+    }
+
+    /** 规范化 SFTP 路径，默认为根目录 */
+    private String normalizeSftpPath(String path) {
+        if (path == null || path.isBlank()) {
+            return "/";
+        }
+        String trimmed = path.trim();
+        // 前端允许输入 var/log 这类相对写法，后端统一补成远程绝对路径，避免不同入口行为不一致。
+        return trimmed.startsWith("/") ? trimmed : "/" + trimmed;
     }
 
     private String limitMessage(String message) {

@@ -46,7 +46,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException ex) {
-        return ApiResponse.fail("上传文件大小不能超过20MB");
+        return ApiResponse.fail("上传文件大小超过限制（最大 512MB）");
     }
 
     @ExceptionHandler(NoSuchElementException.class)

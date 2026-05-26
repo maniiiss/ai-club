@@ -1942,3 +1942,39 @@ export interface PrReviewStatsQueryPayload {
   groupId: number
   groupName?: string
 }
+
+/** SFTP 远程文件或目录项 */
+export interface SftpFileItem {
+  /** 文件/目录名称 */
+  name: string
+  /** 完整路径 */
+  path: string
+  /** 是否为目录 */
+  isDirectory: boolean
+  /** 是否为符号链接 */
+  symbolicLink: boolean
+  /** 符号链接目标路径 */
+  linkTarget: string | null
+  /** 文件大小（字节） */
+  size: number
+  /** 最后修改时间 */
+  lastModified: string
+  /** 权限字符串 */
+  permissions: string
+}
+
+/** SFTP 远程目录列表结果 */
+export interface SftpLsResult {
+  /** 当前目录路径 */
+  path: string
+  /** 目录中的文件和子目录列表 */
+  files: SftpFileItem[]
+}
+
+/** SFTP 短期下载票据 */
+export interface SftpDownloadTicket {
+  /** 绑定当前用户、服务器和路径的短期票据 */
+  ticket: string
+  /** 票据过期时间 */
+  expiresAt: string
+}

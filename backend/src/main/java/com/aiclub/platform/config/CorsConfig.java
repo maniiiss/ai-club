@@ -32,6 +32,8 @@ public class CorsConfig {
         config.setAllowedOriginPatterns(originPatterns);
         config.setAllowedHeaders(List.of("*"));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        // 暴露 Content-Disposition 头，供前端 SFTP 下载时获取文件名
+        config.setExposedHeaders(List.of("Content-Disposition"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);

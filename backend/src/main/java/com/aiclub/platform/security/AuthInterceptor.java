@@ -33,7 +33,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
 
         String requestUri = request.getRequestURI();
-        if (isPublicPath(requestUri)) {
+        if (isSftpDownloadTicketRequest(requestUri, request) || isPublicPath(requestUri)) {
             return true;
         }
 
@@ -77,6 +77,15 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || requestUri.startsWith("/comment-images")
                 || requestUri.startsWith("/actuator")
                 || requestUri.startsWith("/error");
+    }
+
+    private boolean isSftpDownloadTicketRequest(String requestUri, HttpServletRequest request) {
+        if (!"GET".equalsIgnoreCase(request.getMethod())
+                || !requestUri.matches("/api/servers/\\d+/sftp/download")) {
+            return false;
+        }
+        String ticket = request.getParameter("ticket");
+        return ticket != null && !ticket.isBlank();
     }
 
     private RequirePermission findPermission(HandlerMethod handlerMethod) {

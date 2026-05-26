@@ -6,6 +6,7 @@
 
 - Linux 服务器接入与 SSH 凭据管理
 - 页面内 SSH 终端操作
+- 页面内 SFTP 文件浏览、上传、下载、删除和创建目录
 - CPU / 内存 / 磁盘 / 连通性监控
 - 站内告警与通知人绑定
 - 运行期即时总开关，停用时不影响平台其他业务
@@ -98,7 +99,15 @@
 - 后端通过 `sshj` 打开 PTY shell，把输入输出桥接到页面终端。
 - 第一版协议只支持 `INPUT`、`RESIZE`、`OUTPUT`、`STATUS`。
 
-## 7. 安全要求
+## 7. SFTP 文件管理
+
+- SFTP 复用 `server:terminal` 权限和服务器管理总开关，后端通过 `sshj` 为每次文件操作建立独立 SFTP 会话。
+- 浏览目录、上传、删除和创建目录使用常规 Bearer 鉴权 API。
+- 下载大文件时前端先调用 `POST /api/servers/{id}/sftp/download-ticket` 创建短期票据，再用浏览器原生下载请求访问 `GET /api/servers/{id}/sftp/download`。
+- 下载票据绑定当前用户、服务器 ID、规范化远程路径和过期时间，只保存 HMAC 签名后的短期凭证，不把长期登录 Token 放入 URL。
+- 下载响应使用 `filename` + `filename*` 双格式 `Content-Disposition`，兼容中文文件名与旧浏览器兜底文件名。
+
+## 8. 安全要求
 
 - 所有敏感凭据只在写入时接收，读取时只返回 `passwordConfigured` / `privateKeyConfigured` 等布尔状态。
 - 操作日志、异常信息、告警文案和终端错误输出都不得拼接或暴露明文凭据。

@@ -2,6 +2,8 @@ package com.aiclub.platform.service;
 
 import org.junit.jupiter.api.Test;
 
+import net.schmizz.sshj.sftp.FileMode;
+
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,5 +32,12 @@ class SshjServerSshGatewayTests {
         assertThat(parsed).containsEntry("cpu", 17);
         assertThat(parsed).containsEntry("mem", 63);
         assertThat(parsed).containsEntry("disk", 81);
+    }
+
+    @Test
+    void shouldFormatSftpFileModeAsPosixPermissionText() {
+        assertThat(SshjServerSshGateway.formatFileMode(new FileMode(040755))).isEqualTo("drwxr-xr-x");
+        assertThat(SshjServerSshGateway.formatFileMode(new FileMode(0100600))).isEqualTo("-rw-------");
+        assertThat(SshjServerSshGateway.formatFileMode(new FileMode(0120777))).isEqualTo("lrwxrwxrwx");
     }
 }

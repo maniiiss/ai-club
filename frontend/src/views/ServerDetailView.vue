@@ -241,6 +241,12 @@
           </div>
           </div>
         </el-tab-pane>
+
+        <el-tab-pane v-if="canUseTerminal" label="SFTP 文件" name="sftp">
+          <div class="server-tab-shell">
+            <ServerSftpPanel :server-id="serverId" :can-operate="canUseTerminal" />
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </section>
 
@@ -302,6 +308,7 @@ import { getResolvedApiBaseUrl } from '@/api/http'
 import { AUTH_TOKEN_KEY } from '@/constants/auth'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
+import ServerSftpPanel from '@/components/ServerSftpPanel.vue'
 import type { ServerDetailItem, ServerMetricSampleItem, UserOptionItem } from '@/types/platform'
 
 interface AlertFormState {

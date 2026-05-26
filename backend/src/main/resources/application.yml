@@ -49,8 +49,8 @@ spring:
     clean-disabled: true
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 64MB
+      max-file-size: 512MB
+      max-request-size: 512MB
   mvc:
     async:
       # 执行中心 run 级 SSE 可能需要覆盖完整的长时实现步骤，5 分钟会让连接被动断开后频繁重连。
