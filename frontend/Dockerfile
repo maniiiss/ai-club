@@ -7,10 +7,10 @@ ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ENV VITE_API_PORT=${VITE_API_PORT}
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 COPY . .
-RUN npm run build
+RUN npm run build --legacy-peer-deps
 
 FROM nginx:1.27-alpine
 WORKDIR /usr/share/nginx/html
