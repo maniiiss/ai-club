@@ -219,7 +219,8 @@ services:
       HERMES_LLM_BASE_URL: ${HERMES_LLM_BASE_URL:-}
       # 默认关闭 Hermes 自带的外部 Hindsight memory provider，避免与平台后端的用户会话记忆重复写入。
       HERMES_MEMORY_PROVIDER: ${HERMES_MEMORY_PROVIDER:-}
-      HERMES_MEMORY_HINDSIGHT_URL: "http://${SERVER_HOST:-hindsight}:${HINDSIGHT_PORT:-8888}"
+      # 容器内访问 Hindsight 必须走 compose 服务名和容器端口，不能复用宿主机暴露地址。
+      HERMES_MEMORY_HINDSIGHT_URL: http://hindsight:8888
       CODE_PROCESSING_IP: ${CODE_PROCESSING_IP:-host.docker.internal}
       CODE_PROCESSING_PORT: ${CODE_PROCESSING_PORT:-9000}
       API_SERVER_ENABLED: "true"
@@ -228,7 +229,8 @@ services:
       API_SERVER_KEY: ${PLATFORM_HERMES_API_KEY:-}
       API_SERVER_MODEL_NAME: ${PLATFORM_HERMES_MODEL:-hermes-agent}
       PLATFORM_HERMES_MCP_SHARED_TOKEN: ${PLATFORM_HERMES_MCP_SHARED_TOKEN:-git-ai-club-hermes-mcp-token}
-    entrypoint:
+    # 保留官方镜像 entrypoint，只通过 command 注入平台启动前置逻辑。
+    command:
       - /bin/sh
       - -lc
       - |
@@ -275,8 +277,37 @@ services:
           echo "      resources: false"
           echo "      prompts: false"
         } > /opt/data/config.yaml
-        exec hermes gateway
-    command: []
+        # 等待 Hindsight API 真正就绪，避免 Hermes 启动后首次访问记忆服务时撞上冷启动。
+        python3 - <<'PY'
+        import os
+        import sys
+        import time
+        import urllib.error
+        import urllib.request
+
+        base_url = os.getenv("HERMES_MEMORY_HINDSIGHT_URL", "http://hindsight:8888").rstrip("/")
+        deadline = time.time() + 120
+        last_error = "未知错误"
+
+        while time.time() < deadline:
+            try:
+                with urllib.request.urlopen(f"{base_url}/health", timeout=3) as response:
+                    if 200 <= response.status < 500:
+                        print(f"Hindsight 已就绪: {base_url}/health")
+                        sys.exit(0)
+            except urllib.error.HTTPError as exc:
+                if exc.code < 500:
+                    print(f"Hindsight 已响应（状态码 {exc.code}），继续启动 Hermes。")
+                    sys.exit(0)
+                last_error = f"HTTP {exc.code}"
+            except Exception as exc:
+                last_error = str(exc)
+            time.sleep(2)
+
+        print(f"Hindsight 在 120 秒内仍未就绪，最后一次错误：{last_error}", file=sys.stderr)
+        sys.exit(1)
+        PY
+        exec /opt/hermes/.venv/bin/hermes gateway run
     ports:
       - "${HERMES_PORT:-18080}:18080"
     volumes:
