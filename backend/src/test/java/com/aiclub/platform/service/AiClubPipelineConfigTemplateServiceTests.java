@@ -30,7 +30,8 @@ class AiClubPipelineConfigTemplateServiceTests {
                 )
         );
 
-        assertThat(content).startsWith("skip_clone: true");
+        assertThat(content).contains("skip_clone: true");
+        assertThat(content).contains("# ai-club:template=SSH_REMOTE");
         assertThat(content).contains("ssh-keyscan -p 22 'deploy.example.com'");
         assertThat(content).contains("ssh -i ~/.ssh/id_ai_club -p 22 'deploy@deploy.example.com' 'bash -se'");
         assertThat(content).doesNotContain("cicd_bot@deploy@10.10.10.10@jump.example.com");
@@ -135,6 +136,67 @@ class AiClubPipelineConfigTemplateServiceTests {
                         "sshCommands", "pwd"
                 )
         )).hasMessage("JumpServer 端口必须为数字");
+    }
+
+    @Test
+    void shouldParseTemplateMetadataBackToParameters() {
+        String raw = service.renderTemplate(
+                "GENERIC_SHELL",
+                context(),
+                Map.of(
+                        "branch", "deploy",
+                        "skipClone", "true",
+                        "shellImage", "alpine:3.20",
+                        "shellCommands", "echo hello"
+                )
+        );
+
+        AiClubPipelineConfigTemplateService.TemplatePrefillResult result = service.parseExistingConfig(raw, context());
+
+        assertThat(result.prefillMode()).isEqualTo(AiClubPipelineConfigTemplateService.PREFILL_MODE_FORM);
+        assertThat(result.templateCode()).isEqualTo("GENERIC_SHELL");
+        assertThat(result.parameters()).containsEntry("branch", "deploy");
+        assertThat(result.parameters()).containsEntry("skipClone", "true");
+        assertThat(result.parameters()).containsEntry("shellCommands", "echo hello");
+    }
+
+    @Test
+    void shouldHeuristicallyParseExistingSshRemoteYamlWithoutMetadata() {
+        String raw = """
+                skip_clone: true
+
+                steps:
+                  - name: ssh-deploy
+                    image: alpine:3.20
+                    environment:
+                      SSH_PRIVATE_KEY:
+                        from_secret: AI_CLUB_PIPELINE_1_SSH_PRIVATE_KEY
+                    commands:
+                      - "apk add --no-cache openssh-client bash"
+                      - "ssh-keyscan -p 2222 '192.168.111.51' >> ~/.ssh/known_hosts"
+                      - |
+                        ssh -i ~/.ssh/id_ai_club -p 2222 'dulihong@root@192.168.111.74@192.168.111.51' 'bash -se' <<'AI_CLUB_REMOTE_SCRIPT'
+                        set -eu
+                        pwd
+                        whoami
+                        AI_CLUB_REMOTE_SCRIPT
+                    when:
+                      - event: [manual]
+                        branch: "deploy"
+                """;
+
+        AiClubPipelineConfigTemplateService.TemplatePrefillResult result = service.parseExistingConfig(raw, context());
+
+        assertThat(result.prefillMode()).isEqualTo(AiClubPipelineConfigTemplateService.PREFILL_MODE_FORM);
+        assertThat(result.templateCode()).isEqualTo(AiClubPipelineConfigTemplateService.TEMPLATE_SSH_REMOTE);
+        assertThat(result.parameters()).containsEntry("skipClone", "true");
+        assertThat(result.parameters()).containsEntry("branch", "deploy");
+        assertThat(result.parameters()).containsEntry("connectionType", "JUMPSERVER");
+        assertThat(result.parameters()).containsEntry("jumpServerHost", "192.168.111.51");
+        assertThat(result.parameters()).containsEntry("jumpServerPort", "2222");
+        assertThat(result.parameters()).containsEntry("jumpServerUser", "dulihong");
+        assertThat(result.parameters()).containsEntry("jumpTargetUser", "root");
+        assertThat(result.parameters()).containsEntry("jumpTargetAssetIp", "192.168.111.74");
     }
 
     private AiClubPipelineConfigTemplateService.TemplateRenderContext context() {

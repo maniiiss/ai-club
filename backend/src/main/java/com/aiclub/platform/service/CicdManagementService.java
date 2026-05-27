@@ -9,6 +9,7 @@ import com.aiclub.platform.domain.model.ProjectPipelineBindingEntity;
 import com.aiclub.platform.dto.AiClubPipelineRunLogDetail;
 import com.aiclub.platform.dto.AiClubPipelineRunSummary;
 import com.aiclub.platform.dto.AiClubPipelineConfigCompleteResult;
+import com.aiclub.platform.dto.AiClubPipelineConfigEditContextResult;
 import com.aiclub.platform.dto.AiClubPipelineConfigPreviewResult;
 import com.aiclub.platform.dto.AiClubPipelineConfigStatusItem;
 import com.aiclub.platform.dto.AiClubPipelineConfigTemplateItem;
@@ -176,6 +177,40 @@ public class CicdManagementService {
         );
     }
 
+    public AiClubPipelineConfigEditContextResult getAiClubPipelineConfigEditContext(Long id) {
+        AiClubPipelineEntity entity = requireAiClubPipeline(id);
+        String branch = resolveAiClubPipelineBranch(entity, null);
+        String configPath = defaultString(trimToNull(entity.getConfigPath()), ".woodpecker.yml");
+        boolean exists = repositoryFileExists(entity, branch, configPath);
+        if (!exists) {
+            return new AiClubPipelineConfigEditContextResult(
+                    branch,
+                    configPath,
+                    "MISSING",
+                    "",
+                    AiClubPipelineConfigTemplateService.PREFILL_MODE_FORM,
+                    null,
+                    Map.of(),
+                    "目标分支 " + branch + " 尚未配置流水线文件 " + configPath + "，可使用平台模板创建 MR 补全配置。"
+            );
+        }
+        String rawContent = loadRepositoryFileContent(entity, branch, configPath);
+        AiClubPipelineConfigTemplateService.TemplatePrefillResult prefill = pipelineConfigTemplateService.parseExistingConfig(
+                rawContent,
+                buildTemplateRenderContext(entity)
+        );
+        return new AiClubPipelineConfigEditContextResult(
+                branch,
+                configPath,
+                "PRESENT",
+                rawContent,
+                defaultString(prefill.prefillMode(), AiClubPipelineConfigTemplateService.PREFILL_MODE_MANUAL),
+                trimToNull(prefill.templateCode()),
+                prefill.parameters() == null ? Map.of() : Map.copyOf(prefill.parameters()),
+                trimToNull(prefill.message())
+        );
+    }
+
     @Transactional(noRollbackFor = RuntimeException.class)
     public AiClubPipelineConfigCompleteResult completeAiClubPipelineConfig(Long id, AiClubPipelineConfigCompleteRequest request) {
         AiClubPipelineEntity entity = requireAiClubPipeline(id);
@@ -184,7 +219,7 @@ public class CicdManagementService {
         String configPath = defaultString(trimToNull(entity.getConfigPath()), ".woodpecker.yml");
         boolean configExists = repositoryFileExists(entity, branch, configPath);
         String renderedContent = resolvePipelineConfigContent(entity, request);
-        prepareTemplateSecrets(entity, request);
+        prepareTemplateSecrets(entity, request, !configExists);
 
         ProjectGitlabBindingEntity binding = entity.getGitlabBinding();
         String token = tokenCipherService.decrypt(binding.getTokenCiphertext());
@@ -686,6 +721,18 @@ public class CicdManagementService {
         );
     }
 
+    private String loadRepositoryFileContent(AiClubPipelineEntity entity, String branch, String configPath) {
+        ProjectGitlabBindingEntity binding = entity.getGitlabBinding();
+        String apiToken = tokenCipherService.decrypt(binding.getTokenCiphertext());
+        return gitlabApiService.getRepositoryFileContent(
+                binding.getApiBaseUrl(),
+                apiToken,
+                resolveAiClubPipelineProjectRef(binding),
+                branch,
+                configPath
+        );
+    }
+
     private AiClubPipelineConfigTemplateService.TemplateRenderContext buildTemplateRenderContext(AiClubPipelineEntity entity) {
         if (entity == null) {
             return AiClubPipelineConfigTemplateService.TemplateRenderContext.defaultPreview();
@@ -716,12 +763,12 @@ public class CicdManagementService {
      * 参数化模板中的敏感字段只写入 Woodpecker repo secrets，
      * YAML 和 GitLab MR 中只保留 from_secret 引用。
      */
-    private void prepareTemplateSecrets(AiClubPipelineEntity entity, AiClubPipelineConfigCompleteRequest request) {
+    private void prepareTemplateSecrets(AiClubPipelineEntity entity, AiClubPipelineConfigCompleteRequest request, boolean requireValues) {
         List<AiClubPipelineConfigTemplateService.TemplateSecret> secrets = pipelineConfigTemplateService.collectSecrets(
                 request.templateCode(),
                 buildTemplateRenderContext(entity),
                 request.parameters(),
-                !request.manualEdit()
+                !request.manualEdit() && requireValues
         );
         if (secrets.isEmpty()) {
             return;

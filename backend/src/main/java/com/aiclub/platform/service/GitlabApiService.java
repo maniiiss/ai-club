@@ -14,6 +14,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -449,6 +450,39 @@ public class GitlabApiService {
             throw new IllegalStateException("调用 GitLab API 失败", exception);
         } catch (IOException exception) {
             throw new IllegalStateException("调用 GitLab API 失败", exception);
+        }
+    }
+
+    /**
+     * 读取指定分支上的仓库文件原文，主要供“修改配置”时回显当前 .woodpecker.yml 使用。
+     */
+    public String getRepositoryFileContent(String apiBaseUrl,
+                                           String token,
+                                           String projectRef,
+                                           String branchName,
+                                           String filePath) {
+        return getRepositoryFileContent(apiBaseUrl, GitlabAuthorization.privateToken(token), projectRef, branchName, filePath);
+    }
+
+    public String getRepositoryFileContent(String apiBaseUrl,
+                                           GitlabAuthorization authorization,
+                                           String projectRef,
+                                           String branchName,
+                                           String filePath) {
+        String url = normalizeBaseUrl(apiBaseUrl)
+                + "/projects/" + encodeProjectRef(projectRef)
+                + "/repository/files/" + urlEncode(filePath).replace("+", "%20")
+                + "?ref=" + urlEncode(branchName);
+        JsonNode node = sendJsonRequest("GET", url, authorization, null, null);
+        String encodedContent = node.path("content").asText("");
+        if (!hasText(encodedContent)) {
+            return "";
+        }
+        String normalized = encodedContent.replace("\n", "").replace("\r", "").trim();
+        try {
+            return new String(Base64.getDecoder().decode(normalized), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalStateException("解析 GitLab 仓库文件内容失败", exception);
         }
     }
 

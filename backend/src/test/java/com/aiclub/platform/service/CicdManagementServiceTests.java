@@ -7,6 +7,7 @@ import com.aiclub.platform.domain.model.ProjectPipelineBindingEntity;
 import com.aiclub.platform.domain.model.RoleEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.AiClubPipelineConfigCompleteResult;
+import com.aiclub.platform.dto.AiClubPipelineConfigEditContextResult;
 import com.aiclub.platform.dto.AiClubPipelineConfigPreviewResult;
 import com.aiclub.platform.dto.AiClubPipelineConfigStatusItem;
 import com.aiclub.platform.dto.AiClubPipelineConfigTemplateItem;
@@ -911,6 +912,55 @@ class CicdManagementServiceTests {
                 .contains("from_secret: AI_CLUB_PIPELINE_" + pipeline.getId() + "_SERVER_DEPLOY_SSH_PRIVATE_KEY")
                 .contains("./restart.sh")
         );
+    }
+
+    @Test
+    void shouldReturnExistingConfigEditContextWithPrefilledParameters() {
+        ProjectEntity project = projectRepository.save(new ProjectEntity("Woodpecker 配置回显项目", "钱十八", "进行中", "验证修改配置回显"));
+        ProjectGitlabBindingEntity gitlabBinding = projectGitlabBindingRepository.save(createGitlabBinding(project));
+        AiClubPipelineEntity pipeline = aiClubPipelineRepository.save(createAiClubPipeline(project, gitlabBinding));
+        String rawContent = """
+                # ai-club:template=SSH_REMOTE
+                # ai-club:version=1
+                # ai-club:param:branch=ZGVwbG95
+                # ai-club:param:skipClone=dHJ1ZQ==
+                # ai-club:param:connectionType=SlVNUFNFUlZFUg==
+                # ai-club:param:jumpServerHost=MTkyLjE2OC4xMTEuNTE=
+                # ai-club:param:jumpServerPort=MjIyMg==
+                # ai-club:param:jumpServerUser=ZHViaWhvbmc=
+                # ai-club:param:jumpTargetUser=cm9vdA==
+                # ai-club:param:jumpTargetAssetIp=MTkyLjE2OC4xMTEuNzQ=
+                #
+                skip_clone: true
+
+                steps:
+                  - name: ssh-deploy
+                    image: alpine:3.20
+                """;
+        when(gitlabApiService.repositoryFileExists(
+                eq("http://gitlab.example.com/api/v4"),
+                anyString(),
+                eq("group/repo"),
+                eq("main"),
+                eq(".woodpecker.yml")
+        )).thenReturn(true);
+        when(gitlabApiService.getRepositoryFileContent(
+                eq("http://gitlab.example.com/api/v4"),
+                anyString(),
+                eq("group/repo"),
+                eq("main"),
+                eq(".woodpecker.yml")
+        )).thenReturn(rawContent);
+
+        AiClubPipelineConfigEditContextResult result = cicdManagementService.getAiClubPipelineConfigEditContext(pipeline.getId());
+
+        assertThat(result.status()).isEqualTo("PRESENT");
+        assertThat(result.prefillMode()).isEqualTo("FORM");
+        assertThat(result.templateCode()).isEqualTo("SSH_REMOTE");
+        assertThat(result.rawContent()).contains("skip_clone: true");
+        assertThat(result.parameters()).containsEntry("branch", "deploy");
+        assertThat(result.parameters()).containsEntry("skipClone", "true");
+        assertThat(result.parameters()).containsEntry("jumpServerHost", "192.168.111.51");
     }
 
     /**

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -22,11 +23,17 @@ public class AiClubPipelineConfigTemplateService {
 
     public static final String TEMPLATE_DOCKER_BUILDX = "DOCKER_BUILDX";
     public static final String TEMPLATE_SSH_REMOTE = "SSH_REMOTE";
+    public static final String PREFILL_MODE_FORM = "FORM";
+    public static final String PREFILL_MODE_MANUAL = "MANUAL";
 
     private static final String DEFAULT_CONFIG_PATH = ".woodpecker.yml";
     private static final String DEFAULT_BRANCH = "main";
     private static final String DEFAULT_PIPELINE_NAME = "AI Club Pipeline";
     private static final String DEFAULT_GITLAB_PROJECT_PATH = "group/repo";
+    private static final String METADATA_TEMPLATE_PREFIX = "# ai-club:template=";
+    private static final String METADATA_VERSION_PREFIX = "# ai-club:version=";
+    private static final String METADATA_PARAMETER_PREFIX = "# ai-club:param:";
+    private static final String METADATA_VERSION = "1";
 
     private static final String TYPE_TEXT = "text";
     private static final String TYPE_PASSWORD = "password";
@@ -193,7 +200,33 @@ public class AiClubPipelineConfigTemplateService {
         Map<String, String> effectiveParameters = new LinkedHashMap<>(buildDefaultParameterValues(template, safeContext));
         effectiveParameters.putAll(normalizeParameters(parameters));
         validateRequiredVisibleParameters(template, safeContext, effectiveParameters);
-        return template.renderer().render(new TemplateRenderInput(safeContext, effectiveParameters));
+        String renderedContent = template.renderer().render(new TemplateRenderInput(safeContext, effectiveParameters));
+        return prependTemplateMetadata(template, effectiveParameters, renderedContent);
+    }
+
+    /**
+     * 修改配置时优先按平台模板元数据回填；无法命中元数据时，再尝试对当前高频模板做有限识别。
+     */
+    public TemplatePrefillResult parseExistingConfig(String rawContent, TemplateRenderContext context) {
+        TemplateRenderContext safeContext = normalizeContext(context);
+        if (!hasText(rawContent)) {
+            return new TemplatePrefillResult(PREFILL_MODE_MANUAL, null, Map.of(), "", "仓库配置内容为空，已回退手动 YAML 模式");
+        }
+        MetadataSnapshot metadataSnapshot = extractMetadata(rawContent);
+        if (hasText(metadataSnapshot.templateCode())) {
+            try {
+                TemplateDefinition template = requireTemplate(metadataSnapshot.templateCode());
+                Map<String, String> parameters = new LinkedHashMap<>(buildDefaultParameterValues(template, safeContext));
+                parameters.putAll(metadataSnapshot.parameters());
+                return new TemplatePrefillResult(PREFILL_MODE_FORM, template.code(), parameters, rawContent, "已按平台模板元数据回填参数");
+            } catch (NoSuchElementException ignored) {
+            }
+        }
+        TemplatePrefillResult heuristicResult = parseByTemplateHeuristics(rawContent, safeContext);
+        if (heuristicResult != null) {
+            return heuristicResult;
+        }
+        return new TemplatePrefillResult(PREFILL_MODE_MANUAL, null, Map.of(), rawContent, "当前配置不是平台可逆模板，已回显仓库原文，可继续手动修改");
     }
 
     /**
@@ -594,6 +627,43 @@ public class AiClubPipelineConfigTemplateService {
             builder.append("skip_clone: true\n\n");
         }
         return builder;
+    }
+
+    private String prependTemplateMetadata(TemplateDefinition template,
+                                           Map<String, String> parameters,
+                                           String renderedContent) {
+        if (!hasText(renderedContent) || template == null) {
+            return defaultString(renderedContent);
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append(METADATA_TEMPLATE_PREFIX).append(template.code()).append('\n');
+        builder.append(METADATA_VERSION_PREFIX).append(METADATA_VERSION).append('\n');
+        for (ParameterDefinition parameter : template.parameters()) {
+            if (parameter.secret()) {
+                continue;
+            }
+            String value = parameters.get(parameter.key());
+            if (!shouldPersistMetadataValue(parameter, value)) {
+                continue;
+            }
+            builder.append(METADATA_PARAMETER_PREFIX)
+                    .append(parameter.key())
+                    .append('=')
+                    .append(Base64.getEncoder().encodeToString(defaultString(value).getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                    .append('\n');
+        }
+        builder.append('\n');
+        return builder + defaultString(renderedContent).replace("\r\n", "\n").replace('\r', '\n');
+    }
+
+    private boolean shouldPersistMetadataValue(ParameterDefinition parameter, String value) {
+        if (parameter == null) {
+            return false;
+        }
+        if (TYPE_SWITCH.equals(parameter.type()) || TYPE_SELECT.equals(parameter.type())) {
+            return value != null;
+        }
+        return hasText(value);
     }
 
     private String resolveDockerImageRepo(TemplateRenderContext context, Map<String, String> parameters) {
@@ -998,6 +1068,464 @@ public class AiClubPipelineConfigTemplateService {
         return slashIndex >= 0 ? normalized.substring(0, slashIndex) : normalized;
     }
 
+    private MetadataSnapshot extractMetadata(String rawContent) {
+        String templateCode = null;
+        Map<String, String> parameters = new LinkedHashMap<>();
+        for (String line : normalizeLines(rawContent)) {
+            if (line.startsWith(METADATA_TEMPLATE_PREFIX)) {
+                templateCode = line.substring(METADATA_TEMPLATE_PREFIX.length()).trim().toUpperCase(Locale.ROOT);
+                continue;
+            }
+            if (!line.startsWith(METADATA_PARAMETER_PREFIX)) {
+                continue;
+            }
+            String payload = line.substring(METADATA_PARAMETER_PREFIX.length()).trim();
+            int equalsIndex = payload.indexOf('=');
+            if (equalsIndex <= 0) {
+                continue;
+            }
+            String key = payload.substring(0, equalsIndex).trim();
+            String encodedValue = payload.substring(equalsIndex + 1).trim();
+            if (!hasText(key) || !hasText(encodedValue)) {
+                continue;
+            }
+            try {
+                parameters.put(key, new String(Base64.getDecoder().decode(encodedValue), java.nio.charset.StandardCharsets.UTF_8));
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        return new MetadataSnapshot(templateCode, parameters);
+    }
+
+    private TemplatePrefillResult parseByTemplateHeuristics(String rawContent, TemplateRenderContext context) {
+        if (!hasText(rawContent)) {
+            return null;
+        }
+        if (rawContent.contains("name: ssh-deploy")) {
+            return buildHeuristicPrefill(TEMPLATE_SSH_REMOTE, parseSshRemoteParameters(rawContent), rawContent, context, "已按 SSH 远程部署模板回填可识别参数");
+        }
+        if (rawContent.contains("name: test") && rawContent.contains("name: package")) {
+            return buildHeuristicPrefill("JAVA_MAVEN", parseJavaMavenParameters(rawContent), rawContent, context, "已按 Java / Maven 模板回填可识别参数");
+        }
+        if (rawContent.contains("name: build")) {
+            return buildHeuristicPrefill("NODE_VITE", parseNodeViteParameters(rawContent), rawContent, context, "已按 Node / Vite 模板回填可识别参数");
+        }
+        if (rawContent.contains("name: verify") && rawContent.contains("python")) {
+            return buildHeuristicPrefill("PYTHON_FASTAPI", parsePythonFastapiParameters(rawContent), rawContent, context, "已按 Python / FastAPI 模板回填可识别参数");
+        }
+        if (rawContent.contains("name: verify")) {
+            return buildHeuristicPrefill("GENERIC_SHELL", parseGenericShellParameters(rawContent), rawContent, context, "已按通用 Shell 模板回填可识别参数");
+        }
+        return null;
+    }
+
+    private TemplatePrefillResult buildHeuristicPrefill(String templateCode,
+                                                        Map<String, String> parsedParameters,
+                                                        String rawContent,
+                                                        TemplateRenderContext context,
+                                                        String message) {
+        if (parsedParameters == null || parsedParameters.isEmpty()) {
+            return null;
+        }
+        TemplateDefinition template = requireTemplate(templateCode);
+        Map<String, String> parameters = new LinkedHashMap<>(buildDefaultParameterValues(template, context));
+        parameters.putAll(parsedParameters);
+        return new TemplatePrefillResult(PREFILL_MODE_FORM, template.code(), parameters, rawContent, message);
+    }
+
+    private Map<String, String> parseSshRemoteParameters(String rawContent) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        appendSkipClone(rawContent, parameters);
+        putIfPresent(parameters, "branch", firstYamlValue(rawContent, "branch:"));
+        putIfPresent(parameters, "sshCommands", firstRemoteScriptBlock(rawContent));
+        String remoteTarget = firstSshRemoteTarget(rawContent);
+        String host = firstSshHost(rawContent);
+        String port = firstSshPort(rawContent);
+        if (remoteTarget != null && remoteTarget.split("@").length >= 4) {
+            String[] parts = remoteTarget.split("@", 4);
+            parameters.put(PARAM_CONNECTION_TYPE, CONNECTION_JUMPSERVER);
+            putIfPresent(parameters, PARAM_JUMP_SERVER_USER, parts[0]);
+            putIfPresent(parameters, PARAM_JUMP_TARGET_USER, parts[1]);
+            putIfPresent(parameters, PARAM_JUMP_TARGET_ASSET_IP, parts[2]);
+            putIfPresent(parameters, PARAM_JUMP_SERVER_HOST, parts[3]);
+            putIfPresent(parameters, PARAM_JUMP_SERVER_PORT, port);
+        } else {
+            parameters.put(PARAM_CONNECTION_TYPE, CONNECTION_DIRECT_SSH);
+            putIfPresent(parameters, PARAM_DIRECT_SSH_HOST, host);
+            putIfPresent(parameters, PARAM_DIRECT_SSH_PORT, port);
+            putIfPresent(parameters, PARAM_DIRECT_SSH_USER, extractDirectUser(remoteTarget));
+        }
+        return parameters;
+    }
+
+    private Map<String, String> parseJavaMavenParameters(String rawContent) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        appendSkipClone(rawContent, parameters);
+        putIfPresent(parameters, "branch", firstYamlValue(rawContent, "branch:"));
+        putIfPresent(parameters, "javaImage", firstImageForStep(rawContent, "test"));
+        putIfPresent(parameters, "projectRoot", firstStepProjectRoot(rawContent, "test"));
+        putIfPresent(parameters, "testCommand", String.join("\n", commandsWithoutLeadingCd(stepCommands(rawContent, "test"))));
+        putIfPresent(parameters, "packageCommand", String.join("\n", commandsWithoutLeadingCd(stepCommands(rawContent, "package"))));
+        appendParsedServerDeploy(rawContent, parameters);
+        return parameters;
+    }
+
+    private Map<String, String> parseNodeViteParameters(String rawContent) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        appendSkipClone(rawContent, parameters);
+        putIfPresent(parameters, "branch", firstYamlValue(rawContent, "branch:"));
+        putIfPresent(parameters, "nodeImage", firstImageForStep(rawContent, "build"));
+        putIfPresent(parameters, "projectRoot", firstStepProjectRoot(rawContent, "build"));
+        List<String> commands = commandsWithoutLeadingCd(stepCommands(rawContent, "build"));
+        if (!commands.isEmpty()) {
+            putIfPresent(parameters, "installCommand", commands.get(0));
+            if (commands.size() > 1) {
+                putIfPresent(parameters, "buildCommand", String.join("\n", commands.subList(1, commands.size())));
+            }
+        }
+        appendParsedServerDeploy(rawContent, parameters);
+        return parameters;
+    }
+
+    private Map<String, String> parsePythonFastapiParameters(String rawContent) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        appendSkipClone(rawContent, parameters);
+        putIfPresent(parameters, "branch", firstYamlValue(rawContent, "branch:"));
+        putIfPresent(parameters, "pythonImage", firstImageForStep(rawContent, "verify"));
+        putIfPresent(parameters, "projectRoot", firstStepProjectRoot(rawContent, "verify"));
+        List<String> commands = commandsWithoutLeadingCd(stepCommands(rawContent, "verify"));
+        if (!commands.isEmpty()) {
+            putIfPresent(parameters, "installCommand", commands.get(0));
+            if (commands.size() > 1) {
+                putIfPresent(parameters, "verifyCommand", String.join("\n", commands.subList(1, commands.size())));
+            }
+        }
+        appendParsedServerDeploy(rawContent, parameters);
+        return parameters;
+    }
+
+    private Map<String, String> parseGenericShellParameters(String rawContent) {
+        Map<String, String> parameters = new LinkedHashMap<>();
+        appendSkipClone(rawContent, parameters);
+        putIfPresent(parameters, "branch", firstYamlValue(rawContent, "branch:"));
+        putIfPresent(parameters, "shellImage", firstImageForStep(rawContent, "verify"));
+        putIfPresent(parameters, "projectRoot", firstStepProjectRoot(rawContent, "verify"));
+        putIfPresent(parameters, "shellCommands", String.join("\n", commandsWithoutLeadingCd(stepCommands(rawContent, "verify"))));
+        appendParsedServerDeploy(rawContent, parameters);
+        return parameters;
+    }
+
+    private void appendParsedServerDeploy(String rawContent, Map<String, String> parameters) {
+        if (!rawContent.contains("name: deploy")) {
+            return;
+        }
+        parameters.put(PARAM_SERVER_DEPLOY_ENABLED, "true");
+        String deployBlock = stepBlock(rawContent, "deploy");
+        String remoteTarget = lastSshRemoteTarget(deployBlock);
+        String port = firstSshPort(deployBlock);
+        String sourcePath = extractValueAfterPrefix(deployBlock, "DEPLOY_SOURCE='", "'");
+        String remotePath = extractRemotePathFromScp(deployBlock);
+        String deployCommands = lastRemoteScriptBlock(deployBlock);
+        if (remoteTarget != null && remoteTarget.split("@").length >= 4) {
+            String[] parts = remoteTarget.split("@", 4);
+            parameters.put(PARAM_SERVER_DEPLOY_CONNECTION_TYPE, CONNECTION_JUMPSERVER);
+            putIfPresent(parameters, PARAM_SERVER_DEPLOY_JUMP_USER, parts[0]);
+            putIfPresent(parameters, PARAM_SERVER_DEPLOY_JUMP_TARGET_USER, parts[1]);
+            putIfPresent(parameters, PARAM_SERVER_DEPLOY_JUMP_TARGET_ASSET_IP, parts[2]);
+            putIfPresent(parameters, PARAM_SERVER_DEPLOY_JUMP_HOST, parts[3]);
+            putIfPresent(parameters, PARAM_SERVER_DEPLOY_JUMP_PORT, port);
+        } else {
+            parameters.put(PARAM_SERVER_DEPLOY_CONNECTION_TYPE, CONNECTION_DIRECT_SSH);
+            putIfPresent(parameters, PARAM_SERVER_DEPLOY_DIRECT_HOST, firstSshHost(deployBlock));
+            putIfPresent(parameters, PARAM_SERVER_DEPLOY_DIRECT_PORT, port);
+            putIfPresent(parameters, PARAM_SERVER_DEPLOY_DIRECT_USER, extractDirectUser(remoteTarget));
+        }
+        putIfPresent(parameters, PARAM_SERVER_DEPLOY_SOURCE_PATH, sourcePath);
+        putIfPresent(parameters, PARAM_SERVER_DEPLOY_REMOTE_PATH, remotePath);
+        putIfPresent(parameters, PARAM_SERVER_DEPLOY_COMMANDS, deployCommands);
+    }
+
+    private void appendSkipClone(String rawContent, Map<String, String> parameters) {
+        if (rawContent != null && rawContent.contains("skip_clone: true")) {
+            parameters.put(PARAM_SKIP_CLONE, "true");
+        }
+    }
+
+    private String firstYamlValue(String rawContent, String keyPrefix) {
+        for (String line : normalizeLines(rawContent)) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith(keyPrefix)) {
+                return stripYamlQuotes(trimmed.substring(keyPrefix.length()).trim());
+            }
+        }
+        return null;
+    }
+
+    private String firstImageForStep(String rawContent, String stepName) {
+        return firstYamlValue(stepBlock(rawContent, stepName), "image:");
+    }
+
+    private String firstStepProjectRoot(String rawContent, String stepName) {
+        List<String> commands = stepCommands(rawContent, stepName);
+        if (!commands.isEmpty() && commands.get(0).startsWith("cd ")) {
+            return stripShellQuotes(commands.get(0).substring(3).trim());
+        }
+        return "";
+    }
+
+    private List<String> stepCommands(String rawContent, String stepName) {
+        String block = stepBlock(rawContent, stepName);
+        List<String> commands = new ArrayList<>();
+        boolean inCommands = false;
+        boolean readingMultiline = false;
+        StringBuilder multilineBuilder = new StringBuilder();
+        for (String line : normalizeLines(block)) {
+            if (line.trim().startsWith("commands:")) {
+                inCommands = true;
+                continue;
+            }
+            if (!inCommands) {
+                continue;
+            }
+            if (line.startsWith("    when:") || line.startsWith("  - name:")) {
+                if (readingMultiline) {
+                    commands.add(multilineBuilder.toString().stripTrailing());
+                }
+                break;
+            }
+            if (readingMultiline) {
+                if (line.startsWith("        ")) {
+                    if (multilineBuilder.length() > 0) {
+                        multilineBuilder.append('\n');
+                    }
+                    multilineBuilder.append(line.substring(8));
+                    continue;
+                }
+                commands.add(multilineBuilder.toString().stripTrailing());
+                multilineBuilder.setLength(0);
+                readingMultiline = false;
+            }
+            String trimmed = line.trim();
+            if (!trimmed.startsWith("-")) {
+                continue;
+            }
+            if ("- |".equals(trimmed)) {
+                readingMultiline = true;
+                continue;
+            }
+            commands.add(stripYamlQuotes(trimmed.substring(1).trim()));
+        }
+        if (readingMultiline) {
+            commands.add(multilineBuilder.toString().stripTrailing());
+        }
+        return commands;
+    }
+
+    private List<String> commandsWithoutLeadingCd(List<String> commands) {
+        if (commands == null || commands.isEmpty()) {
+            return List.of();
+        }
+        if (commands.get(0).startsWith("cd ")) {
+            return List.copyOf(commands.subList(1, commands.size()));
+        }
+        return List.copyOf(commands);
+    }
+
+    private String stepBlock(String rawContent, String stepName) {
+        StringBuilder builder = new StringBuilder();
+        boolean collecting = false;
+        for (String line : normalizeLines(rawContent)) {
+            String trimmed = line.trim();
+            if (!collecting) {
+                if (trimmed.equals("- name: " + stepName)) {
+                    collecting = true;
+                    builder.append(line).append('\n');
+                }
+                continue;
+            }
+            if (trimmed.startsWith("- name: ") && !trimmed.equals("- name: " + stepName)) {
+                break;
+            }
+            builder.append(line).append('\n');
+        }
+        return builder.toString();
+    }
+
+    private String firstSshHost(String rawContent) {
+        for (String line : normalizeLines(rawContent)) {
+            int keyscanIndex = line.indexOf("ssh-keyscan -p ");
+            if (keyscanIndex < 0) {
+                continue;
+            }
+            int quoteStart = line.indexOf('\'', keyscanIndex);
+            int quoteEnd = quoteStart < 0 ? -1 : line.indexOf('\'', quoteStart + 1);
+            if (quoteStart >= 0 && quoteEnd > quoteStart) {
+                return line.substring(quoteStart + 1, quoteEnd);
+            }
+        }
+        return null;
+    }
+
+    private String firstSshPort(String rawContent) {
+        for (String line : normalizeLines(rawContent)) {
+            int keyscanIndex = line.indexOf("ssh-keyscan -p ");
+            if (keyscanIndex < 0) {
+                continue;
+            }
+            int startIndex = keyscanIndex + "ssh-keyscan -p ".length();
+            int endIndex = line.indexOf(' ', startIndex);
+            if (endIndex > startIndex) {
+                return line.substring(startIndex, endIndex).trim();
+            }
+        }
+        return null;
+    }
+
+    private String firstSshRemoteTarget(String rawContent) {
+        for (String line : normalizeLines(rawContent)) {
+            String target = extractSshRemoteTarget(line);
+            if (target != null) {
+                return target;
+            }
+        }
+        return null;
+    }
+
+    private String lastSshRemoteTarget(String rawContent) {
+        String result = null;
+        for (String line : normalizeLines(rawContent)) {
+            String target = extractSshRemoteTarget(line);
+            if (target != null) {
+                result = target;
+            }
+        }
+        return result;
+    }
+
+    private String extractSshRemoteTarget(String line) {
+        int startIndex = line.indexOf("ssh -i ~/.ssh/id_ai_club -p ");
+        if (startIndex < 0) {
+            return null;
+        }
+        int firstQuote = line.indexOf('\'', startIndex);
+        int secondQuote = firstQuote < 0 ? -1 : line.indexOf('\'', firstQuote + 1);
+        if (firstQuote >= 0 && secondQuote > firstQuote) {
+            return line.substring(firstQuote + 1, secondQuote);
+        }
+        return null;
+    }
+
+    private String firstRemoteScriptBlock(String rawContent) {
+        List<String> blocks = remoteScriptBlocks(rawContent);
+        return blocks.isEmpty() ? "" : blocks.get(0);
+    }
+
+    private String lastRemoteScriptBlock(String rawContent) {
+        List<String> blocks = remoteScriptBlocks(rawContent);
+        return blocks.isEmpty() ? "" : blocks.get(blocks.size() - 1);
+    }
+
+    private List<String> remoteScriptBlocks(String rawContent) {
+        List<String> blocks = new ArrayList<>();
+        String terminator = null;
+        StringBuilder builder = null;
+        for (String line : normalizeLines(rawContent)) {
+            if (terminator == null) {
+                int markerIndex = line.indexOf("<<'");
+                if (markerIndex < 0) {
+                    continue;
+                }
+                int startIndex = markerIndex + 3;
+                int endIndex = line.indexOf('\'', startIndex);
+                if (endIndex <= startIndex) {
+                    continue;
+                }
+                terminator = line.substring(startIndex, endIndex);
+                builder = new StringBuilder();
+                continue;
+            }
+            if (line.trim().equals(terminator)) {
+                if (builder != null) {
+                    blocks.add(builder.toString().stripTrailing());
+                }
+                terminator = null;
+                builder = null;
+                continue;
+            }
+            if (builder != null) {
+                if (builder.length() > 0) {
+                    builder.append('\n');
+                }
+                builder.append(line);
+            }
+        }
+        return blocks;
+    }
+
+    private String extractRemotePathFromScp(String rawContent) {
+        for (String line : normalizeLines(rawContent)) {
+            int colonIndex = line.indexOf(":/");
+            if (line.contains("scp ") && colonIndex > 0) {
+                int quoteStart = line.lastIndexOf('\'', colonIndex);
+                int quoteEnd = line.indexOf('\'', colonIndex);
+                if (quoteStart >= 0 && quoteEnd > colonIndex) {
+                    return line.substring(colonIndex + 1, quoteEnd);
+                }
+            }
+        }
+        return null;
+    }
+
+    private String extractValueAfterPrefix(String rawContent, String prefix, String suffix) {
+        for (String line : normalizeLines(rawContent)) {
+            int startIndex = line.indexOf(prefix);
+            if (startIndex < 0) {
+                continue;
+            }
+            int valueStart = startIndex + prefix.length();
+            int valueEnd = line.indexOf(suffix, valueStart);
+            if (valueEnd > valueStart) {
+                return line.substring(valueStart, valueEnd);
+            }
+        }
+        return null;
+    }
+
+    private String extractDirectUser(String remoteTarget) {
+        if (!hasText(remoteTarget) || !remoteTarget.contains("@")) {
+            return null;
+        }
+        return remoteTarget.substring(0, remoteTarget.indexOf('@'));
+    }
+
+    private String stripYamlQuotes(String value) {
+        String normalized = defaultString(value);
+        if (normalized.length() >= 2 && normalized.startsWith("\"") && normalized.endsWith("\"")) {
+            normalized = normalized.substring(1, normalized.length() - 1)
+                    .replace("\\\"", "\"")
+                    .replace("\\\\", "\\");
+        }
+        return normalized;
+    }
+
+    private String stripShellQuotes(String value) {
+        String normalized = defaultString(value);
+        if (normalized.length() >= 2 && normalized.startsWith("'") && normalized.endsWith("'")) {
+            return normalized.substring(1, normalized.length() - 1).replace("'\"'\"'", "'");
+        }
+        return normalized;
+    }
+
+    private String[] normalizeLines(String value) {
+        return defaultString(value).replace("\r\n", "\n").replace('\r', '\n').split("\n");
+    }
+
+    private void putIfPresent(Map<String, String> target, String key, String value) {
+        if (target != null && hasText(key) && value != null) {
+            target.put(key, value);
+        }
+    }
+
     private String yamlQuote(String value) {
         return "\"" + defaultString(value).replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
@@ -1262,6 +1790,21 @@ public class AiClubPipelineConfigTemplateService {
             String host,
             String port,
             String remoteTarget
+    ) {
+    }
+
+    public record TemplatePrefillResult(
+            String prefillMode,
+            String templateCode,
+            Map<String, String> parameters,
+            String rawContent,
+            String message
+    ) {
+    }
+
+    private record MetadataSnapshot(
+            String templateCode,
+            Map<String, String> parameters
     ) {
     }
 

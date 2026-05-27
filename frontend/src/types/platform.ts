@@ -1356,6 +1356,17 @@ export interface AiClubPipelineConfigStatusItem {
   checkedAt: string | null
 }
 
+export interface AiClubPipelineConfigEditContextItem {
+  branch: string
+  configPath: string
+  status: 'PRESENT' | 'MISSING'
+  rawContent: string
+  prefillMode: 'FORM' | 'MANUAL' | string
+  templateCode: string | null
+  parameters: Record<string, string>
+  message: string | null
+}
+
 export interface AiClubPipelineConfigPreviewResult {
   templateCode: string
   content: string

@@ -3,6 +3,7 @@ package com.aiclub.platform.controller;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.AiClubPipelineConfigCompleteResult;
+import com.aiclub.platform.dto.AiClubPipelineConfigEditContextResult;
 import com.aiclub.platform.dto.AiClubPipelineConfigPreviewResult;
 import com.aiclub.platform.dto.AiClubPipelineConfigStatusItem;
 import com.aiclub.platform.dto.AiClubPipelineConfigTemplateItem;
@@ -133,6 +134,12 @@ public class CicdController {
     @RequirePermission("cicd:view")
     public ApiResponse<AiClubPipelineConfigStatusItem> getAiClubPipelineConfigStatus(@PathVariable Long id) {
         return ApiResponse.success(cicdManagementService.getAiClubPipelineConfigStatus(id));
+    }
+
+    @GetMapping("/pipelines/{id}/config/edit-context")
+    @RequirePermission("cicd:view")
+    public ApiResponse<AiClubPipelineConfigEditContextResult> getAiClubPipelineConfigEditContext(@PathVariable Long id) {
+        return ApiResponse.success(cicdManagementService.getAiClubPipelineConfigEditContext(id));
     }
 
     @PostMapping("/pipelines/{id}/config/preview")

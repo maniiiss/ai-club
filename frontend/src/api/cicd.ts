@@ -1,6 +1,7 @@
 import { http } from './http'
 import type {
   AiClubPipelineConfigCompleteResult,
+  AiClubPipelineConfigEditContextItem,
   AiClubPipelineConfigPreviewResult,
   AiClubPipelineConfigStatusItem,
   AiClubPipelineConfigTemplateItem,
@@ -163,6 +164,11 @@ export const triggerAiClubPipeline = async (id: number) => {
 
 export const getAiClubPipelineConfigStatus = async (id: number) => {
   const { data } = await http.get<ApiResponse<AiClubPipelineConfigStatusItem>>(`/api/cicd/pipelines/${id}/config/status`)
+  return data.data
+}
+
+export const getAiClubPipelineConfigEditContext = async (id: number) => {
+  const { data } = await http.get<ApiResponse<AiClubPipelineConfigEditContextItem>>(`/api/cicd/pipelines/${id}/config/edit-context`)
   return data.data
 }
 

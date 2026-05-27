@@ -53,6 +53,15 @@
             <li v-for="item in selectedTemplate.requirements" :key="item">{{ item }}</li>
           </ul>
         </div>
+        <el-alert
+          v-if="prefillMessage"
+          type="info"
+          show-icon
+          :closable="false"
+          class="pipeline-config-prefill-alert"
+        >
+          <template #title>{{ prefillMessage }}</template>
+        </el-alert>
         <div class="pipeline-config-editor-head">
           <div>
             <div class="pipeline-config-editor-title">{{ configPreview?.configPath || configStatus?.configPath || pipeline?.configPath || '.woodpecker.yml' }}</div>
@@ -200,12 +209,14 @@ import { DataAnalysis, QuestionFilled } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import {
   completeAiClubPipelineConfig,
+  getAiClubPipelineConfigEditContext,
   getAiClubPipelineConfigStatus,
   listAiClubPipelineConfigTemplatesForPipeline,
   previewAiClubPipelineConfig
 } from '@/api/cicd'
 import type {
   AiClubPipelineConfigCompleteResult,
+  AiClubPipelineConfigEditContextItem,
   AiClubPipelineConfigPreviewResult,
   AiClubPipelineConfigStatusItem,
   AiClubPipelineConfigTemplateItem,
@@ -235,6 +246,7 @@ const configEditMode = ref<'form' | 'manual'>('form')
 const completionStep = ref<'template' | 'configure'>('template')
 const configuredTemplateCode = ref('')
 const parameterValues = reactive<Record<string, string>>({})
+const prefillMessage = ref('')
 const connectionTypeLabelMap: Record<string, string> = {
   DIRECT_SSH: '直连服务器',
   JUMPSERVER: '经 JumpServer'
@@ -276,7 +288,7 @@ const canComplete = computed(() => {
   if (!props.pipeline || !selectedTemplateCode.value) return false
   if (selectedTemplate.value && selectedTemplate.value.available === false) return false
   if (configEditMode.value === 'manual') return Boolean(draftContent.value.trim())
-  return visibleTemplateParameters.value.every((param) => !param.required || Boolean((parameterValues[param.key] || '').trim()))
+  return visibleTemplateParameters.value.every((param) => !param.required || Boolean((parameterValues[param.key] || '').trim()) || (isExistingConfig.value && param.secret))
 })
 
 function handleClose() {
@@ -293,20 +305,47 @@ function resetDialogState() {
   configEditMode.value = 'form'
   completionStep.value = 'template'
   configuredTemplateCode.value = ''
+  prefillMessage.value = ''
   Object.keys(parameterValues).forEach((key) => delete parameterValues[key])
 }
 
 async function loadDialogData(pipelineId: number) {
   try {
-    const [nextTemplates, nextStatus] = await Promise.all([
+    const [nextTemplates, nextStatus, editContext] = await Promise.all([
       listAiClubPipelineConfigTemplatesForPipeline(pipelineId),
-      getAiClubPipelineConfigStatus(pipelineId)
+      getAiClubPipelineConfigStatus(pipelineId),
+      getAiClubPipelineConfigEditContext(pipelineId)
     ])
     templates.value = nextTemplates
     configStatus.value = nextStatus
-    selectedTemplateCode.value = nextTemplates.find((item) => item.available !== false)?.code || nextTemplates[0]?.code || ''
+    selectedTemplateCode.value = editContext.templateCode || nextTemplates.find((item) => item.available !== false)?.code || nextTemplates[0]?.code || ''
+    applyEditContext(editContext)
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '加载配置模板失败')
+  }
+}
+
+function applyEditContext(editContext: AiClubPipelineConfigEditContextItem) {
+  prefillMessage.value = editContext.message || ''
+  if (editContext.prefillMode === 'FORM' && selectedTemplateCode.value) {
+    configEditMode.value = 'form'
+    configuredTemplateCode.value = selectedTemplateCode.value
+    resetConfigParameterValues()
+    Object.entries(editContext.parameters || {}).forEach(([key, value]) => {
+      parameterValues[key] = value ?? ''
+    })
+  } else {
+    configEditMode.value = 'manual'
+    configuredTemplateCode.value = selectedTemplateCode.value
+  }
+  if (editContext.rawContent) {
+    configPreview.value = {
+      templateCode: editContext.templateCode || selectedTemplateCode.value,
+      content: editContext.rawContent,
+      branch: editContext.branch,
+      configPath: editContext.configPath
+    }
+    draftContent.value = editContext.rawContent
   }
 }
 
@@ -673,6 +712,10 @@ function configParameterShouldSpanMedium(param: AiClubPipelineConfigTemplatePara
   color: var(--app-muted);
   font-size: 12px;
   line-height: 1.6;
+}
+
+.pipeline-config-prefill-alert {
+  margin-top: -2px;
 }
 
 .pipeline-config-editor-head {
