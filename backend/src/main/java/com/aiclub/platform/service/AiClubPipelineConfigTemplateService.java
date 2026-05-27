@@ -32,12 +32,33 @@ public class AiClubPipelineConfigTemplateService {
     private static final String TYPE_PASSWORD = "password";
     private static final String TYPE_TEXTAREA = "textarea";
     private static final String TYPE_SWITCH = "switch";
+    private static final String TYPE_SELECT = "select";
+    private static final String CONNECTION_DIRECT_SSH = "DIRECT_SSH";
+    private static final String CONNECTION_JUMPSERVER = "JUMPSERVER";
+    private static final String PARAM_CONNECTION_TYPE = "connectionType";
+    private static final String PARAM_DIRECT_SSH_HOST = "directSshHost";
+    private static final String PARAM_DIRECT_SSH_PORT = "directSshPort";
+    private static final String PARAM_DIRECT_SSH_USER = "directSshUser";
+    private static final String PARAM_DIRECT_SSH_PRIVATE_KEY = "directSshPrivateKey";
+    private static final String PARAM_JUMP_SERVER_HOST = "jumpServerHost";
+    private static final String PARAM_JUMP_SERVER_PORT = "jumpServerPort";
+    private static final String PARAM_JUMP_SERVER_USER = "jumpServerUser";
+    private static final String PARAM_JUMP_SERVER_PRIVATE_KEY = "jumpServerPrivateKey";
+    private static final String PARAM_JUMP_TARGET_USER = "jumpTargetUser";
+    private static final String PARAM_JUMP_TARGET_ASSET_IP = "jumpTargetAssetIp";
     private static final String PARAM_PROJECT_ROOT = "projectRoot";
     private static final String PARAM_SERVER_DEPLOY_ENABLED = "serverDeployEnabled";
-    private static final String PARAM_SERVER_DEPLOY_HOST = "serverDeployHost";
-    private static final String PARAM_SERVER_DEPLOY_PORT = "serverDeployPort";
-    private static final String PARAM_SERVER_DEPLOY_USER = "serverDeployUser";
-    private static final String PARAM_SERVER_DEPLOY_PRIVATE_KEY = "serverDeployPrivateKey";
+    private static final String PARAM_SERVER_DEPLOY_CONNECTION_TYPE = "serverDeployConnectionType";
+    private static final String PARAM_SERVER_DEPLOY_DIRECT_HOST = "serverDeployDirectHost";
+    private static final String PARAM_SERVER_DEPLOY_DIRECT_PORT = "serverDeployDirectPort";
+    private static final String PARAM_SERVER_DEPLOY_DIRECT_USER = "serverDeployDirectUser";
+    private static final String PARAM_SERVER_DEPLOY_DIRECT_PRIVATE_KEY = "serverDeployDirectPrivateKey";
+    private static final String PARAM_SERVER_DEPLOY_JUMP_HOST = "serverDeployJumpHost";
+    private static final String PARAM_SERVER_DEPLOY_JUMP_PORT = "serverDeployJumpPort";
+    private static final String PARAM_SERVER_DEPLOY_JUMP_USER = "serverDeployJumpUser";
+    private static final String PARAM_SERVER_DEPLOY_JUMP_PRIVATE_KEY = "serverDeployJumpPrivateKey";
+    private static final String PARAM_SERVER_DEPLOY_JUMP_TARGET_USER = "serverDeployJumpTargetUser";
+    private static final String PARAM_SERVER_DEPLOY_JUMP_TARGET_ASSET_IP = "serverDeployJumpTargetAssetIp";
     private static final String PARAM_SERVER_DEPLOY_SOURCE_PATH = "serverDeploySourcePath";
     private static final String PARAM_SERVER_DEPLOY_REMOTE_PATH = "serverDeployRemotePath";
     private static final String PARAM_SERVER_DEPLOY_COMMANDS = "serverDeployCommands";
@@ -113,15 +134,12 @@ public class AiClubPipelineConfigTemplateService {
                     "适用于构建后通过 SSH 在目标服务器执行发布脚本。",
                     "远程部署",
                     false,
-                    List.of("目标服务器允许 SSH 登录", "页面填写主机、账号、私钥和远程命令，私钥写入 Woodpecker repo secret", "适合轻量部署，复杂发布建议迁移到仓库脚本"),
                     List.of(
-                            parameter("branch", "触发分支", TYPE_TEXT, true, context -> context.branch(), "main", "写入 when.branch，默认使用流水线默认分支", false),
-                            parameter("sshHost", "SSH 主机", TYPE_TEXT, true, "", "deploy.example.com", "目标服务器域名或 IP", false),
-                            parameter("sshPort", "SSH 端口", TYPE_TEXT, true, "22", "22", "目标服务器 SSH 端口", false),
-                            parameter("sshUser", "SSH 用户", TYPE_TEXT, true, "deploy", "deploy", "远程登录用户", false),
-                            parameter("sshPrivateKey", "SSH 私钥", TYPE_PASSWORD, true, "", "粘贴部署私钥", "不会写入 YAML，平台会写入 Woodpecker repo secret", true),
-                            parameter("sshCommands", "远程命令", TYPE_TEXTAREA, true, "pwd\nls -la", "cd /srv/app\n./deploy.sh", "以 bash -se 在远端执行，支持多行脚本", false)
+                            "支持直连服务器或经 JumpServer 连接目标资产，两种模式在页面中显式区分",
+                            "私钥只会写入 Woodpecker repo secret，不会明文进入 YAML",
+                            "JumpServer 模式要求堡垒机支持无交互、公钥登录和直连资产账号，不适用于需要 MFA、审批或手工输入资产账号密码的场景"
                     ),
+                    buildSshRemoteParameters(),
                     this::renderSshRemote
             ),
             new TemplateDefinition(
@@ -253,8 +271,14 @@ public class AiClubPipelineConfigTemplateService {
         if (TEMPLATE_DOCKER_BUILDX.equals(template.code()) && !hasText(previewValues.get("registryUrl"))) {
             previewValues.put("registryUrl", "registry.example.com");
         }
-        if (TEMPLATE_SSH_REMOTE.equals(template.code()) && !hasText(previewValues.get("sshHost"))) {
-            previewValues.put("sshHost", "deploy.example.com");
+        if (TEMPLATE_SSH_REMOTE.equals(template.code()) && !hasText(previewValues.get(PARAM_DIRECT_SSH_HOST))) {
+            previewValues.put(PARAM_DIRECT_SSH_HOST, "deploy.example.com");
+        }
+        if (TEMPLATE_SSH_REMOTE.equals(template.code()) && !hasText(previewValues.get(PARAM_JUMP_SERVER_HOST))) {
+            previewValues.put(PARAM_JUMP_SERVER_HOST, "jump.example.com");
+        }
+        if (TEMPLATE_SSH_REMOTE.equals(template.code()) && !hasText(previewValues.get(PARAM_JUMP_TARGET_ASSET_IP))) {
+            previewValues.put(PARAM_JUMP_TARGET_ASSET_IP, "10.10.10.10");
         }
         return previewValues;
     }
@@ -263,7 +287,7 @@ public class AiClubPipelineConfigTemplateService {
                                                    TemplateRenderContext context,
                                                    Map<String, String> parameters) {
         for (ParameterDefinition parameter : template.parameters()) {
-            if (!isParameterActive(parameter, parameters)) {
+            if (!isParameterActive(template, parameter, parameters)) {
                 continue;
             }
             if (parameter.secret()) {
@@ -307,15 +331,20 @@ public class AiClubPipelineConfigTemplateService {
                                                    Map<String, String> parameters,
                                                    boolean requireValues) {
         List<TemplateSecret> secrets = new ArrayList<>();
+        String connectionType = resolveConnectionType(parameters.get(PARAM_CONNECTION_TYPE));
         appendSecret(
                 secrets,
                 secretName(context, "SSH_PRIVATE_KEY"),
-                parameters.get("sshPrivateKey"),
-                "AI Club Pipeline SSH 远程部署私钥。",
+                CONNECTION_JUMPSERVER.equals(connectionType)
+                        ? parameters.get(PARAM_JUMP_SERVER_PRIVATE_KEY)
+                        : parameters.get(PARAM_DIRECT_SSH_PRIVATE_KEY),
+                CONNECTION_JUMPSERVER.equals(connectionType)
+                        ? "AI Club Pipeline JumpServer 远程部署私钥。"
+                        : "AI Club Pipeline SSH 远程部署私钥。",
                 List.of("push", "manual"),
                 List.of("alpine", "alpine:3.20"),
                 requireValues,
-                "SSH 私钥不能为空"
+                CONNECTION_JUMPSERVER.equals(connectionType) ? "JumpServer 私钥不能为空" : "SSH 私钥不能为空"
         );
         return List.copyOf(secrets);
     }
@@ -324,15 +353,20 @@ public class AiClubPipelineConfigTemplateService {
                                                             Map<String, String> parameters,
                                                             boolean requireValues) {
         List<TemplateSecret> secrets = new ArrayList<>();
+        String connectionType = resolveConnectionType(parameters.get(PARAM_SERVER_DEPLOY_CONNECTION_TYPE));
         appendSecret(
                 secrets,
                 secretName(context, "SERVER_DEPLOY_SSH_PRIVATE_KEY"),
-                parameters.get(PARAM_SERVER_DEPLOY_PRIVATE_KEY),
-                "AI Club Pipeline 后置服务器部署私钥。",
+                CONNECTION_JUMPSERVER.equals(connectionType)
+                        ? parameters.get(PARAM_SERVER_DEPLOY_JUMP_PRIVATE_KEY)
+                        : parameters.get(PARAM_SERVER_DEPLOY_DIRECT_PRIVATE_KEY),
+                CONNECTION_JUMPSERVER.equals(connectionType)
+                        ? "AI Club Pipeline 后置 JumpServer 部署私钥。"
+                        : "AI Club Pipeline 后置服务器部署私钥。",
                 List.of("push", "manual", "tag"),
                 List.of("alpine", "alpine:3.20"),
                 requireValues,
-                "部署 SSH 私钥不能为空"
+                CONNECTION_JUMPSERVER.equals(connectionType) ? "部署 JumpServer 私钥不能为空" : "部署 SSH 私钥不能为空"
         );
         return List.copyOf(secrets);
     }
@@ -493,19 +527,13 @@ public class AiClubPipelineConfigTemplateService {
     }
 
     private String renderSshRemote(TemplateRenderInput input) {
-        String port = requiredParam(input, "sshPort");
-        if (!port.matches("\\d+")) {
-            throw new IllegalArgumentException("SSH 端口必须为数字");
-        }
-        String host = requiredParam(input, "sshHost");
-        String user = requiredParam(input, "sshUser");
-        String remoteTarget = user + "@" + host;
+        RemoteConnectionSpec connection = resolveSshRemoteConnection(input);
         List<String> commands = List.of(
                 "apk add --no-cache openssh-client",
                 "mkdir -p ~/.ssh && chmod 700 ~/.ssh",
                 "printf '%s\\n' \"$SSH_PRIVATE_KEY\" > ~/.ssh/id_ai_club && chmod 600 ~/.ssh/id_ai_club",
-                "ssh-keyscan -p " + port + " " + shellSingleQuote(host) + " >> ~/.ssh/known_hosts",
-                buildRemoteScriptCommand(port, remoteTarget, defaultString(param(input, "sshCommands"), "pwd"))
+                "ssh-keyscan -p " + connection.port() + " " + shellSingleQuote(connection.host()) + " >> ~/.ssh/known_hosts",
+                buildRemoteScriptCommand(connection.port(), connection.remoteTarget(), defaultString(param(input, "sshCommands"), "pwd"))
         );
         return """
                 steps:
@@ -624,13 +652,7 @@ public class AiClubPipelineConfigTemplateService {
         if (!isServerDeployEnabled(input.parameters())) {
             return;
         }
-        String sshPort = requiredParam(input, PARAM_SERVER_DEPLOY_PORT);
-        if (!sshPort.matches("\\d+")) {
-            throw new IllegalArgumentException("部署 SSH 端口必须为数字");
-        }
-        String sshHost = requiredParam(input, PARAM_SERVER_DEPLOY_HOST);
-        String sshUser = requiredParam(input, PARAM_SERVER_DEPLOY_USER);
-        String remoteTarget = sshUser + "@" + sshHost;
+        RemoteConnectionSpec connection = resolveServerDeployConnection(input);
         String deployCommands = requiredParam(input, PARAM_SERVER_DEPLOY_COMMANDS);
         String sourcePath = resolveProjectRelativePath(normalizedProjectRoot(input), trimToNull(param(input, PARAM_SERVER_DEPLOY_SOURCE_PATH)));
         String remotePath = trimToNull(param(input, PARAM_SERVER_DEPLOY_REMOTE_PATH));
@@ -642,18 +664,18 @@ public class AiClubPipelineConfigTemplateService {
         commands.add("apk add --no-cache openssh-client bash");
         commands.add("mkdir -p ~/.ssh && chmod 700 ~/.ssh");
         commands.add("printf '%s\\n' \"$SSH_PRIVATE_KEY\" > ~/.ssh/id_ai_club && chmod 600 ~/.ssh/id_ai_club");
-        commands.add("ssh-keyscan -p " + sshPort + " " + shellSingleQuote(sshHost) + " >> ~/.ssh/known_hosts");
+        commands.add("ssh-keyscan -p " + connection.port() + " " + shellSingleQuote(connection.host()) + " >> ~/.ssh/known_hosts");
         if (sourcePath != null) {
-            commands.add(buildRemoteScriptCommand(sshPort, remoteTarget, buildRemotePrepareScript(remotePath)));
+            commands.add(buildRemoteScriptCommand(connection.port(), connection.remoteTarget(), buildRemotePrepareScript(remotePath)));
             commands.add("DEPLOY_SOURCE=" + shellSingleQuote(sourcePath));
             commands.add("set -- $DEPLOY_SOURCE");
             commands.add("if [ \"$1\" = \"$DEPLOY_SOURCE\" ] && [ ! -e \"$DEPLOY_SOURCE\" ]; then echo \"未找到部署产物: $DEPLOY_SOURCE\" >&2; exit 1; fi");
             commands.add("if [ \"$#\" -ne 1 ]; then echo \"部署产物路径匹配到多个条目，请调整部署产物路径\" >&2; printf '%s\\n' \"$@\"; exit 1; fi");
             commands.add("deploy_source=\"$1\"");
-            commands.add("if [ -d \"$deploy_source\" ]; then scp -r -i ~/.ssh/id_ai_club -P " + sshPort + " \"$deploy_source\" " + shellSingleQuote(remoteTarget + ":" + remotePath)
-                    + "; else scp -i ~/.ssh/id_ai_club -P " + sshPort + " \"$deploy_source\" " + shellSingleQuote(remoteTarget + ":" + remotePath) + "; fi");
+            commands.add("if [ -d \"$deploy_source\" ]; then scp -r -i ~/.ssh/id_ai_club -P " + connection.port() + " \"$deploy_source\" " + shellSingleQuote(connection.remoteTarget() + ":" + remotePath)
+                    + "; else scp -i ~/.ssh/id_ai_club -P " + connection.port() + " \"$deploy_source\" " + shellSingleQuote(connection.remoteTarget() + ":" + remotePath) + "; fi");
         }
-        commands.add(buildRemoteScriptCommand(sshPort, remoteTarget, buildRemoteDeployScript(remotePath, deployCommands)));
+        commands.add(buildRemoteScriptCommand(connection.port(), connection.remoteTarget(), buildRemoteDeployScript(remotePath, deployCommands)));
 
         builder.append('\n');
         builder.append("""
@@ -715,9 +737,77 @@ public class AiClubPipelineConfigTemplateService {
         return Boolean.parseBoolean(defaultString(parameters.get(PARAM_SERVER_DEPLOY_ENABLED), "false"));
     }
 
-    private boolean isParameterActive(ParameterDefinition parameter, Map<String, String> parameters) {
+    /**
+     * 统一把直连服务器和 JumpServer 两种表单参数收敛成远端连接信息，
+     * 让 SSH_REMOTE 模板与后置部署步骤复用同一套拼装逻辑。
+     */
+    private RemoteConnectionSpec resolveSshRemoteConnection(TemplateRenderInput input) {
+        String connectionType = resolveConnectionType(param(input, PARAM_CONNECTION_TYPE));
+        if (CONNECTION_JUMPSERVER.equals(connectionType)) {
+            String host = requiredParam(input, PARAM_JUMP_SERVER_HOST);
+            String port = requireNumericPort(requiredParam(input, PARAM_JUMP_SERVER_PORT), "JumpServer 端口必须为数字");
+            String jumpUser = requiredParam(input, PARAM_JUMP_SERVER_USER);
+            String targetUser = requiredParam(input, PARAM_JUMP_TARGET_USER);
+            String targetAssetIp = requiredParam(input, PARAM_JUMP_TARGET_ASSET_IP);
+            return new RemoteConnectionSpec(connectionType, host, port, buildJumpServerRemoteTarget(jumpUser, targetUser, targetAssetIp, host));
+        }
+        String host = requiredParam(input, PARAM_DIRECT_SSH_HOST);
+        String port = requireNumericPort(requiredParam(input, PARAM_DIRECT_SSH_PORT), "SSH 端口必须为数字");
+        String user = requiredParam(input, PARAM_DIRECT_SSH_USER);
+        return new RemoteConnectionSpec(connectionType, host, port, user + "@" + host);
+    }
+
+    /**
+     * 后置部署与 SSH_REMOTE 模板共用相同的连接方式语义，
+     * 这里把上传产物和执行远程脚本需要的 host/port/target 统一解析出来。
+     */
+    private RemoteConnectionSpec resolveServerDeployConnection(TemplateRenderInput input) {
+        String connectionType = resolveConnectionType(param(input, PARAM_SERVER_DEPLOY_CONNECTION_TYPE));
+        if (CONNECTION_JUMPSERVER.equals(connectionType)) {
+            String host = requiredParam(input, PARAM_SERVER_DEPLOY_JUMP_HOST);
+            String port = requireNumericPort(requiredParam(input, PARAM_SERVER_DEPLOY_JUMP_PORT), "部署 JumpServer 端口必须为数字");
+            String jumpUser = requiredParam(input, PARAM_SERVER_DEPLOY_JUMP_USER);
+            String targetUser = requiredParam(input, PARAM_SERVER_DEPLOY_JUMP_TARGET_USER);
+            String targetAssetIp = requiredParam(input, PARAM_SERVER_DEPLOY_JUMP_TARGET_ASSET_IP);
+            return new RemoteConnectionSpec(connectionType, host, port, buildJumpServerRemoteTarget(jumpUser, targetUser, targetAssetIp, host));
+        }
+        String host = requiredParam(input, PARAM_SERVER_DEPLOY_DIRECT_HOST);
+        String port = requireNumericPort(requiredParam(input, PARAM_SERVER_DEPLOY_DIRECT_PORT), "部署 SSH 端口必须为数字");
+        String user = requiredParam(input, PARAM_SERVER_DEPLOY_DIRECT_USER);
+        return new RemoteConnectionSpec(connectionType, host, port, user + "@" + host);
+    }
+
+    private String resolveConnectionType(String value) {
+        String normalized = defaultString(value, CONNECTION_DIRECT_SSH).trim().toUpperCase(Locale.ROOT);
+        if (CONNECTION_DIRECT_SSH.equals(normalized) || CONNECTION_JUMPSERVER.equals(normalized)) {
+            return normalized;
+        }
+        throw new IllegalArgumentException("连接方式不支持: " + normalized);
+    }
+
+    private String requireNumericPort(String port, String errorMessage) {
+        if (!port.matches("\\d+")) {
+            throw new IllegalArgumentException(errorMessage);
+        }
+        return port;
+    }
+
+    private String buildJumpServerRemoteTarget(String jumpUser, String targetUser, String targetAssetIp, String jumpHost) {
+        return jumpUser + "@" + targetUser + "@" + targetAssetIp + "@" + jumpHost;
+    }
+
+    private boolean isParameterActive(TemplateDefinition template,
+                                      ParameterDefinition parameter,
+                                      Map<String, String> parameters) {
         if (parameter.dependsOnKey() == null) {
             return true;
+        }
+        ParameterDefinition controller = template.parameters().stream()
+                .filter(item -> item.key().equals(parameter.dependsOnKey()))
+                .findFirst()
+                .orElse(null);
+        if (controller != null && !isParameterActive(template, controller, parameters)) {
+            return false;
         }
         String actualValue = defaultString(parameters.get(parameter.dependsOnKey()), "");
         return parameter.dependsOnValue().equalsIgnoreCase(actualValue);
@@ -927,15 +1017,40 @@ public class AiClubPipelineConfigTemplateService {
         );
     }
 
+    private List<ParameterDefinition> buildSshRemoteParameters() {
+        return List.of(
+                parameter("branch", "触发分支", TYPE_TEXT, true, context -> context.branch(), "main", "写入 when.branch，默认使用流水线默认分支", false),
+                selectParameter(PARAM_CONNECTION_TYPE, "连接方式", true, CONNECTION_DIRECT_SSH, "选择直连服务器或经 JumpServer 连接目标资产", List.of(CONNECTION_DIRECT_SSH, CONNECTION_JUMPSERVER)),
+                dependentParameter(PARAM_DIRECT_SSH_HOST, "目标主机", TYPE_TEXT, true, "", "deploy.example.com", "直连模式下填写目标服务器域名或 IP", false, PARAM_CONNECTION_TYPE, CONNECTION_DIRECT_SSH),
+                dependentParameter(PARAM_DIRECT_SSH_PORT, "目标 SSH 端口", TYPE_TEXT, true, "22", "22", "直连模式下填写目标服务器 SSH 端口", false, PARAM_CONNECTION_TYPE, CONNECTION_DIRECT_SSH),
+                dependentParameter(PARAM_DIRECT_SSH_USER, "目标 SSH 用户", TYPE_TEXT, true, "deploy", "deploy", "直连模式下填写远程登录用户", false, PARAM_CONNECTION_TYPE, CONNECTION_DIRECT_SSH),
+                dependentParameter(PARAM_DIRECT_SSH_PRIVATE_KEY, "目标 SSH 私钥", TYPE_PASSWORD, true, "", "粘贴部署私钥", "不会写入 YAML，平台会写入 Woodpecker repo secret", true, PARAM_CONNECTION_TYPE, CONNECTION_DIRECT_SSH),
+                dependentParameter(PARAM_JUMP_SERVER_HOST, "堡垒机主机", TYPE_TEXT, true, "", "jump.example.com", "JumpServer 域名或 IP", false, PARAM_CONNECTION_TYPE, CONNECTION_JUMPSERVER),
+                dependentParameter(PARAM_JUMP_SERVER_PORT, "堡垒机端口", TYPE_TEXT, true, "2222", "2222", "JumpServer SSH 客户端端口，常见为 2222", false, PARAM_CONNECTION_TYPE, CONNECTION_JUMPSERVER),
+                dependentParameter(PARAM_JUMP_SERVER_USER, "堡垒机用户", TYPE_TEXT, true, "", "cicd_bot", "用于登录 JumpServer 的账号", false, PARAM_CONNECTION_TYPE, CONNECTION_JUMPSERVER),
+                dependentParameter(PARAM_JUMP_SERVER_PRIVATE_KEY, "堡垒机私钥", TYPE_PASSWORD, true, "", "粘贴 JumpServer 私钥", "不会写入 YAML，平台会写入 Woodpecker repo secret", true, PARAM_CONNECTION_TYPE, CONNECTION_JUMPSERVER),
+                dependentParameter(PARAM_JUMP_TARGET_USER, "目标系统用户", TYPE_TEXT, true, "deploy", "deploy", "JumpServer 直连目标资产时使用的系统账号", false, PARAM_CONNECTION_TYPE, CONNECTION_JUMPSERVER),
+                dependentParameter(PARAM_JUMP_TARGET_ASSET_IP, "目标资产 IP", TYPE_TEXT, true, "", "10.10.10.10", "JumpServer 直连的目标资产 IP", false, PARAM_CONNECTION_TYPE, CONNECTION_JUMPSERVER),
+                parameter("sshCommands", "远程命令", TYPE_TEXTAREA, true, "pwd\nls -la", "cd /srv/app\n./deploy.sh", "以 bash -se 在远端执行，支持多行脚本", false)
+        );
+    }
+
     private List<ParameterDefinition> postDeployParameters(String sourcePathDefault,
                                                            String remotePathDefault,
                                                            String commandsDefault) {
         return List.of(
                 parameter(PARAM_SERVER_DEPLOY_ENABLED, "部署到服务器", TYPE_SWITCH, false, "false", "", "打开后会在构建完成后追加上传与远程重启步骤", false),
-                dependentParameter(PARAM_SERVER_DEPLOY_HOST, "部署 SSH 主机", TYPE_TEXT, true, "", "deploy.example.com", "目标服务器域名或 IP", false, PARAM_SERVER_DEPLOY_ENABLED, "true"),
-                dependentParameter(PARAM_SERVER_DEPLOY_PORT, "部署 SSH 端口", TYPE_TEXT, true, "22", "22", "目标服务器 SSH 端口", false, PARAM_SERVER_DEPLOY_ENABLED, "true"),
-                dependentParameter(PARAM_SERVER_DEPLOY_USER, "部署 SSH 用户", TYPE_TEXT, true, "deploy", "deploy", "远程登录用户", false, PARAM_SERVER_DEPLOY_ENABLED, "true"),
-                dependentParameter(PARAM_SERVER_DEPLOY_PRIVATE_KEY, "部署 SSH 私钥", TYPE_PASSWORD, true, "", "粘贴部署私钥", "不会写入 YAML，平台会写入 Woodpecker repo secret", true, PARAM_SERVER_DEPLOY_ENABLED, "true"),
+                dependentSelectParameter(PARAM_SERVER_DEPLOY_CONNECTION_TYPE, "连接方式", true, CONNECTION_DIRECT_SSH, "选择直连服务器或经 JumpServer 连接目标资产", List.of(CONNECTION_DIRECT_SSH, CONNECTION_JUMPSERVER), PARAM_SERVER_DEPLOY_ENABLED, "true"),
+                dependentParameter(PARAM_SERVER_DEPLOY_DIRECT_HOST, "目标主机", TYPE_TEXT, true, "", "deploy.example.com", "直连模式下填写目标服务器域名或 IP", false, PARAM_SERVER_DEPLOY_CONNECTION_TYPE, CONNECTION_DIRECT_SSH),
+                dependentParameter(PARAM_SERVER_DEPLOY_DIRECT_PORT, "目标 SSH 端口", TYPE_TEXT, true, "22", "22", "直连模式下填写目标服务器 SSH 端口", false, PARAM_SERVER_DEPLOY_CONNECTION_TYPE, CONNECTION_DIRECT_SSH),
+                dependentParameter(PARAM_SERVER_DEPLOY_DIRECT_USER, "目标 SSH 用户", TYPE_TEXT, true, "deploy", "deploy", "直连模式下填写远程登录用户", false, PARAM_SERVER_DEPLOY_CONNECTION_TYPE, CONNECTION_DIRECT_SSH),
+                dependentParameter(PARAM_SERVER_DEPLOY_DIRECT_PRIVATE_KEY, "目标 SSH 私钥", TYPE_PASSWORD, true, "", "粘贴部署私钥", "不会写入 YAML，平台会写入 Woodpecker repo secret", true, PARAM_SERVER_DEPLOY_CONNECTION_TYPE, CONNECTION_DIRECT_SSH),
+                dependentParameter(PARAM_SERVER_DEPLOY_JUMP_HOST, "堡垒机主机", TYPE_TEXT, true, "", "jump.example.com", "JumpServer 域名或 IP", false, PARAM_SERVER_DEPLOY_CONNECTION_TYPE, CONNECTION_JUMPSERVER),
+                dependentParameter(PARAM_SERVER_DEPLOY_JUMP_PORT, "堡垒机端口", TYPE_TEXT, true, "2222", "2222", "JumpServer SSH 客户端端口，常见为 2222", false, PARAM_SERVER_DEPLOY_CONNECTION_TYPE, CONNECTION_JUMPSERVER),
+                dependentParameter(PARAM_SERVER_DEPLOY_JUMP_USER, "堡垒机用户", TYPE_TEXT, true, "", "cicd_bot", "用于登录 JumpServer 的账号", false, PARAM_SERVER_DEPLOY_CONNECTION_TYPE, CONNECTION_JUMPSERVER),
+                dependentParameter(PARAM_SERVER_DEPLOY_JUMP_PRIVATE_KEY, "堡垒机私钥", TYPE_PASSWORD, true, "", "粘贴 JumpServer 私钥", "不会写入 YAML，平台会写入 Woodpecker repo secret", true, PARAM_SERVER_DEPLOY_CONNECTION_TYPE, CONNECTION_JUMPSERVER),
+                dependentParameter(PARAM_SERVER_DEPLOY_JUMP_TARGET_USER, "目标系统用户", TYPE_TEXT, true, "deploy", "deploy", "JumpServer 直连目标资产时使用的系统账号", false, PARAM_SERVER_DEPLOY_CONNECTION_TYPE, CONNECTION_JUMPSERVER),
+                dependentParameter(PARAM_SERVER_DEPLOY_JUMP_TARGET_ASSET_IP, "目标资产 IP", TYPE_TEXT, true, "", "10.10.10.10", "JumpServer 直连的目标资产 IP", false, PARAM_SERVER_DEPLOY_CONNECTION_TYPE, CONNECTION_JUMPSERVER),
                 dependentParameter(PARAM_SERVER_DEPLOY_SOURCE_PATH, "部署产物路径", TYPE_TEXT, false, sourcePathDefault, "target/*.jar 或 dist", "留空时不上传产物，只执行远程命令；支持单文件、目录或单一 glob 匹配。若配置了项目根目录，这里按项目根目录解析", false, PARAM_SERVER_DEPLOY_ENABLED, "true"),
                 dependentParameter(PARAM_SERVER_DEPLOY_REMOTE_PATH, "服务器目标路径", TYPE_TEXT, false, remotePathDefault, "/srv/app/app.jar 或 /srv/app/dist", "如果填写了部署产物路径，这里填写服务器上的落点路径", false, PARAM_SERVER_DEPLOY_ENABLED, "true"),
                 dependentParameter(PARAM_SERVER_DEPLOY_COMMANDS, "重启 / 发布脚本", TYPE_TEXTAREA, true, commandsDefault, "cd /srv/app\n./restart.sh", "上传完成后在服务器执行，可写多行命令", false, PARAM_SERVER_DEPLOY_ENABLED, "true")
@@ -964,6 +1079,15 @@ public class AiClubPipelineConfigTemplateService {
         return parameter(key, label, type, required, defaultValueProvider, placeholder, helpText, secret, null, null);
     }
 
+    private static ParameterDefinition selectParameter(String key,
+                                                       String label,
+                                                       boolean required,
+                                                       String defaultValue,
+                                                       String helpText,
+                                                       List<String> options) {
+        return parameter(key, label, TYPE_SELECT, required, ignored -> defaultString(defaultValue), "", helpText, false, options, null, null);
+    }
+
     private static ParameterDefinition dependentParameter(String key,
                                                           String label,
                                                           String type,
@@ -977,6 +1101,17 @@ public class AiClubPipelineConfigTemplateService {
         return parameter(key, label, type, required, ignored -> defaultString(defaultValue), placeholder, helpText, secret, dependsOnKey, dependsOnValue);
     }
 
+    private static ParameterDefinition dependentSelectParameter(String key,
+                                                                String label,
+                                                                boolean required,
+                                                                String defaultValue,
+                                                                String helpText,
+                                                                List<String> options,
+                                                                String dependsOnKey,
+                                                                String dependsOnValue) {
+        return parameter(key, label, TYPE_SELECT, required, ignored -> defaultString(defaultValue), "", helpText, false, options, dependsOnKey, dependsOnValue);
+    }
+
     private static ParameterDefinition parameter(String key,
                                                  String label,
                                                  String type,
@@ -987,6 +1122,20 @@ public class AiClubPipelineConfigTemplateService {
                                                  boolean secret,
                                                  String dependsOnKey,
                                                  String dependsOnValue) {
+        return parameter(key, label, type, required, defaultValueProvider, placeholder, helpText, secret, List.of(), dependsOnKey, dependsOnValue);
+    }
+
+    private static ParameterDefinition parameter(String key,
+                                                 String label,
+                                                 String type,
+                                                 boolean required,
+                                                 Function<TemplateRenderContext, String> defaultValueProvider,
+                                                 String placeholder,
+                                                 String helpText,
+                                                 boolean secret,
+                                                 List<String> options,
+                                                 String dependsOnKey,
+                                                 String dependsOnValue) {
         return new ParameterDefinition(
                 key,
                 label,
@@ -995,7 +1144,7 @@ public class AiClubPipelineConfigTemplateService {
                 defaultValueProvider,
                 placeholder,
                 helpText,
-                List.of(),
+                options == null ? List.of() : List.copyOf(options),
                 secret,
                 dependsOnKey,
                 dependsOnValue
@@ -1079,6 +1228,14 @@ public class AiClubPipelineConfigTemplateService {
     private record TemplateRenderInput(
             TemplateRenderContext context,
             Map<String, String> parameters
+    ) {
+    }
+
+    private record RemoteConnectionSpec(
+            String connectionType,
+            String host,
+            String port,
+            String remoteTarget
     ) {
     }
 

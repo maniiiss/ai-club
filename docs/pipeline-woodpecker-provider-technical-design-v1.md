@@ -88,7 +88,7 @@ Jenkins 原接口继续保留在 `/jenkins-servers` 与 `/pipeline-bindings` 下
 
 ## 5.1 配置文件模板与补全
 
-平台内置六类 Woodpecker YAML 模板：Java / Maven、Node / Vite、Python / FastAPI、Docker Buildx、SSH 远程部署、通用 Shell。模板由后端代码维护，不落数据库，也不提供多租户模板 CRUD。模板不再只给一段待编辑 YAML，而是同时返回参数定义；前端默认以表单方式呈现项目根目录、触发分支、命令、推送服务器地址、镜像仓库、SSH 主机和私钥等模板元素，后端根据 `templateCode + parameters` 重新渲染 YAML。高级用户仍可切换到“手动 YAML”模式，继续按自定义内容创建 MR。
+平台内置六类 Woodpecker YAML 模板：Java / Maven、Node / Vite、Python / FastAPI、Docker Buildx、SSH 远程部署、通用 Shell。模板由后端代码维护，不落数据库，也不提供多租户模板 CRUD。模板不再只给一段待编辑 YAML，而是同时返回参数定义；前端默认以表单方式呈现项目根目录、触发分支、命令、推送服务器地址、镜像仓库、连接方式、SSH 主机和私钥等模板元素，后端根据 `templateCode + parameters` 重新渲染 YAML。高级用户仍可切换到“手动 YAML”模式，继续按自定义内容创建 MR。
 
 补全链路固定走 GitLab MR，不直接写目标分支：
 
@@ -99,7 +99,14 @@ Jenkins 原接口继续保留在 `/jenkins-servers` 与 `/pipeline-bindings` 下
 5. 平台提交配置文件并创建 MR 到目标分支。
 6. 目标分支如果已经存在配置文件，补全接口拒绝覆盖。
 
-`部署到服务器` 现在作为共享后置动作挂在 Java / Maven、Node / Vite、Python / FastAPI、Docker Buildx、通用 Shell 等模板里，通过开关启用，而不是再拆新的模板类型。Woodpecker runner 会基于当前提交自动检出源码，因此“拉最新代码”由 CI checkout 隐式完成；当用户打开后置部署开关后，页面会额外展示 `部署 SSH 主机 / 端口 / 用户 / 私钥 / 部署产物路径 / 服务器目标路径 / 重启脚本` 等参数，模板会在构建步骤后自动追加 `scp/ssh` 部署步骤。各模板还支持 `项目根目录`，用于 monorepo 或多模块仓库里指定真正包含 `pom.xml`、`package.json`、Python 应用代码或 Docker build context 的子目录；构建命令、Docker context 与部署产物路径都会优先按这个目录解析。`部署产物路径` 可留空，此时只执行远程脚本，适合 Docker 镜像已经推到 registry 后让服务器 `docker compose pull && up -d`。Docker Buildx 模板生成真实推送配置，使用 `woodpeckerci/plugin-docker-buildx:2`，页面填写 `registry / repo / tags / username / password / branch` 等参数；YAML 中只保留 `from_secret` 引用，平台在创建 MR 前把账号密码和部署私钥 upsert 到当前 Woodpecker repo secrets。SSH 远程部署模板仍保留给“只跑远程脚本、不依赖前置构建”的场景。手动 YAML 模式不强制托管 secrets，适合已经自行维护 Woodpecker secrets 的高级配置。
+`部署到服务器` 现在作为共享后置动作挂在 Java / Maven、Node / Vite、Python / FastAPI、Docker Buildx、通用 Shell 等模板里，通过开关启用，而不是再拆新的模板类型。Woodpecker runner 会基于当前提交自动检出源码，因此“拉最新代码”由 CI checkout 隐式完成；当用户打开后置部署开关后，页面会额外展示 `连接方式 / 目标主机或堡垒机主机 / 端口 / 用户 / 私钥 / 目标资产信息 / 部署产物路径 / 服务器目标路径 / 重启脚本` 等参数，模板会在构建步骤后自动追加 `scp/ssh` 部署步骤。各模板还支持 `项目根目录`，用于 monorepo 或多模块仓库里指定真正包含 `pom.xml`、`package.json`、Python 应用代码或 Docker build context 的子目录；构建命令、Docker context 与部署产物路径都会优先按这个目录解析。`部署产物路径` 可留空，此时只执行远程脚本，适合 Docker 镜像已经推到 registry 后让服务器 `docker compose pull && up -d`。Docker Buildx 模板生成真实推送配置，使用 `woodpeckerci/plugin-docker-buildx:2`，页面填写 `registry / repo / tags / username / password / branch` 等参数；YAML 中只保留 `from_secret` 引用，平台在创建 MR 前把账号密码和部署私钥 upsert 到当前 Woodpecker repo secrets。SSH 远程部署模板仍保留给“只跑远程脚本、不依赖前置构建”的场景。手动 YAML 模式不强制托管 secrets，适合已经自行维护 Woodpecker secrets 的高级配置。
+
+本版把 SSH 相关部署的连接方式显式区分为：
+
+- `DIRECT_SSH`：直接连接目标服务器，YAML 中生成普通 `user@host` 的 `ssh/scp` 命令。
+- `JUMPSERVER`：经 JumpServer 连接目标资产，页面拆分 `堡垒机主机 / 端口 / 用户 / 私钥 / 目标系统用户 / 目标资产 IP`；YAML 中生成 `jumpUser@targetUser@assetIp@jumpHost` 形式的 SSH 目标串。
+
+JumpServer 模式采用“一把私钥登录 JumpServer，并由 JumpServer 直连目标资产”的模型，不实现双私钥代理链路。私钥仍只写入 Woodpecker repo secret；JumpServer 用户名、目标系统用户和目标资产 IP 会作为非敏感连接元数据出现在 YAML 中。该模式要求 JumpServer 支持无交互、公钥登录、资产直连账号；不适用于需要 MFA、审批或手工输入资产用户名密码的命令行直连场景。
 
 ## 6. 部署配置
 

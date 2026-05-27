@@ -744,8 +744,10 @@ stop_full_docker_stack() {
     env_file="${FULL_DOCKER_ENV_FILE}"
   fi
 
+  # 停止全量 Docker 时始终显式带上 woodpecker profile，避免启动时开启过 profile
+  # 但停止时因为未带 profile 而遗漏 woodpecker-server / woodpecker-agent 容器。
   invoke_compose "${FULL_DOCKER_COMPOSE_FILE}" "${env_file}" '关闭全量 Docker 项目' \
-    down --remove-orphans
+    --profile woodpecker down --remove-orphans
 
   printf '\n'
   ok '全量 Docker 项目已关闭'

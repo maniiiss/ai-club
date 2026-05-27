@@ -101,6 +101,20 @@
                   @change="handleConfigParameterChange(param)"
                 />
               </div>
+              <el-radio-group
+                v-else-if="param.type === 'select' && param.options.length"
+                v-model="parameterValues[param.key]"
+                class="pipeline-template-select-group"
+                @change="handleConfigParameterChange(param)"
+              >
+                <el-radio-button
+                  v-for="option in param.options"
+                  :key="option"
+                  :label="option"
+                >
+                  {{ configParameterOptionLabel(option) }}
+                </el-radio-button>
+              </el-radio-group>
               <el-input
                 v-else-if="param.type === 'textarea'"
                 v-model="parameterValues[param.key]"
@@ -221,6 +235,10 @@ const configEditMode = ref<'form' | 'manual'>('form')
 const completionStep = ref<'template' | 'configure'>('template')
 const configuredTemplateCode = ref('')
 const parameterValues = reactive<Record<string, string>>({})
+const connectionTypeLabelMap: Record<string, string> = {
+  DIRECT_SSH: '直连服务器',
+  JUMPSERVER: '经 JumpServer'
+}
 
 const selectedTemplate = computed(() => templates.value.find((item) => item.code === selectedTemplateCode.value) || null)
 const selectedTemplateParameters = computed(() => selectedTemplate.value?.parameters || [])
@@ -239,8 +257,14 @@ watch(
   }
 )
 
+/**
+ * 模板参数存在两级联动：例如“部署到服务器”控制“连接方式”，
+ * “连接方式”再控制直连或 JumpServer 字段，因此这里需要递归判断父字段是否也处于可见态。
+ */
 const isConfigParameterVisible = (param: AiClubPipelineConfigTemplateParameterItem) => {
   if (!param.dependsOnKey) return true
+  const dependency = selectedTemplateParameters.value.find((item) => item.key === param.dependsOnKey)
+  if (dependency && !isConfigParameterVisible(dependency)) return false
   return (parameterValues[param.dependsOnKey] || '') === (param.dependsOnValue || '')
 }
 
@@ -420,6 +444,10 @@ function configParameterTextareaRows(param: AiClubPipelineConfigTemplateParamete
   return 3
 }
 
+function configParameterOptionLabel(option: string) {
+  return connectionTypeLabelMap[option] || option
+}
+
 function configParameterFieldClass(param: AiClubPipelineConfigTemplateParameterItem) {
   return {
     'param-span-full': configParameterShouldSpanFull(param),
@@ -432,12 +460,29 @@ function configParameterFieldClass(param: AiClubPipelineConfigTemplateParameterI
 function configParameterShouldSpanFull(param: AiClubPipelineConfigTemplateParameterItem) {
   return param.type === 'textarea'
     || param.type === 'switch'
+    || param.type === 'select'
     || ['projectRoot', 'registryUrl', 'imageRepo', 'dockerfile', 'serverDeploySourcePath', 'serverDeployRemotePath'].includes(param.key)
 }
 
 function configParameterShouldSpanCompact(param: AiClubPipelineConfigTemplateParameterItem) {
   return !configParameterShouldSpanFull(param)
-    && ['branch', 'javaImage', 'nodeImage', 'pythonImage', 'shellImage', 'serverDeployPort', 'serverDeployUser'].includes(param.key)
+    && [
+      'branch',
+      'javaImage',
+      'nodeImage',
+      'pythonImage',
+      'shellImage',
+      'directSshPort',
+      'directSshUser',
+      'jumpServerPort',
+      'jumpServerUser',
+      'jumpTargetUser',
+      'serverDeployDirectPort',
+      'serverDeployDirectUser',
+      'serverDeployJumpPort',
+      'serverDeployJumpUser',
+      'serverDeployJumpTargetUser'
+    ].includes(param.key)
 }
 
 function configParameterShouldSpanMedium(param: AiClubPipelineConfigTemplateParameterItem) {
@@ -753,6 +798,18 @@ function configParameterShouldSpanMedium(param: AiClubPipelineConfigTemplatePara
 
 .pipeline-template-param-help-trigger:hover {
   color: var(--app-primary);
+}
+
+.pipeline-template-select-group {
+  width: 100%;
+}
+
+.pipeline-template-select-group :deep(.el-radio-button) {
+  flex: 1 1 0;
+}
+
+.pipeline-template-select-group :deep(.el-radio-button__inner) {
+  width: 100%;
 }
 
 .pipeline-config-preview-toolbar {

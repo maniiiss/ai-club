@@ -871,9 +871,10 @@ class CicdManagementServiceTests {
                         Map.of(
                                 "projectRoot", "services/api",
                                 "serverDeployEnabled", "true",
-                                "serverDeployHost", "deploy.example.com",
-                                "serverDeployUser", "deploy",
-                                "serverDeployPrivateKey", "private-key",
+                                "serverDeployConnectionType", "DIRECT_SSH",
+                                "serverDeployDirectHost", "deploy.example.com",
+                                "serverDeployDirectUser", "deploy",
+                                "serverDeployDirectPrivateKey", "private-key",
                                 "serverDeploySourcePath", "target/*.jar",
                                 "serverDeployRemotePath", "/srv/app/app.jar",
                                 "serverDeployCommands", "cd /srv/app\n./restart.sh"
