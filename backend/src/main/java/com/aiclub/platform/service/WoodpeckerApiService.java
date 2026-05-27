@@ -109,20 +109,20 @@ public class WoodpeckerApiService {
         HttpResponse<String> response = sendRequest("GET", "/repos/" + repoId + "/logs/" + pipelineNumber + "/" + stepId, null);
         String body = response.body();
         JsonNode node = readJson(body);
+        String rawLog;
         if (!node.isArray()) {
-            return body == null ? "" : body;
-        }
-        StringBuilder builder = new StringBuilder();
-        for (JsonNode item : node) {
-            if (item.hasNonNull("line")) {
-                builder.append(item.path("line").asInt()).append(" | ");
+            rawLog = body == null ? "" : body;
+        } else {
+            StringBuilder builder = new StringBuilder();
+            for (JsonNode item : node) {
+                builder.append(item.path("data").asText(""));
+                if (builder.length() == 0 || builder.charAt(builder.length() - 1) != '\n') {
+                    builder.append('\n');
+                }
             }
-            builder.append(item.path("data").asText(""));
-            if (builder.length() == 0 || builder.charAt(builder.length() - 1) != '\n') {
-                builder.append('\n');
-            }
+            rawLog = builder.toString();
         }
-        return builder.toString();
+        return sanitizeShellTraceLog(rawLog);
     }
 
     public String fetchAggregatedLogs(Long repoId, int pipelineNumber) {
@@ -258,6 +258,54 @@ public class WoodpeckerApiService {
         } catch (IOException exception) {
             throw new IllegalStateException("构造 Woodpecker secret 请求失败", exception);
         }
+    }
+
+    /**
+     * Woodpecker 原始步骤日志会把 shell trace 与 heredoc 脚本正文一起打出来，
+     * 对“聚合日志”展示来说噪音很大。这里尽量只保留命令真实输出：
+     * 1. 过滤 `+ command` 形式的 shell xtrace
+     * 2. 过滤 heredoc 回显的脚本正文
+     * 3. 保留远端命令真正写到 stdout/stderr 的内容，例如 ssh-keyscan 与远端脚本输出
+     */
+    private String sanitizeShellTraceLog(String rawLog) {
+        if (!hasText(rawLog)) {
+            return "";
+        }
+        String heredocTerminator = null;
+        StringBuilder builder = new StringBuilder();
+        String normalized = rawLog.replace("\r\n", "\n").replace('\r', '\n');
+        for (String line : normalized.split("\n", -1)) {
+            if (heredocTerminator != null) {
+                if (line.trim().equals(heredocTerminator)) {
+                    heredocTerminator = null;
+                }
+                continue;
+            }
+            String trimmed = line.trim();
+            if (trimmed.startsWith("+")) {
+                heredocTerminator = extractHeredocTerminator(trimmed);
+                continue;
+            }
+            if (builder.length() > 0) {
+                builder.append('\n');
+            }
+            builder.append(line);
+        }
+        return builder.toString().strip();
+    }
+
+    private String extractHeredocTerminator(String shellTraceLine) {
+        int markerIndex = shellTraceLine.indexOf("<<'");
+        if (markerIndex < 0) {
+            return null;
+        }
+        int startIndex = markerIndex + 3;
+        int endIndex = shellTraceLine.indexOf('\'', startIndex);
+        if (endIndex <= startIndex) {
+            return null;
+        }
+        String terminator = shellTraceLine.substring(startIndex, endIndex).trim();
+        return hasText(terminator) ? terminator : null;
     }
 
     private WoodpeckerSecret toSecret(JsonNode node) {

@@ -33,6 +33,7 @@ public class AiClubPipelineConfigTemplateService {
     private static final String TYPE_TEXTAREA = "textarea";
     private static final String TYPE_SWITCH = "switch";
     private static final String TYPE_SELECT = "select";
+    private static final String PARAM_SKIP_CLONE = "skipClone";
     private static final String CONNECTION_DIRECT_SSH = "DIRECT_SSH";
     private static final String CONNECTION_JUMPSERVER = "JUMPSERVER";
     private static final String PARAM_CONNECTION_TYPE = "connectionType";
@@ -62,7 +63,6 @@ public class AiClubPipelineConfigTemplateService {
     private static final String PARAM_SERVER_DEPLOY_SOURCE_PATH = "serverDeploySourcePath";
     private static final String PARAM_SERVER_DEPLOY_REMOTE_PATH = "serverDeployRemotePath";
     private static final String PARAM_SERVER_DEPLOY_COMMANDS = "serverDeployCommands";
-    private static final List<String> ALPINE_SECRET_IMAGES = List.of("alpine");
 
     private final List<TemplateDefinition> templates = List.of(
             new TemplateDefinition(
@@ -72,7 +72,7 @@ public class AiClubPipelineConfigTemplateService {
                     "后端服务",
                     false,
                     List.of("仓库根目录存在 pom.xml", "可通过表单调整 Maven 镜像、测试命令和打包命令", "如需部署到服务器，可打开后置部署开关并填写 SSH / 上传 / 重启参数"),
-                    combineParameters(buildProjectRootParameters(), List.of(
+                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(), List.of(
                             parameter("branch", "触发分支", TYPE_TEXT, true, context -> context.branch(), "main", "写入 when.branch，默认使用流水线默认分支", false),
                             parameter("javaImage", "Maven 镜像", TYPE_TEXT, true, "maven:3.9-eclipse-temurin-17", "maven:3.9-eclipse-temurin-17", "Woodpecker 步骤运行镜像", false),
                             parameter("testCommand", "测试命令", TYPE_TEXTAREA, true, "if [ -x ./mvnw ]; then ./mvnw -B test; else mvn -B test; fi", "mvn -B test", "支持多行命令，平台会逐行写入 commands", false),
@@ -87,7 +87,7 @@ public class AiClubPipelineConfigTemplateService {
                     "前端应用",
                     false,
                     List.of("仓库根目录存在 package.json", "可配置 Node 镜像、安装命令、构建命令和触发分支", "如需部署到服务器，可打开后置部署开关并上传构建产物目录"),
-                    combineParameters(buildProjectRootParameters(), List.of(
+                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(), List.of(
                             parameter("branch", "触发分支", TYPE_TEXT, true, context -> context.branch(), "main", "写入 when.branch，默认使用流水线默认分支", false),
                             parameter("nodeImage", "Node 镜像", TYPE_TEXT, true, "node:20-alpine", "node:20-alpine", "Woodpecker 步骤运行镜像", false),
                             parameter("installCommand", "安装命令", TYPE_TEXTAREA, true, "if [ -f package-lock.json ]; then npm ci; else npm install; fi", "npm ci", "支持 pnpm、yarn 或企业源安装命令", false),
@@ -102,7 +102,7 @@ public class AiClubPipelineConfigTemplateService {
                     "后端服务",
                     false,
                     List.of("优先安装 requirements.txt", "可通过表单调整 Python 镜像、依赖安装和验证命令", "如需部署到服务器，可打开后置部署开关并上传构建产物或应用目录"),
-                    combineParameters(buildProjectRootParameters(), List.of(
+                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(), List.of(
                             parameter("branch", "触发分支", TYPE_TEXT, true, context -> context.branch(), "main", "写入 when.branch，默认使用流水线默认分支", false),
                             parameter("pythonImage", "Python 镜像", TYPE_TEXT, true, "python:3.12-slim", "python:3.12-slim", "Woodpecker 步骤运行镜像", false),
                             parameter("installCommand", "依赖安装命令", TYPE_TEXTAREA, true, "python -m pip install --upgrade pip\nif [ -f requirements.txt ]; then pip install -r requirements.txt; fi", "pip install -r requirements.txt", "支持 poetry、uv 或私有源安装命令", false),
@@ -117,7 +117,7 @@ public class AiClubPipelineConfigTemplateService {
                     "镜像构建",
                     true,
                     List.of("仓库根目录存在 Dockerfile", "页面填写 registry、镜像名和推送账号，密码写入 Woodpecker repo secret", "Woodpecker runner 允许 Docker Buildx 插件构建与推送镜像", "如需部署到服务器，可打开后置部署开关，在镜像推送后执行远程重启脚本"),
-                    combineParameters(buildProjectRootParameters(), List.of(
+                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(), List.of(
                             parameter("branch", "触发分支", TYPE_TEXT, true, context -> context.branch(), "main", "push/manual 事件写入 when.branch，tag 事件不限制分支", false),
                             parameter("registryUrl", "推送服务器地址", TYPE_TEXT, true, "", "registry.example.com 或 registry.example.com:5000", "写入 plugin-docker-buildx 的 registry", false),
                             parameter("imageRepo", "镜像仓库名", TYPE_TEXT, false, "", "留空按 registry/项目路径生成", "例如 registry.example.com/team/app；留空时保留 GitLab 路径层级并转小写", false),
@@ -140,7 +140,7 @@ public class AiClubPipelineConfigTemplateService {
                             "私钥只会写入 Woodpecker repo secret，不会明文进入 YAML",
                             "JumpServer 模式要求堡垒机支持无交互、公钥登录和直连资产账号，不适用于需要 MFA、审批或手工输入资产账号密码的场景"
                     ),
-                    buildSshRemoteParameters(),
+                    combineParameters(buildCloneBehaviorParameters(), buildSshRemoteParameters()),
                     this::renderSshRemote
             ),
             new TemplateDefinition(
@@ -150,7 +150,7 @@ public class AiClubPipelineConfigTemplateService {
                     "通用",
                     false,
                     List.of("默认使用 Alpine 镜像", "可通过表单调整镜像、分支和 Shell 命令", "如需部署到服务器，也可以打开后置部署开关"),
-                    combineParameters(buildProjectRootParameters(), List.of(
+                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(), List.of(
                             parameter("branch", "触发分支", TYPE_TEXT, true, context -> context.branch(), "main", "写入 when.branch，默认使用流水线默认分支", false),
                             parameter("shellImage", "运行镜像", TYPE_TEXT, true, "alpine:3.20", "alpine:3.20", "Woodpecker 步骤运行镜像", false),
                             parameter("shellCommands", "Shell 命令", TYPE_TEXTAREA, true, "set -eu\npwd\nls -la\nif [ -f README.md ]; then sed -n '1,40p' README.md; fi", "set -eu", "支持多行命令，平台会逐行写入 commands", false)
@@ -343,7 +343,7 @@ public class AiClubPipelineConfigTemplateService {
                         ? "AI Club Pipeline JumpServer 远程部署私钥。"
                         : "AI Club Pipeline SSH 远程部署私钥。",
                 List.of("push", "manual"),
-                ALPINE_SECRET_IMAGES,
+                List.of(),
                 requireValues,
                 CONNECTION_JUMPSERVER.equals(connectionType) ? "JumpServer 私钥不能为空" : "SSH 私钥不能为空"
         );
@@ -365,7 +365,7 @@ public class AiClubPipelineConfigTemplateService {
                         ? "AI Club Pipeline 后置 JumpServer 部署私钥。"
                         : "AI Club Pipeline 后置服务器部署私钥。",
                 List.of("push", "manual", "tag"),
-                ALPINE_SECRET_IMAGES,
+                List.of(),
                 requireValues,
                 CONNECTION_JUMPSERVER.equals(connectionType) ? "部署 JumpServer 私钥不能为空" : "部署 SSH 私钥不能为空"
         );
@@ -416,7 +416,8 @@ public class AiClubPipelineConfigTemplateService {
         List<String> packageCommands = new ArrayList<>();
         appendProjectRootCommand(packageCommands, input);
         packageCommands.addAll(splitNonBlankLines(param(input, "packageCommand")));
-        StringBuilder builder = new StringBuilder("""
+        StringBuilder builder = startPipelineYaml(input);
+        builder.append("""
                 steps:
                   - name: test
                     image: %s
@@ -446,7 +447,8 @@ public class AiClubPipelineConfigTemplateService {
         appendProjectRootCommand(commands, input);
         commands.addAll(splitNonBlankLines(param(input, "installCommand")));
         commands.addAll(splitNonBlankLines(param(input, "buildCommand")));
-        StringBuilder builder = new StringBuilder("""
+        StringBuilder builder = startPipelineYaml(input);
+        builder.append("""
                 steps:
                   - name: build
                     image: %s
@@ -469,7 +471,8 @@ public class AiClubPipelineConfigTemplateService {
         appendProjectRootCommand(commands, input);
         commands.addAll(splitNonBlankLines(param(input, "installCommand")));
         commands.addAll(splitNonBlankLines(param(input, "verifyCommand")));
-        StringBuilder builder = new StringBuilder("""
+        StringBuilder builder = startPipelineYaml(input);
+        builder.append("""
                 steps:
                   - name: verify
                     image: %s
@@ -493,7 +496,8 @@ public class AiClubPipelineConfigTemplateService {
                 : "";
         String projectRoot = normalizedProjectRoot(input);
         String contextPath = hasText(projectRoot) ? projectRoot : ".";
-        StringBuilder builder = new StringBuilder("""
+        StringBuilder builder = startPipelineYaml(input);
+        builder.append("""
                 steps:
                   - name: docker-build-push
                     image: woodpeckerci/plugin-docker-buildx:2
@@ -536,7 +540,8 @@ public class AiClubPipelineConfigTemplateService {
                 "ssh-keyscan -p " + connection.port() + " " + shellSingleQuote(connection.host()) + " >> ~/.ssh/known_hosts",
                 buildRemoteScriptCommand(connection.port(), connection.remoteTarget(), defaultString(param(input, "sshCommands"), "pwd"))
         );
-        return """
+        StringBuilder builder = startPipelineYaml(input);
+        builder.append("""
                 steps:
                   - name: ssh-deploy
                     image: alpine:3.20
@@ -552,14 +557,16 @@ public class AiClubPipelineConfigTemplateService {
                 secretName(input.context(), "SSH_PRIVATE_KEY"),
                 renderCommandEntries(commands),
                 yamlQuote(requiredParam(input, "branch"))
-        ).stripTrailing() + "\n";
+        ).stripTrailing()).append('\n');
+        return builder.toString();
     }
 
     private String renderGenericShell(TemplateRenderInput input) {
         List<String> commands = new ArrayList<>();
         appendProjectRootCommand(commands, input);
         commands.addAll(splitNonBlankLines(param(input, "shellCommands")));
-        StringBuilder builder = new StringBuilder("""
+        StringBuilder builder = startPipelineYaml(input);
+        builder.append("""
                 steps:
                   - name: verify
                     image: %s
@@ -575,6 +582,18 @@ public class AiClubPipelineConfigTemplateService {
         ).stripTrailing()).append('\n');
         appendServerDeployStep(builder, input);
         return builder.toString();
+    }
+
+    /**
+     * skip_clone 是 Woodpecker 的顶层开关，不属于具体 step。
+     * 这里统一在所有模板渲染前拼接，避免每个模板各自维护重复前缀。
+     */
+    private StringBuilder startPipelineYaml(TemplateRenderInput input) {
+        StringBuilder builder = new StringBuilder();
+        if (Boolean.parseBoolean(defaultString(param(input, PARAM_SKIP_CLONE), "false"))) {
+            builder.append("skip_clone: true\n\n");
+        }
+        return builder;
     }
 
     private String resolveDockerImageRepo(TemplateRenderContext context, Map<String, String> parameters) {
@@ -1015,6 +1034,12 @@ public class AiClubPipelineConfigTemplateService {
     private List<ParameterDefinition> buildProjectRootParameters() {
         return List.of(
                 parameter(PARAM_PROJECT_ROOT, "项目根目录", TYPE_TEXT, false, "", "例如 services/api 或 apps/web", "相对仓库根目录。留空表示直接在仓库根目录构建；构建命令、Docker context 和部署产物路径都会优先按这里解析", false)
+        );
+    }
+
+    private List<ParameterDefinition> buildCloneBehaviorParameters() {
+        return List.of(
+                parameter(PARAM_SKIP_CLONE, "跳过默认克隆", TYPE_SWITCH, false, "false", "", "打开后在 YAML 顶层写入 skip_clone: true，适用于只执行远端命令或准备自行处理代码拉取的场景", false)
         );
     }
 

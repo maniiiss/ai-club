@@ -890,7 +890,7 @@ class CicdManagementServiceTests {
                 eq("private-key"),
                 anyString(),
                 eq(List.of("push", "manual", "tag")),
-                eq(List.of("alpine"))
+                eq(List.of())
         );
 
         ArgumentCaptor<List<GitlabApiService.GitlabCommitAction>> actionsCaptor = ArgumentCaptor.forClass((Class) List.class);
@@ -914,11 +914,12 @@ class CicdManagementServiceTests {
     }
 
     /**
-     * 已存在配置文件时拒绝补全，防止平台模板覆盖仓库内已有流水线定义。
+     * 已存在配置文件时不再拒绝，而是创建 update commit 与 MR，方便继续维护现有流水线定义。
      */
     @Test
-    void shouldRejectConfigCompletionWhenTargetFileExists() {
-        ProjectEntity project = projectRepository.save(new ProjectEntity("Woodpecker 已配置项目", "周十七", "进行中", "验证不覆盖已有配置"));
+    @SuppressWarnings("unchecked")
+    void shouldCreateUpdateMergeRequestWhenTargetFileExists() {
+        ProjectEntity project = projectRepository.save(new ProjectEntity("Woodpecker 已配置项目", "周十七", "进行中", "验证更新已有配置"));
         ProjectGitlabBindingEntity gitlabBinding = projectGitlabBindingRepository.save(createGitlabBinding(project));
         AiClubPipelineEntity pipeline = aiClubPipelineRepository.save(createAiClubPipeline(project, gitlabBinding));
         when(gitlabApiService.repositoryFileExists(
@@ -928,8 +929,38 @@ class CicdManagementServiceTests {
                 eq("main"),
                 eq(".woodpecker.yml")
         )).thenReturn(true);
+        when(gitlabApiService.createCommit(
+                eq("http://gitlab.example.com/api/v4"),
+                anyString(),
+                eq("group/repo"),
+                startsWith("ai-club/pipeline-config/"),
+                eq("ci: update AI Club Pipeline config"),
+                org.mockito.ArgumentMatchers.<List<GitlabApiService.GitlabCommitAction>>any()
+        )).thenReturn(new GitlabApiService.GitlabCreatedCommit(
+                "commit-update",
+                "cu",
+                "ci: update AI Club Pipeline config",
+                "http://gitlab.example.com/group/repo/-/commit/commit-update"
+        ));
+        when(gitlabApiService.createMergeRequest(
+                eq("http://gitlab.example.com/api/v4"),
+                anyString(),
+                eq("group/repo"),
+                startsWith("ai-club/pipeline-config/"),
+                eq("main"),
+                eq("ci: update AI Club Pipeline config for 后端发布"),
+                org.mockito.ArgumentMatchers.contains("AI Club Pipeline 配置文件更新 MR")
+        )).thenReturn(new GitlabApiService.GitlabCreatedMergeRequest(
+                12L,
+                "ci: update AI Club Pipeline config for 后端发布",
+                "ai-club/pipeline-config/1-20260101010101",
+                "main",
+                "opened",
+                "http://gitlab.example.com/group/repo/-/merge_requests/12",
+                "2026-01-01T00:00:00Z"
+        ));
 
-        assertThatThrownBy(() -> cicdManagementService.completeAiClubPipelineConfig(
+        AiClubPipelineConfigCompleteResult result = cicdManagementService.completeAiClubPipelineConfig(
                 pipeline.getId(),
                 new AiClubPipelineConfigCompleteRequest(
                         "GENERIC_SHELL",
@@ -937,11 +968,23 @@ class CicdManagementServiceTests {
                         true,
                         "steps:\n  - name: verify\n    image: alpine\n    commands:\n      - ls\n"
                 )
-        ))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("不会覆盖已有配置");
+        );
 
-        verify(gitlabApiService, never()).createBranch(anyString(), anyString(), anyString(), anyString(), anyString());
+        assertThat(result.message()).contains("更新");
+        ArgumentCaptor<List<GitlabApiService.GitlabCommitAction>> actionsCaptor = ArgumentCaptor.forClass((Class) List.class);
+        verify(gitlabApiService).createCommit(
+                eq("http://gitlab.example.com/api/v4"),
+                anyString(),
+                eq("group/repo"),
+                startsWith("ai-club/pipeline-config/"),
+                eq("ci: update AI Club Pipeline config"),
+                actionsCaptor.capture()
+        );
+        assertThat(actionsCaptor.getValue()).singleElement().satisfies(action -> {
+            assertThat(action.action()).isEqualTo("update");
+            assertThat(action.filePath()).isEqualTo(".woodpecker.yml");
+        });
+        verify(gitlabApiService).createBranch(anyString(), anyString(), anyString(), anyString(), anyString());
     }
 
     /**

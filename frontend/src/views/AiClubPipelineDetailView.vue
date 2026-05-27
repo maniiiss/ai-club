@@ -20,9 +20,13 @@
             <el-icon><Connection /></el-icon>
             <span>同步仓库</span>
           </el-button>
-          <el-button v-if="canManage && isAiEntry && configStatus?.status === 'MISSING'" type="warning" @click="configDialogVisible = true">
+          <el-button
+            v-if="canManage && isAiEntry"
+            :type="configStatus?.status === 'MISSING' ? 'warning' : 'default'"
+            @click="configDialogVisible = true"
+          >
             <el-icon><Plus /></el-icon>
-            <span>补全配置</span>
+            <span>{{ configStatus?.status === 'MISSING' ? '补全配置' : '修改配置' }}</span>
           </el-button>
           <el-button v-if="canManage" @click="editDialogVisible = true">
             <el-icon><EditPen /></el-icon>

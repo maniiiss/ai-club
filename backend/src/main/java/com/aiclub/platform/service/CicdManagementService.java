@@ -182,9 +182,7 @@ public class CicdManagementService {
         pipelineConfigTemplateService.requireTemplateItem(request.templateCode(), buildTemplateRenderContext(entity));
         String branch = resolveAiClubPipelineBranch(entity, null);
         String configPath = defaultString(trimToNull(entity.getConfigPath()), ".woodpecker.yml");
-        if (repositoryFileExists(entity, branch, configPath)) {
-            throw new IllegalArgumentException("目标分支 " + branch + " 已存在流水线文件 " + configPath + "，平台不会覆盖已有配置");
-        }
+        boolean configExists = repositoryFileExists(entity, branch, configPath);
         String renderedContent = resolvePipelineConfigContent(entity, request);
         prepareTemplateSecrets(entity, request);
 
@@ -198,8 +196,8 @@ public class CicdManagementService {
                 token,
                 projectRef,
                 generatedBranch,
-                "ci: add AI Club Pipeline config",
-                List.of(new GitlabApiService.GitlabCommitAction("create", configPath, normalizeConfigContent(renderedContent)))
+                configExists ? "ci: update AI Club Pipeline config" : "ci: add AI Club Pipeline config",
+                List.of(new GitlabApiService.GitlabCommitAction(configExists ? "update" : "create", configPath, normalizeConfigContent(renderedContent)))
         );
         GitlabApiService.GitlabCreatedMergeRequest mergeRequest = gitlabApiService.createMergeRequest(
                 binding.getApiBaseUrl(),
@@ -207,8 +205,8 @@ public class CicdManagementService {
                 projectRef,
                 generatedBranch,
                 branch,
-                "ci: add AI Club Pipeline config for " + entity.getName(),
-                buildPipelineConfigMergeRequestDescription(entity, branch, configPath, request.templateCode())
+                (configExists ? "ci: update AI Club Pipeline config for " : "ci: add AI Club Pipeline config for ") + entity.getName(),
+                buildPipelineConfigMergeRequestDescription(entity, branch, configPath, request.templateCode(), configExists)
         );
         return new AiClubPipelineConfigCompleteResult(
                 generatedBranch,
@@ -216,7 +214,7 @@ public class CicdManagementService {
                 trimToNull(commit.webUrl()),
                 mergeRequest.iid(),
                 trimToNull(mergeRequest.webUrl()),
-                "已创建流水线配置 MR，合并后即可触发 AI Club Pipeline"
+                configExists ? "已创建流水线配置更新 MR，合并后将应用最新配置" : "已创建流水线配置 MR，合并后即可触发 AI Club Pipeline"
         );
     }
 
@@ -763,15 +761,16 @@ public class CicdManagementService {
     private String buildPipelineConfigMergeRequestDescription(AiClubPipelineEntity entity,
                                                               String branch,
                                                               String configPath,
-                                                              String templateCode) {
+                                                              String templateCode,
+                                                              boolean configExists) {
         StringBuilder builder = new StringBuilder();
-        builder.append("AI Club Pipeline 配置文件补全 MR\n\n")
+        builder.append(configExists ? "AI Club Pipeline 配置文件更新 MR\n\n" : "AI Club Pipeline 配置文件补全 MR\n\n")
                 .append("- 平台项目：").append(entity.getProject().getName()).append('\n')
                 .append("- 流水线：").append(entity.getName()).append('\n')
                 .append("- 目标分支：").append(branch).append('\n')
                 .append("- 配置文件：").append(configPath).append('\n')
                 .append("- 模板：").append(defaultString(templateCode).trim().toUpperCase()).append("\n\n")
-                .append("合并后可回到 AI Club 流水线中心触发运行。");
+                .append(configExists ? "合并后将更新现有流水线配置，可回到 AI Club 流水线中心继续触发运行。" : "合并后可回到 AI Club 流水线中心触发运行。");
         return builder.toString();
     }
 

@@ -21,6 +21,7 @@ class AiClubPipelineConfigTemplateServiceTests {
                 AiClubPipelineConfigTemplateService.TEMPLATE_SSH_REMOTE,
                 context(),
                 Map.of(
+                        "skipClone", "true",
                         "connectionType", "DIRECT_SSH",
                         "directSshHost", "deploy.example.com",
                         "directSshPort", "22",
@@ -29,6 +30,7 @@ class AiClubPipelineConfigTemplateServiceTests {
                 )
         );
 
+        assertThat(content).startsWith("skip_clone: true");
         assertThat(content).contains("ssh-keyscan -p 22 'deploy.example.com'");
         assertThat(content).contains("ssh -i ~/.ssh/id_ai_club -p 22 'deploy@deploy.example.com' 'bash -se'");
         assertThat(content).doesNotContain("cicd_bot@deploy@10.10.10.10@jump.example.com");

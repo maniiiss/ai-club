@@ -186,7 +186,7 @@
           上一步
         </el-button>
         <el-button v-if="completionStep === 'configure'" type="primary" :loading="completing" :disabled="!canComplete" @click="handleCompleteConfig">
-          创建配置 MR
+          {{ isExistingConfig ? '创建更新配置 MR' : '创建配置 MR' }}
         </el-button>
       </div>
     </template>
@@ -243,7 +243,9 @@ const connectionTypeLabelMap: Record<string, string> = {
 const selectedTemplate = computed(() => templates.value.find((item) => item.code === selectedTemplateCode.value) || null)
 const selectedTemplateParameters = computed(() => selectedTemplate.value?.parameters || [])
 const canEnterConfigure = computed(() => Boolean(selectedTemplate.value && selectedTemplate.value.available !== false))
-const dialogTitle = computed(() => (props.pipeline ? `补全配置 - ${props.pipeline.name}` : '补全流水线配置'))
+const isExistingConfig = computed(() => configStatus.value?.status === 'PRESENT')
+const dialogActionText = computed(() => (isExistingConfig.value ? '修改配置' : '补全配置'))
+const dialogTitle = computed(() => (props.pipeline ? `${dialogActionText.value} - ${props.pipeline.name}` : `${dialogActionText.value}流水线配置`))
 const dialogSubtitle = computed(() => (props.pipeline
   ? `${props.pipeline.projectName} / ${props.pipeline.gitlabProjectPath || props.pipeline.woodpeckerRepoFullName || '-'} · ${completionStep.value === 'template' ? '步骤 1：选择模板' : '步骤 2：配置与预览'}`
   : '选择模板生成 Woodpecker YAML，并通过 Merge Request 提交到目标分支。'))
@@ -427,7 +429,7 @@ async function handleCompleteConfig() {
       manualEdit: configEditMode.value === 'manual',
       content: configEditMode.value === 'manual' ? draftContent.value : undefined
     })
-    ElMessage.success('流水线配置 MR 已创建')
+    ElMessage.success(isExistingConfig.value ? '流水线配置更新 MR 已创建' : '流水线配置 MR 已创建')
     configStatus.value = await getAiClubPipelineConfigStatus(props.pipeline.id)
     emit('completed')
   } catch (error: any) {
