@@ -890,7 +890,7 @@ class CicdManagementServiceTests {
                 eq("private-key"),
                 anyString(),
                 eq(List.of("push", "manual", "tag")),
-                eq(List.of("alpine", "alpine:3.20"))
+                eq(List.of("alpine"))
         );
 
         ArgumentCaptor<List<GitlabApiService.GitlabCommitAction>> actionsCaptor = ArgumentCaptor.forClass((Class) List.class);

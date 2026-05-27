@@ -81,7 +81,7 @@ class WoodpeckerApiServiceTests {
             } else {
                 bodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
                 byte[] response = """
-                        {"id":13,"repo_id":77,"name":"AI_CLUB_PIPELINE_1_SSH_PRIVATE_KEY","value":"","events":["push","manual"],"images":["alpine","alpine:3.20"]}
+                        {"id":13,"repo_id":77,"name":"AI_CLUB_PIPELINE_1_SSH_PRIVATE_KEY","value":"","events":["push","manual"],"images":["alpine"]}
                         """.getBytes(StandardCharsets.UTF_8);
                 exchange.sendResponseHeaders(200, response.length);
                 exchange.getResponseBody().write(response);
@@ -101,7 +101,7 @@ class WoodpeckerApiServiceTests {
                     "private-key",
                     "note",
                     List.of("push", "manual"),
-                    List.of("alpine", "alpine:3.20")
+                    List.of("alpine")
             );
 
             assertThat(requests).containsExactly(
@@ -111,7 +111,7 @@ class WoodpeckerApiServiceTests {
             JsonNode payload = objectMapper.readTree(bodies.get(0));
             assertThat(payload.path("name").asText()).isEqualTo("AI_CLUB_PIPELINE_1_SSH_PRIVATE_KEY");
             assertThat(payload.path("value").asText()).isEqualTo("private-key");
-            assertThat(readTextArray(payload.path("images"))).containsExactly("alpine", "alpine:3.20");
+            assertThat(readTextArray(payload.path("images"))).containsExactly("alpine");
             assertThat(secret.events()).containsExactly("push", "manual");
         } finally {
             server.stop(0);

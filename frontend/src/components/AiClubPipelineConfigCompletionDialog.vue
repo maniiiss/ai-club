@@ -810,6 +810,13 @@ function configParameterShouldSpanMedium(param: AiClubPipelineConfigTemplatePara
 
 .pipeline-template-select-group :deep(.el-radio-button__inner) {
   width: 100%;
+  min-height: 30px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.2;
+  font-size: 12px;
 }
 
 .pipeline-config-preview-toolbar {

@@ -62,6 +62,7 @@ public class AiClubPipelineConfigTemplateService {
     private static final String PARAM_SERVER_DEPLOY_SOURCE_PATH = "serverDeploySourcePath";
     private static final String PARAM_SERVER_DEPLOY_REMOTE_PATH = "serverDeployRemotePath";
     private static final String PARAM_SERVER_DEPLOY_COMMANDS = "serverDeployCommands";
+    private static final List<String> ALPINE_SECRET_IMAGES = List.of("alpine");
 
     private final List<TemplateDefinition> templates = List.of(
             new TemplateDefinition(
@@ -342,7 +343,7 @@ public class AiClubPipelineConfigTemplateService {
                         ? "AI Club Pipeline JumpServer 远程部署私钥。"
                         : "AI Club Pipeline SSH 远程部署私钥。",
                 List.of("push", "manual"),
-                List.of("alpine", "alpine:3.20"),
+                ALPINE_SECRET_IMAGES,
                 requireValues,
                 CONNECTION_JUMPSERVER.equals(connectionType) ? "JumpServer 私钥不能为空" : "SSH 私钥不能为空"
         );
@@ -364,7 +365,7 @@ public class AiClubPipelineConfigTemplateService {
                         ? "AI Club Pipeline 后置 JumpServer 部署私钥。"
                         : "AI Club Pipeline 后置服务器部署私钥。",
                 List.of("push", "manual", "tag"),
-                List.of("alpine", "alpine:3.20"),
+                ALPINE_SECRET_IMAGES,
                 requireValues,
                 CONNECTION_JUMPSERVER.equals(connectionType) ? "部署 JumpServer 私钥不能为空" : "部署 SSH 私钥不能为空"
         );
