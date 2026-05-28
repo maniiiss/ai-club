@@ -190,6 +190,18 @@
                 <el-descriptions-item label="Woodpecker 仓库">{{ aiPipelineDetail.woodpeckerRepoFullName || '-' }}</el-descriptions-item>
                 <el-descriptions-item label="配置状态">{{ formatAiClubPipelineConfigStatus(configStatus?.status) }}</el-descriptions-item>
                 <el-descriptions-item label="最近运行号">#{{ aiPipelineDetail.lastRunNumber || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="固定触发变量" :span="2">
+                  <template v-if="Object.keys(aiPipelineDetail.triggerVariables || {}).length">
+                    <div class="pipeline-detail-trigger-variables">
+                      <code
+                        v-for="(value, key) in aiPipelineDetail.triggerVariables"
+                        :key="key"
+                        class="pipeline-detail-trigger-variable-chip"
+                      >{{ key }}={{ value }}</code>
+                    </div>
+                  </template>
+                  <span v-else>-</span>
+                </el-descriptions-item>
                 <el-descriptions-item label="运行链接" :span="2">
                   <el-link v-if="aiPipelineDetail.lastRunUrl" :href="aiPipelineDetail.lastRunUrl" target="_blank" type="primary">
                     {{ aiPipelineDetail.lastRunUrl }}
@@ -219,6 +231,109 @@
             </el-descriptions>
           </section>
         </el-tab-pane>
+
+        <el-tab-pane v-if="isAiEntry" label="自动化" name="automation">
+          <section class="pipeline-detail-panel">
+            <div class="pipeline-detail-panel-head">
+              <div>
+                <h2>Woodpecker Cron</h2>
+                <p>在平台内维护仓库级 cron，并同步到当前 AI Club Pipeline 关联的 Woodpecker 仓库。</p>
+              </div>
+              <el-button v-if="canManage" type="primary" @click="openCreateCronDialog">新增 Cron</el-button>
+            </div>
+
+            <el-table v-if="cronList.length" :data="cronList" style="width: 100%">
+              <el-table-column prop="name" label="名称" min-width="160" />
+              <el-table-column prop="branch" label="分支" width="140">
+                <template #default="{ row }">{{ row.branch || detailEntry?.defaultBranch || '-' }}</template>
+              </el-table-column>
+              <el-table-column prop="cronExpression" label="Cron 表达式" min-width="180" />
+              <el-table-column label="状态" width="100">
+                <template #default="{ row }">
+                  <el-tag :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '启用' : '停用' }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="nextRunAt" label="下一次执行" width="180">
+                <template #default="{ row }">{{ row.nextRunAt || '-' }}</template>
+              </el-table-column>
+              <el-table-column prop="lastSyncedAt" label="最近同步" width="180">
+                <template #default="{ row }">{{ row.lastSyncedAt || '-' }}</template>
+              </el-table-column>
+              <el-table-column v-if="canManage" label="操作" width="170" fixed="right">
+                <template #default="{ row }">
+                  <el-button link type="primary" @click="openEditCronDialog(row)">编辑</el-button>
+                  <el-button link type="danger" @click="handleDeleteCron(row)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <el-empty v-else description="当前流水线还没有配置 Cron" />
+            <el-alert type="info" show-icon :closable="false" class="pipeline-detail-automation-alert">
+              <template #title>Woodpecker 需要使用带秒的 Cron 语法，并确保 `.woodpecker.yml` 对应 workflow 支持 `event: cron`。</template>
+            </el-alert>
+          </section>
+
+          <section class="pipeline-detail-panel">
+            <div class="pipeline-detail-panel-head">
+              <div>
+                <h2>公开 Trigger Webhook</h2>
+                <p>供外部系统固定配置触发当前流水线，只会按平台默认分支执行，不允许覆盖变量。</p>
+              </div>
+            </div>
+
+            <el-form label-position="top" class="platform-form-layout pipeline-automation-form">
+              <el-form-item label="启用状态">
+                <el-switch v-model="triggerWebhookForm.enabled" :disabled="!canManage" />
+              </el-form-item>
+              <el-form-item label="触发地址">
+                <el-input :model-value="triggerWebhookDetail?.triggerUrl || ''" readonly placeholder="保存后生成公开触发地址">
+                  <template #append>
+                    <el-button :disabled="!triggerWebhookDetail?.triggerUrl" @click="handleCopyText(triggerWebhookDetail?.triggerUrl || '')">复制</el-button>
+                  </template>
+                </el-input>
+              </el-form-item>
+              <el-form-item label="当前 Token">
+                <el-input :model-value="triggerWebhookDetail?.maskedToken || ''" readonly placeholder="保存后生成 token" />
+              </el-form-item>
+              <div class="pipeline-automation-actions">
+                <el-button v-if="canManage" type="primary" :loading="triggerWebhookSaving" @click="saveTriggerWebhook(false)">保存配置</el-button>
+                <el-button v-if="canManage" :loading="triggerWebhookSaving" @click="saveTriggerWebhook(true)">重新生成 Token</el-button>
+                <span class="pipeline-automation-meta">最近更新：{{ triggerWebhookDetail?.updatedAt || '-' }}</span>
+              </div>
+            </el-form>
+          </section>
+
+          <section class="pipeline-detail-panel">
+            <div class="pipeline-detail-panel-head">
+              <div>
+                <h2>结果 Callback Webhook</h2>
+                <p>按选定状态向外部 URL 推送运行结果，适合企业微信机器人、中转服务或自建编排系统。</p>
+              </div>
+            </div>
+
+            <el-form label-position="top" class="platform-form-layout pipeline-automation-form">
+              <el-form-item label="启用状态">
+                <el-switch v-model="callbackWebhookForm.enabled" :disabled="!canManage" />
+              </el-form-item>
+              <el-form-item label="回调地址">
+                <el-input v-model="callbackWebhookForm.callbackUrl" :readonly="!canManage" placeholder="请输入 http 或 https 地址" />
+                <div class="form-tip">如接收方需要 token，可直接拼在 URL 上，平台不会额外注入鉴权头。</div>
+              </el-form-item>
+              <el-form-item label="订阅状态">
+                <el-checkbox-group v-model="callbackWebhookForm.subscribedStatuses" :disabled="!canManage">
+                  <el-checkbox v-for="status in callbackStatusOptions" :key="status" :label="status">{{ status }}</el-checkbox>
+                </el-checkbox-group>
+              </el-form-item>
+              <div class="pipeline-automation-actions">
+                <el-button v-if="canManage" type="primary" :loading="callbackWebhookSaving" @click="saveCallbackWebhook">保存配置</el-button>
+                <span class="pipeline-automation-meta">最近投递：{{ callbackWebhookDetail?.lastDeliveryAt || '-' }}</span>
+                <span class="pipeline-automation-meta">最近结果：{{ callbackWebhookDetail?.lastDeliveryStatus || '-' }}</span>
+              </div>
+              <div v-if="callbackWebhookDetail?.callbackUrlMasked" class="pipeline-automation-preview">
+                当前目标：{{ callbackWebhookDetail.callbackUrlMasked }}
+              </div>
+            </el-form>
+          </section>
+        </el-tab-pane>
       </el-tabs>
     </section>
 
@@ -241,11 +356,39 @@
       :pipeline="aiPipelineDetail"
       @completed="handleConfigCompleted"
     />
+    <el-dialog v-model="cronDialogVisible" :title="cronDialogTitle" width="560px" class="platform-form-dialog" align-center>
+      <el-form label-position="top" class="platform-form-layout pipeline-automation-form">
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">Cron 配置</div>
+            <div class="platform-form-section-subtitle">使用带秒的 Cron 表达式，并按需指定分支。</div>
+          </div>
+          <el-form-item label="名称">
+            <el-input v-model="cronForm.name" placeholder="例如：工作日夜间构建" />
+          </el-form-item>
+          <el-form-item label="分支">
+            <el-input v-model="cronForm.branch" placeholder="留空则回退流水线默认分支" />
+          </el-form-item>
+          <el-form-item label="Cron 表达式">
+            <el-input v-model="cronForm.cronExpression" placeholder="例如：0 0 2 * * 1-5" />
+          </el-form-item>
+          <el-form-item label="启用">
+            <el-switch v-model="cronForm.enabled" />
+          </el-form-item>
+        </section>
+      </el-form>
+      <template #footer>
+        <div class="platform-dialog-footer">
+          <el-button @click="cronDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="cronSaving" @click="saveCron">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Connection, Delete, EditPen, Plus, VideoPlay } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -253,22 +396,33 @@ import AiClubPipelineConfigCompletionDialog from '@/components/AiClubPipelineCon
 import AiClubPipelineFormDialog from '@/components/AiClubPipelineFormDialog.vue'
 import {
   deleteAiClubPipeline,
+  deleteAiClubPipelineCronJob,
   deletePipelineBinding,
+  getAiClubPipelineCallbackWebhook,
   getAiClubPipeline,
   getAiClubPipelineConfigStatus,
   getAiClubPipelineRunLog,
+  getAiClubPipelineTriggerWebhook,
   getPipelineBinding,
   getPipelineBuildLog,
+  listAiClubPipelineCronJobs,
   listAiClubPipelineRuns,
   listPipelineBuilds,
+  createAiClubPipelineCronJob,
   syncAiClubPipelineRepository,
   triggerAiClubPipeline,
-  triggerPipelineBuild
+  triggerPipelineBuild,
+  updateAiClubPipelineCallbackWebhook,
+  updateAiClubPipelineCronJob,
+  updateAiClubPipelineTriggerWebhook
 } from '@/api/cicd'
 import { useAuthStore } from '@/stores/auth'
 import type {
+  AiClubPipelineCallbackWebhookItem,
   AiClubPipelineConfigStatusItem,
+  AiClubPipelineCronItem,
   AiClubPipelineItem,
+  AiClubPipelineTriggerWebhookItem,
   JenkinsBuildLogDetailItem,
   JenkinsBuildItem,
   ProjectPipelineBindingItem
@@ -314,6 +468,19 @@ interface LoadRunLogOptions {
   silentError?: boolean
 }
 
+interface CronFormState {
+  name: string
+  branch: string
+  cronExpression: string
+  enabled: boolean
+}
+
+interface CallbackWebhookFormState {
+  enabled: boolean
+  callbackUrl: string
+  subscribedStatuses: string[]
+}
+
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
@@ -329,13 +496,37 @@ const runHistoryLimit = ref(20)
 const aiPipelineDetail = ref<AiClubPipelineItem | null>(null)
 const jenkinsBindingDetail = ref<ProjectPipelineBindingItem | null>(null)
 const configStatus = ref<AiClubPipelineConfigStatusItem | null>(null)
+const cronList = ref<AiClubPipelineCronItem[]>([])
+const triggerWebhookDetail = ref<AiClubPipelineTriggerWebhookItem | null>(null)
+const callbackWebhookDetail = ref<AiClubPipelineCallbackWebhookItem | null>(null)
 const runList = ref<RunHistoryItem[]>([])
 const selectedRunNumber = ref<number | null>(null)
 const selectedRunLog = ref<RunLogItem | null>(null)
 const editDialogVisible = ref(false)
 const configDialogVisible = ref(false)
+const cronDialogVisible = ref(false)
 const isLogTailing = ref(false)
 const logScrollbarRef = ref<{ setScrollTop: (value: number) => void } | null>(null)
+const cronEditingId = ref<number | null>(null)
+const cronSaving = ref(false)
+const triggerWebhookSaving = ref(false)
+const callbackWebhookSaving = ref(false)
+
+const callbackStatusOptions = ['QUEUED', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELED']
+const cronForm = reactive<CronFormState>({
+  name: '',
+  branch: '',
+  cronExpression: '',
+  enabled: true
+})
+const triggerWebhookForm = reactive({
+  enabled: false
+})
+const callbackWebhookForm = reactive<CallbackWebhookFormState>({
+  enabled: false,
+  callbackUrl: '',
+  subscribedStatuses: ['SUCCESS', 'FAILED', 'CANCELED']
+})
 
 const LOG_TAIL_INTERVAL_MS = 5000
 const ACTIVE_RUN_STATUSES = new Set(['CREATED', 'PENDING', 'QUEUED', 'RUNNING', 'WAITING'])
@@ -392,6 +583,7 @@ const detailEntry = computed(() => {
   }
   return null
 })
+const cronDialogTitle = computed(() => (cronEditingId.value ? '编辑 Cron' : '新增 Cron'))
 
 const selectedRunSummary = computed(() => runList.value.find((item) => item.number === selectedRunNumber.value) || null)
 const selectedRunSourceLabel = computed(() => (isAiEntry.value ? '仓库' : 'Jenkins 服务'))
@@ -449,14 +641,21 @@ async function loadDetail(preferredRunNumber?: number | null) {
   loading.value = true
   try {
     if (isAiEntry.value) {
-      const [detail, status, runs] = await Promise.all([
+      const [detail, status, runs, cronJobs, triggerWebhook, callbackWebhook] = await Promise.all([
         getAiClubPipeline(entryId.value),
         getAiClubPipelineConfigStatus(entryId.value),
-        listAiClubPipelineRuns(entryId.value, runHistoryLimit.value)
+        listAiClubPipelineRuns(entryId.value, runHistoryLimit.value),
+        listAiClubPipelineCronJobs(entryId.value),
+        getAiClubPipelineTriggerWebhook(entryId.value),
+        getAiClubPipelineCallbackWebhook(entryId.value)
       ])
       aiPipelineDetail.value = detail
       jenkinsBindingDetail.value = null
       configStatus.value = status
+      cronList.value = cronJobs
+      triggerWebhookDetail.value = triggerWebhook
+      callbackWebhookDetail.value = callbackWebhook
+      syncAutomationForms()
       runList.value = runs.map((run) => ({
         number: run.number,
         status: run.status,
@@ -476,6 +675,10 @@ async function loadDetail(preferredRunNumber?: number | null) {
       aiPipelineDetail.value = null
       jenkinsBindingDetail.value = detail
       configStatus.value = null
+      cronList.value = []
+      triggerWebhookDetail.value = null
+      callbackWebhookDetail.value = null
+      resetAutomationForms()
       runList.value = runs.map((run) => ({
         number: run.number,
         status: run.building ? 'RUNNING' : run.result,
@@ -499,6 +702,9 @@ async function loadDetail(preferredRunNumber?: number | null) {
     aiPipelineDetail.value = null
     jenkinsBindingDetail.value = null
     configStatus.value = null
+    cronList.value = []
+    triggerWebhookDetail.value = null
+    callbackWebhookDetail.value = null
     runList.value = []
     selectedRunNumber.value = null
     selectedRunLog.value = null
@@ -691,6 +897,7 @@ async function handleSync() {
   try {
     aiPipelineDetail.value = await syncAiClubPipelineRepository(entryId.value)
     configStatus.value = await getAiClubPipelineConfigStatus(entryId.value)
+    await loadAutomationSettings()
     ElMessage.success('Woodpecker 仓库已同步')
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '同步仓库失败')
@@ -725,6 +932,168 @@ async function handleDetailSaved(payload: { entryType: EntryType; entry: AiClubP
 
 async function handleConfigCompleted() {
   await loadDetail(selectedRunNumber.value)
+}
+
+function syncAutomationForms() {
+  triggerWebhookForm.enabled = Boolean(triggerWebhookDetail.value?.enabled)
+  callbackWebhookForm.enabled = Boolean(callbackWebhookDetail.value?.enabled)
+  callbackWebhookForm.subscribedStatuses = callbackWebhookDetail.value?.subscribedStatuses?.length
+    ? [...callbackWebhookDetail.value.subscribedStatuses]
+    : ['SUCCESS', 'FAILED', 'CANCELED']
+  if (!callbackWebhookDetail.value?.enabled) {
+    callbackWebhookForm.callbackUrl = ''
+  }
+}
+
+function resetAutomationForms() {
+  triggerWebhookForm.enabled = false
+  callbackWebhookForm.enabled = false
+  callbackWebhookForm.callbackUrl = ''
+  callbackWebhookForm.subscribedStatuses = ['SUCCESS', 'FAILED', 'CANCELED']
+}
+
+async function loadAutomationSettings() {
+  if (!isAiEntry.value) return
+  const [cronJobs, triggerWebhook, callbackWebhook] = await Promise.all([
+    listAiClubPipelineCronJobs(entryId.value),
+    getAiClubPipelineTriggerWebhook(entryId.value),
+    getAiClubPipelineCallbackWebhook(entryId.value)
+  ])
+  cronList.value = cronJobs
+  triggerWebhookDetail.value = triggerWebhook
+  callbackWebhookDetail.value = callbackWebhook
+  syncAutomationForms()
+}
+
+function openCreateCronDialog() {
+  cronEditingId.value = null
+  cronForm.name = ''
+  cronForm.branch = aiPipelineDetail.value?.defaultBranch || ''
+  cronForm.cronExpression = ''
+  cronForm.enabled = true
+  cronDialogVisible.value = true
+}
+
+function openEditCronDialog(row: AiClubPipelineCronItem) {
+  cronEditingId.value = row.id
+  cronForm.name = row.name
+  cronForm.branch = row.branch || ''
+  cronForm.cronExpression = row.cronExpression
+  cronForm.enabled = row.enabled
+  cronDialogVisible.value = true
+}
+
+async function saveCron() {
+  if (!isAiEntry.value) return
+  if (!cronForm.name.trim()) {
+    ElMessage.warning('请输入 Cron 名称')
+    return
+  }
+  if (!cronForm.cronExpression.trim()) {
+    ElMessage.warning('请输入 Cron 表达式')
+    return
+  }
+  cronSaving.value = true
+  try {
+    const payload = {
+      name: cronForm.name.trim(),
+      branch: cronForm.branch.trim(),
+      cronExpression: cronForm.cronExpression.trim(),
+      enabled: cronForm.enabled
+    }
+    if (cronEditingId.value) {
+      await updateAiClubPipelineCronJob(entryId.value, cronEditingId.value, payload)
+      ElMessage.success('Cron 已更新')
+    } else {
+      await createAiClubPipelineCronJob(entryId.value, payload)
+      ElMessage.success('Cron 已创建')
+    }
+    cronDialogVisible.value = false
+    await loadAutomationSettings()
+    await loadDetail(selectedRunNumber.value)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '保存 Cron 失败')
+  } finally {
+    cronSaving.value = false
+  }
+}
+
+async function handleDeleteCron(row: AiClubPipelineCronItem) {
+  if (!isAiEntry.value) return
+  try {
+    await ElMessageBox.confirm(`确认删除 Cron《${row.name}》吗？`, '提示', { type: 'warning' })
+    await deleteAiClubPipelineCronJob(entryId.value, row.id)
+    ElMessage.success('Cron 已删除')
+    await loadAutomationSettings()
+    await loadDetail(selectedRunNumber.value)
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || '删除 Cron 失败')
+    }
+  }
+}
+
+async function saveTriggerWebhook(regenerateToken: boolean) {
+  if (!isAiEntry.value) return
+  triggerWebhookSaving.value = true
+  try {
+    triggerWebhookDetail.value = await updateAiClubPipelineTriggerWebhook(entryId.value, {
+      enabled: triggerWebhookForm.enabled,
+      regenerateToken
+    })
+    syncAutomationForms()
+    await loadDetail(selectedRunNumber.value)
+    ElMessage.success(regenerateToken ? '触发 Webhook Token 已重新生成' : '触发 Webhook 配置已保存')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '保存触发 Webhook 失败')
+  } finally {
+    triggerWebhookSaving.value = false
+  }
+}
+
+async function saveCallbackWebhook() {
+  if (!isAiEntry.value) return
+  const shouldValidateCallbackUrl = callbackWebhookForm.enabled && (
+    callbackWebhookForm.callbackUrl.trim().length > 0 || !callbackWebhookDetail.value?.callbackUrlMasked
+  )
+  if (shouldValidateCallbackUrl && !isValidHttpUrl(callbackWebhookForm.callbackUrl)) {
+    ElMessage.warning('请输入合法的 http 或 https 回调地址')
+    return
+  }
+  callbackWebhookSaving.value = true
+  try {
+    callbackWebhookDetail.value = await updateAiClubPipelineCallbackWebhook(entryId.value, {
+      enabled: callbackWebhookForm.enabled,
+      callbackUrl: callbackWebhookForm.callbackUrl.trim(),
+      subscribedStatuses: callbackWebhookForm.subscribedStatuses
+    })
+    syncAutomationForms()
+    await loadDetail(selectedRunNumber.value)
+    ElMessage.success('回调 Webhook 配置已保存')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '保存回调 Webhook 失败')
+  } finally {
+    callbackWebhookSaving.value = false
+  }
+}
+
+async function handleCopyText(value: string) {
+  if (!value) return
+  try {
+    await navigator.clipboard.writeText(value)
+    ElMessage.success('已复制到剪贴板')
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  }
+}
+
+function isValidHttpUrl(value: string) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 </script>
 
@@ -872,6 +1241,49 @@ async function handleConfigCompleted() {
   background: #111827;
   border-radius: 8px;
   white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pipeline-detail-trigger-variables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pipeline-detail-trigger-variable-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  color: var(--app-primary);
+  background: rgba(37, 99, 235, 0.08);
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.pipeline-detail-automation-alert {
+  margin-top: 4px;
+}
+
+.pipeline-automation-form {
+  gap: 12px;
+}
+
+.pipeline-automation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.pipeline-automation-meta {
+  color: var(--app-muted);
+  font-size: 13px;
+}
+
+.pipeline-automation-preview {
+  color: var(--app-text);
+  font-size: 13px;
+  line-height: 1.6;
   word-break: break-word;
 }
 

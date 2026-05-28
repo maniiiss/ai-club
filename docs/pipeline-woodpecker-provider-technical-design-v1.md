@@ -45,6 +45,7 @@ flowchart LR
 - `provider_code`：首版固定 `WOODPECKER`，保留扩展位。
 - `default_branch`：默认触发分支；未填时回退 GitLab 绑定默认分支。
 - `config_path`：Woodpecker YAML 配置路径，默认 `.woodpecker.yml`。
+- `trigger_variables_json`：条目级固定触发变量 JSON，用于同仓库同 YAML 通过 `DEPLOY_TARGET=api/job` 这类变量区分不同部署入口。
 - `woodpecker_repo_id / woodpecker_repo_full_name / woodpecker_repo_url`：平台同步仓库后的远端快照。
 - `last_run_status / last_run_message / last_run_number / last_run_url / last_triggered_at`：最近一次由平台触发或同步后的摘要。
 
@@ -85,6 +86,8 @@ Jenkins 原接口继续保留在 `/jenkins-servers` 与 `/pipeline-bindings` 下
 - 同步仓库失败不创建伪数据，保留用户可在页面点击“同步仓库”重试。
 - 触发前会先通过 GitLab API 校验目标分支存在配置文件路径（默认 `.woodpecker.yml`）；仓库同步成功只代表 Woodpecker repo 已激活，不代表业务流水线已经配置。
 - 触发失败会写入最近运行失败摘要并抛出异常，方便首页和流水线中心展示。
+
+平台触发 Woodpecker 时，除固定注入 `AI_CLUB_PIPELINE_ID / AI_CLUB_PROJECT_ID / AI_CLUB_TRIGGER_SOURCE` 外，还会把 AI Club Pipeline 条目级保存的固定触发变量一起传给 Woodpecker。变量仅支持普通明文 key/value，不支持 secret；变量名不能覆盖平台保留变量，也不能以 `AI_CLUB_` 开头。推荐用于同一份 `.woodpecker.yml` 里通过 `DEPLOY_TARGET` 等变量分发不同部署目标。
 
 ## 5.1 配置文件模板与补全
 

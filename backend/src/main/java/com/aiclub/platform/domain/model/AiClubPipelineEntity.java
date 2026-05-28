@@ -66,6 +66,12 @@ public class AiClubPipelineEntity {
     private String configPath = ".woodpecker.yml";
 
     /**
+     * 固定触发变量 JSON。用于在平台触发 Woodpecker 时，为同一份 YAML 传入不同的业务参数。
+     */
+    @Column(name = "trigger_variables_json", columnDefinition = "TEXT")
+    private String triggerVariablesJson;
+
+    /**
      * Woodpecker 仓库 ID，平台触发和读取运行历史时使用。
      */
     @Column(name = "woodpecker_repo_id")
@@ -197,6 +203,14 @@ public class AiClubPipelineEntity {
 
     public void setConfigPath(String configPath) {
         this.configPath = configPath;
+    }
+
+    public String getTriggerVariablesJson() {
+        return triggerVariablesJson;
+    }
+
+    public void setTriggerVariablesJson(String triggerVariablesJson) {
+        this.triggerVariablesJson = triggerVariablesJson;
     }
 
     public Long getWoodpeckerRepoId() {

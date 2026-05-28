@@ -22,4 +22,9 @@ public interface AiClubPipelineRepository extends JpaRepository<AiClubPipelineEn
      * 更新流水线时排除当前记录，再校验同项目重名。
      */
     boolean existsByProject_IdAndNameAndIdNot(Long projectId, String name, Long id);
+
+    /**
+     * 轮询同步时只扫描已经启用且已绑定 Woodpecker 仓库的流水线。
+     */
+    List<AiClubPipelineEntity> findByEnabledTrueAndWoodpeckerRepoIdIsNotNullOrderByIdAsc();
 }

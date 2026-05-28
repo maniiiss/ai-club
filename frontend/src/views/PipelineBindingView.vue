@@ -115,6 +115,18 @@
                   <span class="management-list-empty">{{ row.secondaryValue || '-' }}</span>
                 </div>
               </div>
+
+              <div
+                v-if="row.entryType === 'AI_CLUB' && (row.cronCount > 0 || row.triggerWebhookEnabled || row.callbackWebhookEnabled)"
+                class="pipeline-card-info-item pipeline-card-info-item-full"
+              >
+                <span class="pipeline-card-info-label">自动化</span>
+                <div class="pipeline-card-automation-tags">
+                  <span v-if="row.cronCount > 0" class="management-list-pill neutral">Cron x{{ row.cronCount }}</span>
+                  <span v-if="row.triggerWebhookEnabled" class="management-list-pill warning">Trigger Webhook</span>
+                  <span v-if="row.callbackWebhookEnabled" class="management-list-pill success">Callback Webhook</span>
+                </div>
+              </div>
             </div>
 
             <div v-if="canView" class="pipeline-card-actions-shell">
@@ -503,6 +515,13 @@ onMounted(async () => {
 
 .pipeline-config-cell .management-list-empty {
   min-width: 0;
+}
+
+.pipeline-card-automation-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 @media (max-width: 980px) {

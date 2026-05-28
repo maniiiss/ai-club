@@ -1281,6 +1281,9 @@ export interface PipelineCenterEntryItem {
   secondaryLabel: string | null
   secondaryValue: string | null
   configStatus: string | null
+  cronCount: number
+  triggerWebhookEnabled: boolean
+  callbackWebhookEnabled: boolean
 }
 
 export interface AiClubPipelineItem {
@@ -1295,6 +1298,7 @@ export interface AiClubPipelineItem {
   providerCode: string
   defaultBranch: string | null
   configPath: string
+  triggerVariables: Record<string, string>
   woodpeckerRepoId: number | null
   woodpeckerRepoFullName: string | null
   woodpeckerRepoUrl: string | null
@@ -1304,6 +1308,10 @@ export interface AiClubPipelineItem {
   lastRunNumber: number | null
   lastRunUrl: string | null
   lastTriggeredAt: string | null
+  cronCount: number
+  triggerWebhookEnabled: boolean
+  callbackWebhookEnabled: boolean
+  callbackSubscribedStatuses: string[]
 }
 
 export interface AiClubPipelineTriggerResult {
@@ -1396,6 +1404,33 @@ export interface AiClubPipelineRunItem {
   finishedAt: string | null
   durationMillis: number | null
   durationText: string
+}
+
+export interface AiClubPipelineCronItem {
+  id: number
+  remoteCronId: number | null
+  name: string
+  branch: string | null
+  cronExpression: string
+  enabled: boolean
+  nextRunAt: string | null
+  lastSyncedAt: string | null
+}
+
+export interface AiClubPipelineTriggerWebhookItem {
+  enabled: boolean
+  triggerUrl: string | null
+  maskedToken: string | null
+  updatedAt: string | null
+}
+
+export interface AiClubPipelineCallbackWebhookItem {
+  enabled: boolean
+  callbackUrlMasked: string | null
+  subscribedStatuses: string[]
+  updatedAt: string | null
+  lastDeliveryAt: string | null
+  lastDeliveryStatus: string | null
 }
 
 export interface AiClubPipelineRunLogDetailItem {

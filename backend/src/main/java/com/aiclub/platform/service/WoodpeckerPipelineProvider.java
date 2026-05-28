@@ -17,6 +17,9 @@ import java.util.Map;
 public class WoodpeckerPipelineProvider {
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    public static final String VARIABLE_PIPELINE_ID = "AI_CLUB_PIPELINE_ID";
+    public static final String VARIABLE_PROJECT_ID = "AI_CLUB_PROJECT_ID";
+    public static final String VARIABLE_TRIGGER_SOURCE = "AI_CLUB_TRIGGER_SOURCE";
     /**
      * 健康检查只暴露平台执行底座状态，不再把 Woodpecker 的 forge 登录配置暴露给业务用户。
      */
@@ -99,7 +102,8 @@ public class WoodpeckerPipelineProvider {
 
     public WoodpeckerApiService.WoodpeckerPipeline triggerPipeline(AiClubPipelineEntity pipeline,
                                                                   String branchOverride,
-                                                                  String sourceDescription) {
+                                                                  String sourceDescription,
+                                                                  Map<String, String> customVariables) {
         requireConfigured();
         if (pipeline == null) {
             throw new IllegalArgumentException("流水线不存在");
@@ -112,9 +116,12 @@ public class WoodpeckerPipelineProvider {
         }
         String branch = resolveTriggerBranch(pipeline, branchOverride);
         Map<String, String> variables = new LinkedHashMap<>();
-        variables.put("AI_CLUB_PIPELINE_ID", String.valueOf(pipeline.getId()));
-        variables.put("AI_CLUB_PROJECT_ID", String.valueOf(pipeline.getProject().getId()));
-        variables.put("AI_CLUB_TRIGGER_SOURCE", hasText(sourceDescription) ? sourceDescription.trim() : "AI Club");
+        variables.put(VARIABLE_PIPELINE_ID, String.valueOf(pipeline.getId()));
+        variables.put(VARIABLE_PROJECT_ID, String.valueOf(pipeline.getProject().getId()));
+        variables.put(VARIABLE_TRIGGER_SOURCE, hasText(sourceDescription) ? sourceDescription.trim() : "AI Club");
+        if (customVariables != null && !customVariables.isEmpty()) {
+            variables.putAll(customVariables);
+        }
         return woodpeckerApiService.triggerPipeline(pipeline.getWoodpeckerRepoId(), branch, variables);
     }
 

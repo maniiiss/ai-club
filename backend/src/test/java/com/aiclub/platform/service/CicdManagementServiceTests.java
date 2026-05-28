@@ -276,10 +276,12 @@ class CicdManagementServiceTests {
                 "后端发布",
                 "main",
                 ".woodpecker.yml",
+                Map.of("DEPLOY_TARGET", "api"),
                 true
         ));
 
         assertThat(summary.providerCode()).isEqualTo("WOODPECKER");
+        assertThat(summary.triggerVariables()).containsEntry("DEPLOY_TARGET", "api");
         assertThat(summary.woodpeckerRepoId()).isEqualTo(77L);
         assertThat(summary.woodpeckerRepoFullName()).isEqualTo("group/repo");
         assertThat(aiClubPipelineRepository.findById(summary.id()).orElseThrow().getWoodpeckerRepoId()).isEqualTo(77L);
@@ -324,6 +326,27 @@ class CicdManagementServiceTests {
         AiClubPipelineEntity reloaded = aiClubPipelineRepository.findById(pipeline.getId()).orElseThrow();
         assertThat(reloaded.getLastRunStatus()).isEqualTo("pending");
         assertThat(reloaded.getLastRunNumber()).isEqualTo(12);
+        ArgumentCaptor<Map<String, String>> variableCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(woodpeckerApiService).triggerPipeline(eq(77L), eq("main"), variableCaptor.capture());
+        assertThat(variableCaptor.getValue()).containsEntry("DEPLOY_TARGET", "api");
+    }
+
+    @Test
+    void shouldRejectReservedTriggerVariableName() {
+        ProjectEntity project = projectRepository.save(new ProjectEntity("Woodpecker 变量项目", "郑十一", "进行中", "验证固定触发变量校验"));
+        ProjectGitlabBindingEntity gitlabBinding = projectGitlabBindingRepository.save(createGitlabBinding(project));
+
+        assertThatThrownBy(() -> cicdManagementService.createAiClubPipeline(new AiClubPipelineRequest(
+                project.getId(),
+                gitlabBinding.getId(),
+                "非法变量流水线",
+                "main",
+                ".woodpecker.yml",
+                Map.of("AI_CLUB_PIPELINE_ID", "override"),
+                true
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("AI_CLUB_ 开头");
     }
 
     /**
@@ -1123,6 +1146,7 @@ class CicdManagementServiceTests {
         pipeline.setProviderCode(AiClubPipelineEntity.PROVIDER_WOODPECKER);
         pipeline.setDefaultBranch("main");
         pipeline.setConfigPath(".woodpecker.yml");
+        pipeline.setTriggerVariablesJson("{\"DEPLOY_TARGET\":\"api\"}");
         pipeline.setWoodpeckerRepoId(77L);
         pipeline.setWoodpeckerRepoFullName("group/repo");
         pipeline.setWoodpeckerRepoUrl("http://gitlab.example.com/group/repo");

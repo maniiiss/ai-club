@@ -4,10 +4,13 @@ import type {
   AiClubPipelineConfigEditContextItem,
   AiClubPipelineConfigPreviewResult,
   AiClubPipelineConfigStatusItem,
+  AiClubPipelineCallbackWebhookItem,
   AiClubPipelineConfigTemplateItem,
+  AiClubPipelineCronItem,
   AiClubPipelineItem,
   AiClubPipelineRunItem,
   AiClubPipelineRunLogDetailItem,
+  AiClubPipelineTriggerWebhookItem,
   AiClubPipelineTriggerResult,
   ApiResponse,
   JenkinsBuildItem,
@@ -60,6 +63,7 @@ export interface AiClubPipelinePayload {
   name: string
   defaultBranch: string
   configPath: string
+  triggerVariables?: Record<string, string>
   enabled: boolean
 }
 
@@ -69,6 +73,24 @@ export interface AiClubPipelineQuery {
   keyword?: string
   projectId?: number
   enabled?: boolean
+}
+
+export interface AiClubPipelineCronPayload {
+  name: string
+  branch: string
+  cronExpression: string
+  enabled: boolean
+}
+
+export interface AiClubPipelineTriggerWebhookPayload {
+  enabled: boolean
+  regenerateToken: boolean
+}
+
+export interface AiClubPipelineCallbackWebhookPayload {
+  enabled: boolean
+  callbackUrl: string
+  subscribedStatuses: string[]
 }
 
 export interface PipelineCenterEntryQuery {
@@ -191,6 +213,45 @@ export const listAiClubPipelineRuns = async (id: number, limit = 20) => {
 
 export const getAiClubPipelineRunLog = async (id: number, runNumber: number) => {
   const { data } = await http.get<ApiResponse<AiClubPipelineRunLogDetailItem>>(`/api/cicd/pipelines/${id}/runs/${runNumber}/log`)
+  return data.data
+}
+
+export const listAiClubPipelineCronJobs = async (id: number) => {
+  const { data } = await http.get<ApiResponse<AiClubPipelineCronItem[]>>(`/api/cicd/pipelines/${id}/cron-jobs`)
+  return data.data
+}
+
+export const createAiClubPipelineCronJob = async (id: number, payload: AiClubPipelineCronPayload) => {
+  const { data } = await http.post<ApiResponse<AiClubPipelineCronItem>>(`/api/cicd/pipelines/${id}/cron-jobs`, payload)
+  return data.data
+}
+
+export const updateAiClubPipelineCronJob = async (id: number, cronJobId: number, payload: AiClubPipelineCronPayload) => {
+  const { data } = await http.put<ApiResponse<AiClubPipelineCronItem>>(`/api/cicd/pipelines/${id}/cron-jobs/${cronJobId}`, payload)
+  return data.data
+}
+
+export const deleteAiClubPipelineCronJob = async (id: number, cronJobId: number) => {
+  await http.delete<ApiResponse<null>>(`/api/cicd/pipelines/${id}/cron-jobs/${cronJobId}`)
+}
+
+export const getAiClubPipelineTriggerWebhook = async (id: number) => {
+  const { data } = await http.get<ApiResponse<AiClubPipelineTriggerWebhookItem>>(`/api/cicd/pipelines/${id}/trigger-webhook`)
+  return data.data
+}
+
+export const updateAiClubPipelineTriggerWebhook = async (id: number, payload: AiClubPipelineTriggerWebhookPayload) => {
+  const { data } = await http.put<ApiResponse<AiClubPipelineTriggerWebhookItem>>(`/api/cicd/pipelines/${id}/trigger-webhook`, payload)
+  return data.data
+}
+
+export const getAiClubPipelineCallbackWebhook = async (id: number) => {
+  const { data } = await http.get<ApiResponse<AiClubPipelineCallbackWebhookItem>>(`/api/cicd/pipelines/${id}/callback-webhook`)
+  return data.data
+}
+
+export const updateAiClubPipelineCallbackWebhook = async (id: number, payload: AiClubPipelineCallbackWebhookPayload) => {
+  const { data } = await http.put<ApiResponse<AiClubPipelineCallbackWebhookItem>>(`/api/cicd/pipelines/${id}/callback-webhook`, payload)
   return data.data
 }
 

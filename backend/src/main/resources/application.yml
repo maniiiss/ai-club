@@ -84,6 +84,14 @@ platform:
     public-base-url: ${PLATFORM_WOODPECKER_PUBLIC_BASE_URL:http://localhost:18000}
     api-token: ${PLATFORM_WOODPECKER_API_TOKEN:}
     timeout-seconds: ${PLATFORM_WOODPECKER_TIMEOUT_SECONDS:20}
+  cicd:
+    public-base-url: ${PLATFORM_CICD_PUBLIC_BASE_URL:}
+    run-sync:
+      fixed-delay-ms: ${PLATFORM_CICD_RUN_SYNC_FIXED_DELAY_MS:30000}
+      fetch-limit: ${PLATFORM_CICD_RUN_SYNC_FETCH_LIMIT:10}
+    callback-delivery:
+      fixed-delay-ms: ${PLATFORM_CICD_CALLBACK_DELIVERY_FIXED_DELAY_MS:10000}
+      max-attempts: ${PLATFORM_CICD_CALLBACK_DELIVERY_MAX_ATTEMPTS:5}
   pr-review:
     oa-base-url: ${PLATFORM_PR_REVIEW_OA_BASE_URL:}
     default-dev-group-name: ${PLATFORM_PR_REVIEW_DEFAULT_DEV_GROUP_NAME:}

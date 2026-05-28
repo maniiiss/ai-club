@@ -125,11 +125,13 @@
                 </el-radio-button>
               </el-radio-group>
               <el-input
-                v-else-if="param.type === 'textarea'"
+                v-else-if="param.type === 'textarea' || configParameterUsesMultilineSecretInput(param)"
                 v-model="parameterValues[param.key]"
                 type="textarea"
                 :rows="configParameterTextareaRows(param)"
                 resize="vertical"
+                :input-style="configParameterInputStyle(param)"
+                :class="{ 'pipeline-config-secret-textarea': configParameterUsesMultilineSecretInput(param) }"
                 :placeholder="param.placeholder"
                 @change="handleConfigParameterChange(param)"
               />
@@ -137,7 +139,7 @@
                 v-else
                 v-model="parameterValues[param.key]"
                 :type="param.type === 'password' ? 'password' : 'text'"
-                :show-password="param.type === 'password'"
+                :show-password="param.type === 'password' && !param.secret"
                 :placeholder="param.placeholder"
                 @change="handleConfigParameterChange(param)"
               />
@@ -375,6 +377,9 @@ function resetConfigParameterValues() {
 function buildConfigParametersPayload() {
   const payload: Record<string, string> = {}
   selectedTemplateParameters.value.forEach((param) => {
+    if (!isConfigParameterVisible(param)) {
+      return
+    }
     payload[param.key] = parameterValues[param.key] ?? ''
   })
   return payload
@@ -483,10 +488,24 @@ async function handleCompleteConfig() {
 }
 
 function configParameterTextareaRows(param: AiClubPipelineConfigTemplateParameterItem) {
+  if (configParameterUsesMultilineSecretInput(param)) return 5
   if (param.secret) return 2
   if (/serverDeployCommands|sshCommands/i.test(param.key)) return 5
   if (/tags/i.test(param.key)) return 4
   return 3
+}
+
+function configParameterUsesMultilineSecretInput(param: AiClubPipelineConfigTemplateParameterItem) {
+  return param.type === 'password' && /privatekey|secretkey|pem|certificate/i.test(param.key)
+}
+
+function configParameterInputStyle(param: AiClubPipelineConfigTemplateParameterItem) {
+  if (!configParameterUsesMultilineSecretInput(param)) {
+    return undefined
+  }
+  return {
+    WebkitTextSecurity: 'disc'
+  }
 }
 
 function configParameterOptionLabel(option: string) {
@@ -504,6 +523,7 @@ function configParameterFieldClass(param: AiClubPipelineConfigTemplateParameterI
 
 function configParameterShouldSpanFull(param: AiClubPipelineConfigTemplateParameterItem) {
   return param.type === 'textarea'
+    || configParameterUsesMultilineSecretInput(param)
     || param.type === 'switch'
     || param.type === 'select'
     || ['projectRoot', 'registryUrl', 'imageRepo', 'dockerfile', 'serverDeploySourcePath', 'serverDeployRemotePath'].includes(param.key)
@@ -784,6 +804,10 @@ function configParameterShouldSpanMedium(param: AiClubPipelineConfigTemplatePara
 .pipeline-template-params :deep(.el-input__wrapper),
 .pipeline-template-params :deep(.el-textarea__inner) {
   border-radius: 8px;
+}
+
+.pipeline-template-params :deep(.pipeline-config-secret-textarea .el-textarea__inner) {
+  -webkit-text-security: disc;
 }
 
 .pipeline-template-params :deep(.param-span-full) {

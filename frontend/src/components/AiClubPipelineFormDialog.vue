@@ -51,6 +51,21 @@
         <el-form-item label="配置文件路径">
           <el-input v-model="aiForm.configPath" placeholder=".woodpecker.yml" />
         </el-form-item>
+        <el-form-item label="固定触发变量">
+          <div class="pipeline-trigger-variable-editor">
+            <div class="form-tip">用于同一份 .woodpecker.yml 按变量区分部署目标，例如 `DEPLOY_TARGET=api` 或 `DEPLOY_TARGET=job`。</div>
+            <div
+              v-for="item in aiTriggerVariableRows"
+              :key="item.id"
+              class="pipeline-trigger-variable-row"
+            >
+              <el-input v-model="item.key" placeholder="变量名，例如 DEPLOY_TARGET" />
+              <el-input v-model="item.value" placeholder="变量值，例如 api" />
+              <el-button class="pipeline-trigger-variable-delete-button" text type="danger" @click="removeAiTriggerVariableRow(item.id)">删除</el-button>
+            </div>
+            <el-button class="pipeline-trigger-variable-add-button" plain @click="addAiTriggerVariableRow">新增变量</el-button>
+          </div>
+        </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="aiForm.enabled" />
         </el-form-item>
@@ -138,7 +153,14 @@ interface AiPipelineForm {
   name: string
   defaultBranch: string
   configPath: string
+  triggerVariables: Record<string, string>
   enabled: boolean
+}
+
+interface TriggerVariableRow {
+  id: string
+  key: string
+  value: string
 }
 
 interface JenkinsBindingForm {
@@ -178,8 +200,10 @@ const aiForm = reactive<AiPipelineForm>({
   name: '',
   defaultBranch: '',
   configPath: '.woodpecker.yml',
+  triggerVariables: {},
   enabled: true
 })
+const aiTriggerVariableRows = ref<TriggerVariableRow[]>([])
 
 const jenkinsForm = reactive<JenkinsBindingForm>({
   projectId: null,
@@ -279,6 +303,7 @@ function fillForms() {
     aiForm.name = props.aiPipeline.name
     aiForm.defaultBranch = props.aiPipeline.defaultBranch || ''
     aiForm.configPath = props.aiPipeline.configPath || '.woodpecker.yml'
+    aiForm.triggerVariables = { ...(props.aiPipeline.triggerVariables || {}) }
     aiForm.enabled = props.aiPipeline.enabled
   } else {
     const firstBinding = gitlabBindingOptions.value[0]
@@ -287,8 +312,11 @@ function fillForms() {
     aiForm.name = firstBinding ? `${firstBinding.projectName} 流水线` : ''
     aiForm.defaultBranch = resolveDefaultBranchFromBinding(firstBinding)
     aiForm.configPath = '.woodpecker.yml'
+    aiForm.triggerVariables = {}
     aiForm.enabled = true
   }
+
+  fillAiTriggerVariableRows()
 
   if (props.jenkinsBinding) {
     jenkinsForm.projectId = props.jenkinsBinding.projectId
@@ -327,6 +355,54 @@ function handleAiBindingChange() {
   }
 }
 
+function fillAiTriggerVariableRows() {
+  const entries = Object.entries(aiForm.triggerVariables || {})
+  aiTriggerVariableRows.value = entries.map(([key, value], index) => ({
+    id: `trigger-${index}-${key}`,
+    key,
+    value
+  }))
+}
+
+function addAiTriggerVariableRow() {
+  aiTriggerVariableRows.value.push({
+    id: `trigger-${Date.now()}-${aiTriggerVariableRows.value.length}`,
+    key: '',
+    value: ''
+  })
+}
+
+function removeAiTriggerVariableRow(id: string) {
+  aiTriggerVariableRows.value = aiTriggerVariableRows.value.filter((item) => item.id !== id)
+}
+
+function buildAiTriggerVariablesPayload() {
+  const payload: Record<string, string> = {}
+  const duplicateCheck = new Set<string>()
+  for (const item of aiTriggerVariableRows.value) {
+    const key = item.key.trim()
+    const value = item.value.trim()
+    if (!key && !value) {
+      continue
+    }
+    if (!key) {
+      throw new Error('固定触发变量名不能为空')
+    }
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      throw new Error('固定触发变量名仅支持字母、数字和下划线，且不能以数字开头')
+    }
+    if (key.toUpperCase().startsWith('AI_CLUB_')) {
+      throw new Error('固定触发变量名不能以 AI_CLUB_ 开头')
+    }
+    if (duplicateCheck.has(key)) {
+      throw new Error(`固定触发变量名不能重复: ${key}`)
+    }
+    duplicateCheck.add(key)
+    payload[key] = value
+  }
+  return payload
+}
+
 function formatGitlabBindingLabel(item: ProjectGitlabBindingItem) {
   const repo = item.gitlabProjectPath || item.gitlabProjectRef
   return `${item.projectName} / ${repo}`
@@ -342,14 +418,15 @@ async function handleSubmit() {
     if (providerType.value === 'AI_CLUB') {
       const valid = await aiFormRef.value?.validate().catch(() => false)
       if (!valid || aiForm.projectId === null || aiForm.gitlabBindingId === null) return
-      const payload = {
-        projectId: aiForm.projectId,
-        gitlabBindingId: aiForm.gitlabBindingId,
-        name: aiForm.name,
-        defaultBranch: aiForm.defaultBranch,
-        configPath: aiForm.configPath || '.woodpecker.yml',
-        enabled: aiForm.enabled
-      }
+        const payload = {
+          projectId: aiForm.projectId,
+          gitlabBindingId: aiForm.gitlabBindingId,
+          name: aiForm.name,
+          defaultBranch: aiForm.defaultBranch,
+          configPath: aiForm.configPath || '.woodpecker.yml',
+          triggerVariables: buildAiTriggerVariablesPayload(),
+          enabled: aiForm.enabled
+        }
       const saved = props.aiPipeline
         ? await updateAiClubPipeline(props.aiPipeline.id, payload)
         : await createAiClubPipeline(payload)
@@ -439,10 +516,39 @@ async function handleSubmit() {
   margin-right: 6px;
 }
 
+.pipeline-trigger-variable-editor {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.pipeline-trigger-variable-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.pipeline-trigger-variable-add-button {
+  justify-self: flex-start;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+}
+
+.pipeline-trigger-variable-delete-button {
+  padding: 0 6px;
+  min-height: 34px;
+}
+
 @media (max-width: 760px) {
   .pipeline-form-head-with-action {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .pipeline-trigger-variable-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>

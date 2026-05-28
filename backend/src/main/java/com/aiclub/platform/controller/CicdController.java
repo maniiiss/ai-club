@@ -7,9 +7,12 @@ import com.aiclub.platform.dto.AiClubPipelineConfigEditContextResult;
 import com.aiclub.platform.dto.AiClubPipelineConfigPreviewResult;
 import com.aiclub.platform.dto.AiClubPipelineConfigStatusItem;
 import com.aiclub.platform.dto.AiClubPipelineConfigTemplateItem;
+import com.aiclub.platform.dto.AiClubPipelineCallbackWebhookSummary;
+import com.aiclub.platform.dto.AiClubPipelineCronSummary;
 import com.aiclub.platform.dto.AiClubPipelineRunLogDetail;
 import com.aiclub.platform.dto.AiClubPipelineRunSummary;
 import com.aiclub.platform.dto.AiClubPipelineSummary;
+import com.aiclub.platform.dto.AiClubPipelineTriggerWebhookSummary;
 import com.aiclub.platform.dto.AiClubPipelineTriggerResult;
 import com.aiclub.platform.dto.JenkinsBuildLogDetail;
 import com.aiclub.platform.dto.JenkinsBuildSummary;
@@ -22,7 +25,10 @@ import com.aiclub.platform.dto.ProjectPipelineBindingSummary;
 import com.aiclub.platform.dto.WoodpeckerHealthSummary;
 import com.aiclub.platform.dto.request.AiClubPipelineConfigCompleteRequest;
 import com.aiclub.platform.dto.request.AiClubPipelineConfigPreviewRequest;
+import com.aiclub.platform.dto.request.AiClubPipelineCallbackWebhookRequest;
+import com.aiclub.platform.dto.request.AiClubPipelineCronRequest;
 import com.aiclub.platform.dto.request.AiClubPipelineRequest;
+import com.aiclub.platform.dto.request.AiClubPipelineTriggerWebhookRequest;
 import com.aiclub.platform.dto.request.JenkinsServerRequest;
 import com.aiclub.platform.dto.request.ProjectPipelineBindingRequest;
 import com.aiclub.platform.service.CicdManagementService;
@@ -168,6 +174,60 @@ public class CicdController {
     public ApiResponse<AiClubPipelineRunLogDetail> getAiClubPipelineRunLog(@PathVariable Long id,
                                                                            @PathVariable int runNumber) {
         return ApiResponse.success(cicdManagementService.getAiClubPipelineRunLog(id, runNumber));
+    }
+
+    @GetMapping("/pipelines/{id}/cron-jobs")
+    @RequirePermission("cicd:view")
+    public ApiResponse<List<AiClubPipelineCronSummary>> listAiClubPipelineCronJobs(@PathVariable Long id) {
+        return ApiResponse.success(cicdManagementService.listAiClubPipelineCronJobs(id));
+    }
+
+    @PostMapping("/pipelines/{id}/cron-jobs")
+    @RequirePermission("cicd:manage")
+    public ApiResponse<AiClubPipelineCronSummary> createAiClubPipelineCronJob(@PathVariable Long id,
+                                                                              @Valid @RequestBody AiClubPipelineCronRequest request) {
+        return ApiResponse.success(cicdManagementService.createAiClubPipelineCronJob(id, request));
+    }
+
+    @PutMapping("/pipelines/{id}/cron-jobs/{cronJobId}")
+    @RequirePermission("cicd:manage")
+    public ApiResponse<AiClubPipelineCronSummary> updateAiClubPipelineCronJob(@PathVariable Long id,
+                                                                              @PathVariable Long cronJobId,
+                                                                              @Valid @RequestBody AiClubPipelineCronRequest request) {
+        return ApiResponse.success(cicdManagementService.updateAiClubPipelineCronJob(id, cronJobId, request));
+    }
+
+    @DeleteMapping("/pipelines/{id}/cron-jobs/{cronJobId}")
+    @RequirePermission("cicd:manage")
+    public ApiResponse<Void> deleteAiClubPipelineCronJob(@PathVariable Long id, @PathVariable Long cronJobId) {
+        cicdManagementService.deleteAiClubPipelineCronJob(id, cronJobId);
+        return new ApiResponse<>(true, "Deleted successfully", null);
+    }
+
+    @GetMapping("/pipelines/{id}/trigger-webhook")
+    @RequirePermission("cicd:view")
+    public ApiResponse<AiClubPipelineTriggerWebhookSummary> getAiClubPipelineTriggerWebhook(@PathVariable Long id) {
+        return ApiResponse.success(cicdManagementService.getAiClubPipelineTriggerWebhook(id));
+    }
+
+    @PutMapping("/pipelines/{id}/trigger-webhook")
+    @RequirePermission("cicd:manage")
+    public ApiResponse<AiClubPipelineTriggerWebhookSummary> updateAiClubPipelineTriggerWebhook(@PathVariable Long id,
+                                                                                                @Valid @RequestBody AiClubPipelineTriggerWebhookRequest request) {
+        return ApiResponse.success(cicdManagementService.updateAiClubPipelineTriggerWebhook(id, request));
+    }
+
+    @GetMapping("/pipelines/{id}/callback-webhook")
+    @RequirePermission("cicd:view")
+    public ApiResponse<AiClubPipelineCallbackWebhookSummary> getAiClubPipelineCallbackWebhook(@PathVariable Long id) {
+        return ApiResponse.success(cicdManagementService.getAiClubPipelineCallbackWebhook(id));
+    }
+
+    @PutMapping("/pipelines/{id}/callback-webhook")
+    @RequirePermission("cicd:manage")
+    public ApiResponse<AiClubPipelineCallbackWebhookSummary> updateAiClubPipelineCallbackWebhook(@PathVariable Long id,
+                                                                                                  @Valid @RequestBody AiClubPipelineCallbackWebhookRequest request) {
+        return ApiResponse.success(cicdManagementService.updateAiClubPipelineCallbackWebhook(id, request));
     }
 
     @GetMapping("/jenkins-servers")

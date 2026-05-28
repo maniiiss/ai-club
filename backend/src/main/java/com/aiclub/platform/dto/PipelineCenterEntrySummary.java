@@ -21,6 +21,9 @@ public record PipelineCenterEntrySummary(
         String primaryUrl,
         String secondaryLabel,
         String secondaryValue,
-        String configStatus
+        String configStatus,
+        long cronCount,
+        boolean triggerWebhookEnabled,
+        boolean callbackWebhookEnabled
 ) {
 }

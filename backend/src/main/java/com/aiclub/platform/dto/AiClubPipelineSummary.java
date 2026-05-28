@@ -1,5 +1,8 @@
 package com.aiclub.platform.dto;
 
+import java.util.List;
+import java.util.Map;
+
 public record AiClubPipelineSummary(
         Long id,
         Long projectId,
@@ -12,6 +15,7 @@ public record AiClubPipelineSummary(
         String providerCode,
         String defaultBranch,
         String configPath,
+        Map<String, String> triggerVariables,
         Long woodpeckerRepoId,
         String woodpeckerRepoFullName,
         String woodpeckerRepoUrl,
@@ -20,6 +24,10 @@ public record AiClubPipelineSummary(
         String lastRunMessage,
         Integer lastRunNumber,
         String lastRunUrl,
-        String lastTriggeredAt
+        String lastTriggeredAt,
+        long cronCount,
+        boolean triggerWebhookEnabled,
+        boolean callbackWebhookEnabled,
+        List<String> callbackSubscribedStatuses
 ) {
 }

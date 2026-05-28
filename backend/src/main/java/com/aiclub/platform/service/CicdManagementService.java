@@ -1,6 +1,8 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.common.DataPermissionScopeType;
+import com.aiclub.platform.dto.AiClubPipelineCallbackWebhookSummary;
+import com.aiclub.platform.dto.AiClubPipelineCronSummary;
 import com.aiclub.platform.domain.model.AiClubPipelineEntity;
 import com.aiclub.platform.domain.model.JenkinsServerEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
@@ -14,6 +16,7 @@ import com.aiclub.platform.dto.AiClubPipelineConfigPreviewResult;
 import com.aiclub.platform.dto.AiClubPipelineConfigStatusItem;
 import com.aiclub.platform.dto.AiClubPipelineConfigTemplateItem;
 import com.aiclub.platform.dto.AiClubPipelineSummary;
+import com.aiclub.platform.dto.AiClubPipelineTriggerWebhookSummary;
 import com.aiclub.platform.dto.AiClubPipelineTriggerResult;
 import com.aiclub.platform.dto.JenkinsBuildTriggerResult;
 import com.aiclub.platform.dto.JenkinsBuildLogDetail;
@@ -26,7 +29,10 @@ import com.aiclub.platform.dto.ProjectPipelineBindingSummary;
 import com.aiclub.platform.dto.WoodpeckerHealthSummary;
 import com.aiclub.platform.dto.request.AiClubPipelineConfigCompleteRequest;
 import com.aiclub.platform.dto.request.AiClubPipelineConfigPreviewRequest;
+import com.aiclub.platform.dto.request.AiClubPipelineCallbackWebhookRequest;
+import com.aiclub.platform.dto.request.AiClubPipelineCronRequest;
 import com.aiclub.platform.dto.request.AiClubPipelineRequest;
+import com.aiclub.platform.dto.request.AiClubPipelineTriggerWebhookRequest;
 import com.aiclub.platform.dto.request.JenkinsServerRequest;
 import com.aiclub.platform.dto.request.ProjectPipelineBindingRequest;
 import com.aiclub.platform.repository.AiClubPipelineRepository;
@@ -55,8 +61,10 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 @Service
 @Transactional(readOnly = true)
@@ -64,6 +72,14 @@ public class CicdManagementService {
 
     public static final String PIPELINE_CENTER_ENTRY_AI_CLUB = "AI_CLUB";
     public static final String PIPELINE_CENTER_ENTRY_JENKINS = "JENKINS";
+    /**
+     * 平台保留变量由系统在触发时自动注入，条目级固定变量不能覆盖这些键。
+     */
+    private static final Set<String> RESERVED_TRIGGER_VARIABLE_KEYS = Set.of(
+            WoodpeckerPipelineProvider.VARIABLE_PIPELINE_ID,
+            WoodpeckerPipelineProvider.VARIABLE_PROJECT_ID,
+            WoodpeckerPipelineProvider.VARIABLE_TRIGGER_SOURCE
+    );
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter PIPELINE_CONFIG_BRANCH_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
@@ -82,6 +98,7 @@ public class CicdManagementService {
     private final ObjectMapper objectMapper;
     private final NotificationService notificationService;
     private final ProjectDataPermissionService projectDataPermissionService;
+    private final AiClubPipelineAutomationService pipelineAutomationService;
 
     public CicdManagementService(ProjectRepository projectRepository,
                                  ProjectGitlabBindingRepository projectGitlabBindingRepository,
@@ -93,10 +110,11 @@ public class CicdManagementService {
                                  GitlabApiService gitlabApiService,
                                  AiClubPipelineConfigTemplateService pipelineConfigTemplateService,
                                  WoodpeckerPipelineProvider woodpeckerPipelineProvider,
-                                 WoodpeckerApiService woodpeckerApiService,
-                                 ObjectMapper objectMapper,
-                                 NotificationService notificationService,
-                                 ProjectDataPermissionService projectDataPermissionService) {
+                                  WoodpeckerApiService woodpeckerApiService,
+                                  ObjectMapper objectMapper,
+                                  NotificationService notificationService,
+                                  ProjectDataPermissionService projectDataPermissionService,
+                                  AiClubPipelineAutomationService pipelineAutomationService) {
         this.projectRepository = projectRepository;
         this.projectGitlabBindingRepository = projectGitlabBindingRepository;
         this.aiClubPipelineRepository = aiClubPipelineRepository;
@@ -111,6 +129,7 @@ public class CicdManagementService {
         this.objectMapper = objectMapper;
         this.notificationService = notificationService;
         this.projectDataPermissionService = projectDataPermissionService;
+        this.pipelineAutomationService = pipelineAutomationService;
     }
 
     public WoodpeckerHealthSummary getWoodpeckerHealth() {
@@ -340,6 +359,52 @@ public class CicdManagementService {
     @Transactional(noRollbackFor = RuntimeException.class)
     public AiClubPipelineTriggerResult triggerAiClubPipeline(Long id) {
         return triggerAiClubPipeline(requireAiClubPipeline(id), null, "手动触发");
+    }
+
+    /**
+     * 公开 webhook 入口只允许固定配置触发，不允许外部覆盖分支或注入变量。
+     */
+    @Transactional(noRollbackFor = RuntimeException.class)
+    public AiClubPipelineTriggerResult triggerAiClubPipelineByWebhook(Long id, String token) {
+        AiClubPipelineEntity entity = pipelineAutomationService.validateTriggerWebhookAccess(id, token);
+        return triggerAiClubPipeline(entity, null, "Webhook 触发");
+    }
+
+    public List<AiClubPipelineCronSummary> listAiClubPipelineCronJobs(Long id) {
+        return pipelineAutomationService.listCronJobs(id);
+    }
+
+    @Transactional
+    public AiClubPipelineCronSummary createAiClubPipelineCronJob(Long id, AiClubPipelineCronRequest request) {
+        return pipelineAutomationService.createCronJob(id, request);
+    }
+
+    @Transactional
+    public AiClubPipelineCronSummary updateAiClubPipelineCronJob(Long id, Long cronJobId, AiClubPipelineCronRequest request) {
+        return pipelineAutomationService.updateCronJob(id, cronJobId, request);
+    }
+
+    @Transactional
+    public void deleteAiClubPipelineCronJob(Long id, Long cronJobId) {
+        pipelineAutomationService.deleteCronJob(id, cronJobId);
+    }
+
+    public AiClubPipelineTriggerWebhookSummary getAiClubPipelineTriggerWebhook(Long id) {
+        return pipelineAutomationService.getTriggerWebhook(id);
+    }
+
+    @Transactional
+    public AiClubPipelineTriggerWebhookSummary updateAiClubPipelineTriggerWebhook(Long id, AiClubPipelineTriggerWebhookRequest request) {
+        return pipelineAutomationService.updateTriggerWebhook(id, request);
+    }
+
+    public AiClubPipelineCallbackWebhookSummary getAiClubPipelineCallbackWebhook(Long id) {
+        return pipelineAutomationService.getCallbackWebhook(id);
+    }
+
+    @Transactional
+    public AiClubPipelineCallbackWebhookSummary updateAiClubPipelineCallbackWebhook(Long id, AiClubPipelineCallbackWebhookRequest request) {
+        return pipelineAutomationService.updateCallbackWebhook(id, request);
     }
 
     public List<AiClubPipelineRunSummary> listAiClubPipelineRuns(Long id, int limit) {
@@ -638,6 +703,7 @@ public class CicdManagementService {
         entity.setProviderCode(AiClubPipelineEntity.PROVIDER_WOODPECKER);
         entity.setDefaultBranch(trimToNull(request.defaultBranch()));
         entity.setConfigPath(normalizeConfigPath(request.configPath()));
+        entity.setTriggerVariablesJson(normalizeTriggerVariablesJson(request.triggerVariables()));
         entity.setEnabled(Boolean.TRUE.equals(request.enabled()));
     }
 
@@ -656,7 +722,12 @@ public class CicdManagementService {
         try {
             String branch = resolveAiClubPipelineBranch(entity, branchOverride);
             ensureAiClubPipelineConfigPresent(entity, branch);
-            WoodpeckerApiService.WoodpeckerPipeline run = woodpeckerPipelineProvider.triggerPipeline(entity, branch, sourceDescription);
+            WoodpeckerApiService.WoodpeckerPipeline run = woodpeckerPipelineProvider.triggerPipeline(
+                    entity,
+                    branch,
+                    sourceDescription,
+                    parseTriggerVariables(entity.getTriggerVariablesJson())
+            );
             String triggerUrl = trimToNull(woodpeckerPipelineProvider.resolveRunUrl(entity, run));
             String message = buildAiClubPipelineTriggeredMessage(run, sourceDescription);
             entity.setLastRunStatus(defaultString(trimToNull(run.status()), "QUEUED"));
@@ -665,6 +736,7 @@ public class CicdManagementService {
             entity.setLastRunUrl(triggerUrl);
             entity.setLastTriggeredAt(now);
             aiClubPipelineRepository.save(entity);
+            pipelineAutomationService.recordTriggeredRun(entity, run, sourceDescription);
             notifyCurrentUserAiClubPipelineQueued(entity);
             return new AiClubPipelineTriggerResult(
                     entity.getId(),
@@ -691,12 +763,7 @@ public class CicdManagementService {
      * 触发前校验目标分支已经提交 Woodpecker 配置文件，避免“只同步仓库”被误认为“流水线已配置”。
      */
     private void ensureAiClubPipelineConfigPresent(AiClubPipelineEntity entity, String branch) {
-        ProjectGitlabBindingEntity binding = entity.getGitlabBinding();
-        String configPath = defaultString(trimToNull(entity.getConfigPath()), ".woodpecker.yml");
-        boolean exists = repositoryFileExists(entity, branch, configPath);
-        if (!exists) {
-            throw new IllegalArgumentException("目标分支 " + branch + " 尚未配置流水线文件 " + configPath + "，请先在仓库提交配置文件，或使用补全配置创建 MR 后再触发");
-        }
+        pipelineAutomationService.ensurePipelineConfigPresent(entity, branch);
     }
 
     private String resolveAiClubPipelineBranch(AiClubPipelineEntity pipeline, String branchOverride) {
@@ -1093,6 +1160,73 @@ public class CicdManagementService {
         }
     }
 
+    /**
+     * 固定触发变量只支持普通 key/value，用于让同一份 .woodpecker.yml 通过变量区分不同部署目标。
+     */
+    private String normalizeTriggerVariablesJson(Map<String, String> variables) {
+        Map<String, String> normalized = normalizeTriggerVariablesMap(variables);
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(normalized);
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("固定触发变量序列化失败");
+        }
+    }
+
+    private Map<String, String> parseTriggerVariables(String json) {
+        String normalizedJson = trimToNull(json);
+        if (normalizedJson == null) {
+            return Map.of();
+        }
+        try {
+            JsonNode node = objectMapper.readTree(normalizedJson);
+            if (!node.isObject()) {
+                throw new IllegalArgumentException("固定触发变量必须为 JSON 对象");
+            }
+            Map<String, String> variables = new LinkedHashMap<>();
+            var fields = node.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> entry = fields.next();
+                variables.put(entry.getKey(), entry.getValue().isNull() ? "" : entry.getValue().asText(""));
+            }
+            return Map.copyOf(variables);
+        } catch (IllegalArgumentException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("固定触发变量 JSON 格式不正确");
+        }
+    }
+
+    private Map<String, String> normalizeTriggerVariablesMap(Map<String, String> variables) {
+        if (variables == null || variables.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> normalized = new LinkedHashMap<>();
+        Set<String> duplicateCheck = new LinkedHashSet<>();
+        variables.forEach((rawKey, rawValue) -> {
+            String key = trimToNull(rawKey);
+            if (key == null) {
+                return;
+            }
+            if (!key.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+                throw new IllegalArgumentException("固定触发变量名仅支持字母、数字和下划线，且不能以数字开头");
+            }
+            if (key.toUpperCase().startsWith("AI_CLUB_")) {
+                throw new IllegalArgumentException("固定触发变量名不能以 AI_CLUB_ 开头");
+            }
+            if (RESERVED_TRIGGER_VARIABLE_KEYS.contains(key)) {
+                throw new IllegalArgumentException("固定触发变量名不能覆盖平台保留变量: " + key);
+            }
+            if (!duplicateCheck.add(key)) {
+                throw new IllegalArgumentException("固定触发变量名不能重复: " + key);
+            }
+            normalized.put(key, rawValue == null ? "" : rawValue.trim());
+        });
+        return Map.copyOf(normalized);
+    }
+
     private String buildServerTestMessage(JenkinsApiService.JenkinsServerInfo info) {
         StringBuilder builder = new StringBuilder("连接成功");
         if (hasText(info.version())) {
@@ -1119,6 +1253,7 @@ public class CicdManagementService {
                 entity.getProviderCode(),
                 entity.getDefaultBranch(),
                 entity.getConfigPath(),
+                parseTriggerVariables(entity.getTriggerVariablesJson()),
                 entity.getWoodpeckerRepoId(),
                 entity.getWoodpeckerRepoFullName(),
                 entity.getWoodpeckerRepoUrl(),
@@ -1127,7 +1262,11 @@ public class CicdManagementService {
                 entity.getLastRunMessage(),
                 entity.getLastRunNumber(),
                 entity.getLastRunUrl(),
-                formatTime(entity.getLastTriggeredAt())
+                formatTime(entity.getLastTriggeredAt()),
+                pipelineAutomationService.countCronJobs(entity.getId()),
+                pipelineAutomationService.isTriggerWebhookEnabled(entity.getId()),
+                pipelineAutomationService.isCallbackWebhookEnabled(entity.getId()),
+                pipelineAutomationService.listCallbackSubscribedStatuses(entity.getId())
         );
     }
 
@@ -1214,7 +1353,10 @@ public class CicdManagementService {
                         trimToNull(firstText(binding.getGitlabProjectWebUrl(), entity.getWoodpeckerRepoUrl())),
                         "配置",
                         entity.getConfigPath(),
-                        null
+                        null,
+                        pipelineAutomationService.countCronJobs(entity.getId()),
+                        pipelineAutomationService.isTriggerWebhookEnabled(entity.getId()),
+                        pipelineAutomationService.isCallbackWebhookEnabled(entity.getId())
                 )
         );
     }
@@ -1241,7 +1383,10 @@ public class CicdManagementService {
                         trimToNull(entity.getJobUrl()),
                         "Jenkins 服务",
                         entity.getJenkinsServer().getName(),
-                        null
+                        null,
+                        0L,
+                        false,
+                        false
                 )
         );
     }

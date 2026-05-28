@@ -85,6 +85,52 @@ public class WoodpeckerApiService {
         return pipelines;
     }
 
+    /**
+     * 读取指定仓库下的全部 cron 定义。
+     */
+    public List<WoodpeckerCron> listCrons(Long repoId) {
+        JsonNode node = readJson(sendRequest("GET", "/repos/" + requireRepoId(repoId) + "/cron", null).body());
+        JsonNode arrayNode = node.isArray() ? node : node.path("cron");
+        List<WoodpeckerCron> crons = new ArrayList<>();
+        if (arrayNode.isArray()) {
+            for (JsonNode item : arrayNode) {
+                crons.add(toCron(item));
+            }
+        }
+        return List.copyOf(crons);
+    }
+
+    /**
+     * 创建仓库级 cron。
+     */
+    public WoodpeckerCron createCron(Long repoId, String name, String cronExpression, String branch) {
+        JsonNode node = readJson(sendRequest(
+                "POST",
+                "/repos/" + requireRepoId(repoId) + "/cron",
+                buildCronPayload(name, cronExpression, branch)
+        ).body());
+        return toCron(node);
+    }
+
+    /**
+     * 更新仓库级 cron。
+     */
+    public WoodpeckerCron updateCron(Long repoId, Long cronId, String name, String cronExpression, String branch) {
+        JsonNode node = readJson(sendRequest(
+                "PATCH",
+                "/repos/" + requireRepoId(repoId) + "/cron/" + requireCronId(cronId),
+                buildCronPayload(name, cronExpression, branch)
+        ).body());
+        return toCron(node);
+    }
+
+    /**
+     * 删除仓库级 cron。
+     */
+    public void deleteCron(Long repoId, Long cronId) {
+        sendRequest("DELETE", "/repos/" + requireRepoId(repoId) + "/cron/" + requireCronId(cronId), null);
+    }
+
     public WoodpeckerPipeline triggerPipeline(Long repoId, String branch, Map<String, String> variables) {
         try {
             Map<String, Object> payload = new LinkedHashMap<>();
@@ -270,6 +316,20 @@ public class WoodpeckerApiService {
         );
     }
 
+    private String buildCronPayload(String name, String cronExpression, String branch) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("name", name == null ? "" : name.trim());
+            payload.put("cron", cronExpression == null ? "" : cronExpression.trim());
+            if (hasText(branch)) {
+                payload.put("branch", branch.trim());
+            }
+            return objectMapper.writeValueAsString(payload);
+        } catch (IOException exception) {
+            throw new IllegalStateException("构造 Woodpecker cron 请求失败", exception);
+        }
+    }
+
     private String buildSecretPayload(String secretName,
                                       String value,
                                       String note,
@@ -345,6 +405,17 @@ public class WoodpeckerApiService {
                 firstText(node, "value"),
                 readTextList(node.path("events")),
                 readTextList(node.path("images"))
+        );
+    }
+
+    private WoodpeckerCron toCron(JsonNode node) {
+        return new WoodpeckerCron(
+                readLong(node, "id"),
+                firstText(node, "name"),
+                firstText(node, "cron", "expression"),
+                firstText(node, "branch"),
+                readBoolean(node, "enabled", "active", "is_active"),
+                toLocalDateTime(firstLong(node, "next_exec", "next", "next_run"))
         );
     }
 
@@ -465,6 +536,22 @@ public class WoodpeckerApiService {
         return 0L;
     }
 
+    private boolean readBoolean(JsonNode node, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            JsonNode value = node.path(fieldName);
+            if (value.isBoolean()) {
+                return value.asBoolean();
+            }
+            if (value.isTextual() && hasText(value.asText())) {
+                return Boolean.parseBoolean(value.asText().trim());
+            }
+            if (value.isNumber()) {
+                return value.asInt() != 0;
+            }
+        }
+        return false;
+    }
+
     private String firstText(JsonNode node, String... fieldNames) {
         for (String fieldName : fieldNames) {
             JsonNode value = node.path(fieldName);
@@ -499,6 +586,13 @@ public class WoodpeckerApiService {
             throw new IllegalArgumentException("Woodpecker repo id 不能为空");
         }
         return repoId;
+    }
+
+    private Long requireCronId(Long cronId) {
+        if (cronId == null || cronId <= 0L) {
+            throw new IllegalArgumentException("Woodpecker cron id 不能为空");
+        }
+        return cronId;
     }
 
     private String normalizeSecretName(String secretName) {
@@ -569,6 +663,16 @@ public class WoodpeckerApiService {
             String value,
             List<String> events,
             List<String> images
+    ) {
+    }
+
+    public record WoodpeckerCron(
+            Long id,
+            String name,
+            String cronExpression,
+            String branch,
+            boolean enabled,
+            LocalDateTime nextRunAt
     ) {
     }
 }
