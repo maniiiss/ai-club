@@ -131,7 +131,7 @@
 
             <div v-if="canView" class="pipeline-card-actions-shell">
               <div class="pipeline-card-actions">
-                <el-button v-if="canBuild" type="primary" @click.stop="handleTriggerPipeline(row)">
+                <el-button v-if="canBuild" type="primary" :loading="triggeringEntryId === row.entryId" @click.stop="handleTriggerPipeline(row)">
                   <el-icon><VideoPlay /></el-icon>
                   <span>触发</span>
                 </el-button>
@@ -219,6 +219,7 @@ const { isMobileViewport } = useMobileViewport()
 const projectOptions = ref<ProjectItem[]>([])
 const pipelineList = ref<PipelineCenterEntryItem[]>([])
 const pipelineLoading = ref(false)
+const triggeringEntryId = ref<number | null>(null)
 const formDialogVisible = ref(false)
 const currentFormEntryType = ref<'AI_CLUB' | 'JENKINS' | null>(null)
 const currentFormAiPipeline = ref<AiClubPipelineItem | null>(null)
@@ -298,6 +299,7 @@ function openPipelineDetail(row: PipelineCenterEntryItem) {
 }
 
 async function handleTriggerPipeline(row: PipelineCenterEntryItem) {
+  triggeringEntryId.value = row.entryId
   try {
     const result = row.entryType === 'AI_CLUB'
       ? await triggerAiClubPipeline(row.entryId)
@@ -307,6 +309,8 @@ async function handleTriggerPipeline(row: PipelineCenterEntryItem) {
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '触发流水线失败')
     await loadPipelines()
+  } finally {
+    triggeringEntryId.value = null
   }
 }
 

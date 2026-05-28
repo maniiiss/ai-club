@@ -12,7 +12,7 @@
           <div class="pipeline-detail-hero-subtitle">{{ detailEntry.projectName }}</div>
         </div>
         <div class="pipeline-detail-hero-actions">
-          <el-button v-if="canBuild" type="primary" @click="handleTrigger">
+          <el-button v-if="canBuild" type="primary" :loading="triggering" @click="handleTrigger">
             <el-icon><VideoPlay /></el-icon>
             <span>触发</span>
           </el-button>
@@ -491,6 +491,7 @@ const canBuild = computed(() => authStore.hasPermission('cicd:build'))
 const loading = ref(false)
 const runLoading = ref(false)
 const runLogLoading = ref(false)
+const triggering = ref(false)
 const activeTab = ref('history')
 const runHistoryLimit = ref(20)
 const aiPipelineDetail = ref<AiClubPipelineItem | null>(null)
@@ -880,6 +881,7 @@ async function loadRunLog(runNumber: number, options: LoadRunLogOptions = {}) {
 }
 
 async function handleTrigger() {
+  triggering.value = true
   try {
     const result = isAiEntry.value
       ? await triggerAiClubPipeline(entryId.value)
@@ -889,6 +891,8 @@ async function handleTrigger() {
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '触发流水线失败')
     await loadDetail()
+  } finally {
+    triggering.value = false
   }
 }
 
