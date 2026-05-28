@@ -115,7 +115,7 @@ public class WoodpeckerApiService {
         } else {
             StringBuilder builder = new StringBuilder();
             for (JsonNode item : node) {
-                builder.append(item.path("data").asText(""));
+                builder.append(decodeLogData(item.path("data")));
                 if (builder.length() == 0 || builder.charAt(builder.length() - 1) != '\n') {
                     builder.append('\n');
                 }
@@ -123,6 +123,34 @@ public class WoodpeckerApiService {
             rawLog = builder.toString();
         }
         return sanitizeShellTraceLog(rawLog);
+    }
+
+    /**
+     * Woodpecker 的日志 API 在不同版本里可能返回纯文本，也可能返回字节数组。
+     * 对数组直接调用 asText() 会被 Jackson 转成 Base64，因此这里显式按 UTF-8 解码。
+     */
+    private String decodeLogData(JsonNode dataNode) {
+        if (dataNode == null || dataNode.isNull() || dataNode.isMissingNode()) {
+            return "";
+        }
+        if (dataNode.isTextual()) {
+            return dataNode.asText("");
+        }
+        if (dataNode.isBinary()) {
+            try {
+                return new String(dataNode.binaryValue(), StandardCharsets.UTF_8);
+            } catch (IOException exception) {
+                throw new IllegalStateException("解析 Woodpecker 日志失败", exception);
+            }
+        }
+        if (dataNode.isArray()) {
+            byte[] bytes = new byte[dataNode.size()];
+            for (int index = 0; index < dataNode.size(); index++) {
+                bytes[index] = (byte) dataNode.path(index).asInt();
+            }
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+        return dataNode.asText("");
     }
 
     public String fetchAggregatedLogs(Long repoId, int pipelineNumber) {

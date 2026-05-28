@@ -179,6 +179,37 @@ class WoodpeckerApiServiceTests {
         }
     }
 
+    @Test
+    void shouldDecodeByteArrayLogPayloadToPlainText() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/api/repos/77/logs/19/101", exchange -> {
+            byte[] response = """
+                    [
+                      {"line": 1, "data": [35, 32, 104, 101, 108, 108, 111, 10]},
+                      {"line": 2, "data": [119, 111, 114, 108, 100, 10]}
+                    ]
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            WoodpeckerApiService service = new WoodpeckerApiService(
+                    objectMapper,
+                    new WoodpeckerPipelineProperties(true, "http://127.0.0.1:" + server.getAddress().getPort(), "", "token", "5")
+            );
+
+            String log = service.fetchStepLog(77L, 19, 101L);
+
+            assertThat(log).contains("# hello");
+            assertThat(log).contains("world");
+            assertThat(log).doesNotContain("IyBoZWxsbw==");
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private List<String> readTextArray(JsonNode node) {
         List<String> values = new ArrayList<>();
         node.forEach(item -> values.add(item.asText()));

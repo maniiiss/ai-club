@@ -88,7 +88,7 @@ Jenkins 原接口继续保留在 `/jenkins-servers` 与 `/pipeline-bindings` 下
 
 ## 5.1 配置文件模板与补全
 
-平台内置六类 Woodpecker YAML 模板：Java / Maven、Node / Vite、Python / FastAPI、Docker Buildx、SSH 远程部署、通用 Shell。模板由后端代码维护，不落数据库，也不提供多租户模板 CRUD。模板不再只给一段待编辑 YAML，而是同时返回参数定义；前端默认以表单方式呈现项目根目录、触发分支、命令、推送服务器地址、镜像仓库、连接方式、SSH 主机和私钥等模板元素，后端根据 `templateCode + parameters` 重新渲染 YAML。各模板还支持 `跳过默认克隆` 开关，打开后会在 YAML 顶层写入 `skip_clone: true`，适合只执行远端命令或准备自行处理代码拉取的场景。高级用户仍可切换到“手动 YAML”模式，继续按自定义内容创建 MR。
+平台内置六类 Woodpecker YAML 模板：Java / Maven、Node / Vite、Python / FastAPI、Docker Buildx、SSH 远程部署、通用 Shell。模板由后端代码维护，不落数据库，也不提供多租户模板 CRUD。模板不再只给一段待编辑 YAML，而是同时返回参数定义；前端默认以表单方式呈现项目根目录、触发分支、触发时机、命令、推送服务器地址、镜像仓库、连接方式、SSH 主机和私钥等模板元素，后端根据 `templateCode + parameters` 重新渲染 YAML。各模板还支持 `跳过默认克隆` 开关，打开后会在 YAML 顶层写入 `skip_clone: true`，适合只执行远端命令或准备自行处理代码拉取的场景。高级用户仍可切换到“手动 YAML”模式，继续按自定义内容创建 MR。
 
 补全链路固定走 GitLab MR，不直接写目标分支：
 

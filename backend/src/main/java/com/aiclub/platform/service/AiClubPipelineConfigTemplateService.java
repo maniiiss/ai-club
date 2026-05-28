@@ -41,6 +41,11 @@ public class AiClubPipelineConfigTemplateService {
     private static final String TYPE_SWITCH = "switch";
     private static final String TYPE_SELECT = "select";
     private static final String PARAM_SKIP_CLONE = "skipClone";
+    private static final String PARAM_TRIGGER_MODE = "triggerMode";
+    private static final String TRIGGER_MODE_MANUAL_ONLY = "MANUAL_ONLY";
+    private static final String TRIGGER_MODE_PUSH_MANUAL = "PUSH_MANUAL";
+    private static final String TRIGGER_MODE_PUSH_PULL_REQUEST_MANUAL = "PUSH_PULL_REQUEST_MANUAL";
+    private static final String TRIGGER_MODE_PUSH_MANUAL_TAG = "PUSH_MANUAL_TAG";
     private static final String CONNECTION_DIRECT_SSH = "DIRECT_SSH";
     private static final String CONNECTION_JUMPSERVER = "JUMPSERVER";
     private static final String PARAM_CONNECTION_TYPE = "connectionType";
@@ -79,7 +84,7 @@ public class AiClubPipelineConfigTemplateService {
                     "后端服务",
                     false,
                     List.of("仓库根目录存在 pom.xml", "可通过表单调整 Maven 镜像、测试命令和打包命令", "如需部署到服务器，可打开后置部署开关并填写 SSH / 上传 / 重启参数"),
-                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(), List.of(
+                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(TRIGGER_MODE_PUSH_MANUAL, triggerOptions(false, false)), List.of(
                             parameter("branch", "触发分支", TYPE_TEXT, true, context -> context.branch(), "main", "写入 when.branch，默认使用流水线默认分支", false),
                             parameter("javaImage", "Maven 镜像", TYPE_TEXT, true, "maven:3.9-eclipse-temurin-17", "maven:3.9-eclipse-temurin-17", "Woodpecker 步骤运行镜像", false),
                             parameter("testCommand", "测试命令", TYPE_TEXTAREA, true, "if [ -x ./mvnw ]; then ./mvnw -B test; else mvn -B test; fi", "mvn -B test", "支持多行命令，平台会逐行写入 commands", false),
@@ -94,7 +99,7 @@ public class AiClubPipelineConfigTemplateService {
                     "前端应用",
                     false,
                     List.of("仓库根目录存在 package.json", "可配置 Node 镜像、安装命令、构建命令和触发分支", "如需部署到服务器，可打开后置部署开关并上传构建产物目录"),
-                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(), List.of(
+                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(TRIGGER_MODE_PUSH_PULL_REQUEST_MANUAL, triggerOptions(true, false)), List.of(
                             parameter("branch", "触发分支", TYPE_TEXT, true, context -> context.branch(), "main", "写入 when.branch，默认使用流水线默认分支", false),
                             parameter("nodeImage", "Node 镜像", TYPE_TEXT, true, "node:20-alpine", "node:20-alpine", "Woodpecker 步骤运行镜像", false),
                             parameter("installCommand", "安装命令", TYPE_TEXTAREA, true, "if [ -f package-lock.json ]; then npm ci; else npm install; fi", "npm ci", "支持 pnpm、yarn 或企业源安装命令", false),
@@ -109,7 +114,7 @@ public class AiClubPipelineConfigTemplateService {
                     "后端服务",
                     false,
                     List.of("优先安装 requirements.txt", "可通过表单调整 Python 镜像、依赖安装和验证命令", "如需部署到服务器，可打开后置部署开关并上传构建产物或应用目录"),
-                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(), List.of(
+                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(TRIGGER_MODE_PUSH_PULL_REQUEST_MANUAL, triggerOptions(true, false)), List.of(
                             parameter("branch", "触发分支", TYPE_TEXT, true, context -> context.branch(), "main", "写入 when.branch，默认使用流水线默认分支", false),
                             parameter("pythonImage", "Python 镜像", TYPE_TEXT, true, "python:3.12-slim", "python:3.12-slim", "Woodpecker 步骤运行镜像", false),
                             parameter("installCommand", "依赖安装命令", TYPE_TEXTAREA, true, "python -m pip install --upgrade pip\nif [ -f requirements.txt ]; then pip install -r requirements.txt; fi", "pip install -r requirements.txt", "支持 poetry、uv 或私有源安装命令", false),
@@ -124,7 +129,7 @@ public class AiClubPipelineConfigTemplateService {
                     "镜像构建",
                     true,
                     List.of("仓库根目录存在 Dockerfile", "页面填写 registry、镜像名和推送账号，密码写入 Woodpecker repo secret", "Woodpecker runner 允许 Docker Buildx 插件构建与推送镜像", "如需部署到服务器，可打开后置部署开关，在镜像推送后执行远程重启脚本"),
-                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(), List.of(
+                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(TRIGGER_MODE_PUSH_MANUAL_TAG, triggerOptions(false, true)), List.of(
                             parameter("branch", "触发分支", TYPE_TEXT, true, context -> context.branch(), "main", "push/manual 事件写入 when.branch，tag 事件不限制分支", false),
                             parameter("registryUrl", "推送服务器地址", TYPE_TEXT, true, "", "registry.example.com 或 registry.example.com:5000", "写入 plugin-docker-buildx 的 registry", false),
                             parameter("imageRepo", "镜像仓库名", TYPE_TEXT, false, "", "留空按 registry/项目路径生成", "例如 registry.example.com/team/app；留空时保留 GitLab 路径层级并转小写", false),
@@ -147,7 +152,7 @@ public class AiClubPipelineConfigTemplateService {
                             "私钥只会写入 Woodpecker repo secret，不会明文进入 YAML",
                             "JumpServer 模式要求堡垒机支持无交互、公钥登录和直连资产账号，不适用于需要 MFA、审批或手工输入资产账号密码的场景"
                     ),
-                    combineParameters(buildCloneBehaviorParameters(), buildSshRemoteParameters()),
+                    combineParameters(buildCloneBehaviorParameters(TRIGGER_MODE_PUSH_MANUAL, triggerOptions(false, false)), buildSshRemoteParameters()),
                     this::renderSshRemote
             ),
             new TemplateDefinition(
@@ -157,7 +162,7 @@ public class AiClubPipelineConfigTemplateService {
                     "通用",
                     false,
                     List.of("默认使用 Alpine 镜像", "可通过表单调整镜像、分支和 Shell 命令", "如需部署到服务器，也可以打开后置部署开关"),
-                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(), List.of(
+                    combineParameters(buildProjectRootParameters(), buildCloneBehaviorParameters(TRIGGER_MODE_PUSH_PULL_REQUEST_MANUAL, triggerOptions(true, false)), List.of(
                             parameter("branch", "触发分支", TYPE_TEXT, true, context -> context.branch(), "main", "写入 when.branch，默认使用流水线默认分支", false),
                             parameter("shellImage", "运行镜像", TYPE_TEXT, true, "alpine:3.20", "alpine:3.20", "Woodpecker 步骤运行镜像", false),
                             parameter("shellCommands", "Shell 命令", TYPE_TEXTAREA, true, "set -eu\npwd\nls -la\nif [ -f README.md ]; then sed -n '1,40p' README.md; fi", "set -eu", "支持多行命令，平台会逐行写入 commands", false)
@@ -469,7 +474,7 @@ public class AiClubPipelineConfigTemplateService {
                 renderCommandEntries(testCommands),
                 yamlQuote(image),
                 renderCommandEntries(packageCommands),
-                yamlQuote(branch)
+                renderWhenBlock(param(input, PARAM_TRIGGER_MODE), branch)
         ).stripTrailing()).append('\n');
         appendServerDeployStep(builder, input);
         return builder.toString();
@@ -487,13 +492,11 @@ public class AiClubPipelineConfigTemplateService {
                     image: %s
                     commands:
                 %s
-                    when:
-                      - event: [push, pull_request, manual]
-                        branch: %s
+                %s
                 """.formatted(
                 yamlQuote(requiredParam(input, "nodeImage")),
                 renderCommandEntries(commands),
-                yamlQuote(requiredParam(input, "branch"))
+                renderWhenBlock(param(input, PARAM_TRIGGER_MODE), requiredParam(input, "branch"))
         ).stripTrailing()).append('\n');
         appendServerDeployStep(builder, input);
         return builder.toString();
@@ -511,13 +514,11 @@ public class AiClubPipelineConfigTemplateService {
                     image: %s
                     commands:
                 %s
-                    when:
-                      - event: [push, pull_request, manual]
-                        branch: %s
+                %s
                 """.formatted(
                 yamlQuote(requiredParam(input, "pythonImage")),
                 renderCommandEntries(commands),
-                yamlQuote(requiredParam(input, "branch"))
+                renderWhenBlock(param(input, PARAM_TRIGGER_MODE), requiredParam(input, "branch"))
         ).stripTrailing()).append('\n');
         appendServerDeployStep(builder, input);
         return builder.toString();
@@ -545,10 +546,7 @@ public class AiClubPipelineConfigTemplateService {
                       password:
                         from_secret: %s
                       tags:
-                %s%s    when:
-                      - event: [push, manual]
-                        branch: %s
-                      - event: tag
+                %s%s%s
                 """.formatted(
                 yamlQuote(contextPath),
                 yamlQuote(requiredParam(input, "dockerfile")),
@@ -558,7 +556,7 @@ public class AiClubPipelineConfigTemplateService {
                 secretName(input.context(), "REGISTRY_PASSWORD"),
                 renderTags(requiredParam(input, "tags")),
                 insecureSetting,
-                yamlQuote(requiredParam(input, "branch"))
+                renderWhenBlock(param(input, PARAM_TRIGGER_MODE), requiredParam(input, "branch"))
         ).stripTrailing()).append('\n');
         appendServerDeployStep(builder, input);
         return builder.toString();
@@ -583,13 +581,11 @@ public class AiClubPipelineConfigTemplateService {
                         from_secret: %s
                     commands:
                 %s
-                    when:
-                      - event: [push, manual]
-                        branch: %s
+                %s
                 """.formatted(
                 secretName(input.context(), "SSH_PRIVATE_KEY"),
                 renderCommandEntries(commands),
-                yamlQuote(requiredParam(input, "branch"))
+                renderWhenBlock(param(input, PARAM_TRIGGER_MODE), requiredParam(input, "branch"))
         ).stripTrailing()).append('\n');
         return builder.toString();
     }
@@ -605,13 +601,11 @@ public class AiClubPipelineConfigTemplateService {
                     image: %s
                     commands:
                 %s
-                    when:
-                      - event: [push, pull_request, manual]
-                        branch: %s
+                %s
                 """.formatted(
                 yamlQuote(requiredParam(input, "shellImage")),
                 renderCommandEntries(commands),
-                yamlQuote(requiredParam(input, "branch"))
+                renderWhenBlock(param(input, PARAM_TRIGGER_MODE), requiredParam(input, "branch"))
         ).stripTrailing()).append('\n');
         appendServerDeployStep(builder, input);
         return builder.toString();
@@ -627,6 +621,35 @@ public class AiClubPipelineConfigTemplateService {
             builder.append("skip_clone: true\n\n");
         }
         return builder;
+    }
+
+    private String renderWhenBlock(String triggerMode, String branch) {
+        String normalizedMode = defaultString(triggerMode, TRIGGER_MODE_PUSH_MANUAL).trim().toUpperCase(Locale.ROOT);
+        String quotedBranch = yamlQuote(branch);
+        return switch (normalizedMode) {
+            case TRIGGER_MODE_MANUAL_ONLY -> """
+                    when:
+                      - event: [manual]
+                        branch: %s
+                    """.formatted(quotedBranch);
+            case TRIGGER_MODE_PUSH_PULL_REQUEST_MANUAL -> """
+                    when:
+                      - event: [push, pull_request, manual]
+                        branch: %s
+                    """.formatted(quotedBranch);
+            case TRIGGER_MODE_PUSH_MANUAL_TAG -> """
+                    when:
+                      - event: [push, manual]
+                        branch: %s
+                      - event: tag
+                    """.formatted(quotedBranch);
+            case TRIGGER_MODE_PUSH_MANUAL -> """
+                    when:
+                      - event: [push, manual]
+                        branch: %s
+                    """.formatted(quotedBranch);
+            default -> throw new IllegalArgumentException("触发时机不支持: " + normalizedMode);
+        };
     }
 
     private String prependTemplateMetadata(TemplateDefinition template,
@@ -1137,6 +1160,7 @@ public class AiClubPipelineConfigTemplateService {
         Map<String, String> parameters = new LinkedHashMap<>();
         appendSkipClone(rawContent, parameters);
         putIfPresent(parameters, "branch", firstYamlValue(rawContent, "branch:"));
+        putIfPresent(parameters, PARAM_TRIGGER_MODE, detectTriggerMode(rawContent));
         putIfPresent(parameters, "sshCommands", firstRemoteScriptBlock(rawContent));
         String remoteTarget = firstSshRemoteTarget(rawContent);
         String host = firstSshHost(rawContent);
@@ -1162,6 +1186,7 @@ public class AiClubPipelineConfigTemplateService {
         Map<String, String> parameters = new LinkedHashMap<>();
         appendSkipClone(rawContent, parameters);
         putIfPresent(parameters, "branch", firstYamlValue(rawContent, "branch:"));
+        putIfPresent(parameters, PARAM_TRIGGER_MODE, detectTriggerMode(rawContent));
         putIfPresent(parameters, "javaImage", firstImageForStep(rawContent, "test"));
         putIfPresent(parameters, "projectRoot", firstStepProjectRoot(rawContent, "test"));
         putIfPresent(parameters, "testCommand", String.join("\n", commandsWithoutLeadingCd(stepCommands(rawContent, "test"))));
@@ -1174,6 +1199,7 @@ public class AiClubPipelineConfigTemplateService {
         Map<String, String> parameters = new LinkedHashMap<>();
         appendSkipClone(rawContent, parameters);
         putIfPresent(parameters, "branch", firstYamlValue(rawContent, "branch:"));
+        putIfPresent(parameters, PARAM_TRIGGER_MODE, detectTriggerMode(rawContent));
         putIfPresent(parameters, "nodeImage", firstImageForStep(rawContent, "build"));
         putIfPresent(parameters, "projectRoot", firstStepProjectRoot(rawContent, "build"));
         List<String> commands = commandsWithoutLeadingCd(stepCommands(rawContent, "build"));
@@ -1191,6 +1217,7 @@ public class AiClubPipelineConfigTemplateService {
         Map<String, String> parameters = new LinkedHashMap<>();
         appendSkipClone(rawContent, parameters);
         putIfPresent(parameters, "branch", firstYamlValue(rawContent, "branch:"));
+        putIfPresent(parameters, PARAM_TRIGGER_MODE, detectTriggerMode(rawContent));
         putIfPresent(parameters, "pythonImage", firstImageForStep(rawContent, "verify"));
         putIfPresent(parameters, "projectRoot", firstStepProjectRoot(rawContent, "verify"));
         List<String> commands = commandsWithoutLeadingCd(stepCommands(rawContent, "verify"));
@@ -1208,6 +1235,7 @@ public class AiClubPipelineConfigTemplateService {
         Map<String, String> parameters = new LinkedHashMap<>();
         appendSkipClone(rawContent, parameters);
         putIfPresent(parameters, "branch", firstYamlValue(rawContent, "branch:"));
+        putIfPresent(parameters, PARAM_TRIGGER_MODE, detectTriggerMode(rawContent));
         putIfPresent(parameters, "shellImage", firstImageForStep(rawContent, "verify"));
         putIfPresent(parameters, "projectRoot", firstStepProjectRoot(rawContent, "verify"));
         putIfPresent(parameters, "shellCommands", String.join("\n", commandsWithoutLeadingCd(stepCommands(rawContent, "verify"))));
@@ -1243,6 +1271,23 @@ public class AiClubPipelineConfigTemplateService {
         putIfPresent(parameters, PARAM_SERVER_DEPLOY_SOURCE_PATH, sourcePath);
         putIfPresent(parameters, PARAM_SERVER_DEPLOY_REMOTE_PATH, remotePath);
         putIfPresent(parameters, PARAM_SERVER_DEPLOY_COMMANDS, deployCommands);
+    }
+
+    private String detectTriggerMode(String rawContent) {
+        String normalized = defaultString(rawContent).replace("\r\n", "\n").replace('\r', '\n');
+        if (normalized.contains("event: [push, pull_request, manual]")) {
+            return TRIGGER_MODE_PUSH_PULL_REQUEST_MANUAL;
+        }
+        if (normalized.contains("event: [manual]")) {
+            return TRIGGER_MODE_MANUAL_ONLY;
+        }
+        if (normalized.contains("event: [push, manual]") && normalized.contains("- event: tag")) {
+            return TRIGGER_MODE_PUSH_MANUAL_TAG;
+        }
+        if (normalized.contains("event: [push, manual]")) {
+            return TRIGGER_MODE_PUSH_MANUAL;
+        }
+        return null;
     }
 
     private void appendSkipClone(String rawContent, Map<String, String> parameters) {
@@ -1566,9 +1611,28 @@ public class AiClubPipelineConfigTemplateService {
     }
 
     private List<ParameterDefinition> buildCloneBehaviorParameters() {
+        return buildCloneBehaviorParameters(TRIGGER_MODE_PUSH_MANUAL, triggerOptions(false, false));
+    }
+
+    private List<ParameterDefinition> buildCloneBehaviorParameters(String defaultTriggerMode,
+                                                                   List<String> triggerOptions) {
         return List.of(
-                parameter(PARAM_SKIP_CLONE, "跳过默认克隆", TYPE_SWITCH, false, "false", "", "打开后在 YAML 顶层写入 skip_clone: true，适用于只执行远端命令或准备自行处理代码拉取的场景", false)
+                parameter(PARAM_SKIP_CLONE, "跳过默认克隆", TYPE_SWITCH, false, "false", "", "打开后在 YAML 顶层写入 skip_clone: true，适用于只执行远端命令或准备自行处理代码拉取的场景", false),
+                selectParameter(PARAM_TRIGGER_MODE, "触发时机", true, defaultTriggerMode, "控制平台模板生成的 when.event 组合。修改配置时也会回填当前触发策略。", triggerOptions)
         );
+    }
+
+    private List<String> triggerOptions(boolean includePullRequest, boolean includeTag) {
+        List<String> options = new ArrayList<>();
+        options.add(TRIGGER_MODE_MANUAL_ONLY);
+        options.add(TRIGGER_MODE_PUSH_MANUAL);
+        if (includePullRequest) {
+            options.add(TRIGGER_MODE_PUSH_PULL_REQUEST_MANUAL);
+        }
+        if (includeTag) {
+            options.add(TRIGGER_MODE_PUSH_MANUAL_TAG);
+        }
+        return List.copyOf(options);
     }
 
     private List<ParameterDefinition> buildSshRemoteParameters() {

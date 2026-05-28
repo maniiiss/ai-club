@@ -249,7 +249,11 @@ const parameterValues = reactive<Record<string, string>>({})
 const prefillMessage = ref('')
 const connectionTypeLabelMap: Record<string, string> = {
   DIRECT_SSH: '直连服务器',
-  JUMPSERVER: '经 JumpServer'
+  JUMPSERVER: '经 JumpServer',
+  MANUAL_ONLY: '仅手动触发',
+  PUSH_MANUAL: '推送 + 手动',
+  PUSH_PULL_REQUEST_MANUAL: '推送 + 合并请求 + 手动',
+  PUSH_MANUAL_TAG: '推送 + 标签 + 手动'
 }
 
 const selectedTemplate = computed(() => templates.value.find((item) => item.code === selectedTemplateCode.value) || null)

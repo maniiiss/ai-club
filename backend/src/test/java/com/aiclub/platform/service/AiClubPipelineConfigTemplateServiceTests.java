@@ -157,6 +157,7 @@ class AiClubPipelineConfigTemplateServiceTests {
         assertThat(result.templateCode()).isEqualTo("GENERIC_SHELL");
         assertThat(result.parameters()).containsEntry("branch", "deploy");
         assertThat(result.parameters()).containsEntry("skipClone", "true");
+        assertThat(result.parameters()).containsEntry("triggerMode", "PUSH_PULL_REQUEST_MANUAL");
         assertThat(result.parameters()).containsEntry("shellCommands", "echo hello");
     }
 
@@ -191,6 +192,7 @@ class AiClubPipelineConfigTemplateServiceTests {
         assertThat(result.templateCode()).isEqualTo(AiClubPipelineConfigTemplateService.TEMPLATE_SSH_REMOTE);
         assertThat(result.parameters()).containsEntry("skipClone", "true");
         assertThat(result.parameters()).containsEntry("branch", "deploy");
+        assertThat(result.parameters()).containsEntry("triggerMode", "MANUAL_ONLY");
         assertThat(result.parameters()).containsEntry("connectionType", "JUMPSERVER");
         assertThat(result.parameters()).containsEntry("jumpServerHost", "192.168.111.51");
         assertThat(result.parameters()).containsEntry("jumpServerPort", "2222");
