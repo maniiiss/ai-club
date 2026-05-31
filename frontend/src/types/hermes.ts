@@ -255,3 +255,63 @@ export interface HermesStreamDoneEvent {
 export interface HermesStreamErrorEvent {
   message: string
 }
+
+/**
+ * Hermes 用户记忆条目。
+ */
+export interface HermesUserMemoryItem {
+  documentId: string
+  title: string
+  snippet: string
+  question: string
+  answer: string
+  scene: string
+  createdAt: string | null
+  metadata: Record<string, unknown>
+}
+
+/**
+ * Hermes 记忆整理后生成的结构化事实。
+ */
+export interface HermesMemoryFactItem {
+  id: string
+  summary: string
+  predicate: string
+  subject: string
+  object: string
+  sourceType: string
+  createdAt: string | null
+  tags: string[]
+  metadata: Record<string, unknown>
+}
+
+/**
+ * Hermes 记忆管理页的聚合视图。
+ */
+export interface HermesMemoryOverview {
+  conversationMemories: HermesUserMemoryItem[]
+  consolidatedFacts: HermesMemoryFactItem[]
+}
+
+/**
+ * Hermes 记忆整理任务的启动结果。
+ */
+export interface HermesMemoryConsolidationTask {
+  operationId: string
+  deduplicated: boolean
+}
+
+/**
+ * Hermes 记忆整理任务的当前状态。
+ */
+export interface HermesMemoryConsolidationStatus {
+  operationId: string
+  operationType: string
+  status: string
+  errorMessage: string
+  retryCount: number | null
+  nextRetryAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+  completedAt: string | null
+}

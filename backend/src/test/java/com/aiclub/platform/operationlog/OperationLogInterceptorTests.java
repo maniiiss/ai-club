@@ -3,10 +3,12 @@ package com.aiclub.platform.operationlog;
 import com.aiclub.platform.controller.HermesController;
 import com.aiclub.platform.controller.UserController;
 import com.aiclub.platform.service.AccessManagementService;
+import com.aiclub.platform.service.AuthService;
 import com.aiclub.platform.service.DocumentAssetService;
 import com.aiclub.platform.service.HermesAttachmentService;
 import com.aiclub.platform.service.HermesChatService;
 import com.aiclub.platform.service.HermesConversationSessionService;
+import com.aiclub.platform.service.HermesHindsightMemoryService;
 import com.aiclub.platform.service.UserOperationLogService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -36,6 +38,8 @@ class OperationLogInterceptorTests {
                 mock(HermesChatService.class),
                 mock(HermesConversationSessionService.class),
                 mock(HermesAttachmentService.class),
+                mock(HermesHindsightMemoryService.class),
+                mock(AuthService.class),
                 mock(DocumentAssetService.class),
                 new ObjectMapper()
         );

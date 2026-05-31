@@ -8,10 +8,14 @@
   >
     <template #header>
       <div class="hermes-head">
-        <div>
-          <div class="hermes-title">Hermes 助手</div>
+        <div class="hermes-head-left">
+          <button v-if="memoryViewVisible" class="hermes-back-button" type="button" @click="memoryViewVisible = false">返回</button>
+          <div class="hermes-title">{{ memoryViewVisible ? '记忆管理' : 'Hermes 助手' }}</div>
         </div>
-        <button class="hermes-close-button" type="button" @click="drawerVisible = false">关闭</button>
+        <div class="hermes-head-right">
+          <button v-if="!memoryViewVisible" class="hermes-memory-entry" type="button" @click="handleOpenMemoryView">记忆管理</button>
+          <button class="hermes-close-button" type="button" @click="drawerVisible = false">关闭</button>
+        </div>
       </div>
     </template>
 
@@ -85,7 +89,97 @@
         </div>
       </aside>
 
-      <section class="hermes-chat-shell">
+      <!-- 记忆管理二级页面 -->
+      <section v-if="memoryViewVisible" class="hermes-memory-view">
+        <div class="hermes-memory-header">
+          <div class="hermes-memory-tabs">
+            <button class="hermes-tab" :class="{ active: memoryTab === 'conversation' }" type="button" @click="memoryTab = 'conversation'">原始会话记忆</button>
+            <button class="hermes-tab" :class="{ active: memoryTab === 'consolidated' }" type="button" @click="memoryTab = 'consolidated'">整理后摘要</button>
+          </div>
+          <div class="hermes-memory-search">
+            <input
+              v-model="memoryQuery"
+              class="hermes-memory-search-input"
+              type="text"
+              placeholder="搜索记忆..."
+              @input="handleMemorySearch"
+            />
+          </div>
+        </div>
+        <div class="hermes-memory-body">
+          <div v-if="memoryConsolidating" class="hermes-muted-card">{{ memoryConsolidationHint }}</div>
+          <div v-if="memoryLoading" class="hermes-muted-card">正在加载记忆...</div>
+
+          <!-- 原始会话记忆 -->
+          <template v-if="memoryTab === 'conversation' && !memoryLoading && !memoryConsolidating">
+            <template v-if="memoryConversationList.length">
+              <div
+                v-for="memory in memoryConversationList"
+                :key="memory.documentId"
+                class="hermes-memory-item"
+                :class="{ expanded: expandedMemoryIds[memory.documentId] }"
+              >
+                <div class="hermes-memory-content">
+                  <div v-if="memory.scene" class="hermes-memory-scene">{{ memory.scene }}</div>
+                  <div class="hermes-memory-question">{{ memory.question || memory.title || '未命名记忆' }}</div>
+                  <template v-if="expandedMemoryIds[memory.documentId]">
+                    <div v-if="memory.answer" class="hermes-memory-answer-label">Hermes 回答</div>
+                    <div v-if="memory.answer" class="hermes-memory-answer">{{ memory.answer }}</div>
+                  </template>
+                  <div v-if="memory.createdAt" class="hermes-memory-time">{{ formatMemoryTime(memory.createdAt) }}</div>
+                </div>
+                <div class="hermes-memory-actions">
+                  <button
+                    class="hermes-memory-toggle"
+                    type="button"
+                    @click="toggleMemoryExpand(memory.documentId)"
+                  >{{ expandedMemoryIds[memory.documentId] ? '收起' : '展开' }}</button>
+                  <button
+                    class="hermes-memory-delete"
+                    type="button"
+                    title="删除这条记忆"
+                    @click="handleDeleteMemory(memory)"
+                  >删除</button>
+                </div>
+              </div>
+            </template>
+            <div v-else class="hermes-empty-state compact">
+              <div class="hermes-empty-kicker">原始会话记忆</div>
+              <div class="hermes-empty-title">暂无会话记忆</div>
+              <p>Hermes 会自动记住你和它的对话要点，下次聊天时会参考这些记忆来回答。</p>
+            </div>
+          </template>
+
+          <!-- 整理后摘要 -->
+          <template v-if="memoryTab === 'consolidated' && !memoryLoading && !memoryConsolidating">
+            <template v-if="memoryFactList.length">
+              <article v-for="fact in memoryFactList" :key="fact.id" class="hermes-memory-fact-item">
+                <div class="hermes-memory-fact-summary">{{ fact.summary || '未生成摘要' }}</div>
+                <div v-if="fact.subject || fact.predicate || fact.object" class="hermes-memory-fact-meta">
+                  {{ [fact.subject, fact.predicate, fact.object].filter(Boolean).join(' · ') }}
+                </div>
+                <div class="hermes-memory-fact-footer">
+                  <div v-if="fact.tags.length" class="hermes-memory-fact-tags">
+                    <span v-for="tag in fact.tags.slice(0, 6)" :key="`${fact.id}-${tag}`" class="hermes-memory-tag">{{ tag }}</span>
+                  </div>
+                  <div v-if="fact.createdAt" class="hermes-memory-time">{{ formatMemoryTime(fact.createdAt) }}</div>
+                </div>
+              </article>
+            </template>
+            <div v-else class="hermes-empty-state compact">
+              <div class="hermes-empty-kicker">整理后摘要</div>
+              <div class="hermes-empty-title">暂无结构化摘要</div>
+              <p>先多聊几轮积累记忆，再点击下方"整理记忆"按钮，Hermes 会用 AI 将碎片记忆整合为结构化知识。</p>
+            </div>
+          </template>
+        </div>
+        <div class="hermes-memory-footer">
+          <button class="hermes-primary-button" type="button" :disabled="memoryLoading || memoryConsolidating" @click="handleConsolidateMemories">{{ memoryConsolidating ? '整理中...' : '整理记忆' }}</button>
+          <button v-if="memoryConversationList.length" class="hermes-danger-button" type="button" :disabled="memoryLoading || memoryConsolidating" @click="handleClearMemories">清空全部</button>
+        </div>
+      </section>
+
+      <section v-if="!memoryViewVisible" class="hermes-chat-shell">
         <div v-if="isMobileViewport" class="hermes-mobile-session-toggle-shell">
           <button
             class="hermes-mobile-session-toggle"
@@ -260,18 +354,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { MoreFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { openCommonFileDownload } from '@/api/common'
-import { archiveHermesConversationSession, createHermesConversationSession, deleteHermesConversationSession, getHermesConversationDetail, pageHermesConversationSessions, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat, streamHermesSessionChatWithFiles, transcribeHermesSpeech } from '@/api/hermes'
+import { archiveHermesConversationSession, clearHermesUserMemories, consolidateHermesUserMemories, createHermesConversationSession, deleteHermesConversationSession, deleteHermesUserMemory, getHermesConversationDetail, getHermesMemoryConsolidationStatus, listHermesUserMemories, pageHermesConversationSessions, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat, streamHermesSessionChatWithFiles, transcribeHermesSpeech } from '@/api/hermes'
 import { createGitlabBindingScanTask } from '@/api/gitlab'
 import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import { renderHermesMarkdownToHtml } from '@/utils/hermesMarkdown'
 import { DEFAULT_REQUIREMENT_TEMPLATE } from '@/utils/requirementTemplate'
-import type { CreateHermesConversationSessionPayload, HermesActionItem, HermesAttachmentItem, HermesConversationDetailItem, HermesConversationSessionSummaryItem, HermesDebugInfoItem, HermesMessageItem, HermesReferenceItem, HermesSelectionCardItem, HermesSelectionOptionItem, HermesSelectionPayload, HermesSessionChatRequestPayload, HermesStreamDeltaEvent, HermesStreamDoneEvent, HermesStreamErrorEvent, HermesStreamMetaEvent, HermesStreamStatusEvent } from '@/types/hermes'
+import type { CreateHermesConversationSessionPayload, HermesActionItem, HermesAttachmentItem, HermesConversationDetailItem, HermesConversationSessionSummaryItem, HermesDebugInfoItem, HermesMemoryConsolidationStatus, HermesMemoryFactItem, HermesMessageItem, HermesReferenceItem, HermesSelectionCardItem, HermesSelectionOptionItem, HermesSelectionPayload, HermesSessionChatRequestPayload, HermesStreamDeltaEvent, HermesStreamDoneEvent, HermesStreamErrorEvent, HermesStreamMetaEvent, HermesStreamStatusEvent, HermesUserMemoryItem } from '@/types/hermes'
 
 interface HermesDrawerProps {
   routeName: string
@@ -348,6 +442,18 @@ const STREAM_LINE_BREAK_PAUSE_MS = 52
 let pendingStreamDrainTimer: ReturnType<typeof setTimeout> | null = null
 let hermesDrawerDisposed = false
 
+// 记忆管理相关状态
+const memoryViewVisible = ref(false)
+const memoryTab = ref<'conversation' | 'consolidated'>('conversation')
+const memoryList = ref<HermesUserMemoryItem[]>([])
+const memoryFactList = ref<HermesMemoryFactItem[]>([])
+const memoryLoading = ref(false)
+const memoryConsolidating = ref(false)
+const memoryConsolidationMessage = ref('')
+const memoryQuery = ref('')
+const memorySearchTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+const expandedMemoryIds = reactive<Record<string, boolean>>({})
+
 // 统一把 Hermes 返回的引用类型转成前端可读的中文标签，避免直接暴露后端枚举值。
 const HERMES_REFERENCE_TYPE_LABELS: Record<string, string> = {
   DASHBOARD: '首页看板',
@@ -371,6 +477,8 @@ const currentStreamStatusText = computed(() => {
   const message = currentStreamStatus.value?.message || 'Hermes 正在整理回答'
   return message + '...'
 })
+const memoryConsolidationHint = computed(() => memoryConsolidationMessage.value || '正在整理记忆，这个过程通常需要几十秒。')
+const memoryConversationList = computed(() => memoryList.value)
 const canLoadMoreSessions = computed(() => sessionSummaries.value.length < sessionTotal.value)
 const mobileSessionToggleValue = computed(() => {
   const count = sessionTotal.value || sessionSummaries.value.length
@@ -493,6 +601,173 @@ const loadMoreSessions = async () => {
   if (canLoadMoreSessions.value && !loadingMoreSessions.value) {
     await loadSessionList(false)
   }
+}
+
+/**
+ * 加载用户记忆列表。
+ */
+const loadMemoryList = async (query?: string) => {
+  memoryLoading.value = true
+  try {
+    const overview = await listHermesUserMemories(query || '', 50)
+    memoryList.value = overview.conversationMemories || []
+    memoryFactList.value = overview.consolidatedFacts || []
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载 Hermes 记忆失败')
+  } finally {
+    memoryLoading.value = false
+  }
+}
+
+/**
+ * 搜索记忆，带 debounce。
+ */
+const handleMemorySearch = () => {
+  if (memorySearchTimer.value) {
+    clearTimeout(memorySearchTimer.value)
+  }
+  memorySearchTimer.value = setTimeout(() => {
+    void loadMemoryList(memoryQuery.value)
+  }, 300)
+}
+
+/**
+ * 格式化记忆时间，将 ISO 时间转为可读格式。
+ */
+const formatMemoryTime = (time: string) => {
+  if (!time) return ''
+  try {
+    const date = new Date(time)
+    if (isNaN(date.getTime())) return time
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+    if (diffMins < 1) return '刚刚'
+    if (diffMins < 60) return `${diffMins} 分钟前`
+    if (diffHours < 24) return `${diffHours} 小时前`
+    if (diffDays < 7) return `${diffDays} 天前`
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  } catch {
+    return time
+  }
+}
+
+/**
+ * 切换记忆条目展开/收起。
+ */
+const toggleMemoryExpand = (documentId: string) => {
+  expandedMemoryIds[documentId] = !expandedMemoryIds[documentId]
+}
+
+/**
+ * 删除单条记忆。
+ */
+const handleDeleteMemory = async (memory: HermesUserMemoryItem) => {
+  try {
+    await ElMessageBox.confirm('确定删除这条记忆吗？删除后不可恢复。', '删除记忆', { type: 'warning' })
+    await deleteHermesUserMemory(memory.documentId)
+    ElMessage.success('记忆已删除')
+    void loadMemoryList(memoryQuery.value)
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || '删除记忆失败')
+    }
+  }
+}
+
+/**
+ * 清空全部记忆。
+ */
+const handleClearMemories = async () => {
+  try {
+    await ElMessageBox.confirm('确定清空全部 Hermes 记忆吗？此操作不可恢复。', '清空记忆', { type: 'warning' })
+    const deletedCount = await clearHermesUserMemories()
+    ElMessage.success(`已清空 ${deletedCount} 条记忆`)
+    void loadMemoryList()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || '清空记忆失败')
+    }
+  }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
+
+/**
+ * 把后端返回的整理状态转成前端可读提示，避免用户只能看到抽象状态码。
+ */
+const resolveMemoryConsolidationStatusText = (status: HermesMemoryConsolidationStatus) => {
+  const normalizedStatus = (status.status || '').trim().toLowerCase()
+  if (normalizedStatus === 'completed') return '记忆整理已完成，正在刷新列表...'
+  if (normalizedStatus === 'failed') return status.errorMessage || '记忆整理失败'
+  if (normalizedStatus === 'cancelled') return '记忆整理已取消'
+  if (normalizedStatus === 'not_found') return '未找到这次记忆整理任务'
+  if (normalizedStatus === 'pending') return '记忆整理任务已创建，正在等待执行...'
+  if (normalizedStatus === 'processing') return 'Hindsight 正在整理记忆，请稍候...'
+  return `记忆整理状态：${status.status || '未知'}`
+}
+
+/**
+ * 轮询 Hindsight consolidation operation，只有真正进入终态后才给用户完成/失败反馈。
+ */
+const waitForMemoryConsolidation = async (operationId: string) => {
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    const status = await getHermesMemoryConsolidationStatus(operationId)
+    memoryConsolidationMessage.value = resolveMemoryConsolidationStatusText(status)
+    const normalizedStatus = (status.status || '').trim().toLowerCase()
+    if (normalizedStatus === 'completed') {
+      return status
+    }
+    if (normalizedStatus === 'failed' || normalizedStatus === 'cancelled' || normalizedStatus === 'not_found') {
+      throw new Error(status.errorMessage || memoryConsolidationMessage.value)
+    }
+    await sleep(2000)
+  }
+  throw new Error('记忆整理仍在后台执行，请稍后重新打开记忆管理查看结果')
+}
+
+/**
+ * 整理记忆：触发 Hindsight consolidation，将碎片记忆合并为结构化摘要。
+ */
+const handleConsolidateMemories = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '整理记忆会使用 AI 将碎片化的对话记忆合并为结构化的知识摘要，过程可能需要几十秒。确定继续？',
+      '整理记忆',
+      { type: 'info', confirmButtonText: '开始整理' }
+    )
+    memoryConsolidating.value = true
+    memoryConsolidationMessage.value = '正在向 Hindsight 提交整理任务...'
+    const task = await consolidateHermesUserMemories()
+    memoryConsolidationMessage.value = task.deduplicated
+      ? '检测到已有相同整理任务，正在跟踪这次后台执行...'
+      : '整理任务已提交，正在等待 Hindsight 执行...'
+    await waitForMemoryConsolidation(task.operationId)
+    await loadMemoryList(memoryQuery.value)
+    ElMessage.success('记忆整理完成')
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || error?.message || '记忆整理失败，请检查 Hindsight LLM 配置')
+    }
+  } finally {
+    memoryConsolidating.value = false
+    memoryConsolidationMessage.value = ''
+  }
+}
+
+/**
+ * 打开记忆管理二级页面。
+ */
+const handleOpenMemoryView = () => {
+  memoryViewVisible.value = true
+  memoryTab.value = 'conversation'
+  memoryQuery.value = ''
+  void loadMemoryList()
 }
 
 /**
@@ -1483,7 +1758,11 @@ function resolvePreferredSessionIdForCurrentContext() {
     return currentSelectedSummary.id
   }
   const matchedSession = sessionSummaries.value.find((item) => isSessionAlignedWithCurrentContext(item))
-  return matchedSession?.id ?? null
+  if (matchedSession) {
+    return matchedSession.id
+  }
+  // 没有匹配当前上下文的会话时，选择最新的会话
+  return sessionSummaries.value.length > 0 ? sessionSummaries.value[0].id : null
 }
 
 function isSessionAlignedWithCurrentContext(session: Pick<HermesConversationSessionSummaryItem, 'routeName' | 'projectId' | 'taskId' | 'iterationId' | 'planId' | 'wikiSpaceId' | 'wikiPageId'>) {
@@ -1575,6 +1854,195 @@ function persistSelectedSessionId(sessionId: number | null) {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.hermes-head {
+  width: 100%;
+  align-items: center;
+}
+
+.hermes-head-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hermes-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.hermes-back-button {
+  padding: 4px 12px;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.hermes-back-button:hover {
+  background: rgba(var(--app-outline-rgb), 0.06);
+}
+
+.hermes-memory-entry {
+  padding: 4px 14px;
+  border: 1px solid rgba(var(--app-primary-rgb), 0.3);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.hermes-memory-entry:hover {
+  background: rgba(var(--app-primary-rgb), 0.08);
+  border-color: rgba(var(--app-primary-rgb), 0.5);
+}
+
+.hermes-memory-view {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hermes-memory-header {
+  padding: 12px 18px;
+  border-bottom: 1px solid rgba(var(--app-outline-rgb), 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hermes-memory-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.hermes-memory-tabs .hermes-tab {
+  flex: 1;
+  text-align: center;
+}
+
+.hermes-memory-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-gutter: stable;
+}
+
+.hermes-memory-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hermes-memory-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hermes-memory-section-title {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.hermes-memory-section-caption {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hermes-memory-inline-empty {
+  padding: 12px 14px;
+  border: 1px dashed rgba(var(--app-outline-rgb), 0.18);
+  border-radius: 10px;
+  color: #64748b;
+  font-size: 12px;
+  background: rgba(var(--app-primary-rgb), 0.03);
+}
+
+.hermes-memory-fact-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(241, 245, 249, 0.9), rgba(255, 255, 255, 0.98));
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+.hermes-memory-fact-summary {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.hermes-memory-fact-meta {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hermes-memory-fact-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.hermes-memory-fact-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.hermes-memory-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(var(--app-primary-rgb), 0.08);
+  color: var(--app-primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.hermes-memory-footer {
+  padding: 12px 18px;
+  border-top: 1px solid rgba(var(--app-outline-rgb), 0.1);
+  display: flex;
+  gap: 10px;
+}
+
+.hermes-memory-footer .hermes-primary-button {
+  flex: 1;
+}
+
+.hermes-memory-footer .hermes-danger-button {
+  flex: 0 0 auto;
+  width: auto;
 }
 
 .hermes-title {
@@ -1709,6 +2177,151 @@ function persistSelectedSessionId(sessionId: number | null) {
 .hermes-tab.active {
   background: rgba(var(--app-primary-rgb), 0.12);
   color: var(--app-primary);
+}
+
+.hermes-memory-search {
+  width: 100%;
+}
+
+.hermes-memory-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 14px;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.2);
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+  background: #fff;
+}
+
+.hermes-memory-search-input:focus {
+  border-color: rgba(var(--app-primary-rgb), 0.5);
+}
+
+.hermes-memory-item {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+.hermes-memory-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hermes-memory-scene {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 1px 8px;
+  border-radius: 4px;
+  background: rgba(var(--app-primary-rgb), 0.08);
+  color: var(--app-primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.hermes-memory-question {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.hermes-memory-answer-label {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+.hermes-memory-answer {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.hermes-memory-time {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.hermes-memory-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  align-items: flex-end;
+}
+
+.hermes-memory-toggle {
+  padding: 2px 10px;
+  border: 1px solid rgba(var(--app-primary-rgb), 0.3);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.hermes-memory-toggle:hover {
+  background: rgba(var(--app-primary-rgb), 0.08);
+  border-color: rgba(var(--app-primary-rgb), 0.5);
+}
+
+.hermes-memory-delete {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 6px;
+  background: transparent;
+  color: #ef4444;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.hermes-memory-delete:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.hermes-danger-button {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  background: transparent;
+  color: #ef4444;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.hermes-danger-button:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.hermes-danger-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .hermes-session-list,

@@ -4,6 +4,9 @@ import type { ApiResponse, PageResponse } from '@/types/platform'
 import type {
   CreateHermesConversationSessionPayload,
   HermesAttachmentItem,
+  HermesMemoryConsolidationStatus,
+  HermesMemoryConsolidationTask,
+  HermesMemoryOverview,
   HermesConversationDetailItem,
   HermesConversationSessionQuery,
   HermesConversationSessionSummaryItem,
@@ -15,6 +18,7 @@ import type {
   HermesStreamErrorEvent,
   HermesStreamMetaEvent,
   HermesStreamStatusEvent,
+  HermesUserMemoryItem,
   RenameHermesConversationSessionPayload
 } from '@/types/hermes'
 
@@ -99,6 +103,48 @@ export const restoreHermesConversationSession = async (sessionId: number) => {
  */
 export const deleteHermesConversationSession = async (sessionId: number) => {
   await http.delete<ApiResponse<null>>(`/api/hermes/sessions/${sessionId}`)
+}
+
+/**
+ * 列出当前用户的 Hermes 记忆。
+ */
+export const listHermesUserMemories = async (query?: string, limit?: number) => {
+  const { data } = await http.get<ApiResponse<HermesMemoryOverview>>('/api/hermes/memories', {
+    params: cleanParams({ query, limit })
+  })
+  return data.data
+}
+
+/**
+ * 删除当前用户的一条 Hermes 记忆。
+ */
+export const deleteHermesUserMemory = async (documentId: string) => {
+  await http.delete<ApiResponse<null>>(`/api/hermes/memories/${encodeURIComponent(documentId)}`)
+}
+
+/**
+ * 清空当前用户的全部 Hermes 记忆。
+ */
+export const clearHermesUserMemories = async () => {
+  const { data } = await http.delete<ApiResponse<number>>('/api/hermes/memories')
+  return data.data
+}
+
+/**
+ * 触发当前用户 Hermes 记忆的整合。
+ * Hindsight 会返回异步 operation，前端需要继续查询真实执行状态。
+ */
+export const consolidateHermesUserMemories = async () => {
+  const { data } = await http.post<ApiResponse<HermesMemoryConsolidationTask>>('/api/hermes/memories/consolidate')
+  return data.data
+}
+
+/**
+ * 查询某次 Hermes 记忆整理任务的当前执行状态。
+ */
+export const getHermesMemoryConsolidationStatus = async (operationId: string) => {
+  const { data } = await http.get<ApiResponse<HermesMemoryConsolidationStatus>>(`/api/hermes/memories/consolidate/${encodeURIComponent(operationId)}`)
+  return data.data
 }
 
 /**

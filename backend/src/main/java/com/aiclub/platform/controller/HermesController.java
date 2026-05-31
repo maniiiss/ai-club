@@ -3,19 +3,26 @@ package com.aiclub.platform.controller;
 import com.aiclub.platform.annotation.OperationLog;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
+import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.HermesChatResponse;
 import com.aiclub.platform.dto.HermesConversationDetail;
 import com.aiclub.platform.dto.HermesConversationSessionSummary;
+import com.aiclub.platform.dto.HermesMemoryConsolidationStatus;
+import com.aiclub.platform.dto.HermesMemoryOverview;
+import com.aiclub.platform.dto.HermesMemoryConsolidationTask;
+import com.aiclub.platform.dto.HermesUserMemoryItem;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.request.CreateHermesConversationSessionRequest;
 import com.aiclub.platform.dto.request.HermesMultipartChatCommand;
 import com.aiclub.platform.dto.request.HermesSessionChatRequest;
 import com.aiclub.platform.dto.request.HermesSelectionFormRequest;
 import com.aiclub.platform.dto.request.RenameHermesConversationSessionRequest;
+import com.aiclub.platform.service.AuthService;
 import com.aiclub.platform.service.DocumentAssetService;
 import com.aiclub.platform.service.HermesAttachmentService;
 import com.aiclub.platform.service.HermesChatService;
 import com.aiclub.platform.service.HermesConversationSessionService;
+import com.aiclub.platform.service.HermesHindsightMemoryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +55,8 @@ public class HermesController {
     private final HermesChatService hermesChatService;
     private final HermesConversationSessionService hermesConversationSessionService;
     private final HermesAttachmentService hermesAttachmentService;
+    private final HermesHindsightMemoryService hermesHindsightMemoryService;
+    private final AuthService authService;
     private final DocumentAssetService documentAssetService;
     private final ObjectMapper objectMapper;
 
@@ -55,11 +64,15 @@ public class HermesController {
     public HermesController(HermesChatService hermesChatService,
                             HermesConversationSessionService hermesConversationSessionService,
                             HermesAttachmentService hermesAttachmentService,
+                            HermesHindsightMemoryService hermesHindsightMemoryService,
+                            AuthService authService,
                             DocumentAssetService documentAssetService,
                             ObjectMapper objectMapper) {
         this.hermesChatService = hermesChatService;
         this.hermesConversationSessionService = hermesConversationSessionService;
         this.hermesAttachmentService = hermesAttachmentService;
+        this.hermesHindsightMemoryService = hermesHindsightMemoryService;
+        this.authService = authService;
         this.documentAssetService = documentAssetService;
         this.objectMapper = objectMapper;
     }
@@ -227,5 +240,60 @@ public class HermesController {
         } catch (Exception exception) {
             throw new IllegalArgumentException("Hermes 选择信息格式不正确");
         }
+    }
+
+    /**
+     * 列出当前用户的 Hermes 记忆。
+     */
+    @GetMapping("/memories")
+    @RequirePermission("hermes:chat")
+    public ApiResponse<HermesMemoryOverview> listMemories(
+            @RequestParam(required = false) String query,
+            @RequestParam(defaultValue = "50") int limit) {
+        CurrentUserInfo currentUser = authService.currentUser();
+        return ApiResponse.success(hermesHindsightMemoryService.getUserMemoryOverview(currentUser, query, limit));
+    }
+
+    /**
+     * 删除当前用户的一条 Hermes 记忆。
+     */
+    @DeleteMapping("/memories/{documentId}")
+    @RequirePermission("hermes:chat")
+    public ApiResponse<Void> deleteMemory(@PathVariable String documentId) {
+        CurrentUserInfo currentUser = authService.currentUser();
+        hermesHindsightMemoryService.deleteUserMemory(currentUser, documentId);
+        return new ApiResponse<>(true, "ok", null);
+    }
+
+    /**
+     * 清空当前用户的全部 Hermes 记忆。
+     */
+    @DeleteMapping("/memories")
+    @RequirePermission("hermes:chat")
+    public ApiResponse<Integer> clearMemories() {
+        CurrentUserInfo currentUser = authService.currentUser();
+        int deletedCount = hermesHindsightMemoryService.clearUserMemories(currentUser);
+        return ApiResponse.success(deletedCount);
+    }
+
+    /**
+     * 触发当前用户 Hermes 记忆的整合。
+     * Hindsight 这里会返回异步 operation，前端需继续轮询状态而不是直接视为已完成。
+     */
+    @PostMapping("/memories/consolidate")
+    @RequirePermission("hermes:chat")
+    public ApiResponse<HermesMemoryConsolidationTask> consolidateMemories() {
+        CurrentUserInfo currentUser = authService.currentUser();
+        return ApiResponse.success(hermesHindsightMemoryService.startUserMemoryConsolidation(currentUser));
+    }
+
+    /**
+     * 查询当前用户某次 Hermes 记忆整理任务的执行状态。
+     */
+    @GetMapping("/memories/consolidate/{operationId}")
+    @RequirePermission("hermes:chat")
+    public ApiResponse<HermesMemoryConsolidationStatus> getMemoryConsolidationStatus(@PathVariable String operationId) {
+        CurrentUserInfo currentUser = authService.currentUser();
+        return ApiResponse.success(hermesHindsightMemoryService.getUserMemoryConsolidationStatus(currentUser, operationId));
     }
 }

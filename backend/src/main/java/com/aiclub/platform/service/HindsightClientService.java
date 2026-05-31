@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -27,6 +29,8 @@ import java.util.Map;
  */
 @Service
 public class HindsightClientService {
+
+    private static final Logger log = LoggerFactory.getLogger(HindsightClientService.class);
 
     private final HindsightProperties properties;
     private final ObjectMapper objectMapper;
@@ -87,6 +91,66 @@ public class HindsightClientService {
                                         List<String> tags,
                                         Map<String, Object> metadata) {
         sendJsonRequest("POST", spaceMemoriesUrl(spaceId), buildRetainPayload(documentId, title, content, tags, metadata, "wiki", "wiki"));
+    }
+
+    /**
+     * 删除指定 bank 中的文档记忆，供用户记忆管理使用。
+     */
+    public void deleteDocument(String bankId, String documentId) {
+        sendJsonRequest("DELETE", bankDocumentUrl(bankId, documentId), null);
+    }
+
+    /**
+     * 触发指定 bank 的记忆整合（consolidation）。
+     * Hindsight 会使用 LLM 将碎片化的记忆合并为结构化的摘要事实。
+     * 该接口本身是异步任务启动入口，实际完成状态需要继续轮询 operation。
+     */
+    public MemoryConsolidationTask startBankConsolidation(String bankId) {
+        try {
+            HttpResponse<String> response = sendJsonRequest("POST", bankConsolidateUrl(bankId), objectMapper.createObjectNode());
+            String body = response == null ? "" : defaultString(response.body());
+            log.info("Hindsight consolidation 响应，bank={}，status={}，body={}",
+                    bankId, response == null ? "null" : response.statusCode(), abbreviate(body, 500));
+            JsonNode root = objectMapper.readTree(body);
+            String operationId = firstText(root, "operation_id", "operationId", "id");
+            if (!hasText(operationId)) {
+                throw new IllegalStateException("Hindsight consolidation 未返回 operation_id：" + abbreviate(body, 200));
+            }
+            return new MemoryConsolidationTask(
+                    operationId,
+                    Boolean.TRUE.equals(firstBoolean(root, "deduplicated"))
+            );
+        } catch (IOException exception) {
+            throw new IllegalStateException("解析 Hindsight consolidation 响应失败", exception);
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("Hindsight consolidation 失败，bank=" + bankId + "：" + limitMessage(exception.getMessage()), exception);
+        }
+    }
+
+    /**
+     * 查询指定 bank 下某个 consolidation operation 的真实执行状态。
+     */
+    public AsyncOperationStatus getBankOperationStatus(String bankId, String operationId) {
+        try {
+            HttpResponse<String> response = sendJsonRequest("GET", bankOperationStatusUrl(bankId, operationId), null);
+            String body = response == null ? "" : defaultString(response.body());
+            JsonNode root = objectMapper.readTree(body);
+            return new AsyncOperationStatus(
+                    firstText(root, "operation_id", "operationId", "id"),
+                    firstText(root, "operation_type", "operationType", "type"),
+                    firstText(root, "status", "state"),
+                    firstText(root, "error_message", "errorMessage", "error"),
+                    firstInt(root, "retry_count", "retryCount"),
+                    firstText(root, "next_retry_at", "nextRetryAt"),
+                    firstText(root, "created_at", "createdAt"),
+                    firstText(root, "updated_at", "updatedAt"),
+                    firstText(root, "completed_at", "completedAt")
+            );
+        } catch (IOException exception) {
+            throw new IllegalStateException("解析 Hindsight operation 状态失败", exception);
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("读取 Hindsight operation 状态失败，bank=" + bankId + "，operationId=" + operationId + "：" + limitMessage(exception.getMessage()), exception);
+        }
     }
 
     /**
@@ -238,6 +302,18 @@ public class HindsightClientService {
         return bankMemoriesUrl(bankId) + "/recall";
     }
 
+    private String bankDocumentUrl(String bankId, String documentId) {
+        return properties.getBaseUrl() + "/v1/default/banks/" + encode(bankId) + "/documents/" + encode(documentId);
+    }
+
+    private String bankConsolidateUrl(String bankId) {
+        return properties.getBaseUrl() + "/v1/default/banks/" + encode(bankId) + "/consolidate";
+    }
+
+    private String bankOperationStatusUrl(String bankId, String operationId) {
+        return properties.getBaseUrl() + "/v1/default/banks/" + encode(bankId) + "/operations/" + encode(operationId);
+    }
+
     private HttpResponse<String> sendJsonRequest(String method, String url, JsonNode payload) {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
@@ -252,6 +328,7 @@ public class HindsightClientService {
                 case "DELETE" -> builder.DELETE().build();
                 case "GET" -> builder.GET().build();
                 case "POST" -> builder.POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)).build();
+                case "PUT" -> builder.PUT(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)).build();
                 default -> throw new IllegalArgumentException("不支持的 Hindsight 请求方法: " + method);
             };
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -772,6 +849,25 @@ public class HindsightClientService {
         return null;
     }
 
+    private Boolean firstBoolean(JsonNode node, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            JsonNode value = node.path(fieldName);
+            if (value.isBoolean()) {
+                return value.asBoolean();
+            }
+            if (value.isTextual()) {
+                String normalized = value.asText("").trim();
+                if ("true".equalsIgnoreCase(normalized)) {
+                    return true;
+                }
+                if ("false".equalsIgnoreCase(normalized)) {
+                    return false;
+                }
+            }
+        }
+        return null;
+    }
+
     private Long firstLong(JsonNode node, String... fieldNames) {
         for (String fieldName : fieldNames) {
             JsonNode value = node.path(fieldName);
@@ -1068,5 +1164,38 @@ public class HindsightClientService {
             List<String> tags,
             Map<String, Object> metadata
     ) {
+    }
+
+    /**
+     * Hindsight consolidate 接口返回的异步任务启动结果。
+     */
+    public record MemoryConsolidationTask(
+            String operationId,
+            boolean deduplicated
+    ) {
+    }
+
+    /**
+     * Hindsight bank operation 的轻量状态视图。
+     */
+    public record AsyncOperationStatus(
+            String operationId,
+            String operationType,
+            String status,
+            String errorMessage,
+            Integer retryCount,
+            String nextRetryAt,
+            String createdAt,
+            String updatedAt,
+            String completedAt
+    ) {
+    }
+
+    private String abbreviate(String value, int maxLength) {
+        String normalized = defaultString(value);
+        if (normalized.length() <= maxLength) {
+            return normalized;
+        }
+        return normalized.substring(0, Math.max(0, maxLength - 3)) + "...";
     }
 }

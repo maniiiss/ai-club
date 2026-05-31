@@ -6,7 +6,11 @@ import com.aiclub.platform.domain.model.WikiPageV2Entity;
 import com.aiclub.platform.domain.model.WikiSpaceEntity;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.HermesConversationState;
+import com.aiclub.platform.dto.HermesMemoryConsolidationStatus;
+import com.aiclub.platform.dto.HermesMemoryOverview;
+import com.aiclub.platform.dto.HermesMemoryConsolidationTask;
 import com.aiclub.platform.dto.HermesReferenceSummary;
+import com.aiclub.platform.dto.HermesUserMemoryItem;
 import com.aiclub.platform.dto.request.HermesChatRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -217,6 +221,273 @@ class HermesHindsightMemoryServiceTests {
         assertThat(tagsCaptor.getValue()).contains("hermes", "source:hermes", "user:5", "project:12", "route:project-iterations");
         assertThat(metadataCaptor.getValue()).containsEntry("userId", 5L);
         assertThat(metadataCaptor.getValue()).containsEntry("memoryType", "conversation_turn");
+    }
+
+    @Test
+    void shouldListUserMemoriesFromHindsightRecall() {
+        HermesHindsightMemoryService service = new HermesHindsightMemoryService(
+                hindsightClientService,
+                hindsightMemoryFallbackService,
+                new HindsightProperties("http://localhost:18888", "", "git-ai-club", "mid", 30),
+                wikiSpaceService
+        );
+        CurrentUserInfo currentUser = currentUser();
+
+        when(hindsightMemoryFallbackService.isEnabled()).thenReturn(false);
+        when(hindsightClientService.recallMemories(eq("git-ai-club:hermes:user:5"), eq("test"), eq(List.of()), eq(50)))
+                .thenReturn(List.of(new HindsightClientService.MemoryRecallHit(
+                        "hermes-conversation:c1:turn:1",
+                        "Hermes 会话记忆：测试",
+                        "这是测试记忆内容",
+                        0.95d
+                )));
+
+        List<HermesUserMemoryItem> items = service.listUserMemories(currentUser, "test", 50);
+
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0).documentId()).isEqualTo("hermes-conversation:c1:turn:1");
+        assertThat(items.get(0).snippet()).isEqualTo("这是测试记忆内容");
+    }
+
+    @Test
+    void shouldDeleteUserMemoryByDocumentId() {
+        HermesHindsightMemoryService service = new HermesHindsightMemoryService(
+                hindsightClientService,
+                hindsightMemoryFallbackService,
+                new HindsightProperties("http://localhost:18888", "", "git-ai-club", "mid", 30),
+                wikiSpaceService
+        );
+        CurrentUserInfo currentUser = currentUser();
+
+        service.deleteUserMemory(currentUser, "hermes-conversation:c1:turn:1");
+
+        verify(hindsightClientService).deleteDocument("git-ai-club:hermes:user:5", "hermes-conversation:c1:turn:1");
+    }
+
+    @Test
+    void shouldRejectDeleteWhenDocumentIdNotHermesPrefix() {
+        HermesHindsightMemoryService service = new HermesHindsightMemoryService(
+                hindsightClientService,
+                hindsightMemoryFallbackService,
+                new HindsightProperties("http://localhost:18888", "", "git-ai-club", "mid", 30),
+                wikiSpaceService
+        );
+        CurrentUserInfo currentUser = currentUser();
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> service.deleteUserMemory(currentUser, "wiki-space-page-15")
+        );
+    }
+
+    @Test
+    void shouldClearAllUserMemories() {
+        HermesHindsightMemoryService service = new HermesHindsightMemoryService(
+                hindsightClientService,
+                hindsightMemoryFallbackService,
+                new HindsightProperties("http://localhost:18888", "", "git-ai-club", "mid", 30),
+                wikiSpaceService
+        );
+        CurrentUserInfo currentUser = currentUser();
+
+        when(hindsightMemoryFallbackService.isEnabled()).thenReturn(false);
+        when(hindsightClientService.recallMemories(eq("git-ai-club:hermes:user:5"), eq(""), eq(List.of()), eq(200)))
+                .thenReturn(List.of(
+                        new HindsightClientService.MemoryRecallHit("hermes-conversation:c1:turn:1", "title1", "snippet1", 0.9d),
+                        new HindsightClientService.MemoryRecallHit("hermes-conversation:c1:turn:2", "title2", "snippet2", 0.8d)
+                ));
+
+        int deleted = service.clearUserMemories(currentUser);
+
+        assertThat(deleted).isEqualTo(2);
+        verify(hindsightClientService).deleteDocument("git-ai-club:hermes:user:5", "hermes-conversation:c1:turn:1");
+        verify(hindsightClientService).deleteDocument("git-ai-club:hermes:user:5", "hermes-conversation:c1:turn:2");
+    }
+
+    @Test
+    void shouldStartUserMemoryConsolidationAndReturnOperationId() {
+        HermesHindsightMemoryService service = new HermesHindsightMemoryService(
+                hindsightClientService,
+                hindsightMemoryFallbackService,
+                new HindsightProperties("http://localhost:18888", "", "git-ai-club", "mid", 30),
+                wikiSpaceService
+        );
+
+        when(hindsightClientService.startBankConsolidation("git-ai-club:hermes:user:5"))
+                .thenReturn(new HindsightClientService.MemoryConsolidationTask("operation-123", false));
+
+        HermesMemoryConsolidationTask task = service.startUserMemoryConsolidation(currentUser());
+
+        assertThat(task.operationId()).isEqualTo("operation-123");
+        assertThat(task.deduplicated()).isFalse();
+    }
+
+    @Test
+    void shouldQueryUserMemoryConsolidationStatus() {
+        HermesHindsightMemoryService service = new HermesHindsightMemoryService(
+                hindsightClientService,
+                hindsightMemoryFallbackService,
+                new HindsightProperties("http://localhost:18888", "", "git-ai-club", "mid", 30),
+                wikiSpaceService
+        );
+
+        when(hindsightClientService.getBankOperationStatus("git-ai-club:hermes:user:5", "operation-123"))
+                .thenReturn(new HindsightClientService.AsyncOperationStatus(
+                        "operation-123",
+                        "consolidate_memories",
+                        "processing",
+                        "",
+                        0,
+                        "",
+                        "2026-05-31T10:00:00Z",
+                        "2026-05-31T10:00:05Z",
+                        ""
+                ));
+
+        HermesMemoryConsolidationStatus status = service.getUserMemoryConsolidationStatus(currentUser(), "operation-123");
+
+        assertThat(status.operationId()).isEqualTo("operation-123");
+        assertThat(status.operationType()).isEqualTo("consolidate_memories");
+        assertThat(status.status()).isEqualTo("processing");
+    }
+
+    @Test
+    void shouldSeparateConversationMemoriesAndConsolidatedFactsInOverview() {
+        HermesHindsightMemoryService service = new HermesHindsightMemoryService(
+                hindsightClientService,
+                hindsightMemoryFallbackService,
+                new HindsightProperties("http://localhost:18888", "", "git-ai-club", "mid", 30),
+                wikiSpaceService
+        );
+
+        when(hindsightMemoryFallbackService.isEnabled()).thenReturn(false);
+        when(hindsightClientService.recallMemories(eq("git-ai-club:hermes:user:5"), eq(""), eq(List.of()), eq(50)))
+                .thenReturn(List.of(new HindsightClientService.MemoryRecallHit(
+                        "hermes-conversation:c1:turn:1",
+                        "Hermes 会话记忆：测试",
+                        "用户：项目经理\n场景：项目 #12\n路由：project-iterations\n\n用户问题：\n发布时间是什么\n\n助手回答：\n下周二发布",
+                        0.95d
+                )));
+        when(hindsightClientService.recallWorldFacts(eq("git-ai-club:hermes:user:5"), eq(""), eq(List.of()), eq(50)))
+                .thenReturn(List.of(
+                        new HindsightClientService.MemoryWorldFact(
+                                "fact-1",
+                                "world",
+                                "发布时间",
+                                "结论",
+                                "下周二",
+                                "当前项目的发布时间已经收敛为下周二。",
+                                0.88d,
+                                "HINDSIGHT_RECALL",
+                                "2026-05-31T08:00:00Z",
+                                List.of("project:12"),
+                                Map.of("documentId", "memory-fact:1")
+                        ),
+                        new HindsightClientService.MemoryWorldFact(
+                                "fact-2",
+                                "world",
+                                "",
+                                "",
+                                "",
+                                "用户：项目经理\n场景：项目 #12\n路由：project-iterations\n\n用户问题：\n发布时间是什么\n\n助手回答：\n下周二发布",
+                                0.88d,
+                                "HINDSIGHT_RECALL",
+                                "2026-05-31T08:00:00Z",
+                                List.of("project:12"),
+                                Map.of("documentId", "hermes-conversation:c1:turn:1")
+                        )
+                ));
+
+        HermesMemoryOverview overview = service.getUserMemoryOverview(currentUser(), "", 50);
+
+        assertThat(overview.conversationMemories()).hasSize(1);
+        assertThat(overview.consolidatedFacts()).hasSize(1);
+        assertThat(overview.consolidatedFacts().get(0).summary()).contains("发布时间已经收敛为下周二");
+    }
+
+    @Test
+    void shouldFilterConsolidatedFactsOutOfConversationMemoryListWhenFallbackEnabled() {
+        HermesHindsightMemoryService service = new HermesHindsightMemoryService(
+                hindsightClientService,
+                hindsightMemoryFallbackService,
+                new HindsightProperties("http://localhost:18888", "", "git-ai-club", "mid", 30),
+                wikiSpaceService
+        );
+
+        when(hindsightMemoryFallbackService.isEnabled()).thenReturn(true);
+        when(hindsightMemoryFallbackService.searchFacts(eq(List.of("git-ai-club:hermes:user:5")), eq(""), eq(50)))
+                .thenReturn(List.of(
+                        new HindsightClientService.MemoryWorldFact(
+                                "hermes-conversation:c1:turn:1",
+                                "world",
+                                "",
+                                "",
+                                "",
+                                "用户：项目经理\n场景：项目 #12\n路由：project-iterations\n\n用户问题：\n发布时间是什么\n\n助手回答：\n下周二发布",
+                                null,
+                                "HINDSIGHT_RECALL",
+                                "2026-05-31T08:00:00Z",
+                                List.of("project:12"),
+                                Map.of("documentId", "hermes-conversation:c1:turn:1")
+                        ),
+                        new HindsightClientService.MemoryWorldFact(
+                                "fact-1",
+                                "world",
+                                "发布时间",
+                                "结论",
+                                "下周二",
+                                "当前项目的发布时间已经收敛为下周二。",
+                                null,
+                                "HINDSIGHT_RECALL",
+                                "2026-05-31T08:10:00Z",
+                                List.of("project:12"),
+                                Map.of("documentId", "memory-fact:1")
+                        )
+                ));
+
+        List<HermesUserMemoryItem> items = service.listUserMemories(currentUser(), "", 50);
+
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0).documentId()).isEqualTo("hermes-conversation:c1:turn:1");
+    }
+
+    @Test
+    void shouldRestoreQuestionAnswerAndDocumentIdFromFallbackMetadata() {
+        HermesHindsightMemoryService service = new HermesHindsightMemoryService(
+                hindsightClientService,
+                hindsightMemoryFallbackService,
+                new HindsightProperties("http://localhost:18888", "", "git-ai-club", "mid", 30),
+                wikiSpaceService
+        );
+
+        when(hindsightMemoryFallbackService.isEnabled()).thenReturn(true);
+        when(hindsightMemoryFallbackService.searchFacts(eq(List.of("git-ai-club:hermes:user:5")), eq(""), eq(50)))
+                .thenReturn(List.of(
+                        new HindsightClientService.MemoryWorldFact(
+                                "memory-unit-uuid-1",
+                                "world",
+                                "",
+                                "",
+                                "",
+                                "发布时间已经确定。",
+                                null,
+                                "HINDSIGHT_RECALL",
+                                "2026-05-31T08:00:00Z",
+                                List.of("project:12"),
+                                Map.of(
+                                        "documentId", "hermes-conversation:c1:turn:3",
+                                        "question", "发布时间是什么",
+                                        "assistantSummary", "下周二发布"
+                                )
+                        )
+                ));
+
+        List<HermesUserMemoryItem> items = service.listUserMemories(currentUser(), "", 50);
+
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0).documentId()).isEqualTo("hermes-conversation:c1:turn:3");
+        assertThat(items.get(0).question()).isEqualTo("发布时间是什么");
+        assertThat(items.get(0).answer()).isEqualTo("下周二发布");
     }
 
     private CurrentUserInfo currentUser() {

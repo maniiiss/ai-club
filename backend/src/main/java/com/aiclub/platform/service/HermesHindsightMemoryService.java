@@ -3,6 +3,11 @@ package com.aiclub.platform.service;
 import com.aiclub.platform.domain.model.HermesConversationSessionEntity;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.HermesConversationState;
+import com.aiclub.platform.dto.HermesMemoryConsolidationStatus;
+import com.aiclub.platform.dto.HermesMemoryFactItem;
+import com.aiclub.platform.dto.HermesMemoryOverview;
+import com.aiclub.platform.dto.HermesMemoryConsolidationTask;
+import com.aiclub.platform.dto.HermesUserMemoryItem;
 import com.aiclub.platform.dto.request.HermesChatRequest;
 import com.aiclub.platform.dto.request.HermesSelectionRequest;
 import org.slf4j.Logger;
@@ -151,6 +156,176 @@ public class HermesHindsightMemoryService {
                         sanitizeWarning(exception));
             }
         });
+    }
+
+    /**
+     * 列出当前用户的 Hermes 会话记忆。
+     * 优先走 DB 回退（按时间倒序），降级到 HTTP recall（语义搜索）。
+     */
+    public List<HermesUserMemoryItem> listUserMemories(CurrentUserInfo currentUser, String query, int limit) {
+        if (currentUser == null || currentUser.id() == null) {
+            return List.of();
+        }
+        String bankId = hindsightProperties.hermesUserMemoryBankId(currentUser.id());
+        int effectiveLimit = Math.max(1, Math.min(limit, 200));
+
+        if (hindsightMemoryFallbackService.isEnabled()) {
+            try {
+                List<HindsightClientService.MemoryWorldFact> facts = hindsightMemoryFallbackService.searchFacts(
+                        List.of(bankId), defaultString(query), effectiveLimit
+                );
+                return facts.stream()
+                        .filter(this::isConversationMemoryFact)
+                        .map(this::toUserMemoryItem)
+                        .toList();
+            } catch (RuntimeException exception) {
+                log.warn("Hermes 用户记忆 DB 回退查询失败，降级到 HTTP recall：{}", sanitizeWarning(exception));
+            }
+        }
+
+        try {
+            List<HindsightClientService.MemoryRecallHit> hits = hindsightClientService.recallMemories(
+                    bankId, defaultString(query), List.of(), effectiveLimit
+            );
+            return hits.stream()
+                    .filter(this::isConversationMemoryHit)
+                    .map(hit -> {
+                        String rawContent = defaultString(hit.snippet());
+                        ParsedMemoryContent parsed = parseMemoryContent(rawContent);
+                        String title = hasText(parsed.question) ? parsed.question : defaultString(hit.title());
+                        if (title.length() > 80) {
+                            title = title.substring(0, 80) + "...";
+                        }
+                        return new HermesUserMemoryItem(
+                                defaultString(hit.documentId()),
+                                title,
+                                rawContent,
+                                parsed.question,
+                                parsed.answer,
+                                parsed.scene,
+                                "",
+                                Map.of()
+                        );
+                    })
+                    .toList();
+        } catch (RuntimeException exception) {
+            log.warn("Hermes 用户记忆列表查询失败，userId={}：{}", currentUser.id(), sanitizeWarning(exception));
+            return List.of();
+        }
+    }
+
+    /**
+     * 聚合读取当前用户的 Hermes 记忆管理视图。
+     * conversationMemories 展示原始问答记忆；consolidatedFacts 展示 Hindsight 整理后的结构化事实。
+     */
+    public HermesMemoryOverview getUserMemoryOverview(CurrentUserInfo currentUser, String query, int limit) {
+        List<HermesUserMemoryItem> conversationMemories = listUserMemories(currentUser, query, limit);
+        List<HermesMemoryFactItem> consolidatedFacts = listUserMemoryFacts(currentUser, query, limit);
+        return new HermesMemoryOverview(conversationMemories, consolidatedFacts);
+    }
+
+    /**
+     * 读取当前用户 bank 中已经结构化整理出来的 world facts。
+     * 这些内容才是 consolidation 后最应该让用户看到的结果。
+     */
+    public List<HermesMemoryFactItem> listUserMemoryFacts(CurrentUserInfo currentUser, String query, int limit) {
+        if (currentUser == null || currentUser.id() == null) {
+            return List.of();
+        }
+        String bankId = hindsightProperties.hermesUserMemoryBankId(currentUser.id());
+        int effectiveLimit = Math.max(1, Math.min(limit, 200));
+        List<HindsightClientService.MemoryWorldFact> facts;
+        if (hindsightMemoryFallbackService.isEnabled()) {
+            try {
+                facts = hindsightMemoryFallbackService.searchFacts(List.of(bankId), defaultString(query), effectiveLimit);
+            } catch (RuntimeException exception) {
+                log.warn("Hermes 整理后记忆 DB 回退查询失败，降级到 HTTP recall：{}", sanitizeWarning(exception));
+                facts = recallUserMemoryFacts(bankId, query, effectiveLimit);
+            }
+        } else {
+            facts = recallUserMemoryFacts(bankId, query, effectiveLimit);
+        }
+        return facts.stream()
+                .filter(this::isConsolidatedFact)
+                .map(this::toMemoryFactItem)
+                .toList();
+    }
+
+    /**
+     * 删除当前用户的一条 Hermes 记忆。
+     * 仅允许删除 hermes-conversation: 前缀的 documentId，防止越权删除其它类型记忆。
+     */
+    public void deleteUserMemory(CurrentUserInfo currentUser, String documentId) {
+        if (currentUser == null || currentUser.id() == null) {
+            throw new IllegalArgumentException("当前用户信息缺失");
+        }
+        String safeDocumentId = defaultString(documentId);
+        if (!safeDocumentId.startsWith("hermes-conversation:")) {
+            throw new IllegalArgumentException("只能删除 Hermes 会话记忆");
+        }
+        String bankId = hindsightProperties.hermesUserMemoryBankId(currentUser.id());
+        hindsightClientService.deleteDocument(bankId, safeDocumentId);
+    }
+
+    /**
+     * 清空当前用户的全部 Hermes 记忆。
+     * 返回实际删除的条数。
+     */
+    public int clearUserMemories(CurrentUserInfo currentUser) {
+        if (currentUser == null || currentUser.id() == null) {
+            throw new IllegalArgumentException("当前用户信息缺失");
+        }
+        String bankId = hindsightProperties.hermesUserMemoryBankId(currentUser.id());
+        List<HermesUserMemoryItem> allMemories = listUserMemories(currentUser, "", 200);
+        int deletedCount = 0;
+        for (HermesUserMemoryItem memory : allMemories) {
+            try {
+                hindsightClientService.deleteDocument(bankId, memory.documentId());
+                deletedCount++;
+            } catch (RuntimeException exception) {
+                log.warn("Hermes 记忆删除失败，documentId={}：{}", memory.documentId(), sanitizeWarning(exception));
+            }
+        }
+        return deletedCount;
+    }
+
+    /**
+     * 触发当前用户 Hermes 记忆的整合（consolidation）。
+     * 该接口只负责启动 Hindsight 异步任务，真正完成状态需要继续查询 operation。
+     */
+    public HermesMemoryConsolidationTask startUserMemoryConsolidation(CurrentUserInfo currentUser) {
+        if (currentUser == null || currentUser.id() == null) {
+            throw new IllegalArgumentException("当前用户信息缺失");
+        }
+        String bankId = hindsightProperties.hermesUserMemoryBankId(currentUser.id());
+        HindsightClientService.MemoryConsolidationTask task = hindsightClientService.startBankConsolidation(bankId);
+        return new HermesMemoryConsolidationTask(task.operationId(), task.deduplicated());
+    }
+
+    /**
+     * 查询当前用户某次记忆整理任务的真实执行状态。
+     * 这样前端就不会把“接口已返回”误判成“整理已经完成”。
+     */
+    public HermesMemoryConsolidationStatus getUserMemoryConsolidationStatus(CurrentUserInfo currentUser, String operationId) {
+        if (currentUser == null || currentUser.id() == null) {
+            throw new IllegalArgumentException("当前用户信息缺失");
+        }
+        if (defaultString(operationId).isBlank()) {
+            throw new IllegalArgumentException("operationId 不能为空");
+        }
+        String bankId = hindsightProperties.hermesUserMemoryBankId(currentUser.id());
+        HindsightClientService.AsyncOperationStatus status = hindsightClientService.getBankOperationStatus(bankId, operationId);
+        return new HermesMemoryConsolidationStatus(
+                status.operationId(),
+                status.operationType(),
+                status.status(),
+                status.errorMessage(),
+                status.retryCount(),
+                status.nextRetryAt(),
+                status.createdAt(),
+                status.updatedAt(),
+                status.completedAt()
+        );
     }
 
     private RecallScope resolveScope(HermesContextAssembler.HermesConversationContext context,
@@ -564,6 +739,173 @@ public class HermesHindsightMemoryService {
 
     private String defaultString(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private HermesUserMemoryItem toUserMemoryItem(HindsightClientService.MemoryWorldFact fact) {
+        String rawContent = defaultString(fact.summary());
+        ParsedMemoryContent parsed = parseMemoryContent(rawContent);
+        Map<String, Object> metadata = fact.metadata() == null ? Map.of() : Map.copyOf(fact.metadata());
+        String metadataQuestion = metadataString(metadata, "question");
+        String metadataAnswer = metadataString(metadata, "assistantSummary");
+        String documentId = firstNonBlank(metadataString(metadata, "documentId"), fact.id());
+        String question = firstNonBlank(parsed.question, metadataQuestion);
+        String answer = firstNonBlank(parsed.answer, metadataAnswer);
+        String title = hasText(question) ? question : firstNonBlank(metadataString(metadata, "title"), rawContent);
+        if (title.length() > 80) {
+            title = title.substring(0, 80) + "...";
+        }
+        return new HermesUserMemoryItem(
+                defaultString(documentId),
+                title,
+                rawContent,
+                question,
+                answer,
+                parsed.scene,
+                defaultString(fact.createdAt()),
+                metadata
+        );
+    }
+
+    private List<HindsightClientService.MemoryWorldFact> recallUserMemoryFacts(String bankId, String query, int limit) {
+        try {
+            return hindsightClientService.recallWorldFacts(bankId, defaultString(query), List.of(), limit);
+        } catch (RuntimeException exception) {
+            log.warn("Hermes 整理后记忆 HTTP recall 失败，bank={}：{}", bankId, sanitizeWarning(exception));
+            return List.of();
+        }
+    }
+
+    /**
+     * 原始会话记忆必须是 Hermes conversation 文档，或者至少能解析出标准问答模板。
+     * 否则 consolidation 后生成的事实会误混进“原始会话记忆”列表。
+     */
+    private boolean isConversationMemoryFact(HindsightClientService.MemoryWorldFact fact) {
+        if (fact == null) {
+            return false;
+        }
+        Map<String, Object> metadata = fact.metadata() == null ? Map.of() : fact.metadata();
+        Object documentId = metadata.get("documentId");
+        if (documentId instanceof String documentIdValue && documentIdValue.startsWith("hermes-conversation:")) {
+            return true;
+        }
+        return looksLikeConversationContent(fact.summary());
+    }
+
+    private boolean isConversationMemoryHit(HindsightClientService.MemoryRecallHit hit) {
+        if (hit == null) {
+            return false;
+        }
+        if (defaultString(hit.documentId()).startsWith("hermes-conversation:")) {
+            return true;
+        }
+        return looksLikeConversationContent(hit.snippet());
+    }
+
+    private boolean looksLikeConversationContent(String rawContent) {
+        String normalized = defaultString(rawContent);
+        return normalized.contains("用户问题：") && normalized.contains("助手回答：");
+    }
+
+    private String metadataString(Map<String, Object> metadata, String key) {
+        if (metadata == null || key == null || key.isBlank()) {
+            return "";
+        }
+        Object value = metadata.get(key);
+        return value == null ? "" : defaultString(String.valueOf(value));
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (hasText(value)) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    /**
+     * 原始对话记忆会带完整“用户问题/助手回答”正文，而 consolidation 后的事实通常不会是这类模板。
+     * 这里用轻量规则把整理后的摘要事实从同一 bank 中筛出来。
+     */
+    private boolean isConsolidatedFact(HindsightClientService.MemoryWorldFact fact) {
+        if (fact == null || !hasText(fact.summary())) {
+            return false;
+        }
+        String summary = defaultString(fact.summary());
+        if (summary.contains("用户问题：") || summary.contains("助手回答：")) {
+            return false;
+        }
+        Map<String, Object> metadata = fact.metadata() == null ? Map.of() : fact.metadata();
+        Object documentId = metadata.get("documentId");
+        if (documentId instanceof String documentIdValue && documentIdValue.startsWith("hermes-conversation:")) {
+            return false;
+        }
+        return true;
+    }
+
+    private HermesMemoryFactItem toMemoryFactItem(HindsightClientService.MemoryWorldFact fact) {
+        Map<String, Object> metadata = fact.metadata() == null ? Map.of() : Map.copyOf(fact.metadata());
+        return new HermesMemoryFactItem(
+                defaultString(fact.id()),
+                defaultString(fact.summary()),
+                defaultString(fact.predicate()),
+                defaultString(fact.subject()),
+                defaultString(fact.object()),
+                defaultString(fact.sourceType()),
+                defaultString(fact.createdAt()),
+                fact.tags() == null ? List.of() : List.copyOf(fact.tags()),
+                metadata
+        );
+    }
+
+    /**
+     * 从 Hindsight 存储的原始内容中解析出用户问题、助手回答和场景。
+     * 存储格式为：
+     * 用户：xxx
+     * 场景：xxx
+     * 路由：xxx
+     *
+     * 用户问题：
+     * xxx
+     *
+     * 助手回答：
+     * xxx
+     */
+    private ParsedMemoryContent parseMemoryContent(String rawContent) {
+        if (!hasText(rawContent)) {
+            return new ParsedMemoryContent("", "", "");
+        }
+        String scene = "";
+        String question = "";
+        String answer = "";
+
+        String scenePrefix = "场景：";
+        int sceneIdx = rawContent.indexOf(scenePrefix);
+        if (sceneIdx >= 0) {
+            int sceneEnd = rawContent.indexOf('\n', sceneIdx);
+            if (sceneEnd > sceneIdx) {
+                scene = rawContent.substring(sceneIdx + scenePrefix.length(), sceneEnd).trim();
+            }
+        }
+
+        String questionMarker = "用户问题：\n";
+        String answerMarker = "\n\n助手回答：\n";
+        int qIdx = rawContent.indexOf(questionMarker);
+        int aIdx = rawContent.indexOf(answerMarker);
+        if (qIdx >= 0 && aIdx > qIdx) {
+            question = rawContent.substring(qIdx + questionMarker.length(), aIdx).trim();
+            answer = rawContent.substring(aIdx + answerMarker.length()).trim();
+        } else if (qIdx >= 0) {
+            question = rawContent.substring(qIdx + questionMarker.length()).trim();
+        }
+
+        return new ParsedMemoryContent(question, answer, scene);
+    }
+
+    private record ParsedMemoryContent(String question, String answer, String scene) {
     }
 
     private boolean hasText(String value) {
