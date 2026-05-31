@@ -229,13 +229,11 @@ services:
       API_SERVER_KEY: ${PLATFORM_HERMES_API_KEY:-}
       API_SERVER_MODEL_NAME: ${PLATFORM_HERMES_MODEL:-hermes-agent}
       PLATFORM_HERMES_MCP_SHARED_TOKEN: ${PLATFORM_HERMES_MCP_SHARED_TOKEN:-git-ai-club-hermes-mcp-token}
-    # 保留官方镜像 entrypoint，只通过 command 注入平台启动前置逻辑。
+    # 覆盖官方 entrypoint，使用 shell 执行启动前置逻辑。
+    entrypoint: ["/bin/sh", "-lc"]
     command:
-      - /bin/sh
-      - -lc
       - |
         mkdir -p /opt/data
-        # 兼容第三方 OpenAI 兼容网关：只要配置了 base_url，就自动切换成 custom provider。
         MODEL_PROVIDER="$${HERMES_LLM_PROVIDER:-}"
         MEMORY_PROVIDER="$${HERMES_MEMORY_PROVIDER:-}"
         if [ -z "$$MODEL_PROVIDER" ]; then
@@ -277,7 +275,6 @@ services:
           echo "      resources: false"
           echo "      prompts: false"
         } > /opt/data/config.yaml
-        # 等待 Hindsight API 真正就绪，避免 Hermes 启动后首次访问记忆服务时撞上冷启动。
         python3 - <<'PY'
         import os
         import sys
@@ -307,7 +304,7 @@ services:
         print(f"Hindsight 在 120 秒内仍未就绪，最后一次错误：{last_error}", file=sys.stderr)
         sys.exit(1)
         PY
-        exec /opt/hermes/.venv/bin/hermes gateway run
+        exec hermes gateway run
     ports:
       - "${HERMES_PORT:-18080}:18080"
     volumes:

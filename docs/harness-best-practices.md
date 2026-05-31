@@ -30,12 +30,15 @@
 
 ### 2. 记忆层：docs/
 
-`docs/` 是项目长期记忆，建议按主题组织：
+`docs/` 是项目长期记忆，当前目录职责建议按下面理解：
 
-- `docs/architecture.md`：系统架构、模块边界、跨服务调用链路。
-- `docs/encoding-guide.md`：UTF-8、LF、中文防乱码约定。
-- `docs/gitlab-module.md`：GitLab 管理模块设计。
-- `docs/harness-best-practices.md`：本文，维护智能体协作和验证策略。
+- `docs/architecture.md`：系统级架构总览、模块边界、跨服务调用链路，是全局视角的主入口。
+- `docs/design-docs/index.md`：正式设计文档导航页，用来串起架构设计、技术设计和专题方案入口。
+- `docs/generated/`：已经成型的正式技术设计 / 架构设计交付物，适合沉淀 `*-technical-design-vN.md`、`*-architecture-vN.md`。
+- `docs/exec-plans/active/`：进行中的执行方案、阶段计划和落地编排，属于过程文档，不替代正式设计结论。
+- `docs/exec-plans/completed/`：历史执行方案归档，用于复盘和追溯，不替代当前有效架构说明。
+- `docs/design-docs/design-draft/`：设计草稿、界面草图、探索性方案素材，默认不作为正式架构结论交付。
+- `docs/encoding-guide.md`、`docs/harness-best-practices.md` 等：工程规范类文档，负责约束协作方式和基础规则。
 
 新增复杂能力时，应同步补充对应文档，尤其是：
 
@@ -48,20 +51,37 @@
 
 这条规则是本仓库的硬约束：只要改动达到“技术架构调整”或“大型技术设计”级别，任务完成前就必须把结论沉淀到 `docs/`，未补文档视为任务未完成。
 
+这里的“沉淀到 `docs/`”不是泛指随便写一份说明，而是要写到**能长期作为后续实现入口的正式文档位置**。执行计划、设计草稿、聊天结论只能作为辅助材料，不能替代正式设计交付。
+
 建议按下表判断是否触发：
 
-| 场景 | 是否必须落文档 | 推荐位置 |
+| 场景 | 是否必须落文档 | 合格交付位置 |
 | --- | --- | --- |
-| 服务拓扑、模块边界、职责归属发生变化 | 是 | `docs/architecture.md` + 专题设计文档 |
-| 新增跨服务链路、异步任务、调度流程、权限模型或共享数据模型 | 是 | 专题设计文档，必要时同步更新 `docs/architecture.md` |
-| 引入新中间件、新运行模式、新部署方式、新环境变量或新日志路径 | 是 | 专题设计文档 + `README.md` + `AGENTS.md` |
-| 影响 `frontend` / `backend` / `code-processing` / `scripts` 中两个及以上目录的方案设计 | 是 | 专题设计文档 |
+| 服务拓扑、模块边界、职责归属发生变化 | 是 | `docs/architecture.md` + 1 份正式专题设计文档 |
+| 新增跨服务链路、异步任务、调度流程、权限模型或共享数据模型 | 是 | `docs/generated/*.md` 或 `docs/*-technical-design-vN.md`，必要时同步更新 `docs/architecture.md` |
+| 引入新中间件、新运行模式、新部署方式、新环境变量或新日志路径 | 是 | 正式专题设计文档 + `README.md` + `AGENTS.md` |
+| 影响 `frontend` / `backend` / `code-processing` / `scripts` 中两个及以上目录的方案设计 | 是 | 正式专题设计文档，必要时补一份执行方案到 `docs/exec-plans/active/` |
 | 只改局部实现细节，不改变边界、链路和约束 | 否 | 只在代码注释或模块文档中补充说明即可 |
+
+“正式专题设计文档”建议优先放在以下位置之一：
+
+- `docs/generated/*-technical-design-vN.md`
+- `docs/generated/*-architecture-vN.md`
+- `docs/` 根目录下已有同类正式设计文件
+
+以下内容**不能单独作为完成条件**：
+
+- `docs/exec-plans/active/` 中的进行中计划，因为它描述的是实施编排，不一定沉淀最终边界结论。
+- `docs/exec-plans/completed/` 中的历史归档，因为它主要用于复盘，可能已经过时。
+- `docs/design-docs/design-draft/` 中的草稿、原型和截图，因为它们默认属于探索材料，不是正式架构基线。
+- 聊天记录、PR 描述、提交说明，因为这些内容不具备稳定可检索的仓库内入口。
 
 最低交付要求如下：
 
-- 全局架构变化：至少更新 `docs/architecture.md`，说明新的边界、链路和依赖关系。
-- 专题方案设计：新增 `docs/*-architecture-vN.md` 或 `docs/*-technical-design-vN.md`，推荐从 `docs/architecture-design-template.md` 开始。
+- 全局架构变化：至少更新 `docs/architecture.md`，说明新的边界、链路、依赖关系和受影响模块。
+- 专题方案设计：新增或更新 1 份正式设计文档，推荐从 `docs/architecture-design-template.md` 开始，文件名遵循 `*-technical-design-vN.md` 或 `*-architecture-vN.md`。
+- 文档导航同步：如果新增的是正式设计文档，原则上同步更新 `docs/design-docs/index.md`，确保后续入口可发现。
+- 执行计划分离：需要分阶段落地时，可额外在 `docs/exec-plans/active/` 维护执行方案，但它不能替代正式设计文档。
 - 启动、环境、harness、日志路径变化：同一次交付内同步更新 `README.md`、`AGENTS.md` 和相关专题文档。
 - 最终验证：至少运行一次 `docs` 级别 harness，确认文档编码、命令和链接没有明显问题。
 
@@ -162,7 +182,7 @@ bash ./scripts/harness-linux.sh all
 
 ## Harness 文档模板
 
-新增重要模块或专题设计时，建议在 `docs/` 增加对应文档，并包含以下章节。也可以直接复制 `docs/architecture-design-template.md` 作为起点：
+新增重要模块或专题设计时，建议优先在正式设计文档位置新增对应文档，并包含以下章节。也可以直接复制 `docs/architecture-design-template.md` 作为起点；如果文档已经定稿，记得同步补到 `docs/design-docs/index.md`：
 
 ```markdown
 # 模块名称
@@ -225,8 +245,9 @@ bash ./scripts/harness-linux.sh all
 ## 维护规则
 
 - 当脚本入口变化时，同步更新 `README.md`、`AGENTS.md` 和本文。
-- 当模块边界变化时，同步更新 `docs/architecture.md` 或对应模块文档。
-- 当完成技术架构调整或大型技术设计时，同步创建或更新专题设计文档，未补文档不算任务完成。
+- 当模块边界变化时，同步更新 `docs/architecture.md`，并视影响范围更新对应正式设计文档。
+- 当完成技术架构调整或大型技术设计时，同步创建或更新正式专题设计文档；仅更新 `exec-plans` 或 `design-draft` 不算任务完成。
+- 当新增正式设计文档时，同步更新 `docs/design-docs/index.md`，避免文档存在但没有入口。
 - 当新增测试或验证命令时，同步更新推荐验证矩阵。
 - 当发现文档错误时，优先修正文档，而不是让后续智能体靠聊天上下文记住例外。
 
