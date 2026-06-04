@@ -220,7 +220,14 @@
               </div>
               <div class="hermes-message-bubble" :class="message.status">
                 <pre v-if="message.role === 'user'">{{ message.content || '暂无内容' }}</pre>
-                <div v-else class="hermes-markdown-content" v-html="renderAssistantMessage(message)"></div>
+                <template v-else>
+                  <div v-if="message.status === 'streaming' && !message.content" class="hermes-thinking-indicator">
+                    <span class="hermes-thinking-icon">◌</span>
+                    <span class="hermes-thinking-text">{{ currentStreamStatusText }}</span>
+                    <span class="hermes-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
+                  </div>
+                  <div v-else class="hermes-markdown-content" v-html="renderAssistantMessage(message)"></div>
+                </template>
                 <div v-if="message.attachments?.length" class="hermes-chip-list">
                   <button
                     v-for="attachment in message.attachments"
@@ -2776,6 +2783,53 @@ function persistSelectedSessionId(sessionId: number | null) {
 .hermes-message-bubble.streaming {
   border: 1px dashed rgba(var(--app-primary-rgb), 0.26);
   box-shadow: 0 10px 22px rgba(var(--app-primary-rgb), 0.08);
+}
+
+.hermes-thinking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  color: var(--app-primary);
+  font-size: 13px;
+}
+
+.hermes-thinking-icon {
+  display: inline-flex;
+  animation: hermes-spin 1.2s linear infinite;
+}
+
+@keyframes hermes-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.hermes-thinking-text {
+  color: #64748b;
+}
+
+.hermes-thinking-dots {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.hermes-thinking-dots span {
+  animation: hermes-dot-blink 1.4s infinite;
+  opacity: 0;
+}
+
+.hermes-thinking-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.hermes-thinking-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes hermes-dot-blink {
+  0%, 20% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 .hermes-message-bubble.error {

@@ -154,6 +154,7 @@ public class HermesChatService {
             try {
                 emitStatus(outputStream, "connecting", "Hermes 正在连接服务");
                 writeEvent(outputStream, "meta", buildMetaEvent(preparedConversation.state()));
+                emitStatus(outputStream, "thinking", "Hermes 正在思考");
 
                 HermesGatewayService.HermesGatewayResult gatewayResult = hermesGatewayService.streamChatCompletion(
                         preparedConversation.prompt(),
