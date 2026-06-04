@@ -47,7 +47,7 @@ services:
       HINDSIGHT_POSTGRES_DB: ${HINDSIGHT_POSTGRES_DB:-hindsight}
       HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvectorscale}
       POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
     volumes:
       - "./docker/postgres/init:/docker-entrypoint-initdb.d:ro"
     # 每次启动时都补偿一次独立库和 vector 扩展，兼容已有 PGDATA 不会重跑 initdb 脚本的场景。
@@ -370,7 +370,7 @@ services:
         condition: service_started
     environment:
       TZ: ${APP_TZ:-Asia/Shanghai}
-      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ai_agent_platform}
+      DB_URL: jdbc:postgresql://postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-ai_agent_platform}
       DB_USERNAME: ${POSTGRES_USER:-aiclub}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
       REDIS_HOST: redis

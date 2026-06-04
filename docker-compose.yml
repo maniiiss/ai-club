@@ -47,7 +47,7 @@ services:
       HINDSIGHT_POSTGRES_DB: ${HINDSIGHT_POSTGRES_DB:-hindsight}
       HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvectorscale}
       POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
     volumes:
       - "./docker/postgres/init:/docker-entrypoint-initdb.d:ro"
     # 单实例模式下统一补偿业务库与 Hindsight 库扩展。
@@ -365,7 +365,7 @@ services:
         condition: service_started
     environment:
       TZ: ${APP_TZ:-Asia/Shanghai}
-      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ai_agent_platform}
+      DB_URL: jdbc:postgresql://postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-ai_agent_platform}
       DB_USERNAME: ${POSTGRES_USER:-aiclub}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
       REDIS_HOST: redis
@@ -381,7 +381,7 @@ services:
       PLATFORM_HERMES_MAX_CONTEXT_MESSAGES: ${PLATFORM_HERMES_MAX_CONTEXT_MESSAGES:-6}
       PLATFORM_HERMES_GROUNDING_TTL_SECONDS: ${PLATFORM_HERMES_GROUNDING_TTL_SECONDS:-86400}
       PLATFORM_HINDSIGHT_TIMEOUT_SECONDS: ${PLATFORM_HINDSIGHT_TIMEOUT_SECONDS:-30}
-      PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_URL: jdbc:postgresql://postgres:5432/${HINDSIGHT_POSTGRES_DB:-hindsight}
+      PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_URL: jdbc:postgresql://postgres:${POSTGRES_PORT:-5432}/${HINDSIGHT_POSTGRES_DB:-hindsight}
       PLATFORM_INTERNAL_SERVICE_TOKEN: ${PLATFORM_INTERNAL_SERVICE_TOKEN:-git-ai-club-internal-service-token}
       PLATFORM_GITLAB_DEFAULT_API_URL: ${PLATFORM_GITLAB_DEFAULT_API_URL:-http://192.168.110.138:30080/api/v4}
       PLATFORM_GITLAB_OAUTH_CLIENT_ID: ${PLATFORM_GITLAB_OAUTH_CLIENT_ID:-}
