@@ -18,3 +18,5 @@ APITOKEN.md
 .scan-workspace
 .docker-config-temp
 .scripts/__pycache__
+__pycache__/
+*.pyc
