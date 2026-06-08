@@ -203,6 +203,10 @@ export interface HermesMessageItem {
   status: 'done' | 'streaming' | 'error'
   attachments: HermesAttachmentItem[]
   actions?: HermesActionItem[]
+  /**
+   * Hermes 本轮回答过程中触发的平台工具执行轨迹，前端用于生成可折叠的过程查看面板。
+   */
+  toolExecutions?: Array<Record<string, unknown>>
 }
 
 /**

@@ -221,17 +221,25 @@
               <div class="hermes-message-bubble" :class="message.status">
                 <pre v-if="message.role === 'user'">{{ message.content || '暂无内容' }}</pre>
                 <template v-else>
-                  <div v-if="message.status === 'streaming' && !message.content" class="hermes-thinking-indicator">
-                    <span class="hermes-thinking-icon">◌</span>
-                    <span class="hermes-thinking-text">{{ currentStreamStatusText }}</span>
-                    <span class="hermes-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
-                  </div>
-                  <div v-else class="hermes-markdown-content" v-html="renderAssistantMessage(message)"></div>
+                  <div class="hermes-markdown-content" v-html="renderAssistantMessage(message)"></div>
                   <div v-if="message.status === 'streaming' && message.content" class="hermes-thinking-indicator compact">
                     <span class="hermes-thinking-icon">◌</span>
                     <span class="hermes-thinking-text">{{ currentStreamStatusText }}</span>
                     <span class="hermes-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
                   </div>
+                  <details v-if="shouldShowProcessTrace(message)" class="hermes-process-trace" :class="`is-${resolveMessageProcessTraceSummary(message).tone}`">
+                    <summary>
+                      <span class="hermes-process-summary-main">
+                        <span class="hermes-process-status-icon">{{ resolveProcessToneIcon(resolveMessageProcessTraceSummary(message).tone) }}</span>
+                        <span>{{ resolveMessageProcessTraceSummary(message).title }}</span>
+                      </span>
+                      <span class="hermes-process-summary-meta">{{ resolveMessageProcessTraceSummary(message).countText }}</span>
+                    </summary>
+                    <div class="hermes-process-trace-body">
+                      <p class="hermes-process-description">{{ resolveMessageProcessTraceSummary(message).description }}</p>
+                      <p v-if="resolveMessageToolExecutionHint(message)" class="hermes-process-description muted">{{ resolveMessageToolExecutionHint(message) }}</p>
+                    </div>
+                  </details>
                 </template>
                 <div v-if="message.attachments?.length" class="hermes-chip-list">
                   <button
@@ -253,6 +261,13 @@
             <div class="hermes-empty-kicker">新会话</div>
             <div class="hermes-empty-title">把当前上下文交给 Hermes</div>
             <p>发送第一条问题后，会话记录会保存在云端，后续可以从左侧列表继续打开。</p>
+          </section>
+
+          <section v-if="hasPendingUserConfirmation" class="hermes-confirmation-hint">
+            <div>
+              <strong>需要你确认后继续</strong>
+              <span>{{ currentSelectionCards.length ? '请选择下方候选项，Hermes 会带着你的确认继续处理。' : 'Hermes 已准备好动作，确认后才会真正执行。' }}</span>
+            </div>
           </section>
 
           <section v-if="currentSelectionCards.length" class="hermes-section">
@@ -376,8 +391,10 @@ import { createGitlabBindingScanTask } from '@/api/gitlab'
 import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import { renderHermesMarkdownToHtml } from '@/utils/hermesMarkdown'
+import { buildHermesStreamingThinkMarkdown, buildHermesToolTraceSummary, normalizeHermesToolExecutions } from '@/utils/hermesProcessTrace'
 import { DEFAULT_REQUIREMENT_TEMPLATE } from '@/utils/requirementTemplate'
 import type { CreateHermesConversationSessionPayload, HermesActionItem, HermesAttachmentItem, HermesConversationDetailItem, HermesConversationSessionSummaryItem, HermesDebugInfoItem, HermesMemoryConsolidationStatus, HermesMemoryFactItem, HermesMessageItem, HermesReferenceItem, HermesSelectionCardItem, HermesSelectionOptionItem, HermesSelectionPayload, HermesSessionChatRequestPayload, HermesStreamDeltaEvent, HermesStreamDoneEvent, HermesStreamErrorEvent, HermesStreamMetaEvent, HermesStreamStatusEvent, HermesUserMemoryItem } from '@/types/hermes'
+import type { HermesToolExecutionViewItem, HermesToolTraceSummary } from '@/utils/hermesProcessTrace'
 
 interface HermesDrawerProps {
   routeName: string
@@ -548,6 +565,7 @@ const footerTip = computed(() => {
       ? '归档会话仅支持查看，恢复后可继续发送'
       : 'Enter 发送，Shift+Enter 换行'
 })
+const hasPendingUserConfirmation = computed(() => Boolean(currentSelectionCards.value.length || currentActions.value.length))
 const voiceLevelPercent = computed(() => Math.min(100, Math.round(Math.sqrt(Math.max(voiceLevel.value, 0)) * 180)))
 const voiceLevelBarWidth = computed(() => {
   if (!recording.value) return 0
@@ -1109,8 +1127,54 @@ const resolveAssistantFinalContent = (streamedContent: string, doneContent: stri
   return normalizedDone
 }
 
-const renderAssistantMessage = (message: HermesMessageItem) => renderHermesMarkdownToHtml(message.content || (message.status === 'streaming' ? currentStreamStatusText.value : '暂无内容'), { thinkBlockKeyPrefix: message.id, isThinkBlockOpen: (thinkBlockKey: string) => Boolean(thinkBlockOpenState.get(thinkBlockKey)) })
+const resolveAssistantRenderableContent = (message: HermesMessageItem) => {
+  if (message.content) return message.content
+  if (message.status === 'streaming') return buildHermesStreamingThinkMarkdown(currentStreamStatusText.value)
+  return '暂无内容'
+}
+
+const renderAssistantMessage = (message: HermesMessageItem) => renderHermesMarkdownToHtml(resolveAssistantRenderableContent(message), { thinkBlockKeyPrefix: message.id, isThinkBlockOpen: (thinkBlockKey: string) => Boolean(thinkBlockOpenState.get(thinkBlockKey)) })
 const formatDebugInfo = (debug: HermesDebugInfoItem | null) => JSON.stringify(debug || {}, null, 2)
+
+const resolveMessageToolExecutionItems = (message: HermesMessageItem): HermesToolExecutionViewItem[] => {
+  const rawExecutions = message.toolExecutions || (
+    message.id === currentStreamingAssistantMessageId.value
+      ? currentDebug.value?.toolExecutions || []
+      : []
+  )
+  return normalizeHermesToolExecutions(rawExecutions)
+}
+
+const resolveMessageProcessTraceSummary = (message: HermesMessageItem): HermesToolTraceSummary =>
+  buildHermesToolTraceSummary(resolveMessageToolExecutionItems(message)) || {
+    title: '工具调用',
+    description: '',
+    countText: '0 次',
+    tone: 'muted'
+  }
+
+const shouldShowProcessTrace = (message: HermesMessageItem) =>
+  message.role === 'assistant' && resolveMessageToolExecutionItems(message).length > 0
+
+const resolveMessageToolExecutionHint = (message: HermesMessageItem) => {
+  const items = resolveMessageToolExecutionItems(message)
+  if (!items.length) return ''
+  return items
+    .slice(0, 3)
+    .map((item) => item.compactLabel)
+    .join(' / ')
+}
+
+const resolveProcessToneIcon = (tone: HermesToolTraceSummary['tone']) => {
+  if (tone === 'success') return '✓'
+  if (tone === 'warning') return '!'
+  if (tone === 'danger') return '×'
+  if (tone === 'running') return '↯'
+  return '·'
+}
+
+const resolveDebugToolExecutions = (debug: HermesDebugInfoItem | null | undefined): Array<Record<string, unknown>> =>
+  debug?.toolExecutions || []
 
 /**
  * 流式状态心跳只在前端本地运转，用来驱动“正在思考 / 调工具 / 整理答案”的文案切换。
@@ -1202,7 +1266,7 @@ const submitConversation = async (question: string, userContent: string, selecti
             flushPendingStreamDeltas(true)
             applyStreamDisplayState(streamPayload.roleName, streamPayload.references, streamPayload.suggestions, streamPayload.actions, streamPayload.selectionCards, streamPayload.debug)
             const shouldPreferTerminalContent = Boolean(streamPayload.actions?.length || streamPayload.selectionCards?.length)
-        updateMessage(assistantMessageId, (current) => ({ ...current, content: shouldPreferTerminalContent ? (streamPayload.content || current.content) : resolveAssistantFinalContent(current.content, streamPayload.content), status: 'done', attachments: current.attachments || [] }))
+        updateMessage(assistantMessageId, (current) => ({ ...current, content: shouldPreferTerminalContent ? (streamPayload.content || current.content) : resolveAssistantFinalContent(current.content, streamPayload.content), status: 'done', attachments: current.attachments || [], toolExecutions: resolveDebugToolExecutions(streamPayload.debug) }))
             pendingFiles.value = []
             finishStream()
             void refreshCurrentSessionFromCloud()
@@ -1213,7 +1277,7 @@ const submitConversation = async (question: string, userContent: string, selecti
               return
             }
             flushPendingStreamDeltas(true)
-            updateMessage(assistantMessageId, (current) => ({ ...current, content: streamPayload.message || current.content || 'Hermes 助手暂时不可用', status: 'error', attachments: current.attachments || [] }))
+            updateMessage(assistantMessageId, (current) => ({ ...current, content: streamPayload.message || current.content || 'Hermes 助手暂时不可用', status: 'error', attachments: current.attachments || [], toolExecutions: current.toolExecutions || resolveDebugToolExecutions(currentDebug.value) }))
             finishStream()
             ElMessage.error(streamPayload.message || 'Hermes 助手暂时不可用')
             void refreshCurrentSessionFromCloud()
@@ -1231,7 +1295,7 @@ const submitConversation = async (question: string, userContent: string, selecti
         flushPendingStreamDeltas(true)
         applyStreamDisplayState(payload.roleName, payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug)
         const shouldPreferTerminalContent = Boolean(payload.actions?.length || payload.selectionCards?.length)
-        updateMessage(assistantMessageId, (current) => ({ ...current, content: shouldPreferTerminalContent ? (payload.content || current.content) : resolveAssistantFinalContent(current.content, payload.content), status: 'done', attachments: current.attachments || [] }))
+        updateMessage(assistantMessageId, (current) => ({ ...current, content: shouldPreferTerminalContent ? (payload.content || current.content) : resolveAssistantFinalContent(current.content, payload.content), status: 'done', attachments: current.attachments || [], toolExecutions: resolveDebugToolExecutions(payload.debug) }))
         pendingFiles.value = []
         finishStream()
         void refreshCurrentSessionFromCloud()
@@ -1242,7 +1306,7 @@ const submitConversation = async (question: string, userContent: string, selecti
           return
         }
         flushPendingStreamDeltas(true)
-        updateMessage(assistantMessageId, (current) => ({ ...current, content: payload.message || current.content || 'Hermes 助手暂时不可用', status: 'error', attachments: current.attachments || [] }))
+        updateMessage(assistantMessageId, (current) => ({ ...current, content: payload.message || current.content || 'Hermes 助手暂时不可用', status: 'error', attachments: current.attachments || [], toolExecutions: current.toolExecutions || resolveDebugToolExecutions(currentDebug.value) }))
         finishStream()
         ElMessage.error(payload.message || 'Hermes 助手暂时不可用')
         void refreshCurrentSessionFromCloud()
@@ -1251,7 +1315,7 @@ const submitConversation = async (question: string, userContent: string, selecti
     activeStreamAbort.value = streamController.abort
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Hermes 助手暂时不可用'
-    updateMessage(assistantMessageId, (current) => ({ ...current, content: message, status: 'error', attachments: current.attachments || [] }))
+    updateMessage(assistantMessageId, (current) => ({ ...current, content: message, status: 'error', attachments: current.attachments || [], toolExecutions: current.toolExecutions || resolveDebugToolExecutions(currentDebug.value) }))
     finishStream()
     ElMessage.error(message)
   }
@@ -1467,8 +1531,17 @@ async function restoreThinkBlocksAndScroll(shouldScroll = true) {
 
 function applySessionDetail(detail: HermesConversationDetailItem) {
   currentSessionDetail.value = detail
-  currentMessages.value = detail.messages.map((message) => ({ id: `cloud-${message.id}`, role: message.role === 'user' ? 'user' : 'assistant', content: message.content || '', status: message.status === 'error' ? 'error' : 'done', attachments: message.attachments || [] }))
   const latestDisplayState = detail.latestDisplayState || emptyLatestDisplayState()
+  const messages: HermesMessageItem[] = detail.messages.map((message) => ({ id: `cloud-${message.id}`, role: message.role === 'user' ? 'user' : 'assistant', content: message.content || '', status: message.status === 'error' ? 'error' : 'done', attachments: message.attachments || [] }))
+  const latestAssistantIndex = [...messages].reverse().findIndex((message) => message.role === 'assistant')
+  if (latestAssistantIndex >= 0) {
+    const targetIndex = messages.length - 1 - latestAssistantIndex
+    messages[targetIndex] = {
+      ...messages[targetIndex],
+      toolExecutions: resolveDebugToolExecutions(latestDisplayState.debug)
+    }
+  }
+  currentMessages.value = messages
   currentReferences.value = latestDisplayState.references || []
   currentSuggestions.value = latestDisplayState.suggestions || []
   currentActions.value = latestDisplayState.actions || []
@@ -2175,6 +2248,31 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.hermes-confirmation-hint {
+  padding: 12px 14px;
+  border: 1px solid rgba(20, 184, 166, 0.24);
+  border-radius: 16px;
+  background: rgba(240, 253, 250, 0.9);
+}
+
+.hermes-confirmation-hint div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hermes-confirmation-hint strong {
+  color: #0f766e;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.hermes-confirmation-hint span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .hermes-close-button,
@@ -2913,6 +3011,142 @@ function persistSelectedSessionId(sessionId: number | null) {
 .hermes-thinking-icon {
   display: inline-flex;
   animation: hermes-spin 1.2s linear infinite;
+}
+
+.hermes-process-trace {
+  margin-top: 10px;
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.1);
+  border-radius: 999px;
+  background: rgba(243, 244, 245, 0.72);
+  overflow: hidden;
+}
+
+.hermes-process-trace summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.hermes-process-trace summary::-webkit-details-marker {
+  display: none;
+}
+
+.hermes-process-summary-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.hermes-process-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  flex: 0 0 16px;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.hermes-process-summary-meta {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.hermes-process-trace summary::after {
+  content: '展开';
+  flex: 0 0 auto;
+  padding-left: 2px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.hermes-process-trace[open] summary::after {
+  content: '收起';
+}
+
+.hermes-process-trace[open] {
+  width: 100%;
+  max-width: 520px;
+  border-radius: 12px;
+}
+
+.hermes-process-trace-body {
+  padding: 0 14px 12px;
+  border-top: 1px solid rgba(var(--app-outline-rgb), 0.08);
+}
+
+.hermes-process-description {
+  margin: 10px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.hermes-process-description.muted {
+  color: #94a3b8;
+}
+
+.hermes-process-trace.is-running {
+  border-color: rgba(37, 99, 235, 0.2);
+  background: rgba(239, 246, 255, 0.68);
+}
+
+.hermes-process-trace.is-success {
+  border-color: rgba(15, 118, 110, 0.2);
+  background: rgba(236, 253, 245, 0.72);
+}
+
+.hermes-process-trace.is-warning {
+  border-color: rgba(245, 158, 11, 0.24);
+  background: rgba(255, 251, 235, 0.72);
+}
+
+.hermes-process-trace.is-danger {
+  border-color: rgba(220, 38, 38, 0.2);
+  background: rgba(254, 242, 242, 0.72);
+}
+
+.hermes-process-trace.is-running .hermes-process-status-icon {
+  background: rgba(37, 99, 235, 0.12);
+  color: #2563eb;
+}
+
+.hermes-process-trace.is-success .hermes-process-status-icon {
+  background: rgba(15, 118, 110, 0.14);
+  color: #0f766e;
+}
+
+.hermes-process-trace.is-warning .hermes-process-status-icon {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+}
+
+.hermes-process-trace.is-danger .hermes-process-status-icon {
+  background: rgba(220, 38, 38, 0.12);
+  color: #dc2626;
 }
 
 @keyframes hermes-spin {

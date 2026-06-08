@@ -688,8 +688,12 @@ public class HermesToolOrchestrator {
         String keyword = defaultString(String.valueOf(validatedToolCall.arguments().getOrDefault("keyword", "")));
         String workItemType = defaultString(String.valueOf(validatedToolCall.arguments().getOrDefault("workItemType", "")));
         Long iterationId = resolveLong(validatedToolCall.arguments().get("iterationId"));
+        // 风险分析、列表和统计问题关注结果集合，不能因为命中了多个工作项就打断成单对象确认。
+        if (collectionIntent) {
+            return true;
+        }
         if (iterationId == null) {
-            return collectionIntent && !keyword.isBlank() && isGenericWorkItemCollectionKeyword(keyword);
+            return false;
         }
         if (!workItemType.isBlank()) {
             return true;

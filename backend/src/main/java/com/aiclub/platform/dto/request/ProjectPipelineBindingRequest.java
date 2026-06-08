@@ -4,6 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 public record ProjectPipelineBindingRequest(
         @NotNull(message = "项目不能为空")
         Long projectId,
@@ -17,6 +19,7 @@ public record ProjectPipelineBindingRequest(
         @Size(max = 4000, message = "构建参数 JSON 长度不能超过4000")
         String buildParametersJson,
         @NotNull(message = "启用状态不能为空")
-        Boolean enabled
+        Boolean enabled,
+        List<ProjectRuntimeInstanceRequest> runtimeInstances
 ) {
 }

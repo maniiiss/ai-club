@@ -26,6 +26,7 @@ import com.aiclub.platform.dto.JenkinsServerSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.PipelineCenterEntrySummary;
 import com.aiclub.platform.dto.ProjectPipelineBindingSummary;
+import com.aiclub.platform.dto.ProjectRuntimeInstanceSummary;
 import com.aiclub.platform.dto.WoodpeckerHealthSummary;
 import com.aiclub.platform.dto.request.AiClubPipelineConfigCompleteRequest;
 import com.aiclub.platform.dto.request.AiClubPipelineConfigPreviewRequest;
@@ -99,6 +100,7 @@ public class CicdManagementService {
     private final NotificationService notificationService;
     private final ProjectDataPermissionService projectDataPermissionService;
     private final AiClubPipelineAutomationService pipelineAutomationService;
+    private final ProjectRuntimeInstanceService projectRuntimeInstanceService;
 
     public CicdManagementService(ProjectRepository projectRepository,
                                  ProjectGitlabBindingRepository projectGitlabBindingRepository,
@@ -114,7 +116,8 @@ public class CicdManagementService {
                                   ObjectMapper objectMapper,
                                   NotificationService notificationService,
                                   ProjectDataPermissionService projectDataPermissionService,
-                                  AiClubPipelineAutomationService pipelineAutomationService) {
+                                  AiClubPipelineAutomationService pipelineAutomationService,
+                                  ProjectRuntimeInstanceService projectRuntimeInstanceService) {
         this.projectRepository = projectRepository;
         this.projectGitlabBindingRepository = projectGitlabBindingRepository;
         this.aiClubPipelineRepository = aiClubPipelineRepository;
@@ -130,6 +133,7 @@ public class CicdManagementService {
         this.notificationService = notificationService;
         this.projectDataPermissionService = projectDataPermissionService;
         this.pipelineAutomationService = pipelineAutomationService;
+        this.projectRuntimeInstanceService = projectRuntimeInstanceService;
     }
 
     public WoodpeckerHealthSummary getWoodpeckerHealth() {
@@ -326,6 +330,11 @@ public class CicdManagementService {
 
     public ProjectPipelineBindingSummary getPipelineBinding(Long id) {
         return toPipelineBindingSummary(requirePipelineBinding(id));
+    }
+
+    public List<ProjectRuntimeInstanceSummary> listPipelineBindingRuntimeInstances(Long id) {
+        ProjectPipelineBindingEntity entity = requirePipelineBinding(id);
+        return projectRuntimeInstanceService.listByJenkinsBinding(entity);
     }
 
     @Transactional
@@ -593,19 +602,25 @@ public class CicdManagementService {
     public ProjectPipelineBindingSummary createPipelineBinding(ProjectPipelineBindingRequest request) {
         ProjectPipelineBindingEntity entity = new ProjectPipelineBindingEntity();
         fillPipelineBindingEntity(entity, request, true);
-        return toPipelineBindingSummary(projectPipelineBindingRepository.save(entity));
+        ProjectPipelineBindingEntity saved = projectPipelineBindingRepository.save(entity);
+        projectRuntimeInstanceService.syncJenkinsRuntimeInstances(saved, request.runtimeInstances());
+        return toPipelineBindingSummary(saved);
     }
 
     @Transactional
     public ProjectPipelineBindingSummary updatePipelineBinding(Long id, ProjectPipelineBindingRequest request) {
         ProjectPipelineBindingEntity entity = requirePipelineBinding(id);
         fillPipelineBindingEntity(entity, request, false);
-        return toPipelineBindingSummary(projectPipelineBindingRepository.save(entity));
+        ProjectPipelineBindingEntity saved = projectPipelineBindingRepository.save(entity);
+        projectRuntimeInstanceService.syncJenkinsRuntimeInstances(saved, request.runtimeInstances());
+        return toPipelineBindingSummary(saved);
     }
 
     @Transactional
     public void deletePipelineBinding(Long id) {
-        projectPipelineBindingRepository.delete(requirePipelineBinding(id));
+        ProjectPipelineBindingEntity entity = requirePipelineBinding(id);
+        projectRuntimeInstanceService.deleteJenkinsRuntimeInstances(entity);
+        projectPipelineBindingRepository.delete(entity);
     }
 
     @Transactional(noRollbackFor = RuntimeException.class)
@@ -972,6 +987,7 @@ public class CicdManagementService {
             entity.setLastTriggeredAt(now);
             entity.setLastTriggerUrl(trimToNull(result.triggerUrl()));
             projectPipelineBindingRepository.save(entity);
+            projectRuntimeInstanceService.markJenkinsRuntimeInstancesDeploying(entity, "Jenkins Job 已进入队列");
             notifyCurrentUserPipelineQueued(entity);
             return new JenkinsBuildTriggerResult(
                     entity.getId(),

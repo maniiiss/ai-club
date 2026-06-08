@@ -91,6 +91,16 @@
 - **复用优先**：项目健康采集复用 `ServerSshGateway` 与调度模式；执行健康聚合复用现有执行/流水线表；平台自身大盘直接读现有表。
 - **按项目隔离**：所有新表带 `project_id`，查询与权限按项目维度收口。
 - **写读分离**：采集/聚合写入明细与快照表，前端查询走聚合/分页接口，避免大表全扫。
+- **运行实例优先**：日志采集和健康探测不再从项目、流水线参数或部署脚本中临时推断目标，而是统一读取 `project_runtime_instance`。
+
+### 5.1.1 项目运行实例
+
+新增 `project_runtime_instance` 作为可观测采集的前置契约，描述“某个项目在某个环境/服务形态下运行在哪里，以及如何观测它”。第一版以 Jenkins 兼容链路为主，支持两类实例：
+
+- **受管服务器实例**：绑定 `server_info`，可启用 SSH 日志采集，并配置一组日志路径；健康检查可配置 HTTP/TCP 目标。
+- **外部地址实例**：只配置外部访问地址与健康检查目标，不启用 SSH 日志采集，适合暂未纳入服务器管理的部署。
+
+实例来源分为 `MANUAL`、`JENKINS` 与预留的 `WOODPECKER`。Jenkins 绑定表单可维护 0–N 个运行实例；触发 Jenkins 成功进入队列时，只把关联实例标记为 `DEPLOYING`，不提前认定部署成功。后续日志采集器读取启用的受管服务器实例，健康探测读取全部启用且开启健康检查的实例。Woodpecker 当前不可用，本期仅保留来源枚举，不做自动生成。
 
 ### 5.2 关键流程
 
@@ -130,6 +140,7 @@
 | 表 | 用途 | 关键字段 |
 |----|------|---------|
 | `project_runtime_log` | 项目运行日志明细 | `project_id, server_id, log_level, logger, trace_id, message, raw, logged_at, collected_at` |
+| `project_runtime_instance` | 项目运行实例与采集目标 | `project_id, source_type, source_binding_id, server_mode, server_id, external_base_url, log_paths_json, health_probe_type, health_target` |
 | `project_log_cursor` | 日志采集游标 | `project_id, server_id, source_path, byte_offset, last_line_hash, updated_at` |
 | `project_log_collect_config` | 项目日志采集配置 | `project_id, enabled, source_paths, retention_days, max_lines_per_day, push_enabled` |
 | `project_health_check_config` | 项目健康检查配置 | `project_id, probe_type, target, timeout_ms, interval_seconds, warn_threshold, critical_threshold, enabled` |

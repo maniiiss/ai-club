@@ -121,7 +121,8 @@ class CicdManagementServiceTests {
                 "job-one",
                 "main",
                 "{\"ENV\":\"test\"}",
-                true
+                true,
+                List.of()
         ));
         ProjectPipelineBindingSummary secondBinding = cicdManagementService.createPipelineBinding(new ProjectPipelineBindingRequest(
                 project.getId(),
@@ -129,7 +130,8 @@ class CicdManagementServiceTests {
                 "job-two",
                 "develop",
                 "{\"ENV\":\"prod\"}",
-                true
+                true,
+                List.of()
         ));
 
         assertThat(firstBinding.projectId()).isEqualTo(project.getId());
@@ -160,7 +162,8 @@ class CicdManagementServiceTests {
                 "job-one",
                 "main",
                 "{\"ENV\":\"test\"}",
-                true
+                true,
+                List.of()
         ));
         cicdManagementService.createPipelineBinding(new ProjectPipelineBindingRequest(
                 project.getId(),
@@ -168,7 +171,8 @@ class CicdManagementServiceTests {
                 "job-two",
                 "develop",
                 "{\"ENV\":\"prod\"}",
-                true
+                true,
+                List.of()
         ));
 
         CicdManagementService.PipelineTriggerOutcome outcome = cicdManagementService.tryTriggerProjectPipeline(
@@ -204,7 +208,8 @@ class CicdManagementServiceTests {
                 "plain-job",
                 "main",
                 "",
-                true
+                true,
+                List.of()
         ));
         clearInvocations(jenkinsApiService);
         mockFetchJob("plain-job");
@@ -233,7 +238,8 @@ class CicdManagementServiceTests {
                 "branch-job",
                 "release",
                 "",
-                true
+                true,
+                List.of()
         ));
         clearInvocations(jenkinsApiService);
         mockFetchJob("branch-job", java.util.List.of("BRANCH"));
@@ -507,7 +513,8 @@ class CicdManagementServiceTests {
                 "backend/build",
                 "release",
                 "{\"env\":\"test\"}",
-                true
+                true,
+                List.of()
         ));
         ProjectPipelineBindingEntity bindingEntity = projectPipelineBindingRepository.findById(jenkinsBinding.id()).orElseThrow();
         bindingEntity.setLastTriggerStatus("SUCCESS");
@@ -563,7 +570,8 @@ class CicdManagementServiceTests {
                 "backend/build",
                 "main",
                 "{\"env\":\"test\"}",
-                true
+                true,
+                List.of()
         ));
 
         ProjectPipelineBindingSummary result = cicdManagementService.getPipelineBinding(binding.id());

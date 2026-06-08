@@ -112,6 +112,57 @@
         <el-form-item label="构建参数 JSON">
           <el-input v-model="jenkinsForm.buildParametersJson" type="textarea" :rows="6" placeholder='例如：{"env":"test","branch":"main"}' />
         </el-form-item>
+        <el-form-item label="项目运行实例">
+          <div class="runtime-instance-editor">
+            <div class="form-tip">用于后续日志采集和健康检查。受管服务器支持 SSH 日志路径，外部地址仅支持健康检查。</div>
+            <article v-for="item in runtimeInstanceRows" :key="item.id" class="runtime-instance-card">
+              <div class="runtime-instance-card-head">
+                <div class="runtime-instance-card-title">{{ item.name || '未命名运行实例' }}</div>
+                <div class="runtime-instance-card-actions">
+                  <el-switch v-model="item.enabled" size="small" />
+                  <el-button text type="danger" @click="removeRuntimeInstanceRow(item.id)">删除</el-button>
+                </div>
+              </div>
+              <div class="runtime-instance-grid">
+                <el-input v-model="item.name" placeholder="实例名称，例如：生产 API" />
+                <el-input v-model="item.environment" placeholder="环境，例如：prod" />
+                <el-input v-model="item.serviceName" placeholder="服务名，例如：api-service" />
+                <el-select v-model="item.serverMode" placeholder="服务器模式" @change="handleRuntimeServerModeChange(item)">
+                  <el-option label="受管服务器" value="MANAGED_SERVER" />
+                  <el-option label="外部地址" value="EXTERNAL_ENDPOINT" />
+                </el-select>
+                <el-select
+                  v-if="item.serverMode === 'MANAGED_SERVER'"
+                  v-model="item.serverId"
+                  filterable
+                  clearable
+                  placeholder="选择受管服务器"
+                >
+                  <el-option v-for="server in serverOptions" :key="server.id" :label="`${server.name} / ${server.host}`" :value="server.id" />
+                </el-select>
+                <el-input v-else v-model="item.externalBaseUrl" placeholder="外部访问地址，例如：https://api.example.com" />
+                <el-select v-model="item.healthProbeType" placeholder="健康探针">
+                  <el-option label="HTTP" value="HTTP" />
+                  <el-option label="TCP" value="TCP" />
+                </el-select>
+              </div>
+              <el-input v-model="item.healthTarget" class="runtime-instance-wide-input" placeholder="健康检查目标，例如：https://api.example.com/health 或 10.10.10.10:8080" />
+              <div v-if="item.serverMode === 'MANAGED_SERVER'" class="runtime-instance-log-row">
+                <el-checkbox v-model="item.logEnabled">开启日志采集</el-checkbox>
+                <el-input
+                  v-model="item.logPathsText"
+                  type="textarea"
+                  :rows="2"
+                  :disabled="!item.logEnabled"
+                  placeholder="每行一个日志路径，例如：/srv/app/logs/app.log"
+                />
+              </div>
+            </article>
+            <el-button class="runtime-instance-add-button" plain @click="addRuntimeInstanceRow">
+              新增运行实例
+            </el-button>
+          </div>
+        </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="jenkinsForm.enabled" />
         </el-form-item>
@@ -137,13 +188,23 @@ import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import {
   createAiClubPipeline,
   createPipelineBinding,
+  listPipelineBindingRuntimeInstances,
   listJenkinsServerOptions,
   updateAiClubPipeline,
   updatePipelineBinding
 } from '@/api/cicd'
 import { listGitlabBindingOptions } from '@/api/gitlab'
 import { listProjectOptions } from '@/api/platform'
-import type { AiClubPipelineItem, JenkinsServerItem, ProjectGitlabBindingItem, ProjectItem, ProjectPipelineBindingItem } from '@/types/platform'
+import { pageServers } from '@/api/servers'
+import type {
+  AiClubPipelineItem,
+  JenkinsServerItem,
+  ProjectGitlabBindingItem,
+  ProjectItem,
+  ProjectPipelineBindingItem,
+  ProjectRuntimeInstanceItem,
+  ServerSummaryItem
+} from '@/types/platform'
 
 type ProviderType = 'AI_CLUB' | 'JENKINS'
 
@@ -172,6 +233,22 @@ interface JenkinsBindingForm {
   enabled: boolean
 }
 
+interface RuntimeInstanceForm {
+  id: string
+  name: string
+  environment: string
+  serviceName: string
+  enabled: boolean
+  serverMode: 'MANAGED_SERVER' | 'EXTERNAL_ENDPOINT'
+  serverId: number | null
+  externalBaseUrl: string
+  logEnabled: boolean
+  logPathsText: string
+  healthEnabled: boolean
+  healthProbeType: 'HTTP' | 'TCP'
+  healthTarget: string
+}
+
 const props = defineProps<{
   modelValue: boolean
   entryType?: ProviderType | null
@@ -193,6 +270,7 @@ const providerType = ref<ProviderType>('AI_CLUB')
 const projectOptions = ref<ProjectItem[]>([])
 const gitlabBindingOptions = ref<ProjectGitlabBindingItem[]>([])
 const jenkinsServerOptions = ref<JenkinsServerItem[]>([])
+const serverOptions = ref<ServerSummaryItem[]>([])
 
 const aiForm = reactive<AiPipelineForm>({
   projectId: null,
@@ -213,6 +291,7 @@ const jenkinsForm = reactive<JenkinsBindingForm>({
   buildParametersJson: '',
   enabled: true
 })
+const runtimeInstanceRows = ref<RuntimeInstanceForm[]>([])
 
 const isEditing = computed(() => Boolean(props.aiPipeline?.id || props.jenkinsBinding?.id))
 const dialogTitle = computed(() => {
@@ -255,7 +334,7 @@ watch(
     if (!visible) return
     await loadOptions()
     initializeProviderType()
-    fillForms()
+    await fillForms()
   }
 )
 
@@ -283,20 +362,22 @@ async function loadOptions() {
   if (loadingOptions.value) return
   loadingOptions.value = true
   try {
-    const [projects, bindings, servers] = await Promise.all([
+    const [projects, bindings, jenkinsServers, serverPage] = await Promise.all([
       listProjectOptions(),
       listGitlabBindingOptions(),
-      listJenkinsServerOptions()
+      listJenkinsServerOptions(),
+      pageServers({ page: 1, size: 100, enabled: true })
     ])
     projectOptions.value = projects
     gitlabBindingOptions.value = bindings
-    jenkinsServerOptions.value = servers
+    jenkinsServerOptions.value = jenkinsServers
+    serverOptions.value = serverPage.records
   } finally {
     loadingOptions.value = false
   }
 }
 
-function fillForms() {
+async function fillForms() {
   if (props.aiPipeline) {
     aiForm.projectId = props.aiPipeline.projectId
     aiForm.gitlabBindingId = props.aiPipeline.gitlabBindingId
@@ -325,6 +406,8 @@ function fillForms() {
     jenkinsForm.defaultBranch = props.jenkinsBinding.defaultBranch || ''
     jenkinsForm.buildParametersJson = props.jenkinsBinding.buildParametersJson || ''
     jenkinsForm.enabled = props.jenkinsBinding.enabled
+    const instances = await listPipelineBindingRuntimeInstances(props.jenkinsBinding.id)
+    runtimeInstanceRows.value = instances.map(toRuntimeInstanceForm)
   } else {
     jenkinsForm.projectId = projectOptions.value[0]?.id ?? null
     jenkinsForm.jenkinsServerId = jenkinsServerOptions.value[0]?.id ?? null
@@ -332,6 +415,7 @@ function fillForms() {
     jenkinsForm.defaultBranch = ''
     jenkinsForm.buildParametersJson = ''
     jenkinsForm.enabled = true
+    runtimeInstanceRows.value = []
   }
 
   aiFormRef.value?.clearValidate()
@@ -412,6 +496,92 @@ function openJenkinsServerManagement() {
   router.push({ name: 'cicd-servers' })
 }
 
+function toRuntimeInstanceForm(item: ProjectRuntimeInstanceItem): RuntimeInstanceForm {
+  return {
+    id: `runtime-${item.id}`,
+    name: item.name || '',
+    environment: item.environment || '',
+    serviceName: item.serviceName || '',
+    enabled: item.enabled,
+    serverMode: item.serverMode === 'EXTERNAL_ENDPOINT' ? 'EXTERNAL_ENDPOINT' : 'MANAGED_SERVER',
+    serverId: item.serverId,
+    externalBaseUrl: item.externalBaseUrl || '',
+    logEnabled: item.logEnabled,
+    logPathsText: (item.logPaths || []).join('\n'),
+    healthEnabled: item.healthEnabled,
+    healthProbeType: item.healthProbeType === 'TCP' ? 'TCP' : 'HTTP',
+    healthTarget: item.healthTarget || ''
+  }
+}
+
+function addRuntimeInstanceRow() {
+  runtimeInstanceRows.value.push({
+    id: `runtime-${Date.now()}-${runtimeInstanceRows.value.length}`,
+    name: '',
+    environment: '',
+    serviceName: '',
+    enabled: true,
+    serverMode: 'MANAGED_SERVER',
+    serverId: serverOptions.value[0]?.id ?? null,
+    externalBaseUrl: '',
+    logEnabled: false,
+    logPathsText: '',
+    healthEnabled: true,
+    healthProbeType: 'HTTP',
+    healthTarget: ''
+  })
+}
+
+function removeRuntimeInstanceRow(id: string) {
+  runtimeInstanceRows.value = runtimeInstanceRows.value.filter((item) => item.id !== id)
+}
+
+function handleRuntimeServerModeChange(item: RuntimeInstanceForm) {
+  if (item.serverMode === 'EXTERNAL_ENDPOINT') {
+    item.serverId = null
+    item.logEnabled = false
+    item.logPathsText = ''
+    return
+  }
+  item.externalBaseUrl = ''
+  item.serverId = item.serverId ?? serverOptions.value[0]?.id ?? null
+}
+
+function buildRuntimeInstancePayload() {
+  return runtimeInstanceRows.value.map((item, index) => {
+    const name = item.name.trim()
+    if (!name) {
+      throw new Error(`第 ${index + 1} 个运行实例名称不能为空`)
+    }
+    if (item.serverMode === 'MANAGED_SERVER' && !item.serverId) {
+      throw new Error(`第 ${index + 1} 个运行实例必须选择受管服务器`)
+    }
+    if (item.serverMode === 'EXTERNAL_ENDPOINT' && !item.externalBaseUrl.trim()) {
+      throw new Error(`第 ${index + 1} 个运行实例必须填写外部访问地址`)
+    }
+    if (item.healthEnabled && !item.healthTarget.trim()) {
+      throw new Error(`第 ${index + 1} 个运行实例必须填写健康检查目标`)
+    }
+    const logPaths = item.serverMode === 'MANAGED_SERVER' && item.logEnabled
+      ? item.logPathsText.split(/\r?\n/).map((path) => path.trim()).filter(Boolean)
+      : []
+    return {
+      name,
+      environment: item.environment.trim(),
+      serviceName: item.serviceName.trim(),
+      enabled: item.enabled,
+      serverMode: item.serverMode,
+      serverId: item.serverMode === 'MANAGED_SERVER' ? item.serverId : null,
+      externalBaseUrl: item.serverMode === 'EXTERNAL_ENDPOINT' ? item.externalBaseUrl.trim() : '',
+      logEnabled: item.serverMode === 'MANAGED_SERVER' && item.logEnabled,
+      logPaths,
+      healthEnabled: item.healthEnabled,
+      healthProbeType: item.healthProbeType,
+      healthTarget: item.healthEnabled ? item.healthTarget.trim() : ''
+    }
+  })
+}
+
 async function handleSubmit() {
   submitting.value = true
   try {
@@ -444,7 +614,8 @@ async function handleSubmit() {
       jobName: jenkinsForm.jobName,
       defaultBranch: jenkinsForm.defaultBranch,
       buildParametersJson: jenkinsForm.buildParametersJson,
-      enabled: jenkinsForm.enabled
+      enabled: jenkinsForm.enabled,
+      runtimeInstances: buildRuntimeInstancePayload()
     }
     const saved = props.jenkinsBinding
       ? await updatePipelineBinding(props.jenkinsBinding.id, payload)
@@ -453,7 +624,7 @@ async function handleSubmit() {
     emit('saved', { entryType: 'JENKINS', entry: saved })
     emit('update:modelValue', false)
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '保存失败')
+    ElMessage.error(error?.response?.data?.message || error?.message || '保存失败')
   } finally {
     submitting.value = false
   }
@@ -541,6 +712,64 @@ async function handleSubmit() {
   min-height: 34px;
 }
 
+.runtime-instance-editor {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+}
+
+.runtime-instance-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.16);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.86);
+}
+
+.runtime-instance-card-head,
+.runtime-instance-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.runtime-instance-card-head {
+  justify-content: space-between;
+}
+
+.runtime-instance-card-title {
+  min-width: 0;
+  color: var(--app-text);
+  font-size: 14px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-instance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.runtime-instance-wide-input {
+  width: 100%;
+}
+
+.runtime-instance-log-row {
+  display: grid;
+  gap: 8px;
+}
+
+.runtime-instance-add-button {
+  justify-self: flex-start;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+}
+
 @media (max-width: 760px) {
   .pipeline-form-head-with-action {
     align-items: flex-start;
@@ -549,6 +778,15 @@ async function handleSubmit() {
 
   .pipeline-trigger-variable-row {
     grid-template-columns: 1fr;
+  }
+
+  .runtime-instance-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-instance-card-head {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

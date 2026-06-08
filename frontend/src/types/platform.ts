@@ -1263,6 +1263,30 @@ export interface ProjectPipelineBindingItem {
   lastTriggerUrl: string | null
 }
 
+export interface ProjectRuntimeInstanceItem {
+  id: number
+  projectId: number
+  projectName: string
+  sourceType: 'MANUAL' | 'JENKINS' | 'WOODPECKER' | string
+  sourceBindingId: number | null
+  name: string
+  environment: string | null
+  serviceName: string | null
+  enabled: boolean
+  serverMode: 'MANAGED_SERVER' | 'EXTERNAL_ENDPOINT' | string
+  serverId: number | null
+  serverName: string
+  externalBaseUrl: string | null
+  logEnabled: boolean
+  logPaths: string[]
+  healthEnabled: boolean
+  healthProbeType: 'HTTP' | 'TCP' | string | null
+  healthTarget: string | null
+  lastDeployedAt: string | null
+  lastStatus: string | null
+  lastStatusMessage: string | null
+}
+
 export interface PipelineCenterEntryItem {
   entryType: 'AI_CLUB' | 'JENKINS' | string
   entryId: number

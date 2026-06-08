@@ -528,6 +528,102 @@ class HermesToolOrchestratorTests {
     }
 
     /**
+     * 跨项目风险分析会多次检索工作项，这类问题的目标是聚合风险，不应把中间工作项搜索误转成单对象确认卡片。
+     */
+    @Test
+    void shouldKeepGlobalRiskWorkItemSearchAsCollectionWhenQuestionAsksWhichProjects() {
+        HermesToolOrchestrator orchestrator = new HermesToolOrchestrator(
+                platformToolExecutor,
+                platformToolRegistry,
+                hermesActionPlannerService,
+                new ObjectMapper()
+        );
+
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "dashboard",
+                null,
+                null,
+                "项目经理",
+                List.of(),
+                List.of(),
+                "首页看板上下文"
+        );
+        HermesChatRequest request = new HermesChatRequest(
+                "哪些项目本周有延期风险",
+                "dashboard",
+                null,
+                null,
+                null,
+                null,
+                "conversation-risk-1",
+                null,
+                null
+        );
+        PlatformToolDefinition workItemSearch = new PlatformToolDefinition(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "搜索工作项",
+                "WORK_ITEM",
+                "按项目、迭代、标题、编号或说明搜索需求/任务/缺陷",
+                true,
+                "LOW",
+                "task:view",
+                false,
+                Map.of("keyword", "工作项关键词", "projectId", "项目ID", "iterationId", "迭代ID", "workItemType", "工作项类型")
+        );
+        PlatformToolResult searchResult = new PlatformToolResult(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "搜索工作项",
+                "找到 2 个存在延期风险的工作项",
+                List.of(
+                        new PlatformToolCandidate(
+                                "WORK_ITEM",
+                                501L,
+                                "#3Z3LJH 完成项目首页框架",
+                                "类型：任务 / 状态：处理中 / 项目：Agent Ops",
+                                "/projects/21/iterations?openTaskId=501",
+                                Map.of("projectId", 21L, "workItemId", 501L, "status", "处理中", "projectName", "Agent Ops"),
+                                List.of()
+                        ),
+                        new PlatformToolCandidate(
+                                "WORK_ITEM",
+                                502L,
+                                "#LFZ77R 项目权限修正",
+                                "类型：需求 / 状态：草稿 / 项目：Agent Ops",
+                                "/projects/21/iterations?openTaskId=502",
+                                Map.of("projectId", 21L, "workItemId", 502L, "status", "草稿", "projectName", "Agent Ops"),
+                                List.of()
+                        )
+                ),
+                List.of(),
+                Map.of()
+        );
+
+        when(platformToolRegistry.isEnabled(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.isAllowAutoExecute(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.requireDefinition(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(workItemSearch);
+        when(platformToolExecutor.execute(any())).thenReturn(searchResult);
+
+        HermesToolExecutionOutcome outcome = orchestrator.executeToolCall(
+                new HermesToolCallRequest(
+                        "call-risk-1",
+                        PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                        "work_item__search",
+                        Map.of("keyword", "延期风险")
+                ),
+                "scope-risk-1",
+                context,
+                request,
+                HermesGroundingState.empty()
+        );
+
+        assertThat(outcome.stopLoop()).isFalse();
+        assertThat(outcome.selectionCards()).isEmpty();
+        assertThat(outcome.groundingState().boundSlot("workItem")).isNull();
+        assertThat(outcome.toolMessageContent()).contains("完成项目首页框架");
+        assertThat(outcome.toolMessageContent()).contains("项目权限修正");
+    }
+
+    /**
      * 当 Hermes 发起写工具调用时，平台应直接转成确认动作卡片。
      */
     @Test

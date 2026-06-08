@@ -21,6 +21,7 @@ import type {
   PageResponse,
   PipelineCenterEntryItem,
   ProjectPipelineBindingItem,
+  ProjectRuntimeInstanceItem,
   WoodpeckerHealthItem
 } from '@/types/platform'
 
@@ -47,6 +48,22 @@ export interface PipelineBindingPayload {
   defaultBranch: string
   buildParametersJson: string
   enabled: boolean
+  runtimeInstances?: ProjectRuntimeInstancePayload[]
+}
+
+export interface ProjectRuntimeInstancePayload {
+  name: string
+  environment: string
+  serviceName: string
+  enabled: boolean
+  serverMode: 'MANAGED_SERVER' | 'EXTERNAL_ENDPOINT'
+  serverId?: number | null
+  externalBaseUrl?: string
+  logEnabled: boolean
+  logPaths: string[]
+  healthEnabled: boolean
+  healthProbeType: 'HTTP' | 'TCP'
+  healthTarget: string
 }
 
 export interface PipelineBindingQuery {
@@ -157,6 +174,11 @@ export const getAiClubPipeline = async (id: number) => {
 
 export const getPipelineBinding = async (id: number) => {
   const { data } = await http.get<ApiResponse<ProjectPipelineBindingItem>>(`/api/cicd/pipeline-bindings/${id}`)
+  return data.data
+}
+
+export const listPipelineBindingRuntimeInstances = async (id: number) => {
+  const { data } = await http.get<ApiResponse<ProjectRuntimeInstanceItem[]>>(`/api/cicd/pipeline-bindings/${id}/runtime-instances`)
   return data.data
 }
 

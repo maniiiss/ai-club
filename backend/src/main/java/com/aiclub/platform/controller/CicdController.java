@@ -22,6 +22,7 @@ import com.aiclub.platform.dto.JenkinsServerSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.PipelineCenterEntrySummary;
 import com.aiclub.platform.dto.ProjectPipelineBindingSummary;
+import com.aiclub.platform.dto.ProjectRuntimeInstanceSummary;
 import com.aiclub.platform.dto.WoodpeckerHealthSummary;
 import com.aiclub.platform.dto.request.AiClubPipelineConfigCompleteRequest;
 import com.aiclub.platform.dto.request.AiClubPipelineConfigPreviewRequest;
@@ -308,6 +309,12 @@ public class CicdController {
     @RequirePermission("cicd:view")
     public ApiResponse<ProjectPipelineBindingSummary> getPipelineBinding(@PathVariable Long id) {
         return ApiResponse.success(cicdManagementService.getPipelineBinding(id));
+    }
+
+    @GetMapping("/pipeline-bindings/{id}/runtime-instances")
+    @RequirePermission("cicd:view")
+    public ApiResponse<List<ProjectRuntimeInstanceSummary>> listPipelineBindingRuntimeInstances(@PathVariable Long id) {
+        return ApiResponse.success(cicdManagementService.listPipelineBindingRuntimeInstances(id));
     }
 
     @GetMapping("/pipeline-bindings/{id}/builds")
