@@ -193,7 +193,12 @@ services:
       HINDSIGHT_API_RERANKER_LITELLM_API_KEY: ${HINDSIGHT_API_RERANKER_LITELLM_API_KEY:-}
       HINDSIGHT_API_RERANKER_LITELLM_MODEL: ${HINDSIGHT_API_RERANKER_LITELLM_MODEL:-cohere/rerank-english-v3.0}
       # Hindsight 与业务后端共用同一 PostgreSQL 服务，通过独立数据库名隔离数据。
-      HINDSIGHT_API_DATABASE_URL: postgresql://${POSTGRES_USER:-aiclub}:${POSTGRES_PASSWORD:-aiclub123}@postgres:${POSTGRES_PORT:-5432}/${HINDSIGHT_POSTGRES_DB:-hindsight}
+      # 为了兼容包含 @、?、*、% 等特殊字符的复杂密码，默认不再把密码直接写进 URL，
+      # 而是交给 libpq 从 PGPASSWORD 读取，避免 Alembic / SQLAlchemy URL 解析链路误伤。
+      HINDSIGHT_API_DATABASE_URL: ${HINDSIGHT_API_DATABASE_URL:-postgresql://${POSTGRES_USER:-aiclub}@postgres:5432/${HINDSIGHT_POSTGRES_DB:-hindsight}}
+      # 如果 Hindsight 需要连接独立数据库账号，可单独覆盖 HINDSIGHT_API_DATABASE_PASSWORD；
+      # 未显式设置时，默认复用 POSTGRES_PASSWORD。
+      PGPASSWORD: ${HINDSIGHT_API_DATABASE_PASSWORD:-${POSTGRES_PASSWORD:-aiclub123}}
       HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvectorscale}
       HF_ENDPOINT: https://hf-mirror.com
     ports:
@@ -365,7 +370,7 @@ services:
         condition: service_started
     environment:
       TZ: ${APP_TZ:-Asia/Shanghai}
-      DB_URL: jdbc:postgresql://postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-ai_agent_platform}
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ai_agent_platform}
       DB_USERNAME: ${POSTGRES_USER:-aiclub}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
       REDIS_HOST: redis
@@ -381,7 +386,7 @@ services:
       PLATFORM_HERMES_MAX_CONTEXT_MESSAGES: ${PLATFORM_HERMES_MAX_CONTEXT_MESSAGES:-6}
       PLATFORM_HERMES_GROUNDING_TTL_SECONDS: ${PLATFORM_HERMES_GROUNDING_TTL_SECONDS:-86400}
       PLATFORM_HINDSIGHT_TIMEOUT_SECONDS: ${PLATFORM_HINDSIGHT_TIMEOUT_SECONDS:-30}
-      PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_URL: jdbc:postgresql://postgres:${POSTGRES_PORT:-5432}/${HINDSIGHT_POSTGRES_DB:-hindsight}
+      PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_URL: jdbc:postgresql://postgres:5432/${HINDSIGHT_POSTGRES_DB:-hindsight}
       PLATFORM_INTERNAL_SERVICE_TOKEN: ${PLATFORM_INTERNAL_SERVICE_TOKEN:-git-ai-club-internal-service-token}
       PLATFORM_GITLAB_DEFAULT_API_URL: ${PLATFORM_GITLAB_DEFAULT_API_URL:-http://192.168.110.138:30080/api/v4}
       PLATFORM_GITLAB_OAUTH_CLIENT_ID: ${PLATFORM_GITLAB_OAUTH_CLIENT_ID:-}

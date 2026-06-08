@@ -125,7 +125,12 @@ services:
       HINDSIGHT_API_RERANKER_LITELLM_MODEL: ${HINDSIGHT_API_RERANKER_LITELLM_MODEL:-cohere/rerank-english-v3.0}
       # Hindsight 固定连接独立数据库，避免与业务库 ai_agent_platform 混用。
       # 容器间固定通过 compose 服务名访问 PostgreSQL，避免误走宿主机映射端口导致联通性抖动。
-      HINDSIGHT_API_DATABASE_URL: postgresql://${POSTGRES_USER:-aiclub}:${POSTGRES_PASSWORD:-aiclub123}@postgres:${POSTGRES_PORT:-5432}/${HINDSIGHT_POSTGRES_DB:-hindsight}
+      # 为了兼容包含 @、?、*、% 等特殊字符的复杂密码，默认不再把密码直接写进 URL，
+      # 而是交给 libpq 从 PGPASSWORD 读取，避免 Alembic / SQLAlchemy URL 解析链路误伤。
+      HINDSIGHT_API_DATABASE_URL: ${HINDSIGHT_API_DATABASE_URL:-postgresql://${POSTGRES_USER:-aiclub}@postgres:5432/${HINDSIGHT_POSTGRES_DB:-hindsight}}
+      # 如果 Hindsight 需要连接独立数据库账号，可单独覆盖 HINDSIGHT_API_DATABASE_PASSWORD；
+      # 未显式设置时，默认复用 POSTGRES_PASSWORD。
+      PGPASSWORD: ${HINDSIGHT_API_DATABASE_PASSWORD:-${POSTGRES_PASSWORD:-aiclub123}}
       HINDSIGHT_API_VECTOR_EXTENSION: ${HINDSIGHT_API_VECTOR_EXTENSION:-pgvectorscale}
       # 在 bridge 网络内固定监听容器端口，避免服务只绑定到容器回环地址导致 Hermes 无法访问。
       HINDSIGHT_API_HOST: 0.0.0.0
@@ -370,7 +375,7 @@ services:
         condition: service_started
     environment:
       TZ: ${APP_TZ:-Asia/Shanghai}
-      DB_URL: jdbc:postgresql://postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-ai_agent_platform}
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ai_agent_platform}
       DB_USERNAME: ${POSTGRES_USER:-aiclub}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
       REDIS_HOST: redis
@@ -390,7 +395,7 @@ services:
       HINDSIGHT_API_URL: http://hindsight:8888
       HINDSIGHT_API_KEY: ${HINDSIGHT_API_KEY:-}
       PLATFORM_HINDSIGHT_TIMEOUT_SECONDS: ${PLATFORM_HINDSIGHT_TIMEOUT_SECONDS:-30}
-      PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_URL: jdbc:postgresql://postgres:${POSTGRES_PORT:-5432}/${HINDSIGHT_POSTGRES_DB:-hindsight}
+      PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_URL: jdbc:postgresql://postgres:5432/${HINDSIGHT_POSTGRES_DB:-hindsight}
       PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_USERNAME: ${POSTGRES_USER:-aiclub}
       PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-aiclub123}
       PLATFORM_INTERNAL_SERVICE_TOKEN: ${PLATFORM_INTERNAL_SERVICE_TOKEN:-git-ai-club-internal-service-token}

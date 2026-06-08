@@ -195,7 +195,7 @@
           </button>
         </div>
 
-        <div ref="messageScrollRef" class="hermes-body" @click="handleThinkSummaryClick" @scroll="handleMessageScroll">
+        <div ref="messageScrollRef" class="hermes-body" @click="handleThinkSummaryClick" @toggle.capture="handleThinkBlockToggle" @scroll="handleMessageScroll">
           <section v-if="!currentSessionDetail" class="hermes-empty-state">
             <div class="hermes-empty-kicker">云端会话</div>
             <div class="hermes-empty-title">选择历史会话，或从当前页面新建</div>
@@ -227,6 +227,11 @@
                     <span class="hermes-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
                   </div>
                   <div v-else class="hermes-markdown-content" v-html="renderAssistantMessage(message)"></div>
+                  <div v-if="message.status === 'streaming' && message.content" class="hermes-thinking-indicator compact">
+                    <span class="hermes-thinking-icon">◌</span>
+                    <span class="hermes-thinking-text">{{ currentStreamStatusText }}</span>
+                    <span class="hermes-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
+                  </div>
                 </template>
                 <div v-if="message.attachments?.length" class="hermes-chip-list">
                   <button
@@ -442,11 +447,16 @@ const currentStreamStatus = ref<HermesStreamStatusEvent | null>(null)
 const isPinnedToBottom = ref(true)
 const pendingSessionBottomScroll = ref(false)
 const pendingStreamDeltaMap = new Map<string, string>()
+const streamStartedAt = ref(0)
+const lastStreamDeltaAt = ref(0)
+const lastStreamStatusAt = ref(0)
+const streamStatusHeartbeat = ref(0)
 const STREAM_DRAIN_INTERVAL_MS = 20
 const STREAM_DRAIN_CHARS_PER_TICK = 18
 const STREAM_PUNCTUATION_PAUSE_MS = 36
 const STREAM_LINE_BREAK_PAUSE_MS = 52
 let pendingStreamDrainTimer: ReturnType<typeof setTimeout> | null = null
+let streamStatusHeartbeatTimer: number | null = null
 let hermesDrawerDisposed = false
 
 // 记忆管理相关状态
@@ -480,9 +490,44 @@ const HERMES_REFERENCE_TYPE_LABELS: Record<string, string> = {
 const displayPrompts = computed(() => currentSuggestions.value.length ? currentSuggestions.value : props.fallbackPrompts || [])
 const wikiReferences = computed(() => currentReferences.value.filter((item) => item.type === 'WIKI_PAGE'))
 const nonWikiReferences = computed(() => currentReferences.value.filter((item) => item.type !== 'WIKI_PAGE'))
+const currentStreamingAssistantMessage = computed(() => {
+  if (!currentStreamingAssistantMessageId.value) return null
+  return currentMessages.value.find((item) => item.id === currentStreamingAssistantMessageId.value) || null
+})
+/**
+ * 后端目前只在关键节点推送有限的 status 事件，因此这里根据最近一次 delta / status 时间推断更贴近用户体感的流式提示，
+ * 避免调用工具或整理答案时界面长时间停在同一句文案上，看起来像“卡住”。
+ */
 const currentStreamStatusText = computed(() => {
-  const message = currentStreamStatus.value?.message || 'Hermes 正在整理回答'
-  return message + '...'
+  streamStatusHeartbeat.value
+  const explicitMessage = (currentStreamStatus.value?.message || '').trim()
+  const stage = (currentStreamStatus.value?.stage || '').trim().toLowerCase()
+  const hasVisibleContent = Boolean(currentStreamingAssistantMessage.value?.content?.trim())
+  const now = streamStatusHeartbeat.value || Date.now()
+  const startedAt = streamStartedAt.value || now
+  const lastProgressAt = Math.max(startedAt, lastStreamDeltaAt.value || 0, lastStreamStatusAt.value || 0)
+  const elapsedMs = Math.max(0, now - startedAt)
+  const idleMs = Math.max(0, now - lastProgressAt)
+
+  if (stage === 'connecting') {
+    return explicitMessage || 'Hermes 正在连接服务'
+  }
+  if (idleMs >= 4500) {
+    return hasVisibleContent ? 'Hermes 正在调用工具补充细节' : 'Hermes 正在调用工具收集信息'
+  }
+  if (!hasVisibleContent) {
+    if (stage === 'thinking' && elapsedMs >= 2200) {
+      return 'Hermes 正在分析问题'
+    }
+    return explicitMessage || 'Hermes 正在准备回答'
+  }
+  if (idleMs >= 2200) {
+    return 'Hermes 正在整理已收集的信息'
+  }
+  if (stage === 'thinking') {
+    return 'Hermes 正在整理回答'
+  }
+  return explicitMessage || 'Hermes 正在整理回答'
 })
 const memoryConsolidationHint = computed(() => memoryConsolidationMessage.value || '正在整理记忆，这个过程通常需要几十秒。')
 const memoryConversationList = computed(() => memoryList.value)
@@ -562,6 +607,7 @@ onBeforeUnmount(() => {
   hermesDrawerDisposed = true
   stopVoiceRecording(true)
   flushPendingStreamDeltas(true)
+  stopStreamStatusHeartbeat()
   if (typeof window !== 'undefined') {
     if (pendingStreamDrainTimer != null) {
       window.clearTimeout(pendingStreamDrainTimer)
@@ -1040,6 +1086,7 @@ const updateMessage = (messageId: string, updater: (current: HermesMessageItem) 
  */
 const queueStreamDelta = (messageId: string, delta: string) => {
   if (!delta) return
+  markStreamDeltaProgress()
   pendingStreamDeltaMap.set(messageId, `${pendingStreamDeltaMap.get(messageId) || ''}${delta}`)
   ensurePendingStreamDrainLoop()
 }
@@ -1065,6 +1112,52 @@ const resolveAssistantFinalContent = (streamedContent: string, doneContent: stri
 const renderAssistantMessage = (message: HermesMessageItem) => renderHermesMarkdownToHtml(message.content || (message.status === 'streaming' ? currentStreamStatusText.value : '暂无内容'), { thinkBlockKeyPrefix: message.id, isThinkBlockOpen: (thinkBlockKey: string) => Boolean(thinkBlockOpenState.get(thinkBlockKey)) })
 const formatDebugInfo = (debug: HermesDebugInfoItem | null) => JSON.stringify(debug || {}, null, 2)
 
+/**
+ * 流式状态心跳只在前端本地运转，用来驱动“正在思考 / 调工具 / 整理答案”的文案切换。
+ */
+function startStreamStatusHeartbeat() {
+  stopStreamStatusHeartbeat()
+  const now = Date.now()
+  streamStartedAt.value = now
+  lastStreamStatusAt.value = now
+  lastStreamDeltaAt.value = 0
+  streamStatusHeartbeat.value = now
+  if (typeof window === 'undefined') {
+    return
+  }
+  streamStatusHeartbeatTimer = window.setInterval(() => {
+    streamStatusHeartbeat.value = Date.now()
+  }, 800)
+}
+
+function stopStreamStatusHeartbeat() {
+  if (typeof window !== 'undefined' && streamStatusHeartbeatTimer != null) {
+    window.clearInterval(streamStatusHeartbeatTimer)
+  }
+  streamStatusHeartbeatTimer = null
+  streamStartedAt.value = 0
+  lastStreamStatusAt.value = 0
+  lastStreamDeltaAt.value = 0
+  streamStatusHeartbeat.value = 0
+}
+
+function markStreamStatusProgress() {
+  const now = Date.now()
+  lastStreamStatusAt.value = now
+  streamStatusHeartbeat.value = now
+}
+
+function markStreamDeltaProgress() {
+  const now = Date.now()
+  lastStreamDeltaAt.value = now
+  streamStatusHeartbeat.value = now
+}
+
+function applyStreamStatus(payload: HermesStreamStatusEvent) {
+  currentStreamStatus.value = payload
+  markStreamStatusProgress()
+}
+
 const submitConversation = async (question: string, userContent: string, selection?: HermesSelectionPayload | null) => {
   const normalizedQuestion = question.trim()
   const normalizedUserContent = userContent.trim() || normalizedQuestion
@@ -1084,6 +1177,7 @@ const submitConversation = async (question: string, userContent: string, selecti
   currentSelectionCards.value = []
   currentDebug.value = null
   currentStreamStatus.value = { stage: 'planning', message: 'Hermes 正在分析问题' }
+  startStreamStatusHeartbeat()
   currentMessages.value = [
     ...currentMessages.value,
     { id: userMessageId, role: 'user', content: normalizedUserContent, status: 'done', attachments: pendingFiles.value.map(toAttachmentSummary) },
@@ -1097,7 +1191,7 @@ const submitConversation = async (question: string, userContent: string, selecti
     const payload = buildPayload(normalizedQuestion, selection)
     const streamController = pendingFiles.value.length
       ? await streamHermesSessionChatWithFiles(writableSessionId, payload, pendingFiles.value, {
-          onStatus: (streamPayload: HermesStreamStatusEvent) => { currentStreamStatus.value = streamPayload },
+          onStatus: (streamPayload: HermesStreamStatusEvent) => { applyStreamStatus(streamPayload) },
           onMeta: (streamPayload: HermesStreamMetaEvent) => { applyStreamDisplayState(streamPayload.roleName, streamPayload.references, streamPayload.suggestions, streamPayload.actions, streamPayload.selectionCards, streamPayload.debug) },
           onDelta: (streamPayload: HermesStreamDeltaEvent) => queueStreamDelta(assistantMessageId, streamPayload.content || ''),
           onDone: (streamPayload: HermesStreamDoneEvent) => {
@@ -1126,7 +1220,7 @@ const submitConversation = async (question: string, userContent: string, selecti
           }
         })
       : await streamHermesSessionChat(writableSessionId, payload, {
-      onStatus: (payload: HermesStreamStatusEvent) => { currentStreamStatus.value = payload },
+      onStatus: (payload: HermesStreamStatusEvent) => { applyStreamStatus(payload) },
       onMeta: (payload: HermesStreamMetaEvent) => { applyStreamDisplayState(payload.roleName, payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug) },
       onDelta: (payload: HermesStreamDeltaEvent) => queueStreamDelta(assistantMessageId, payload.content || ''),
       onDone: (payload: HermesStreamDoneEvent) => {
@@ -1237,6 +1331,7 @@ function applyStreamDisplayState(roleName: string, references: HermesReferenceIt
 
 function finishStream(options: { preserveStopRequested?: boolean } = {}) {
   flushPendingStreamDeltas(true)
+  stopStreamStatusHeartbeat()
   currentStreamStatus.value = null
   sending.value = false
   activeStreamAbort.value = null
@@ -1247,10 +1342,24 @@ function finishStream(options: { preserveStopRequested?: boolean } = {}) {
 }
 
 function handleThinkSummaryClick(event: Event) {
-  const summaryElement = event.target instanceof HTMLElement ? event.target.closest('summary') : null
+  const targetElement = event.target instanceof HTMLElement
+    ? event.target
+    : event.target instanceof Node
+      ? event.target.parentElement
+      : null
+  const summaryElement = targetElement?.closest('summary') || null
   const thinkBlock = summaryElement instanceof HTMLElement ? summaryElement.parentElement : null
   if (thinkBlock instanceof HTMLDetailsElement && thinkBlock.dataset.thinkKey) {
-    thinkBlockOpenState.set(thinkBlock.dataset.thinkKey, !thinkBlock.open)
+    queueMicrotask(() => {
+      thinkBlockOpenState.set(thinkBlock.dataset.thinkKey || '', thinkBlock.open)
+    })
+  }
+}
+
+function handleThinkBlockToggle(event: Event) {
+  const thinkBlock = event.target instanceof HTMLDetailsElement ? event.target : null
+  if (thinkBlock?.dataset.thinkKey) {
+    thinkBlockOpenState.set(thinkBlock.dataset.thinkKey, thinkBlock.open)
   }
 }
 
@@ -2792,6 +2901,13 @@ function persistSelectedSessionId(sessionId: number | null) {
   padding: 4px 0;
   color: var(--app-primary);
   font-size: 13px;
+}
+
+.hermes-thinking-indicator.compact {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(var(--app-outline-rgb), 0.12);
+  font-size: 12px;
 }
 
 .hermes-thinking-icon {

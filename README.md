@@ -161,6 +161,9 @@ docker compose up -d
 - Username: `aiclub`
 - Password: `aiclub123`
 
+如果 PostgreSQL 使用了复杂密码，同时又需要启动 `hindsight`，推荐在 `.env` 或 `.env.server` 里把 `HINDSIGHT_API_DATABASE_URL` 写成不带密码的连接串，并通过 `HINDSIGHT_API_DATABASE_PASSWORD` 或 `POSTGRES_PASSWORD` 单独提供密码。
+这样可以避免 Hindsight 启动迁移时，复杂密码在 Alembic / SQLAlchemy URL 解析链路里触发转义与插值问题。
+
 > 数据库结构统一由 Flyway 管理，首次启动后端时会自动执行 `backend/src/main/resources/db/migration` 下的迁移脚本。  
 > 如果你想重新初始化数据库，请执行：
 
