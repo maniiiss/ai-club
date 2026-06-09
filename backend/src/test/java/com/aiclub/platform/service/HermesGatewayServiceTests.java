@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -62,6 +63,26 @@ class HermesGatewayServiceTests {
         assertThat(messages.get(3).path("content").asText()).isEqualTo("current contextual user prompt");
     }
 
+    @Test
+    void shouldWrapStreamReasoningContentAsThinkBlock() throws Exception {
+        HermesGatewayService service = createService();
+        List<String> deltas = new ArrayList<>();
+
+        HermesGatewayService.HermesGatewayResult result = service.streamChatCompletion(
+                new HermesPromptBuilder.HermesPrompt("system prompt", "current user prompt"),
+                List.of(),
+                deltas::add
+        );
+
+        assertThat(result.responseId()).isEqualTo("stream-1");
+        assertThat(result.content()).isEqualTo("<think>先分析项目状态，再查找延期风险。</think>当前项目存在延期风险。");
+        assertThat(deltas).containsExactly(
+                "<think>先分析项目状态，",
+                "再查找延期风险。",
+                "</think>当前项目存在延期风险。"
+        );
+    }
+
     private HermesGatewayService createService() throws Exception {
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/v1/chat/completions", this::handleRequest);
@@ -74,6 +95,11 @@ class HermesGatewayServiceTests {
 
     private void handleRequest(HttpExchange exchange) throws IOException {
         lastRequestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+        JsonNode requestRoot = new ObjectMapper().readTree(lastRequestBody.get());
+        if (requestRoot.path("stream").asBoolean(false)) {
+            handleStreamRequest(exchange);
+            return;
+        }
         String body = """
                 {
                   "id": "resp-1",
@@ -88,6 +114,25 @@ class HermesGatewayServiceTests {
                 """;
         byte[] responseBody = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(200, responseBody.length);
+        try (OutputStream outputStream = exchange.getResponseBody()) {
+            outputStream.write(responseBody);
+        }
+    }
+
+    private void handleStreamRequest(HttpExchange exchange) throws IOException {
+        String body = """
+                data: {"id":"stream-1","choices":[{"delta":{"reasoning_content":"先分析项目状态，"}}]}
+
+                data: {"id":"stream-1","choices":[{"delta":{"reasoning_content":"再查找延期风险。"}}]}
+
+                data: {"id":"stream-1","choices":[{"delta":{"content":"当前项目存在延期风险。"}}]}
+
+                data: [DONE]
+
+                """;
+        byte[] responseBody = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().add("Content-Type", "text/event-stream; charset=utf-8");
         exchange.sendResponseHeaders(200, responseBody.length);
         try (OutputStream outputStream = exchange.getResponseBody()) {
             outputStream.write(responseBody);

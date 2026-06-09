@@ -124,12 +124,13 @@ public class HermesGatewayService {
 
     /**
      * 解析 Hermes 返回的 SSE 文本流。
-     * 这里会原样消费 `choices[0].delta.content`，让前端直接看到 Hermes 内联的工具进度文本。
+     * 这里同时消费 `choices[0].delta.content` 和显式 reasoning 字段；reasoning 会包装成 `<think>` 透传给前端。
      */
     private HermesGatewayResult consumeChatCompletionsStream(InputStream inputStream,
                                                              HermesDeltaConsumer consumer) throws IOException {
         StringBuilder fullText = new StringBuilder();
         StringBuilder eventData = new StringBuilder();
+        ReasoningStreamState reasoningState = new ReasoningStreamState();
         String responseId = null;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
             String line;
@@ -143,7 +144,8 @@ public class HermesGatewayService {
                         }
                         JsonNode choices = node.path("choices");
                         if (choices.isArray() && !choices.isEmpty()) {
-                            String deltaText = extractDeltaContent(choices.get(0).path("delta").path("content"));
+                            JsonNode deltaNode = choices.get(0).path("delta");
+                            String deltaText = buildStreamDeltaText(deltaNode, reasoningState);
                             if (!deltaText.isBlank()) {
                                 fullText.append(deltaText);
                                 if (consumer != null) {
@@ -163,7 +165,40 @@ public class HermesGatewayService {
                 }
             }
         }
+        String tailText = reasoningState.closeIfNeeded();
+        if (!tailText.isBlank()) {
+            fullText.append(tailText);
+            if (consumer != null) {
+                consumer.onDelta(tailText);
+            }
+        }
         return new HermesGatewayResult(responseId, fullText.toString());
+    }
+
+    private String buildStreamDeltaText(JsonNode deltaNode, ReasoningStreamState reasoningState) {
+        if (deltaNode == null || deltaNode.isMissingNode() || deltaNode.isNull()) {
+            return "";
+        }
+        String reasoningText = extractReasoningContent(deltaNode);
+        String contentText = extractDeltaContent(deltaNode.path("content"));
+        StringBuilder builder = new StringBuilder();
+        if (!reasoningText.isBlank()) {
+            builder.append(reasoningState.openIfNeeded()).append(reasoningText);
+        }
+        if (!contentText.isBlank()) {
+            builder.append(reasoningState.closeIfNeeded()).append(contentText);
+        }
+        return builder.toString();
+    }
+
+    private String extractReasoningContent(JsonNode deltaNode) {
+        for (String fieldName : List.of("reasoning_content", "reasoningContent", "reasoning", "thoughts", "thinking")) {
+            String text = extractDeltaContent(deltaNode.path(fieldName));
+            if (!text.isBlank()) {
+                return text;
+            }
+        }
+        return "";
     }
 
     private String extractMessageContent(JsonNode contentNode) {
@@ -261,6 +296,29 @@ public class HermesGatewayService {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    /**
+     * 维护 reasoning 分片到 `<think>` 块的开闭状态，保证前端 Markdown 渲染能得到完整结构。
+     */
+    private static final class ReasoningStreamState {
+        private boolean open;
+
+        private String openIfNeeded() {
+            if (open) {
+                return "";
+            }
+            open = true;
+            return "<think>";
+        }
+
+        private String closeIfNeeded() {
+            if (!open) {
+                return "";
+            }
+            open = false;
+            return "</think>";
+        }
     }
 
     /**

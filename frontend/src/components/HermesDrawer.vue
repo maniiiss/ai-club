@@ -221,8 +221,8 @@
               <div class="hermes-message-bubble" :class="message.status">
                 <pre v-if="message.role === 'user'">{{ message.content || '暂无内容' }}</pre>
                 <template v-else>
-                  <div class="hermes-markdown-content" v-html="renderAssistantMessage(message)"></div>
-                  <div v-if="message.status === 'streaming' && message.content" class="hermes-thinking-indicator compact">
+                  <div v-if="shouldShowAssistantMarkdown(message)" class="hermes-markdown-content" v-html="renderAssistantMessage(message)"></div>
+                  <div v-if="shouldShowInlineStreamStatus(message)" class="hermes-thinking-indicator" :class="{ compact: Boolean(message.content?.trim()) }">
                     <span class="hermes-thinking-icon" aria-hidden="true"></span>
                     <span class="hermes-thinking-text">{{ currentStreamStatusText }}</span>
                     <span class="hermes-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
@@ -391,7 +391,7 @@ import { createGitlabBindingScanTask } from '@/api/gitlab'
 import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import { renderHermesMarkdownToHtml } from '@/utils/hermesMarkdown'
-import { buildHermesStreamingThinkMarkdown, buildHermesToolTraceSummary, normalizeHermesToolExecutions } from '@/utils/hermesProcessTrace'
+import { buildHermesToolTraceSummary, normalizeHermesToolExecutions } from '@/utils/hermesProcessTrace'
 import { DEFAULT_REQUIREMENT_TEMPLATE } from '@/utils/requirementTemplate'
 import type { CreateHermesConversationSessionPayload, HermesActionItem, HermesAttachmentItem, HermesConversationDetailItem, HermesConversationSessionSummaryItem, HermesDebugInfoItem, HermesMemoryConsolidationStatus, HermesMemoryFactItem, HermesMessageItem, HermesReferenceItem, HermesSelectionCardItem, HermesSelectionOptionItem, HermesSelectionPayload, HermesSessionChatRequestPayload, HermesStreamDeltaEvent, HermesStreamDoneEvent, HermesStreamErrorEvent, HermesStreamMetaEvent, HermesStreamStatusEvent, HermesUserMemoryItem } from '@/types/hermes'
 import type { HermesToolExecutionViewItem, HermesToolTraceSummary } from '@/utils/hermesProcessTrace'
@@ -560,7 +560,7 @@ const footerTip = computed(() => {
   if (recording.value) return '正在录音，再次点击语音输入结束并转写'
   if (transcribing.value) return '正在转写语音...'
   return sending.value
-    ? currentStreamStatusText.value
+    ? (currentStreamingAssistantMessage.value ? '' : currentStreamStatusText.value)
     : currentSessionDetail.value?.archived
       ? '归档会话仅支持查看，恢复后可继续发送'
       : 'Enter 发送，Shift+Enter 换行'
@@ -1129,12 +1129,26 @@ const resolveAssistantFinalContent = (streamedContent: string, doneContent: stri
 
 const resolveAssistantRenderableContent = (message: HermesMessageItem) => {
   if (message.content) return message.content
-  if (message.status === 'streaming') return buildHermesStreamingThinkMarkdown(currentStreamStatusText.value)
   return '暂无内容'
 }
 
 const renderAssistantMessage = (message: HermesMessageItem) => renderHermesMarkdownToHtml(resolveAssistantRenderableContent(message), { thinkBlockKeyPrefix: message.id, isThinkBlockOpen: (thinkBlockKey: string) => Boolean(thinkBlockOpenState.get(thinkBlockKey)) })
 const formatDebugInfo = (debug: HermesDebugInfoItem | null) => JSON.stringify(debug || {}, null, 2)
+
+/**
+ * 流式等待阶段没有真实回答内容时，仅展示过程状态，避免伪造成可展开的思考过程。
+ */
+const shouldShowAssistantMarkdown = (message: HermesMessageItem) => {
+  if (message.status === 'streaming' && !message.content?.trim()) return false
+  return true
+}
+
+/**
+ * 当前正在流式输出的助手消息承担唯一状态展示，底部输入区不再重复提示。
+ */
+const shouldShowInlineStreamStatus = (message: HermesMessageItem) => {
+  return message.status === 'streaming' && message.id === currentStreamingAssistantMessageId.value
+}
 
 const resolveMessageToolExecutionItems = (message: HermesMessageItem): HermesToolExecutionViewItem[] => {
   const rawExecutions = message.toolExecutions || (
