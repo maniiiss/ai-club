@@ -167,7 +167,7 @@
                   <div class="quick-build-kicker">CI/CD 工作台</div>
                   <div class="quick-build-hero-title">快速构建</div>
                   <p class="quick-build-hero-text">
-                    {{ canBuildCicd ? '选择已启用的 AI Club Pipeline，一键触发流水线并快速跳转到流水线中心继续跟进。' : '查看首页推荐的流水线，快速进入流水线中心了解最新运行状态。' }}
+                    {{ canBuildCicd ? '选择已启用的流水线，一键触发 AI Club Pipeline 或 Jenkins 构建并快速跳转到流水线中心继续跟进。' : '查看首页推荐的流水线，快速进入流水线中心了解最新运行状态。' }}
                   </p>
                   <div class="quick-build-meta-line">
                     <span>可用流水线：{{ quickBuildBindingCount }}</span>
@@ -177,7 +177,7 @@
                 <div class="dashboard-widget-scroll-area">
                   <div v-if="quickBuildLoading" class="widget-empty">正在加载可快速触发的流水线...</div>
                   <div v-else-if="quickBuildBindings.length" class="quick-build-list">
-                    <article v-for="binding in quickBuildBindings" :key="binding.id" class="quick-build-item">
+                    <article v-for="binding in quickBuildBindings" :key="quickBuildEntryKey(binding)" class="quick-build-item">
                       <div class="quick-build-main">
                         <div class="quick-build-title-row">
                           <div class="quick-build-title">{{ binding.projectName }}</div>
@@ -185,7 +185,7 @@
                             {{ formatQuickBuildTriggerStatus(binding.lastRunStatus) }}
                           </span>
                         </div>
-                        <div class="quick-build-subtitle">{{ binding.providerCode }} / {{ binding.name }}</div>
+                        <div class="quick-build-subtitle">{{ formatQuickBuildProvider(binding.providerCode) }} / {{ binding.displayName }}</div>
                         <div class="quick-build-meta-line">
                           <span>默认分支：{{ binding.defaultBranch || '-' }}</span>
                           <span>最近触发：{{ formatDateTime(binding.lastTriggeredAt) }}</span>
@@ -198,16 +198,16 @@
                           v-if="canBuildCicd"
                           class="quick-build-button solid"
                           type="button"
-                          :disabled="quickBuildTriggeringId === binding.id"
+                          :disabled="quickBuildTriggeringId === quickBuildEntryKey(binding)"
                           @click="handleQuickBuildTrigger(binding)"
                         >
-                          {{ quickBuildTriggeringId === binding.id ? '触发中...' : '立即构建' }}
+                          {{ quickBuildTriggeringId === quickBuildEntryKey(binding) ? '触发中...' : '立即构建' }}
                         </button>
                       </div>
                     </article>
                   </div>
                   <div v-else class="widget-empty">
-                    {{ canBuildCicd ? '当前没有可快速触发的启用流水线，请先在流水线中心创建 AI Club Pipeline。' : '当前没有可展示的启用流水线，可进入流水线中心查看详情。' }}
+                    {{ canBuildCicd ? '当前没有可快速触发的启用流水线，请先在流水线中心创建或启用流水线。' : '当前没有可展示的启用流水线，可进入流水线中心查看详情。' }}
                   </div>
                 </div>
                 <button v-if="canViewCicd" class="widget-footer-button" type="button" @click="handleOpenPipelineCenter">进入流水线中心</button>
@@ -444,7 +444,7 @@ import { Cpu, FolderOpened, Plus, Tickets } from '@element-plus/icons-vue'
 import DashboardQuickTaskWidget from '@/components/DashboardQuickTaskWidget.vue'
 import DashboardShortcutEntriesWidget from '@/components/DashboardShortcutEntriesWidget.vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
-import { pageAiClubPipelines, triggerAiClubPipeline } from '@/api/cicd'
+import { pagePipelineCenterEntries, triggerAiClubPipeline, triggerPipelineBuild } from '@/api/cicd'
 import { VueDraggable } from 'vue-draggable-plus'
 import {
   createGitlabMergeRequest,
@@ -466,7 +466,7 @@ import type {
   GitlabCreateMergeRequestResultItem,
   GitlabUserOauthBindingItem,
   ProjectGitlabBindingItem,
-  AiClubPipelineItem,
+  PipelineCenterEntryItem,
   TaskItem
 } from '@/types/platform'
 import type {
@@ -549,8 +549,8 @@ const quickMergeDialogVisible = ref(false)
 const quickMergeResultVisible = ref(false)
 const quickMergeSubmitting = ref(false)
 const quickBuildLoading = ref(false)
-const quickBuildBindings = ref<AiClubPipelineItem[]>([])
-const quickBuildTriggeringId = ref<number | null>(null)
+const quickBuildBindings = ref<PipelineCenterEntryItem[]>([])
+const quickBuildTriggeringId = ref<string | null>(null)
 const quickMergeFormRef = ref<FormInstance>()
 const quickMergeBindingOptions = ref<ProjectGitlabBindingItem[]>([])
 const quickMergeOauthBinding = ref<GitlabUserOauthBindingItem>(fallbackQuickMergeOauthBinding())
@@ -1064,7 +1064,7 @@ async function loadDashboardCards() {
 }
 
 /**
- * 首页快速构建卡片只拉取少量启用中的流水线绑定，保证首页打开速度和交互聚焦。
+ * 首页快速构建卡片复用流水线中心条目，兼容内置 AI Club Pipeline 与外部 Jenkins 绑定。
  */
 async function loadQuickBuildBindings() {
   if (!canViewCicd.value) {
@@ -1074,7 +1074,7 @@ async function loadQuickBuildBindings() {
 
   quickBuildLoading.value = true
   try {
-    const pageData = await pageAiClubPipelines({
+    const pageData = await pagePipelineCenterEntries({
       page: 1,
       size: 4,
       enabled: true
@@ -1233,19 +1233,34 @@ function quickBuildTriggerStatusTone(status?: string | null) {
   return 'neutral'
 }
 
+function quickBuildEntryKey(binding: PipelineCenterEntryItem) {
+  return `${binding.entryType}-${binding.entryId}`
+}
+
+function formatQuickBuildProvider(providerCode?: string | null) {
+  if (providerCode === 'JENKINS') return 'Jenkins'
+  if (providerCode === 'WOODPECKER') return 'AI Club Pipeline'
+  return providerCode || '流水线'
+}
+
 function handleOpenPipelineCenter() {
   router.push('/cicd/pipeline-bindings')
 }
 
-async function handleQuickBuildTrigger(binding: AiClubPipelineItem) {
+/**
+ * 首页触发入口按统一条目类型分派，保证 Jenkins 兼容绑定和内置流水线都能直接构建。
+ */
+async function handleQuickBuildTrigger(binding: PipelineCenterEntryItem) {
   if (!canBuildCicd.value) {
     handleOpenPipelineCenter()
     return
   }
 
-  quickBuildTriggeringId.value = binding.id
+  quickBuildTriggeringId.value = quickBuildEntryKey(binding)
   try {
-    const result = await triggerAiClubPipeline(binding.id)
+    const result = binding.entryType === 'AI_CLUB'
+      ? await triggerAiClubPipeline(binding.entryId)
+      : await triggerPipelineBuild(binding.entryId)
     ElMessage.success(result.message)
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '触发流水线失败')
