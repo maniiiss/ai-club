@@ -25,6 +25,7 @@ from app.services.gitlab_code_structure_service import (
     GitlabCodeStructureWorkspace,
     _remove_directory_with_retry,
     _reclone_repository,
+    _refresh_existing_repository,
     _build_graph_payload,
     build_gitlab_code_structure_overview,
     build_gitnexus_launch_context,
@@ -303,6 +304,53 @@ class GitlabCodeStructureServiceTests(unittest.TestCase):
         self.assertEqual(repo_dir, result)
         refresh_mock.assert_called_once()
         remove_mock.assert_not_called()
+
+    def test_should_not_force_openssl_ssl_backend_when_cloning(self):
+        repository = self._build_repository()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = GitlabCodeStructureWorkspace(
+                root=Path(temp_dir),
+                repo_dir=Path(temp_dir) / "repo",
+                log_file=Path(temp_dir) / "code-structure.log",
+            )
+            run_calls: list[list[str]] = []
+
+            def subprocess_side_effect(command, **kwargs):
+                run_calls.append(command)
+                return type("Completed", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+            with patch("app.services.gitlab_code_structure_service.subprocess.run", side_effect=subprocess_side_effect), \
+                    patch("app.services.gitlab_code_structure_service._promote_directory_with_retry"):
+                _reclone_repository(repository, workspace)
+
+        self.assertEqual(1, len(run_calls))
+        self.assertNotIn("http.sslBackend=openssl", run_calls[0])
+        self.assertIn("http.sslVerify=false", run_calls[0])
+
+    def test_should_not_force_openssl_ssl_backend_when_fetching_cache(self):
+        repository = self._build_repository()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_dir = Path(temp_dir) / "repo"
+            (repo_dir / ".git").mkdir(parents=True, exist_ok=True)
+            workspace = GitlabCodeStructureWorkspace(
+                root=Path(temp_dir),
+                repo_dir=repo_dir,
+                log_file=Path(temp_dir) / "code-structure.log",
+            )
+            run_calls: list[list[str]] = []
+
+            def subprocess_side_effect(command, **kwargs):
+                run_calls.append(command)
+                return type("Completed", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+            with patch("app.services.gitlab_code_structure_service.subprocess.run", side_effect=subprocess_side_effect):
+                refreshed = _refresh_existing_repository(repository, workspace)
+
+        self.assertTrue(refreshed)
+        fetch_commands = [command for command in run_calls if "fetch" in command]
+        self.assertEqual(1, len(fetch_commands))
+        self.assertNotIn("http.sslBackend=openssl", fetch_commands[0])
+        self.assertIn("http.sslVerify=false", fetch_commands[0])
 
     def test_should_retry_directory_remove_with_chmod_on_permission_error(self):
         with tempfile.TemporaryDirectory() as temp_dir:

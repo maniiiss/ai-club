@@ -507,9 +507,9 @@ def _reclone_repository(repository, workspace: GitlabCodeStructureWorkspace) -> 
     repo_urls = _build_clone_url_candidates(repository.repoUrl)
     attempts: list[tuple[str, list[str]]] = []
     for repo_url in repo_urls:
-        attempts.append(("basic-auth", ["git", "-c", "http.sslBackend=openssl", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "clone", "--depth", "1", "--branch", repository.targetBranch, _build_authenticated_repo_url(repo_url, repository.authToken), str(workspace.repo_dir)]))
-        attempts.append(("private-token-header", ["git", "-c", "http.sslBackend=openssl", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "-c", f"http.extraHeader=PRIVATE-TOKEN: {repository.authToken}", "clone", "--depth", "1", "--branch", repository.targetBranch, repo_url, str(workspace.repo_dir)]))
-        attempts.append(("bearer-header", ["git", "-c", "http.sslBackend=openssl", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "-c", f"http.extraHeader=Authorization: Bearer {repository.authToken}", "clone", "--depth", "1", "--branch", repository.targetBranch, repo_url, str(workspace.repo_dir)]))
+        attempts.append(("basic-auth", ["git", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "clone", "--depth", "1", "--branch", repository.targetBranch, _build_authenticated_repo_url(repo_url, repository.authToken), str(workspace.repo_dir)]))
+        attempts.append(("private-token-header", ["git", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "-c", f"http.extraHeader=PRIVATE-TOKEN: {repository.authToken}", "clone", "--depth", "1", "--branch", repository.targetBranch, repo_url, str(workspace.repo_dir)]))
+        attempts.append(("bearer-header", ["git", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "-c", f"http.extraHeader=Authorization: Bearer {repository.authToken}", "clone", "--depth", "1", "--branch", repository.targetBranch, repo_url, str(workspace.repo_dir)]))
     errors: list[str] = []
     for index, (strategy, command) in enumerate(attempts, start=1):
         attempt_dir = workspace.root / f"repo-attempt-{index}"
@@ -555,7 +555,7 @@ def _refresh_existing_repository(repository, workspace: GitlabCodeStructureWorks
                 _build_authenticated_repo_url(repo_url, repository.authToken),
                 [
                     ["git", "remote", "set-url", "origin", _build_authenticated_repo_url(repo_url, repository.authToken)],
-                    ["git", "-c", "http.sslBackend=openssl", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "fetch", "--depth", "1", "origin", branch],
+                    ["git", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "fetch", "--depth", "1", "origin", branch],
                     ["git", "checkout", "-B", branch, "FETCH_HEAD"],
                 ],
             ),
@@ -564,7 +564,7 @@ def _refresh_existing_repository(repository, workspace: GitlabCodeStructureWorks
                 repo_url,
                 [
                     ["git", "remote", "set-url", "origin", repo_url],
-                    ["git", "-c", "http.sslBackend=openssl", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "-c", f"http.extraHeader=PRIVATE-TOKEN: {repository.authToken}", "fetch", "--depth", "1", "origin", branch],
+                    ["git", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "-c", f"http.extraHeader=PRIVATE-TOKEN: {repository.authToken}", "fetch", "--depth", "1", "origin", branch],
                     ["git", "checkout", "-B", branch, "FETCH_HEAD"],
                 ],
             ),
@@ -573,7 +573,7 @@ def _refresh_existing_repository(repository, workspace: GitlabCodeStructureWorks
                 repo_url,
                 [
                     ["git", "remote", "set-url", "origin", repo_url],
-                    ["git", "-c", "http.sslBackend=openssl", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "-c", f"http.extraHeader=Authorization: Bearer {repository.authToken}", "fetch", "--depth", "1", "origin", branch],
+                    ["git", "-c", "core.longpaths=true", "-c", "http.sslVerify=false", "-c", f"http.extraHeader=Authorization: Bearer {repository.authToken}", "fetch", "--depth", "1", "origin", branch],
                     ["git", "checkout", "-B", branch, "FETCH_HEAD"],
                 ],
             ),
