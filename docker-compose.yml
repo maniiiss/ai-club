@@ -212,6 +212,9 @@ services:
     build:
       context: ./docker/hermes
       dockerfile: Dockerfile
+      args:
+        # Hermes API Server 的思考输出行为会随上游镜像变化；这里允许部署端显式 pin 基础镜像版本或 digest。
+        HERMES_BASE_IMAGE: ${HERMES_BASE_IMAGE:-nousresearch/hermes-agent:latest}
     image: ${HERMES_IMAGE:-git-ai-club-hermes:latest}
     container_name: git-ai-club-hermes
     restart: unless-stopped
@@ -270,6 +273,9 @@ services:
               echo "  hindsight_url: $${HERMES_MEMORY_HINDSIGHT_URL}"
             fi
           fi
+          # 对话式输出显式开启 reasoning 展示，配合本地 API Server patch 把思考过程透给下游客户端。
+          echo "display:"
+          echo "  show_reasoning: true"
           echo "platform_toolsets:"
           echo "  api_server:"
           echo "    - git_ai_club"
