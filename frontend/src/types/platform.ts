@@ -1285,6 +1285,84 @@ export interface ProjectRuntimeInstanceItem {
   lastDeployedAt: string | null
   lastStatus: string | null
   lastStatusMessage: string | null
+  lastLogCollectedAt: string | null
+  lastLogCollectStatus: string | null
+  lastLogCollectMessage: string | null
+  lastHealthCheckedAt: string | null
+  lastHealthScore: number | null
+  lastHealthLevel: string | null
+  lastHealthMessage: string | null
+  lastHealthLatencyMs: number | null
+}
+
+export interface ObservabilityProjectItem {
+  projectId: number
+  projectName: string
+  projectStatus: string
+  instanceCount: number
+  enabledInstanceCount: number
+  abnormalInstanceCount: number
+  projectHealthScore: number | null
+  projectHealthLevel: string | null
+  lastHealthCheckedAt: string | null
+  lastLogCollectedAt: string | null
+  lastLogCollectStatus: string | null
+  lastLogCollectMessage: string | null
+}
+
+export interface ObservabilityProjectDetailItem {
+  summary: ObservabilityProjectItem
+  instances: ProjectRuntimeInstanceItem[]
+}
+
+export interface ObservabilityProjectLogItem {
+  id: number
+  runtimeInstanceId: number
+  runtimeInstanceName: string
+  sourceType: string
+  sourcePath: string | null
+  logLevel: string | null
+  logger: string | null
+  traceId: string | null
+  message: string
+  raw: string | null
+  loggedAt: string | null
+  collectedAt: string | null
+}
+
+export interface ObservabilityRuntimeInstanceHealthItem {
+  runtimeInstanceId: number
+  runtimeInstanceName: string
+  environment: string | null
+  serviceName: string | null
+  enabled: boolean
+  probeType: string | null
+  probeTarget: string | null
+  healthScore: number | null
+  healthLevel: string | null
+  availabilityStatus: string | null
+  httpStatus: number | null
+  latencyMs: number | null
+  failureReason: string | null
+  sampledAt: string | null
+}
+
+export interface ObservabilityProjectHealthItem {
+  projectId: number
+  projectName: string
+  projectHealthScore: number | null
+  projectHealthLevel: string | null
+  lastHealthCheckedAt: string | null
+  totalInstanceCount: number
+  enabledInstanceCount: number
+  abnormalInstanceCount: number
+  instances: ObservabilityRuntimeInstanceHealthItem[]
+}
+
+export interface ObservabilityHealthTimelinePointItem {
+  sampledAt: string
+  healthScore: number | null
+  healthLevel: string | null
 }
 
 export interface PipelineCenterEntryItem {

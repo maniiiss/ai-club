@@ -25,6 +25,17 @@ public interface ServerSshGateway {
     /** 将远程文件内容下载到输出流 */
     void downloadFile(ServerInfoEntity server, String remotePath, OutputStream outputStream);
 
+    /**
+     * 读取远程文件元数据。
+     * 可观测性采集需要基于文件大小和修改时间判断日志是否发生截断或轮转。
+     */
+    RemoteFileMetadata readFileMetadata(ServerInfoEntity server, String remotePath);
+
+    /**
+     * 按偏移量读取远程文件片段，避免日志采集每次整文件重复下载。
+     */
+    byte[] readFileChunk(ServerInfoEntity server, String remotePath, long offset, int maxBytes);
+
     /** 删除远程文件或目录 */
     void delete(ServerInfoEntity server, String path, boolean recursive);
 
@@ -36,6 +47,18 @@ public interface ServerSshGateway {
             Integer memoryUsagePercent,
             Integer diskUsagePercent,
             String summary
+    ) {
+    }
+
+    /**
+     * 远程文件元数据摘要。
+     */
+    record RemoteFileMetadata(
+            String path,
+            long size,
+            long modifiedAtEpochSecond,
+            boolean directory,
+            boolean symbolicLink
     ) {
     }
 

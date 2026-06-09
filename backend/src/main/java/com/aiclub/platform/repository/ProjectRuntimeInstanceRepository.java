@@ -10,9 +10,15 @@ public interface ProjectRuntimeInstanceRepository extends JpaRepository<ProjectR
 
     List<ProjectRuntimeInstanceEntity> findAllByProject_IdOrderByIdAsc(Long projectId);
 
+    List<ProjectRuntimeInstanceEntity> findAllByProject_IdAndEnabledTrueOrderByIdAsc(Long projectId);
+
     Optional<ProjectRuntimeInstanceEntity> findByIdAndProject_Id(Long id, Long projectId);
 
     List<ProjectRuntimeInstanceEntity> findAllBySourceTypeAndSourceBindingIdOrderByIdAsc(String sourceType, Long sourceBindingId);
+
+    List<ProjectRuntimeInstanceEntity> findAllByEnabledTrueAndLogEnabledTrueAndServerModeOrderByIdAsc(String serverMode);
+
+    List<ProjectRuntimeInstanceEntity> findAllByEnabledTrueAndHealthEnabledTrueOrderByIdAsc();
 
     void deleteAllBySourceTypeAndSourceBindingId(String sourceType, Long sourceBindingId);
 }

@@ -102,6 +102,54 @@ public class ProjectRuntimeInstanceEntity {
     @Column(name = "last_status_message", length = 500)
     private String lastStatusMessage;
 
+    /**
+     * 最近一次日志采集完成时间。
+     */
+    @Column(name = "last_log_collected_at")
+    private LocalDateTime lastLogCollectedAt;
+
+    /**
+     * 最近一次日志采集状态，例如 SUCCESS / FAILED / SKIPPED。
+     */
+    @Column(name = "last_log_collect_status", length = 30)
+    private String lastLogCollectStatus;
+
+    /**
+     * 最近一次日志采集结果说明，供可观测性中心直接展示。
+     */
+    @Column(name = "last_log_collect_message", length = 500)
+    private String lastLogCollectMessage;
+
+    /**
+     * 最近一次健康检查时间。
+     */
+    @Column(name = "last_health_checked_at")
+    private LocalDateTime lastHealthCheckedAt;
+
+    /**
+     * 最近一次健康检查得分。
+     */
+    @Column(name = "last_health_score")
+    private Integer lastHealthScore;
+
+    /**
+     * 最近一次健康等级，例如 HEALTHY / DEGRADED / ABNORMAL。
+     */
+    @Column(name = "last_health_level", length = 30)
+    private String lastHealthLevel;
+
+    /**
+     * 最近一次健康检查说明。
+     */
+    @Column(name = "last_health_message", length = 500)
+    private String lastHealthMessage;
+
+    /**
+     * 最近一次健康检查耗时，单位毫秒。
+     */
+    @Column(name = "last_health_latency_ms")
+    private Long lastHealthLatencyMs;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -286,5 +334,69 @@ public class ProjectRuntimeInstanceEntity {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public LocalDateTime getLastLogCollectedAt() {
+        return lastLogCollectedAt;
+    }
+
+    public void setLastLogCollectedAt(LocalDateTime lastLogCollectedAt) {
+        this.lastLogCollectedAt = lastLogCollectedAt;
+    }
+
+    public String getLastLogCollectStatus() {
+        return lastLogCollectStatus;
+    }
+
+    public void setLastLogCollectStatus(String lastLogCollectStatus) {
+        this.lastLogCollectStatus = lastLogCollectStatus;
+    }
+
+    public String getLastLogCollectMessage() {
+        return lastLogCollectMessage;
+    }
+
+    public void setLastLogCollectMessage(String lastLogCollectMessage) {
+        this.lastLogCollectMessage = lastLogCollectMessage;
+    }
+
+    public LocalDateTime getLastHealthCheckedAt() {
+        return lastHealthCheckedAt;
+    }
+
+    public void setLastHealthCheckedAt(LocalDateTime lastHealthCheckedAt) {
+        this.lastHealthCheckedAt = lastHealthCheckedAt;
+    }
+
+    public Integer getLastHealthScore() {
+        return lastHealthScore;
+    }
+
+    public void setLastHealthScore(Integer lastHealthScore) {
+        this.lastHealthScore = lastHealthScore;
+    }
+
+    public String getLastHealthLevel() {
+        return lastHealthLevel;
+    }
+
+    public void setLastHealthLevel(String lastHealthLevel) {
+        this.lastHealthLevel = lastHealthLevel;
+    }
+
+    public String getLastHealthMessage() {
+        return lastHealthMessage;
+    }
+
+    public void setLastHealthMessage(String lastHealthMessage) {
+        this.lastHealthMessage = lastHealthMessage;
+    }
+
+    public Long getLastHealthLatencyMs() {
+        return lastHealthLatencyMs;
+    }
+
+    public void setLastHealthLatencyMs(Long lastHealthLatencyMs) {
+        this.lastHealthLatencyMs = lastHealthLatencyMs;
     }
 }

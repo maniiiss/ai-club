@@ -16,6 +16,8 @@ import PipelineBindingView from '@/views/PipelineBindingView.vue'
 const ServerManagementView = () => import('@/views/ServerManagementView.vue')
 const ServerDetailView = () => import('@/views/ServerDetailView.vue')
 const AiClubPipelineDetailView = () => import('@/views/AiClubPipelineDetailView.vue')
+const ObservabilityProjectListView = () => import('@/views/ObservabilityProjectListView.vue')
+const ObservabilityProjectDetailView = () => import('@/views/ObservabilityProjectDetailView.vue')
 import ModelView from '@/views/ModelView.vue'
 const ApiGroupHomeView = () => import('@/views/ApiGroupHomeView.vue')
 const ProjectApiManagementView = () => import('@/views/ProjectApiManagementView.vue')
@@ -106,6 +108,8 @@ const router = createRouter({
         { path: 'cicd/jenkins-servers', name: 'cicd-servers', component: JenkinsServerView, meta: { title: 'Jenkins 服务管理', permission: 'cicd:view' } },
         { path: 'cicd/pipeline-bindings', name: 'cicd-pipelines', component: PipelineBindingView, meta: { title: '流水线中心', permission: 'cicd:view' } },
         { path: 'cicd/pipelines/:entryType/:entryId', name: 'cicd-pipeline-detail', component: AiClubPipelineDetailView, meta: { title: '流水线详情', permission: 'cicd:view', activeMenu: '/cicd/pipeline-bindings' } },
+        { path: 'observability', name: 'observability-projects', component: ObservabilityProjectListView, meta: { title: '可观测性中心', permission: 'observability:view' } },
+        { path: 'observability/projects/:projectId', name: 'observability-project-detail', component: ObservabilityProjectDetailView, meta: { title: '项目观测详情', permission: 'observability:view', activeMenu: '/observability' } },
         { path: 'profile', name: 'profile', component: ProfileView, meta: { title: '个人中心' } },
         { path: 'profile/gitlab-callback', name: 'profile-gitlab-callback', component: GitlabOauthCallbackView, meta: { title: 'GitLab 授权回调' } },
         { path: 'users', name: 'users', component: UserView, meta: { title: '用户管理', permission: 'system:user:view' } },

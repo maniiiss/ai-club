@@ -776,6 +776,7 @@ const primaryMenuSeeds: MenuSeed[] = [
 
 const integrationMenuSeeds: MenuSeed[] = [
   { permission: 'server:view', fallbackPath: '/servers', fallbackLabel: '服务器管理', shortLabel: '服务器', fallbackIcon: Connection, matchNames: ['servers', 'server-detail'] },
+  { permission: 'observability:view', fallbackPath: '/observability', fallbackLabel: '可观测性中心', shortLabel: '观测', fallbackIcon: DataAnalysis, matchNames: ['observability-projects', 'observability-project-detail'] },
   { permission: 'cicd:view', fallbackPath: '/cicd/pipeline-bindings', fallbackLabel: '流水线中心', shortLabel: '流水线', fallbackIcon: DataAnalysis, matchNames: ['cicd-pipelines', 'cicd-pipeline-detail'] },
   { permission: 'cicd:view', fallbackPath: '/cicd/jenkins-servers', fallbackLabel: 'Jenkins 服务管理', shortLabel: 'Jenkins', fallbackIcon: DataAnalysis, matchNames: ['cicd-servers'] }
 ]
@@ -913,6 +914,14 @@ const projectWorkspaceMenus = computed<MenuItem[]>(() => {
       permission: 'wiki:view',
       icon: Document,
       matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page', 'wiki-space-memory-fact-graph']
+    },
+    {
+      path: `/observability/projects/${currentProjectId.value}`,
+      label: '应用观测',
+      shortLabel: '观测',
+      permission: 'observability:view',
+      icon: DataAnalysis,
+      matchNames: ['observability-project-detail']
     }
   ]
 })

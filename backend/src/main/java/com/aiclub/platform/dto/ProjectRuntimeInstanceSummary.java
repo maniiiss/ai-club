@@ -23,6 +23,14 @@ public record ProjectRuntimeInstanceSummary(
         String healthTarget,
         String lastDeployedAt,
         String lastStatus,
-        String lastStatusMessage
+        String lastStatusMessage,
+        String lastLogCollectedAt,
+        String lastLogCollectStatus,
+        String lastLogCollectMessage,
+        String lastHealthCheckedAt,
+        Integer lastHealthScore,
+        String lastHealthLevel,
+        String lastHealthMessage,
+        Long lastHealthLatencyMs
 ) {
 }

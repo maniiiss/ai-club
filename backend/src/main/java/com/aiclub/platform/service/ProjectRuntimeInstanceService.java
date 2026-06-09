@@ -6,6 +6,7 @@ import com.aiclub.platform.domain.model.ProjectRuntimeInstanceEntity;
 import com.aiclub.platform.domain.model.ServerInfoEntity;
 import com.aiclub.platform.dto.ProjectRuntimeInstanceSummary;
 import com.aiclub.platform.dto.request.ProjectRuntimeInstanceRequest;
+import com.aiclub.platform.dto.request.ObservabilityRuntimeInstanceUpdateRequest;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.aiclub.platform.repository.ProjectRuntimeInstanceRepository;
 import com.aiclub.platform.repository.ServerInfoRepository;
@@ -86,6 +87,30 @@ public class ProjectRuntimeInstanceService {
         projectDataPermissionService.requireProjectVisible(entity.getProject());
         fillEntity(entity, request);
         return toSummary(runtimeInstanceRepository.save(entity));
+    }
+
+    /**
+     * 可观测性中心更新运行实例配置。
+     * 目前沿用运行实例的统一校验规则，只更新实例本身，不改动 Jenkins 绑定主记录。
+     */
+    @Transactional
+    public ProjectRuntimeInstanceSummary updateFromObservability(Long projectId,
+                                                                Long id,
+                                                                ObservabilityRuntimeInstanceUpdateRequest request) {
+        return update(projectId, id, new ProjectRuntimeInstanceRequest(
+                request.name(),
+                request.environment(),
+                request.serviceName(),
+                request.enabled(),
+                request.serverMode(),
+                request.serverId(),
+                request.externalBaseUrl(),
+                request.logEnabled(),
+                request.logPaths(),
+                request.healthEnabled(),
+                request.healthProbeType(),
+                request.healthTarget()
+        ));
     }
 
     @Transactional
@@ -260,7 +285,15 @@ public class ProjectRuntimeInstanceService {
                 entity.getHealthTarget(),
                 formatTime(entity.getLastDeployedAt()),
                 entity.getLastStatus(),
-                entity.getLastStatusMessage()
+                entity.getLastStatusMessage(),
+                formatTime(entity.getLastLogCollectedAt()),
+                entity.getLastLogCollectStatus(),
+                entity.getLastLogCollectMessage(),
+                formatTime(entity.getLastHealthCheckedAt()),
+                entity.getLastHealthScore(),
+                entity.getLastHealthLevel(),
+                entity.getLastHealthMessage(),
+                entity.getLastHealthLatencyMs()
         );
     }
 

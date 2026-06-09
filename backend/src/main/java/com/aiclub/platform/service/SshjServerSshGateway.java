@@ -182,6 +182,52 @@ public class SshjServerSshGateway implements ServerSshGateway {
         }
     }
 
+    @Override
+    public RemoteFileMetadata readFileMetadata(ServerInfoEntity server, String remotePath) {
+        validatePath(remotePath);
+        ConnectedClients connectedClients = connectForSftp(server);
+        try (connectedClients; SFTPClient sftp = connectedClients.targetClient().newSFTPClient()) {
+            FileAttributes attributes = sftp.stat(remotePath);
+            return new RemoteFileMetadata(
+                    normalizePath(remotePath),
+                    attributes.getSize(),
+                    attributes.getMtime(),
+                    attributes.getType() == FileMode.Type.DIRECTORY,
+                    attributes.getType() == FileMode.Type.SYMLINK
+            );
+        } catch (IOException exception) {
+            throw new IllegalStateException("SFTP 读取文件属性失败：" + sanitizeMessage(exception.getMessage()), exception);
+        }
+    }
+
+    @Override
+    public byte[] readFileChunk(ServerInfoEntity server, String remotePath, long offset, int maxBytes) {
+        validatePath(remotePath);
+        if (offset < 0) {
+            throw new IllegalArgumentException("读取偏移量不能小于 0");
+        }
+        if (maxBytes <= 0) {
+            throw new IllegalArgumentException("读取字节数必须大于 0");
+        }
+        ConnectedClients connectedClients = connectForSftp(server);
+        try (connectedClients; SFTPClient sftp = connectedClients.targetClient().newSFTPClient();
+             RemoteFile remoteFile = sftp.open(remotePath, EnumSet.of(OpenMode.READ))) {
+            byte[] buffer = new byte[maxBytes];
+            int read = remoteFile.read(offset, buffer, 0, maxBytes);
+            if (read <= 0) {
+                return new byte[0];
+            }
+            if (read == buffer.length) {
+                return buffer;
+            }
+            byte[] result = new byte[read];
+            System.arraycopy(buffer, 0, result, 0, read);
+            return result;
+        } catch (IOException exception) {
+            throw new IllegalStateException("SFTP 读取文件片段失败：" + sanitizeMessage(exception.getMessage()), exception);
+        }
+    }
+
     /**
      * 向输出流写入数据，捕获客户端断开连接导致的所有异常类型。
      * Spring 6.1+ 在客户端中断时可能抛出 AsyncRequestNotUsableException（RuntimeException），

@@ -24,7 +24,13 @@ if [ -n "${POSTGRES_PORT:-}" ]; then
   export PGPORT="${POSTGRES_PORT}"
 fi
 
-if [ -n "${POSTGRES_PASSWORD:-}" ]; then
+if [ -n "${PGPASSWORD:-}" ]; then
+  # Compose 可显式传入 PGPASSWORD，用于外部 Hindsight 库或复杂密码场景。
+  export PGPASSWORD="${PGPASSWORD}"
+elif [ -n "${HINDSIGHT_API_DATABASE_PASSWORD:-}" ]; then
+  # 兼容直接运行脚本时只提供 Hindsight 专用数据库密码的场景。
+  export PGPASSWORD="${HINDSIGHT_API_DATABASE_PASSWORD}"
+elif [ -n "${POSTGRES_PASSWORD:-}" ]; then
   export PGPASSWORD="${POSTGRES_PASSWORD}"
 fi
 

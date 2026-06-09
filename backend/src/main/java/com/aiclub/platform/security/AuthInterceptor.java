@@ -3,6 +3,7 @@ package com.aiclub.platform.security;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.service.AuthService;
+import com.aiclub.platform.service.InternalServiceAuthenticator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -19,10 +20,14 @@ import java.io.IOException;
 public class AuthInterceptor implements HandlerInterceptor {
 
     private final AuthService authService;
+    private final InternalServiceAuthenticator internalServiceAuthenticator;
     private final ObjectMapper objectMapper;
 
-    public AuthInterceptor(AuthService authService, ObjectMapper objectMapper) {
+    public AuthInterceptor(AuthService authService,
+                           InternalServiceAuthenticator internalServiceAuthenticator,
+                           ObjectMapper objectMapper) {
         this.authService = authService;
+        this.internalServiceAuthenticator = internalServiceAuthenticator;
         this.objectMapper = objectMapper;
     }
 
@@ -38,6 +43,14 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
 
         String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (isInternalActuatorPath(requestUri) && authHeader != null && !authHeader.isBlank()) {
+            try {
+                internalServiceAuthenticator.requireAuthorized(authHeader, request.getRemoteAddr());
+                return true;
+            } catch (RuntimeException ignored) {
+                // 若不是内部服务 Token，则继续按普通登录态校验。
+            }
+        }
         if (authHeader == null || authHeader.isBlank()) {
             writeJson(response, HttpStatus.UNAUTHORIZED, "Not logged in or session expired");
             return false;
@@ -76,8 +89,14 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || requestUri.startsWith("/api/yaade/proxy")
                 || requestUri.startsWith("/api/common/public-files/")
                 || requestUri.startsWith("/comment-images")
-                || requestUri.startsWith("/actuator")
+                || requestUri.startsWith("/actuator/health")
                 || requestUri.startsWith("/error");
+    }
+
+    private boolean isInternalActuatorPath(String requestUri) {
+        return requestUri.startsWith("/actuator/prometheus")
+                || requestUri.startsWith("/actuator/metrics")
+                || requestUri.startsWith("/actuator/info");
     }
 
     private boolean isSftpDownloadTicketRequest(String requestUri, HttpServletRequest request) {

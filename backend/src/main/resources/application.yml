@@ -60,7 +60,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus
 
 platform:
   code-processing:
@@ -145,6 +145,18 @@ platform:
   internal:
     allow-local-bypass: ${PLATFORM_INTERNAL_ALLOW_LOCAL_BYPASS:true}
     service-token: ${PLATFORM_INTERNAL_SERVICE_TOKEN:git-ai-club-internal-service-token}
+  observability:
+    enabled: ${PLATFORM_OBSERVABILITY_ENABLED:true}
+    ingest-token: ${PLATFORM_OBSERVABILITY_INGEST_TOKEN:git-ai-club-observability-token}
+    log:
+      collect-interval-ms: ${PLATFORM_PROJECT_LOG_COLLECT_INTERVAL_MS:30000}
+      retention-days: ${PLATFORM_PROJECT_LOG_RETENTION_DAYS:14}
+      chunk-bytes: ${PLATFORM_PROJECT_LOG_CHUNK_BYTES:262144}
+    health:
+      collect-interval-ms: ${PLATFORM_PROJECT_HEALTH_INTERVAL_MS:30000}
+      retention-days: ${PLATFORM_PROJECT_HEALTH_RETENTION_DAYS:30}
+      http-connect-timeout-ms: ${PLATFORM_PROJECT_HEALTH_HTTP_CONNECT_TIMEOUT_MS:3000}
+      http-read-timeout-ms: ${PLATFORM_PROJECT_HEALTH_HTTP_READ_TIMEOUT_MS:5000}
   security:
     token-secret: ${PLATFORM_TOKEN_SECRET:ai-club-demo-token-secret}
     token-expire-hours: ${PLATFORM_TOKEN_EXPIRE_HOURS:12}
