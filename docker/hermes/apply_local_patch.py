@@ -56,6 +56,28 @@ def _strip_think_blocks_from_history(history: Any) -> Any:
         cleaned_history.append(normalized_entry)
     return cleaned_history
 
+
+def _resolve_last_reasoning_from_result(result: Any) -> str:
+    \"\"\"优先返回原生 last_reasoning；为空时从最新 assistant message 的 reasoning 字段回捞。\"\"\"
+    if not isinstance(result, dict):
+        return ""
+    direct_reasoning = str(result.get("last_reasoning") or "").strip()
+    if direct_reasoning:
+        return direct_reasoning
+    messages = result.get("messages")
+    if not isinstance(messages, list):
+        return ""
+    for message in reversed(messages):
+        if not isinstance(message, dict):
+            continue
+        if str(message.get("role") or "").strip().lower() != "assistant":
+            continue
+        for field_name in ("reasoning_content", "reasoning"):
+            field_value = message.get(field_name)
+            if isinstance(field_value, str) and field_value.strip():
+                return field_value.strip()
+    return ""
+
 """,
         description="注入 think 清洗辅助函数",
     )
@@ -221,7 +243,7 @@ def _strip_think_blocks_from_history(history: Any) -> Any:
                     last_activity = await _emit("</think>")
                     _reasoning_open = False
                 elif not _reasoning_seen:
-                    final_reasoning = result.get("last_reasoning", "") if isinstance(result, dict) else ""
+                    final_reasoning = _resolve_last_reasoning_from_result(result)
                     if final_reasoning:
                         last_activity = await _emit(f"<think>{final_reasoning}</think>")
             except Exception as exc:
@@ -236,7 +258,7 @@ def _strip_think_blocks_from_history(history: Any) -> Any:
         content,
         '        final_response = result.get("final_response") or ""\n',
         """        final_response = result.get("final_response") or ""
-        final_reasoning = result.get("last_reasoning") or ""
+        final_reasoning = _resolve_last_reasoning_from_result(result)
         if final_reasoning:
             final_response = f"<think>{final_reasoning}</think>\\n\\n{final_response}" if final_response else f"<think>{final_reasoning}</think>"
 """,
