@@ -223,7 +223,7 @@
                 <template v-else>
                   <div class="hermes-markdown-content" v-html="renderAssistantMessage(message)"></div>
                   <div v-if="message.status === 'streaming' && message.content" class="hermes-thinking-indicator compact">
-                    <span class="hermes-thinking-icon">◌</span>
+                    <span class="hermes-thinking-icon" aria-hidden="true"></span>
                     <span class="hermes-thinking-text">{{ currentStreamStatusText }}</span>
                     <span class="hermes-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
                   </div>
@@ -3010,6 +3010,17 @@ function persistSelectedSessionId(sessionId: number | null) {
 
 .hermes-thinking-icon {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border: 2px solid rgba(var(--app-primary-rgb), 0.18);
+  border-top-color: var(--app-primary);
+  border-radius: 50%;
+  box-sizing: border-box;
+  line-height: 0;
+  transform-origin: 50% 50%;
   animation: hermes-spin 1.2s linear infinite;
 }
 
@@ -3130,8 +3141,14 @@ function persistSelectedSessionId(sessionId: number | null) {
 }
 
 .hermes-process-trace.is-running .hermes-process-status-icon {
-  background: rgba(37, 99, 235, 0.12);
-  color: #2563eb;
+  border: 2px solid rgba(37, 99, 235, 0.16);
+  border-top-color: #2563eb;
+  background: transparent;
+  color: transparent;
+  font-size: 0;
+  line-height: 0;
+  transform-origin: 50% 50%;
+  animation: hermes-spin 1.2s linear infinite;
 }
 
 .hermes-process-trace.is-success .hermes-process-status-icon {
@@ -3401,14 +3418,22 @@ function persistSelectedSessionId(sessionId: number | null) {
   width: 18px;
   height: 18px;
   border-radius: 999px;
+  box-sizing: border-box;
   flex: 0 0 18px;
   font-size: 11px;
   font-weight: 900;
+  line-height: 1;
 }
 
 .hermes-markdown-content :deep(.hermes-think-status-icon.thinking) {
+  border: 2px solid rgba(var(--app-primary-rgb), 0.16);
+  border-top-color: rgba(var(--app-primary-rgb), 0.92);
   color: rgba(var(--app-primary-rgb), 0.92);
-  background: rgba(var(--app-primary-rgb), 0.12);
+  background: transparent;
+  font-size: 0;
+  line-height: 0;
+  transform-origin: 50% 50%;
+  animation: hermes-spin 1.2s linear infinite;
 }
 
 .hermes-markdown-content :deep(.hermes-think-status-icon.done) {
