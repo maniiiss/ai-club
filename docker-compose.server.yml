@@ -262,7 +262,8 @@ services:
     restart: unless-stopped
     environment:
       TZ: ${APP_TZ:-Asia/Shanghai}
-      PLATFORM_BACKEND_INTERNAL_BASE_URL: ${PLATFORM_BACKEND_INTERNAL_BASE_URL:-http://backend:8080}
+      # 全量 Docker 内部工具桥接必须走 backend 容器端口 8080；BACKEND_PORT 只是宿主机映射端口。
+      PLATFORM_BACKEND_INTERNAL_BASE_URL: http://backend:8080
       PLATFORM_INTERNAL_SERVICE_TOKEN: ${PLATFORM_INTERNAL_SERVICE_TOKEN:-git-ai-club-internal-service-token}
       PLATFORM_HERMES_MCP_SHARED_TOKEN: ${PLATFORM_HERMES_MCP_SHARED_TOKEN:-git-ai-club-hermes-mcp-token}
       PLATFORM_MINIO_ENDPOINT: ${PLATFORM_MINIO_ENDPOINT:-http://minio:9000}

@@ -27,9 +27,9 @@ class _FakeAsyncClient:
         return False
 
     async def post(self, url: str, json: dict[str, object], headers: dict[str, str]):
-        """按 URL 模拟连接结果，localhost 失败后 backend 服务名成功。"""
+        """按 URL 模拟连接结果，宿主机端口失败后 backend 容器端口成功。"""
         self.calls.append(url)
-        if self.fail_all or "localhost" in url:
+        if self.fail_all or "localhost" in url or ":8899" in url:
             raise httpx.ConnectError("All connection attempts failed")
         return httpx.Response(200, json={"message": "工具执行成功"})
 
@@ -79,6 +79,27 @@ class HermesInternalClientTests(unittest.IsolatedAsyncioTestCase):
                 "http://localhost:8080/internal/hermes/mcp/execute",
                 "http://backend:8080/internal/hermes/mcp/execute",
                 "http://git-ai-club-server-backend:8080/internal/hermes/mcp/execute",
+            ],
+            _FakeAsyncClient.calls,
+        )
+
+    async def test_should_fallback_to_container_port_when_configured_with_host_port(self):
+        fake_settings = SimpleNamespace(
+            backend_internal_base_url="http://backend:8899",
+            internal_service_token="internal-token",
+        )
+
+        with patch("app.services.hermes_internal_client.settings", fake_settings), \
+            patch("app.services.hermes_internal_client.os.path.exists", return_value=True), \
+            patch("app.services.hermes_internal_client.httpx.AsyncClient", _FakeAsyncClient):
+            result = await HermesInternalClient().execute_tool("hcs_0123456789abcdef", "project.search", {"keyword": ""})
+
+        self.assertEqual("工具执行成功", result.message)
+        self.assertEqual(
+            [
+                "http://backend:8899/internal/hermes/mcp/execute",
+                "http://git-ai-club-server-backend:8899/internal/hermes/mcp/execute",
+                "http://backend:8080/internal/hermes/mcp/execute",
             ],
             _FakeAsyncClient.calls,
         )

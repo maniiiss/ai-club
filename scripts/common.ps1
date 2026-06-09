@@ -144,7 +144,8 @@ function Ensure-FullDockerEnvFile {
 
     $backendPort = Get-DotEnvValue -Path $context.FullDockerEnvFile -Name 'BACKEND_PORT' -DefaultValue '8080'
     $normalizedValues = @{
-        PLATFORM_BACKEND_INTERNAL_BASE_URL = "http://backend:$backendPort"
+        # BACKEND_PORT 是宿主机映射端口；全量 Docker 内部服务互访始终使用 backend 容器端口 8080。
+        PLATFORM_BACKEND_INTERNAL_BASE_URL = 'http://backend:8080'
         PLATFORM_INTERNAL_ALLOW_LOCAL_BYPASS = 'false'
         VITE_API_BASE_URL = ''
         VITE_API_PORT = $backendPort

@@ -175,7 +175,8 @@ ensure_full_docker_env_file() {
 
   local backend_port
   backend_port="$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'BACKEND_PORT' '8080')"
-  set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_BACKEND_INTERNAL_BASE_URL' "http://backend:${backend_port}"
+  # BACKEND_PORT 是宿主机映射端口；全量 Docker 内部服务互访始终使用 backend 容器端口 8080。
+  set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_BACKEND_INTERNAL_BASE_URL' 'http://backend:8080'
   set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_INTERNAL_ALLOW_LOCAL_BYPASS' 'false'
   set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'VITE_API_BASE_URL' ''
   set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'VITE_API_PORT' "${backend_port}"

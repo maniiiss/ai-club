@@ -17,13 +17,15 @@ class HermesInternalClient:
         candidates = [configured_url]
 
         parsed = urlparse(configured_url)
-        # 容器内最容易被普通 .env 的 localhost 配置误伤；这里按同端口追加 compose 服务名和固定容器名兜底。
+        # 容器内最容易被普通 .env 的宿主机端口配置误伤；这里固定追加 backend 容器端口 8080 兜底。
         if os.path.exists("/.dockerenv"):
             scheme = parsed.scheme or "http"
             port = parsed.port or (443 if scheme == "https" else 8080)
             candidates.extend([
                 f"{scheme}://backend:{port}",
                 f"{scheme}://git-ai-club-server-backend:{port}",
+                f"{scheme}://backend:8080",
+                f"{scheme}://git-ai-club-server-backend:8080",
             ])
 
         deduplicated: list[str] = []
