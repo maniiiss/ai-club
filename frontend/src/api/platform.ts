@@ -751,15 +751,6 @@ export const retryExecutionTask = async (id: number) => {
   return data.data
 }
 
-export const passRequirementDev = async (id: number) => {
-  const { data } = await http.post<ApiResponse<TaskItem>>(`/api/tasks/${id}/requirement-dev-pass`)
-  return data.data
-}
-
-export const passRequirementTest = async (id: number) => {
-  const { data } = await http.post<ApiResponse<TaskItem>>(`/api/tasks/${id}/requirement-test-pass`)
-  return data.data
-}
 
 export const pageTestPlans = async (query: TestPlanQuery) => {
   const { data } = await http.get<ApiResponse<PageResponse<TestPlanItem>>>('/api/test-plans', {

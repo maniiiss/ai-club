@@ -218,7 +218,7 @@
                 {{ message.role === 'user' ? '我' : 'Hermes' }}
                 <span v-if="message.role === 'assistant'" class="hermes-role-tag">{{ currentRoleName }}</span>
               </div>
-              <div class="hermes-message-bubble" :class="message.status">
+              <div class="hermes-message-bubble" :class="[message.status, { 'stream-loading': shouldShowInlineStreamStatus(message) && !message.content?.trim() }]">
                 <pre v-if="message.role === 'user'">{{ message.content || '暂无内容' }}</pre>
                 <template v-else>
                   <div v-if="shouldShowAssistantMarkdown(message)" class="hermes-markdown-content" v-html="renderAssistantMessage(message)"></div>
@@ -2561,7 +2561,7 @@ function persistSelectedSessionId(sessionId: number | null) {
 
 .hermes-session-list {
   flex: 1 1 auto;
-  gap: 10px;
+  gap: 6px;
   width: 100%;
   box-sizing: border-box;
   padding: 8px var(--hermes-session-scroll-gutter) 8px 0;
@@ -2576,8 +2576,8 @@ function persistSelectedSessionId(sessionId: number | null) {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px;
-  border-radius: 16px;
+  padding: 6px 8px;
+  border-radius: 8px;
   background: #fff;
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
 }
@@ -3006,6 +3006,16 @@ function persistSelectedSessionId(sessionId: number | null) {
   box-shadow: 0 10px 22px rgba(var(--app-primary-rgb), 0.08);
 }
 
+.hermes-message-bubble.stream-loading {
+  position: relative;
+  border: 3px solid transparent;
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    conic-gradient(from 0deg, transparent 0deg, rgba(var(--app-primary-rgb), 0.35) 60deg, var(--app-primary) 100deg, rgba(var(--app-primary-container-rgb), 0.98) 140deg, transparent 200deg, rgba(var(--app-primary-rgb), 0.3) 360deg) border-box;
+  box-shadow: 0 14px 36px rgba(var(--app-primary-rgb), 0.22), 0 0 0 6px rgba(var(--app-primary-rgb), 0.08);
+  animation: hermes-loading-border 2s linear infinite;
+}
+
 .hermes-thinking-indicator {
   display: flex;
   align-items: center;
@@ -3183,6 +3193,27 @@ function persistSelectedSessionId(sessionId: number | null) {
 @keyframes hermes-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+@property --hermes-loading-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes hermes-loading-border {
+  from {
+    --hermes-loading-angle: 0deg;
+    background:
+      linear-gradient(#fff, #fff) padding-box,
+      conic-gradient(from var(--hermes-loading-angle), transparent 0deg, rgba(var(--app-primary-rgb), 0.35) 60deg, var(--app-primary) 100deg, rgba(var(--app-primary-container-rgb), 0.98) 140deg, transparent 200deg, rgba(var(--app-primary-rgb), 0.3) 360deg) border-box;
+  }
+  to {
+    --hermes-loading-angle: 360deg;
+    background:
+      linear-gradient(#fff, #fff) padding-box,
+      conic-gradient(from var(--hermes-loading-angle), transparent 0deg, rgba(var(--app-primary-rgb), 0.35) 60deg, var(--app-primary) 100deg, rgba(var(--app-primary-container-rgb), 0.98) 140deg, transparent 200deg, rgba(var(--app-primary-rgb), 0.3) 360deg) border-box;
+  }
 }
 
 .hermes-thinking-text {

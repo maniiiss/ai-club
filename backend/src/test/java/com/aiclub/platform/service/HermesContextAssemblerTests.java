@@ -144,7 +144,7 @@ class HermesContextAssemblerTests {
         platformStoreService.createTask(new TaskRequest(
                 "统一登录改造",
                 "需求",
-                "通过",
+                "已完成",
                 "高",
                 "",
                 null,

@@ -14,7 +14,7 @@ public final class TaskStatusUtils {
     public static final String WORK_ITEM_TYPE_TASK = "任务";
     public static final String WORK_ITEM_TYPE_DEFECT = "缺陷";
 
-    private static final List<String> REQUIREMENT_STATUSES = List.of("草稿", "待开始", "进行中", "已完成", "已阻塞", "通过");
+    private static final List<String> REQUIREMENT_STATUSES = List.of("草稿", "待开始", "进行中", "已完成", "已阻塞");
     private static final List<String> TASK_STATUSES = List.of("待开始", "进行中", "已阻塞", "已完成");
     private static final List<String> DEFECT_STATUSES = List.of("已拒绝", "待开始", "进行中", "已完成", "通过", "延期解决");
 
@@ -28,7 +28,7 @@ public final class TaskStatusUtils {
         String normalizedType = normalizeWorkItemType(workItemType);
         String normalizedStatus = normalizeStatus(normalizedType, status);
         if (WORK_ITEM_TYPE_REQUIREMENT.equals(normalizedType)) {
-            return "通过".equals(normalizedStatus);
+            return "已完成".equals(normalizedStatus);
         }
         if (WORK_ITEM_TYPE_DEFECT.equals(normalizedType)) {
             return "通过".equals(normalizedStatus);

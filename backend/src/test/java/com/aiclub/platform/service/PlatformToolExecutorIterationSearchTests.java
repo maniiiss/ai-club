@@ -84,7 +84,7 @@ class PlatformToolExecutorIterationSearchTests {
         platformStoreService.createTask(new TaskRequest(
                 "当前迭代需求",
                 "需求",
-                "通过",
+                "已完成",
                 "高",
                 "",
                 null,
@@ -172,7 +172,7 @@ class PlatformToolExecutorIterationSearchTests {
         platformStoreService.createTask(new TaskRequest(
                 "登录统一改造",
                 "需求",
-                "通过",
+                "已完成",
                 "高",
                 "",
                 null,

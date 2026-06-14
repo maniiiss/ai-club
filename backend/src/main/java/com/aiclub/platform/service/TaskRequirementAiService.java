@@ -11,6 +11,8 @@ import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.TaskRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,10 +32,15 @@ public class TaskRequirementAiService {
     private static final String ACTION_TEST_CASES = "TEST_CASES";
 
     private static final Pattern THINK_BLOCK_PATTERN = Pattern.compile("(?is)<think>.*?</think>");
-    private static final Pattern JSON_CODE_BLOCK_PATTERN = Pattern.compile("(?is)```json\\s*(\\{.*})\\s*```");
+    private static final Pattern JSON_CODE_BLOCK_PATTERN = Pattern.compile("(?is)```json\\s*(\\{.*?})\\s*```");
     private static final Pattern GENERIC_CODE_BLOCK_PATTERN = Pattern.compile("(?is)```(?:markdown|md)?\\s*(.*?)\\s*```");
+    private static final Pattern ANY_CODE_BLOCK_PATTERN = Pattern.compile("(?is)```\\w*\\s*(.*?)\\s*```");
     private static final Pattern ORDERED_LIST_PATTERN = Pattern.compile("^\\d+\\.\\s+(.+)$");
     private static final Pattern UNORDERED_LIST_PATTERN = Pattern.compile("^[-*]\\s+(.+)$");
+    private static final Pattern MARKDOWN_TABLE_ROW_PATTERN = Pattern.compile("^\\|(.+)\\|$");
+    private static final Pattern BOLD_TITLE_PATTERN = Pattern.compile("^\\*\\*(.+?)\\*\\*[:：]?\\s*(.*)$");
+
+    private static final Logger log = LoggerFactory.getLogger(TaskRequirementAiService.class);
 
     private final TaskRepository taskRepository;
     private final AiModelConfigRepository aiModelConfigRepository;
@@ -81,7 +88,7 @@ public class TaskRequirementAiService {
                                                         String systemPrompt,
                                                         String userPrompt,
                                                         int maxTokens) {
-        String raw = invokePrompt(modelConfig, systemPrompt, userPrompt, maxTokens);
+        String raw = invokePrompt(modelConfig, systemPrompt, userPrompt, maxTokens, false);
         return new TaskRequirementAiResult(
                 action,
                 title,
@@ -94,7 +101,7 @@ public class TaskRequirementAiService {
     }
 
     private TaskRequirementAiResult buildBreakdownResult(TaskEntity task, AiModelConfigEntity modelConfig) {
-        String raw = invokePrompt(modelConfig, breakdownPrompt(), buildTaskContext(task), 2600);
+        String raw = invokePrompt(modelConfig, breakdownPrompt(), buildTaskContext(task), 2600, false);
         String markdown = cleanMarkdownOutput(raw);
         List<TaskRequirementAiSuggestion> taskSuggestions = List.of();
 
@@ -138,7 +145,7 @@ public class TaskRequirementAiService {
         RuntimeException primaryFailure = null;
 
         try {
-            String raw = invokePrompt(modelConfig, testCasesPrompt(), buildTaskContext(task), 1800);
+            String raw = invokePrompt(modelConfig, testCasesPrompt(), buildTaskContext(task), 1800, true);
             TestCaseParseResult parsed = parseTestCaseResult(raw);
             markdown = parsed.markdown();
             testCaseSuggestions = parsed.suggestions();
@@ -147,10 +154,11 @@ public class TaskRequirementAiService {
             }
         } catch (RuntimeException ex) {
             primaryFailure = ex;
+            log.warn("需求 AI 测试用例主流程解析失败，尝试兜底提示词。原因: {}", ex.getMessage());
         }
 
         if (!hasText(markdown) && testCaseSuggestions.isEmpty()) {
-            String fallbackRaw = invokePrompt(modelConfig, testCasesFallbackPrompt(), buildTaskContext(task), 1200);
+            String fallbackRaw = invokePrompt(modelConfig, testCasesFallbackPrompt(), buildTaskContext(task), 1200, false);
             TestCaseParseResult fallbackParsed = parseTestCaseResult(fallbackRaw);
             markdown = fallbackParsed.markdown();
             testCaseSuggestions = fallbackParsed.suggestions();
@@ -184,7 +192,9 @@ public class TaskRequirementAiService {
             if (!parsed.isEmpty()) {
                 suggestions = parsed;
             }
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            log.warn("需求 AI 测试用例 JSON 解析失败，尝试从 Markdown 推导。原始响应前 500 字符: {}",
+                    abbreviate(raw, 500));
         }
 
         if (suggestions.isEmpty()) {
@@ -238,18 +248,52 @@ public class TaskRequirementAiService {
     private List<TaskRequirementAiTestCaseSuggestion> deriveTestCasesFromMarkdown(String markdown) {
         List<TaskRequirementAiTestCaseSuggestion> derived = new ArrayList<>();
         String currentSection = "功能测试";
+        boolean inTable = false;
 
         for (String rawLine : defaultString(markdown).replace("\r\n", "\n").split("\n")) {
             String line = rawLine.trim();
             if (line.isEmpty()) {
+                inTable = false;
                 continue;
             }
 
             if (line.startsWith("###")) {
                 currentSection = line.substring(3).trim();
+                inTable = false;
                 continue;
             }
             if (line.startsWith("##")) {
+                inTable = false;
+                continue;
+            }
+
+            Matcher tableRowMatcher = MARKDOWN_TABLE_ROW_PATTERN.matcher(line);
+            if (tableRowMatcher.matches()) {
+                String rowContent = tableRowMatcher.group(1).trim();
+                if (rowContent.contains("---") || rowContent.contains("标题") || rowContent.contains("用例")) {
+                    inTable = true;
+                    continue;
+                }
+                if (inTable) {
+                    String[] cells = rowContent.split("\\|");
+                    if (cells.length >= 2) {
+                        String title = cells[0].trim();
+                        if (hasText(title)) {
+                            String content = cells.length >= 2 ? cells[Math.min(cells.length - 1, 1)].trim() : title;
+                            derived.add(buildDerivedCase(currentSection, title, content));
+                        }
+                    }
+                }
+                continue;
+            }
+
+            Matcher boldMatcher = BOLD_TITLE_PATTERN.matcher(line);
+            if (boldMatcher.matches()) {
+                String title = boldMatcher.group(1).trim();
+                String content = boldMatcher.group(2).trim();
+                if (hasText(title)) {
+                    derived.add(buildDerivedCase(currentSection, title, hasText(content) ? content : title));
+                }
                 continue;
             }
 
@@ -266,27 +310,24 @@ public class TaskRequirementAiService {
                 continue;
             }
 
-            String title = abbreviate((currentSection + "-" + content).replace("：", "-"), 80);
-            String caseType = inferCaseType(currentSection, content);
-            String priority = inferCasePriority(currentSection, content);
-            String precondition = "进入相关功能页面，并具备对应权限。";
-            String remarks = content;
-            List<TaskRequirementAiTestCaseStepSuggestion> steps = List.of(
-                    new TaskRequirementAiTestCaseStepSuggestion(1, content, "结果符合需求预期")
-            );
-
-            derived.add(new TaskRequirementAiTestCaseSuggestion(
-                    title,
-                    inferModuleName(currentSection),
-                    caseType,
-                    priority,
-                    precondition,
-                    remarks,
-                    steps
-            ));
+            derived.add(buildDerivedCase(currentSection,
+                    abbreviate((currentSection + "-" + content).replace("：", "-"), 80),
+                    content));
         }
 
         return derived;
+    }
+
+    private TaskRequirementAiTestCaseSuggestion buildDerivedCase(String section, String title, String content) {
+        return new TaskRequirementAiTestCaseSuggestion(
+                title,
+                inferModuleName(section),
+                inferCaseType(section, content),
+                inferCasePriority(section, content),
+                "进入相关功能页面，并具备对应权限。",
+                content,
+                List.of(new TaskRequirementAiTestCaseStepSuggestion(1, content, "结果符合需求预期"))
+        );
     }
 
     private TaskEntity requireRequirementTask(Long taskId) {
@@ -386,38 +427,39 @@ public class TaskRequirementAiService {
                 """;
     }
 
+
     private String testCasesPrompt() {
         return """
                 你是资深 QA，请基于需求生成测试用例。
-                严格要求：
-                1. 只输出 JSON 对象，不要输出思考过程，不要输出分析过程，不要输出 <think> 标签。
-                2. 不要使用 Markdown 代码块包裹 JSON。
-                3. JSON 格式如下：
+
+                【重要】你必须且只能输出一个合法的 JSON 对象，不要输出任何其他文字、解释或标签。如果你输出了非 JSON 内容，整个响应将被丢弃。
+
+                输出格式（严格按此结构，参考示例）：
                 {
-                  "markdown": "## 测试用例建议\\n- ...",
+                  "markdown": "## 测试用例建议\\n\\n### 功能测试\\n1. 验证用户登录功能\\n2. 验证数据展示\\n\\n### 异常测试\\n3. 验证空数据场景\\n4. 验证网络异常场景",
                   "testCases": [
                     {
-                      "title": "用例标题",
-                      "moduleName": "功能模块",
+                      "title": "验证用户登录功能",
+                      "moduleName": "用户模块",
                       "caseType": "功能测试",
-                      "priority": "P2",
-                      "precondition": "前置条件",
-                      "remarks": "备注",
+                      "priority": "P1",
+                      "precondition": "用户已注册且账号状态正常",
+                      "remarks": "覆盖正常登录流程",
                       "steps": [
-                        {
-                          "stepNo": 1,
-                          "action": "执行步骤",
-                          "expectedResult": "预期结果"
-                        }
+                        { "stepNo": 1, "action": "打开登录页面", "expectedResult": "页面正常加载，显示登录表单" },
+                        { "stepNo": 2, "action": "输入正确的用户名和密码，点击登录", "expectedResult": "登录成功，跳转到首页" }
                       ]
                     }
                   ]
                 }
-                4. testCases 最多 6 条。
-                5. 每条用例最多 4 个步骤。
-                6. caseType 仅允许：功能测试、接口测试、回归测试、异常测试、兼容性测试、性能测试。
-                7. priority 仅允许：P0、P1、P2、P3。
-                8. markdown 中只保留测试设计结论，不要重复输出整段 JSON。
+
+                规则：
+                1. testCases 最多 6 条。
+                2. 每条用例最多 4 个步骤。
+                3. caseType 仅允许：功能测试、接口测试、回归测试、异常测试、兼容性测试、性能测试。
+                4. priority 仅允许：P0、P1、P2、P3。
+                5. markdown 中只保留测试设计结论，不要重复输出整段 JSON。
+                6. 直接输出 JSON，不要用 ```json 包裹，不要输出  thinking 标签。
                 """;
     }
 
@@ -454,12 +496,13 @@ public class TaskRequirementAiService {
         ).trim();
     }
 
-    private String invokePrompt(AiModelConfigEntity modelConfig, String systemPrompt, String userPrompt, int maxTokens) {
+    private String invokePrompt(AiModelConfigEntity modelConfig, String systemPrompt, String userPrompt, int maxTokens, boolean jsonMode) {
         return modelConfigService.invokePrompt(
                 modelConfigService.resolveModelConfig(modelConfig.getId()),
                 systemPrompt,
                 userPrompt,
-                maxTokens
+                maxTokens,
+                jsonMode
         );
     }
 
@@ -487,15 +530,26 @@ public class TaskRequirementAiService {
 
     private String extractJsonObject(String raw) {
         String cleaned = stripThinkingContent(raw);
+
         Matcher jsonCodeBlockMatcher = JSON_CODE_BLOCK_PATTERN.matcher(cleaned);
         if (jsonCodeBlockMatcher.find()) {
             return jsonCodeBlockMatcher.group(1).trim();
         }
+
+        Matcher anyCodeBlockMatcher = ANY_CODE_BLOCK_PATTERN.matcher(cleaned);
+        if (anyCodeBlockMatcher.find()) {
+            String content = anyCodeBlockMatcher.group(1).trim();
+            if (content.startsWith("{")) {
+                return content;
+            }
+        }
+
         int start = cleaned.indexOf('{');
         int end = cleaned.lastIndexOf('}');
         if (start >= 0 && end > start) {
             return cleaned.substring(start, end + 1).trim();
         }
+
         return cleaned.trim();
     }
 

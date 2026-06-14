@@ -147,6 +147,10 @@ public class ModelConfigService {
     }
 
     public String invokePrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, Integer maxTokens) {
+        return invokePrompt(config, systemPrompt, userPrompt, maxTokens, false);
+    }
+
+    public String invokePrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, Integer maxTokens, boolean jsonMode) {
         String modelType = normalizeModelType(config.modelType());
         if (!MODEL_TYPE_CHAT.equals(modelType)) {
             throw new IllegalArgumentException("Embedding 模型不支持文本生成调用，请选择对话模型");
@@ -155,7 +159,7 @@ public class ModelConfigService {
         int safeMaxTokens = maxTokens == null ? 2048 : Math.max(64, Math.min(maxTokens, 8192));
         try {
             if (PROVIDER_OPENAI.equals(provider)) {
-                return invokeOpenAiPrompt(config, systemPrompt, userPrompt, safeMaxTokens);
+                return invokeOpenAiPrompt(config, systemPrompt, userPrompt, safeMaxTokens, jsonMode);
             }
             if (PROVIDER_ANTHROPIC.equals(provider)) {
                 return invokeAnthropicPrompt(config, systemPrompt, userPrompt, safeMaxTokens);
@@ -308,22 +312,22 @@ public class ModelConfigService {
         return extractOpenAiEmbeddingDimension(objectMapper.readTree(response.body()));
     }
 
-    private String invokeOpenAiPrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, int maxTokens) throws IOException, InterruptedException {
+    private String invokeOpenAiPrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, int maxTokens, boolean jsonMode) throws IOException, InterruptedException {
         String baseUrl = trimSlash(config.apiBaseUrl());
         JsonNode input = objectMapper.createArrayNode()
                 .add(objectMapper.createObjectNode().put("role", "system").put("content", defaultString(systemPrompt)))
                 .add(objectMapper.createObjectNode().put("role", "user").put("content", defaultString(userPrompt)));
-        JsonNode payload = objectMapper.createObjectNode()
+        ObjectNode payload = objectMapper.createObjectNode()
                 .put("model", config.modelName())
                 .set("input", input);
-        ((ObjectNode) payload).put("max_output_tokens", maxTokens);
+        payload.put("max_output_tokens", maxTokens);
 
         HttpResponse<String> response = sendJsonPost(baseUrl + "/responses", config.apiKey(), payload);
         if (response.statusCode() >= 200 && response.statusCode() < 300) {
             return extractOpenAiText(objectMapper.readTree(response.body()));
         }
         if (response.statusCode() == 404) {
-            return invokeOpenAiChatCompletionsPrompt(baseUrl, config, systemPrompt, userPrompt, maxTokens);
+            return invokeOpenAiChatCompletionsPrompt(baseUrl, config, systemPrompt, userPrompt, maxTokens, jsonMode);
         }
         throw new IllegalStateException("OpenAI 接口调用失败：" + extractHttpError(response));
     }
@@ -347,11 +351,12 @@ public class ModelConfigService {
     }
 
     private String invokeOpenAiChatCompletionsPrompt(String baseUrl,
-                                                     ResolvedModelConfig config,
-                                                     String systemPrompt,
-                                                     String userPrompt,
-                                                     int maxTokens) throws IOException, InterruptedException {
-        JsonNode payload = objectMapper.createObjectNode()
+                                                      ResolvedModelConfig config,
+                                                      String systemPrompt,
+                                                      String userPrompt,
+                                                      int maxTokens,
+                                                      boolean jsonMode) throws IOException, InterruptedException {
+        ObjectNode payload = objectMapper.createObjectNode()
                 .put("model", config.modelName())
                 .put("temperature", 0)
                 .put("max_tokens", maxTokens)
@@ -362,6 +367,10 @@ public class ModelConfigService {
                         .add(objectMapper.createObjectNode()
                                 .put("role", "user")
                                 .put("content", defaultString(userPrompt))));
+
+        if (jsonMode) {
+            payload.set("response_format", objectMapper.createObjectNode().put("type", "json_object"));
+        }
 
         HttpResponse<String> response = sendJsonPost(baseUrl + "/chat/completions", config.apiKey(), payload);
         if (response.statusCode() < 200 || response.statusCode() >= 300) {

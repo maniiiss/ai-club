@@ -20,6 +20,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
@@ -92,7 +93,7 @@ class TaskRequirementAiServiceTests {
                 "gpt-5.4",
                 "chat-key"
         ));
-        when(modelConfigService.invokePrompt(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt()))
+        when(modelConfigService.invokePrompt(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt(), anyBoolean()))
                 .thenReturn("# 用户故事\n\n补充说明");
 
         TaskRequirementAiResult result = taskRequirementAiService.generate(1L, new TaskRequirementAiRequest("STANDARDIZE", null));

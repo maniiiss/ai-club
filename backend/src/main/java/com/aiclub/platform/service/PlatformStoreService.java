@@ -668,7 +668,6 @@ public class PlatformStoreService {
         validateAgentProject(project.getId(), agent);
         validateRequirementRelation(workItemType, requirementTask);
         validateWorkItemStatus(workItemType, status);
-        validateTaskWorkHoursPermission(workItemType, requirementTask, request.workHours());
         validateProjectParticipants(project, assigneeUser, collaborators);
 
         TaskEntity entity = new TaskEntity(
@@ -752,7 +751,6 @@ public class PlatformStoreService {
         validateAgentProject(project.getId(), agent);
         validateRequirementRelation(workItemType, requirementTask);
         validateWorkItemStatus(workItemType, status);
-        validateTaskWorkHoursPermission(workItemType, requirementTask, request.workHours());
         validateProjectParticipants(project, assigneeUser, collaborators);
 
         entity.setName(request.name());
@@ -787,35 +785,6 @@ public class PlatformStoreService {
         return summary;
     }
 
-    /**
-     * 标记需求已开发通过。
-     */
-    @Transactional
-    public TaskSummary passRequirementDev(Long taskId) {
-        TaskEntity requirement = requireRequirementTask(taskId);
-        if (requirement.isDevPassed()) {
-            return toTaskSummary(requirement);
-        }
-        requirement.setDevPassed(true);
-        TaskEntity saved = taskRepository.save(requirement);
-        knowledgeGraphService.rebuildProjectGraph(saved.getProject().getId());
-        return toTaskSummary(saved);
-    }
-
-    /**
-     * 标记需求已测试通过。
-     */
-    @Transactional
-    public TaskSummary passRequirementTest(Long taskId) {
-        TaskEntity requirement = requireRequirementTask(taskId);
-        if (requirement.isTestPassed()) {
-            return toTaskSummary(requirement);
-        }
-        requirement.setTestPassed(true);
-        TaskEntity saved = taskRepository.save(requirement);
-        knowledgeGraphService.rebuildProjectGraph(saved.getProject().getId());
-        return toTaskSummary(saved);
-    }
 
     @Transactional
     public void deleteTask(Long id) {
@@ -1401,17 +1370,6 @@ public class PlatformStoreService {
         );
     }
 
-    /**
-     * 校验任务工时是否已被关联需求解锁。
-     */
-    private void validateTaskWorkHoursPermission(String workItemType, TaskEntity requirementTask, BigDecimal workHours) {
-        if (!"任务".equals(workItemType) || workHours == null || requirementTask == null) {
-            return;
-        }
-        if (!isRequirementFullyPassed(requirementTask)) {
-            throw new IllegalArgumentException("需关联需求开发、测试均通过后才可设定或修改工时");
-        }
-    }
 
     /**
      * 标准化任务工时。仅任务类型允许设置工时，其他工作项统一清空。
@@ -1467,14 +1425,6 @@ public class PlatformStoreService {
         return builder.toString();
     }
 
-    /**
-     * 判断需求是否已评审、开发、测试全部通过。
-     */
-    private boolean isRequirementFullyPassed(TaskEntity requirementTask) {
-        return requirementTask != null
-                && requirementTask.isDevPassed()
-                && requirementTask.isTestPassed();
-    }
 
     /**
      * 统计摘要统一复用类型化完成态定义，供迭代详情顶部卡片直接消费。

@@ -115,6 +115,15 @@ const normalizeRichHtmlMarkup = (markdown: string) =>
     .replace(/<\/?(div|span|section|article|main|header|footer)\b[^>]*>/gi, '')
 
 /**
+ * Hermes 偶发会把标题、段落和表格头挤在同一行里，这里先做轻量纠偏，
+ * 让后续统一的 Markdown 解析仍能识别出标题与表格结构。
+ */
+const normalizeCollapsedMarkdownBlocks = (markdown: string) =>
+  markdown
+    .replace(/([^\n#\s*（(])(#{1,6}\s*[^\s#])/g, '$1\n$2')
+    .replace(/^(#{1,6}\s*[^|\n]+?)(\|(?:[^|\n]*\|)+)\s*$/gm, '$1\n$2')
+
+/**
  * 将 Markdown 表格行切成单元格，兼容首尾带竖线和普通竖线写法。
  */
 const parseTableCells = (line: string) =>
@@ -133,11 +142,73 @@ const isTableDividerLine = (line: string) => {
   if (!cells.length) {
     return false
   }
-  return cells.every((cell) => /^:?-{3,}:?$/.test(cell))
+  return cells.every((cell) => /^:?-+(?::?-+)*:?$/.test(cell))
 }
 
 const isHorizontalRuleLine = (line: string) =>
   /^\s{0,3}(?:(?:-\s*){3,}|(?:_\s*){3,}|(?:\*\s*){3,})$/.test(line)
+
+/**
+ * Hermes 偶尔会把表格体中的一行拆成“前半行 + 下一行续写”，这里用列数做兜底合并。
+ */
+const mergeTableContinuationLine = (rows: string[][], continuationLine: string, expectedColumns: number) => {
+  if (!rows.length) {
+    return false
+  }
+  const lastRow = rows[rows.length - 1]
+  const normalizedContinuation = continuationLine.trim().replace(/\s+/g, ' ')
+  if (!normalizedContinuation) {
+    return false
+  }
+  if (lastRow.length < expectedColumns) {
+    const mergedRow = [...lastRow]
+    while (mergedRow.length < expectedColumns - 1) {
+      mergedRow.push('')
+    }
+    const targetIndex = Math.max(mergedRow.length - 1, 0)
+    mergedRow[targetIndex] = mergedRow[targetIndex]
+      ? `${mergedRow[targetIndex]}\n${normalizedContinuation}`
+      : normalizedContinuation
+    rows[rows.length - 1] = mergedRow
+    return true
+  }
+  if (lastRow.length === expectedColumns) {
+    const mergedRow = [...lastRow]
+    const targetIndex = expectedColumns - 1
+    mergedRow[targetIndex] = mergedRow[targetIndex]
+      ? `${mergedRow[targetIndex]}\n${normalizedContinuation}`
+      : normalizedContinuation
+    rows[rows.length - 1] = mergedRow
+    return true
+  }
+  return false
+}
+
+const shouldMergePlainContinuationLine = (line: string) => {
+  const trimmed = line.trim()
+  if (!trimmed) {
+    return false
+  }
+  if (/^(#{1,6}\s|[-*]\s|\d+\.\s|>\s)/.test(trimmed)) {
+    return false
+  }
+  return true
+}
+
+const shouldAppendTableCellsAsContinuation = (
+  rawLine: string,
+  candidateCells: string[],
+  expectedColumns: number
+) => {
+  if (!candidateCells.length || candidateCells.length >= expectedColumns) {
+    return false
+  }
+  if (candidateCells.length === 1) {
+    const trimmed = rawLine.trim()
+    return !trimmed.startsWith('|')
+  }
+  return true
+}
 
 /**
  * Hermes 常输出 GitHub 风格任务清单，这里补成只读复选框，避免在消息区退化成普通无序列表。
@@ -198,7 +269,7 @@ const renderHermesMarkdownToHtmlInternal = (
         return `\n${token}\n`
       })
 
-  const lines = normalizeRichHtmlMarkup(normalizedMarkdown).replace(/\r\n/g, '\n').split('\n')
+  const lines = normalizeCollapsedMarkdownBlocks(normalizeRichHtmlMarkup(normalizedMarkdown)).replace(/\r\n/g, '\n').split('\n')
   const html: string[] = []
   let paragraph: string[] = []
   let listType: 'ul' | 'ol' | null = null
@@ -264,7 +335,7 @@ const renderHermesMarkdownToHtmlInternal = (
       continue
     }
 
-    const headingMatch = line.match(/^(#{1,6})\s+(.*)$/)
+    const headingMatch = line.match(/^(#{1,6})\s*(.+)$/)
     if (headingMatch) {
       flushParagraph()
       closeList()
@@ -332,21 +403,53 @@ const renderHermesMarkdownToHtmlInternal = (
       flushParagraph()
       closeList()
       const headerCells = parseTableCells(line)
+
+      // 当行首不含 | 且第一个单元格像独立标题（含 emoji 或明显偏长）时，拆出前置标题段落
+      const trimmedLine = line.trim()
+      const startsWithPipe = trimmedLine.startsWith('|')
+      let effectiveHeaderCells = headerCells
+      if (!startsWithPipe && headerCells.length >= 2) {
+        const firstCell = headerCells[0]
+        const otherCells = headerCells.slice(1)
+        const avgOtherLen = otherCells.reduce((sum, c) => sum + c.length, 0) / otherCells.length
+        const hasEmoji = /[\p{Emoji_Presentation}\p{Emoji}\u{200D}\u{FE0F}]/u.test(firstCell)
+        if (hasEmoji || firstCell.length > Math.max(avgOtherLen * 2.2, 8)) {
+          html.push(`<p>${renderInline(firstCell)}</p>`)
+          effectiveHeaderCells = otherCells
+        }
+      }
+
       const bodyRows: string[][] = []
       index += 2
 
       while (index < lines.length) {
         const candidateLine = lines[index].replace(/\t/g, '    ')
-        if (!candidateLine.trim() || !candidateLine.includes('|')) {
+        if (!candidateLine.trim()) {
           index -= 1
           break
         }
-        bodyRows.push(parseTableCells(candidateLine))
+        if (!candidateLine.includes('|')) {
+          if (!shouldMergePlainContinuationLine(candidateLine)
+            || !mergeTableContinuationLine(bodyRows, candidateLine, effectiveHeaderCells.length)) {
+            index -= 1
+            break
+          }
+          index += 1
+          continue
+        }
+        const candidateCells = parseTableCells(candidateLine)
+        const appendedAsContinuation = shouldAppendTableCellsAsContinuation(candidateLine, candidateCells, effectiveHeaderCells.length)
+          && mergeTableContinuationLine(bodyRows, candidateCells.join(' | '), effectiveHeaderCells.length)
+        if (appendedAsContinuation) {
+          index += 1
+          continue
+        }
+        bodyRows.push(candidateCells)
         index += 1
       }
 
       html.push('<div class="hermes-table-wrap"><table><thead><tr>')
-      headerCells.forEach((cell) => {
+      effectiveHeaderCells.forEach((cell) => {
         html.push(`<th>${renderInline(cell)}</th>`)
       })
       html.push('</tr></thead>')

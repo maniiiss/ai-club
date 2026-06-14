@@ -532,16 +532,7 @@
                         <el-icon><EditPen /></el-icon>
                       </button>
                     </el-tooltip>
-                    <el-tooltip v-if="row.workItemType === '需求' && canRequirementDevPass && !row.devPassed" content="开发通过" placement="top">
-                      <button class="workspace-action-button pass" type="button" aria-label="标记开发通过" @click="handleRequirementDevPass(row)">
-                        <el-icon><Management /></el-icon>
-                      </button>
-                    </el-tooltip>
-                    <el-tooltip v-if="row.workItemType === '需求' && canRequirementTestPass && !row.testPassed" content="测试通过" placement="top">
-                      <button class="workspace-action-button success" type="button" aria-label="标记测试通过" @click="handleRequirementTestPass(row)">
-                        <el-icon><Finished /></el-icon>
-                      </button>
-                    </el-tooltip>
+
                     <el-tooltip v-if="canManageWorkItem && row.canDelete" content="删除" placement="top">
                       <button class="workspace-action-button danger" type="button" aria-label="删除工作项" @click="handleDeleteWorkItem(row)">
                         <el-icon><Delete /></el-icon>
@@ -692,14 +683,7 @@
                       <el-icon><Cpu /></el-icon>
                       <span>智能操作</span>
                     </button>
-                    <button v-if="row.workItemType === '需求' && canRequirementDevPass && !row.devPassed" class="mobile-entity-action-button" type="button" @click="handleRequirementDevPass(row)">
-                      <el-icon><Management /></el-icon>
-                      <span>开发通过</span>
-                    </button>
-                    <button v-if="row.workItemType === '需求' && canRequirementTestPass && !row.testPassed" class="mobile-entity-action-button info" type="button" @click="handleRequirementTestPass(row)">
-                      <el-icon><Finished /></el-icon>
-                      <span>测试通过</span>
-                    </button>
+
                     <button v-if="canManageWorkItem && row.canDelete" class="mobile-entity-action-button danger" type="button" @click="handleDeleteWorkItem(row)">
                       <el-icon><Delete /></el-icon>
                       <span>删除</span>
@@ -1282,17 +1266,12 @@ import {
   listProjectRequirementModules,
   listProjectWorkItems,
   initializeTaskPrd,
-  passRequirementDev,
-  passRequirementTest,
   pageProjectWorkItems,
   updateIteration,
   updateTask
 } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
-import {
-  isRequirementFullyPassed
-} from '@/utils/requirementReview'
 import { uploadMarkdownImage } from '@/utils/taskImageUpload'
 import {
   buildRequirementDraft,
@@ -1386,8 +1365,6 @@ const canManageIteration = computed(() => authStore.hasPermission('project:manag
 const canManageWorkItem = computed(() => authStore.hasPermission('task:manage'))
 const canManageGiteeBinding = computed(() => authStore.hasPermission('gitee:binding:manage'))
 const canSyncGiteeWorkItems = computed(() => authStore.hasPermission('gitee:work-item:sync'))
-const canRequirementDevPass = computed(() => authStore.hasPermission('task:requirement:dev'))
-const canRequirementTestPass = computed(() => authStore.hasPermission('task:requirement:test'))
 const canUseHermes = computed(() => authStore.hasPermission('hermes:chat'))
 const userInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
 const userAvatarUrl = computed(() => resolveAssetUrl(authStore.user?.avatarUrl))
@@ -1585,17 +1562,7 @@ const requirementDocumentPlaceholder = computed(() => `${DEFAULT_REQUIREMENT_TEM
 const requirementSelectableOptions = computed(() =>
   requirementOptions.value.filter((item) => item.id !== currentWorkItemId.value)
 )
-const selectedRequirementForWorkHours = computed(() =>
-  requirementOptions.value.find((item) => item.id === workItemForm.requirementTaskId) || null
-)
-const workItemWorkHoursLockedReason = computed(() => {
-  if (workItemForm.workItemType !== '任务' || !selectedRequirementForWorkHours.value) {
-    return ''
-  }
-  return isRequirementFullyPassed(selectedRequirementForWorkHours.value)
-    ? ''
-    : '需关联需求开发、测试均通过后才可编辑'
-})
+const workItemWorkHoursLockedReason = computed(() => '')
 
 const workItemDisplayCode = computed(() => {
   return workItemForm.workItemCode || '保存后自动生成'
@@ -2378,26 +2345,6 @@ const handleInitializeCurrentTaskPrd = async () => {
     await Promise.all([refreshBoardAndItems(), refreshCurrentDialogWorkItem()])
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '初始化 PRD 失败')
-  }
-}
-
-const handleRequirementDevPass = async (task: TaskItem) => {
-  try {
-    await passRequirementDev(task.id)
-    ElMessage.success('需求已开发通过')
-    await refreshBoardAndItems()
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '开发通过失败')
-  }
-}
-
-const handleRequirementTestPass = async (task: TaskItem) => {
-  try {
-    await passRequirementTest(task.id)
-    ElMessage.success('需求已测试通过')
-    await refreshBoardAndItems()
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '测试通过失败')
   }
 }
 

@@ -266,8 +266,6 @@ class RequirementModuleOptionIntegrationTests {
                 null
         ));
 
-        platformStoreService.passRequirementDev(created.id());
-        platformStoreService.passRequirementTest(created.id());
         TaskSummary updated = platformStoreService.updateTask(created.id(), new TaskRequest(
                 created.name(),
                 created.workItemType(),

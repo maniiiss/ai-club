@@ -18,8 +18,8 @@ class TaskStatusUtilsTests {
 
     @Test
     void shouldUseTypeSpecificCompletedStateDefinitions() {
-        assertThat(TaskStatusUtils.isCompletedStatus("需求", "通过")).isTrue();
-        assertThat(TaskStatusUtils.isCompletedStatus("需求", "已完成")).isFalse();
+        assertThat(TaskStatusUtils.isCompletedStatus("需求", "已完成")).isTrue();
+        assertThat(TaskStatusUtils.isCompletedStatus("需求", "通过")).isFalse();
         assertThat(TaskStatusUtils.isCompletedStatus("任务", "已完成")).isTrue();
         assertThat(TaskStatusUtils.isCompletedStatus("缺陷", "通过")).isTrue();
         assertThat(TaskStatusUtils.isCompletedStatus("缺陷", "已完成")).isFalse();
@@ -30,7 +30,7 @@ class TaskStatusUtilsTests {
         LocalDate today = LocalDate.of(2026, 4, 30);
         LocalDate yesterday = today.minusDays(1);
 
-        assertThat(TaskStatusUtils.isOverdue(yesterday, "需求", "通过", today)).isFalse();
+        assertThat(TaskStatusUtils.isOverdue(yesterday, "需求", "已完成", today)).isFalse();
         assertThat(TaskStatusUtils.isOverdue(yesterday, "任务", "已完成", today)).isFalse();
         assertThat(TaskStatusUtils.isOverdue(yesterday, "缺陷", "通过", today)).isFalse();
         assertThat(TaskStatusUtils.isOverdue(yesterday, "缺陷", "延期解决", today)).isTrue();

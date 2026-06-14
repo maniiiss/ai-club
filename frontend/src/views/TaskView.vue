@@ -492,9 +492,6 @@ import {
   updateTask
 } from '@/api/platform'
 import {
-  isRequirementFullyPassed
-} from '@/utils/requirementReview'
-import {
   buildRequirementDraft,
   DEFAULT_REQUIREMENT_TEMPLATE,
   normalizeRequirementDocument,
@@ -647,17 +644,7 @@ const collaboratorSelectableUsers = computed(() =>
 )
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
 const isRequirementForm = computed(() => form.workItemType === '需求')
-const selectedRequirementForWorkHours = computed(() =>
-  requirementOptions.value.find((item) => item.id === form.requirementTaskId) || null
-)
-const taskFormWorkHoursLockedReason = computed(() => {
-  if (form.workItemType !== '任务' || !selectedRequirementForWorkHours.value) {
-    return ''
-  }
-  return isRequirementFullyPassed(selectedRequirementForWorkHours.value)
-    ? ''
-    : '需关联需求开发、测试均通过后才可编辑'
-})
+const taskFormWorkHoursLockedReason = computed(() => '')
 
 const formatTaskStatusLabel = (task: TaskItem | null | undefined) => {
   if (!task) {
