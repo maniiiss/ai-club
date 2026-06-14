@@ -126,38 +126,6 @@ export interface KnowledgeGraphItem {
   edges: KnowledgeGraphEdgeItem[]
 }
 
-export interface MemoryFactNodeItem {
-  id: string
-  entityType: string
-  label: string
-  aliases: string[]
-  degree: number
-  factCount: number
-  metadataJson: string
-}
-
-export interface MemoryFactEdgeItem {
-  id: string
-  sourceId: string
-  targetId: string
-  relationType: string
-  weight: number | null
-  factIds: string[]
-  metadataJson: string
-}
-
-export interface MemoryFactGraphItem {
-  projectId: number | null
-  bankId: string
-  generatedAt: string
-  nodeCount: number
-  edgeCount: number
-  factCount: number
-  warnings: string[]
-  nodes: MemoryFactNodeItem[]
-  edges: MemoryFactEdgeItem[]
-}
-
 export interface MemoryFactItem {
   id: string
   type: string
@@ -170,30 +138,6 @@ export interface MemoryFactItem {
   createdAt: string
   tags: string[]
   metadataJson: string
-}
-
-export interface MemoryFactFactsResponseItem {
-  projectId: number | null
-  scopeType: string
-  scopeId: string
-  query: string
-  factCount: number
-  warnings: string[]
-  facts: MemoryFactItem[]
-}
-
-export interface MemoryFactEntityDetailItem {
-  projectId: number | null
-  entityId: string
-  label: string
-  entityType: string
-  aliases: string[]
-  degree: number
-  factCount: number
-  observations: string[]
-  metadataJson: string
-  warnings: string[]
-  facts: MemoryFactItem[]
 }
 
 export interface WikiSpaceItem {

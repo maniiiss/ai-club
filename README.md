@@ -27,7 +27,7 @@ git-ai-club/
 
 1. 源码模式启动：
    `powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1`
-   作用：`hermes / hindsight / gitnexus-web / postgres / redis / minio / woodpecker-server / woodpecker-agent` 走 Docker，`code-processing / backend / frontend` 走源码启动；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker。
+   作用：`hermes / qdrant / hindsight / gitnexus-web / postgres / redis / minio / woodpecker-server / woodpecker-agent` 走 Docker，`code-processing / backend / frontend` 走源码启动；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker。
 2. 源码模式停止：
    `powershell -ExecutionPolicy Bypass -File .\scripts\stop-windows.ps1`
    作用：先停源码服务，再停源码模式依赖容器。
@@ -55,7 +55,7 @@ git-ai-club/
 
 1. 源码模式启动：
    `bash ./scripts/start-linux.sh`
-   作用：`hermes / hindsight / gitnexus-web / postgres / redis / minio / woodpecker-server / woodpecker-agent` 走 Docker，`code-processing / backend / frontend` 走源码启动；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker。
+   作用：`hermes / qdrant / hindsight / gitnexus-web / postgres / redis / minio / woodpecker-server / woodpecker-agent` 走 Docker，`code-processing / backend / frontend` 走源码启动；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker。
 2. 源码模式停止：
    `bash ./scripts/stop-linux.sh`
    作用：先停源码服务，再停源码模式依赖容器。
@@ -81,7 +81,7 @@ git-ai-club/
 
 源码模式脚本会自动完成以下动作：
 
-1. 启动 `postgres`、`redis`、`minio`、`hindsight`、`gitnexus-web`、`hermes`、`woodpecker-server`、`woodpecker-agent` 容器；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker
+1. 启动 `postgres`、`redis`、`minio`、`qdrant`、`hindsight`、`gitnexus-web`、`hermes`、`woodpecker-server`、`woodpecker-agent` 容器；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker
 2. 安装前端依赖
 3. 检查并创建 `code-processing/.venv`
 4. 启动 `code-processing`、`backend`、`frontend`
@@ -96,6 +96,7 @@ git-ai-club/
 - Backend: `http://localhost:8080`
 - Code Processing: `http://localhost:9000`
 - Hermes: `http://localhost:18080`
+- Qdrant: `http://localhost:16333`
 - Hindsight: `http://localhost:18888`
 - GitNexus Web UI: `http://localhost:5174`
 - Woodpecker（默认启用）: `http://localhost:18000`

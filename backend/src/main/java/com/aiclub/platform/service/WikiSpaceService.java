@@ -42,6 +42,7 @@ import com.aiclub.platform.repository.WikiSpaceMemberRepository;
 import com.aiclub.platform.repository.WikiSpaceRepository;
 import com.aiclub.platform.security.AuthContext;
 import com.aiclub.platform.security.AuthContextHolder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -65,7 +66,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * 空间化 Wiki 核心服务，负责空间、目录、页面、搜索和 Hindsight 同步。
+ * 空间化 Wiki 核心服务，负责空间、目录、页面、搜索和知识索引同步。
  */
 @Service
 @Transactional(readOnly = true)
@@ -131,7 +132,9 @@ public class WikiSpaceService {
     private final HindsightClientService hindsightClientService;
     private final DocumentAssetService documentAssetService;
     private final DocumentMarkdownService documentMarkdownService;
+    private final WikiKnowledgeSearchService wikiKnowledgeSearchService;
 
+    @Autowired
     public WikiSpaceService(WikiSpaceRepository wikiSpaceRepository,
                             WikiSpaceMemberRepository wikiSpaceMemberRepository,
                             WikiDirectoryRepository wikiDirectoryRepository,
@@ -143,7 +146,8 @@ public class WikiSpaceService {
                             ProjectDataPermissionService projectDataPermissionService,
                             HindsightClientService hindsightClientService,
                             DocumentAssetService documentAssetService,
-                            DocumentMarkdownService documentMarkdownService) {
+                            DocumentMarkdownService documentMarkdownService,
+                            WikiKnowledgeSearchService wikiKnowledgeSearchService) {
         this.wikiSpaceRepository = wikiSpaceRepository;
         this.wikiSpaceMemberRepository = wikiSpaceMemberRepository;
         this.wikiDirectoryRepository = wikiDirectoryRepository;
@@ -156,6 +160,39 @@ public class WikiSpaceService {
         this.hindsightClientService = hindsightClientService;
         this.documentAssetService = documentAssetService;
         this.documentMarkdownService = documentMarkdownService;
+        this.wikiKnowledgeSearchService = wikiKnowledgeSearchService;
+    }
+
+    /**
+     * 兼容旧测试构造方式。
+     */
+    public WikiSpaceService(WikiSpaceRepository wikiSpaceRepository,
+                            WikiSpaceMemberRepository wikiSpaceMemberRepository,
+                            WikiDirectoryRepository wikiDirectoryRepository,
+                            WikiPageV2Repository wikiPageV2Repository,
+                            WikiPageVersionV2Repository wikiPageVersionV2Repository,
+                            WikiPageSyncTaskV2Repository wikiPageSyncTaskV2Repository,
+                            UserRepository userRepository,
+                            ProjectRepository projectRepository,
+                            ProjectDataPermissionService projectDataPermissionService,
+                            HindsightClientService hindsightClientService,
+                            DocumentAssetService documentAssetService,
+                            DocumentMarkdownService documentMarkdownService) {
+        this(
+                wikiSpaceRepository,
+                wikiSpaceMemberRepository,
+                wikiDirectoryRepository,
+                wikiPageV2Repository,
+                wikiPageVersionV2Repository,
+                wikiPageSyncTaskV2Repository,
+                userRepository,
+                projectRepository,
+                projectDataPermissionService,
+                hindsightClientService,
+                documentAssetService,
+                documentMarkdownService,
+                null
+        );
     }
 
     /**
@@ -369,8 +406,8 @@ public class WikiSpaceService {
     }
 
     /**
-     * 当页面最近一次 Hindsight 同步失败时，允许用户手动把 retain 任务重新排队。
-     * 这里不直接阻塞式调用 Hindsight，而是复用现有调度链路，避免前台请求长时间卡住。
+     * 当页面最近一次知识索引同步失败时，允许用户手动把 retain 任务重新排队。
+     * 这里不直接阻塞式调用索引服务，而是复用现有调度链路，避免前台请求长时间卡住。
      */
     @Transactional
     public WikiSpacePageDetail retryPageSync(Long spaceId, Long pageId) {
@@ -395,7 +432,7 @@ public class WikiSpaceService {
     }
 
     /**
-     * 创建空间化 Wiki 页面，并生成 v1 与同步任务。
+     * 创建空间化 Wiki 页面，并生成 v1 与知识索引同步任务。
      */
     @Transactional
     public WikiSpacePageDetail createPage(Long spaceId, CreateWikiSpacePageRequest request) {
@@ -507,7 +544,7 @@ public class WikiSpaceService {
     }
 
     /**
-     * 删除页面，并追加 Hindsight 删除任务。
+     * 删除页面，并追加知识索引删除任务。
      */
     @Transactional
     public void deletePage(Long spaceId, Long pageId) {
@@ -597,12 +634,23 @@ public class WikiSpaceService {
         LinkedHashMap<Long, WikiSpaceSearchResult> merged = new LinkedHashMap<>();
         for (WikiSpaceEntity space : visibleSpaces) {
             try {
-                List<HindsightClientService.WikiRecallHit> hits = hindsightClientService.recallWikiSpaceDocuments(space.getId(), query, 8);
-                Map<Long, HindsightClientService.WikiRecallHit> hitByPageId = new LinkedHashMap<>();
-                for (HindsightClientService.WikiRecallHit hit : hits) {
-                    Long pageId = hit.pageId() == null ? parsePageIdFromDocumentId(hit.documentId()) : hit.pageId();
-                    if (pageId != null) {
-                        hitByPageId.putIfAbsent(pageId, hit);
+                List<WikiPageV2Entity> keywordCandidates = resolveCandidatePages(space.getId()).stream()
+                        .filter(page -> canViewSpace(page.getSpace(), userContext))
+                        .filter(page -> projectId == null || Objects.equals(resolveEffectiveBoundProjectId(page.getDirectory()), projectId))
+                        .filter(page -> defaultString(query).isBlank()
+                                || containsIgnoreCase(page.getTitle(), defaultString(query).toLowerCase(Locale.ROOT))
+                                || containsIgnoreCase(page.getSlug(), defaultString(query).toLowerCase(Locale.ROOT))
+                                || containsIgnoreCase(page.getContent(), defaultString(query).toLowerCase(Locale.ROOT))
+                                || containsIgnoreCase(page.getDirectory().getName(), defaultString(query).toLowerCase(Locale.ROOT)))
+                        .limit(8)
+                        .toList();
+                List<WikiKnowledgeSearchService.WikiRankedPageHit> hits = wikiKnowledgeSearchService == null
+                        ? List.of()
+                        : wikiKnowledgeSearchService.hybridSearchSpacePages(space.getId(), projectId, query, keywordCandidates, 8);
+                Map<Long, WikiKnowledgeSearchService.WikiRankedPageHit> hitByPageId = new LinkedHashMap<>();
+                for (WikiKnowledgeSearchService.WikiRankedPageHit hit : hits) {
+                    if (hit.pageId() != null) {
+                        hitByPageId.putIfAbsent(hit.pageId(), hit);
                     }
                 }
                 if (hitByPageId.isEmpty()) {
@@ -624,7 +672,7 @@ public class WikiSpaceService {
                     if (projectId != null && !Objects.equals(resolveEffectiveBoundProjectId(page.getDirectory()), projectId)) {
                         continue;
                     }
-                    HindsightClientService.WikiRecallHit hit = hitByPageId.get(page.getId());
+                    WikiKnowledgeSearchService.WikiRankedPageHit hit = hitByPageId.get(page.getId());
                     merged.putIfAbsent(
                             page.getId(),
                             new WikiSpaceSearchResult(
@@ -639,9 +687,7 @@ public class WikiSpaceService {
             }
         }
         if (!merged.isEmpty()) {
-            return merged.values().stream()
-                    .sorted(Comparator.comparing((WikiSpaceSearchResult item) -> item.score() == null ? Double.NEGATIVE_INFINITY : item.score()).reversed())
-                    .toList();
+            return List.copyOf(merged.values());
         }
         return searchPages(query, spaceId, projectId).stream()
                 .map(page -> new WikiSpaceSearchResult(page, null, "关键词匹配结果"))
@@ -664,7 +710,7 @@ public class WikiSpaceService {
     }
 
     /**
-     * 轮询并处理空间化 Wiki 的 Hindsight 同步任务。
+     * 轮询并处理空间化 Wiki 的知识索引同步任务。
      */
     @Transactional
     public void processPendingSyncTasks() {
@@ -816,20 +862,17 @@ public class WikiSpaceService {
         wikiPageSyncTaskV2Repository.save(task);
         try {
             if (SYNC_OPERATION_DELETE.equalsIgnoreCase(task.getOperation())) {
-                hindsightClientService.deleteWikiSpaceDocument(task.getSpace().getId(), task.getDocumentId());
+                if (wikiKnowledgeSearchService != null) {
+                    wikiKnowledgeSearchService.deleteSpacePage(task.getSpace().getId(), parsePageIdFromDocumentId(task.getDocumentId()));
+                }
             } else {
                 WikiPageV2Entity page = task.getPage();
                 if (page == null) {
                     throw new IllegalStateException("同步页面不存在");
                 }
-                hindsightClientService.retainWikiSpaceDocument(
-                        page.getSpace().getId(),
-                        task.getDocumentId(),
-                        page.getTitle(),
-                        buildHindsightContent(page),
-                        buildHindsightTags(page),
-                        buildHindsightMetadata(page)
-                );
+                if (wikiKnowledgeSearchService != null) {
+                    wikiKnowledgeSearchService.indexSpacePage(page);
+                }
                 page.setSyncStatus(SYNC_STATUS_SYNCED);
                 page.setLastSyncedAt(LocalDateTime.now());
                 page.setLastSyncError("");
@@ -1282,45 +1325,6 @@ public class WikiSpaceService {
         task.setDocumentId(documentId(page.getId()));
         task.setStatus(SYNC_STATUS_PENDING);
         wikiPageSyncTaskV2Repository.save(task);
-    }
-
-    private String buildHindsightContent(WikiPageV2Entity page) {
-        return "空间：" + page.getSpace().getName() + "\n"
-                + "目录：" + buildDirectoryPath(page.getDirectory()) + "\n"
-                + "标题：" + page.getTitle() + "\n"
-                + "Slug：" + page.getSlug() + "\n"
-                + "关联项目：" + defaultString(resolveEffectiveBoundProjectName(page.getDirectory())) + "\n\n"
-                + page.getContent();
-    }
-
-    private List<String> buildHindsightTags(WikiPageV2Entity page) {
-        List<String> tags = new ArrayList<>();
-        tags.add("wiki");
-        tags.add("source:wiki");
-        tags.add("space:" + page.getSpace().getId());
-        tags.add("directory:" + page.getDirectory().getId());
-        Long boundProjectId = resolveEffectiveBoundProjectId(page.getDirectory());
-        if (boundProjectId != null) {
-            tags.add("project:" + boundProjectId);
-        }
-        return tags;
-    }
-
-    private Map<String, Object> buildHindsightMetadata(WikiPageV2Entity page) {
-        LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("spaceId", page.getSpace().getId());
-        metadata.put("pageId", page.getId());
-        metadata.put("directoryId", page.getDirectory().getId());
-        if (page.getParentPage() != null) {
-            metadata.put("parentPageId", page.getParentPage().getId());
-        }
-        metadata.put("slug", page.getSlug());
-        metadata.put("title", page.getTitle());
-        Long boundProjectId = resolveEffectiveBoundProjectId(page.getDirectory());
-        if (boundProjectId != null) {
-            metadata.put("projectId", boundProjectId);
-        }
-        return Map.copyOf(metadata);
     }
 
     private String buildDirectoryPath(WikiDirectoryEntity directory) {

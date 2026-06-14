@@ -135,6 +135,26 @@ platform:
       database-url: ${PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_URL:jdbc:postgresql://localhost:5432/hindsight}
       database-username: ${PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_USERNAME:${DB_USERNAME:aiclub}}
       database-password: ${PLATFORM_HINDSIGHT_MEMORY_FACT_DATABASE_PASSWORD:${DB_PASSWORD:aiclub123}}
+  wiki-knowledge:
+    enabled: ${PLATFORM_WIKI_KNOWLEDGE_ENABLED:true}
+    qdrant:
+      base-url: ${PLATFORM_WIKI_KNOWLEDGE_QDRANT_BASE_URL:http://localhost:6333}
+      api-key: ${PLATFORM_WIKI_KNOWLEDGE_QDRANT_API_KEY:}
+      timeout-seconds: ${PLATFORM_WIKI_KNOWLEDGE_QDRANT_TIMEOUT_SECONDS:20}
+      project-collection: ${PLATFORM_WIKI_KNOWLEDGE_QDRANT_PROJECT_COLLECTION:wiki_project_chunks}
+      space-collection: ${PLATFORM_WIKI_KNOWLEDGE_QDRANT_SPACE_COLLECTION:wiki_space_chunks}
+    embedding:
+      model-id: ${PLATFORM_WIKI_KNOWLEDGE_EMBEDDING_MODEL_ID:0}
+    search:
+      vector-limit: ${PLATFORM_WIKI_KNOWLEDGE_VECTOR_LIMIT:12}
+      candidate-limit: ${PLATFORM_WIKI_KNOWLEDGE_CANDIDATE_LIMIT:24}
+    rerank:
+      provider: ${PLATFORM_WIKI_KNOWLEDGE_RERANK_PROVIDER:openai-compatible}
+      base-url: ${PLATFORM_WIKI_KNOWLEDGE_RERANK_BASE_URL:}
+      api-key: ${PLATFORM_WIKI_KNOWLEDGE_RERANK_API_KEY:}
+      model: ${PLATFORM_WIKI_KNOWLEDGE_RERANK_MODEL:}
+      timeout-seconds: ${PLATFORM_WIKI_KNOWLEDGE_RERANK_TIMEOUT_SECONDS:15}
+      top-k: ${PLATFORM_WIKI_KNOWLEDGE_RERANK_TOP_K:10}
   yaade:
     base-url: ${PLATFORM_YAADE_BASE_URL:}
     admin-username: ${PLATFORM_YAADE_ADMIN_USERNAME:}

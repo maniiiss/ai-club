@@ -181,6 +181,7 @@ class HermesPromptBuilderTests {
 
         assertThat(prompt.systemPrompt())
                 .contains("回答和思考都必须使用中文。")
+                .contains("需要展示思考过程时，必须用 `<think>...</think>` 包裹")
                 .contains("当前未命中额外业务 Skill")
                 .doesNotContain("### Skill: wiki-qa")
                 .doesNotContain("### Skill: work-item-create")
@@ -189,7 +190,7 @@ class HermesPromptBuilderTests {
     }
 
     /**
-     * 当上层已经召回到 Hindsight 记忆时，PromptBuilder 应把这段记忆和当前轮输入一起注入 user prompt。
+     * 当上层已经召回到记忆与 Wiki 证据时，PromptBuilder 应把这段上下文和当前轮输入一起注入 user prompt。
      */
     @Test
     void shouldIncludeHindsightMemoryAndCurrentTurnContentInUserPrompt() {
@@ -210,11 +211,11 @@ class HermesPromptBuilderTests {
                 HermesGroundingState.empty(),
                 "hcs_test_token",
                 "继续分析这个项目的发布风险\n\n请重点关注巴黎和柏林的讨论记录。",
-                "- Paris and Berlin are often discussed together.（来源：项目 Wiki；标签：project:12）"
+                "### Hindsight 记忆\n- 你之前提过巴黎和柏林需要一起评估发布时间。\n\n### Wiki 知识证据\n- Paris and Berlin are often discussed together.（来源：Wiki 知识库）"
         );
 
         assertThat(prompt.userPrompt())
-                .contains("当前可参考的 Hindsight 记忆")
+                .contains("当前可参考的记忆与 Wiki 知识证据")
                 .contains("Paris and Berlin are often discussed together.")
                 .contains("用户当前输入：")
                 .contains("请重点关注巴黎和柏林的讨论记录。");

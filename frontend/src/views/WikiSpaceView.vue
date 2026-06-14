@@ -18,14 +18,6 @@
             <span>绑定项目：{{ spaceDetail?.boundProjectName || '未绑定' }}</span>
             <span>成员默认：{{ memberDefaultSourceLabel(spaceDetail?.memberDefaultSource) }}</span>
           </div>
-          <div class="wiki-space-card-actions-shell">
-            <div class="wiki-space-card-actions">
-              <el-button type="primary" @click="openMemoryFactGraph">
-                <el-icon><DataAnalysis /></el-icon>
-                <span>记忆事实图</span>
-              </el-button>
-            </div>
-          </div>
         </div>
 
         <div class="wiki-search-shell">
@@ -376,7 +368,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowDown, ArrowLeft, ArrowRight, DataAnalysis } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MdPreview } from 'md-editor-v3'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
@@ -1362,10 +1354,6 @@ function downloadCurrentSource() {
 
 function goBack() {
   router.push({ name: 'wiki-home' })
-}
-
-function openMemoryFactGraph() {
-  router.push({ name: 'wiki-space-memory-fact-graph', params: { spaceId: spaceId.value } })
 }
 
 function roleLabel(role?: string | null) {

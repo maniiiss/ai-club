@@ -38,8 +38,6 @@ import WikiHomeView from '@/views/WikiHomeView.vue'
 import WikiSpaceView from '@/views/WikiSpaceView.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
-
-const MemoryFactGraphView = () => import('@/views/MemoryFactGraphView.vue')
 const PrReviewStatsView = () => import('@/views/PrReviewStatsView.vue')
 
 const APP_TITLE = 'AI代理工程管理平台'
@@ -89,11 +87,9 @@ const router = createRouter({
         { path: 'apis/projects/:projectId', name: 'api-project-detail', component: ProjectApiManagementView, meta: { title: 'API 工作台', permission: 'api:view', activeMenu: '/apis' } },
         { path: 'wiki', name: 'wiki-home', component: WikiHomeView, meta: { title: 'Wiki 中心', permission: 'wiki:view' } },
         { path: 'wiki/spaces/:spaceId', name: 'wiki-space', component: WikiSpaceView, meta: { title: 'Wiki 空间', permission: 'wiki:view' } },
-        { path: 'wiki/spaces/:spaceId/memory-fact-graph', name: 'wiki-space-memory-fact-graph', component: MemoryFactGraphView, meta: { title: '记忆事实图', permission: 'wiki:view' } },
         { path: 'wiki/spaces/:spaceId/pages/:pageId', name: 'wiki-space-page', component: WikiSpaceView, meta: { title: 'Wiki 页面', permission: 'wiki:view' } },
         { path: 'projects/:projectId/iterations', name: 'project-iterations', component: IterationView, meta: { title: '迭代管理', permission: 'project:view' } },
         { path: 'projects/:projectId/knowledge-graph', redirect: (to) => ({ name: 'project-iterations', params: { projectId: to.params.projectId } }), meta: { requiresAuth: true, permission: 'project:view' } },
-        { path: 'projects/:projectId/memory-fact-graph', name: 'project-memory-fact-graph', component: MemoryFactGraphView, meta: { title: '记忆事实图', permission: 'project:view' } },
         { path: 'agents', name: 'agents', component: AgentView, meta: { title: '智能体管理', permission: 'agent:view' } },
         { path: 'tasks', name: 'tasks', component: ExecutionTaskView, meta: { title: '执行中心', permission: 'task:view' } },
         { path: 'tasks/:executionTaskId', name: 'execution-task-detail', component: ExecutionTaskDetailView, meta: { title: '执行详情', permission: 'task:view', activeMenu: '/tasks' } },

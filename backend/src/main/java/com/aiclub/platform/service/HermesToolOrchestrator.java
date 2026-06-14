@@ -682,6 +682,11 @@ public class HermesToolOrchestrator {
         }
         String question = request == null ? "" : defaultString(request.question());
         boolean collectionIntent = isCollectionIntentQuestion(question);
+        if (PlatformToolRegistry.TOOL_PROJECT_SEARCH.equals(toolCode)) {
+            // 业务意图：project.search 常被模型用来解析“这个项目”这类指代。
+            // 只有用户明确在问项目集合时才直接返回列表，否则多个项目命中必须弹出候选确认卡片。
+            return collectionIntent && isProjectCollectionQuestion(question) && !isSingularProjectReference(question);
+        }
         if (!PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH.equals(toolCode)) {
             return collectionIntent;
         }
@@ -717,6 +722,38 @@ public class HermesToolOrchestrator {
                 || "进行中".equals(normalized)
                 || "待处理".equals(normalized)
                 || "待开始".equals(normalized);
+    }
+
+    private boolean isProjectCollectionQuestion(String question) {
+        String normalized = defaultString(question).toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        return normalized.contains("哪些项目")
+                || normalized.contains("有哪些项目")
+                || normalized.contains("几个项目")
+                || normalized.contains("多少项目")
+                || normalized.contains("项目列表")
+                || normalized.contains("项目清单")
+                || normalized.contains("全部项目")
+                || normalized.contains("所有项目")
+                || normalized.contains("项目概览")
+                || normalized.contains("项目总览")
+                || normalized.contains("project list")
+                || normalized.contains("projects");
+    }
+
+    private boolean isSingularProjectReference(String question) {
+        String normalized = defaultString(question).toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        return normalized.contains("这个项目")
+                || normalized.contains("当前项目")
+                || normalized.contains("本项目")
+                || normalized.contains("该项目")
+                || normalized.contains("这个project")
+                || normalized.contains("current project");
     }
 
     /**

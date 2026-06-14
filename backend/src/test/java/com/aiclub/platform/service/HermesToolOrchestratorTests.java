@@ -624,6 +624,104 @@ class HermesToolOrchestratorTests {
     }
 
     /**
+     * “这个项目有哪些...”这类问题虽然包含集合意图，但第一步 project.search 是在解析“这个项目”。
+     * 如果没有页面 projectId 且命中多个项目，必须交给前端候选卡片确认，而不是把项目列表当作最终事实返回。
+     */
+    @Test
+    void shouldAskUserToSelectProjectWhenProjectSearchResolvesDeicticProjectInCollectionQuestion() {
+        HermesToolOrchestrator orchestrator = new HermesToolOrchestrator(
+                platformToolExecutor,
+                platformToolRegistry,
+                hermesActionPlannerService,
+                new ObjectMapper()
+        );
+
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "projects",
+                null,
+                null,
+                "超级管理员",
+                List.of(),
+                List.of(),
+                "项目列表上下文"
+        );
+        HermesChatRequest request = new HermesChatRequest(
+                "最近这个项目有哪些关键变化",
+                "projects",
+                null,
+                null,
+                null,
+                null,
+                "conversation-project-selection",
+                null,
+                null
+        );
+        PlatformToolDefinition projectSearch = new PlatformToolDefinition(
+                PlatformToolRegistry.TOOL_PROJECT_SEARCH,
+                "搜索项目",
+                "PROJECT",
+                "按项目名称或关键词搜索当前用户可见项目",
+                true,
+                "LOW",
+                "project:view",
+                false,
+                Map.of("keyword", "项目关键词")
+        );
+        PlatformToolResult searchResult = new PlatformToolResult(
+                PlatformToolRegistry.TOOL_PROJECT_SEARCH,
+                "搜索项目",
+                "找到 2 个相关项目",
+                List.of(
+                        new PlatformToolCandidate(
+                                "PROJECT",
+                                1L,
+                                "Agent Ops",
+                                "状态：进行中 / 负责人：张三",
+                                "/projects/1/iterations",
+                                Map.of("projectId", 1L, "status", "进行中"),
+                                List.of()
+                        ),
+                        new PlatformToolCandidate(
+                                "PROJECT",
+                                4L,
+                                "CRM 项目",
+                                "状态：进行中 / 负责人：管理员",
+                                "/projects/4/iterations",
+                                Map.of("projectId", 4L, "status", "进行中"),
+                                List.of()
+                        )
+                ),
+                List.of(),
+                Map.of()
+        );
+
+        when(platformToolRegistry.isEnabled(PlatformToolRegistry.TOOL_PROJECT_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.isAllowAutoExecute(PlatformToolRegistry.TOOL_PROJECT_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.requireDefinition(PlatformToolRegistry.TOOL_PROJECT_SEARCH)).thenReturn(projectSearch);
+        when(platformToolExecutor.execute(any())).thenReturn(searchResult);
+
+        HermesToolExecutionOutcome outcome = orchestrator.executeToolCall(
+                new HermesToolCallRequest(
+                        "call-project-selection",
+                        PlatformToolRegistry.TOOL_PROJECT_SEARCH,
+                        "project__search",
+                        Map.of("keyword", "")
+                ),
+                "scope-project-selection",
+                context,
+                request,
+                HermesGroundingState.empty()
+        );
+
+        assertThat(outcome.stopLoop()).isTrue();
+        assertThat(outcome.stopReason()).isEqualTo("awaiting_selection");
+        assertThat(outcome.selectionCards()).hasSize(1);
+        assertThat(outcome.selectionCards().get(0).options())
+                .extracting(option -> option.title())
+                .containsExactly("Agent Ops", "CRM 项目");
+    }
+
+    /**
      * 当 Hermes 发起写工具调用时，平台应直接转成确认动作卡片。
      */
     @Test

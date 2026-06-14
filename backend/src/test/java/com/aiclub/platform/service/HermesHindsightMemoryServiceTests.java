@@ -28,7 +28,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 验证 Hermes 的 Hindsight 用户记忆召回与写入都按用户隔离执行。
+ * 验证 Hermes 的 Hindsight 用户记忆召回与写入都按用户隔离执行，
+ * 同时不再把 Wiki 知识召回混进会话记忆链路。
  */
 @ExtendWith(MockitoExtension.class)
 class HermesHindsightMemoryServiceTests {
@@ -43,7 +44,7 @@ class HermesHindsightMemoryServiceTests {
     private WikiSpaceService wikiSpaceService;
 
     @Test
-    void shouldRecallUserBankBeforeProjectAndSharedBanks() {
+    void shouldRecallUserBankBeforeSharedBanks() {
         HindsightProperties properties = new HindsightProperties(
                 "http://localhost:18888",
                 "",
@@ -91,31 +92,12 @@ class HermesHindsightMemoryServiceTests {
                 false
         );
 
-        when(wikiSpaceService.buildProjectGraphProjection(12L)).thenReturn(new WikiSpaceService.WikiProjectGraphProjection(
-                List.<WikiSpaceEntity>of(),
-                List.<WikiDirectoryEntity>of(),
-                List.<WikiPageV2Entity>of()
-        ));
         when(hindsightClientService.recallMemories(eq("git-ai-club:hermes:user:5"), eq("巴黎和柏林最近在项目知识里有什么联系"), eq(List.of("project:12")), eq(3)))
                 .thenReturn(List.of(new HindsightClientService.MemoryRecallHit(
                         "fact-user-1",
                         "Hermes 会话记忆：发布时间",
                         "你之前在 Hermes 会话里提到 Paris 和 Berlin 需要一起评估发布时间。",
                         0.92d
-                )));
-        when(hindsightClientService.recallWorldFacts(eq("git-ai-club:wiki:project:12"), any(), eq(List.of("project:12")), eq(3)))
-                .thenReturn(List.of(new HindsightClientService.MemoryWorldFact(
-                        "fact-wiki-1",
-                        "world",
-                        "Paris",
-                        "co_occurrence",
-                        "Berlin",
-                        "Paris and Berlin are often discussed together.",
-                        0.88d,
-                        "WIKI",
-                        "2026-04-24T09:00:00Z",
-                        List.of("project:12", "source:wiki"),
-                        Map.of()
                 )));
         when(hindsightClientService.recallWorldFacts(eq("git-ai-club:memory:shared"), any(), eq(List.of("project:12")), eq(3)))
                 .thenReturn(List.of(new HindsightClientService.MemoryWorldFact(
@@ -137,9 +119,9 @@ class HermesHindsightMemoryServiceTests {
         assertThat(markdown)
                 .contains("你之前在 Hermes 会话里提到 Paris 和 Berlin 需要一起评估发布时间。")
                 .contains("来源：用户会话记忆")
-                .contains("来源：项目 Wiki");
+                .contains("来源：共享记忆")
+                .doesNotContain("来源：项目 Wiki");
         verify(hindsightClientService).recallMemories("git-ai-club:hermes:user:5", "巴黎和柏林最近在项目知识里有什么联系", List.of("project:12"), 3);
-        verify(hindsightClientService).recallWorldFacts("git-ai-club:wiki:project:12", "巴黎和柏林最近在项目知识里有什么联系", List.of("project:12"), 3);
         verify(hindsightClientService).recallWorldFacts("git-ai-club:memory:shared", "巴黎和柏林最近在项目知识里有什么联系", List.of("project:12"), 3);
     }
 

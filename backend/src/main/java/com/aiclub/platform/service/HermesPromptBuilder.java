@@ -132,7 +132,7 @@ public class HermesPromptBuilder {
                 当前可见上下文：
                 %s
 
-                当前可参考的 Hindsight 记忆：
+                当前可参考的记忆与 Wiki 知识证据：
                 %s
 
                 当前会话已绑定对象：
@@ -225,7 +225,7 @@ public class HermesPromptBuilder {
 
     private String renderMemoryContext(String memoryContextMarkdown) {
         if (!hasText(memoryContextMarkdown)) {
-            return "- 当前未召回到额外的 Hindsight 记忆";
+            return "- 当前未召回到额外的记忆或 Wiki 知识证据";
         }
         return memoryContextMarkdown.trim();
     }

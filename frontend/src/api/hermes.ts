@@ -43,6 +43,18 @@ const isAbortLikeError = (error: unknown, signal: AbortSignal) => {
   return error.name === 'AbortError' || /aborted|abort/i.test(error.message)
 }
 
+/**
+ * 网络或代理层异常断开时，不能伪造空 done 事件，否则会把前端正在展示的确认卡片清空。
+ */
+const notifyInterruptedHermesStream = (handlers: StreamHandlers, signal: AbortSignal) => {
+  if (signal.aborted) {
+    return
+  }
+  handlers.onError?.({
+    message: 'Hermes 连接已中断，可直接重试；如果页面里已经出现确认卡片，也可以继续使用当前结果'
+  })
+}
+
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
     Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
@@ -255,18 +267,8 @@ export const streamHermesSessionChat = async (sessionId: number, payload: Hermes
         if (buffer.trim()) {
           consumeChunk(buffer)
         }
-        if (!didReceiveTerminalEvent && didReceiveAnyEvent) {
-          handlers.onDone?.({
-            scopeKey: '',
-            roleName: '',
-            content: '',
-            references: [],
-            suggestions: [],
-            actions: [],
-            selectionCards: [],
-            debug: null,
-            attachments: []
-          })
+        if (!didReceiveTerminalEvent) {
+          notifyInterruptedHermesStream(handlers, controller.signal)
         }
         break
       }
@@ -390,18 +392,8 @@ export const streamHermesSessionChatWithFiles = async (
         if (buffer.trim()) {
           consumeChunk(buffer)
         }
-        if (!didReceiveTerminalEvent && didReceiveAnyEvent) {
-          handlers.onDone?.({
-            scopeKey: '',
-            roleName: '',
-            content: '',
-            references: [],
-            suggestions: [],
-            actions: [],
-            selectionCards: [],
-            debug: null,
-            attachments: [] as HermesAttachmentItem[]
-          })
+        if (!didReceiveTerminalEvent) {
+          notifyInterruptedHermesStream(handlers, controller.signal)
         }
         break
       }

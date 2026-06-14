@@ -9,6 +9,7 @@ import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -146,6 +147,20 @@ public class ModelConfigService {
         return invokePrompt(resolveModelConfig(id), systemPrompt, userPrompt, 2048);
     }
 
+    /**
+     * 生成单条文本的向量，供 Wiki 知识索引等业务复用平台统一的 Embedding 模型配置。
+     */
+    public List<Double> generateEmbedding(Long id, String input) {
+        return generateEmbedding(resolveModelConfig(id), input);
+    }
+
+    /**
+     * 批量生成向量，避免业务层为多 chunk 建索时逐条重复握手。
+     */
+    public List<List<Double>> generateEmbeddings(Long id, List<String> inputs) {
+        return generateEmbeddings(resolveModelConfig(id), inputs);
+    }
+
     public String invokePrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, Integer maxTokens) {
         String modelType = normalizeModelType(config.modelType());
         if (!MODEL_TYPE_CHAT.equals(modelType)) {
@@ -167,6 +182,41 @@ public class ModelConfigService {
             throw exception;
         } catch (Exception exception) {
             throw new IllegalStateException("模型调用失败：" + limitMessage(exception.getMessage()), exception);
+        }
+    }
+
+    public List<Double> generateEmbedding(ResolvedModelConfig config, String input) {
+        List<List<Double>> vectors = generateEmbeddings(config, List.of(input));
+        if (vectors.isEmpty()) {
+            throw new IllegalStateException("Embedding 接口未返回有效向量");
+        }
+        return vectors.get(0);
+    }
+
+    public List<List<Double>> generateEmbeddings(ResolvedModelConfig config, List<String> inputs) {
+        String modelType = normalizeModelType(config.modelType());
+        if (!MODEL_TYPE_EMBEDDING.equals(modelType)) {
+            throw new IllegalArgumentException("仅 Embedding 模型支持生成向量");
+        }
+        String provider = normalizeProvider(config.provider());
+        if (!PROVIDER_OPENAI.equals(provider)) {
+            throw new IllegalArgumentException("Embedding 模型仅支持 OPENAI 兼容提供商");
+        }
+        List<String> normalizedInputs = (inputs == null ? List.<String>of() : inputs).stream()
+                .map(this::defaultString)
+                .filter(this::hasText)
+                .toList();
+        if (normalizedInputs.isEmpty()) {
+            return List.of();
+        }
+        try {
+            return invokeOpenAiEmbeddings(config, normalizedInputs);
+        } catch (IllegalArgumentException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IllegalStateException("Embedding 调用失败：" + limitMessage(exception.getMessage()), exception);
         }
     }
 
@@ -306,6 +356,21 @@ public class ModelConfigService {
             throw new IllegalStateException("OpenAI Embeddings 调用失败：" + extractHttpError(response));
         }
         return extractOpenAiEmbeddingDimension(objectMapper.readTree(response.body()));
+    }
+
+    private List<List<Double>> invokeOpenAiEmbeddings(ResolvedModelConfig config, List<String> inputs) throws IOException, InterruptedException {
+        String baseUrl = trimSlash(config.apiBaseUrl());
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("model", config.modelName());
+        ArrayNode inputArray = payload.putArray("input");
+        for (String input : inputs) {
+            inputArray.add(defaultString(input));
+        }
+        HttpResponse<String> response = sendJsonPost(baseUrl + "/embeddings", config.apiKey(), payload);
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("OpenAI Embeddings 调用失败：" + extractHttpError(response));
+        }
+        return extractOpenAiEmbeddings(objectMapper.readTree(response.body()));
     }
 
     private String invokeOpenAiPrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, int maxTokens) throws IOException, InterruptedException {
@@ -460,6 +525,29 @@ public class ModelConfigService {
             }
         }
         throw new IllegalStateException("Embedding 接口未返回有效向量");
+    }
+
+    private List<List<Double>> extractOpenAiEmbeddings(JsonNode body) {
+        JsonNode data = body.path("data");
+        if (!data.isArray() || data.isEmpty()) {
+            throw new IllegalStateException("Embedding 接口未返回有效向量");
+        }
+        List<List<Double>> vectors = new ArrayList<>();
+        for (JsonNode item : data) {
+            JsonNode embedding = item.path("embedding");
+            if (!embedding.isArray() || embedding.isEmpty()) {
+                continue;
+            }
+            List<Double> vector = new ArrayList<>();
+            for (JsonNode value : embedding) {
+                vector.add(value.asDouble());
+            }
+            vectors.add(List.copyOf(vector));
+        }
+        if (vectors.isEmpty()) {
+            throw new IllegalStateException("Embedding 接口未返回有效向量");
+        }
+        return List.copyOf(vectors);
     }
 
     private HttpResponse<String> sendJsonPost(String url, String apiKey, JsonNode payload) throws IOException, InterruptedException {
