@@ -10,6 +10,10 @@ from app.models import ReviewRequest, ReviewResponse
 logger = logging.getLogger(__name__)
 
 
+class ReviewProviderError(RuntimeError):
+    """封装上游模型调用失败，便于接口层返回可读的 4xx 信息。"""
+
+
 def review_code(request: ReviewRequest) -> ReviewResponse:
     provider = request.provider.strip().upper()
     prompt = _build_prompt(request)
@@ -104,12 +108,13 @@ def _trim_diff(diff: str, max_chars: int = 12000) -> str:
 def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, prompt: str) -> str:
     with httpx.Client(timeout=60.0, http2=False) as client:
         if provider == "OPENAI":
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
             response = client.post(
                 f"{api_base_url}/responses",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 json={
                     "model": model,
                     "input": prompt,
@@ -121,13 +126,10 @@ def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, p
                     },
                 },
             )
-            if response.status_code == 404:
-                response = client.post(
+            if response.status_code == 404 or _should_retry_with_chat_completions(api_base_url, response):
+                fallback_response = client.post(
                     f"{api_base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
+                    headers=headers,
                     json={
                         "model": model,
                         "temperature": 0,
@@ -135,10 +137,10 @@ def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, p
                         "messages": [{"role": "user", "content": prompt}],
                     },
                 )
-                response.raise_for_status()
-                return _extract_openai_chat_text(response.json())
+                _raise_for_provider_error("OPENAI chat/completions", fallback_response)
+                return _extract_openai_chat_text(fallback_response.json())
 
-            response.raise_for_status()
+            _raise_for_provider_error("OPENAI responses", response)
             return _extract_openai_text(response.json())
 
         if provider == "ANTHROPIC":
@@ -156,10 +158,60 @@ def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, p
                     "messages": [{"role": "user", "content": prompt}],
                 },
             )
-            response.raise_for_status()
+            _raise_for_provider_error("ANTHROPIC messages", response)
             return _extract_anthropic_text(response.json())
 
     raise ValueError(f"Unsupported provider: {provider}")
+
+
+def _should_retry_with_chat_completions(api_base_url: str, response: httpx.Response) -> bool:
+    """OpenAI 兼容网关在 /responses 不兼容时，按特征切回 chat/completions。"""
+    if response.status_code != 400:
+        return False
+    lower_base_url = api_base_url.lower()
+    if "volces.com" in lower_base_url or "ark" in lower_base_url:
+        return True
+    body = _abbreviate(response.text, 1000).lower()
+    return "responses" in body and ("unsupported" in body or "not support" in body)
+
+
+def _raise_for_provider_error(provider_label: str, response: httpx.Response) -> None:
+    """统一收口模型供应商错误，避免接口直接抛成 500。"""
+    if response.is_success:
+        return
+    detail = _format_provider_error_detail(response)
+    logger.warning(
+        "Code review provider call failed: provider=%s, status=%s, url=%s, response=%s",
+        provider_label,
+        response.status_code,
+        response.request.url,
+        detail,
+    )
+    raise ReviewProviderError(f"{provider_label} 调用失败，HTTP {response.status_code}：{detail}")
+
+
+def _format_provider_error_detail(response: httpx.Response) -> str:
+    """尽量从上游响应体中提炼出可读错误，方便后端和页面直接定位。"""
+    text = (response.text or "").strip()
+    if not text:
+        return "上游未返回错误详情"
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return _abbreviate(text, 500)
+    message_candidates = [
+        payload.get("message"),
+        payload.get("error"),
+        payload.get("detail"),
+    ]
+    for candidate in message_candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return _abbreviate(candidate.strip(), 500)
+        if isinstance(candidate, dict):
+            nested_message = candidate.get("message") or candidate.get("detail") or candidate.get("type")
+            if isinstance(nested_message, str) and nested_message.strip():
+                return _abbreviate(nested_message.strip(), 500)
+    return _abbreviate(json.dumps(payload, ensure_ascii=False), 500)
 
 
 def _extract_openai_text(body: dict[str, Any]) -> str:
