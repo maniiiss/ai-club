@@ -125,6 +125,7 @@ class AgentExecutionServiceTests {
                 ModelConfigService.PROVIDER_OPENAI,
                 "https://api.example.com",
                 "gpt-test",
+                ModelConfigService.OPENAI_API_MODE_AUTO,
                 "sk-test"
         );
         CodeReviewResult reviewResult = new CodeReviewResult(

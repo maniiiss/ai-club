@@ -1799,6 +1799,7 @@ export interface GitlabAutoMergeLogItem {
 }
 
 export type AiModelType = 'CHAT' | 'EMBEDDING'
+export type OpenAiApiMode = 'AUTO' | 'RESPONSES' | 'CHAT_COMPLETIONS' | 'CHAT_COMPLETIONS_PLAIN'
 
 export interface AiModelConfigItem {
   id: number
@@ -1807,6 +1808,7 @@ export interface AiModelConfigItem {
   provider: 'OPENAI' | 'ANTHROPIC'
   apiBaseUrl: string
   modelName: string
+  openaiApiMode: OpenAiApiMode
   apiKeyConfigured: boolean
   description: string
   enabled: boolean

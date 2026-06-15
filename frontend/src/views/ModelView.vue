@@ -292,6 +292,11 @@
           <el-form-item label="模型名" prop="modelName">
             <el-input v-model="form.modelName" :placeholder="modelNamePlaceholder" />
           </el-form-item>
+          <el-form-item v-if="form.provider === 'OPENAI' && form.modelType === 'CHAT'" label="调用模式" prop="openaiApiMode">
+            <el-select v-model="form.openaiApiMode" style="width: 100%">
+              <el-option v-for="item in openAiApiModeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="API 密钥" prop="apiKey">
             <el-input
               v-model="form.apiKey"
@@ -325,7 +330,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Cpu, Delete, EditPen, Filter, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import { createModelConfig, deleteModelConfig, pageModelConfigs, testModelConfig, updateModelConfig } from '@/api/models'
-import type { AiModelConfigItem, AiModelType } from '@/types/platform'
+import type { AiModelConfigItem, AiModelType, OpenAiApiMode } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
@@ -342,12 +347,20 @@ const providerOptions = [
   { label: 'Anthropic', value: 'ANTHROPIC' as const }
 ]
 
+const openAiApiModeOptions: Array<{ label: string; value: OpenAiApiMode }> = [
+  { label: '自动探测', value: 'AUTO' },
+  { label: 'Responses', value: 'RESPONSES' },
+  { label: 'Chat Completions(JSON)', value: 'CHAT_COMPLETIONS' },
+  { label: 'Chat Completions(纯文本 JSON)', value: 'CHAT_COMPLETIONS_PLAIN' }
+]
+
 interface ModelForm {
   name: string
   modelType: AiModelType
   provider: 'OPENAI' | 'ANTHROPIC'
   apiBaseUrl: string
   modelName: string
+  openaiApiMode: OpenAiApiMode
   apiKey: string
   description: string
   enabled: boolean
@@ -387,6 +400,7 @@ const form = reactive<ModelForm>({
   provider: 'OPENAI',
   apiBaseUrl: OPENAI_API_BASE_URL,
   modelName: '',
+  openaiApiMode: 'AUTO',
   apiKey: '',
   description: '',
   enabled: true
@@ -413,6 +427,7 @@ watch(
         form.provider = 'OPENAI'
         return
       }
+      form.openaiApiMode = 'AUTO'
       if (form.apiBaseUrl === ANTHROPIC_API_BASE_URL) {
         form.apiBaseUrl = OPENAI_API_BASE_URL
       }
@@ -424,6 +439,9 @@ watch(
   () => form.provider,
   (provider) => {
     form.apiBaseUrl = provider === 'ANTHROPIC' ? ANTHROPIC_API_BASE_URL : OPENAI_API_BASE_URL
+    if (provider !== 'OPENAI') {
+      form.openaiApiMode = 'AUTO'
+    }
   }
 )
 
@@ -460,6 +478,7 @@ const resetForm = () => {
   form.provider = 'OPENAI'
   form.apiBaseUrl = OPENAI_API_BASE_URL
   form.modelName = ''
+  form.openaiApiMode = 'AUTO'
   form.apiKey = ''
   form.description = ''
   form.enabled = true
@@ -524,6 +543,7 @@ const fillForm = (row: AiModelConfigItem) => {
   form.provider = row.provider
   form.apiBaseUrl = row.apiBaseUrl
   form.modelName = row.modelName
+  form.openaiApiMode = row.openaiApiMode
   form.apiKey = ''
   form.description = row.description
   form.enabled = row.enabled

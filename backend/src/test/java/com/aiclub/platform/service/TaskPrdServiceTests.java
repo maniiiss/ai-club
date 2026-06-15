@@ -127,6 +127,7 @@ class TaskPrdServiceTests {
                 ModelConfigService.PROVIDER_OPENAI,
                 "https://api.openai.com/v1",
                 "gpt-5.4",
+                ModelConfigService.OPENAI_API_MODE_AUTO,
                 "chat-key"
         ));
         when(wikiSpaceService.semanticSearchPages(anyString(), any(), any())).thenThrow(new IllegalStateException("semantic failed"));

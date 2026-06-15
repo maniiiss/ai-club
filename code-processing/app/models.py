@@ -44,6 +44,7 @@ class ReviewRequest(BaseModel):
     apiBaseUrl: str = Field(description="Provider API base url")
     apiKey: str = Field(description="Provider API key")
     model: str = Field(description="Provider model name")
+    openaiApiMode: str = Field(default="AUTO", description="OpenAI compatible API invocation mode")
     prompt: str = Field(description="Code review prompt/rules")
     mergeRequestTitle: str = Field(default="")
     mergeRequestDescription: str = Field(default="")

@@ -39,6 +39,10 @@ public class ModelConfigService {
     public static final String MODEL_TYPE_EMBEDDING = "EMBEDDING";
     public static final String PROVIDER_OPENAI = "OPENAI";
     public static final String PROVIDER_ANTHROPIC = "ANTHROPIC";
+    public static final String OPENAI_API_MODE_AUTO = "AUTO";
+    public static final String OPENAI_API_MODE_RESPONSES = "RESPONSES";
+    public static final String OPENAI_API_MODE_CHAT_COMPLETIONS = "CHAT_COMPLETIONS";
+    public static final String OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN = "CHAT_COMPLETIONS_PLAIN";
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final Duration MODEL_REQUEST_TIMEOUT = Duration.ofSeconds(120);
@@ -138,6 +142,7 @@ public class ModelConfigService {
                 entity.getProvider(),
                 entity.getApiBaseUrl(),
                 entity.getModelName(),
+                normalizeOpenAiApiMode(entity.getProvider(), entity.getOpenaiApiMode()),
                 tokenCipherService.decrypt(entity.getApiKeyCiphertext())
         );
     }
@@ -183,6 +188,7 @@ public class ModelConfigService {
         entity.setProvider(provider);
         entity.setApiBaseUrl(resolveApiBaseUrl(provider, modelType, request.apiBaseUrl()));
         entity.setModelName(request.modelName().trim());
+        entity.setOpenaiApiMode(normalizeOpenAiApiMode(provider, request.openaiApiMode()));
         entity.setDescription(request.description() == null ? "" : request.description().trim());
         entity.setEnabled(request.enabled() == null || request.enabled());
 
@@ -227,6 +233,7 @@ public class ModelConfigService {
                 entity.getProvider(),
                 entity.getApiBaseUrl(),
                 entity.getModelName(),
+                normalizeOpenAiApiMode(entity.getProvider(), entity.getOpenaiApiMode()),
                 hasText(entity.getApiKeyCiphertext()),
                 entity.getDescription(),
                 entity.getEnabled()
@@ -284,6 +291,10 @@ public class ModelConfigService {
 
     private String invokeOpenAi(ResolvedModelConfig config) throws IOException, InterruptedException {
         String baseUrl = trimSlash(config.apiBaseUrl());
+        if (OPENAI_API_MODE_CHAT_COMPLETIONS.equals(config.openaiApiMode())
+                || OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN.equals(config.openaiApiMode())) {
+            return invokeOpenAiChatCompletions(baseUrl, config);
+        }
         JsonNode payload = objectMapper.createObjectNode()
                 .put("model", config.modelName())
                 .put("input", "Reply with exactly OK.")
@@ -314,6 +325,10 @@ public class ModelConfigService {
 
     private String invokeOpenAiPrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, int maxTokens, boolean jsonMode) throws IOException, InterruptedException {
         String baseUrl = trimSlash(config.apiBaseUrl());
+        if (OPENAI_API_MODE_CHAT_COMPLETIONS.equals(config.openaiApiMode())
+                || OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN.equals(config.openaiApiMode())) {
+            return invokeOpenAiChatCompletionsPrompt(baseUrl, config, systemPrompt, userPrompt, maxTokens, jsonMode);
+        }
         JsonNode input = objectMapper.createArrayNode()
                 .add(objectMapper.createObjectNode().put("role", "system").put("content", defaultString(systemPrompt)))
                 .add(objectMapper.createObjectNode().put("role", "user").put("content", defaultString(userPrompt)));
@@ -368,7 +383,7 @@ public class ModelConfigService {
                                 .put("role", "user")
                                 .put("content", defaultString(userPrompt))));
 
-        if (jsonMode) {
+        if (jsonMode && !OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN.equals(config.openaiApiMode())) {
             payload.set("response_format", objectMapper.createObjectNode().put("type", "json_object"));
         }
 
@@ -536,6 +551,26 @@ public class ModelConfigService {
         return value;
     }
 
+    /**
+     * 统一归一化 OpenAI 兼容调用模式，非 OpenAI 提供商固定回落为 AUTO。
+     */
+    private String normalizeOpenAiApiMode(String provider, String openAiApiMode) {
+        if (!PROVIDER_OPENAI.equals(normalizeProvider(provider))) {
+            return OPENAI_API_MODE_AUTO;
+        }
+        if (!hasText(openAiApiMode)) {
+            return OPENAI_API_MODE_AUTO;
+        }
+        String value = openAiApiMode.trim().toUpperCase();
+        if (!OPENAI_API_MODE_AUTO.equals(value)
+                && !OPENAI_API_MODE_RESPONSES.equals(value)
+                && !OPENAI_API_MODE_CHAT_COMPLETIONS.equals(value)
+                && !OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN.equals(value)) {
+            throw new IllegalArgumentException("OpenAI 调用模式仅支持 AUTO、RESPONSES、CHAT_COMPLETIONS、CHAT_COMPLETIONS_PLAIN");
+        }
+        return value;
+    }
+
     private void validateProviderForModelType(String provider, String modelType) {
         if (MODEL_TYPE_EMBEDDING.equals(modelType) && !PROVIDER_OPENAI.equals(provider)) {
             throw new IllegalArgumentException("Embedding 模型仅支持 OPENAI 兼容提供商");
@@ -601,6 +636,6 @@ public class ModelConfigService {
     /**
      * 下游统一使用该载荷读取模型连接信息，modelType 用于保护文本生成链路不误用 Embedding 模型。
      */
-    public record ResolvedModelConfig(Long id, String name, String modelType, String provider, String apiBaseUrl, String modelName, String apiKey) {
+    public record ResolvedModelConfig(Long id, String name, String modelType, String provider, String apiBaseUrl, String modelName, String openaiApiMode, String apiKey) {
     }
 }

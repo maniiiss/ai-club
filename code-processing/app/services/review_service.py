@@ -16,15 +16,17 @@ class ReviewProviderError(RuntimeError):
 
 def review_code(request: ReviewRequest) -> ReviewResponse:
     provider = request.provider.strip().upper()
+    openai_api_mode = _normalize_openai_api_mode(request.openaiApiMode)
     prompt = _build_prompt(request)
     logger.info(
-        "Starting code review: provider=%s, model=%s, api_base_url=%s, change_count=%s",
+        "Starting code review: provider=%s, model=%s, api_base_url=%s, openai_api_mode=%s, change_count=%s",
         provider,
         request.model,
         request.apiBaseUrl.rstrip("/"),
+        openai_api_mode,
         len(request.changes),
     )
-    raw_text = _call_provider(provider, request.apiBaseUrl.rstrip("/"), request.apiKey, request.model, prompt)
+    raw_text = _call_provider(provider, request.apiBaseUrl.rstrip("/"), request.apiKey, request.model, prompt, openai_api_mode)
     logger.info("Code review raw model response excerpt: %s", _abbreviate(raw_text, 1000))
     payload = _extract_json(raw_text)
 
@@ -105,13 +107,17 @@ def _trim_diff(diff: str, max_chars: int = 12000) -> str:
     return diff[:max_chars] + "\n...diff truncated..."
 
 
-def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, prompt: str) -> str:
+def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, prompt: str, openai_api_mode: str) -> str:
     with httpx.Client(timeout=60.0, http2=False) as client:
         if provider == "OPENAI":
             headers = {
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             }
+            if openai_api_mode == "CHAT_COMPLETIONS":
+                return _call_openai_chat_completions_with_fallback(client, api_base_url, headers, model, prompt, allow_plain_fallback=False)
+            if openai_api_mode == "CHAT_COMPLETIONS_PLAIN":
+                return _call_openai_chat_completions_plain(client, api_base_url, headers, model, prompt)
             response = client.post(
                 f"{api_base_url}/responses",
                 headers=headers,
@@ -127,18 +133,7 @@ def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, p
                 },
             )
             if response.status_code == 404 or _should_retry_with_chat_completions(api_base_url, response):
-                fallback_response = client.post(
-                    f"{api_base_url}/chat/completions",
-                    headers=headers,
-                    json={
-                        "model": model,
-                        "temperature": 0,
-                        "response_format": {"type": "json_object"},
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                )
-                _raise_for_provider_error("OPENAI chat/completions", fallback_response)
-                return _extract_openai_chat_text(fallback_response.json())
+                return _call_openai_chat_completions_with_fallback(client, api_base_url, headers, model, prompt, allow_plain_fallback=True)
 
             _raise_for_provider_error("OPENAI responses", response)
             return _extract_openai_text(response.json())
@@ -173,6 +168,73 @@ def _should_retry_with_chat_completions(api_base_url: str, response: httpx.Respo
         return True
     body = _abbreviate(response.text, 1000).lower()
     return "responses" in body and ("unsupported" in body or "not support" in body)
+
+
+def _call_openai_chat_completions_with_fallback(
+        client: httpx.Client,
+        api_base_url: str,
+        headers: dict[str, str],
+        model: str,
+        prompt: str,
+        allow_plain_fallback: bool,
+) -> str:
+    """兼容不支持 response_format 的 OpenAI 网关，必要时降级为纯提示词约束。"""
+    structured_payload = _build_openai_chat_payload(model, prompt, include_response_format=True)
+    fallback_response = client.post(
+        f"{api_base_url}/chat/completions",
+        headers=headers,
+        json=structured_payload,
+    )
+    if allow_plain_fallback and _should_retry_without_response_format(fallback_response):
+        return _call_openai_chat_completions_plain(client, api_base_url, headers, model, prompt)
+    _raise_for_provider_error("OPENAI chat/completions", fallback_response)
+    return _extract_openai_chat_text(fallback_response.json())
+
+
+def _call_openai_chat_completions_plain(
+        client: httpx.Client,
+        api_base_url: str,
+        headers: dict[str, str],
+        model: str,
+        prompt: str,
+) -> str:
+    """直接走不带 response_format 的 chat/completions，减少兼容网关的额外探测。"""
+    plain_payload = _build_openai_chat_payload(model, prompt, include_response_format=False)
+    response = client.post(
+        f"{api_base_url}/chat/completions",
+        headers=headers,
+        json=plain_payload,
+    )
+    _raise_for_provider_error("OPENAI chat/completions", response)
+    return _extract_openai_chat_text(response.json())
+
+
+def _build_openai_chat_payload(model: str, prompt: str, include_response_format: bool) -> dict[str, Any]:
+    """统一构造 chat/completions 请求体，便于按网关能力做最小差异降级。"""
+    payload: dict[str, Any] = {
+        "model": model,
+        "temperature": 0,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if include_response_format:
+        payload["response_format"] = {"type": "json_object"}
+    return payload
+
+
+def _should_retry_without_response_format(response: httpx.Response) -> bool:
+    """部分兼容模型不支持 response_format=json_object，此时回退到纯文本 JSON 输出。"""
+    if response.status_code != 400:
+        return False
+    detail = _format_provider_error_detail(response).lower()
+    return "response_format.type" in detail and "json_object" in detail and "not supported" in detail
+
+
+def _normalize_openai_api_mode(value: str | None) -> str:
+    """统一收口 OpenAI 兼容调用模式，非法值直接按 AUTO 处理。"""
+    if not value or not str(value).strip():
+        return "AUTO"
+    normalized = str(value).strip().upper()
+    return normalized if normalized in {"AUTO", "RESPONSES", "CHAT_COMPLETIONS", "CHAT_COMPLETIONS_PLAIN"} else "AUTO"
 
 
 def _raise_for_provider_error(provider_label: str, response: httpx.Response) -> None:

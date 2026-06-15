@@ -37,6 +37,7 @@ class ModelConfigServiceIntegrationTests {
                 ModelConfigService.PROVIDER_OPENAI,
                 "https://api.openai.com/v1",
                 "gpt-5.4",
+                ModelConfigService.OPENAI_API_MODE_AUTO,
                 "chat-key",
                 "默认对话模型",
                 true
@@ -47,6 +48,7 @@ class ModelConfigServiceIntegrationTests {
                 ModelConfigService.PROVIDER_OPENAI,
                 "https://api.openai.com/v1",
                 "text-embedding-3-large",
+                ModelConfigService.OPENAI_API_MODE_AUTO,
                 "embedding-key",
                 "默认向量模型",
                 true
@@ -65,6 +67,7 @@ class ModelConfigServiceIntegrationTests {
 
         assertThat(defaultOptions).extracting(AiModelConfigSummary::id).containsExactly(chatModel.id());
         assertThat(defaultOptions).extracting(AiModelConfigSummary::modelType).containsOnly(ModelConfigService.MODEL_TYPE_CHAT);
+        assertThat(defaultOptions).extracting(AiModelConfigSummary::openaiApiMode).containsOnly(ModelConfigService.OPENAI_API_MODE_AUTO);
         assertThat(embeddingOptions).extracting(AiModelConfigSummary::id).containsExactly(embeddingModel.id());
         assertThat(embeddingOptions).extracting(AiModelConfigSummary::modelType).containsOnly(ModelConfigService.MODEL_TYPE_EMBEDDING);
         assertThat(embeddingPage.records()).extracting(AiModelConfigSummary::id).containsExactly(embeddingModel.id());
@@ -94,6 +97,7 @@ class ModelConfigServiceIntegrationTests {
                     ModelConfigService.PROVIDER_OPENAI,
                     "http://127.0.0.1:" + server.getAddress().getPort(),
                     "text-embedding-3-small",
+                    ModelConfigService.OPENAI_API_MODE_AUTO,
                     "embedding-key",
                     "本地测试服务",
                     true
@@ -120,6 +124,7 @@ class ModelConfigServiceIntegrationTests {
                 ModelConfigService.PROVIDER_OPENAI,
                 "https://api.openai.com/v1",
                 "text-embedding-3-large",
+                ModelConfigService.OPENAI_API_MODE_AUTO,
                 "embedding-key",
                 "向量模型",
                 true

@@ -48,6 +48,7 @@ public class CodeReviewClientService {
                     .put("apiBaseUrl", defaultString(modelConfig.apiBaseUrl()))
                     .put("apiKey", defaultString(modelConfig.apiKey()))
                     .put("model", defaultString(modelConfig.modelName()))
+                    .put("openaiApiMode", defaultString(modelConfig.openaiApiMode()))
                     .put("prompt", defaultString(prompt))
                     .put("mergeRequestTitle", defaultString(mergeRequest.title()))
                     .put("mergeRequestDescription", defaultString(changes.description()));

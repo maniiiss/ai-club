@@ -91,6 +91,7 @@ class TaskRequirementAiServiceTests {
                 ModelConfigService.PROVIDER_OPENAI,
                 "https://api.openai.com/v1",
                 "gpt-5.4",
+                ModelConfigService.OPENAI_API_MODE_AUTO,
                 "chat-key"
         ));
         when(modelConfigService.invokePrompt(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt(), anyBoolean()))

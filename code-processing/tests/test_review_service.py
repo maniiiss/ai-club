@@ -105,6 +105,51 @@ class ReviewServiceTests(unittest.TestCase):
         second_url = client.post.call_args_list[1].args[0]
         self.assertTrue(first_url.endswith("/responses"))
         self.assertTrue(second_url.endswith("/chat/completions"))
+        second_payload = client.post.call_args_list[1].kwargs["json"]
+        self.assertEqual({"type": "json_object"}, second_payload["response_format"])
+
+    @patch("app.services.review_service.httpx.Client")
+    def test_should_retry_chat_completions_without_response_format_when_model_does_not_support_it(self, client_class):
+        client = client_class.return_value.__enter__.return_value
+
+        responses_call = self._build_httpx_response(
+            400,
+            "https://ark.cn-beijing.volces.com/api/coding/v3/responses",
+            {"message": "unsupported endpoint"},
+        )
+        structured_chat_call = self._build_httpx_response(
+            400,
+            "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
+            {"message": "The parameter `response_format.type` specified in the request are not valid: `json_object` is not supported by this model."},
+        )
+        plain_chat_call = self._build_httpx_response(
+            200,
+            "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"approved": false, "summary": "存在风险", "issues": ["缺少边界处理"], "reviewMarkdown": "# 代码审查\\n- 审查结论：建议暂不合并"}'
+                        }
+                    }
+                ]
+            },
+        )
+        client.post.side_effect = [responses_call, structured_chat_call, plain_chat_call]
+
+        request = self._build_request().model_copy(update={
+            "apiBaseUrl": "https://ark.cn-beijing.volces.com/api/coding/v3",
+            "model": "ark-code-latest",
+        })
+        result = review_code(request)
+
+        self.assertFalse(result.approved)
+        self.assertEqual("存在风险", result.summary)
+        self.assertEqual(3, client.post.call_count)
+        second_payload = client.post.call_args_list[1].kwargs["json"]
+        third_payload = client.post.call_args_list[2].kwargs["json"]
+        self.assertEqual({"type": "json_object"}, second_payload["response_format"])
+        self.assertNotIn("response_format", third_payload)
 
     def test_should_return_review_provider_error_detail_when_upstream_call_fails(self):
         self.assertEqual("OPENAI responses 调用失败，HTTP 400：模型不支持该接口", str(
