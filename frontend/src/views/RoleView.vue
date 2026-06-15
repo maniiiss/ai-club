@@ -219,7 +219,7 @@
       </div>
     </section>
 
-  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="760px" class="platform-form-dialog" align-center>
+  <el-dialog v-if="!isMobileViewport" v-model="dialogVisible" :title="dialogTitle" width="760px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="UserFilled" />
     </template>
@@ -289,6 +289,87 @@
       </div>
     </template>
   </el-dialog>
+
+  <!-- 移动端角色编辑抽屉。 -->
+  <MobileFormDrawer
+    v-else
+    v-model="dialogVisible"
+    :title="dialogTitle"
+    :subtitle="dialogSubtitle"
+    :submit-text="'保存'"
+    :submitting="submitting"
+    :header-icon="UserFilled"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleSubmit"
+    @cancel="dialogVisible = false"
+  >
+    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">角色信息</div>
+          <div class="platform-form-section-subtitle">配置角色编码、功能权限和启用状态。</div>
+        </div>
+        <el-form-item label="角色名称" prop="name">
+          <el-input v-model="form.name" placeholder="请输入角色名称" />
+        </el-form-item>
+        <el-form-item label="角色编码" prop="code">
+          <el-input v-model="form.code" :disabled="currentBuiltIn" placeholder="例如：DEV_MANAGER" />
+        </el-form-item>
+        <el-form-item label="权限配置">
+          <el-select v-model="form.permissionIds" multiple filterable collapse-tags placeholder="请选择权限" style="width: 100%">
+            <el-option
+              v-for="item in permissionOptions"
+              :key="item.id"
+              :label="`${item.name} (${item.code})`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="form.enabled" :disabled="currentBuiltIn" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="form.description" type="textarea" :rows="3" placeholder="请输入角色描述" />
+        </el-form-item>
+      </section>
+
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">数据权限</div>
+          <div class="platform-form-section-subtitle">
+            按角色固定枚举配置项目数据可见和删除范围；项目绑定的新功能统一跟随“项目可见”，其中“项目成员”包含负责人、创建人和项目成员。
+          </div>
+        </div>
+        <el-form-item label="项目可见" prop="projectVisibilityScope">
+          <el-select v-model="form.projectVisibilityScope" placeholder="请选择项目可见范围" style="width: 100%">
+            <el-option v-for="item in dataPermissionScopeOptions" :key="`project-visibility-${item.value}`" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="项目维护" prop="projectManageScope">
+          <el-select v-model="form.projectManageScope" placeholder="请选择项目维护范围" style="width: 100%">
+            <el-option v-for="item in dataPermissionScopeOptions" :key="`project-manage-${item.value}`" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="迭代删除" prop="iterationDeleteScope">
+          <el-select v-model="form.iterationDeleteScope" placeholder="请选择迭代删除范围" style="width: 100%">
+            <el-option v-for="item in dataPermissionScopeOptions" :key="`iteration-delete-${item.value}`" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="工作项删除" prop="taskDeleteScope">
+          <el-select v-model="form.taskDeleteScope" placeholder="请选择工作项删除范围" style="width: 100%">
+            <el-option v-for="item in dataPermissionScopeOptions" :key="`task-delete-${item.value}`" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+      </section>
+    </el-form>
+    <template #footer>
+      <div class="platform-dialog-footer mobile-form-drawer-footer">
+        <el-button class="mobile-form-drawer-footer-btn" @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!readonlyMode" class="mobile-form-drawer-footer-btn is-primary" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      </div>
+    </template>
+  </MobileFormDrawer>
   </div>
 </template>
 
@@ -298,6 +379,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Plus, RefreshRight, Search, UserFilled } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 import { createRole, deleteRole, listPermissionOptions, pageRoles, updateRole } from '@/api/access'
 import { useAuthStore } from '@/stores/auth'
 import type { DataPermissionScopeValue, PermissionItem, RoleItem } from '@/types/platform'

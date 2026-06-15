@@ -188,7 +188,7 @@
       </div>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="760px" class="platform-form-dialog" align-center>
+    <el-dialog v-if="!isMobileViewport" v-model="dialogVisible" :title="dialogTitle" width="760px" class="platform-form-dialog" align-center>
       <template #header>
         <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="Search" />
       </template>
@@ -242,6 +242,71 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 移动端规则集编辑抽屉，YAML 内容长，使用全屏高度。 -->
+    <MobileFormDrawer
+      v-else
+      v-model="dialogVisible"
+      :title="dialogTitle"
+      :subtitle="dialogSubtitle"
+      :submit-text="'保存'"
+      :submitting="submitting"
+      :header-icon="Search"
+      :close-on-click-modal="true"
+      size="100%"
+      @submit="handleSubmit"
+      @cancel="dialogVisible = false"
+    >
+      <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-position="top" class="platform-form-layout">
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">基础信息</div>
+            <div class="platform-form-section-subtitle">维护规则集编码、默认状态与规则正文。</div>
+          </div>
+          <el-form-item label="规则集编码" prop="code">
+            <el-input v-model="form.code" placeholder="例如：team-default" :disabled="readonlyMode || editingMode" />
+          </el-form-item>
+          <el-form-item label="规则集名称" prop="name">
+            <el-input v-model="form.name" placeholder="请输入规则集名称" />
+          </el-form-item>
+          <el-form-item label="描述" prop="description">
+            <el-input v-model="form.description" type="textarea" :rows="3" placeholder="请输入规则集说明" />
+          </el-form-item>
+          <el-form-item label="扫描引擎" prop="engineType">
+            <el-select v-model="form.engineType" style="width: 100%" :disabled="readonlyMode || editingMode">
+              <el-option label="SEMGREP" value="SEMGREP" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="启用">
+            <el-switch v-model="form.enabled" />
+          </el-form-item>
+          <el-form-item label="设为默认">
+            <el-switch v-model="form.defaultSelected" />
+            <div class="form-tip">系统同一时刻只允许一份默认规则集，保存后会自动替换其他默认项。</div>
+          </el-form-item>
+        </section>
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">规则内容</div>
+          </div>
+          <div v-if="!readonlyMode" class="ruleset-validate-bar">
+            <el-button :loading="validating" @click="handleValidateRuleset">校验规则</el-button>
+            <span v-if="validationMessage" class="ruleset-validate-message" :class="validationSuccess ? 'success' : 'error'">
+              {{ validationMessage }}
+            </span>
+          </div>
+          <el-form-item label="YAML 规则正文" prop="definitionContent">
+            <el-input v-model="form.definitionContent" type="textarea" :rows="16" placeholder="请输入 Semgrep YAML 规则内容" />
+          </el-form-item>
+        </section>
+      </el-form>
+      <template #footer>
+        <div class="platform-dialog-footer mobile-form-drawer-footer">
+          <el-button class="mobile-form-drawer-footer-btn" @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+          <el-button v-if="!readonlyMode" class="mobile-form-drawer-footer-btn is-primary" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        </div>
+      </template>
+    </MobileFormDrawer>
   </div>
 </template>
 
@@ -251,6 +316,7 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, EditPen, Filter, Plus, RefreshRight, Search, View } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 import {
   createRepositoryScanRuleset,
   getRepositoryScanRulesetDetail,

@@ -179,7 +179,7 @@
       </div>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="620px" class="platform-form-dialog" align-center>
+    <el-dialog v-if="!isMobileViewport" v-model="dialogVisible" :title="dialogTitle" width="620px" class="platform-form-dialog" align-center>
       <template #header>
         <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="Link" />
       </template>
@@ -225,6 +225,57 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 移动端快捷入口编辑抽屉。 -->
+    <MobileFormDrawer
+      v-else
+      v-model="dialogVisible"
+      :title="dialogTitle"
+      :subtitle="dialogSubtitle"
+      :submit-text="'保存'"
+      :submitting="submitting"
+      :header-icon="Link"
+      :close-on-click-modal="true"
+      size="88%"
+      @submit="handleSubmit"
+      @cancel="dialogVisible = false"
+    >
+      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="platform-form-layout">
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">入口信息</div>
+            <div class="platform-form-section-subtitle">配置名称、链接地址、图标和展示顺序，首页会按启用状态与排序展示。</div>
+          </div>
+          <el-form-item label="名称" prop="name">
+            <el-input v-model="form.name" maxlength="120" placeholder="例如：GitLab / Jenkins / 禅道" />
+          </el-form-item>
+          <el-form-item label="链接地址" prop="url">
+            <el-input v-model="form.url" maxlength="500" placeholder="请输入完整链接，例如 https://gitlab.example.com" />
+          </el-form-item>
+          <el-form-item label="上传图片">
+            <div class="shortcut-entry-upload-shell">
+              <div class="shortcut-entry-upload-preview">
+                <span class="management-list-title-icon shortcut-entry-icon preview">
+                  <img v-if="isImageIcon(form.icon)" :src="resolveAssetUrl(form.icon)" alt="快捷入口图标预览" class="shortcut-entry-icon-image" />
+                  <el-icon v-else><component :is="resolveShortcutIcon(form.icon)" /></el-icon>
+                </span>
+              </div>
+              <div class="shortcut-entry-upload-actions">
+                <input ref="iconInputRef" class="shortcut-entry-file-input" type="file" accept="image/png,image/jpeg,image/jpg,image/gif" @change="handleIconFileChange" />
+                <el-button :loading="iconUploading" @click="triggerIconUpload">上传图片</el-button>
+                <el-button :disabled="!isImageIcon(form.icon) || iconUploading" @click="handleResetIcon">恢复默认</el-button>
+              </div>
+            </div>
+          </el-form-item>
+          <el-form-item label="排序值" prop="sortOrder">
+            <el-input-number v-model="form.sortOrder" :min="0" :max="9999" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="启用">
+            <el-switch v-model="form.enabled" />
+          </el-form-item>
+        </section>
+      </el-form>
+    </MobileFormDrawer>
   </div>
 </template>
 
@@ -235,6 +286,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Delete, EditPen, Filter, Link, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 import {
   createDashboardShortcutEntry,
   deleteDashboardShortcutEntry,

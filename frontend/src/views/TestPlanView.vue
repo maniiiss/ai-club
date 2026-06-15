@@ -251,6 +251,7 @@
     </section>
 
   <el-dialog
+    v-if="!isMobileViewport"
     v-model="dialogVisible"
     :title="dialogTitle"
     width="760px"
@@ -332,6 +333,91 @@
       </div>
     </template>
   </el-dialog>
+
+  <!-- 移动端测试计划编辑抽屉。 -->
+  <MobileFormDrawer
+    v-else
+    v-model="dialogVisible"
+    :title="dialogTitle"
+    :subtitle="dialogSubtitle"
+    :submit-text="isEditing ? '保存计划' : '保存并进入'"
+    :submitting="submitting"
+    :header-icon="Finished"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleSubmit"
+    @cancel="dialogVisible = false"
+  >
+    <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">计划信息</div>
+          <div class="platform-form-section-subtitle">先创建测试计划，保存后再进入计划详情维护测试用例。</div>
+        </div>
+        <div class="plan-grid">
+          <el-form-item label="计划名称" prop="name" class="span-2">
+            <el-input v-model="form.name" :disabled="!canManageCurrent" placeholder="请输入测试计划名称" />
+          </el-form-item>
+          <el-form-item label="所属项目" prop="projectId">
+            <el-select
+              v-model="form.projectId"
+              :disabled="!canManageCurrent"
+              placeholder="请选择项目"
+              style="width: 100%"
+              @change="handleFormProjectChange"
+            >
+              <el-option v-for="item in projectOptions" :key="item.id" :label="item.name" :value="item.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="所属迭代" prop="iterationId">
+            <el-select
+              v-model="form.iterationId"
+              :disabled="!canManageCurrent || !form.projectId"
+              placeholder="请选择迭代"
+              style="width: 100%"
+              @change="handleFormIterationChange"
+            >
+              <el-option v-for="item in formIterationOptions" :key="item.id" :label="item.name" :value="item.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="计划时间" class="span-2">
+            <el-date-picker
+              v-model="planDateRange"
+              :disabled="!canManageCurrent"
+              type="daterange"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              value-format="YYYY-MM-DD"
+              style="width: 100%"
+            />
+          </el-form-item>
+          <el-form-item label="状态" prop="status">
+            <el-select v-model="form.status" :disabled="!canManageCurrent" style="width: 100%">
+              <el-option v-for="item in statusOptions" :key="item" :label="item" :value="item" />
+            </el-select>
+          </el-form-item>
+          <div />
+          <el-form-item label="说明" class="span-2">
+            <el-input
+              v-model="form.description"
+              :disabled="!canManageCurrent"
+              type="textarea"
+              :rows="4"
+              placeholder="用于描述测试范围、版本范围和执行目标"
+            />
+          </el-form-item>
+        </div>
+      </section>
+    </el-form>
+    <template #footer>
+      <div class="platform-dialog-footer mobile-form-drawer-footer">
+        <el-button class="mobile-form-drawer-footer-btn" @click="dialogVisible = false">{{ canManageCurrent ? '取消' : '关闭' }}</el-button>
+        <el-button v-if="canManageCurrent" class="mobile-form-drawer-footer-btn is-primary" type="primary" :loading="submitting" @click="handleSubmit">
+          {{ isEditing ? '保存计划' : '保存并进入' }}
+        </el-button>
+      </div>
+    </template>
+  </MobileFormDrawer>
   </div>
 </template>
 
@@ -343,6 +429,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Finished, Plus, RefreshRight, Right, Search } from '@element-plus/icons-vue'
 import CompactSelectMenu, { type CompactSelectOption } from '@/components/CompactSelectMenu.vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 import {
   createTestPlan,
   deleteTestPlan,

@@ -251,6 +251,7 @@
     </section>
 
     <el-dialog
+      v-if="!isMobileViewport"
       v-model="alertEditorDialogVisible"
       width="760px"
       class="platform-form-dialog alert-config-dialog"
@@ -286,6 +287,38 @@
       </div>
     </el-dialog>
 
+    <!-- 移动端告警覆盖设置抽屉。 -->
+    <MobileFormDrawer
+      v-else
+      v-model="alertEditorDialogVisible"
+      title="编辑告警覆盖设置"
+      subtitle="覆盖值留空时继续使用环境变量默认阈值。"
+      :submit-text="'保存告警配置'"
+      :submitting="alertSubmitting"
+      :header-icon="EditPen"
+      :close-on-click-modal="true"
+      size="88%"
+      @submit="handleSaveAlerts"
+      @cancel="alertEditorDialogVisible = false"
+    >
+      <div class="alert-edit-panel dialog-mode">
+        <div class="alert-edit-grid compact">
+          <el-select v-model="alertForm.connectivityAlertEnabledOverride" clearable placeholder="连通性继承默认值">
+            <el-option label="开启" :value="true" />
+            <el-option label="关闭" :value="false" />
+          </el-select>
+          <el-input-number v-model="alertForm.cpuThresholdPercentOverride" :min="1" :max="100" placeholder="CPU 阈值" style="width: 100%" />
+          <el-input-number v-model="alertForm.memoryThresholdPercentOverride" :min="1" :max="100" placeholder="内存阈值" style="width: 100%" />
+          <el-input-number v-model="alertForm.diskThresholdPercentOverride" :min="1" :max="100" placeholder="磁盘阈值" style="width: 100%" />
+          <el-input-number v-model="alertForm.consecutiveBreachesOverride" :min="1" :max="20" placeholder="连续越线次数" style="width: 100%" />
+          <el-input-number v-model="alertForm.cooldownMinutesOverride" :min="1" :max="1440" placeholder="冷却分钟数" style="width: 100%" />
+        </div>
+        <el-select v-model="alertForm.recipientUserIds" multiple filterable collapse-tags collapse-tags-tooltip placeholder="选择通知人" style="width: 100%; margin-top: 12px">
+          <el-option v-for="user in userOptions" :key="user.id" :label="user.nickname || user.username" :value="user.id" />
+        </el-select>
+      </div>
+    </MobileFormDrawer>
+
     <el-result v-if="!detail && !loading" icon="warning" title="服务器不存在" sub-title="请返回列表重新选择服务器。">
       <template #extra>
         <el-button type="primary" @click="goBack">返回列表</el-button>
@@ -309,6 +342,8 @@ import { AUTH_TOKEN_KEY } from '@/constants/auth'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import ServerSftpPanel from '@/components/ServerSftpPanel.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
+import { useMobileViewport } from '@/utils/mobileViewport'
 import type { ServerDetailItem, ServerMetricSampleItem, UserOptionItem } from '@/types/platform'
 
 interface AlertFormState {
@@ -323,6 +358,8 @@ interface AlertFormState {
 
 const route = useRoute()
 const router = useRouter()
+// 移动端断点 900，告警编辑弹窗在移动端切换为底部抽屉。
+const { isMobileViewport } = useMobileViewport()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('server:manage'))

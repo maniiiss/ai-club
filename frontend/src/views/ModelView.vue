@@ -263,7 +263,7 @@
       </div>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="620px" class="platform-form-dialog" align-center>
+    <el-dialog v-if="!isMobileViewport" v-model="dialogVisible" :title="dialogTitle" width="620px" class="platform-form-dialog" align-center>
       <template #header>
         <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="Cpu" />
       </template>
@@ -320,6 +320,74 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 移动端 AI 模型配置编辑抽屉。 -->
+    <MobileFormDrawer
+      v-else
+      v-model="dialogVisible"
+      :title="dialogTitle"
+      :subtitle="dialogSubtitle"
+      :submit-text="'保存'"
+      :submitting="submitting"
+      :header-icon="Cpu"
+      :close-on-click-modal="true"
+      size="88%"
+      @submit="handleSubmit"
+      @cancel="dialogVisible = false"
+    >
+      <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-position="top" class="platform-form-layout">
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">模型信息</div>
+            <div class="platform-form-section-subtitle">配置模型类型、提供商、访问地址与启用状态。</div>
+          </div>
+          <el-form-item label="名称" prop="name">
+            <el-input v-model="form.name" placeholder="例如：代码审查模型 / 知识检索 Embedding" />
+          </el-form-item>
+          <el-form-item label="模型类型" prop="modelType">
+            <el-select v-model="form.modelType" style="width: 100%">
+              <el-option v-for="item in modelTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="提供商" prop="provider">
+            <el-select v-model="form.provider" style="width: 100%">
+              <el-option v-for="item in availableProviderOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="API 地址" prop="apiBaseUrl">
+            <el-input v-model="form.apiBaseUrl" />
+          </el-form-item>
+          <el-form-item label="模型名" prop="modelName">
+            <el-input v-model="form.modelName" :placeholder="modelNamePlaceholder" />
+          </el-form-item>
+          <el-form-item v-if="form.provider === 'OPENAI' && form.modelType === 'CHAT'" label="调用模式" prop="openaiApiMode">
+            <el-select v-model="form.openaiApiMode" style="width: 100%">
+              <el-option v-for="item in openAiApiModeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="API 密钥" prop="apiKey">
+            <el-input
+              v-model="form.apiKey"
+              type="password"
+              show-password
+              :placeholder="isEditing ? '留空则保留原密钥' : '请输入 API 密钥'"
+            />
+          </el-form-item>
+          <el-form-item label="描述">
+            <el-input v-model="form.description" type="textarea" :rows="3" />
+          </el-form-item>
+          <el-form-item label="启用">
+            <el-switch v-model="form.enabled" />
+          </el-form-item>
+        </section>
+      </el-form>
+      <template #footer>
+        <div class="platform-dialog-footer mobile-form-drawer-footer">
+          <el-button class="mobile-form-drawer-footer-btn" @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+          <el-button v-if="!readonlyMode" class="mobile-form-drawer-footer-btn is-primary" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        </div>
+      </template>
+    </MobileFormDrawer>
   </div>
 </template>
 
@@ -329,6 +397,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Cpu, Delete, EditPen, Filter, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 import { createModelConfig, deleteModelConfig, pageModelConfigs, testModelConfig, updateModelConfig } from '@/api/models'
 import type { AiModelConfigItem, AiModelType, OpenAiApiMode } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'

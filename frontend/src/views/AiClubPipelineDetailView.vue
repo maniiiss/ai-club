@@ -356,7 +356,7 @@
       :pipeline="aiPipelineDetail"
       @completed="handleConfigCompleted"
     />
-    <el-dialog v-model="cronDialogVisible" :title="cronDialogTitle" width="560px" class="platform-form-dialog" align-center>
+    <el-dialog v-if="!isMobileViewport" v-model="cronDialogVisible" :title="cronDialogTitle" width="560px" class="platform-form-dialog" align-center>
       <el-form label-position="top" class="platform-form-layout pipeline-automation-form">
         <section class="platform-form-section">
           <div class="platform-form-section-head">
@@ -384,6 +384,41 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 移动端 Cron 配置抽屉。 -->
+    <MobileFormDrawer
+      v-else
+      v-model="cronDialogVisible"
+      :title="cronDialogTitle"
+      :submit-text="'保存'"
+      :submitting="cronSaving"
+      :header-icon="Connection"
+      :close-on-click-modal="true"
+      size="88%"
+      @submit="saveCron"
+      @cancel="cronDialogVisible = false"
+    >
+      <el-form label-position="top" class="platform-form-layout pipeline-automation-form">
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">Cron 配置</div>
+            <div class="platform-form-section-subtitle">使用带秒的 Cron 表达式，并按需指定分支。</div>
+          </div>
+          <el-form-item label="名称">
+            <el-input v-model="cronForm.name" placeholder="例如：工作日夜间构建" />
+          </el-form-item>
+          <el-form-item label="分支">
+            <el-input v-model="cronForm.branch" placeholder="留空则回退流水线默认分支" />
+          </el-form-item>
+          <el-form-item label="Cron 表达式">
+            <el-input v-model="cronForm.cronExpression" placeholder="例如：0 0 2 * * 1-5" />
+          </el-form-item>
+          <el-form-item label="启用">
+            <el-switch v-model="cronForm.enabled" />
+          </el-form-item>
+        </section>
+      </el-form>
+    </MobileFormDrawer>
   </div>
 </template>
 
@@ -394,6 +429,8 @@ import { ArrowLeft, Connection, Delete, EditPen, Plus, VideoPlay } from '@elemen
 import { useRoute, useRouter } from 'vue-router'
 import AiClubPipelineConfigCompletionDialog from '@/components/AiClubPipelineConfigCompletionDialog.vue'
 import AiClubPipelineFormDialog from '@/components/AiClubPipelineFormDialog.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
+import { useMobileViewport } from '@/utils/mobileViewport'
 import {
   deleteAiClubPipeline,
   deleteAiClubPipelineCronJob,
@@ -483,6 +520,8 @@ interface CallbackWebhookFormState {
 
 const route = useRoute()
 const router = useRouter()
+// 移动端视口断点 900，统一使用全局 composable，弹窗在移动端切换为底部抽屉。
+const { isMobileViewport } = useMobileViewport()
 const authStore = useAuthStore()
 
 const canManage = computed(() => authStore.hasPermission('cicd:manage'))

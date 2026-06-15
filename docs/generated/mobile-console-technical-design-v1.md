@@ -141,6 +141,44 @@
 - 为移动端哨兵节点提供统一样式
 - 为 `management-list / atelier / work-list` 三类工具栏提供“新增按钮并回同排”的全局移动端规则
 
+### 移动端表单抽屉
+
+通用能力文件：
+
+- `frontend/src/components/MobileFormDrawer.vue`
+- 配套断点 composable：`frontend/src/utils/mobileViewport.ts`（断点 900）
+
+设计要求：
+
+- 桌面端（>900px）继续沿用各自的 `el-dialog` 形态，保持既有视觉与交互不变。
+- 移动端（≤900px）将“新增/编辑”类业务弹窗切换为底部抽屉，从下往上弹出。
+- 抽屉关键参数：`direction="btt"`、默认 `size="88%"`（最高 100%，可按内容收缩）、`:show-close="false"` 自绘头部、点击遮罩默认不关闭。
+- 视觉规范：
+  - 顶部圆角 `24px 24px 0 0`，与 `mobile-more-drawer` / 消息中心抽屉保持一致。
+  - 顶部居中渲染 `36×4` 圆角拖拽指示条，提示可下滑收起。
+  - 头部支持图标 + 标题 + 副标题三段式，右上角附“收起”自绘按钮。
+  - 底部 footer 为「取消 + 主操作」全宽双按钮，使用 `safe-area-inset-bottom` 适配刘海屏。
+- 业务集成约定：
+  - 表单主体抽成独立子组件（如 `ProjectEditorFormBody.vue`），桌面端 `el-dialog` 与移动端 `MobileFormDrawer` 共用同一份模板，避免双份漂移。
+  - 子组件通过 `defineExpose({ validate, clearValidate, ... })` 透出表单实例方法，父组件继续以 `formRef.value?.validate()` 调用，无需感知形态差异。
+  - 业务逻辑（提交、校验、重置）保持单一来源，仅外壳形态因视口切换。
+  - 多 dialog 页面允许采用「v-if 桌面 dialog + v-else MobileFormDrawer」复制粘贴方案，无需为每个 dialog 单独抽子组件；改造时承诺"原模板分支保持不变 + 抽屉分支整段复制粘贴"以避免漂移。
+  - 桌面端使用 `PlatformDialogHeader` 的页面接入 `MobileFormDrawer` 时，只需透传 `title / subtitle / header-icon` 三个 prop，即可复刻三段式头部视觉，不需要再写 header slot。
+  - 全局约定 `:close-on-click-modal="true"`，点击遮罩可关闭抽屉（与移动端「下滑/点击空白处」预期一致）。
+  - 抽屉高度策略：
+    - 简单/中型表单（≤820px 桌面宽度）：`size="88%"`，按内容收缩。
+    - 含 MarkdownEditor / 大表单 / 数组项 / 长 YAML 等：`size="100%"` 全屏。
+
+参考实现（已接入 `MobileFormDrawer` 的页面与组件）：
+
+- 项目管理：`frontend/src/views/ProjectView.vue`（新建/编辑项目 / 维护 Gitee 绑定）
+- 用户/角色/权限：`UserView.vue`、`RoleView.vue`、`PermissionView.vue`
+- AI 模型与智能体：`ModelView.vue`、`AgentView.vue`（编辑 + 测试两个抽屉）
+- 自动化与 Wiki：`TestPlanView.vue`、`WikiHomeView.vue`、`WikiSpaceView.vue`（4 个抽屉，含 MarkdownEditor 全屏）
+- 工程基础设施：`GitlabView.vue`（7 个编辑型抽屉）、`JenkinsServerView.vue`、`AiClubPipelineDetailView.vue`、`ServerManagementView.vue`、`ServerDetailView.vue`、`SelfUpgradeCenterView.vue`、`RepositoryScanRulesetView.vue`、`ShortcutEntryManagementView.vue`
+- 公共组件：`AiClubPipelineFormDialog.vue`（被 `PipelineBindingView.vue` 复用，组件内部双外壳）
+
+
 ## 参考实现
 
 ### 首页看板

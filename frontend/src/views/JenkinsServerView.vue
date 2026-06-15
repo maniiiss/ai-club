@@ -246,7 +246,7 @@
       </div>
     </section>
 
-    <el-dialog v-model="serverDialogVisible" :title="serverDialogTitle" width="640px" class="platform-form-dialog" align-center>
+    <el-dialog v-if="!isMobileViewport" v-model="serverDialogVisible" :title="serverDialogTitle" width="640px" class="platform-form-dialog" align-center>
       <template #header>
         <PlatformDialogHeader :title="serverDialogTitle" :subtitle="serverDialogSubtitle" :icon="Connection" />
       </template>
@@ -289,6 +289,59 @@
       </template>
     </el-dialog>
 
+    <!-- 移动端 Jenkins 服务编辑抽屉。 -->
+    <MobileFormDrawer
+      v-else
+      v-model="serverDialogVisible"
+      :title="serverDialogTitle"
+      :subtitle="serverDialogSubtitle"
+      :submit-text="'保存'"
+      :submitting="serverSubmitting"
+      :header-icon="Connection"
+      :close-on-click-modal="true"
+      size="88%"
+      @submit="handleServerSubmit"
+      @cancel="serverDialogVisible = false"
+    >
+      <el-form ref="serverFormRef" :model="serverForm" :rules="serverRules" :disabled="serverReadonlyMode" label-position="top" class="platform-form-layout">
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">Jenkins 服务</div>
+            <div class="platform-form-section-subtitle">配置 Jenkins 地址、认证信息和启用状态。</div>
+          </div>
+          <el-form-item label="名称" prop="name">
+            <el-input v-model="serverForm.name" placeholder="例如：测试环境 Jenkins" />
+          </el-form-item>
+          <el-form-item label="Jenkins 地址" prop="baseUrl">
+            <el-input v-model="serverForm.baseUrl" placeholder="例如：http://jenkins.example.com" />
+          </el-form-item>
+          <el-form-item label="用户名" prop="username">
+            <el-input v-model="serverForm.username" placeholder="请输入 Jenkins 用户名" />
+          </el-form-item>
+          <el-form-item label="API 令牌">
+            <el-input
+              v-model="serverForm.apiToken"
+              type="password"
+              show-password
+              :placeholder="serverIsEditing ? '留空则保留原令牌' : '请输入 API 令牌'"
+            />
+          </el-form-item>
+          <el-form-item label="描述">
+            <el-input v-model="serverForm.description" type="textarea" :rows="3" placeholder="可填写用途、环境说明等" />
+          </el-form-item>
+          <el-form-item label="启用">
+            <el-switch v-model="serverForm.enabled" />
+          </el-form-item>
+        </section>
+      </el-form>
+      <template #footer>
+        <div class="platform-dialog-footer mobile-form-drawer-footer">
+          <el-button class="mobile-form-drawer-footer-btn" @click="serverDialogVisible = false">{{ serverReadonlyMode ? '关闭' : '取消' }}</el-button>
+          <el-button v-if="!serverReadonlyMode" class="mobile-form-drawer-footer-btn is-primary" type="primary" :loading="serverSubmitting" @click="handleServerSubmit">保存</el-button>
+        </div>
+      </template>
+    </MobileFormDrawer>
+
     <el-drawer v-model="jobDrawerVisible" :title="jobDrawerTitle" size="60%">
       <el-table v-loading="jobLoading" :data="jobList" style="width: 100%">
         <el-table-column label="名称" min-width="180">
@@ -325,6 +378,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Delete, EditPen, Filter, Plus, Promotion, RefreshRight, Search, Tickets } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 import {
   createJenkinsServer,
   deleteJenkinsServer,

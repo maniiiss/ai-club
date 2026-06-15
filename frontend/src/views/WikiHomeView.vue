@@ -113,7 +113,7 @@
       <el-empty v-if="!loading && !spaces.length" description="当前没有可访问的 Wiki 空间" />
     </section>
 
-    <el-dialog v-model="spaceDialogVisible" :title="editingSpace ? '编辑 Wiki 空间' : '创建 Wiki 空间'" width="720px" destroy-on-close>
+    <el-dialog v-if="!isMobileViewport" v-model="spaceDialogVisible" :title="editingSpace ? '编辑 Wiki 空间' : '创建 Wiki 空间'" width="720px" destroy-on-close>
       <el-form ref="spaceFormRef" :model="spaceForm" :rules="spaceRules" label-position="top">
         <el-form-item label="空间名称" prop="name">
           <el-input v-model="spaceForm.name" maxlength="120" show-word-limit />
@@ -145,6 +145,47 @@
         <el-button type="primary" :loading="submitting" @click="handleSubmitSpace">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 移动端 Wiki 空间编辑抽屉。 -->
+    <MobileFormDrawer
+      v-else
+      v-model="spaceDialogVisible"
+      :title="editingSpace ? '编辑 Wiki 空间' : '创建 Wiki 空间'"
+      :submit-text="'保存'"
+      :submitting="submitting"
+      :header-icon="Edit"
+      :close-on-click-modal="true"
+      size="88%"
+      @submit="handleSubmitSpace"
+      @cancel="spaceDialogVisible = false"
+    >
+      <el-form ref="spaceFormRef" :model="spaceForm" :rules="spaceRules" label-position="top">
+        <el-form-item label="空间名称" prop="name">
+          <el-input v-model="spaceForm.name" maxlength="120" show-word-limit />
+        </el-form-item>
+        <el-form-item label="空间说明">
+          <el-input v-model="spaceForm.description" type="textarea" :rows="4" maxlength="500" show-word-limit />
+        </el-form-item>
+        <el-form-item label="绑定项目">
+          <el-select v-model="spaceForm.boundProjectId" clearable filterable placeholder="不绑定项目" style="width: 100%">
+            <el-option v-for="item in projectOptions" :key="item.id" :label="item.name" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="读取范围">
+          <el-select v-model="spaceForm.readScope" style="width: 100%">
+            <el-option label="仅成员可读" value="MEMBERS_ONLY" />
+            <el-option label="所有登录用户可读" value="ALL_LOGGED_IN" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="成员默认配置">
+          <el-radio-group v-model="spaceForm.memberDefaultSource">
+            <el-radio value="MANUAL">手动配置成员</el-radio>
+            <el-radio value="PROJECT_MEMBERS" :disabled="!spaceForm.boundProjectId">使用项目成员作为默认成员</el-radio>
+          </el-radio-group>
+          <div class="wiki-space-form-hint">开启后会自动带入项目负责人、项目创建人和项目成员，当前操作者会保留管理员权限。</div>
+        </el-form-item>
+      </el-form>
+    </MobileFormDrawer>
   </div>
 </template>
 
@@ -165,6 +206,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import type { ProjectItem, WikiSpaceItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 
 interface WikiSpaceForm {
   name: string

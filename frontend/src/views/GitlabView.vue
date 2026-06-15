@@ -999,7 +999,7 @@
 </div>
 </div>
 
-  <el-dialog v-model="bindingDialogVisible" :title="bindingDialogTitle" width="760px" class="platform-form-dialog" align-center>
+  <el-dialog v-if="!isMobileViewport" v-model="bindingDialogVisible" :title="bindingDialogTitle" width="760px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="bindingDialogTitle" :subtitle="bindingDialogSubtitle" :icon="FolderOpened" />
     </template>
@@ -1122,7 +1122,134 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="tagDialogVisible" title="创建 GitLab Tag" width="680px" class="platform-form-dialog" align-center>
+  <!-- 移动端 GitLab 绑定抽屉，表单较长使用全屏高度。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && bindingDialogVisible"
+    v-model="bindingDialogVisible"
+    :title="bindingDialogTitle"
+    :subtitle="bindingDialogSubtitle"
+    :submit-text="'保存'"
+    :submitting="bindingSubmitting"
+    :header-icon="FolderOpened"
+    :close-on-click-modal="true"
+    size="100%"
+    @submit="handleBindingSubmit"
+    @cancel="bindingDialogVisible = false"
+  >
+    <el-form ref="bindingFormRef" :model="bindingForm" :rules="bindingRules" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">GitLab 绑定</div>
+          <div class="platform-form-section-subtitle">配置平台项目与 GitLab 项目的映射关系。</div>
+        </div>
+        <el-form-item label="平台项目" prop="projectId">
+          <el-select v-model="bindingForm.projectId" placeholder="请选择平台项目" style="width: 100%">
+            <el-option v-for="project in projectOptions" :key="project.id" :label="project.name" :value="project.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="GitLab API" prop="apiBaseUrl"><el-input v-model="bindingForm.apiBaseUrl" /></el-form-item>
+        <el-form-item label="项目 ID / 路径" prop="gitlabProjectRef"><el-input v-model="bindingForm.gitlabProjectRef" /></el-form-item>
+        <el-form-item label="默认目标分支"><el-input v-model="bindingForm.defaultTargetBranch" /></el-form-item>
+        <el-form-item label="产品主线分支"><el-input v-model="bindingForm.productMainBranch" placeholder="例如：main" /></el-form-item>
+        <el-form-item label="APIToken"><el-input v-model="bindingForm.apiToken" type="password" show-password :placeholder="bindingIsEditing ? '留空则保留原 Token' : '请输入 APIToken'" /></el-form-item>
+        <el-form-item label="启用"><el-switch v-model="bindingForm.enabled" /></el-form-item>
+      </section>
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">测试模板</div>
+          <div class="platform-form-section-subtitle">为开发执行的 TEST 步骤声明浏览器烟测或服务烟测规则；留空则仅执行命令型 Harness。</div>
+        </div>
+        <el-form-item label="仓库类型">
+          <el-select v-model="bindingForm.repoKind" clearable placeholder="不配置则仅执行 COMMAND suite" style="width: 100%">
+            <el-option label="前端仓库" value="FRONTEND" />
+            <el-option label="后端仓库" value="BACKEND" />
+            <el-option label="混合仓库" value="MIXED" />
+          </el-select>
+          <div class="form-tip">只在需要 sidecar 烟测时填写，系统会按仓库类型补充 Playwright 或服务健康检查。</div>
+        </el-form-item>
+        <el-form-item label="测试工作目录">
+          <el-input v-model="bindingForm.workingDir" placeholder="例如 frontend 或 backend；留空表示仓库根目录" />
+        </el-form-item>
+        <el-form-item label="启动命令">
+          <el-input
+            v-model="bindingForm.startCommand"
+            placeholder="例如 npm run dev、pnpm preview、mvn spring-boot:run"
+          />
+          <div class="form-tip">前端与后端 sidecar 共用这条启动命令；命令型 Harness 仍沿用现有平台推荐逻辑。</div>
+        </el-form-item>
+        <el-row v-if="showFrontendTestProfile || showBackendTestProfile" :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="基础访问地址">
+              <el-input v-model="bindingForm.baseUrl" placeholder="留空时由运行时自动分配本地端口并拼装地址" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="包管理器">
+              <el-select v-model="bindingForm.packageManager" clearable placeholder="可选，默认按锁文件推断" style="width: 100%">
+                <el-option label="npm" value="npm" />
+                <el-option label="pnpm" value="pnpm" />
+                <el-option label="yarn" value="yarn" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <template v-if="showFrontendTestProfile">
+          <el-form-item label="烟测页面路径">
+            <el-input
+              v-model="bindingForm.smokePathsText"
+              type="textarea"
+              :rows="4"
+              placeholder="每行一个路径，例如：&#10;/&#10;/login&#10;/dashboard"
+            />
+            <div class="form-tip">留空时默认访问 `/`。建议只放少量关键页面，避免 TEST 步骤耗时过长。</div>
+          </el-form-item>
+          <el-form-item label="页面就绪选择器">
+            <el-input v-model="bindingForm.readySelector" placeholder="例如 #app、[data-testid=&quot;dashboard-ready&quot;]" />
+          </el-form-item>
+        </template>
+
+        <template v-if="showBackendTestProfile">
+          <el-form-item label="健康检查路径">
+            <el-input v-model="bindingForm.healthPath" placeholder="例如 /actuator/health 或 /health" />
+          </el-form-item>
+          <div class="platform-form-inline-head">
+            <div>
+              <div class="platform-form-inline-title">HTTP Smoke 列表</div>
+              <div class="platform-form-inline-subtitle">逐条声明需要校验的方法、路径与期望状态码。</div>
+            </div>
+            <el-button type="primary" link @click="addBindingHttpCheck">新增检查</el-button>
+          </div>
+          <div v-if="bindingForm.httpChecks.length" class="binding-http-check-list">
+            <div v-for="(item, index) in bindingForm.httpChecks" :key="`http-check-${index}`" class="binding-http-check-row">
+              <el-input v-model="item.name" placeholder="检查名称" />
+              <el-select v-model="item.method" placeholder="方法">
+                <el-option label="GET" value="GET" />
+                <el-option label="POST" value="POST" />
+                <el-option label="PUT" value="PUT" />
+                <el-option label="DELETE" value="DELETE" />
+              </el-select>
+              <el-input v-model="item.path" placeholder="路径，例如 /api/ping" />
+              <div class="binding-http-check-actions">
+                <el-input-number
+                  v-model="item.expectedStatus"
+                  class="binding-http-check-status"
+                  :min="100"
+                  :max="599"
+                  :step="1"
+                  controls-position="right"
+                />
+                <el-button class="binding-http-check-remove" text type="danger" @click="removeBindingHttpCheck(index)">删除</el-button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="form-tip">还没有配置 HTTP 检查。仅填写健康检查路径也可以跑最小服务烟测。</div>
+        </template>
+      </section>
+    </el-form>
+  </MobileFormDrawer>
+
+  <el-dialog v-if="!isMobileViewport" v-model="tagDialogVisible" title="创建 GitLab Tag" width="680px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader title="创建 GitLab Tag" :subtitle="tagDialogSubtitle" :icon="DocumentCopy" />
     </template>
@@ -1171,6 +1298,59 @@
     </template>
   </el-dialog>
 
+  <!-- 移动端创建 Tag 抽屉。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && tagDialogVisible"
+    v-model="tagDialogVisible"
+    title="创建 GitLab Tag"
+    :subtitle="tagDialogSubtitle"
+    :submit-text="'创建'"
+    :submitting="tagSubmitting"
+    :header-icon="DocumentCopy"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleTagSubmit"
+    @cancel="tagDialogVisible = false"
+  >
+    <el-form ref="tagFormRef" :model="tagForm" :rules="tagRules" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">Tag 信息</div>
+          <div class="platform-form-section-subtitle">基于当前绑定仓库选择分支并创建新的 GitLab Tag。</div>
+        </div>
+        <el-form-item label="当前仓库">
+          <el-input :model-value="currentTagBinding ? `${currentTagBinding.projectName} / ${currentTagBinding.gitlabProjectPath || currentTagBinding.gitlabProjectRef}` : ''" disabled />
+          <div class="form-tip">默认目标分支：{{ currentTagBinding?.defaultTargetBranch || '未配置' }}</div>
+        </el-form-item>
+        <el-form-item label="Tag 名称" prop="tagName">
+          <el-input v-model="tagForm.tagName" placeholder="例如：v1.2.0" />
+        </el-form-item>
+        <el-form-item label="来源分支" prop="branchName">
+          <el-select
+            v-model="tagForm.branchName"
+            filterable
+            remote
+            reserve-keyword
+            placeholder="请输入关键字搜索分支"
+            style="width: 100%"
+            :remote-method="handleTagBranchSearch"
+            :loading="tagBranchLoading"
+          >
+            <el-option
+              v-for="branch in tagBranchOptions"
+              :key="branch.name"
+              :label="branch.defaultBranch ? `${branch.name}（默认）` : branch.name"
+              :value="branch.name"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注说明">
+          <el-input v-model="tagForm.message" type="textarea" :rows="3" placeholder="留空将创建轻量 Tag" />
+        </el-form-item>
+      </section>
+    </el-form>
+  </MobileFormDrawer>
+
   <el-dialog v-model="tagResultVisible" title="Tag 创建结果" width="720px">
     <el-descriptions v-if="tagResult" :column="2" border>
       <el-descriptions-item label="平台项目">{{ tagResult.projectName }}</el-descriptions-item>
@@ -1189,7 +1369,7 @@
     </el-descriptions>
   </el-dialog>
 
-  <el-dialog v-model="scanDialogVisible" title="发起仓库规范扫描" width="680px" class="platform-form-dialog" align-center>
+  <el-dialog v-if="!isMobileViewport" v-model="scanDialogVisible" title="发起仓库规范扫描" width="680px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader title="发起仓库规范扫描" :subtitle="scanDialogSubtitle" :icon="Search" />
     </template>
@@ -1270,7 +1450,92 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="apiSyncDialogVisible" title="同步 API" width="680px" class="platform-form-dialog" align-center>
+  <!-- 移动端规范扫描抽屉。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && scanDialogVisible"
+    v-model="scanDialogVisible"
+    title="发起仓库规范扫描"
+    :subtitle="scanDialogSubtitle"
+    :submit-text="'创建扫描任务'"
+    :submitting="scanSubmitting"
+    :header-icon="Search"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleScanSubmit"
+    @cancel="scanDialogVisible = false"
+  >
+    <el-form ref="scanFormRef" :model="scanForm" :rules="scanRules" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">扫描配置</div>
+          <div class="platform-form-section-subtitle">任务创建后会进入执行中心异步运行，并生成 Markdown、HTML、JSON、SARIF 报告。</div>
+        </div>
+        <el-form-item label="当前仓库">
+          <el-input :model-value="currentScanBinding ? `${currentScanBinding.projectName} / ${currentScanBinding.gitlabProjectPath || currentScanBinding.gitlabProjectRef}` : ''" disabled />
+        </el-form-item>
+        <el-form-item label="扫描分支" prop="branch">
+          <el-select
+            v-model="scanForm.branch"
+            filterable
+            remote
+            reserve-keyword
+            placeholder="请输入关键字搜索分支"
+            style="width: 100%"
+            :remote-method="handleScanBranchSearch"
+            :loading="scanBranchLoading"
+          >
+            <el-option
+              v-for="branch in scanBranchOptions"
+              :key="branch.name"
+              :label="branch.defaultBranch ? `${branch.name}（默认）` : branch.name"
+              :value="branch.name"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="规则集" prop="rulesetCode">
+          <el-select v-model="scanForm.rulesetCode" placeholder="请选择规则集" style="width: 100%">
+            <el-option
+              v-for="ruleset in scanRulesetOptions"
+              :key="ruleset.code"
+              :label="ruleset.defaultSelected ? `${ruleset.name}（默认）` : ruleset.name"
+              :value="ruleset.code"
+            />
+          </el-select>
+          <div class="form-tip">
+            {{
+              (() => {
+                const selected = scanRulesetOptions.find((item) => item.code === scanForm.rulesetCode)
+                if (!selected) return '请选择一个规则集用于扫描。'
+                return `${selected.description || '暂无描述'}${selected.engineType ? ` · 引擎 ${selected.engineType}` : ''}${selected.defaultSelected ? ' · 当前系统默认' : ''}`
+              })()
+            }}
+          </div>
+        </el-form-item>
+        <el-form-item label="计划智能体">
+          <el-select v-model="scanForm.planAgentId" clearable placeholder="留空仅生成规则版计划与占位 executable plan" style="width: 100%">
+            <el-option
+              v-for="agent in scanPlanAgentOptions"
+              :key="agent.id"
+              :label="agent.name"
+              :value="agent.id"
+            />
+          </el-select>
+          <div class="form-tip">
+            {{
+              (() => {
+                if (!scanPlanAgentOptions.length) return '当前没有可用的仓库扫描计划智能体，扫描完成后只会生成规则版计划。'
+                const selected = scanPlanAgentOptions.find((item) => item.id === scanForm.planAgentId)
+                if (!selected) return '留空表示仅生成规则版计划与占位 executable plan。'
+                return `${selected.description || '使用该智能体对规则计划和扫描报告做进一步分析'} · 仅支持内置仓库扫描计划智能体`
+              })()
+            }}
+          </div>
+        </el-form-item>
+      </section>
+    </el-form>
+  </MobileFormDrawer>
+
+  <el-dialog v-if="!isMobileViewport" v-model="apiSyncDialogVisible" title="同步 API" width="680px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader title="同步 API" :subtitle="apiSyncDialogSubtitle" :icon="Connection" />
     </template>
@@ -1313,6 +1578,53 @@
     </template>
   </el-dialog>
 
+  <!-- 移动端 API 同步抽屉。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && apiSyncDialogVisible"
+    v-model="apiSyncDialogVisible"
+    title="同步 API"
+    :subtitle="apiSyncDialogSubtitle"
+    :submit-text="'同步 API'"
+    :submitting="apiSyncSubmitting"
+    :header-icon="Connection"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleApiSyncSubmit"
+    @cancel="apiSyncDialogVisible = false"
+  >
+    <el-form label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">同步配置</div>
+          <div class="platform-form-section-subtitle">系统会读取后端或混合仓库中的 Spring 接口，并写入当前项目的 API 工作台。</div>
+        </div>
+        <el-form-item label="当前仓库">
+          <el-input :model-value="currentApiSyncBinding ? `${currentApiSyncBinding.projectName} / ${currentApiSyncBinding.gitlabProjectPath || currentApiSyncBinding.gitlabProjectRef}` : ''" disabled />
+        </el-form-item>
+        <el-form-item label="同步分支">
+          <el-select
+            v-model="apiSyncForm.branch"
+            filterable
+            remote
+            reserve-keyword
+            placeholder="请输入关键字搜索分支"
+            style="width: 100%"
+            :remote-method="handleApiSyncBranchSearch"
+            :loading="apiSyncBranchLoading"
+          >
+            <el-option
+              v-for="branch in apiSyncBranchOptions"
+              :key="branch.name"
+              :label="branch.defaultBranch ? `${branch.name}（默认）` : branch.name"
+              :value="branch.name"
+            />
+          </el-select>
+          <div class="form-tip">同步会覆盖平台生成的 API 项，并保留人工在 API 工作台维护的内容。</div>
+        </el-form-item>
+      </section>
+    </el-form>
+  </MobileFormDrawer>
+
   <el-dialog v-model="apiSyncResultVisible" title="同步 API 结果" width="760px">
     <el-descriptions v-if="apiSyncResult" :column="3" border>
       <el-descriptions-item label="分支">{{ apiSyncResult.branch }}</el-descriptions-item>
@@ -1342,7 +1654,7 @@
     </el-alert>
   </el-dialog>
 
-  <el-dialog v-model="autoMergeDialogVisible" :title="autoMergeDialogTitle" width="760px" class="platform-form-dialog" align-center>
+  <el-dialog v-if="!isMobileViewport" v-model="autoMergeDialogVisible" :title="autoMergeDialogTitle" width="760px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="autoMergeDialogTitle" :subtitle="autoMergeDialogSubtitle" :icon="Connection" />
     </template>
@@ -1464,7 +1776,139 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="productBranchDialogVisible" :title="productBranchDialogTitle" width="680px" class="platform-form-dialog" align-center>
+  <!-- 移动端自动合并策略抽屉，表单较长使用全屏高度。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && autoMergeDialogVisible"
+    v-model="autoMergeDialogVisible"
+    :title="autoMergeDialogTitle"
+    :subtitle="autoMergeDialogSubtitle"
+    :submit-text="'保存'"
+    :submitting="autoMergeSubmitting"
+    :header-icon="Connection"
+    :close-on-click-modal="true"
+    size="100%"
+    @submit="handleAutoMergeSubmit"
+    @cancel="autoMergeDialogVisible = false"
+  >
+    <el-form ref="autoMergeFormRef" class="auto-merge-form platform-form-layout" :model="autoMergeForm" :rules="autoMergeRules" :disabled="autoMergeReadonlyMode" label-position="top">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">基础配置</div>
+          <div class="platform-form-section-subtitle">定义策略范围、执行模式和目标仓库规则。</div>
+        </div>
+        <div class="auto-merge-grid">
+        <el-form-item label="策略名称" prop="name">
+          <el-input v-model="autoMergeForm.name" />
+        </el-form-item>
+        <el-form-item label="执行模式" prop="executionMode">
+          <el-radio-group v-model="autoMergeForm.executionMode">
+            <el-radio value="PROJECT_BOUND">关联业务项目</el-radio>
+            <el-radio value="STANDALONE">独立运行</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <template v-if="autoMergeForm.executionMode === 'PROJECT_BOUND'">
+          <el-form-item label="GitLab 绑定" prop="bindingId" class="span-2">
+            <el-select v-model="autoMergeForm.bindingId" style="width: 100%">
+              <el-option v-for="binding in bindingOptions" :key="binding.id" :label="`${binding.projectName} / ${binding.gitlabProjectPath || binding.gitlabProjectRef}`" :value="binding.id" />
+            </el-select>
+          </el-form-item>
+        </template>
+        <template v-else>
+          <el-form-item label="GitLab API">
+            <el-input v-model="autoMergeForm.apiBaseUrl" />
+          </el-form-item>
+          <el-form-item label="项目 ID / 路径">
+            <el-input v-model="autoMergeForm.gitlabProjectRef" />
+          </el-form-item>
+          <el-form-item label="APIToken" class="span-2">
+            <el-input v-model="autoMergeForm.apiToken" type="password" show-password :placeholder="autoMergeIsEditing ? '留空则保留原 Token' : '请输入 APIToken'" />
+          </el-form-item>
+        </template>
+        <el-form-item label="源分支">
+          <el-input v-model="autoMergeForm.sourceBranch" placeholder="留空表示不限" />
+        </el-form-item>
+        <el-form-item label="目标分支">
+          <el-input v-model="autoMergeForm.targetBranch" placeholder="留空表示不限" />
+        </el-form-item>
+        <el-form-item label="标题关键字">
+          <el-input v-model="autoMergeForm.titleKeyword" placeholder="留空表示不限" />
+        </el-form-item>
+        <el-form-item label="策略启用">
+          <el-switch v-model="autoMergeForm.enabled" />
+        </el-form-item>
+        <el-form-item label="策略描述" class="span-2">
+          <el-input v-model="autoMergeForm.description" type="textarea" :rows="3" />
+        </el-form-item>
+        </div>
+      </section>
+
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">调度配置</div>
+          <div class="platform-form-section-subtitle">配置定时执行方式和 Cron 规则。</div>
+        </div>
+        <div class="auto-merge-grid">
+        <el-form-item label="启用调度">
+          <el-switch v-model="autoMergeForm.schedulerEnabled" />
+        </el-form-item>
+        <el-form-item label="Cron 示例">
+          <el-select v-model="cronTemplate" clearable placeholder="选择一个常用示例" style="width: 100%" @change="handleCronTemplateChange">
+            <el-option label="每5分钟：0 */5 * * * *" value="0 */5 * * * *" />
+            <el-option label="每10分钟：0 */10 * * * *" value="0 */10 * * * *" />
+            <el-option label="每30分钟：0 */30 * * * *" value="0 */30 * * * *" />
+            <el-option label="每小时整点：0 0 * * * *" value="0 0 * * * *" />
+            <el-option label="每天凌晨2点：0 0 2 * * *" value="0 0 2 * * *" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="调度 Cron" class="span-2">
+          <el-input v-model="autoMergeForm.schedulerCron" :disabled="!autoMergeForm.schedulerEnabled" placeholder="例如：0 */5 * * * *" />
+          <div class="form-tip">使用 Spring 6 位 Cron，例如：0 */5 * * * * 表示每 5 分钟执行一次。</div>
+        </el-form-item>
+        </div>
+      </section>
+
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">Agent 配置</div>
+          <div class="platform-form-section-subtitle">配置 AI 审核和自动合并行为。</div>
+        </div>
+        <div class="auto-merge-grid">
+        <el-form-item label="启用 AI 审核">
+          <el-switch v-model="autoMergeForm.aiReviewEnabled" />
+        </el-form-item>
+        <el-form-item label="Code Review Agent" class="span-2">
+          <el-select v-model="autoMergeForm.reviewAgentId" clearable placeholder="请选择内置 Code Review Agent" style="width: 100%" :disabled="!autoMergeForm.aiReviewEnabled">
+            <el-option v-for="agent in reviewAgentOptions" :key="agent.id" :label="agent.name" :value="agent.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="自动合并">
+          <el-switch v-model="autoMergeForm.autoMerge" />
+        </el-form-item>
+        <el-form-item label="需 Pipeline 成功">
+          <el-switch v-model="autoMergeForm.requirePipelineSuccess" />
+        </el-form-item>
+        <el-form-item label="Squash 合并">
+          <el-switch v-model="autoMergeForm.squashOnMerge" />
+        </el-form-item>
+        <el-form-item label="删除源分支">
+          <el-switch v-model="autoMergeForm.removeSourceBranch" />
+        </el-form-item>
+        <el-form-item label="合并后触发流水线" class="span-2">
+          <el-switch v-model="autoMergeForm.triggerPipelineAfterMerge" :disabled="autoMergeForm.executionMode !== 'PROJECT_BOUND'" />
+          <div class="form-tip">仅关联业务项目模式可用，合并成功后会按项目默认流水线自动触发。</div>
+        </el-form-item>
+        </div>
+      </section>
+    </el-form>
+    <template #footer>
+      <div class="platform-dialog-footer mobile-form-drawer-footer">
+        <el-button class="mobile-form-drawer-footer-btn" @click="autoMergeDialogVisible = false">{{ autoMergeReadonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!autoMergeReadonlyMode" class="mobile-form-drawer-footer-btn is-primary" type="primary" :loading="autoMergeSubmitting" @click="handleAutoMergeSubmit">保存</el-button>
+      </div>
+    </template>
+  </MobileFormDrawer>
+
+  <el-dialog v-if="!isMobileViewport" v-model="productBranchDialogVisible" :title="productBranchDialogTitle" width="680px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="productBranchDialogTitle" :subtitle="productBranchDialogSubtitle" :icon="FolderOpened" />
     </template>
@@ -1500,7 +1944,47 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="productBranchSyncDialogVisible" title="批量同步主线到分线" width="720px" class="platform-form-dialog" align-center>
+  <!-- 移动端主线/分线绑定抽屉。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && productBranchDialogVisible"
+    v-model="productBranchDialogVisible"
+    :title="productBranchDialogTitle"
+    :subtitle="productBranchDialogSubtitle"
+    :submit-text="'保存'"
+    :submitting="productBranchSubmitting"
+    :header-icon="FolderOpened"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleProductBranchSubmit"
+    @cancel="productBranchDialogVisible = false"
+  >
+    <el-form ref="productBranchFormRef" :model="productBranchForm" :rules="productBranchRules" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">分线信息</div>
+          <div class="platform-form-section-subtitle">维护产品线编码、名称和对应的 Git 分支。</div>
+        </div>
+        <el-form-item label="当前绑定">
+          <el-input :model-value="currentProductBinding ? `${currentProductBinding.projectName} / ${currentProductBinding.gitlabProjectPath || currentProductBinding.gitlabProjectRef}` : ''" disabled />
+          <div class="form-tip">产品主线：{{ currentProductBinding?.productMainBranch || '未配置' }}</div>
+        </el-form-item>
+        <el-form-item label="产品线编码" prop="lineCode">
+          <el-input v-model="productBranchForm.lineCode" placeholder="例如：line-a" />
+        </el-form-item>
+        <el-form-item label="产品线名称" prop="lineName">
+          <el-input v-model="productBranchForm.lineName" placeholder="例如：A 产品线" />
+        </el-form-item>
+        <el-form-item label="分线分支" prop="branchName">
+          <el-input v-model="productBranchForm.branchName" placeholder="例如：release/a" />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="productBranchForm.enabled" />
+        </el-form-item>
+      </section>
+    </el-form>
+  </MobileFormDrawer>
+
+  <el-dialog v-if="!isMobileViewport" v-model="productBranchSyncDialogVisible" title="批量同步主线到分线" width="720px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader title="批量同步主线到分线" subtitle="系统会按所选产品分线创建主线同步 MR，并返回逐条结果。" :icon="Connection" />
     </template>
@@ -1525,6 +2009,36 @@
       </div>
     </template>
   </el-dialog>
+
+  <!-- 移动端批量同步主线到分线抽屉。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && productBranchSyncDialogVisible"
+    v-model="productBranchSyncDialogVisible"
+    title="批量同步主线到分线"
+    subtitle="系统会按所选产品分线创建主线同步 MR，并返回逐条结果。"
+    :submit-text="'创建同步 MR'"
+    :submitting="productBranchSyncSubmitting"
+    :header-icon="Connection"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleProductBranchSyncSubmit"
+    @cancel="productBranchSyncDialogVisible = false"
+  >
+    <section class="platform-form-section">
+      <div class="platform-form-section-head">
+        <div class="platform-form-section-title">同步范围</div>
+        <div class="platform-form-section-subtitle">本次同步会以当前绑定的产品主线为源分支。</div>
+      </div>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="当前绑定">{{ currentProductBinding ? `${currentProductBinding.projectName} / ${currentProductBinding.gitlabProjectPath || currentProductBinding.gitlabProjectRef}` : '-' }}</el-descriptions-item>
+        <el-descriptions-item label="产品主线">{{ currentProductBinding?.productMainBranch || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="目标分线数">{{ selectedProductBranchIds.length }}</el-descriptions-item>
+        <el-descriptions-item label="目标列表">
+          {{ productBranchList.filter((item) => selectedProductBranchIds.includes(item.id)).map((item) => item.lineName).join('、') || '-' }}
+        </el-descriptions-item>
+      </el-descriptions>
+    </section>
+  </MobileFormDrawer>
 
   <el-drawer v-model="productBranchSyncLogsVisible" title="产品分支同步日志" size="56%" append-to-body>
     <el-table :data="productBranchSyncLogs" v-loading="productBranchSyncLogsLoading" style="width: 100%">
@@ -1651,6 +2165,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Delete, DocumentCopy, EditPen, Filter, FolderOpened, Plus, RefreshRight, Search, Share, Tickets, VideoPlay } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 import { listAgentOptions, listProjectOptions } from '@/api/platform'
 import {
   createGitlabAutoMergeConfig,
