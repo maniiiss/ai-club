@@ -3,17 +3,10 @@ package com.aiclub.platform.service;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.ModelBenchmarkMetricEntity;
 import com.aiclub.platform.domain.model.ModelBenchmarkRunEntity;
-import com.aiclub.platform.domain.model.UserEntity;
-import com.aiclub.platform.dto.ModelBenchmarkMetricView;
-import com.aiclub.platform.dto.ModelBenchmarkProgressView;
-import com.aiclub.platform.dto.ModelBenchmarkRunDetail;
-import com.aiclub.platform.dto.ModelBenchmarkRunSummary;
-import com.aiclub.platform.dto.PageResponse;
-import com.aiclub.platform.dto.request.ModelBenchmarkCreateRequest;
+import com.aiclub.platform.dto.request.ModelBenchmarkConfigCreateRequest;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.ModelBenchmarkMetricRepository;
 import com.aiclub.platform.repository.ModelBenchmarkRunRepository;
-import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.security.AuthContext;
 import com.aiclub.platform.security.AuthContextHolder;
 import com.aiclub.platform.service.ModelConfigService.ResolvedModelConfig;
@@ -22,15 +15,9 @@ import com.aiclub.platform.service.benchmark.BenchmarkInvoker;
 import com.aiclub.platform.service.benchmark.ModelBenchmarkMetrics;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.persistence.criteria.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -38,8 +25,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -55,10 +40,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * 模型对比测试服务：
- * - 创建 run 后立即返回，由 benchmarkRunExecutor 编排各模型逐个执行；
- * - 每个模型内部通过 Semaphore 控制并发上限，请求实际由 benchmarkWorkerExecutor 发出；
- * - 进度通过内存计数 + 周期性写库的方式更新，避免高频 DB 写。
+ * 模型对比测试执行编排服务（内部协作组件）。
+ *
+ * <p>本服务只承担"一次 run 的实际跑动"：写入 run + metric 行、提交异步任务、
+ * 维护内存进度计数与取消 flag。配置 CRUD 由 {@link ModelBenchmarkConfigService}
+ * 处理，运行记录的查询、取消、删除由 {@link ModelBenchmarkRunService} 提供给 controller。</p>
+ *
+ * <p>切分后本类不再被任何 controller 直接调用，因此对外 API 收口在两个上层 service。</p>
  */
 @Service
 @Transactional(readOnly = true)
@@ -73,12 +61,10 @@ public class ModelBenchmarkService {
 
     /** 进度落库节流阈值：完成 N 次请求或距离上次落库 200ms，才更新一次。 */
     private static final int PROGRESS_FLUSH_BATCH = 5;
-    private static final long PROGRESS_FLUSH_INTERVAL_MS = 200L;
 
     private final ModelBenchmarkRunRepository runRepository;
     private final ModelBenchmarkMetricRepository metricRepository;
     private final AiModelConfigRepository aiModelConfigRepository;
-    private final UserRepository userRepository;
     private final ModelConfigService modelConfigService;
     private final BenchmarkInvoker benchmarkInvoker;
     private final ObjectMapper objectMapper;
@@ -93,7 +79,6 @@ public class ModelBenchmarkService {
     public ModelBenchmarkService(ModelBenchmarkRunRepository runRepository,
                                  ModelBenchmarkMetricRepository metricRepository,
                                  AiModelConfigRepository aiModelConfigRepository,
-                                 UserRepository userRepository,
                                  ModelConfigService modelConfigService,
                                  BenchmarkInvoker benchmarkInvoker,
                                  ObjectMapper objectMapper,
@@ -102,7 +87,6 @@ public class ModelBenchmarkService {
         this.runRepository = runRepository;
         this.metricRepository = metricRepository;
         this.aiModelConfigRepository = aiModelConfigRepository;
-        this.userRepository = userRepository;
         this.modelConfigService = modelConfigService;
         this.benchmarkInvoker = benchmarkInvoker;
         this.objectMapper = objectMapper;
@@ -110,16 +94,24 @@ public class ModelBenchmarkService {
         this.benchmarkWorkerExecutor = benchmarkWorkerExecutor;
     }
 
-    // =================== 对外 API ===================
+    // =================== 对内编排 API ===================
 
     /**
-     * 创建一次对比测试 run，并异步启动执行。
+     * 基于一份配置触发一次 run，并异步启动执行。
+     *
+     * @param request  触发瞬间的配置快照（来自 config 字段拷贝），运行结束后不再变化
+     * @param configId 关联配置 id；新模型下 run 必须挂在 config 之下
+     * @return 新生成的 run id
      */
     @Transactional
-    public ModelBenchmarkRunDetail createAndStart(ModelBenchmarkCreateRequest request) {
+    public Long createAndStart(ModelBenchmarkConfigCreateRequest request, Long configId) {
+        if (configId == null) {
+            throw new IllegalArgumentException("触发对比测试运行必须关联 configId");
+        }
         validateModels(request.modelIds());
 
         ModelBenchmarkRunEntity run = new ModelBenchmarkRunEntity();
+        run.setConfigId(configId);
         run.setName(hasText(request.name()) ? request.name().trim() : defaultRunName());
         run.setStatus("PENDING");
         run.setConcurrency(request.concurrency());
@@ -175,136 +167,51 @@ public class ModelBenchmarkService {
             kickoff.run();
         }
 
-        return getDetail(saved.getId());
+        return saved.getId();
     }
 
-    public PageResponse<ModelBenchmarkRunSummary> page(int page, int size, String keyword, String status) {
-        Pageable pageable = PageRequest.of(Math.max(page - 1, 0), Math.max(1, Math.min(size, 100)),
-                Sort.by(Sort.Direction.DESC, "id"));
-        Specification<ModelBenchmarkRunEntity> spec = (root, query, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
-            if (hasText(keyword)) {
-                String pattern = "%" + keyword.trim().toLowerCase() + "%";
-                predicates.add(cb.like(cb.lower(root.get("name")), pattern));
-            }
-            if (hasText(status)) {
-                predicates.add(cb.equal(root.get("status"), status.trim().toUpperCase()));
-            }
-            return cb.and(predicates.toArray(new Predicate[0]));
-        };
-        Page<ModelBenchmarkRunEntity> data = runRepository.findAll(spec, pageable);
-        Map<Long, String> nicknames = loadNicknames(data.getContent().stream().map(ModelBenchmarkRunEntity::getCreatedBy).toList());
-        Page<ModelBenchmarkRunSummary> mapped = data.map(entity -> toSummary(entity, nicknames));
-        return PageResponse.from(mapped);
-    }
-
-    public ModelBenchmarkRunDetail getDetail(Long id) {
-        ModelBenchmarkRunEntity run = requireRun(id);
-        List<ModelBenchmarkMetricEntity> metrics = metricRepository.findAllByRunIdOrderByIdAsc(id);
-        // 用内存进度覆盖落库快照，实时性更高（落库是节流刷新）
-        AtomicInteger live = progressCache.get(id);
-        Integer progressDone = live != null ? live.get() : run.getProgressDone();
-        String createdByName = run.getCreatedBy() == null ? null
-                : userRepository.findById(run.getCreatedBy()).map(UserEntity::getNickname).orElse(null);
-        return new ModelBenchmarkRunDetail(
-                run.getId(),
-                run.getName(),
-                run.getStatus(),
-                run.getConcurrency(),
-                run.getTotalRequests(),
-                run.getStreamEnabled(),
-                run.getMaxTokens(),
-                run.getSystemPrompt(),
-                run.getUserPrompt(),
-                deserializeIds(run.getModelIds()),
-                run.getProgressTotal(),
-                progressDone,
-                run.getErrorMessage(),
-                run.getCreatedBy(),
-                createdByName,
-                run.getCreatedAt(),
-                run.getUpdatedAt(),
-                run.getFinishedAt(),
-                metrics.stream().map(this::toMetricView).toList()
-        );
-    }
-
-    public ModelBenchmarkProgressView getProgress(Long id) {
-        ModelBenchmarkRunEntity run = requireRun(id);
-        AtomicInteger live = progressCache.get(id);
-        int done = live != null ? live.get() : run.getProgressDone();
-        return new ModelBenchmarkProgressView(run.getId(), run.getStatus(), run.getProgressTotal(), done, run.getErrorMessage());
-    }
-
+    /**
+     * 取消 run：设置内存 flag，并立即把状态改为 CANCELED 以反馈给前端。
+     * 已派发的 worker 会跑完，但其结果不再影响整体状态。
+     */
     @Transactional
-    public void cancel(Long id) {
-        ModelBenchmarkRunEntity run = requireRun(id);
+    public void cancel(Long runId) {
+        ModelBenchmarkRunEntity run = runRepository.findById(runId)
+                .orElseThrow(() -> new NoSuchElementException("对比测试不存在: " + runId));
         if (!"PENDING".equals(run.getStatus()) && !"RUNNING".equals(run.getStatus())) {
             return;
         }
-        AtomicBoolean flag = cancelFlags.computeIfAbsent(id, k -> new AtomicBoolean(false));
+        AtomicBoolean flag = cancelFlags.computeIfAbsent(runId, k -> new AtomicBoolean(false));
         flag.set(true);
 
-        // 立即把状态改成 CANCELED 给前端反馈；Runner 感知 flag 后会停止派发新请求，
-        // 已派发的 worker 会跑完，但其结果不再影响整体状态。
         run.setStatus("CANCELED");
         run.setFinishedAt(LocalDateTime.now());
         runRepository.save(run);
     }
 
+    /** 删除 run + 其全部 metric。运行中的 run 拒绝删除。 */
     @Transactional
-    public void delete(Long id) {
-        ModelBenchmarkRunEntity run = requireRun(id);
+    public void delete(Long runId) {
+        ModelBenchmarkRunEntity run = runRepository.findById(runId)
+                .orElseThrow(() -> new NoSuchElementException("对比测试不存在: " + runId));
         if ("RUNNING".equals(run.getStatus())) {
             throw new IllegalStateException("运行中的对比测试不可删除，请先取消");
         }
-        metricRepository.deleteByRunId(id);
+        metricRepository.deleteByRunId(runId);
         runRepository.delete(run);
-        progressCache.remove(id);
-        cancelFlags.remove(id);
+        progressCache.remove(runId);
+        cancelFlags.remove(runId);
     }
 
-    /**
-     * 基于已有 run 的配置克隆出一个新 run 并立即启动。
-     * 旧 run 与历史指标保留，便于多次执行结果对比；新 run 名称末尾自动追加"-重跑"。
-     */
-    @Transactional
-    public ModelBenchmarkRunDetail rerun(Long id) {
-        ModelBenchmarkRunEntity source = requireRun(id);
-        if ("PENDING".equals(source.getStatus()) || "RUNNING".equals(source.getStatus())) {
-            throw new IllegalStateException("当前对比测试尚未结束，无法重跑");
-        }
-        List<Long> modelIds = deserializeIds(source.getModelIds());
-        if (modelIds.isEmpty()) {
-            throw new IllegalStateException("原对比测试缺少模型配置，无法重跑");
-        }
-        ModelBenchmarkCreateRequest cloned = new ModelBenchmarkCreateRequest(
-                appendRerunSuffix(source.getName()),
-                modelIds,
-                source.getConcurrency(),
-                source.getTotalRequests(),
-                source.getStreamEnabled(),
-                source.getMaxTokens(),
-                source.getSystemPrompt(),
-                source.getUserPrompt()
-        );
-        return createAndStart(cloned);
-    }
-
-    /** 给重跑生成的新 run 加上一个直观的后缀，避免和原 run 同名混淆。 */
-    private String appendRerunSuffix(String original) {
-        String base = hasText(original) ? original.trim() : defaultRunName();
-        if (base.length() > 150) {
-            base = base.substring(0, 150);
-        }
-        return base + "-重跑";
+    /** 不抛异常版的内存进度读取，供 RunService 拼装 detail 时实时覆盖落库快照。 */
+    public Optional<Integer> peekLiveProgress(Long runId) {
+        AtomicInteger c = progressCache.get(runId);
+        return c == null ? Optional.empty() : Optional.of(c.get());
     }
 
     // =================== 异步执行 ===================
 
-    /**
-     * 整个 run 的编排入口。逐模型串行执行，避免不同模型并发互相干扰指标。
-     */
+    /** 整个 run 的编排入口。逐模型串行执行，避免不同模型并发互相干扰指标。 */
     void executeRun(Long runId) {
         ModelBenchmarkRunEntity run;
         try {
@@ -382,9 +289,7 @@ public class ModelBenchmarkService {
         }
     }
 
-    /**
-     * 单个模型的并发压测。返回原始结果集合 + 墙钟耗时（用于计算 token/s 与吞吐）。
-     */
+    /** 单个模型的并发压测。返回原始结果集合 + 墙钟耗时（用于计算 token/s 与吞吐）。 */
     private ModelRunResult runForModel(ResolvedModelConfig config,
                                        ModelBenchmarkRunEntity run,
                                        AtomicBoolean cancelFlag,
@@ -502,82 +407,6 @@ public class ModelBenchmarkService {
                 .orElse(null);
     }
 
-    private ModelBenchmarkRunSummary toSummary(ModelBenchmarkRunEntity entity, Map<Long, String> nicknames) {
-        List<Long> ids = deserializeIds(entity.getModelIds());
-        return new ModelBenchmarkRunSummary(
-                entity.getId(),
-                entity.getName(),
-                entity.getStatus(),
-                entity.getConcurrency(),
-                entity.getTotalRequests(),
-                entity.getStreamEnabled(),
-                entity.getMaxTokens(),
-                ids.size(),
-                ids,
-                entity.getProgressTotal(),
-                entity.getProgressDone(),
-                entity.getCreatedBy(),
-                entity.getCreatedBy() == null ? null : nicknames.get(entity.getCreatedBy()),
-                entity.getCreatedAt(),
-                entity.getUpdatedAt(),
-                entity.getFinishedAt()
-        );
-    }
-
-    private ModelBenchmarkMetricView toMetricView(ModelBenchmarkMetricEntity entity) {
-        return new ModelBenchmarkMetricView(
-                entity.getId(),
-                entity.getRunId(),
-                entity.getModelId(),
-                entity.getModelName(),
-                entity.getProvider(),
-                entity.getModelRealName(),
-                entity.getStatus(),
-                entity.getTotalCount(),
-                entity.getSuccessCount(),
-                entity.getFailureCount(),
-                entity.getFailureRate(),
-                entity.getAvgOutputTokens(),
-                entity.getAvgTtftMs(),
-                entity.getAvgLatencyMs(),
-                entity.getP50LatencyMs(),
-                entity.getP95LatencyMs(),
-                entity.getTotalTokenPerSec(),
-                entity.getGenTokenPerSec(),
-                entity.getThroughput(),
-                entity.getWallTimeMs(),
-                entity.getTokenEstimated(),
-                entity.getSampleError(),
-                entity.getCreatedAt(),
-                entity.getUpdatedAt()
-        );
-    }
-
-    private Map<Long, String> loadNicknames(List<Long> userIds) {
-        if (userIds == null || userIds.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        Set<Long> ids = new HashSet<>();
-        for (Long id : userIds) {
-            if (id != null) {
-                ids.add(id);
-            }
-        }
-        if (ids.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        Map<Long, String> map = new HashMap<>();
-        for (UserEntity user : userRepository.findAllById(ids)) {
-            map.put(user.getId(), user.getNickname());
-        }
-        return map;
-    }
-
-    private ModelBenchmarkRunEntity requireRun(Long id) {
-        return runRepository.findById(id)
-                .orElseThrow(() -> new NoSuchElementException("对比测试不存在: " + id));
-    }
-
     private Long currentUserId() {
         return AuthContextHolder.get().map(AuthContext::userId).orElse(null);
     }
@@ -631,7 +460,6 @@ public class ModelBenchmarkService {
 
     // 仅供同包测试用：暴露内存进度缓存当前值
     Optional<Integer> peekProgress(Long runId) {
-        AtomicInteger c = progressCache.get(runId);
-        return c == null ? Optional.empty() : Optional.of(c.get());
+        return peekLiveProgress(runId);
     }
 }

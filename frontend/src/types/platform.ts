@@ -1861,6 +1861,10 @@ export interface ModelBenchmarkMetricView {
 
 export interface ModelBenchmarkRunSummary {
   id: number
+  /**
+   * 关联的配置 id。新模型下每条 run 都挂在唯一一份 config 之下。
+   */
+  configId: number
   name: string
   status: ModelBenchmarkRunStatus
   concurrency: number
@@ -1891,6 +1895,53 @@ export interface ModelBenchmarkProgress {
   progressTotal: number
   progressDone: number
   errorMessage: string | null
+}
+
+/**
+ * 模型对比测试配置：可重复编辑、可重复触发的"测试方案"。
+ *
+ * 列表行附带 latestRun + runCount，便于在列表页一眼看到"这份配置最近跑得怎么样"。
+ */
+export interface ModelBenchmarkConfigSummary {
+  id: number
+  name: string
+  concurrency: number
+  totalRequests: number
+  streamEnabled: boolean
+  maxTokens: number
+  modelCount: number
+  modelIds: number[]
+  createdBy: number | null
+  createdByName: string | null
+  createdAt: string
+  updatedAt: string
+  /** 该 config 历史 run 总次数。 */
+  runCount: number
+  /** 最近一次 run 的轻量摘要；从未运行时为 null。 */
+  latestRun: ModelBenchmarkRunSummary | null
+}
+
+/** 抽屉顶部用：配置摘要 + active run 标记。 */
+export interface ModelBenchmarkConfigDetail {
+  id: number
+  name: string
+  concurrency: number
+  totalRequests: number
+  streamEnabled: boolean
+  maxTokens: number
+  systemPrompt: string
+  userPrompt: string
+  modelIds: number[]
+  createdBy: number | null
+  createdByName: string | null
+  createdAt: string
+  updatedAt: string
+  runCount: number
+  /** 是否存在 PENDING/RUNNING 的 run。 */
+  hasActiveRun: boolean
+  /** 当前 active run 的 id（若有），便于直接发起 cancel。 */
+  activeRunId: number | null
+  latestRun: ModelBenchmarkRunSummary | null
 }
 
 export interface CurrentUserInfo {

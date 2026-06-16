@@ -2,43 +2,15 @@ import { http } from './http'
 import type {
   ApiResponse,
   ModelBenchmarkProgress,
-  ModelBenchmarkRunDetail,
-  ModelBenchmarkRunStatus,
-  ModelBenchmarkRunSummary,
-  PageResponse
+  ModelBenchmarkRunDetail
 } from '@/types/platform'
 
-/** 创建对比测试 run 的请求载荷，与后端 ModelBenchmarkCreateRequest 对齐。 */
-export interface ModelBenchmarkCreatePayload {
-  name?: string
-  modelIds: number[]
-  concurrency: number
-  totalRequests: number
-  streamEnabled: boolean
-  maxTokens: number
-  systemPrompt?: string
-  userPrompt?: string
-}
-
-export interface ModelBenchmarkQuery {
-  page: number
-  size: number
-  keyword?: string
-  status?: ModelBenchmarkRunStatus
-}
-
-const cleanParams = <T extends object>(params: T) =>
-  Object.fromEntries(
-    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
-  )
-
-export const pageBenchmarks = async (query: ModelBenchmarkQuery) => {
-  const { data } = await http.get<ApiResponse<PageResponse<ModelBenchmarkRunSummary>>>(
-    '/api/model-benchmarks',
-    { params: cleanParams(query) }
-  )
-  return data.data
-}
+/**
+ * 单条对比测试运行的接口。
+ *
+ * 新模型下：列表与触发都收口到 modelBenchmarkConfig.ts；本文件只保留单条 run 的
+ * 详情 / 进度 / 取消 / 删除。
+ */
 
 export const getBenchmarkDetail = async (id: number) => {
   const { data } = await http.get<ApiResponse<ModelBenchmarkRunDetail>>(`/api/model-benchmarks/${id}`)
@@ -50,18 +22,8 @@ export const getBenchmarkProgress = async (id: number) => {
   return data.data
 }
 
-export const createBenchmark = async (payload: ModelBenchmarkCreatePayload) => {
-  const { data } = await http.post<ApiResponse<ModelBenchmarkRunDetail>>('/api/model-benchmarks', payload)
-  return data.data
-}
-
 export const cancelBenchmark = async (id: number) => {
   await http.post<ApiResponse<null>>(`/api/model-benchmarks/${id}/cancel`)
-}
-
-export const rerunBenchmark = async (id: number) => {
-  const { data } = await http.post<ApiResponse<ModelBenchmarkRunDetail>>(`/api/model-benchmarks/${id}/rerun`)
-  return data.data
 }
 
 export const deleteBenchmark = async (id: number) => {

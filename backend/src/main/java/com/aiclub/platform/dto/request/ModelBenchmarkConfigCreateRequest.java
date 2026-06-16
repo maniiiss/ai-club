@@ -9,10 +9,12 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 
 /**
- * 创建模型对比测试请求体。
- * 校验规则与后端线程池容量配套：concurrency ≤ 64、totalRequests ≤ 500、modelIds ≤ 8。
+ * 模型对比测试配置创建请求。
+ *
+ * <p>校验规则与后端线程池容量配套：concurrency ≤ 64、totalRequests ≤ 500、modelIds ≤ 8。
+ * 配置不再承载 run 状态，触发运行通过 {@code POST /api/model-benchmark-configs/{id}/runs}。</p>
  */
-public record ModelBenchmarkCreateRequest(
+public record ModelBenchmarkConfigCreateRequest(
         @Size(max = 160) String name,
 
         @NotEmpty(message = "至少需要选择一个模型")
