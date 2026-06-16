@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cross-Agent Harness"
+  short_description: "Template for a repository-native multi-agent harness"
+  default_prompt: "Use $cross-agent-harness to create or retrofit a repository with a cross-agent harness contract, document structure, and validation script."

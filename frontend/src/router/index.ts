@@ -101,6 +101,7 @@ const router = createRouter({
         { path: 'tests', name: 'tests', component: TestPlanView, meta: { title: '测试管理', permission: 'test:view' } },
         { path: 'tests/:planId', name: 'test-plan-detail', component: TestPlanDetailView, meta: { title: '测试计划详情', permission: 'test:view', activeMenu: '/tests' } },
         { path: 'models', name: 'models', component: ModelView, meta: { title: '模型管理', permission: 'model:view' } },
+        { path: 'model-benchmarks', name: 'model-benchmarks', component: () => import('@/views/ModelBenchmarkView.vue'), meta: { title: '模型对比测试', permission: 'model:view', activeMenu: '/models' } },
         { path: 'gitlab', name: 'gitlab', component: GitlabView, meta: { title: '代码仓库管理', permission: 'gitlab:view' } },
         { path: 'servers', name: 'servers', component: ServerManagementView, meta: { title: '服务器管理', permission: 'server:view', requiresServerManagement: true } },
         { path: 'servers/:serverId', name: 'server-detail', component: ServerDetailView, meta: { title: '服务器详情', permission: 'server:view', activeMenu: '/servers', requiresServerManagement: true } },

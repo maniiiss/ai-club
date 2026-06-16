@@ -782,7 +782,7 @@ const integrationMenuSeeds: MenuSeed[] = [
 ]
 
 const trailingMenuSeeds: MenuSeed[] = [
-  { permission: 'model:view', fallbackPath: '/models', fallbackLabel: '模型管理', shortLabel: '模型', fallbackIcon: Cpu, matchNames: ['models'] },
+  { permission: 'model:view', fallbackPath: '/models', fallbackLabel: '模型管理', shortLabel: '模型', fallbackIcon: Cpu, matchNames: ['models', 'model-benchmarks'] },
   { permission: 'system:pr-review:view', fallbackPath: '/pr-review-stats', fallbackLabel: 'PR评审统计', shortLabel: 'PR评审', fallbackIcon: DataAnalysis, matchNames: ['pr-review-stats'] }
 ]
 

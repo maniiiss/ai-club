@@ -1,12 +1,20 @@
 <template>
-  <div
-    class="atelier-list-page"
-    v-loading="isTesting"
-    element-loading-text="正在测试模型连接，请稍候..."
-    element-loading-background="rgba(248, 249, 250, 0.72)"
-  >
-    <section class="atelier-toolbar">
-      <div class="atelier-toolbar-main">
+  <div class="model-page">
+    <el-tabs v-model="activeTab" class="model-tabs">
+      <el-tab-pane label="模型配置" name="configs">
+        <div
+          class="management-list-page model-main-card model-list-page"
+          v-loading="isTesting"
+          element-loading-text="正在测试模型连接，请稍候..."
+          element-loading-background="rgba(248, 249, 250, 0.72)"
+        >
+          <section class="management-list-toolbar">
+            <div class="management-list-toolbar-main">
+              <div class="model-tab-switcher" role="tablist" aria-label="模型管理页面切换">
+                <button class="model-tab-button" :class="{ active: activeTab === 'configs' }" type="button" @click="activeTab = 'configs'">模型配置</button>
+                <button class="model-tab-button" :class="{ active: activeTab === 'benchmark' }" type="button" @click="activeTab = 'benchmark'">对比测试</button>
+              </div>
+              <span class="management-list-toolbar-divider" aria-hidden="true"></span>
         <div class="atelier-search-shell">
           <el-icon class="atelier-search-icon"><Search /></el-icon>
           <input
@@ -65,15 +73,15 @@
           <el-icon><Plus /></el-icon>
           <span>新增模型</span>
         </button>
-      </div>
+            </div>
 
-      <div v-if="!isMobileViewport" class="atelier-toolbar-side">
-        <button class="atelier-create-button" type="button" @click="openCreateDialog">
-          <el-icon><Plus /></el-icon>
-          <span>新增模型</span>
-        </button>
-      </div>
-    </section>
+            <div v-if="!isMobileViewport" class="atelier-toolbar-side">
+              <button class="atelier-create-button" type="button" @click="openCreateDialog">
+                <el-icon><Plus /></el-icon>
+                <span>新增模型</span>
+              </button>
+            </div>
+          </section>
 
     <section class="atelier-table-shell">
       <div class="atelier-table-scroll mobile-card-scroll" v-loading="loading">
@@ -388,16 +396,25 @@
         </div>
       </template>
     </MobileFormDrawer>
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="对比测试" name="benchmark">
+        <ModelBenchmarkView v-model="activeTab" />
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Cpu, Delete, EditPen, Filter, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
+import ModelBenchmarkView from '@/views/ModelBenchmarkView.vue'
 import { createModelConfig, deleteModelConfig, pageModelConfigs, testModelConfig, updateModelConfig } from '@/api/models'
 import type { AiModelConfigItem, AiModelType, OpenAiApiMode } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
@@ -438,6 +455,9 @@ interface ModelForm {
 const loading = ref(false)
 const submitting = ref(false)
 const { isMobileViewport } = useMobileViewport()
+const route = useRoute()
+/** 默认进入"模型配置"tab；通过 /model-benchmarks 深链进入时直接落到对比测试 tab。 */
+const activeTab = ref<'configs' | 'benchmark'>(route.name === 'model-benchmarks' ? 'benchmark' : 'configs')
 const dialogVisible = ref(false)
 const isEditing = ref(false)
 const readonlyMode = ref(false)
@@ -688,6 +708,80 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* ── Tab 切换样式（对齐 GitlabView 风格） ── */
+
+/* 让 ModelView 与子 tab-pane 占满父级高度，避免列表撑不满屏幕 */
+.model-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 100%;
+}
+
+.model-tabs {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 隐藏 el-tabs 原生 header，用自定义按钮切换 */
+.model-tabs :deep(.el-tabs__header) {
+  display: none;
+}
+
+.model-tabs :deep(.el-tabs__content) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.model-tabs :deep(.el-tab-pane) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.model-tab-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(225, 227, 228, 0.56);
+}
+
+.model-tab-button {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #7c8794;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.model-tab-button:hover {
+  color: var(--app-primary, #409eff);
+}
+
+.model-tab-button.active {
+  background: #fff;
+  color: var(--app-primary, #409eff);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+/* ── 原有样式 ── */
+
 .atelier-list-page,
 .atelier-table-shell,
 .atelier-table-scroll {

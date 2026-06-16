@@ -1825,6 +1825,74 @@ export interface ModelTestResult {
   testedAt: string
 }
 
+/** 模型对比测试整体状态：从 PENDING 到 RUNNING，最终落到 SUCCESS/FAILED/CANCELED 三种终态之一。 */
+export type ModelBenchmarkRunStatus = 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELED'
+/** 单个模型在某次 run 内的指标行状态。 */
+export type ModelBenchmarkMetricStatus = 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'SKIPPED'
+
+export interface ModelBenchmarkMetricView {
+  id: number
+  runId: number
+  modelId: number
+  modelName: string
+  provider: string
+  modelRealName: string
+  status: ModelBenchmarkMetricStatus
+  totalCount: number
+  successCount: number
+  failureCount: number
+  /** 失败率，0~1 浮点数。 */
+  failureRate: number
+  avgOutputTokens: number
+  avgTtftMs: number
+  avgLatencyMs: number
+  p50LatencyMs: number
+  p95LatencyMs: number
+  totalTokenPerSec: number
+  genTokenPerSec: number
+  throughput: number
+  wallTimeMs: number
+  /** true 表示该行的 token 数为按文本长度估算（接口未返回 usage）。 */
+  tokenEstimated: boolean
+  sampleError: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ModelBenchmarkRunSummary {
+  id: number
+  name: string
+  status: ModelBenchmarkRunStatus
+  concurrency: number
+  totalRequests: number
+  streamEnabled: boolean
+  maxTokens: number
+  modelCount: number
+  modelIds: number[]
+  progressTotal: number
+  progressDone: number
+  createdBy: number | null
+  createdByName: string | null
+  createdAt: string
+  updatedAt: string
+  finishedAt: string | null
+}
+
+export interface ModelBenchmarkRunDetail extends Omit<ModelBenchmarkRunSummary, 'modelCount'> {
+  systemPrompt: string
+  userPrompt: string
+  errorMessage: string | null
+  metrics: ModelBenchmarkMetricView[]
+}
+
+export interface ModelBenchmarkProgress {
+  id: number
+  status: ModelBenchmarkRunStatus
+  progressTotal: number
+  progressDone: number
+  errorMessage: string | null
+}
+
 export interface CurrentUserInfo {
   id: number
   username: string
