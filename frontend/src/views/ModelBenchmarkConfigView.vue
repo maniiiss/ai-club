@@ -293,7 +293,11 @@
             :rows="4"
             :placeholder="defaultUserPrompt"
           />
-          <el-button text type="primary" size="small" @click="useDefaultPrompts">使用默认模板</el-button>
+          <div class="form-default-template">
+            <button type="button" class="form-default-template-btn" @click="useDefaultPrompts">
+              使用默认模板
+            </button>
+          </div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -362,50 +366,65 @@
             <el-tab-pane label="运行记录" name="runs">
               <div class="benchmark-runs-toolbar">
                 <span class="benchmark-runs-toolbar-text">共 {{ runsPagination.total }} 次</span>
-                <el-button text size="small" @click="loadDrawerRuns">
+                <button class="atelier-toolbar-button" type="button" @click="loadDrawerRuns">
                   <el-icon><RefreshRight /></el-icon>
                   刷新
-                </el-button>
+                </button>
               </div>
               <div v-if="!runs.length && !runsLoading" class="benchmark-empty">该配置暂未运行，点击右上角"立即运行"开始</div>
-              <el-table v-else :data="runs" v-loading="runsLoading" stripe size="small" style="width: 100%">
-                <el-table-column label="创建时间" min-width="160">
-                  <template #default="{ row }">
+              <div v-else class="atelier-data-list benchmark-runs-list" v-loading="runsLoading">
+                <div class="atelier-data-head benchmark-runs-head">
+                  <div class="atelier-data-head-item runs-col-time">创建时间</div>
+                  <div class="atelier-data-head-item runs-col-status center">状态</div>
+                  <div class="atelier-data-head-item runs-col-progress">进度</div>
+                  <div class="atelier-data-head-item runs-col-duration right">耗时</div>
+                  <div class="atelier-data-head-item runs-col-actions right">操作</div>
+                </div>
+                <div
+                  v-for="row in runs"
+                  :key="row.id"
+                  class="atelier-data-row benchmark-runs-row"
+                  :class="{ 'benchmark-runs-row-active': selectedRunDetail?.id === row.id }"
+                >
+                  <div class="atelier-data-cell runs-col-time" data-label="创建时间">
                     <span class="management-list-text">{{ formatTime(row.createdAt) }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="状态" width="100" align="center">
-                  <template #default="{ row }">
+                  </div>
+                  <div class="atelier-data-cell runs-col-status center" data-label="状态">
                     <span class="management-list-pill" :class="statusPillClass(row.status)">{{ statusLabel(row.status) }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="进度" min-width="160">
-                  <template #default="{ row }">
+                  </div>
+                  <div class="atelier-data-cell runs-col-progress" data-label="进度">
                     <el-progress
                       :percentage="progressPercent(row)"
                       :status="progressStatus(row.status)"
                       :stroke-width="6"
                     />
-                  </template>
-                </el-table-column>
-                <el-table-column label="耗时" width="100" align="right">
-                  <template #default="{ row }">
+                  </div>
+                  <div class="atelier-data-cell runs-col-duration right" data-label="耗时">
                     <span class="metric-num">{{ formatDuration(row) }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="170" align="right">
-                  <template #default="{ row }">
-                    <el-button text type="primary" size="small" @click="selectRunForMetrics(row)">查看指标</el-button>
-                    <el-button
-                      text
-                      type="danger"
-                      size="small"
-                      :disabled="!canBenchmark || row.status === 'RUNNING'"
-                      @click="handleDeleteRun(row)"
-                    >删除</el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
+                  </div>
+                  <div class="atelier-data-cell runs-col-actions right" data-label="操作">
+                    <div class="management-list-row-actions">
+                      <button
+                        class="management-list-row-button"
+                        type="button"
+                        title="查看指标"
+                        @click.stop="selectRunForMetrics(row)"
+                      >
+                        <el-icon><DataLine /></el-icon>
+                      </button>
+                      <button
+                        class="management-list-row-button danger"
+                        type="button"
+                        title="删除该次运行"
+                        :disabled="!canBenchmark || row.status === 'RUNNING'"
+                        @click.stop="handleDeleteRun(row)"
+                      >
+                        <el-icon><Delete /></el-icon>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div v-if="runsPagination.total > runsPagination.size" class="atelier-page-nav benchmark-runs-pager">
                 <button class="atelier-page-button" type="button" :disabled="runsPagination.page <= 1" @click="changeRunsPage(runsPagination.page - 1)">
                   <el-icon><ArrowLeft /></el-icon>
@@ -544,7 +563,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, CircleClose, DataAnalysis, Delete, EditPen, Plus, RefreshRight, Search, VideoPlay, View, Warning } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, CircleClose, DataAnalysis, DataLine, Delete, EditPen, Plus, RefreshRight, Search, VideoPlay, View, Warning } from '@element-plus/icons-vue'
 import {
   cancelBenchmark,
   deleteBenchmark,
@@ -909,9 +928,10 @@ async function changeRunsPage(page: number) {
 }
 
 async function selectRunForMetrics(run: ModelBenchmarkRunSummary) {
+  // 先立刻切到指标 Tab，避免 await 期间用户再点别的 Tab 被强制拉回
+  drawerTab.value = 'metrics'
   try {
     selectedRunDetail.value = await getBenchmarkDetail(run.id)
-    drawerTab.value = 'metrics'
   } catch (error: unknown) {
     ElMessage.error((error as Error)?.message || '加载指标失败')
   }
@@ -1356,6 +1376,36 @@ function formatDuration(run: ModelBenchmarkRunSummary) {
   font-size: 12px;
 }
 
+/* "使用默认模板"按钮：与 textarea 拉开间距，主题色文本，hover 加底色 */
+.form-default-template {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.form-default-template-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--app-primary, #409eff);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.form-default-template-btn:hover {
+  background: rgba(64, 158, 255, 0.08);
+  border-color: rgba(64, 158, 255, 0.24);
+}
+
+.form-default-template-btn:active {
+  background: rgba(64, 158, 255, 0.16);
+}
+
 /* ============ 抽屉 ============ */
 
 .benchmark-detail {
@@ -1449,6 +1499,67 @@ function formatDuration(run: ModelBenchmarkRunSummary) {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+/* ============ 运行记录列表（atelier 风格） ============ */
+.benchmark-runs-list {
+  width: 100%;
+  min-width: 0;
+}
+
+.benchmark-runs-head,
+.benchmark-runs-row {
+  display: grid;
+  grid-template-columns:
+    minmax(160px, 1.4fr)
+    minmax(88px, 0.6fr)
+    minmax(160px, 1.6fr)
+    minmax(80px, 0.6fr)
+    minmax(96px, 0.6fr);
+  align-items: center;
+}
+
+.benchmark-runs-row {
+  transition: background 0.15s;
+}
+
+.benchmark-runs-row + .benchmark-runs-row {
+  border-top: 1px solid #f1f5f9;
+}
+
+.benchmark-runs-row:hover {
+  background-color: #f8fafc;
+}
+
+/* 选中查看指标的那一行整体高亮，便于在 Tabs 切回时一眼看到当前正在查看哪条 run */
+.benchmark-runs-row-active {
+  background-color: rgba(64, 158, 255, 0.08);
+}
+
+.benchmark-runs-row-active:hover {
+  background-color: rgba(64, 158, 255, 0.12);
+}
+
+.runs-col-time,
+.runs-col-status,
+.runs-col-progress,
+.runs-col-duration,
+.runs-col-actions {
+  min-width: 0;
+}
+
+.atelier-data-cell.runs-col-status.center,
+.atelier-data-head-item.runs-col-status.center {
+  justify-content: center;
+  text-align: center;
+}
+
+.atelier-data-cell.runs-col-duration.right,
+.atelier-data-head-item.runs-col-duration.right,
+.atelier-data-cell.runs-col-actions.right,
+.atelier-data-head-item.runs-col-actions.right {
+  justify-content: flex-end;
+  text-align: right;
 }
 
 .benchmark-metric-current {
