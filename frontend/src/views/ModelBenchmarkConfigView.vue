@@ -361,9 +361,35 @@
             <p><strong>User：</strong>{{ drawerConfig.userPrompt || '（空）' }}</p>
           </details>
 
-          <el-tabs v-model="drawerTab" class="benchmark-detail-tabs">
+          <!-- 用自定义 Tab 头：避开 el-tabs 在某些场景下的 v-model 同步抖动，
+               同时让"查看指标"切 Tab、用户点 Tab 头切回都用同一条同步路径。 -->
+          <div class="benchmark-detail-tabs">
+            <div class="benchmark-tabs-nav" role="tablist">
+              <button
+                type="button"
+                class="benchmark-tab-button"
+                :class="{ active: drawerTab === 'runs' }"
+                role="tab"
+                :aria-selected="drawerTab === 'runs'"
+                @click="drawerTab = 'runs'"
+              >
+                运行记录
+                <span v-if="runsPagination.total" class="benchmark-tab-badge">{{ runsPagination.total }}</span>
+              </button>
+              <button
+                type="button"
+                class="benchmark-tab-button"
+                :class="{ active: drawerTab === 'metrics' }"
+                role="tab"
+                :aria-selected="drawerTab === 'metrics'"
+                @click="drawerTab = 'metrics'"
+              >
+                指标对比
+              </button>
+            </div>
+
             <!-- Tab 1: 运行记录 -->
-            <el-tab-pane label="运行记录" name="runs">
+            <div v-show="drawerTab === 'runs'" class="benchmark-tab-panel">
               <div class="benchmark-runs-toolbar">
                 <span class="benchmark-runs-toolbar-text">共 {{ runsPagination.total }} 次</span>
                 <button class="atelier-toolbar-button" type="button" @click="loadDrawerRuns">
@@ -434,10 +460,10 @@
                   <el-icon><ArrowRight /></el-icon>
                 </button>
               </div>
-            </el-tab-pane>
+            </div>
 
             <!-- Tab 2: 指标对比 -->
-            <el-tab-pane label="指标对比" name="metrics">
+            <div v-show="drawerTab === 'metrics'" class="benchmark-tab-panel">
               <div v-if="!selectedRunDetail" class="benchmark-empty">
                 <span v-if="drawerConfig.runCount === 0">该配置暂未运行</span>
                 <span v-else>请在"运行记录"中选择一次运行查看指标</span>
@@ -551,8 +577,8 @@
                   </div>
                 </div>
               </template>
-            </el-tab-pane>
-          </el-tabs>
+            </div>
+          </div>
         </div>
       </template>
     </el-drawer>
@@ -1481,6 +1507,66 @@ function formatDuration(run: ModelBenchmarkRunSummary) {
 
 .benchmark-detail-tabs {
   margin-top: 4px;
+}
+
+/* 自定义 Tab 头：替代 el-tabs，避免 v-model 同步抖动导致的"切不回" */
+.benchmark-tabs-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 12px;
+}
+
+.benchmark-tab-button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.benchmark-tab-button:hover {
+  color: var(--app-primary, #409eff);
+}
+
+.benchmark-tab-button.active {
+  color: var(--app-primary, #409eff);
+  border-bottom-color: var(--app-primary, #409eff);
+}
+
+.benchmark-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #eef2ff;
+  color: #4f46e5;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.benchmark-tab-button.active .benchmark-tab-badge {
+  background: rgba(64, 158, 255, 0.16);
+  color: var(--app-primary, #409eff);
+}
+
+.benchmark-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .benchmark-runs-toolbar {
