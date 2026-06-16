@@ -22,10 +22,16 @@ public record HermesConversationDetail(
         String updatedAt,
         String lastMessageAt,
         HermesLatestDisplayState latestDisplayState,
-        List<HermesConversationMessageItem> messages
+        List<HermesConversationMessageItem> messages,
+        /**
+         * 当前会话内已被用户确认执行过的动作 key 列表。
+         * 前端据此把"可执行动作"按钮恢复为"已执行"，避免重复触发同一写入动作。
+         */
+        List<String> executedActionKeys
 ) {
     public HermesConversationDetail {
         latestDisplayState = latestDisplayState == null ? HermesLatestDisplayState.empty() : latestDisplayState;
         messages = messages == null ? List.of() : List.copyOf(messages);
+        executedActionKeys = executedActionKeys == null ? List.of() : List.copyOf(executedActionKeys);
     }
 }

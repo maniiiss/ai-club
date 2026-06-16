@@ -338,7 +338,8 @@ public class HermesConversationSessionService {
                 formatTime(entity.getUpdatedAt()),
                 formatTime(entity.getLastMessageAt()),
                 readLatestDisplayState(entity.getLatestDisplayStateJson()),
-                messages
+                messages,
+                readExecutedActionKeys(entity.getExecutedActionKeysJson())
         );
     }
 
@@ -413,6 +414,56 @@ public class HermesConversationSessionService {
         } catch (JsonProcessingException exception) {
             return HermesLatestDisplayState.empty();
         }
+    }
+
+    /**
+     * 从数据库 JSON 文本中恢复已执行动作 key 列表；旧数据或脏数据统一回退为空列表。
+     */
+    private List<String> readExecutedActionKeys(String executedActionKeysJson) {
+        if (!hasText(executedActionKeysJson)) {
+            return List.of();
+        }
+        try {
+            String[] keys = objectMapper.readValue(executedActionKeysJson, String[].class);
+            if (keys == null || keys.length == 0) {
+                return List.of();
+            }
+            return List.of(keys);
+        } catch (JsonProcessingException exception) {
+            return List.of();
+        }
+    }
+
+    /**
+     * 将已执行动作 key 列表序列化为 JSON 文本，便于持久化。
+     */
+    private String writeExecutedActionKeys(List<String> executedActionKeys) {
+        try {
+            return objectMapper.writeValueAsString(executedActionKeys == null ? List.of() : executedActionKeys);
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Hermes 已执行动作列表序列化失败", exception);
+        }
+    }
+
+    /**
+     * 在当前用户拥有的会话中登记一个已执行动作 key，并返回最新会话详情。
+     * 同一 key 重复上报会被去重，避免列表无限增长。
+     */
+    @Transactional
+    public HermesConversationDetail markActionExecuted(Long sessionId, String actionKey) {
+        if (!hasText(actionKey)) {
+            throw new IllegalArgumentException("动作标识不能为空");
+        }
+        HermesConversationSessionEntity session = requireOwnedSession(sessionId);
+        List<String> existingKeys = readExecutedActionKeys(session.getExecutedActionKeysJson());
+        String trimmedKey = actionKey.trim();
+        if (!existingKeys.contains(trimmedKey)) {
+            java.util.List<String> nextKeys = new java.util.ArrayList<>(existingKeys);
+            nextKeys.add(trimmedKey);
+            session.setExecutedActionKeysJson(writeExecutedActionKeys(nextKeys));
+            session = hermesConversationSessionRepository.save(session);
+        }
+        return buildDetail(session);
     }
 
     /**

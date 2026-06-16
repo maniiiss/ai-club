@@ -176,6 +176,10 @@ export interface HermesLatestDisplayState {
 export interface HermesConversationDetailItem extends HermesConversationSessionSummaryItem {
   latestDisplayState: HermesLatestDisplayState
   messages: HermesConversationMessageItem[]
+  /**
+   * 后端累积记录的已执行动作 key 列表，供前端把"可执行动作"按钮恢复为"已执行"。
+   */
+  executedActionKeys?: string[]
 }
 
 /**

@@ -251,6 +251,64 @@ class HermesConversationSessionServiceTests {
         return entity;
     }
 
+    /**
+     * 标记动作已执行后应把 key 累积保存，并在详情中回显，从而让前端刷新后仍能识别已执行状态；
+     * 同一 key 重复上报需要去重，避免持久化字段无限增长。
+     */
+    @Test
+    void shouldAccumulateAndExposeExecutedActionKeys() {
+        HermesConversationSessionService service = new HermesConversationSessionService(
+                authService,
+                userRepository,
+                hermesConversationSessionRepository,
+                hermesConversationMessageRepository,
+                new ObjectMapper()
+        );
+
+        CurrentUserInfo currentUser = buildCurrentUser();
+        HermesConversationSessionEntity session = buildSessionEntity();
+        session.setExecutedActionKeysJson("[]");
+
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(hermesConversationSessionRepository.findByIdAndUser_Id(10L, 5L)).thenReturn(Optional.of(session));
+        when(hermesConversationSessionRepository.save(any(HermesConversationSessionEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(hermesConversationMessageRepository.findBySession_IdOrderByCreatedAtAscIdAsc(10L))
+                .thenReturn(List.of());
+
+        service.markActionExecuted(10L, "CREATE_EXECUTION_TASK:0:scan|abc123");
+        service.markActionExecuted(10L, "CREATE_WORK_ITEM_DRAFT:1:draft|def456");
+        // 重复上报应被去重，不再触发新的保存写入
+        com.aiclub.platform.dto.HermesConversationDetail detail =
+                service.markActionExecuted(10L, "CREATE_EXECUTION_TASK:0:scan|abc123");
+
+        assertThat(session.getExecutedActionKeysJson())
+                .contains("CREATE_EXECUTION_TASK:0:scan|abc123")
+                .contains("CREATE_WORK_ITEM_DRAFT:1:draft|def456");
+        assertThat(detail.executedActionKeys())
+                .containsExactly("CREATE_EXECUTION_TASK:0:scan|abc123", "CREATE_WORK_ITEM_DRAFT:1:draft|def456");
+        // 第三次重复上报不应再 save
+        verify(hermesConversationSessionRepository, org.mockito.Mockito.times(2)).save(any(HermesConversationSessionEntity.class));
+    }
+
+    /**
+     * 上报的动作 key 不能为空，避免脏数据写入。
+     */
+    @Test
+    void shouldRejectBlankActionKey() {
+        HermesConversationSessionService service = new HermesConversationSessionService(
+                authService,
+                userRepository,
+                hermesConversationSessionRepository,
+                hermesConversationMessageRepository,
+                new ObjectMapper()
+        );
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.markActionExecuted(10L, "  "))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("动作标识");
+    }
+
     private CurrentUserInfo buildCurrentUser() {
         return new CurrentUserInfo(
                 5L,

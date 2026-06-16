@@ -43,6 +43,7 @@ spring:
     baseline-on-migrate: true
     baseline-version: 1
     encoding: UTF-8
+    out-of-order: true
     ignore-migration-patterns:
       - "*:future"
       - "*:missing"

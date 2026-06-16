@@ -80,6 +80,13 @@ public class HermesConversationSessionEntity {
     @Column(name = "latest_display_state_json", nullable = false, columnDefinition = "TEXT")
     private String latestDisplayStateJson = "{}";
 
+    /**
+     * 当前会话中已被用户确认执行过的动作 key 列表，使用 JSON 数组字符串保存。
+     * 用于刷新或换设备后仍能把"可执行动作"按钮恢复为"已执行"，避免重复触发同一写入动作。
+     */
+    @Column(name = "executed_action_keys_json", nullable = false, columnDefinition = "TEXT")
+    private String executedActionKeysJson = "[]";
+
     /** 当前会话是否已被归档。 */
     @Column(nullable = false)
     private boolean archived;
@@ -317,6 +324,20 @@ public class HermesConversationSessionEntity {
      */
     public void setLatestDisplayStateJson(String latestDisplayStateJson) {
         this.latestDisplayStateJson = latestDisplayStateJson;
+    }
+
+    /**
+     * 获取已执行动作 key 列表的 JSON 文本。
+     */
+    public String getExecutedActionKeysJson() {
+        return executedActionKeysJson;
+    }
+
+    /**
+     * 设置已执行动作 key 列表的 JSON 文本。
+     */
+    public void setExecutedActionKeysJson(String executedActionKeysJson) {
+        this.executedActionKeysJson = executedActionKeysJson;
     }
 
     /**
