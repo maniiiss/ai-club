@@ -17,6 +17,7 @@ RUN apt-get update \
 COPY --from=gitnexus-cli /usr/local/bin/node /usr/local/bin/node
 COPY --from=gitnexus-cli /app/gitnexus /app/gitnexus
 COPY --from=gitnexus-cli /home/node/.lbdb /home/node/.lbdb
+COPY docker/gitnexus-hooks/resolve-analyze-cmd.cjs /app/gitnexus/hooks/claude/resolve-analyze-cmd.cjs
 
 RUN mkdir -p /home/node \
     && printf '%s\n' '#!/bin/sh' \
