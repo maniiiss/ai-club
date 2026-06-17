@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.services.gitnexus_serve_manager import (
     _reset_gitnexus_serve_state_for_tests,
     ensure_gitnexus_serve_running,
+    local_gitnexus_serve_base_url,
     probe_gitnexus_serve,
 )
 
@@ -22,6 +23,9 @@ class GitnexusServeManagerTests(unittest.TestCase):
     def test_should_treat_http_error_as_reachable(self):
         with patch("app.services.gitnexus_serve_manager.urllib.request.urlopen", side_effect=urllib.error.HTTPError("http://localhost:4747", 404, "Not Found", {}, None)):
             self.assertTrue(probe_gitnexus_serve("http://localhost:4747"))
+
+    def test_should_probe_localhost_when_bind_host_is_zero_address(self):
+        self.assertEqual("http://localhost:4747", local_gitnexus_serve_base_url())
 
     def test_should_reuse_existing_serve_when_probe_is_healthy(self):
         with patch("app.services.gitnexus_serve_manager._is_serve_reachable", return_value=True), \
