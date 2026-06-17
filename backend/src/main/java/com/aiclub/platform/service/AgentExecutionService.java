@@ -266,14 +266,15 @@ public class AgentExecutionService {
 
     public CodeReviewResult reviewMergeRequest(Long agentId,
                                                GitlabApiService.GitlabMergeRequest mergeRequest,
-                                               GitlabApiService.GitlabMergeRequestChanges changes) {
+                                               GitlabApiService.GitlabMergeRequestChanges changes,
+                                               List<String> previousIssues) {
         AgentEntity agent = requireAgent(agentId);
         validateEnabled(agent);
         if (!ACCESS_BUILT_IN.equals(normalizeAccessType(agent.getAccessType()))
                 || !BUILTIN_CODE_REVIEW.equals(normalizeBuiltinCode(agent.getBuiltinCode()))) {
             throw new IllegalArgumentException("当前 Agent 不是可用的 GitLab AI 代码审查 Agent");
         }
-        return executeBuiltinCodeReview(agent, mergeRequest, changes);
+        return executeBuiltinCodeReview(agent, mergeRequest, changes, previousIssues);
     }
 
     public void validateCodeReviewAgent(Long agentId) {
@@ -412,16 +413,17 @@ public class AgentExecutionService {
                         false
                 ))
         );
-        return executeBuiltinCodeReview(agent, mergeRequest, changes).reviewMarkdown();
+        return executeBuiltinCodeReview(agent, mergeRequest, changes, List.of()).reviewMarkdown();
     }
 
     private CodeReviewResult executeBuiltinCodeReview(AgentEntity agent,
                                                       GitlabApiService.GitlabMergeRequest mergeRequest,
-                                                      GitlabApiService.GitlabMergeRequestChanges changes) {
+                                                      GitlabApiService.GitlabMergeRequestChanges changes,
+                                                      List<String> previousIssues) {
         Long modelConfigId = requireAiModelConfigId(agent);
         ModelConfigService.ResolvedModelConfig modelConfig = modelConfigService.resolveModelConfig(modelConfigId);
         String prompt = hasText(agent.getSystemPrompt()) ? agent.getSystemPrompt().trim() : defaultCodeReviewPrompt();
-        return codeReviewClientService.reviewMergeRequest(modelConfig, prompt, mergeRequest, changes);
+        return codeReviewClientService.reviewMergeRequest(modelConfig, prompt, mergeRequest, changes, previousIssues);
     }
 
     private String executeLlmPromptAgent(AgentEntity agent, String input, Map<String, String> variables) {

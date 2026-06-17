@@ -7,6 +7,8 @@ public record CodeReviewResult(
         String summary,
         String provider,
         List<String> issues,
-        String reviewMarkdown
+        String reviewMarkdown,
+        List<String> resolvedPreviousIssues,
+        List<String> unresolvedPreviousIssues
 ) {
 }

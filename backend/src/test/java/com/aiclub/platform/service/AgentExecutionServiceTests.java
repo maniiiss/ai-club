@@ -138,11 +138,13 @@ class AgentExecutionServiceTests {
 
                         ## 结论
                         - 发现空指针风险
-                        """
+                        """,
+                List.of(),
+                List.of()
         );
         when(agentRepository.findById(12L)).thenReturn(Optional.of(agent));
         when(modelConfigService.resolveModelConfig(6L)).thenReturn(resolvedConfig);
-        when(codeReviewClientService.reviewMergeRequest(eq(resolvedConfig), anyString(), any(), any()))
+        when(codeReviewClientService.reviewMergeRequest(eq(resolvedConfig), anyString(), any(), any(), any()))
                 .thenReturn(reviewResult);
 
         String output = agentExecutionService.runAgent(12L, "新增空指针风险");
@@ -152,11 +154,13 @@ class AgentExecutionServiceTests {
         ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<GitlabApiService.GitlabMergeRequest> mergeRequestCaptor = ArgumentCaptor.forClass(GitlabApiService.GitlabMergeRequest.class);
         ArgumentCaptor<GitlabApiService.GitlabMergeRequestChanges> changesCaptor = ArgumentCaptor.forClass(GitlabApiService.GitlabMergeRequestChanges.class);
+        ArgumentCaptor<List<String>> previousIssuesCaptor = ArgumentCaptor.forClass(List.class);
         verify(codeReviewClientService).reviewMergeRequest(
                 eq(resolvedConfig),
                 promptCaptor.capture(),
                 mergeRequestCaptor.capture(),
-                changesCaptor.capture()
+                changesCaptor.capture(),
+                previousIssuesCaptor.capture()
         );
 
         assertThat(promptCaptor.getValue()).contains("代码审查智能体").contains("JSON");
@@ -165,6 +169,7 @@ class AgentExecutionServiceTests {
         assertThat(changesCaptor.getValue().changes()).hasSize(1);
         assertThat(changesCaptor.getValue().changes().get(0).newPath()).isEqualTo("sample.txt");
         assertThat(changesCaptor.getValue().changes().get(0).diff()).isEqualTo("新增空指针风险");
+        assertThat(previousIssuesCaptor.getValue()).isEmpty();
     }
 
     /**

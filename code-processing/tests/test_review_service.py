@@ -44,9 +44,21 @@ class ReviewServiceTests(unittest.TestCase):
         prompt = _build_prompt(self._build_request())
 
         self.assertIn('"reviewMarkdown": "# 代码审查', prompt)
-        self.assertIn("## 发现的问题", prompt)
+        self.assertIn("resolvedPreviousIssues", prompt)
+        self.assertIn("## 历史问题修复情况", prompt)
         self.assertIn("## 修改建议", prompt)
         self.assertNotIn("????", prompt)
+
+    def test_should_include_previous_issues_in_prompt_when_history_exists(self):
+        request = self._build_request().model_copy(update={
+            "previousIssues": ["补充空值判断", "补充鉴权校验"],
+        })
+
+        prompt = _build_prompt(request)
+
+        self.assertIn("Previous Issues From Last Rejected Review", prompt)
+        self.assertIn("- 补充空值判断", prompt)
+        self.assertIn("- 补充鉴权校验", prompt)
 
     @patch("app.services.review_service._call_provider")
     def test_should_build_chinese_fallback_markdown_when_review_markdown_missing(self, call_provider):
@@ -54,19 +66,25 @@ class ReviewServiceTests(unittest.TestCase):
         {
           "approved": false,
           "summary": "存在空指针风险",
-          "issues": ["缺少空值判断"]
+          "issues": ["缺少空值判断"],
+          "resolvedPreviousIssues": [],
+          "unresolvedPreviousIssues": ["缺少空值判断"]
         }
         """
 
-        result = review_code(self._build_request())
+        result = review_code(self._build_request().model_copy(update={
+            "previousIssues": ["缺少空值判断"]
+        }))
 
         self.assertFalse(result.approved)
         self.assertEqual("存在空指针风险", result.summary)
         self.assertIn("# 代码审查", result.reviewMarkdown)
         self.assertIn("审查结论：建议暂不合并", result.reviewMarkdown)
+        self.assertIn("历史问题修复情况", result.reviewMarkdown)
         self.assertIn("缺少空值判断", result.reviewMarkdown)
         self.assertIn("请结合上述问题补充修复或说明", result.reviewMarkdown)
         self.assertNotIn("????", result.reviewMarkdown)
+        self.assertEqual(["缺少空值判断"], result.unresolvedPreviousIssues)
 
     @patch("app.services.review_service.httpx.Client")
     def test_should_fallback_to_chat_completions_when_ark_responses_returns_400(self, client_class):
@@ -151,6 +169,28 @@ class ReviewServiceTests(unittest.TestCase):
         self.assertEqual({"type": "json_object"}, second_payload["response_format"])
         self.assertNotIn("response_format", third_payload)
 
+    @patch("app.services.review_service._call_provider")
+    def test_should_parse_history_resolution_fields_when_provider_returns_them(self, call_provider):
+        call_provider.return_value = """
+        {
+          "approved": false,
+          "summary": "仍有历史问题未修复",
+          "issues": ["缺少空值判断", "新增鉴权校验"],
+          "resolvedPreviousIssues": ["补充单元测试"],
+          "unresolvedPreviousIssues": ["缺少空值判断"],
+          "reviewMarkdown": "# 代码审查\\n## 历史问题修复情况\\n### 未修复\\n- 缺少空值判断"
+        }
+        """
+
+        result = review_code(self._build_request().model_copy(update={
+            "previousIssues": ["缺少空值判断", "补充单元测试"]
+        }))
+
+        self.assertFalse(result.approved)
+        self.assertEqual(["补充单元测试"], result.resolvedPreviousIssues)
+        self.assertEqual(["缺少空值判断"], result.unresolvedPreviousIssues)
+        self.assertEqual(["缺少空值判断", "新增鉴权校验"], result.issues)
+
     def test_should_return_review_provider_error_detail_when_upstream_call_fails(self):
         self.assertEqual("OPENAI responses 调用失败，HTTP 400：模型不支持该接口", str(
             ReviewProviderError("OPENAI responses 调用失败，HTTP 400：模型不支持该接口")
@@ -198,6 +238,7 @@ class ReviewRouteTests(unittest.TestCase):
             "mergeRequestTitle": "修复空指针",
             "mergeRequestDescription": "补充空值判断",
             "changes": [],
+            "previousIssues": [],
         })
 
         self.assertEqual(400, response.status_code)

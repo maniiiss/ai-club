@@ -50,11 +50,35 @@ public class GitlabAutoMergeLogEntity {
     @Column(name = "merge_request_author_username", length = 100)
     private String mergeRequestAuthorUsername;
 
+    /**
+     * GitLab 项目标识快照，用于在配置变更后仍能按“项目 + MR IID”回溯历史审查记录。
+     */
+    @Column(name = "gitlab_project_ref_snapshot", length = 255)
+    private String gitlabProjectRefSnapshot;
+
     @Column(nullable = false, length = 30)
     private String result;
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String reason;
+
+    /**
+     * 当前这次审查后仍需处理的问题列表，下一次同一 MR 复审时会继续带入。
+     */
+    @Column(name = "review_issues_json", columnDefinition = "TEXT")
+    private String reviewIssuesJson;
+
+    /**
+     * 本次复审已确认修复的历史问题列表。
+     */
+    @Column(name = "resolved_previous_issues_json", columnDefinition = "TEXT")
+    private String resolvedPreviousIssuesJson;
+
+    /**
+     * 本次复审仍未修复的历史问题列表。
+     */
+    @Column(name = "unresolved_previous_issues_json", columnDefinition = "TEXT")
+    private String unresolvedPreviousIssuesJson;
 
     @Column(name = "detail_markdown", columnDefinition = "TEXT")
     private String detailMarkdown;
@@ -144,6 +168,14 @@ public class GitlabAutoMergeLogEntity {
         this.mergeRequestAuthorUsername = mergeRequestAuthorUsername;
     }
 
+    public String getGitlabProjectRefSnapshot() {
+        return gitlabProjectRefSnapshot;
+    }
+
+    public void setGitlabProjectRefSnapshot(String gitlabProjectRefSnapshot) {
+        this.gitlabProjectRefSnapshot = gitlabProjectRefSnapshot;
+    }
+
     public String getResult() {
         return result;
     }
@@ -158,6 +190,30 @@ public class GitlabAutoMergeLogEntity {
 
     public void setReason(String reason) {
         this.reason = reason;
+    }
+
+    public String getReviewIssuesJson() {
+        return reviewIssuesJson;
+    }
+
+    public void setReviewIssuesJson(String reviewIssuesJson) {
+        this.reviewIssuesJson = reviewIssuesJson;
+    }
+
+    public String getResolvedPreviousIssuesJson() {
+        return resolvedPreviousIssuesJson;
+    }
+
+    public void setResolvedPreviousIssuesJson(String resolvedPreviousIssuesJson) {
+        this.resolvedPreviousIssuesJson = resolvedPreviousIssuesJson;
+    }
+
+    public String getUnresolvedPreviousIssuesJson() {
+        return unresolvedPreviousIssuesJson;
+    }
+
+    public void setUnresolvedPreviousIssuesJson(String unresolvedPreviousIssuesJson) {
+        this.unresolvedPreviousIssuesJson = unresolvedPreviousIssuesJson;
     }
 
     public String getDetailMarkdown() {

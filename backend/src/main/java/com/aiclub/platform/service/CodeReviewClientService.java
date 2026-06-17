@@ -41,7 +41,8 @@ public class CodeReviewClientService {
     public CodeReviewResult reviewMergeRequest(ModelConfigService.ResolvedModelConfig modelConfig,
                                                String prompt,
                                                GitlabApiService.GitlabMergeRequest mergeRequest,
-                                               GitlabApiService.GitlabMergeRequestChanges changes) {
+                                               GitlabApiService.GitlabMergeRequestChanges changes,
+                                               List<String> previousIssues) {
         try {
             ObjectNode payload = objectMapper.createObjectNode()
                     .put("provider", defaultString(modelConfig.provider()))
@@ -65,6 +66,7 @@ public class CodeReviewClientService {
                 changeNodes.add(node);
             }
             payload.set("changes", objectMapper.valueToTree(changeNodes));
+            payload.set("previousIssues", objectMapper.valueToTree(normalizeIssueList(previousIssues)));
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/api/code/review"))
@@ -86,23 +88,22 @@ public class CodeReviewClientService {
             }
 
             JsonNode body = parseReviewBody(response.body());
-            List<String> issues = new ArrayList<>();
-            if (body.path("issues").isArray()) {
-                for (JsonNode issue : body.path("issues")) {
-                    issues.add(issue.asText(""));
-                }
-            }
+            List<String> issues = readStringList(body, "issues");
+            List<String> resolvedPreviousIssues = readStringList(body, "resolvedPreviousIssues");
+            List<String> unresolvedPreviousIssues = readStringList(body, "unresolvedPreviousIssues");
             String summary = body.path("summary").asText("");
             String reviewMarkdown = body.path("reviewMarkdown").asText("");
             if (!hasText(reviewMarkdown)) {
-                reviewMarkdown = buildFallbackMarkdown(summary, issues);
+                reviewMarkdown = buildFallbackMarkdown(summary, issues, previousIssues, resolvedPreviousIssues, unresolvedPreviousIssues);
             }
             return new CodeReviewResult(
                     body.path("approved").asBoolean(false),
                     summary,
                     body.path("provider").asText(defaultString(modelConfig.provider())),
                     issues,
-                    reviewMarkdown
+                    reviewMarkdown,
+                    resolvedPreviousIssues,
+                    unresolvedPreviousIssues
             );
         } catch (IOException exception) {
             log.warn("Code review response parse failed: provider={}, model={}, message={}",
@@ -110,7 +111,7 @@ public class CodeReviewClientService {
                     modelConfig.modelName(),
                     exception.getMessage(),
                     exception);
-            return buildRawFallbackResult(modelConfig, exception.getMessage());
+            return buildRawFallbackResult(modelConfig, exception.getMessage(), previousIssues);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Code Review \u8c03\u7528\u88ab\u4e2d\u65ad", exception);
@@ -159,7 +160,9 @@ public class CodeReviewClientService {
         throw new IOException("Code Review 服务返回了非 JSON 响应: " + abbreviate(normalized, 500));
     }
 
-    private CodeReviewResult buildRawFallbackResult(ModelConfigService.ResolvedModelConfig modelConfig, String message) {
+    private CodeReviewResult buildRawFallbackResult(ModelConfigService.ResolvedModelConfig modelConfig,
+                                                    String message,
+                                                    List<String> previousIssues) {
         String summary = hasText(message) ? "Code Review 返回非标准 JSON，已降级展示原始信息" : "Code Review 结果解析失败";
         List<String> issues = hasText(message) ? List.of(limitMessage(message)) : List.of();
         return new CodeReviewResult(
@@ -167,16 +170,29 @@ public class CodeReviewClientService {
                 summary,
                 defaultString(modelConfig.provider()),
                 issues,
-                buildFallbackMarkdown(summary, issues)
+                buildFallbackMarkdown(summary, issues, previousIssues, List.of(), List.of()),
+                List.of(),
+                List.of()
         );
     }
 
-    private String buildFallbackMarkdown(String summary, List<String> issues) {
+    /**
+     * 当 code-processing 未返回 Markdown 时，由 backend 补一份包含历史问题修复情况的兜底说明。
+     */
+    private String buildFallbackMarkdown(String summary,
+                                         List<String> issues,
+                                         List<String> previousIssues,
+                                         List<String> resolvedPreviousIssues,
+                                         List<String> unresolvedPreviousIssues) {
         StringBuilder builder = new StringBuilder();
         builder.append("# Code Review\n\n");
         builder.append("## \u603b\u7ed3\n");
         builder.append(hasText(summary) ? summary : "\u672a\u63d0\u4f9b\u6458\u8981").append("\n\n");
-        builder.append("## \u95ee\u9898\n");
+        builder.append("## \u5386\u53f2\u95ee\u9898\u4fee\u590d\u60c5\u51b5\n");
+        appendIssueSection(builder, "### \u4e0a\u6b21\u5e26\u5165\u95ee\u9898", previousIssues);
+        appendIssueSection(builder, "### \u5df2\u786e\u8ba4\u4fee\u590d", resolvedPreviousIssues);
+        appendIssueSection(builder, "### \u4ecd\u672a\u4fee\u590d", unresolvedPreviousIssues);
+        builder.append("\n## \u5f53\u524d\u4ecd\u9700\u5904\u7406\u7684\u95ee\u9898\n");
         if (issues == null || issues.isEmpty()) {
             builder.append("- \u672a\u8bc6\u522b\u5230\u660e\u786e\u95ee\u9898\n");
         } else {
@@ -185,6 +201,46 @@ public class CodeReviewClientService {
             }
         }
         return builder.toString();
+    }
+
+    private List<String> readStringList(JsonNode body, String fieldName) {
+        List<String> values = new ArrayList<>();
+        JsonNode node = body.path(fieldName);
+        if (!node.isArray()) {
+            return values;
+        }
+        for (JsonNode item : node) {
+            String value = item.asText("");
+            if (hasText(value)) {
+                values.add(value.trim());
+            }
+        }
+        return values;
+    }
+
+    private void appendIssueSection(StringBuilder builder, String title, List<String> issues) {
+        builder.append(title).append("\n");
+        if (issues == null || issues.isEmpty()) {
+            builder.append("- \u65e0\n\n");
+            return;
+        }
+        for (String issue : issues) {
+            builder.append("- ").append(issue).append("\n");
+        }
+        builder.append("\n");
+    }
+
+    private List<String> normalizeIssueList(List<String> issues) {
+        if (issues == null || issues.isEmpty()) {
+            return List.of();
+        }
+        List<String> values = new ArrayList<>();
+        for (String issue : issues) {
+            if (hasText(issue)) {
+                values.add(issue.trim());
+            }
+        }
+        return values;
     }
 
     private String buildResponseMessage(String responseBody) {

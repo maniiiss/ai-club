@@ -49,6 +49,7 @@ class ReviewRequest(BaseModel):
     mergeRequestTitle: str = Field(default="")
     mergeRequestDescription: str = Field(default="")
     changes: list[CodeChange] = Field(default_factory=list)
+    previousIssues: list[str] = Field(default_factory=list)
 
     @field_validator("mergeRequestTitle", "mergeRequestDescription", mode="before")
     @classmethod
@@ -57,6 +58,16 @@ class ReviewRequest(BaseModel):
             return ""
         return str(value)
 
+    @field_validator("previousIssues", mode="before")
+    @classmethod
+    def normalize_previous_issues(cls, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        text = str(value).strip()
+        return [text] if text else []
+
 
 class ReviewResponse(BaseModel):
     approved: bool
@@ -64,6 +75,8 @@ class ReviewResponse(BaseModel):
     provider: str
     issues: list[str] = Field(default_factory=list)
     reviewMarkdown: str = Field(default="")
+    resolvedPreviousIssues: list[str] = Field(default_factory=list)
+    unresolvedPreviousIssues: list[str] = Field(default_factory=list)
 
 
 class HermesInternalToolExecuteRequest(BaseModel):

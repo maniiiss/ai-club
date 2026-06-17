@@ -832,6 +832,8 @@ public class GitlabManagementService {
             int nonMergedCount = 0;
             for (GitlabApiService.GitlabMergeRequest mergeRequest : mergeRequests) {
                 try {
+                    List<String> previousIssues = List.of();
+                    CodeReviewResult reviewResult = null;
                     GitlabApiService.GitlabMergeRequest latestMergeRequest = gitlabApiService.fetchMergeRequest(
                             resolved.apiBaseUrl(),
                             resolved.token(),
@@ -867,13 +869,14 @@ public class GitlabManagementService {
                         continue;
                     }
                     if (Boolean.TRUE.equals(entity.getAiReviewEnabled())) {
-                        CodeReviewResult reviewResult = reviewMergeRequest(entity, resolved, latestMergeRequest);
+                        previousIssues = loadLatestRejectedReviewIssues(resolved.projectRef(), latestMergeRequest.iid());
+                        reviewResult = applyReviewSafetyGuard(reviewMergeRequest(entity, resolved, latestMergeRequest, previousIssues));
                         if (!reviewResult.approved()) {
                             nonMergedCount++;
                             String reason = buildReviewFailureMessage(reviewResult);
-                            String detailMarkdown = buildReviewExtraMarkdown(reviewResult);
+                            String detailMarkdown = buildReviewExtraMarkdown(reviewResult, previousIssues);
                             items.add(new GitlabAutoMergeRunItem(latestMergeRequest.iid(), latestMergeRequest.title(), "AI_REJECTED", reason, latestMergeRequest.webUrl()));
-                            saveAutoMergeLog(entity, triggerType, latestMergeRequest, "AI_REJECTED", reason, latestMergeRequest.webUrl(), detailMarkdown, executedAt);
+                            saveAutoMergeLog(entity, triggerType, latestMergeRequest, "AI_REJECTED", reason, latestMergeRequest.webUrl(), detailMarkdown, reviewResult, executedAt);
                             continue;
                         }
                     }
@@ -881,7 +884,7 @@ public class GitlabManagementService {
                     mergedCount++;
                     String baseMessage = buildMergeMessage(result);
                     String webUrl = hasText(result.webUrl()) ? result.webUrl() : latestMergeRequest.webUrl();
-                    String extraMarkdown = null;
+                    String extraMarkdown = reviewResult == null ? null : buildReviewExtraMarkdown(reviewResult, previousIssues);
                     String message = baseMessage;
                     if (Boolean.TRUE.equals(entity.getTriggerPipelineAfterMerge())
                             && MODE_PROJECT_BOUND.equals(entity.getExecutionMode())
@@ -893,10 +896,10 @@ public class GitlabManagementService {
                                 "GitLab 自动合并"
                         );
                         message = buildMergedWithPipelineMessage(baseMessage, pipelineOutcome);
-                        extraMarkdown = buildPipelineTriggerMarkdown(pipelineOutcome);
+                        extraMarkdown = appendMarkdownSection(extraMarkdown, buildPipelineTriggerMarkdown(pipelineOutcome));
                     }
                     items.add(new GitlabAutoMergeRunItem(latestMergeRequest.iid(), latestMergeRequest.title(), "MERGED", message, webUrl));
-                    saveAutoMergeLog(entity, triggerType, latestMergeRequest, "MERGED", message, webUrl, extraMarkdown, executedAt);
+                    saveAutoMergeLog(entity, triggerType, latestMergeRequest, "MERGED", message, webUrl, extraMarkdown, reviewResult, executedAt);
                 } catch (RuntimeException exception) {
                     nonMergedCount++;
                     String fullReason = defaultString(exception.getMessage());
@@ -1029,18 +1032,24 @@ public class GitlabManagementService {
         return entity.getGitlabProjectRef();
     }
 
-    private CodeReviewResult reviewMergeRequest(GitlabAutoMergeConfigEntity entity, ResolvedGitlabConfig resolved, GitlabApiService.GitlabMergeRequest mergeRequest) {
+    /**
+     * 执行一次带历史问题上下文的 MR 复审，让模型同时判断旧问题修复状态和本次新增风险。
+     */
+    private CodeReviewResult reviewMergeRequest(GitlabAutoMergeConfigEntity entity,
+                                                ResolvedGitlabConfig resolved,
+                                                GitlabApiService.GitlabMergeRequest mergeRequest,
+                                                List<String> previousIssues) {
         GitlabApiService.GitlabMergeRequestChanges changes = gitlabApiService.fetchMergeRequestChanges(
                 resolved.apiBaseUrl(), resolved.token(), resolved.projectRef(), mergeRequest.iid());
         if (entity.getReviewAgent() != null) {
-            return agentExecutionService.reviewMergeRequest(entity.getReviewAgent().getId(), mergeRequest, changes);
+            return agentExecutionService.reviewMergeRequest(entity.getReviewAgent().getId(), mergeRequest, changes, previousIssues);
         }
         if (entity.getAiModelConfig() == null) {
             throw new IllegalArgumentException("AI ????? Code Review Agent");
         }
         ensureChatModelConfig(entity.getAiModelConfig());
         ModelConfigService.ResolvedModelConfig modelConfig = modelConfigService.resolveModelConfig(entity.getAiModelConfig().getId());
-        return codeReviewClientService.reviewMergeRequest(modelConfig, buildReviewPrompt(entity), mergeRequest, changes);
+        return codeReviewClientService.reviewMergeRequest(modelConfig, buildReviewPrompt(entity), mergeRequest, changes, previousIssues);
     }
 
 
@@ -1065,10 +1074,15 @@ public class GitlabManagementService {
 
     private String buildReviewFailureMessage(CodeReviewResult reviewResult) {
         String summary = hasText(reviewResult.summary()) ? reviewResult.summary() : "AI Review \u672a\u901a\u8fc7";
-        if (reviewResult.issues() == null || reviewResult.issues().isEmpty()) {
+        List<String> pendingIssues = normalizeIssueList(reviewResult.issues());
+        List<String> unresolvedPreviousIssues = normalizeIssueList(reviewResult.unresolvedPreviousIssues());
+        if (pendingIssues.isEmpty() && unresolvedPreviousIssues.isEmpty()) {
             return limitMessage(summary);
         }
-        return limitMessage(summary + "\uff08" + reviewResult.issues().size() + " \u9879\u5f85\u5904\u7406\u95ee\u9898\uff09");
+        if (!unresolvedPreviousIssues.isEmpty()) {
+            return limitMessage(summary + "\uff08" + unresolvedPreviousIssues.size() + " \u9879\u5386\u53f2\u95ee\u9898\u672a\u4fee\u590d\uff0c\u5f53\u524d\u5171 " + pendingIssues.size() + " \u9879\u5f85\u5904\u7406\u95ee\u9898\uff09");
+        }
+        return limitMessage(summary + "\uff08" + pendingIssues.size() + " \u9879\u5f85\u5904\u7406\u95ee\u9898\uff09");
     }
 
     private void updateRunState(GitlabAutoMergeConfigEntity entity, String status, String message, LocalDateTime executedAt) {
@@ -1094,6 +1108,18 @@ public class GitlabManagementService {
                                   String webUrl,
                                   String extraMarkdown,
                                   LocalDateTime executedAt) {
+        saveAutoMergeLog(config, triggerType, mergeRequest, result, reason, webUrl, extraMarkdown, null, executedAt);
+    }
+
+    private void saveAutoMergeLog(GitlabAutoMergeConfigEntity config,
+                                  String triggerType,
+                                  GitlabApiService.GitlabMergeRequest mergeRequest,
+                                  String result,
+                                  String reason,
+                                  String webUrl,
+                                  String extraMarkdown,
+                                  CodeReviewResult reviewResult,
+                                  LocalDateTime executedAt) {
         saveAutoMergeLog(
                 config,
                 triggerType,
@@ -1105,12 +1131,13 @@ public class GitlabManagementService {
                 reason,
                 webUrl,
                 extraMarkdown,
+                reviewResult,
                 executedAt
         );
     }
 
     private void saveAutoMergeLog(GitlabAutoMergeConfigEntity config, String triggerType, Long mergeRequestIid, String mergeRequestTitle, String result, String reason, String webUrl, String extraMarkdown, LocalDateTime executedAt) {
-        saveAutoMergeLog(config, triggerType, mergeRequestIid, mergeRequestTitle, null, null, result, reason, webUrl, extraMarkdown, executedAt);
+        saveAutoMergeLog(config, triggerType, mergeRequestIid, mergeRequestTitle, null, null, result, reason, webUrl, extraMarkdown, null, executedAt);
     }
 
     private void saveAutoMergeLog(GitlabAutoMergeConfigEntity config,
@@ -1123,6 +1150,7 @@ public class GitlabManagementService {
                                   String reason,
                                   String webUrl,
                                   String extraMarkdown,
+                                  CodeReviewResult reviewResult,
                                   LocalDateTime executedAt) {
         GitlabAutoMergeLogEntity log = new GitlabAutoMergeLogEntity();
         log.setConfig(config);
@@ -1133,8 +1161,12 @@ public class GitlabManagementService {
         log.setMergeRequestTitle(trimToNull(mergeRequestTitle));
         log.setMergeRequestAuthorName(trimToNull(mergeRequestAuthorName));
         log.setMergeRequestAuthorUsername(trimToNull(mergeRequestAuthorUsername));
+        log.setGitlabProjectRefSnapshot(resolveLogProjectRefSnapshot(config));
         log.setResult(result);
         log.setReason(limitMessage(reason));
+        log.setReviewIssuesJson(writeIssueListJson(reviewResult == null ? null : reviewResult.issues()));
+        log.setResolvedPreviousIssuesJson(writeIssueListJson(reviewResult == null ? null : reviewResult.resolvedPreviousIssues()));
+        log.setUnresolvedPreviousIssuesJson(writeIssueListJson(reviewResult == null ? null : reviewResult.unresolvedPreviousIssues()));
         log.setDetailMarkdown(limitDetailMarkdown(buildLogDetailMarkdown(config, triggerType, mergeRequestIid, mergeRequestTitle, result, reason, webUrl, executedAt, extraMarkdown)));
         log.setWebUrl(trimToNull(webUrl));
         log.setExecutedAt(executedAt == null ? LocalDateTime.now() : executedAt);
@@ -1262,22 +1294,29 @@ public class GitlabManagementService {
         return builder.toString();
     }
 
-    private String buildReviewExtraMarkdown(CodeReviewResult reviewResult) {
-        if (hasText(reviewResult.reviewMarkdown())) {
-            return "## Code Review \u8f93\u51fa\n\n" + reviewResult.reviewMarkdown().trim();
-        }
+    /**
+     * 将历史问题修复状态与原始 AI Review 输出拼成统一 Markdown，确保日志详情固定可读。
+     */
+    private String buildReviewExtraMarkdown(CodeReviewResult reviewResult, List<String> previousIssues) {
+        List<String> normalizedPreviousIssues = normalizeIssueList(previousIssues);
+        List<String> resolvedPreviousIssues = normalizeIssueList(reviewResult.resolvedPreviousIssues());
+        List<String> unresolvedPreviousIssues = normalizeIssueList(reviewResult.unresolvedPreviousIssues());
+        List<String> pendingIssues = normalizeIssueList(reviewResult.issues());
+        List<String> newlyRaisedIssues = subtractIssues(pendingIssues, unresolvedPreviousIssues);
         StringBuilder builder = new StringBuilder();
-        builder.append("## Code Review \u8f93\u51fa\n\n");
-        builder.append("### \u603b\u7ed3\n");
-        builder.append(hasText(reviewResult.summary()) ? reviewResult.summary().trim() : "\u672a\u63d0\u4f9b\u5ba1\u67e5\u6458\u8981").append("\n\n");
-        builder.append("### \u5173\u952e\u95ee\u9898\n");
-        if (reviewResult.issues() == null || reviewResult.issues().isEmpty()) {
-            builder.append("- \u672a\u63d0\u4f9b\u95ee\u9898\u5217\u8868\n");
-        } else {
-            for (String issue : reviewResult.issues()) {
-                builder.append("- ").append(issue).append("\n");
-            }
+        builder.append("## \u5386\u53f2\u95ee\u9898\u4fee\u590d\u60c5\u51b5\n\n");
+        appendMarkdownIssueSection(builder, "### \u4e0a\u6b21\u95ee\u9898", normalizedPreviousIssues);
+        appendMarkdownIssueSection(builder, "### \u5df2\u4fee\u590d\u9879", resolvedPreviousIssues);
+        appendMarkdownIssueSection(builder, "### \u672a\u4fee\u590d\u9879", unresolvedPreviousIssues);
+        appendMarkdownIssueSection(builder, "### \u672c\u6b21\u65b0\u589e\u95ee\u9898", newlyRaisedIssues);
+        appendMarkdownIssueSection(builder, "### \u5f53\u524d\u4ecd\u9700\u5904\u7406\u95ee\u9898", pendingIssues);
+        if (hasText(reviewResult.reviewMarkdown())) {
+            builder.append("\n## Code Review \u8f93\u51fa\n\n").append(reviewResult.reviewMarkdown().trim());
+            return builder.toString();
         }
+        builder.append("\n## Code Review \u8f93\u51fa\n\n");
+        builder.append("### \u603b\u7ed3\n");
+        builder.append(hasText(reviewResult.summary()) ? reviewResult.summary().trim() : "\u672a\u63d0\u4f9b\u5ba1\u67e5\u6458\u8981").append("\n");
         return builder.toString();
     }
 
@@ -1317,6 +1356,135 @@ public class GitlabManagementService {
         }
         String value = markdown.trim();
         return value.length() > 20000 ? value.substring(0, 20000) : value;
+    }
+
+    /**
+     * 同一 MR 的历史问题带入依赖“GitLab 项目 + MR IID”，这里优先读取最近一次 AI 拒绝后的问题快照。
+     */
+    private List<String> loadLatestRejectedReviewIssues(String gitlabProjectRef, Long mergeRequestIid) {
+        String normalizedProjectRef = trimToNull(gitlabProjectRef);
+        if (normalizedProjectRef == null || mergeRequestIid == null) {
+            return List.of();
+        }
+        return autoMergeLogRepository
+                .findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
+                        normalizedProjectRef,
+                        mergeRequestIid,
+                        "AI_REJECTED"
+                )
+                .map(log -> readIssueListJson(log.getReviewIssuesJson()))
+                .orElseGet(List::of);
+    }
+
+    /**
+     * 后端对模型结果做最终兜底，只要还有历史问题未修复，就算模型误判 approved=true 也必须拦截。
+     */
+    private CodeReviewResult applyReviewSafetyGuard(CodeReviewResult reviewResult) {
+        List<String> issues = normalizeIssueList(reviewResult.issues());
+        List<String> resolvedPreviousIssues = normalizeIssueList(reviewResult.resolvedPreviousIssues());
+        List<String> unresolvedPreviousIssues = normalizeIssueList(reviewResult.unresolvedPreviousIssues());
+        boolean approved = reviewResult.approved();
+        String summary = hasText(reviewResult.summary()) ? reviewResult.summary().trim() : "AI Review 未通过";
+        if (approved && !unresolvedPreviousIssues.isEmpty()) {
+            approved = false;
+            summary = limitMessage(summary + "；检测到仍有历史问题未修复，已自动拦截合并");
+        }
+        return new CodeReviewResult(
+                approved,
+                summary,
+                defaultString(reviewResult.provider()),
+                issues,
+                defaultString(reviewResult.reviewMarkdown()),
+                resolvedPreviousIssues,
+                unresolvedPreviousIssues
+        );
+    }
+
+    private String resolveLogProjectRefSnapshot(GitlabAutoMergeConfigEntity config) {
+        if (MODE_PROJECT_BOUND.equals(config.getExecutionMode()) && config.getBinding() != null) {
+            return trimToNull(resolveBindingProjectRef(config.getBinding()));
+        }
+        return trimToNull(config.getGitlabProjectRef());
+    }
+
+    private String writeIssueListJson(List<String> issues) {
+        try {
+            return objectMapper.writeValueAsString(normalizeIssueList(issues));
+        } catch (Exception exception) {
+            throw new IllegalStateException("自动合并日志问题列表序列化失败", exception);
+        }
+    }
+
+    private List<String> readIssueListJson(String json) {
+        if (!hasText(json)) {
+            return List.of();
+        }
+        try {
+            JsonNode node = objectMapper.readTree(json);
+            if (!node.isArray()) {
+                return List.of();
+            }
+            List<String> issues = new ArrayList<>();
+            for (JsonNode item : node) {
+                String value = item.asText("");
+                if (hasText(value)) {
+                    issues.add(value.trim());
+                }
+            }
+            return issues;
+        } catch (Exception exception) {
+            log.warn("自动合并日志问题列表解析失败: {}", exception.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<String> normalizeIssueList(List<String> issues) {
+        if (issues == null || issues.isEmpty()) {
+            return List.of();
+        }
+        Set<String> normalizedIssues = new LinkedHashSet<>();
+        for (String issue : issues) {
+            if (hasText(issue)) {
+                normalizedIssues.add(issue.trim());
+            }
+        }
+        return List.copyOf(normalizedIssues);
+    }
+
+    private List<String> subtractIssues(List<String> issues, List<String> excludedIssues) {
+        if (issues == null || issues.isEmpty()) {
+            return List.of();
+        }
+        Set<String> excluded = new LinkedHashSet<>(normalizeIssueList(excludedIssues));
+        List<String> result = new ArrayList<>();
+        for (String issue : normalizeIssueList(issues)) {
+            if (!excluded.contains(issue)) {
+                result.add(issue);
+            }
+        }
+        return result;
+    }
+
+    private void appendMarkdownIssueSection(StringBuilder builder, String title, List<String> issues) {
+        builder.append(title).append("\n");
+        if (issues == null || issues.isEmpty()) {
+            builder.append("- \u65e0\n\n");
+            return;
+        }
+        for (String issue : issues) {
+            builder.append("- ").append(issue).append("\n");
+        }
+        builder.append("\n");
+    }
+
+    private String appendMarkdownSection(String baseMarkdown, String extraMarkdown) {
+        if (!hasText(baseMarkdown)) {
+            return hasText(extraMarkdown) ? extraMarkdown.trim() : null;
+        }
+        if (!hasText(extraMarkdown)) {
+            return baseMarkdown.trim();
+        }
+        return baseMarkdown.trim() + "\n\n" + extraMarkdown.trim();
     }
 
     /**

@@ -33,9 +33,18 @@ def review_code(request: ReviewRequest) -> ReviewResponse:
     approved = bool(payload.get("approved", False))
     summary = _string_value(payload.get("summary")) or "Review summary is missing"
     issues = _normalize_issues(payload.get("issues"))
+    resolved_previous_issues = _normalize_issues(payload.get("resolvedPreviousIssues"))
+    unresolved_previous_issues = _normalize_issues(payload.get("unresolvedPreviousIssues"))
     review_markdown = _string_value(payload.get("reviewMarkdown"))
     if not review_markdown:
-        review_markdown = _build_fallback_markdown(approved, summary, issues)
+        review_markdown = _build_fallback_markdown(
+            approved,
+            summary,
+            issues,
+            request.previousIssues,
+            resolved_previous_issues,
+            unresolved_previous_issues,
+        )
 
     logger.info(
         "Code review parsed successfully: provider=%s, model=%s, approved=%s, issue_count=%s",
@@ -51,6 +60,8 @@ def review_code(request: ReviewRequest) -> ReviewResponse:
         provider=provider,
         issues=issues,
         reviewMarkdown=review_markdown,
+        resolvedPreviousIssues=resolved_previous_issues,
+        unresolvedPreviousIssues=unresolved_previous_issues,
     )
 
 
@@ -79,16 +90,29 @@ Use this exact JSON shape:
 {{
   "approved": false,
   "summary": "One-sentence conclusion about whether auto-merge is safe",
-  "issues": ["Issue 1", "Issue 2"],
-  "reviewMarkdown": "# 代码审查\n- 审查结论：建议暂不合并\n- 摘要：存在高风险问题，建议暂不自动合并\n\n## 发现的问题\n- service 层缺少空值判断，可能导致运行时异常\n\n## 修改建议\n- 补充空值校验与对应测试用例"
+  "issues": ["仍需处理的问题1", "仍需处理的问题2"],
+  "resolvedPreviousIssues": ["已修复的历史问题1"],
+  "unresolvedPreviousIssues": ["尚未修复的历史问题1"],
+  "reviewMarkdown": "# 代码审查\n- 审查结论：建议暂不合并\n- 摘要：存在高风险问题，建议暂不自动合并\n\n## 历史问题修复情况\n### 已修复\n- 已补充空值判断\n\n### 未修复\n- service 层仍缺少边界保护\n\n## 当前仍需处理的问题\n- service 层缺少空值判断，可能导致运行时异常\n\n## 修改建议\n- 补充空值校验与对应测试用例"
 }}
 
 Rules:
 1. reviewMarkdown must be Markdown and must be written in Chinese.
-2. If there is any high-risk issue, approved must be false.
-3. If there is no obvious issue, issues must be an empty array.
-4. reviewMarkdown should be clear and practical, and should include sections for conclusion, issues, and suggestions.
-5. Return JSON only.
+2. You must review every previous issue and decide whether it is already fixed.
+3. issues must contain the full list of problems that are still unresolved in the current MR, including unresolved previous issues and newly found issues, so they can be carried into the next review.
+4. If there is any unresolved previous issue or any new high-risk issue, approved must be false.
+5. If there is no obvious issue, issues, resolvedPreviousIssues, and unresolvedPreviousIssues should use empty arrays as appropriate.
+6. reviewMarkdown should be clear and practical, and should include sections for conclusion, historical issue status, current issues, and suggestions.
+7. Return JSON only.
+
+Previous Issues From Last Rejected Review:
+{_format_previous_issues(request.previousIssues)}
+
+Rules For History:
+- resolvedPreviousIssues must only include issues from Previous Issues From Last Rejected Review that are now fixed.
+- unresolvedPreviousIssues must only include issues from Previous Issues From Last Rejected Review that are still not fixed.
+- Do not invent historical issues that were not provided.
+- Newly found issues should appear in issues, but not in resolvedPreviousIssues or unresolvedPreviousIssues.
 
 MR Title:
 {request.mergeRequestTitle}
@@ -343,7 +367,14 @@ def _normalize_issues(value: Any) -> list[str]:
     return [text] if text else []
 
 
-def _build_fallback_markdown(approved: bool, summary: str, issues: list[str]) -> str:
+def _build_fallback_markdown(
+        approved: bool,
+        summary: str,
+        issues: list[str],
+        previous_issues: list[str],
+        resolved_previous_issues: list[str],
+        unresolved_previous_issues: list[str],
+) -> str:
     decision_text = "建议合并" if approved else "建议暂不合并"
     summary_text = summary or "未提供摘要"
     lines = [
@@ -351,8 +382,33 @@ def _build_fallback_markdown(approved: bool, summary: str, issues: list[str]) ->
         f"- 审查结论：{decision_text}",
         f"- 摘要：{summary_text}",
         "",
-        "## 发现的问题",
+        "## 历史问题修复情况",
+        "### 上次带入问题",
     ]
+    if previous_issues:
+        lines.extend(f"- {issue}" for issue in previous_issues)
+    else:
+        lines.append("- 无")
+    lines.extend([
+        "",
+        "### 已修复",
+    ])
+    if resolved_previous_issues:
+        lines.extend(f"- {issue}" for issue in resolved_previous_issues)
+    else:
+        lines.append("- 无")
+    lines.extend([
+        "",
+        "### 未修复",
+    ])
+    if unresolved_previous_issues:
+        lines.extend(f"- {issue}" for issue in unresolved_previous_issues)
+    else:
+        lines.append("- 无")
+    lines.extend([
+        "",
+        "## 当前仍需处理的问题",
+    ])
     if issues:
         lines.extend(f"- {issue}" for issue in issues)
     else:
@@ -363,6 +419,12 @@ def _build_fallback_markdown(approved: bool, summary: str, issues: list[str]) ->
         "- 请结合上述问题补充修复或说明，再重新发起审查。",
     ])
     return "\n".join(lines)
+
+
+def _format_previous_issues(previous_issues: list[str]) -> str:
+    if not previous_issues:
+        return "- None"
+    return "\n".join(f"- {issue}" for issue in previous_issues)
 
 
 def _abbreviate(value: str, max_chars: int) -> str:

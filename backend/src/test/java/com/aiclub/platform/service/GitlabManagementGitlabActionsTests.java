@@ -5,6 +5,9 @@ import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
 import com.aiclub.platform.domain.model.RepositoryScanRulesetEntity;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.AgentEntity;
+import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
+import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
+import com.aiclub.platform.dto.CodeReviewResult;
 import com.aiclub.platform.dto.GitlabBranchSummary;
 import com.aiclub.platform.dto.GitlabCreateMergeRequestResult;
 import com.aiclub.platform.dto.GitlabTagCreateResult;
@@ -36,8 +39,13 @@ import java.util.concurrent.Executor;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -428,6 +436,184 @@ class GitlabManagementGitlabActionsTests {
     }
 
     /**
+     * 同一 GitLab 项目与 MR 最近一次 AI 拒绝中的问题，应在下一次复审时继续带入。
+     */
+    @Test
+    void shouldCarryLatestRejectedIssuesIntoFollowUpReview() {
+        GitlabAutoMergeConfigEntity config = buildStandaloneAutoMergeConfig();
+        GitlabApiService.GitlabMergeRequest mergeRequest = buildMergeRequest(31L, "修复登录空指针");
+        GitlabApiService.GitlabMergeRequestChanges changes = buildMergeRequestChanges(31L, "修复登录空指针");
+        GitlabAutoMergeLogEntity historyLog = new GitlabAutoMergeLogEntity();
+        historyLog.setReviewIssuesJson("[\"补充登录空值判断\"]");
+
+        when(autoMergeConfigRepository.findById(21L)).thenReturn(Optional.of(config));
+        when(autoMergeConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(autoMergeLogRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(gitlabApiService.listMergeRequests("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "opened", "main"))
+                .thenReturn(List.of(mergeRequest));
+        when(gitlabApiService.fetchMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 31L))
+                .thenReturn(mergeRequest);
+        when(gitlabApiService.fetchMergeRequestChanges("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 31L))
+                .thenReturn(changes);
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
+                "group/demo-repo", 31L, "AI_REJECTED"
+        )).thenReturn(Optional.of(historyLog));
+        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of("补充登录空值判断"))))
+                .thenReturn(new CodeReviewResult(
+                        false,
+                        "历史问题尚未修复",
+                        ModelConfigService.PROVIDER_OPENAI,
+                        List.of("补充登录空值判断"),
+                        "# 代码审查",
+                        List.of(),
+                        List.of("补充登录空值判断")
+                ));
+
+        var result = gitlabManagementService.runAutoMergeConfig(21L);
+
+        assertThat(result.matchedCount()).isEqualTo(1);
+        assertThat(result.skippedCount()).isEqualTo(1);
+        assertThat(result.items()).singleElement().satisfies(item -> {
+            assertThat(item.action()).isEqualTo("AI_REJECTED");
+            assertThat(item.message()).contains("历史问题尚未修复");
+        });
+        verify(codeReviewClientService).reviewMergeRequest(any(), any(), any(), any(), eq(List.of("补充登录空值判断")));
+    }
+
+    /**
+     * 即使模型误返回允许合并，只要仍有历史问题未修复，后端也必须强制拦截自动合并。
+     */
+    @Test
+    void shouldRejectMergeWhenHistoricalIssueStillUnresolved() {
+        GitlabAutoMergeConfigEntity config = buildStandaloneAutoMergeConfig();
+        GitlabApiService.GitlabMergeRequest mergeRequest = buildMergeRequest(32L, "继续修复登录空指针");
+        GitlabApiService.GitlabMergeRequestChanges changes = buildMergeRequestChanges(32L, "继续修复登录空指针");
+        GitlabAutoMergeLogEntity historyLog = new GitlabAutoMergeLogEntity();
+        historyLog.setReviewIssuesJson("[\"补充登录空值判断\"]");
+
+        when(autoMergeConfigRepository.findById(21L)).thenReturn(Optional.of(config));
+        when(autoMergeConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(autoMergeLogRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(gitlabApiService.listMergeRequests("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "opened", "main"))
+                .thenReturn(List.of(mergeRequest));
+        when(gitlabApiService.fetchMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 32L))
+                .thenReturn(mergeRequest);
+        when(gitlabApiService.fetchMergeRequestChanges("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 32L))
+                .thenReturn(changes);
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
+                "group/demo-repo", 32L, "AI_REJECTED"
+        )).thenReturn(Optional.of(historyLog));
+        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of("补充登录空值判断"))))
+                .thenReturn(new CodeReviewResult(
+                        true,
+                        "代码已修复，可以合并",
+                        ModelConfigService.PROVIDER_OPENAI,
+                        List.of("补充登录空值判断"),
+                        "# 代码审查",
+                        List.of(),
+                        List.of("补充登录空值判断")
+                ));
+
+        var result = gitlabManagementService.runAutoMergeConfig(21L);
+
+        assertThat(result.items()).singleElement().satisfies(item -> assertThat(item.action()).isEqualTo("AI_REJECTED"));
+        verify(gitlabApiService, never()).acceptMergeRequest(anyString(), anyString(), anyString(), anyLong(), anyBoolean(), anyBoolean(), anyBoolean());
+    }
+
+    /**
+     * 历史问题已修复时，合并成功日志需要保留修复摘要，便于后续追溯。
+     */
+    @Test
+    void shouldPersistResolvedHistoricalIssuesIntoMergedLog() {
+        GitlabAutoMergeConfigEntity config = buildStandaloneAutoMergeConfig();
+        GitlabApiService.GitlabMergeRequest mergeRequest = buildMergeRequest(33L, "完成登录空指针修复");
+        GitlabApiService.GitlabMergeRequestChanges changes = buildMergeRequestChanges(33L, "完成登录空指针修复");
+        GitlabAutoMergeLogEntity historyLog = new GitlabAutoMergeLogEntity();
+        historyLog.setReviewIssuesJson("[\"补充登录空值判断\"]");
+
+        when(autoMergeConfigRepository.findById(21L)).thenReturn(Optional.of(config));
+        when(autoMergeConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(autoMergeLogRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(gitlabApiService.listMergeRequests("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "opened", "main"))
+                .thenReturn(List.of(mergeRequest));
+        when(gitlabApiService.fetchMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 33L))
+                .thenReturn(mergeRequest);
+        when(gitlabApiService.fetchMergeRequestChanges("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 33L))
+                .thenReturn(changes);
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
+                "group/demo-repo", 33L, "AI_REJECTED"
+        )).thenReturn(Optional.of(historyLog));
+        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of("补充登录空值判断"))))
+                .thenReturn(new CodeReviewResult(
+                        true,
+                        "历史问题已修复",
+                        ModelConfigService.PROVIDER_OPENAI,
+                        List.of(),
+                        "# 代码审查",
+                        List.of("补充登录空值判断"),
+                        List.of()
+                ));
+        when(gitlabApiService.acceptMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 33L, true, false, true))
+                .thenReturn(new GitlabApiService.GitlabMergeResult("merged", "http://gitlab.example.com/group/demo-repo/-/merge_requests/33", "abc123", "merged"));
+
+        var result = gitlabManagementService.runAutoMergeConfig(21L);
+
+        assertThat(result.mergedCount()).isEqualTo(1);
+        assertThat(result.items()).singleElement().satisfies(item -> assertThat(item.action()).isEqualTo("MERGED"));
+        verify(autoMergeLogRepository).save(argThat(log ->
+                "MERGED".equals(log.getResult())
+                        && "[\"补充登录空值判断\"]".equals(log.getResolvedPreviousIssuesJson())
+                        && "[]".equals(log.getReviewIssuesJson())
+                        && log.getDetailMarkdown() != null
+                        && log.getDetailMarkdown().contains("已修复项")
+        ));
+    }
+
+    /**
+     * 老日志没有结构化问题字段时，不应抛错，下一次复审直接按“无历史问题”处理。
+     */
+    @Test
+    void shouldIgnoreLegacyRejectedLogWithoutStructuredIssues() {
+        GitlabAutoMergeConfigEntity config = buildStandaloneAutoMergeConfig();
+        GitlabApiService.GitlabMergeRequest mergeRequest = buildMergeRequest(34L, "兼容旧日志格式");
+        GitlabApiService.GitlabMergeRequestChanges changes = buildMergeRequestChanges(34L, "兼容旧日志格式");
+        GitlabAutoMergeLogEntity historyLog = new GitlabAutoMergeLogEntity();
+        historyLog.setReviewIssuesJson(null);
+
+        when(autoMergeConfigRepository.findById(21L)).thenReturn(Optional.of(config));
+        when(autoMergeConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(autoMergeLogRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(gitlabApiService.listMergeRequests("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "opened", "main"))
+                .thenReturn(List.of(mergeRequest));
+        when(gitlabApiService.fetchMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 34L))
+                .thenReturn(mergeRequest);
+        when(gitlabApiService.fetchMergeRequestChanges("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 34L))
+                .thenReturn(changes);
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
+                "group/demo-repo", 34L, "AI_REJECTED"
+        )).thenReturn(Optional.of(historyLog));
+        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of())))
+                .thenReturn(new CodeReviewResult(
+                        false,
+                        "存在新的风险",
+                        ModelConfigService.PROVIDER_OPENAI,
+                        List.of("新增接口缺少鉴权"),
+                        "# 代码审查",
+                        List.of(),
+                        List.of()
+                ));
+
+        var result = gitlabManagementService.runAutoMergeConfig(21L);
+
+        assertThat(result.skippedCount()).isEqualTo(1);
+        verify(codeReviewClientService).reviewMergeRequest(any(), any(), any(), any(), eq(List.of()));
+    }
+
+    /**
      * 构造一个包含平台项目、仓库路径和默认分支的绑定样例，供多个测试复用。
      */
     private ProjectGitlabBindingEntity buildBinding() {
@@ -481,5 +667,73 @@ class GitlabManagementGitlabActionsTests {
         modelConfig.setId(3L);
         entity.setAiModelConfig(modelConfig);
         return entity;
+    }
+
+    /**
+     * 构造一个启用 AI Review 的独立自动合并策略，供历史问题带入场景复用。
+     */
+    private GitlabAutoMergeConfigEntity buildStandaloneAutoMergeConfig() {
+        GitlabAutoMergeConfigEntity entity = new GitlabAutoMergeConfigEntity();
+        entity.setId(21L);
+        entity.setName("AI 自动合并");
+        entity.setExecutionMode("STANDALONE");
+        entity.setApiBaseUrl("http://gitlab.example.com/api/v4");
+        entity.setGitlabProjectRef("group/demo-repo");
+        entity.setTargetBranch("main");
+        entity.setTokenCiphertext("cipher-token");
+        entity.setEnabled(true);
+        entity.setAutoMerge(true);
+        entity.setSquashOnMerge(false);
+        entity.setRemoveSourceBranch(true);
+        entity.setRequirePipelineSuccess(true);
+        entity.setAiReviewEnabled(true);
+        AiModelConfigEntity modelConfig = new AiModelConfigEntity();
+        modelConfig.setId(6L);
+        modelConfig.setName("代码审查模型");
+        modelConfig.setModelType(ModelConfigService.MODEL_TYPE_CHAT);
+        modelConfig.setProvider(ModelConfigService.PROVIDER_OPENAI);
+        entity.setAiModelConfig(modelConfig);
+        return entity;
+    }
+
+    /**
+     * 构造自动合并测试用的开放 MR。
+     */
+    private GitlabApiService.GitlabMergeRequest buildMergeRequest(Long iid, String title) {
+        return new GitlabApiService.GitlabMergeRequest(
+                iid,
+                title,
+                "opened",
+                "feature/login",
+                "main",
+                false,
+                false,
+                "can_be_merged",
+                "success",
+                "Alice",
+                "alice",
+                "http://gitlab.example.com/group/demo-repo/-/merge_requests/" + iid,
+                "2026-06-17T10:00:00Z",
+                0
+        );
+    }
+
+    /**
+     * 构造自动合并复审测试用的 Diff 快照。
+     */
+    private GitlabApiService.GitlabMergeRequestChanges buildMergeRequestChanges(Long iid, String title) {
+        return new GitlabApiService.GitlabMergeRequestChanges(
+                iid,
+                title,
+                "修复登录逻辑",
+                List.of(new GitlabApiService.GitlabChange(
+                        "src/LoginService.java",
+                        "src/LoginService.java",
+                        "+ if (user == null) { throw new IllegalArgumentException(); }",
+                        false,
+                        false,
+                        false
+                ))
+        );
     }
 }
