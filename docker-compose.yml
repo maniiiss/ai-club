@@ -64,6 +64,8 @@ services:
     build:
       context: ./code-processing
       dockerfile: Dockerfile
+      args:
+        GITNEXUS_CLI_IMAGE: ${GITNEXUS_CLI_IMAGE:-ghcr.io/abhigyanpatwari/gitnexus:latest}
     image: ${CODE_PROCESSING_IMAGE:-git-ai-club-code-processing:latest}
     container_name: git-ai-club-code-processing
     restart: unless-stopped
@@ -77,6 +79,9 @@ services:
       PLATFORM_MINIO_SECRET_KEY: ${PLATFORM_MINIO_SECRET_KEY:-minioadmin}
       PLATFORM_MINIO_BUCKET: ${PLATFORM_MINIO_BUCKET:-ai-club-assets}
       PLATFORM_SCAN_WORKSPACE_ROOT: ${PLATFORM_SCAN_WORKSPACE_ROOT:-/tmp/git-ai-club-scans}
+      PLATFORM_GITNEXUS_CLI_PATH: ${PLATFORM_GITNEXUS_CLI_PATH:-/usr/local/bin/gitnexus}
+      PLATFORM_GITNEXUS_SERVE_HOST: ${PLATFORM_GITNEXUS_SERVE_HOST:-0.0.0.0}
+      PLATFORM_GITNEXUS_SERVE_PORT: ${PLATFORM_GITNEXUS_SERVE_PORT:-4747}
       # 透传 Codex / Claude Code CLI 配置，避免容器内回落到不符合预期的默认值。
       PLATFORM_CODEX_CLI_PATH: ${PLATFORM_CODEX_CLI_PATH:-}
       PLATFORM_CODEX_MODEL_PROVIDER: ${PLATFORM_CODEX_MODEL_PROVIDER:-}
@@ -85,6 +90,7 @@ services:
       PLATFORM_CLAUDE_MODEL: ${PLATFORM_CLAUDE_MODEL:-}
     ports:
       - "${CODE_PROCESSING_PORT:-9000}:9000"
+      - "${PLATFORM_GITNEXUS_SERVE_PUBLIC_PORT:-4747}:${PLATFORM_GITNEXUS_SERVE_PORT:-4747}"
     volumes:
       - "${PLATFORM_SCAN_HOST_PATH:-./.data/scans}:${PLATFORM_SCAN_WORKSPACE_ROOT:-/tmp/git-ai-club-scans}"
 
