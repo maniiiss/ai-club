@@ -1455,14 +1455,39 @@ public class GitlabManagementService {
         if (issues == null || issues.isEmpty()) {
             return List.of();
         }
-        Set<String> excluded = new LinkedHashSet<>(normalizeIssueList(excludedIssues));
+        Set<String> excluded = new LinkedHashSet<>();
+        for (String excludedIssue : normalizeIssueList(excludedIssues)) {
+            excluded.add(issueSemanticKey(excludedIssue));
+        }
         List<String> result = new ArrayList<>();
         for (String issue : normalizeIssueList(issues)) {
-            if (!excluded.contains(issue)) {
+            if (!excluded.contains(issueSemanticKey(issue))) {
                 result.add(issue);
             }
         }
         return result;
+    }
+
+    /**
+     * “本次新增问题”判定不再按整句精确匹配，而是取问题主语段做归一化，
+     * 避免同一问题只是补充了建议、风险说明后就被误判成新增。
+     */
+    private String issueSemanticKey(String issue) {
+        String normalized = trimToNull(issue);
+        if (normalized == null) {
+            return "";
+        }
+        String compact = normalized
+                .replace('（', '(')
+                .replace('）', ')')
+                .replace('：', ':')
+                .replaceAll("\\s+", " ")
+                .trim();
+        String[] segments = compact.split("[，,。；;：:]");
+        if (segments.length > 0 && hasText(segments[0])) {
+            return segments[0].trim().toLowerCase();
+        }
+        return compact.toLowerCase();
     }
 
     private void appendMarkdownIssueSection(StringBuilder builder, String title, List<String> issues) {

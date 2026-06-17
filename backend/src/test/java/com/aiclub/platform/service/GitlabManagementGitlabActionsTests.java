@@ -523,6 +523,50 @@ class GitlabManagementGitlabActionsTests {
     }
 
     /**
+     * 同一历史问题即使本次描述更详细，也不应被误判为“本次新增问题”。
+     */
+    @Test
+    void shouldNotTreatExpandedWordingAsNewIssue() {
+        GitlabAutoMergeConfigEntity config = buildStandaloneAutoMergeConfig();
+        GitlabApiService.GitlabMergeRequest mergeRequest = buildMergeRequest(35L, "附件管理传参调整");
+        GitlabApiService.GitlabMergeRequestChanges changes = buildMergeRequestChanges(35L, "附件管理传参调整");
+        GitlabAutoMergeLogEntity historyLog = new GitlabAutoMergeLogEntity();
+        historyLog.setReviewIssuesJson("[\"变更2中 teamMembers 数组元素可能为 null 或 undefined，导致 map 展开报错\"]");
+
+        when(autoMergeConfigRepository.findById(21L)).thenReturn(Optional.of(config));
+        when(autoMergeConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(autoMergeLogRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(gitlabApiService.listMergeRequests("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "opened", "main"))
+                .thenReturn(List.of(mergeRequest));
+        when(gitlabApiService.fetchMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 35L))
+                .thenReturn(mergeRequest);
+        when(gitlabApiService.fetchMergeRequestChanges("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 35L))
+                .thenReturn(changes);
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
+                "group/demo-repo", 35L, "AI_REJECTED"
+        )).thenReturn(Optional.of(historyLog));
+        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of("变更2中 teamMembers 数组元素可能为 null 或 undefined，导致 map 展开报错"))))
+                .thenReturn(new CodeReviewResult(
+                        false,
+                        "历史问题未修复",
+                        ModelConfigService.PROVIDER_OPENAI,
+                        List.of("变更2中 teamMembers 数组元素可能为 null 或 undefined，使用展开运算符 {...member} 时会报错，建议先过滤或使用空对象默认值"),
+                        "# 代码审查",
+                        List.of(),
+                        List.of("变更2中 teamMembers 数组元素可能为 null 或 undefined，导致 map 展开报错")
+                ));
+
+        gitlabManagementService.runAutoMergeConfig(21L);
+
+        verify(autoMergeLogRepository).save(argThat(log ->
+                "AI_REJECTED".equals(log.getResult())
+                        && log.getDetailMarkdown() != null
+                        && log.getDetailMarkdown().contains("### 本次新增问题\n- 无")
+        ));
+    }
+
+    /**
      * 历史问题已修复时，合并成功日志需要保留修复摘要，便于后续追溯。
      */
     @Test
