@@ -37,8 +37,8 @@ public record ModelBenchmarkConfigUpdateRequest(
         @Max(value = 8192, message = "max_tokens 不应高于 8192")
         Integer maxTokens,
 
-        @Size(max = 4000) String systemPrompt,
+        @Size(max = 32000, message = "System Prompt 长度不能超过 32000 个字符") String systemPrompt,
 
-        @Size(max = 4000) String userPrompt
+        @Size(max = 32000, message = "User Prompt 长度不能超过 32000 个字符") String userPrompt
 ) {
 }

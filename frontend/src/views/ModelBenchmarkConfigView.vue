@@ -284,6 +284,8 @@
             type="textarea"
             :rows="2"
             :placeholder="defaultSystemPrompt"
+            :maxlength="32000"
+            show-word-limit
           />
         </el-form-item>
         <el-form-item label="User Prompt">
@@ -292,6 +294,8 @@
             type="textarea"
             :rows="4"
             :placeholder="defaultUserPrompt"
+            :maxlength="32000"
+            show-word-limit
           />
           <div class="form-default-template">
             <button type="button" class="form-default-template-btn" @click="useDefaultPrompts">
