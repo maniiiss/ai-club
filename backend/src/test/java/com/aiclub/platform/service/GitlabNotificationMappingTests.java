@@ -7,6 +7,7 @@ import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
 import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
+import com.aiclub.platform.repository.GitlabAutoMergeWebhookRepository;
 import com.aiclub.platform.repository.GitlabProductBranchRepository;
 import com.aiclub.platform.repository.GitlabProductBranchSyncLogRepository;
 import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
@@ -44,6 +45,9 @@ class GitlabNotificationMappingTests {
     private GitlabAutoMergeLogRepository autoMergeLogRepository;
 
     @Mock
+    private GitlabAutoMergeWebhookRepository autoMergeWebhookRepository;
+
+    @Mock
     private GitlabProductBranchRepository productBranchRepository;
 
     @Mock
@@ -75,6 +79,9 @@ class GitlabNotificationMappingTests {
 
     @Mock
     private NotificationService notificationService;
+
+    @Mock
+    private GitlabAutoMergeWebhookDispatcher autoMergeWebhookDispatcher;
 
     @Mock
     private ProjectDataPermissionService projectDataPermissionService;
@@ -121,6 +128,7 @@ class GitlabNotificationMappingTests {
                 gitlabCodeStructureSnapshotRepository,
                 autoMergeConfigRepository,
                 autoMergeLogRepository,
+                autoMergeWebhookRepository,
                 productBranchRepository,
                 productBranchSyncLogRepository,
                 aiModelConfigRepository,
@@ -132,6 +140,7 @@ class GitlabNotificationMappingTests {
                 agentExecutionService,
                 cicdManagementService,
                 notificationService,
+                autoMergeWebhookDispatcher,
                 projectDataPermissionService,
                 gitlabUserOauthService,
                 executionTaskService,
