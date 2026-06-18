@@ -80,6 +80,7 @@ diff:
 """
         )
     joined_changes = "\n".join(changes_text) if changes_text else "No file changes"
+    strictness_rules = _build_strictness_rules(request.reviewStrictness)
 
     return f"""
 {request.prompt}
@@ -105,6 +106,9 @@ Rules:
 6. reviewMarkdown should be clear and practical, and should include sections for conclusion, historical issue status, current issues, and suggestions.
 7. Return JSON only.
 
+Platform Final Auto-Merge Gate:
+{strictness_rules}
+
 Previous Issues From Last Rejected Review:
 {_format_previous_issues(request.previousIssues)}
 
@@ -123,6 +127,28 @@ MR Description:
 Changes:
 {joined_changes}
 """.strip()
+
+
+def _build_strictness_rules(review_strictness: str) -> str:
+    """根据自动合并策略严格度生成最终门禁规则，覆盖自定义提示词中的宽松要求。"""
+    normalized = (review_strictness or "MEDIUM").strip().upper()
+    if normalized == "HIGH":
+        return (
+            "- 当前严格度：高（HIGH）。\n"
+            "- 只要发现明确不规范、质量缺陷、缺少必要测试、边界条件不足、错误处理不足、潜在风险或历史问题未修复，approved 必须为 false。\n"
+            "- 只有变更清晰、风险可控、实现规范且必要验证充分时，才允许 approved 为 true。"
+        )
+    if normalized == "LOW":
+        return (
+            "- 当前严格度：低（LOW）。\n"
+            "- 仅当问题会导致线上故障、安全漏洞、数据破坏、接口或行为兼容性破坏、严重性能退化，或历史问题未修复时，approved 必须为 false。\n"
+            "- 纯风格、轻微可维护性建议、非阻塞测试建议可以写入 reviewMarkdown，但不要仅因此拒绝合并。"
+        )
+    return (
+        "- 当前严格度：中（MEDIUM）。\n"
+        "- 发现严重风险或中等风险时 approved 必须为 false，例如明显 bug、边界遗漏、异常处理缺失、安全隐患、关键流程回归、缺少必要测试或历史问题未修复。\n"
+        "- 纯格式、命名、注释等轻微风格问题可作为建议，不要仅因此拒绝合并。"
+    )
 
 
 def _trim_diff(diff: str, max_chars: int = 12000) -> str:

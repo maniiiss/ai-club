@@ -1626,6 +1626,7 @@ export interface GitlabAutoMergeConfigItem {
   nextExecutionTime: string | null
   aiReviewEnabled: boolean
   aiReviewPrompt: string | null
+  reviewStrictness: 'HIGH' | 'MEDIUM' | 'LOW'
   lastRunStatus: string | null
   lastRunMessage: string | null
   lastRunAt: string | null

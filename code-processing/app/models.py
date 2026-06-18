@@ -46,6 +46,7 @@ class ReviewRequest(BaseModel):
     model: str = Field(description="Provider model name")
     openaiApiMode: str = Field(default="AUTO", description="OpenAI compatible API invocation mode")
     prompt: str = Field(description="Code review prompt/rules")
+    reviewStrictness: str = Field(default="MEDIUM", description="AI review strictness: HIGH, MEDIUM or LOW")
     mergeRequestTitle: str = Field(default="")
     mergeRequestDescription: str = Field(default="")
     changes: list[CodeChange] = Field(default_factory=list)
@@ -67,6 +68,15 @@ class ReviewRequest(BaseModel):
             return [str(item).strip() for item in value if str(item).strip()]
         text = str(value).strip()
         return [text] if text else []
+
+    @field_validator("reviewStrictness", mode="before")
+    @classmethod
+    def normalize_review_strictness(cls, value: Any) -> str:
+        """收口审查严格度，兼容旧请求未传值或传入非法值的情况。"""
+        if value is None:
+            return "MEDIUM"
+        normalized = str(value).strip().upper()
+        return normalized if normalized in {"HIGH", "MEDIUM", "LOW"} else "MEDIUM"
 
 
 class ReviewResponse(BaseModel):

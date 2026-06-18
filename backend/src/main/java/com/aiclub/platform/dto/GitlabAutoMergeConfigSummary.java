@@ -31,6 +31,7 @@ public record GitlabAutoMergeConfigSummary(
         String nextExecutionTime,
         Boolean aiReviewEnabled,
         String aiReviewPrompt,
+        String reviewStrictness,
         String lastRunStatus,
         String lastRunMessage,
         String lastRunAt

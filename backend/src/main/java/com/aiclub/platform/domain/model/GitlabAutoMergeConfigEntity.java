@@ -85,6 +85,12 @@ public class GitlabAutoMergeConfigEntity {
     @Column(name = "ai_review_prompt", columnDefinition = "TEXT")
     private String aiReviewPrompt;
 
+    /**
+     * AI 审查严格度，控制自动合并前模型拒绝 MR 的风险阈值，取值 HIGH / MEDIUM / LOW。
+     */
+    @Column(name = "ai_review_strictness", nullable = false, length = 20)
+    private String reviewStrictness = "MEDIUM";
+
     @Column(name = "scheduler_cron", length = 100)
     private String schedulerCron;
 
@@ -287,6 +293,14 @@ public class GitlabAutoMergeConfigEntity {
 
     public void setAiReviewPrompt(String aiReviewPrompt) {
         this.aiReviewPrompt = aiReviewPrompt;
+    }
+
+    public String getReviewStrictness() {
+        return reviewStrictness;
+    }
+
+    public void setReviewStrictness(String reviewStrictness) {
+        this.reviewStrictness = reviewStrictness;
     }
 
     public String getSchedulerCron() {

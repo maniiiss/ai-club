@@ -60,6 +60,36 @@ class ReviewServiceTests(unittest.TestCase):
         self.assertIn("- 补充空值判断", prompt)
         self.assertIn("- 补充鉴权校验", prompt)
 
+    def test_should_include_default_medium_review_strictness_rules_in_prompt(self):
+        prompt = _build_prompt(self._build_request())
+
+        self.assertIn("Platform Final Auto-Merge Gate", prompt)
+        self.assertIn("当前严格度：中（MEDIUM）", prompt)
+        self.assertIn("严重风险或中等风险", prompt)
+        self.assertIn("历史问题未修复", prompt)
+
+    def test_should_include_high_review_strictness_rules_in_prompt(self):
+        request = self._build_request().model_copy(update={
+            "reviewStrictness": "HIGH",
+        })
+
+        prompt = _build_prompt(request)
+
+        self.assertIn("当前严格度：高（HIGH）", prompt)
+        self.assertIn("明确不规范", prompt)
+        self.assertIn("缺少必要测试", prompt)
+
+    def test_should_include_low_review_strictness_rules_in_prompt(self):
+        request = self._build_request().model_copy(update={
+            "reviewStrictness": "LOW",
+        })
+
+        prompt = _build_prompt(request)
+
+        self.assertIn("当前严格度：低（LOW）", prompt)
+        self.assertIn("仅当问题会导致线上故障", prompt)
+        self.assertIn("纯风格", prompt)
+
     @patch("app.services.review_service._call_provider")
     def test_should_build_chinese_fallback_markdown_when_review_markdown_missing(self, call_provider):
         call_provider.return_value = """

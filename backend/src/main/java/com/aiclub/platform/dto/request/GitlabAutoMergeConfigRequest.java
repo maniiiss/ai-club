@@ -38,6 +38,8 @@ public record GitlabAutoMergeConfigRequest(
         Long aiModelConfigId,
         Boolean aiReviewEnabled,
         @Size(max = 5000, message = "AI Review 提示不能不能超过5000个字符")
-        String aiReviewPrompt
+        String aiReviewPrompt,
+        @Size(max = 20, message = "AI Review 严格度不能超过20个字符")
+        String reviewStrictness
 ) {
 }

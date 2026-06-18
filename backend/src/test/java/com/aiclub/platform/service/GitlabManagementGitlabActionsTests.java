@@ -438,10 +438,97 @@ class GitlabManagementGitlabActionsTests {
                 null,
                 9L,
                 true,
-                "请审查当前 MR"
+                "请审查当前 MR",
+                null
         )))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("AI Review 仅支持绑定对话模型配置");
+    }
+
+    /**
+     * 创建自动合并策略时应保存 AI 审查严格度；未传或非法值由服务层统一回退到中等严格度。
+     */
+    @Test
+    void shouldPersistReviewStrictnessWhenCreatingAutoMergeConfig() {
+        AiModelConfigEntity chatModel = new AiModelConfigEntity();
+        chatModel.setId(6L);
+        chatModel.setName("代码审查模型");
+        chatModel.setModelType(ModelConfigService.MODEL_TYPE_CHAT);
+        chatModel.setProvider(ModelConfigService.PROVIDER_OPENAI);
+        when(aiModelConfigRepository.findById(6L)).thenReturn(Optional.of(chatModel));
+        when(tokenCipherService.encrypt("gitlab-token")).thenReturn("cipher-token");
+        when(autoMergeConfigRepository.save(any())).thenAnswer(invocation -> {
+            GitlabAutoMergeConfigEntity entity = invocation.getArgument(0);
+            entity.setId(88L);
+            return entity;
+        });
+
+        var summary = gitlabManagementService.createAutoMergeConfig(new GitlabAutoMergeConfigRequest(
+                "严格审查策略",
+                "STANDALONE",
+                "验证 AI 审查严格度保存",
+                null,
+                "http://gitlab.example.com/api/v4",
+                "group/demo-repo",
+                "gitlab-token",
+                "feature/test",
+                "main",
+                "feat:",
+                true,
+                true,
+                false,
+                true,
+                false,
+                true,
+                false,
+                null,
+                null,
+                6L,
+                true,
+                "请审查当前 MR",
+                "HIGH"
+        ));
+
+        assertThat(summary.reviewStrictness()).isEqualTo("HIGH");
+        verify(autoMergeConfigRepository).save(argThat(entity -> "HIGH".equals(entity.getReviewStrictness())));
+    }
+
+    /**
+     * 审查严格度传入空值或未知值时，自动合并策略应按中等严格度保存，兼容旧前端和旧数据。
+     */
+    @Test
+    void shouldFallbackInvalidReviewStrictnessToMedium() {
+        when(tokenCipherService.encrypt("gitlab-token")).thenReturn("cipher-token");
+        when(autoMergeConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var summary = gitlabManagementService.createAutoMergeConfig(new GitlabAutoMergeConfigRequest(
+                "兼容旧策略",
+                "STANDALONE",
+                "验证非法严格度回退",
+                null,
+                "http://gitlab.example.com/api/v4",
+                "group/demo-repo",
+                "gitlab-token",
+                "feature/test",
+                "main",
+                "feat:",
+                true,
+                true,
+                false,
+                true,
+                false,
+                true,
+                false,
+                null,
+                null,
+                null,
+                false,
+                "",
+                "STRICT"
+        ));
+
+        assertThat(summary.reviewStrictness()).isEqualTo("MEDIUM");
+        verify(autoMergeConfigRepository).save(argThat(entity -> "MEDIUM".equals(entity.getReviewStrictness())));
     }
 
     /**
@@ -468,7 +555,7 @@ class GitlabManagementGitlabActionsTests {
         when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
                 "group/demo-repo", 31L, "AI_REJECTED"
         )).thenReturn(Optional.of(historyLog));
-        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of("补充登录空值判断"))))
+        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of("补充登录空值判断")), anyString()))
                 .thenReturn(new CodeReviewResult(
                         false,
                         "历史问题尚未修复",
@@ -487,7 +574,7 @@ class GitlabManagementGitlabActionsTests {
             assertThat(item.action()).isEqualTo("AI_REJECTED");
             assertThat(item.message()).contains("历史问题尚未修复");
         });
-        verify(codeReviewClientService).reviewMergeRequest(any(), any(), any(), any(), eq(List.of("补充登录空值判断")));
+        verify(codeReviewClientService).reviewMergeRequest(any(), any(), any(), any(), eq(List.of("补充登录空值判断")), eq("MEDIUM"));
     }
 
     /**
@@ -514,7 +601,7 @@ class GitlabManagementGitlabActionsTests {
         when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
                 "group/demo-repo", 32L, "AI_REJECTED"
         )).thenReturn(Optional.of(historyLog));
-        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of("补充登录空值判断"))))
+        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of("补充登录空值判断")), anyString()))
                 .thenReturn(new CodeReviewResult(
                         true,
                         "代码已修复，可以合并",
@@ -555,7 +642,7 @@ class GitlabManagementGitlabActionsTests {
         when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
                 "group/demo-repo", 35L, "AI_REJECTED"
         )).thenReturn(Optional.of(historyLog));
-        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of("变更2中 teamMembers 数组元素可能为 null 或 undefined，导致 map 展开报错"))))
+        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of("变更2中 teamMembers 数组元素可能为 null 或 undefined，导致 map 展开报错")), anyString()))
                 .thenReturn(new CodeReviewResult(
                         false,
                         "历史问题未修复",
@@ -599,7 +686,7 @@ class GitlabManagementGitlabActionsTests {
         when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
                 "group/demo-repo", 33L, "AI_REJECTED"
         )).thenReturn(Optional.of(historyLog));
-        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of("补充登录空值判断"))))
+        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of("补充登录空值判断")), anyString()))
                 .thenReturn(new CodeReviewResult(
                         true,
                         "历史问题已修复",
@@ -649,7 +736,7 @@ class GitlabManagementGitlabActionsTests {
         when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
                 "group/demo-repo", 34L, "AI_REJECTED"
         )).thenReturn(Optional.of(historyLog));
-        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of())))
+        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of()), anyString()))
                 .thenReturn(new CodeReviewResult(
                         false,
                         "存在新的风险",
@@ -663,7 +750,47 @@ class GitlabManagementGitlabActionsTests {
         var result = gitlabManagementService.runAutoMergeConfig(21L);
 
         assertThat(result.skippedCount()).isEqualTo(1);
-        verify(codeReviewClientService).reviewMergeRequest(any(), any(), any(), any(), eq(List.of()));
+        verify(codeReviewClientService).reviewMergeRequest(any(), any(), any(), any(), eq(List.of()), eq("MEDIUM"));
+    }
+
+    /**
+     * 执行自动合并 AI 审查时，应把策略配置的严格度透传给 code-processing 审查服务。
+     */
+    @Test
+    void shouldPassConfiguredReviewStrictnessIntoCodeReview() {
+        GitlabAutoMergeConfigEntity config = buildStandaloneAutoMergeConfig();
+        config.setReviewStrictness("LOW");
+        GitlabApiService.GitlabMergeRequest mergeRequest = buildMergeRequest(36L, "宽松审查合并");
+        GitlabApiService.GitlabMergeRequestChanges changes = buildMergeRequestChanges(36L, "宽松审查合并");
+
+        when(autoMergeConfigRepository.findById(21L)).thenReturn(Optional.of(config));
+        when(autoMergeConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(autoMergeLogRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(gitlabApiService.listMergeRequests("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "opened", "main"))
+                .thenReturn(List.of(mergeRequest));
+        when(gitlabApiService.fetchMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 36L))
+                .thenReturn(mergeRequest);
+        when(gitlabApiService.fetchMergeRequestChanges("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 36L))
+                .thenReturn(changes);
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
+                "group/demo-repo", 36L, "AI_REJECTED"
+        )).thenReturn(Optional.empty());
+        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of()), eq("LOW")))
+                .thenReturn(new CodeReviewResult(
+                        false,
+                        "仅严重问题拒绝",
+                        ModelConfigService.PROVIDER_OPENAI,
+                        List.of("存在严重安全风险"),
+                        "# 代码审查",
+                        List.of(),
+                        List.of()
+                ));
+
+        var result = gitlabManagementService.runAutoMergeConfig(21L);
+
+        assertThat(result.items()).singleElement().satisfies(item -> assertThat(item.action()).isEqualTo("AI_REJECTED"));
+        verify(codeReviewClientService).reviewMergeRequest(any(), any(), any(), any(), eq(List.of()), eq("LOW"));
     }
 
     /**

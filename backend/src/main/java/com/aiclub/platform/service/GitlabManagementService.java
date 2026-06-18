@@ -106,6 +106,9 @@ public class GitlabManagementService {
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String MODE_PROJECT_BOUND = "PROJECT_BOUND";
     private static final String MODE_STANDALONE = "STANDALONE";
+    private static final String REVIEW_STRICTNESS_HIGH = "HIGH";
+    private static final String REVIEW_STRICTNESS_MEDIUM = "MEDIUM";
+    private static final String REVIEW_STRICTNESS_LOW = "LOW";
     private static final String TRIGGER_MANUAL = "MANUAL";
     private static final String TRIGGER_SCHEDULED = "SCHEDULED";
     private static final String BRANCH_BEHIND_REASON_PREFIX = "源分支落后于目标分支";
@@ -1135,6 +1138,7 @@ public class GitlabManagementService {
         entity.setSchedulerCron(normalizeSchedulerCron(request.schedulerCron()));
         entity.setAiReviewEnabled(defaultBoolean(request.aiReviewEnabled(), false));
         entity.setAiReviewPrompt(defaultString(request.aiReviewPrompt()));
+        entity.setReviewStrictness(normalizeReviewStrictness(request.reviewStrictness()));
         entity.setReviewAgent(request.reviewAgentId() == null ? null : requireAgent(request.reviewAgentId()));
         entity.setAiModelConfig(request.aiModelConfigId() == null ? null : requireChatModelConfig(request.aiModelConfigId()));
         if (Boolean.TRUE.equals(entity.getSchedulerEnabled()) && !hasText(entity.getSchedulerCron())) {
@@ -1237,15 +1241,16 @@ public class GitlabManagementService {
                                                 List<String> previousIssues) {
         GitlabApiService.GitlabMergeRequestChanges changes = gitlabApiService.fetchMergeRequestChanges(
                 resolved.apiBaseUrl(), resolved.token(), resolved.projectRef(), mergeRequest.iid());
+        String reviewStrictness = normalizeReviewStrictness(entity.getReviewStrictness());
         if (entity.getReviewAgent() != null) {
-            return agentExecutionService.reviewMergeRequest(entity.getReviewAgent().getId(), mergeRequest, changes, previousIssues);
+            return agentExecutionService.reviewMergeRequest(entity.getReviewAgent().getId(), mergeRequest, changes, previousIssues, reviewStrictness);
         }
         if (entity.getAiModelConfig() == null) {
             throw new IllegalArgumentException("AI ????? Code Review Agent");
         }
         ensureChatModelConfig(entity.getAiModelConfig());
         ModelConfigService.ResolvedModelConfig modelConfig = modelConfigService.resolveModelConfig(entity.getAiModelConfig().getId());
-        return codeReviewClientService.reviewMergeRequest(modelConfig, buildReviewPrompt(entity), mergeRequest, changes, previousIssues);
+        return codeReviewClientService.reviewMergeRequest(modelConfig, buildReviewPrompt(entity), mergeRequest, changes, previousIssues, reviewStrictness);
     }
 
 
@@ -1266,6 +1271,20 @@ public class GitlabManagementService {
 
                 如果存在高风险问题，approved 必须为 false。
                 """;
+    }
+
+    /**
+     * 将页面或旧数据里的审查严格度统一收口为平台支持的枚举，默认采用中等严格度。
+     */
+    private String normalizeReviewStrictness(String value) {
+        if (!hasText(value)) {
+            return REVIEW_STRICTNESS_MEDIUM;
+        }
+        String normalized = value.trim().toUpperCase();
+        return switch (normalized) {
+            case REVIEW_STRICTNESS_HIGH, REVIEW_STRICTNESS_MEDIUM, REVIEW_STRICTNESS_LOW -> normalized;
+            default -> REVIEW_STRICTNESS_MEDIUM;
+        };
     }
 
     private String buildReviewFailureMessage(CodeReviewResult reviewResult) {
@@ -2512,6 +2531,7 @@ public class GitlabManagementService {
                 computeNextExecutionTime(entity),
                 defaultBoolean(entity.getAiReviewEnabled(), false),
                 entity.getAiReviewPrompt(),
+                normalizeReviewStrictness(entity.getReviewStrictness()),
                 entity.getLastRunStatus(),
                 entity.getLastRunMessage(),
                 formatTime(entity.getLastRunAt())

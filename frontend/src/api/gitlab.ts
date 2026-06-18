@@ -69,6 +69,7 @@ export interface GitlabAutoMergePayload {
   aiModelConfigId?: number | null
   aiReviewEnabled: boolean
   aiReviewPrompt: string
+  reviewStrictness: 'HIGH' | 'MEDIUM' | 'LOW'
 }
 
 export interface GitlabAutoMergeQuery {

@@ -144,7 +144,7 @@ class AgentExecutionServiceTests {
         );
         when(agentRepository.findById(12L)).thenReturn(Optional.of(agent));
         when(modelConfigService.resolveModelConfig(6L)).thenReturn(resolvedConfig);
-        when(codeReviewClientService.reviewMergeRequest(eq(resolvedConfig), anyString(), any(), any(), any()))
+        when(codeReviewClientService.reviewMergeRequest(eq(resolvedConfig), anyString(), any(), any(), any(), anyString()))
                 .thenReturn(reviewResult);
 
         String output = agentExecutionService.runAgent(12L, "新增空指针风险");
@@ -155,12 +155,14 @@ class AgentExecutionServiceTests {
         ArgumentCaptor<GitlabApiService.GitlabMergeRequest> mergeRequestCaptor = ArgumentCaptor.forClass(GitlabApiService.GitlabMergeRequest.class);
         ArgumentCaptor<GitlabApiService.GitlabMergeRequestChanges> changesCaptor = ArgumentCaptor.forClass(GitlabApiService.GitlabMergeRequestChanges.class);
         ArgumentCaptor<List<String>> previousIssuesCaptor = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<String> strictnessCaptor = ArgumentCaptor.forClass(String.class);
         verify(codeReviewClientService).reviewMergeRequest(
                 eq(resolvedConfig),
                 promptCaptor.capture(),
                 mergeRequestCaptor.capture(),
                 changesCaptor.capture(),
-                previousIssuesCaptor.capture()
+                previousIssuesCaptor.capture(),
+                strictnessCaptor.capture()
         );
 
         assertThat(promptCaptor.getValue()).contains("代码审查智能体").contains("JSON");
@@ -170,6 +172,7 @@ class AgentExecutionServiceTests {
         assertThat(changesCaptor.getValue().changes().get(0).newPath()).isEqualTo("sample.txt");
         assertThat(changesCaptor.getValue().changes().get(0).diff()).isEqualTo("新增空指针风险");
         assertThat(previousIssuesCaptor.getValue()).isEmpty();
+        assertThat(strictnessCaptor.getValue()).isEqualTo("MEDIUM");
     }
 
     /**

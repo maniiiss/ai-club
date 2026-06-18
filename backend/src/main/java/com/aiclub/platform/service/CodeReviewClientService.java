@@ -42,7 +42,8 @@ public class CodeReviewClientService {
                                                String prompt,
                                                GitlabApiService.GitlabMergeRequest mergeRequest,
                                                GitlabApiService.GitlabMergeRequestChanges changes,
-                                               List<String> previousIssues) {
+                                               List<String> previousIssues,
+                                               String reviewStrictness) {
         try {
             ObjectNode payload = objectMapper.createObjectNode()
                     .put("provider", defaultString(modelConfig.provider()))
@@ -51,6 +52,7 @@ public class CodeReviewClientService {
                     .put("model", defaultString(modelConfig.modelName()))
                     .put("openaiApiMode", defaultString(modelConfig.openaiApiMode()))
                     .put("prompt", defaultString(prompt))
+                    .put("reviewStrictness", normalizeReviewStrictness(reviewStrictness))
                     .put("mergeRequestTitle", defaultString(mergeRequest.title()))
                     .put("mergeRequestDescription", defaultString(changes.description()));
 
@@ -241,6 +243,20 @@ public class CodeReviewClientService {
             }
         }
         return values;
+    }
+
+    /**
+     * 统一兜底审查严格度，保障旧调用链或旧配置不会传出空值。
+     */
+    private String normalizeReviewStrictness(String value) {
+        if (!hasText(value)) {
+            return "MEDIUM";
+        }
+        String normalized = value.trim().toUpperCase();
+        if ("HIGH".equals(normalized) || "MEDIUM".equals(normalized) || "LOW".equals(normalized)) {
+            return normalized;
+        }
+        return "MEDIUM";
     }
 
     private String buildResponseMessage(String responseBody) {
