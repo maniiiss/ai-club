@@ -1760,13 +1760,20 @@
             <el-option v-for="agent in reviewAgentOptions" :key="agent.id" :label="agent.name" :value="agent.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="审查严格度" class="span-2">
-          <el-radio-group v-model="autoMergeForm.reviewStrictness" :disabled="!autoMergeForm.aiReviewEnabled">
+        <el-form-item class="span-2 auto-merge-strictness-item">
+          <template #label>
+            <span class="auto-merge-label-with-help">
+              审查严格度
+              <el-tooltip content="高：不规范也拒绝；中：拒绝严重和中等风险；低：仅拒绝严重风险。" placement="top">
+                <el-icon class="auto-merge-help-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+          </template>
+          <el-radio-group v-model="autoMergeForm.reviewStrictness" class="auto-merge-strictness-group" :disabled="!autoMergeForm.aiReviewEnabled">
             <el-radio-button label="HIGH">高</el-radio-button>
             <el-radio-button label="MEDIUM">中</el-radio-button>
             <el-radio-button label="LOW">低</el-radio-button>
           </el-radio-group>
-          <div class="form-tip">高：不规范也拒绝；中：拒绝严重和中等风险；低：仅拒绝严重风险。</div>
         </el-form-item>
         <el-form-item label="自动合并">
           <el-switch v-model="autoMergeForm.autoMerge" />
@@ -1780,9 +1787,16 @@
         <el-form-item label="删除源分支">
           <el-switch v-model="autoMergeForm.removeSourceBranch" />
         </el-form-item>
-        <el-form-item label="合并后触发流水线" class="span-2">
+        <el-form-item class="span-2">
+          <template #label>
+            <span class="auto-merge-label-with-help">
+              合并后触发流水线
+              <el-tooltip content="仅关联业务项目模式可用，合并成功后会按项目默认流水线自动触发。" placement="top">
+                <el-icon class="auto-merge-help-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+          </template>
           <el-switch v-model="autoMergeForm.triggerPipelineAfterMerge" :disabled="autoMergeForm.executionMode !== 'PROJECT_BOUND'" />
-          <div class="form-tip">仅关联业务项目模式可用，合并成功后会按项目默认流水线自动触发。</div>
         </el-form-item>
         </div>
       </section>
@@ -1901,13 +1915,20 @@
             <el-option v-for="agent in reviewAgentOptions" :key="agent.id" :label="agent.name" :value="agent.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="审查严格度" class="span-2">
-          <el-radio-group v-model="autoMergeForm.reviewStrictness" :disabled="!autoMergeForm.aiReviewEnabled">
+        <el-form-item class="span-2 auto-merge-strictness-item">
+          <template #label>
+            <span class="auto-merge-label-with-help">
+              审查严格度
+              <el-tooltip content="高：不规范也拒绝；中：拒绝严重和中等风险；低：仅拒绝严重风险。" placement="top">
+                <el-icon class="auto-merge-help-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+          </template>
+          <el-radio-group v-model="autoMergeForm.reviewStrictness" class="auto-merge-strictness-group" :disabled="!autoMergeForm.aiReviewEnabled">
             <el-radio-button label="HIGH">高</el-radio-button>
             <el-radio-button label="MEDIUM">中</el-radio-button>
             <el-radio-button label="LOW">低</el-radio-button>
           </el-radio-group>
-          <div class="form-tip">高：不规范也拒绝；中：拒绝严重和中等风险；低：仅拒绝严重风险。</div>
         </el-form-item>
         <el-form-item label="自动合并">
           <el-switch v-model="autoMergeForm.autoMerge" />
@@ -1921,9 +1942,16 @@
         <el-form-item label="删除源分支">
           <el-switch v-model="autoMergeForm.removeSourceBranch" />
         </el-form-item>
-        <el-form-item label="合并后触发流水线" class="span-2">
+        <el-form-item class="span-2">
+          <template #label>
+            <span class="auto-merge-label-with-help">
+              合并后触发流水线
+              <el-tooltip content="仅关联业务项目模式可用，合并成功后会按项目默认流水线自动触发。" placement="top">
+                <el-icon class="auto-merge-help-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+          </template>
           <el-switch v-model="autoMergeForm.triggerPipelineAfterMerge" :disabled="autoMergeForm.executionMode !== 'PROJECT_BOUND'" />
-          <div class="form-tip">仅关联业务项目模式可用，合并成功后会按项目默认流水线自动触发。</div>
         </el-form-item>
         </div>
       </section>
@@ -2277,7 +2305,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Bell, Connection, Delete, DocumentCopy, EditPen, Filter, FolderOpened, Plus, RefreshRight, Search, Share, Tickets, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Bell, Connection, Delete, DocumentCopy, EditPen, Filter, FolderOpened, Plus, QuestionFilled, RefreshRight, Search, Share, Tickets, VideoPlay } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
@@ -3856,6 +3884,56 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 }
 .auto-merge-form :deep(.el-divider__text) {
   font-weight: 600;
+}
+.auto-merge-label-with-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.2;
+}
+.auto-merge-help-icon {
+  color: #7a8ca4;
+  font-size: 15px;
+  transition: color 0.18s ease, transform 0.18s ease;
+}
+.auto-merge-help-icon:hover {
+  color: var(--app-tertiary);
+  transform: translateY(-1px);
+}
+.auto-merge-strictness-item :deep(.el-form-item__content) {
+  align-items: center;
+}
+.auto-merge-strictness-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.auto-merge-strictness-group :deep(.el-radio-button) {
+  margin: 0;
+}
+.auto-merge-strictness-group :deep(.el-radio-button__inner) {
+  min-width: 44px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  border-radius: 999px !important;
+  background: #f3f5f7;
+  color: #5f6f82;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px rgba(25, 28, 29, 0.06) !important;
+}
+.auto-merge-strictness-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  background: var(--app-tertiary);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(var(--app-tertiary-rgb), 0.18) !important;
+}
+.auto-merge-strictness-group :deep(.el-radio-button.is-disabled .el-radio-button__inner) {
+  background: #f3f5f7;
+  color: #a6b0bd;
+  box-shadow: inset 0 0 0 1px rgba(25, 28, 29, 0.04) !important;
 }
 .card-header { justify-content: space-between; }
 .filter-form { margin-bottom: 18px; flex-wrap: wrap; }
