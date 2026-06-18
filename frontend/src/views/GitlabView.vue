@@ -647,6 +647,11 @@
                           <el-icon><VideoPlay /></el-icon>
                         </button>
                       </el-tooltip>
+                      <el-tooltip content="Webhook 通知" placement="top">
+                        <button class="management-list-row-button gitlab-action-button" type="button" aria-label="管理自动合并 Webhook" @click="openAutoMergeWebhookDialog(row.id)">
+                          <el-icon><Bell /></el-icon>
+                        </button>
+                      </el-tooltip>
                       <el-tooltip content="编辑策略" placement="top">
                         <button class="management-list-row-button gitlab-action-button" type="button" aria-label="编辑自动合并策略" @click="openAutoMergeEditDialog(row)">
                           <el-icon><EditPen /></el-icon>
@@ -738,6 +743,10 @@
                       <button class="mobile-entity-action-button" type="button" @click="openAutoMergeEditDialog(row)">
                         <el-icon><EditPen /></el-icon>
                         <span>编辑</span>
+                      </button>
+                      <button class="mobile-entity-action-button" type="button" @click="openAutoMergeWebhookDialog(row.id)">
+                        <el-icon><Bell /></el-icon>
+                        <span>Webhook</span>
                       </button>
                       <button class="mobile-entity-action-button danger" type="button" @click="handleAutoMergeDelete(row.id)">
                         <el-icon><Delete /></el-icon>
@@ -1770,6 +1779,7 @@
     </el-form>
     <template #footer>
       <div class="platform-dialog-footer">
+        <el-button v-if="autoMergeIsEditing && currentAutoMergeId !== null" @click="openAutoMergeWebhookDialog(currentAutoMergeId)">管理 Webhook</el-button>
         <el-button @click="autoMergeDialogVisible = false">{{ autoMergeReadonlyMode ? '关闭' : '取消' }}</el-button>
         <el-button v-if="!autoMergeReadonlyMode" type="primary" :loading="autoMergeSubmitting" @click="handleAutoMergeSubmit">保存</el-button>
       </div>
@@ -1902,11 +1912,98 @@
     </el-form>
     <template #footer>
       <div class="platform-dialog-footer mobile-form-drawer-footer">
+        <el-button v-if="autoMergeIsEditing && currentAutoMergeId !== null" class="mobile-form-drawer-footer-btn" @click="openAutoMergeWebhookDialog(currentAutoMergeId)">管理 Webhook</el-button>
         <el-button class="mobile-form-drawer-footer-btn" @click="autoMergeDialogVisible = false">{{ autoMergeReadonlyMode ? '关闭' : '取消' }}</el-button>
         <el-button v-if="!autoMergeReadonlyMode" class="mobile-form-drawer-footer-btn is-primary" type="primary" :loading="autoMergeSubmitting" @click="handleAutoMergeSubmit">保存</el-button>
       </div>
     </template>
   </MobileFormDrawer>
+
+  <!-- 自动合并外发 Webhook 管理 dialog：按配置维度展示已挂的全部 Webhook，并提供新增/编辑/删除/测试入口。 -->
+  <el-dialog v-model="autoMergeWebhookDialogVisible" title="Webhook 通知" :width="isMobileViewport ? '92%' : '760px'" class="platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader title="Webhook 通知" subtitle="自动合并产生事件后异步投递到这里配置的地址。" :icon="Bell" />
+    </template>
+    <div class="auto-merge-webhook-toolbar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <span class="form-tip">合并成功 / AI 拒绝 / 失败 / 跳过 等事件可分别订阅；模板留空则发通用 JSON。</span>
+      <el-button type="primary" :icon="Plus" @click="openAutoMergeWebhookCreate">新增 Webhook</el-button>
+    </div>
+    <el-table v-loading="autoMergeWebhookListLoading" :data="autoMergeWebhookList" empty-text="尚未配置 Webhook" size="small" stripe>
+      <el-table-column prop="name" label="名称" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="targetUrlMasked" label="地址（脱敏）" min-width="180" show-overflow-tooltip />
+      <el-table-column label="订阅事件" min-width="180">
+        <template #default="{ row }">
+          <el-tag v-for="ev in row.subscribedEvents" :key="ev" type="info" size="small" style="margin-right:4px;margin-bottom:2px;">
+            {{ autoMergeWebhookEventLabel(ev) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="启用" width="70">
+        <template #default="{ row }">
+          <el-tag :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? '启用' : '停用' }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="最近投递" min-width="160">
+        <template #default="{ row }">
+          <div v-if="row.lastDeliveryAt" style="font-size:12px;line-height:1.4;">
+            <div>{{ row.lastDeliveryAt }}</div>
+            <el-tag :type="autoMergeWebhookStatusKind(row.lastDeliveryStatus)" size="small">{{ row.lastDeliveryStatus || '-' }}</el-tag>
+          </div>
+          <span v-else style="color:#909399;font-size:12px;">尚未投递</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="200">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="handleAutoMergeWebhookTest(row)">测试</el-button>
+          <el-button link type="primary" @click="openAutoMergeWebhookEdit(row)">编辑</el-button>
+          <el-button link type="danger" @click="handleAutoMergeWebhookDelete(row)">删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    <template #footer>
+      <div class="platform-dialog-footer">
+        <el-button @click="autoMergeWebhookDialogVisible = false">关闭</el-button>
+      </div>
+    </template>
+  </el-dialog>
+
+  <!-- 自动合并 Webhook 新增/编辑子 dialog；URL 出于安全只在新增/更新时携带明文，编辑时不会回填。 -->
+  <el-dialog v-model="autoMergeWebhookEditDialogVisible" :title="autoMergeWebhookEditingId !== null ? '编辑 Webhook' : '新增 Webhook'" :width="isMobileViewport ? '92%' : '600px'" class="platform-form-dialog" append-to-body align-center>
+    <el-form ref="autoMergeWebhookFormRef" :model="autoMergeWebhookForm" :rules="autoMergeWebhookRules" label-position="top">
+      <el-form-item label="名称" prop="name">
+        <el-input v-model="autoMergeWebhookForm.name" maxlength="120" show-word-limit placeholder="例如：发布群通知" />
+      </el-form-item>
+      <el-form-item label="Webhook 地址" prop="targetUrl">
+        <el-input v-model="autoMergeWebhookForm.targetUrl" maxlength="1000" :placeholder="autoMergeWebhookEditingId !== null ? '编辑模式下需重新输入完整地址' : 'https://…'" />
+        <div class="form-tip">支持钉钉/飞书/企业微信群机器人或自建接收端；签名 token 直接拼到 URL 中，落库时整体加密。</div>
+      </el-form-item>
+      <el-form-item label="订阅事件" prop="subscribedEvents">
+        <el-checkbox-group v-model="autoMergeWebhookForm.subscribedEvents">
+          <el-checkbox v-for="opt in GITLAB_AUTO_MERGE_WEBHOOK_EVENT_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</el-checkbox>
+        </el-checkbox-group>
+      </el-form-item>
+      <el-form-item label="自定义消息模板">
+        <el-input
+          v-model="autoMergeWebhookForm.messageTemplate"
+          type="textarea"
+          :rows="4"
+          maxlength="4000"
+          show-word-limit
+          :placeholder="autoMergeWebhookTemplatePlaceholder"
+        />
+        <div class="form-tip">填写后自动包装为钉钉/飞书/企微 text 机器人结构 <code>{&quot;msgtype&quot;:&quot;text&quot;,&quot;text&quot;:{&quot;content&quot;:&quot;渲染结果&quot;}}</code>。</div>
+      </el-form-item>
+      <el-form-item label="启用">
+        <el-switch v-model="autoMergeWebhookForm.enabled" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <div class="platform-dialog-footer">
+        <el-button @click="autoMergeWebhookEditDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="autoMergeWebhookSubmitting" @click="handleAutoMergeWebhookSubmit">保存</el-button>
+      </div>
+    </template>
+  </el-dialog>
 
   <el-dialog v-if="!isMobileViewport" v-model="productBranchDialogVisible" :title="productBranchDialogTitle" width="680px" class="platform-form-dialog" align-center>
     <template #header>
@@ -2162,7 +2259,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Connection, Delete, DocumentCopy, EditPen, Filter, FolderOpened, Plus, RefreshRight, Search, Share, Tickets, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Bell, Connection, Delete, DocumentCopy, EditPen, Filter, FolderOpened, Plus, RefreshRight, Search, Share, Tickets, VideoPlay } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
@@ -2193,7 +2290,12 @@ import {
   testGitlabBinding,
   updateGitlabAutoMergeConfig,
   updateGitlabBinding,
-  updateGitlabProductBranch
+  updateGitlabProductBranch,
+  listAutoMergeWebhooks,
+  createAutoMergeWebhook,
+  updateAutoMergeWebhook,
+  deleteAutoMergeWebhook,
+  testAutoMergeWebhook
 } from '@/api/gitlab'
 import type {
   AgentItem,
@@ -2207,10 +2309,12 @@ import type {
   GitlabProductBranchSyncLogItem,
   GitlabProductBranchSyncRunResult,
   GitlabTagCreateResultItem,
+  GitlabAutoMergeWebhookItem,
   ProjectGitlabBindingItem,
   ProjectItem,
   RepositoryScanRulesetItem
 } from '@/types/platform'
+import { GITLAB_AUTO_MERGE_WEBHOOK_EVENT_OPTIONS } from '@/types/platform'
 import { renderMarkdownToHtml } from '@/utils/markdown'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
@@ -2366,6 +2470,59 @@ const autoMergeFilters = reactive({ keyword: '', executionMode: undefined as 'PR
 const autoMergeFilterPopoverVisible = ref(false)
 const autoMergeForm = reactive<AutoMergeForm>({ name: '', executionMode: 'PROJECT_BOUND', description: '', bindingId: null, apiBaseUrl: DEFAULT_GITLAB_API_URL, gitlabProjectRef: '', apiToken: '', sourceBranch: '', targetBranch: '', titleKeyword: '', schedulerEnabled: false, schedulerCron: '0 */5 * * * *', enabled: true, autoMerge: true, squashOnMerge: false, removeSourceBranch: true, triggerPipelineAfterMerge: false, requirePipelineSuccess: true, reviewAgentId: null, aiReviewEnabled: false, aiReviewPrompt: '' })
 const cronTemplate = ref('')
+// ===== 自动合并外发 Webhook 管理 dialog 状态 =====
+interface AutoMergeWebhookForm {
+  name: string
+  targetUrl: string
+  subscribedEvents: string[]
+  messageTemplate: string
+  enabled: boolean
+}
+const autoMergeWebhookDialogVisible = ref(false)
+const autoMergeWebhookConfigId = ref<number | null>(null)
+const autoMergeWebhookList = ref<GitlabAutoMergeWebhookItem[]>([])
+const autoMergeWebhookListLoading = ref(false)
+const autoMergeWebhookEditDialogVisible = ref(false)
+const autoMergeWebhookEditingId = ref<number | null>(null)
+const autoMergeWebhookSubmitting = ref(false)
+const autoMergeWebhookForm = reactive<AutoMergeWebhookForm>({
+  name: '',
+  targetUrl: '',
+  subscribedEvents: ['MERGED', 'AI_REJECTED', 'FAILED'],
+  messageTemplate: '',
+  enabled: true
+})
+const autoMergeWebhookFormRef = ref<any>(null)
+const autoMergeWebhookRules = {
+  name: [{ required: true, message: '请输入 Webhook 名称', trigger: 'blur' }],
+  targetUrl: [
+    { required: true, message: '请输入 Webhook 地址', trigger: 'blur' },
+    { pattern: /^https?:\/\/.+/i, message: '地址必须以 http:// 或 https:// 开头', trigger: 'blur' }
+  ],
+  subscribedEvents: [{ required: true, type: 'array', min: 1, message: '请至少选择一个订阅事件', trigger: 'change' }]
+}
+const autoMergeWebhookEventLabel = (value: string) => {
+  const matched = GITLAB_AUTO_MERGE_WEBHOOK_EVENT_OPTIONS.find(item => item.value === value)
+  return matched ? matched.label : value
+}
+const autoMergeWebhookStatusKind = (status: string | null | undefined) => {
+  if (!status) return 'info'
+  if (status === 'SUCCESS') return 'success'
+  return status.startsWith('FAILED') ? 'danger' : 'warning'
+}
+// 在常量里拼模板占位符提示，避免 Vue 模板把 {{ ... }} 当成插值表达式
+const autoMergeWebhookTemplatePlaceholder = '留空则发送通用 JSON。支持占位符：'
+  + '{' + '{event}} '
+  + '{' + '{configName}} '
+  + '{' + '{projectRef}} '
+  + '{' + '{mergeRequestIid}} '
+  + '{' + '{mergeRequestTitle}} '
+  + '{' + '{mergeRequestAuthor}} '
+  + '{' + '{result}} '
+  + '{' + '{reason}} '
+  + '{' + '{webUrl}} '
+  + '{' + '{executedAt}} '
+  + '{' + '{triggerType}}'
 const logLoading = ref(false)
 const logList = ref<GitlabAutoMergeLogItem[]>([])
 const logPagination = reactive({ page: 1, size: 10, total: 0 })
@@ -3060,6 +3217,112 @@ const handleAutoMergeDelete = async (id: number) => { try { await ElMessageBox.c
 const handleAutoMergeTest = async (id: number) => { try { await testGitlabAutoMergeConfig(id); ElMessage.success('策略测试成功') } catch (error: any) { ElMessage.error(error?.response?.data?.message || '策略测试失败') } }
 const openAutoMergeMergeRequests = async (row: GitlabAutoMergeConfigItem) => { mergeRequestDrawerTitle.value = `自动合并 MR 预览 - ${row.name}`; mergeRequestDrawerVisible.value = true; mergeRequestLoading.value = true; try { mergeRequestList.value = await previewAutoMergeConfigMergeRequests(row.id) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '加载 MR 失败') } finally { mergeRequestLoading.value = false } }
 const handleAutoMergeRun = async (id: number) => { try { const result = await runAutoMergeConfig(id); runResult.value = result; runResultVisible.value = true; ElMessage.success(`执行完成：成功 ${result.mergedCount}，未合并 ${result.skippedCount}`); await Promise.all([loadAutoMergeConfigs(), loadAutoMergeLogs()]) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '执行失败'); await loadAutoMergeLogs() } }
+
+// ===== 自动合并外发 Webhook 管理 =====
+/** 重置编辑表单到默认值。 */
+const resetAutoMergeWebhookForm = () => {
+  autoMergeWebhookEditingId.value = null
+  autoMergeWebhookForm.name = ''
+  autoMergeWebhookForm.targetUrl = ''
+  autoMergeWebhookForm.subscribedEvents = ['MERGED', 'AI_REJECTED', 'FAILED']
+  autoMergeWebhookForm.messageTemplate = ''
+  autoMergeWebhookForm.enabled = true
+}
+
+/** 加载指定配置下的全部 Webhook。 */
+const loadAutoMergeWebhookList = async () => {
+  if (autoMergeWebhookConfigId.value === null) return
+  autoMergeWebhookListLoading.value = true
+  try {
+    autoMergeWebhookList.value = await listAutoMergeWebhooks(autoMergeWebhookConfigId.value)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载 Webhook 失败')
+  } finally {
+    autoMergeWebhookListLoading.value = false
+  }
+}
+
+/** 行操作：打开 Webhook 管理 dialog。 */
+const openAutoMergeWebhookDialog = async (configId: number) => {
+  autoMergeWebhookConfigId.value = configId
+  autoMergeWebhookList.value = []
+  autoMergeWebhookDialogVisible.value = true
+  await loadAutoMergeWebhookList()
+}
+
+/** 打开新建 Webhook 子 dialog。 */
+const openAutoMergeWebhookCreate = () => {
+  resetAutoMergeWebhookForm()
+  autoMergeWebhookEditDialogVisible.value = true
+}
+
+/** 打开编辑 Webhook 子 dialog；URL 出于安全考虑不会回填，需要重新填写。 */
+const openAutoMergeWebhookEdit = (row: GitlabAutoMergeWebhookItem) => {
+  autoMergeWebhookEditingId.value = row.id
+  autoMergeWebhookForm.name = row.name
+  autoMergeWebhookForm.targetUrl = ''
+  autoMergeWebhookForm.subscribedEvents = (row.subscribedEvents || []).slice()
+  autoMergeWebhookForm.messageTemplate = row.messageTemplate || ''
+  autoMergeWebhookForm.enabled = row.enabled
+  autoMergeWebhookEditDialogVisible.value = true
+}
+
+/** 保存（新建/更新）。 */
+const handleAutoMergeWebhookSubmit = async () => {
+  const valid = await autoMergeWebhookFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+  if (autoMergeWebhookConfigId.value === null) return
+  autoMergeWebhookSubmitting.value = true
+  try {
+    const payload = {
+      name: autoMergeWebhookForm.name.trim(),
+      targetUrl: autoMergeWebhookForm.targetUrl.trim(),
+      subscribedEvents: autoMergeWebhookForm.subscribedEvents.slice(),
+      messageTemplate: autoMergeWebhookForm.messageTemplate.trim() || null,
+      enabled: autoMergeWebhookForm.enabled
+    }
+    if (autoMergeWebhookEditingId.value !== null) {
+      await updateAutoMergeWebhook(autoMergeWebhookEditingId.value, payload)
+      ElMessage.success('Webhook 已更新')
+    } else {
+      await createAutoMergeWebhook(autoMergeWebhookConfigId.value, payload)
+      ElMessage.success('Webhook 已创建')
+    }
+    autoMergeWebhookEditDialogVisible.value = false
+    await loadAutoMergeWebhookList()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '保存失败')
+  } finally {
+    autoMergeWebhookSubmitting.value = false
+  }
+}
+
+/** 删除一条 Webhook。 */
+const handleAutoMergeWebhookDelete = async (row: GitlabAutoMergeWebhookItem) => {
+  try {
+    await ElMessageBox.confirm(`确认删除 Webhook「${row.name}」吗？`, '提示', { type: 'warning' })
+    await deleteAutoMergeWebhook(row.id)
+    ElMessage.success('Webhook 已删除')
+    await loadAutoMergeWebhookList()
+  } catch (error: any) {
+    if (error !== 'cancel') ElMessage.error(error?.response?.data?.message || '删除失败')
+  }
+}
+
+/** 触发一次测试投递并刷新列表。 */
+const handleAutoMergeWebhookTest = async (row: GitlabAutoMergeWebhookItem) => {
+  try {
+    const result = await testAutoMergeWebhook(row.id)
+    if (result.lastDeliveryStatus === 'SUCCESS') {
+      ElMessage.success('测试投递成功')
+    } else {
+      ElMessage.warning(`测试投递结果：${result.lastDeliveryStatus || '未知'}`)
+    }
+    await loadAutoMergeWebhookList()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '测试投递失败')
+  }
+}
 
 const bindingSummary = computed(() => bindingOptions.value.length)
 const recentExecutionLogs = computed(() => logList.value.slice(0, 6))

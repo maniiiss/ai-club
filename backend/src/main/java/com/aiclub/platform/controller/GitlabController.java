@@ -4,6 +4,7 @@ import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.GitlabAutoMergeConfigSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
+import com.aiclub.platform.dto.GitlabAutoMergeWebhookSummary;
 import com.aiclub.platform.dto.GitlabApiSyncResult;
 import com.aiclub.platform.dto.GitlabAutoMergeRunResult;
 import com.aiclub.platform.dto.GitlabBranchSummary;
@@ -25,6 +26,7 @@ import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
 import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabAutoMergeWebhookRequest;
 import com.aiclub.platform.dto.request.GitlabApiSyncRequest;
 import com.aiclub.platform.dto.request.GitlabCreateProductBranchSyncRequest;
 import com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest;
@@ -407,5 +409,53 @@ public class GitlabController {
     @RequirePermission("gitlab:manage")
     public ApiResponse<GitlabAutoMergeRunResult> runAutoMerge(@PathVariable Long id) {
         return ApiResponse.success(gitlabManagementService.runAutoMergeConfig(id));
+    }
+
+    /**
+     * 列出指定自动合并配置下的全部外发 Webhook（URL 已脱敏）。
+     */
+    @GetMapping("/auto-merge-configs/{id}/webhooks")
+    @RequirePermission("gitlab:view")
+    public ApiResponse<List<GitlabAutoMergeWebhookSummary>> listAutoMergeWebhooks(@PathVariable Long id) {
+        return ApiResponse.success(gitlabManagementService.listAutoMergeWebhooks(id));
+    }
+
+    /**
+     * 为指定自动合并配置新增一条外发 Webhook。
+     */
+    @PostMapping("/auto-merge-configs/{id}/webhooks")
+    @RequirePermission("gitlab:manage")
+    public ApiResponse<GitlabAutoMergeWebhookSummary> createAutoMergeWebhook(@PathVariable Long id,
+                                                                             @Valid @RequestBody GitlabAutoMergeWebhookRequest request) {
+        return ApiResponse.success(gitlabManagementService.createAutoMergeWebhook(id, request));
+    }
+
+    /**
+     * 更新指定外发 Webhook。
+     */
+    @PutMapping("/auto-merge-webhooks/{webhookId}")
+    @RequirePermission("gitlab:manage")
+    public ApiResponse<GitlabAutoMergeWebhookSummary> updateAutoMergeWebhook(@PathVariable Long webhookId,
+                                                                             @Valid @RequestBody GitlabAutoMergeWebhookRequest request) {
+        return ApiResponse.success(gitlabManagementService.updateAutoMergeWebhook(webhookId, request));
+    }
+
+    /**
+     * 删除指定外发 Webhook。
+     */
+    @DeleteMapping("/auto-merge-webhooks/{webhookId}")
+    @RequirePermission("gitlab:manage")
+    public ApiResponse<Void> deleteAutoMergeWebhook(@PathVariable Long webhookId) {
+        gitlabManagementService.deleteAutoMergeWebhook(webhookId);
+        return new ApiResponse<>(true, "Deleted successfully", null);
+    }
+
+    /**
+     * 用一份固定的演示载荷向指定 Webhook 触发一次同步投递，返回最新一次投递状态。
+     */
+    @PostMapping("/auto-merge-webhooks/{webhookId}/test")
+    @RequirePermission("gitlab:manage")
+    public ApiResponse<GitlabAutoMergeWebhookSummary> testAutoMergeWebhook(@PathVariable Long webhookId) {
+        return ApiResponse.success(gitlabManagementService.testAutoMergeWebhook(webhookId));
     }
 }

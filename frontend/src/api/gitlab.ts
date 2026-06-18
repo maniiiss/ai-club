@@ -5,6 +5,7 @@ import type {
   GitlabAutoMergeConfigItem,
   GitlabAutoMergeLogItem,
   GitlabAutoMergeRunResult,
+  GitlabAutoMergeWebhookItem,
   GitlabApiSyncRequestItem,
   GitlabApiSyncResultItem,
   GitlabBranchItem,
@@ -333,5 +334,45 @@ export const previewAutoMergeConfigMergeRequests = async (id: number) => {
 
 export const runAutoMergeConfig = async (id: number) => {
   const { data } = await http.post<ApiResponse<GitlabAutoMergeRunResult>>(`/api/gitlab/auto-merge-configs/${id}/run`)
+  return data.data
+}
+
+/**
+ * 自动合并外发 Webhook 的前端请求体。URL 由后端加密落库，此处仅在新建/更新时携带明文。
+ */
+export interface GitlabAutoMergeWebhookPayload {
+  name: string
+  targetUrl: string
+  subscribedEvents: string[]
+  messageTemplate?: string | null
+  enabled: boolean
+}
+
+/** 列出指定自动合并配置下的全部外发 Webhook（URL 已脱敏）。 */
+export const listAutoMergeWebhooks = async (configId: number) => {
+  const { data } = await http.get<ApiResponse<GitlabAutoMergeWebhookItem[]>>(`/api/gitlab/auto-merge-configs/${configId}/webhooks`)
+  return data.data
+}
+
+/** 为指定自动合并配置新增一条外发 Webhook。 */
+export const createAutoMergeWebhook = async (configId: number, payload: GitlabAutoMergeWebhookPayload) => {
+  const { data } = await http.post<ApiResponse<GitlabAutoMergeWebhookItem>>(`/api/gitlab/auto-merge-configs/${configId}/webhooks`, payload)
+  return data.data
+}
+
+/** 更新指定外发 Webhook。 */
+export const updateAutoMergeWebhook = async (webhookId: number, payload: GitlabAutoMergeWebhookPayload) => {
+  const { data } = await http.put<ApiResponse<GitlabAutoMergeWebhookItem>>(`/api/gitlab/auto-merge-webhooks/${webhookId}`, payload)
+  return data.data
+}
+
+/** 删除指定外发 Webhook。 */
+export const deleteAutoMergeWebhook = async (webhookId: number) => {
+  await http.delete<ApiResponse<null>>(`/api/gitlab/auto-merge-webhooks/${webhookId}`)
+}
+
+/** 触发一次测试投递，返回最新一次投递状态。 */
+export const testAutoMergeWebhook = async (webhookId: number) => {
+  const { data } = await http.post<ApiResponse<GitlabAutoMergeWebhookItem>>(`/api/gitlab/auto-merge-webhooks/${webhookId}/test`)
   return data.data
 }

@@ -6,6 +6,7 @@ import com.aiclub.platform.common.DataPermissionScopeType;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
+import com.aiclub.platform.domain.model.GitlabAutoMergeWebhookEntity;
 import com.aiclub.platform.domain.model.GitlabCodeStructureSnapshotEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
 import com.aiclub.platform.domain.model.GitlabProductBranchEntity;
@@ -19,6 +20,7 @@ import com.aiclub.platform.dto.GitlabAutoMergeConfigSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeRunItem;
 import com.aiclub.platform.dto.GitlabAutoMergeRunResult;
+import com.aiclub.platform.dto.GitlabAutoMergeWebhookSummary;
 import com.aiclub.platform.dto.GitlabBranchSummary;
 import com.aiclub.platform.dto.GitlabCodeStructureCandidateSymbolSummary;
 import com.aiclub.platform.dto.GitlabCodeStructureGraphEdgeSummary;
@@ -41,6 +43,7 @@ import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
 import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabAutoMergeWebhookRequest;
 import com.aiclub.platform.dto.request.GitlabCreateProductBranchSyncRequest;
 import com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest;
 import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
@@ -54,6 +57,7 @@ import com.aiclub.platform.dto.request.ProjectGitlabBindingRequest;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
+import com.aiclub.platform.repository.GitlabAutoMergeWebhookRepository;
 import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
 import com.aiclub.platform.repository.GitlabProductBranchRepository;
@@ -122,6 +126,7 @@ public class GitlabManagementService {
     private final GitlabCodeStructureSnapshotRepository codeStructureSnapshotRepository;
     private final GitlabAutoMergeConfigRepository autoMergeConfigRepository;
     private final GitlabAutoMergeLogRepository autoMergeLogRepository;
+    private final GitlabAutoMergeWebhookRepository autoMergeWebhookRepository;
     private final GitlabProductBranchRepository productBranchRepository;
     private final GitlabProductBranchSyncLogRepository productBranchSyncLogRepository;
     private final AiModelConfigRepository aiModelConfigRepository;
@@ -132,6 +137,7 @@ public class GitlabManagementService {
     private final AgentExecutionService agentExecutionService;
     private final CicdManagementService cicdManagementService;
     private final NotificationService notificationService;
+    private final GitlabAutoMergeWebhookDispatcher autoMergeWebhookDispatcher;
     private final ProjectDataPermissionService projectDataPermissionService;
     private final GitlabUserOauthService gitlabUserOauthService;
     private final ExecutionTaskService executionTaskService;
@@ -150,6 +156,7 @@ public class GitlabManagementService {
                                    GitlabCodeStructureSnapshotRepository codeStructureSnapshotRepository,
                                    GitlabAutoMergeConfigRepository autoMergeConfigRepository,
                                    GitlabAutoMergeLogRepository autoMergeLogRepository,
+                                   GitlabAutoMergeWebhookRepository autoMergeWebhookRepository,
                                    GitlabProductBranchRepository productBranchRepository,
                                    GitlabProductBranchSyncLogRepository productBranchSyncLogRepository,
                                    AiModelConfigRepository aiModelConfigRepository,
@@ -161,6 +168,7 @@ public class GitlabManagementService {
                                    AgentExecutionService agentExecutionService,
                                    CicdManagementService cicdManagementService,
                                    NotificationService notificationService,
+                                   GitlabAutoMergeWebhookDispatcher autoMergeWebhookDispatcher,
                                    ProjectDataPermissionService projectDataPermissionService,
                                    GitlabUserOauthService gitlabUserOauthService,
                                    ExecutionTaskService executionTaskService,
@@ -179,6 +187,7 @@ public class GitlabManagementService {
         this.codeStructureSnapshotRepository = codeStructureSnapshotRepository;
         this.autoMergeConfigRepository = autoMergeConfigRepository;
         this.autoMergeLogRepository = autoMergeLogRepository;
+        this.autoMergeWebhookRepository = autoMergeWebhookRepository;
         this.productBranchRepository = productBranchRepository;
         this.productBranchSyncLogRepository = productBranchSyncLogRepository;
         this.aiModelConfigRepository = aiModelConfigRepository;
@@ -189,6 +198,7 @@ public class GitlabManagementService {
         this.agentExecutionService = agentExecutionService;
         this.cicdManagementService = cicdManagementService;
         this.notificationService = notificationService;
+        this.autoMergeWebhookDispatcher = autoMergeWebhookDispatcher;
         this.projectDataPermissionService = projectDataPermissionService;
         this.gitlabUserOauthService = gitlabUserOauthService;
         this.executionTaskService = executionTaskService;
@@ -765,7 +775,10 @@ public class GitlabManagementService {
 
     @Transactional
     public void deleteAutoMergeConfig(Long id) {
-        autoMergeConfigRepository.delete(requireAutoMergeConfig(id));
+        GitlabAutoMergeConfigEntity entity = requireAutoMergeConfig(id);
+        // 同事务里清理外发 webhook 子表，防止留下孤儿记录
+        autoMergeWebhookRepository.deleteByConfig_Id(entity.getId());
+        autoMergeConfigRepository.delete(entity);
     }
 
     public GitlabAutoMergeConfigSummary testAutoMergeConfig(Long id) {
@@ -775,6 +788,189 @@ public class GitlabManagementService {
         gitlabApiService.fetchProject(resolved.apiBaseUrl(), resolved.token(), resolved.projectRef());
         return toAutoMergeSummary(entity);
     }
+
+    // ==================== 自动合并外发 Webhook 配置 ====================
+
+    /**
+     * 列出指定自动合并配置下的全部 Webhook（已脱敏）。
+     */
+    public List<GitlabAutoMergeWebhookSummary> listAutoMergeWebhooks(Long configId) {
+        GitlabAutoMergeConfigEntity config = requireAutoMergeConfig(configId);
+        return autoMergeWebhookRepository.findByConfig_IdOrderByIdAsc(config.getId()).stream()
+                .map(this::toAutoMergeWebhookSummary)
+                .toList();
+    }
+
+    /**
+     * 新建一条外发 Webhook，URL 加密落库。
+     */
+    @Transactional
+    public GitlabAutoMergeWebhookSummary createAutoMergeWebhook(Long configId, GitlabAutoMergeWebhookRequest request) {
+        GitlabAutoMergeConfigEntity config = requireAutoMergeConfig(configId);
+        validateWebhookEvents(request.subscribedEvents());
+        autoMergeWebhookRepository.findByConfig_IdAndName(config.getId(), request.name().trim())
+                .ifPresent(existing -> { throw new IllegalArgumentException("同一配置下已存在同名 Webhook: " + request.name()); });
+        GitlabAutoMergeWebhookEntity entity = new GitlabAutoMergeWebhookEntity();
+        entity.setConfig(config);
+        applyWebhookRequest(entity, request);
+        return toAutoMergeWebhookSummary(autoMergeWebhookRepository.save(entity));
+    }
+
+    /**
+     * 更新一条外发 Webhook，URL 重新加密。
+     */
+    @Transactional
+    public GitlabAutoMergeWebhookSummary updateAutoMergeWebhook(Long webhookId, GitlabAutoMergeWebhookRequest request) {
+        GitlabAutoMergeWebhookEntity entity = requireAutoMergeWebhook(webhookId);
+        validateWebhookEvents(request.subscribedEvents());
+        autoMergeWebhookRepository.findByConfig_IdAndName(entity.getConfig().getId(), request.name().trim())
+                .filter(other -> !other.getId().equals(entity.getId()))
+                .ifPresent(other -> { throw new IllegalArgumentException("同一配置下已存在同名 Webhook: " + request.name()); });
+        applyWebhookRequest(entity, request);
+        return toAutoMergeWebhookSummary(autoMergeWebhookRepository.save(entity));
+    }
+
+    /**
+     * 删除一条外发 Webhook。
+     */
+    @Transactional
+    public void deleteAutoMergeWebhook(Long webhookId) {
+        GitlabAutoMergeWebhookEntity entity = requireAutoMergeWebhook(webhookId);
+        autoMergeWebhookRepository.delete(entity);
+    }
+
+    /**
+     * 用一份固定的演示载荷向指定 Webhook 触发一次同步投递，便于运维联调地址可达性。
+     */
+    public GitlabAutoMergeWebhookSummary testAutoMergeWebhook(Long webhookId) {
+        GitlabAutoMergeWebhookEntity entity = requireAutoMergeWebhook(webhookId);
+        autoMergeWebhookDispatcher.dispatchTest(entity);
+        // 投递状态由 dispatcher 在新事务里写回，这里重新加载一次拿到最新值
+        GitlabAutoMergeWebhookEntity refreshed = autoMergeWebhookRepository.findById(entity.getId()).orElse(entity);
+        return toAutoMergeWebhookSummary(refreshed);
+    }
+
+    private void applyWebhookRequest(GitlabAutoMergeWebhookEntity entity, GitlabAutoMergeWebhookRequest request) {
+        entity.setName(request.name().trim());
+        entity.setTargetUrlCiphertext(tokenCipherService.encrypt(request.targetUrl().trim()));
+        entity.setSubscribedEventsJson(writeWebhookEventsJson(request.subscribedEvents()));
+        String template = request.messageTemplate();
+        entity.setMessageTemplate(template == null || template.isBlank() ? null : template);
+        entity.setEnabled(request.enabled() == null ? Boolean.TRUE : request.enabled());
+    }
+
+    private void validateWebhookEvents(List<String> events) {
+        if (events == null || events.isEmpty()) {
+            throw new IllegalArgumentException("至少订阅一个事件");
+        }
+        for (String event : events) {
+            if (event == null || event.isBlank() || !GitlabAutoMergeWebhookDispatcher.SUPPORTED_EVENTS.contains(event)) {
+                throw new IllegalArgumentException("不支持的订阅事件: " + event);
+            }
+        }
+    }
+
+    private String writeWebhookEventsJson(List<String> events) {
+        try {
+            // 去重并保留入参顺序，保证审计可读
+            LinkedHashSet<String> distinct = new LinkedHashSet<>(events);
+            return objectMapper.writeValueAsString(new ArrayList<>(distinct));
+        } catch (Exception ex) {
+            throw new IllegalStateException("序列化 Webhook 订阅事件失败", ex);
+        }
+    }
+
+    private GitlabAutoMergeWebhookEntity requireAutoMergeWebhook(Long id) {
+        GitlabAutoMergeWebhookEntity entity = autoMergeWebhookRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Webhook 不存在: " + id));
+        // 借用配置的可见性校验；若当前用户对配置不可见，则同样不可见 webhook
+        requireAutoMergeConfig(entity.getConfig().getId());
+        return entity;
+    }
+
+    private GitlabAutoMergeWebhookSummary toAutoMergeWebhookSummary(GitlabAutoMergeWebhookEntity entity) {
+        List<String> events = readWebhookEventList(entity.getSubscribedEventsJson());
+        String urlMasked = maskWebhookUrl(safeDecrypt(entity.getTargetUrlCiphertext()));
+        return new GitlabAutoMergeWebhookSummary(
+                entity.getId(),
+                entity.getConfig() == null ? null : entity.getConfig().getId(),
+                entity.getName(),
+                urlMasked,
+                events,
+                entity.getMessageTemplate(),
+                entity.getEnabled(),
+                entity.getLastDeliveryAt() == null ? null : TIME_FORMATTER.format(entity.getLastDeliveryAt()),
+                entity.getLastDeliveryStatus(),
+                entity.getLastDeliveryMessage()
+        );
+    }
+
+    private List<String> readWebhookEventList(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<String> list = objectMapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+            return list == null ? List.of() : list;
+        } catch (Exception ex) {
+            log.warn("解析 Webhook 订阅事件失败: {}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    private String safeDecrypt(String cipherText) {
+        if (cipherText == null || cipherText.isBlank()) {
+            return null;
+        }
+        try {
+            return tokenCipherService.decrypt(cipherText);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    /**
+     * 仅返回脱敏后的 URL 给前端：保留协议+主机，路径与 query 中段以 *** 占位，便于核对又不暴露 token。
+     */
+    private String maskWebhookUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return "";
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme();
+            String host = uri.getHost() == null ? "" : uri.getHost();
+            int port = uri.getPort();
+            String path = uri.getRawPath() == null ? "" : uri.getRawPath();
+            String pathMasked;
+            if (path.length() <= 8) {
+                pathMasked = path;
+            } else {
+                pathMasked = path.substring(0, Math.min(6, path.length())) + "***" + path.substring(path.length() - 2);
+            }
+            String query = uri.getRawQuery();
+            String queryMasked = (query == null || query.isBlank()) ? "" : "?***";
+            StringBuilder builder = new StringBuilder();
+            if (!scheme.isEmpty()) {
+                builder.append(scheme).append("://");
+            }
+            builder.append(host);
+            if (port > 0) {
+                builder.append(':').append(port);
+            }
+            builder.append(pathMasked).append(queryMasked);
+            return builder.toString();
+        } catch (Exception ex) {
+            // URL 解析失败就返回前后各几位的简单脱敏，避免把整段 token 透出
+            int len = url.length();
+            if (len <= 12) {
+                return "***";
+            }
+            return url.substring(0, 8) + "***" + url.substring(len - 4);
+        }
+    }
+
+    // ==================================================================
 
     public List<GitlabMergeRequestSummary> previewAutoMergeConfigMergeRequests(Long id) {
         GitlabAutoMergeConfigEntity entity = requireAutoMergeConfig(id);
@@ -1172,6 +1368,8 @@ public class GitlabManagementService {
         log.setExecutedAt(executedAt == null ? LocalDateTime.now() : executedAt);
         autoMergeLogRepository.save(log);
         notifyMergeRequestAuthor(log);
+        // 触发外发 webhook 投递（异步、不重试，异常吞掉避免影响主流程）
+        autoMergeWebhookDispatcher.dispatchAsync(log);
     }
 
     private void notifyMergeRequestAuthor(GitlabAutoMergeLogEntity log) {

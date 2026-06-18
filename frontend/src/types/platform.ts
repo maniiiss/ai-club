@@ -1677,6 +1677,35 @@ export interface GitlabAutoMergeRunResult {
   items: GitlabAutoMergeRunItem[]
 }
 
+/**
+ * GitLab 自动合并外发 Webhook（URL 已脱敏；明文不会从后端返回）。
+ */
+export interface GitlabAutoMergeWebhookItem {
+  id: number
+  configId: number
+  name: string
+  targetUrlMasked: string
+  subscribedEvents: string[]
+  messageTemplate: string | null
+  enabled: boolean
+  lastDeliveryAt: string | null
+  lastDeliveryStatus: string | null
+  lastDeliveryMessage: string | null
+}
+
+/**
+ * GitLab 自动合并外发 Webhook 可订阅的事件列表，与后端 GitlabAutoMergeWebhookDispatcher.SUPPORTED_EVENTS 保持一致。
+ */
+export const GITLAB_AUTO_MERGE_WEBHOOK_EVENT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'MERGED', label: '合并成功' },
+  { value: 'AI_REJECTED', label: 'AI 审核拒绝' },
+  { value: 'FAILED', label: '合并失败' },
+  { value: 'SKIPPED', label: '已跳过' },
+  { value: 'BRANCH_BEHIND', label: '源分支落后' },
+  { value: 'EMPTY', label: '无可处理 MR' }
+]
+
+
 export interface GitlabProductBranchItem {
   id: number
   bindingId: number
