@@ -28,6 +28,7 @@ import com.aiclub.platform.repository.ProjectRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -39,6 +40,7 @@ import java.util.concurrent.Executor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -794,6 +796,184 @@ class GitlabManagementGitlabActionsTests {
     }
 
     /**
+     * 同一 MR 指纹未变化时，应直接复用上一次结构化审查结果，不再重复调用模型。
+     */
+    @Test
+    void shouldReuseReviewResultWhenFingerprintMatches() {
+        GitlabAutoMergeConfigEntity config = buildStandaloneAutoMergeConfig();
+        GitlabApiService.GitlabMergeRequest mergeRequest = buildMergeRequest(37L, "复用已有审查结果");
+        GitlabAutoMergeLogEntity cachedLog = new GitlabAutoMergeLogEntity();
+        cachedLog.setReviewFingerprint("sha:fingerprint-37");
+        cachedLog.setReviewResultJson("""
+                {"approved":false,"summary":"历史问题未修复","provider":"OPENAI","issues":["补充登录空值判断"],"reviewMarkdown":"# 代码审查","resolvedPreviousIssues":[],"unresolvedPreviousIssues":["补充登录空值判断"]}
+                """);
+
+        when(autoMergeConfigRepository.findById(21L)).thenReturn(Optional.of(config));
+        when(autoMergeConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(autoMergeLogRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(gitlabApiService.listMergeRequests("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "opened", "main"))
+                .thenReturn(List.of(mergeRequest));
+        when(gitlabApiService.fetchMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 37L))
+                .thenReturn(mergeRequest);
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
+                "group/demo-repo", 37L, "AI_REJECTED"
+        )).thenReturn(Optional.empty());
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndReviewFingerprintAndReviewResultJsonIsNotNullOrderByExecutedAtDescIdDesc(
+                eq("group/demo-repo"), eq(37L), anyString()
+        )).thenReturn(Optional.of(cachedLog));
+
+        var result = gitlabManagementService.runAutoMergeConfig(21L);
+
+        assertThat(result.items()).singleElement().satisfies(item -> assertThat(item.action()).isEqualTo("AI_REJECTED"));
+        verify(codeReviewClientService, never()).reviewMergeRequest(any(), any(), any(), any(), any(), anyString());
+        verify(autoMergeLogRepository).save(argThat(log ->
+                log.getReviewFingerprint() != null
+                        && log.getReviewFingerprint().startsWith("sha:")
+                        && Boolean.TRUE.equals(log.getReviewCacheHit())
+                        && log.getDetailMarkdown() != null
+                        && log.getDetailMarkdown().contains("本次 AI 审查复用历史结果，未重新调用模型")
+        ));
+    }
+
+    /**
+     * 同一 MR 只要 head SHA 变化，就必须重新发起 AI 审查，不能误复用旧结果。
+     */
+    @Test
+    void shouldReReviewWhenHeadShaChanges() {
+        GitlabAutoMergeConfigEntity config = buildStandaloneAutoMergeConfig();
+        GitlabApiService.GitlabMergeRequest mergeRequest = buildMergeRequest(38L, "新提交后重新审查").withShas("head-sha-new", "base-sha", "start-sha");
+        GitlabApiService.GitlabMergeRequestChanges changes = buildMergeRequestChanges(38L, "新提交后重新审查");
+
+        when(autoMergeConfigRepository.findById(21L)).thenReturn(Optional.of(config));
+        when(autoMergeConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(autoMergeLogRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(gitlabApiService.listMergeRequests("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "opened", "main"))
+                .thenReturn(List.of(mergeRequest));
+        when(gitlabApiService.fetchMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 38L))
+                .thenReturn(mergeRequest);
+        when(gitlabApiService.fetchMergeRequestChanges("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 38L))
+                .thenReturn(changes);
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
+                "group/demo-repo", 38L, "AI_REJECTED"
+        )).thenReturn(Optional.empty());
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndReviewFingerprintAndReviewResultJsonIsNotNullOrderByExecutedAtDescIdDesc(
+                eq("group/demo-repo"), eq(38L), anyString()
+        )).thenReturn(Optional.empty());
+        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of()), eq("MEDIUM")))
+                .thenReturn(new CodeReviewResult(
+                        false,
+                        "需要重新审查的新问题",
+                        ModelConfigService.PROVIDER_OPENAI,
+                        List.of("新增边界遗漏"),
+                        "# 代码审查",
+                        List.of(),
+                        List.of()
+                ));
+
+        var result = gitlabManagementService.runAutoMergeConfig(21L);
+
+        assertThat(result.items()).singleElement().satisfies(item -> assertThat(item.action()).isEqualTo("AI_REJECTED"));
+        verify(codeReviewClientService).reviewMergeRequest(any(), any(), any(), any(), eq(List.of()), eq("MEDIUM"));
+        verify(autoMergeLogRepository).save(argThat(log ->
+                log.getReviewFingerprint() != null
+                        && log.getReviewFingerprint().startsWith("sha:")
+                        && Boolean.FALSE.equals(log.getReviewCacheHit())
+        ));
+    }
+
+    /**
+     * 当 GitLab 详情里缺少 SHA 时，应回退到 diff 哈希判断是否可以复用旧审查结果。
+     */
+    @Test
+    void shouldFallbackToDiffFingerprintWhenShasMissing() {
+        GitlabAutoMergeConfigEntity config = buildStandaloneAutoMergeConfig();
+        GitlabApiService.GitlabMergeRequest mergeRequest = buildMergeRequest(39L, "缺少 SHA 时按 diff 指纹复用").withShas("", "", "");
+        GitlabApiService.GitlabMergeRequestChanges changes = buildMergeRequestChanges(39L, "缺少 SHA 时按 diff 指纹复用");
+        GitlabAutoMergeLogEntity cachedLog = new GitlabAutoMergeLogEntity();
+        cachedLog.setReviewFingerprint("diff:9f28557dd9b7d507ac120177096e4636d6742188a21d4bb27844f0044a804f5e");
+        cachedLog.setReviewResultJson("""
+                {"approved":true,"summary":"可以合并","provider":"OPENAI","issues":[],"reviewMarkdown":"# 代码审查","resolvedPreviousIssues":[],"unresolvedPreviousIssues":[]}
+                """);
+
+        when(autoMergeConfigRepository.findById(21L)).thenReturn(Optional.of(config));
+        when(autoMergeConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(autoMergeLogRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(gitlabApiService.listMergeRequests("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "opened", "main"))
+                .thenReturn(List.of(mergeRequest));
+        when(gitlabApiService.fetchMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 39L))
+                .thenReturn(mergeRequest);
+        when(gitlabApiService.fetchMergeRequestChanges("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 39L))
+                .thenReturn(changes);
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
+                "group/demo-repo", 39L, "AI_REJECTED"
+        )).thenReturn(Optional.empty());
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndReviewFingerprintAndReviewResultJsonIsNotNullOrderByExecutedAtDescIdDesc(
+                eq("group/demo-repo"), eq(39L), anyString()
+        )).thenReturn(Optional.of(cachedLog));
+        when(gitlabApiService.acceptMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 39L, true, false, true))
+                .thenReturn(new GitlabApiService.GitlabMergeResult("merged", "http://gitlab.example.com/group/demo-repo/-/merge_requests/39", "abc123", "merged"));
+
+        var result = gitlabManagementService.runAutoMergeConfig(21L);
+
+        assertThat(result.items()).singleElement().satisfies(item -> assertThat(item.action()).isEqualTo("MERGED"));
+        verify(codeReviewClientService, never()).reviewMergeRequest(any(), any(), any(), any(), any(), anyString());
+        verify(autoMergeLogRepository).save(argThat(log ->
+                log.getReviewFingerprint() != null
+                        && log.getReviewFingerprint().startsWith("diff:")
+                        && "DIFF".equals(log.getReviewFingerprintSource())
+                        && Boolean.TRUE.equals(log.getReviewCacheHit())
+        ));
+    }
+
+    /**
+     * 旧日志没有结构化缓存时，即使指纹查到了历史记录，也必须安全回退到实时审查。
+     */
+    @Test
+    void shouldIgnoreLegacyFingerprintLogWithoutReviewPayload() {
+        GitlabAutoMergeConfigEntity config = buildStandaloneAutoMergeConfig();
+        GitlabApiService.GitlabMergeRequest mergeRequest = buildMergeRequest(40L, "旧日志缓存兼容");
+        GitlabApiService.GitlabMergeRequestChanges changes = buildMergeRequestChanges(40L, "旧日志缓存兼容");
+        GitlabAutoMergeLogEntity cachedLog = new GitlabAutoMergeLogEntity();
+        cachedLog.setReviewFingerprint("sha:legacy-40");
+        cachedLog.setReviewResultJson(null);
+
+        when(autoMergeConfigRepository.findById(21L)).thenReturn(Optional.of(config));
+        when(autoMergeConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(autoMergeLogRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(gitlabApiService.listMergeRequests("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "opened", "main"))
+                .thenReturn(List.of(mergeRequest));
+        when(gitlabApiService.fetchMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 40L))
+                .thenReturn(mergeRequest);
+        when(gitlabApiService.fetchMergeRequestChanges("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 40L))
+                .thenReturn(changes);
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
+                "group/demo-repo", 40L, "AI_REJECTED"
+        )).thenReturn(Optional.empty());
+        when(autoMergeLogRepository.findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndReviewFingerprintAndReviewResultJsonIsNotNullOrderByExecutedAtDescIdDesc(
+                eq("group/demo-repo"), eq(40L), anyString()
+        )).thenReturn(Optional.empty());
+        when(codeReviewClientService.reviewMergeRequest(any(), any(), any(), any(), eq(List.of()), eq("MEDIUM")))
+                .thenReturn(new CodeReviewResult(
+                        false,
+                        "需要实时审查",
+                        ModelConfigService.PROVIDER_OPENAI,
+                        List.of("新增风险"),
+                        "# 代码审查",
+                        List.of(),
+                        List.of()
+                ));
+
+        var result = gitlabManagementService.runAutoMergeConfig(21L);
+
+        assertThat(result.items()).singleElement().satisfies(item -> assertThat(item.action()).isEqualTo("AI_REJECTED"));
+        verify(codeReviewClientService).reviewMergeRequest(any(), any(), any(), any(), eq(List.of()), eq("MEDIUM"));
+    }
+
+    /**
      * 构造一个包含平台项目、仓库路径和默认分支的绑定样例，供多个测试复用。
      */
     private ProjectGitlabBindingEntity buildBinding() {
@@ -894,7 +1074,10 @@ class GitlabManagementGitlabActionsTests {
                 "alice",
                 "http://gitlab.example.com/group/demo-repo/-/merge_requests/" + iid,
                 "2026-06-17T10:00:00Z",
-                0
+                0,
+                "head-sha-" + iid,
+                "base-sha-" + iid,
+                "start-sha-" + iid
         );
     }
 

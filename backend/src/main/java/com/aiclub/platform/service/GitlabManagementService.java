@@ -85,6 +85,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -112,6 +113,8 @@ public class GitlabManagementService {
     private static final String TRIGGER_MANUAL = "MANUAL";
     private static final String TRIGGER_SCHEDULED = "SCHEDULED";
     private static final String BRANCH_BEHIND_REASON_PREFIX = "源分支落后于目标分支";
+    private static final String REVIEW_FINGERPRINT_SOURCE_SHA = "SHA";
+    private static final String REVIEW_FINGERPRINT_SOURCE_DIFF = "DIFF";
     private static final String PRODUCT_BRANCH_RESULT_CREATED = "CREATED";
     private static final String PRODUCT_BRANCH_RESULT_NO_CHANGE = "NO_CHANGE";
     private static final String PRODUCT_BRANCH_RESULT_EXISTING_OPEN_MR = "EXISTING_OPEN_MR";
@@ -1033,6 +1036,7 @@ public class GitlabManagementService {
                 try {
                     List<String> previousIssues = List.of();
                     CodeReviewResult reviewResult = null;
+                    ReviewExecutionContext reviewContext = null;
                     GitlabApiService.GitlabMergeRequest latestMergeRequest = gitlabApiService.fetchMergeRequest(
                             resolved.apiBaseUrl(),
                             resolved.token(),
@@ -1069,13 +1073,15 @@ public class GitlabManagementService {
                     }
                     if (Boolean.TRUE.equals(entity.getAiReviewEnabled())) {
                         previousIssues = loadLatestRejectedReviewIssues(resolved.projectRef(), latestMergeRequest.iid());
-                        reviewResult = applyReviewSafetyGuard(reviewMergeRequest(entity, resolved, latestMergeRequest, previousIssues));
+                        reviewContext = executeReviewWithCache(entity, resolved, latestMergeRequest, previousIssues);
+                        reviewResult = applyReviewSafetyGuard(reviewContext.reviewResult());
                         if (!reviewResult.approved()) {
                             nonMergedCount++;
                             String reason = buildReviewFailureMessage(reviewResult);
-                            String detailMarkdown = buildReviewExtraMarkdown(reviewResult, previousIssues);
+                            String detailMarkdown = buildReviewExtraMarkdown(reviewResult, previousIssues, reviewContext.cacheHit());
                             items.add(new GitlabAutoMergeRunItem(latestMergeRequest.iid(), latestMergeRequest.title(), "AI_REJECTED", reason, latestMergeRequest.webUrl()));
-                            saveAutoMergeLog(entity, triggerType, latestMergeRequest, "AI_REJECTED", reason, latestMergeRequest.webUrl(), detailMarkdown, reviewResult, executedAt);
+                            saveAutoMergeLog(entity, triggerType, latestMergeRequest, "AI_REJECTED", reason, latestMergeRequest.webUrl(), detailMarkdown, reviewResult,
+                                    reviewContext.reviewFingerprint(), reviewContext.reviewFingerprintSource(), reviewContext.cacheHit(), executedAt);
                             continue;
                         }
                     }
@@ -1083,7 +1089,7 @@ public class GitlabManagementService {
                     mergedCount++;
                     String baseMessage = buildMergeMessage(result);
                     String webUrl = hasText(result.webUrl()) ? result.webUrl() : latestMergeRequest.webUrl();
-                    String extraMarkdown = reviewResult == null ? null : buildReviewExtraMarkdown(reviewResult, previousIssues);
+                    String extraMarkdown = reviewResult == null ? null : buildReviewExtraMarkdown(reviewResult, previousIssues, reviewContext != null && reviewContext.cacheHit());
                     String message = baseMessage;
                     if (Boolean.TRUE.equals(entity.getTriggerPipelineAfterMerge())
                             && MODE_PROJECT_BOUND.equals(entity.getExecutionMode())
@@ -1098,7 +1104,11 @@ public class GitlabManagementService {
                         extraMarkdown = appendMarkdownSection(extraMarkdown, buildPipelineTriggerMarkdown(pipelineOutcome));
                     }
                     items.add(new GitlabAutoMergeRunItem(latestMergeRequest.iid(), latestMergeRequest.title(), "MERGED", message, webUrl));
-                    saveAutoMergeLog(entity, triggerType, latestMergeRequest, "MERGED", message, webUrl, extraMarkdown, reviewResult, executedAt);
+                    saveAutoMergeLog(entity, triggerType, latestMergeRequest, "MERGED", message, webUrl, extraMarkdown, reviewResult,
+                            reviewContext == null ? null : reviewContext.reviewFingerprint(),
+                            reviewContext == null ? null : reviewContext.reviewFingerprintSource(),
+                            reviewContext != null && reviewContext.cacheHit(),
+                            executedAt);
                 } catch (RuntimeException exception) {
                     nonMergedCount++;
                     String fullReason = defaultString(exception.getMessage());
@@ -1253,6 +1263,44 @@ public class GitlabManagementService {
         return codeReviewClientService.reviewMergeRequest(modelConfig, buildReviewPrompt(entity), mergeRequest, changes, previousIssues, reviewStrictness);
     }
 
+    /**
+     * 先按 MR 版本指纹查缓存，命中则直接复用结构化审查结果；未命中时才真正调用模型。
+     */
+    private ReviewExecutionContext executeReviewWithCache(GitlabAutoMergeConfigEntity entity,
+                                                          ResolvedGitlabConfig resolved,
+                                                          GitlabApiService.GitlabMergeRequest mergeRequest,
+                                                          List<String> previousIssues) {
+        ReviewFingerprint reviewFingerprint = buildShaReviewFingerprint(entity, resolved.projectRef(), mergeRequest);
+        if (reviewFingerprint != null) {
+            Optional<CodeReviewResult> cached = loadCachedReviewResult(resolved.projectRef(), mergeRequest.iid(), reviewFingerprint.value());
+            if (cached.isPresent()) {
+                return new ReviewExecutionContext(cached.get(), reviewFingerprint.value(), reviewFingerprint.source(), true);
+            }
+        }
+        GitlabApiService.GitlabMergeRequestChanges changes = gitlabApiService.fetchMergeRequestChanges(
+                resolved.apiBaseUrl(), resolved.token(), resolved.projectRef(), mergeRequest.iid());
+        if (reviewFingerprint == null) {
+            reviewFingerprint = buildDiffReviewFingerprint(entity, resolved.projectRef(), mergeRequest, changes);
+            Optional<CodeReviewResult> cached = loadCachedReviewResult(resolved.projectRef(), mergeRequest.iid(), reviewFingerprint.value());
+            if (cached.isPresent()) {
+                return new ReviewExecutionContext(cached.get(), reviewFingerprint.value(), reviewFingerprint.source(), true);
+            }
+        }
+        String reviewStrictness = normalizeReviewStrictness(entity.getReviewStrictness());
+        CodeReviewResult reviewResult;
+        if (entity.getReviewAgent() != null) {
+            reviewResult = agentExecutionService.reviewMergeRequest(entity.getReviewAgent().getId(), mergeRequest, changes, previousIssues, reviewStrictness);
+        } else {
+            if (entity.getAiModelConfig() == null) {
+                throw new IllegalArgumentException("AI 模型不能为空，或请改为选择 Code Review Agent");
+            }
+            ensureChatModelConfig(entity.getAiModelConfig());
+            ModelConfigService.ResolvedModelConfig modelConfig = modelConfigService.resolveModelConfig(entity.getAiModelConfig().getId());
+            reviewResult = codeReviewClientService.reviewMergeRequest(modelConfig, buildReviewPrompt(entity), mergeRequest, changes, previousIssues, reviewStrictness);
+        }
+        return new ReviewExecutionContext(reviewResult, reviewFingerprint.value(), reviewFingerprint.source(), false);
+    }
+
 
     private String buildReviewPrompt(GitlabAutoMergeConfigEntity entity) {
         if (hasText(entity.getAiReviewPrompt())) {
@@ -1335,6 +1383,21 @@ public class GitlabManagementService {
                                   String extraMarkdown,
                                   CodeReviewResult reviewResult,
                                   LocalDateTime executedAt) {
+        saveAutoMergeLog(config, triggerType, mergeRequest, result, reason, webUrl, extraMarkdown, reviewResult, null, null, false, executedAt);
+    }
+
+    private void saveAutoMergeLog(GitlabAutoMergeConfigEntity config,
+                                  String triggerType,
+                                  GitlabApiService.GitlabMergeRequest mergeRequest,
+                                  String result,
+                                  String reason,
+                                  String webUrl,
+                                  String extraMarkdown,
+                                  CodeReviewResult reviewResult,
+                                  String reviewFingerprint,
+                                  String reviewFingerprintSource,
+                                  boolean reviewCacheHit,
+                                  LocalDateTime executedAt) {
         saveAutoMergeLog(
                 config,
                 triggerType,
@@ -1347,12 +1410,15 @@ public class GitlabManagementService {
                 webUrl,
                 extraMarkdown,
                 reviewResult,
+                reviewFingerprint,
+                reviewFingerprintSource,
+                reviewCacheHit,
                 executedAt
         );
     }
 
     private void saveAutoMergeLog(GitlabAutoMergeConfigEntity config, String triggerType, Long mergeRequestIid, String mergeRequestTitle, String result, String reason, String webUrl, String extraMarkdown, LocalDateTime executedAt) {
-        saveAutoMergeLog(config, triggerType, mergeRequestIid, mergeRequestTitle, null, null, result, reason, webUrl, extraMarkdown, null, executedAt);
+        saveAutoMergeLog(config, triggerType, mergeRequestIid, mergeRequestTitle, null, null, result, reason, webUrl, extraMarkdown, null, null, null, false, executedAt);
     }
 
     private void saveAutoMergeLog(GitlabAutoMergeConfigEntity config,
@@ -1366,6 +1432,9 @@ public class GitlabManagementService {
                                   String webUrl,
                                   String extraMarkdown,
                                   CodeReviewResult reviewResult,
+                                  String reviewFingerprint,
+                                  String reviewFingerprintSource,
+                                  boolean reviewCacheHit,
                                   LocalDateTime executedAt) {
         GitlabAutoMergeLogEntity log = new GitlabAutoMergeLogEntity();
         log.setConfig(config);
@@ -1382,6 +1451,10 @@ public class GitlabManagementService {
         log.setReviewIssuesJson(writeIssueListJson(reviewResult == null ? null : reviewResult.issues()));
         log.setResolvedPreviousIssuesJson(writeIssueListJson(reviewResult == null ? null : reviewResult.resolvedPreviousIssues()));
         log.setUnresolvedPreviousIssuesJson(writeIssueListJson(reviewResult == null ? null : reviewResult.unresolvedPreviousIssues()));
+        log.setReviewFingerprint(trimToNull(reviewFingerprint));
+        log.setReviewFingerprintSource(trimToNull(reviewFingerprintSource));
+        log.setReviewResultJson(writeReviewResultJson(reviewResult));
+        log.setReviewCacheHit(reviewResult == null ? null : reviewCacheHit);
         log.setDetailMarkdown(limitDetailMarkdown(buildLogDetailMarkdown(config, triggerType, mergeRequestIid, mergeRequestTitle, result, reason, webUrl, executedAt, extraMarkdown)));
         log.setWebUrl(trimToNull(webUrl));
         log.setExecutedAt(executedAt == null ? LocalDateTime.now() : executedAt);
@@ -1493,6 +1566,9 @@ public class GitlabManagementService {
         if (hasText(formatTime(executedAt))) {
             builder.append("- \u6267\u884c\u65f6\u95f4\uff1a").append(formatTime(executedAt)).append("\n");
         }
+        if (hasText(extraMarkdown) && extraMarkdown.contains("本次 AI 审查复用历史结果，未重新调用模型")) {
+            builder.append("- AI 审查：复用历史结果，未重新调用模型\n");
+        }
         if (mergeRequestIid != null) {
             builder.append("- Merge Request\uff1a!").append(mergeRequestIid);
             if (hasText(mergeRequestTitle)) {
@@ -1514,13 +1590,16 @@ public class GitlabManagementService {
     /**
      * 将历史问题修复状态与原始 AI Review 输出拼成统一 Markdown，确保日志详情固定可读。
      */
-    private String buildReviewExtraMarkdown(CodeReviewResult reviewResult, List<String> previousIssues) {
+    private String buildReviewExtraMarkdown(CodeReviewResult reviewResult, List<String> previousIssues, boolean reviewCacheHit) {
         List<String> normalizedPreviousIssues = normalizeIssueList(previousIssues);
         List<String> resolvedPreviousIssues = normalizeIssueList(reviewResult.resolvedPreviousIssues());
         List<String> unresolvedPreviousIssues = normalizeIssueList(reviewResult.unresolvedPreviousIssues());
         List<String> pendingIssues = normalizeIssueList(reviewResult.issues());
         List<String> newlyRaisedIssues = subtractIssues(pendingIssues, unresolvedPreviousIssues);
         StringBuilder builder = new StringBuilder();
+        if (reviewCacheHit) {
+            builder.append("> 本次 AI 审查复用历史结果，未重新调用模型。\n\n");
+        }
         builder.append("## \u5386\u53f2\u95ee\u9898\u4fee\u590d\u60c5\u51b5\n\n");
         appendMarkdownIssueSection(builder, "### \u4e0a\u6b21\u95ee\u9898", normalizedPreviousIssues);
         appendMarkdownIssueSection(builder, "### \u5df2\u4fee\u590d\u9879", resolvedPreviousIssues);
@@ -1594,6 +1673,77 @@ public class GitlabManagementService {
     }
 
     /**
+     * 同一 MR + 版本指纹命中缓存时，直接复用上一次结构化审查结果，避免重复调用模型。
+     */
+    private Optional<CodeReviewResult> loadCachedReviewResult(String gitlabProjectRef, Long mergeRequestIid, String reviewFingerprint) {
+        String normalizedProjectRef = trimToNull(gitlabProjectRef);
+        String normalizedFingerprint = trimToNull(reviewFingerprint);
+        if (normalizedProjectRef == null || mergeRequestIid == null || normalizedFingerprint == null) {
+            return Optional.empty();
+        }
+        return autoMergeLogRepository
+                .findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndReviewFingerprintAndReviewResultJsonIsNotNullOrderByExecutedAtDescIdDesc(
+                        normalizedProjectRef,
+                        mergeRequestIid,
+                        normalizedFingerprint
+                )
+                .flatMap(log -> readReviewResultJson(log.getReviewResultJson()));
+    }
+
+    private ReviewFingerprint buildShaReviewFingerprint(GitlabAutoMergeConfigEntity entity,
+                                                        String gitlabProjectRef,
+                                                        GitlabApiService.GitlabMergeRequest mergeRequest) {
+        String normalizedProjectRef = trimToNull(gitlabProjectRef);
+        String headSha = trimToNull(mergeRequest.headSha());
+        String baseSha = trimToNull(mergeRequest.baseSha());
+        if (normalizedProjectRef == null || mergeRequest.iid() == null || headSha == null || baseSha == null) {
+            return null;
+        }
+        String payload = String.join("|",
+                normalizedProjectRef,
+                String.valueOf(mergeRequest.iid()),
+                headSha,
+                baseSha,
+                defaultString(trimToNull(mergeRequest.startSha())),
+                resolveReviewConfigKey(entity),
+                hashText(defaultString(trimToNull(entity.getAiReviewPrompt()))));
+        return new ReviewFingerprint("sha:" + hashText(payload), REVIEW_FINGERPRINT_SOURCE_SHA);
+    }
+
+    private ReviewFingerprint buildDiffReviewFingerprint(GitlabAutoMergeConfigEntity entity,
+                                                         String gitlabProjectRef,
+                                                         GitlabApiService.GitlabMergeRequest mergeRequest,
+                                                         GitlabApiService.GitlabMergeRequestChanges changes) {
+        String normalizedProjectRef = trimToNull(gitlabProjectRef);
+        if (normalizedProjectRef == null || mergeRequest.iid() == null) {
+            return new ReviewFingerprint("diff:" + hashText(resolveReviewConfigKey(entity)), REVIEW_FINGERPRINT_SOURCE_DIFF);
+        }
+        StringBuilder payload = new StringBuilder();
+        payload.append(normalizedProjectRef)
+                .append('|').append(mergeRequest.iid())
+                .append('|').append(resolveReviewConfigKey(entity))
+                .append('|').append(hashText(defaultString(trimToNull(entity.getAiReviewPrompt()))));
+        if (changes != null && changes.changes() != null) {
+            for (GitlabApiService.GitlabChange change : changes.changes()) {
+                payload.append("\n--change--\n")
+                        .append(defaultString(change.oldPath())).append('\n')
+                        .append(defaultString(change.newPath())).append('\n')
+                        .append(defaultString(change.diff())).append('\n')
+                        .append(change.newFile()).append('|')
+                        .append(change.deletedFile()).append('|')
+                        .append(change.renamedFile());
+            }
+        }
+        return new ReviewFingerprint("diff:" + hashText(payload.toString()), REVIEW_FINGERPRINT_SOURCE_DIFF);
+    }
+
+    private String resolveReviewConfigKey(GitlabAutoMergeConfigEntity entity) {
+        String agentKey = entity.getReviewAgent() == null ? "" : "agent:" + entity.getReviewAgent().getId();
+        String modelKey = entity.getAiModelConfig() == null ? "" : "model:" + entity.getAiModelConfig().getId();
+        return normalizeReviewStrictness(entity.getReviewStrictness()) + "|" + agentKey + "|" + modelKey;
+    }
+
+    /**
      * 后端对模型结果做最终兜底，只要还有历史问题未修复，就算模型误判 approved=true 也必须拦截。
      */
     private CodeReviewResult applyReviewSafetyGuard(CodeReviewResult reviewResult) {
@@ -1629,6 +1779,29 @@ public class GitlabManagementService {
             return objectMapper.writeValueAsString(normalizeIssueList(issues));
         } catch (Exception exception) {
             throw new IllegalStateException("自动合并日志问题列表序列化失败", exception);
+        }
+    }
+
+    private String writeReviewResultJson(CodeReviewResult reviewResult) {
+        if (reviewResult == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(reviewResult);
+        } catch (Exception exception) {
+            throw new IllegalStateException("自动合并日志审查结果序列化失败", exception);
+        }
+    }
+
+    private Optional<CodeReviewResult> readReviewResultJson(String json) {
+        if (!hasText(json)) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(objectMapper.readValue(json, CodeReviewResult.class));
+        } catch (Exception exception) {
+            log.warn("自动合并日志审查结果解析失败: {}", exception.getMessage());
+            return Optional.empty();
         }
     }
 
@@ -1707,6 +1880,21 @@ public class GitlabManagementService {
         return compact.toLowerCase();
     }
 
+    private String hashText(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(defaultString(value).getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(bytes.length * 2);
+            for (byte current : bytes) {
+                builder.append(Character.forDigit((current >> 4) & 0xF, 16));
+                builder.append(Character.forDigit(current & 0xF, 16));
+            }
+            return builder.toString();
+        } catch (Exception exception) {
+            throw new IllegalStateException("自动合并日志指纹计算失败", exception);
+        }
+    }
+
     private void appendMarkdownIssueSection(StringBuilder builder, String title, List<String> issues) {
         builder.append(title).append("\n");
         if (issues == null || issues.isEmpty()) {
@@ -1717,6 +1905,15 @@ public class GitlabManagementService {
             builder.append("- ").append(issue).append("\n");
         }
         builder.append("\n");
+    }
+
+    private record ReviewExecutionContext(CodeReviewResult reviewResult,
+                                          String reviewFingerprint,
+                                          String reviewFingerprintSource,
+                                          boolean cacheHit) {
+    }
+
+    private record ReviewFingerprint(String value, String source) {
     }
 
     private String appendMarkdownSection(String baseMarkdown, String extraMarkdown) {

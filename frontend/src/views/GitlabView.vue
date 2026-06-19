@@ -3900,6 +3900,7 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
   color: var(--app-tertiary);
   transform: translateY(-1px);
 }
+.auto-merge-strictness-item :deep(.el-form-item__label),
 .auto-merge-strictness-item :deep(.el-form-item__content) {
   align-items: center;
 }
@@ -3926,9 +3927,9 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
   box-shadow: inset 0 0 0 1px rgba(25, 28, 29, 0.06) !important;
 }
 .auto-merge-strictness-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
-  background: var(--app-tertiary);
+  background: var(--app-primary-container);
   color: #fff;
-  box-shadow: 0 8px 18px rgba(var(--app-tertiary-rgb), 0.18) !important;
+  box-shadow: 0 8px 18px rgba(var(--app-primary-container-rgb), 0.25) !important;
 }
 .auto-merge-strictness-group :deep(.el-radio-button.is-disabled .el-radio-button__inner) {
   background: #f3f5f7;

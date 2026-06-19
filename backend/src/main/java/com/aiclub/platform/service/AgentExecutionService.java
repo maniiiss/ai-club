@@ -399,7 +399,10 @@ public class AgentExecutionService {
                 "agent-tester",
                 "",
                 "",
-                0
+                0,
+                "",
+                "",
+                ""
         );
         GitlabApiService.GitlabMergeRequestChanges changes = new GitlabApiService.GitlabMergeRequestChanges(
                 0L,

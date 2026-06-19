@@ -4,6 +4,7 @@ import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeWebhookEntity;
 import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
+import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeWebhookRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -27,6 +28,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executor;
 
@@ -58,6 +60,7 @@ public class GitlabAutoMergeWebhookDispatcher {
     private static final String BRANCH_BEHIND_REASON_PREFIX = "源分支落后于目标分支";
 
     private final GitlabAutoMergeWebhookRepository webhookRepository;
+    private final GitlabAutoMergeLogRepository autoMergeLogRepository;
     private final TokenCipherService tokenCipherService;
     private final ObjectMapper objectMapper;
     private final Executor executor;
@@ -65,11 +68,13 @@ public class GitlabAutoMergeWebhookDispatcher {
     private final HttpClient httpClient;
 
     public GitlabAutoMergeWebhookDispatcher(GitlabAutoMergeWebhookRepository webhookRepository,
+                                            GitlabAutoMergeLogRepository autoMergeLogRepository,
                                             TokenCipherService tokenCipherService,
                                             ObjectMapper objectMapper,
                                             @Qualifier("executionTaskExecutor") Executor executor,
                                             PlatformTransactionManager transactionManager) {
         this.webhookRepository = webhookRepository;
+        this.autoMergeLogRepository = autoMergeLogRepository;
         this.tokenCipherService = tokenCipherService;
         this.objectMapper = objectMapper;
         this.executor = executor;
@@ -97,6 +102,9 @@ public class GitlabAutoMergeWebhookDispatcher {
         String configName = config.getName();
         Long mergeRequestIid = logEntity.getMergeRequestIid();
         Map<String, Object> payload = buildPayloadModel(logEntity, event);
+        if (shouldSuppressWebhook(logEntity, event)) {
+            return;
+        }
         try {
             executor.execute(() -> dispatchInternal(configId, configName, mergeRequestIid, event, payload));
         } catch (Exception ex) {
@@ -147,6 +155,30 @@ public class GitlabAutoMergeWebhookDispatcher {
                         configId, mergeRequestIid, webhook.getId(), ex.getMessage());
             }
         }
+    }
+
+    /**
+     * webhook 去重不影响日志留存；只有“上一条同作用域日志的事件+原因摘要完全一致”时才抑制外发。
+     */
+    private boolean shouldSuppressWebhook(GitlabAutoMergeLogEntity logEntity, String event) {
+        GitlabAutoMergeConfigEntity config = logEntity.getConfig();
+        Long configId = config == null ? null : config.getId();
+        Long currentLogId = logEntity.getId();
+        if (configId == null || currentLogId == null) {
+            return false;
+        }
+        Optional<GitlabAutoMergeLogEntity> previousLog;
+        if (logEntity.getMergeRequestIid() == null) {
+            previousLog = autoMergeLogRepository.findTopByConfig_IdAndMergeRequestIidIsNullAndIdLessThanOrderByIdDesc(configId, currentLogId);
+        } else {
+            previousLog = autoMergeLogRepository.findTopByConfig_IdAndMergeRequestIidAndIdLessThanOrderByIdDesc(configId, logEntity.getMergeRequestIid(), currentLogId);
+        }
+        if (previousLog.isEmpty()) {
+            return false;
+        }
+        String currentStateKey = buildStateKey(event, logEntity.getReason());
+        String previousStateKey = buildStateKey(resolveEvent(previousLog.get()), previousLog.get().getReason());
+        return currentStateKey.equals(previousStateKey);
     }
 
     /** 实际发送 HTTP；调用方负责保证不抛出。 */
@@ -299,6 +331,14 @@ public class GitlabAutoMergeWebhookDispatcher {
             }
         }
         return result == null ? "" : result.toUpperCase();
+    }
+
+    private String buildStateKey(String event, String reason) {
+        return defaultString(event).trim().toUpperCase() + "|" + defaultString(reason).trim();
+    }
+
+    private String defaultString(String value) {
+        return value == null ? "" : value;
     }
 
     private String limitMessage(String text) {

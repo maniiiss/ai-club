@@ -286,7 +286,8 @@ class GitlabProductBranchManagementTests {
                 .thenReturn(List.of(new GitlabApiService.GitlabMergeRequest(
                         88L, "[主线同步] main -> release/a", "opened", "main", "release/a",
                         false, false, "can_be_merged", "success", "Alice", "alice",
-                        "http://gitlab.example.com/group/demo-repo/-/merge_requests/88", "2026-04-20T10:00:00Z", 1
+                        "http://gitlab.example.com/group/demo-repo/-/merge_requests/88", "2026-04-20T10:00:00Z", 1,
+                        "", "", ""
                 )));
 
         GitlabProductBranchSyncRunResult result = gitlabManagementService.createProductBranchSyncMergeRequests(

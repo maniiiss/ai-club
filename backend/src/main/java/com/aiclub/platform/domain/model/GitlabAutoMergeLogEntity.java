@@ -80,6 +80,30 @@ public class GitlabAutoMergeLogEntity {
     @Column(name = "unresolved_previous_issues_json", columnDefinition = "TEXT")
     private String unresolvedPreviousIssuesJson;
 
+    /**
+     * 当前审查结果对应的 MR 版本指纹；同一指纹命中时可直接复用历史结构化审查结果。
+     */
+    @Column(name = "review_fingerprint", length = 255)
+    private String reviewFingerprint;
+
+    /**
+     * 指纹来源：SHA 或 DIFF，便于排查为何命中或未命中缓存。
+     */
+    @Column(name = "review_fingerprint_source", length = 20)
+    private String reviewFingerprintSource;
+
+    /**
+     * 结构化审查结果快照，用于同一 MR 版本复审时直接复用，避免重复消耗模型调用。
+     */
+    @Column(name = "review_result_json", columnDefinition = "TEXT")
+    private String reviewResultJson;
+
+    /**
+     * 标记本次日志是否复用了历史审查缓存，便于后续统计节省的 token 与排查行为。
+     */
+    @Column(name = "review_cache_hit")
+    private Boolean reviewCacheHit;
+
     @Column(name = "detail_markdown", columnDefinition = "TEXT")
     private String detailMarkdown;
 
@@ -214,6 +238,38 @@ public class GitlabAutoMergeLogEntity {
 
     public void setUnresolvedPreviousIssuesJson(String unresolvedPreviousIssuesJson) {
         this.unresolvedPreviousIssuesJson = unresolvedPreviousIssuesJson;
+    }
+
+    public String getReviewFingerprint() {
+        return reviewFingerprint;
+    }
+
+    public void setReviewFingerprint(String reviewFingerprint) {
+        this.reviewFingerprint = reviewFingerprint;
+    }
+
+    public String getReviewFingerprintSource() {
+        return reviewFingerprintSource;
+    }
+
+    public void setReviewFingerprintSource(String reviewFingerprintSource) {
+        this.reviewFingerprintSource = reviewFingerprintSource;
+    }
+
+    public String getReviewResultJson() {
+        return reviewResultJson;
+    }
+
+    public void setReviewResultJson(String reviewResultJson) {
+        this.reviewResultJson = reviewResultJson;
+    }
+
+    public Boolean getReviewCacheHit() {
+        return reviewCacheHit;
+    }
+
+    public void setReviewCacheHit(Boolean reviewCacheHit) {
+        this.reviewCacheHit = reviewCacheHit;
     }
 
     public String getDetailMarkdown() {
