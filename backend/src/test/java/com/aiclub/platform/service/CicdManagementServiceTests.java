@@ -193,6 +193,88 @@ class CicdManagementServiceTests {
     }
 
     /**
+     * 显式选择目标流水线时，只触发命中的 AI Club / Jenkins 项，不再按项目维度广播全部绑定。
+     */
+    @Test
+    void shouldTriggerOnlySelectedProjectPipelines() {
+        ProjectEntity project = projectRepository.save(new ProjectEntity("定向触发项目", "赵六", "进行中", "验证只触发选中的流水线"));
+        JenkinsServerSummary server = createJenkinsServer();
+        ProjectGitlabBindingEntity gitlabBinding = projectGitlabBindingRepository.save(createGitlabBinding(project));
+
+        mockFetchJob("job-one");
+        mockFetchJob("job-two");
+        when(jenkinsApiService.triggerJob(anyString(), anyString(), anyString(), eq("job-one"), anyMap()))
+                .thenReturn(new JenkinsApiService.JenkinsTriggerResult("http://jenkins.example.com/queue/1", "已提交 Jenkins 构建请求"));
+        when(woodpeckerApiService.triggerPipeline(eq(77L), eq("release"), anyMap()))
+                .thenReturn(new WoodpeckerApiService.WoodpeckerPipeline(
+                        9001L,
+                        21,
+                        "pending",
+                        "release",
+                        "manual",
+                        "manual run",
+                        "abc123",
+                        "http://woodpecker.example.com/repos/group/repo/pipeline/21",
+                        LocalDateTime.now(),
+                        null,
+                        null,
+                        java.util.List.of()
+                ));
+        when(gitlabApiService.repositoryFileExists(
+                eq("http://gitlab.example.com/api/v4"),
+                anyString(),
+                eq("group/repo"),
+                eq("release"),
+                eq(".woodpecker.yml")
+        )).thenReturn(true);
+
+        AiClubPipelineEntity selectedAiPipeline = aiClubPipelineRepository.save(createAiClubPipeline(project, gitlabBinding));
+        AiClubPipelineEntity ignoredAiPipeline = aiClubPipelineRepository.save(createSecondAiClubPipeline(project, gitlabBinding));
+        ProjectPipelineBindingSummary selectedJenkinsBinding = cicdManagementService.createPipelineBinding(new ProjectPipelineBindingRequest(
+                project.getId(),
+                server.id(),
+                "job-one",
+                "main",
+                "{\"ENV\":\"test\"}",
+                true,
+                List.of()
+        ));
+        cicdManagementService.createPipelineBinding(new ProjectPipelineBindingRequest(
+                project.getId(),
+                server.id(),
+                "job-two",
+                "develop",
+                "{\"ENV\":\"prod\"}",
+                true,
+                List.of()
+        ));
+
+        CicdManagementService.PipelineTriggerOutcome outcome = cicdManagementService.triggerSelectedProjectPipelines(
+                project.getId(),
+                List.of(
+                        new CicdManagementService.PipelineTargetRef("AI_CLUB", selectedAiPipeline.getId()),
+                        new CicdManagementService.PipelineTargetRef("JENKINS", selectedJenkinsBinding.id())
+                ),
+                "release",
+                "GitLab 自动合并"
+        );
+
+        assertThat(outcome.status()).isEqualTo("SUCCESS");
+        assertThat(outcome.bindingOutcomes())
+                .extracting(CicdManagementService.PipelineBindingOutcome::jobName)
+                .containsExactly("后端发布", "job-one");
+        verify(woodpeckerApiService).triggerPipeline(eq(77L), eq("release"), anyMap());
+        verify(jenkinsApiService).triggerJob(anyString(), anyString(), anyString(), eq("job-one"), anyMap());
+        verify(jenkinsApiService, never()).triggerJob(anyString(), anyString(), anyString(), eq("job-two"), anyMap());
+
+        AiClubPipelineEntity reloadedSelectedAi = aiClubPipelineRepository.findById(selectedAiPipeline.getId()).orElseThrow();
+        AiClubPipelineEntity reloadedIgnoredAi = aiClubPipelineRepository.findById(ignoredAiPipeline.getId()).orElseThrow();
+        assertThat(reloadedSelectedAi.getLastRunStatus()).isEqualTo("pending");
+        assertThat(reloadedIgnoredAi.getLastRunStatus()).isNull();
+        assertThat(projectPipelineBindingRepository.findById(selectedJenkinsBinding.id()).orElseThrow().getLastTriggerStatus()).isEqualTo("QUEUED");
+    }
+
+    /**
      * 验证默认分支不会被强行注入到未声明 branch 参数的 Jenkins Job 中，
      * 避免普通 Job 被误判为参数化构建后触发 500。
      */
@@ -1159,6 +1241,13 @@ class CicdManagementServiceTests {
         pipeline.setWoodpeckerRepoFullName("group/repo");
         pipeline.setWoodpeckerRepoUrl("http://gitlab.example.com/group/repo");
         pipeline.setEnabled(true);
+        return pipeline;
+    }
+
+    private AiClubPipelineEntity createSecondAiClubPipeline(ProjectEntity project, ProjectGitlabBindingEntity gitlabBinding) {
+        AiClubPipelineEntity pipeline = createAiClubPipeline(project, gitlabBinding);
+        pipeline.setName("前端发布");
+        pipeline.setDefaultBranch("develop");
         return pipeline;
     }
 }

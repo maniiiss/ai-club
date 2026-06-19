@@ -65,6 +65,7 @@ import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -697,6 +698,36 @@ public class CicdManagementService {
         return buildProjectPipelineOutcome(bindingOutcomes);
     }
 
+    /**
+     * 仅触发自动合并配置里显式勾选的流水线目标，避免继续按项目维度广播全部绑定。
+     */
+    public PipelineTriggerOutcome triggerSelectedProjectPipelines(Long projectId,
+                                                                 List<PipelineTargetRef> targets,
+                                                                 String branchOverride,
+                                                                 String sourceDescription) {
+        if (targets == null || targets.isEmpty()) {
+            return PipelineTriggerOutcome.skipped("当前策略未配置可触发的流水线");
+        }
+        List<PipelineBindingOutcome> bindingOutcomes = new ArrayList<>();
+        LinkedHashSet<PipelineTargetRef> deduplicatedTargets = new LinkedHashSet<>(targets);
+        for (PipelineTargetRef target : deduplicatedTargets) {
+            if (target == null || target.targetId() == null) {
+                bindingOutcomes.add(PipelineBindingOutcome.failed("目标流水线配置无效", "未知流水线", "UNKNOWN"));
+                continue;
+            }
+            if (PIPELINE_CENTER_ENTRY_AI_CLUB.equalsIgnoreCase(target.targetType())) {
+                triggerSelectedAiClubPipeline(projectId, target, branchOverride, sourceDescription, bindingOutcomes);
+                continue;
+            }
+            if (PIPELINE_CENTER_ENTRY_JENKINS.equalsIgnoreCase(target.targetType())) {
+                triggerSelectedJenkinsBinding(projectId, target, branchOverride, sourceDescription, bindingOutcomes);
+                continue;
+            }
+            bindingOutcomes.add(PipelineBindingOutcome.failed("不支持的流水线类型: " + target.targetType(), String.valueOf(target.targetId()), "UNKNOWN"));
+        }
+        return buildProjectPipelineOutcome(bindingOutcomes);
+    }
+
     private void fillAiClubPipelineEntity(AiClubPipelineEntity entity, AiClubPipelineRequest request, boolean createMode) {
         ProjectEntity project = requireProject(request.projectId());
         ProjectGitlabBindingEntity gitlabBinding = requireGitlabBinding(request.gitlabBindingId());
@@ -1129,6 +1160,64 @@ public class CicdManagementService {
                 "共 " + bindingOutcomes.size() + " 条绑定，成功 " + successCount + " 条，失败 " + failedCount + " 条，跳过 " + skippedCount + " 条",
                 bindingOutcomes
         );
+    }
+
+    private void triggerSelectedAiClubPipeline(Long projectId,
+                                               PipelineTargetRef target,
+                                               String branchOverride,
+                                               String sourceDescription,
+                                               List<PipelineBindingOutcome> bindingOutcomes) {
+        Optional<AiClubPipelineEntity> optionalPipeline = aiClubPipelineRepository.findById(target.targetId());
+        if (optionalPipeline.isEmpty() || optionalPipeline.get().getProject() == null
+                || !projectId.equals(optionalPipeline.get().getProject().getId())) {
+            bindingOutcomes.add(PipelineBindingOutcome.failed("指定的 AI Club Pipeline 不存在或已不属于当前项目", String.valueOf(target.targetId()), "WOODPECKER"));
+            return;
+        }
+        AiClubPipelineEntity entity = optionalPipeline.get();
+        try {
+            AiClubPipelineTriggerResult result = triggerAiClubPipeline(entity, branchOverride, sourceDescription);
+            bindingOutcomes.add(PipelineBindingOutcome.success(
+                    result.message(),
+                    result.triggerUrl(),
+                    result.pipelineName(),
+                    result.providerCode()
+            ));
+        } catch (RuntimeException exception) {
+            bindingOutcomes.add(PipelineBindingOutcome.failed(
+                    limitMessage(exception.getMessage()),
+                    entity.getName(),
+                    entity.getProviderCode()
+            ));
+        }
+    }
+
+    private void triggerSelectedJenkinsBinding(Long projectId,
+                                               PipelineTargetRef target,
+                                               String branchOverride,
+                                               String sourceDescription,
+                                               List<PipelineBindingOutcome> bindingOutcomes) {
+        Optional<ProjectPipelineBindingEntity> optionalBinding = projectPipelineBindingRepository.findById(target.targetId());
+        if (optionalBinding.isEmpty() || optionalBinding.get().getProject() == null
+                || !projectId.equals(optionalBinding.get().getProject().getId())) {
+            bindingOutcomes.add(PipelineBindingOutcome.failed("指定的 Jenkins 流水线不存在或已不属于当前项目", String.valueOf(target.targetId()), "JENKINS"));
+            return;
+        }
+        ProjectPipelineBindingEntity entity = optionalBinding.get();
+        try {
+            JenkinsBuildTriggerResult result = triggerPipelineBuild(entity, branchOverride, sourceDescription);
+            bindingOutcomes.add(PipelineBindingOutcome.success(
+                    result.message(),
+                    result.triggerUrl(),
+                    result.jobName(),
+                    result.jenkinsServerName()
+            ));
+        } catch (RuntimeException exception) {
+            bindingOutcomes.add(PipelineBindingOutcome.failed(
+                    limitMessage(exception.getMessage()),
+                    entity.getJobName(),
+                    entity.getJenkinsServer().getName()
+            ));
+        }
     }
 
     private BuildParameterSnapshot parseBuildParameters(String buildParametersJson) {
@@ -1775,6 +1864,15 @@ public class CicdManagementService {
         public static PipelineTriggerOutcome skipped(String message) {
             return skipped(message, List.of());
         }
+    }
+
+    /**
+     * 自动合并配置里选中的目标流水线键。
+     */
+    public record PipelineTargetRef(
+            String targetType,
+            Long targetId
+    ) {
     }
 
     /**

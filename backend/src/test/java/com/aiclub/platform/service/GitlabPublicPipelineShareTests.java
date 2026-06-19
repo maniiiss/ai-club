@@ -12,6 +12,7 @@ import com.aiclub.platform.repository.AiClubPipelineRepository;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
+import com.aiclub.platform.repository.GitlabAutoMergePipelineTargetRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeProjectShareRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeWebhookRepository;
 import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
@@ -64,6 +65,9 @@ class GitlabPublicPipelineShareTests {
 
     @Mock
     private GitlabAutoMergeLogRepository autoMergeLogRepository;
+
+    @Mock
+    private GitlabAutoMergePipelineTargetRepository autoMergePipelineTargetRepository;
 
     @Mock
     private GitlabAutoMergeProjectShareRepository autoMergeProjectShareRepository;
@@ -152,6 +156,7 @@ class GitlabPublicPipelineShareTests {
                 bindingRepository,
                 codeStructureSnapshotRepository,
                 autoMergeConfigRepository,
+                autoMergePipelineTargetRepository,
                 autoMergeLogRepository,
                 autoMergeProjectShareRepository,
                 autoMergeWebhookRepository,

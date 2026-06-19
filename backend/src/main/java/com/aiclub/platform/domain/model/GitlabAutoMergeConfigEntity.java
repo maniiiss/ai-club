@@ -1,6 +1,7 @@
 package com.aiclub.platform.domain.model;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -8,10 +9,13 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.time.LocalDateTime;
 
 @Entity
@@ -67,6 +71,12 @@ public class GitlabAutoMergeConfigEntity {
 
     @Column(name = "trigger_pipeline_after_merge", nullable = false)
     private Boolean triggerPipelineAfterMerge = Boolean.FALSE;
+
+    /**
+     * 合并成功后显式触发的目标流水线列表。
+     */
+    @OneToMany(mappedBy = "config", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<GitlabAutoMergePipelineTargetEntity> pipelineTargets = new ArrayList<>();
 
     @Column(name = "require_pipeline_success", nullable = false)
     private Boolean requirePipelineSuccess = Boolean.TRUE;
@@ -253,6 +263,31 @@ public class GitlabAutoMergeConfigEntity {
 
     public void setTriggerPipelineAfterMerge(Boolean triggerPipelineAfterMerge) {
         this.triggerPipelineAfterMerge = triggerPipelineAfterMerge;
+    }
+
+    public List<GitlabAutoMergePipelineTargetEntity> getPipelineTargets() {
+        return pipelineTargets;
+    }
+
+    /**
+     * 统一由聚合根接管子项，确保双向关联与 orphanRemoval 一致。
+     */
+    public void setPipelineTargets(List<GitlabAutoMergePipelineTargetEntity> pipelineTargets) {
+        this.pipelineTargets.clear();
+        if (pipelineTargets == null) {
+            return;
+        }
+        for (GitlabAutoMergePipelineTargetEntity target : pipelineTargets) {
+            addPipelineTarget(target);
+        }
+    }
+
+    public void addPipelineTarget(GitlabAutoMergePipelineTargetEntity target) {
+        if (target == null) {
+            return;
+        }
+        target.setConfig(this);
+        this.pipelineTargets.add(target);
     }
 
     public Boolean getRequirePipelineSuccess() {

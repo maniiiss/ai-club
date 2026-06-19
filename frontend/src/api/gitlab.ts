@@ -77,6 +77,12 @@ export interface GitlabAutoMergePayload {
   aiReviewEnabled: boolean
   aiReviewPrompt: string
   reviewStrictness: 'HIGH' | 'MEDIUM' | 'LOW'
+  pipelineTargets: GitlabAutoMergePipelineTargetPayload[]
+}
+
+export interface GitlabAutoMergePipelineTargetPayload {
+  targetType: 'AI_CLUB' | 'JENKINS'
+  targetId: number
 }
 
 export interface GitlabAutoMergeQuery {

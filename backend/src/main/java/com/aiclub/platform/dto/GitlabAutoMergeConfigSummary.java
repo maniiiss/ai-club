@@ -1,5 +1,7 @@
 package com.aiclub.platform.dto;
 
+import java.util.List;
+
 public record GitlabAutoMergeConfigSummary(
         Long id,
         String name,
@@ -32,6 +34,7 @@ public record GitlabAutoMergeConfigSummary(
         Boolean aiReviewEnabled,
         String aiReviewPrompt,
         String reviewStrictness,
+        List<GitlabAutoMergePipelineTargetSummary> pipelineTargets,
         String lastRunStatus,
         String lastRunMessage,
         String lastRunAt

@@ -2,17 +2,21 @@ package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
+import com.aiclub.platform.domain.model.ProjectPipelineBindingEntity;
 import com.aiclub.platform.domain.model.RepositoryScanRulesetEntity;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.AgentEntity;
+import com.aiclub.platform.domain.model.AiClubPipelineEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
+import com.aiclub.platform.domain.model.JenkinsServerEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeProjectShareEntity;
 import com.aiclub.platform.dto.CodeReviewResult;
 import com.aiclub.platform.dto.GitlabBranchSummary;
 import com.aiclub.platform.dto.GitlabCreateMergeRequestResult;
 import com.aiclub.platform.dto.GitlabTagCreateResult;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabAutoMergePipelineTargetRequest;
 import com.aiclub.platform.dto.request.GitlabAutoMergeProjectShareRequest;
 import com.aiclub.platform.dto.request.GitlabCreateMergeRequestRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
@@ -21,6 +25,7 @@ import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.AiClubPipelineRepository;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
+import com.aiclub.platform.repository.GitlabAutoMergePipelineTargetRepository;
 import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeProjectShareRepository;
@@ -71,6 +76,9 @@ class GitlabManagementGitlabActionsTests {
 
     @Mock
     private GitlabAutoMergeConfigRepository autoMergeConfigRepository;
+
+    @Mock
+    private GitlabAutoMergePipelineTargetRepository autoMergePipelineTargetRepository;
 
     @Mock
     private GitlabCodeStructureSnapshotRepository gitlabCodeStructureSnapshotRepository;
@@ -170,6 +178,7 @@ class GitlabManagementGitlabActionsTests {
                 bindingRepository,
                 gitlabCodeStructureSnapshotRepository,
                 autoMergeConfigRepository,
+                autoMergePipelineTargetRepository,
                 autoMergeLogRepository,
                 autoMergeProjectShareRepository,
                 autoMergeWebhookRepository,
@@ -459,7 +468,8 @@ class GitlabManagementGitlabActionsTests {
                 9L,
                 true,
                 "请审查当前 MR",
-                null
+                null,
+                List.of()
         )))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("AI Review 仅支持绑定对话模型配置");
@@ -506,7 +516,8 @@ class GitlabManagementGitlabActionsTests {
                 6L,
                 true,
                 "请审查当前 MR",
-                "HIGH"
+                "HIGH",
+                List.of()
         ));
 
         assertThat(summary.reviewStrictness()).isEqualTo("HIGH");
@@ -544,11 +555,96 @@ class GitlabManagementGitlabActionsTests {
                 null,
                 false,
                 "",
-                "STRICT"
+                "STRICT",
+                List.of()
         ));
 
         assertThat(summary.reviewStrictness()).isEqualTo("MEDIUM");
         verify(autoMergeConfigRepository).save(argThat(entity -> "MEDIUM".equals(entity.getReviewStrictness())));
+    }
+
+    /**
+     * 关联业务项目模式开启“合并后触发流水线”时，必须显式选择至少一条目标流水线。
+     */
+    @Test
+    void shouldRejectProjectBoundAutoMergeConfigWithoutPipelineTargetsWhenTriggerEnabled() {
+        ProjectGitlabBindingEntity binding = buildBinding();
+        when(bindingRepository.findById(1L)).thenReturn(Optional.of(binding));
+
+        assertThatThrownBy(() -> gitlabManagementService.createAutoMergeConfig(new GitlabAutoMergeConfigRequest(
+                "项目自动合并",
+                "PROJECT_BOUND",
+                "验证必须显式选择流水线",
+                1L,
+                null,
+                null,
+                null,
+                "feature/test",
+                "main",
+                "feat:",
+                true,
+                true,
+                false,
+                true,
+                true,
+                true,
+                false,
+                null,
+                null,
+                null,
+                false,
+                "",
+                "MEDIUM",
+                List.of()
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("开启合并后触发流水线时，必须至少选择 1 条目标流水线");
+    }
+
+    /**
+     * 自动合并成功后只应触发配置里选中的流水线，而不是回退为项目级全部广播。
+     */
+    @Test
+    void shouldTriggerOnlySelectedPipelinesAfterMerge() {
+        GitlabAutoMergeConfigEntity config = buildProjectBoundAutoMergeConfig();
+        GitlabApiService.GitlabMergeRequest mergeRequest = buildMergeRequest(36L, "发布后端服务");
+
+        when(autoMergeConfigRepository.findById(31L)).thenReturn(Optional.of(config));
+        when(autoMergeConfigRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(autoMergeLogRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tokenCipherService.decrypt("cipher-token")).thenReturn("plain-token");
+        when(gitlabApiService.listMergeRequests("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", "opened", "main"))
+                .thenReturn(List.of(mergeRequest));
+        when(gitlabApiService.fetchMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 36L))
+                .thenReturn(mergeRequest);
+        when(gitlabApiService.acceptMergeRequest("http://gitlab.example.com/api/v4", "plain-token", "group/demo-repo", 36L, true, false, true))
+                .thenReturn(new GitlabApiService.GitlabMergeResult("merged", mergeRequest.webUrl(), "abc123", "merged"));
+        when(cicdManagementService.triggerSelectedProjectPipelines(
+                eq(11L),
+                any(),
+                eq("main"),
+                eq("GitLab 自动合并")
+        )).thenReturn(CicdManagementService.PipelineTriggerOutcome.success(
+                "已触发 2 条流水线",
+                List.of(
+                        CicdManagementService.PipelineBindingOutcome.success("AI Club Pipeline 已进入队列", "http://woodpecker.example.com/pipelines/501", "后端发布", "WOODPECKER"),
+                        CicdManagementService.PipelineBindingOutcome.success("Jenkins Job 已进入队列", "http://jenkins.example.com/queue/23", "deploy-prod", "主 Jenkins")
+                )
+        ));
+
+        var result = gitlabManagementService.runAutoMergeConfig(31L);
+
+        assertThat(result.mergedCount()).isEqualTo(1);
+        verify(cicdManagementService).triggerSelectedProjectPipelines(
+                eq(11L),
+                eq(List.of(
+                        new CicdManagementService.PipelineTargetRef("AI_CLUB", 501L),
+                        new CicdManagementService.PipelineTargetRef("JENKINS", 601L)
+                )),
+                eq("main"),
+                eq("GitLab 自动合并")
+        );
+        verify(cicdManagementService, never()).tryTriggerProjectPipeline(anyLong(), anyString(), anyString());
     }
 
     /**
@@ -1226,6 +1322,74 @@ class GitlabManagementGitlabActionsTests {
         modelConfig.setProvider(ModelConfigService.PROVIDER_OPENAI);
         entity.setAiModelConfig(modelConfig);
         return entity;
+    }
+
+    /**
+     * 构造一个项目型自动合并策略，并显式绑定两条合并后触发目标。
+     */
+    private GitlabAutoMergeConfigEntity buildProjectBoundAutoMergeConfig() {
+        ProjectGitlabBindingEntity binding = buildBinding();
+        GitlabAutoMergeConfigEntity entity = new GitlabAutoMergeConfigEntity();
+        entity.setId(31L);
+        entity.setName("项目自动合并");
+        entity.setExecutionMode("PROJECT_BOUND");
+        entity.setBinding(binding);
+        entity.setTargetBranch("main");
+        entity.setEnabled(true);
+        entity.setAutoMerge(true);
+        entity.setSquashOnMerge(false);
+        entity.setRemoveSourceBranch(true);
+        entity.setRequirePipelineSuccess(true);
+        entity.setTriggerPipelineAfterMerge(true);
+        entity.setPipelineTargets(List.of(
+                buildAiClubPipelineTarget(entity, binding.getProject()),
+                buildJenkinsPipelineTarget(entity, binding.getProject())
+        ));
+        return entity;
+    }
+
+    private com.aiclub.platform.domain.model.GitlabAutoMergePipelineTargetEntity buildAiClubPipelineTarget(GitlabAutoMergeConfigEntity config,
+                                                                                                             ProjectEntity project) {
+        AiClubPipelineEntity pipeline = new AiClubPipelineEntity();
+        pipeline.setId(501L);
+        pipeline.setProject(project);
+        pipeline.setName("后端发布");
+        pipeline.setProviderCode(AiClubPipelineEntity.PROVIDER_WOODPECKER);
+        pipeline.setEnabled(true);
+        pipeline.setGitlabBinding(buildBinding());
+
+        com.aiclub.platform.domain.model.GitlabAutoMergePipelineTargetEntity target =
+                new com.aiclub.platform.domain.model.GitlabAutoMergePipelineTargetEntity();
+        target.setConfig(config);
+        target.setTargetType("AI_CLUB");
+        target.setAiClubPipeline(pipeline);
+        return target;
+    }
+
+    private com.aiclub.platform.domain.model.GitlabAutoMergePipelineTargetEntity buildJenkinsPipelineTarget(GitlabAutoMergeConfigEntity config,
+                                                                                                             ProjectEntity project) {
+        JenkinsServerEntity server = new JenkinsServerEntity();
+        server.setId(701L);
+        server.setName("主 Jenkins");
+        server.setBaseUrl("http://jenkins.example.com");
+        server.setUsername("ci");
+        server.setTokenCiphertext("cipher");
+        server.setEnabled(true);
+
+        ProjectPipelineBindingEntity binding = new ProjectPipelineBindingEntity();
+        binding.setId(601L);
+        binding.setProject(project);
+        binding.setJenkinsServer(server);
+        binding.setJobName("deploy-prod");
+        binding.setDefaultBranch("main");
+        binding.setEnabled(true);
+
+        com.aiclub.platform.domain.model.GitlabAutoMergePipelineTargetEntity target =
+                new com.aiclub.platform.domain.model.GitlabAutoMergePipelineTargetEntity();
+        target.setConfig(config);
+        target.setTargetType("JENKINS");
+        target.setJenkinsBinding(binding);
+        return target;
     }
 
     /**

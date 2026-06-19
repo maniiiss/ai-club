@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aiclub.platform.common.DataPermissionScopeType;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.AgentEntity;
+import com.aiclub.platform.domain.model.GitlabAutoMergePipelineTargetEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeWebhookEntity;
 import com.aiclub.platform.domain.model.GitlabCodeStructureSnapshotEntity;
@@ -21,6 +22,7 @@ import com.aiclub.platform.dto.CodeReviewResult;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeConfigSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
+import com.aiclub.platform.dto.GitlabAutoMergePipelineTargetSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeProjectShareSummary;
 import com.aiclub.platform.dto.GitlabAutoMergePublicLogPage;
 import com.aiclub.platform.dto.AiClubPipelineRunSummary;
@@ -53,6 +55,7 @@ import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
 import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabAutoMergePipelineTargetRequest;
 import com.aiclub.platform.dto.request.GitlabAutoMergeProjectShareRequest;
 import com.aiclub.platform.dto.request.GitlabAutoMergeWebhookRequest;
 import com.aiclub.platform.dto.request.GitlabCreateProductBranchSyncRequest;
@@ -70,6 +73,7 @@ import com.aiclub.platform.repository.AiClubPipelineRepository;
 import com.aiclub.platform.repository.ProjectPipelineBindingRepository;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
+import com.aiclub.platform.repository.GitlabAutoMergePipelineTargetRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeWebhookRepository;
 import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
@@ -130,6 +134,8 @@ public class GitlabManagementService {
     private static final String BRANCH_BEHIND_REASON_PREFIX = "源分支落后于目标分支";
     private static final String REVIEW_FINGERPRINT_SOURCE_SHA = "SHA";
     private static final String REVIEW_FINGERPRINT_SOURCE_DIFF = "DIFF";
+    private static final String AUTO_MERGE_TARGET_AI_CLUB = "AI_CLUB";
+    private static final String AUTO_MERGE_TARGET_JENKINS = "JENKINS";
     private static final String PRODUCT_BRANCH_RESULT_CREATED = "CREATED";
     private static final String PRODUCT_BRANCH_RESULT_NO_CHANGE = "NO_CHANGE";
     private static final String PRODUCT_BRANCH_RESULT_EXISTING_OPEN_MR = "EXISTING_OPEN_MR";
@@ -148,6 +154,7 @@ public class GitlabManagementService {
     private final ProjectGitlabBindingRepository bindingRepository;
     private final GitlabCodeStructureSnapshotRepository codeStructureSnapshotRepository;
     private final GitlabAutoMergeConfigRepository autoMergeConfigRepository;
+    private final GitlabAutoMergePipelineTargetRepository autoMergePipelineTargetRepository;
     private final GitlabAutoMergeLogRepository autoMergeLogRepository;
     private final GitlabAutoMergeProjectShareRepository autoMergeProjectShareRepository;
     private final GitlabAutoMergeWebhookRepository autoMergeWebhookRepository;
@@ -182,6 +189,7 @@ public class GitlabManagementService {
                                    ProjectGitlabBindingRepository bindingRepository,
                                    GitlabCodeStructureSnapshotRepository codeStructureSnapshotRepository,
                                    GitlabAutoMergeConfigRepository autoMergeConfigRepository,
+                                   GitlabAutoMergePipelineTargetRepository autoMergePipelineTargetRepository,
                                    GitlabAutoMergeLogRepository autoMergeLogRepository,
                                    GitlabAutoMergeProjectShareRepository autoMergeProjectShareRepository,
                                    GitlabAutoMergeWebhookRepository autoMergeWebhookRepository,
@@ -217,6 +225,7 @@ public class GitlabManagementService {
         this.bindingRepository = bindingRepository;
         this.codeStructureSnapshotRepository = codeStructureSnapshotRepository;
         this.autoMergeConfigRepository = autoMergeConfigRepository;
+        this.autoMergePipelineTargetRepository = autoMergePipelineTargetRepository;
         this.autoMergeLogRepository = autoMergeLogRepository;
         this.autoMergeProjectShareRepository = autoMergeProjectShareRepository;
         this.autoMergeWebhookRepository = autoMergeWebhookRepository;
@@ -1380,8 +1389,9 @@ public class GitlabManagementService {
                             && MODE_PROJECT_BOUND.equals(entity.getExecutionMode())
                             && entity.getBinding() != null
                             && entity.getBinding().getProject() != null) {
-                        CicdManagementService.PipelineTriggerOutcome pipelineOutcome = cicdManagementService.tryTriggerProjectPipeline(
+                        CicdManagementService.PipelineTriggerOutcome pipelineOutcome = cicdManagementService.triggerSelectedProjectPipelines(
                                 entity.getBinding().getProject().getId(),
+                                buildPipelineTargetRefs(entity),
                                 latestMergeRequest.targetBranch(),
                                 "GitLab 自动合并"
                         );
@@ -1417,6 +1427,7 @@ public class GitlabManagementService {
 
     private void fillAutoMergeEntity(GitlabAutoMergeConfigEntity entity, GitlabAutoMergeConfigRequest request, boolean createMode) {
         String executionMode = normalizeExecutionMode(request.executionMode());
+        List<GitlabAutoMergePipelineTargetRequest> requestedTargets = request.pipelineTargets() == null ? List.of() : request.pipelineTargets();
         entity.setName(request.name().trim());
         entity.setExecutionMode(executionMode);
         entity.setDescription(defaultString(request.description()));
@@ -1455,6 +1466,14 @@ public class GitlabManagementService {
             entity.setApiBaseUrl(null);
             entity.setGitlabProjectRef(null);
             entity.setTokenCiphertext(null);
+            if (Boolean.TRUE.equals(entity.getTriggerPipelineAfterMerge())) {
+                if (requestedTargets.isEmpty()) {
+                    throw new IllegalArgumentException("开启合并后触发流水线时，必须至少选择 1 条目标流水线");
+                }
+                entity.setPipelineTargets(resolvePipelineTargets(entity, binding.getProject().getId(), requestedTargets));
+            } else {
+                entity.setPipelineTargets(List.of());
+            }
         } else {
             if (Boolean.TRUE.equals(entity.getTriggerPipelineAfterMerge())) {
                 throw new IllegalArgumentException("独立运行模式不支持合并后自动触发流水线");
@@ -1469,7 +1488,105 @@ public class GitlabManagementService {
             } else if (!hasText(entity.getTokenCiphertext())) {
                 throw new IllegalArgumentException("?????????? APIToken");
             }
+            entity.setPipelineTargets(List.of());
         }
+    }
+
+    /**
+     * 把前端提交的目标流水线选择解析为实体子项，并校验其确实属于当前项目。
+     */
+    private List<GitlabAutoMergePipelineTargetEntity> resolvePipelineTargets(GitlabAutoMergeConfigEntity config,
+                                                                            Long projectId,
+                                                                            List<GitlabAutoMergePipelineTargetRequest> requestedTargets) {
+        LinkedHashMap<String, GitlabAutoMergePipelineTargetEntity> deduplicatedTargets = new LinkedHashMap<>();
+        for (GitlabAutoMergePipelineTargetRequest targetRequest : requestedTargets) {
+            if (targetRequest == null || targetRequest.targetId() == null || !hasText(targetRequest.targetType())) {
+                throw new IllegalArgumentException("目标流水线配置不完整");
+            }
+            String targetType = targetRequest.targetType().trim().toUpperCase();
+            GitlabAutoMergePipelineTargetEntity target = new GitlabAutoMergePipelineTargetEntity();
+            target.setConfig(config);
+            target.setTargetType(targetType);
+            switch (targetType) {
+                case AUTO_MERGE_TARGET_AI_CLUB -> {
+                    AiClubPipelineEntity pipeline = aiClubPipelineRepository.findById(targetRequest.targetId())
+                            .orElseThrow(() -> new NoSuchElementException("AI Club Pipeline 不存在: " + targetRequest.targetId()));
+                    if (pipeline.getProject() == null || !projectId.equals(pipeline.getProject().getId())) {
+                        throw new IllegalArgumentException("所选 AI Club Pipeline 不属于当前项目");
+                    }
+                    target.setAiClubPipeline(pipeline);
+                }
+                case AUTO_MERGE_TARGET_JENKINS -> {
+                    ProjectPipelineBindingEntity binding = projectPipelineBindingRepository.findById(targetRequest.targetId())
+                            .orElseThrow(() -> new NoSuchElementException("项目流水线绑定不存在: " + targetRequest.targetId()));
+                    if (binding.getProject() == null || !projectId.equals(binding.getProject().getId())) {
+                        throw new IllegalArgumentException("所选 Jenkins 流水线不属于当前项目");
+                    }
+                    target.setJenkinsBinding(binding);
+                }
+                default -> throw new IllegalArgumentException("不支持的流水线类型: " + targetRequest.targetType());
+            }
+            deduplicatedTargets.put(targetType + ":" + targetRequest.targetId(), target);
+        }
+        return new ArrayList<>(deduplicatedTargets.values());
+    }
+
+    private List<CicdManagementService.PipelineTargetRef> buildPipelineTargetRefs(GitlabAutoMergeConfigEntity entity) {
+        if (entity.getPipelineTargets() == null || entity.getPipelineTargets().isEmpty()) {
+            return List.of();
+        }
+        return entity.getPipelineTargets().stream()
+                .map(this::toPipelineTargetRef)
+                .filter(target -> target.targetId() != null)
+                .toList();
+    }
+
+    private CicdManagementService.PipelineTargetRef toPipelineTargetRef(GitlabAutoMergePipelineTargetEntity entity) {
+        if (entity == null || !hasText(entity.getTargetType())) {
+            return new CicdManagementService.PipelineTargetRef(null, null);
+        }
+        Long targetId = AUTO_MERGE_TARGET_AI_CLUB.equalsIgnoreCase(entity.getTargetType())
+                ? entity.getAiClubPipeline() == null ? null : entity.getAiClubPipeline().getId()
+                : entity.getJenkinsBinding() == null ? null : entity.getJenkinsBinding().getId();
+        return new CicdManagementService.PipelineTargetRef(entity.getTargetType().trim().toUpperCase(), targetId);
+    }
+
+    private List<GitlabAutoMergePipelineTargetSummary> buildPipelineTargetSummaries(GitlabAutoMergeConfigEntity entity) {
+        if (entity.getPipelineTargets() == null || entity.getPipelineTargets().isEmpty()) {
+            return List.of();
+        }
+        return entity.getPipelineTargets().stream()
+                .map(this::toPipelineTargetSummary)
+                .toList();
+    }
+
+    private GitlabAutoMergePipelineTargetSummary toPipelineTargetSummary(GitlabAutoMergePipelineTargetEntity entity) {
+        if (entity == null || !hasText(entity.getTargetType())) {
+            return new GitlabAutoMergePipelineTargetSummary("", null, "", "", null, false);
+        }
+        if (AUTO_MERGE_TARGET_AI_CLUB.equalsIgnoreCase(entity.getTargetType()) && entity.getAiClubPipeline() != null) {
+            AiClubPipelineEntity pipeline = entity.getAiClubPipeline();
+            return new GitlabAutoMergePipelineTargetSummary(
+                    AUTO_MERGE_TARGET_AI_CLUB,
+                    pipeline.getId(),
+                    pipeline.getName(),
+                    pipeline.getProviderCode(),
+                    pipeline.getDefaultBranch(),
+                    defaultBoolean(pipeline.getEnabled(), true)
+            );
+        }
+        if (entity.getJenkinsBinding() != null) {
+            ProjectPipelineBindingEntity binding = entity.getJenkinsBinding();
+            return new GitlabAutoMergePipelineTargetSummary(
+                    AUTO_MERGE_TARGET_JENKINS,
+                    binding.getId(),
+                    binding.getJobName(),
+                    binding.getJenkinsServer() == null ? "JENKINS" : binding.getJenkinsServer().getName(),
+                    binding.getDefaultBranch(),
+                    defaultBoolean(binding.getEnabled(), true)
+            );
+        }
+        return new GitlabAutoMergePipelineTargetSummary(entity.getTargetType(), null, "", "", null, false);
     }
 
 
@@ -3014,6 +3131,7 @@ public class GitlabManagementService {
                 defaultBoolean(entity.getAiReviewEnabled(), false),
                 entity.getAiReviewPrompt(),
                 normalizeReviewStrictness(entity.getReviewStrictness()),
+                buildPipelineTargetSummaries(entity),
                 entity.getLastRunStatus(),
                 entity.getLastRunMessage(),
                 formatTime(entity.getLastRunAt())

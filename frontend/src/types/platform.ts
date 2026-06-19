@@ -1627,9 +1627,19 @@ export interface GitlabAutoMergeConfigItem {
   aiReviewEnabled: boolean
   aiReviewPrompt: string | null
   reviewStrictness: 'HIGH' | 'MEDIUM' | 'LOW'
+  pipelineTargets: GitlabAutoMergePipelineTargetItem[]
   lastRunStatus: string | null
   lastRunMessage: string | null
   lastRunAt: string | null
+}
+
+export interface GitlabAutoMergePipelineTargetItem {
+  targetType: 'AI_CLUB' | 'JENKINS' | string
+  targetId: number
+  targetName: string
+  providerName: string
+  defaultBranch: string | null
+  enabled: boolean
 }
 
 /**
