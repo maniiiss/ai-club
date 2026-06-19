@@ -4,6 +4,10 @@
       <div class="gitlab-public-hero-copy">
         <h1>{{ pageTitle }}</h1>
       </div>
+      <button class="gitlab-public-refresh" type="button" :disabled="logLoading || pipelineLoading" @click="refreshActiveTab">
+        <el-icon><Refresh /></el-icon>
+        <span>刷新</span>
+      </button>
     </section>
 
     <!-- tab 切换：自动合并日志 / 流水线发布记录；同一 token 即可，无需重新分享 -->
@@ -39,6 +43,9 @@
             <option value="SKIPPED">已跳过</option>
           </select>
         </label>
+        <span class="gitlab-public-next-merge">
+          下次合并时间：<strong>{{ nextMergeAt || '未设置定时合并' }}</strong>
+        </span>
       </div>
 
       <div v-if="logErrorMessage" class="gitlab-public-error">
@@ -66,13 +73,13 @@
           </article>
         </div>
 
-        <div v-if="logs.length" class="gitlab-public-pagination">
+        <div v-if="logTotal > logSize" class="gitlab-public-pagination">
           <button type="button" :disabled="logPage <= 1" @click="changeLogPage(logPage - 1)">上一页</button>
           <span>第 {{ logPage }} / {{ logTotalPages }} 页</span>
           <button type="button" :disabled="logPage >= logTotalPages" @click="changeLogPage(logPage + 1)">下一页</button>
         </div>
 
-        <div v-else class="gitlab-public-empty">当前条件下暂无自动合并日志。</div>
+        <div v-if="!logs.length" class="gitlab-public-empty">当前条件下暂无自动合并日志。</div>
       </template>
     </section>
 
@@ -117,13 +124,14 @@
                 <h2>{{ selectedPipeline?.name || '-' }}</h2>
                 <p>{{ selectedPipeline ? `${kindLabel(selectedPipeline.kind)} · ${selectedPipeline.defaultBranch || '默认分支未设置'}` : '请选择流水线' }}</p>
               </div>
-              <span v-if="runsWarning" class="gitlab-public-pipeline-warning">{{ runsWarning }}</span>
             </header>
 
             <div v-if="!selectedPipeline" class="gitlab-public-empty">请从左侧选择一条流水线。</div>
 
             <template v-else>
-              <table class="gitlab-public-pipeline-table">
+              <div v-if="runsWarning" class="gitlab-public-inline-error">{{ runsWarning }}</div>
+
+              <table v-else class="gitlab-public-pipeline-table">
                 <thead>
                   <tr>
                     <th>编号</th>
@@ -152,7 +160,7 @@
                 </tbody>
               </table>
 
-              <div v-if="runs.length" class="gitlab-public-pagination">
+              <div v-if="!runsWarning && runTotal > runSize" class="gitlab-public-pagination">
                 <button type="button" :disabled="runPage <= 1" @click="changeRunPage(runPage - 1)">上一页</button>
                 <span>第 {{ runPage }} / {{ runTotalPages }} 页</span>
                 <button type="button" :disabled="runPage >= runTotalPages" @click="changeRunPage(runPage + 1)">下一页</button>
@@ -179,6 +187,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Refresh } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import {
   listPublicPipelinesByShare,
@@ -209,6 +218,7 @@ const logs = ref<GitlabAutoMergeLogItem[]>([])
 const logPage = ref(1)
 const logSize = ref(10)
 const logTotal = ref(0)
+const nextMergeAt = ref<string | null>(null)
 const resultFilter = ref('')
 const detailVisible = ref(false)
 const currentLogDetail = ref<GitlabAutoMergeLogItem | null>(null)
@@ -276,6 +286,7 @@ const loadLogs = async () => {
     projectName.value = response.projectName
     logs.value = response.logs.records
     logTotal.value = response.logs.total
+    nextMergeAt.value = response.nextMergeAt
   } catch (error: any) {
     logs.value = []
     logTotal.value = 0
@@ -349,6 +360,18 @@ const handleFilterChange = async () => {
   await loadLogs()
 }
 
+/** 右上角刷新：按当前所在 tab 重新拉取数据。 */
+const refreshActiveTab = async () => {
+  if (activeTab.value === 'auto-merge') {
+    await loadLogs()
+  } else if (selectedPipeline.value) {
+    // 已选中流水线则刷新其运行历史；否则重新拉流水线列表
+    await loadRuns()
+  } else {
+    await loadPipelines()
+  }
+}
+
 const openDetail = (item: GitlabAutoMergeLogItem) => {
   currentLogDetail.value = item
   detailVisible.value = true
@@ -399,7 +422,9 @@ onMounted(async () => {
 
 <style scoped>
 .gitlab-public-page {
-  min-height: 100vh;
+  box-sizing: border-box;
+  height: 100vh;
+  overflow-y: auto;
   padding: 36px 24px 64px;
   background: #f7f8fa;
   color: #1f2937;
@@ -413,6 +438,10 @@ onMounted(async () => {
 }
 
 .gitlab-public-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
   margin-bottom: 20px;
   padding: 0 4px;
 }
@@ -423,6 +452,40 @@ onMounted(async () => {
   font-weight: 600;
   line-height: 1.4;
   color: #1f2937;
+}
+
+.gitlab-public-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 7px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.gitlab-public-refresh:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.gitlab-public-refresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.gitlab-public-next-merge {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.gitlab-public-next-merge strong {
+  color: #1f2937;
+  font-weight: 500;
 }
 
 .gitlab-public-tab-bar {
@@ -466,7 +529,10 @@ onMounted(async () => {
 
 .gitlab-public-toolbar {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
   margin-bottom: 14px;
 }
 
@@ -750,6 +816,16 @@ onMounted(async () => {
   color: #b45309;
   font-size: 12px;
   max-width: 280px;
+}
+
+.gitlab-public-inline-error {
+  padding: 16px;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #b45309;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .gitlab-public-pipeline-table {

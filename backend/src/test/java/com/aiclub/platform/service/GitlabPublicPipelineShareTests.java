@@ -342,7 +342,9 @@ class GitlabPublicPipelineShareTests {
                 11L, "share-token-11", "JENKINS", 202L, 1, 10);
 
         assertThat(page.runs().records()).isEmpty();
-        assertThat(page.warning()).contains("Jenkins 不可达");
+        // warning 为对外的可读提示，不再回传原始异常文本（含 Jenkins 登录 HTML 等敏感/噪声内容）
+        assertThat(page.warning()).isNotBlank();
+        assertThat(page.warning()).doesNotContain("Jenkins 不可达");
     }
 
     /**

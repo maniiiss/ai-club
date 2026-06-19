@@ -830,7 +830,40 @@ public class GitlabManagementService {
         Pageable pageable = buildPageable(page, size, Sort.by(Sort.Direction.DESC, "executedAt", "id"));
         Page<GitlabAutoMergeLogSummary> pageData = autoMergeLogRepository.findAll(publicAutoMergeLogSpecification(projectId, result), pageable)
                 .map(this::toAutoMergeLogSummary);
-        return new GitlabAutoMergePublicLogPage(projectId, project.getName(), PageResponse.from(pageData));
+        return new GitlabAutoMergePublicLogPage(projectId, project.getName(), resolveProjectNextMergeAt(projectId), PageResponse.from(pageData));
+    }
+
+    /**
+     * 计算该项目下「下次自动合并时间」：取所有 PROJECT_BOUND、启用了定时调度且 cron 合法的策略中最近一次触发时间。
+     *
+     * <p>用于只读分享页给外部相关方一个明确的预期；没有任何启用调度的策略时返回 {@code null}。</p>
+     */
+    private String resolveProjectNextMergeAt(Long projectId) {
+        Specification<GitlabAutoMergeConfigEntity> spec = (root, query, cb) -> {
+            var binding = root.join("binding", JoinType.LEFT);
+            return cb.and(
+                    cb.equal(root.get("executionMode"), MODE_PROJECT_BOUND),
+                    cb.isTrue(root.get("schedulerEnabled")),
+                    cb.equal(binding.join("project", JoinType.LEFT).get("id"), projectId)
+            );
+        };
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime earliest = null;
+        for (GitlabAutoMergeConfigEntity config : autoMergeConfigRepository.findAll(spec)) {
+            String cron = trimToNull(config.getSchedulerCron());
+            if (cron == null || !CronExpression.isValidExpression(cron)) {
+                continue;
+            }
+            try {
+                LocalDateTime next = CronExpression.parse(cron).next(now);
+                if (next != null && (earliest == null || next.isBefore(earliest))) {
+                    earliest = next;
+                }
+            } catch (RuntimeException ignored) {
+                // 单条 cron 解析异常不影响其它策略
+            }
+        }
+        return earliest == null ? null : formatTime(earliest);
     }
 
     /**
@@ -944,7 +977,7 @@ public class GitlabManagementService {
             }
         } catch (RuntimeException ex) {
             log.warn("公开分享拉取 Woodpecker 运行历史失败: pipelineId={}, message={}", pipelineId, ex.getMessage());
-            warning = "暂时无法获取流水线运行历史: " + ex.getMessage();
+            warning = "暂时无法获取流水线运行历史，请稍后重试或联系项目负责人。";
         }
         return buildRunPage(project, projectId, "WOODPECKER", pipelineId, pipeline.getName(), all, page, size, warning);
     }
@@ -978,7 +1011,7 @@ public class GitlabManagementService {
             }
         } catch (RuntimeException ex) {
             log.warn("公开分享拉取 Jenkins 构建历史失败: bindingId={}, message={}", pipelineId, ex.getMessage());
-            warning = "暂时无法获取流水线运行历史: " + ex.getMessage();
+            warning = "暂时无法获取流水线运行历史，请稍后重试或联系项目负责人。";
         }
         return buildRunPage(project, projectId, "JENKINS", pipelineId, binding.getJobName(), all, page, size, warning);
     }

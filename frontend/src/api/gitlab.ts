@@ -361,6 +361,7 @@ export interface GitlabAutoMergeProjectShareItem {
 export interface GitlabAutoMergePublicLogPageItem {
   projectId: number
   projectName: string
+  nextMergeAt: string | null
   logs: PageResponse<GitlabAutoMergeLogItem>
 }
 

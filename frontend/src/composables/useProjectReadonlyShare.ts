@@ -87,15 +87,33 @@ export function useProjectReadonlyShare() {
     }
   }
 
-  /** 复制 shareUrl 到剪贴板，剪贴板不可用时降级提示用户手动复制。 */
+  /** 复制 shareUrl 到剪贴板，优先使用 Clipboard API，不可用时降级 execCommand。 */
   const copy = async () => {
     const url = shareInfo.value?.shareUrl
     if (!url) {
       ElMessage.warning('当前还没有可用的分享链接')
       return
     }
+    // 优先尝试现代 Clipboard API（仅 HTTPS / localhost 可用）
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(url)
+        ElMessage.success('分享链接已复制')
+        return
+      } catch {
+        // Clipboard API 调用失败，继续降级
+      }
+    }
+    // 降级方案：通过隐藏 textarea + execCommand('copy') 兼容 HTTP / 旧浏览器
     try {
-      await navigator.clipboard.writeText(url)
+      const textarea = document.createElement('textarea')
+      textarea.value = url
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
       ElMessage.success('分享链接已复制')
     } catch {
       ElMessage.warning('复制失败，请手动复制链接')
