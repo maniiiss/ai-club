@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@theme {
+  /* Aether brand colors from the reference interface spec */
+  --color-blue-650: #0050cb;
+  --color-blue-620: #0066ff;
+  --color-blue-105: #dae1ff;
+  --color-blue-900: #001849;
+  
+  --color-cyan-650: #00677f;
+  --color-cyan-700: #004e60;
+  
+  --color-emerald-650: #00ccf9;
+  
+  --color-indigo-650: #6e00f5;
+  --color-indigo-750: #23005b;
+  --color-indigo-205: #e9ddff;
+
+  --color-orange-650: #ba1a1a;
+
+  --color-purple-650: #8447ff;
+  --color-purple-105: #fcf5ff;
+}
+
+/* Animations and custom layout enhancements */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideLeft {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slideLeft {
+  animation: slideLeft 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Custom scrollbar to match high density dashboards */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(194, 198, 216, 0.4);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(114, 118, 135, 0.6);
+}

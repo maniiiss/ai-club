@@ -133,6 +133,16 @@
                       <el-icon><Link /></el-icon>
                     </button>
                   </el-tooltip>
+                  <el-tooltip v-if="canManageProjects && row.canEdit" content="分享" placement="top">
+                    <button
+                      class="project-action-button"
+                      type="button"
+                      aria-label="生成项目分享链接"
+                      @click="openShareDialog(row)"
+                    >
+                      <el-icon><Share /></el-icon>
+                    </button>
+                  </el-tooltip>
                   <el-tooltip v-if="canManageProjects && row.canEdit" content="编辑" placement="top">
                     <button
                       class="project-action-button"
@@ -227,6 +237,15 @@
               >
                 <el-icon><Link /></el-icon>
                 <span>Gitee绑定</span>
+              </button>
+              <button
+                v-if="canManageProjects && row.canEdit"
+                class="project-mobile-action-button"
+                type="button"
+                @click="openShareDialog(row)"
+              >
+                <el-icon><Share /></el-icon>
+                <span>分享</span>
               </button>
               <button
                 v-if="canManageProjects && row.canEdit"
@@ -409,6 +428,76 @@
         <el-button @click="repoDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!--
+      项目分享 dialog：复用 useProjectReadonlyShare composable，同一个 token 同时承载
+      自动合并日志摘要 + 流水线发布记录摘要，分享给项目外的相关方查看进度。
+    -->
+    <el-dialog v-model="readonlyShare.dialogVisible.value" :width="isMobileViewport ? '92%' : '640px'" class="platform-form-dialog project-share-dialog-wrapper" align-center>
+      <template #header>
+        <PlatformDialogHeader
+          title="项目分享"
+          :subtitle="`为 ${readonlyShare.currentProjectName.value || '当前项目'} 生成分享链接，对外展示自动合并日志和流水线发布记录。`"
+          :icon="Share"
+        />
+      </template>
+      <div v-loading="readonlyShare.loading.value" class="project-share-dialog">
+        <div class="project-share-form">
+          <!-- 有效期 / 永久 一行两列；其余字段独占一行，给足呼吸空间 -->
+          <div class="project-share-row project-share-row--split">
+            <label class="project-share-field">
+              <span class="project-share-label">有效期（天）</span>
+              <el-input-number
+                v-model="readonlyShare.expiresInDays.value"
+                :min="1"
+                :max="3650"
+                :step="1"
+                :disabled="readonlyShare.permanent.value"
+                style="width: 100%"
+              />
+            </label>
+            <label class="project-share-field project-share-field--switch">
+              <span class="project-share-label">永久有效</span>
+              <el-switch v-model="readonlyShare.permanent.value" />
+            </label>
+          </div>
+
+          <div class="project-share-row project-share-row--split">
+            <div class="project-share-field">
+              <span class="project-share-label">当前状态</span>
+              <el-tag :type="readonlyShare.enabled.value ? 'success' : 'info'" effect="light">
+                {{ readonlyShare.enabled.value ? '已启用' : '未启用' }}
+              </el-tag>
+            </div>
+            <div class="project-share-field">
+              <span class="project-share-label">过期时间</span>
+              <strong class="project-share-value">{{ readonlyShare.shareInfo.value?.expiresAt || '尚未生成' }}</strong>
+            </div>
+          </div>
+
+          <label class="project-share-row">
+            <span class="project-share-label">分享链接</span>
+            <el-input
+              :model-value="readonlyShare.shareInfo.value?.shareUrl || '当前未启用分享链接'"
+              readonly
+              size="large"
+            />
+          </label>
+
+          <p class="project-share-hint">
+            访问者将看到当前项目的自动合并日志和流水线发布记录。
+          </p>
+        </div>
+      </div>
+      <template #footer>
+        <div class="platform-dialog-footer project-share-footer">
+          <el-button @click="readonlyShare.close()">关闭</el-button>
+          <el-button :disabled="!readonlyShare.shareInfo.value?.shareUrl" @click="readonlyShare.copy()">复制链接</el-button>
+          <el-button v-if="readonlyShare.enabled.value" type="danger" plain @click="readonlyShare.disable()">失效链接</el-button>
+          <el-button type="primary" :loading="readonlyShare.loading.value" @click="readonlyShare.refresh()">生成 / 刷新</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -416,7 +505,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, FolderOpened, Lightning, Link, PieChart, Plus, RefreshRight, Search, Tickets, TrendCharts } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, FolderOpened, Lightning, Link, PieChart, Plus, RefreshRight, Search, Share, Tickets, TrendCharts } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { listUserOptions } from '@/api/access'
 import {
@@ -429,9 +518,11 @@ import ListUserDisplay from '@/components/ListUserDisplay.vue'
 import ListUserGroupDisplay from '@/components/ListUserGroupDisplay.vue'
 import type { ListUserDisplayItem } from '@/components/listUserDisplay'
 import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import ProjectEditorFormBody from '@/components/ProjectEditorFormBody.vue'
 import { createProject, deleteProject, getProjectListStats, pageProjects, updateProject } from '@/api/platform'
 import { pageGitlabBindings } from '@/api/gitlab'
+import { useProjectReadonlyShare } from '@/composables/useProjectReadonlyShare'
 import { useAuthStore } from '@/stores/auth'
 import type {
   GiteeProgramItem,
@@ -759,6 +850,17 @@ const openEditDialog = async (row: ProjectItem) => {
 
 const openIterationBoard = (row: ProjectItem) => {
   router.push({ name: 'project-iterations', params: { projectId: row.id } })
+}
+
+/**
+ * 项目只读分享 dialog 控制器：复用统一的 composable，避免在多个 view 之间重复实现。
+ * dialog 模板中的 readonlyShare.* 即为该实例暴露的响应式状态。
+ */
+const readonlyShare = useProjectReadonlyShare()
+
+/** 行操作：打开项目只读分享 dialog，加载当前 share 状态。 */
+const openShareDialog = (row: ProjectItem) => {
+  readonlyShare.openShare(row.id, row.name)
 }
 
 
@@ -1740,6 +1842,80 @@ onMounted(async () => {
 
   .project-dialog-header-title {
     font-size: 21px;
+  }
+}
+
+/* ===== 项目分享 dialog ===== */
+.project-share-dialog {
+  padding: 4px 4px 8px;
+}
+
+.project-share-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.project-share-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.project-share-row--split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: stretch;
+}
+
+.project-share-field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.project-share-field--switch {
+  align-items: flex-start;
+}
+
+.project-share-label {
+  font-size: 13px;
+  color: #6b7a90;
+  letter-spacing: 0.02em;
+}
+
+.project-share-value {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  font-size: 14px;
+  color: #2c3e50;
+  font-weight: 500;
+}
+
+.project-share-hint {
+  margin: 4px 0 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(23, 131, 255, 0.08);
+  color: #34557a;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.project-share-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+@media (max-width: 768px) {
+  .project-share-row--split {
+    grid-template-columns: 1fr;
+    gap: 18px;
   }
 }
 </style>

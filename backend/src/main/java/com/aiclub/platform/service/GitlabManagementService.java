@@ -9,6 +9,9 @@ import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeWebhookEntity;
 import com.aiclub.platform.domain.model.GitlabCodeStructureSnapshotEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
+import com.aiclub.platform.domain.model.GitlabAutoMergeProjectShareEntity;
+import com.aiclub.platform.domain.model.AiClubPipelineEntity;
+import com.aiclub.platform.domain.model.ProjectPipelineBindingEntity;
 import com.aiclub.platform.domain.model.GitlabProductBranchEntity;
 import com.aiclub.platform.domain.model.GitlabProductBranchSyncLogEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
@@ -18,6 +21,13 @@ import com.aiclub.platform.dto.CodeReviewResult;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeConfigSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
+import com.aiclub.platform.dto.GitlabAutoMergeProjectShareSummary;
+import com.aiclub.platform.dto.GitlabAutoMergePublicLogPage;
+import com.aiclub.platform.dto.AiClubPipelineRunSummary;
+import com.aiclub.platform.dto.JenkinsBuildSummary;
+import com.aiclub.platform.dto.ProjectPublicPipelineSummary;
+import com.aiclub.platform.dto.ProjectPublicPipelineRunSummary;
+import com.aiclub.platform.dto.ProjectPublicPipelineRunPage;
 import com.aiclub.platform.dto.GitlabAutoMergeRunItem;
 import com.aiclub.platform.dto.GitlabAutoMergeRunResult;
 import com.aiclub.platform.dto.GitlabAutoMergeWebhookSummary;
@@ -43,6 +53,7 @@ import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
 import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabAutoMergeProjectShareRequest;
 import com.aiclub.platform.dto.request.GitlabAutoMergeWebhookRequest;
 import com.aiclub.platform.dto.request.GitlabCreateProductBranchSyncRequest;
 import com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest;
@@ -55,11 +66,14 @@ import com.aiclub.platform.dto.request.GitlabProductBranchRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
 import com.aiclub.platform.dto.request.ProjectGitlabBindingRequest;
 import com.aiclub.platform.repository.AiModelConfigRepository;
+import com.aiclub.platform.repository.AiClubPipelineRepository;
+import com.aiclub.platform.repository.ProjectPipelineBindingRepository;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeWebhookRepository;
 import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
+import com.aiclub.platform.repository.GitlabAutoMergeProjectShareRepository;
 import com.aiclub.platform.repository.GitlabProductBranchRepository;
 import com.aiclub.platform.repository.GitlabProductBranchSyncLogRepository;
 import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
@@ -86,6 +100,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -125,6 +140,8 @@ public class GitlabManagementService {
     private static final String CODE_STRUCTURE_STATUS_DEGRADED = "DEGRADED";
     private static final String CODE_STRUCTURE_STATUS_FAILED = "FAILED";
     private static final String DEFAULT_CODE_STRUCTURE_BRANCH = "main";
+    private static final char[] TOKEN_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".toCharArray();
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final ProjectRepository projectRepository;
     private final AgentRepository agentRepository;
@@ -132,7 +149,10 @@ public class GitlabManagementService {
     private final GitlabCodeStructureSnapshotRepository codeStructureSnapshotRepository;
     private final GitlabAutoMergeConfigRepository autoMergeConfigRepository;
     private final GitlabAutoMergeLogRepository autoMergeLogRepository;
+    private final GitlabAutoMergeProjectShareRepository autoMergeProjectShareRepository;
     private final GitlabAutoMergeWebhookRepository autoMergeWebhookRepository;
+    private final AiClubPipelineRepository aiClubPipelineRepository;
+    private final ProjectPipelineBindingRepository projectPipelineBindingRepository;
     private final GitlabProductBranchRepository productBranchRepository;
     private final GitlabProductBranchSyncLogRepository productBranchSyncLogRepository;
     private final AiModelConfigRepository aiModelConfigRepository;
@@ -154,6 +174,7 @@ public class GitlabManagementService {
     private final PlatformEnvVarResolver platformEnvVarResolver;
     private final ObjectMapper objectMapper;
     private final String defaultApiUrl;
+    private final String publicBaseUrl;
     private final Executor executionTaskExecutor;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
@@ -162,7 +183,10 @@ public class GitlabManagementService {
                                    GitlabCodeStructureSnapshotRepository codeStructureSnapshotRepository,
                                    GitlabAutoMergeConfigRepository autoMergeConfigRepository,
                                    GitlabAutoMergeLogRepository autoMergeLogRepository,
+                                   GitlabAutoMergeProjectShareRepository autoMergeProjectShareRepository,
                                    GitlabAutoMergeWebhookRepository autoMergeWebhookRepository,
+                                   AiClubPipelineRepository aiClubPipelineRepository,
+                                   ProjectPipelineBindingRepository projectPipelineBindingRepository,
                                    GitlabProductBranchRepository productBranchRepository,
                                    GitlabProductBranchSyncLogRepository productBranchSyncLogRepository,
                                    AiModelConfigRepository aiModelConfigRepository,
@@ -185,6 +209,7 @@ public class GitlabManagementService {
                                    PlatformEnvVarResolver platformEnvVarResolver,
                                    ObjectMapper objectMapper,
                                    @Value("${platform.gitlab.default-api-url}") String defaultApiUrl,
+                                   @Value("${platform.frontend.public-base-url:}") String publicBaseUrl,
                                    PlatformTransactionManager transactionManager,
                                    @Qualifier("executionTaskExecutor") Executor executionTaskExecutor) {
         this.projectRepository = projectRepository;
@@ -193,7 +218,10 @@ public class GitlabManagementService {
         this.codeStructureSnapshotRepository = codeStructureSnapshotRepository;
         this.autoMergeConfigRepository = autoMergeConfigRepository;
         this.autoMergeLogRepository = autoMergeLogRepository;
+        this.autoMergeProjectShareRepository = autoMergeProjectShareRepository;
         this.autoMergeWebhookRepository = autoMergeWebhookRepository;
+        this.aiClubPipelineRepository = aiClubPipelineRepository;
+        this.projectPipelineBindingRepository = projectPipelineBindingRepository;
         this.productBranchRepository = productBranchRepository;
         this.productBranchSyncLogRepository = productBranchSyncLogRepository;
         this.aiModelConfigRepository = aiModelConfigRepository;
@@ -215,6 +243,7 @@ public class GitlabManagementService {
         this.platformEnvVarResolver = platformEnvVarResolver;
         this.objectMapper = objectMapper;
         this.defaultApiUrl = defaultApiUrl;
+        this.publicBaseUrl = trimTrailingSlash(publicBaseUrl);
         this.executionTaskExecutor = executionTaskExecutor;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -750,6 +779,229 @@ public class GitlabManagementService {
         Page<GitlabAutoMergeLogSummary> pageData = autoMergeLogRepository.findAll(autoMergeLogSpecification(configId, result, triggerType, null, scope), pageable)
                 .map(this::toAutoMergeLogSummary);
         return PageResponse.from(pageData);
+    }
+
+    public GitlabAutoMergeProjectShareSummary getProjectAutoMergeShare(Long projectId) {
+        ProjectEntity project = requireVisibleProject(projectId);
+        return toProjectAutoMergeShareSummary(project, autoMergeProjectShareRepository.findByProject_Id(projectId).orElse(null));
+    }
+
+    @Transactional
+    public GitlabAutoMergeProjectShareSummary createOrRefreshProjectAutoMergeShare(Long projectId,
+                                                                                   GitlabAutoMergeProjectShareRequest request) {
+        ProjectEntity project = requireVisibleProject(projectId);
+        GitlabAutoMergeProjectShareEntity entity = autoMergeProjectShareRepository.findByProject_Id(projectId)
+                .orElseGet(() -> {
+                    GitlabAutoMergeProjectShareEntity created = new GitlabAutoMergeProjectShareEntity();
+                    created.setProject(project);
+                    return created;
+                });
+        String token = generateShareToken();
+        entity.setTokenCiphertext(tokenCipherService.encrypt(token));
+        if (Boolean.TRUE.equals(request.permanent())) {
+            entity.setExpiresAt(null);
+        } else {
+            Integer expiresInDays = request.expiresInDays();
+            if (expiresInDays == null) {
+                throw new IllegalArgumentException("请选择分享有效天数，或开启永久有效");
+            }
+            entity.setExpiresAt(LocalDateTime.now().plusDays(expiresInDays));
+        }
+        entity.setEnabled(true);
+        autoMergeProjectShareRepository.save(entity);
+        return toProjectAutoMergeShareSummary(project, entity);
+    }
+
+    @Transactional
+    public void disableProjectAutoMergeShare(Long projectId) {
+        ProjectEntity project = requireVisibleProject(projectId);
+        GitlabAutoMergeProjectShareEntity entity = autoMergeProjectShareRepository.findByProject_Id(project.getId())
+                .orElseThrow(() -> new NoSuchElementException("当前项目尚未创建自动合并日志分享链接"));
+        entity.setEnabled(false);
+        autoMergeProjectShareRepository.save(entity);
+    }
+
+    public GitlabAutoMergePublicLogPage pageProjectAutoMergeLogsByShare(Long projectId,
+                                                                        String token,
+                                                                        int page,
+                                                                        int size,
+                                                                        String result) {
+        ProjectEntity project = requireValidProjectShare(projectId, token);
+        Pageable pageable = buildPageable(page, size, Sort.by(Sort.Direction.DESC, "executedAt", "id"));
+        Page<GitlabAutoMergeLogSummary> pageData = autoMergeLogRepository.findAll(publicAutoMergeLogSpecification(projectId, result), pageable)
+                .map(this::toAutoMergeLogSummary);
+        return new GitlabAutoMergePublicLogPage(projectId, project.getName(), PageResponse.from(pageData));
+    }
+
+    /**
+     * 公开侧：列出该项目下绑定的所有流水线（脱敏摘要）。
+     *
+     * <p>合并两类来源：</p>
+     * <ul>
+     *     <li>{@code WOODPECKER}：来自 {@link AiClubPipelineEntity}（AI Club 内置流水线，按 project_id 过滤）</li>
+     *     <li>{@code JENKINS}：来自 {@link ProjectPipelineBindingEntity}（项目 Jenkins 绑定，按 project_id 过滤）</li>
+     * </ul>
+     *
+     * <p>返回字段严格白名单，避免泄露 token 等敏感信息；只暴露最近一次状态、时间、外链。</p>
+     */
+    public List<ProjectPublicPipelineSummary> listPublicPipelinesByShare(Long projectId, String token) {
+        requireValidProjectShare(projectId, token);
+        List<ProjectPublicPipelineSummary> result = new ArrayList<>();
+        for (AiClubPipelineEntity pipeline : aiClubPipelineRepository.findByProject_IdOrderByIdAsc(projectId)) {
+            result.add(new ProjectPublicPipelineSummary(
+                    pipeline.getId(),
+                    "WOODPECKER",
+                    pipeline.getName(),
+                    trimToNull(pipeline.getDefaultBranch()),
+                    trimToNull(pipeline.getLastRunStatus()),
+                    formatTime(pipeline.getLastTriggeredAt()),
+                    trimToNull(pipeline.getLastRunUrl())
+            ));
+        }
+        for (ProjectPipelineBindingEntity binding : projectPipelineBindingRepository.findByProject_IdOrderByIdAsc(projectId)) {
+            result.add(new ProjectPublicPipelineSummary(
+                    binding.getId(),
+                    "JENKINS",
+                    binding.getJobName(),
+                    trimToNull(binding.getDefaultBranch()),
+                    trimToNull(binding.getLastTriggerStatus()),
+                    formatTime(binding.getLastTriggeredAt()),
+                    trimToNull(binding.getLastTriggerUrl())
+            ));
+        }
+        return result;
+    }
+
+    /**
+     * 公开侧：分页查看某条流水线的运行历史，仅暴露摘要字段。
+     *
+     * <p>底层不入库的 Jenkins 与已落 snapshot 的 Woodpecker 一并支持；外部 CI 调用失败时返回空列表 + warning，避免分享页整体不可用。</p>
+     *
+     * <p>用 {@code Propagation.NOT_SUPPORTED} 跳出 class 级别的 readOnly 事务上下文：
+     * 否则一旦底层 Jenkins/Woodpecker 调用抛 {@link RuntimeException}，即便我们在内部 catch 住，
+     * Spring 仍会把外层事务标记为 rollback-only，方法返回时抛 {@code UnexpectedRollbackException}。
+     * 这条链路本来就只是读 repository + 调用远程 CI，没有事务需求。</p>
+     *
+     * @param kind       {@code WOODPECKER} 或 {@code JENKINS}
+     * @param pipelineId 对应来源的主键，必须归属当前 {@code projectId}，否则视为越权
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
+    public ProjectPublicPipelineRunPage pagePublicPipelineRunsByShare(Long projectId,
+                                                                      String token,
+                                                                      String kind,
+                                                                      Long pipelineId,
+                                                                      int page,
+                                                                      int size) {
+        ProjectEntity project = requireValidProjectShare(projectId, token);
+        String normalizedKind = trimToNull(kind);
+        if (normalizedKind == null) {
+            throw new IllegalArgumentException("流水线类型不能为空");
+        }
+        if (pipelineId == null) {
+            throw new IllegalArgumentException("流水线 ID 不能为空");
+        }
+        int safePage = Math.max(1, page);
+        int safeSize = Math.max(1, Math.min(size, 50));
+        if ("WOODPECKER".equalsIgnoreCase(normalizedKind)) {
+            return loadWoodpeckerPipelineRunsForShare(project, projectId, pipelineId, safePage, safeSize);
+        }
+        if ("JENKINS".equalsIgnoreCase(normalizedKind)) {
+            return loadJenkinsPipelineRunsForShare(project, projectId, pipelineId, safePage, safeSize);
+        }
+        throw new IllegalArgumentException("不支持的流水线类型: " + kind);
+    }
+
+    /**
+     * Woodpecker 分支：通过 cicdManagementService 复用底层 API 调用。
+     *
+     * <p>分享接口为匿名调用，不会附带登录上下文，CicdManagementService 内部的项目可见性校验在
+     * {@code currentScopeOrNull()} 为 null 时会直接放行；这里再额外做一次 projectId 归属校验防止越权。</p>
+     */
+    private ProjectPublicPipelineRunPage loadWoodpeckerPipelineRunsForShare(ProjectEntity project,
+                                                                            Long projectId,
+                                                                            Long pipelineId,
+                                                                            int page,
+                                                                            int size) {
+        AiClubPipelineEntity pipeline = aiClubPipelineRepository.findById(pipelineId)
+                .orElseThrow(() -> new NoSuchElementException("流水线不存在: " + pipelineId));
+        if (pipeline.getProject() == null || !projectId.equals(pipeline.getProject().getId())) {
+            throw new NoSuchElementException("流水线不属于当前项目: " + pipelineId);
+        }
+        // 取前 page*size 条做内存分页；Woodpecker 接口本身只支持 limit
+        int limit = Math.min(page * size, 200);
+        List<ProjectPublicPipelineRunSummary> all = new ArrayList<>();
+        String warning = null;
+        try {
+            for (AiClubPipelineRunSummary run : cicdManagementService.listAiClubPipelineRuns(pipelineId, limit)) {
+                all.add(new ProjectPublicPipelineRunSummary(
+                        run.number(),
+                        run.status(),
+                        run.branch(),
+                        run.event(),
+                        run.startedAt() != null ? run.startedAt() : run.createdAt(),
+                        run.url()
+                ));
+            }
+        } catch (RuntimeException ex) {
+            log.warn("公开分享拉取 Woodpecker 运行历史失败: pipelineId={}, message={}", pipelineId, ex.getMessage());
+            warning = "暂时无法获取流水线运行历史: " + ex.getMessage();
+        }
+        return buildRunPage(project, projectId, "WOODPECKER", pipelineId, pipeline.getName(), all, page, size, warning);
+    }
+
+    /**
+     * Jenkins 分支：实时调用 Jenkins API，构建失败时返回空列表 + warning，不影响其它内容。
+     */
+    private ProjectPublicPipelineRunPage loadJenkinsPipelineRunsForShare(ProjectEntity project,
+                                                                         Long projectId,
+                                                                         Long pipelineId,
+                                                                         int page,
+                                                                         int size) {
+        ProjectPipelineBindingEntity binding = projectPipelineBindingRepository.findById(pipelineId)
+                .orElseThrow(() -> new NoSuchElementException("流水线不存在: " + pipelineId));
+        if (binding.getProject() == null || !projectId.equals(binding.getProject().getId())) {
+            throw new NoSuchElementException("流水线不属于当前项目: " + pipelineId);
+        }
+        int limit = Math.min(page * size, 200);
+        List<ProjectPublicPipelineRunSummary> all = new ArrayList<>();
+        String warning = null;
+        try {
+            for (JenkinsBuildSummary build : cicdManagementService.listPipelineBuilds(pipelineId, limit)) {
+                all.add(new ProjectPublicPipelineRunSummary(
+                        build.number(),
+                        Boolean.TRUE.equals(build.building()) ? "RUNNING" : trimToNull(build.result()),
+                        trimToNull(binding.getDefaultBranch()),
+                        "MANUAL",
+                        build.executedAt(),
+                        build.url()
+                ));
+            }
+        } catch (RuntimeException ex) {
+            log.warn("公开分享拉取 Jenkins 构建历史失败: bindingId={}, message={}", pipelineId, ex.getMessage());
+            warning = "暂时无法获取流水线运行历史: " + ex.getMessage();
+        }
+        return buildRunPage(project, projectId, "JENKINS", pipelineId, binding.getJobName(), all, page, size, warning);
+    }
+
+    /**
+     * 在内存里基于 limit 截断的原始列表做分页，保证返回结构与其它分页接口一致。
+     */
+    private ProjectPublicPipelineRunPage buildRunPage(ProjectEntity project,
+                                                      Long projectId,
+                                                      String kind,
+                                                      Long pipelineId,
+                                                      String pipelineName,
+                                                      List<ProjectPublicPipelineRunSummary> all,
+                                                      int page,
+                                                      int size,
+                                                      String warning) {
+        int total = all.size();
+        int from = Math.min((page - 1) * size, total);
+        int to = Math.min(from + size, total);
+        List<ProjectPublicPipelineRunSummary> records = all.subList(from, to);
+        int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
+        PageResponse<ProjectPublicPipelineRunSummary> pageResponse = new PageResponse<>(records, total, page, size, totalPages);
+        return new ProjectPublicPipelineRunPage(projectId, project.getName(), kind, pipelineId, pipelineName, pageResponse, warning);
     }
 
     public List<GitlabAutoMergeLogSummary> listLogsByMergeRequestAuthorUsername(String gitlabUsername, int limit) {
@@ -2755,6 +3007,107 @@ public class GitlabManagementService {
         );
     }
 
+    private GitlabAutoMergeProjectShareSummary toProjectAutoMergeShareSummary(ProjectEntity project, GitlabAutoMergeProjectShareEntity entity) {
+        if (entity == null || !Boolean.TRUE.equals(entity.getEnabled()) || !hasText(entity.getTokenCiphertext())) {
+            return new GitlabAutoMergeProjectShareSummary(project.getId(), project.getName(), false, null, null);
+        }
+        String token = tokenCipherService.decrypt(entity.getTokenCiphertext());
+        return new GitlabAutoMergeProjectShareSummary(
+                project.getId(),
+                project.getName(),
+                true,
+                entity.getExpiresAt() == null ? "永久有效" : formatTime(entity.getExpiresAt()),
+                buildProjectAutoMergeShareUrl(project.getId(), token)
+        );
+    }
+
+    private ProjectEntity requireVisibleProject(Long projectId) {
+        return requireProject(projectId);
+    }
+
+    private ProjectEntity requireValidProjectShare(Long projectId, String token) {
+        ProjectEntity project = projectRepository.findById(projectId).orElseThrow(() -> new NoSuchElementException("项目不存在: " + projectId));
+        GitlabAutoMergeProjectShareEntity share = autoMergeProjectShareRepository.findByProject_Id(projectId)
+                .orElseThrow(() -> new IllegalArgumentException("当前项目尚未创建分享链接"));
+        if (!Boolean.TRUE.equals(share.getEnabled())) {
+            throw new IllegalArgumentException("分享链接已失效");
+        }
+        if (share.getExpiresAt() != null && share.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new IllegalArgumentException("分享链接已过期");
+        }
+        String storedToken = tokenCipherService.decrypt(share.getTokenCiphertext());
+        if (!defaultString(storedToken).equals(defaultString(token))) {
+            throw new IllegalArgumentException("分享链接无效");
+        }
+        return project;
+    }
+
+    private String buildProjectAutoMergeShareUrl(Long projectId, String token) {
+        String baseUrl = trimToNull(publicBaseUrl);
+        if (baseUrl == null) {
+            baseUrl = resolveCurrentRequestBaseUrl();
+        }
+        if (baseUrl == null) {
+            return null;
+        }
+        return baseUrl + "/gitlab/public/projects/" + projectId + "/auto-merge-logs/" + token;
+    }
+
+    private String resolveCurrentRequestBaseUrl() {
+        org.springframework.web.context.request.RequestAttributes attributes = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (!(attributes instanceof org.springframework.web.context.request.ServletRequestAttributes servletRequestAttributes)) {
+            return null;
+        }
+        jakarta.servlet.http.HttpServletRequest request = servletRequestAttributes.getRequest();
+        String origin = trimToNull(request.getHeader("Origin"));
+        if (origin != null) {
+            return trimTrailingSlash(origin);
+        }
+        String referer = trimToNull(request.getHeader("Referer"));
+        if (referer != null) {
+            try {
+                java.net.URI uri = java.net.URI.create(referer);
+                StringBuilder builder = new StringBuilder();
+                builder.append(uri.getScheme()).append("://").append(uri.getHost());
+                if (uri.getPort() > 0
+                        && !("http".equalsIgnoreCase(uri.getScheme()) && uri.getPort() == 80)
+                        && !("https".equalsIgnoreCase(uri.getScheme()) && uri.getPort() == 443)) {
+                    builder.append(':').append(uri.getPort());
+                }
+                return builder.toString();
+            } catch (Exception ignored) {
+                // ignore invalid referer and continue with request host fallback
+            }
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append(request.getScheme()).append("://").append(request.getServerName());
+        if (request.getServerPort() > 0
+                && !("http".equalsIgnoreCase(request.getScheme()) && request.getServerPort() == 80)
+                && !("https".equalsIgnoreCase(request.getScheme()) && request.getServerPort() == 443)) {
+            builder.append(':').append(request.getServerPort());
+        }
+        return builder.toString();
+    }
+
+    private String generateShareToken() {
+        StringBuilder builder = new StringBuilder(32);
+        for (int index = 0; index < 32; index++) {
+            builder.append(TOKEN_ALPHABET[SECURE_RANDOM.nextInt(TOKEN_ALPHABET.length)]);
+        }
+        return builder.toString();
+    }
+
+    private String trimTrailingSlash(String value) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            return null;
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
+    }
+
     private GitlabMergeRequestSummary toMergeRequestSummary(GitlabApiService.GitlabMergeRequest item) {
         return new GitlabMergeRequestSummary(item.iid(), item.title(), item.state(), item.sourceBranch(), item.targetBranch(), item.draft(), item.hasConflicts(), item.detailedMergeStatus(), item.divergedCommitsCount(), item.pipelineStatus(), item.authorName(), item.webUrl(), item.updatedAt());
     }
@@ -2791,6 +3144,26 @@ public class GitlabManagementService {
                 ));
             }
         }
+    }
+
+    private Specification<GitlabAutoMergeLogEntity> publicAutoMergeLogSpecification(Long projectId, String result) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.join("project", JoinType.INNER).get("id"), projectId));
+            predicates.add(cb.isNotNull(root.join("config", JoinType.LEFT).get("id")));
+            predicates.add(cb.equal(root.join("config", JoinType.LEFT).get("executionMode"), MODE_PROJECT_BOUND));
+            if (hasText(result)) {
+                predicates.add(cb.equal(root.get("result"), result.trim().toUpperCase()));
+            } else {
+                // 默认隐藏 EMPTY（未匹配到任何可执行 MR）的扫描记录，避免对外分享时充满“无内容”行；
+                // 仅当调用方显式 ?result=EMPTY 才返回这类记录。
+                predicates.add(cb.or(
+                        cb.isNull(root.get("result")),
+                        cb.notEqual(root.get("result"), "EMPTY")
+                ));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
     }
 
     /**

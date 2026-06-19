@@ -1828,6 +1828,14 @@ export interface GitlabAutoMergeLogItem {
   executedAt: string
 }
 
+export interface GitlabAutoMergeProjectShareItem {
+  projectId: number
+  projectName: string
+  enabled: boolean
+  expiresAt: string | null
+  shareUrl: string | null
+}
+
 export type AiModelType = 'CHAT' | 'EMBEDDING'
 export type OpenAiApiMode = 'AUTO' | 'RESPONSES' | 'CHAT_COMPLETIONS' | 'CHAT_COMPLETIONS_PLAIN'
 

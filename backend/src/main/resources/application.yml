@@ -74,6 +74,8 @@ platform:
     serve-public-port: ${PLATFORM_GITNEXUS_SERVE_PUBLIC_PORT:4747}
   gitlab:
     default-api-url: ${PLATFORM_GITLAB_DEFAULT_API_URL:}
+  frontend:
+    public-base-url: ${PLATFORM_FRONTEND_PUBLIC_BASE_URL:}
     oauth:
       client-id: ${PLATFORM_GITLAB_OAUTH_CLIENT_ID:}
       client-secret: ${PLATFORM_GITLAB_OAUTH_CLIENT_SECRET:}

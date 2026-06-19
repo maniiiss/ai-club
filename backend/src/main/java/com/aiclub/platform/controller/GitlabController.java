@@ -4,6 +4,8 @@ import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.GitlabAutoMergeConfigSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
+import com.aiclub.platform.dto.GitlabAutoMergeProjectShareSummary;
+import com.aiclub.platform.dto.GitlabAutoMergePublicLogPage;
 import com.aiclub.platform.dto.GitlabAutoMergeWebhookSummary;
 import com.aiclub.platform.dto.GitlabApiSyncResult;
 import com.aiclub.platform.dto.GitlabAutoMergeRunResult;
@@ -24,8 +26,11 @@ import com.aiclub.platform.dto.GitlabUserSummary;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
+import com.aiclub.platform.dto.ProjectPublicPipelineRunPage;
+import com.aiclub.platform.dto.ProjectPublicPipelineSummary;
 import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabAutoMergeProjectShareRequest;
 import com.aiclub.platform.dto.request.GitlabAutoMergeWebhookRequest;
 import com.aiclub.platform.dto.request.GitlabApiSyncRequest;
 import com.aiclub.platform.dto.request.GitlabCreateProductBranchSyncRequest;
@@ -371,6 +376,57 @@ public class GitlabController {
             @RequestParam(required = false) String triggerType
     ) {
         return ApiResponse.success(gitlabManagementService.pageAutoMergeLogs(page, size, configId, result, triggerType));
+    }
+
+    @GetMapping("/projects/{projectId}/auto-merge-share")
+    @RequirePermission("gitlab:view")
+    public ApiResponse<GitlabAutoMergeProjectShareSummary> getProjectAutoMergeShare(@PathVariable Long projectId) {
+        return ApiResponse.success(gitlabManagementService.getProjectAutoMergeShare(projectId));
+    }
+
+    @PostMapping("/projects/{projectId}/auto-merge-share")
+    @RequirePermission("gitlab:manage")
+    public ApiResponse<GitlabAutoMergeProjectShareSummary> createOrRefreshProjectAutoMergeShare(@PathVariable Long projectId,
+                                                                                                 @Valid @RequestBody GitlabAutoMergeProjectShareRequest request) {
+        return ApiResponse.success(gitlabManagementService.createOrRefreshProjectAutoMergeShare(projectId, request));
+    }
+
+    @DeleteMapping("/projects/{projectId}/auto-merge-share")
+    @RequirePermission("gitlab:manage")
+    public ApiResponse<Void> disableProjectAutoMergeShare(@PathVariable Long projectId) {
+        gitlabManagementService.disableProjectAutoMergeShare(projectId);
+        return new ApiResponse<>(true, "Deleted successfully", null);
+    }
+
+    @GetMapping("/public/projects/{projectId}/auto-merge-logs/{token}")
+    public ApiResponse<GitlabAutoMergePublicLogPage> pageProjectAutoMergeLogsByShare(@PathVariable Long projectId,
+                                                                                      @PathVariable String token,
+                                                                                      @RequestParam(defaultValue = "1") int page,
+                                                                                      @RequestParam(defaultValue = "10") int size,
+                                                                                      @RequestParam(required = false) String result) {
+        return ApiResponse.success(gitlabManagementService.pageProjectAutoMergeLogsByShare(projectId, token, page, size, result));
+    }
+
+    /**
+     * 公开侧：基于项目只读分享 token 列出该项目下绑定的所有流水线（Woodpecker + Jenkins 合并）。
+     */
+    @GetMapping("/public/projects/{projectId}/pipelines/{token}")
+    public ApiResponse<List<ProjectPublicPipelineSummary>> listPublicPipelinesByShare(@PathVariable Long projectId,
+                                                                                       @PathVariable String token) {
+        return ApiResponse.success(gitlabManagementService.listPublicPipelinesByShare(projectId, token));
+    }
+
+    /**
+     * 公开侧：基于项目只读分享 token 分页查看某条流水线的运行历史摘要，仅暴露 6 个非敏感字段。
+     */
+    @GetMapping("/public/projects/{projectId}/pipelines/{token}/runs")
+    public ApiResponse<ProjectPublicPipelineRunPage> pagePublicPipelineRunsByShare(@PathVariable Long projectId,
+                                                                                    @PathVariable String token,
+                                                                                    @RequestParam String kind,
+                                                                                    @RequestParam Long pipelineId,
+                                                                                    @RequestParam(defaultValue = "1") int page,
+                                                                                    @RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.success(gitlabManagementService.pagePublicPipelineRunsByShare(projectId, token, kind, pipelineId, page, size));
     }
 
     @PostMapping("/auto-merge-configs")

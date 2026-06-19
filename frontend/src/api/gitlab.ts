@@ -1,4 +1,6 @@
 ﻿import { http } from './http'
+import axios from 'axios'
+import { getResolvedApiBaseUrl } from './http'
 import type {
   ApiResponse,
   ExecutionTaskItem,
@@ -27,6 +29,11 @@ import type {
   ProjectGitlabBindingItem,
   RepositoryScanRulesetItem
 } from '@/types/platform'
+
+const publicHttp = axios.create({
+  baseURL: getResolvedApiBaseUrl(),
+  timeout: 60000
+})
 
 export interface GitlabBindingPayload {
   projectId: number
@@ -335,6 +342,107 @@ export const previewAutoMergeConfigMergeRequests = async (id: number) => {
 
 export const runAutoMergeConfig = async (id: number) => {
   const { data } = await http.post<ApiResponse<GitlabAutoMergeRunResult>>(`/api/gitlab/auto-merge-configs/${id}/run`)
+  return data.data
+}
+
+export interface GitlabAutoMergeProjectSharePayload {
+  permanent: boolean
+  expiresInDays?: number | null
+}
+
+export interface GitlabAutoMergeProjectShareItem {
+  projectId: number
+  projectName: string
+  enabled: boolean
+  expiresAt: string | null
+  shareUrl: string | null
+}
+
+export interface GitlabAutoMergePublicLogPageItem {
+  projectId: number
+  projectName: string
+  logs: PageResponse<GitlabAutoMergeLogItem>
+}
+
+export const getProjectAutoMergeShare = async (projectId: number) => {
+  const { data } = await http.get<ApiResponse<GitlabAutoMergeProjectShareItem>>(`/api/gitlab/projects/${projectId}/auto-merge-share`)
+  return data.data
+}
+
+export const createOrRefreshProjectAutoMergeShare = async (projectId: number, payload: GitlabAutoMergeProjectSharePayload) => {
+  const { data } = await http.post<ApiResponse<GitlabAutoMergeProjectShareItem>>(`/api/gitlab/projects/${projectId}/auto-merge-share`, payload)
+  return data.data
+}
+
+export const disableProjectAutoMergeShare = async (projectId: number) => {
+  await http.delete<ApiResponse<null>>(`/api/gitlab/projects/${projectId}/auto-merge-share`)
+}
+
+export const pageProjectAutoMergeLogsByShare = async (
+  projectId: number,
+  token: string,
+  query: { page: number; size: number; result?: string }
+) => {
+  const { data } = await publicHttp.get<ApiResponse<GitlabAutoMergePublicLogPageItem>>(`/api/gitlab/public/projects/${projectId}/auto-merge-logs/${token}`, {
+    params: cleanParams(query)
+  })
+  return data.data
+}
+
+/**
+ * 项目只读分享：暴露给公开页的流水线摘要（Woodpecker / Jenkins 合并）。
+ *
+ * 字段严格脱敏，不携带触发者邮箱、提交信息、控制台日志等内容。
+ */
+export interface ProjectPublicPipelineItem {
+  id: number
+  kind: 'WOODPECKER' | 'JENKINS'
+  name: string
+  defaultBranch: string | null
+  lastStatus: string | null
+  lastTriggeredAt: string | null
+  lastUrl: string | null
+}
+
+/** 单次流水线运行摘要，仅含 6 个非敏感字段。 */
+export interface ProjectPublicPipelineRunItem {
+  runNumber: number | null
+  status: string | null
+  branch: string | null
+  event: string | null
+  triggeredAt: string | null
+  runUrl: string | null
+}
+
+/** 流水线运行历史分页结果；warning 用于在 Jenkins 远端不可达时提示用户。 */
+export interface ProjectPublicPipelineRunPageItem {
+  projectId: number
+  projectName: string
+  pipelineKind: 'WOODPECKER' | 'JENKINS'
+  pipelineId: number
+  pipelineName: string
+  runs: PageResponse<ProjectPublicPipelineRunItem>
+  warning: string | null
+}
+
+/** 公开页：列出该项目下绑定的所有流水线（脱敏摘要）。 */
+export const listPublicPipelinesByShare = async (projectId: number, token: string) => {
+  const { data } = await publicHttp.get<ApiResponse<ProjectPublicPipelineItem[]>>(
+    `/api/gitlab/public/projects/${projectId}/pipelines/${token}`
+  )
+  return data.data
+}
+
+/** 公开页：分页拉取某条流水线的运行历史摘要。 */
+export const pagePublicPipelineRunsByShare = async (
+  projectId: number,
+  token: string,
+  query: { kind: 'WOODPECKER' | 'JENKINS'; pipelineId: number; page: number; size: number }
+) => {
+  const { data } = await publicHttp.get<ApiResponse<ProjectPublicPipelineRunPageItem>>(
+    `/api/gitlab/public/projects/${projectId}/pipelines/${token}/runs`,
+    { params: cleanParams(query) }
+  )
   return data.data
 }
 

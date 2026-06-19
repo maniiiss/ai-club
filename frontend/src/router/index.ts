@@ -10,6 +10,7 @@ import SelfUpgradeCenterView from '@/views/SelfUpgradeCenterView.vue'
 import TestPlanView from '@/views/TestPlanView.vue'
 import TestPlanDetailView from '@/views/TestPlanDetailView.vue'
 import GitlabView from '@/views/GitlabView.vue'
+const GitlabAutoMergePublicView = () => import('@/views/GitlabAutoMergePublicView.vue')
 const GitlabCodeStructureView = () => import('@/views/GitlabCodeStructureView.vue')
 import JenkinsServerView from '@/views/JenkinsServerView.vue'
 import PipelineBindingView from '@/views/PipelineBindingView.vue'
@@ -58,6 +59,20 @@ const router = createRouter({
       name: 'forbidden',
       component: ForbiddenView,
       meta: { requiresAuth: false, title: '无权限' }
+    },
+    {
+      path: '/gitlab/public/projects/:projectId/auto-merge-logs/:token',
+      name: 'gitlab-auto-merge-public',
+      component: GitlabAutoMergePublicView,
+      meta: { requiresAuth: false, title: '项目只读分享页' }
+    },
+    {
+      // 项目只读分享页的语义化别名：内容由旧组件复用，但语义统一为「项目只读分享」。
+      // 旧 token 通过原路径仍可访问，避免存量分享链接失效。
+      path: '/public/projects/:projectId/readonly/:token',
+      name: 'project-readonly-share',
+      component: GitlabAutoMergePublicView,
+      meta: { requiresAuth: false, title: '项目只读分享页' }
     },
     {
       path: '/gitlab/bindings/:id/code-structure',

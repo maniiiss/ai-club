@@ -7,23 +7,28 @@ import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
+import com.aiclub.platform.domain.model.GitlabAutoMergeProjectShareEntity;
 import com.aiclub.platform.dto.CodeReviewResult;
 import com.aiclub.platform.dto.GitlabBranchSummary;
 import com.aiclub.platform.dto.GitlabCreateMergeRequestResult;
 import com.aiclub.platform.dto.GitlabTagCreateResult;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabAutoMergeProjectShareRequest;
 import com.aiclub.platform.dto.request.GitlabCreateMergeRequestRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aiclub.platform.repository.AgentRepository;
+import com.aiclub.platform.repository.AiClubPipelineRepository;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
 import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
+import com.aiclub.platform.repository.GitlabAutoMergeProjectShareRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeWebhookRepository;
 import com.aiclub.platform.repository.GitlabProductBranchRepository;
 import com.aiclub.platform.repository.GitlabProductBranchSyncLogRepository;
 import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
+import com.aiclub.platform.repository.ProjectPipelineBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -74,7 +79,16 @@ class GitlabManagementGitlabActionsTests {
     private GitlabAutoMergeLogRepository autoMergeLogRepository;
 
     @Mock
+    private GitlabAutoMergeProjectShareRepository autoMergeProjectShareRepository;
+
+    @Mock
     private GitlabAutoMergeWebhookRepository autoMergeWebhookRepository;
+
+    @Mock
+    private AiClubPipelineRepository aiClubPipelineRepository;
+
+    @Mock
+    private ProjectPipelineBindingRepository projectPipelineBindingRepository;
 
     @Mock
     private GitlabProductBranchRepository productBranchRepository;
@@ -157,7 +171,10 @@ class GitlabManagementGitlabActionsTests {
                 gitlabCodeStructureSnapshotRepository,
                 autoMergeConfigRepository,
                 autoMergeLogRepository,
+                autoMergeProjectShareRepository,
                 autoMergeWebhookRepository,
+                aiClubPipelineRepository,
+                projectPipelineBindingRepository,
                 productBranchRepository,
                 productBranchSyncLogRepository,
                 aiModelConfigRepository,
@@ -180,6 +197,7 @@ class GitlabManagementGitlabActionsTests {
                 platformEnvVarResolver,
                 new ObjectMapper(),
                 "http://gitlab.example.com/api/v4",
+                "http://platform.example.com",
                 transactionManager,
                 executionTaskExecutor
         );
@@ -793,6 +811,160 @@ class GitlabManagementGitlabActionsTests {
 
         assertThat(result.items()).singleElement().satisfies(item -> assertThat(item.action()).isEqualTo("AI_REJECTED"));
         verify(codeReviewClientService).reviewMergeRequest(any(), any(), any(), any(), eq(List.of()), eq("LOW"));
+    }
+
+    /**
+     * 项目管理员可为项目生成唯一的自动合并日志分享链接，旧 token 会被覆盖。
+     */
+    @Test
+    void shouldCreateProjectLevelAutoMergeShareLink() {
+        ProjectEntity project = new ProjectEntity("演示项目", "张三", "进行中", "用于分享自动合并日志");
+        project.setId(11L);
+        GitlabAutoMergeProjectShareEntity share = new GitlabAutoMergeProjectShareEntity();
+        share.setProject(project);
+        share.setEnabled(true);
+
+        when(projectRepository.findById(11L)).thenReturn(Optional.of(project));
+        when(autoMergeProjectShareRepository.findByProject_Id(11L)).thenReturn(Optional.of(share));
+        when(tokenCipherService.encrypt(anyString())).thenReturn("cipher-share-token");
+        when(tokenCipherService.decrypt("cipher-share-token")).thenReturn("share-token-11");
+        when(autoMergeProjectShareRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = gitlabManagementService.createOrRefreshProjectAutoMergeShare(11L, new GitlabAutoMergeProjectShareRequest(false, 30));
+
+        assertThat(result.projectId()).isEqualTo(11L);
+        assertThat(result.projectName()).isEqualTo("演示项目");
+        assertThat(result.shareUrl()).contains("/gitlab/public/projects/11/auto-merge-logs/share-token-11");
+        assertThat(result.expiresAt()).isNotBlank();
+        verify(tokenCipherService).encrypt(anyString());
+        verify(autoMergeProjectShareRepository).save(argThat(entity ->
+                entity.getProject() != null
+                        && Long.valueOf(11L).equals(entity.getProject().getId())
+                        && "cipher-share-token".equals(entity.getTokenCiphertext())
+                        && Boolean.TRUE.equals(entity.getEnabled())
+        ));
+    }
+
+    /**
+     * 访问者通过有效分享 token 可匿名查看项目下全部 PROJECT_BOUND 自动合并日志。
+     */
+    @Test
+    void shouldListProjectAutoMergeLogsByPublicShareToken() {
+        ProjectEntity project = new ProjectEntity("演示项目", "张三", "进行中", "用于分享自动合并日志");
+        project.setId(11L);
+        GitlabAutoMergeProjectShareEntity share = new GitlabAutoMergeProjectShareEntity();
+        share.setProject(project);
+        share.setEnabled(true);
+        share.setExpiresAt(java.time.LocalDateTime.now().plusHours(2));
+        share.setTokenCiphertext("cipher-share-token");
+
+        GitlabAutoMergeLogEntity log = new GitlabAutoMergeLogEntity();
+        log.setId(501L);
+        log.setProject(project);
+        log.setConfigName("主线自动合并");
+        log.setTriggerType("SCHEDULED");
+        log.setMergeRequestIid(88L);
+        log.setMergeRequestTitle("修复登录空指针");
+        log.setMergeRequestAuthorName("Alice");
+        log.setMergeRequestAuthorUsername("alice");
+        log.setResult("AI_REJECTED");
+        log.setReason("历史问题未修复");
+        log.setDetailMarkdown("# 自动合并日志详情");
+        log.setWebUrl("http://gitlab.example.com/group/demo-repo/-/merge_requests/88");
+        log.setExecutedAt(java.time.LocalDateTime.of(2026, 6, 19, 1, 0));
+
+        when(projectRepository.findById(11L)).thenReturn(Optional.of(project));
+        when(autoMergeProjectShareRepository.findByProject_Id(11L)).thenReturn(Optional.of(share));
+        when(tokenCipherService.decrypt("cipher-share-token")).thenReturn("share-token-11");
+        when(autoMergeLogRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(
+                        List.of(log),
+                        org.springframework.data.domain.PageRequest.of(0, 10),
+                        1
+                ));
+
+        var result = gitlabManagementService.pageProjectAutoMergeLogsByShare(11L, "share-token-11", 1, 10, "AI_REJECTED");
+
+        assertThat(result.projectId()).isEqualTo(11L);
+        assertThat(result.projectName()).isEqualTo("演示项目");
+        assertThat(result.logs().records()).singleElement().satisfies(item -> {
+            assertThat(item.id()).isEqualTo(501L);
+            assertThat(item.result()).isEqualTo("AI_REJECTED");
+            assertThat(item.detailMarkdown()).contains("自动合并日志详情");
+        });
+    }
+
+    /**
+     * 公开分享页默认应隐藏「未匹配到任何可执行 MR」的扫描占位记录（result=EMPTY），
+     * 只有调用方显式 ?result=EMPTY 时才返回这类行。
+     *
+     * <p>这里捕获 service 传给 repository 的 Specification，并在受控的 mock CriteriaBuilder
+     * 上「演练」一遍 toPredicate，断言 EMPTY 谓词被调用过。</p>
+     */
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void shouldExcludeEmptyResultFromPublicAutoMergeLogs() {
+        ProjectEntity project = new ProjectEntity("演示项目", "张三", "进行中", "用于分享自动合并日志");
+        project.setId(11L);
+        GitlabAutoMergeProjectShareEntity share = new GitlabAutoMergeProjectShareEntity();
+        share.setProject(project);
+        share.setEnabled(true);
+        share.setExpiresAt(java.time.LocalDateTime.now().plusHours(2));
+        share.setTokenCiphertext("cipher-share-token");
+
+        when(projectRepository.findById(11L)).thenReturn(Optional.of(project));
+        when(autoMergeProjectShareRepository.findByProject_Id(11L)).thenReturn(Optional.of(share));
+        when(tokenCipherService.decrypt("cipher-share-token")).thenReturn("share-token-11");
+
+        ArgumentCaptor<org.springframework.data.jpa.domain.Specification<com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity>> specCaptor =
+                ArgumentCaptor.forClass(org.springframework.data.jpa.domain.Specification.class);
+        when(autoMergeLogRepository.findAll(specCaptor.capture(), any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(), org.springframework.data.domain.PageRequest.of(0, 10), 0));
+
+        // result 参数为空，期望 service 传出的 spec 自带 EMPTY 排除谓词
+        gitlabManagementService.pageProjectAutoMergeLogsByShare(11L, "share-token-11", 1, 10, null);
+
+        var root = org.mockito.Mockito.mock(jakarta.persistence.criteria.Root.class);
+        var query = org.mockito.Mockito.mock(jakarta.persistence.criteria.CriteriaQuery.class);
+        var cb = org.mockito.Mockito.mock(jakarta.persistence.criteria.CriteriaBuilder.class);
+        var anyJoin = org.mockito.Mockito.mock(jakarta.persistence.criteria.Join.class);
+        var anyPath = org.mockito.Mockito.mock(jakarta.persistence.criteria.Path.class);
+        var anyPredicate = org.mockito.Mockito.mock(jakarta.persistence.criteria.Predicate.class);
+        org.mockito.Mockito.lenient().when(root.join(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(jakarta.persistence.criteria.JoinType.class))).thenReturn(anyJoin);
+        org.mockito.Mockito.lenient().when(root.get(org.mockito.ArgumentMatchers.anyString())).thenReturn(anyPath);
+        org.mockito.Mockito.lenient().when(anyJoin.get(org.mockito.ArgumentMatchers.anyString())).thenReturn(anyPath);
+        org.mockito.Mockito.lenient().when(cb.equal(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(anyPredicate);
+        org.mockito.Mockito.lenient().when(cb.notEqual(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(anyPredicate);
+        org.mockito.Mockito.lenient().when(cb.isNull(org.mockito.ArgumentMatchers.any())).thenReturn(anyPredicate);
+        org.mockito.Mockito.lenient().when(cb.isNotNull(org.mockito.ArgumentMatchers.any())).thenReturn(anyPredicate);
+        org.mockito.Mockito.lenient().when(cb.or(org.mockito.ArgumentMatchers.<jakarta.persistence.criteria.Predicate>any(), org.mockito.ArgumentMatchers.<jakarta.persistence.criteria.Predicate>any())).thenReturn(anyPredicate);
+        org.mockito.Mockito.lenient().when(cb.and(org.mockito.ArgumentMatchers.<jakarta.persistence.criteria.Predicate[]>any())).thenReturn(anyPredicate);
+
+        specCaptor.getValue().toPredicate(root, query, cb);
+
+        // 关键断言：默认分支必然调用过 cb.notEqual(<result path>, "EMPTY")
+        verify(cb).notEqual(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("EMPTY"));
+    }
+
+    /**
+     * 过期或已失效的分享 token 必须被拒绝，不能继续匿名读取项目日志。
+     */
+    @Test
+    void shouldRejectExpiredProjectAutoMergeShareToken() {
+        ProjectEntity project = new ProjectEntity("演示项目", "张三", "进行中", "用于分享自动合并日志");
+        project.setId(11L);
+        GitlabAutoMergeProjectShareEntity share = new GitlabAutoMergeProjectShareEntity();
+        share.setProject(project);
+        share.setEnabled(true);
+        share.setExpiresAt(java.time.LocalDateTime.now().minusHours(1));
+        share.setTokenCiphertext("cipher-share-token");
+
+        when(projectRepository.findById(11L)).thenReturn(Optional.of(project));
+        when(autoMergeProjectShareRepository.findByProject_Id(11L)).thenReturn(Optional.of(share));
+
+        assertThatThrownBy(() -> gitlabManagementService.pageProjectAutoMergeLogsByShare(11L, "share-token-11", 1, 10, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("分享链接已过期");
     }
 
     /**

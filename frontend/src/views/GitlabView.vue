@@ -3983,6 +3983,45 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 .log-detail-markdown :deep(pre) { overflow: auto; padding: 12px; border-radius: 6px; background: var(--el-fill-color-light); }
 .log-detail-markdown :deep(code) { font-family: var(--app-font-mono); }
 
+.gitlab-share-dialog {
+  padding: 6px 4px 2px;
+}
+
+.gitlab-share-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 20px;
+}
+
+.gitlab-share-field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 18px 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(239, 244, 248, 0.92) 100%);
+  border: 1px solid rgba(125, 145, 170, 0.14);
+}
+
+.gitlab-share-field > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #62738a;
+}
+
+.gitlab-share-field strong {
+  font-size: 18px;
+  color: #1d344d;
+}
+
+.gitlab-share-field-full {
+  grid-column: 1 / -1;
+}
+
+.gitlab-share-switch {
+  justify-content: space-between;
+}
+
 :deep(.el-dialog.gitlab-log-detail-dialog) {
   --platform-dialog-max-height: min(75vh, calc(100vh - 48px));
   max-height: var(--platform-dialog-max-height);
@@ -4086,6 +4125,14 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 
   .binding-http-check-actions {
     justify-content: space-between;
+  }
+
+  .gitlab-share-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gitlab-share-field-full {
+    grid-column: auto;
   }
 }
 </style>
