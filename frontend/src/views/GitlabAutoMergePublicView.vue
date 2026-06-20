@@ -185,7 +185,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
@@ -210,6 +210,11 @@ const token = String(route.params.token || '')
 const initialTab = (route.query.tab === 'pipelines' ? 'pipelines' : 'auto-merge') as 'auto-merge' | 'pipelines'
 const activeTab = ref<'auto-merge' | 'pipelines'>(initialTab)
 const projectName = ref('项目分享')
+
+/** 项目名称加载完成后同步浏览器页签标题，格式：{项目名称}分享 */
+watch(projectName, (name) => {
+  document.title = `${name}分享`
+})
 
 // ===== 自动合并日志 tab 状态 =====
 const logLoading = ref(false)

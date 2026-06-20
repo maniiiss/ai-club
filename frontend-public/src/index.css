@@ -1,56 +1,76 @@
 @import "tailwindcss";
+@import "./styles/tokens.css";
 
+/* Tailwind v4 主题扩展 */
 @theme {
-  /* Aether brand colors from the reference interface spec */
-  --color-blue-650: #0050cb;
-  --color-blue-620: #0066ff;
-  --color-blue-105: #dae1ff;
-  --color-blue-900: #001849;
-  
-  --color-cyan-650: #00677f;
-  --color-cyan-700: #004e60;
-  
-  --color-emerald-650: #00ccf9;
-  
-  --color-indigo-650: #6e00f5;
-  --color-indigo-750: #23005b;
-  --color-indigo-205: #e9ddff;
-
-  --color-orange-650: #ba1a1a;
-
-  --color-purple-650: #8447ff;
-  --color-purple-105: #fcf5ff;
+  --color-brand: #4f46e5;
+  --color-brand-hover: #4338ca;
+  --color-brand-light: #eef2ff;
 }
 
-/* Animations and custom layout enhancements */
+/* ── 全局基础样式 ── */
+html {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg-page);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ── 选中文字颜色 ── */
+::selection {
+  background-color: rgba(79, 70, 229, 0.15);
+}
+
+/* ── 入场动画 ── */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes slideLeft {
-  from { opacity: 0; transform: translateX(20px); }
+  from { opacity: 0; transform: translateX(24px); }
   to { opacity: 1; transform: translateX(0); }
 }
 
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .animate-fadeIn {
-  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-.animate-slideLeft {
-  animation: slideLeft 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .animate-slideUp {
-  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Custom scrollbar to match high density dashboards */
+.animate-slideLeft {
+  animation: slideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ── 自定义滚动条 ── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -61,10 +81,48 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(194, 198, 216, 0.4);
+  background: rgba(0, 0, 0, 0.1);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(114, 118, 135, 0.6);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+/* ── 焦点可见性 ── */
+:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ── 链接 ── */
+a {
+  color: var(--color-text-link);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--color-primary-hover);
+}
+
+/* ── 工具类 ── */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── 页面内容区渐变背景（用于认证页等） ── */
+.bg-gradient-auth {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #6366f1 100%);
+}
+
+.bg-mesh {
+  background-image:
+    radial-gradient(at 20% 80%, rgba(99, 102, 241, 0.15) 0, transparent 50%),
+    radial-gradient(at 80% 20%, rgba(124, 58, 237, 0.12) 0, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(79, 70, 229, 0.08) 0, transparent 60%);
 }

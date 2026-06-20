@@ -2,9 +2,11 @@ package com.aiclub.platform.repository;
 
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -39,4 +41,10 @@ public interface GitlabAutoMergeLogRepository extends JpaRepository<GitlabAutoMe
      */
     Optional<GitlabAutoMergeLogEntity> findTopByConfig_IdAndMergeRequestIidIsNullAndIdLessThanOrderByIdDesc(Long configId,
                                                                                                               Long id);
+
+    /**
+     * 删除指定时间之前的自动合并日志，用于定期清理过期数据。
+     */
+    @Modifying
+    long deleteAllByExecutedAtBefore(LocalDateTime cutoff);
 }
