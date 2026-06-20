@@ -1,7 +1,7 @@
 /**
  * 项目内布局。
- * 模块 Tab 置于页面最顶部作为一级切换导航，
- * 下方展示面包屑 + 项目摘要 + 子路由内容。
+ * 模块 Tab 作为项目区域的一级切换导航，置于内容区最顶部。
+ * 在 ProductLayout 的 max-w-7xl 容器内渲染。
  */
 import { Outlet, useParams, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
@@ -9,7 +9,6 @@ import { ArrowLeft, Users, CheckSquare, GitBranch } from 'lucide-react'
 import { ProjectNav } from '@/src/components/navigation/ProjectNav'
 import { getProjectDetail } from '@/src/api/projects'
 import type { ProjectItem } from '@/src/types/project'
-import { Button } from '@/src/components/common/Button'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 
@@ -47,8 +46,8 @@ export const ProjectLayout = () => {
   }
 
   return (
-    <div className="flex h-full flex-col -m-4 lg:-m-6">
-      {/* 顶部：面包屑 + 状态 */}
+    <div className="-mx-4 -my-6 lg:-mx-6 lg:-my-8">
+      {/* 面包屑 */}
       <div className="flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-bg-card)] px-4 py-2 lg:px-6">
         <button
           onClick={() => navigate('/projects')}
@@ -77,7 +76,7 @@ export const ProjectLayout = () => {
       {/* 模块切换 Tab */}
       <ProjectNav />
 
-      {/* 项目摘要信息条 */}
+      {/* 项目摘要 */}
       {project && (
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-[var(--color-border-light)] bg-[var(--color-bg-card)]/50 px-4 py-2 text-[12px] text-[var(--color-text-tertiary)] lg:px-6">
           {project.description && (
@@ -103,7 +102,7 @@ export const ProjectLayout = () => {
       )}
 
       {/* 子路由内容 */}
-      <div className="flex-1 overflow-y-auto bg-[var(--color-bg-page)] p-5 lg:p-6">
+      <div className="bg-[var(--color-bg-page)] px-4 py-6 lg:px-6 lg:py-8">
         <Outlet />
       </div>
     </div>

@@ -64,7 +64,7 @@ export const ProjectsPage = () => {
   }
 
   return (
-    <div className="mx-auto max-w-6xl animate-fadeIn">
+    <div className="animate-fadeIn">
       {/* 页面标题 */}
       <div className="mb-6 flex items-start justify-between">
         <div>

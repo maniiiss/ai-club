@@ -49,7 +49,7 @@ export const DashboardPage = () => {
   const greeting = getGreeting()
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 animate-fadeIn">
+    <div className="space-y-8 animate-fadeIn">
       {/* 欢迎区 */}
       <div>
         <h1 className="text-[24px] font-bold tracking-tight text-[var(--color-text-primary)]">
