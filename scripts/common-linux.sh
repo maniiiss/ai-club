@@ -665,13 +665,13 @@ start_source_stack() {
 
   if [[ "${skip_infrastructure}" != 'true' ]]; then
     local profile_args=()
-    local infrastructure_services=(postgres redis minio hindsight gitnexus-web hermes)
+    local infrastructure_services=(postgres redis minio qdrant hindsight gitnexus-web hermes)
     if woodpecker_enabled; then
       profile_args+=(--profile woodpecker)
       infrastructure_services+=(woodpecker-server woodpecker-agent)
     fi
 
-    invoke_compose "${HYBRID_COMPOSE_FILE}" "${DEFAULT_ENV_FILE}" '启动源码模式依赖容器（PostgreSQL / Redis / MinIO / Hindsight）' \
+    invoke_compose "${HYBRID_COMPOSE_FILE}" "${DEFAULT_ENV_FILE}" '启动源码模式依赖容器（PostgreSQL / Redis / MinIO / Qdrant / Hindsight）' \
       "${profile_args[@]}" up -d "${infrastructure_services[@]}"
 
     local hybrid_code_processing_host
@@ -684,6 +684,7 @@ start_source_stack() {
     wait_port "${POSTGRES_PORT}" 120 'PostgreSQL'
     wait_port "${REDIS_PORT}" 120 'Redis'
     wait_port "${MINIO_PORT}" 120 'MinIO'
+    wait_port "${QDRANT_PORT}" 120 'Qdrant'
     wait_port "${HINDSIGHT_PORT}" 120 'Hindsight'
     wait_port "${GITNEXUS_UI_PORT}" 120 'GitNexus Web UI'
     wait_port "${HERMES_PORT}" 120 'Hermes'
@@ -708,7 +709,7 @@ stop_source_stack() {
   fi
 
   invoke_compose "${HYBRID_COMPOSE_FILE}" "${env_file}" '停止源码模式依赖容器' \
-    --profile woodpecker stop postgres redis minio hindsight gitnexus-web hermes woodpecker-server woodpecker-agent
+    --profile woodpecker stop postgres redis minio qdrant hindsight gitnexus-web hermes woodpecker-server woodpecker-agent
 
   printf '\n'
   ok '源码模式项目已停止'
@@ -757,6 +758,7 @@ start_full_docker_stack() {
   wait_port "${REDIS_PORT}" 180 'Redis'
   wait_port "${MINIO_PORT}" 180 'MinIO'
   wait_port "${CODE_PROCESSING_PORT}" 180 'Code processing'
+  wait_port "${QDRANT_PORT}" 180 'Qdrant'
   wait_port "${HINDSIGHT_PORT}" 180 'Hindsight'
   wait_port "${HERMES_PORT}" 180 'Hermes'
   wait_port "${GITNEXUS_UI_PORT}" 180 'GitNexus Web UI'
@@ -773,6 +775,7 @@ start_full_docker_stack() {
   printf 'Backend: http://localhost:%s\n' "${BACKEND_PORT}"
   printf 'Code processing: http://localhost:%s\n' "${CODE_PROCESSING_PORT}"
   printf 'Hermes: http://localhost:%s\n' "${HERMES_PORT}"
+  printf 'Qdrant: http://localhost:%s\n' "${QDRANT_PORT}"
   printf 'Hindsight: http://localhost:%s\n' "${HINDSIGHT_PORT}"
   printf 'GitNexus Web UI: http://localhost:%s\n' "${GITNEXUS_UI_PORT}"
   printf 'Yaade: http://localhost:%s%s\n' "${YAADE_PORT}" "$(get_env_or_default 'YAADE_BASE_PATH' '/api/yaade/proxy')"
@@ -823,7 +826,7 @@ package_full_docker_stack() {
   invoke_compose "${FULL_DOCKER_COMPOSE_FILE}" "${FULL_DOCKER_ENV_FILE}" '构建全量 Docker 业务镜像' \
     "${compose_profile_args[@]}" build --pull
 
-  local middleware_services=(postgres redis minio hindsight hermes)
+  local middleware_services=(postgres redis minio qdrant hindsight hermes)
   if woodpecker_enabled; then
     middleware_services+=(woodpecker-server woodpecker-agent)
   fi
@@ -852,6 +855,7 @@ package_full_docker_stack() {
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'POSTGRES_IMAGE' 'postgres:16')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'REDIS_IMAGE' 'redis:7-alpine')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'MINIO_IMAGE' 'minio/minio:RELEASE.2025-02-28T09-55-16Z')"
+      "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'QDRANT_IMAGE' 'qdrant/qdrant:v1.13.4')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HERMES_IMAGE' 'ghcr.io/nousresearch/hermes-agent:latest')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HINDSIGHT_IMAGE' 'ghcr.io/vectorize-io/hindsight:latest')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'GITNEXUS_WEB_IMAGE' 'git-ai-club-gitnexus-web:latest')"

@@ -21,7 +21,6 @@
 - [GitLab 集成设计](../exec-plans/completed/gitlab-module.md) - 代码仓库集成
 - [GitLab 代码结构](../generated/gitlab-code-structure-technical-design-v1.md) - 代码结构分析
 - [服务器管理设计](../generated/server-management-technical-design-v1.md) - 服务器管理模块
-- [记忆事实图设计](../exec-plans/completed/memory-fact-graph.md) - 知识图谱设计
 
 ### 移动端设计
 

@@ -254,7 +254,7 @@ const renderHermesMarkdownToHtmlInternal = (
           ? `${options.thinkBlockKeyPrefix}-${thinkPlaceholders.length}`
           : ''
         const thinkStatus = resolveThinkBlockStatus(rawThinkBlock)
-        const thinkLabel = thinkStatus === 'thinking' ? '思考中' : '已完成思考'
+        const thinkLabel = thinkStatus === 'thinking' ? 'ReAct 推理中' : 'ReAct 推理完成'
         const thinkOpenAttr = thinkBlockKey && options.isThinkBlockOpen?.(thinkBlockKey) ? ' open' : ''
         const thinkDots = thinkStatus === 'thinking'
           ? '<span class="hermes-think-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>'
@@ -264,7 +264,7 @@ const renderHermesMarkdownToHtmlInternal = (
           : '<span class="hermes-think-status-icon done" aria-hidden="true">✓</span>'
 
         thinkPlaceholders.push(
-          `<details class="hermes-think-block is-${thinkStatus}"${thinkOpenAttr}${thinkBlockKey ? ` data-think-key="${escapeHtml(thinkBlockKey)}"` : ''}><summary><span class="hermes-think-summary-main">${thinkIcon}<span class="hermes-think-summary-label">${thinkLabel}</span>${thinkDots}</span></summary><div class="hermes-think-content">${thinkHtml}</div></details>`
+          `<details class="hermes-think-block hermes-react-process-block is-${thinkStatus}"${thinkOpenAttr}${thinkBlockKey ? ` data-think-key="${escapeHtml(thinkBlockKey)}"` : ''}><summary><span class="hermes-think-summary-main">${thinkIcon}<span class="hermes-think-summary-label">${thinkLabel}</span>${thinkDots}</span></summary><div class="hermes-think-content">${thinkHtml}</div></details>`
         )
         return `\n${token}\n`
       })

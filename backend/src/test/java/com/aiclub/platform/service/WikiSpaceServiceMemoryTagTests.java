@@ -29,8 +29,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 验证空间化 Wiki retain 时会写入统一来源标签和项目标签，
- * 保证项目维度的记忆事实图可以同时读取项目页面与空间页面记忆。
+ * 验证空间化 Wiki 同步任务会切到独立知识索引链路，
+ * 避免继续把页面内容 retain 到 Hindsight 记忆库。
  */
 @ExtendWith(MockitoExtension.class)
 class WikiSpaceServiceMemoryTagTests {
@@ -71,8 +71,11 @@ class WikiSpaceServiceMemoryTagTests {
     @Mock
     private DocumentMarkdownService documentMarkdownService;
 
+    @Mock
+    private WikiKnowledgeSearchService wikiKnowledgeSearchService;
+
     @Test
-    void shouldAttachSourceAndProjectTagsWhenRetainingWikiSpacePage() {
+    void shouldIndexWikiSpacePageIntoKnowledgeStore() {
         WikiSpaceService wikiSpaceService = new WikiSpaceService(
                 wikiSpaceRepository,
                 wikiSpaceMemberRepository,
@@ -85,7 +88,8 @@ class WikiSpaceServiceMemoryTagTests {
                 projectDataPermissionService,
                 hindsightClientService,
                 documentAssetService,
-                documentMarkdownService
+                documentMarkdownService,
+                wikiKnowledgeSearchService
         );
         ProjectEntity project = new ProjectEntity();
         project.setId(12L);
@@ -125,16 +129,7 @@ class WikiSpaceServiceMemoryTagTests {
 
         wikiSpaceService.processPendingSyncTasks();
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<String>> tagsCaptor = ArgumentCaptor.forClass((Class) List.class);
-        verify(hindsightClientService).retainWikiSpaceDocument(
-                org.mockito.ArgumentMatchers.eq(9L),
-                org.mockito.ArgumentMatchers.eq("wiki-page-v2:201"),
-                org.mockito.ArgumentMatchers.eq("空间发布说明"),
-                org.mockito.ArgumentMatchers.anyString(),
-                tagsCaptor.capture(),
-                org.mockito.ArgumentMatchers.anyMap()
-        );
-        assertThat(tagsCaptor.getValue()).contains("wiki", "source:wiki", "space:9", "directory:20", "project:12");
+        verify(wikiKnowledgeSearchService).indexSpacePage(page);
+        verify(hindsightClientService, org.mockito.Mockito.never()).retainWikiSpaceDocument(any(), any(), any(), any(), any(), any());
     }
 }

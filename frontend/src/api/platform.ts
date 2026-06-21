@@ -21,9 +21,6 @@ import type {
   IterationBoardItem,
   IterationItem,
   KnowledgeGraphItem,
-  MemoryFactEntityDetailItem,
-  MemoryFactFactsResponseItem,
-  MemoryFactGraphItem,
   PageResponse,
   ProjectBurndownItem,
   ProjectListStatsItem,
@@ -812,50 +809,6 @@ export const getProjectKnowledgeGraph = async (projectId: number, refresh = fals
 
 export const rebuildProjectKnowledgeGraph = async (projectId: number) => {
   const { data } = await http.post<ApiResponse<KnowledgeGraphItem>>(`/api/projects/${projectId}/knowledge-graph/rebuild`)
-  return data.data
-}
-
-export const getProjectMemoryFactGraph = async (projectId: number) => {
-  const { data } = await http.get<ApiResponse<MemoryFactGraphItem>>(`/api/projects/${projectId}/memory-fact-graph`)
-  return data.data
-}
-
-export const getProjectMemoryFactGraphFacts = async (
-  projectId: number,
-  params: { entityId?: string; edgeId?: string; query?: string; limit?: number }
-) => {
-  const { data } = await http.get<ApiResponse<MemoryFactFactsResponseItem>>(`/api/projects/${projectId}/memory-fact-graph/facts`, {
-    params: cleanParams(params)
-  })
-  return data.data
-}
-
-export const getProjectMemoryFactGraphEntityDetail = async (projectId: number, entityId: string) => {
-  const { data } = await http.get<ApiResponse<MemoryFactEntityDetailItem>>(
-    `/api/projects/${projectId}/memory-fact-graph/entity/${encodeURIComponent(entityId)}`
-  )
-  return data.data
-}
-
-export const getWikiSpaceMemoryFactGraph = async (spaceId: number) => {
-  const { data } = await http.get<ApiResponse<MemoryFactGraphItem>>(`/api/wiki/spaces/${spaceId}/memory-fact-graph`)
-  return data.data
-}
-
-export const getWikiSpaceMemoryFactGraphFacts = async (
-  spaceId: number,
-  params: { entityId?: string; edgeId?: string; query?: string; limit?: number }
-) => {
-  const { data } = await http.get<ApiResponse<MemoryFactFactsResponseItem>>(`/api/wiki/spaces/${spaceId}/memory-fact-graph/facts`, {
-    params: cleanParams(params)
-  })
-  return data.data
-}
-
-export const getWikiSpaceMemoryFactGraphEntityDetail = async (spaceId: number, entityId: string) => {
-  const { data } = await http.get<ApiResponse<MemoryFactEntityDetailItem>>(
-    `/api/wiki/spaces/${spaceId}/memory-fact-graph/entity/${encodeURIComponent(entityId)}`
-  )
   return data.data
 }
 

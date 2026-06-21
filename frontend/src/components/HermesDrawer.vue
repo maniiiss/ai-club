@@ -2,24 +2,41 @@
   <el-drawer
     v-model="drawerVisible"
     :direction="isMobileViewport ? 'btt' : 'rtl'"
-    :size="isMobileViewport ? '100%' : '880px'"
+    :size="drawerPresentation.size"
     :show-close="false"
-    :class="['hermes-drawer', { 'is-mobile': isMobileViewport }]"
+    :class="drawerPresentation.classNames"
   >
     <template #header>
       <div class="hermes-head">
         <div class="hermes-head-left">
           <button v-if="memoryViewVisible" class="hermes-back-button" type="button" @click="memoryViewVisible = false">返回</button>
-          <div class="hermes-title">{{ memoryViewVisible ? '记忆管理' : 'Hermes 助手' }}</div>
+          <div class="hermes-title-wrap">
+            <div class="hermes-title">{{ memoryViewVisible ? '记忆管理' : 'Hermes 助手' }}</div>
+            <el-tooltip v-if="!memoryViewVisible" placement="bottom-start" effect="light">
+              <button class="hermes-help-button" type="button" aria-label="查看 Hermes 能力边界说明">
+                <el-icon><QuestionFilled /></el-icon>
+              </button>
+              <template #content>
+                <div class="hermes-help-tooltip">
+                  <p>{{ hermesAssistantTooltipCopy.intro }}</p>
+                  <p>{{ hermesAssistantTooltipCopy.boundary }}</p>
+                  <p>{{ hermesAssistantTooltipCopy.confirmation }}</p>
+                </div>
+              </template>
+            </el-tooltip>
+          </div>
         </div>
         <div class="hermes-head-right">
           <button v-if="!memoryViewVisible" class="hermes-memory-entry" type="button" @click="handleOpenMemoryView">记忆管理</button>
+          <button v-if="!isMobileViewport" class="hermes-close-button hermes-view-toggle-button" type="button" @click="toggleDesktopFullscreen">
+            {{ desktopFullscreen ? '退出全屏' : '全屏' }}
+          </button>
           <button class="hermes-close-button" type="button" @click="drawerVisible = false">关闭</button>
         </div>
       </div>
     </template>
 
-    <div class="hermes-panel">
+    <div class="hermes-panel" :style="{ gridTemplateColumns: drawerPresentation.panelColumns }">
       <div
         v-if="isMobileViewport"
         class="hermes-mobile-session-backdrop"
@@ -266,7 +283,7 @@
           <section v-if="hasPendingUserConfirmation" class="hermes-confirmation-hint">
             <div>
               <strong>需要你确认后继续</strong>
-              <span>{{ currentSelectionCards.length ? '请选择下方候选项，Hermes 会带着你的确认继续处理。' : 'Hermes 已准备好动作，确认后才会真正执行。' }}</span>
+              <span>{{ currentSelectionCards.length ? hermesAssistantTooltipCopy.confirmation : 'Hermes 已准备好动作，确认后才会真正执行。' }}</span>
             </div>
           </section>
 
@@ -382,7 +399,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { MoreFilled } from '@element-plus/icons-vue'
+import { MoreFilled, QuestionFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { openCommonFileDownload } from '@/api/common'
@@ -391,6 +408,7 @@ import { createGitlabBindingScanTask } from '@/api/gitlab'
 import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import { renderHermesMarkdownToHtml } from '@/utils/hermesMarkdown'
+import { resolveHermesDrawerPresentation } from '@/utils/hermesDrawerLayout'
 import { buildHermesToolTraceSummary, normalizeHermesToolExecutions } from '@/utils/hermesProcessTrace'
 import { DEFAULT_REQUIREMENT_TEMPLATE } from '@/utils/requirementTemplate'
 import type { CreateHermesConversationSessionPayload, HermesActionItem, HermesAttachmentItem, HermesConversationDetailItem, HermesConversationSessionSummaryItem, HermesDebugInfoItem, HermesMemoryConsolidationStatus, HermesMemoryFactItem, HermesMessageItem, HermesReferenceItem, HermesSelectionCardItem, HermesSelectionOptionItem, HermesSelectionPayload, HermesSessionChatRequestPayload, HermesStreamDeltaEvent, HermesStreamDoneEvent, HermesStreamErrorEvent, HermesStreamMetaEvent, HermesStreamStatusEvent, HermesUserMemoryItem } from '@/types/hermes'
@@ -419,6 +437,8 @@ const messageScrollRef = ref<HTMLDivElement>()
 const questionInputRef = ref<HermesQuestionInputExpose | null>(null)
 const fileInputRef = ref<HTMLInputElement>()
 const isMobileViewport = ref(false)
+// 桌面端全屏只影响当前抽屉展示，不做持久化，关闭后恢复默认宽度。
+const desktopFullscreen = ref(false)
 const draftQuestion = ref('')
 const pendingFiles = ref<File[]>([])
 const sending = ref(false)
@@ -507,9 +527,19 @@ const HERMES_REFERENCE_TYPE_LABELS: Record<string, string> = {
   WORK_ITEM: '工作项'
 }
 
+/**
+ * 将 Hermes 的能力边界与确认机制收口到标题旁提示里，避免在正文区重复铺开长文案。
+ */
+const HERMES_ASSISTANT_TOOLTIP_COPY = {
+  intro: 'Hermes 是平台内协作助手，会优先结合当前页面上下文和平台内可用数据，协助查询项目、工作项、执行任务、测试计划、Wiki 和附件内容。',
+  boundary: '它不会直接代替外部浏览器、联网搜索，也不会绕过确认直接创建或修改数据。',
+  confirmation: '查到多个候选对象时会先等你选择；写操作会先生成待确认动作，确认后才会真正执行。'
+} as const
+
 const displayPrompts = computed(() => currentSuggestions.value.length ? currentSuggestions.value : props.fallbackPrompts || [])
 const wikiReferences = computed(() => currentReferences.value.filter((item) => item.type === 'WIKI_PAGE'))
 const nonWikiReferences = computed(() => currentReferences.value.filter((item) => item.type !== 'WIKI_PAGE'))
+const hermesAssistantTooltipCopy = computed(() => HERMES_ASSISTANT_TOOLTIP_COPY)
 const currentStreamingAssistantMessage = computed(() => {
   if (!currentStreamingAssistantMessageId.value) return null
   return currentMessages.value.find((item) => item.id === currentStreamingAssistantMessageId.value) || null
@@ -580,6 +610,10 @@ const voiceLevelLabel = computed(() => {
   if (voiceInputDetected.value) return '声音较弱，请靠近麦克风'
   return '等待声音'
 })
+const drawerPresentation = computed(() => resolveHermesDrawerPresentation({
+  isMobileViewport: isMobileViewport.value,
+  desktopFullscreen: desktopFullscreen.value
+}))
 const currentContextKey = computed(() => JSON.stringify(buildCurrentRouteContext()))
 
 watch(drawerVisible, (visible) => {
@@ -588,6 +622,7 @@ watch(drawerVisible, (visible) => {
     void initializeDrawer()
     return
   }
+  desktopFullscreen.value = false
   mobileSessionPanelVisible.value = false
   stopVoiceRecording(true)
 })
@@ -605,9 +640,11 @@ watch(currentContextKey, () => {
 })
 
 watch(isMobileViewport, (mobile) => {
-  if (!mobile) {
-    mobileSessionPanelVisible.value = false
+  if (mobile) {
+    desktopFullscreen.value = false
+    return
   }
+  mobileSessionPanelVisible.value = false
 })
 
 watch(() => authStore.user?.roleNames, () => {
@@ -1183,14 +1220,8 @@ const shouldShowInlineStreamStatus = (message: HermesMessageItem) => {
   return message.status === 'streaming' && message.id === currentStreamingAssistantMessageId.value
 }
 
-const resolveMessageToolExecutionItems = (message: HermesMessageItem): HermesToolExecutionViewItem[] => {
-  const rawExecutions = message.toolExecutions || (
-    message.id === currentStreamingAssistantMessageId.value
-      ? currentDebug.value?.toolExecutions || []
-      : []
-  )
-  return normalizeHermesToolExecutions(rawExecutions)
-}
+const resolveMessageToolExecutionItems = (message: HermesMessageItem): HermesToolExecutionViewItem[] =>
+  normalizeHermesToolExecutions(message.toolExecutions || [])
 
 const resolveMessageProcessTraceSummary = (message: HermesMessageItem): HermesToolTraceSummary =>
   buildHermesToolTraceSummary(resolveMessageToolExecutionItems(message)) || {
@@ -1269,6 +1300,21 @@ function applyStreamStatus(payload: HermesStreamStatusEvent) {
   markStreamStatusProgress()
 }
 
+/**
+ * 将流式错误统一转换成前端更容易理解的提示，优先说明“可重试/可继续使用已有确认结果”，
+ * 避免所有异常都落成“助手不可用”。
+ */
+function resolveHermesStreamErrorMessage(message?: string) {
+  const normalized = (message || '').trim()
+  if (!normalized) {
+    return 'Hermes 本轮连接已中断，可直接重试；如果页面里已经出现确认卡片，也可以继续使用当前结果'
+  }
+  if (/中断|断开|连接|stream/i.test(normalized)) {
+    return normalized
+  }
+  return normalized
+}
+
 const submitConversation = async (question: string, userContent: string, selection?: HermesSelectionPayload | null) => {
   const normalizedQuestion = question.trim()
   const normalizedUserContent = userContent.trim() || normalizedQuestion
@@ -1294,7 +1340,7 @@ const submitConversation = async (question: string, userContent: string, selecti
   currentMessages.value = [
     ...currentMessages.value,
     { id: userMessageId, role: 'user', content: normalizedUserContent, status: 'done', attachments: pendingFiles.value.map(toAttachmentSummary) },
-    { id: assistantMessageId, role: 'assistant', content: '', status: 'streaming', attachments: [] }
+    { id: assistantMessageId, role: 'assistant', content: '', status: 'streaming', attachments: [], toolExecutions: [] }
   ]
   isPinnedToBottom.value = true
   draftQuestion.value = ''
@@ -1326,9 +1372,10 @@ const submitConversation = async (question: string, userContent: string, selecti
               return
             }
             flushPendingStreamDeltas(true)
-            updateMessage(assistantMessageId, (current) => ({ ...current, content: streamPayload.message || current.content || 'Hermes 助手暂时不可用', status: 'error', attachments: current.attachments || [], toolExecutions: current.toolExecutions || resolveDebugToolExecutions(currentDebug.value) }))
+            const errorMessage = resolveHermesStreamErrorMessage(streamPayload.message) || currentStreamStatusText.value
+            updateMessage(assistantMessageId, (current) => ({ ...current, content: errorMessage || current.content || 'Hermes 本轮连接已中断，可直接重试', status: 'error', attachments: current.attachments || [], toolExecutions: current.toolExecutions || resolveDebugToolExecutions(currentDebug.value) }))
             finishStream()
-            ElMessage.error(streamPayload.message || 'Hermes 助手暂时不可用')
+            ElMessage.error(errorMessage || 'Hermes 本轮连接已中断，可直接重试')
             void refreshCurrentSessionFromCloud()
           }
         })
@@ -1355,15 +1402,16 @@ const submitConversation = async (question: string, userContent: string, selecti
           return
         }
         flushPendingStreamDeltas(true)
-        updateMessage(assistantMessageId, (current) => ({ ...current, content: payload.message || current.content || 'Hermes 助手暂时不可用', status: 'error', attachments: current.attachments || [], toolExecutions: current.toolExecutions || resolveDebugToolExecutions(currentDebug.value) }))
+        const errorMessage = resolveHermesStreamErrorMessage(payload.message) || currentStreamStatusText.value
+        updateMessage(assistantMessageId, (current) => ({ ...current, content: errorMessage || current.content || 'Hermes 本轮连接已中断，可直接重试', status: 'error', attachments: current.attachments || [], toolExecutions: current.toolExecutions || resolveDebugToolExecutions(currentDebug.value) }))
         finishStream()
-        ElMessage.error(payload.message || 'Hermes 助手暂时不可用')
+        ElMessage.error(errorMessage || 'Hermes 本轮连接已中断，可直接重试')
         void refreshCurrentSessionFromCloud()
       }
     })
     activeStreamAbort.value = streamController.abort
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Hermes 助手暂时不可用'
+    const message = resolveHermesStreamErrorMessage(error instanceof Error ? error.message : '')
     updateMessage(assistantMessageId, (current) => ({ ...current, content: message, status: 'error', attachments: current.attachments || [], toolExecutions: current.toolExecutions || resolveDebugToolExecutions(currentDebug.value) }))
     finishStream()
     ElMessage.error(message)
@@ -1414,6 +1462,16 @@ const openWithQuestion = async (question: string) => {
 }
 
 defineExpose({ openDrawer, openWithQuestion })
+
+/**
+ * 桌面端允许在默认 880px 抽屉和铺满应用窗口之间切换，移动端始终保持既有全屏样式。
+ */
+function toggleDesktopFullscreen() {
+  if (isMobileViewport.value) {
+    return
+  }
+  desktopFullscreen.value = !desktopFullscreen.value
+}
 
 function handleStopStream() {
   if (!sending.value) {
@@ -2150,6 +2208,11 @@ function persistSelectedSessionId(sessionId: number | null) {
   border-color: rgba(var(--app-primary-rgb), 0.5);
 }
 
+.hermes-view-toggle-button {
+  min-width: 74px;
+  text-align: center;
+}
+
 .hermes-memory-view {
   flex: 1 1 auto;
   min-width: 0;
@@ -2292,6 +2355,53 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-family: var(--app-font-heading);
   font-size: 24px;
   font-weight: 900;
+}
+
+.hermes-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hermes-help-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(var(--app-primary-rgb), 0.1);
+  color: var(--app-primary);
+  box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.14);
+  transition: background-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.hermes-help-button:hover {
+  background: rgba(var(--app-primary-rgb), 0.16);
+  box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.22);
+  transform: translateY(-1px);
+}
+
+.hermes-help-button :deep(svg) {
+  width: 14px;
+  height: 14px;
+}
+
+.hermes-help-tooltip {
+  max-width: 280px;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.hermes-help-tooltip p {
+  margin: 0;
+}
+
+.hermes-help-tooltip p + p {
+  margin-top: 8px;
 }
 
 .hermes-subtitle,
@@ -3088,12 +3198,17 @@ function persistSelectedSessionId(sessionId: number | null) {
 }
 
 .hermes-process-trace {
-  margin-top: 10px;
+  position: relative;
+  margin-top: 12px;
   width: max-content;
   max-width: 100%;
-  border: 1px solid rgba(var(--app-outline-rgb), 0.1);
-  border-radius: 999px;
-  background: rgba(243, 244, 245, 0.72);
+  border: 1px solid rgba(51, 65, 85, 0.12);
+  border-left: 3px solid rgba(51, 65, 85, 0.26);
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg, rgba(248, 250, 252, 0.94), rgba(255, 255, 255, 0.78)),
+    repeating-linear-gradient(135deg, rgba(100, 116, 139, 0.08) 0 1px, transparent 1px 8px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
   overflow: hidden;
 }
 
@@ -3104,7 +3219,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   gap: 8px;
   min-height: 32px;
   box-sizing: border-box;
-  padding: 7px 10px;
+  padding: 8px 11px;
   color: #334155;
   font-size: 12px;
   font-weight: 800;
@@ -3121,6 +3236,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 
@@ -3164,12 +3280,12 @@ function persistSelectedSessionId(sessionId: number | null) {
 .hermes-process-trace[open] {
   width: 100%;
   max-width: 520px;
-  border-radius: 12px;
+  border-radius: 10px;
 }
 
 .hermes-process-trace-body {
-  padding: 0 14px 12px;
-  border-top: 1px solid rgba(var(--app-outline-rgb), 0.08);
+  padding: 0 14px 12px 18px;
+  border-top: 1px solid rgba(51, 65, 85, 0.08);
 }
 
 .hermes-process-description {
@@ -3184,23 +3300,35 @@ function persistSelectedSessionId(sessionId: number | null) {
 }
 
 .hermes-process-trace.is-running {
-  border-color: rgba(37, 99, 235, 0.2);
-  background: rgba(239, 246, 255, 0.68);
+  border-color: rgba(37, 99, 235, 0.22);
+  border-left-color: #2563eb;
+  background:
+    linear-gradient(90deg, rgba(239, 246, 255, 0.96), rgba(255, 255, 255, 0.82)),
+    repeating-linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0 1px, transparent 1px 8px);
 }
 
 .hermes-process-trace.is-success {
   border-color: rgba(15, 118, 110, 0.2);
-  background: rgba(236, 253, 245, 0.72);
+  border-left-color: #0f766e;
+  background:
+    linear-gradient(90deg, rgba(236, 253, 245, 0.96), rgba(255, 255, 255, 0.82)),
+    repeating-linear-gradient(135deg, rgba(15, 118, 110, 0.08) 0 1px, transparent 1px 8px);
 }
 
 .hermes-process-trace.is-warning {
-  border-color: rgba(245, 158, 11, 0.24);
-  background: rgba(255, 251, 235, 0.72);
+  border-color: rgba(245, 158, 11, 0.26);
+  border-left-color: #d97706;
+  background:
+    linear-gradient(90deg, rgba(255, 251, 235, 0.98), rgba(255, 255, 255, 0.82)),
+    repeating-linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0 1px, transparent 1px 8px);
 }
 
 .hermes-process-trace.is-danger {
-  border-color: rgba(220, 38, 38, 0.2);
-  background: rgba(254, 242, 242, 0.72);
+  border-color: rgba(220, 38, 38, 0.22);
+  border-left-color: #dc2626;
+  background:
+    linear-gradient(90deg, rgba(254, 242, 242, 0.98), rgba(255, 255, 255, 0.82)),
+    repeating-linear-gradient(135deg, rgba(220, 38, 38, 0.08) 0 1px, transparent 1px 8px);
 }
 
 .hermes-process-trace.is-running .hermes-process-status-icon {
@@ -3468,10 +3596,14 @@ function persistSelectedSessionId(sessionId: number | null) {
 }
 
 .hermes-markdown-content :deep(.hermes-think-block) {
-  margin: 0 0 10px;
-  border: 1px solid rgba(var(--app-outline-rgb), 0.12);
-  border-radius: 16px;
-  background: rgba(243, 244, 245, 0.78);
+  margin: 0 0 12px;
+  border: 1px solid rgba(51, 65, 85, 0.12);
+  border-left: 3px solid #2563eb;
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg, rgba(239, 246, 255, 0.96), rgba(255, 255, 255, 0.82)),
+    repeating-linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0 1px, transparent 1px 8px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
   overflow: hidden;
 }
 
@@ -3480,8 +3612,8 @@ function persistSelectedSessionId(sessionId: number | null) {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px;
-  color: var(--app-text);
+  padding: 10px 13px;
+  color: #1e3a8a;
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
@@ -3526,8 +3658,11 @@ function persistSelectedSessionId(sessionId: number | null) {
 }
 
 .hermes-markdown-content :deep(.hermes-think-block.is-done) {
-  border-color: rgba(15, 118, 110, 0.18);
-  background: rgba(236, 253, 245, 0.88);
+  border-color: rgba(15, 118, 110, 0.2);
+  border-left-color: #0f766e;
+  background:
+    linear-gradient(90deg, rgba(236, 253, 245, 0.96), rgba(255, 255, 255, 0.82)),
+    repeating-linear-gradient(135deg, rgba(15, 118, 110, 0.08) 0 1px, transparent 1px 8px);
 }
 
 .hermes-markdown-content :deep(.hermes-think-block.is-done .hermes-think-summary-label) {
@@ -3535,7 +3670,7 @@ function persistSelectedSessionId(sessionId: number | null) {
 }
 
 .hermes-markdown-content :deep(.hermes-think-summary-label) {
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 .hermes-markdown-content :deep(.hermes-think-dots) {
@@ -3576,8 +3711,18 @@ function persistSelectedSessionId(sessionId: number | null) {
 }
 
 .hermes-markdown-content :deep(.hermes-think-content) {
-  padding: 0 14px 14px;
-  border-top: 1px solid rgba(var(--app-outline-rgb), 0.08);
+  padding: 0 14px 13px 18px;
+  border-top: 1px solid rgba(51, 65, 85, 0.08);
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.hermes-markdown-content :deep(.hermes-react-process-block .hermes-think-content p) {
+  margin: 10px 0 0;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.7;
 }
 
 @keyframes hermes-think-dot-bounce {
@@ -3627,6 +3772,11 @@ function persistSelectedSessionId(sessionId: number | null) {
   min-height: 0;
   padding: 0;
   overflow: hidden;
+}
+
+:deep(.hermes-drawer.is-desktop-fullscreen .el-drawer) {
+  width: 100% !important;
+  max-width: 100%;
 }
 
 :deep(.hermes-drawer .el-textarea__inner) {

@@ -25,9 +25,9 @@ import java.util.Objects;
 import java.util.concurrent.Executor;
 
 /**
- * 为 Hermes 问答补充 Hindsight 记忆召回与会话记忆写入。
+ * 为 Hermes 问答补充 Hindsight 用户记忆召回与会话记忆写入。
  * 设计原则有两条：
- * 1. 问答前优先召回当前用户自己沉淀过的会话记忆，再补项目 / Wiki 记忆。
+ * 1. 问答前优先召回当前用户自己沉淀过的会话记忆，再补共享记忆事实。
  * 2. 问答后异步写入 Hindsight，不让记忆旁路拖慢主问答响应。
  */
 @Service
@@ -356,26 +356,6 @@ public class HermesHindsightMemoryService {
         }
         if (scope == null) {
             return List.copyOf(bankIds);
-        }
-        if (scope.wikiSpaceScope()) {
-            bankIds.add(hindsightProperties.wikiSpaceBankId(scope.spaceId()));
-            return List.copyOf(bankIds);
-        }
-
-        Long projectId = scope.projectId();
-        bankIds.add(hindsightProperties.memoryFactProjectBankId(projectId));
-        WikiSpaceService.WikiProjectGraphProjection projection = wikiSpaceService.buildProjectGraphProjection(projectId);
-        if (projection != null) {
-            projection.spaces().stream()
-                    .map(space -> space == null ? null : space.getId())
-                    .filter(Objects::nonNull)
-                    .map(hindsightProperties::wikiSpaceBankId)
-                    .forEach(bankIds::add);
-            projection.pages().stream()
-                    .map(page -> page == null || page.getSpace() == null ? null : page.getSpace().getId())
-                    .filter(Objects::nonNull)
-                    .map(hindsightProperties::wikiSpaceBankId)
-                    .forEach(bankIds::add);
         }
         if (hindsightProperties.hasMemoryFactSharedBankId()) {
             bankIds.add(hindsightProperties.memoryFactSharedBankId());

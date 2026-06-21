@@ -556,8 +556,7 @@ public class HermesContextAssembler {
     private boolean isProjectScene(String routeName) {
         return "projects".equals(routeName)
                 || "project-iterations".equals(routeName)
-                || "project-knowledge-graph".equals(routeName)
-                || "project-memory-fact-graph".equals(routeName);
+                || "project-knowledge-graph".equals(routeName);
     }
 
     private String normalizeRouteName(String routeName) {

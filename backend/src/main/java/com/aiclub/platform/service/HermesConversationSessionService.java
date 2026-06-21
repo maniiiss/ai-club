@@ -295,6 +295,22 @@ public class HermesConversationSessionService {
     }
 
     /**
+     * 仅刷新 Hermes 最新展示态，不追加消息。
+     * 业务意图：流式连接断开但工具已经写入待确认动作时，前端刷新会话仍能看到确认卡片。
+     */
+    @Transactional
+    public HermesConversationDetail recordLatestDisplayState(HermesConversationSessionEntity session,
+                                                             HermesConversationState latestState,
+                                                             HermesDebugInfo debugInfo) {
+        if (session.isArchived()) {
+            throw new IllegalArgumentException("已归档会话不能继续更新展示态，请先恢复会话");
+        }
+        session.setLatestDisplayStateJson(writeLatestDisplayState(buildLatestDisplayState(latestState, debugInfo)));
+        HermesConversationSessionEntity saved = hermesConversationSessionRepository.save(session);
+        return buildDetail(saved);
+    }
+
+    /**
      * 将会话实体转换为列表摘要。
      */
     private HermesConversationSessionSummary toSummary(HermesConversationSessionEntity entity) {

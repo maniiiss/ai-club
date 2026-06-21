@@ -23,6 +23,7 @@ import com.aiclub.platform.repository.WikiPageSyncTaskRepository;
 import com.aiclub.platform.repository.WikiPageVersionRepository;
 import com.aiclub.platform.security.AuthContext;
 import com.aiclub.platform.security.AuthContextHolder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -46,7 +47,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Wiki 页面核心服务，统一承载页面 CRUD、版本历史、页面级权限和 Hindsight 同步。
+ * Wiki 页面核心服务，统一承载页面 CRUD、版本历史、页面级权限和知识索引同步。
  */
 @Service
 @Transactional(readOnly = true)
@@ -67,10 +68,10 @@ public class WikiPageService {
     /** 页面编辑授权。 */
     private static final String ACCESS_EDIT = "EDIT";
 
-    /** 页面写入或更新 Hindsight 的同步操作。 */
+    /** 页面写入或更新知识索引的同步操作。 */
     private static final String SYNC_OPERATION_RETAIN = "RETAIN";
 
-    /** 页面从 Hindsight 删除的同步操作。 */
+    /** 页面从知识索引删除的同步操作。 */
     private static final String SYNC_OPERATION_DELETE = "DELETE";
 
     /** 等待同步的任务状态。 */
@@ -102,7 +103,9 @@ public class WikiPageService {
     private final WikiPageSyncTaskRepository wikiPageSyncTaskRepository;
     private final ProjectDataPermissionService projectDataPermissionService;
     private final HindsightClientService hindsightClientService;
+    private final WikiKnowledgeSearchService wikiKnowledgeSearchService;
 
+    @Autowired
     public WikiPageService(ProjectRepository projectRepository,
                            UserRepository userRepository,
                            WikiPageRepository wikiPageRepository,
@@ -110,7 +113,8 @@ public class WikiPageService {
                            WikiPageAccessRepository wikiPageAccessRepository,
                            WikiPageSyncTaskRepository wikiPageSyncTaskRepository,
                            ProjectDataPermissionService projectDataPermissionService,
-                           HindsightClientService hindsightClientService) {
+                           HindsightClientService hindsightClientService,
+                           WikiKnowledgeSearchService wikiKnowledgeSearchService) {
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
         this.wikiPageRepository = wikiPageRepository;
@@ -119,6 +123,31 @@ public class WikiPageService {
         this.wikiPageSyncTaskRepository = wikiPageSyncTaskRepository;
         this.projectDataPermissionService = projectDataPermissionService;
         this.hindsightClientService = hindsightClientService;
+        this.wikiKnowledgeSearchService = wikiKnowledgeSearchService;
+    }
+
+    /**
+     * 兼容旧测试构造方式。
+     */
+    public WikiPageService(ProjectRepository projectRepository,
+                           UserRepository userRepository,
+                           WikiPageRepository wikiPageRepository,
+                           WikiPageVersionRepository wikiPageVersionRepository,
+                           WikiPageAccessRepository wikiPageAccessRepository,
+                           WikiPageSyncTaskRepository wikiPageSyncTaskRepository,
+                           ProjectDataPermissionService projectDataPermissionService,
+                           HindsightClientService hindsightClientService) {
+        this(
+                projectRepository,
+                userRepository,
+                wikiPageRepository,
+                wikiPageVersionRepository,
+                wikiPageAccessRepository,
+                wikiPageSyncTaskRepository,
+                projectDataPermissionService,
+                hindsightClientService,
+                null
+        );
     }
 
     /**
@@ -154,7 +183,7 @@ public class WikiPageService {
     }
 
     /**
-     * 当项目 Wiki 页面同步失败时，允许页面维护者手动重新排队 retain 任务。
+     * 当项目 Wiki 页面同步失败时，允许页面维护者手动重新排队知识索引任务。
      * 这里仍复用既有调度器消费，避免同步调用把页面操作阻塞到外部依赖完成。
      */
     @Transactional
@@ -169,7 +198,7 @@ public class WikiPageService {
     }
 
     /**
-     * 创建 Wiki 页面，并立即生成 v1 版本和 Hindsight 同步任务。
+     * 创建 Wiki 页面，并立即生成 v1 版本和知识索引同步任务。
      */
     @Transactional
     public WikiPageDetail createPage(Long projectId, CreateWikiPageRequest request) {
@@ -302,18 +331,27 @@ public class WikiPageService {
     }
 
     /**
-     * 项目内语义搜索，优先使用 Hindsight recall，失败时自动回退关键词搜索。
+     * 项目内语义搜索，优先使用知识索引召回，失败时自动回退关键词搜索。
      */
     public List<WikiSemanticSearchResult> semanticSearchPages(Long projectId, String query) {
         requireProject(projectId);
         ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.requireCurrentScope();
         try {
-            List<HindsightClientService.WikiRecallHit> hits = hindsightClientService.recallWikiDocuments(projectId, query, 12);
-            Map<Long, HindsightClientService.WikiRecallHit> hitByPageId = new LinkedHashMap<>();
-            for (HindsightClientService.WikiRecallHit hit : hits) {
-                Long pageId = hit.pageId() == null ? parsePageIdFromDocumentId(hit.documentId()) : hit.pageId();
-                if (pageId != null) {
-                    hitByPageId.putIfAbsent(pageId, hit);
+            List<WikiPageEntity> keywordCandidates = wikiPageRepository.findAllByProject_IdOrderByUpdatedAtDescIdDesc(projectId, PageRequest.of(0, 30)).stream()
+                    .filter(page -> canViewPage(page, scope))
+                    .filter(page -> defaultString(query).isBlank()
+                            || containsAny(page.getTitle(), defaultString(query).toLowerCase(Locale.ROOT))
+                            || containsAny(page.getSlug(), defaultString(query).toLowerCase(Locale.ROOT))
+                            || containsAny(page.getContent(), defaultString(query).toLowerCase(Locale.ROOT)))
+                    .limit(12)
+                    .toList();
+            List<WikiKnowledgeSearchService.WikiRankedPageHit> hits = wikiKnowledgeSearchService == null
+                    ? List.of()
+                    : wikiKnowledgeSearchService.hybridSearchProjectPages(projectId, query, keywordCandidates, 12);
+            Map<Long, WikiKnowledgeSearchService.WikiRankedPageHit> hitByPageId = new LinkedHashMap<>();
+            for (WikiKnowledgeSearchService.WikiRankedPageHit hit : hits) {
+                if (hit.pageId() != null) {
+                    hitByPageId.putIfAbsent(hit.pageId(), hit);
                 }
             }
             if (hitByPageId.isEmpty()) {
@@ -324,7 +362,7 @@ public class WikiPageService {
                     .filter(page -> canViewPage(page, scope))
                     .sorted(Comparator.comparingInt(page -> pageIds.indexOf(page.getId())))
                     .map(page -> {
-                        HindsightClientService.WikiRecallHit hit = hitByPageId.get(page.getId());
+                        WikiKnowledgeSearchService.WikiRankedPageHit hit = hitByPageId.get(page.getId());
                         return new WikiSemanticSearchResult(toSummary(page, scope), hit.score(), abbreviate(firstText(hit.snippet(), page.getContent()), SNIPPET_LENGTH));
                     })
                     .toList();
@@ -373,7 +411,7 @@ public class WikiPageService {
     }
 
     /**
-     * 调度并执行一批 Hindsight 同步任务。
+     * 调度并执行一批 Wiki 知识索引同步任务。
      */
     @Transactional
     public void processPendingSyncTasks() {
@@ -408,20 +446,17 @@ public class WikiPageService {
         wikiPageSyncTaskRepository.save(task);
         try {
             if (SYNC_OPERATION_DELETE.equalsIgnoreCase(task.getOperation())) {
-                hindsightClientService.deleteWikiDocument(task.getProject().getId(), task.getDocumentId());
+                if (wikiKnowledgeSearchService != null) {
+                    wikiKnowledgeSearchService.deleteProjectPage(task.getProject().getId(), parsePageIdFromDocumentId(task.getDocumentId()));
+                }
             } else {
                 WikiPageEntity page = task.getPage();
                 if (page == null) {
-                    throw new IllegalStateException("Wiki 页面不存在，无法同步到 Hindsight");
+                    throw new IllegalStateException("Wiki 页面不存在，无法同步到 Wiki 知识索引");
                 }
-                hindsightClientService.retainWikiDocument(
-                        page.getProject().getId(),
-                        task.getDocumentId(),
-                        page.getTitle(),
-                        buildHindsightContent(page),
-                        buildHindsightTags(page),
-                        buildHindsightMetadata(page)
-                );
+                if (wikiKnowledgeSearchService != null) {
+                    wikiKnowledgeSearchService.indexProjectPage(page);
+                }
                 page.setSyncStatus(SYNC_STATUS_SYNCED);
                 page.setLastSyncedAt(LocalDateTime.now());
                 page.setLastSyncError("");
@@ -771,34 +806,6 @@ public class WikiPageService {
             case VISIBILITY_PUBLIC, VISIBILITY_PROJECT_MEMBERS, VISIBILITY_SPECIFIC_USERS -> scope;
             default -> throw new IllegalArgumentException("不支持的 Wiki 可见范围: " + value);
         };
-    }
-
-    private String buildHindsightContent(WikiPageEntity page) {
-        return "标题：" + page.getTitle() + "\n"
-                + "项目：" + page.getProject().getName() + "\n"
-                + "路径：" + buildBreadcrumb(page) + "\n"
-                + "Slug：" + page.getSlug() + "\n"
-                + "可见范围：" + page.getVisibilityScope() + "\n\n"
-                + page.getContent();
-    }
-
-    private List<String> buildHindsightTags(WikiPageEntity page) {
-        return List.of(
-                "wiki",
-                "source:wiki",
-                "project:" + page.getProject().getId(),
-                "visibility:" + page.getVisibilityScope()
-        );
-    }
-
-    private Map<String, Object> buildHindsightMetadata(WikiPageEntity page) {
-        return Map.of(
-                "pageId", page.getId(),
-                "projectId", page.getProject().getId(),
-                "slug", page.getSlug(),
-                "title", page.getTitle(),
-                "visibilityScope", page.getVisibilityScope()
-        );
     }
 
     private String buildBreadcrumb(WikiPageEntity page) {

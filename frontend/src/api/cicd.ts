@@ -182,6 +182,25 @@ export const listPipelineBindingRuntimeInstances = async (id: number) => {
   return data.data
 }
 
+export const listProjectRuntimeInstances = async (projectId: number) => {
+  const { data } = await http.get<ApiResponse<ProjectRuntimeInstanceItem[]>>(`/api/projects/${projectId}/runtime-instances`)
+  return data.data
+}
+
+export const createProjectRuntimeInstance = async (projectId: number, payload: ProjectRuntimeInstancePayload) => {
+  const { data } = await http.post<ApiResponse<ProjectRuntimeInstanceItem>>(`/api/projects/${projectId}/runtime-instances`, payload)
+  return data.data
+}
+
+export const updateProjectRuntimeInstance = async (projectId: number, id: number, payload: ProjectRuntimeInstancePayload) => {
+  const { data } = await http.put<ApiResponse<ProjectRuntimeInstanceItem>>(`/api/projects/${projectId}/runtime-instances/${id}`, payload)
+  return data.data
+}
+
+export const deleteProjectRuntimeInstance = async (projectId: number, id: number) => {
+  await http.delete<ApiResponse<null>>(`/api/projects/${projectId}/runtime-instances/${id}`)
+}
+
 export const createAiClubPipeline = async (payload: AiClubPipelinePayload) => {
   const { data } = await http.post<ApiResponse<AiClubPipelineItem>>('/api/cicd/pipelines', payload)
   return data.data

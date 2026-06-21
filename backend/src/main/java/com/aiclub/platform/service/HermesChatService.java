@@ -61,6 +61,7 @@ public class HermesChatService {
     private final HermesChatAuditRepository hermesChatAuditRepository;
     private final HermesConversationSessionService hermesConversationSessionService;
     private final HermesAttachmentService hermesAttachmentService;
+    private final WikiKnowledgeSearchService wikiKnowledgeSearchService;
     private final ObjectMapper objectMapper;
 
     @Autowired
@@ -78,6 +79,7 @@ public class HermesChatService {
                              HermesChatAuditRepository hermesChatAuditRepository,
                              HermesConversationSessionService hermesConversationSessionService,
                              HermesAttachmentService hermesAttachmentService,
+                             WikiKnowledgeSearchService wikiKnowledgeSearchService,
                              ObjectMapper objectMapper) {
         this.authService = authService;
         this.userRepository = userRepository;
@@ -93,6 +95,7 @@ public class HermesChatService {
         this.hermesChatAuditRepository = hermesChatAuditRepository;
         this.hermesConversationSessionService = hermesConversationSessionService;
         this.hermesAttachmentService = hermesAttachmentService;
+        this.wikiKnowledgeSearchService = wikiKnowledgeSearchService;
         this.objectMapper = objectMapper;
     }
 
@@ -115,7 +118,7 @@ public class HermesChatService {
                              ObjectMapper objectMapper) {
         this(authService, userRepository, hermesProperties, hermesContextAssembler, hermesPromptBuilder, hermesGatewayService,
                 hermesHindsightMemoryService, hermesToolOrchestrator, hermesActionFallbackService, hermesConversationStateStore, hermesMcpSessionTokenService,
-                hermesChatAuditRepository, hermesConversationSessionService, null, objectMapper);
+                hermesChatAuditRepository, hermesConversationSessionService, null, null, objectMapper);
     }
 
     /**
@@ -163,7 +166,7 @@ public class HermesChatService {
                             try {
                                 writeEvent(outputStream, "delta", new HermesStreamDelta(delta));
                             } catch (IOException exception) {
-                                throw new IllegalStateException("Hermes 文本分片发送失败", exception);
+                                throw new HermesClientStreamDisconnectedException("Hermes 客户端流式连接已断开", exception);
                             }
                         }
                 );
@@ -195,6 +198,17 @@ public class HermesChatService {
                         finalizedConversation.state()
                 );
                 finishSuccess(outputStream, audit, gatewayResult, finalizedConversation, debugInfo, attachments);
+            } catch (HermesClientStreamDisconnectedException exception) {
+                log.info("Hermes 流式响应写出时客户端已断开，停止当前输出：{}", resolveErrorMessage(exception));
+                HermesConversationState latestState = loadLatestState(preparedConversation.state());
+                HermesDebugInfo debugInfo = buildDebugInfo(latestState, "");
+                if (shouldPersistDisplayStateOnDisconnect(latestState)) {
+                    hermesConversationSessionService.recordLatestDisplayState(session, latestState, debugInfo);
+                }
+                audit.setStatus("CLIENT_DISCONNECTED");
+                audit.setErrorMessage(abbreviate(resolveErrorMessage(exception), 1000));
+                audit.setFinishedAt(LocalDateTime.now());
+                hermesChatAuditRepository.save(audit);
             } catch (Exception exception) {
                 HermesConversationState latestState = loadLatestState(preparedConversation.state());
                 HermesDebugInfo debugInfo = buildDebugInfo(latestState, "");
@@ -359,10 +373,10 @@ public class HermesChatService {
                 existingState == null ? List.of() : existingState.transcript(),
                 context.references(),
                 context.suggestions(),
-                existingState == null ? List.of() : existingState.actions(),
+                resolvePreparedActions(existingState, request),
                 resolvePreparedSelectionCards(existingState, request),
                 groundingState,
-                existingState == null ? List.of() : existingState.toolExecutions(),
+                List.of(),
                 existingState == null ? "" : existingState.lastErrorMessage()
         );
         hermesConversationStateStore.save(preparedState);
@@ -388,15 +402,21 @@ public class HermesChatService {
     }
 
     /**
-     * 用户已经在候选卡片中完成确认后，本轮展示态不应继续回显上一轮的待确认卡片。
-     * 否则前端会在 selection 请求发出后被旧 meta/done 事件重新刷回“需要确认”区块。
+     * 每次用户主动发送新问题时，上一轮待确认动作都应失效。
+     * 否则前端刚清空确认区，后端首包 meta 又会把旧动作卡片刷回来，造成“确认不响应”的错觉。
+     */
+    private List<com.aiclub.platform.dto.HermesActionSummary> resolvePreparedActions(HermesConversationState existingState,
+                                                                                      HermesChatRequest request) {
+        return List.of();
+    }
+
+    /**
+     * 用户主动发送新问题或已经在候选卡片中完成确认后，本轮展示态不应继续回显上一轮的待确认卡片。
+     * 否则前端会被旧 meta/done 事件重新刷回“需要确认”区块。
      */
     private List<com.aiclub.platform.dto.HermesSelectionCard> resolvePreparedSelectionCards(HermesConversationState existingState,
                                                                                              HermesChatRequest request) {
-        if (request != null && request.selection() != null) {
-            return List.of();
-        }
-        return existingState == null ? List.of() : existingState.selectionCards();
+        return List.of();
     }
 
     /**
@@ -510,20 +530,38 @@ public class HermesChatService {
     }
 
     /**
-     * 记忆召回属于增强能力，失败时只降级为空，不能反向拖垮主问答。
+     * 记忆与 Wiki 知识证据召回都属于增强能力，失败时只降级为空，不能反向拖垮主问答。
      */
     private String resolveMemoryContextMarkdown(CurrentUserInfo currentUser,
                                                 HermesContextAssembler.HermesConversationContext context,
                                                 HermesChatRequest request) {
-        if (hermesHindsightMemoryService == null) {
-            return "";
+        String memoryMarkdown = "";
+        if (hermesHindsightMemoryService != null) {
+            try {
+                memoryMarkdown = defaultString(hermesHindsightMemoryService.buildMemoryContextMarkdown(currentUser, context, request));
+            } catch (RuntimeException exception) {
+                log.warn("Hermes 组装 Hindsight 记忆上下文失败：{}", resolveErrorMessage(exception));
+            }
         }
+        String wikiEvidenceMarkdown = "";
         try {
-            return defaultString(hermesHindsightMemoryService.buildMemoryContextMarkdown(currentUser, context, request));
+            if (wikiKnowledgeSearchService != null) {
+                wikiEvidenceMarkdown = defaultString(wikiKnowledgeSearchService.buildWikiEvidenceMarkdown(currentUser, context, request));
+            }
         } catch (RuntimeException exception) {
-            log.warn("Hermes 组装 Hindsight 记忆上下文失败：{}", resolveErrorMessage(exception));
-            return "";
+            log.warn("Hermes 组装 Wiki 知识证据失败：{}", resolveErrorMessage(exception));
         }
+        StringBuilder builder = new StringBuilder();
+        if (hasText(memoryMarkdown)) {
+            builder.append("### Hindsight 记忆\n").append(memoryMarkdown.trim());
+        }
+        if (hasText(wikiEvidenceMarkdown)) {
+            if (!builder.isEmpty()) {
+                builder.append("\n\n");
+            }
+            builder.append("### Wiki 知识证据\n").append(wikiEvidenceMarkdown.trim());
+        }
+        return builder.toString().trim();
     }
 
     /**
@@ -639,8 +677,10 @@ public class HermesChatService {
                     debugInfo,
                     toAttachmentSummaries(attachments)
             ));
+        } catch (HermesClientStreamDisconnectedException exception) {
+            throw exception;
         } catch (IOException exception) {
-            throw new IllegalStateException("Hermes 完成事件发送失败", exception);
+            throw new HermesClientStreamDisconnectedException("Hermes 完成事件发送时客户端已断开", exception);
         }
     }
 
@@ -656,6 +696,8 @@ public class HermesChatService {
 
         try {
             writeEvent(outputStream, "error", new HermesStreamError(resolveErrorMessage(exception)));
+        } catch (HermesClientStreamDisconnectedException sendException) {
+            throw sendException;
         } catch (IOException sendException) {
             throw new IllegalStateException("Hermes 错误事件发送失败", sendException);
         }
@@ -674,8 +716,15 @@ public class HermesChatService {
     private void writeEvent(OutputStream outputStream, String eventName, Object payload) throws IOException {
         String json = objectMapper.writeValueAsString(payload);
         String ssePayload = "event:" + eventName + "\n" + "data:" + json + "\n\n";
-        outputStream.write(ssePayload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        outputStream.flush();
+        try {
+            outputStream.write(ssePayload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            outputStream.flush();
+        } catch (IOException exception) {
+            if (isClientStreamDisconnect(exception)) {
+                throw new HermesClientStreamDisconnectedException("Hermes 客户端流式连接已断开", exception);
+            }
+            throw exception;
+        }
     }
 
     private List<com.aiclub.platform.dto.HermesAttachmentSummary> toAttachmentSummaries(List<HermesAttachmentService.PreparedAttachment> attachments) {
@@ -808,6 +857,37 @@ public class HermesChatService {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    /**
+     * 客户端断开时只在已有工具结果或确认卡片的情况下落库展示态，避免普通生成中断污染会话列表。
+     */
+    private boolean shouldPersistDisplayStateOnDisconnect(HermesConversationState state) {
+        return state != null
+                && ((state.actions() != null && !state.actions().isEmpty())
+                || (state.selectionCards() != null && !state.selectionCards().isEmpty())
+                || (state.toolExecutions() != null && !state.toolExecutions().isEmpty()));
+    }
+
+    private boolean isClientStreamDisconnect(IOException exception) {
+        if (exception == null) {
+            return false;
+        }
+        String message = defaultString(exception.getMessage()).toLowerCase(java.util.Locale.ROOT);
+        return message.contains("broken pipe")
+                || message.contains("connection reset")
+                || message.contains("clientabort")
+                || message.contains("stream is closed")
+                || message.contains("远程主机强迫关闭")
+                || message.contains("连接已关闭")
+                || message.contains("客户端")
+                || message.contains("断开");
+    }
+
+    private static class HermesClientStreamDisconnectedException extends RuntimeException {
+        HermesClientStreamDisconnectedException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 
     /**

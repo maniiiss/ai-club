@@ -26,8 +26,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 验证项目 Wiki retain 时会补齐统一项目标签与来源标签，
- * 避免后续记忆事实图按项目过滤时漏掉平台可控的 Wiki 记忆。
+ * 验证项目 Wiki 同步任务会切到独立知识索引链路，
+ * 避免继续把页面内容 retain 到 Hindsight 记忆库。
  */
 @ExtendWith(MockitoExtension.class)
 class WikiPageServiceMemoryTagTests {
@@ -56,8 +56,11 @@ class WikiPageServiceMemoryTagTests {
     @Mock
     private HindsightClientService hindsightClientService;
 
+    @Mock
+    private WikiKnowledgeSearchService wikiKnowledgeSearchService;
+
     @Test
-    void shouldAttachProjectAndSourceTagsWhenRetainingWikiPage() {
+    void shouldIndexProjectPageIntoKnowledgeStore() {
         WikiPageService wikiPageService = new WikiPageService(
                 projectRepository,
                 userRepository,
@@ -66,7 +69,8 @@ class WikiPageServiceMemoryTagTests {
                 wikiPageAccessRepository,
                 wikiPageSyncTaskRepository,
                 projectDataPermissionService,
-                hindsightClientService
+                hindsightClientService,
+                wikiKnowledgeSearchService
         );
         ProjectEntity project = new ProjectEntity();
         project.setId(12L);
@@ -102,16 +106,7 @@ class WikiPageServiceMemoryTagTests {
 
         wikiPageService.processPendingSyncTasks();
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<String>> tagsCaptor = ArgumentCaptor.forClass((Class) List.class);
-        verify(hindsightClientService).retainWikiDocument(
-                org.mockito.ArgumentMatchers.eq(12L),
-                org.mockito.ArgumentMatchers.eq("wiki-page:101"),
-                org.mockito.ArgumentMatchers.eq("发布说明"),
-                org.mockito.ArgumentMatchers.anyString(),
-                tagsCaptor.capture(),
-                org.mockito.ArgumentMatchers.anyMap()
-        );
-        assertThat(tagsCaptor.getValue()).contains("wiki", "source:wiki", "project:12");
+        verify(wikiKnowledgeSearchService).indexProjectPage(page);
+        verify(hindsightClientService, org.mockito.Mockito.never()).retainWikiDocument(any(), any(), any(), any(), any(), any());
     }
 }

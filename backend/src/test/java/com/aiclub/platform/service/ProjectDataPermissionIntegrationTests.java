@@ -94,9 +94,6 @@ class ProjectDataPermissionIntegrationTests {
     private KnowledgeGraphService knowledgeGraphService;
 
     @Autowired
-    private MemoryFactGraphService memoryFactGraphService;
-
-    @Autowired
     private ProjectRepository projectRepository;
 
     @Autowired
@@ -632,14 +629,6 @@ class ProjectDataPermissionIntegrationTests {
                 .isInstanceOf(ForbiddenException.class);
         assertThatThrownBy(() -> knowledgeGraphService.rebuildProjectGraph(hiddenProject.getId()))
                 .isInstanceOf(ForbiddenException.class);
-        assertThatThrownBy(() -> memoryFactGraphService.getProjectGraph(hiddenProject.getId()))
-                .isInstanceOf(ForbiddenException.class);
-        assertThatThrownBy(() -> memoryFactGraphService.getFacts(hiddenProject.getId(), null, null, "隐藏项目", 5))
-                .isInstanceOf(ForbiddenException.class);
-        assertThatThrownBy(() -> memoryFactGraphService.getEntityDetail(
-                hiddenProject.getId(),
-                "git-ai-club:wiki:project:" + hiddenProject.getId() + "::entity-hidden"
-        )).isInstanceOf(ForbiddenException.class);
     }
 
     private UserEntity createUser(String username, String nickname) {

@@ -768,7 +768,7 @@ const primaryMenuSeeds: MenuSeed[] = [
   { permission: 'dashboard:view', fallbackPath: '/dashboard', fallbackLabel: '首页看板', shortLabel: '首页', fallbackIcon: Odometer, matchNames: ['dashboard'] },
   { permission: 'project:view', fallbackPath: '/projects', fallbackLabel: '项目管理', shortLabel: '项目', fallbackIcon: FolderOpened, matchNames: ['projects', 'project-iterations'] },
   { permission: 'api:view', fallbackPath: '/apis', fallbackLabel: 'API管理', shortLabel: 'API', fallbackIcon: Connection, matchNames: ['api-groups', 'api-project-detail'] },
-  { permission: 'wiki:view', fallbackPath: '/wiki', fallbackLabel: 'Wiki 中心', shortLabel: 'Wiki', fallbackIcon: Document, matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page', 'wiki-space-memory-fact-graph', 'project-memory-fact-graph'] },
+  { permission: 'wiki:view', fallbackPath: '/wiki', fallbackLabel: 'Wiki 中心', shortLabel: 'Wiki', fallbackIcon: Document, matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page'] },
   { permission: 'agent:view', fallbackPath: '/agents', fallbackLabel: '智能体管理', shortLabel: '智能体', fallbackIcon: Connection, matchNames: ['agents'] },
   { permission: 'task:view', fallbackPath: '/tasks', fallbackLabel: '执行中心', shortLabel: '执行', fallbackIcon: Tickets, matchNames: ['tasks', 'execution-task-detail'] },
   { permission: 'self-upgrade:view', fallbackPath: '/self-upgrade', fallbackLabel: '自升级中心', shortLabel: '自升级', fallbackIcon: Connection, matchNames: ['self-upgrade'] },
@@ -916,7 +916,7 @@ const projectWorkspaceMenus = computed<MenuItem[]>(() => {
       shortLabel: 'Wiki',
       permission: 'wiki:view',
       icon: Document,
-      matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page', 'wiki-space-memory-fact-graph']
+      matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page']
     },
     {
       path: `/observability/projects/${currentProjectId.value}`,
@@ -936,12 +936,10 @@ const hermesQuickPrompts = computed(() => {
     'project-iterations': hermesIterationId.value
       ? ['帮我总结当前迭代发版内容', '当前迭代修复了多少缺陷', '当前迭代开发了哪些需求']
       : ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个任务为什么延期了'],
-    'project-memory-fact-graph': ['这个项目里最近形成了哪些稳定事实', '哪些实体和当前项目关系最紧密', '从这些事实里能看出什么风险或机会'],
     'api-groups': ['哪些项目还没初始化 API 工作台', '帮我找某个项目的 API GROUP', '最近哪个项目接口最需要同步'],
     'api-project-detail': ['帮我总结当前项目的接口资产', '这个项目有哪些接口同步风险', '当前 API 工作台下一步该检查什么'],
     'wiki-home': ['有哪些空间与当前项目相关', '帮我找某个项目关联的知识目录', '当前最值得看的空间是哪个'],
     'wiki-space': ['这个空间最近有哪些知识更新', '帮我梳理这个空间里的重点内容', '这个空间目前最值得关注的页面是什么'],
-    'wiki-space-memory-fact-graph': ['这个空间里最近形成了哪些稳定事实', '哪些实体和当前空间关系最紧密', '从这些事实里能看出什么风险或机会'],
     'wiki-space-page': ['帮我总结当前 Wiki 页面', '这个页面和哪些知识有关', '基于 Wiki 内容下一步应该做什么'],
     tasks: ['最近有哪些执行任务失败了', '哪些智能体任务还在运行', '帮我总结执行中心的风险'],
     'self-upgrade': ['最近有哪些新建议值得优先处理', '夜间巡检都发现了什么问题', '哪些整改工作项最值得先做'],

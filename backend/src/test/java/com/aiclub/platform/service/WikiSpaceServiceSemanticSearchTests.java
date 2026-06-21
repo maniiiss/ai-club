@@ -2,6 +2,7 @@ package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.domain.model.WikiDirectoryEntity;
+import com.aiclub.platform.domain.model.WikiSpaceMemberEntity;
 import com.aiclub.platform.domain.model.WikiPageV2Entity;
 import com.aiclub.platform.domain.model.WikiSpaceEntity;
 import com.aiclub.platform.dto.WikiSpaceSearchResult;
@@ -29,11 +30,13 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 /**
- * 覆盖空间 Wiki 召回搜索在 score 为空时的顺序保持，
- * 避免数据库批量查询顺序覆盖 Hindsight 原始 rerank 顺序。
+ * 覆盖空间 Wiki 知识检索在 score 为空时的顺序保持，
+ * 避免数据库批量查询顺序覆盖知识检索服务已经排好的结果顺序。
  */
 @ExtendWith(MockitoExtension.class)
 class WikiSpaceServiceSemanticSearchTests {
@@ -74,6 +77,9 @@ class WikiSpaceServiceSemanticSearchTests {
     @Mock
     private DocumentMarkdownService documentMarkdownService;
 
+    @Mock
+    private WikiKnowledgeSearchService wikiKnowledgeSearchService;
+
     private WikiSpaceService wikiSpaceService;
 
     @BeforeEach
@@ -90,7 +96,8 @@ class WikiSpaceServiceSemanticSearchTests {
                 projectDataPermissionService,
                 hindsightClientService,
                 documentAssetService,
-                documentMarkdownService
+                documentMarkdownService,
+                wikiKnowledgeSearchService
         );
         AuthContextHolder.set(new AuthContext(
                 1L,
@@ -107,7 +114,7 @@ class WikiSpaceServiceSemanticSearchTests {
     }
 
     /**
-     * Hindsight 命中结果没有数值 score 时，仍应按 recall 返回的原始顺序输出。
+     * 知识检索命中结果没有数值 score 时，仍应按检索服务返回的原始顺序输出。
      */
     @Test
     void shouldKeepRecallOrderWhenScoresAreNull() {
@@ -131,11 +138,12 @@ class WikiSpaceServiceSemanticSearchTests {
 
         when(userRepository.findWithDetailsById(1L)).thenReturn(Optional.of(user));
         when(wikiSpaceRepository.findById(10L)).thenReturn(Optional.of(space));
-        when(hindsightClientService.recallWikiSpaceDocuments(10L, "证书提醒", 8)).thenReturn(List.of(
-                new HindsightClientService.WikiRecallHit("wiki-space-page-102", 102L, "#B-第二页", "第二页摘要", null),
-                new HindsightClientService.WikiRecallHit("wiki-space-page-101", 101L, "#A-第一页", "第一页摘要", null)
+        when(wikiPageV2Repository.findAllBySpace_IdOrderByUpdatedAtDescIdDesc(10L)).thenReturn(List.of(firstPage, secondPage));
+        when(wikiKnowledgeSearchService.hybridSearchSpacePages(eq(10L), eq(null), eq("证书提醒"), anyList(), eq(8))).thenReturn(List.of(
+                new WikiKnowledgeSearchService.WikiRankedPageHit(102L, "第二页摘要", null),
+                new WikiKnowledgeSearchService.WikiRankedPageHit(101L, "第一页摘要", null)
         ));
-        when(wikiPageV2Repository.findAllByIdIn(List.of(102L, 101L))).thenReturn(List.of(firstPage, secondPage));
+        when(wikiPageV2Repository.findAllByIdIn(List.of(102L, 101L))).thenReturn(List.of(secondPage, firstPage));
 
         List<WikiSpaceSearchResult> results = wikiSpaceService.semanticSearchPages("证书提醒", 10L, null);
 
@@ -154,7 +162,7 @@ class WikiSpaceServiceSemanticSearchTests {
         page.setDirectory(directory);
         page.setTitle(title);
         page.setSlug("page-" + id);
-        page.setContent(title + " 正文");
+        page.setContent(title + " 正文，包含证书提醒");
         page.setCurrentVersionNumber(1);
         page.setSyncStatus("SYNCED");
         page.setUpdatedAt(LocalDateTime.parse(updatedAtIso));
