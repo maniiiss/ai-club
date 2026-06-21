@@ -5,6 +5,8 @@
 import { http, unwrap, cleanParams } from './http'
 import type { ApiResponse } from '@/src/types/api'
 import type {
+  DocumentAssetItem,
+  DocumentMarkdownResultItem,
   KnowledgeGraphItem,
   MemoryFactFactsResponseItem,
   MemoryFactGraphItem,
@@ -12,6 +14,7 @@ import type {
   WikiSpaceItem,
   WikiSpacePageDetailItem,
   WikiSpacePageSummaryItem,
+  WikiSpacePageVersionItem,
   WikiDirectoryTreeNodeItem,
 } from '@/src/types/knowledge'
 
@@ -95,6 +98,55 @@ export const searchWikiPages = async (query?: {
   const res = await http.get<ApiResponse<WikiSpacePageSummaryItem[]>>('/api/wiki/search', {
     params: query ? cleanParams(query) : undefined,
   })
+  return unwrap(res)
+}
+
+/* ── Wiki 版本历史 ── */
+
+/** 查询页面的版本历史列表。 */
+export const listWikiPageVersions = async (spaceId: number, pageId: number): Promise<WikiSpacePageVersionItem[]> => {
+  const res = await http.get<ApiResponse<WikiSpacePageVersionItem[]>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}/versions`)
+  return unwrap(res)
+}
+
+/** 恢复到指定版本，返回恢复后的页面详情。 */
+export const restoreWikiPageVersion = async (spaceId: number, pageId: number, versionNumber: number): Promise<WikiSpacePageDetailItem> => {
+  const res = await http.post<ApiResponse<WikiSpacePageDetailItem>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}/restore/${versionNumber}`)
+  return unwrap(res)
+}
+
+/* ── Wiki 文档导入 ── */
+
+/** 上传文档资产（PDF/DOCX/PPTX/XLSX），返回文档资产摘要。 */
+export const uploadDocumentAsset = async (file: File, directory?: string): Promise<DocumentAssetItem> => {
+  const formData = new FormData()
+  formData.append('file', file)
+  if (directory) {
+    formData.append('directory', directory)
+  }
+  const res = await http.post<ApiResponse<DocumentAssetItem>>('/api/common/files/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return unwrap(res)
+}
+
+/** 预览导入：后端将文档转换为 Markdown 并返回预览结果。 */
+export const previewWikiImport = async (spaceId: number, assetId: number): Promise<DocumentMarkdownResultItem> => {
+  const res = await http.post<ApiResponse<DocumentMarkdownResultItem>>(`/api/wiki/spaces/${spaceId}/imports/preview`, { assetId })
+  return unwrap(res)
+}
+
+/** 从导入的文档资产创建 Wiki 页面。 */
+export interface WikiImportPagePayload {
+  assetId: number
+  directoryId: number
+  parentPageId?: number | null
+  title: string
+  content?: string
+}
+
+export const importWikiPage = async (spaceId: number, payload: WikiImportPagePayload): Promise<WikiSpacePageDetailItem> => {
+  const res = await http.post<ApiResponse<WikiSpacePageDetailItem>>(`/api/wiki/spaces/${spaceId}/pages/import`, payload)
   return unwrap(res)
 }
 

@@ -15,6 +15,11 @@ public interface RoleRepository extends JpaRepository<RoleEntity, Long>, JpaSpec
 
     boolean existsByCodeIgnoreCaseAndIdNot(String code, Long id);
 
+    /**
+     * 按角色编码查找角色。
+     */
+    Optional<RoleEntity> findByCode(String code);
+
     List<RoleEntity> findAllByOrderByIdAsc();
 
     @Query("select distinct r from RoleEntity r left join fetch r.permissions where r.id = :id")

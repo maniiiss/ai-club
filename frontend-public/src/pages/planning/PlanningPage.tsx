@@ -2,7 +2,7 @@
  * 计划模块页面。
  * 功能：迭代 CRUD、工作项 CRUD、工作项详情抽屉、列表/看板切换。
  */
-import { useEffect, useState, useCallback, type FormEvent } from 'react'
+import { useEffect, useState, useCallback, useRef, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   Plus, CalendarRange, CheckSquare, AlertCircle, FileText, Search,
@@ -29,6 +29,7 @@ import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
 import { Select } from '@/src/components/common/Select'
+import { SlideDrawer, SlideDrawerFooter } from '@/src/components/common/SlideDrawer'
 import { cn, formatDate, getErrorMessage } from '@/src/lib/utils'
 
 /* ── 常量 ── */
@@ -539,6 +540,14 @@ const WorkItemDialog = ({ projectId, editing, iterationId, onClose, onSaved }: {
   const [error, setError] = useState<string | null>(null)
   /** 创建需求时是否自动执行标准化需求 */
   const [autoStandardize, setAutoStandardize] = useState(false)
+  const formRef = useRef<HTMLFormElement>(null)
+  /** 关闭动画播放中，延迟父组件卸载 */
+  const [isClosing, setIsClosing] = useState(false)
+
+  const handleClose = useCallback(() => {
+    setIsClosing(true)
+    setTimeout(onClose, 300)
+  }, [onClose])
 
   const currentStatusOptions = statusOptions[form.workItemType] || statusOptions['任务']
 
@@ -561,88 +570,80 @@ const WorkItemDialog = ({ projectId, editing, iterationId, onClose, onSaved }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-transparent" onClick={onClose} />
-      <div className="absolute inset-y-0 right-0 flex flex-col w-full max-w-[800px] bg-white shadow-[var(--shadow-xl)] animate-slideLeft overflow-hidden">
-        {/* 抽屉头部 */}
-        <div className="flex-shrink-0 flex items-center justify-between border-b border-[var(--color-border)] bg-white px-6 py-3">
-          <span className="text-[15px] font-semibold text-[var(--color-text-primary)]">
-            {editing ? '编辑工作项' : '新建工作项'}
-          </span>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors">
-            <X className="h-4 w-4" />
-          </button>
+    <SlideDrawer
+      open={!isClosing}
+      onClose={handleClose}
+      title={editing ? '编辑工作项' : '新建工作项'}
+      maxWidth="800px"
+      footer={
+        <SlideDrawerFooter
+          cancelText="取消"
+          confirmText={editing ? '保存' : '创建'}
+          loading={saving}
+          onCancel={handleClose}
+          onConfirm={() => formRef.current?.requestSubmit()}
+        />
+      }
+    >
+      <form ref={formRef} onSubmit={handleSubmit} className="p-6 flex flex-col gap-4 min-h-full">
+        {error && <div className="rounded-lg bg-[var(--color-danger-light)] border border-red-100 px-3 py-2 text-[13px] text-[var(--color-danger)]">{error}</div>}
+        <Input label="名称 *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required autoFocus />
+        <div className="grid grid-cols-3 gap-3">
+          <Select
+            label="类型"
+            value={form.workItemType}
+            onChange={(v) => { setForm({ ...form, workItemType: v, status: (statusOptions[v] || ['待开始'])[0] }); setAutoStandardize(false) }}
+            options={[
+              { value: '需求', label: '需求', icon: <FileText className="h-3.5 w-3.5 text-blue-600" /> },
+              { value: '任务', label: '任务', icon: <CheckSquare className="h-3.5 w-3.5 text-emerald-600" /> },
+              { value: '缺陷', label: '缺陷', icon: <AlertCircle className="h-3.5 w-3.5 text-red-600" /> },
+            ]}
+          />
+          <Select
+            label="状态"
+            value={form.status}
+            onChange={(v) => setForm({ ...form, status: v })}
+            options={currentStatusOptions.map((s) => ({ value: s, label: s }))}
+          />
+          <Select
+            label="优先级"
+            value={form.priority}
+            onChange={(v) => setForm({ ...form, priority: v })}
+            options={[
+              { value: '高', label: '高', icon: <span className="inline-block h-2 w-2 rounded-full bg-red-500" /> },
+              { value: '中', label: '中', icon: <span className="inline-block h-2 w-2 rounded-full bg-amber-500" /> },
+              { value: '低', label: '低', icon: <span className="inline-block h-2 w-2 rounded-full bg-gray-400" /> },
+            ]}
+          />
         </div>
-
-        {/* 表单内容 */}
-        <div className="flex-1 min-h-0 flex flex-col">
-          <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-            <div className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col gap-4">
-              {error && <div className="rounded-lg bg-[var(--color-danger-light)] border border-red-100 px-3 py-2 text-[13px] text-[var(--color-danger)]">{error}</div>}
-              <Input label="名称 *" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required autoFocus />
-              <div className="grid grid-cols-3 gap-3">
-                <Select
-                  label="类型"
-                  value={form.workItemType}
-                  onChange={(v) => { setForm({ ...form, workItemType: v, status: (statusOptions[v] || ['待开始'])[0] }); setAutoStandardize(false) }}
-                  options={[
-                    { value: '需求', label: '需求', icon: <FileText className="h-3.5 w-3.5 text-blue-600" /> },
-                    { value: '任务', label: '任务', icon: <CheckSquare className="h-3.5 w-3.5 text-emerald-600" /> },
-                    { value: '缺陷', label: '缺陷', icon: <AlertCircle className="h-3.5 w-3.5 text-red-600" /> },
-                  ]}
-                />
-                <Select
-                  label="状态"
-                  value={form.status}
-                  onChange={(v) => setForm({ ...form, status: v })}
-                  options={currentStatusOptions.map((s) => ({ value: s, label: s }))}
-                />
-                <Select
-                  label="优先级"
-                  value={form.priority}
-                  onChange={(v) => setForm({ ...form, priority: v })}
-                  options={[
-                    { value: '高', label: '高', icon: <span className="inline-block h-2 w-2 rounded-full bg-red-500" /> },
-                    { value: '中', label: '中', icon: <span className="inline-block h-2 w-2 rounded-full bg-amber-500" /> },
-                    { value: '低', label: '低', icon: <span className="inline-block h-2 w-2 rounded-full bg-gray-400" /> },
-                  ]}
-                />
-              </div>
-              <Input label="负责人" value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })} />
-              <div className="flex flex-col gap-1.5 flex-1 min-h-0">
-                <label className="text-[13px] font-medium text-[var(--color-text-secondary)]">描述</label>
-                <MarkdownEditor
-                  value={form.description}
-                  onChange={(v) => setForm({ ...form, description: v })}
-                  placeholder="支持 Markdown 格式…"
-                  height="auto"
-                  templates={form.workItemType === '需求' ? [REQUIREMENT_TEMPLATE] : [TASK_TEMPLATE]}
-                  uploadImage={uploadMarkdownImage}
-                  startInEditMode={!editing}
-                />
-              </div>
-              {/* 创建需求时显示标准化需求复选框 */}
-              {!editing && form.workItemType === '需求' && (
-                <label className="flex items-center gap-2 cursor-pointer select-none rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] px-3 py-2.5 text-[13px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-primary)]/30 transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={autoStandardize}
-                    onChange={(e) => setAutoStandardize(e.target.checked)}
-                    className="h-4 w-4 rounded border-[var(--color-border-strong)] text-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
-                  />
-                  <Sparkles className="h-3.5 w-3.5 text-[var(--color-primary)] flex-shrink-0" />
-                  <span>创建后自动执行「标准化需求」</span>
-                </label>
-              )}
-            </div>
-            <div className="flex-shrink-0 flex justify-end gap-2 px-6 py-3 border-t border-[var(--color-border-light)]">
-              <Button variant="secondary" type="button" onClick={onClose}>取消</Button>
-              <Button type="submit" loading={saving}>{editing ? '保存' : '创建'}</Button>
-            </div>
-          </form>
+        <Input label="负责人" value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })} />
+        <div className="flex flex-col gap-1.5 flex-1 min-h-0">
+          <label className="text-[13px] font-medium text-[var(--color-text-secondary)]">描述</label>
+          <MarkdownEditor
+            value={form.description}
+            onChange={(v) => setForm({ ...form, description: v })}
+            placeholder="支持 Markdown 格式…"
+            height="auto"
+            templates={form.workItemType === '需求' ? [REQUIREMENT_TEMPLATE] : [TASK_TEMPLATE]}
+            uploadImage={uploadMarkdownImage}
+            startInEditMode={!editing}
+          />
         </div>
-      </div>
-    </div>
+        {/* 创建需求时显示标准化需求复选框 */}
+        {!editing && form.workItemType === '需求' && (
+          <label className="flex items-center gap-2 cursor-pointer select-none rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] px-3 py-2.5 text-[13px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-primary)]/30 transition-colors">
+            <input
+              type="checkbox"
+              checked={autoStandardize}
+              onChange={(e) => setAutoStandardize(e.target.checked)}
+              className="h-4 w-4 rounded border-[var(--color-border-strong)] text-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+            />
+            <Sparkles className="h-3.5 w-3.5 text-[var(--color-primary)] flex-shrink-0" />
+            <span>创建后自动执行「标准化需求」</span>
+          </label>
+        )}
+      </form>
+    </SlideDrawer>
   )
 }
 
@@ -661,6 +662,12 @@ const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefr
   const [commentSubmitting, setCommentSubmitting] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [showStatusSelect, setShowStatusSelect] = useState(false)
+  /** 关闭动画播放中，延迟父组件卸载 */
+  const [isClosing, setIsClosing] = useState(false)
+  const handleClose = useCallback(() => {
+    setIsClosing(true)
+    setTimeout(onClose, 300)
+  }, [onClose])
   const scrollToComments = () => {
     document.getElementById('comments-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
@@ -715,151 +722,159 @@ const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefr
     finally { setStatusUpdating(false) }
   }
 
+  /** 头部操作按钮，渲染在 SlideDrawer 关闭按钮之前 */
+  const headerActions = (
+    <>
+      {item.workItemType === '需求' && onOpenAi && (
+        <button onClick={onOpenAi} title="AI 助手" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors">
+          <Sparkles className="h-4 w-4" />
+        </button>
+      )}
+      <button onClick={scrollToComments} title="评论" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors">
+        <MessageSquare className="h-4 w-4" />
+      </button>
+      {item.canDelete && (
+        <button onClick={() => onDelete(item)} title="删除" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-bg-hover)] transition-colors">
+          <Trash2 className="h-4 w-4" />
+        </button>
+      )}
+      <button onClick={onEdit} title="编辑" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors">
+        <Edit3 className="h-4 w-4" />
+      </button>
+    </>
+  )
+
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-transparent" onClick={onClose} />
-      <div className="absolute inset-y-0 right-0 flex flex-col w-full max-w-[800px] bg-white shadow-[var(--shadow-xl)] animate-slideLeft overflow-hidden">
-        {/* ── 顶部 ── */}
-        <div className="flex-shrink-0 flex items-center justify-between border-b border-[var(--color-border)] bg-white px-6 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.04)] z-10">
-          <div className="flex items-center gap-2 min-w-0">
-            {item.workItemCode && <span className="text-[12px] font-mono text-[var(--color-text-tertiary)] flex-shrink-0">{item.workItemCode}</span>}
-            <span className="text-[14px] font-semibold text-[var(--color-text-primary)] truncate">{item.name}</span>
-          </div>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {item.workItemType === '需求' && onOpenAi && <button onClick={onOpenAi} title="AI 助手" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"><Sparkles className="h-4 w-4" /></button>}
-            <button onClick={scrollToComments} title="评论" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"><MessageSquare className="h-4 w-4" /></button>
-            {item.canDelete && <button onClick={() => onDelete(item)} title="删除" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-bg-hover)] transition-colors"><Trash2 className="h-4 w-4" /></button>}
-            <button onClick={onEdit} title="编辑" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"><Edit3 className="h-4 w-4" /></button>
-            <button onClick={onClose} title="关闭" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"><X className="h-4 w-4" /></button>
-          </div>
-        </div>
-
-        {/* ── 内容 ── */}
-        <div className="flex-1 overflow-y-auto">
-          {loading ? <LoadingSpinner fullscreen text="加载中…" /> : (
-            <div className="p-6 pb-4 space-y-5">
-            {/* 属性网格 */}
-            <div className="grid grid-cols-2 gap-4">
-              <DetailField label="类型"><span className="inline-flex items-center gap-1.5 text-[13px]"><TypeIcon className="h-4 w-4" strokeWidth={1.75} />{item.workItemType}</span></DetailField>
-              {/* 内联状态切换 */}
-              <DetailField label="状态">
-                <div className="relative">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setShowStatusSelect(!showStatusSelect) }}
-                    disabled={statusUpdating}
-                    className={cn(
-                      'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[12px] font-medium cursor-pointer hover:opacity-80 transition-opacity',
-                      statusColorMap[item.status] || 'bg-gray-100 text-gray-600',
-                      statusUpdating && 'opacity-50 cursor-wait',
-                    )}
-                  >
-                    {item.status}
-                    <ChevronDown className="h-3 w-3" strokeWidth={2} />
-                  </button>
-                  {showStatusSelect && (
-                    <div className="absolute left-0 top-full mt-1 z-50 min-w-[120px] rounded-lg border border-[var(--color-border)] bg-white shadow-[var(--shadow-lg)] py-1 animate-fadeIn">
-                      {currentStatusOptions.map((s) => (
-                        <button
-                          key={s}
-                          onClick={() => handleStatusChange(s)}
-                          className={cn(
-                            'w-full text-left px-3 py-1.5 text-[13px] hover:bg-[var(--color-bg-hover)] transition-colors',
-                            s === item.status && 'text-[var(--color-primary)] font-medium',
-                          )}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
+    <SlideDrawer
+      open={!isClosing}
+      onClose={handleClose}
+      title={item.name}
+      description={item.workItemCode || undefined}
+      maxWidth="800px"
+      headerActions={headerActions}
+    >
+      {loading ? <LoadingSpinner fullscreen text="加载中…" /> : (
+        <div className="p-6 pb-4 space-y-5">
+          {/* 属性网格 */}
+          <div className="grid grid-cols-2 gap-4">
+            <DetailField label="类型"><span className="inline-flex items-center gap-1.5 text-[13px]"><TypeIcon className="h-4 w-4" strokeWidth={1.75} />{item.workItemType}</span></DetailField>
+            {/* 内联状态切换 */}
+            <DetailField label="状态">
+              <div className="relative">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowStatusSelect(!showStatusSelect) }}
+                  disabled={statusUpdating}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[12px] font-medium cursor-pointer hover:opacity-80 transition-opacity',
+                    statusColorMap[item.status] || 'bg-gray-100 text-gray-600',
+                    statusUpdating && 'opacity-50 cursor-wait',
                   )}
-                </div>
-              </DetailField>
-              <DetailField label="优先级"><span className={cn('text-[13px]', priorityColorMap[item.priority])}>{item.priority}</span></DetailField>
-              <DetailField label="负责人"><span className="text-[13px]">{item.assignee || '未分配'}</span></DetailField>
-              <DetailField label="迭代"><span className="text-[13px]">{item.iterationName || '未规划'}</span></DetailField>
-              <DetailField label="所属项目"><span className="text-[13px]">{item.projectName}</span></DetailField>
-              <DetailField label="创建人"><span className="inline-flex items-center gap-1 text-[13px]"><User className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />{item.creatorName || '未知'}</span></DetailField>
-              {item.moduleName && <DetailField label="模块"><span className="inline-flex items-center gap-1 text-[13px]"><FolderOpen className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />{item.moduleName}</span></DetailField>}
-              {item.agentName && <DetailField label="关联 Agent"><span className="inline-flex items-center gap-1 text-[13px]"><Bot className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />{item.agentName}</span></DetailField>}
-              {item.requirementTaskName && <DetailField label="关联需求"><span className="inline-flex items-center gap-1 text-[13px]"><Link2 className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />{item.requirementTaskName}</span></DetailField>}
-              {item.planStartDate && <DetailField label="计划周期"><span className="text-[13px]">{formatDate(item.planStartDate)} ~ {formatDate(item.planEndDate)}</span></DetailField>}
-              {item.workHours != null && <DetailField label="预估工时"><span className="text-[13px]">{item.workHours} 小时</span></DetailField>}
-            </div>
+                >
+                  {item.status}
+                  <ChevronDown className="h-3 w-3" strokeWidth={2} />
+                </button>
+                {showStatusSelect && (
+                  <div className="absolute left-0 top-full mt-1 z-50 min-w-[120px] rounded-lg border border-[var(--color-border)] bg-white shadow-[var(--shadow-lg)] py-1 animate-fadeIn">
+                    {currentStatusOptions.map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => handleStatusChange(s)}
+                        className={cn(
+                          'w-full text-left px-3 py-1.5 text-[13px] hover:bg-[var(--color-bg-hover)] transition-colors',
+                          s === item.status && 'text-[var(--color-primary)] font-medium',
+                        )}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </DetailField>
+            <DetailField label="优先级"><span className={cn('text-[13px]', priorityColorMap[item.priority])}>{item.priority}</span></DetailField>
+            <DetailField label="负责人"><span className="text-[13px]">{item.assignee || '未分配'}</span></DetailField>
+            <DetailField label="迭代"><span className="text-[13px]">{item.iterationName || '未规划'}</span></DetailField>
+            <DetailField label="所属项目"><span className="text-[13px]">{item.projectName}</span></DetailField>
+            <DetailField label="创建人"><span className="inline-flex items-center gap-1 text-[13px]"><User className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />{item.creatorName || '未知'}</span></DetailField>
+            {item.moduleName && <DetailField label="模块"><span className="inline-flex items-center gap-1 text-[13px]"><FolderOpen className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />{item.moduleName}</span></DetailField>}
+            {item.agentName && <DetailField label="关联 Agent"><span className="inline-flex items-center gap-1 text-[13px]"><Bot className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />{item.agentName}</span></DetailField>}
+            {item.requirementTaskName && <DetailField label="关联需求"><span className="inline-flex items-center gap-1 text-[13px]"><Link2 className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />{item.requirementTaskName}</span></DetailField>}
+            {item.planStartDate && <DetailField label="计划周期"><span className="text-[13px]">{formatDate(item.planStartDate)} ~ {formatDate(item.planEndDate)}</span></DetailField>}
+            {item.workHours != null && <DetailField label="预估工时"><span className="text-[13px]">{item.workHours} 小时</span></DetailField>}
+          </div>
 
-            {/* 描述 */}
+          {/* 描述 */}
+          <div>
+            <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">描述</h4>
+            <div className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] p-4">
+              {item.description ? <Markdown content={item.description} /> : <span className="text-[var(--color-text-tertiary)] text-[14px]">暂无描述</span>}
+            </div>
+          </div>
+
+          {/* 协作者 */}
+          {item.collaboratorNames.length > 0 && (
             <div>
-              <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">描述</h4>
-              <div className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] p-4">
-                {item.description ? <Markdown content={item.description} /> : <span className="text-[var(--color-text-tertiary)] text-[14px]">暂无描述</span>}
+              <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">协作者</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {item.collaboratorNames.map((n) => <span key={n} className="rounded-full bg-[var(--color-bg-hover)] px-2.5 py-1 text-[12px] text-[var(--color-text-secondary)]">{n}</span>)}
               </div>
             </div>
+          )}
 
-            {/* 协作者 */}
-            {item.collaboratorNames.length > 0 && (
-              <div>
-                <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">协作者</h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {item.collaboratorNames.map((n) => <span key={n} className="rounded-full bg-[var(--color-bg-hover)] px-2.5 py-1 text-[12px] text-[var(--color-text-secondary)]">{n}</span>)}
-                </div>
+          {/* ── 评论区 ── */}
+          <div id="comments-section">
+            <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
+              评论{comments.length > 0 && <span className="ml-1 text-[var(--color-primary)]">({comments.length})</span>}
+            </h4>
+
+            {commentsLoading ? (
+              <div className="py-4 text-center text-[13px] text-[var(--color-text-tertiary)]">加载评论中…</div>
+            ) : comments.length === 0 ? (
+              <div className="py-4 text-center text-[13px] text-[var(--color-text-tertiary)]">暂无评论</div>
+            ) : (
+              <div className="space-y-3 mb-4">
+                {comments.map((c) => (
+                  <div key={c.id} className="rounded-lg border border-[var(--color-border-light)] bg-white p-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[13px] font-medium text-[var(--color-text-primary)]">{c.authorName || '未知用户'}</span>
+                      <span className="text-[11px] text-[var(--color-text-tertiary)]">{formatDate(c.createdAt)}</span>
+                    </div>
+                    <div className="text-[13px]">
+                      <Markdown content={c.content} />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
-            {/* ── 评论区 ── */}
-            <div id="comments-section">
-              <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
-                评论{comments.length > 0 && <span className="ml-1 text-[var(--color-primary)]">({comments.length})</span>}
-              </h4>
-
-              {commentsLoading ? (
-                <div className="py-4 text-center text-[13px] text-[var(--color-text-tertiary)]">加载评论中…</div>
-              ) : comments.length === 0 ? (
-                <div className="py-4 text-center text-[13px] text-[var(--color-text-tertiary)]">暂无评论</div>
-              ) : (
-                <div className="space-y-3 mb-4">
-                  {comments.map((c) => (
-                    <div key={c.id} className="rounded-lg border border-[var(--color-border-light)] bg-white p-3">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[13px] font-medium text-[var(--color-text-primary)]">{c.authorName || '未知用户'}</span>
-                        <span className="text-[11px] text-[var(--color-text-tertiary)]">{formatDate(c.createdAt)}</span>
-                      </div>
-                      <div className="text-[13px]">
-                        <Markdown content={c.content} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* 评论输入 */}
-              <div className="space-y-2">
-                <MarkdownEditor
-                  value={commentText}
-                  onChange={setCommentText}
-                  placeholder="输入评论内容…"
-                  height={200}
-                  uploadImage={uploadMarkdownImage}
-                  startInEditMode
-                />
-                <div className="flex justify-end">
-                  <Button
-                    onClick={handleSubmitComment}
-                    loading={commentSubmitting}
-                    disabled={!commentText.trim()}
-                    icon={<Send className="h-3.5 w-3.5" />}
-                    size="sm"
-                  >
-                    发送
-                  </Button>
-                </div>
+            {/* 评论输入 */}
+            <div className="space-y-2">
+              <MarkdownEditor
+                value={commentText}
+                onChange={setCommentText}
+                placeholder="输入评论内容…"
+                height={200}
+                uploadImage={uploadMarkdownImage}
+                startInEditMode
+              />
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleSubmitComment}
+                  loading={commentSubmitting}
+                  disabled={!commentText.trim()}
+                  icon={<Send className="h-3.5 w-3.5" />}
+                  size="sm"
+                >
+                  发送
+                </Button>
               </div>
             </div>
-
-            <p className="text-[11px] text-[var(--color-text-tertiary)]">最后更新：{formatDate(item.updatedAt)}</p>
           </div>
-        )}
+
+          <p className="text-[11px] text-[var(--color-text-tertiary)]">最后更新：{formatDate(item.updatedAt)}</p>
         </div>
-      </div>
-    </div>
+      )}
+    </SlideDrawer>
   )
 }
 

@@ -1,16 +1,22 @@
 /**
  * 研发模块 API。
- * 与后端 /api/gitlab/* 接口对齐，面向项目维度的仓库绑定、分支、合并请求、代码结构、扫描和自动合并。
+ * 与后端 /api/gitlab/* 接口对齐，面向项目维度的仓库绑定、分支、合并请求、代码结构、扫描、自动合并和 Webhook。
  */
 import { http, unwrap, cleanParams } from './http'
 import type { ApiResponse, PageResponse } from '@/src/types/api'
 import type {
+  AgentOptionItem,
+  GitlabAutoMergeConfigItem,
+  GitlabAutoMergeConfigPayload,
+  GitlabAutoMergeLogItem,
+  GitlabAutoMergeRunResult,
+  GitlabAutoMergeWebhookItem,
+  GitlabAutoMergeWebhookPayload,
   GitlabBranchItem,
   GitlabCodeStructureSnapshotItem,
   GitlabMergeRequestItem,
   ProjectGitlabBindingItem,
   RepositoryScanRulesetItem,
-  GitlabAutoMergeLogItem,
 } from '@/src/types/development'
 
 /** 分页查询 GitLab 绑定列表。 */
@@ -99,8 +105,146 @@ export const pageGitlabAutoMergeLogs = async (query: {
   triggerType?: 'MANUAL' | 'SCHEDULED'
 }): Promise<PageResponse<GitlabAutoMergeLogItem>> => {
   const res = await http.get<ApiResponse<PageResponse<GitlabAutoMergeLogItem>>>(
-    '/api/gitlab/auto-merge/logs',
+    '/api/gitlab/auto-merge-logs',
     { params: cleanParams(query) },
   )
+  return unwrap(res)
+}
+
+/* ── 自动合并策略 CRUD ── */
+
+/** 分页查询自动合并策略列表。 */
+export const pageGitlabAutoMergeConfigs = async (query: {
+  page: number
+  size: number
+  keyword?: string
+  executionMode?: 'PROJECT_BOUND' | 'STANDALONE'
+  enabled?: boolean
+}): Promise<PageResponse<GitlabAutoMergeConfigItem>> => {
+  const res = await http.get<ApiResponse<PageResponse<GitlabAutoMergeConfigItem>>>(
+    '/api/gitlab/auto-merge-configs',
+    { params: cleanParams(query) },
+  )
+  return unwrap(res)
+}
+
+/** 创建自动合并策略。 */
+export const createGitlabAutoMergeConfig = async (
+  payload: GitlabAutoMergeConfigPayload,
+): Promise<GitlabAutoMergeConfigItem> => {
+  const res = await http.post<ApiResponse<GitlabAutoMergeConfigItem>>(
+    '/api/gitlab/auto-merge-configs',
+    payload,
+  )
+  return unwrap(res)
+}
+
+/** 更新自动合并策略。 */
+export const updateGitlabAutoMergeConfig = async (
+  id: number,
+  payload: GitlabAutoMergeConfigPayload,
+): Promise<GitlabAutoMergeConfigItem> => {
+  const res = await http.put<ApiResponse<GitlabAutoMergeConfigItem>>(
+    `/api/gitlab/auto-merge-configs/${id}`,
+    payload,
+  )
+  return unwrap(res)
+}
+
+/** 删除自动合并策略。 */
+export const deleteGitlabAutoMergeConfig = async (id: number): Promise<void> => {
+  await http.delete<ApiResponse<null>>(`/api/gitlab/auto-merge-configs/${id}`)
+}
+
+/** 测试自动合并策略连通性。 */
+export const testGitlabAutoMergeConfig = async (
+  id: number,
+): Promise<GitlabAutoMergeConfigItem> => {
+  const res = await http.post<ApiResponse<GitlabAutoMergeConfigItem>>(
+    `/api/gitlab/auto-merge-configs/${id}/test`,
+  )
+  return unwrap(res)
+}
+
+/** 预览自动合并策略匹配的合并请求。 */
+export const previewAutoMergeConfigMergeRequests = async (
+  id: number,
+): Promise<GitlabMergeRequestItem[]> => {
+  const res = await http.get<ApiResponse<GitlabMergeRequestItem[]>>(
+    `/api/gitlab/auto-merge-configs/${id}/merge-requests`,
+  )
+  return unwrap(res)
+}
+
+/** 立即执行自动合并策略。 */
+export const runAutoMergeConfig = async (
+  id: number,
+): Promise<GitlabAutoMergeRunResult> => {
+  const res = await http.post<ApiResponse<GitlabAutoMergeRunResult>>(
+    `/api/gitlab/auto-merge-configs/${id}/run`,
+  )
+  return unwrap(res)
+}
+
+/* ── Webhook 管理 ── */
+
+/** 列出指定自动合并配置下的全部 Webhook。 */
+export const listAutoMergeWebhooks = async (
+  configId: number,
+): Promise<GitlabAutoMergeWebhookItem[]> => {
+  const res = await http.get<ApiResponse<GitlabAutoMergeWebhookItem[]>>(
+    `/api/gitlab/auto-merge-configs/${configId}/webhooks`,
+  )
+  return unwrap(res)
+}
+
+/** 创建 Webhook。 */
+export const createAutoMergeWebhook = async (
+  configId: number,
+  payload: GitlabAutoMergeWebhookPayload,
+): Promise<GitlabAutoMergeWebhookItem> => {
+  const res = await http.post<ApiResponse<GitlabAutoMergeWebhookItem>>(
+    `/api/gitlab/auto-merge-configs/${configId}/webhooks`,
+    payload,
+  )
+  return unwrap(res)
+}
+
+/** 更新 Webhook。 */
+export const updateAutoMergeWebhook = async (
+  webhookId: number,
+  payload: GitlabAutoMergeWebhookPayload,
+): Promise<GitlabAutoMergeWebhookItem> => {
+  const res = await http.put<ApiResponse<GitlabAutoMergeWebhookItem>>(
+    `/api/gitlab/auto-merge-webhooks/${webhookId}`,
+    payload,
+  )
+  return unwrap(res)
+}
+
+/** 删除 Webhook。 */
+export const deleteAutoMergeWebhook = async (webhookId: number): Promise<void> => {
+  await http.delete<ApiResponse<null>>(`/api/gitlab/auto-merge-webhooks/${webhookId}`)
+}
+
+/** 触发 Webhook 测试投递。 */
+export const testAutoMergeWebhook = async (
+  webhookId: number,
+): Promise<GitlabAutoMergeWebhookItem> => {
+  const res = await http.post<ApiResponse<GitlabAutoMergeWebhookItem>>(
+    `/api/gitlab/auto-merge-webhooks/${webhookId}/test`,
+  )
+  return unwrap(res)
+}
+
+/* ── Agent 选项 ── */
+
+/** 列出可用的 Agent 选项（轻量列表）。 */
+export const listAgentOptions = async (
+  projectId?: number,
+): Promise<AgentOptionItem[]> => {
+  const res = await http.get<ApiResponse<AgentOptionItem[]>>('/api/agents/options', {
+    params: cleanParams({ projectId }),
+  })
   return unwrap(res)
 }

@@ -114,3 +114,113 @@ export interface ExecutionTaskListStatsItem {
   successCount: number
   averageProgressPercent: number
 }
+
+/* ── 详情页扩展类型 ── */
+
+/** 执行产物（详情页扩展）。 */
+export interface ExecutionArtifactDetailItem {
+  id: number
+  runId: number
+  stepId: number | null
+  artifactType: string
+  title: string
+  contentRef: string | null
+  contentText: string | null
+  workItemWriteback: boolean
+}
+
+/** 执行步骤。 */
+export interface ExecutionStepItem {
+  id: number
+  runId: number
+  stepNo: number
+  stepCode: string
+  stepName: string
+  agentId: number | null
+  agentName: string | null
+  status: string
+  progressPercent: number
+  latestMessage: string
+  currentCommand: string | null
+  lastEventId: number | null
+  lastEventAt: string | null
+  lastHeartbeatAt: string | null
+  tailLogText: string | null
+  tailLogLineCount: number | null
+  hasLiveStream: boolean
+  inputSnapshot: string
+  outputSnapshot: string | null
+  errorMessage: string | null
+  startedAt: string | null
+  finishedAt: string | null
+}
+
+/** 执行运行详情（含步骤和产物）。 */
+export interface ExecutionRunDetailItem extends ExecutionRunItem {
+  lastEventId: number | null
+  lastEventAt: string | null
+  hasLiveStream: boolean
+  steps: ExecutionStepItem[]
+  artifacts: ExecutionArtifactDetailItem[]
+}
+
+/** 工作区清理摘要。 */
+export interface ExecutionWorkspaceCleanupSummaryItem {
+  enabled: boolean
+  retentionHours: number
+  status: string
+  executionResultStatus: string | null
+  expiresAt: string | null
+  deletedAt: string | null
+  deleteFailedAt: string | null
+  deleteErrorMessage: string | null
+  trackedWorkspaceCount: number
+  message: string
+}
+
+/** 执行任务详情（含运行列表）。 */
+export interface ExecutionTaskDetailItem {
+  id: number
+  title: string
+  scenarioCode: string
+  scenarioName: string
+  sourceType: string
+  sourceId: number | null
+  triggerSource: string
+  projectId: number
+  projectName: string
+  workItemId: number | null
+  workItemCode: string | null
+  workItemName: string | null
+  status: string
+  cancelRequested: boolean
+  latestSummary: string
+  createdByUserId: number | null
+  createdByName: string | null
+  createdAt: string
+  updatedAt: string
+  currentRunId: number | null
+  inputPayload: string
+  planConfirmationRequired: boolean
+  planConfirmationPending: boolean
+  canCurrentUserConfirmPlan: boolean
+  runs: ExecutionRunItem[]
+  workspaceCleanup: ExecutionWorkspaceCleanupSummaryItem | null
+}
+
+/** SSE 流事件。 */
+export interface ExecutionStreamEvent {
+  id: number
+  runId: number
+  stepId: number | null
+  stepNo: number | null
+  stepName: string | null
+  eventType: string
+  streamKind: string | null
+  text: string | null
+  currentCommand: string | null
+  progressPercent: number | null
+  summary: string | null
+  artifactId: number | null
+  createdAt: string | null
+}

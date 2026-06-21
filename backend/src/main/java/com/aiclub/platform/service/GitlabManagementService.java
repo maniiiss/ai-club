@@ -131,6 +131,7 @@ public class GitlabManagementService {
     private static final String REVIEW_STRICTNESS_LOW = "LOW";
     private static final String TRIGGER_MANUAL = "MANUAL";
     private static final String TRIGGER_SCHEDULED = "SCHEDULED";
+    private static final String CREDIT_FEATURE_AUTO_MERGE = "AUTO_MERGE";
     private static final String BRANCH_BEHIND_REASON_PREFIX = "源分支落后于目标分支";
     private static final String REVIEW_FINGERPRINT_SOURCE_SHA = "SHA";
     private static final String REVIEW_FINGERPRINT_SOURCE_DIFF = "DIFF";
@@ -171,6 +172,7 @@ public class GitlabManagementService {
     private final CicdManagementService cicdManagementService;
     private final NotificationService notificationService;
     private final GitlabAutoMergeWebhookDispatcher autoMergeWebhookDispatcher;
+    private final CreditConsumptionService creditConsumptionService;
     private final ProjectDataPermissionService projectDataPermissionService;
     private final GitlabUserOauthService gitlabUserOauthService;
     private final ExecutionTaskService executionTaskService;
@@ -207,6 +209,7 @@ public class GitlabManagementService {
                                    CicdManagementService cicdManagementService,
                                    NotificationService notificationService,
                                    GitlabAutoMergeWebhookDispatcher autoMergeWebhookDispatcher,
+                                   CreditConsumptionService creditConsumptionService,
                                    ProjectDataPermissionService projectDataPermissionService,
                                    GitlabUserOauthService gitlabUserOauthService,
                                    ExecutionTaskService executionTaskService,
@@ -242,6 +245,7 @@ public class GitlabManagementService {
         this.cicdManagementService = cicdManagementService;
         this.notificationService = notificationService;
         this.autoMergeWebhookDispatcher = autoMergeWebhookDispatcher;
+        this.creditConsumptionService = creditConsumptionService;
         this.projectDataPermissionService = projectDataPermissionService;
         this.gitlabUserOauthService = gitlabUserOauthService;
         this.executionTaskService = executionTaskService;
@@ -1367,7 +1371,36 @@ public class GitlabManagementService {
                     }
                     if (Boolean.TRUE.equals(entity.getAiReviewEnabled())) {
                         previousIssues = loadLatestRejectedReviewIssues(resolved.projectRef(), latestMergeRequest.iid());
-                        reviewContext = executeReviewWithCache(entity, resolved, latestMergeRequest, previousIssues);
+                        // Step 1: 检查缓存（命中不扣积分）
+                        Optional<ReviewExecutionContext> cached = checkReviewCache(entity, resolved, latestMergeRequest);
+                        if (cached.isPresent()) {
+                            reviewContext = cached.get();
+                        } else {
+                            // Step 2: 缓存未命中，需要扣积分执行实际 AI 审核
+                            Long chargeUserId = resolveChargeUserId(entity);
+                            if (chargeUserId != null) {
+                                String businessKey = "auto-merge:" + entity.getId() + ":" + latestMergeRequest.iid() + ":" + System.currentTimeMillis();
+                                String creditReason = "AI审核自动合并：" + entity.getName() + " !" + latestMergeRequest.iid();
+                                try {
+                                    final List<String> finalPrevIssues = previousIssues;
+                                    reviewContext = creditConsumptionService.consumeForFeature(
+                                            chargeUserId, CREDIT_FEATURE_AUTO_MERGE, businessKey, creditReason,
+                                            () -> executeActualReview(entity, resolved, latestMergeRequest, finalPrevIssues)
+                                    );
+                                } catch (IllegalArgumentException creditEx) {
+                                    nonMergedCount++;
+                                    String skipReason = "积分余额不足，跳过 AI 审核";
+                                    items.add(new GitlabAutoMergeRunItem(latestMergeRequest.iid(), latestMergeRequest.title(),
+                                            "CREDIT_INSUFFICIENT", skipReason, latestMergeRequest.webUrl()));
+                                    saveAutoMergeLog(entity, triggerType, latestMergeRequest, "CREDIT_INSUFFICIENT",
+                                            skipReason, latestMergeRequest.webUrl(), null, executedAt);
+                                    continue;
+                                }
+                            } else {
+                                // STANDALONE 模式无关联项目，跳过积分检查直接执行
+                                reviewContext = executeActualReview(entity, resolved, latestMergeRequest, previousIssues);
+                            }
+                        }
                         reviewResult = applyReviewSafetyGuard(reviewContext.reviewResult());
                         if (!reviewResult.approved()) {
                             nonMergedCount++;
@@ -1666,17 +1699,17 @@ public class GitlabManagementService {
     }
 
     /**
-     * 先按 MR 版本指纹查缓存，命中则直接复用结构化审查结果；未命中时才真正调用模型。
+     * 仅做指纹匹配和缓存查询，不执行实际 AI 审核。
+     * 命中缓存时返回 ReviewExecutionContext(cacheHit=true)；未命中时返回 empty。
      */
-    private ReviewExecutionContext executeReviewWithCache(GitlabAutoMergeConfigEntity entity,
-                                                          ResolvedGitlabConfig resolved,
-                                                          GitlabApiService.GitlabMergeRequest mergeRequest,
-                                                          List<String> previousIssues) {
+    private Optional<ReviewExecutionContext> checkReviewCache(GitlabAutoMergeConfigEntity entity,
+                                                             ResolvedGitlabConfig resolved,
+                                                             GitlabApiService.GitlabMergeRequest mergeRequest) {
         ReviewFingerprint reviewFingerprint = buildShaReviewFingerprint(entity, resolved.projectRef(), mergeRequest);
         if (reviewFingerprint != null) {
             Optional<CodeReviewResult> cached = loadCachedReviewResult(resolved.projectRef(), mergeRequest.iid(), reviewFingerprint.value());
             if (cached.isPresent()) {
-                return new ReviewExecutionContext(cached.get(), reviewFingerprint.value(), reviewFingerprint.source(), true);
+                return Optional.of(new ReviewExecutionContext(cached.get(), reviewFingerprint.value(), reviewFingerprint.source(), true));
             }
         }
         GitlabApiService.GitlabMergeRequestChanges changes = gitlabApiService.fetchMergeRequestChanges(
@@ -1685,8 +1718,25 @@ public class GitlabManagementService {
             reviewFingerprint = buildDiffReviewFingerprint(entity, resolved.projectRef(), mergeRequest, changes);
             Optional<CodeReviewResult> cached = loadCachedReviewResult(resolved.projectRef(), mergeRequest.iid(), reviewFingerprint.value());
             if (cached.isPresent()) {
-                return new ReviewExecutionContext(cached.get(), reviewFingerprint.value(), reviewFingerprint.source(), true);
+                return Optional.of(new ReviewExecutionContext(cached.get(), reviewFingerprint.value(), reviewFingerprint.source(), true));
             }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * 执行实际 AI 审核（仅在缓存未命中时调用，会消耗积分）。
+     * 调用方需先通过 checkReviewCache 确认未命中缓存。
+     */
+    private ReviewExecutionContext executeActualReview(GitlabAutoMergeConfigEntity entity,
+                                                       ResolvedGitlabConfig resolved,
+                                                       GitlabApiService.GitlabMergeRequest mergeRequest,
+                                                       List<String> previousIssues) {
+        ReviewFingerprint reviewFingerprint = buildShaReviewFingerprint(entity, resolved.projectRef(), mergeRequest);
+        GitlabApiService.GitlabMergeRequestChanges changes = gitlabApiService.fetchMergeRequestChanges(
+                resolved.apiBaseUrl(), resolved.token(), resolved.projectRef(), mergeRequest.iid());
+        if (reviewFingerprint == null) {
+            reviewFingerprint = buildDiffReviewFingerprint(entity, resolved.projectRef(), mergeRequest, changes);
         }
         String reviewStrictness = normalizeReviewStrictness(entity.getReviewStrictness());
         CodeReviewResult reviewResult;
@@ -1701,6 +1751,19 @@ public class GitlabManagementService {
             reviewResult = codeReviewClientService.reviewMergeRequest(modelConfig, buildReviewPrompt(entity), mergeRequest, changes, previousIssues, reviewStrictness);
         }
         return new ReviewExecutionContext(reviewResult, reviewFingerprint.value(), reviewFingerprint.source(), false);
+    }
+
+    /**
+     * 解析积分扣费用户：PROJECT_BOUND 模式取项目 owner，STANDALONE 模式返回 null（跳过积分检查）。
+     */
+    private Long resolveChargeUserId(GitlabAutoMergeConfigEntity entity) {
+        if (MODE_PROJECT_BOUND.equals(entity.getExecutionMode())
+                && entity.getBinding() != null
+                && entity.getBinding().getProject() != null
+                && entity.getBinding().getProject().getOwnerUser() != null) {
+            return entity.getBinding().getProject().getOwnerUser().getId();
+        }
+        return null;
     }
 
 

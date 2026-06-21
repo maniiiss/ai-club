@@ -1,10 +1,11 @@
 /**
  * 测试与执行模块页面。
  * 两个子 Tab：测试计划 + 执行中心。
- * 支持测试计划详情（含用例列表）和执行任务详情。
+ * 测试计划支持新建、编辑、删除、内联状态切换，点击卡片跳转详情页。
+ * 执行中心支持场景/状态/项目筛选、自动轮询、状态中文标签，点击跳转详情页。
  */
-import { useEffect, useState, useCallback } from 'react'
-import { useParams } from 'react-router-dom'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   FlaskConical,
   Play,
@@ -12,26 +13,31 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
-  FileText,
-  AlertCircle,
-  ExternalLink,
+  Filter,
+  Plus,
+  Trash2,
+  RefreshCw,
+  ChevronDown,
 } from 'lucide-react'
 import {
   pageTestPlans,
   getTestPlanDetail,
   pageExecutionTasks,
   getExecutionTaskListStats,
-  listExecutionTaskRuns,
   cancelExecutionTask,
   retryExecutionTask,
+  updateTestPlan,
+  createTestPlan,
+  deleteTestPlan,
+  listTestPlanIterations,
 } from '@/src/api/execution'
+import { listProjectOptions } from '@/src/api/projects'
 import type {
   TestPlanItem,
-  TestCaseItem,
   ExecutionTaskItem,
   ExecutionTaskListStatsItem,
-  ExecutionRunItem,
 } from '@/src/types/execution'
+import type { ProjectItem } from '@/src/types/project'
 import type { PageResponse } from '@/src/types/api'
 import { Card } from '@/src/components/common/Card'
 import { Button } from '@/src/components/common/Button'
@@ -48,16 +54,51 @@ const tabs: { key: ExecutionTab; label: string; icon: typeof FlaskConical }[] = 
 ]
 
 const statusColorMap: Record<string, string> = {
+  '草稿': 'bg-gray-100 text-gray-600',
   '待执行': 'bg-amber-50 text-amber-700',
   '执行中': 'bg-blue-50 text-blue-700',
+  '已完成': 'bg-emerald-50 text-emerald-700',
   '成功': 'bg-emerald-50 text-emerald-700',
   '失败': 'bg-red-50 text-red-700',
   '已取消': 'bg-gray-100 text-gray-600',
   '待确认': 'bg-purple-50 text-purple-700',
   IDLE: 'bg-gray-100 text-gray-600',
   PENDING: 'bg-amber-50 text-amber-700',
+  WAITING_CONFIRMATION: 'bg-purple-50 text-purple-700',
+  RUNNING: 'bg-blue-50 text-blue-700',
   SUCCESS: 'bg-emerald-50 text-emerald-700',
   FAILED: 'bg-red-50 text-red-700',
+  CANCELED: 'bg-gray-100 text-gray-600',
+}
+
+const planStatusOptions = ['草稿', '待执行', '执行中', '已完成']
+
+const executionStatusOptions = [
+  { value: 'PENDING', label: '待执行' },
+  { value: 'WAITING_CONFIRMATION', label: '待确认' },
+  { value: 'RUNNING', label: '执行中' },
+  { value: 'SUCCESS', label: '成功' },
+  { value: 'FAILED', label: '失败' },
+  { value: 'CANCELED', label: '已取消' },
+]
+
+const scenarioOptions = [
+  { value: 'DEVELOPMENT_IMPLEMENTATION', label: '开发执行' },
+  { value: 'TEST_AUTOMATION', label: '自动化测试' },
+  { value: 'CODEBASE_COMPLIANCE_SCAN', label: '仓库规范扫描' },
+]
+
+/** 执行状态码转中文标签。 */
+const executionStatusLabel = (status: string) => {
+  const map: Record<string, string> = {
+    PENDING: '待执行',
+    WAITING_CONFIRMATION: '待确认',
+    RUNNING: '执行中',
+    SUCCESS: '成功',
+    FAILED: '失败',
+    CANCELED: '已取消',
+  }
+  return map[status] || status
 }
 
 const priorityColorMap: Record<string, string> = {
@@ -113,6 +154,7 @@ export const ExecutionPage = () => {
 
 const TestPlansPanel = () => {
   const { projectId } = useParams<{ projectId: string }>()
+  const navigate = useNavigate()
   const pid = Number(projectId)
 
   const [plans, setPlans] = useState<PageResponse<TestPlanItem> | null>(null)
@@ -121,9 +163,13 @@ const TestPlansPanel = () => {
   const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
 
-  /* 测试计划详情 */
-  const [detailPlan, setDetailPlan] = useState<TestPlanItem | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
+  /* 新建/编辑对话框 */
+  const [formVisible, setFormVisible] = useState(false)
+  const [formLoading, setFormLoading] = useState(false)
+  const [editingPlan, setEditingPlan] = useState<TestPlanItem | null>(null)
+
+  /* 状态切换 */
+  const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null)
 
   const fetchPlans = useCallback(async () => {
     setLoading(true)
@@ -147,32 +193,80 @@ const TestPlansPanel = () => {
     fetchPlans()
   }, [fetchPlans])
 
-  const handleOpenDetail = async (planId: number) => {
-    setDetailLoading(true)
+  const handleOpenDetail = (planId: number) => {
+    navigate(`/projects/${projectId}/execution/test-plans/${planId}`)
+  }
+
+  const handleStatusChange = async (plan: TestPlanItem, newStatus: string) => {
+    if (plan.status === newStatus) return
+    setStatusUpdatingId(plan.id)
     try {
-      const data = await getTestPlanDetail(planId)
-      setDetailPlan(data)
+      await updateTestPlan(plan.id, {
+        name: plan.name,
+        projectId: plan.projectId,
+        iterationId: plan.iterationId,
+        status: newStatus,
+        description: plan.description,
+        startDate: plan.startDate,
+        endDate: plan.endDate,
+      })
+      await fetchPlans()
     } catch {
-      setDetailPlan(null)
+      /* 静默处理 */
     } finally {
-      setDetailLoading(false)
+      setStatusUpdatingId(null)
+    }
+  }
+
+  const handleDelete = async (plan: TestPlanItem) => {
+    if (!window.confirm(`确认删除测试计划「${plan.name}」吗？计划下的测试用例会一并删除。`)) return
+    try {
+      await deleteTestPlan(plan.id)
+      await fetchPlans()
+    } catch {
+      /* 静默处理 */
+    }
+  }
+
+  const handleEdit = async (planId: number) => {
+    setFormLoading(true)
+    try {
+      const detail = await getTestPlanDetail(planId)
+      setEditingPlan(detail)
+      setFormVisible(true)
+    } catch {
+      /* 静默处理 */
+    } finally {
+      setFormLoading(false)
     }
   }
 
   return (
     <div>
-      <div className="mb-4 relative max-w-xs">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
-        <input
-          type="text"
-          placeholder="搜索测试计划…"
-          value={keyword}
-          onChange={(e) => {
-            setKeyword(e.target.value)
-            setPage(1)
+      <div className="mb-4 flex items-center gap-3">
+        <div className="relative max-w-xs flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
+          <input
+            type="text"
+            placeholder="搜索测试计划…"
+            value={keyword}
+            onChange={(e) => {
+              setKeyword(e.target.value)
+              setPage(1)
+            }}
+            className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white pl-9 pr-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+          />
+        </div>
+        <Button
+          size="sm"
+          icon={<Plus className="h-4 w-4" />}
+          onClick={() => {
+            setEditingPlan(null)
+            setFormVisible(true)
           }}
-          className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white pl-9 pr-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-        />
+        >
+          新建测试计划
+        </Button>
       </div>
 
       {loading ? (
@@ -191,11 +285,13 @@ const TestPlansPanel = () => {
             {plans.records.map((plan) => (
               <div
                 key={plan.id}
-                className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-card)] cursor-pointer hover:shadow-[var(--shadow-card-hover)] transition-shadow"
-                onClick={() => handleOpenDetail(plan.id)}
+                className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] transition-shadow"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
+                  <div
+                    className="min-w-0 flex-1 cursor-pointer"
+                    onClick={() => handleOpenDetail(plan.id)}
+                  >
                     <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">
                       {plan.name}
                     </h3>
@@ -218,14 +314,13 @@ const TestPlansPanel = () => {
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
-                    <span
-                      className={cn(
-                        'rounded-full px-2.5 py-1 text-[11px] font-medium',
-                        statusColorMap[plan.status] || 'bg-gray-100 text-gray-600',
-                      )}
-                    >
-                      {plan.status}
-                    </span>
+                    {/* 内联状态切换 */}
+                    <InlineStatusSelect
+                      currentStatus={plan.status}
+                      options={planStatusOptions}
+                      disabled={statusUpdatingId === plan.id}
+                      onChange={(newStatus) => handleStatusChange(plan, newStatus)}
+                    />
                     {plan.lastAutomationStatus && (
                       <span
                         className={cn(
@@ -237,6 +332,24 @@ const TestPlansPanel = () => {
                       </span>
                     )}
                   </div>
+                </div>
+                {/* 操作按钮 */}
+                <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border-light)] pt-3">
+                  <Button variant="ghost" size="sm" onClick={() => handleOpenDetail(plan.id)}>
+                    进入计划
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => handleEdit(plan.id)} loading={formLoading}>
+                    编辑
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<Trash2 className="h-3.5 w-3.5" />}
+                    onClick={() => handleDelete(plan)}
+                    className="text-[var(--color-danger)] hover:text-red-700"
+                  >
+                    删除
+                  </Button>
                 </div>
               </div>
             ))}
@@ -271,12 +384,20 @@ const TestPlansPanel = () => {
         </>
       )}
 
-      {/* 测试计划详情抽屉 */}
-      {detailPlan && (
-        <TestPlanDetailDrawer
-          plan={detailPlan}
-          loading={detailLoading}
-          onClose={() => setDetailPlan(null)}
+      {/* 新建/编辑对话框 */}
+      {formVisible && (
+        <TestPlanFormDialog
+          projectId={pid}
+          editingPlan={editingPlan}
+          onClose={() => {
+            setFormVisible(false)
+            setEditingPlan(null)
+          }}
+          onSaved={() => {
+            setFormVisible(false)
+            setEditingPlan(null)
+            fetchPlans()
+          }}
         />
       )}
     </div>
@@ -284,183 +405,269 @@ const TestPlansPanel = () => {
 }
 
 /* ════════════════════════════════════════════
-   测试计划详情抽屉
+   内联状态选择器
    ════════════════════════════════════════════ */
 
-const TestPlanDetailDrawer = ({
-  plan,
-  loading,
-  onClose,
+const InlineStatusSelect = ({
+  currentStatus,
+  options,
+  disabled,
+  onChange,
 }: {
-  plan: TestPlanItem
-  loading: boolean
-  onClose: () => void
-}) => (
-  <div className="fixed inset-0 z-50">
-    <div className="absolute inset-0 bg-transparent" onClick={onClose} />
-    <div className="absolute inset-y-0 right-0 flex flex-col w-full max-w-[900px] bg-white shadow-[var(--shadow-xl)] animate-slideLeft overflow-hidden">
-      <div className="flex-shrink-0 flex items-center justify-between border-b border-[var(--color-border)] bg-white px-6 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.04)] z-10">
-        <div className="flex items-center gap-2">
-          <FlaskConical className="h-4 w-4 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />
-          <span className="text-[14px] font-semibold text-[var(--color-text-primary)]">{plan.name}</span>
-        </div>
-        <button
-          onClick={onClose}
-          className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+  currentStatus: string
+  options: string[]
+  disabled?: boolean
+  onChange: (value: string) => void
+}) => {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
 
-      <div className="flex-1 overflow-y-auto">
-        {loading ? (
-          <LoadingSpinner fullscreen text="加载中…" />
-        ) : (
-          <div className="p-6 pb-4 space-y-5">
-          {/* 基本信息 */}
-          <div className="grid grid-cols-2 gap-4">
-            <DetailField label="状态">
-              <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-medium', statusColorMap[plan.status] || 'bg-gray-100 text-gray-600')}>
-                {plan.status}
-              </span>
-            </DetailField>
-            <DetailField label="所属项目">
-              <span className="text-[13px]">{plan.projectName}</span>
-            </DetailField>
-            {plan.iterationName && (
-              <DetailField label="迭代">
-                <span className="text-[13px]">{plan.iterationName}</span>
-              </DetailField>
-            )}
-            <DetailField label="用例数">
-              <span className="text-[13px] font-semibold">{plan.caseCount}</span>
-            </DetailField>
-            {plan.startDate && plan.endDate && (
-              <DetailField label="周期">
-                <span className="text-[13px]">{formatDate(plan.startDate)} ~ {formatDate(plan.endDate)}</span>
-              </DetailField>
-            )}
-            {plan.automationEnabledCaseCount > 0 && (
-              <DetailField label="自动化用例">
-                <span className="text-[13px]">{plan.automationEnabledCaseCount} 个</span>
-              </DetailField>
-            )}
-          </div>
-
-          {plan.description && (
-            <div>
-              <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">描述</h4>
-              <p className="text-[13px] text-[var(--color-text-secondary)]">{plan.description}</p>
-            </div>
-          )}
-
-          {/* 自动化状态 */}
-          {plan.lastAutomationStatus && (
-            <div className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] p-4">
-              <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">最近自动化执行</h4>
-              <div className="flex items-center gap-3">
-                <span className={cn('rounded-full px-2.5 py-1 text-[12px] font-medium', statusColorMap[plan.lastAutomationStatus] || 'bg-gray-100 text-gray-600')}>
-                  {plan.lastAutomationStatus}
-                </span>
-                {plan.lastAutomationSummary && (
-                  <span className="text-[12px] text-[var(--color-text-secondary)]">{plan.lastAutomationSummary}</span>
-                )}
-                {plan.lastAutomationMrUrl && (
-                  <a href={plan.lastAutomationMrUrl} target="_blank" rel="noopener noreferrer" className="text-[12px] text-[var(--color-primary)] hover:underline inline-flex items-center gap-1">
-                    <ExternalLink className="h-3 w-3" />查看 MR
-                  </a>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* 测试用例列表 */}
-          {plan.cases && plan.cases.length > 0 && (
-            <div>
-              <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-3">
-                测试用例 ({plan.cases.length})
-              </h4>
-              <div className="space-y-2">
-                {plan.cases.map((tc, idx) => (
-                  <TestCaseCard key={tc.id ?? idx} testCase={tc} index={idx + 1} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {(!plan.cases || plan.cases.length === 0) && (
-            <div className="rounded-lg border border-dashed border-[var(--color-border)] p-8 text-center">
-              <FileText className="mx-auto h-8 w-8 text-[var(--color-text-tertiary)]" strokeWidth={1.5} />
-              <p className="mt-2 text-[13px] text-[var(--color-text-tertiary)]">暂无测试用例</p>
-            </div>
-          )}
-        </div>
-      )}
-      </div>
-    </div>
-  </div>
-)
-
-/** 单个测试用例卡片。 */
-const TestCaseCard = ({ testCase, index }: { testCase: TestCaseItem; index: number }) => {
-  const [expanded, setExpanded] = useState(false)
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] overflow-hidden">
+    <div className="relative" ref={ref}>
       <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--color-bg-hover)] transition-colors"
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen(!open)}
+        className={cn(
+          'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium transition-all',
+          statusColorMap[currentStatus] || 'bg-gray-100 text-gray-600',
+          !disabled && 'cursor-pointer hover:opacity-80',
+          disabled && 'opacity-50',
+        )}
       >
-        <span className="flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-bg-hover)] text-[11px] font-mono text-[var(--color-text-tertiary)]">
-          {index}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-[var(--color-text-primary)] truncate">{testCase.title}</p>
-          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--color-text-tertiary)]">
-            <span>{testCase.caseType}</span>
-            <span className={cn(priorityColorMap[testCase.priority] || 'text-gray-500')}>{testCase.priority}</span>
-            {testCase.moduleName && <span>{testCase.moduleName}</span>}
-          </div>
-        </div>
-        <ChevronRight className={cn('h-4 w-4 text-[var(--color-text-tertiary)] transition-transform', expanded && 'rotate-90')} />
+        {currentStatus}
+        <ChevronDown className="h-3 w-3" />
       </button>
-      {expanded && (
-        <div className="border-t border-[var(--color-border-light)] px-4 py-3 space-y-2">
-          {testCase.precondition && (
-            <div>
-              <p className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-1">前置条件</p>
-              <p className="text-[12px] text-[var(--color-text-secondary)]">{testCase.precondition}</p>
-            </div>
-          )}
-          {testCase.steps && testCase.steps.length > 0 && (
-            <div>
-              <p className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-1">步骤</p>
-              <div className="space-y-1.5">
-                {testCase.steps.map((step, si) => (
-                  <div key={si} className="flex gap-2 text-[12px]">
-                    <span className="flex-shrink-0 w-5 text-right font-mono text-[var(--color-text-tertiary)]">{step.stepNo}</span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[var(--color-text-primary)]">{step.action}</p>
-                      <p className="text-[var(--color-text-tertiary)]">预期: {step.expectedResult}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {testCase.remarks && (
-            <div>
-              <p className="text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-1">备注</p>
-              <p className="text-[12px] text-[var(--color-text-secondary)]">{testCase.remarks}</p>
-            </div>
-          )}
-          {testCase.automationType && (
-            <div className="flex items-center gap-2 text-[11px]">
-              <span className="rounded-full bg-blue-50 px-2 py-0.5 font-medium text-blue-700">自动化: {testCase.automationType}</span>
-            </div>
-          )}
+      {open && (
+        <div className="absolute right-0 z-50 mt-1 min-w-[100px] rounded-lg border border-[var(--color-border)] bg-white py-1 shadow-[var(--shadow-lg)]">
+          {options.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => {
+                onChange(opt)
+                setOpen(false)
+              }}
+              className={cn(
+                'block w-full px-3 py-1.5 text-left text-[12px] transition-colors',
+                opt === currentStatus
+                  ? 'bg-[var(--color-primary-light)] text-[var(--color-primary)] font-medium'
+                  : 'text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]',
+              )}
+            >
+              {opt}
+            </button>
+          ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/* ════════════════════════════════════════════
+   测试计划表单对话框
+   ════════════════════════════════════════════ */
+
+interface IterationOption {
+  id: number
+  name: string
+  startDate: string | null
+  endDate: string | null
+}
+
+const TestPlanFormDialog = ({
+  projectId,
+  editingPlan,
+  onClose,
+  onSaved,
+}: {
+  projectId: number
+  editingPlan: TestPlanItem | null
+  onClose: () => void
+  onSaved: () => void
+}) => {
+  const isEditing = Boolean(editingPlan)
+  const [name, setName] = useState(editingPlan?.name || '')
+  const [description, setDescription] = useState(editingPlan?.description || '')
+  const [status, setStatus] = useState(editingPlan?.status || '草稿')
+  const [iterationId, setIterationId] = useState<number | null>(editingPlan?.iterationId ?? null)
+  const [startDate, setStartDate] = useState(editingPlan?.startDate || '')
+  const [endDate, setEndDate] = useState(editingPlan?.endDate || '')
+  const [iterations, setIterations] = useState<IterationOption[]>([])
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const data = await listTestPlanIterations(projectId)
+        setIterations(data)
+        if (!isEditing && data.length > 0 && !iterationId) {
+          setIterationId(data[0].id)
+          if (data[0].startDate) setStartDate(data[0].startDate)
+          if (data[0].endDate) setEndDate(data[0].endDate)
+        }
+      } catch {
+        /* 静默 */
+      }
+    }
+    load()
+  }, [projectId])
+
+  const handleIterationChange = (id: number) => {
+    setIterationId(id)
+    const iter = iterations.find((i) => i.id === id)
+    if (iter) {
+      if (iter.startDate) setStartDate(iter.startDate)
+      if (iter.endDate) setEndDate(iter.endDate)
+    }
+  }
+
+  const handleSubmit = async () => {
+    if (!name.trim()) return
+    setSubmitting(true)
+    try {
+      const payload = {
+        name: name.trim(),
+        projectId,
+        iterationId,
+        status,
+        description: description.trim(),
+        startDate: startDate || null,
+        endDate: endDate || null,
+      }
+      if (isEditing && editingPlan) {
+        await updateTestPlan(editingPlan.id, payload)
+      } else {
+        await createTestPlan(payload)
+      }
+      onSaved()
+    } catch {
+      /* 静默 */
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-[560px] rounded-2xl bg-white p-6 shadow-[var(--shadow-xl)]">
+        <div className="mb-5 flex items-center justify-between">
+          <h3 className="text-[16px] font-semibold text-[var(--color-text-primary)]">
+            {isEditing ? '编辑测试计划' : '新建测试计划'}
+          </h3>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-[var(--color-text-secondary)]">
+              计划名称 <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="请输入测试计划名称"
+              className="h-10 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3.5 text-[14px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-[var(--color-text-secondary)]">
+                所属迭代
+              </label>
+              <select
+                value={iterationId ?? ''}
+                onChange={(e) => handleIterationChange(Number(e.target.value))}
+                className="h-10 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[14px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+              >
+                <option value="">请选择迭代</option>
+                {iterations.map((iter) => (
+                  <option key={iter.id} value={iter.id}>{iter.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-[var(--color-text-secondary)]">
+                状态
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="h-10 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[14px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+              >
+                {planStatusOptions.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-[var(--color-text-secondary)]">
+                开始日期
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="h-10 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[14px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[13px] font-medium text-[var(--color-text-secondary)]">
+                结束日期
+              </label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="h-10 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[14px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[13px] font-medium text-[var(--color-text-secondary)]">
+              说明
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="用于描述测试范围、版本范围和执行目标"
+              rows={4}
+              className="w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3.5 py-2.5 text-[14px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <Button variant="secondary" onClick={onClose}>
+            取消
+          </Button>
+          <Button onClick={handleSubmit} loading={submitting} disabled={!name.trim()}>
+            {isEditing ? '保存计划' : '创建计划'}
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -471,6 +678,7 @@ const TestCaseCard = ({ testCase, index }: { testCase: TestCaseItem; index: numb
 
 const ExecutionCenterPanel = () => {
   const { projectId } = useParams<{ projectId: string }>()
+  const navigate = useNavigate()
   const pid = Number(projectId)
 
   const [tasks, setTasks] = useState<PageResponse<ExecutionTaskItem> | null>(null)
@@ -480,40 +688,102 @@ const ExecutionCenterPanel = () => {
   const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
 
-  /* 执行任务详情 */
-  const [detailTask, setDetailTask] = useState<ExecutionTaskItem | null>(null)
+  /* 筛选 */
+  const [filterStatus, setFilterStatus] = useState('')
+  const [filterScenario, setFilterScenario] = useState('')
+  const [filterVisible, setFilterVisible] = useState(false)
+  const [projectOptions, setProjectOptions] = useState<ProjectItem[]>([])
+
+  /* 轮询 */
+  const pollTimerRef = useRef<number | null>(null)
 
   const fetchTasks = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await pageExecutionTasks({
-        page,
-        size: 20,
-        projectId: pid,
-        keyword: keyword || undefined,
-      })
+      const [data, statsData] = await Promise.all([
+        pageExecutionTasks({
+          page,
+          size: 20,
+          projectId: pid,
+          keyword: keyword || undefined,
+          status: filterStatus || undefined,
+          scenarioCode: filterScenario || undefined,
+        }),
+        getExecutionTaskListStats({
+          projectId: pid,
+          keyword: keyword || undefined,
+          status: filterStatus || undefined,
+          scenarioCode: filterScenario || undefined,
+        }),
+      ])
       setTasks(data)
+      setStats(statsData)
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载执行任务失败')
     } finally {
       setLoading(false)
     }
-  }, [pid, page, keyword])
-
-  const fetchStats = async () => {
-    try {
-      const data = await getExecutionTaskListStats({ projectId: pid })
-      setStats(data)
-    } catch {
-      /* 统计加载失败不阻塞页面 */
-    }
-  }
+  }, [pid, page, keyword, filterStatus, filterScenario])
 
   useEffect(() => {
     fetchTasks()
-    fetchStats()
   }, [fetchTasks])
+
+  /* 自动轮询：当存在运行中或待执行任务时每 8 秒刷新。 */
+  useEffect(() => {
+    if (pollTimerRef.current) {
+      window.clearInterval(pollTimerRef.current)
+      pollTimerRef.current = null
+    }
+    if (tasks?.records.some((t) => ['PENDING', 'RUNNING', 'WAITING_CONFIRMATION'].includes(t.status))) {
+      pollTimerRef.current = window.setInterval(() => {
+        fetchTasks()
+      }, 8000)
+    }
+    return () => {
+      if (pollTimerRef.current) {
+        window.clearInterval(pollTimerRef.current)
+      }
+    }
+  }, [tasks, fetchTasks])
+
+  /* 加载项目选项 */
+  useEffect(() => {
+    listProjectOptions().then(setProjectOptions).catch(() => {})
+  }, [])
+
+  const handleOpenDetail = (taskId: number) => {
+    navigate(`/projects/${projectId}/execution/tasks/${taskId}`)
+  }
+
+  const handleCancel = async (task: ExecutionTaskItem) => {
+    if (!window.confirm(`确认取消执行任务「${task.title}」吗？`)) return
+    try {
+      await cancelExecutionTask(task.id)
+      await fetchTasks()
+    } catch {
+      /* 静默 */
+    }
+  }
+
+  const handleRetry = async (task: ExecutionTaskItem) => {
+    try {
+      await retryExecutionTask(task.id)
+      await fetchTasks()
+    } catch {
+      /* 静默 */
+    }
+  }
+
+  const handleResetFilters = () => {
+    setKeyword('')
+    setFilterStatus('')
+    setFilterScenario('')
+    setPage(1)
+  }
+
+  const hasActiveFilters = Boolean(filterStatus || filterScenario)
 
   return (
     <div>
@@ -535,19 +805,97 @@ const ExecutionCenterPanel = () => {
         </div>
       )}
 
-      <div className="mb-4 relative max-w-xs">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
-        <input
-          type="text"
-          placeholder="搜索执行任务…"
-          value={keyword}
-          onChange={(e) => {
-            setKeyword(e.target.value)
-            setPage(1)
-          }}
-          className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white pl-9 pr-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-        />
+      {/* 搜索和筛选 */}
+      <div className="mb-4 flex items-center gap-3">
+        <div className="relative max-w-xs flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
+          <input
+            type="text"
+            placeholder="搜索执行任务…"
+            value={keyword}
+            onChange={(e) => {
+              setKeyword(e.target.value)
+              setPage(1)
+            }}
+            className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white pl-9 pr-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => setFilterVisible(!filterVisible)}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[13px] font-medium transition-all',
+            hasActiveFilters
+              ? 'border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary)]'
+              : 'border-[var(--color-border-strong)] bg-white text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]',
+          )}
+        >
+          <Filter className="h-3.5 w-3.5" />
+          筛选
+          {hasActiveFilters && (
+            <span className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-[var(--color-primary)] text-[10px] text-white">
+              {(filterStatus ? 1 : 0) + (filterScenario ? 1 : 0)}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={fetchTasks}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border-strong)] bg-white px-3 py-1.5 text-[13px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-all"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          刷新
+        </button>
       </div>
+
+      {/* 筛选面板 */}
+      {filterVisible && (
+        <div className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-sm)]">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <label className="mb-1.5 block text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">
+                执行场景
+              </label>
+              <select
+                value={filterScenario}
+                onChange={(e) => {
+                  setFilterScenario(e.target.value)
+                  setPage(1)
+                }}
+                className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none"
+              >
+                <option value="">全部场景</option>
+                {scenarioOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">
+                执行状态
+              </label>
+              <select
+                value={filterStatus}
+                onChange={(e) => {
+                  setFilterStatus(e.target.value)
+                  setPage(1)
+                }}
+                className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none"
+              >
+                <option value="">全部状态</option>
+                {executionStatusOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <Button variant="secondary" size="sm" onClick={handleResetFilters}>
+                重置筛选
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <LoadingSpinner text="加载执行任务…" />
@@ -566,7 +914,7 @@ const ExecutionCenterPanel = () => {
               <div
                 key={task.id}
                 className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-xs)] cursor-pointer hover:shadow-[var(--shadow-sm)] transition-shadow"
-                onClick={() => setDetailTask(task)}
+                onClick={() => handleOpenDetail(task.id)}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
@@ -577,8 +925,8 @@ const ExecutionCenterPanel = () => {
                       </h4>
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-tertiary)]">
-                      <span className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5 font-mono">
-                        {task.scenarioCode}
+                      <span className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5 font-medium">
+                        {task.scenarioName || task.scenarioCode}
                       </span>
                       {task.workItemName && <span>工作项: {task.workItemName}</span>}
                       <span>创建者: {task.createdByName || '-'}</span>
@@ -597,7 +945,7 @@ const ExecutionCenterPanel = () => {
                         statusColorMap[task.status] || 'bg-gray-100 text-gray-600',
                       )}
                     >
-                      {task.status}
+                      {executionStatusLabel(task.status)}
                     </span>
                     <div className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-tertiary)]">
                       <div className="h-1.5 w-16 rounded-full bg-[var(--color-bg-hover)] overflow-hidden">
@@ -609,6 +957,38 @@ const ExecutionCenterPanel = () => {
                       <span>{task.progressPercent}%</span>
                     </div>
                   </div>
+                </div>
+                {/* 操作按钮 */}
+                <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border-light)] pt-3">
+                  <Button variant="ghost" size="sm" onClick={() => handleOpenDetail(task.id)}>
+                    查看详情
+                  </Button>
+                  {['PENDING', 'RUNNING', 'WAITING_CONFIRMATION'].includes(task.status) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleCancel(task)
+                      }}
+                      className="text-amber-600 hover:text-amber-700"
+                    >
+                      取消
+                    </Button>
+                  )}
+                  {['FAILED', 'CANCELED'].includes(task.status) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<RefreshCw className="h-3.5 w-3.5" />}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleRetry(task)
+                      }}
+                    >
+                      重试
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -642,208 +1022,6 @@ const ExecutionCenterPanel = () => {
           )}
         </>
       )}
-
-      {/* 执行任务详情抽屉 */}
-      {detailTask && (
-        <ExecutionTaskDetailDrawer task={detailTask} onClose={() => setDetailTask(null)} />
-      )}
     </div>
   )
 }
-
-/* ════════════════════════════════════════════
-   执行任务详情抽屉
-   ════════════════════════════════════════════ */
-
-const ExecutionTaskDetailDrawer = ({
-  task,
-  onClose,
-}: {
-  task: ExecutionTaskItem
-  onClose: () => void
-}) => {
-  const [runs, setRuns] = useState<ExecutionRunItem[]>([])
-  const [runsLoading, setRunsLoading] = useState(true)
-  const [actionLoading, setActionLoading] = useState(false)
-
-  useEffect(() => {
-    const fetch = async () => {
-      setRunsLoading(true)
-      try { setRuns(await listExecutionTaskRuns(task.id)) } catch { /* ignore */ }
-      finally { setRunsLoading(false) }
-    }
-    fetch()
-  }, [task.id])
-
-  const handleCancel = async () => {
-    setActionLoading(true)
-    try { await cancelExecutionTask(task.id) } catch { /* ignore */ }
-    finally { setActionLoading(false) }
-  }
-
-  const handleRetry = async () => {
-    setActionLoading(true)
-    try { await retryExecutionTask(task.id) } catch { /* ignore */ }
-    finally { setActionLoading(false) }
-  }
-
-  return (
-  <div className="fixed inset-0 z-50">
-    <div className="absolute inset-0 bg-transparent" onClick={onClose} />
-    <div className="absolute inset-y-0 right-0 flex flex-col w-full max-w-[850px] bg-white shadow-[var(--shadow-xl)] animate-slideLeft overflow-hidden">
-      <div className="flex-shrink-0 flex items-center justify-between border-b border-[var(--color-border)] bg-white px-6 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.04)] z-10">
-        <div className="flex items-center gap-2">
-          <Play className="h-4 w-4 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />
-          <span className="text-[14px] font-semibold text-[var(--color-text-primary)]">{task.title}</span>
-        </div>
-        <div className="flex items-center gap-1">
-          {(task.status === 'PENDING' || task.status === 'RUNNING') && (
-            <Button variant="danger" size="sm" onClick={handleCancel} loading={actionLoading}>取消</Button>
-          )}
-          {(task.status === 'FAILED' || task.status === 'CANCELLED') && (
-            <Button variant="secondary" size="sm" onClick={handleRetry} loading={actionLoading}>重试</Button>
-          )}
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-6 pb-4 space-y-5">
-        {/* 基本信息 */}
-        <div className="grid grid-cols-2 gap-4">
-          <DetailField label="状态">
-            <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-[12px] font-medium', statusColorMap[task.status] || 'bg-gray-100 text-gray-600')}>
-              {task.status}
-            </span>
-          </DetailField>
-          <DetailField label="进度">
-            <div className="flex items-center gap-2">
-              <div className="h-2 w-20 rounded-full bg-[var(--color-bg-hover)] overflow-hidden">
-                <div className="h-full bg-[var(--color-primary)] transition-all" style={{ width: `${task.progressPercent}%` }} />
-              </div>
-              <span className="text-[13px] font-semibold">{task.progressPercent}%</span>
-            </div>
-          </DetailField>
-          <DetailField label="场景">
-            <span className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5 text-[12px] font-mono">{task.scenarioCode}</span>
-            <span className="ml-2 text-[12px] text-[var(--color-text-tertiary)]">{task.scenarioName}</span>
-          </DetailField>
-          <DetailField label="来源类型">
-            <span className="text-[13px]">{task.sourceType}</span>
-          </DetailField>
-          {task.workItemName && (
-            <DetailField label="关联工作项">
-              <span className="text-[13px]">{task.workItemCode} {task.workItemName}</span>
-            </DetailField>
-          )}
-          <DetailField label="创建者">
-            <span className="text-[13px]">{task.createdByName || '-'}</span>
-          </DetailField>
-          <DetailField label="创建时间">
-            <span className="text-[13px]">{formatDate(task.createdAt)}</span>
-          </DetailField>
-          <DetailField label="更新时间">
-            <span className="text-[13px]">{formatDate(task.updatedAt)}</span>
-          </DetailField>
-        </div>
-
-        {/* 当前执行步骤 */}
-        {task.currentStepName && (
-          <div className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] p-4">
-            <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">当前执行步骤</h4>
-            <div className="flex items-center gap-2">
-              <span className="text-[12px] text-[var(--color-text-tertiary)]">步骤 #{task.currentStepNo}</span>
-              <span className="text-[13px] font-medium text-[var(--color-text-primary)]">{task.currentStepName}</span>
-              {task.currentRunStatus && (
-                <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', statusColorMap[task.currentRunStatus] || 'bg-gray-100 text-gray-600')}>
-                  {task.currentRunStatus}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* 最新摘要 */}
-        {task.latestSummary && (
-          <div>
-            <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">最新摘要</h4>
-            <div className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] p-4">
-              <p className="text-[13px] text-[var(--color-text-secondary)]">{task.latestSummary}</p>
-            </div>
-          </div>
-        )}
-
-        {/* 计划确认状态 */}
-        {task.planConfirmationRequired && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-            <div className="flex items-center gap-2 text-amber-800 text-[13px] font-medium">
-              <AlertCircle className="h-4 w-4" />
-              {task.planConfirmationPending ? '等待计划确认' : '需要计划确认'}
-            </div>
-          </div>
-        )}
-
-        {/* 运行历史 */}
-        <div>
-          <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
-            运行历史 {runs.length > 0 && <span className="text-[var(--color-text-tertiary)]">({runs.length})</span>}
-          </h4>
-          {runsLoading ? (
-            <LoadingSpinner text="加载运行记录…" />
-          ) : runs.length === 0 ? (
-            <p className="text-[13px] text-[var(--color-text-tertiary)]">暂无运行记录</p>
-          ) : (
-            <div className="space-y-2">
-              {runs.map((run) => (
-                <div key={run.id} className="rounded-lg border border-[var(--color-border)] px-3.5 py-3 hover:bg-[var(--color-bg-hover)]/30 transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[12px] font-mono text-[var(--color-text-tertiary)]">#{run.runNo}</span>
-                      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium', statusColorMap[run.status] || 'bg-gray-100 text-gray-600')}>
-                        {run.status}
-                      </span>
-                    </div>
-                    <span className="text-[11px] text-[var(--color-text-tertiary)]">{formatDate(run.createdAt)}</span>
-                  </div>
-                  <div className="mt-1.5 flex items-center gap-3 text-[12px] text-[var(--color-text-secondary)]">
-                    <div className="flex items-center gap-1.5">
-                      <div className="h-1.5 w-12 rounded-full bg-[var(--color-bg-hover)] overflow-hidden">
-                        <div className="h-full bg-[var(--color-primary)] transition-all" style={{ width: `${run.progressPercent}%` }} />
-                      </div>
-                      <span>{run.progressPercent}%</span>
-                    </div>
-                    {run.currentStepName && <span className="truncate">步骤: {run.currentStepName}</span>}
-                  </div>
-                  {run.outputSummary && (
-                    <p className="mt-1.5 text-[12px] text-[var(--color-text-tertiary)] line-clamp-2">{run.outputSummary}</p>
-                  )}
-                  {run.errorMessage && (
-                    <p className="mt-1.5 text-[12px] text-[var(--color-danger)]">{run.errorMessage}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-      </div>
-    </div>
-  </div>
-  )
-}
-
-/* ════════════════════════════════════════════
-   公共组件
-   ════════════════════════════════════════════ */
-
-const DetailField = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <div>
-    <p className="text-[11px] font-medium text-[var(--color-text-tertiary)] uppercase tracking-wider mb-1">{label}</p>
-    {children}
-  </div>
-)

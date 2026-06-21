@@ -76,6 +76,40 @@ export interface WikiSpacePageDetailItem {
   updatedAt: string
 }
 
+/** 上传文档资产摘要。 */
+export interface DocumentAssetItem {
+  id: number
+  fileName: string
+  contentType: string
+  fileSize: number
+  sourceFormat: string
+  bindingStatus: string
+  url: string
+}
+
+/** 文档导入预览结果（后端将文档转换为 Markdown 后的摘要）。 */
+export interface DocumentMarkdownResultItem {
+  assetId: number
+  fileName: string
+  suggestedTitle: string
+  sourceFormat: string
+  markdown: string
+  truncated: boolean
+  warnings: string[]
+}
+
+/** 页面版本历史摘要。 */
+export interface WikiSpacePageVersionItem {
+  id: number
+  pageId: number
+  versionNumber: number
+  title: string
+  content: string
+  authorName: string
+  changeSummary: string
+  createdAt: string
+}
+
 /* ── 知识图谱 ── */
 
 export interface KnowledgeGraphNodeItem {

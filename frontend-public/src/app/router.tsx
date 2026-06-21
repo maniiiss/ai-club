@@ -19,6 +19,8 @@ import { PlanningPage } from '@/src/pages/planning/PlanningPage'
 import { KnowledgePage } from '@/src/pages/knowledge/KnowledgePage'
 import { DevelopmentPage } from '@/src/pages/development/DevelopmentPage'
 import { ExecutionPage } from '@/src/pages/execution/ExecutionPage'
+import { TestPlanDetailPage } from '@/src/pages/execution/TestPlanDetailPage'
+import { ExecutionTaskDetailPage } from '@/src/pages/execution/ExecutionTaskDetailPage'
 import { ReleasePage } from '@/src/pages/release/ReleasePage'
 
 
@@ -42,6 +44,9 @@ export const router = createBrowserRouter([
       { path: '/dashboard', element: <DashboardPage /> },
       { path: '/projects', element: <ProjectsPage /> },
       { path: '/settings/profile', element: <ProfilePage /> },
+      // 测试与执行详情页（独立页面，不嵌套在项目布局内）
+      { path: '/projects/:projectId/execution/test-plans/:planId', element: <TestPlanDetailPage /> },
+      { path: '/projects/:projectId/execution/tasks/:taskId', element: <ExecutionTaskDetailPage /> },
     ],
   },
 

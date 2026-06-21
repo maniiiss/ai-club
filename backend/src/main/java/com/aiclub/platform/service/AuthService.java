@@ -10,6 +10,7 @@ import com.aiclub.platform.dto.request.LoginRequest;
 import com.aiclub.platform.dto.request.RegisterRequest;
 import com.aiclub.platform.dto.request.UpdateProfileRequest;
 import com.aiclub.platform.exception.UnauthorizedException;
+import com.aiclub.platform.repository.RoleRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.security.AuthContext;
 import com.aiclub.platform.security.AuthContextHolder;
@@ -35,6 +36,7 @@ public class AuthService {
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
     private final LoginSessionStore loginSessionStore;
@@ -42,12 +44,14 @@ public class AuthService {
     private final CreditService creditService;
 
     public AuthService(UserRepository userRepository,
+                       RoleRepository roleRepository,
                        PasswordEncoder passwordEncoder,
                        TokenService tokenService,
                        LoginSessionStore loginSessionStore,
                        AccessManagementService accessManagementService,
                        CreditService creditService) {
         this.userRepository = userRepository;
+        this.roleRepository = roleRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.loginSessionStore = loginSessionStore;
@@ -112,9 +116,13 @@ public class AuthService {
         entity.setEmail(defaultString(request.email()));
         entity.setPhone(defaultString(request.phone()));
         entity.setGitlabUsername(defaultString(request.gitlabUsername()));
-        entity.setEnabled(false);
+        entity.setEnabled(true);
         entity.setBuiltIn(false);
         entity.setPasswordHash(passwordEncoder.encode(request.password().trim()));
+
+        // 自助注册用户默认分配 PUBLIC_DEFAULT 角色
+        roleRepository.findByCode("PUBLIC_DEFAULT").ifPresent(role -> entity.getRoles().add(role));
+
         UserEntity saved = userRepository.save(entity);
         creditService.grantRegisterCredits(saved.getId());
     }
