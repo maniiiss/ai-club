@@ -39,17 +39,20 @@ public class AuthService {
     private final TokenService tokenService;
     private final LoginSessionStore loginSessionStore;
     private final AccessManagementService accessManagementService;
+    private final CreditService creditService;
 
     public AuthService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
                        TokenService tokenService,
                        LoginSessionStore loginSessionStore,
-                       AccessManagementService accessManagementService) {
+                       AccessManagementService accessManagementService,
+                       CreditService creditService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
         this.loginSessionStore = loginSessionStore;
         this.accessManagementService = accessManagementService;
+        this.creditService = creditService;
     }
 
     @Transactional
@@ -112,7 +115,8 @@ public class AuthService {
         entity.setEnabled(false);
         entity.setBuiltIn(false);
         entity.setPasswordHash(passwordEncoder.encode(request.password().trim()));
-        userRepository.save(entity);
+        UserEntity saved = userRepository.save(entity);
+        creditService.grantRegisterCredits(saved.getId());
     }
 
     @Transactional

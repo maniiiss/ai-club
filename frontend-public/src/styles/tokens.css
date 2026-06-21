@@ -5,7 +5,7 @@
  */
 
 :root {
-  /* ── 品牌色 ── */
+  /* ── 品牌色（默认 Indigo，由主题系统覆盖） ── */
   --color-primary: #4f46e5;
   --color-primary-hover: #4338ca;
   --color-primary-light: #eef2ff;
@@ -105,4 +105,145 @@
 
   /* ── 布局 ── */
   --topbar-height: 52px;
+  --sidebar-width: 240px;
+}
+
+/* ══════════════════════════════════════════════
+   主题色预设 — 通过 html[data-theme] 切换
+   ══════════════════════════════════════════════ */
+
+/* Indigo（默认） */
+[data-theme="indigo"] {
+  --color-primary: #4f46e5;
+  --color-primary-hover: #4338ca;
+  --color-primary-light: #eef2ff;
+  --color-primary-lighter: #f5f7ff;
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-900: #312e81;
+  --color-text-link: #4f46e5;
+  --color-border-focus: #4f46e5;
+  --color-bg-active: #eef2ff;
+}
+
+/* Blue */
+[data-theme="blue"] {
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-light: #eff6ff;
+  --color-primary-lighter: #f0f7ff;
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-900: #1e3a5f;
+  --color-text-link: #2563eb;
+  --color-border-focus: #2563eb;
+  --color-bg-active: #eff6ff;
+}
+
+/* Teal */
+[data-theme="teal"] {
+  --color-primary: #0d9488;
+  --color-primary-hover: #0f766e;
+  --color-primary-light: #f0fdfa;
+  --color-primary-lighter: #f0fdf8;
+  --color-primary-50: #f0fdfa;
+  --color-primary-100: #ccfbf1;
+  --color-primary-500: #14b8a6;
+  --color-primary-600: #0d9488;
+  --color-primary-700: #0f766e;
+  --color-primary-900: #134e4a;
+  --color-text-link: #0d9488;
+  --color-border-focus: #0d9488;
+  --color-bg-active: #f0fdfa;
+}
+
+/* Emerald */
+[data-theme="emerald"] {
+  --color-primary: #059669;
+  --color-primary-hover: #047857;
+  --color-primary-light: #ecfdf5;
+  --color-primary-lighter: #f0fdf4;
+  --color-primary-50: #ecfdf5;
+  --color-primary-100: #d1fae5;
+  --color-primary-500: #10b981;
+  --color-primary-600: #059669;
+  --color-primary-700: #047857;
+  --color-primary-900: #064e3b;
+  --color-text-link: #059669;
+  --color-border-focus: #059669;
+  --color-bg-active: #ecfdf5;
+}
+
+/* Orange */
+[data-theme="orange"] {
+  --color-primary: #ea580c;
+  --color-primary-hover: #c2410c;
+  --color-primary-light: #fff7ed;
+  --color-primary-lighter: #fffaf5;
+  --color-primary-50: #fff7ed;
+  --color-primary-100: #ffedd5;
+  --color-primary-500: #f97316;
+  --color-primary-600: #ea580c;
+  --color-primary-700: #c2410c;
+  --color-primary-900: #7c2d12;
+  --color-text-link: #ea580c;
+  --color-border-focus: #ea580c;
+  --color-bg-active: #fff7ed;
+}
+
+/* Rose */
+[data-theme="rose"] {
+  --color-primary: #e11d48;
+  --color-primary-hover: #be123c;
+  --color-primary-light: #fff1f2;
+  --color-primary-lighter: #fff5f5;
+  --color-primary-50: #fff1f2;
+  --color-primary-100: #ffe4e6;
+  --color-primary-500: #f43f5e;
+  --color-primary-600: #e11d48;
+  --color-primary-700: #be123c;
+  --color-primary-900: #881337;
+  --color-text-link: #e11d48;
+  --color-border-focus: #e11d48;
+  --color-bg-active: #fff1f2;
+}
+
+/* Violet */
+[data-theme="violet"] {
+  --color-primary: #7c3aed;
+  --color-primary-hover: #6d28d9;
+  --color-primary-light: #f5f3ff;
+  --color-primary-lighter: #f8f5ff;
+  --color-primary-50: #f5f3ff;
+  --color-primary-100: #ede9fe;
+  --color-primary-500: #8b5cf6;
+  --color-primary-600: #7c3aed;
+  --color-primary-700: #6d28d9;
+  --color-primary-900: #4c1d95;
+  --color-text-link: #7c3aed;
+  --color-border-focus: #7c3aed;
+  --color-bg-active: #f5f3ff;
+}
+
+/* Slate（中性灰） */
+[data-theme="slate"] {
+  --color-primary: #475569;
+  --color-primary-hover: #334155;
+  --color-primary-light: #f8fafc;
+  --color-primary-lighter: #f9fafb;
+  --color-primary-50: #f8fafc;
+  --color-primary-100: #f1f5f9;
+  --color-primary-500: #64748b;
+  --color-primary-600: #475569;
+  --color-primary-700: #334155;
+  --color-primary-900: #0f172a;
+  --color-text-link: #475569;
+  --color-border-focus: #475569;
+  --color-bg-active: #f1f5f9;
 }

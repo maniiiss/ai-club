@@ -46,6 +46,45 @@ export const getWikiPage = async (spaceId: number, pageId: number): Promise<Wiki
   return unwrap(res)
 }
 
+export interface WikiPagePayload {
+  directoryId: number
+  parentPageId?: number | null
+  title: string
+  content: string
+  changeSummary?: string
+}
+
+export const createWikiPage = async (spaceId: number, payload: WikiPagePayload): Promise<WikiSpacePageDetailItem> => {
+  const res = await http.post<ApiResponse<WikiSpacePageDetailItem>>(`/api/wiki/spaces/${spaceId}/pages`, payload)
+  return unwrap(res)
+}
+
+export const updateWikiPage = async (spaceId: number, pageId: number, payload: WikiPagePayload): Promise<WikiSpacePageDetailItem> => {
+  const res = await http.put<ApiResponse<WikiSpacePageDetailItem>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}`, payload)
+  return unwrap(res)
+}
+
+export const deleteWikiPage = async (spaceId: number, pageId: number): Promise<void> => {
+  await http.delete<ApiResponse<null>>(`/api/wiki/spaces/${spaceId}/pages/${pageId}`)
+}
+
+/* ── Wiki 目录 ── */
+
+export interface WikiDirectoryPayload {
+  name: string
+  content: string
+  parentDirectoryId?: number | null
+  boundProjectId?: number | null
+}
+
+export const createWikiDirectory = async (spaceId: number, payload: WikiDirectoryPayload): Promise<void> => {
+  await http.post<ApiResponse<null>>(`/api/wiki/spaces/${spaceId}/directories`, payload)
+}
+
+export const deleteWikiDirectory = async (spaceId: number, directoryId: number): Promise<void> => {
+  await http.delete<ApiResponse<null>>(`/api/wiki/spaces/${spaceId}/directories/${directoryId}`)
+}
+
 /* ── Wiki 搜索 ── */
 
 export const searchWikiPages = async (query?: {

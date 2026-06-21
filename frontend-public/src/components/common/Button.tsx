@@ -23,8 +23,8 @@ const variantStyles: Record<ButtonVariant, string> = {
     'bg-[var(--color-primary)] text-white',
     'hover:bg-[var(--color-primary-hover)]',
     'active:bg-[var(--color-primary-700)]',
-    'shadow-[0_1px_2px_rgba(79,70,229,0.25)]',
-    'hover:shadow-[0_2px_4px_rgba(79,70,229,0.3)]',
+    'shadow-[var(--shadow-sm)]',
+    'hover:shadow-[var(--shadow-md)]',
   ].join(' '),
   secondary: [
     'bg-white text-[var(--color-text-primary)]',

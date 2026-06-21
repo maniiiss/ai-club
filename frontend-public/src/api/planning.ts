@@ -9,6 +9,7 @@ import type {
   IterationBoardItem,
   IterationItem,
   IterationPayload,
+  TaskComment,
   WorkItem,
   WorkItemPayload,
   WorkItemQuery,
@@ -84,6 +85,18 @@ export const updateWorkItem = async (id: number, payload: WorkItemPayload): Prom
 
 export const deleteWorkItem = async (id: number): Promise<void> => {
   await http.delete<ApiResponse<null>>(`/api/tasks/${id}`)
+}
+
+/* ── 评论 ── */
+
+export const listTaskComments = async (taskId: number): Promise<TaskComment[]> => {
+  const res = await http.get<ApiResponse<TaskComment[]>>(`/api/tasks/${taskId}/comments`)
+  return unwrap(res)
+}
+
+export const createTaskComment = async (taskId: number, content: string): Promise<TaskComment> => {
+  const res = await http.post<ApiResponse<TaskComment>>(`/api/tasks/${taskId}/comments`, { content })
+  return unwrap(res)
 }
 
 /* ── 燃尽图 ── */

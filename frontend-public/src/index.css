@@ -3,9 +3,9 @@
 
 /* Tailwind v4 主题扩展 */
 @theme {
-  --color-brand: #4f46e5;
-  --color-brand-hover: #4338ca;
-  --color-brand-light: #eef2ff;
+  --color-brand: var(--color-primary);
+  --color-brand-hover: var(--color-primary-hover);
+  --color-brand-light: var(--color-primary-light);
 }
 
 /* ── 全局基础样式 ── */
@@ -70,7 +70,16 @@ body {
   animation: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* ── 自定义滚动条 ── */
+/* ── 自定义滚动条 — 默认隐藏，悬停/滚动时显示 ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -81,12 +90,21 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1);
+  background: transparent;
   border-radius: 9999px;
+  transition: background 0.2s;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.18);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* ── 焦点可见性 ── */
@@ -117,12 +135,230 @@ a:hover {
 
 /* ── 页面内容区渐变背景（用于认证页等） ── */
 .bg-gradient-auth {
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #6366f1 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-500) 50%, var(--color-primary-700) 100%);
 }
 
 .bg-mesh {
   background-image:
-    radial-gradient(at 20% 80%, rgba(99, 102, 241, 0.15) 0, transparent 50%),
-    radial-gradient(at 80% 20%, rgba(124, 58, 237, 0.12) 0, transparent 50%),
-    radial-gradient(at 50% 50%, rgba(79, 70, 229, 0.08) 0, transparent 60%);
+    radial-gradient(at 20% 80%, color-mix(in srgb, var(--color-primary) 15%, transparent) 0, transparent 50%),
+    radial-gradient(at 80% 20%, color-mix(in srgb, var(--color-primary-500) 12%, transparent) 0, transparent 50%),
+    radial-gradient(at 50% 50%, color-mix(in srgb, var(--color-primary) 8%, transparent) 0, transparent 60%);
+}
+
+/* ── Markdown 渲染样式 ── */
+.prose-markdown {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-text-primary);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.prose-markdown > *:first-child {
+  margin-top: 0;
+}
+
+.prose-markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+/* 标题 */
+.prose-markdown h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 24px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border-light);
+  letter-spacing: -0.02em;
+}
+
+.prose-markdown h2 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 20px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border-light);
+  letter-spacing: -0.015em;
+}
+
+.prose-markdown h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 18px 0 8px;
+}
+
+.prose-markdown h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 16px 0 6px;
+}
+
+.prose-markdown h5,
+.prose-markdown h6 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 14px 0 6px;
+  color: var(--color-text-secondary);
+}
+
+/* 段落 */
+.prose-markdown p {
+  margin: 8px 0;
+}
+
+/* 链接 */
+.prose-markdown a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose-markdown a:hover {
+  color: var(--color-primary-hover);
+}
+
+/* 强调 */
+.prose-markdown strong {
+  font-weight: 600;
+}
+
+.prose-markdown em {
+  font-style: italic;
+}
+
+/* 列表 */
+.prose-markdown ul,
+.prose-markdown ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.prose-markdown ul {
+  list-style-type: disc;
+}
+
+.prose-markdown ol {
+  list-style-type: decimal;
+}
+
+.prose-markdown li {
+  margin: 4px 0;
+}
+
+.prose-markdown li > ul,
+.prose-markdown li > ol {
+  margin: 2px 0;
+}
+
+/* 任务列表 (GFM) */
+.prose-markdown .task-list-item {
+  list-style-type: none;
+  margin-left: -24px;
+  padding-left: 0;
+}
+
+.prose-markdown input[type="checkbox"] {
+  margin-right: 8px;
+  accent-color: var(--color-primary);
+}
+
+/* 引用块 */
+.prose-markdown blockquote {
+  margin: 12px 0;
+  padding: 8px 16px;
+  border-left: 3px solid var(--color-primary);
+  background: var(--color-primary-lighter);
+  color: var(--color-text-secondary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.prose-markdown blockquote p {
+  margin: 4px 0;
+}
+
+/* 代码 - 行内 */
+.prose-markdown code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--color-bg-hover);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--color-primary-700);
+}
+
+/* 代码 - 块 */
+.prose-markdown pre {
+  margin: 12px 0;
+  padding: 16px;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.prose-markdown pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+/* 表格 */
+.prose-markdown table {
+  width: 100%;
+  margin: 12px 0;
+  border-collapse: collapse;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.prose-markdown thead {
+  background: var(--color-bg-page);
+}
+
+.prose-markdown th {
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.prose-markdown td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.prose-markdown tbody tr:hover {
+  background: var(--color-bg-hover);
+}
+
+.prose-markdown tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* 分割线 */
+.prose-markdown hr {
+  margin: 20px 0;
+  border: none;
+  border-top: 1px solid var(--color-border);
+}
+
+/* 图片 */
+.prose-markdown img {
+  max-width: 100%;
+  border-radius: var(--radius-md);
+  margin: 12px 0;
+}
+
+/* 删除线 (GFM) */
+.prose-markdown del {
+  color: var(--color-text-tertiary);
 }

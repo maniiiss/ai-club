@@ -41,7 +41,7 @@ export const LoadingSpinner = ({ text, fullscreen = false, size = 'md' }: Loadin
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3">
         {spinner}
         {text && (
-          <p className="text-[var(--text-sm)] text-[var(--color-text-tertiary)]">{text}</p>
+          <p className="text-[13px] text-[var(--color-text-tertiary)]">{text}</p>
         )}
       </div>
     )
@@ -51,7 +51,7 @@ export const LoadingSpinner = ({ text, fullscreen = false, size = 'md' }: Loadin
     <div className="flex items-center gap-2 py-4">
       {spinner}
       {text && (
-        <p className="text-[var(--text-sm)] text-[var(--color-text-tertiary)]">{text}</p>
+        <p className="text-[13px] text-[var(--color-text-tertiary)]">{text}</p>
       )}
     </div>
   )

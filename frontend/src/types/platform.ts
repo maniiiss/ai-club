@@ -2034,6 +2034,50 @@ export interface UserItem {
   roleNames: string[]
 }
 
+export interface CreditGlobalConfigItem {
+  /** 新用户注册后是否自动赠送积分。 */
+  registerGrantEnabled: boolean
+  /** 注册赠送积分数量，后端保证不小于 0。 */
+  registerGrantAmount: number
+  updatedAt: string | null
+}
+
+export interface CreditFeatureConfigItem {
+  id: number | null
+  /** AI 功能扣费编码，后续业务消费时用 featureCode 精确匹配。 */
+  featureCode: string
+  featureName: string
+  costAmount: number
+  enabled: boolean
+  updatedAt: string | null
+}
+
+export interface CreditAccountItem {
+  userId: number
+  username: string
+  nickname: string
+  balance: number
+  totalGranted: number
+  totalConsumed: number
+  totalRefunded: number
+  updatedAt: string | null
+}
+
+export interface CreditTransactionItem {
+  id: number
+  userId: number
+  username: string
+  transactionType: string
+  amount: number
+  balanceAfter: number
+  featureCode: string
+  businessKey: string
+  reason: string
+  operatorUserId: number | null
+  relatedTransactionId: number | null
+  createdAt: string | null
+}
+
 export interface GitlabUserItem {
   id: number
   username: string

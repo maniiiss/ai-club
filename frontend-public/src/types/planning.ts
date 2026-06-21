@@ -113,6 +113,17 @@ export interface WorkItemStats {
   completionRate: number
 }
 
+/** 工作项评论。 */
+export interface TaskComment {
+  id: number
+  taskId: number
+  authorUserId: number
+  authorName: string
+  /** Markdown 格式评论内容。 */
+  content: string
+  createdAt: string
+}
+
 /** 燃尽图数据。 */
 export interface BurndownItem {
   startDate: string

@@ -1,7 +1,6 @@
 /**
  * 项目内布局。
- * 模块 Tab 作为项目区域的一级切换导航，置于内容区最顶部。
- * 在 ProductLayout 的 max-w-7xl 容器内渲染。
+ * 面包屑、Tab、摘要信息固定不动，内容区内部滚动。
  */
 import { Outlet, useParams, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
@@ -46,9 +45,9 @@ export const ProjectLayout = () => {
   }
 
   return (
-    <div className="-mx-4 -my-6 lg:-mx-6 lg:-my-8">
-      {/* 面包屑 */}
-      <div className="flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-bg-card)] px-4 py-2 lg:px-6">
+    <div className="-mx-4 -my-6 h-full flex flex-col lg:-mx-6 lg:-my-8">
+      {/* 面包屑 — 固定 */}
+      <div className="flex-shrink-0 flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-bg-card)] px-4 py-2 lg:px-6">
         <button
           onClick={() => navigate('/projects')}
           className="flex items-center gap-1 text-[12px] text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] transition-colors"
@@ -73,12 +72,14 @@ export const ProjectLayout = () => {
         )}
       </div>
 
-      {/* 模块切换 Tab */}
-      <ProjectNav />
+      {/* 模块切换 Tab — 固定 */}
+      <div className="flex-shrink-0">
+        <ProjectNav />
+      </div>
 
-      {/* 项目摘要 */}
+      {/* 项目摘要 — 固定 */}
       {project && (
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-[var(--color-border-light)] bg-[var(--color-bg-card)]/50 px-4 py-2 text-[12px] text-[var(--color-text-tertiary)] lg:px-6">
+        <div className="flex-shrink-0 flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-[var(--color-border-light)] bg-[var(--color-bg-card)]/50 px-4 py-2 text-[12px] text-[var(--color-text-tertiary)] lg:px-6">
           {project.description && (
             <span className="max-w-md truncate text-[var(--color-text-secondary)]">
               {project.description}
@@ -101,8 +102,8 @@ export const ProjectLayout = () => {
         </div>
       )}
 
-      {/* 子路由内容 */}
-      <div className="bg-[var(--color-bg-page)] px-4 py-6 lg:px-6 lg:py-8">
+      {/* 子路由内容 — 内部滚动 */}
+      <div className="flex-1 overflow-y-auto bg-[var(--color-bg-page)] px-4 pt-4 pb-2 lg:px-6 lg:pt-5 lg:pb-2">
         <Outlet />
       </div>
     </div>

@@ -5,8 +5,9 @@
  */
 import { useState, useRef, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { Menu, X, LogOut, User, ChevronDown } from 'lucide-react'
+import { Menu, X, LogOut, User, ChevronDown, Coins } from 'lucide-react'
 import { useAuthStore } from '@/src/stores/auth'
+import { getMyCreditAccount } from '@/src/api/credits'
 import { cn, getInitials } from '@/src/lib/utils'
 
 const navItems = [
@@ -21,6 +22,7 @@ export const TopNav = () => {
   const logout = useAuthStore((s) => s.logout)
   const [menuOpen, setMenuOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [creditBalance, setCreditBalance] = useState<number | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -33,6 +35,24 @@ export const TopNav = () => {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
+  useEffect(() => {
+    let alive = true
+    if (!user) {
+      setCreditBalance(null)
+      return
+    }
+    getMyCreditAccount()
+      .then((account) => {
+        if (alive) setCreditBalance(account.balance)
+      })
+      .catch(() => {
+        if (alive) setCreditBalance(null)
+      })
+    return () => {
+      alive = false
+    }
+  }, [user?.id])
+
   const handleLogout = async () => {
     await logout()
     navigate('/login')
@@ -43,7 +63,7 @@ export const TopNav = () => {
 
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[var(--color-bg-card)]/80 backdrop-blur-md">
-      <div className="mx-auto flex h-[52px] max-w-[1600px] items-center gap-4 px-4 lg:px-8">
+      <div className="flex h-[52px] items-center gap-4 px-4 sm:px-6 lg:px-8">
         {/* Logo */}
         <NavLink to="/dashboard" className="flex items-center gap-2 shrink-0">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--color-primary)]">
@@ -79,6 +99,17 @@ export const TopNav = () => {
 
         {/* 右侧空间 */}
         <div className="flex-1" />
+
+        {creditBalance !== null && (
+          <NavLink
+            to="/settings/profile"
+            className="hidden sm:flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-2.5 py-1.5 text-[13px] font-semibold text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
+            title="当前积分余额"
+          >
+            <Coins className="h-3.5 w-3.5 text-[var(--color-primary)]" strokeWidth={1.8} />
+            <span>{creditBalance}</span>
+          </NavLink>
+        )}
 
         {/* 用户菜单 */}
         <div className="relative hidden sm:block" ref={menuRef}>
@@ -178,6 +209,15 @@ export const TopNav = () => {
               </NavLink>
             ))}
             <div className="mx-3 my-2 border-t border-[var(--color-border-light)]" />
+            {creditBalance !== null && (
+              <div className="mx-3 flex items-center justify-between rounded-lg bg-[var(--color-bg-hover)] px-3 py-2 text-[13px]">
+                <span className="flex items-center gap-2 text-[var(--color-text-secondary)]">
+                  <Coins className="h-4 w-4 text-[var(--color-primary)]" />
+                  积分余额
+                </span>
+                <strong className="text-[var(--color-text-primary)]">{creditBalance}</strong>
+              </div>
+            )}
             <button
               onClick={() => {
                 setMobileOpen(false)

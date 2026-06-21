@@ -461,3 +461,20 @@ services:
         condition: service_started
     ports:
       - "${FRONTEND_PORT:-5173}:80"
+
+  frontend-public:
+    build:
+      context: ./frontend-public
+      dockerfile: Dockerfile
+      args:
+        # 公众端默认按“当前主机名 + 后端端口”直连真实后端，也支持显式传完整接口地址。
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-}"
+        VITE_API_PORT: "${VITE_API_PORT:-8080}"
+    image: ${FRONTEND_PUBLIC_IMAGE:-git-ai-club-frontend-public:latest}
+    container_name: git-ai-club-server-frontend-public
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "${FRONTEND_PUBLIC_PORT:-5175}:80"

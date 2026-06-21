@@ -2,7 +2,8 @@
 
 这是一个面向 **AI Agent 工程管理** 的基础脚手架，按职责拆分为：
 
-- `frontend`：前端控制台，基于 **Vue 3 + Vite + Element Plus**
+- `frontend`：管理端控制台，基于 **Vue 3 + Vite + Element Plus**
+- `frontend-public`：公众端前端，基于 **React + Vite**
 - `backend`：业务后端，基于 **Spring Boot + PostgreSQL**
 - `code-processing`：代码处理服务，基于 **FastAPI**
 - `backend/src/main/resources/db/migration`：Flyway 数据库版本脚本
@@ -13,7 +14,8 @@
 
 ```text
 git-ai-club/
-├─ frontend/                  # Vue3 + Element Plus 前端
+├─ frontend/                  # Vue3 + Element Plus 管理端控制台
+├─ frontend-public/           # React + Vite 公众端前端
 ├─ backend/                   # Spring Boot 后端
 │  └─ src/main/resources/db/migration/  # Flyway 数据库迁移脚本
 ├─ code-processing/           # Python 代码处理服务
@@ -27,13 +29,13 @@ git-ai-club/
 
 1. 源码模式启动：
    `powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1`
-   作用：`hermes / hindsight / gitnexus-web / postgres / redis / minio / woodpecker-server / woodpecker-agent` 走 Docker，`code-processing / backend / frontend` 走源码启动；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker。
+   作用：`hermes / hindsight / gitnexus-web / postgres / redis / minio / woodpecker-server / woodpecker-agent` 走 Docker，`code-processing / backend / frontend / frontend-public` 走源码启动；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker。
 2. 源码模式停止：
    `powershell -ExecutionPolicy Bypass -File .\scripts\stop-windows.ps1`
    作用：先停源码服务，再停源码模式依赖容器。
 3. 源码服务重启：
    `powershell -ExecutionPolicy Bypass -File .\scripts\restart-source.ps1`
-   作用：只重启 `code-processing / backend / frontend`，不重新拉起 Docker 中间件。
+   作用：只重启 `code-processing / backend / frontend / frontend-public`，不重新拉起 Docker 中间件。
 4. 全量 Docker 启动：
    `powershell -ExecutionPolicy Bypass -File .\scripts\start-docker.ps1`
    作用：使用 `docker-compose.server.yml` 启动整套项目。
@@ -79,12 +81,12 @@ git-ai-club/
    `python ./scripts/check_postgres_collation.py`
    作用：检查 `ai_agent_platform` / `hindsight` 的 collation version mismatch；默认只检查，显式追加 `--apply` 才执行备份、`REINDEX DATABASE` 和 `ALTER DATABASE ... REFRESH COLLATION VERSION`。
 
-源码模式脚本会自动完成以下动作：
+Windows 源码模式脚本会自动完成以下动作：
 
 1. 启动 `postgres`、`redis`、`minio`、`hindsight`、`gitnexus-web`、`hermes`、`woodpecker-server`、`woodpecker-agent` 容器；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker
-2. 安装前端依赖
+2. 安装管理端和公众端前端依赖
 3. 检查并创建 `code-processing/.venv`
-4. 启动 `code-processing`、`backend`、`frontend`
+4. 启动 `code-processing`、`backend`、`frontend`、`frontend-public`
 5. 将日志写入项目根目录 `.run-logs/`
 
 全量 Docker 脚本默认使用 `docker-compose.server.yml` 和 `.env.server`。
@@ -92,7 +94,8 @@ git-ai-club/
 
 默认访问地址：
 
-- Frontend: `http://localhost:5173`
+- Frontend 管理端: `http://localhost:5173`
+- Frontend 公众端: `http://localhost:5175`
 - Backend: `http://localhost:8080`
 - Code Processing: `http://localhost:9000`
 - Hermes: `http://localhost:18080`

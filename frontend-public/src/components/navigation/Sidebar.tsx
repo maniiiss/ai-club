@@ -51,7 +51,7 @@ export const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
                     'flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] font-medium',
                     'transition-all duration-150',
                     isActive
-                      ? 'bg-[var(--color-primary-light)] text-[var(--color-primary)] shadow-[inset_0_0_0_1px_rgba(79,70,229,0.08)]'
+                      ? 'bg-[var(--color-primary-light)] text-[var(--color-primary)] shadow-[inset_0_0_0_1px_var(--color-border-light)]'
                       : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]',
                   )
                 }
