@@ -1,30 +1,22 @@
 /**
  * 产品全局布局。
- * 左侧边栏 + 顶栏 + 主内容区。
- * 包含 ProtectedRoute 逻辑：未登录时重定向到 /login。
+ * 顶部水平导航 + 全宽内容区，无侧边栏。
+ * 内容区使用 max-w-[1600px] 保持可读性的同时充分利用大屏空间。
  */
-import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
-import { Sidebar } from '@/src/components/navigation/Sidebar'
-import { TopBar } from '@/src/components/navigation/TopBar'
+import { TopNav } from '@/src/components/navigation/TopNav'
 import { ProtectedRoute } from '@/src/components/common/ProtectedRoute'
 
 export const ProductLayout = () => {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-
   return (
     <ProtectedRoute>
-      <div className="flex h-screen overflow-hidden">
-        <Sidebar
-          mobileOpen={mobileMenuOpen}
-          onMobileClose={() => setMobileMenuOpen(false)}
-        />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <TopBar onMobileMenuOpen={() => setMobileMenuOpen(true)} />
-          <main className="flex-1 overflow-y-auto bg-[var(--color-bg-page)] p-4 lg:p-6">
+      <div className="flex min-h-screen flex-col">
+        <TopNav />
+        <main className="flex-1 bg-[var(--color-bg-page)]">
+          <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-8 lg:py-8">
             <Outlet />
-          </main>
-        </div>
+          </div>
+        </main>
       </div>
     </ProtectedRoute>
   )

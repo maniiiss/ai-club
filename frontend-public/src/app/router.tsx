@@ -15,6 +15,8 @@ import { DashboardPage } from '@/src/pages/dashboard/DashboardPage'
 import { ProjectsPage } from '@/src/pages/projects/ProjectsPage'
 import { ProfilePage } from '@/src/pages/settings/ProfilePage'
 import { NotFoundPage } from '@/src/pages/NotFoundPage'
+import { PlanningPage } from '@/src/pages/planning/PlanningPage'
+import { KnowledgePage } from '@/src/pages/knowledge/KnowledgePage'
 
 /* ── 占位模块页面（统一风格） ── */
 
@@ -132,8 +134,8 @@ export const router = createBrowserRouter([
         element: <ProjectLayout />,
         children: [
           { index: true, element: <Navigate to="planning" replace /> },
-          { path: 'planning', element: <PlanningPlaceholder /> },
-          { path: 'knowledge', element: <KnowledgePlaceholder /> },
+          { path: 'planning', element: <PlanningPage /> },
+          { path: 'knowledge', element: <KnowledgePage /> },
           { path: 'development', element: <DevelopmentPlaceholder /> },
           { path: 'execution', element: <ExecutionPlaceholder /> },
           { path: 'release', element: <ReleasePlaceholder /> },
