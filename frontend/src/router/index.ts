@@ -27,6 +27,7 @@ import ForbiddenView from '@/views/ForbiddenView.vue'
 import UserView from '@/views/UserView.vue'
 import RoleView from '@/views/RoleView.vue'
 import PermissionView from '@/views/PermissionView.vue'
+import CreditManagementView from '@/views/CreditManagementView.vue'
 import ToolConfigView from '@/views/ToolConfigView.vue'
 import EnvironmentVariableManagementView from '@/views/EnvironmentVariableManagementView.vue'
 import ShortcutEntryManagementView from '@/views/ShortcutEntryManagementView.vue'
@@ -131,6 +132,7 @@ const router = createRouter({
         { path: 'users', name: 'users', component: UserView, meta: { title: '用户管理', permission: 'system:user:view' } },
         { path: 'roles', name: 'roles', component: RoleView, meta: { title: '角色管理', permission: 'system:role:view' } },
         { path: 'permissions', name: 'permissions', component: PermissionView, meta: { title: '功能管理', permission: 'system:permission:view' } },
+        { path: 'credits', name: 'credits', component: CreditManagementView, meta: { title: '积分管理', permission: 'system:credit:view' } },
         { path: 'tools', name: 'tools', component: ToolConfigView, meta: { title: '工具配置', permission: 'system:tool:view' } },
         { path: 'env-vars', name: 'env-vars', component: EnvironmentVariableManagementView, meta: { title: '环境变量管理', permission: 'system:env:view' } },
         { path: 'shortcuts', name: 'shortcuts', component: ShortcutEntryManagementView, meta: { title: '快捷入口管理', permission: 'system:shortcut:view' } },

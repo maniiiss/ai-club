@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { ApiResponse, DashboardShortcutEntryItem, DataPermissionScopeValue, PageResponse, PermissionItem, PlatformEnvVarDetailItem, PlatformEnvVarItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
+import type { ApiResponse, CreditAccountItem, CreditFeatureConfigItem, CreditGlobalConfigItem, CreditTransactionItem, DashboardShortcutEntryItem, DataPermissionScopeValue, PageResponse, PermissionItem, PlatformEnvVarDetailItem, PlatformEnvVarItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
 
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
@@ -122,6 +122,29 @@ export interface RepositoryScanRulesetPayload {
 export interface RepositoryScanRulesetValidationPayload {
   engineType: string
   definitionContent: string
+}
+
+export interface CreditGlobalConfigPayload {
+  registerGrantAmount: number
+  registerGrantEnabled: boolean
+}
+
+export interface CreditFeatureConfigPayload {
+  featureCode: string
+  featureName: string
+  costAmount: number
+  enabled: boolean
+}
+
+export interface CreditAccountQuery {
+  page: number
+  size: number
+  keyword?: string
+}
+
+export interface CreditAdjustmentPayload {
+  amount: number
+  reason: string
 }
 
 export const pageUsers = async (query: UserQuery) => {
@@ -281,5 +304,44 @@ export const updateRepositoryScanRuleset = async (id: number, payload: Repositor
 
 export const validateRepositoryScanRuleset = async (payload: RepositoryScanRulesetValidationPayload) => {
   const { data } = await http.post<ApiResponse<{ success: boolean; message: string }>>('/api/repository-scan-rulesets/validate', payload)
+  return data.data
+}
+
+export const getCreditGlobalConfig = async () => {
+  const { data } = await http.get<ApiResponse<CreditGlobalConfigItem>>('/api/credits/config')
+  return data.data
+}
+
+export const updateCreditGlobalConfig = async (payload: CreditGlobalConfigPayload) => {
+  const { data } = await http.put<ApiResponse<CreditGlobalConfigItem>>('/api/credits/config', payload)
+  return data.data
+}
+
+export const listCreditFeatureConfigs = async () => {
+  const { data } = await http.get<ApiResponse<CreditFeatureConfigItem[]>>('/api/credits/features')
+  return data.data
+}
+
+export const saveCreditFeatureConfig = async (payload: CreditFeatureConfigPayload) => {
+  const { data } = await http.post<ApiResponse<CreditFeatureConfigItem>>('/api/credits/features', payload)
+  return data.data
+}
+
+export const pageCreditAccounts = async (query: CreditAccountQuery) => {
+  const { data } = await http.get<ApiResponse<PageResponse<CreditAccountItem>>>('/api/credits/accounts', {
+    params: cleanParams(query)
+  })
+  return data.data
+}
+
+export const adjustCreditAccount = async (userId: number, payload: CreditAdjustmentPayload) => {
+  const { data } = await http.post<ApiResponse<CreditAccountItem>>(`/api/credits/accounts/${userId}/adjust`, payload)
+  return data.data
+}
+
+export const pageCreditAccountTransactions = async (userId: number, page: number, size: number) => {
+  const { data } = await http.get<ApiResponse<PageResponse<CreditTransactionItem>>>(`/api/credits/accounts/${userId}/transactions`, {
+    params: { page, size }
+  })
   return data.data
 }

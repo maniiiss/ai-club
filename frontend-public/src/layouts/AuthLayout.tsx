@@ -61,7 +61,7 @@ export const AuthLayout = () => {
           <h2 className="mt-10 text-3xl font-bold text-white leading-tight">
             智能研发协作平台
           </h2>
-          <p className="mt-3 text-base text-indigo-100/80 leading-relaxed max-w-sm">
+          <p className="mt-3 text-base text-white/70 leading-relaxed max-w-sm">
             从规划到发布，AI 驱动的全流程研发协作工具。让团队专注于创造价值。
           </p>
         </div>
@@ -79,7 +79,7 @@ export const AuthLayout = () => {
         </div>
 
         {/* 底部 */}
-        <p className="relative z-10 text-xs text-indigo-200/50">
+        <p className="relative z-10 text-xs text-white/40">
           &copy; {new Date().getFullYear()} AI Club
         </p>
       </div>

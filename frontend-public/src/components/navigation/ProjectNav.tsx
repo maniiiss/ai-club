@@ -4,6 +4,7 @@
  */
 import { NavLink, useParams } from 'react-router-dom'
 import {
+  LayoutDashboard,
   CalendarRange,
   BookOpen,
   Code2,
@@ -13,11 +14,12 @@ import {
 import { cn } from '@/src/lib/utils'
 
 const projectTabs = [
-  { path: 'planning', label: '计划', icon: CalendarRange },
-  { path: 'knowledge', label: '知识', icon: BookOpen },
-  { path: 'development', label: '研发', icon: Code2 },
-  { path: 'execution', label: '测试与执行', icon: FlaskConical },
-  { path: 'release', label: '发布与观测', icon: Rocket },
+  { path: '', label: '概览', icon: LayoutDashboard, exact: true },
+  { path: 'planning', label: '计划', icon: CalendarRange, exact: false },
+  { path: 'knowledge', label: '知识', icon: BookOpen, exact: false },
+  { path: 'development', label: '研发', icon: Code2, exact: false },
+  { path: 'execution', label: '测试与执行', icon: FlaskConical, exact: false },
+  { path: 'release', label: '发布与观测', icon: Rocket, exact: false },
 ]
 
 export const ProjectNav = () => {
@@ -30,7 +32,8 @@ export const ProjectNav = () => {
         {projectTabs.map((tab) => (
           <NavLink
             key={tab.path}
-            to={`${basePath}/${tab.path}`}
+            to={tab.path === '' ? basePath : `${basePath}/${tab.path}`}
+            end={tab.exact}
             className={({ isActive }) =>
               cn(
                 'relative flex items-center gap-2 px-4 py-3 text-[13.5px] font-medium whitespace-nowrap',

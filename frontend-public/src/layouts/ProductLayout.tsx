@@ -1,7 +1,6 @@
 /**
  * 产品全局布局。
- * 顶部水平导航 + 全宽内容区，无侧边栏。
- * 内容区使用 max-w-[1600px] 保持可读性的同时充分利用大屏空间。
+ * 顶部导航固定 + 内容区填满视口，各页面自行管理滚动。
  */
 import { Outlet } from 'react-router-dom'
 import { TopNav } from '@/src/components/navigation/TopNav'
@@ -10,10 +9,10 @@ import { ProtectedRoute } from '@/src/components/common/ProtectedRoute'
 export const ProductLayout = () => {
   return (
     <ProtectedRoute>
-      <div className="flex min-h-screen flex-col">
+      <div className="flex h-screen flex-col overflow-hidden">
         <TopNav />
-        <main className="flex-1 bg-[var(--color-bg-page)]">
-          <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-8 lg:py-8">
+        <main className="flex-1 overflow-hidden bg-[var(--color-bg-page)]">
+          <div className="h-full px-4 pt-4 pb-2 sm:px-6 lg:px-8 lg:pt-6 lg:pb-2">
             <Outlet />
           </div>
         </main>
