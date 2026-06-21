@@ -228,7 +228,7 @@
       </div>
     </section>
 
-  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="620px" class="platform-form-dialog" align-center>
+  <el-dialog v-if="!isMobileViewport" v-model="dialogVisible" :title="dialogTitle" width="620px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="Setting" />
     </template>
@@ -282,6 +282,71 @@
       </div>
     </template>
   </el-dialog>
+
+  <!-- 移动端权限/功能编辑抽屉。 -->
+  <MobileFormDrawer
+    v-else
+    v-model="dialogVisible"
+    :title="dialogTitle"
+    :subtitle="dialogSubtitle"
+    :submit-text="'保存'"
+    :submitting="submitting"
+    :header-icon="Setting"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleSubmit"
+    @cancel="dialogVisible = false"
+  >
+    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">功能信息</div>
+          <div class="platform-form-section-subtitle">配置功能类型、路由信息和启用状态。</div>
+        </div>
+        <el-form-item label="功能名称" prop="name">
+          <el-input v-model="form.name" placeholder="请输入功能名称" />
+        </el-form-item>
+        <el-form-item label="功能编码" prop="code">
+          <el-input v-model="form.code" :disabled="currentBuiltIn" placeholder="例如：project:view" />
+        </el-form-item>
+        <el-form-item label="功能类型" prop="type">
+          <el-radio-group v-model="form.type">
+            <el-radio label="MENU">菜单</el-radio>
+            <el-radio label="ACTION">动作</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="上级功能">
+          <el-select v-model="form.parentId" clearable placeholder="请选择上级功能" style="width: 100%">
+            <el-option v-for="item in parentOptions" :key="item.id" :label="`${item.name} (${item.code})`" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="路由路径">
+          <el-input v-model="form.path" placeholder="菜单可配置，例如 /projects" />
+        </el-form-item>
+        <el-form-item label="组件名称">
+          <el-input v-model="form.component" placeholder="例如：ProjectView" />
+        </el-form-item>
+        <el-form-item label="图标">
+          <el-input v-model="form.icon" placeholder="例如：User / Lock" />
+        </el-form-item>
+        <el-form-item label="排序值" prop="sortOrder">
+          <el-input-number v-model="form.sortOrder" :min="0" :max="9999" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="form.enabled" :disabled="currentBuiltIn" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="form.description" type="textarea" :rows="3" placeholder="请输入描述" />
+        </el-form-item>
+      </section>
+    </el-form>
+    <template #footer>
+      <div class="platform-dialog-footer mobile-form-drawer-footer">
+        <el-button class="mobile-form-drawer-footer-btn" @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!readonlyMode" class="mobile-form-drawer-footer-btn is-primary" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      </div>
+    </template>
+  </MobileFormDrawer>
   </div>
 </template>
 
@@ -291,6 +356,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Plus, RefreshRight, Search, Setting } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 import { createPermission, deletePermission, listPermissionOptions, pagePermissions, updatePermission } from '@/api/access'
 import { useAuthStore } from '@/stores/auth'
 import type { PermissionItem } from '@/types/platform'

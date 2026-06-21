@@ -1570,9 +1570,20 @@ export interface GitlabAutoMergeConfigItem {
   nextExecutionTime: string | null
   aiReviewEnabled: boolean
   aiReviewPrompt: string | null
+  reviewStrictness: 'HIGH' | 'MEDIUM' | 'LOW'
+  pipelineTargets: GitlabAutoMergePipelineTargetItem[]
   lastRunStatus: string | null
   lastRunMessage: string | null
   lastRunAt: string | null
+}
+
+export interface GitlabAutoMergePipelineTargetItem {
+  targetType: 'AI_CLUB' | 'JENKINS' | string
+  targetId: number
+  targetName: string
+  providerName: string
+  defaultBranch: string | null
+  enabled: boolean
 }
 
 /**
@@ -1620,6 +1631,35 @@ export interface GitlabAutoMergeRunResult {
   skippedCount: number
   items: GitlabAutoMergeRunItem[]
 }
+
+/**
+ * GitLab 自动合并外发 Webhook（URL 已脱敏；明文不会从后端返回）。
+ */
+export interface GitlabAutoMergeWebhookItem {
+  id: number
+  configId: number
+  name: string
+  targetUrlMasked: string
+  subscribedEvents: string[]
+  messageTemplate: string | null
+  enabled: boolean
+  lastDeliveryAt: string | null
+  lastDeliveryStatus: string | null
+  lastDeliveryMessage: string | null
+}
+
+/**
+ * GitLab 自动合并外发 Webhook 可订阅的事件列表，与后端 GitlabAutoMergeWebhookDispatcher.SUPPORTED_EVENTS 保持一致。
+ */
+export const GITLAB_AUTO_MERGE_WEBHOOK_EVENT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'MERGED', label: '合并成功' },
+  { value: 'AI_REJECTED', label: 'AI 审核拒绝' },
+  { value: 'FAILED', label: '合并失败' },
+  { value: 'SKIPPED', label: '已跳过' },
+  { value: 'BRANCH_BEHIND', label: '源分支落后' },
+  { value: 'EMPTY', label: '无可处理 MR' }
+]
+
 
 export interface GitlabProductBranchItem {
   id: number
@@ -1742,7 +1782,16 @@ export interface GitlabAutoMergeLogItem {
   executedAt: string
 }
 
+export interface GitlabAutoMergeProjectShareItem {
+  projectId: number
+  projectName: string
+  enabled: boolean
+  expiresAt: string | null
+  shareUrl: string | null
+}
+
 export type AiModelType = 'CHAT' | 'EMBEDDING'
+export type OpenAiApiMode = 'AUTO' | 'RESPONSES' | 'CHAT_COMPLETIONS' | 'CHAT_COMPLETIONS_PLAIN'
 
 export interface AiModelConfigItem {
   id: number
@@ -1751,6 +1800,7 @@ export interface AiModelConfigItem {
   provider: 'OPENAI' | 'ANTHROPIC'
   apiBaseUrl: string
   modelName: string
+  openaiApiMode: OpenAiApiMode
   apiKeyConfigured: boolean
   description: string
   enabled: boolean
@@ -1765,6 +1815,125 @@ export interface ModelTestResult {
   success: boolean
   message: string
   testedAt: string
+}
+
+/** 模型对比测试整体状态：从 PENDING 到 RUNNING，最终落到 SUCCESS/FAILED/CANCELED 三种终态之一。 */
+export type ModelBenchmarkRunStatus = 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELED'
+/** 单个模型在某次 run 内的指标行状态。 */
+export type ModelBenchmarkMetricStatus = 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'SKIPPED'
+
+export interface ModelBenchmarkMetricView {
+  id: number
+  runId: number
+  modelId: number
+  modelName: string
+  provider: string
+  modelRealName: string
+  status: ModelBenchmarkMetricStatus
+  totalCount: number
+  successCount: number
+  failureCount: number
+  /** 失败率，0~1 浮点数。 */
+  failureRate: number
+  avgOutputTokens: number
+  avgTtftMs: number
+  avgLatencyMs: number
+  p50LatencyMs: number
+  p95LatencyMs: number
+  totalTokenPerSec: number
+  genTokenPerSec: number
+  throughput: number
+  wallTimeMs: number
+  /** true 表示该行的 token 数为按文本长度估算（接口未返回 usage）。 */
+  tokenEstimated: boolean
+  sampleError: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ModelBenchmarkRunSummary {
+  id: number
+  /**
+   * 关联的配置 id。新模型下每条 run 都挂在唯一一份 config 之下。
+   */
+  configId: number
+  name: string
+  status: ModelBenchmarkRunStatus
+  concurrency: number
+  totalRequests: number
+  streamEnabled: boolean
+  maxTokens: number
+  modelCount: number
+  modelIds: number[]
+  progressTotal: number
+  progressDone: number
+  createdBy: number | null
+  createdByName: string | null
+  createdAt: string
+  updatedAt: string
+  finishedAt: string | null
+}
+
+export interface ModelBenchmarkRunDetail extends Omit<ModelBenchmarkRunSummary, 'modelCount'> {
+  systemPrompt: string
+  userPrompt: string
+  errorMessage: string | null
+  metrics: ModelBenchmarkMetricView[]
+}
+
+export interface ModelBenchmarkProgress {
+  id: number
+  status: ModelBenchmarkRunStatus
+  progressTotal: number
+  progressDone: number
+  errorMessage: string | null
+}
+
+/**
+ * 模型对比测试配置：可重复编辑、可重复触发的"测试方案"。
+ *
+ * 列表行附带 latestRun + runCount，便于在列表页一眼看到"这份配置最近跑得怎么样"。
+ */
+export interface ModelBenchmarkConfigSummary {
+  id: number
+  name: string
+  concurrency: number
+  totalRequests: number
+  streamEnabled: boolean
+  maxTokens: number
+  modelCount: number
+  modelIds: number[]
+  createdBy: number | null
+  createdByName: string | null
+  createdAt: string
+  updatedAt: string
+  /** 该 config 历史 run 总次数。 */
+  runCount: number
+  /** 最近一次 run 的轻量摘要；从未运行时为 null。 */
+  latestRun: ModelBenchmarkRunSummary | null
+}
+
+/** 抽屉顶部用：配置摘要 + active run 标记。 */
+export interface ModelBenchmarkConfigDetail {
+  id: number
+  name: string
+  concurrency: number
+  totalRequests: number
+  streamEnabled: boolean
+  maxTokens: number
+  systemPrompt: string
+  userPrompt: string
+  modelIds: number[]
+  createdBy: number | null
+  createdByName: string | null
+  createdAt: string
+  updatedAt: string
+  runCount: number
+  /** 是否存在 PENDING/RUNNING 的 run。 */
+  hasActiveRun: boolean
+  /** 当前 active run 的 id（若有），便于直接发起 cancel。 */
+  activeRunId: number | null
+  latestRun: ModelBenchmarkRunSummary | null
 }
 
 export interface CurrentUserInfo {
@@ -1807,6 +1976,50 @@ export interface UserItem {
   roleIds: number[]
   roleCodes: string[]
   roleNames: string[]
+}
+
+export interface CreditGlobalConfigItem {
+  /** 新用户注册后是否自动赠送积分。 */
+  registerGrantEnabled: boolean
+  /** 注册赠送积分数量，后端保证不小于 0。 */
+  registerGrantAmount: number
+  updatedAt: string | null
+}
+
+export interface CreditFeatureConfigItem {
+  id: number | null
+  /** AI 功能扣费编码，后续业务消费时用 featureCode 精确匹配。 */
+  featureCode: string
+  featureName: string
+  costAmount: number
+  enabled: boolean
+  updatedAt: string | null
+}
+
+export interface CreditAccountItem {
+  userId: number
+  username: string
+  nickname: string
+  balance: number
+  totalGranted: number
+  totalConsumed: number
+  totalRefunded: number
+  updatedAt: string | null
+}
+
+export interface CreditTransactionItem {
+  id: number
+  userId: number
+  username: string
+  transactionType: string
+  amount: number
+  balanceAfter: number
+  featureCode: string
+  businessKey: string
+  reason: string
+  operatorUserId: number | null
+  relatedTransactionId: number | null
+  createdAt: string | null
 }
 
 export interface GitlabUserItem {

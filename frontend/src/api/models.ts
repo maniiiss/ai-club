@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { AiModelConfigItem, AiModelType, ApiResponse, ModelTestResult, PageResponse } from '@/types/platform'
+import type { AiModelConfigItem, AiModelType, ApiResponse, ModelTestResult, OpenAiApiMode, PageResponse } from '@/types/platform'
 
 export interface AiModelConfigPayload {
   name: string
@@ -7,6 +7,7 @@ export interface AiModelConfigPayload {
   provider: 'OPENAI' | 'ANTHROPIC'
   apiBaseUrl: string
   modelName: string
+  openaiApiMode: OpenAiApiMode
   apiKey: string
   description: string
   enabled: boolean

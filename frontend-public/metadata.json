@@ -1,0 +1,6 @@
+{
+  "name": "Aether R&D",
+  "description": "An AI-powered R&D collaboration suite with cognitive dashboarding, operational monitoring, agile Kanban, and AI requirements designer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

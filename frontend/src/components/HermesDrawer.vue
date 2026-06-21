@@ -235,7 +235,7 @@
                 {{ message.role === 'user' ? '我' : 'Hermes' }}
                 <span v-if="message.role === 'assistant'" class="hermes-role-tag">{{ currentRoleName }}</span>
               </div>
-              <div class="hermes-message-bubble" :class="message.status">
+              <div class="hermes-message-bubble" :class="[message.status, { 'stream-loading': shouldShowInlineStreamStatus(message) && !message.content?.trim() }]">
                 <pre v-if="message.role === 'user'">{{ message.content || '暂无内容' }}</pre>
                 <template v-else>
                   <div v-if="shouldShowAssistantMarkdown(message)" class="hermes-markdown-content" v-html="renderAssistantMessage(message)"></div>
@@ -315,8 +315,8 @@
                 <strong>{{ action.title }}</strong>
                 <span>{{ action.description }}</span>
               </div>
-              <button class="hermes-inline-button" type="button" :disabled="footerDisabled || executingActionKey === actionKey(action, index)" @click="handleConfirmAction(action, index)">
-                {{ executingActionKey === actionKey(action, index) ? '执行中...' : '确认执行' }}
+              <button class="hermes-inline-button" type="button" :disabled="footerDisabled || executingActionKey === actionKey(action, index) || executedActionKeys.has(actionKey(action, index))" @click="handleConfirmAction(action, index)">
+                {{ executedActionKeys.has(actionKey(action, index)) ? '已执行' : (executingActionKey === actionKey(action, index) ? '执行中...' : '确认执行') }}
               </button>
             </article>
           </section>
@@ -403,7 +403,7 @@ import { MoreFilled, QuestionFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { openCommonFileDownload } from '@/api/common'
-import { archiveHermesConversationSession, clearHermesUserMemories, consolidateHermesUserMemories, createHermesConversationSession, deleteHermesConversationSession, deleteHermesUserMemory, getHermesConversationDetail, getHermesMemoryConsolidationStatus, listHermesUserMemories, pageHermesConversationSessions, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat, streamHermesSessionChatWithFiles, transcribeHermesSpeech } from '@/api/hermes'
+import { archiveHermesConversationSession, clearHermesUserMemories, consolidateHermesUserMemories, createHermesConversationSession, deleteHermesConversationSession, deleteHermesUserMemory, getHermesConversationDetail, getHermesMemoryConsolidationStatus, listHermesUserMemories, markHermesActionExecuted, pageHermesConversationSessions, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat, streamHermesSessionChatWithFiles, transcribeHermesSpeech } from '@/api/hermes'
 import { createGitlabBindingScanTask } from '@/api/gitlab'
 import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
@@ -476,6 +476,9 @@ const currentStreamingAssistantMessageId = ref<string | null>(null)
 const stopRequested = ref(false)
 const thinkBlockOpenState = new Map<string, boolean>()
 const executingActionKey = ref('')
+// 已成功执行过的动作 key 集合，用于把按钮从"确认执行"切换到"已执行"，
+// 避免用户在抽屉中重复触发同一个写入动作。
+const executedActionKeys = ref<Set<string>>(new Set())
 const HERMES_DEBUG_STORAGE_KEY = 'git-ai-club:hermes:debug'
 const HERMES_SELECTED_SESSION_STORAGE_KEY = 'git-ai-club:hermes:selected-session'
 const SESSION_PAGE_SIZE = 20
@@ -1071,12 +1074,47 @@ const formatReferenceDisplayText = (reference: HermesReferenceItem) => {
   return title === label ? title : `${label}:${title}`
 }
 
-const actionKey = (action: HermesActionItem, index: number) => `${action.type}:${index}:${action.title}`
+/**
+ * 计算稳定的动作哈希，避免不同轮对话里恰巧 type+title+index 相同被误判已执行。
+ * 使用按字段名排序后的 JSON 字符串配合 djb2 哈希，速度足够快、碰撞概率可接受。
+ */
+const computeActionParamsHash = (params: Record<string, unknown> | null | undefined) => {
+  try {
+    const sortedJson = JSON.stringify(params ?? {}, Object.keys(params ?? {}).sort())
+    let hash = 5381
+    for (let i = 0; i < sortedJson.length; i += 1) {
+      hash = ((hash << 5) + hash + sortedJson.charCodeAt(i)) | 0
+    }
+    return (hash >>> 0).toString(36)
+  } catch {
+    return '0'
+  }
+}
+
+/**
+ * 动作的稳定唯一标识，由后端持久化以恢复"已执行"状态。
+ * 同时拼上 paramsHash，避免不同轮里恰巧 type+title+index 相同的动作互相覆盖。
+ */
+const actionKey = (action: HermesActionItem, index: number) =>
+  `${action.type}:${index}:${action.title}|${computeActionParamsHash(action.params as Record<string, unknown>)}`
 
 /**
  * Hermes 只负责给出动作建议，真正写入仍走平台执行中心接口并在用户确认后发生。
  */
 const executeAction = async (action: { type: string; title: string; description: string; requiresConfirm: boolean; params: Record<string, unknown> }, key: string) => {
+  // 把当前动作 key 加入"已执行"集合；通过新建 Set 触发 ref 响应式刷新。
+  // 同时尝试上报后端持久化，失败时静默退化为仅前端态，避免阻塞用户操作。
+  const markExecuted = () => {
+    const next = new Set(executedActionKeys.value)
+    next.add(key)
+    executedActionKeys.value = next
+    const sessionId = selectedSessionId.value
+    if (sessionId) {
+      void markHermesActionExecuted(sessionId, key).catch(() => {
+        // 后端记录失败不影响当前 UI 体验；下次刷新若仍未持久化，会回到"确认执行"再点一次。
+      })
+    }
+  }
   try {
     if (action.requiresConfirm) {
       await ElMessageBox.confirm(action.description || `确认执行“${action.title}”吗？`, '确认执行动作', { type: 'warning' })
@@ -1085,17 +1123,16 @@ const executeAction = async (action: { type: string; title: string; description:
     const params = action.params || {}
     if (action.type === 'CREATE_EXECUTION_TASK') {
       const executionTask = await createExecutionTask({ scenarioCode: String(params.scenarioCode || ''), projectId: Number(params.projectId), workItemId: params.workItemId == null ? null : Number(params.workItemId), triggerSource: String(params.triggerSource || 'HERMES'), inputPayload: (params.inputPayload || {}) as Record<string, unknown> })
-      ElMessage.success('执行任务已创建')
-      drawerVisible.value = false
-      await router.push({ name: 'execution-task-detail', params: { executionTaskId: executionTask.id } })
+      markExecuted()
+      // 保留抽屉打开状态，让按钮直接呈现"已执行"，由用户决定是否查看任务详情。
+      ElMessage.success(`执行任务已创建（#${executionTask.id}）`)
       return
     }
     if (action.type === 'CREATE_REPOSITORY_SCAN_TASK') {
       const bindingId = Number(params.bindingId)
       const executionTask = await createGitlabBindingScanTask(bindingId, { branch: String(params.branch || ''), rulesetCode: String(params.rulesetCode || '') })
-      ElMessage.success('仓库扫描任务已创建')
-      drawerVisible.value = false
-      await router.push({ name: 'execution-task-detail', params: { executionTaskId: executionTask.id } })
+      markExecuted()
+      ElMessage.success(`仓库扫描任务已创建（#${executionTask.id}）`)
       return
     }
     if (action.type === 'CREATE_WORK_ITEM_DRAFT') {
@@ -1104,18 +1141,14 @@ const executeAction = async (action: { type: string; title: string; description:
       const name = String(params.name || (content.slice(0, 40) || `Hermes 创建的${workItemType}草稿`))
       const requirementMarkdown = workItemType === '需求' ? `${DEFAULT_REQUIREMENT_TEMPLATE}\n\n### 临时补充\n\n${content}` : ''
       await createTask({ name, workItemType: workItemType as '需求' | '任务' | '缺陷', status: '草稿', priority: '中', assignee: params.assigneeUserId ? '待确认' : '', assigneeUserId: params.assigneeUserId == null ? null : Number(params.assigneeUserId), collaboratorUserIds: [], description: workItemType === '需求' ? requirementMarkdown : content, requirementMarkdown, prototypeUrl: '', projectId: Number(params.projectId), agentId: null, iterationId: params.iterationId == null ? null : Number(params.iterationId), requirementTaskId: null })
+      markExecuted()
       ElMessage.success('工作项草稿已创建')
-      drawerVisible.value = false
-      if (params.projectId) {
-        await router.push({ name: 'project-iterations', params: { projectId: Number(params.projectId) } })
-      }
       return
     }
     if (action.type === 'CREATE_TEST_PLAN_DRAFT') {
       await createTestPlan({ name: String(params.name || 'Hermes 测试计划草稿'), projectId: Number(params.projectId), iterationId: Number(params.iterationId), status: '草稿', description: String(params.description || ''), cases: [] })
+      markExecuted()
       ElMessage.success('测试计划草稿已创建')
-      drawerVisible.value = false
-      await router.push({ name: 'tests' })
       return
     }
     ElMessage.warning('暂不支持该动作类型')
@@ -1300,6 +1333,8 @@ const submitConversation = async (question: string, userContent: string, selecti
   currentActions.value = []
   currentSelectionCards.value = []
   currentDebug.value = null
+  // 已执行集合是会话维度的累积属性，由后端持久化和详情回显维护，这里不再重置；
+  // actionKey 已经带 paramsHash 不会串号，新轮次新动作会得到不同 key。
   currentStreamStatus.value = { stage: 'planning', message: 'Hermes 正在分析问题' }
   startStreamStatusHeartbeat()
   currentMessages.value = [
@@ -1619,6 +1654,8 @@ function applySessionDetail(detail: HermesConversationDetailItem) {
   currentActions.value = latestDisplayState.actions || []
   currentSelectionCards.value = latestDisplayState.selectionCards || []
   currentDebug.value = latestDisplayState.debug || null
+  // 从后端持久化的已执行 key 列表恢复，避免刷新或换设备后按钮回到"确认执行"。
+  executedActionKeys.value = new Set(detail.executedActionKeys || [])
   currentRoleName.value = resolveCurrentRoleName()
   const shouldScrollToBottom = pendingSessionBottomScroll.value
   pendingSessionBottomScroll.value = false
@@ -1634,6 +1671,8 @@ function clearSelectedSession() {
   currentActions.value = []
   currentSelectionCards.value = []
   currentDebug.value = null
+  // 没有当前会话时，已执行集合也应跟随清空。
+  executedActionKeys.value = new Set()
   persistSelectedSessionId(null)
 }
 
@@ -2671,7 +2710,7 @@ function persistSelectedSessionId(sessionId: number | null) {
 
 .hermes-session-list {
   flex: 1 1 auto;
-  gap: 10px;
+  gap: 6px;
   width: 100%;
   box-sizing: border-box;
   padding: 8px var(--hermes-session-scroll-gutter) 8px 0;
@@ -2686,8 +2725,8 @@ function persistSelectedSessionId(sessionId: number | null) {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px;
-  border-radius: 16px;
+  padding: 6px 8px;
+  border-radius: 8px;
   background: #fff;
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
 }
@@ -3116,6 +3155,16 @@ function persistSelectedSessionId(sessionId: number | null) {
   box-shadow: 0 10px 22px rgba(var(--app-primary-rgb), 0.08);
 }
 
+.hermes-message-bubble.stream-loading {
+  position: relative;
+  border: 3px solid transparent;
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    conic-gradient(from 0deg, transparent 0deg, rgba(var(--app-primary-rgb), 0.35) 60deg, var(--app-primary) 100deg, rgba(var(--app-primary-container-rgb), 0.98) 140deg, transparent 200deg, rgba(var(--app-primary-rgb), 0.3) 360deg) border-box;
+  box-shadow: 0 14px 36px rgba(var(--app-primary-rgb), 0.22), 0 0 0 6px rgba(var(--app-primary-rgb), 0.08);
+  animation: hermes-loading-border 2s linear infinite;
+}
+
 .hermes-thinking-indicator {
   display: flex;
   align-items: center;
@@ -3311,6 +3360,27 @@ function persistSelectedSessionId(sessionId: number | null) {
 @keyframes hermes-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+@property --hermes-loading-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes hermes-loading-border {
+  from {
+    --hermes-loading-angle: 0deg;
+    background:
+      linear-gradient(#fff, #fff) padding-box,
+      conic-gradient(from var(--hermes-loading-angle), transparent 0deg, rgba(var(--app-primary-rgb), 0.35) 60deg, var(--app-primary) 100deg, rgba(var(--app-primary-container-rgb), 0.98) 140deg, transparent 200deg, rgba(var(--app-primary-rgb), 0.3) 360deg) border-box;
+  }
+  to {
+    --hermes-loading-angle: 360deg;
+    background:
+      linear-gradient(#fff, #fff) padding-box,
+      conic-gradient(from var(--hermes-loading-angle), transparent 0deg, rgba(var(--app-primary-rgb), 0.35) 60deg, var(--app-primary) 100deg, rgba(var(--app-primary-container-rgb), 0.98) 140deg, transparent 200deg, rgba(var(--app-primary-rgb), 0.3) 360deg) border-box;
+  }
 }
 
 .hermes-thinking-text {

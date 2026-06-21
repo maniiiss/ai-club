@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -146,6 +147,68 @@ class TaskWorkItemMetadataIntegrationTests {
                 "2026-07-01"
         ))).isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("计划结束日期不能早于计划开始日期");
+    }
+
+    /**
+     * 任务工时不再依赖关联需求的开发、测试通过状态。
+     */
+    @Test
+    void shouldAllowTaskWorkHoursWithoutRequirementPassGate() {
+        UserEntity creator = createUser("creator-meta-c", "创建人丙");
+        UserEntity owner = createUser("owner-meta-c", "负责人丙");
+        ProjectEntity project = createProjectAs(creator, owner, "元数据项目C");
+
+        loginAs(creator);
+        TaskSummary requirement = platformStoreService.createTask(new TaskRequest(
+                "关联需求C",
+                "需求",
+                "草稿",
+                "中",
+                "",
+                null,
+                List.of(),
+                "需求描述",
+                "# 用户故事\n\n用户需要记录工时。\n\n# 需求描述\n\n允许任务直接填写工时。\n\n# 验收标准\n\n任务保存成功。",
+                "",
+                "",
+                false,
+                false,
+                null,
+                null,
+                null,
+                project.getId(),
+                null,
+                null,
+                null
+        ));
+
+        TaskSummary task = platformStoreService.createTask(new TaskRequest(
+                "关联任务C",
+                "任务",
+                "待开始",
+                "中",
+                "",
+                null,
+                List.of(),
+                "任务描述",
+                "",
+                "",
+                "",
+                false,
+                false,
+                new BigDecimal("3.5"),
+                null,
+                null,
+                project.getId(),
+                null,
+                null,
+                requirement.id()
+        ));
+
+        assertThat(task.workHours()).isEqualByComparingTo("3.5");
+        assertThat(task.requirementTaskId()).isEqualTo(requirement.id());
+        assertThat(requirement.devPassed()).isFalse();
+        assertThat(requirement.testPassed()).isFalse();
     }
 
     /**

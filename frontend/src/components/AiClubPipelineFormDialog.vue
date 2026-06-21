@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :model-value="modelValue" width="760px" class="platform-form-dialog" align-center @close="handleClose">
+  <el-dialog v-if="!isMobileViewport" :model-value="modelValue" width="760px" class="platform-form-dialog" align-center @close="handleClose">
     <template #header>
       <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="DataAnalysis" />
     </template>
@@ -176,6 +176,187 @@
       </div>
     </template>
   </el-dialog>
+
+  <!-- 移动端流水线表单抽屉，与桌面 dialog 共享同一份业务逻辑。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && modelValue"
+    :model-value="modelValue"
+    :title="dialogTitle"
+    :subtitle="dialogSubtitle"
+    :submit-text="'保存'"
+    :submitting="submitting"
+    :header-icon="DataAnalysis"
+    :close-on-click-modal="true"
+    size="100%"
+    @update:model-value="(value: boolean) => emit('update:modelValue', value)"
+    @submit="handleSubmit"
+    @cancel="handleClose"
+  >
+    <section v-if="!isEditing" class="platform-form-section">
+      <div class="platform-form-section-head">
+        <div class="platform-form-section-title">流水线类型</div>
+      </div>
+      <el-radio-group v-model="providerType" class="pipeline-provider-group">
+        <el-radio-button label="AI_CLUB">AI Club Pipeline</el-radio-button>
+        <el-radio-button label="JENKINS">外部 Jenkins</el-radio-button>
+      </el-radio-group>
+    </section>
+
+    <el-form
+      v-if="providerType === 'AI_CLUB'"
+      ref="aiFormRef"
+      :model="aiForm"
+      :rules="aiRules"
+      label-position="top"
+      class="platform-form-layout"
+    >
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">AI Club Pipeline</div>
+          <div class="platform-form-section-subtitle">Provider：Woodpecker</div>
+        </div>
+        <el-form-item label="流水线名称" prop="name">
+          <el-input v-model="aiForm.name" placeholder="例如：后端发布" />
+        </el-form-item>
+        <el-form-item label="平台项目" prop="projectId">
+          <el-select v-model="aiForm.projectId" filterable placeholder="请选择项目" style="width: 100%" @change="handleAiProjectChange">
+            <el-option v-for="item in projectOptions" :key="item.id" :label="item.name" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="GitLab 绑定" prop="gitlabBindingId">
+          <el-select v-model="aiForm.gitlabBindingId" filterable placeholder="请选择 GitLab 仓库绑定" style="width: 100%" @change="handleAiBindingChange">
+            <el-option
+              v-for="item in aiFormGitlabBindingOptions"
+              :key="item.id"
+              :label="formatGitlabBindingLabel(item)"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="默认分支">
+          <el-input v-model="aiForm.defaultBranch" placeholder="例如：main" />
+        </el-form-item>
+        <el-form-item label="配置文件路径">
+          <el-input v-model="aiForm.configPath" placeholder=".woodpecker.yml" />
+        </el-form-item>
+        <el-form-item label="固定触发变量">
+          <div class="pipeline-trigger-variable-editor">
+            <div class="form-tip">用于同一份 .woodpecker.yml 按变量区分部署目标，例如 `DEPLOY_TARGET=api` 或 `DEPLOY_TARGET=job`。</div>
+            <div
+              v-for="item in aiTriggerVariableRows"
+              :key="item.id"
+              class="pipeline-trigger-variable-row"
+            >
+              <el-input v-model="item.key" placeholder="变量名，例如 DEPLOY_TARGET" />
+              <el-input v-model="item.value" placeholder="变量值，例如 api" />
+              <el-button class="pipeline-trigger-variable-delete-button" text type="danger" @click="removeAiTriggerVariableRow(item.id)">删除</el-button>
+            </div>
+            <el-button class="pipeline-trigger-variable-add-button" plain @click="addAiTriggerVariableRow">新增变量</el-button>
+          </div>
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="aiForm.enabled" />
+        </el-form-item>
+      </section>
+    </el-form>
+
+    <el-form
+      v-else
+      ref="jenkinsFormRef"
+      :model="jenkinsForm"
+      :rules="jenkinsRules"
+      label-position="top"
+      class="platform-form-layout"
+    >
+      <section class="platform-form-section">
+        <div class="platform-form-section-head pipeline-form-head-with-action">
+          <div>
+            <div class="platform-form-section-title">外部 Jenkins 绑定</div>
+            <div class="platform-form-section-subtitle">将平台项目映射到 Jenkins Job，并设置默认分支与构建参数。</div>
+          </div>
+          <el-button class="pipeline-manage-server-button" plain @click="openJenkinsServerManagement">
+            <el-icon><Setting /></el-icon>
+            <span>管理 Jenkins 服务</span>
+          </el-button>
+        </div>
+        <el-form-item label="平台项目" prop="projectId">
+          <el-select v-model="jenkinsForm.projectId" filterable placeholder="请选择项目" style="width: 100%">
+            <el-option v-for="item in projectOptions" :key="item.id" :label="item.name" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Jenkins 服务" prop="jenkinsServerId">
+          <el-select v-model="jenkinsForm.jenkinsServerId" filterable placeholder="请选择 Jenkins 服务" style="width: 100%">
+            <el-option v-for="item in jenkinsServerOptions" :key="item.id" :label="item.name" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="任务名称" prop="jobName">
+          <el-input v-model="jenkinsForm.jobName" placeholder="支持 folder/job 形式，例如：backend/build" />
+          <div class="form-tip">保存时会实时校验该任务是否存在。</div>
+        </el-form-item>
+        <el-form-item label="默认分支">
+          <el-input v-model="jenkinsForm.defaultBranch" placeholder="例如：main" />
+          <div class="form-tip">触发构建时，如参数 JSON 中未配置 branch / BRANCH，且 Jenkins Job 已声明对应参数，系统会自动补充分支值。</div>
+        </el-form-item>
+        <el-form-item label="构建参数 JSON">
+          <el-input v-model="jenkinsForm.buildParametersJson" type="textarea" :rows="6" placeholder='例如：{"env":"test","branch":"main"}' />
+        </el-form-item>
+        <el-form-item label="项目运行实例">
+          <div class="runtime-instance-editor">
+            <div class="form-tip">用于后续日志采集和健康检查。受管服务器支持 SSH 日志路径，外部地址仅支持健康检查。</div>
+            <article v-for="item in runtimeInstanceRows" :key="item.id" class="runtime-instance-card">
+              <div class="runtime-instance-card-head">
+                <div class="runtime-instance-card-title">{{ item.name || '未命名运行实例' }}</div>
+                <div class="runtime-instance-card-actions">
+                  <el-switch v-model="item.enabled" size="small" />
+                  <el-button text type="danger" @click="removeRuntimeInstanceRow(item.id)">删除</el-button>
+                </div>
+              </div>
+              <div class="runtime-instance-grid">
+                <el-input v-model="item.name" placeholder="实例名称，例如：生产 API" />
+                <el-input v-model="item.environment" placeholder="环境，例如：prod" />
+                <el-input v-model="item.serviceName" placeholder="服务名，例如：api-service" />
+                <el-select v-model="item.serverMode" placeholder="服务器模式" @change="handleRuntimeServerModeChange(item)">
+                  <el-option label="受管服务器" value="MANAGED_SERVER" />
+                  <el-option label="外部地址" value="EXTERNAL_ENDPOINT" />
+                </el-select>
+                <el-select
+                  v-if="item.serverMode === 'MANAGED_SERVER'"
+                  v-model="item.serverId"
+                  filterable
+                  clearable
+                  placeholder="选择受管服务器"
+                >
+                  <el-option v-for="server in serverOptions" :key="server.id" :label="`${server.name} / ${server.host}`" :value="server.id" />
+                </el-select>
+                <el-input v-else v-model="item.externalBaseUrl" placeholder="外部访问地址，例如：https://api.example.com" />
+                <el-select v-model="item.healthProbeType" placeholder="健康探针">
+                  <el-option label="HTTP" value="HTTP" />
+                  <el-option label="TCP" value="TCP" />
+                </el-select>
+              </div>
+              <el-input v-model="item.healthTarget" class="runtime-instance-wide-input" placeholder="健康检查目标，例如：https://api.example.com/health 或 10.10.10.10:8080" />
+              <div v-if="item.serverMode === 'MANAGED_SERVER'" class="runtime-instance-log-row">
+                <el-checkbox v-model="item.logEnabled">开启日志采集</el-checkbox>
+                <el-input
+                  v-model="item.logPathsText"
+                  type="textarea"
+                  :rows="2"
+                  :disabled="!item.logEnabled"
+                  placeholder="每行一个日志路径，例如：/srv/app/logs/app.log"
+                />
+              </div>
+            </article>
+            <el-button class="runtime-instance-add-button" plain @click="addRuntimeInstanceRow">
+              新增运行实例
+            </el-button>
+          </div>
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="jenkinsForm.enabled" />
+        </el-form-item>
+      </section>
+    </el-form>
+  </MobileFormDrawer>
 </template>
 
 <script setup lang="ts">
@@ -185,6 +366,8 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { DataAnalysis, Setting } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
+import { useMobileViewport } from '@/utils/mobileViewport'
 import {
   createAiClubPipeline,
   createPipelineBinding,
@@ -266,6 +449,8 @@ const aiFormRef = ref<FormInstance>()
 const jenkinsFormRef = ref<FormInstance>()
 const submitting = ref(false)
 const loadingOptions = ref(false)
+// 移动端断点 900，弹窗在移动端切换为底部抽屉。
+const { isMobileViewport } = useMobileViewport()
 const providerType = ref<ProviderType>('AI_CLUB')
 const projectOptions = ref<ProjectItem[]>([])
 const gitlabBindingOptions = ref<ProjectGitlabBindingItem[]>([])

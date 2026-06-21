@@ -10,6 +10,7 @@ import SelfUpgradeCenterView from '@/views/SelfUpgradeCenterView.vue'
 import TestPlanView from '@/views/TestPlanView.vue'
 import TestPlanDetailView from '@/views/TestPlanDetailView.vue'
 import GitlabView from '@/views/GitlabView.vue'
+const GitlabAutoMergePublicView = () => import('@/views/GitlabAutoMergePublicView.vue')
 const GitlabCodeStructureView = () => import('@/views/GitlabCodeStructureView.vue')
 import JenkinsServerView from '@/views/JenkinsServerView.vue'
 import PipelineBindingView from '@/views/PipelineBindingView.vue'
@@ -26,6 +27,7 @@ import ForbiddenView from '@/views/ForbiddenView.vue'
 import UserView from '@/views/UserView.vue'
 import RoleView from '@/views/RoleView.vue'
 import PermissionView from '@/views/PermissionView.vue'
+import CreditManagementView from '@/views/CreditManagementView.vue'
 import ToolConfigView from '@/views/ToolConfigView.vue'
 import EnvironmentVariableManagementView from '@/views/EnvironmentVariableManagementView.vue'
 import ShortcutEntryManagementView from '@/views/ShortcutEntryManagementView.vue'
@@ -56,6 +58,20 @@ const router = createRouter({
       name: 'forbidden',
       component: ForbiddenView,
       meta: { requiresAuth: false, title: '无权限' }
+    },
+    {
+      path: '/gitlab/public/projects/:projectId/auto-merge-logs/:token',
+      name: 'gitlab-auto-merge-public',
+      component: GitlabAutoMergePublicView,
+      meta: { requiresAuth: false, title: '项目只读分享页' }
+    },
+    {
+      // 项目只读分享页的语义化别名：内容由旧组件复用，但语义统一为「项目只读分享」。
+      // 旧 token 通过原路径仍可访问，避免存量分享链接失效。
+      path: '/public/projects/:projectId/readonly/:token',
+      name: 'project-readonly-share',
+      component: GitlabAutoMergePublicView,
+      meta: { requiresAuth: false, title: '项目只读分享页' }
     },
     {
       path: '/gitlab/bindings/:id/code-structure',
@@ -97,6 +113,7 @@ const router = createRouter({
         { path: 'tests', name: 'tests', component: TestPlanView, meta: { title: '测试管理', permission: 'test:view' } },
         { path: 'tests/:planId', name: 'test-plan-detail', component: TestPlanDetailView, meta: { title: '测试计划详情', permission: 'test:view', activeMenu: '/tests' } },
         { path: 'models', name: 'models', component: ModelView, meta: { title: '模型管理', permission: 'model:view' } },
+        { path: 'model-benchmark-configs', name: 'model-benchmark-configs', component: () => import('@/views/ModelBenchmarkConfigView.vue'), meta: { title: '模型对比测试', permission: 'model:view', activeMenu: '/models' } },
         { path: 'gitlab', name: 'gitlab', component: GitlabView, meta: { title: '代码仓库管理', permission: 'gitlab:view' } },
         { path: 'servers', name: 'servers', component: ServerManagementView, meta: { title: '服务器管理', permission: 'server:view', requiresServerManagement: true } },
         { path: 'servers/:serverId', name: 'server-detail', component: ServerDetailView, meta: { title: '服务器详情', permission: 'server:view', activeMenu: '/servers', requiresServerManagement: true } },
@@ -111,6 +128,7 @@ const router = createRouter({
         { path: 'users', name: 'users', component: UserView, meta: { title: '用户管理', permission: 'system:user:view' } },
         { path: 'roles', name: 'roles', component: RoleView, meta: { title: '角色管理', permission: 'system:role:view' } },
         { path: 'permissions', name: 'permissions', component: PermissionView, meta: { title: '功能管理', permission: 'system:permission:view' } },
+        { path: 'credits', name: 'credits', component: CreditManagementView, meta: { title: '积分管理', permission: 'system:credit:view' } },
         { path: 'tools', name: 'tools', component: ToolConfigView, meta: { title: '工具配置', permission: 'system:tool:view' } },
         { path: 'env-vars', name: 'env-vars', component: EnvironmentVariableManagementView, meta: { title: '环境变量管理', permission: 'system:env:view' } },
         { path: 'shortcuts', name: 'shortcuts', component: ShortcutEntryManagementView, meta: { title: '快捷入口管理', permission: 'system:shortcut:view' } },

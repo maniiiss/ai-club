@@ -3,6 +3,8 @@ package com.aiclub.platform.dto.request;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 public record GitlabAutoMergeConfigRequest(
         @NotBlank(message = "配置名称不能为空")
         @Size(max = 120, message = "配置名称不能超过120个字符")
@@ -38,6 +40,9 @@ public record GitlabAutoMergeConfigRequest(
         Long aiModelConfigId,
         Boolean aiReviewEnabled,
         @Size(max = 5000, message = "AI Review 提示不能不能超过5000个字符")
-        String aiReviewPrompt
+        String aiReviewPrompt,
+        @Size(max = 20, message = "AI Review 严格度不能超过20个字符")
+        String reviewStrictness,
+        List<GitlabAutoMergePipelineTargetRequest> pipelineTargets
 ) {
 }

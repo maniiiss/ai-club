@@ -37,6 +37,12 @@ public class AiModelConfigEntity {
     @Column(name = "model_name", nullable = false, length = 120)
     private String modelName;
 
+    /**
+     * OpenAI 兼容模型的接口调用模式，用于跳过逐级探测并直接命中已知兼容端点。
+     */
+    @Column(name = "openai_api_mode", nullable = false, length = 40)
+    private String openaiApiMode = "AUTO";
+
     @Column(name = "api_key_ciphertext", nullable = false, columnDefinition = "TEXT")
     private String apiKeyCiphertext;
 
@@ -110,6 +116,14 @@ public class AiModelConfigEntity {
 
     public void setModelName(String modelName) {
         this.modelName = modelName;
+    }
+
+    public String getOpenaiApiMode() {
+        return openaiApiMode;
+    }
+
+    public void setOpenaiApiMode(String openaiApiMode) {
+        this.openaiApiMode = openaiApiMode;
     }
 
     public String getApiKeyCiphertext() {

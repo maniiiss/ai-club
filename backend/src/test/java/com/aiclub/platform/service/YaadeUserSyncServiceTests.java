@@ -177,4 +177,62 @@ class YaadeUserSyncServiceTests {
                 .hasMessageContaining("PLATFORM_YAADE_DEFAULT_USER_PASSWORD")
                 .hasMessageContaining("YAADE_DEFAULT_PASSWORD");
     }
+
+    @Test
+    void shouldRemoveStaleBindingThatOccupiesCurrentRemoteYaadeUser() {
+        UserEntity user = new UserEntity();
+        user.setId(18L);
+        when(userRepository.findWithDetailsById(18L)).thenReturn(Optional.of(user));
+        var scope = new ProjectDataPermissionService.ProjectDataScope(
+                18L,
+                false,
+                new ProjectDataPermissionService.DataPermissionPolicy(
+                        DataPermissionScopeType.ALL,
+                        DataPermissionScopeType.ALL,
+                        DataPermissionScopeType.ALL,
+                        DataPermissionScopeType.ALL
+                )
+        );
+        when(projectDataPermissionService.requireCurrentScope()).thenReturn(scope);
+        when(projectRepository.findAll(any(org.springframework.data.domain.Sort.class))).thenReturn(List.of());
+
+        YaadeClientService.YaadeSession adminSession = new YaadeClientService.YaadeSession("admin-cookie");
+        when(yaadeClientService.loginAdmin()).thenReturn(adminSession);
+        ObjectMapper objectMapper = new ObjectMapper();
+        var remoteUser = new YaadeClientService.YaadeRemoteUser(
+                33L,
+                "aiclub-18",
+                objectMapper.createObjectNode().put("username", "aiclub-18"),
+                List.of("aiclub-api-public")
+        );
+        when(yaadeClientService.listUsers(adminSession)).thenReturn(List.of(remoteUser));
+
+        PlatformYaadeUserBindingEntity currentBinding = new PlatformYaadeUserBindingEntity();
+        currentBinding.setId(10L);
+        currentBinding.setUserId(18L);
+        currentBinding.setYaadeUserId(101L);
+        currentBinding.setYaadeUsername("aiclub-18");
+        currentBinding.setPasswordCiphertext("cipher-password");
+        PlatformYaadeUserBindingEntity staleBinding = new PlatformYaadeUserBindingEntity();
+        staleBinding.setId(20L);
+        staleBinding.setUserId(77L);
+        staleBinding.setYaadeUserId(33L);
+        staleBinding.setYaadeUsername("aiclub-77");
+        staleBinding.setPasswordCiphertext("stale-cipher-password");
+        when(userBindingRepository.findByUserId(18L)).thenReturn(Optional.of(currentBinding));
+        when(userBindingRepository.findAllByYaadeUserIdOrYaadeUsername(33L, "aiclub-18"))
+                .thenReturn(List.of(staleBinding, currentBinding));
+        when(tokenCipherService.decrypt("cipher-password")).thenReturn("managed-password");
+        when(tokenCipherService.encrypt("managed-password")).thenReturn("cipher-password");
+        when(yaadeClientService.login("aiclub-18", "managed-password"))
+                .thenReturn(new YaadeClientService.YaadeSession("user-cookie"));
+
+        yaadeUserSyncService.loginCurrentUserWithSyncedGroups(null);
+
+        verify(userBindingRepository).deleteAll(List.of(staleBinding));
+        verify(userBindingRepository).flush();
+        ArgumentCaptor<PlatformYaadeUserBindingEntity> bindingCaptor = ArgumentCaptor.forClass(PlatformYaadeUserBindingEntity.class);
+        verify(userBindingRepository).save(bindingCaptor.capture());
+        assertThat(bindingCaptor.getValue().getYaadeUserId()).isEqualTo(33L);
+    }
 }

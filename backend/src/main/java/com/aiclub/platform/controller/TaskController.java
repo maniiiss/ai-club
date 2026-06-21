@@ -129,17 +129,6 @@ public class TaskController {
         return ApiResponse.success(platformStoreService.updateTask(id, request));
     }
 
-    @PostMapping("/{id}/requirement-dev-pass")
-    @RequirePermission("task:requirement:dev")
-    public ApiResponse<TaskSummary> passRequirementDev(@PathVariable Long id) {
-        return ApiResponse.success(platformStoreService.passRequirementDev(id));
-    }
-
-    @PostMapping("/{id}/requirement-test-pass")
-    @RequirePermission("task:requirement:test")
-    public ApiResponse<TaskSummary> passRequirementTest(@PathVariable Long id) {
-        return ApiResponse.success(platformStoreService.passRequirementTest(id));
-    }
 
     @DeleteMapping("/{id}")
     @RequirePermission("task:manage")

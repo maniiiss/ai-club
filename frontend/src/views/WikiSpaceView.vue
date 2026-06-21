@@ -216,7 +216,7 @@
       </main>
     </section>
 
-    <el-dialog v-model="spaceDialogVisible" title="编辑空间" width="720px" destroy-on-close>
+    <el-dialog v-if="!isMobileViewport" v-model="spaceDialogVisible" title="编辑空间" width="720px" destroy-on-close>
       <el-form ref="spaceFormRef" :model="spaceForm" :rules="spaceRules" label-position="top">
         <el-form-item label="空间名称" prop="name">
           <el-input v-model="spaceForm.name" maxlength="120" show-word-limit />
@@ -249,7 +249,48 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="directoryDialogVisible" :title="editingDirectory ? '编辑页面' : '添加目录'" width="1120px" destroy-on-close>
+    <!-- 移动端编辑空间抽屉。 -->
+    <MobileFormDrawer
+      v-else-if="isMobileViewport && spaceDialogVisible"
+      v-model="spaceDialogVisible"
+      title="编辑空间"
+      :submit-text="'保存'"
+      :submitting="submitting"
+      :header-icon="DataAnalysis"
+      :close-on-click-modal="true"
+      size="88%"
+      @submit="handleSubmitSpace"
+      @cancel="spaceDialogVisible = false"
+    >
+      <el-form ref="spaceFormRef" :model="spaceForm" :rules="spaceRules" label-position="top">
+        <el-form-item label="空间名称" prop="name">
+          <el-input v-model="spaceForm.name" maxlength="120" show-word-limit />
+        </el-form-item>
+        <el-form-item label="空间说明">
+          <el-input v-model="spaceForm.description" type="textarea" :rows="4" maxlength="500" show-word-limit />
+        </el-form-item>
+        <el-form-item label="绑定项目">
+          <el-select v-model="spaceForm.boundProjectId" clearable filterable placeholder="不绑定项目" style="width: 100%">
+            <el-option v-for="project in projectOptions" :key="project.id" :label="project.name" :value="project.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="读取范围">
+          <el-select v-model="spaceForm.readScope" style="width: 100%">
+            <el-option label="仅成员可读" value="MEMBERS_ONLY" />
+            <el-option label="所有登录用户可读" value="ALL_LOGGED_IN" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="成员默认配置">
+          <el-radio-group v-model="spaceForm.memberDefaultSource">
+            <el-radio value="MANUAL">手动配置成员</el-radio>
+            <el-radio value="PROJECT_MEMBERS" :disabled="!spaceForm.boundProjectId">使用项目成员作为默认成员</el-radio>
+          </el-radio-group>
+          <div class="wiki-space-form-hint">开启后会把绑定项目中的负责人、创建人和成员作为默认空间成员带入，当前操作者保留管理员权限。</div>
+        </el-form-item>
+      </el-form>
+    </MobileFormDrawer>
+
+    <el-dialog v-if="!isMobileViewport" v-model="directoryDialogVisible" :title="editingDirectory ? '编辑页面' : '添加目录'" width="1120px" destroy-on-close>
       <el-form ref="directoryFormRef" :model="directoryForm" :rules="directoryRules" label-position="top">
         <div class="wiki-form-grid">
           <el-form-item label="页面标题" prop="name">
@@ -266,7 +307,32 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="pageDialogVisible" :title="editingPage ? '编辑页面' : '新建页面'" width="1120px" destroy-on-close>
+    <!-- 移动端目录编辑抽屉，含 Markdown 编辑器，使用全屏高度。 -->
+    <MobileFormDrawer
+      v-else-if="isMobileViewport && directoryDialogVisible"
+      v-model="directoryDialogVisible"
+      :title="editingDirectory ? '编辑页面' : '添加目录'"
+      :submit-text="'保存'"
+      :submitting="submitting"
+      :header-icon="DataAnalysis"
+      :close-on-click-modal="true"
+      size="100%"
+      @submit="handleSubmitDirectory"
+      @cancel="directoryDialogVisible = false"
+    >
+      <el-form ref="directoryFormRef" :model="directoryForm" :rules="directoryRules" label-position="top">
+        <div class="wiki-form-grid">
+          <el-form-item label="页面标题" prop="name">
+            <el-input v-model="directoryForm.name" maxlength="120" show-word-limit />
+          </el-form-item>
+        </div>
+        <el-form-item label="正文">
+          <MarkdownEditor v-model="directoryForm.content" height="60vh" :upload-image="handleUploadImage" />
+        </el-form-item>
+      </el-form>
+    </MobileFormDrawer>
+
+    <el-dialog v-if="!isMobileViewport" v-model="pageDialogVisible" :title="editingPage ? '编辑页面' : '新建页面'" width="1120px" destroy-on-close>
       <el-form ref="pageFormRef" :model="pageForm" :rules="pageRules" label-position="top">
         <div class="wiki-form-grid">
           <el-form-item label="页面标题" prop="title">
@@ -291,7 +357,40 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="importDialogVisible" title="导入文档" width="720px" destroy-on-close>
+    <!-- 移动端页面编辑抽屉，含 Markdown 编辑器，使用全屏高度。 -->
+    <MobileFormDrawer
+      v-else-if="isMobileViewport && pageDialogVisible"
+      v-model="pageDialogVisible"
+      :title="editingPage ? '编辑页面' : '新建页面'"
+      :submit-text="'保存'"
+      :submitting="submitting"
+      :header-icon="DataAnalysis"
+      :close-on-click-modal="true"
+      size="100%"
+      @submit="handleSubmitPage"
+      @cancel="pageDialogVisible = false"
+    >
+      <el-form ref="pageFormRef" :model="pageForm" :rules="pageRules" label-position="top">
+        <div class="wiki-form-grid">
+          <el-form-item label="页面标题" prop="title">
+            <el-input v-model="pageForm.title" maxlength="200" show-word-limit />
+          </el-form-item>
+          <el-form-item label="上级页面">
+            <el-select v-model="pageForm.parentPageId" clearable placeholder="作为目录下一级页面" style="width: 100%">
+              <el-option v-for="row in pageSelectRows" :key="row.id" :label="`${'  '.repeat(row.depth)}${row.label}`" :value="row.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="editingPage" label="变更说明">
+            <el-input v-model="pageForm.changeSummary" maxlength="500" show-word-limit />
+          </el-form-item>
+        </div>
+        <el-form-item label="正文">
+          <MarkdownEditor v-model="pageForm.content" height="60vh" :upload-image="handleUploadImage" />
+        </el-form-item>
+      </el-form>
+    </MobileFormDrawer>
+
+    <el-dialog v-if="!isMobileViewport" v-model="importDialogVisible" title="导入文档" width="720px" destroy-on-close>
       <div
         v-loading="importLoading"
         element-loading-text="正在上传并转换文档，请稍候..."
@@ -327,6 +426,52 @@
         <el-button type="primary" :loading="importLoading" :disabled="!importPreview" @click="applyImportPreview">导入为新页面</el-button>
       </template>
     </el-dialog>
+
+    <!-- 移动端导入文档抽屉，预览区高使用全屏高度。 -->
+    <MobileFormDrawer
+      v-else-if="isMobileViewport && importDialogVisible"
+      v-model="importDialogVisible"
+      title="导入文档"
+      :submit-text="'导入为新页面'"
+      :submitting="importLoading"
+      :submit-disabled="!importPreview"
+      :header-icon="DataAnalysis"
+      :close-on-click-modal="true"
+      size="100%"
+      @submit="applyImportPreview"
+      @cancel="importDialogVisible = false"
+    >
+      <div
+        v-loading="importLoading"
+        element-loading-text="正在上传并转换文档，请稍候..."
+        class="wiki-import-shell"
+      >
+        <el-upload
+          drag
+          action=""
+          :auto-upload="false"
+          :show-file-list="false"
+          :disabled="importLoading"
+          :on-change="handleImportFileChange"
+          accept=".pdf,.docx,.pptx,.xlsx"
+        >
+          <div class="wiki-import-dropzone">
+            <p>拖拽或点击上传 PDF / DOCX / PPTX / XLSX 文档</p>
+            <small>系统会先转为 Markdown 预览，再创建新的 Wiki 页面。</small>
+          </div>
+        </el-upload>
+        <div v-if="importPreview" class="wiki-import-preview">
+          <div class="wiki-import-meta">
+            <span>建议标题：{{ importPreview.suggestedTitle || importPreview.fileName }}</span>
+            <span>格式：{{ importPreview.sourceFormat }}</span>
+            <span v-if="importPreview.truncated">内容已截断</span>
+          </div>
+          <div v-if="importPreview.warnings.length" class="wiki-import-warnings">
+            {{ importPreview.warnings.join('；') }}
+          </div>
+        </div>
+      </div>
+    </MobileFormDrawer>
 
     <el-drawer v-model="memberDrawerVisible" size="520px" title="空间成员管理">
       <div class="wiki-member-editor">
@@ -372,6 +517,8 @@ import { ArrowDown, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MdPreview } from 'md-editor-v3'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
+import { useMobileViewport } from '@/utils/mobileViewport'
 import { listUserOptions } from '@/api/access'
 import {
   createWikiDirectory,
@@ -472,6 +619,8 @@ interface WikiSearchState {
 
 const route = useRoute()
 const router = useRouter()
+// 移动端断点 900，弹窗在移动端切换为底部抽屉。
+const { isMobileViewport } = useMobileViewport()
 const spaceId = computed(() => Number(route.params.spaceId))
 const pageId = computed(() => {
   const value = Number(route.params.pageId)

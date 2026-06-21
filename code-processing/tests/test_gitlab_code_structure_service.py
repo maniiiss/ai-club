@@ -19,6 +19,7 @@ from app.services.gitnexus_cli_support import (
     extract_json_object,
     looks_like_structured_output,
     run_gitnexus_analyze_command,
+    run_gitnexus_command,
     strip_ansi_escape_sequences,
 )
 from app.services.gitlab_code_structure_service import (
@@ -246,6 +247,41 @@ class GitlabCodeStructureServiceTests(unittest.TestCase):
                 run_gitnexus_analyze_command(Path("gitnexus"), repo_dir, lambda _: None)
 
         self.assertEqual([["analyze", str(repo_dir)], ["analyze", "."]], run_calls)
+
+    def test_should_retry_once_when_gitnexus_hits_retryable_lbug_recovery(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_dir = Path(temp_dir)
+            responses = [
+                type(
+                    "Completed",
+                    (),
+                    {
+                        "returncode": 1,
+                        "stdout": "",
+                        "stderr": '{"level":40,"msg":"GitNexus: found 415406 byte lbug.wal without lbug.shadow before write open; will rely on LadybugDB replay/recovery instead of deleting pending WAL data."}',
+                    },
+                )(),
+                type("Completed", (), {"returncode": 0, "stdout": "ok\n", "stderr": ""})(),
+            ]
+
+            with patch("app.services.gitnexus_cli_support.subprocess.run", side_effect=responses), \
+                    patch("app.services.gitnexus_cli_support.time.sleep") as sleep_mock:
+                result = run_gitnexus_command(Path("gitnexus"), ["list"], repo_dir, lambda _: None)
+
+        self.assertEqual("ok", result)
+        sleep_mock.assert_called_once_with(1.0)
+
+    def test_should_not_swallow_non_retryable_gitnexus_failures(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_dir = Path(temp_dir)
+            response = type("Completed", (), {"returncode": 1, "stdout": "", "stderr": "plain failure"})()
+
+            with patch("app.services.gitnexus_cli_support.subprocess.run", return_value=response), \
+                    patch("app.services.gitnexus_cli_support.time.sleep") as sleep_mock:
+                with self.assertRaisesRegex(RuntimeError, "plain failure"):
+                    run_gitnexus_command(Path("gitnexus"), ["list"], repo_dir, lambda _: None)
+
+        sleep_mock.assert_not_called()
 
     def test_should_raise_clear_error_when_workspace_is_not_git_repository(self):
         with tempfile.TemporaryDirectory() as temp_dir:

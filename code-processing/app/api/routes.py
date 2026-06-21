@@ -59,6 +59,7 @@ from app.services.repository_scan_service import (
     run_semgrep_scan,
     summarize_repository_scan,
 )
+from app.services.review_service import ReviewProviderError
 from app.services.review_service import review_code
 from app.settings import settings
 
@@ -75,7 +76,12 @@ def get_summary(request: ScanRequest) -> ScanSummary:
 
 @router.post("/review", response_model=ReviewResponse)
 def review(request: ReviewRequest) -> ReviewResponse:
-    return review_code(request)
+    try:
+        return review_code(request)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except ReviewProviderError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
 
 
 @router.post("/codex-executions", response_model=CodexExecutionResponse)

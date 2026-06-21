@@ -20,6 +20,11 @@ public record AiModelConfigRequest(
         @NotBlank(message = "模型标识不能为空")
         @Size(max = 120, message = "模型标识长度不能超过120")
         String modelName,
+        /**
+         * OpenAI 兼容模型的接口调用模式，允许为特定网关跳过自动探测。
+         */
+        @Size(max = 40, message = "OpenAI 调用模式长度不能超过40")
+        String openaiApiMode,
         @Size(max = 500, message = "API Key 长度不能超过500")
         String apiKey,
         @Size(max = 500, message = "描述长度不能超过500")

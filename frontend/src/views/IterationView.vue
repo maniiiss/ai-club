@@ -415,24 +415,112 @@
       >
         <div class="workspace-table-scroll mobile-card-scroll">
           <template v-if="!isMobileViewport">
-          <table class="workspace-table mobile-card-table">
+          <table class="workspace-table mobile-card-table" ref="workItemTableRef">
+            <colgroup>
+              <col
+                v-for="definition in WORK_ITEM_COLUMN_DEFINITIONS"
+                :key="definition.key"
+                :data-column-key="definition.key"
+                :style="{ width: workItemColumnWidths[definition.key] + 'px' }"
+              />
+            </colgroup>
             <thead>
               <tr>
-                <th class="workspace-col-code">工作项编号</th>
-                <th class="workspace-col-main">标题</th>
-                <th class="center workspace-col-status">状态</th>
-                <th class="center workspace-col-hours">预估工时</th>
-                <th class="center workspace-col-type">工作项类型</th>
-                <th class="workspace-col-plan">计划时间</th>
-                <th class="workspace-col-owner">负责人</th>
-                <th class="center workspace-col-priority">优先级</th>
-                <th class="workspace-col-creator">创建人</th>
-                <th class="right workspace-col-actions">操作</th>
+                <th class="workspace-col-code" :class="{ resizing: resizingColumnKey === 'code' }">
+                  <span class="workspace-col-label">工作项编号</span>
+                  <span
+                    class="workspace-col-resizer"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="调整工作项编号列宽"
+                    @mousedown="startWorkItemColumnResize($event, 'code')"
+                  ></span>
+                </th>
+                <th class="workspace-col-main" :class="{ resizing: resizingColumnKey === 'main' }">
+                  <span class="workspace-col-label">标题</span>
+                  <span
+                    class="workspace-col-resizer"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="调整标题列宽"
+                    @mousedown="startWorkItemColumnResize($event, 'main')"
+                  ></span>
+                </th>
+                <th class="center workspace-col-status" :class="{ resizing: resizingColumnKey === 'status' }">
+                  <span class="workspace-col-label">状态</span>
+                  <span
+                    class="workspace-col-resizer"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="调整状态列宽"
+                    @mousedown="startWorkItemColumnResize($event, 'status')"
+                  ></span>
+                </th>
+                <th class="center workspace-col-hours" :class="{ resizing: resizingColumnKey === 'hours' }">
+                  <span class="workspace-col-label">预估工时</span>
+                  <span
+                    class="workspace-col-resizer"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="调整预估工时列宽"
+                    @mousedown="startWorkItemColumnResize($event, 'hours')"
+                  ></span>
+                </th>
+                <th class="center workspace-col-type" :class="{ resizing: resizingColumnKey === 'type' }">
+                  <span class="workspace-col-label">工作项类型</span>
+                  <span
+                    class="workspace-col-resizer"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="调整工作项类型列宽"
+                    @mousedown="startWorkItemColumnResize($event, 'type')"
+                  ></span>
+                </th>
+                <th class="workspace-col-plan" :class="{ resizing: resizingColumnKey === 'plan' }">
+                  <span class="workspace-col-label">计划时间</span>
+                  <span
+                    class="workspace-col-resizer"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="调整计划时间列宽"
+                    @mousedown="startWorkItemColumnResize($event, 'plan')"
+                  ></span>
+                </th>
+                <th class="workspace-col-owner" :class="{ resizing: resizingColumnKey === 'owner' }">
+                  <span class="workspace-col-label">负责人</span>
+                  <span
+                    class="workspace-col-resizer"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="调整负责人列宽"
+                    @mousedown="startWorkItemColumnResize($event, 'owner')"
+                  ></span>
+                </th>
+                <th class="center workspace-col-priority" :class="{ resizing: resizingColumnKey === 'priority' }">
+                  <span class="workspace-col-label">优先级</span>
+                  <span
+                    class="workspace-col-resizer"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="调整优先级列宽"
+                    @mousedown="startWorkItemColumnResize($event, 'priority')"
+                  ></span>
+                </th>
+                <th class="workspace-col-creator" :class="{ resizing: resizingColumnKey === 'creator' }">
+                  <span class="workspace-col-label">创建人</span>
+                  <span
+                    class="workspace-col-resizer"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label="调整创建人列宽"
+                    @mousedown="startWorkItemColumnResize($event, 'creator')"
+                  ></span>
+                </th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!workItems.length">
-                <td colspan="10" class="workspace-empty-row">当前筛选条件下暂无工作项</td>
+                <td colspan="9" class="workspace-empty-row">当前筛选条件下暂无工作项</td>
               </tr>
               <tr v-for="row in workItems" :key="row.id" class="workspace-row">
                 <td class="workspace-col-code" data-label="工作项编号">
@@ -447,18 +535,32 @@
                 <td class="workspace-col-main" data-label="标题">
                   <div class="workspace-primary-cell">
                     <div class="workspace-primary-copy">
-                      <button class="workspace-title-button" type="button" :title="row.name" @click="openWorkItemDetailFromRow(row)">{{ row.name }}</button>
-                      <div v-if="row.externalSource" class="workspace-primary-source-row">
-                        <span class="workspace-source-pill">{{ formatExternalSourceLabel(row.externalSource) }}</span>
+                      <div class="workspace-title-row">
+                        <!--
+                          来自 Gitee 的工作项：在标题最前展示一个 Gitee logo 图标。
+                          如果带远端链接，图标本身就是跳到远端工作项的超链接，
+                          否则就是个静态图标，仅用于标识来源。原来标题下面那一行"来自 Gitee + 远端编号"
+                          的整段已经收敛到这一个图标上，避免列表标题区被两段元数据撑高。
+                        -->
                         <a
-                          v-if="row.externalRemoteUrl"
-                          class="workspace-source-link"
+                          v-if="row.externalSource === 'GITEE' && row.externalRemoteUrl"
+                          class="workspace-title-source-icon"
                           :href="row.externalRemoteUrl"
                           target="_blank"
                           rel="noreferrer"
+                          :title="`来自 Gitee${row.externalRemoteId ? ` #${row.externalRemoteId}` : ''}`"
+                          @click.stop
                         >
-                          #{{ row.externalRemoteId || '-' }}
+                          <img :src="giteeSourceIconUrl" alt="Gitee" />
                         </a>
+                        <span
+                          v-else-if="row.externalSource === 'GITEE'"
+                          class="workspace-title-source-icon"
+                          title="来自 Gitee"
+                        >
+                          <img :src="giteeSourceIconUrl" alt="Gitee" />
+                        </span>
+                        <button class="workspace-title-button" type="button" :title="row.name" @click="openWorkItemDetailFromRow(row)">{{ row.name }}</button>
                       </div>
                     </div>
                   </div>
@@ -514,40 +616,6 @@
                 </td>
                 <td class="workspace-col-creator" data-label="创建人">
                   <ListUserDisplay :user="buildWorkItemCreatorDisplayItem(row)" empty-text="-" size="md" />
-                </td>
-                <td class="right workspace-col-actions" data-label="操作">
-                  <div class="workspace-row-actions">
-                    <el-tooltip content="评论" placement="top">
-                      <button class="workspace-action-button" type="button" aria-label="评论工作项" @click="openCommentDialog(row)">
-                        <el-icon><ChatDotRound /></el-icon>
-                      </button>
-                    </el-tooltip>
-                    <el-tooltip v-if="canOpenSmartActionDialog(row)" content="智能操作" placement="top">
-                      <button class="workspace-action-button ai" type="button" aria-label="打开智能操作" @click="openSmartActionDialog(row)">
-                        <el-icon><Cpu /></el-icon>
-                      </button>
-                    </el-tooltip>
-                    <el-tooltip v-if="canManageWorkItem" content="编辑" placement="top">
-                      <button class="workspace-action-button" type="button" aria-label="编辑工作项" @click="openWorkItemDetailFromRow(row)">
-                        <el-icon><EditPen /></el-icon>
-                      </button>
-                    </el-tooltip>
-                    <el-tooltip v-if="row.workItemType === '需求' && canRequirementDevPass && !row.devPassed" content="开发通过" placement="top">
-                      <button class="workspace-action-button pass" type="button" aria-label="标记开发通过" @click="handleRequirementDevPass(row)">
-                        <el-icon><Management /></el-icon>
-                      </button>
-                    </el-tooltip>
-                    <el-tooltip v-if="row.workItemType === '需求' && canRequirementTestPass && !row.testPassed" content="测试通过" placement="top">
-                      <button class="workspace-action-button success" type="button" aria-label="标记测试通过" @click="handleRequirementTestPass(row)">
-                        <el-icon><Finished /></el-icon>
-                      </button>
-                    </el-tooltip>
-                    <el-tooltip v-if="canManageWorkItem && row.canDelete" content="删除" placement="top">
-                      <button class="workspace-action-button danger" type="button" aria-label="删除工作项" @click="handleDeleteWorkItem(row)">
-                        <el-icon><Delete /></el-icon>
-                      </button>
-                    </el-tooltip>
-                  </div>
                 </td>
               </tr>
             </tbody>
@@ -678,33 +746,6 @@
                       </div>
                     </div>
                   </div>
-
-                  <footer class="mobile-entity-actions">
-                    <button class="mobile-entity-action-button info" type="button" @click="openCommentDialog(row)">
-                      <el-icon><ChatDotRound /></el-icon>
-                      <span>评论</span>
-                    </button>
-                    <button v-if="canManageWorkItem" class="mobile-entity-action-button" type="button" @click="openWorkItemDetailFromRow(row)">
-                      <el-icon><EditPen /></el-icon>
-                      <span>编辑</span>
-                    </button>
-                    <button v-if="canOpenSmartActionDialog(row)" class="mobile-entity-action-button info" type="button" @click="openSmartActionDialog(row)">
-                      <el-icon><Cpu /></el-icon>
-                      <span>智能操作</span>
-                    </button>
-                    <button v-if="row.workItemType === '需求' && canRequirementDevPass && !row.devPassed" class="mobile-entity-action-button" type="button" @click="handleRequirementDevPass(row)">
-                      <el-icon><Management /></el-icon>
-                      <span>开发通过</span>
-                    </button>
-                    <button v-if="row.workItemType === '需求' && canRequirementTestPass && !row.testPassed" class="mobile-entity-action-button info" type="button" @click="handleRequirementTestPass(row)">
-                      <el-icon><Finished /></el-icon>
-                      <span>测试通过</span>
-                    </button>
-                    <button v-if="canManageWorkItem && row.canDelete" class="mobile-entity-action-button danger" type="button" @click="handleDeleteWorkItem(row)">
-                      <el-icon><Delete /></el-icon>
-                      <span>删除</span>
-                    </button>
-                  </footer>
                 </article>
               </div>
               <div v-if="hasMoreMobileItems" ref="sentinelRef" class="mobile-waterfall-sentinel"></div>
@@ -828,6 +869,50 @@
             </div>
           </div>
           <div class="work-item-dialog-header-side">
+            <!--
+              详情抽屉顶部操作区：原来散落在列表"操作"列里的按钮（评论 / 智能操作 / 删除）
+              统一收纳到这里，列表上不再展示。仅在编辑已有工作项时显示。
+            -->
+            <div v-if="workItemEditing && currentDialogWorkItem" class="work-item-dialog-header-actions">
+              <el-tooltip content="评论" placement="bottom">
+                <button
+                  class="workspace-action-button"
+                  type="button"
+                  aria-label="评论工作项"
+                  @click="openCommentDialog(currentDialogWorkItem)"
+                >
+                  <el-icon><ChatDotRound /></el-icon>
+                </button>
+              </el-tooltip>
+              <el-tooltip
+                v-if="canOpenSmartActionDialog(currentDialogWorkItem)"
+                content="智能操作"
+                placement="bottom"
+              >
+                <button
+                  class="workspace-action-button ai"
+                  type="button"
+                  aria-label="打开智能操作"
+                  @click="openSmartActionDialog(currentDialogWorkItem)"
+                >
+                  <el-icon><Cpu /></el-icon>
+                </button>
+              </el-tooltip>
+              <el-tooltip
+                v-if="canManageWorkItem && currentDialogWorkItem.canDelete"
+                content="删除"
+                placement="bottom"
+              >
+                <button
+                  class="workspace-action-button danger"
+                  type="button"
+                  aria-label="删除工作项"
+                  @click="handleDeleteWorkItem(currentDialogWorkItem)"
+                >
+                  <el-icon><Delete /></el-icon>
+                </button>
+              </el-tooltip>
+            </div>
             <span class="work-item-dialog-updated">更新于 {{ workItemDialogUpdatedAt }}</span>
           </div>
         </div>
@@ -1282,17 +1367,12 @@ import {
   listProjectRequirementModules,
   listProjectWorkItems,
   initializeTaskPrd,
-  passRequirementDev,
-  passRequirementTest,
   pageProjectWorkItems,
   updateIteration,
   updateTask
 } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
-import {
-  isRequirementFullyPassed
-} from '@/utils/requirementReview'
 import { uploadMarkdownImage } from '@/utils/taskImageUpload'
 import {
   buildRequirementDraft,
@@ -1329,6 +1409,18 @@ import type {
 } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
+import {
+  WORK_ITEM_COLUMN_DEFINITIONS,
+  type WorkItemColumnKey,
+  type WorkItemColumnWidthMap,
+  buildDefaultWorkItemColumnWidths,
+  clampColumnWidth,
+  readStoredWorkItemColumnWidths,
+  writeStoredWorkItemColumnWidths
+} from '@/utils/workItemColumnWidths'
+// 本地化的 Gitee logo 资源，用于在工作项标题最前标识"来自 Gitee"。
+// 通过 Vite 资源 import 引入，构建时会被打包并附带 hash，避免运行时再去访问 Gitee CDN。
+import giteeSourceIconUrl from '@/assets/logos/gitee-logo.svg'
 
 interface IterationForm {
   name: string
@@ -1375,6 +1467,7 @@ interface CommentForm {
 }
 
 const BASE_PRIORITY_OPTIONS = ['高', '中', '低']
+
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
@@ -1386,11 +1479,97 @@ const canManageIteration = computed(() => authStore.hasPermission('project:manag
 const canManageWorkItem = computed(() => authStore.hasPermission('task:manage'))
 const canManageGiteeBinding = computed(() => authStore.hasPermission('gitee:binding:manage'))
 const canSyncGiteeWorkItems = computed(() => authStore.hasPermission('gitee:work-item:sync'))
-const canRequirementDevPass = computed(() => authStore.hasPermission('task:requirement:dev'))
-const canRequirementTestPass = computed(() => authStore.hasPermission('task:requirement:test'))
 const canUseHermes = computed(() => authStore.hasPermission('hermes:chat'))
 const userInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
 const userAvatarUrl = computed(() => resolveAssetUrl(authStore.user?.avatarUrl))
+
+/**
+ * 工作项列表的列宽映射，按用户隔离持久化到浏览器 localStorage。
+ * 模板里通过 <colgroup> + 内联 width 控制实际列宽，CSS 里仅保留默认值兜底。
+ */
+const workItemColumnWidths = reactive<WorkItemColumnWidthMap>(buildDefaultWorkItemColumnWidths())
+
+/** 应用一份新的列宽映射到响应式对象上，做一次合法性兜底。 */
+function applyWorkItemColumnWidths(next: WorkItemColumnWidthMap) {
+  WORK_ITEM_COLUMN_DEFINITIONS.forEach((definition) => {
+    workItemColumnWidths[definition.key] = clampColumnWidth(next[definition.key] ?? definition.defaultWidth)
+  })
+}
+
+/**
+ * 从 localStorage 读取当前用户的列宽配置，登录态变化时也走这一条路径。
+ */
+function loadWorkItemColumnWidths() {
+  applyWorkItemColumnWidths(readStoredWorkItemColumnWidths(authStore.user?.id ?? null))
+}
+loadWorkItemColumnWidths()
+
+watch(
+  () => authStore.user?.id ?? null,
+  () => {
+    loadWorkItemColumnWidths()
+  }
+)
+
+/** 当前正在拖拽的列 key，用来给表头加高亮态、避免 hover 抖动。 */
+const resizingColumnKey = ref<WorkItemColumnKey | null>(null)
+
+/** 工作项表格 DOM 引用，拖拽时用于直接同步 <col> 的 width，避免响应式更新被异步合批延迟。 */
+const workItemTableRef = ref<HTMLTableElement | null>(null)
+
+/** 直接把列宽写到 <col> 元素的 style.width 上，作为响应式之外的可靠通路。 */
+function syncColumnWidthToDom(columnKey: WorkItemColumnKey, width: number) {
+  const tableEl = workItemTableRef.value
+  if (!tableEl) {
+    return
+  }
+  const colEl = tableEl.querySelector<HTMLTableColElement>(`col[data-column-key="${columnKey}"]`)
+  if (colEl) {
+    colEl.style.width = `${width}px`
+  }
+}
+
+/**
+ * 表头列宽拖拽入口：在每个列右侧的拖拽手柄上触发。
+ * - 计算 mousemove 偏移更新列宽；
+ * - mouseup 时统一写入 localStorage，避免拖拽过程中频繁写盘；
+ * - 拖拽期间禁用文本选择，防止误触发选区。
+ */
+function startWorkItemColumnResize(event: MouseEvent, columnKey: WorkItemColumnKey) {
+  const definition = WORK_ITEM_COLUMN_DEFINITIONS.find((item) => item.key === columnKey)
+  if (!definition || !definition.resizable) {
+    return
+  }
+  event.preventDefault()
+  event.stopPropagation()
+  const startX = event.clientX
+  const startWidth = workItemColumnWidths[columnKey] ?? definition.defaultWidth
+  resizingColumnKey.value = columnKey
+
+  const previousUserSelect = document.body.style.userSelect
+  const previousCursor = document.body.style.cursor
+  document.body.style.userSelect = 'none'
+  document.body.style.cursor = 'col-resize'
+
+  const handleMouseMove = (moveEvent: MouseEvent) => {
+    const delta = moveEvent.clientX - startX
+    const nextWidth = clampColumnWidth(startWidth + delta)
+    workItemColumnWidths[columnKey] = nextWidth
+    // 同步直接写 DOM，避免在某些情况下 :style 没及时反映到 <col>。
+    syncColumnWidthToDom(columnKey, nextWidth)
+  }
+  const handleMouseUp = () => {
+    window.removeEventListener('mousemove', handleMouseMove)
+    window.removeEventListener('mouseup', handleMouseUp)
+    document.body.style.userSelect = previousUserSelect
+    document.body.style.cursor = previousCursor
+    resizingColumnKey.value = null
+    writeStoredWorkItemColumnWidths(workItemColumnWidths, authStore.user?.id ?? null)
+  }
+
+  window.addEventListener('mousemove', handleMouseMove)
+  window.addEventListener('mouseup', handleMouseUp)
+}
 
 const board = reactive<IterationBoardItem>({
   project: {
@@ -1585,17 +1764,7 @@ const requirementDocumentPlaceholder = computed(() => `${DEFAULT_REQUIREMENT_TEM
 const requirementSelectableOptions = computed(() =>
   requirementOptions.value.filter((item) => item.id !== currentWorkItemId.value)
 )
-const selectedRequirementForWorkHours = computed(() =>
-  requirementOptions.value.find((item) => item.id === workItemForm.requirementTaskId) || null
-)
-const workItemWorkHoursLockedReason = computed(() => {
-  if (workItemForm.workItemType !== '任务' || !selectedRequirementForWorkHours.value) {
-    return ''
-  }
-  return isRequirementFullyPassed(selectedRequirementForWorkHours.value)
-    ? ''
-    : '需关联需求开发、测试均通过后才可编辑'
-})
+const workItemWorkHoursLockedReason = computed(() => '')
 
 const workItemDisplayCode = computed(() => {
   return workItemForm.workItemCode || '保存后自动生成'
@@ -2378,26 +2547,6 @@ const handleInitializeCurrentTaskPrd = async () => {
     await Promise.all([refreshBoardAndItems(), refreshCurrentDialogWorkItem()])
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '初始化 PRD 失败')
-  }
-}
-
-const handleRequirementDevPass = async (task: TaskItem) => {
-  try {
-    await passRequirementDev(task.id)
-    ElMessage.success('需求已开发通过')
-    await refreshBoardAndItems()
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '开发通过失败')
-  }
-}
-
-const handleRequirementTestPass = async (task: TaskItem) => {
-  try {
-    await passRequirementTest(task.id)
-    ElMessage.success('需求已测试通过')
-    await refreshBoardAndItems()
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '测试通过失败')
   }
 }
 
@@ -3867,8 +4016,16 @@ onMounted(async () => {
 }
 
 .workspace-table {
-  width: 100%;
-  min-width: 1280px;
+  /**
+   * 列宽改为可手动拖拽 + 持久化后，必须让 <table> 严格遵循 <colgroup> 给出的列宽，
+   * 而不是被父容器 width: 100% / min-width 反向等比拉伸，否则拖动一列会把其他列也按比例拽走。
+   * 因此：
+   * - width 改为 max-content，让表格宽度等于各 <col> width 之和；
+   * - 不再设置 min-width，避免列总宽小于容器时整体被拉伸；
+   * - 列总宽小于容器时右侧留白，由 .workspace-table-scroll 的 overflow:auto 在超出时提供横向滚动；
+   * - table-layout: fixed 保证 <col> 的 width 为列宽权威值，避免内容反推列宽。
+   */
+  width: max-content;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -3891,6 +4048,67 @@ onMounted(async () => {
   letter-spacing: 0.14em;
   text-align: left;
   text-transform: uppercase;
+  position: relative;
+  /**
+   * 不在 th 上设置 overflow: hidden，否则会把列宽拖拽手柄探出右边的命中区裁掉，
+   * 导致"标题"等列在视觉上看不到分割线、也无法点中拖动。
+   * 文本溢出由 .workspace-col-label 单独负责省略。
+   */
+}
+
+/**
+ * 列宽拖拽手柄：绝对定位横跨在两列分割线之上（右侧探出 4px），
+ * 让用户从邻列左缘附近也能命中；同时通过 ::after 显示一条提示竖线。
+ * z-index 高于 sticky thead 自身，避免被覆盖导致 mousedown 无效。
+ *
+ * 调试提示：hover 时整个 resizer 区域显示半透明蓝色，
+ * 用于直观判断"当前悬停的分割线属于哪一列"。
+ */
+.workspace-col-resizer {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 5;
+  touch-action: none;
+}
+
+.workspace-col-resizer::after {
+  content: '';
+  position: absolute;
+  top: 20%;
+  left: 50%;
+  width: 2px;
+  height: 60%;
+  margin-left: -1px;
+  background: rgba(148, 163, 184, 0.35);
+  transition: background 0.15s ease;
+  pointer-events: none;
+}
+
+.workspace-col-resizer:hover {
+  background: rgba(37, 99, 235, 0.18);
+}
+
+.workspace-col-resizer:hover::after,
+.workspace-table th.resizing .workspace-col-resizer::after {
+  background: var(--app-primary, #2563eb);
+}
+
+.workspace-table th.resizing {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.workspace-col-label {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .workspace-table td {
@@ -3898,18 +4116,19 @@ onMounted(async () => {
   border-bottom: 1px solid rgba(221, 193, 174, 0.08);
   vertical-align: middle;
   font-size: 12px;
+  /**
+   * fixed 布局下 td 内容（如标题按钮的长文本）若不裁剪，可能撑开列宽，
+   * 让 <col> 的 width 看起来"无效"。强制 overflow: hidden 让 <col> 成为权威列宽。
+   */
+  overflow: hidden;
 }
 
-.workspace-col-code { width: 90px; }
-.workspace-col-main { width: auto; min-width: 0; }
-.workspace-col-type { width: 86px; }
-.workspace-col-owner { width: 124px; }
-.workspace-col-priority { width: 116px; }
-.workspace-col-hours { width: 80px; }
-.workspace-col-status { width: 116px; }
-.workspace-col-plan { width: 156px; }
-.workspace-col-creator { width: 90px; }
-.workspace-col-actions { width: 100px; }
+/**
+ * 列宽全部由 <colgroup> 中的内联 width 控制（见 utils/workItemColumnWidths.ts）。
+ * 这里不再写死任何 .workspace-col-* 的 width，避免与 <col> 的内联 width 冲突，
+ * 尤其是"标题"列原先用 width:auto 会被 fixed 布局当成弹性列抢走全部剩余空间，
+ * 导致 <col> 给的像素值看起来无效。
+ */
 
 .workspace-row:hover {
   background: #f3f4f5;
@@ -4009,6 +4228,51 @@ onMounted(async () => {
 
 .workspace-title-button:hover {
   color: var(--app-primary);
+}
+
+/**
+ * 标题行：把"来源图标 + 标题按钮"水平排版到一行。
+ * 容器和按钮都设 min-width:0，保持原有"标题过长用省略号"的效果。
+ */
+.workspace-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.workspace-title-row .workspace-title-button {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/**
+ * 来源图标（目前只有 Gitee）：固定高度，按比例缩放，避免影响标题行高。
+ * 链接形态时悬停加深色，提示可点击跳转远端工作项。
+ */
+.workspace-title-source-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  line-height: 0;
+  border-radius: 50%;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.workspace-title-source-icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+a.workspace-title-source-icon:hover {
+  opacity: 0.85;
+  transform: translateY(-1px);
 }
 
 .workspace-primary-meta {
@@ -4599,6 +4863,16 @@ onMounted(async () => {
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
+}
+
+/**
+ * 详情抽屉头部操作按钮组：复用列表里的 .workspace-action-button 视觉，
+ * 整体放在"更新于"信息左侧，避免遮挡标题区域。
+ */
+.work-item-dialog-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .work-item-dialog-updated {

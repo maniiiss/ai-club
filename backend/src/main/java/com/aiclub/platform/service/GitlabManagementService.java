@@ -5,9 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aiclub.platform.common.DataPermissionScopeType;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.AgentEntity;
+import com.aiclub.platform.domain.model.GitlabAutoMergePipelineTargetEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
+import com.aiclub.platform.domain.model.GitlabAutoMergeWebhookEntity;
 import com.aiclub.platform.domain.model.GitlabCodeStructureSnapshotEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
+import com.aiclub.platform.domain.model.GitlabAutoMergeProjectShareEntity;
+import com.aiclub.platform.domain.model.AiClubPipelineEntity;
+import com.aiclub.platform.domain.model.ProjectPipelineBindingEntity;
 import com.aiclub.platform.domain.model.GitlabProductBranchEntity;
 import com.aiclub.platform.domain.model.GitlabProductBranchSyncLogEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
@@ -17,8 +22,17 @@ import com.aiclub.platform.dto.CodeReviewResult;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeConfigSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
+import com.aiclub.platform.dto.GitlabAutoMergePipelineTargetSummary;
+import com.aiclub.platform.dto.GitlabAutoMergeProjectShareSummary;
+import com.aiclub.platform.dto.GitlabAutoMergePublicLogPage;
+import com.aiclub.platform.dto.AiClubPipelineRunSummary;
+import com.aiclub.platform.dto.JenkinsBuildSummary;
+import com.aiclub.platform.dto.ProjectPublicPipelineSummary;
+import com.aiclub.platform.dto.ProjectPublicPipelineRunSummary;
+import com.aiclub.platform.dto.ProjectPublicPipelineRunPage;
 import com.aiclub.platform.dto.GitlabAutoMergeRunItem;
 import com.aiclub.platform.dto.GitlabAutoMergeRunResult;
+import com.aiclub.platform.dto.GitlabAutoMergeWebhookSummary;
 import com.aiclub.platform.dto.GitlabBranchSummary;
 import com.aiclub.platform.dto.GitlabCodeStructureCandidateSymbolSummary;
 import com.aiclub.platform.dto.GitlabCodeStructureGraphEdgeSummary;
@@ -41,6 +55,9 @@ import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectGitlabBindingSummary;
 import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabAutoMergePipelineTargetRequest;
+import com.aiclub.platform.dto.request.GitlabAutoMergeProjectShareRequest;
+import com.aiclub.platform.dto.request.GitlabAutoMergeWebhookRequest;
 import com.aiclub.platform.dto.request.GitlabCreateProductBranchSyncRequest;
 import com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest;
 import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
@@ -52,10 +69,15 @@ import com.aiclub.platform.dto.request.GitlabProductBranchRequest;
 import com.aiclub.platform.dto.request.GitlabTagCreateRequest;
 import com.aiclub.platform.dto.request.ProjectGitlabBindingRequest;
 import com.aiclub.platform.repository.AiModelConfigRepository;
+import com.aiclub.platform.repository.AiClubPipelineRepository;
+import com.aiclub.platform.repository.ProjectPipelineBindingRepository;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
+import com.aiclub.platform.repository.GitlabAutoMergePipelineTargetRepository;
+import com.aiclub.platform.repository.GitlabAutoMergeWebhookRepository;
 import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
+import com.aiclub.platform.repository.GitlabAutoMergeProjectShareRepository;
 import com.aiclub.platform.repository.GitlabProductBranchRepository;
 import com.aiclub.platform.repository.GitlabProductBranchSyncLogRepository;
 import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
@@ -81,6 +103,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -102,9 +126,16 @@ public class GitlabManagementService {
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String MODE_PROJECT_BOUND = "PROJECT_BOUND";
     private static final String MODE_STANDALONE = "STANDALONE";
+    private static final String REVIEW_STRICTNESS_HIGH = "HIGH";
+    private static final String REVIEW_STRICTNESS_MEDIUM = "MEDIUM";
+    private static final String REVIEW_STRICTNESS_LOW = "LOW";
     private static final String TRIGGER_MANUAL = "MANUAL";
     private static final String TRIGGER_SCHEDULED = "SCHEDULED";
     private static final String BRANCH_BEHIND_REASON_PREFIX = "源分支落后于目标分支";
+    private static final String REVIEW_FINGERPRINT_SOURCE_SHA = "SHA";
+    private static final String REVIEW_FINGERPRINT_SOURCE_DIFF = "DIFF";
+    private static final String AUTO_MERGE_TARGET_AI_CLUB = "AI_CLUB";
+    private static final String AUTO_MERGE_TARGET_JENKINS = "JENKINS";
     private static final String PRODUCT_BRANCH_RESULT_CREATED = "CREATED";
     private static final String PRODUCT_BRANCH_RESULT_NO_CHANGE = "NO_CHANGE";
     private static final String PRODUCT_BRANCH_RESULT_EXISTING_OPEN_MR = "EXISTING_OPEN_MR";
@@ -115,13 +146,20 @@ public class GitlabManagementService {
     private static final String CODE_STRUCTURE_STATUS_DEGRADED = "DEGRADED";
     private static final String CODE_STRUCTURE_STATUS_FAILED = "FAILED";
     private static final String DEFAULT_CODE_STRUCTURE_BRANCH = "main";
+    private static final char[] TOKEN_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz".toCharArray();
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final ProjectRepository projectRepository;
     private final AgentRepository agentRepository;
     private final ProjectGitlabBindingRepository bindingRepository;
     private final GitlabCodeStructureSnapshotRepository codeStructureSnapshotRepository;
     private final GitlabAutoMergeConfigRepository autoMergeConfigRepository;
+    private final GitlabAutoMergePipelineTargetRepository autoMergePipelineTargetRepository;
     private final GitlabAutoMergeLogRepository autoMergeLogRepository;
+    private final GitlabAutoMergeProjectShareRepository autoMergeProjectShareRepository;
+    private final GitlabAutoMergeWebhookRepository autoMergeWebhookRepository;
+    private final AiClubPipelineRepository aiClubPipelineRepository;
+    private final ProjectPipelineBindingRepository projectPipelineBindingRepository;
     private final GitlabProductBranchRepository productBranchRepository;
     private final GitlabProductBranchSyncLogRepository productBranchSyncLogRepository;
     private final AiModelConfigRepository aiModelConfigRepository;
@@ -132,6 +170,7 @@ public class GitlabManagementService {
     private final AgentExecutionService agentExecutionService;
     private final CicdManagementService cicdManagementService;
     private final NotificationService notificationService;
+    private final GitlabAutoMergeWebhookDispatcher autoMergeWebhookDispatcher;
     private final ProjectDataPermissionService projectDataPermissionService;
     private final GitlabUserOauthService gitlabUserOauthService;
     private final ExecutionTaskService executionTaskService;
@@ -142,6 +181,7 @@ public class GitlabManagementService {
     private final PlatformEnvVarResolver platformEnvVarResolver;
     private final ObjectMapper objectMapper;
     private final String defaultApiUrl;
+    private final String publicBaseUrl;
     private final Executor executionTaskExecutor;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
@@ -149,7 +189,12 @@ public class GitlabManagementService {
                                    ProjectGitlabBindingRepository bindingRepository,
                                    GitlabCodeStructureSnapshotRepository codeStructureSnapshotRepository,
                                    GitlabAutoMergeConfigRepository autoMergeConfigRepository,
+                                   GitlabAutoMergePipelineTargetRepository autoMergePipelineTargetRepository,
                                    GitlabAutoMergeLogRepository autoMergeLogRepository,
+                                   GitlabAutoMergeProjectShareRepository autoMergeProjectShareRepository,
+                                   GitlabAutoMergeWebhookRepository autoMergeWebhookRepository,
+                                   AiClubPipelineRepository aiClubPipelineRepository,
+                                   ProjectPipelineBindingRepository projectPipelineBindingRepository,
                                    GitlabProductBranchRepository productBranchRepository,
                                    GitlabProductBranchSyncLogRepository productBranchSyncLogRepository,
                                    AiModelConfigRepository aiModelConfigRepository,
@@ -161,6 +206,7 @@ public class GitlabManagementService {
                                    AgentExecutionService agentExecutionService,
                                    CicdManagementService cicdManagementService,
                                    NotificationService notificationService,
+                                   GitlabAutoMergeWebhookDispatcher autoMergeWebhookDispatcher,
                                    ProjectDataPermissionService projectDataPermissionService,
                                    GitlabUserOauthService gitlabUserOauthService,
                                    ExecutionTaskService executionTaskService,
@@ -171,6 +217,7 @@ public class GitlabManagementService {
                                    PlatformEnvVarResolver platformEnvVarResolver,
                                    ObjectMapper objectMapper,
                                    @Value("${platform.gitlab.default-api-url}") String defaultApiUrl,
+                                   @Value("${platform.frontend.public-base-url:}") String publicBaseUrl,
                                    PlatformTransactionManager transactionManager,
                                    @Qualifier("executionTaskExecutor") Executor executionTaskExecutor) {
         this.projectRepository = projectRepository;
@@ -178,7 +225,12 @@ public class GitlabManagementService {
         this.bindingRepository = bindingRepository;
         this.codeStructureSnapshotRepository = codeStructureSnapshotRepository;
         this.autoMergeConfigRepository = autoMergeConfigRepository;
+        this.autoMergePipelineTargetRepository = autoMergePipelineTargetRepository;
         this.autoMergeLogRepository = autoMergeLogRepository;
+        this.autoMergeProjectShareRepository = autoMergeProjectShareRepository;
+        this.autoMergeWebhookRepository = autoMergeWebhookRepository;
+        this.aiClubPipelineRepository = aiClubPipelineRepository;
+        this.projectPipelineBindingRepository = projectPipelineBindingRepository;
         this.productBranchRepository = productBranchRepository;
         this.productBranchSyncLogRepository = productBranchSyncLogRepository;
         this.aiModelConfigRepository = aiModelConfigRepository;
@@ -189,6 +241,7 @@ public class GitlabManagementService {
         this.agentExecutionService = agentExecutionService;
         this.cicdManagementService = cicdManagementService;
         this.notificationService = notificationService;
+        this.autoMergeWebhookDispatcher = autoMergeWebhookDispatcher;
         this.projectDataPermissionService = projectDataPermissionService;
         this.gitlabUserOauthService = gitlabUserOauthService;
         this.executionTaskService = executionTaskService;
@@ -199,6 +252,7 @@ public class GitlabManagementService {
         this.platformEnvVarResolver = platformEnvVarResolver;
         this.objectMapper = objectMapper;
         this.defaultApiUrl = defaultApiUrl;
+        this.publicBaseUrl = trimTrailingSlash(publicBaseUrl);
         this.executionTaskExecutor = executionTaskExecutor;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -736,6 +790,262 @@ public class GitlabManagementService {
         return PageResponse.from(pageData);
     }
 
+    public GitlabAutoMergeProjectShareSummary getProjectAutoMergeShare(Long projectId) {
+        ProjectEntity project = requireVisibleProject(projectId);
+        return toProjectAutoMergeShareSummary(project, autoMergeProjectShareRepository.findByProject_Id(projectId).orElse(null));
+    }
+
+    @Transactional
+    public GitlabAutoMergeProjectShareSummary createOrRefreshProjectAutoMergeShare(Long projectId,
+                                                                                   GitlabAutoMergeProjectShareRequest request) {
+        ProjectEntity project = requireVisibleProject(projectId);
+        GitlabAutoMergeProjectShareEntity entity = autoMergeProjectShareRepository.findByProject_Id(projectId)
+                .orElseGet(() -> {
+                    GitlabAutoMergeProjectShareEntity created = new GitlabAutoMergeProjectShareEntity();
+                    created.setProject(project);
+                    return created;
+                });
+        String token = generateShareToken();
+        entity.setTokenCiphertext(tokenCipherService.encrypt(token));
+        if (Boolean.TRUE.equals(request.permanent())) {
+            entity.setExpiresAt(null);
+        } else {
+            Integer expiresInDays = request.expiresInDays();
+            if (expiresInDays == null) {
+                throw new IllegalArgumentException("请选择分享有效天数，或开启永久有效");
+            }
+            entity.setExpiresAt(LocalDateTime.now().plusDays(expiresInDays));
+        }
+        entity.setEnabled(true);
+        autoMergeProjectShareRepository.save(entity);
+        return toProjectAutoMergeShareSummary(project, entity);
+    }
+
+    @Transactional
+    public void disableProjectAutoMergeShare(Long projectId) {
+        ProjectEntity project = requireVisibleProject(projectId);
+        GitlabAutoMergeProjectShareEntity entity = autoMergeProjectShareRepository.findByProject_Id(project.getId())
+                .orElseThrow(() -> new NoSuchElementException("当前项目尚未创建自动合并日志分享链接"));
+        entity.setEnabled(false);
+        autoMergeProjectShareRepository.save(entity);
+    }
+
+    public GitlabAutoMergePublicLogPage pageProjectAutoMergeLogsByShare(Long projectId,
+                                                                        String token,
+                                                                        int page,
+                                                                        int size,
+                                                                        String result) {
+        ProjectEntity project = requireValidProjectShare(projectId, token);
+        Pageable pageable = buildPageable(page, size, Sort.by(Sort.Direction.DESC, "executedAt", "id"));
+        Page<GitlabAutoMergeLogSummary> pageData = autoMergeLogRepository.findAll(publicAutoMergeLogSpecification(projectId, result), pageable)
+                .map(this::toAutoMergeLogSummary);
+        return new GitlabAutoMergePublicLogPage(projectId, project.getName(), resolveProjectNextMergeAt(projectId), PageResponse.from(pageData));
+    }
+
+    /**
+     * 计算该项目下「下次自动合并时间」：取所有 PROJECT_BOUND、启用了定时调度且 cron 合法的策略中最近一次触发时间。
+     *
+     * <p>用于只读分享页给外部相关方一个明确的预期；没有任何启用调度的策略时返回 {@code null}。</p>
+     */
+    private String resolveProjectNextMergeAt(Long projectId) {
+        Specification<GitlabAutoMergeConfigEntity> spec = (root, query, cb) -> {
+            var binding = root.join("binding", JoinType.LEFT);
+            return cb.and(
+                    cb.equal(root.get("executionMode"), MODE_PROJECT_BOUND),
+                    cb.isTrue(root.get("schedulerEnabled")),
+                    cb.equal(binding.join("project", JoinType.LEFT).get("id"), projectId)
+            );
+        };
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime earliest = null;
+        for (GitlabAutoMergeConfigEntity config : autoMergeConfigRepository.findAll(spec)) {
+            String cron = trimToNull(config.getSchedulerCron());
+            if (cron == null || !CronExpression.isValidExpression(cron)) {
+                continue;
+            }
+            try {
+                LocalDateTime next = CronExpression.parse(cron).next(now);
+                if (next != null && (earliest == null || next.isBefore(earliest))) {
+                    earliest = next;
+                }
+            } catch (RuntimeException ignored) {
+                // 单条 cron 解析异常不影响其它策略
+            }
+        }
+        return earliest == null ? null : formatTime(earliest);
+    }
+
+    /**
+     * 公开侧：列出该项目下绑定的所有流水线（脱敏摘要）。
+     *
+     * <p>合并两类来源：</p>
+     * <ul>
+     *     <li>{@code WOODPECKER}：来自 {@link AiClubPipelineEntity}（AI Club 内置流水线，按 project_id 过滤）</li>
+     *     <li>{@code JENKINS}：来自 {@link ProjectPipelineBindingEntity}（项目 Jenkins 绑定，按 project_id 过滤）</li>
+     * </ul>
+     *
+     * <p>返回字段严格白名单，避免泄露 token 等敏感信息；只暴露最近一次状态、时间、外链。</p>
+     */
+    public List<ProjectPublicPipelineSummary> listPublicPipelinesByShare(Long projectId, String token) {
+        requireValidProjectShare(projectId, token);
+        List<ProjectPublicPipelineSummary> result = new ArrayList<>();
+        for (AiClubPipelineEntity pipeline : aiClubPipelineRepository.findByProject_IdOrderByIdAsc(projectId)) {
+            result.add(new ProjectPublicPipelineSummary(
+                    pipeline.getId(),
+                    "WOODPECKER",
+                    pipeline.getName(),
+                    trimToNull(pipeline.getDefaultBranch()),
+                    trimToNull(pipeline.getLastRunStatus()),
+                    formatTime(pipeline.getLastTriggeredAt()),
+                    trimToNull(pipeline.getLastRunUrl())
+            ));
+        }
+        for (ProjectPipelineBindingEntity binding : projectPipelineBindingRepository.findByProject_IdOrderByIdAsc(projectId)) {
+            result.add(new ProjectPublicPipelineSummary(
+                    binding.getId(),
+                    "JENKINS",
+                    binding.getJobName(),
+                    trimToNull(binding.getDefaultBranch()),
+                    trimToNull(binding.getLastTriggerStatus()),
+                    formatTime(binding.getLastTriggeredAt()),
+                    trimToNull(binding.getLastTriggerUrl())
+            ));
+        }
+        return result;
+    }
+
+    /**
+     * 公开侧：分页查看某条流水线的运行历史，仅暴露摘要字段。
+     *
+     * <p>底层不入库的 Jenkins 与已落 snapshot 的 Woodpecker 一并支持；外部 CI 调用失败时返回空列表 + warning，避免分享页整体不可用。</p>
+     *
+     * <p>用 {@code Propagation.NOT_SUPPORTED} 跳出 class 级别的 readOnly 事务上下文：
+     * 否则一旦底层 Jenkins/Woodpecker 调用抛 {@link RuntimeException}，即便我们在内部 catch 住，
+     * Spring 仍会把外层事务标记为 rollback-only，方法返回时抛 {@code UnexpectedRollbackException}。
+     * 这条链路本来就只是读 repository + 调用远程 CI，没有事务需求。</p>
+     *
+     * @param kind       {@code WOODPECKER} 或 {@code JENKINS}
+     * @param pipelineId 对应来源的主键，必须归属当前 {@code projectId}，否则视为越权
+     */
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.NOT_SUPPORTED)
+    public ProjectPublicPipelineRunPage pagePublicPipelineRunsByShare(Long projectId,
+                                                                      String token,
+                                                                      String kind,
+                                                                      Long pipelineId,
+                                                                      int page,
+                                                                      int size) {
+        ProjectEntity project = requireValidProjectShare(projectId, token);
+        String normalizedKind = trimToNull(kind);
+        if (normalizedKind == null) {
+            throw new IllegalArgumentException("流水线类型不能为空");
+        }
+        if (pipelineId == null) {
+            throw new IllegalArgumentException("流水线 ID 不能为空");
+        }
+        int safePage = Math.max(1, page);
+        int safeSize = Math.max(1, Math.min(size, 50));
+        if ("WOODPECKER".equalsIgnoreCase(normalizedKind)) {
+            return loadWoodpeckerPipelineRunsForShare(project, projectId, pipelineId, safePage, safeSize);
+        }
+        if ("JENKINS".equalsIgnoreCase(normalizedKind)) {
+            return loadJenkinsPipelineRunsForShare(project, projectId, pipelineId, safePage, safeSize);
+        }
+        throw new IllegalArgumentException("不支持的流水线类型: " + kind);
+    }
+
+    /**
+     * Woodpecker 分支：通过 cicdManagementService 复用底层 API 调用。
+     *
+     * <p>分享接口为匿名调用，不会附带登录上下文，CicdManagementService 内部的项目可见性校验在
+     * {@code currentScopeOrNull()} 为 null 时会直接放行；这里再额外做一次 projectId 归属校验防止越权。</p>
+     */
+    private ProjectPublicPipelineRunPage loadWoodpeckerPipelineRunsForShare(ProjectEntity project,
+                                                                            Long projectId,
+                                                                            Long pipelineId,
+                                                                            int page,
+                                                                            int size) {
+        AiClubPipelineEntity pipeline = aiClubPipelineRepository.findById(pipelineId)
+                .orElseThrow(() -> new NoSuchElementException("流水线不存在: " + pipelineId));
+        if (pipeline.getProject() == null || !projectId.equals(pipeline.getProject().getId())) {
+            throw new NoSuchElementException("流水线不属于当前项目: " + pipelineId);
+        }
+        // 取前 page*size 条做内存分页；Woodpecker 接口本身只支持 limit
+        int limit = Math.min(page * size, 200);
+        List<ProjectPublicPipelineRunSummary> all = new ArrayList<>();
+        String warning = null;
+        try {
+            for (AiClubPipelineRunSummary run : cicdManagementService.listAiClubPipelineRuns(pipelineId, limit)) {
+                all.add(new ProjectPublicPipelineRunSummary(
+                        run.number(),
+                        run.status(),
+                        run.branch(),
+                        run.event(),
+                        run.startedAt() != null ? run.startedAt() : run.createdAt(),
+                        run.url()
+                ));
+            }
+        } catch (RuntimeException ex) {
+            log.warn("公开分享拉取 Woodpecker 运行历史失败: pipelineId={}, message={}", pipelineId, ex.getMessage());
+            warning = "暂时无法获取流水线运行历史，请稍后重试或联系项目负责人。";
+        }
+        return buildRunPage(project, projectId, "WOODPECKER", pipelineId, pipeline.getName(), all, page, size, warning);
+    }
+
+    /**
+     * Jenkins 分支：实时调用 Jenkins API，构建失败时返回空列表 + warning，不影响其它内容。
+     */
+    private ProjectPublicPipelineRunPage loadJenkinsPipelineRunsForShare(ProjectEntity project,
+                                                                         Long projectId,
+                                                                         Long pipelineId,
+                                                                         int page,
+                                                                         int size) {
+        ProjectPipelineBindingEntity binding = projectPipelineBindingRepository.findById(pipelineId)
+                .orElseThrow(() -> new NoSuchElementException("流水线不存在: " + pipelineId));
+        if (binding.getProject() == null || !projectId.equals(binding.getProject().getId())) {
+            throw new NoSuchElementException("流水线不属于当前项目: " + pipelineId);
+        }
+        int limit = Math.min(page * size, 200);
+        List<ProjectPublicPipelineRunSummary> all = new ArrayList<>();
+        String warning = null;
+        try {
+            for (JenkinsBuildSummary build : cicdManagementService.listPipelineBuilds(pipelineId, limit)) {
+                all.add(new ProjectPublicPipelineRunSummary(
+                        build.number(),
+                        Boolean.TRUE.equals(build.building()) ? "RUNNING" : trimToNull(build.result()),
+                        trimToNull(binding.getDefaultBranch()),
+                        "MANUAL",
+                        build.executedAt(),
+                        build.url()
+                ));
+            }
+        } catch (RuntimeException ex) {
+            log.warn("公开分享拉取 Jenkins 构建历史失败: bindingId={}, message={}", pipelineId, ex.getMessage());
+            warning = "暂时无法获取流水线运行历史，请稍后重试或联系项目负责人。";
+        }
+        return buildRunPage(project, projectId, "JENKINS", pipelineId, binding.getJobName(), all, page, size, warning);
+    }
+
+    /**
+     * 在内存里基于 limit 截断的原始列表做分页，保证返回结构与其它分页接口一致。
+     */
+    private ProjectPublicPipelineRunPage buildRunPage(ProjectEntity project,
+                                                      Long projectId,
+                                                      String kind,
+                                                      Long pipelineId,
+                                                      String pipelineName,
+                                                      List<ProjectPublicPipelineRunSummary> all,
+                                                      int page,
+                                                      int size,
+                                                      String warning) {
+        int total = all.size();
+        int from = Math.min((page - 1) * size, total);
+        int to = Math.min(from + size, total);
+        List<ProjectPublicPipelineRunSummary> records = all.subList(from, to);
+        int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
+        PageResponse<ProjectPublicPipelineRunSummary> pageResponse = new PageResponse<>(records, total, page, size, totalPages);
+        return new ProjectPublicPipelineRunPage(projectId, project.getName(), kind, pipelineId, pipelineName, pageResponse, warning);
+    }
+
     public List<GitlabAutoMergeLogSummary> listLogsByMergeRequestAuthorUsername(String gitlabUsername, int limit) {
         ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.requireCurrentScope();
         String normalizedUsername = trimToNull(gitlabUsername);
@@ -765,7 +1075,10 @@ public class GitlabManagementService {
 
     @Transactional
     public void deleteAutoMergeConfig(Long id) {
-        autoMergeConfigRepository.delete(requireAutoMergeConfig(id));
+        GitlabAutoMergeConfigEntity entity = requireAutoMergeConfig(id);
+        // 同事务里清理外发 webhook 子表，防止留下孤儿记录
+        autoMergeWebhookRepository.deleteByConfig_Id(entity.getId());
+        autoMergeConfigRepository.delete(entity);
     }
 
     public GitlabAutoMergeConfigSummary testAutoMergeConfig(Long id) {
@@ -775,6 +1088,189 @@ public class GitlabManagementService {
         gitlabApiService.fetchProject(resolved.apiBaseUrl(), resolved.token(), resolved.projectRef());
         return toAutoMergeSummary(entity);
     }
+
+    // ==================== 自动合并外发 Webhook 配置 ====================
+
+    /**
+     * 列出指定自动合并配置下的全部 Webhook（已脱敏）。
+     */
+    public List<GitlabAutoMergeWebhookSummary> listAutoMergeWebhooks(Long configId) {
+        GitlabAutoMergeConfigEntity config = requireAutoMergeConfig(configId);
+        return autoMergeWebhookRepository.findByConfig_IdOrderByIdAsc(config.getId()).stream()
+                .map(this::toAutoMergeWebhookSummary)
+                .toList();
+    }
+
+    /**
+     * 新建一条外发 Webhook，URL 加密落库。
+     */
+    @Transactional
+    public GitlabAutoMergeWebhookSummary createAutoMergeWebhook(Long configId, GitlabAutoMergeWebhookRequest request) {
+        GitlabAutoMergeConfigEntity config = requireAutoMergeConfig(configId);
+        validateWebhookEvents(request.subscribedEvents());
+        autoMergeWebhookRepository.findByConfig_IdAndName(config.getId(), request.name().trim())
+                .ifPresent(existing -> { throw new IllegalArgumentException("同一配置下已存在同名 Webhook: " + request.name()); });
+        GitlabAutoMergeWebhookEntity entity = new GitlabAutoMergeWebhookEntity();
+        entity.setConfig(config);
+        applyWebhookRequest(entity, request);
+        return toAutoMergeWebhookSummary(autoMergeWebhookRepository.save(entity));
+    }
+
+    /**
+     * 更新一条外发 Webhook，URL 重新加密。
+     */
+    @Transactional
+    public GitlabAutoMergeWebhookSummary updateAutoMergeWebhook(Long webhookId, GitlabAutoMergeWebhookRequest request) {
+        GitlabAutoMergeWebhookEntity entity = requireAutoMergeWebhook(webhookId);
+        validateWebhookEvents(request.subscribedEvents());
+        autoMergeWebhookRepository.findByConfig_IdAndName(entity.getConfig().getId(), request.name().trim())
+                .filter(other -> !other.getId().equals(entity.getId()))
+                .ifPresent(other -> { throw new IllegalArgumentException("同一配置下已存在同名 Webhook: " + request.name()); });
+        applyWebhookRequest(entity, request);
+        return toAutoMergeWebhookSummary(autoMergeWebhookRepository.save(entity));
+    }
+
+    /**
+     * 删除一条外发 Webhook。
+     */
+    @Transactional
+    public void deleteAutoMergeWebhook(Long webhookId) {
+        GitlabAutoMergeWebhookEntity entity = requireAutoMergeWebhook(webhookId);
+        autoMergeWebhookRepository.delete(entity);
+    }
+
+    /**
+     * 用一份固定的演示载荷向指定 Webhook 触发一次同步投递，便于运维联调地址可达性。
+     */
+    public GitlabAutoMergeWebhookSummary testAutoMergeWebhook(Long webhookId) {
+        GitlabAutoMergeWebhookEntity entity = requireAutoMergeWebhook(webhookId);
+        autoMergeWebhookDispatcher.dispatchTest(entity);
+        // 投递状态由 dispatcher 在新事务里写回，这里重新加载一次拿到最新值
+        GitlabAutoMergeWebhookEntity refreshed = autoMergeWebhookRepository.findById(entity.getId()).orElse(entity);
+        return toAutoMergeWebhookSummary(refreshed);
+    }
+
+    private void applyWebhookRequest(GitlabAutoMergeWebhookEntity entity, GitlabAutoMergeWebhookRequest request) {
+        entity.setName(request.name().trim());
+        entity.setTargetUrlCiphertext(tokenCipherService.encrypt(request.targetUrl().trim()));
+        entity.setSubscribedEventsJson(writeWebhookEventsJson(request.subscribedEvents()));
+        String template = request.messageTemplate();
+        entity.setMessageTemplate(template == null || template.isBlank() ? null : template);
+        entity.setEnabled(request.enabled() == null ? Boolean.TRUE : request.enabled());
+    }
+
+    private void validateWebhookEvents(List<String> events) {
+        if (events == null || events.isEmpty()) {
+            throw new IllegalArgumentException("至少订阅一个事件");
+        }
+        for (String event : events) {
+            if (event == null || event.isBlank() || !GitlabAutoMergeWebhookDispatcher.SUPPORTED_EVENTS.contains(event)) {
+                throw new IllegalArgumentException("不支持的订阅事件: " + event);
+            }
+        }
+    }
+
+    private String writeWebhookEventsJson(List<String> events) {
+        try {
+            // 去重并保留入参顺序，保证审计可读
+            LinkedHashSet<String> distinct = new LinkedHashSet<>(events);
+            return objectMapper.writeValueAsString(new ArrayList<>(distinct));
+        } catch (Exception ex) {
+            throw new IllegalStateException("序列化 Webhook 订阅事件失败", ex);
+        }
+    }
+
+    private GitlabAutoMergeWebhookEntity requireAutoMergeWebhook(Long id) {
+        GitlabAutoMergeWebhookEntity entity = autoMergeWebhookRepository.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Webhook 不存在: " + id));
+        // 借用配置的可见性校验；若当前用户对配置不可见，则同样不可见 webhook
+        requireAutoMergeConfig(entity.getConfig().getId());
+        return entity;
+    }
+
+    private GitlabAutoMergeWebhookSummary toAutoMergeWebhookSummary(GitlabAutoMergeWebhookEntity entity) {
+        List<String> events = readWebhookEventList(entity.getSubscribedEventsJson());
+        String urlMasked = maskWebhookUrl(safeDecrypt(entity.getTargetUrlCiphertext()));
+        return new GitlabAutoMergeWebhookSummary(
+                entity.getId(),
+                entity.getConfig() == null ? null : entity.getConfig().getId(),
+                entity.getName(),
+                urlMasked,
+                events,
+                entity.getMessageTemplate(),
+                entity.getEnabled(),
+                entity.getLastDeliveryAt() == null ? null : TIME_FORMATTER.format(entity.getLastDeliveryAt()),
+                entity.getLastDeliveryStatus(),
+                entity.getLastDeliveryMessage()
+        );
+    }
+
+    private List<String> readWebhookEventList(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<String> list = objectMapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+            return list == null ? List.of() : list;
+        } catch (Exception ex) {
+            log.warn("解析 Webhook 订阅事件失败: {}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    private String safeDecrypt(String cipherText) {
+        if (cipherText == null || cipherText.isBlank()) {
+            return null;
+        }
+        try {
+            return tokenCipherService.decrypt(cipherText);
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    /**
+     * 仅返回脱敏后的 URL 给前端：保留协议+主机，路径与 query 中段以 *** 占位，便于核对又不暴露 token。
+     */
+    private String maskWebhookUrl(String url) {
+        if (url == null || url.isBlank()) {
+            return "";
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme();
+            String host = uri.getHost() == null ? "" : uri.getHost();
+            int port = uri.getPort();
+            String path = uri.getRawPath() == null ? "" : uri.getRawPath();
+            String pathMasked;
+            if (path.length() <= 8) {
+                pathMasked = path;
+            } else {
+                pathMasked = path.substring(0, Math.min(6, path.length())) + "***" + path.substring(path.length() - 2);
+            }
+            String query = uri.getRawQuery();
+            String queryMasked = (query == null || query.isBlank()) ? "" : "?***";
+            StringBuilder builder = new StringBuilder();
+            if (!scheme.isEmpty()) {
+                builder.append(scheme).append("://");
+            }
+            builder.append(host);
+            if (port > 0) {
+                builder.append(':').append(port);
+            }
+            builder.append(pathMasked).append(queryMasked);
+            return builder.toString();
+        } catch (Exception ex) {
+            // URL 解析失败就返回前后各几位的简单脱敏，避免把整段 token 透出
+            int len = url.length();
+            if (len <= 12) {
+                return "***";
+            }
+            return url.substring(0, 8) + "***" + url.substring(len - 4);
+        }
+    }
+
+    // ==================================================================
 
     public List<GitlabMergeRequestSummary> previewAutoMergeConfigMergeRequests(Long id) {
         GitlabAutoMergeConfigEntity entity = requireAutoMergeConfig(id);
@@ -832,6 +1328,9 @@ public class GitlabManagementService {
             int nonMergedCount = 0;
             for (GitlabApiService.GitlabMergeRequest mergeRequest : mergeRequests) {
                 try {
+                    List<String> previousIssues = List.of();
+                    CodeReviewResult reviewResult = null;
+                    ReviewExecutionContext reviewContext = null;
                     GitlabApiService.GitlabMergeRequest latestMergeRequest = gitlabApiService.fetchMergeRequest(
                             resolved.apiBaseUrl(),
                             resolved.token(),
@@ -867,13 +1366,16 @@ public class GitlabManagementService {
                         continue;
                     }
                     if (Boolean.TRUE.equals(entity.getAiReviewEnabled())) {
-                        CodeReviewResult reviewResult = reviewMergeRequest(entity, resolved, latestMergeRequest);
+                        previousIssues = loadLatestRejectedReviewIssues(resolved.projectRef(), latestMergeRequest.iid());
+                        reviewContext = executeReviewWithCache(entity, resolved, latestMergeRequest, previousIssues);
+                        reviewResult = applyReviewSafetyGuard(reviewContext.reviewResult());
                         if (!reviewResult.approved()) {
                             nonMergedCount++;
                             String reason = buildReviewFailureMessage(reviewResult);
-                            String detailMarkdown = buildReviewExtraMarkdown(reviewResult);
+                            String detailMarkdown = buildReviewExtraMarkdown(reviewResult, previousIssues, reviewContext.cacheHit());
                             items.add(new GitlabAutoMergeRunItem(latestMergeRequest.iid(), latestMergeRequest.title(), "AI_REJECTED", reason, latestMergeRequest.webUrl()));
-                            saveAutoMergeLog(entity, triggerType, latestMergeRequest, "AI_REJECTED", reason, latestMergeRequest.webUrl(), detailMarkdown, executedAt);
+                            saveAutoMergeLog(entity, triggerType, latestMergeRequest, "AI_REJECTED", reason, latestMergeRequest.webUrl(), detailMarkdown, reviewResult,
+                                    reviewContext.reviewFingerprint(), reviewContext.reviewFingerprintSource(), reviewContext.cacheHit(), executedAt);
                             continue;
                         }
                     }
@@ -881,22 +1383,27 @@ public class GitlabManagementService {
                     mergedCount++;
                     String baseMessage = buildMergeMessage(result);
                     String webUrl = hasText(result.webUrl()) ? result.webUrl() : latestMergeRequest.webUrl();
-                    String extraMarkdown = null;
+                    String extraMarkdown = reviewResult == null ? null : buildReviewExtraMarkdown(reviewResult, previousIssues, reviewContext != null && reviewContext.cacheHit());
                     String message = baseMessage;
                     if (Boolean.TRUE.equals(entity.getTriggerPipelineAfterMerge())
                             && MODE_PROJECT_BOUND.equals(entity.getExecutionMode())
                             && entity.getBinding() != null
                             && entity.getBinding().getProject() != null) {
-                        CicdManagementService.PipelineTriggerOutcome pipelineOutcome = cicdManagementService.tryTriggerProjectPipeline(
+                        CicdManagementService.PipelineTriggerOutcome pipelineOutcome = cicdManagementService.triggerSelectedProjectPipelines(
                                 entity.getBinding().getProject().getId(),
+                                buildPipelineTargetRefs(entity),
                                 latestMergeRequest.targetBranch(),
                                 "GitLab 自动合并"
                         );
                         message = buildMergedWithPipelineMessage(baseMessage, pipelineOutcome);
-                        extraMarkdown = buildPipelineTriggerMarkdown(pipelineOutcome);
+                        extraMarkdown = appendMarkdownSection(extraMarkdown, buildPipelineTriggerMarkdown(pipelineOutcome));
                     }
                     items.add(new GitlabAutoMergeRunItem(latestMergeRequest.iid(), latestMergeRequest.title(), "MERGED", message, webUrl));
-                    saveAutoMergeLog(entity, triggerType, latestMergeRequest, "MERGED", message, webUrl, extraMarkdown, executedAt);
+                    saveAutoMergeLog(entity, triggerType, latestMergeRequest, "MERGED", message, webUrl, extraMarkdown, reviewResult,
+                            reviewContext == null ? null : reviewContext.reviewFingerprint(),
+                            reviewContext == null ? null : reviewContext.reviewFingerprintSource(),
+                            reviewContext != null && reviewContext.cacheHit(),
+                            executedAt);
                 } catch (RuntimeException exception) {
                     nonMergedCount++;
                     String fullReason = defaultString(exception.getMessage());
@@ -920,6 +1427,7 @@ public class GitlabManagementService {
 
     private void fillAutoMergeEntity(GitlabAutoMergeConfigEntity entity, GitlabAutoMergeConfigRequest request, boolean createMode) {
         String executionMode = normalizeExecutionMode(request.executionMode());
+        List<GitlabAutoMergePipelineTargetRequest> requestedTargets = request.pipelineTargets() == null ? List.of() : request.pipelineTargets();
         entity.setName(request.name().trim());
         entity.setExecutionMode(executionMode);
         entity.setDescription(defaultString(request.description()));
@@ -936,6 +1444,7 @@ public class GitlabManagementService {
         entity.setSchedulerCron(normalizeSchedulerCron(request.schedulerCron()));
         entity.setAiReviewEnabled(defaultBoolean(request.aiReviewEnabled(), false));
         entity.setAiReviewPrompt(defaultString(request.aiReviewPrompt()));
+        entity.setReviewStrictness(normalizeReviewStrictness(request.reviewStrictness()));
         entity.setReviewAgent(request.reviewAgentId() == null ? null : requireAgent(request.reviewAgentId()));
         entity.setAiModelConfig(request.aiModelConfigId() == null ? null : requireChatModelConfig(request.aiModelConfigId()));
         if (Boolean.TRUE.equals(entity.getSchedulerEnabled()) && !hasText(entity.getSchedulerCron())) {
@@ -957,6 +1466,14 @@ public class GitlabManagementService {
             entity.setApiBaseUrl(null);
             entity.setGitlabProjectRef(null);
             entity.setTokenCiphertext(null);
+            if (Boolean.TRUE.equals(entity.getTriggerPipelineAfterMerge())) {
+                if (requestedTargets.isEmpty()) {
+                    throw new IllegalArgumentException("开启合并后触发流水线时，必须至少选择 1 条目标流水线");
+                }
+                entity.setPipelineTargets(resolvePipelineTargets(entity, binding.getProject().getId(), requestedTargets));
+            } else {
+                entity.setPipelineTargets(List.of());
+            }
         } else {
             if (Boolean.TRUE.equals(entity.getTriggerPipelineAfterMerge())) {
                 throw new IllegalArgumentException("独立运行模式不支持合并后自动触发流水线");
@@ -971,7 +1488,105 @@ public class GitlabManagementService {
             } else if (!hasText(entity.getTokenCiphertext())) {
                 throw new IllegalArgumentException("?????????? APIToken");
             }
+            entity.setPipelineTargets(List.of());
         }
+    }
+
+    /**
+     * 把前端提交的目标流水线选择解析为实体子项，并校验其确实属于当前项目。
+     */
+    private List<GitlabAutoMergePipelineTargetEntity> resolvePipelineTargets(GitlabAutoMergeConfigEntity config,
+                                                                            Long projectId,
+                                                                            List<GitlabAutoMergePipelineTargetRequest> requestedTargets) {
+        LinkedHashMap<String, GitlabAutoMergePipelineTargetEntity> deduplicatedTargets = new LinkedHashMap<>();
+        for (GitlabAutoMergePipelineTargetRequest targetRequest : requestedTargets) {
+            if (targetRequest == null || targetRequest.targetId() == null || !hasText(targetRequest.targetType())) {
+                throw new IllegalArgumentException("目标流水线配置不完整");
+            }
+            String targetType = targetRequest.targetType().trim().toUpperCase();
+            GitlabAutoMergePipelineTargetEntity target = new GitlabAutoMergePipelineTargetEntity();
+            target.setConfig(config);
+            target.setTargetType(targetType);
+            switch (targetType) {
+                case AUTO_MERGE_TARGET_AI_CLUB -> {
+                    AiClubPipelineEntity pipeline = aiClubPipelineRepository.findById(targetRequest.targetId())
+                            .orElseThrow(() -> new NoSuchElementException("AI Club Pipeline 不存在: " + targetRequest.targetId()));
+                    if (pipeline.getProject() == null || !projectId.equals(pipeline.getProject().getId())) {
+                        throw new IllegalArgumentException("所选 AI Club Pipeline 不属于当前项目");
+                    }
+                    target.setAiClubPipeline(pipeline);
+                }
+                case AUTO_MERGE_TARGET_JENKINS -> {
+                    ProjectPipelineBindingEntity binding = projectPipelineBindingRepository.findById(targetRequest.targetId())
+                            .orElseThrow(() -> new NoSuchElementException("项目流水线绑定不存在: " + targetRequest.targetId()));
+                    if (binding.getProject() == null || !projectId.equals(binding.getProject().getId())) {
+                        throw new IllegalArgumentException("所选 Jenkins 流水线不属于当前项目");
+                    }
+                    target.setJenkinsBinding(binding);
+                }
+                default -> throw new IllegalArgumentException("不支持的流水线类型: " + targetRequest.targetType());
+            }
+            deduplicatedTargets.put(targetType + ":" + targetRequest.targetId(), target);
+        }
+        return new ArrayList<>(deduplicatedTargets.values());
+    }
+
+    private List<CicdManagementService.PipelineTargetRef> buildPipelineTargetRefs(GitlabAutoMergeConfigEntity entity) {
+        if (entity.getPipelineTargets() == null || entity.getPipelineTargets().isEmpty()) {
+            return List.of();
+        }
+        return entity.getPipelineTargets().stream()
+                .map(this::toPipelineTargetRef)
+                .filter(target -> target.targetId() != null)
+                .toList();
+    }
+
+    private CicdManagementService.PipelineTargetRef toPipelineTargetRef(GitlabAutoMergePipelineTargetEntity entity) {
+        if (entity == null || !hasText(entity.getTargetType())) {
+            return new CicdManagementService.PipelineTargetRef(null, null);
+        }
+        Long targetId = AUTO_MERGE_TARGET_AI_CLUB.equalsIgnoreCase(entity.getTargetType())
+                ? entity.getAiClubPipeline() == null ? null : entity.getAiClubPipeline().getId()
+                : entity.getJenkinsBinding() == null ? null : entity.getJenkinsBinding().getId();
+        return new CicdManagementService.PipelineTargetRef(entity.getTargetType().trim().toUpperCase(), targetId);
+    }
+
+    private List<GitlabAutoMergePipelineTargetSummary> buildPipelineTargetSummaries(GitlabAutoMergeConfigEntity entity) {
+        if (entity.getPipelineTargets() == null || entity.getPipelineTargets().isEmpty()) {
+            return List.of();
+        }
+        return entity.getPipelineTargets().stream()
+                .map(this::toPipelineTargetSummary)
+                .toList();
+    }
+
+    private GitlabAutoMergePipelineTargetSummary toPipelineTargetSummary(GitlabAutoMergePipelineTargetEntity entity) {
+        if (entity == null || !hasText(entity.getTargetType())) {
+            return new GitlabAutoMergePipelineTargetSummary("", null, "", "", null, false);
+        }
+        if (AUTO_MERGE_TARGET_AI_CLUB.equalsIgnoreCase(entity.getTargetType()) && entity.getAiClubPipeline() != null) {
+            AiClubPipelineEntity pipeline = entity.getAiClubPipeline();
+            return new GitlabAutoMergePipelineTargetSummary(
+                    AUTO_MERGE_TARGET_AI_CLUB,
+                    pipeline.getId(),
+                    pipeline.getName(),
+                    pipeline.getProviderCode(),
+                    pipeline.getDefaultBranch(),
+                    defaultBoolean(pipeline.getEnabled(), true)
+            );
+        }
+        if (entity.getJenkinsBinding() != null) {
+            ProjectPipelineBindingEntity binding = entity.getJenkinsBinding();
+            return new GitlabAutoMergePipelineTargetSummary(
+                    AUTO_MERGE_TARGET_JENKINS,
+                    binding.getId(),
+                    binding.getJobName(),
+                    binding.getJenkinsServer() == null ? "JENKINS" : binding.getJenkinsServer().getName(),
+                    binding.getDefaultBranch(),
+                    defaultBoolean(binding.getEnabled(), true)
+            );
+        }
+        return new GitlabAutoMergePipelineTargetSummary(entity.getTargetType(), null, "", "", null, false);
     }
 
 
@@ -1029,18 +1644,63 @@ public class GitlabManagementService {
         return entity.getGitlabProjectRef();
     }
 
-    private CodeReviewResult reviewMergeRequest(GitlabAutoMergeConfigEntity entity, ResolvedGitlabConfig resolved, GitlabApiService.GitlabMergeRequest mergeRequest) {
+    /**
+     * 执行一次带历史问题上下文的 MR 复审，让模型同时判断旧问题修复状态和本次新增风险。
+     */
+    private CodeReviewResult reviewMergeRequest(GitlabAutoMergeConfigEntity entity,
+                                                ResolvedGitlabConfig resolved,
+                                                GitlabApiService.GitlabMergeRequest mergeRequest,
+                                                List<String> previousIssues) {
         GitlabApiService.GitlabMergeRequestChanges changes = gitlabApiService.fetchMergeRequestChanges(
                 resolved.apiBaseUrl(), resolved.token(), resolved.projectRef(), mergeRequest.iid());
+        String reviewStrictness = normalizeReviewStrictness(entity.getReviewStrictness());
         if (entity.getReviewAgent() != null) {
-            return agentExecutionService.reviewMergeRequest(entity.getReviewAgent().getId(), mergeRequest, changes);
+            return agentExecutionService.reviewMergeRequest(entity.getReviewAgent().getId(), mergeRequest, changes, previousIssues, reviewStrictness);
         }
         if (entity.getAiModelConfig() == null) {
             throw new IllegalArgumentException("AI ????? Code Review Agent");
         }
         ensureChatModelConfig(entity.getAiModelConfig());
         ModelConfigService.ResolvedModelConfig modelConfig = modelConfigService.resolveModelConfig(entity.getAiModelConfig().getId());
-        return codeReviewClientService.reviewMergeRequest(modelConfig, buildReviewPrompt(entity), mergeRequest, changes);
+        return codeReviewClientService.reviewMergeRequest(modelConfig, buildReviewPrompt(entity), mergeRequest, changes, previousIssues, reviewStrictness);
+    }
+
+    /**
+     * 先按 MR 版本指纹查缓存，命中则直接复用结构化审查结果；未命中时才真正调用模型。
+     */
+    private ReviewExecutionContext executeReviewWithCache(GitlabAutoMergeConfigEntity entity,
+                                                          ResolvedGitlabConfig resolved,
+                                                          GitlabApiService.GitlabMergeRequest mergeRequest,
+                                                          List<String> previousIssues) {
+        ReviewFingerprint reviewFingerprint = buildShaReviewFingerprint(entity, resolved.projectRef(), mergeRequest);
+        if (reviewFingerprint != null) {
+            Optional<CodeReviewResult> cached = loadCachedReviewResult(resolved.projectRef(), mergeRequest.iid(), reviewFingerprint.value());
+            if (cached.isPresent()) {
+                return new ReviewExecutionContext(cached.get(), reviewFingerprint.value(), reviewFingerprint.source(), true);
+            }
+        }
+        GitlabApiService.GitlabMergeRequestChanges changes = gitlabApiService.fetchMergeRequestChanges(
+                resolved.apiBaseUrl(), resolved.token(), resolved.projectRef(), mergeRequest.iid());
+        if (reviewFingerprint == null) {
+            reviewFingerprint = buildDiffReviewFingerprint(entity, resolved.projectRef(), mergeRequest, changes);
+            Optional<CodeReviewResult> cached = loadCachedReviewResult(resolved.projectRef(), mergeRequest.iid(), reviewFingerprint.value());
+            if (cached.isPresent()) {
+                return new ReviewExecutionContext(cached.get(), reviewFingerprint.value(), reviewFingerprint.source(), true);
+            }
+        }
+        String reviewStrictness = normalizeReviewStrictness(entity.getReviewStrictness());
+        CodeReviewResult reviewResult;
+        if (entity.getReviewAgent() != null) {
+            reviewResult = agentExecutionService.reviewMergeRequest(entity.getReviewAgent().getId(), mergeRequest, changes, previousIssues, reviewStrictness);
+        } else {
+            if (entity.getAiModelConfig() == null) {
+                throw new IllegalArgumentException("AI 模型不能为空，或请改为选择 Code Review Agent");
+            }
+            ensureChatModelConfig(entity.getAiModelConfig());
+            ModelConfigService.ResolvedModelConfig modelConfig = modelConfigService.resolveModelConfig(entity.getAiModelConfig().getId());
+            reviewResult = codeReviewClientService.reviewMergeRequest(modelConfig, buildReviewPrompt(entity), mergeRequest, changes, previousIssues, reviewStrictness);
+        }
+        return new ReviewExecutionContext(reviewResult, reviewFingerprint.value(), reviewFingerprint.source(), false);
     }
 
 
@@ -1063,12 +1723,31 @@ public class GitlabManagementService {
                 """;
     }
 
+    /**
+     * 将页面或旧数据里的审查严格度统一收口为平台支持的枚举，默认采用中等严格度。
+     */
+    private String normalizeReviewStrictness(String value) {
+        if (!hasText(value)) {
+            return REVIEW_STRICTNESS_MEDIUM;
+        }
+        String normalized = value.trim().toUpperCase();
+        return switch (normalized) {
+            case REVIEW_STRICTNESS_HIGH, REVIEW_STRICTNESS_MEDIUM, REVIEW_STRICTNESS_LOW -> normalized;
+            default -> REVIEW_STRICTNESS_MEDIUM;
+        };
+    }
+
     private String buildReviewFailureMessage(CodeReviewResult reviewResult) {
         String summary = hasText(reviewResult.summary()) ? reviewResult.summary() : "AI Review \u672a\u901a\u8fc7";
-        if (reviewResult.issues() == null || reviewResult.issues().isEmpty()) {
+        List<String> pendingIssues = normalizeIssueList(reviewResult.issues());
+        List<String> unresolvedPreviousIssues = normalizeIssueList(reviewResult.unresolvedPreviousIssues());
+        if (pendingIssues.isEmpty() && unresolvedPreviousIssues.isEmpty()) {
             return limitMessage(summary);
         }
-        return limitMessage(summary + "\uff08" + reviewResult.issues().size() + " \u9879\u5f85\u5904\u7406\u95ee\u9898\uff09");
+        if (!unresolvedPreviousIssues.isEmpty()) {
+            return limitMessage(summary + "\uff08" + unresolvedPreviousIssues.size() + " \u9879\u5386\u53f2\u95ee\u9898\u672a\u4fee\u590d\uff0c\u5f53\u524d\u5171 " + pendingIssues.size() + " \u9879\u5f85\u5904\u7406\u95ee\u9898\uff09");
+        }
+        return limitMessage(summary + "\uff08" + pendingIssues.size() + " \u9879\u5f85\u5904\u7406\u95ee\u9898\uff09");
     }
 
     private void updateRunState(GitlabAutoMergeConfigEntity entity, String status, String message, LocalDateTime executedAt) {
@@ -1094,6 +1773,33 @@ public class GitlabManagementService {
                                   String webUrl,
                                   String extraMarkdown,
                                   LocalDateTime executedAt) {
+        saveAutoMergeLog(config, triggerType, mergeRequest, result, reason, webUrl, extraMarkdown, null, executedAt);
+    }
+
+    private void saveAutoMergeLog(GitlabAutoMergeConfigEntity config,
+                                  String triggerType,
+                                  GitlabApiService.GitlabMergeRequest mergeRequest,
+                                  String result,
+                                  String reason,
+                                  String webUrl,
+                                  String extraMarkdown,
+                                  CodeReviewResult reviewResult,
+                                  LocalDateTime executedAt) {
+        saveAutoMergeLog(config, triggerType, mergeRequest, result, reason, webUrl, extraMarkdown, reviewResult, null, null, false, executedAt);
+    }
+
+    private void saveAutoMergeLog(GitlabAutoMergeConfigEntity config,
+                                  String triggerType,
+                                  GitlabApiService.GitlabMergeRequest mergeRequest,
+                                  String result,
+                                  String reason,
+                                  String webUrl,
+                                  String extraMarkdown,
+                                  CodeReviewResult reviewResult,
+                                  String reviewFingerprint,
+                                  String reviewFingerprintSource,
+                                  boolean reviewCacheHit,
+                                  LocalDateTime executedAt) {
         saveAutoMergeLog(
                 config,
                 triggerType,
@@ -1105,12 +1811,16 @@ public class GitlabManagementService {
                 reason,
                 webUrl,
                 extraMarkdown,
+                reviewResult,
+                reviewFingerprint,
+                reviewFingerprintSource,
+                reviewCacheHit,
                 executedAt
         );
     }
 
     private void saveAutoMergeLog(GitlabAutoMergeConfigEntity config, String triggerType, Long mergeRequestIid, String mergeRequestTitle, String result, String reason, String webUrl, String extraMarkdown, LocalDateTime executedAt) {
-        saveAutoMergeLog(config, triggerType, mergeRequestIid, mergeRequestTitle, null, null, result, reason, webUrl, extraMarkdown, executedAt);
+        saveAutoMergeLog(config, triggerType, mergeRequestIid, mergeRequestTitle, null, null, result, reason, webUrl, extraMarkdown, null, null, null, false, executedAt);
     }
 
     private void saveAutoMergeLog(GitlabAutoMergeConfigEntity config,
@@ -1123,6 +1833,10 @@ public class GitlabManagementService {
                                   String reason,
                                   String webUrl,
                                   String extraMarkdown,
+                                  CodeReviewResult reviewResult,
+                                  String reviewFingerprint,
+                                  String reviewFingerprintSource,
+                                  boolean reviewCacheHit,
                                   LocalDateTime executedAt) {
         GitlabAutoMergeLogEntity log = new GitlabAutoMergeLogEntity();
         log.setConfig(config);
@@ -1133,13 +1847,23 @@ public class GitlabManagementService {
         log.setMergeRequestTitle(trimToNull(mergeRequestTitle));
         log.setMergeRequestAuthorName(trimToNull(mergeRequestAuthorName));
         log.setMergeRequestAuthorUsername(trimToNull(mergeRequestAuthorUsername));
+        log.setGitlabProjectRefSnapshot(resolveLogProjectRefSnapshot(config));
         log.setResult(result);
         log.setReason(limitMessage(reason));
+        log.setReviewIssuesJson(writeIssueListJson(reviewResult == null ? null : reviewResult.issues()));
+        log.setResolvedPreviousIssuesJson(writeIssueListJson(reviewResult == null ? null : reviewResult.resolvedPreviousIssues()));
+        log.setUnresolvedPreviousIssuesJson(writeIssueListJson(reviewResult == null ? null : reviewResult.unresolvedPreviousIssues()));
+        log.setReviewFingerprint(trimToNull(reviewFingerprint));
+        log.setReviewFingerprintSource(trimToNull(reviewFingerprintSource));
+        log.setReviewResultJson(writeReviewResultJson(reviewResult));
+        log.setReviewCacheHit(reviewResult == null ? null : reviewCacheHit);
         log.setDetailMarkdown(limitDetailMarkdown(buildLogDetailMarkdown(config, triggerType, mergeRequestIid, mergeRequestTitle, result, reason, webUrl, executedAt, extraMarkdown)));
         log.setWebUrl(trimToNull(webUrl));
         log.setExecutedAt(executedAt == null ? LocalDateTime.now() : executedAt);
         autoMergeLogRepository.save(log);
         notifyMergeRequestAuthor(log);
+        // 触发外发 webhook 投递（异步、不重试，异常吞掉避免影响主流程）
+        autoMergeWebhookDispatcher.dispatchAsync(log);
     }
 
     private void notifyMergeRequestAuthor(GitlabAutoMergeLogEntity log) {
@@ -1244,6 +1968,9 @@ public class GitlabManagementService {
         if (hasText(formatTime(executedAt))) {
             builder.append("- \u6267\u884c\u65f6\u95f4\uff1a").append(formatTime(executedAt)).append("\n");
         }
+        if (hasText(extraMarkdown) && extraMarkdown.contains("本次 AI 审查复用历史结果，未重新调用模型")) {
+            builder.append("- AI 审查：复用历史结果，未重新调用模型\n");
+        }
         if (mergeRequestIid != null) {
             builder.append("- Merge Request\uff1a!").append(mergeRequestIid);
             if (hasText(mergeRequestTitle)) {
@@ -1262,22 +1989,32 @@ public class GitlabManagementService {
         return builder.toString();
     }
 
-    private String buildReviewExtraMarkdown(CodeReviewResult reviewResult) {
-        if (hasText(reviewResult.reviewMarkdown())) {
-            return "## Code Review \u8f93\u51fa\n\n" + reviewResult.reviewMarkdown().trim();
-        }
+    /**
+     * 将历史问题修复状态与原始 AI Review 输出拼成统一 Markdown，确保日志详情固定可读。
+     */
+    private String buildReviewExtraMarkdown(CodeReviewResult reviewResult, List<String> previousIssues, boolean reviewCacheHit) {
+        List<String> normalizedPreviousIssues = normalizeIssueList(previousIssues);
+        List<String> resolvedPreviousIssues = normalizeIssueList(reviewResult.resolvedPreviousIssues());
+        List<String> unresolvedPreviousIssues = normalizeIssueList(reviewResult.unresolvedPreviousIssues());
+        List<String> pendingIssues = normalizeIssueList(reviewResult.issues());
+        List<String> newlyRaisedIssues = subtractIssues(pendingIssues, unresolvedPreviousIssues);
         StringBuilder builder = new StringBuilder();
-        builder.append("## Code Review \u8f93\u51fa\n\n");
-        builder.append("### \u603b\u7ed3\n");
-        builder.append(hasText(reviewResult.summary()) ? reviewResult.summary().trim() : "\u672a\u63d0\u4f9b\u5ba1\u67e5\u6458\u8981").append("\n\n");
-        builder.append("### \u5173\u952e\u95ee\u9898\n");
-        if (reviewResult.issues() == null || reviewResult.issues().isEmpty()) {
-            builder.append("- \u672a\u63d0\u4f9b\u95ee\u9898\u5217\u8868\n");
-        } else {
-            for (String issue : reviewResult.issues()) {
-                builder.append("- ").append(issue).append("\n");
-            }
+        if (reviewCacheHit) {
+            builder.append("> 本次 AI 审查复用历史结果，未重新调用模型。\n\n");
         }
+        builder.append("## \u5386\u53f2\u95ee\u9898\u4fee\u590d\u60c5\u51b5\n\n");
+        appendMarkdownIssueSection(builder, "### \u4e0a\u6b21\u95ee\u9898", normalizedPreviousIssues);
+        appendMarkdownIssueSection(builder, "### \u5df2\u4fee\u590d\u9879", resolvedPreviousIssues);
+        appendMarkdownIssueSection(builder, "### \u672a\u4fee\u590d\u9879", unresolvedPreviousIssues);
+        appendMarkdownIssueSection(builder, "### \u672c\u6b21\u65b0\u589e\u95ee\u9898", newlyRaisedIssues);
+        appendMarkdownIssueSection(builder, "### \u5f53\u524d\u4ecd\u9700\u5904\u7406\u95ee\u9898", pendingIssues);
+        if (hasText(reviewResult.reviewMarkdown())) {
+            builder.append("\n## Code Review \u8f93\u51fa\n\n").append(reviewResult.reviewMarkdown().trim());
+            return builder.toString();
+        }
+        builder.append("\n## Code Review \u8f93\u51fa\n\n");
+        builder.append("### \u603b\u7ed3\n");
+        builder.append(hasText(reviewResult.summary()) ? reviewResult.summary().trim() : "\u672a\u63d0\u4f9b\u5ba1\u67e5\u6458\u8981").append("\n");
         return builder.toString();
     }
 
@@ -1317,6 +2054,278 @@ public class GitlabManagementService {
         }
         String value = markdown.trim();
         return value.length() > 20000 ? value.substring(0, 20000) : value;
+    }
+
+    /**
+     * 同一 MR 的历史问题带入依赖“GitLab 项目 + MR IID”，这里优先读取最近一次 AI 拒绝后的问题快照。
+     */
+    private List<String> loadLatestRejectedReviewIssues(String gitlabProjectRef, Long mergeRequestIid) {
+        String normalizedProjectRef = trimToNull(gitlabProjectRef);
+        if (normalizedProjectRef == null || mergeRequestIid == null) {
+            return List.of();
+        }
+        return autoMergeLogRepository
+                .findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndResultOrderByExecutedAtDescIdDesc(
+                        normalizedProjectRef,
+                        mergeRequestIid,
+                        "AI_REJECTED"
+                )
+                .map(log -> readIssueListJson(log.getReviewIssuesJson()))
+                .orElseGet(List::of);
+    }
+
+    /**
+     * 同一 MR + 版本指纹命中缓存时，直接复用上一次结构化审查结果，避免重复调用模型。
+     */
+    private Optional<CodeReviewResult> loadCachedReviewResult(String gitlabProjectRef, Long mergeRequestIid, String reviewFingerprint) {
+        String normalizedProjectRef = trimToNull(gitlabProjectRef);
+        String normalizedFingerprint = trimToNull(reviewFingerprint);
+        if (normalizedProjectRef == null || mergeRequestIid == null || normalizedFingerprint == null) {
+            return Optional.empty();
+        }
+        return autoMergeLogRepository
+                .findTopByGitlabProjectRefSnapshotAndMergeRequestIidAndReviewFingerprintAndReviewResultJsonIsNotNullOrderByExecutedAtDescIdDesc(
+                        normalizedProjectRef,
+                        mergeRequestIid,
+                        normalizedFingerprint
+                )
+                .flatMap(log -> readReviewResultJson(log.getReviewResultJson()));
+    }
+
+    private ReviewFingerprint buildShaReviewFingerprint(GitlabAutoMergeConfigEntity entity,
+                                                        String gitlabProjectRef,
+                                                        GitlabApiService.GitlabMergeRequest mergeRequest) {
+        String normalizedProjectRef = trimToNull(gitlabProjectRef);
+        String headSha = trimToNull(mergeRequest.headSha());
+        String baseSha = trimToNull(mergeRequest.baseSha());
+        if (normalizedProjectRef == null || mergeRequest.iid() == null || headSha == null || baseSha == null) {
+            return null;
+        }
+        String payload = String.join("|",
+                normalizedProjectRef,
+                String.valueOf(mergeRequest.iid()),
+                headSha,
+                baseSha,
+                defaultString(trimToNull(mergeRequest.startSha())),
+                resolveReviewConfigKey(entity),
+                hashText(defaultString(trimToNull(entity.getAiReviewPrompt()))));
+        return new ReviewFingerprint("sha:" + hashText(payload), REVIEW_FINGERPRINT_SOURCE_SHA);
+    }
+
+    private ReviewFingerprint buildDiffReviewFingerprint(GitlabAutoMergeConfigEntity entity,
+                                                         String gitlabProjectRef,
+                                                         GitlabApiService.GitlabMergeRequest mergeRequest,
+                                                         GitlabApiService.GitlabMergeRequestChanges changes) {
+        String normalizedProjectRef = trimToNull(gitlabProjectRef);
+        if (normalizedProjectRef == null || mergeRequest.iid() == null) {
+            return new ReviewFingerprint("diff:" + hashText(resolveReviewConfigKey(entity)), REVIEW_FINGERPRINT_SOURCE_DIFF);
+        }
+        StringBuilder payload = new StringBuilder();
+        payload.append(normalizedProjectRef)
+                .append('|').append(mergeRequest.iid())
+                .append('|').append(resolveReviewConfigKey(entity))
+                .append('|').append(hashText(defaultString(trimToNull(entity.getAiReviewPrompt()))));
+        if (changes != null && changes.changes() != null) {
+            for (GitlabApiService.GitlabChange change : changes.changes()) {
+                payload.append("\n--change--\n")
+                        .append(defaultString(change.oldPath())).append('\n')
+                        .append(defaultString(change.newPath())).append('\n')
+                        .append(defaultString(change.diff())).append('\n')
+                        .append(change.newFile()).append('|')
+                        .append(change.deletedFile()).append('|')
+                        .append(change.renamedFile());
+            }
+        }
+        return new ReviewFingerprint("diff:" + hashText(payload.toString()), REVIEW_FINGERPRINT_SOURCE_DIFF);
+    }
+
+    private String resolveReviewConfigKey(GitlabAutoMergeConfigEntity entity) {
+        String agentKey = entity.getReviewAgent() == null ? "" : "agent:" + entity.getReviewAgent().getId();
+        String modelKey = entity.getAiModelConfig() == null ? "" : "model:" + entity.getAiModelConfig().getId();
+        return normalizeReviewStrictness(entity.getReviewStrictness()) + "|" + agentKey + "|" + modelKey;
+    }
+
+    /**
+     * 后端对模型结果做最终兜底，只要还有历史问题未修复，就算模型误判 approved=true 也必须拦截。
+     */
+    private CodeReviewResult applyReviewSafetyGuard(CodeReviewResult reviewResult) {
+        List<String> issues = normalizeIssueList(reviewResult.issues());
+        List<String> resolvedPreviousIssues = normalizeIssueList(reviewResult.resolvedPreviousIssues());
+        List<String> unresolvedPreviousIssues = normalizeIssueList(reviewResult.unresolvedPreviousIssues());
+        boolean approved = reviewResult.approved();
+        String summary = hasText(reviewResult.summary()) ? reviewResult.summary().trim() : "AI Review 未通过";
+        if (approved && !unresolvedPreviousIssues.isEmpty()) {
+            approved = false;
+            summary = limitMessage(summary + "；检测到仍有历史问题未修复，已自动拦截合并");
+        }
+        return new CodeReviewResult(
+                approved,
+                summary,
+                defaultString(reviewResult.provider()),
+                issues,
+                defaultString(reviewResult.reviewMarkdown()),
+                resolvedPreviousIssues,
+                unresolvedPreviousIssues
+        );
+    }
+
+    private String resolveLogProjectRefSnapshot(GitlabAutoMergeConfigEntity config) {
+        if (MODE_PROJECT_BOUND.equals(config.getExecutionMode()) && config.getBinding() != null) {
+            return trimToNull(resolveBindingProjectRef(config.getBinding()));
+        }
+        return trimToNull(config.getGitlabProjectRef());
+    }
+
+    private String writeIssueListJson(List<String> issues) {
+        try {
+            return objectMapper.writeValueAsString(normalizeIssueList(issues));
+        } catch (Exception exception) {
+            throw new IllegalStateException("自动合并日志问题列表序列化失败", exception);
+        }
+    }
+
+    private String writeReviewResultJson(CodeReviewResult reviewResult) {
+        if (reviewResult == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(reviewResult);
+        } catch (Exception exception) {
+            throw new IllegalStateException("自动合并日志审查结果序列化失败", exception);
+        }
+    }
+
+    private Optional<CodeReviewResult> readReviewResultJson(String json) {
+        if (!hasText(json)) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(objectMapper.readValue(json, CodeReviewResult.class));
+        } catch (Exception exception) {
+            log.warn("自动合并日志审查结果解析失败: {}", exception.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private List<String> readIssueListJson(String json) {
+        if (!hasText(json)) {
+            return List.of();
+        }
+        try {
+            JsonNode node = objectMapper.readTree(json);
+            if (!node.isArray()) {
+                return List.of();
+            }
+            List<String> issues = new ArrayList<>();
+            for (JsonNode item : node) {
+                String value = item.asText("");
+                if (hasText(value)) {
+                    issues.add(value.trim());
+                }
+            }
+            return issues;
+        } catch (Exception exception) {
+            log.warn("自动合并日志问题列表解析失败: {}", exception.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<String> normalizeIssueList(List<String> issues) {
+        if (issues == null || issues.isEmpty()) {
+            return List.of();
+        }
+        Set<String> normalizedIssues = new LinkedHashSet<>();
+        for (String issue : issues) {
+            if (hasText(issue)) {
+                normalizedIssues.add(issue.trim());
+            }
+        }
+        return List.copyOf(normalizedIssues);
+    }
+
+    private List<String> subtractIssues(List<String> issues, List<String> excludedIssues) {
+        if (issues == null || issues.isEmpty()) {
+            return List.of();
+        }
+        Set<String> excluded = new LinkedHashSet<>();
+        for (String excludedIssue : normalizeIssueList(excludedIssues)) {
+            excluded.add(issueSemanticKey(excludedIssue));
+        }
+        List<String> result = new ArrayList<>();
+        for (String issue : normalizeIssueList(issues)) {
+            if (!excluded.contains(issueSemanticKey(issue))) {
+                result.add(issue);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * “本次新增问题”判定不再按整句精确匹配，而是取问题主语段做归一化，
+     * 避免同一问题只是补充了建议、风险说明后就被误判成新增。
+     */
+    private String issueSemanticKey(String issue) {
+        String normalized = trimToNull(issue);
+        if (normalized == null) {
+            return "";
+        }
+        String compact = normalized
+                .replace('（', '(')
+                .replace('）', ')')
+                .replace('：', ':')
+                .replaceAll("\\s+", " ")
+                .trim();
+        String[] segments = compact.split("[，,。；;：:]");
+        if (segments.length > 0 && hasText(segments[0])) {
+            return segments[0].trim().toLowerCase();
+        }
+        return compact.toLowerCase();
+    }
+
+    private String hashText(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(defaultString(value).getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(bytes.length * 2);
+            for (byte current : bytes) {
+                builder.append(Character.forDigit((current >> 4) & 0xF, 16));
+                builder.append(Character.forDigit(current & 0xF, 16));
+            }
+            return builder.toString();
+        } catch (Exception exception) {
+            throw new IllegalStateException("自动合并日志指纹计算失败", exception);
+        }
+    }
+
+    private void appendMarkdownIssueSection(StringBuilder builder, String title, List<String> issues) {
+        builder.append(title).append("\n");
+        if (issues == null || issues.isEmpty()) {
+            builder.append("- \u65e0\n\n");
+            return;
+        }
+        for (String issue : issues) {
+            builder.append("- ").append(issue).append("\n");
+        }
+        builder.append("\n");
+    }
+
+    private record ReviewExecutionContext(CodeReviewResult reviewResult,
+                                          String reviewFingerprint,
+                                          String reviewFingerprintSource,
+                                          boolean cacheHit) {
+    }
+
+    private record ReviewFingerprint(String value, String source) {
+    }
+
+    private String appendMarkdownSection(String baseMarkdown, String extraMarkdown) {
+        if (!hasText(baseMarkdown)) {
+            return hasText(extraMarkdown) ? extraMarkdown.trim() : null;
+        }
+        if (!hasText(extraMarkdown)) {
+            return baseMarkdown.trim();
+        }
+        return baseMarkdown.trim() + "\n\n" + extraMarkdown.trim();
     }
 
     /**
@@ -2121,6 +3130,8 @@ public class GitlabManagementService {
                 computeNextExecutionTime(entity),
                 defaultBoolean(entity.getAiReviewEnabled(), false),
                 entity.getAiReviewPrompt(),
+                normalizeReviewStrictness(entity.getReviewStrictness()),
+                buildPipelineTargetSummaries(entity),
                 entity.getLastRunStatus(),
                 entity.getLastRunMessage(),
                 formatTime(entity.getLastRunAt())
@@ -2145,6 +3156,107 @@ public class GitlabManagementService {
                 entity.getWebUrl(),
                 formatTime(entity.getExecutedAt())
         );
+    }
+
+    private GitlabAutoMergeProjectShareSummary toProjectAutoMergeShareSummary(ProjectEntity project, GitlabAutoMergeProjectShareEntity entity) {
+        if (entity == null || !Boolean.TRUE.equals(entity.getEnabled()) || !hasText(entity.getTokenCiphertext())) {
+            return new GitlabAutoMergeProjectShareSummary(project.getId(), project.getName(), false, null, null);
+        }
+        String token = tokenCipherService.decrypt(entity.getTokenCiphertext());
+        return new GitlabAutoMergeProjectShareSummary(
+                project.getId(),
+                project.getName(),
+                true,
+                entity.getExpiresAt() == null ? "永久有效" : formatTime(entity.getExpiresAt()),
+                buildProjectAutoMergeShareUrl(project.getId(), token)
+        );
+    }
+
+    private ProjectEntity requireVisibleProject(Long projectId) {
+        return requireProject(projectId);
+    }
+
+    private ProjectEntity requireValidProjectShare(Long projectId, String token) {
+        ProjectEntity project = projectRepository.findById(projectId).orElseThrow(() -> new NoSuchElementException("项目不存在: " + projectId));
+        GitlabAutoMergeProjectShareEntity share = autoMergeProjectShareRepository.findByProject_Id(projectId)
+                .orElseThrow(() -> new IllegalArgumentException("当前项目尚未创建分享链接"));
+        if (!Boolean.TRUE.equals(share.getEnabled())) {
+            throw new IllegalArgumentException("分享链接已失效");
+        }
+        if (share.getExpiresAt() != null && share.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new IllegalArgumentException("分享链接已过期");
+        }
+        String storedToken = tokenCipherService.decrypt(share.getTokenCiphertext());
+        if (!defaultString(storedToken).equals(defaultString(token))) {
+            throw new IllegalArgumentException("分享链接无效");
+        }
+        return project;
+    }
+
+    private String buildProjectAutoMergeShareUrl(Long projectId, String token) {
+        String baseUrl = trimToNull(publicBaseUrl);
+        if (baseUrl == null) {
+            baseUrl = resolveCurrentRequestBaseUrl();
+        }
+        if (baseUrl == null) {
+            return null;
+        }
+        return baseUrl + "/gitlab/public/projects/" + projectId + "/auto-merge-logs/" + token;
+    }
+
+    private String resolveCurrentRequestBaseUrl() {
+        org.springframework.web.context.request.RequestAttributes attributes = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        if (!(attributes instanceof org.springframework.web.context.request.ServletRequestAttributes servletRequestAttributes)) {
+            return null;
+        }
+        jakarta.servlet.http.HttpServletRequest request = servletRequestAttributes.getRequest();
+        String origin = trimToNull(request.getHeader("Origin"));
+        if (origin != null) {
+            return trimTrailingSlash(origin);
+        }
+        String referer = trimToNull(request.getHeader("Referer"));
+        if (referer != null) {
+            try {
+                java.net.URI uri = java.net.URI.create(referer);
+                StringBuilder builder = new StringBuilder();
+                builder.append(uri.getScheme()).append("://").append(uri.getHost());
+                if (uri.getPort() > 0
+                        && !("http".equalsIgnoreCase(uri.getScheme()) && uri.getPort() == 80)
+                        && !("https".equalsIgnoreCase(uri.getScheme()) && uri.getPort() == 443)) {
+                    builder.append(':').append(uri.getPort());
+                }
+                return builder.toString();
+            } catch (Exception ignored) {
+                // ignore invalid referer and continue with request host fallback
+            }
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append(request.getScheme()).append("://").append(request.getServerName());
+        if (request.getServerPort() > 0
+                && !("http".equalsIgnoreCase(request.getScheme()) && request.getServerPort() == 80)
+                && !("https".equalsIgnoreCase(request.getScheme()) && request.getServerPort() == 443)) {
+            builder.append(':').append(request.getServerPort());
+        }
+        return builder.toString();
+    }
+
+    private String generateShareToken() {
+        StringBuilder builder = new StringBuilder(32);
+        for (int index = 0; index < 32; index++) {
+            builder.append(TOKEN_ALPHABET[SECURE_RANDOM.nextInt(TOKEN_ALPHABET.length)]);
+        }
+        return builder.toString();
+    }
+
+    private String trimTrailingSlash(String value) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            return null;
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 
     private GitlabMergeRequestSummary toMergeRequestSummary(GitlabApiService.GitlabMergeRequest item) {
@@ -2183,6 +3295,26 @@ public class GitlabManagementService {
                 ));
             }
         }
+    }
+
+    private Specification<GitlabAutoMergeLogEntity> publicAutoMergeLogSpecification(Long projectId, String result) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.join("project", JoinType.INNER).get("id"), projectId));
+            predicates.add(cb.isNotNull(root.join("config", JoinType.LEFT).get("id")));
+            predicates.add(cb.equal(root.join("config", JoinType.LEFT).get("executionMode"), MODE_PROJECT_BOUND));
+            if (hasText(result)) {
+                predicates.add(cb.equal(root.get("result"), result.trim().toUpperCase()));
+            } else {
+                // 默认隐藏 EMPTY（未匹配到任何可执行 MR）的扫描记录，避免对外分享时充满“无内容”行；
+                // 仅当调用方显式 ?result=EMPTY 才返回这类记录。
+                predicates.add(cb.or(
+                        cb.isNull(root.get("result")),
+                        cb.notEqual(root.get("result"), "EMPTY")
+                ));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
     }
 
     /**

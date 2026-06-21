@@ -183,6 +183,7 @@ public class SelfUpgradeExecutionBridgeService {
         modelNode.put("provider", defaultString(modelConfig.provider()));
         modelNode.put("apiBaseUrl", defaultString(modelConfig.apiBaseUrl()));
         modelNode.put("modelName", defaultString(modelConfig.modelName()));
+        modelNode.put("openaiApiMode", defaultString(modelConfig.openaiApiMode()));
         modelNode.put("apiKey", defaultString(modelConfig.apiKey()));
 
         root.put("maxExplorationSteps", plan.getMaxExplorationSteps());

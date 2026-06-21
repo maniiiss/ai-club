@@ -681,6 +681,7 @@ public class GitlabApiService {
     private GitlabMergeRequest toMergeRequest(JsonNode node) {
         JsonNode pipelineNode = node.path("head_pipeline");
         JsonNode divergedNode = node.get("diverged_commits_count");
+        JsonNode diffRefsNode = node.path("diff_refs");
         Integer divergedCommitsCount = divergedNode == null || divergedNode.isNull() ? null : divergedNode.asInt();
         return new GitlabMergeRequest(
                 node.path("iid").asLong(),
@@ -696,7 +697,10 @@ public class GitlabApiService {
                 node.path("author").path("username").asText(""),
                 node.path("web_url").asText(""),
                 node.path("updated_at").asText(""),
-                divergedCommitsCount
+                divergedCommitsCount,
+                node.path("sha").asText(""),
+                diffRefsNode.path("base_sha").asText(""),
+                diffRefsNode.path("start_sha").asText("")
         );
     }
 
@@ -778,7 +782,30 @@ public class GitlabApiService {
 
     public record GitlabMergeRequest(Long iid, String title, String state, String sourceBranch, String targetBranch,
                                      Boolean draft, Boolean hasConflicts, String detailedMergeStatus, String pipelineStatus,
-                                     String authorName, String authorUsername, String webUrl, String updatedAt, Integer divergedCommitsCount) {
+                                     String authorName, String authorUsername, String webUrl, String updatedAt, Integer divergedCommitsCount,
+                                     String headSha, String baseSha, String startSha) {
+
+        public GitlabMergeRequest withShas(String newHeadSha, String newBaseSha, String newStartSha) {
+            return new GitlabMergeRequest(
+                    iid,
+                    title,
+                    state,
+                    sourceBranch,
+                    targetBranch,
+                    draft,
+                    hasConflicts,
+                    detailedMergeStatus,
+                    pipelineStatus,
+                    authorName,
+                    authorUsername,
+                    webUrl,
+                    updatedAt,
+                    divergedCommitsCount,
+                    newHeadSha,
+                    newBaseSha,
+                    newStartSha
+            );
+        }
     }
 
     public record GitlabCompareResult(boolean sameRef, boolean compareTimeout, List<String> commitIds) {

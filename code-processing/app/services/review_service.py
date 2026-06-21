@@ -10,26 +10,41 @@ from app.models import ReviewRequest, ReviewResponse
 logger = logging.getLogger(__name__)
 
 
+class ReviewProviderError(RuntimeError):
+    """封装上游模型调用失败，便于接口层返回可读的 4xx 信息。"""
+
+
 def review_code(request: ReviewRequest) -> ReviewResponse:
     provider = request.provider.strip().upper()
+    openai_api_mode = _normalize_openai_api_mode(request.openaiApiMode)
     prompt = _build_prompt(request)
     logger.info(
-        "Starting code review: provider=%s, model=%s, api_base_url=%s, change_count=%s",
+        "Starting code review: provider=%s, model=%s, api_base_url=%s, openai_api_mode=%s, change_count=%s",
         provider,
         request.model,
         request.apiBaseUrl.rstrip("/"),
+        openai_api_mode,
         len(request.changes),
     )
-    raw_text = _call_provider(provider, request.apiBaseUrl.rstrip("/"), request.apiKey, request.model, prompt)
+    raw_text = _call_provider(provider, request.apiBaseUrl.rstrip("/"), request.apiKey, request.model, prompt, openai_api_mode)
     logger.info("Code review raw model response excerpt: %s", _abbreviate(raw_text, 1000))
     payload = _extract_json(raw_text)
 
     approved = bool(payload.get("approved", False))
     summary = _string_value(payload.get("summary")) or "Review summary is missing"
     issues = _normalize_issues(payload.get("issues"))
+    resolved_previous_issues = _normalize_issues(payload.get("resolvedPreviousIssues"))
+    unresolved_previous_issues = _normalize_issues(payload.get("unresolvedPreviousIssues"))
     review_markdown = _string_value(payload.get("reviewMarkdown"))
     if not review_markdown:
-        review_markdown = _build_fallback_markdown(approved, summary, issues)
+        review_markdown = _build_fallback_markdown(
+            approved,
+            summary,
+            issues,
+            request.previousIssues,
+            resolved_previous_issues,
+            unresolved_previous_issues,
+        )
 
     logger.info(
         "Code review parsed successfully: provider=%s, model=%s, approved=%s, issue_count=%s",
@@ -45,6 +60,8 @@ def review_code(request: ReviewRequest) -> ReviewResponse:
         provider=provider,
         issues=issues,
         reviewMarkdown=review_markdown,
+        resolvedPreviousIssues=resolved_previous_issues,
+        unresolvedPreviousIssues=unresolved_previous_issues,
     )
 
 
@@ -63,6 +80,7 @@ diff:
 """
         )
     joined_changes = "\n".join(changes_text) if changes_text else "No file changes"
+    strictness_rules = _build_strictness_rules(request.reviewStrictness)
 
     return f"""
 {request.prompt}
@@ -73,16 +91,32 @@ Use this exact JSON shape:
 {{
   "approved": false,
   "summary": "One-sentence conclusion about whether auto-merge is safe",
-  "issues": ["Issue 1", "Issue 2"],
-  "reviewMarkdown": "# 代码审查\n- 审查结论：建议暂不合并\n- 摘要：存在高风险问题，建议暂不自动合并\n\n## 发现的问题\n- service 层缺少空值判断，可能导致运行时异常\n\n## 修改建议\n- 补充空值校验与对应测试用例"
+  "issues": ["仍需处理的问题1", "仍需处理的问题2"],
+  "resolvedPreviousIssues": ["已修复的历史问题1"],
+  "unresolvedPreviousIssues": ["尚未修复的历史问题1"],
+  "reviewMarkdown": "# 代码审查\n- 审查结论：建议暂不合并\n- 摘要：存在高风险问题，建议暂不自动合并\n\n## 历史问题修复情况\n### 已修复\n- 已补充空值判断\n\n### 未修复\n- service 层仍缺少边界保护\n\n## 当前仍需处理的问题\n- service 层缺少空值判断，可能导致运行时异常\n\n## 修改建议\n- 补充空值校验与对应测试用例"
 }}
 
 Rules:
 1. reviewMarkdown must be Markdown and must be written in Chinese.
-2. If there is any high-risk issue, approved must be false.
-3. If there is no obvious issue, issues must be an empty array.
-4. reviewMarkdown should be clear and practical, and should include sections for conclusion, issues, and suggestions.
-5. Return JSON only.
+2. You must review every previous issue and decide whether it is already fixed.
+3. issues must contain the full list of problems that are still unresolved in the current MR, including unresolved previous issues and newly found issues, so they can be carried into the next review.
+4. If there is any unresolved previous issue or any new high-risk issue, approved must be false.
+5. If there is no obvious issue, issues, resolvedPreviousIssues, and unresolvedPreviousIssues should use empty arrays as appropriate.
+6. reviewMarkdown should be clear and practical, and should include sections for conclusion, historical issue status, current issues, and suggestions.
+7. Return JSON only.
+
+Platform Final Auto-Merge Gate:
+{strictness_rules}
+
+Previous Issues From Last Rejected Review:
+{_format_previous_issues(request.previousIssues)}
+
+Rules For History:
+- resolvedPreviousIssues must only include issues from Previous Issues From Last Rejected Review that are now fixed.
+- unresolvedPreviousIssues must only include issues from Previous Issues From Last Rejected Review that are still not fixed.
+- Do not invent historical issues that were not provided.
+- Newly found issues should appear in issues, but not in resolvedPreviousIssues or unresolvedPreviousIssues.
 
 MR Title:
 {request.mergeRequestTitle}
@@ -95,21 +129,48 @@ Changes:
 """.strip()
 
 
+def _build_strictness_rules(review_strictness: str) -> str:
+    """根据自动合并策略严格度生成最终门禁规则，覆盖自定义提示词中的宽松要求。"""
+    normalized = (review_strictness or "MEDIUM").strip().upper()
+    if normalized == "HIGH":
+        return (
+            "- 当前严格度：高（HIGH）。\n"
+            "- 只要发现明确不规范、质量缺陷、缺少必要测试、边界条件不足、错误处理不足、潜在风险或历史问题未修复，approved 必须为 false。\n"
+            "- 只有变更清晰、风险可控、实现规范且必要验证充分时，才允许 approved 为 true。"
+        )
+    if normalized == "LOW":
+        return (
+            "- 当前严格度：低（LOW）。\n"
+            "- 仅当问题会导致线上故障、安全漏洞、数据破坏、接口或行为兼容性破坏、严重性能退化，或历史问题未修复时，approved 必须为 false。\n"
+            "- 纯风格、轻微可维护性建议、非阻塞测试建议可以写入 reviewMarkdown，但不要仅因此拒绝合并。"
+        )
+    return (
+        "- 当前严格度：中（MEDIUM）。\n"
+        "- 发现严重风险或中等风险时 approved 必须为 false，例如明显 bug、边界遗漏、异常处理缺失、安全隐患、关键流程回归、缺少必要测试或历史问题未修复。\n"
+        "- 纯格式、命名、注释等轻微风格问题可作为建议，不要仅因此拒绝合并。"
+    )
+
+
 def _trim_diff(diff: str, max_chars: int = 12000) -> str:
     if len(diff) <= max_chars:
         return diff
     return diff[:max_chars] + "\n...diff truncated..."
 
 
-def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, prompt: str) -> str:
+def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, prompt: str, openai_api_mode: str) -> str:
     with httpx.Client(timeout=60.0, http2=False) as client:
         if provider == "OPENAI":
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            if openai_api_mode == "CHAT_COMPLETIONS":
+                return _call_openai_chat_completions_with_fallback(client, api_base_url, headers, model, prompt, allow_plain_fallback=False)
+            if openai_api_mode == "CHAT_COMPLETIONS_PLAIN":
+                return _call_openai_chat_completions_plain(client, api_base_url, headers, model, prompt)
             response = client.post(
                 f"{api_base_url}/responses",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 json={
                     "model": model,
                     "input": prompt,
@@ -121,24 +182,10 @@ def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, p
                     },
                 },
             )
-            if response.status_code == 404:
-                response = client.post(
-                    f"{api_base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": model,
-                        "temperature": 0,
-                        "response_format": {"type": "json_object"},
-                        "messages": [{"role": "user", "content": prompt}],
-                    },
-                )
-                response.raise_for_status()
-                return _extract_openai_chat_text(response.json())
+            if response.status_code == 404 or _should_retry_with_chat_completions(api_base_url, response):
+                return _call_openai_chat_completions_with_fallback(client, api_base_url, headers, model, prompt, allow_plain_fallback=True)
 
-            response.raise_for_status()
+            _raise_for_provider_error("OPENAI responses", response)
             return _extract_openai_text(response.json())
 
         if provider == "ANTHROPIC":
@@ -156,10 +203,127 @@ def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, p
                     "messages": [{"role": "user", "content": prompt}],
                 },
             )
-            response.raise_for_status()
+            _raise_for_provider_error("ANTHROPIC messages", response)
             return _extract_anthropic_text(response.json())
 
     raise ValueError(f"Unsupported provider: {provider}")
+
+
+def _should_retry_with_chat_completions(api_base_url: str, response: httpx.Response) -> bool:
+    """OpenAI 兼容网关在 /responses 不兼容时，按特征切回 chat/completions。"""
+    if response.status_code != 400:
+        return False
+    lower_base_url = api_base_url.lower()
+    if "volces.com" in lower_base_url or "ark" in lower_base_url:
+        return True
+    body = _abbreviate(response.text, 1000).lower()
+    return "responses" in body and ("unsupported" in body or "not support" in body)
+
+
+def _call_openai_chat_completions_with_fallback(
+        client: httpx.Client,
+        api_base_url: str,
+        headers: dict[str, str],
+        model: str,
+        prompt: str,
+        allow_plain_fallback: bool,
+) -> str:
+    """兼容不支持 response_format 的 OpenAI 网关，必要时降级为纯提示词约束。"""
+    structured_payload = _build_openai_chat_payload(model, prompt, include_response_format=True)
+    fallback_response = client.post(
+        f"{api_base_url}/chat/completions",
+        headers=headers,
+        json=structured_payload,
+    )
+    if allow_plain_fallback and _should_retry_without_response_format(fallback_response):
+        return _call_openai_chat_completions_plain(client, api_base_url, headers, model, prompt)
+    _raise_for_provider_error("OPENAI chat/completions", fallback_response)
+    return _extract_openai_chat_text(fallback_response.json())
+
+
+def _call_openai_chat_completions_plain(
+        client: httpx.Client,
+        api_base_url: str,
+        headers: dict[str, str],
+        model: str,
+        prompt: str,
+) -> str:
+    """直接走不带 response_format 的 chat/completions，减少兼容网关的额外探测。"""
+    plain_payload = _build_openai_chat_payload(model, prompt, include_response_format=False)
+    response = client.post(
+        f"{api_base_url}/chat/completions",
+        headers=headers,
+        json=plain_payload,
+    )
+    _raise_for_provider_error("OPENAI chat/completions", response)
+    return _extract_openai_chat_text(response.json())
+
+
+def _build_openai_chat_payload(model: str, prompt: str, include_response_format: bool) -> dict[str, Any]:
+    """统一构造 chat/completions 请求体，便于按网关能力做最小差异降级。"""
+    payload: dict[str, Any] = {
+        "model": model,
+        "temperature": 0,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if include_response_format:
+        payload["response_format"] = {"type": "json_object"}
+    return payload
+
+
+def _should_retry_without_response_format(response: httpx.Response) -> bool:
+    """部分兼容模型不支持 response_format=json_object，此时回退到纯文本 JSON 输出。"""
+    if response.status_code != 400:
+        return False
+    detail = _format_provider_error_detail(response).lower()
+    return "response_format.type" in detail and "json_object" in detail and "not supported" in detail
+
+
+def _normalize_openai_api_mode(value: str | None) -> str:
+    """统一收口 OpenAI 兼容调用模式，非法值直接按 AUTO 处理。"""
+    if not value or not str(value).strip():
+        return "AUTO"
+    normalized = str(value).strip().upper()
+    return normalized if normalized in {"AUTO", "RESPONSES", "CHAT_COMPLETIONS", "CHAT_COMPLETIONS_PLAIN"} else "AUTO"
+
+
+def _raise_for_provider_error(provider_label: str, response: httpx.Response) -> None:
+    """统一收口模型供应商错误，避免接口直接抛成 500。"""
+    if response.is_success:
+        return
+    detail = _format_provider_error_detail(response)
+    logger.warning(
+        "Code review provider call failed: provider=%s, status=%s, url=%s, response=%s",
+        provider_label,
+        response.status_code,
+        response.request.url,
+        detail,
+    )
+    raise ReviewProviderError(f"{provider_label} 调用失败，HTTP {response.status_code}：{detail}")
+
+
+def _format_provider_error_detail(response: httpx.Response) -> str:
+    """尽量从上游响应体中提炼出可读错误，方便后端和页面直接定位。"""
+    text = (response.text or "").strip()
+    if not text:
+        return "上游未返回错误详情"
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return _abbreviate(text, 500)
+    message_candidates = [
+        payload.get("message"),
+        payload.get("error"),
+        payload.get("detail"),
+    ]
+    for candidate in message_candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return _abbreviate(candidate.strip(), 500)
+        if isinstance(candidate, dict):
+            nested_message = candidate.get("message") or candidate.get("detail") or candidate.get("type")
+            if isinstance(nested_message, str) and nested_message.strip():
+                return _abbreviate(nested_message.strip(), 500)
+    return _abbreviate(json.dumps(payload, ensure_ascii=False), 500)
 
 
 def _extract_openai_text(body: dict[str, Any]) -> str:
@@ -229,7 +393,14 @@ def _normalize_issues(value: Any) -> list[str]:
     return [text] if text else []
 
 
-def _build_fallback_markdown(approved: bool, summary: str, issues: list[str]) -> str:
+def _build_fallback_markdown(
+        approved: bool,
+        summary: str,
+        issues: list[str],
+        previous_issues: list[str],
+        resolved_previous_issues: list[str],
+        unresolved_previous_issues: list[str],
+) -> str:
     decision_text = "建议合并" if approved else "建议暂不合并"
     summary_text = summary or "未提供摘要"
     lines = [
@@ -237,8 +408,33 @@ def _build_fallback_markdown(approved: bool, summary: str, issues: list[str]) ->
         f"- 审查结论：{decision_text}",
         f"- 摘要：{summary_text}",
         "",
-        "## 发现的问题",
+        "## 历史问题修复情况",
+        "### 上次带入问题",
     ]
+    if previous_issues:
+        lines.extend(f"- {issue}" for issue in previous_issues)
+    else:
+        lines.append("- 无")
+    lines.extend([
+        "",
+        "### 已修复",
+    ])
+    if resolved_previous_issues:
+        lines.extend(f"- {issue}" for issue in resolved_previous_issues)
+    else:
+        lines.append("- 无")
+    lines.extend([
+        "",
+        "### 未修复",
+    ])
+    if unresolved_previous_issues:
+        lines.extend(f"- {issue}" for issue in unresolved_previous_issues)
+    else:
+        lines.append("- 无")
+    lines.extend([
+        "",
+        "## 当前仍需处理的问题",
+    ])
     if issues:
         lines.extend(f"- {issue}" for issue in issues)
     else:
@@ -249,6 +445,12 @@ def _build_fallback_markdown(approved: bool, summary: str, issues: list[str]) ->
         "- 请结合上述问题补充修复或说明，再重新发起审查。",
     ])
     return "\n".join(lines)
+
+
+def _format_previous_issues(previous_issues: list[str]) -> str:
+    if not previous_issues:
+        return "- None"
+    return "\n".join(f"- {issue}" for issue in previous_issues)
 
 
 def _abbreviate(value: str, max_chars: int) -> str:

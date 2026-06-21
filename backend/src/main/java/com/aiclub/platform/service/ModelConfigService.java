@@ -9,7 +9,6 @@ import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -40,6 +39,10 @@ public class ModelConfigService {
     public static final String MODEL_TYPE_EMBEDDING = "EMBEDDING";
     public static final String PROVIDER_OPENAI = "OPENAI";
     public static final String PROVIDER_ANTHROPIC = "ANTHROPIC";
+    public static final String OPENAI_API_MODE_AUTO = "AUTO";
+    public static final String OPENAI_API_MODE_RESPONSES = "RESPONSES";
+    public static final String OPENAI_API_MODE_CHAT_COMPLETIONS = "CHAT_COMPLETIONS";
+    public static final String OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN = "CHAT_COMPLETIONS_PLAIN";
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final Duration MODEL_REQUEST_TIMEOUT = Duration.ofSeconds(120);
@@ -139,6 +142,7 @@ public class ModelConfigService {
                 entity.getProvider(),
                 entity.getApiBaseUrl(),
                 entity.getModelName(),
+                normalizeOpenAiApiMode(entity.getProvider(), entity.getOpenaiApiMode()),
                 tokenCipherService.decrypt(entity.getApiKeyCiphertext())
         );
     }
@@ -147,21 +151,11 @@ public class ModelConfigService {
         return invokePrompt(resolveModelConfig(id), systemPrompt, userPrompt, 2048);
     }
 
-    /**
-     * 生成单条文本的向量，供 Wiki 知识索引等业务复用平台统一的 Embedding 模型配置。
-     */
-    public List<Double> generateEmbedding(Long id, String input) {
-        return generateEmbedding(resolveModelConfig(id), input);
-    }
-
-    /**
-     * 批量生成向量，避免业务层为多 chunk 建索时逐条重复握手。
-     */
-    public List<List<Double>> generateEmbeddings(Long id, List<String> inputs) {
-        return generateEmbeddings(resolveModelConfig(id), inputs);
-    }
-
     public String invokePrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, Integer maxTokens) {
+        return invokePrompt(config, systemPrompt, userPrompt, maxTokens, false);
+    }
+
+    public String invokePrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, Integer maxTokens, boolean jsonMode) {
         String modelType = normalizeModelType(config.modelType());
         if (!MODEL_TYPE_CHAT.equals(modelType)) {
             throw new IllegalArgumentException("Embedding 模型不支持文本生成调用，请选择对话模型");
@@ -170,7 +164,7 @@ public class ModelConfigService {
         int safeMaxTokens = maxTokens == null ? 2048 : Math.max(64, Math.min(maxTokens, 8192));
         try {
             if (PROVIDER_OPENAI.equals(provider)) {
-                return invokeOpenAiPrompt(config, systemPrompt, userPrompt, safeMaxTokens);
+                return invokeOpenAiPrompt(config, systemPrompt, userPrompt, safeMaxTokens, jsonMode);
             }
             if (PROVIDER_ANTHROPIC.equals(provider)) {
                 return invokeAnthropicPrompt(config, systemPrompt, userPrompt, safeMaxTokens);
@@ -185,41 +179,6 @@ public class ModelConfigService {
         }
     }
 
-    public List<Double> generateEmbedding(ResolvedModelConfig config, String input) {
-        List<List<Double>> vectors = generateEmbeddings(config, List.of(input));
-        if (vectors.isEmpty()) {
-            throw new IllegalStateException("Embedding 接口未返回有效向量");
-        }
-        return vectors.get(0);
-    }
-
-    public List<List<Double>> generateEmbeddings(ResolvedModelConfig config, List<String> inputs) {
-        String modelType = normalizeModelType(config.modelType());
-        if (!MODEL_TYPE_EMBEDDING.equals(modelType)) {
-            throw new IllegalArgumentException("仅 Embedding 模型支持生成向量");
-        }
-        String provider = normalizeProvider(config.provider());
-        if (!PROVIDER_OPENAI.equals(provider)) {
-            throw new IllegalArgumentException("Embedding 模型仅支持 OPENAI 兼容提供商");
-        }
-        List<String> normalizedInputs = (inputs == null ? List.<String>of() : inputs).stream()
-                .map(this::defaultString)
-                .filter(this::hasText)
-                .toList();
-        if (normalizedInputs.isEmpty()) {
-            return List.of();
-        }
-        try {
-            return invokeOpenAiEmbeddings(config, normalizedInputs);
-        } catch (IllegalArgumentException exception) {
-            throw exception;
-        } catch (RuntimeException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw new IllegalStateException("Embedding 调用失败：" + limitMessage(exception.getMessage()), exception);
-        }
-    }
-
     private void fillEntity(AiModelConfigEntity entity, AiModelConfigRequest request, boolean createMode) {
         String modelType = normalizeModelType(request.modelType());
         String provider = normalizeProvider(request.provider());
@@ -229,6 +188,7 @@ public class ModelConfigService {
         entity.setProvider(provider);
         entity.setApiBaseUrl(resolveApiBaseUrl(provider, modelType, request.apiBaseUrl()));
         entity.setModelName(request.modelName().trim());
+        entity.setOpenaiApiMode(normalizeOpenAiApiMode(provider, request.openaiApiMode()));
         entity.setDescription(request.description() == null ? "" : request.description().trim());
         entity.setEnabled(request.enabled() == null || request.enabled());
 
@@ -273,6 +233,7 @@ public class ModelConfigService {
                 entity.getProvider(),
                 entity.getApiBaseUrl(),
                 entity.getModelName(),
+                normalizeOpenAiApiMode(entity.getProvider(), entity.getOpenaiApiMode()),
                 hasText(entity.getApiKeyCiphertext()),
                 entity.getDescription(),
                 entity.getEnabled()
@@ -330,6 +291,10 @@ public class ModelConfigService {
 
     private String invokeOpenAi(ResolvedModelConfig config) throws IOException, InterruptedException {
         String baseUrl = trimSlash(config.apiBaseUrl());
+        if (OPENAI_API_MODE_CHAT_COMPLETIONS.equals(config.openaiApiMode())
+                || OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN.equals(config.openaiApiMode())) {
+            return invokeOpenAiChatCompletions(baseUrl, config);
+        }
         JsonNode payload = objectMapper.createObjectNode()
                 .put("model", config.modelName())
                 .put("input", "Reply with exactly OK.")
@@ -358,37 +323,26 @@ public class ModelConfigService {
         return extractOpenAiEmbeddingDimension(objectMapper.readTree(response.body()));
     }
 
-    private List<List<Double>> invokeOpenAiEmbeddings(ResolvedModelConfig config, List<String> inputs) throws IOException, InterruptedException {
+    private String invokeOpenAiPrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, int maxTokens, boolean jsonMode) throws IOException, InterruptedException {
         String baseUrl = trimSlash(config.apiBaseUrl());
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("model", config.modelName());
-        ArrayNode inputArray = payload.putArray("input");
-        for (String input : inputs) {
-            inputArray.add(defaultString(input));
+        if (OPENAI_API_MODE_CHAT_COMPLETIONS.equals(config.openaiApiMode())
+                || OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN.equals(config.openaiApiMode())) {
+            return invokeOpenAiChatCompletionsPrompt(baseUrl, config, systemPrompt, userPrompt, maxTokens, jsonMode);
         }
-        HttpResponse<String> response = sendJsonPost(baseUrl + "/embeddings", config.apiKey(), payload);
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException("OpenAI Embeddings 调用失败：" + extractHttpError(response));
-        }
-        return extractOpenAiEmbeddings(objectMapper.readTree(response.body()));
-    }
-
-    private String invokeOpenAiPrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, int maxTokens) throws IOException, InterruptedException {
-        String baseUrl = trimSlash(config.apiBaseUrl());
         JsonNode input = objectMapper.createArrayNode()
                 .add(objectMapper.createObjectNode().put("role", "system").put("content", defaultString(systemPrompt)))
                 .add(objectMapper.createObjectNode().put("role", "user").put("content", defaultString(userPrompt)));
-        JsonNode payload = objectMapper.createObjectNode()
+        ObjectNode payload = objectMapper.createObjectNode()
                 .put("model", config.modelName())
                 .set("input", input);
-        ((ObjectNode) payload).put("max_output_tokens", maxTokens);
+        payload.put("max_output_tokens", maxTokens);
 
         HttpResponse<String> response = sendJsonPost(baseUrl + "/responses", config.apiKey(), payload);
         if (response.statusCode() >= 200 && response.statusCode() < 300) {
             return extractOpenAiText(objectMapper.readTree(response.body()));
         }
         if (response.statusCode() == 404) {
-            return invokeOpenAiChatCompletionsPrompt(baseUrl, config, systemPrompt, userPrompt, maxTokens);
+            return invokeOpenAiChatCompletionsPrompt(baseUrl, config, systemPrompt, userPrompt, maxTokens, jsonMode);
         }
         throw new IllegalStateException("OpenAI 接口调用失败：" + extractHttpError(response));
     }
@@ -412,11 +366,12 @@ public class ModelConfigService {
     }
 
     private String invokeOpenAiChatCompletionsPrompt(String baseUrl,
-                                                     ResolvedModelConfig config,
-                                                     String systemPrompt,
-                                                     String userPrompt,
-                                                     int maxTokens) throws IOException, InterruptedException {
-        JsonNode payload = objectMapper.createObjectNode()
+                                                      ResolvedModelConfig config,
+                                                      String systemPrompt,
+                                                      String userPrompt,
+                                                      int maxTokens,
+                                                      boolean jsonMode) throws IOException, InterruptedException {
+        ObjectNode payload = objectMapper.createObjectNode()
                 .put("model", config.modelName())
                 .put("temperature", 0)
                 .put("max_tokens", maxTokens)
@@ -427,6 +382,10 @@ public class ModelConfigService {
                         .add(objectMapper.createObjectNode()
                                 .put("role", "user")
                                 .put("content", defaultString(userPrompt))));
+
+        if (jsonMode && !OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN.equals(config.openaiApiMode())) {
+            payload.set("response_format", objectMapper.createObjectNode().put("type", "json_object"));
+        }
 
         HttpResponse<String> response = sendJsonPost(baseUrl + "/chat/completions", config.apiKey(), payload);
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
@@ -527,29 +486,6 @@ public class ModelConfigService {
         throw new IllegalStateException("Embedding 接口未返回有效向量");
     }
 
-    private List<List<Double>> extractOpenAiEmbeddings(JsonNode body) {
-        JsonNode data = body.path("data");
-        if (!data.isArray() || data.isEmpty()) {
-            throw new IllegalStateException("Embedding 接口未返回有效向量");
-        }
-        List<List<Double>> vectors = new ArrayList<>();
-        for (JsonNode item : data) {
-            JsonNode embedding = item.path("embedding");
-            if (!embedding.isArray() || embedding.isEmpty()) {
-                continue;
-            }
-            List<Double> vector = new ArrayList<>();
-            for (JsonNode value : embedding) {
-                vector.add(value.asDouble());
-            }
-            vectors.add(List.copyOf(vector));
-        }
-        if (vectors.isEmpty()) {
-            throw new IllegalStateException("Embedding 接口未返回有效向量");
-        }
-        return List.copyOf(vectors);
-    }
-
     private HttpResponse<String> sendJsonPost(String url, String apiKey, JsonNode payload) throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -611,6 +547,26 @@ public class ModelConfigService {
         String value = provider == null ? "" : provider.trim().toUpperCase();
         if (!PROVIDER_OPENAI.equals(value) && !PROVIDER_ANTHROPIC.equals(value)) {
             throw new IllegalArgumentException("仅支持 OPENAI 和 ANTHROPIC");
+        }
+        return value;
+    }
+
+    /**
+     * 统一归一化 OpenAI 兼容调用模式，非 OpenAI 提供商固定回落为 AUTO。
+     */
+    private String normalizeOpenAiApiMode(String provider, String openAiApiMode) {
+        if (!PROVIDER_OPENAI.equals(normalizeProvider(provider))) {
+            return OPENAI_API_MODE_AUTO;
+        }
+        if (!hasText(openAiApiMode)) {
+            return OPENAI_API_MODE_AUTO;
+        }
+        String value = openAiApiMode.trim().toUpperCase();
+        if (!OPENAI_API_MODE_AUTO.equals(value)
+                && !OPENAI_API_MODE_RESPONSES.equals(value)
+                && !OPENAI_API_MODE_CHAT_COMPLETIONS.equals(value)
+                && !OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN.equals(value)) {
+            throw new IllegalArgumentException("OpenAI 调用模式仅支持 AUTO、RESPONSES、CHAT_COMPLETIONS、CHAT_COMPLETIONS_PLAIN");
         }
         return value;
     }
@@ -680,6 +636,6 @@ public class ModelConfigService {
     /**
      * 下游统一使用该载荷读取模型连接信息，modelType 用于保护文本生成链路不误用 Embedding 模型。
      */
-    public record ResolvedModelConfig(Long id, String name, String modelType, String provider, String apiBaseUrl, String modelName, String apiKey) {
+    public record ResolvedModelConfig(Long id, String name, String modelType, String provider, String apiBaseUrl, String modelName, String openaiApiMode, String apiKey) {
     }
 }

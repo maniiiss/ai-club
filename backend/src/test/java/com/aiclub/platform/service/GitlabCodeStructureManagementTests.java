@@ -10,12 +10,17 @@ import com.aiclub.platform.dto.request.GitlabCodeStructureQueryRequest;
 import com.aiclub.platform.dto.request.GitlabCodeStructureRefreshRequest;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.AgentRepository;
+import com.aiclub.platform.repository.AiClubPipelineRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
+import com.aiclub.platform.repository.GitlabAutoMergePipelineTargetRepository;
+import com.aiclub.platform.repository.GitlabAutoMergeProjectShareRepository;
+import com.aiclub.platform.repository.GitlabAutoMergeWebhookRepository;
 import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabProductBranchRepository;
 import com.aiclub.platform.repository.GitlabProductBranchSyncLogRepository;
 import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
+import com.aiclub.platform.repository.ProjectPipelineBindingRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,6 +63,21 @@ class GitlabCodeStructureManagementTests {
     private GitlabAutoMergeLogRepository autoMergeLogRepository;
 
     @Mock
+    private GitlabAutoMergePipelineTargetRepository autoMergePipelineTargetRepository;
+
+    @Mock
+    private GitlabAutoMergeProjectShareRepository autoMergeProjectShareRepository;
+
+    @Mock
+    private GitlabAutoMergeWebhookRepository autoMergeWebhookRepository;
+
+    @Mock
+    private AiClubPipelineRepository aiClubPipelineRepository;
+
+    @Mock
+    private ProjectPipelineBindingRepository projectPipelineBindingRepository;
+
+    @Mock
     private GitlabProductBranchRepository productBranchRepository;
 
     @Mock
@@ -89,6 +109,9 @@ class GitlabCodeStructureManagementTests {
 
     @Mock
     private NotificationService notificationService;
+
+    @Mock
+    private GitlabAutoMergeWebhookDispatcher autoMergeWebhookDispatcher;
 
     @Mock
     private ProjectDataPermissionService projectDataPermissionService;
@@ -134,7 +157,12 @@ class GitlabCodeStructureManagementTests {
                 bindingRepository,
                 codeStructureSnapshotRepository,
                 autoMergeConfigRepository,
+                autoMergePipelineTargetRepository,
                 autoMergeLogRepository,
+                autoMergeProjectShareRepository,
+                autoMergeWebhookRepository,
+                aiClubPipelineRepository,
+                projectPipelineBindingRepository,
                 productBranchRepository,
                 productBranchSyncLogRepository,
                 aiModelConfigRepository,
@@ -146,6 +174,7 @@ class GitlabCodeStructureManagementTests {
                 agentExecutionService,
                 cicdManagementService,
                 notificationService,
+                autoMergeWebhookDispatcher,
                 projectDataPermissionService,
                 gitlabUserOauthService,
                 executionTaskService,
@@ -156,6 +185,7 @@ class GitlabCodeStructureManagementTests {
                 platformEnvVarResolver,
                 new ObjectMapper(),
                 "http://gitlab.example.com/api/v4",
+                "",
                 transactionManager,
                 executionTaskExecutor
         );

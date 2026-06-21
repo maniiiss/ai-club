@@ -2,12 +2,17 @@ import json
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Callable
 
 from app.settings import settings
 
 ANSI_ESCAPE_PATTERN = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+LBUG_RECOVERY_PATTERNS = (
+    "lbug.wal without lbug.shadow",
+    "ladybugdb replay/recovery",
+)
 
 
 def discover_gitnexus_cli_path() -> Path | None:
@@ -33,28 +38,36 @@ def run_gitnexus_command(
     """执行 GitNexus CLI 并统一处理日志和非零退出码。"""
     command = [str(gitnexus_cli), *args]
     log(f"执行 GitNexus：{' '.join(command)}")
-    completed = subprocess.run(
-        command,
-        cwd=repo_dir,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=300,
-    )
-    stdout = (completed.stdout or "").strip()
-    stderr = (completed.stderr or "").strip()
-    if stdout:
-        log(stdout)
-    if stderr:
-        log(stderr)
-    if completed.returncode != 0:
+    # GitNexus / LadybugDB 在 WAL 恢复窗口内偶发首轮返回非零退出码，但随后重试即可恢复。
+    # 这里做一次小范围自动重试，避免平台把短暂自愈过程误报成“打开全仓图失败”。
+    for attempt_index in range(2):
+        completed = subprocess.run(
+            command,
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=300,
+        )
+        stdout = (completed.stdout or "").strip()
+        stderr = (completed.stderr or "").strip()
+        if stdout:
+            log(stdout)
+        if stderr:
+            log(stderr)
+        if completed.returncode == 0:
+            if stdout:
+                return stdout
+            if looks_like_structured_output(stderr):
+                return stderr
+            return stdout
+        if attempt_index == 0 and _looks_like_retryable_lbug_recovery(stderr):
+            log("检测到 GitNexus LadybugDB WAL 恢复日志，等待 1 秒后自动重试一次。")
+            time.sleep(1.0)
+            continue
         raise RuntimeError((fail_message or "GitNexus 执行失败") + f"：{stderr or stdout or '未知错误'}")
-    if stdout:
-        return stdout
-    if looks_like_structured_output(stderr):
-        return stderr
-    return stdout
+    raise RuntimeError((fail_message or "GitNexus 执行失败") + "：未知错误")
 
 
 def run_gitnexus_json_command(
@@ -196,3 +209,11 @@ def looks_like_structured_output(value: str) -> bool:
     if normalized.startswith("```"):
         return True
     return normalized.startswith("{") or normalized.startswith("[")
+
+
+def _looks_like_retryable_lbug_recovery(value: str) -> bool:
+    """识别 LadybugDB WAL 恢复期的短暂失败日志，允许上层做一次自愈重试。"""
+    normalized = strip_ansi_escape_sequences((value or "").strip()).lower()
+    if not normalized:
+        return False
+    return any(pattern in normalized for pattern in LBUG_RECOVERY_PATTERNS)

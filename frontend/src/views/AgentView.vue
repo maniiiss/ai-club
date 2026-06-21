@@ -239,6 +239,7 @@
     </section>
 
     <el-dialog
+      v-if="!isMobileViewport"
       v-model="dialogVisible"
       :title="dialogTitle"
       width="960px"
@@ -456,7 +457,220 @@
       </template>
     </el-dialog>
 
-      <el-dialog v-model="testDialogVisible" title="测试智能体" width="760px" destroy-on-close>
+    <!-- 移动端智能体编辑抽屉，表单较长使用全屏高度。 -->
+    <MobileFormDrawer
+      v-else
+      v-model="dialogVisible"
+      :title="dialogTitle"
+      :subtitle="dialogSubtitle"
+      :submit-text="'保存'"
+      :submitting="submitting"
+      :header-icon="agentAccessIcon(form.accessType)"
+      :close-on-click-modal="true"
+      size="100%"
+      drawer-class="agent-editor-mobile-drawer"
+      @submit="handleSubmit"
+      @cancel="dialogVisible = false"
+    >
+      <div class="agent-dialog-shell">
+      <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-position="top" class="platform-form-layout agent-dialog-form">
+        <section class="platform-form-section agent-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">基础信息</div>
+            <div class="platform-form-section-subtitle">定义智能体的定位、归属和基础能力描述。</div>
+          </div>
+          <div class="form-grid two-columns">
+            <el-form-item label="智能体名称" prop="name">
+            <el-input v-model="form.name" placeholder="请输入智能体名称" />
+          </el-form-item>
+          <el-form-item label="所属项目">
+            <el-select v-model="form.projectId" clearable placeholder="为空表示全局智能体" style="width: 100%">
+              <el-option v-for="item in projectOptions" :key="item.id" :label="item.name" :value="item.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="类型" prop="type">
+            <el-select v-model="form.type" placeholder="请选择类型" style="width: 100%">
+              <el-option v-for="item in typeOptions" :key="item" :label="item" :value="item" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="状态" prop="status">
+            <el-select v-model="form.status" placeholder="请选择状态" style="width: 100%">
+              <el-option v-for="item in statusOptions" :key="item" :label="item" :value="item" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="是否启用">
+            <el-switch v-model="form.enabled" />
+          </el-form-item>
+          <el-form-item label="接入方式" prop="accessType" class="span-2">
+            <el-radio-group v-model="form.accessType" class="access-type-group">
+              <el-radio-button v-for="item in accessTypeOptions" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item label="能力描述" class="span-2">
+            <el-input v-model="form.capability" placeholder="例如：任务拆解、代码建议、测试建议、项目协作" />
+          </el-form-item>
+          <el-form-item label="详细说明" class="span-2">
+            <el-input v-model="form.description" type="textarea" :rows="3" placeholder="补充说明智能体的职责范围、输入输出要求等" />
+          </el-form-item>
+          </div>
+        </section>
+
+        <section class="platform-form-section agent-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">接入配置</div>
+            <div class="platform-form-section-subtitle">根据接入方式配置模型、运行时或 HTTP 接口参数。</div>
+          </div>
+
+          <template v-if="form.accessType === 'BUILT_IN'">
+            <div class="form-grid two-columns">
+            <el-form-item label="内置能力" prop="builtinCode">
+              <el-select v-model="form.builtinCode" placeholder="请选择内置能力" style="width: 100%">
+                <el-option v-for="item in builtinOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="模型配置" prop="aiModelConfigId">
+              <el-select v-model="form.aiModelConfigId" placeholder="请选择模型配置" clearable style="width: 100%">
+                <el-option
+                  v-for="model in modelOptions"
+                  :key="model.id"
+                  :label="`${model.name} / ${model.provider} / ${model.modelName}`"
+                  :value="model.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="系统提示词" class="span-2">
+              <el-input v-model="form.systemPrompt" type="textarea" :rows="8" placeholder="可覆盖默认系统提示词" />
+            </el-form-item>
+            </div>
+          </template>
+
+          <template v-else-if="form.accessType === 'LLM_PROMPT'">
+            <div class="form-grid two-columns">
+            <el-form-item label="模型配置" prop="aiModelConfigId">
+              <el-select v-model="form.aiModelConfigId" placeholder="请选择模型配置" clearable style="width: 100%">
+                <el-option
+                  v-for="model in modelOptions"
+                  :key="model.id"
+                  :label="`${model.name} / ${model.provider} / ${model.modelName}`"
+                  :value="model.id"
+                />
+              </el-select>
+            </el-form-item>
+            <div />
+            <el-form-item label="系统提示词" class="span-2">
+              <el-input v-model="form.systemPrompt" type="textarea" :rows="5" placeholder="请输入系统提示词" />
+            </el-form-item>
+            <el-form-item label="用户提示词模板" class="span-2" prop="userPromptTemplate">
+              <el-input
+                v-model="form.userPromptTemplate"
+                type="textarea"
+                :rows="8"
+                placeholder="支持 {{input}}、{{input_json}}、{{system_prompt}}、{{system_prompt_json}}"
+              />
+            </el-form-item>
+            </div>
+          </template>
+
+          <template v-else-if="form.accessType === 'AGENT_RUNTIME'">
+            <div class="form-grid two-columns">
+            <el-form-item label="运行时类型" prop="runtimeType">
+              <el-select v-model="form.runtimeType" placeholder="请选择运行时类型" style="width: 100%">
+                <el-option v-for="item in runtimeTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="isOpenclawRuntime" label="Gateway 地址" prop="endpointUrl">
+              <el-input v-model="form.endpointUrl" placeholder="例如：http://127.0.0.1:8000（code-processing 服务地址）" />
+            </el-form-item>
+            <el-form-item v-if="isOpenclawRuntime" label="智能体标识" prop="runtimeAgentRef">
+              <el-input
+                v-model="form.runtimeAgentRef"
+                :disabled="form.runtimeType !== 'OPENCLAW'"
+                :placeholder="form.runtimeType === 'OPENCLAW' ? '例如：planner-agent' : 'CLI Runner 模式下无需填写'"
+              />
+            </el-form-item>
+            <el-form-item v-if="isOpenclawRuntime" label="会话 Key 模板">
+              <el-input v-model="form.runtimeSessionKeyTemplate" placeholder="例如：task:{{task_id}}:user:{{user_id}}" />
+            </el-form-item>
+            <el-form-item v-if="isOpenclawRuntime" label="认证方式">
+              <el-select v-model="form.httpAuthType" style="width: 100%">
+                <el-option label="无" value="NONE" />
+                <el-option label="Bearer Token" value="BEARER" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="超时时间(秒)">
+              <el-input-number v-model="form.timeoutSeconds" :min="5" :max="300" style="width: 100%" />
+            </el-form-item>
+            <el-form-item v-if="isOpenclawRuntime" label="Bearer Token" class="span-2">
+              <el-input v-model="form.httpAuthToken" type="password" show-password placeholder="编辑时留空则沿用已有 Token" />
+            </el-form-item>
+            <el-form-item label="系统提示词" class="span-2">
+              <el-input v-model="form.systemPrompt" type="textarea" :rows="5" placeholder="运行时级系统提示词，可为空；CLI Runner 与 OpenClaw 都会复用" />
+            </el-form-item>
+            <el-form-item label="运行输入模板" class="span-2">
+              <el-input
+                v-model="form.userPromptTemplate"
+                type="textarea"
+                :rows="8"
+                placeholder="支持 {{input}}、{{task_id}}、{{task_name}}、{{project_name}}、{{user_id}} 等变量；CLI Runner 会先渲染后再提交到 code-processing"
+              />
+            </el-form-item>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="form-grid two-columns">
+            <el-form-item label="接口地址" prop="endpointUrl">
+              <el-input v-model="form.endpointUrl" placeholder="例如：http://127.0.0.1:8000/agent/run" />
+            </el-form-item>
+            <el-form-item label="HTTP 方法">
+              <el-select v-model="form.httpMethod" style="width: 100%">
+                <el-option label="POST" value="POST" />
+                <el-option label="PUT" value="PUT" />
+                <el-option label="GET" value="GET" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="认证方式">
+              <el-select v-model="form.httpAuthType" style="width: 100%">
+                <el-option label="无" value="NONE" />
+                <el-option label="Bearer Token" value="BEARER" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="超时时间(秒)">
+              <el-input-number v-model="form.timeoutSeconds" :min="5" :max="300" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="Bearer Token" class="span-2">
+              <el-input v-model="form.httpAuthToken" type="password" show-password placeholder="编辑时留空则沿用已有 Token" />
+            </el-form-item>
+            <el-form-item label="Headers(JSON)" class="span-2">
+              <el-input v-model="form.httpHeaders" type="textarea" :rows="4" placeholder='例如：{"X-App":"agent-platform"}' />
+            </el-form-item>
+            <el-form-item label="请求模板" class="span-2">
+              <el-input
+                v-model="form.httpRequestTemplate"
+                type="textarea"
+                :rows="7"
+                placeholder='默认发送 {"input":"..."}；也可自定义模板，支持 {{input}}、{{input_json}}'
+              />
+            </el-form-item>
+            <el-form-item label="响应路径" class="span-2">
+              <el-input v-model="form.httpResponsePath" placeholder="可选，例如 data.content 或 result.output" />
+            </el-form-item>
+            </div>
+          </template>
+        </section>
+      </el-form>
+      </div>
+      <template #footer>
+        <div class="agent-dialog-footer mobile-form-drawer-footer">
+          <el-button class="mobile-form-drawer-footer-btn" @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+          <el-button v-if="!readonlyMode" class="mobile-form-drawer-footer-btn is-primary" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        </div>
+      </template>
+    </MobileFormDrawer>
+
+      <el-dialog v-if="!isMobileViewport" v-model="testDialogVisible" title="测试智能体" width="760px" destroy-on-close>
       <div class="test-title">{{ currentTestAgent?.name || '-' }}</div>
       <el-input v-model="testInput" type="textarea" :rows="10" placeholder="请输入测试内容" />
       <template #footer>
@@ -480,6 +694,39 @@
         <pre>{{ testResult.output }}</pre>
       </div>
     </el-dialog>
+
+    <!-- 移动端测试智能体抽屉。 -->
+    <MobileFormDrawer
+      v-else
+      v-model="testDialogVisible"
+      title="测试智能体"
+      :submit-text="'开始测试'"
+      :submitting="testing"
+      :header-icon="Promotion"
+      :close-on-click-modal="true"
+      size="88%"
+      @submit="handleTest"
+      @cancel="testDialogVisible = false"
+    >
+      <div class="test-title">{{ currentTestAgent?.name || '-' }}</div>
+      <el-input v-model="testInput" type="textarea" :rows="10" placeholder="请输入测试内容" />
+      <el-alert
+        v-if="testResult"
+        :title="testResult.message"
+        :type="testResult.success ? 'success' : 'error'"
+        show-icon
+        :closable="false"
+        class="test-result-alert"
+      />
+      <el-descriptions v-if="testResult" :column="2" border class="test-meta">
+        <el-descriptions-item label="智能体">{{ testResult.agentName }}</el-descriptions-item>
+        <el-descriptions-item label="测试时间">{{ testResult.testedAt }}</el-descriptions-item>
+      </el-descriptions>
+      <div v-if="testResult?.output" class="test-output">
+        <div class="test-output-title">输出结果</div>
+        <pre>{{ testResult.output }}</pre>
+      </div>
+    </MobileFormDrawer>
   </div>
 </template>
 
@@ -494,6 +741,7 @@ import { createAgent, deleteAgent, listProjectOptions, pageAgents, testAgent, up
 import type { AgentItem, AgentTestResult, AiModelConfigItem, ProjectItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 
 interface AgentForm {
   name: string

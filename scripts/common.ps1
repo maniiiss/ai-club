@@ -11,6 +11,7 @@ $script:AiClubScriptContext = @{
     RepoRoot                 = $repoRoot
     LogDir                   = Join-Path $repoRoot '.run-logs'
     FrontendDir              = Join-Path $repoRoot 'frontend'
+    FrontendPublicDir        = Join-Path $repoRoot 'frontend-public'
     BackendDir               = Join-Path $repoRoot 'backend'
     CodeDir                  = Join-Path $repoRoot 'code-processing'
     CodeVenvDir              = Join-Path $repoRoot 'code-processing\.venv'
@@ -232,6 +233,7 @@ function Get-PortConfiguration {
     return @{
         Backend        = [int](Get-EnvOrDefault -Name 'BACKEND_PORT' -DefaultValue '8080')
         Frontend       = [int](Get-EnvOrDefault -Name 'FRONTEND_PORT' -DefaultValue '5173')
+        FrontendPublic = [int](Get-EnvOrDefault -Name 'FRONTEND_PUBLIC_PORT' -DefaultValue '5175')
         CodeProcessing = [int](Get-EnvOrDefault -Name 'CODE_PROCESSING_PORT' -DefaultValue '9000')
         Postgres       = [int](Get-EnvOrDefault -Name 'POSTGRES_PORT' -DefaultValue '5432')
         Redis          = [int](Get-EnvOrDefault -Name 'REDIS_PORT' -DefaultValue '6379')
@@ -371,7 +373,7 @@ function Stop-ServiceByPidFile([string]$Name) {
     Write-Success "$Name 已停止"
 }
 
-function Stop-LocalServices([string[]]$Names = @('frontend', 'backend', 'code-processing')) {
+function Stop-LocalServices([string[]]$Names = @('frontend-public', 'frontend', 'backend', 'code-processing')) {
     foreach ($name in $Names) {
         Stop-ServiceByPidFile -Name $name
     }
@@ -696,6 +698,22 @@ function Start-LocalApplicationServices(
         }
     }
 
+    $frontendPublicNodeModulesDir = Join-Path $context.FrontendPublicDir 'node_modules'
+    $shouldInstallFrontendPublic = $InstallFrontendDependencies.IsPresent -or (-not (Test-Path $frontendPublicNodeModulesDir))
+    if ($shouldInstallFrontendPublic) {
+        Write-Step '安装公众端前端依赖'
+        Push-Location $context.FrontendPublicDir
+        try {
+            $npmCmd = Get-NpmCommandPath
+            & $npmCmd 'install' '--legacy-peer-deps'
+            if ($LASTEXITCODE -ne 0) {
+                throw '安装公众端前端依赖失败'
+            }
+        } finally {
+            Pop-Location
+        }
+    }
+
     Ensure-CodeVenv -Launcher $launcher -InstallDependencies:$InstallCodeDependencies.IsPresent
 
     # 源码模式下由脚本统一注入端口，确保前端、后端和 code-processing 的地址保持一致。
@@ -728,9 +746,17 @@ function Start-LocalApplicationServices(
         -ExistingProcessPatterns @($context.FrontendDir, 'vite', "--port $($PortConfiguration.Frontend)") `
         -Port $PortConfiguration.Frontend
 
+    Start-BackgroundService -Name 'frontend-public' `
+        -WorkingDirectory $context.FrontendPublicDir `
+        -FilePath $npmCmd `
+        -Arguments @('run', 'dev', '--', '--host', '0.0.0.0', '--port', "$($PortConfiguration.FrontendPublic)", '--strictPort') `
+        -ExistingProcessPatterns @($context.FrontendPublicDir, 'vite', "--port $($PortConfiguration.FrontendPublic)") `
+        -Port $PortConfiguration.FrontendPublic
+
     Write-Host ''
     Write-Success '源码服务启动完成'
     Write-Host "Frontend: http://localhost:$($PortConfiguration.Frontend)"
+    Write-Host "Frontend public: http://localhost:$($PortConfiguration.FrontendPublic)"
     Write-Host "Backend: http://localhost:$($PortConfiguration.Backend)"
     Write-Host "Code processing: http://localhost:$($PortConfiguration.CodeProcessing)"
     Write-Host "Logs: $($context.LogDir)"

@@ -140,6 +140,7 @@ public class YaadeUserSyncService {
         PlatformYaadeUserBindingEntity binding = userBindingRepository.findByUserId(user.getId()).orElse(null);
         YaadeClientService.YaadeRemoteUser remoteUser = resolveRemoteUser(binding, managedUsername, remoteUsers, adminSession, targetGroups);
         syncGroupsIfNeeded(adminSession, remoteUser, targetGroups);
+        removeStaleConflictingBindings(binding, user.getId(), remoteUser.id(), managedUsername);
 
         String password = binding == null ? null : tokenCipherService.decrypt(binding.getPasswordCiphertext());
         if (password == null || password.isBlank()) {
@@ -188,6 +189,41 @@ public class YaadeUserSyncService {
             return matchedByName;
         }
         return yaadeClientService.createUser(adminSession, managedUsername, new ArrayList<>(targetGroups));
+    }
+
+    /**
+     * Yaade 远端用户名 `aiclub-{userId}` 是受管账号归属的事实来源。
+     * 线上历史数据可能保留了指向同一远端用户 ID 的旧绑定，必须先删除并 flush，
+     * 避免当前用户绑定更新 yaade_user_id 时撞上唯一索引。
+     */
+    private void removeStaleConflictingBindings(PlatformYaadeUserBindingEntity currentBinding,
+                                                Long currentUserId,
+                                                Long yaadeUserId,
+                                                String yaadeUsername) {
+        List<PlatformYaadeUserBindingEntity> staleBindings = userBindingRepository
+                .findAllByYaadeUserIdOrYaadeUsername(yaadeUserId, yaadeUsername)
+                .stream()
+                .filter(candidate -> !isCurrentBinding(candidate, currentBinding, currentUserId))
+                .toList();
+        if (staleBindings.isEmpty()) {
+            return;
+        }
+        userBindingRepository.deleteAll(staleBindings);
+        userBindingRepository.flush();
+    }
+
+    private boolean isCurrentBinding(PlatformYaadeUserBindingEntity candidate,
+                                     PlatformYaadeUserBindingEntity currentBinding,
+                                     Long currentUserId) {
+        if (candidate == null) {
+            return false;
+        }
+        if (Objects.equals(candidate.getUserId(), currentUserId)) {
+            return true;
+        }
+        return currentBinding != null
+                && currentBinding.getId() != null
+                && Objects.equals(candidate.getId(), currentBinding.getId());
     }
 
     private void syncGroupsIfNeeded(YaadeClientService.YaadeSession adminSession,

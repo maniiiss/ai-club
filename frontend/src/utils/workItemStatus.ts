@@ -14,9 +14,8 @@ const REQUIREMENT_STATUS_OPTIONS: WorkItemStatusOption[] = [
   { label: '草稿', value: '草稿', tone: 'info' },
   { label: '待开始', value: '待开始', tone: 'warning' },
   { label: '进行中', value: '进行中', tone: 'primary' },
-  { label: '已完成', value: '已完成', tone: 'info' },
-  { label: '已阻塞', value: '已阻塞', tone: 'danger' },
-  { label: '通过', value: '通过', tone: 'success' }
+  { label: '已完成', value: '已完成', tone: 'success' },
+  { label: '已阻塞', value: '已阻塞', tone: 'danger' }
 ]
 
 const TASK_STATUS_OPTIONS: WorkItemStatusOption[] = [
@@ -117,12 +116,15 @@ export const formatWorkItemStatusLabel = (workItemType?: string | null, status?:
 }
 
 /**
- * 完成态按工作项类型区分：需求/缺陷以“通过”为完成，任务以“已完成”为完成。
+ * 完成态按工作项类型区分：需求以"已完成"为完成，缺陷以"通过"为完成，任务以"已完成"为完成。
  */
 export const isWorkItemCompletedStatus = (workItemType?: string | null, status?: string | null) => {
   const normalizedType = normalizeWorkItemType(workItemType)
   const normalizedStatus = normalizeWorkItemStatus(workItemType, status)
-  if (normalizedType === REQUIREMENT_TYPE || normalizedType === DEFECT_TYPE) {
+  if (normalizedType === REQUIREMENT_TYPE) {
+    return normalizedStatus === '已完成'
+  }
+  if (normalizedType === DEFECT_TYPE) {
     return normalizedStatus === '通过'
   }
   return normalizedStatus === '已完成'

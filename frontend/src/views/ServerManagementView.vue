@@ -197,7 +197,7 @@
       </div>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="820px" class="platform-form-dialog" align-center>
+    <el-dialog v-if="!isMobileViewport" v-model="dialogVisible" :title="dialogTitle" width="820px" class="platform-form-dialog" align-center>
       <template #header>
         <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="Connection" />
       </template>
@@ -344,6 +344,158 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 移动端服务器编辑抽屉，表单较长使用全屏高度。 -->
+    <MobileFormDrawer
+      v-else
+      v-model="dialogVisible"
+      :title="dialogTitle"
+      :subtitle="dialogSubtitle"
+      :submit-text="'保存'"
+      :submitting="submitting"
+      :header-icon="Connection"
+      :close-on-click-modal="true"
+      size="100%"
+      @submit="handleSubmit"
+      @cancel="dialogVisible = false"
+    >
+      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="platform-form-layout">
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">基础连接</div>
+            <div class="platform-form-section-subtitle">配置 Linux 主机、登录账号与基础启用状态。</div>
+          </div>
+          <div class="server-form-grid">
+            <el-form-item label="服务器名称" prop="name">
+              <el-input v-model="form.name" placeholder="例如：生产应用服务器 A" />
+            </el-form-item>
+            <el-form-item label="操作系统">
+              <el-select v-model="form.osType">
+                <el-option label="Linux" value="LINUX" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="主机地址" prop="host">
+              <el-input v-model="form.host" placeholder="例如：10.10.10.8" />
+            </el-form-item>
+            <el-form-item label="SSH 端口" prop="port">
+              <el-input-number v-model="form.port" :min="1" :max="65535" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="SSH 用户名" prop="username">
+              <el-input v-model="form.username" placeholder="例如：root / deploy" />
+            </el-form-item>
+            <el-form-item label="启用">
+              <el-switch v-model="form.enabled" />
+            </el-form-item>
+          </div>
+          <el-form-item label="说明">
+            <el-input v-model="form.description" type="textarea" :rows="3" placeholder="可填写业务用途、机器分组和备注。" />
+          </el-form-item>
+        </section>
+
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">主机认证</div>
+            <div class="platform-form-section-subtitle">敏感值不会回显；编辑时留空表示保留现有密文。</div>
+          </div>
+          <el-form-item label="认证方式">
+            <el-radio-group v-model="form.authType">
+              <el-radio-button label="PASSWORD">密码</el-radio-button>
+              <el-radio-button label="PRIVATE_KEY">私钥</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <template v-if="form.authType === 'PASSWORD'">
+            <el-form-item label="SSH 密码">
+              <el-input v-model="form.password" type="password" show-password :placeholder="secretPlaceholder(form.passwordConfigured)" />
+            </el-form-item>
+          </template>
+          <template v-else>
+            <el-form-item label="SSH 私钥">
+              <el-input v-model="form.privateKey" type="textarea" :rows="5" :placeholder="secretPlaceholder(form.privateKeyConfigured, '粘贴 PEM 私钥，留空保留旧值')" />
+            </el-form-item>
+            <el-form-item label="私钥口令">
+              <el-input v-model="form.privateKeyPassphrase" type="password" show-password :placeholder="secretPlaceholder(form.privateKeyPassphraseConfigured)" />
+            </el-form-item>
+          </template>
+        </section>
+
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">跳板机</div>
+            <div class="platform-form-section-subtitle">第一版支持单跳内嵌配置；跳板机认证同样按密文保存。</div>
+          </div>
+          <el-form-item label="启用跳板机">
+            <el-switch v-model="form.jumpHostEnabled" />
+          </el-form-item>
+          <template v-if="form.jumpHostEnabled">
+            <div class="server-form-grid">
+              <el-form-item label="跳板机地址">
+                <el-input v-model="form.jumpHost" placeholder="例如：172.16.10.2" />
+              </el-form-item>
+              <el-form-item label="跳板机端口">
+                <el-input-number v-model="form.jumpPort" :min="1" :max="65535" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="跳板机用户">
+                <el-input v-model="form.jumpUsername" placeholder="例如：jump-admin" />
+              </el-form-item>
+              <el-form-item label="跳板机认证方式">
+                <el-select v-model="form.jumpAuthType">
+                  <el-option label="密码" value="PASSWORD" />
+                  <el-option label="私钥" value="PRIVATE_KEY" />
+                </el-select>
+              </el-form-item>
+            </div>
+            <template v-if="form.jumpAuthType === 'PASSWORD'">
+              <el-form-item label="跳板机密码">
+                <el-input v-model="form.jumpPassword" type="password" show-password :placeholder="secretPlaceholder(form.jumpPasswordConfigured)" />
+              </el-form-item>
+            </template>
+            <template v-else>
+              <el-form-item label="跳板机私钥">
+                <el-input v-model="form.jumpPrivateKey" type="textarea" :rows="5" :placeholder="secretPlaceholder(form.jumpPrivateKeyConfigured, '粘贴跳板机私钥，留空保留旧值')" />
+              </el-form-item>
+              <el-form-item label="跳板机私钥口令">
+                <el-input v-model="form.jumpPrivateKeyPassphrase" type="password" show-password :placeholder="secretPlaceholder(form.jumpPrivateKeyPassphraseConfigured)" />
+              </el-form-item>
+            </template>
+          </template>
+        </section>
+
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">告警覆盖</div>
+            <div class="platform-form-section-subtitle">留空表示继续使用环境变量默认值。</div>
+          </div>
+          <div class="server-form-grid">
+            <el-form-item label="连通性告警覆盖">
+              <el-select v-model="form.connectivityAlertEnabledOverride" clearable placeholder="继承默认值">
+                <el-option label="开启" :value="true" />
+                <el-option label="关闭" :value="false" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="CPU 阈值">
+              <el-input-number v-model="form.cpuThresholdPercentOverride" :min="1" :max="100" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="内存阈值">
+              <el-input-number v-model="form.memoryThresholdPercentOverride" :min="1" :max="100" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="磁盘阈值">
+              <el-input-number v-model="form.diskThresholdPercentOverride" :min="1" :max="100" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="连续越线次数">
+              <el-input-number v-model="form.consecutiveBreachesOverride" :min="1" :max="20" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="冷却分钟数">
+              <el-input-number v-model="form.cooldownMinutesOverride" :min="1" :max="1440" style="width: 100%" />
+            </el-form-item>
+          </div>
+          <el-form-item label="通知人">
+            <el-select v-model="form.recipientUserIds" multiple filterable collapse-tags collapse-tags-tooltip placeholder="选择收到服务器告警的通知人" style="width: 100%">
+              <el-option v-for="user in userOptions" :key="user.id" :label="user.nickname || user.username" :value="user.id" />
+            </el-select>
+          </el-form-item>
+        </section>
+      </el-form>
+    </MobileFormDrawer>
   </div>
 </template>
 
@@ -354,6 +506,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Delete, EditPen, Filter, Plus, Promotion, RefreshRight, Search, View } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 import { createServer, deleteServer, getServerDetail, pageServers, testServerConnection, updateServer, type ServerPayload } from '@/api/servers'
 import { listUserOptions } from '@/api/access'
 import { useAppStore } from '@/stores/app'

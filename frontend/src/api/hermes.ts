@@ -118,6 +118,18 @@ export const deleteHermesConversationSession = async (sessionId: number) => {
 }
 
 /**
+ * 上报某条 Hermes 可执行动作已被用户确认执行，后端会按会话累积保存动作 key，
+ * 让"已执行"状态在刷新或换设备登录后仍能恢复。
+ */
+export const markHermesActionExecuted = async (sessionId: number, actionKey: string) => {
+  const { data } = await http.post<ApiResponse<HermesConversationDetailItem>>(
+    `/api/hermes/sessions/${sessionId}/actions/executed`,
+    { actionKey }
+  )
+  return data.data
+}
+
+/**
  * 列出当前用户的 Hermes 记忆。
  */
 export const listHermesUserMemories = async (query?: string, limit?: number) => {

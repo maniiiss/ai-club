@@ -109,6 +109,7 @@
 
 - 后端：`cd backend && mvn -s maven-settings-central.xml test`
 - 前端：`cd frontend && npm run build`
+- 公众端前端：`cd frontend-public && npm run build`
 - Python 服务：`cd code-processing && pip install -e .`
 - 编码：`python scripts/check_encoding.py`
 - 运行日志：`.run-logs/`
@@ -125,6 +126,7 @@
 | 后端 DTO / Service / Controller | 相关 JUnit 测试 | `cd backend && mvn -s maven-settings-central.xml test` |
 | Flyway 迁移 | 后端测试，必要时重建本地库 | 源码模式启动后检查后端日志和页面 |
 | 前端页面 / 类型 | `cd frontend && npm run build` | 源码模式启动后人工走一遍页面 |
+| 公众端页面 / 类型 | `cd frontend-public && npm run build` | 源码模式启动后人工走一遍公众端主流程 |
 | code-processing | `cd code-processing && pip install -e .` | 启动 FastAPI 并访问 `/docs` |
 | 跨服务链路 | 相关单测 + 对应模块构建 | `scripts/start.ps1` 或 `scripts/start-linux.sh` 源码模式联调 |
 | 智能体工具 / MCP 工具 | 工具 schema 或服务测试 | 通过 Hermes 或 MCP 客户端跑真实调用样例 |
@@ -228,7 +230,8 @@ bash ./scripts/harness-linux.sh all
 
 源码模式启动后优先查看 `.run-logs/`：
 
-- 前端启动失败：查看前端日志和 `frontend/package.json`。
+- 管理端启动失败：查看 `frontend` 日志和 `frontend/package.json`。
+- 公众端启动失败：查看 `frontend-public` 日志和 `frontend-public/package.json`。
 - 后端启动失败：查看后端日志、`.env`、PostgreSQL 端口和 Flyway 迁移。
 - code-processing 启动失败：查看 Python 依赖、虚拟环境和端口占用。
 - Hermes / Hindsight 调用失败：检查 Docker 容器状态、内部地址、后端内部认证配置。

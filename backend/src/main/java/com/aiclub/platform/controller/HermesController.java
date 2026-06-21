@@ -13,6 +13,7 @@ import com.aiclub.platform.dto.HermesMemoryConsolidationTask;
 import com.aiclub.platform.dto.HermesUserMemoryItem;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.request.CreateHermesConversationSessionRequest;
+import com.aiclub.platform.dto.request.HermesActionExecutedRequest;
 import com.aiclub.platform.dto.request.HermesMultipartChatCommand;
 import com.aiclub.platform.dto.request.HermesSessionChatRequest;
 import com.aiclub.platform.dto.request.HermesSelectionFormRequest;
@@ -154,6 +155,17 @@ public class HermesController {
     public ApiResponse<Void> deleteSession(@PathVariable Long sessionId) {
         hermesConversationSessionService.deleteSession(sessionId);
         return new ApiResponse<>(true, "ok", null);
+    }
+
+    /**
+     * 上报某条 Hermes 可执行动作已被用户确认执行。
+     * 后端会按会话累积保存动作 key，刷新或换设备后仍能恢复"已执行"状态。
+     */
+    @PostMapping("/sessions/{sessionId}/actions/executed")
+    @RequirePermission("hermes:chat")
+    public ApiResponse<HermesConversationDetail> markActionExecuted(@PathVariable Long sessionId,
+                                                                    @Valid @RequestBody HermesActionExecutedRequest request) {
+        return ApiResponse.success(hermesConversationSessionService.markActionExecuted(sessionId, request.actionKey()));
     }
 
     /**

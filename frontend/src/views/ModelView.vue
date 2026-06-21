@@ -1,12 +1,20 @@
 <template>
-  <div
-    class="atelier-list-page"
-    v-loading="isTesting"
-    element-loading-text="正在测试模型连接，请稍候..."
-    element-loading-background="rgba(248, 249, 250, 0.72)"
-  >
-    <section class="atelier-toolbar">
-      <div class="atelier-toolbar-main">
+  <div class="model-page">
+    <el-tabs v-model="activeTab" class="model-tabs">
+      <el-tab-pane label="模型配置" name="configs">
+        <div
+          class="management-list-page model-main-card model-list-page"
+          v-loading="isTesting"
+          element-loading-text="正在测试模型连接，请稍候..."
+          element-loading-background="rgba(248, 249, 250, 0.72)"
+        >
+          <section class="management-list-toolbar">
+            <div class="management-list-toolbar-main">
+              <div class="model-tab-switcher" role="tablist" aria-label="模型管理页面切换">
+                <button class="model-tab-button" :class="{ active: activeTab === 'configs' }" type="button" @click="activeTab = 'configs'">模型配置</button>
+                <button class="model-tab-button" :class="{ active: activeTab === 'benchmark' }" type="button" @click="activeTab = 'benchmark'">对比测试</button>
+              </div>
+              <span class="management-list-toolbar-divider" aria-hidden="true"></span>
         <div class="atelier-search-shell">
           <el-icon class="atelier-search-icon"><Search /></el-icon>
           <input
@@ -65,15 +73,15 @@
           <el-icon><Plus /></el-icon>
           <span>新增模型</span>
         </button>
-      </div>
+            </div>
 
-      <div v-if="!isMobileViewport" class="atelier-toolbar-side">
-        <button class="atelier-create-button" type="button" @click="openCreateDialog">
-          <el-icon><Plus /></el-icon>
-          <span>新增模型</span>
-        </button>
-      </div>
-    </section>
+            <div v-if="!isMobileViewport" class="atelier-toolbar-side">
+              <button class="atelier-create-button" type="button" @click="openCreateDialog">
+                <el-icon><Plus /></el-icon>
+                <span>新增模型</span>
+              </button>
+            </div>
+          </section>
 
     <section class="atelier-table-shell">
       <div class="atelier-table-scroll mobile-card-scroll" v-loading="loading">
@@ -263,7 +271,7 @@
       </div>
     </section>
 
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="620px" class="platform-form-dialog" align-center>
+    <el-dialog v-if="!isMobileViewport" v-model="dialogVisible" :title="dialogTitle" width="620px" class="platform-form-dialog" align-center>
       <template #header>
         <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="Cpu" />
       </template>
@@ -292,6 +300,11 @@
           <el-form-item label="模型名" prop="modelName">
             <el-input v-model="form.modelName" :placeholder="modelNamePlaceholder" />
           </el-form-item>
+          <el-form-item v-if="form.provider === 'OPENAI' && form.modelType === 'CHAT'" label="调用模式" prop="openaiApiMode">
+            <el-select v-model="form.openaiApiMode" style="width: 100%">
+              <el-option v-for="item in openAiApiModeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="API 密钥" prop="apiKey">
             <el-input
               v-model="form.apiKey"
@@ -315,17 +328,95 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 移动端 AI 模型配置编辑抽屉。 -->
+    <MobileFormDrawer
+      v-else
+      v-model="dialogVisible"
+      :title="dialogTitle"
+      :subtitle="dialogSubtitle"
+      :submit-text="'保存'"
+      :submitting="submitting"
+      :header-icon="Cpu"
+      :close-on-click-modal="true"
+      size="88%"
+      @submit="handleSubmit"
+      @cancel="dialogVisible = false"
+    >
+      <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-position="top" class="platform-form-layout">
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">模型信息</div>
+            <div class="platform-form-section-subtitle">配置模型类型、提供商、访问地址与启用状态。</div>
+          </div>
+          <el-form-item label="名称" prop="name">
+            <el-input v-model="form.name" placeholder="例如：代码审查模型 / 知识检索 Embedding" />
+          </el-form-item>
+          <el-form-item label="模型类型" prop="modelType">
+            <el-select v-model="form.modelType" style="width: 100%">
+              <el-option v-for="item in modelTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="提供商" prop="provider">
+            <el-select v-model="form.provider" style="width: 100%">
+              <el-option v-for="item in availableProviderOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="API 地址" prop="apiBaseUrl">
+            <el-input v-model="form.apiBaseUrl" />
+          </el-form-item>
+          <el-form-item label="模型名" prop="modelName">
+            <el-input v-model="form.modelName" :placeholder="modelNamePlaceholder" />
+          </el-form-item>
+          <el-form-item v-if="form.provider === 'OPENAI' && form.modelType === 'CHAT'" label="调用模式" prop="openaiApiMode">
+            <el-select v-model="form.openaiApiMode" style="width: 100%">
+              <el-option v-for="item in openAiApiModeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="API 密钥" prop="apiKey">
+            <el-input
+              v-model="form.apiKey"
+              type="password"
+              show-password
+              :placeholder="isEditing ? '留空则保留原密钥' : '请输入 API 密钥'"
+            />
+          </el-form-item>
+          <el-form-item label="描述">
+            <el-input v-model="form.description" type="textarea" :rows="3" />
+          </el-form-item>
+          <el-form-item label="启用">
+            <el-switch v-model="form.enabled" />
+          </el-form-item>
+        </section>
+      </el-form>
+      <template #footer>
+        <div class="platform-dialog-footer mobile-form-drawer-footer">
+          <el-button class="mobile-form-drawer-footer-btn" @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+          <el-button v-if="!readonlyMode" class="mobile-form-drawer-footer-btn is-primary" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        </div>
+      </template>
+    </MobileFormDrawer>
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="对比测试" name="benchmark">
+        <ModelBenchmarkView v-model="activeTab" />
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Connection, Cpu, Delete, EditPen, Filter, Plus, RefreshRight, Search } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
+import ModelBenchmarkView from '@/views/ModelBenchmarkConfigView.vue'
 import { createModelConfig, deleteModelConfig, pageModelConfigs, testModelConfig, updateModelConfig } from '@/api/models'
-import type { AiModelConfigItem, AiModelType } from '@/types/platform'
+import type { AiModelConfigItem, AiModelType, OpenAiApiMode } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
@@ -342,12 +433,20 @@ const providerOptions = [
   { label: 'Anthropic', value: 'ANTHROPIC' as const }
 ]
 
+const openAiApiModeOptions: Array<{ label: string; value: OpenAiApiMode }> = [
+  { label: '自动探测', value: 'AUTO' },
+  { label: 'Responses', value: 'RESPONSES' },
+  { label: 'Chat Completions(JSON)', value: 'CHAT_COMPLETIONS' },
+  { label: 'Chat Completions(纯文本 JSON)', value: 'CHAT_COMPLETIONS_PLAIN' }
+]
+
 interface ModelForm {
   name: string
   modelType: AiModelType
   provider: 'OPENAI' | 'ANTHROPIC'
   apiBaseUrl: string
   modelName: string
+  openaiApiMode: OpenAiApiMode
   apiKey: string
   description: string
   enabled: boolean
@@ -356,6 +455,9 @@ interface ModelForm {
 const loading = ref(false)
 const submitting = ref(false)
 const { isMobileViewport } = useMobileViewport()
+const route = useRoute()
+/** 默认进入"模型配置"tab；通过 /model-benchmarks 深链进入时直接落到对比测试 tab。 */
+const activeTab = ref<'configs' | 'benchmark'>(route.name === 'model-benchmarks' ? 'benchmark' : 'configs')
 const dialogVisible = ref(false)
 const isEditing = ref(false)
 const readonlyMode = ref(false)
@@ -387,6 +489,7 @@ const form = reactive<ModelForm>({
   provider: 'OPENAI',
   apiBaseUrl: OPENAI_API_BASE_URL,
   modelName: '',
+  openaiApiMode: 'AUTO',
   apiKey: '',
   description: '',
   enabled: true
@@ -413,6 +516,7 @@ watch(
         form.provider = 'OPENAI'
         return
       }
+      form.openaiApiMode = 'AUTO'
       if (form.apiBaseUrl === ANTHROPIC_API_BASE_URL) {
         form.apiBaseUrl = OPENAI_API_BASE_URL
       }
@@ -424,6 +528,9 @@ watch(
   () => form.provider,
   (provider) => {
     form.apiBaseUrl = provider === 'ANTHROPIC' ? ANTHROPIC_API_BASE_URL : OPENAI_API_BASE_URL
+    if (provider !== 'OPENAI') {
+      form.openaiApiMode = 'AUTO'
+    }
   }
 )
 
@@ -460,6 +567,7 @@ const resetForm = () => {
   form.provider = 'OPENAI'
   form.apiBaseUrl = OPENAI_API_BASE_URL
   form.modelName = ''
+  form.openaiApiMode = 'AUTO'
   form.apiKey = ''
   form.description = ''
   form.enabled = true
@@ -524,6 +632,7 @@ const fillForm = (row: AiModelConfigItem) => {
   form.provider = row.provider
   form.apiBaseUrl = row.apiBaseUrl
   form.modelName = row.modelName
+  form.openaiApiMode = row.openaiApiMode
   form.apiKey = ''
   form.description = row.description
   form.enabled = row.enabled
@@ -599,6 +708,80 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* ── Tab 切换样式（对齐 GitlabView 风格） ── */
+
+/* 让 ModelView 与子 tab-pane 占满父级高度，避免列表撑不满屏幕 */
+.model-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 100%;
+}
+
+.model-tabs {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 隐藏 el-tabs 原生 header，用自定义按钮切换 */
+.model-tabs :deep(.el-tabs__header) {
+  display: none;
+}
+
+.model-tabs :deep(.el-tabs__content) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.model-tabs :deep(.el-tab-pane) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+}
+
+.model-tab-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(225, 227, 228, 0.56);
+}
+
+.model-tab-button {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #7c8794;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.model-tab-button:hover {
+  color: var(--app-primary, #409eff);
+}
+
+.model-tab-button.active {
+  background: #fff;
+  color: var(--app-primary, #409eff);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+/* ── 原有样式 ── */
+
 .atelier-list-page,
 .atelier-table-shell,
 .atelier-table-scroll {

@@ -10,6 +10,10 @@ public record AiModelConfigSummary(
         String provider,
         String apiBaseUrl,
         String modelName,
+        /**
+         * OpenAI 兼容模型的调用模式，前端可据此减少不必要的探测请求。
+         */
+        String openaiApiMode,
         Boolean apiKeyConfigured,
         String description,
         Boolean enabled

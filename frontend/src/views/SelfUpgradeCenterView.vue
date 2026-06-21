@@ -356,6 +356,7 @@
     </template>
 
     <el-dialog
+      v-if="!isMobileViewport"
       v-model="planDialogVisible"
       :title="planDialogMode === 'create' ? '新建巡检计划' : '编辑巡检计划'"
       width="1120px"
@@ -499,6 +500,147 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 移动端巡检计划抽屉，表单超长使用全屏高度。 -->
+    <MobileFormDrawer
+      v-else
+      v-model="planDialogVisible"
+      :title="planDialogMode === 'create' ? '新建巡检计划' : '编辑巡检计划'"
+      :submit-text="planDialogMode === 'create' ? '创建计划' : '保存计划'"
+      :submitting="planSaving"
+      :header-icon="Setting"
+      :close-on-click-modal="true"
+      size="100%"
+      @submit="handleSavePlan"
+      @cancel="planDialogVisible = false"
+    >
+      <div class="self-upgrade-plan-editor">
+        <section class="self-upgrade-editor-card self-upgrade-plan-editor-panel">
+          <div class="self-upgrade-editor-card-head">
+            <h3>计划配置</h3>
+            <span>定义调度策略、运行预算，以及环境和巡检模型绑定。</span>
+          </div>
+
+          <el-form label-position="top" class="self-upgrade-plan-form">
+            <el-form-item label="计划名称">
+              <el-input v-model="planForm.name" maxlength="120" placeholder="例如：STAGING 夜间体验巡检" />
+            </el-form-item>
+            <el-form-item label="环境档案">
+              <el-select v-model="planForm.environmentProfileId" placeholder="请选择环境档案" style="width: 100%">
+                <el-option
+                  v-for="environment in planEnvironmentOptions"
+                  :key="environment.id"
+                  :label="`${environment.name} (${environment.code})`"
+                  :value="environment.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="巡检模型">
+              <el-select v-model="planForm.aiModelConfigId" filterable placeholder="请选择巡检模型" style="width: 100%">
+                <el-option
+                  v-for="model in patrolModelOptions"
+                  :key="model.id"
+                  :label="`${model.name} / ${model.provider} / ${model.modelName}`"
+                  :value="model.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="计划说明">
+              <el-input v-model="planForm.description" type="textarea" :rows="4" maxlength="1000" show-word-limit />
+            </el-form-item>
+
+            <div class="self-upgrade-inline-form-grid">
+              <el-form-item label="调度 Cron">
+                <el-input v-model="planForm.schedulerCron" placeholder="例如：0 0 2 * * *" />
+              </el-form-item>
+              <el-form-item label="最大探索步数">
+                <el-input-number v-model="planForm.maxExplorationSteps" :min="1" :max="500" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="目标超时（秒）">
+                <el-input-number v-model="planForm.targetTimeoutSeconds" :min="30" :max="7200" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="运行超时（秒）">
+                <el-input-number v-model="planForm.runTimeoutSeconds" :min="60" :max="14400" style="width: 100%" />
+              </el-form-item>
+            </div>
+
+            <div class="self-upgrade-switch-row">
+              <el-switch v-model="planForm.schedulerEnabled" active-text="启用夜间调度" />
+              <el-switch v-model="planForm.enabled" active-text="启用计划" />
+            </div>
+          </el-form>
+        </section>
+
+        <section class="self-upgrade-editor-card self-upgrade-plan-editor-panel">
+          <div class="self-upgrade-editor-card-head">
+            <div>
+              <h3>探索入口</h3>
+              <span>每个入口都会在同一浏览器会话内顺序执行。</span>
+            </div>
+            <el-button class="self-upgrade-head-action" type="primary" plain @click="handleAddPlanTarget">
+              <el-icon><Plus /></el-icon>
+              <span>新增入口</span>
+            </el-button>
+          </div>
+
+          <div class="self-upgrade-target-editor-list self-upgrade-target-editor-list-scroll">
+            <article
+              v-for="(target, index) in planForm.targets"
+              :key="target.id ?? `draft-${index}`"
+              class="self-upgrade-target-editor"
+            >
+              <div class="self-upgrade-target-editor-head">
+                <div>
+                  <strong>入口 {{ index + 1 }}</strong>
+                  <span>{{ target.name || '未命名入口' }}</span>
+                </div>
+                <el-button text type="danger" @click="handleRemovePlanTarget(index)">
+                  <el-icon><Delete /></el-icon>
+                  <span>移除</span>
+                </el-button>
+              </div>
+
+              <div class="self-upgrade-inline-form-grid">
+                <el-form-item label="入口名称">
+                  <el-input v-model="target.name" maxlength="120" placeholder="例如：登录后首页巡检" />
+                </el-form-item>
+                <el-form-item label="入口地址">
+                  <el-input v-model="target.seedUrl" maxlength="500" placeholder="/dashboard 或完整 URL" />
+                </el-form-item>
+                <el-form-item label="页面就绪选择器">
+                  <el-input v-model="target.readySelector" maxlength="300" placeholder="例如：#app .dashboard-shell" />
+                </el-form-item>
+                <el-form-item label="最大步数覆盖">
+                  <el-input-number v-model="target.maxStepsOverride" :min="1" :max="500" style="width: 100%" />
+                </el-form-item>
+              </div>
+
+              <div class="self-upgrade-switch-row">
+                <el-switch v-model="target.allowWrite" active-text="允许命中白名单写操作" />
+                <el-switch v-model="target.enabled" active-text="入口启用" />
+              </div>
+
+              <el-form-item label="巡检目标提示">
+                <el-input v-model="target.goalPrompt" type="textarea" :rows="5" placeholder="描述希望模型重点检查的场景、证据和退出条件" />
+              </el-form-item>
+
+              <el-form-item label="写操作白名单覆盖（JSON 数组）">
+                <el-input
+                  v-model="target.writeAllowlistOverrideJson"
+                  type="textarea"
+                  :rows="4"
+                  placeholder='例如：[{"pathPattern":"/settings","selector":"button.save","actionType":"CLICK","maxCount":1}]'
+                />
+              </el-form-item>
+            </article>
+
+            <div v-if="!planForm.targets.length" class="self-upgrade-empty-mini">
+              至少需要一个探索入口，夜间巡检才知道从哪里开始。
+            </div>
+          </div>
+        </section>
+      </div>
+    </MobileFormDrawer>
 
     <el-drawer v-model="configDrawerVisible" title="中心配置" size="720px" destroy-on-close>
       <div v-loading="configOptionsLoading || configSaving" class="self-upgrade-drawer-body">
@@ -1054,6 +1196,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { listModelConfigOptions } from '@/api/models'
 import { getResolvedApiBaseUrl } from '@/api/http'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
+import { useMobileViewport } from '@/utils/mobileViewport'
 import {
   acceptSelfUpgradeSuggestion,
   completeSelfUpgradeWorkItem,
@@ -1156,6 +1300,8 @@ const LIST_PAGE_SIZE = 1000
 
 const route = useRoute()
 const router = useRouter()
+// 移动端断点 900，巡检计划弹窗在移动端切换为底部抽屉。
+const { isMobileViewport } = useMobileViewport()
 const authStore = useAuthStore()
 
 const activeTab = ref<SelfUpgradeTab>(resolveTab(route.query.tab))

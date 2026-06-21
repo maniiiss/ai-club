@@ -133,6 +133,16 @@
                       <el-icon><Link /></el-icon>
                     </button>
                   </el-tooltip>
+                  <el-tooltip v-if="canManageProjects && row.canEdit" content="分享" placement="top">
+                    <button
+                      class="project-action-button"
+                      type="button"
+                      aria-label="生成项目分享链接"
+                      @click="openShareDialog(row)"
+                    >
+                      <el-icon><Share /></el-icon>
+                    </button>
+                  </el-tooltip>
                   <el-tooltip v-if="canManageProjects && row.canEdit" content="编辑" placement="top">
                     <button
                       class="project-action-button"
@@ -232,6 +242,15 @@
                 v-if="canManageProjects && row.canEdit"
                 class="project-mobile-action-button"
                 type="button"
+                @click="openShareDialog(row)"
+              >
+                <el-icon><Share /></el-icon>
+                <span>分享</span>
+              </button>
+              <button
+                v-if="canManageProjects && row.canEdit"
+                class="project-mobile-action-button"
+                type="button"
                 @click="openEditDialog(row)"
               >
                 <el-icon><EditPen /></el-icon>
@@ -281,7 +300,13 @@
       </section>
     </section>
 
+    <!--
+      桌面端项目新增/编辑弹窗。
+      移动端（≤900px）改为底部抽屉形态（见下方 MobileFormDrawer），
+      但表单主体始终复用同一个 ProjectEditorFormBody 子组件，避免双份模板漂移。
+    -->
     <el-dialog
+      v-if="!isMobileViewport"
       v-model="dialogVisible"
       :title="dialogTitle"
       width="680px"
@@ -302,81 +327,21 @@
       </template>
 
       <div class="project-dialog-shell">
-        <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="platform-form-layout project-form-layout">
-          <section class="platform-form-section">
-            <div class="platform-form-section-head">
-              <div class="platform-form-section-title">基础设置</div>
-            </div>
-            <div class="project-dialog-form-grid">
-              <el-form-item label="项目名称" prop="name" class="project-dialog-span-2">
-                <el-input v-model="form.name" :disabled="!canEditProjectFields" placeholder="例如：智能代码评审平台" />
-              </el-form-item>
-              <el-form-item label="负责人" prop="ownerUserId">
-                <el-select v-model="form.ownerUserId" :disabled="!canEditProjectFields" filterable placeholder="请选择负责人" style="width: 100%" @change="handleOwnerChange">
-                  <el-option
-                    v-for="item in userOptions"
-                    :key="item.id"
-                    :label="buildUserLabel(item)"
-                    :value="item.id"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="状态" prop="status">
-                <el-select v-model="form.status" :disabled="!canEditProjectFields" placeholder="请选择状态" style="width: 100%">
-                  <el-option label="进行中" value="进行中" />
-                  <el-option label="规划中" value="规划中" />
-                  <el-option label="已立项" value="已立项" />
-                  <el-option label="已完成" value="已完成" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="项目成员" class="project-dialog-span-2">
-                <el-select v-model="form.memberUserIds" :disabled="!canEditProjectFields" multiple filterable collapse-tags placeholder="请选择项目成员" style="width: 100%">
-                  <el-option
-                    v-for="item in memberSelectableUsers"
-                    :key="item.id"
-                    :label="buildUserLabel(item)"
-                    :value="item.id"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="项目说明" prop="description" class="project-dialog-span-2">
-                <el-input v-model="form.description" :disabled="!canEditProjectFields" type="textarea" :rows="4" placeholder="请输入项目目标、协作范围或当前阶段说明" />
-              </el-form-item>
-            </div>
-          </section>
-
-          <section v-if="showGiteeBindingSection" class="platform-form-section">
-            <div class="platform-form-section-head">
-              <div class="platform-form-section-title">Gitee 绑定</div>
-              <div class="platform-form-section-subtitle">企业 ID 与 Access Token 统一由系统设置中的环境变量管理维护，这里只选择 Gitee 项目和启用状态。</div>
-            </div>
-            <div v-loading="giteeBindingLoading" class="project-dialog-form-grid">
-              <el-form-item label="Gitee 项目" class="project-dialog-span-2">
-                <el-select
-                  v-model="form.giteeProgramId"
-                  filterable
-                  :disabled="!canEditGiteeBindingFields || giteeProgramLoading"
-                  placeholder="请选择 Gitee 项目"
-                  :no-data-text="giteeProgramLoading ? 'Gitee 项目加载中...' : '未查询到可见的 Gitee 项目'"
-                  style="width: 100%"
-                >
-                  <el-option
-                    v-for="item in giteeProgramOptions"
-                    :key="item.id"
-                    :label="item.ident ? `${item.name}（${item.ident}）` : item.name"
-                    :value="item.id"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="启用状态">
-                <el-switch
-                  v-model="form.giteeBindingEnabled"
-                  :disabled="!canEditGiteeBindingFields || !form.giteeProgramId"
-                />
-              </el-form-item>
-            </div>
-          </section>
-        </el-form>
+        <ProjectEditorFormBody
+          ref="formRef"
+          :form="form"
+          :rules="rules"
+          :can-edit-project-fields="canEditProjectFields"
+          :can-edit-gitee-binding-fields="canEditGiteeBindingFields"
+          :show-gitee-binding-section="showGiteeBindingSection"
+          :gitee-binding-loading="giteeBindingLoading"
+          :gitee-program-loading="giteeProgramLoading"
+          :gitee-program-options="giteeProgramOptions"
+          :user-options="userOptions"
+          :member-selectable-users="memberSelectableUsers"
+          :build-user-label="buildUserLabel"
+          @owner-change="handleOwnerChange"
+        />
       </div>
 
       <template #footer>
@@ -388,6 +353,40 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 移动端项目新增/编辑底部抽屉，从下往上弹出。 -->
+    <MobileFormDrawer
+      v-else
+      v-model="dialogVisible"
+      :title="dialogTitle"
+      :subtitle="dialogSubtitle"
+      :submit-text="dialogSubmitText"
+      :submitting="submitting"
+      :header-icon="FolderOpened"
+      :close-on-click-modal="true"
+      drawer-class="project-editor-mobile-drawer"
+      size="88%"
+      @submit="handleSubmit"
+      @cancel="dialogVisible = false"
+    >
+      <div class="project-dialog-shell project-dialog-shell--mobile">
+        <ProjectEditorFormBody
+          ref="formRef"
+          :form="form"
+          :rules="rules"
+          :can-edit-project-fields="canEditProjectFields"
+          :can-edit-gitee-binding-fields="canEditGiteeBindingFields"
+          :show-gitee-binding-section="showGiteeBindingSection"
+          :gitee-binding-loading="giteeBindingLoading"
+          :gitee-program-loading="giteeProgramLoading"
+          :gitee-program-options="giteeProgramOptions"
+          :user-options="userOptions"
+          :member-selectable-users="memberSelectableUsers"
+          :build-user-label="buildUserLabel"
+          @owner-change="handleOwnerChange"
+        />
+      </div>
+    </MobileFormDrawer>
 
     <el-dialog v-model="repoDialogVisible" title="关联仓库列表" width="760px" align-center destroy-on-close>
       <template v-if="currentRepoProject">
@@ -429,14 +428,84 @@
         <el-button @click="repoDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!--
+      项目分享 dialog：复用 useProjectReadonlyShare composable，同一个 token 同时承载
+      自动合并日志摘要 + 流水线发布记录摘要，分享给项目外的相关方查看进度。
+    -->
+    <el-dialog v-model="readonlyShare.dialogVisible.value" :width="isMobileViewport ? '92%' : '640px'" class="platform-form-dialog project-share-dialog-wrapper" align-center>
+      <template #header>
+        <PlatformDialogHeader
+          title="项目分享"
+          :subtitle="`为 ${readonlyShare.currentProjectName.value || '当前项目'} 生成分享链接，对外展示自动合并日志和流水线发布记录。`"
+          :icon="Share"
+        />
+      </template>
+      <div v-loading="readonlyShare.loading.value" class="project-share-dialog">
+        <div class="project-share-form">
+          <!-- 有效期 / 永久 一行两列；其余字段独占一行，给足呼吸空间 -->
+          <div class="project-share-row project-share-row--split">
+            <label class="project-share-field">
+              <span class="project-share-label">有效期（天）</span>
+              <el-input-number
+                v-model="readonlyShare.expiresInDays.value"
+                :min="1"
+                :max="3650"
+                :step="1"
+                :disabled="readonlyShare.permanent.value"
+                style="width: 100%"
+              />
+            </label>
+            <label class="project-share-field project-share-field--switch">
+              <span class="project-share-label">永久有效</span>
+              <el-switch v-model="readonlyShare.permanent.value" />
+            </label>
+          </div>
+
+          <div class="project-share-row project-share-row--split">
+            <div class="project-share-field">
+              <span class="project-share-label">当前状态</span>
+              <el-tag :type="readonlyShare.enabled.value ? 'success' : 'info'" effect="light">
+                {{ readonlyShare.enabled.value ? '已启用' : '未启用' }}
+              </el-tag>
+            </div>
+            <div class="project-share-field">
+              <span class="project-share-label">过期时间</span>
+              <strong class="project-share-value">{{ readonlyShare.shareInfo.value?.expiresAt || '尚未生成' }}</strong>
+            </div>
+          </div>
+
+          <label class="project-share-row">
+            <span class="project-share-label">分享链接</span>
+            <el-input
+              :model-value="readonlyShare.shareInfo.value?.shareUrl || '当前未启用分享链接'"
+              readonly
+              size="large"
+            />
+          </label>
+
+          <p class="project-share-hint">
+            访问者将看到当前项目的自动合并日志和流水线发布记录。
+          </p>
+        </div>
+      </div>
+      <template #footer>
+        <div class="platform-dialog-footer project-share-footer">
+          <el-button @click="readonlyShare.close()">关闭</el-button>
+          <el-button :disabled="!readonlyShare.shareInfo.value?.shareUrl" @click="readonlyShare.copy()">复制链接</el-button>
+          <el-button v-if="readonlyShare.enabled.value" type="danger" plain @click="readonlyShare.disable()">失效链接</el-button>
+          <el-button type="primary" :loading="readonlyShare.loading.value" @click="readonlyShare.refresh()">生成 / 刷新</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, FolderOpened, Lightning, Link, PieChart, Plus, RefreshRight, Search, Tickets, TrendCharts } from '@element-plus/icons-vue'
+import type { FormRules } from 'element-plus'
+import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, FolderOpened, Lightning, Link, PieChart, Plus, RefreshRight, Search, Share, Tickets, TrendCharts } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { listUserOptions } from '@/api/access'
 import {
@@ -448,8 +517,12 @@ import {
 import ListUserDisplay from '@/components/ListUserDisplay.vue'
 import ListUserGroupDisplay from '@/components/ListUserGroupDisplay.vue'
 import type { ListUserDisplayItem } from '@/components/listUserDisplay'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
+import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import ProjectEditorFormBody from '@/components/ProjectEditorFormBody.vue'
 import { createProject, deleteProject, getProjectListStats, pageProjects, updateProject } from '@/api/platform'
 import { pageGitlabBindings } from '@/api/gitlab'
+import { useProjectReadonlyShare } from '@/composables/useProjectReadonlyShare'
 import { useAuthStore } from '@/stores/auth'
 import type {
   GiteeProgramItem,
@@ -461,6 +534,7 @@ import type {
   UserOptionItem
 } from '@/types/platform'
 import { resolveAssetUrl } from '@/utils/asset'
+import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
 interface ProjectForm {
@@ -504,11 +578,12 @@ const projectGiteeBinding = ref<ProjectGiteeBindingItem | null>(null)
 const giteeProgramOptions = ref<GiteeProgramItem[]>([])
 const giteeBindingLoading = ref(false)
 const giteeProgramLoading = ref(false)
-const formRef = ref<FormInstance>()
+const formRef = ref<InstanceType<typeof ProjectEditorFormBody>>()
 const router = useRouter()
 const authStore = useAuthStore()
 const activePreset = ref<'all' | 'planning' | 'draft'>('all')
-const isMobileViewport = ref(false)
+// 统一使用全局 composable 推断移动端视口，断点 900 与 AppLayout / HermesDrawer 保持一致。
+const { isMobileViewport } = useMobileViewport()
 const dialogEntryMode = ref<'create' | 'edit' | 'gitee'>('create')
 const canManageProjects = computed(() => authStore.hasPermission('project:manage'))
 const canManageGiteeBinding = computed(() => authStore.hasPermission('gitee:binding:manage'))
@@ -777,6 +852,17 @@ const openIterationBoard = (row: ProjectItem) => {
   router.push({ name: 'project-iterations', params: { projectId: row.id } })
 }
 
+/**
+ * 项目只读分享 dialog 控制器：复用统一的 composable，避免在多个 view 之间重复实现。
+ * dialog 模板中的 readonlyShare.* 即为该实例暴露的响应式状态。
+ */
+const readonlyShare = useProjectReadonlyShare()
+
+/** 行操作：打开项目只读分享 dialog，加载当前 share 状态。 */
+const openShareDialog = (row: ProjectItem) => {
+  readonlyShare.openShare(row.id, row.name)
+}
+
 
 const openRepoDialog = async (row: ProjectItem) => {
   if (!authStore.hasPermission('gitlab:view')) {
@@ -926,16 +1012,6 @@ const statusLabel = (status?: string | null) => {
 const taskProgress = (row: ProjectItem) => Math.min(100, Math.max(4, row.taskCount))
 
 /**
- * 项目管理页在手机端切换为独立卡片模板，避免继续被通用表格压缩样式挤乱字段布局。
- */
-const syncMobileViewport = () => {
-  if (typeof window === 'undefined') {
-    return
-  }
-  isMobileViewport.value = window.innerWidth <= 900
-}
-
-/**
  * 统一解析项目负责人展示名称，兼容历史数据里仅有 owner 文本、没有头像字段的情况。
  */
 const projectOwnerName = (row: ProjectItem) => row.owner?.trim() || ''
@@ -979,17 +1055,8 @@ const buildProjectMemberDisplayItems = (row: ProjectItem): ListUserDisplayItem[]
   }))
 
 onMounted(async () => {
-  syncMobileViewport()
-  window.addEventListener('resize', syncMobileViewport)
   await loadUserList()
   await loadProjects()
-})
-
-onBeforeUnmount(() => {
-  if (typeof window === 'undefined') {
-    return
-  }
-  window.removeEventListener('resize', syncMobileViewport)
 })
 </script>
 
@@ -1666,6 +1733,11 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
   }
 
+  .project-dialog-shell--mobile {
+    /* 移动端抽屉内表单去掉左右额外内边距，靠抽屉本身的 padding 控制 */
+    padding: 0;
+  }
+
   .project-create-button {
     margin-left: auto;
     min-height: 32px;
@@ -1770,6 +1842,80 @@ onBeforeUnmount(() => {
 
   .project-dialog-header-title {
     font-size: 21px;
+  }
+}
+
+/* ===== 项目分享 dialog ===== */
+.project-share-dialog {
+  padding: 4px 4px 8px;
+}
+
+.project-share-form {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.project-share-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.project-share-row--split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: stretch;
+}
+
+.project-share-field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.project-share-field--switch {
+  align-items: flex-start;
+}
+
+.project-share-label {
+  font-size: 13px;
+  color: #6b7a90;
+  letter-spacing: 0.02em;
+}
+
+.project-share-value {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  font-size: 14px;
+  color: #2c3e50;
+  font-weight: 500;
+}
+
+.project-share-hint {
+  margin: 4px 0 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: rgba(23, 131, 255, 0.08);
+  color: #34557a;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.project-share-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+@media (max-width: 768px) {
+  .project-share-row--split {
+    grid-template-columns: 1fr;
+    gap: 18px;
   }
 }
 </style>

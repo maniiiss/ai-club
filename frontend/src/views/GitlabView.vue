@@ -617,7 +617,8 @@
                     <div class="gitlab-meta-stack">
                       <span>{{ row.schedulerEnabled ? `Cron：${row.schedulerCron || '-'}` : '未启用调度' }}</span>
                       <span>AI 审核：{{ row.aiReviewEnabled ? (row.reviewAgentName || '已启用') : '关闭' }}</span>
-                      <span>合并后流水线：{{ row.triggerPipelineAfterMerge ? '开启' : '关闭' }}</span>
+                      <span>严格度：{{ formatReviewStrictnessLabel(row.reviewStrictness) }}</span>
+                      <span>合并后流水线：{{ buildAutoMergePipelineSelectionText(row) }}</span>
                     </div>
                   </td>
                   <td class="center gitlab-auto-col-enabled" data-label="启用">
@@ -645,6 +646,11 @@
                       <el-tooltip content="立即执行" placement="top">
                         <button class="management-list-row-button gitlab-action-button run" type="button" aria-label="立即执行自动合并" @click="handleAutoMergeRun(row.id)">
                           <el-icon><VideoPlay /></el-icon>
+                        </button>
+                      </el-tooltip>
+                      <el-tooltip content="Webhook 通知" placement="top">
+                        <button class="management-list-row-button gitlab-action-button" type="button" aria-label="管理自动合并 Webhook" @click="openAutoMergeWebhookDialog(row.id)">
+                          <el-icon><Bell /></el-icon>
                         </button>
                       </el-tooltip>
                       <el-tooltip content="编辑策略" placement="top">
@@ -701,7 +707,8 @@
                           <div class="mobile-entity-meta-stack">
                             <span class="mobile-entity-empty-text">{{ row.schedulerEnabled ? `Cron：${row.schedulerCron || '-'}` : '未启用调度' }}</span>
                             <span class="mobile-entity-empty-text">AI 审核：{{ row.aiReviewEnabled ? (row.reviewAgentName || '已启用') : '关闭' }}</span>
-                            <span class="mobile-entity-empty-text">合并后流水线：{{ row.triggerPipelineAfterMerge ? '开启' : '关闭' }}</span>
+                            <span class="mobile-entity-empty-text">严格度：{{ formatReviewStrictnessLabel(row.reviewStrictness) }}</span>
+                            <span class="mobile-entity-empty-text">合并后流水线：{{ buildAutoMergePipelineSelectionText(row) }}</span>
                           </div>
                         </div>
                       </div>
@@ -738,6 +745,10 @@
                       <button class="mobile-entity-action-button" type="button" @click="openAutoMergeEditDialog(row)">
                         <el-icon><EditPen /></el-icon>
                         <span>编辑</span>
+                      </button>
+                      <button class="mobile-entity-action-button" type="button" @click="openAutoMergeWebhookDialog(row.id)">
+                        <el-icon><Bell /></el-icon>
+                        <span>Webhook</span>
                       </button>
                       <button class="mobile-entity-action-button danger" type="button" @click="handleAutoMergeDelete(row.id)">
                         <el-icon><Delete /></el-icon>
@@ -999,7 +1010,7 @@
 </div>
 </div>
 
-  <el-dialog v-model="bindingDialogVisible" :title="bindingDialogTitle" width="760px" class="platform-form-dialog" align-center>
+  <el-dialog v-if="!isMobileViewport" v-model="bindingDialogVisible" :title="bindingDialogTitle" width="760px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="bindingDialogTitle" :subtitle="bindingDialogSubtitle" :icon="FolderOpened" />
     </template>
@@ -1122,7 +1133,134 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="tagDialogVisible" title="创建 GitLab Tag" width="680px" class="platform-form-dialog" align-center>
+  <!-- 移动端 GitLab 绑定抽屉，表单较长使用全屏高度。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && bindingDialogVisible"
+    v-model="bindingDialogVisible"
+    :title="bindingDialogTitle"
+    :subtitle="bindingDialogSubtitle"
+    :submit-text="'保存'"
+    :submitting="bindingSubmitting"
+    :header-icon="FolderOpened"
+    :close-on-click-modal="true"
+    size="100%"
+    @submit="handleBindingSubmit"
+    @cancel="bindingDialogVisible = false"
+  >
+    <el-form ref="bindingFormRef" :model="bindingForm" :rules="bindingRules" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">GitLab 绑定</div>
+          <div class="platform-form-section-subtitle">配置平台项目与 GitLab 项目的映射关系。</div>
+        </div>
+        <el-form-item label="平台项目" prop="projectId">
+          <el-select v-model="bindingForm.projectId" placeholder="请选择平台项目" style="width: 100%">
+            <el-option v-for="project in projectOptions" :key="project.id" :label="project.name" :value="project.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="GitLab API" prop="apiBaseUrl"><el-input v-model="bindingForm.apiBaseUrl" /></el-form-item>
+        <el-form-item label="项目 ID / 路径" prop="gitlabProjectRef"><el-input v-model="bindingForm.gitlabProjectRef" /></el-form-item>
+        <el-form-item label="默认目标分支"><el-input v-model="bindingForm.defaultTargetBranch" /></el-form-item>
+        <el-form-item label="产品主线分支"><el-input v-model="bindingForm.productMainBranch" placeholder="例如：main" /></el-form-item>
+        <el-form-item label="APIToken"><el-input v-model="bindingForm.apiToken" type="password" show-password :placeholder="bindingIsEditing ? '留空则保留原 Token' : '请输入 APIToken'" /></el-form-item>
+        <el-form-item label="启用"><el-switch v-model="bindingForm.enabled" /></el-form-item>
+      </section>
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">测试模板</div>
+          <div class="platform-form-section-subtitle">为开发执行的 TEST 步骤声明浏览器烟测或服务烟测规则；留空则仅执行命令型 Harness。</div>
+        </div>
+        <el-form-item label="仓库类型">
+          <el-select v-model="bindingForm.repoKind" clearable placeholder="不配置则仅执行 COMMAND suite" style="width: 100%">
+            <el-option label="前端仓库" value="FRONTEND" />
+            <el-option label="后端仓库" value="BACKEND" />
+            <el-option label="混合仓库" value="MIXED" />
+          </el-select>
+          <div class="form-tip">只在需要 sidecar 烟测时填写，系统会按仓库类型补充 Playwright 或服务健康检查。</div>
+        </el-form-item>
+        <el-form-item label="测试工作目录">
+          <el-input v-model="bindingForm.workingDir" placeholder="例如 frontend 或 backend；留空表示仓库根目录" />
+        </el-form-item>
+        <el-form-item label="启动命令">
+          <el-input
+            v-model="bindingForm.startCommand"
+            placeholder="例如 npm run dev、pnpm preview、mvn spring-boot:run"
+          />
+          <div class="form-tip">前端与后端 sidecar 共用这条启动命令；命令型 Harness 仍沿用现有平台推荐逻辑。</div>
+        </el-form-item>
+        <el-row v-if="showFrontendTestProfile || showBackendTestProfile" :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="基础访问地址">
+              <el-input v-model="bindingForm.baseUrl" placeholder="留空时由运行时自动分配本地端口并拼装地址" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="包管理器">
+              <el-select v-model="bindingForm.packageManager" clearable placeholder="可选，默认按锁文件推断" style="width: 100%">
+                <el-option label="npm" value="npm" />
+                <el-option label="pnpm" value="pnpm" />
+                <el-option label="yarn" value="yarn" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <template v-if="showFrontendTestProfile">
+          <el-form-item label="烟测页面路径">
+            <el-input
+              v-model="bindingForm.smokePathsText"
+              type="textarea"
+              :rows="4"
+              placeholder="每行一个路径，例如：&#10;/&#10;/login&#10;/dashboard"
+            />
+            <div class="form-tip">留空时默认访问 `/`。建议只放少量关键页面，避免 TEST 步骤耗时过长。</div>
+          </el-form-item>
+          <el-form-item label="页面就绪选择器">
+            <el-input v-model="bindingForm.readySelector" placeholder="例如 #app、[data-testid=&quot;dashboard-ready&quot;]" />
+          </el-form-item>
+        </template>
+
+        <template v-if="showBackendTestProfile">
+          <el-form-item label="健康检查路径">
+            <el-input v-model="bindingForm.healthPath" placeholder="例如 /actuator/health 或 /health" />
+          </el-form-item>
+          <div class="platform-form-inline-head">
+            <div>
+              <div class="platform-form-inline-title">HTTP Smoke 列表</div>
+              <div class="platform-form-inline-subtitle">逐条声明需要校验的方法、路径与期望状态码。</div>
+            </div>
+            <el-button type="primary" link @click="addBindingHttpCheck">新增检查</el-button>
+          </div>
+          <div v-if="bindingForm.httpChecks.length" class="binding-http-check-list">
+            <div v-for="(item, index) in bindingForm.httpChecks" :key="`http-check-${index}`" class="binding-http-check-row">
+              <el-input v-model="item.name" placeholder="检查名称" />
+              <el-select v-model="item.method" placeholder="方法">
+                <el-option label="GET" value="GET" />
+                <el-option label="POST" value="POST" />
+                <el-option label="PUT" value="PUT" />
+                <el-option label="DELETE" value="DELETE" />
+              </el-select>
+              <el-input v-model="item.path" placeholder="路径，例如 /api/ping" />
+              <div class="binding-http-check-actions">
+                <el-input-number
+                  v-model="item.expectedStatus"
+                  class="binding-http-check-status"
+                  :min="100"
+                  :max="599"
+                  :step="1"
+                  controls-position="right"
+                />
+                <el-button class="binding-http-check-remove" text type="danger" @click="removeBindingHttpCheck(index)">删除</el-button>
+              </div>
+            </div>
+          </div>
+          <div v-else class="form-tip">还没有配置 HTTP 检查。仅填写健康检查路径也可以跑最小服务烟测。</div>
+        </template>
+      </section>
+    </el-form>
+  </MobileFormDrawer>
+
+  <el-dialog v-if="!isMobileViewport" v-model="tagDialogVisible" title="创建 GitLab Tag" width="680px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader title="创建 GitLab Tag" :subtitle="tagDialogSubtitle" :icon="DocumentCopy" />
     </template>
@@ -1171,6 +1309,59 @@
     </template>
   </el-dialog>
 
+  <!-- 移动端创建 Tag 抽屉。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && tagDialogVisible"
+    v-model="tagDialogVisible"
+    title="创建 GitLab Tag"
+    :subtitle="tagDialogSubtitle"
+    :submit-text="'创建'"
+    :submitting="tagSubmitting"
+    :header-icon="DocumentCopy"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleTagSubmit"
+    @cancel="tagDialogVisible = false"
+  >
+    <el-form ref="tagFormRef" :model="tagForm" :rules="tagRules" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">Tag 信息</div>
+          <div class="platform-form-section-subtitle">基于当前绑定仓库选择分支并创建新的 GitLab Tag。</div>
+        </div>
+        <el-form-item label="当前仓库">
+          <el-input :model-value="currentTagBinding ? `${currentTagBinding.projectName} / ${currentTagBinding.gitlabProjectPath || currentTagBinding.gitlabProjectRef}` : ''" disabled />
+          <div class="form-tip">默认目标分支：{{ currentTagBinding?.defaultTargetBranch || '未配置' }}</div>
+        </el-form-item>
+        <el-form-item label="Tag 名称" prop="tagName">
+          <el-input v-model="tagForm.tagName" placeholder="例如：v1.2.0" />
+        </el-form-item>
+        <el-form-item label="来源分支" prop="branchName">
+          <el-select
+            v-model="tagForm.branchName"
+            filterable
+            remote
+            reserve-keyword
+            placeholder="请输入关键字搜索分支"
+            style="width: 100%"
+            :remote-method="handleTagBranchSearch"
+            :loading="tagBranchLoading"
+          >
+            <el-option
+              v-for="branch in tagBranchOptions"
+              :key="branch.name"
+              :label="branch.defaultBranch ? `${branch.name}（默认）` : branch.name"
+              :value="branch.name"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注说明">
+          <el-input v-model="tagForm.message" type="textarea" :rows="3" placeholder="留空将创建轻量 Tag" />
+        </el-form-item>
+      </section>
+    </el-form>
+  </MobileFormDrawer>
+
   <el-dialog v-model="tagResultVisible" title="Tag 创建结果" width="720px">
     <el-descriptions v-if="tagResult" :column="2" border>
       <el-descriptions-item label="平台项目">{{ tagResult.projectName }}</el-descriptions-item>
@@ -1189,7 +1380,7 @@
     </el-descriptions>
   </el-dialog>
 
-  <el-dialog v-model="scanDialogVisible" title="发起仓库规范扫描" width="680px" class="platform-form-dialog" align-center>
+  <el-dialog v-if="!isMobileViewport" v-model="scanDialogVisible" title="发起仓库规范扫描" width="680px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader title="发起仓库规范扫描" :subtitle="scanDialogSubtitle" :icon="Search" />
     </template>
@@ -1270,7 +1461,92 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="apiSyncDialogVisible" title="同步 API" width="680px" class="platform-form-dialog" align-center>
+  <!-- 移动端规范扫描抽屉。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && scanDialogVisible"
+    v-model="scanDialogVisible"
+    title="发起仓库规范扫描"
+    :subtitle="scanDialogSubtitle"
+    :submit-text="'创建扫描任务'"
+    :submitting="scanSubmitting"
+    :header-icon="Search"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleScanSubmit"
+    @cancel="scanDialogVisible = false"
+  >
+    <el-form ref="scanFormRef" :model="scanForm" :rules="scanRules" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">扫描配置</div>
+          <div class="platform-form-section-subtitle">任务创建后会进入执行中心异步运行，并生成 Markdown、HTML、JSON、SARIF 报告。</div>
+        </div>
+        <el-form-item label="当前仓库">
+          <el-input :model-value="currentScanBinding ? `${currentScanBinding.projectName} / ${currentScanBinding.gitlabProjectPath || currentScanBinding.gitlabProjectRef}` : ''" disabled />
+        </el-form-item>
+        <el-form-item label="扫描分支" prop="branch">
+          <el-select
+            v-model="scanForm.branch"
+            filterable
+            remote
+            reserve-keyword
+            placeholder="请输入关键字搜索分支"
+            style="width: 100%"
+            :remote-method="handleScanBranchSearch"
+            :loading="scanBranchLoading"
+          >
+            <el-option
+              v-for="branch in scanBranchOptions"
+              :key="branch.name"
+              :label="branch.defaultBranch ? `${branch.name}（默认）` : branch.name"
+              :value="branch.name"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="规则集" prop="rulesetCode">
+          <el-select v-model="scanForm.rulesetCode" placeholder="请选择规则集" style="width: 100%">
+            <el-option
+              v-for="ruleset in scanRulesetOptions"
+              :key="ruleset.code"
+              :label="ruleset.defaultSelected ? `${ruleset.name}（默认）` : ruleset.name"
+              :value="ruleset.code"
+            />
+          </el-select>
+          <div class="form-tip">
+            {{
+              (() => {
+                const selected = scanRulesetOptions.find((item) => item.code === scanForm.rulesetCode)
+                if (!selected) return '请选择一个规则集用于扫描。'
+                return `${selected.description || '暂无描述'}${selected.engineType ? ` · 引擎 ${selected.engineType}` : ''}${selected.defaultSelected ? ' · 当前系统默认' : ''}`
+              })()
+            }}
+          </div>
+        </el-form-item>
+        <el-form-item label="计划智能体">
+          <el-select v-model="scanForm.planAgentId" clearable placeholder="留空仅生成规则版计划与占位 executable plan" style="width: 100%">
+            <el-option
+              v-for="agent in scanPlanAgentOptions"
+              :key="agent.id"
+              :label="agent.name"
+              :value="agent.id"
+            />
+          </el-select>
+          <div class="form-tip">
+            {{
+              (() => {
+                if (!scanPlanAgentOptions.length) return '当前没有可用的仓库扫描计划智能体，扫描完成后只会生成规则版计划。'
+                const selected = scanPlanAgentOptions.find((item) => item.id === scanForm.planAgentId)
+                if (!selected) return '留空表示仅生成规则版计划与占位 executable plan。'
+                return `${selected.description || '使用该智能体对规则计划和扫描报告做进一步分析'} · 仅支持内置仓库扫描计划智能体`
+              })()
+            }}
+          </div>
+        </el-form-item>
+      </section>
+    </el-form>
+  </MobileFormDrawer>
+
+  <el-dialog v-if="!isMobileViewport" v-model="apiSyncDialogVisible" title="同步 API" width="680px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader title="同步 API" :subtitle="apiSyncDialogSubtitle" :icon="Connection" />
     </template>
@@ -1313,6 +1589,53 @@
     </template>
   </el-dialog>
 
+  <!-- 移动端 API 同步抽屉。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && apiSyncDialogVisible"
+    v-model="apiSyncDialogVisible"
+    title="同步 API"
+    :subtitle="apiSyncDialogSubtitle"
+    :submit-text="'同步 API'"
+    :submitting="apiSyncSubmitting"
+    :header-icon="Connection"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleApiSyncSubmit"
+    @cancel="apiSyncDialogVisible = false"
+  >
+    <el-form label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">同步配置</div>
+          <div class="platform-form-section-subtitle">系统会读取后端或混合仓库中的 Spring 接口，并写入当前项目的 API 工作台。</div>
+        </div>
+        <el-form-item label="当前仓库">
+          <el-input :model-value="currentApiSyncBinding ? `${currentApiSyncBinding.projectName} / ${currentApiSyncBinding.gitlabProjectPath || currentApiSyncBinding.gitlabProjectRef}` : ''" disabled />
+        </el-form-item>
+        <el-form-item label="同步分支">
+          <el-select
+            v-model="apiSyncForm.branch"
+            filterable
+            remote
+            reserve-keyword
+            placeholder="请输入关键字搜索分支"
+            style="width: 100%"
+            :remote-method="handleApiSyncBranchSearch"
+            :loading="apiSyncBranchLoading"
+          >
+            <el-option
+              v-for="branch in apiSyncBranchOptions"
+              :key="branch.name"
+              :label="branch.defaultBranch ? `${branch.name}（默认）` : branch.name"
+              :value="branch.name"
+            />
+          </el-select>
+          <div class="form-tip">同步会覆盖平台生成的 API 项，并保留人工在 API 工作台维护的内容。</div>
+        </el-form-item>
+      </section>
+    </el-form>
+  </MobileFormDrawer>
+
   <el-dialog v-model="apiSyncResultVisible" title="同步 API 结果" width="760px">
     <el-descriptions v-if="apiSyncResult" :column="3" border>
       <el-descriptions-item label="分支">{{ apiSyncResult.branch }}</el-descriptions-item>
@@ -1342,7 +1665,7 @@
     </el-alert>
   </el-dialog>
 
-  <el-dialog v-model="autoMergeDialogVisible" :title="autoMergeDialogTitle" width="760px" class="platform-form-dialog" align-center>
+  <el-dialog v-if="!isMobileViewport" v-model="autoMergeDialogVisible" :title="autoMergeDialogTitle" width="760px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="autoMergeDialogTitle" :subtitle="autoMergeDialogSubtitle" :icon="Connection" />
     </template>
@@ -1437,6 +1760,21 @@
             <el-option v-for="agent in reviewAgentOptions" :key="agent.id" :label="agent.name" :value="agent.id" />
           </el-select>
         </el-form-item>
+        <el-form-item class="span-2 auto-merge-strictness-item">
+          <template #label>
+            <span class="auto-merge-label-with-help">
+              审查严格度
+              <el-tooltip content="高：不规范也拒绝；中：拒绝严重和中等风险；低：仅拒绝严重风险。" placement="top">
+                <el-icon class="auto-merge-help-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+          </template>
+          <el-radio-group v-model="autoMergeForm.reviewStrictness" class="auto-merge-strictness-group" :disabled="!autoMergeForm.aiReviewEnabled">
+            <el-radio-button label="HIGH">高</el-radio-button>
+            <el-radio-button label="MEDIUM">中</el-radio-button>
+            <el-radio-button label="LOW">低</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="自动合并">
           <el-switch v-model="autoMergeForm.autoMerge" />
         </el-form-item>
@@ -1449,22 +1787,329 @@
         <el-form-item label="删除源分支">
           <el-switch v-model="autoMergeForm.removeSourceBranch" />
         </el-form-item>
-        <el-form-item label="合并后触发流水线" class="span-2">
+        <el-form-item class="span-2">
+          <template #label>
+            <span class="auto-merge-label-with-help">
+              合并后触发流水线
+              <el-tooltip content="仅关联业务项目模式可用；开启后必须显式选择要触发的 AI Club / Jenkins 流水线。" placement="top">
+                <el-icon class="auto-merge-help-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+          </template>
           <el-switch v-model="autoMergeForm.triggerPipelineAfterMerge" :disabled="autoMergeForm.executionMode !== 'PROJECT_BOUND'" />
-          <div class="form-tip">仅关联业务项目模式可用，合并成功后会按项目默认流水线自动触发。</div>
+        </el-form-item>
+        <el-form-item v-if="autoMergeForm.executionMode === 'PROJECT_BOUND' && autoMergeForm.triggerPipelineAfterMerge" class="span-2" label="目标流水线">
+          <el-select
+            v-model="autoMergeSelectedPipelineKeys"
+            multiple
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择至少一条流水线"
+            :loading="autoMergePipelineTargetLoading"
+            :disabled="autoMergeReadonlyMode"
+          >
+            <el-option-group v-if="autoMergeAiClubTargetOptions.length" label="AI Club Pipeline">
+              <el-option
+                v-for="item in autoMergeAiClubTargetOptions"
+                :key="buildPipelineTargetKey(item.entryType, item.entryId)"
+                :label="`${item.displayName} (${item.providerCode})`"
+                :value="buildPipelineTargetKey(item.entryType, item.entryId)"
+              />
+            </el-option-group>
+            <el-option-group v-if="autoMergeJenkinsTargetOptions.length" label="Jenkins">
+              <el-option
+                v-for="item in autoMergeJenkinsTargetOptions"
+                :key="buildPipelineTargetKey(item.entryType, item.entryId)"
+                :label="`${item.displayName} (${item.providerCode})`"
+                :value="buildPipelineTargetKey(item.entryType, item.entryId)"
+              />
+            </el-option-group>
+          </el-select>
         </el-form-item>
         </div>
       </section>
     </el-form>
     <template #footer>
       <div class="platform-dialog-footer">
+        <el-button v-if="autoMergeIsEditing && currentAutoMergeId !== null" @click="openAutoMergeWebhookDialog(currentAutoMergeId)">管理 Webhook</el-button>
         <el-button @click="autoMergeDialogVisible = false">{{ autoMergeReadonlyMode ? '关闭' : '取消' }}</el-button>
         <el-button v-if="!autoMergeReadonlyMode" type="primary" :loading="autoMergeSubmitting" @click="handleAutoMergeSubmit">保存</el-button>
       </div>
     </template>
   </el-dialog>
 
-  <el-dialog v-model="productBranchDialogVisible" :title="productBranchDialogTitle" width="680px" class="platform-form-dialog" align-center>
+  <!-- 移动端自动合并策略抽屉，表单较长使用全屏高度。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && autoMergeDialogVisible"
+    v-model="autoMergeDialogVisible"
+    :title="autoMergeDialogTitle"
+    :subtitle="autoMergeDialogSubtitle"
+    :submit-text="'保存'"
+    :submitting="autoMergeSubmitting"
+    :header-icon="Connection"
+    :close-on-click-modal="true"
+    size="100%"
+    @submit="handleAutoMergeSubmit"
+    @cancel="autoMergeDialogVisible = false"
+  >
+    <el-form ref="autoMergeFormRef" class="auto-merge-form platform-form-layout" :model="autoMergeForm" :rules="autoMergeRules" :disabled="autoMergeReadonlyMode" label-position="top">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">基础配置</div>
+          <div class="platform-form-section-subtitle">定义策略范围、执行模式和目标仓库规则。</div>
+        </div>
+        <div class="auto-merge-grid">
+        <el-form-item label="策略名称" prop="name">
+          <el-input v-model="autoMergeForm.name" />
+        </el-form-item>
+        <el-form-item label="执行模式" prop="executionMode">
+          <el-radio-group v-model="autoMergeForm.executionMode">
+            <el-radio value="PROJECT_BOUND">关联业务项目</el-radio>
+            <el-radio value="STANDALONE">独立运行</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <template v-if="autoMergeForm.executionMode === 'PROJECT_BOUND'">
+          <el-form-item label="GitLab 绑定" prop="bindingId" class="span-2">
+            <el-select v-model="autoMergeForm.bindingId" style="width: 100%">
+              <el-option v-for="binding in bindingOptions" :key="binding.id" :label="`${binding.projectName} / ${binding.gitlabProjectPath || binding.gitlabProjectRef}`" :value="binding.id" />
+            </el-select>
+          </el-form-item>
+        </template>
+        <template v-else>
+          <el-form-item label="GitLab API">
+            <el-input v-model="autoMergeForm.apiBaseUrl" />
+          </el-form-item>
+          <el-form-item label="项目 ID / 路径">
+            <el-input v-model="autoMergeForm.gitlabProjectRef" />
+          </el-form-item>
+          <el-form-item label="APIToken" class="span-2">
+            <el-input v-model="autoMergeForm.apiToken" type="password" show-password :placeholder="autoMergeIsEditing ? '留空则保留原 Token' : '请输入 APIToken'" />
+          </el-form-item>
+        </template>
+        <el-form-item label="源分支">
+          <el-input v-model="autoMergeForm.sourceBranch" placeholder="留空表示不限" />
+        </el-form-item>
+        <el-form-item label="目标分支">
+          <el-input v-model="autoMergeForm.targetBranch" placeholder="留空表示不限" />
+        </el-form-item>
+        <el-form-item label="标题关键字">
+          <el-input v-model="autoMergeForm.titleKeyword" placeholder="留空表示不限" />
+        </el-form-item>
+        <el-form-item label="策略启用">
+          <el-switch v-model="autoMergeForm.enabled" />
+        </el-form-item>
+        <el-form-item label="策略描述" class="span-2">
+          <el-input v-model="autoMergeForm.description" type="textarea" :rows="3" />
+        </el-form-item>
+        </div>
+      </section>
+
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">调度配置</div>
+          <div class="platform-form-section-subtitle">配置定时执行方式和 Cron 规则。</div>
+        </div>
+        <div class="auto-merge-grid">
+        <el-form-item label="启用调度">
+          <el-switch v-model="autoMergeForm.schedulerEnabled" />
+        </el-form-item>
+        <el-form-item label="Cron 示例">
+          <el-select v-model="cronTemplate" clearable placeholder="选择一个常用示例" style="width: 100%" @change="handleCronTemplateChange">
+            <el-option label="每5分钟：0 */5 * * * *" value="0 */5 * * * *" />
+            <el-option label="每10分钟：0 */10 * * * *" value="0 */10 * * * *" />
+            <el-option label="每30分钟：0 */30 * * * *" value="0 */30 * * * *" />
+            <el-option label="每小时整点：0 0 * * * *" value="0 0 * * * *" />
+            <el-option label="每天凌晨2点：0 0 2 * * *" value="0 0 2 * * *" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="调度 Cron" class="span-2">
+          <el-input v-model="autoMergeForm.schedulerCron" :disabled="!autoMergeForm.schedulerEnabled" placeholder="例如：0 */5 * * * *" />
+          <div class="form-tip">使用 Spring 6 位 Cron，例如：0 */5 * * * * 表示每 5 分钟执行一次。</div>
+        </el-form-item>
+        </div>
+      </section>
+
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">Agent 配置</div>
+          <div class="platform-form-section-subtitle">配置 AI 审核和自动合并行为。</div>
+        </div>
+        <div class="auto-merge-grid">
+        <el-form-item label="启用 AI 审核">
+          <el-switch v-model="autoMergeForm.aiReviewEnabled" />
+        </el-form-item>
+        <el-form-item label="Code Review Agent" class="span-2">
+          <el-select v-model="autoMergeForm.reviewAgentId" clearable placeholder="请选择内置 Code Review Agent" style="width: 100%" :disabled="!autoMergeForm.aiReviewEnabled">
+            <el-option v-for="agent in reviewAgentOptions" :key="agent.id" :label="agent.name" :value="agent.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item class="span-2 auto-merge-strictness-item">
+          <template #label>
+            <span class="auto-merge-label-with-help">
+              审查严格度
+              <el-tooltip content="高：不规范也拒绝；中：拒绝严重和中等风险；低：仅拒绝严重风险。" placement="top">
+                <el-icon class="auto-merge-help-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+          </template>
+          <el-radio-group v-model="autoMergeForm.reviewStrictness" class="auto-merge-strictness-group" :disabled="!autoMergeForm.aiReviewEnabled">
+            <el-radio-button label="HIGH">高</el-radio-button>
+            <el-radio-button label="MEDIUM">中</el-radio-button>
+            <el-radio-button label="LOW">低</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="自动合并">
+          <el-switch v-model="autoMergeForm.autoMerge" />
+        </el-form-item>
+        <el-form-item label="需 Pipeline 成功">
+          <el-switch v-model="autoMergeForm.requirePipelineSuccess" />
+        </el-form-item>
+        <el-form-item label="Squash 合并">
+          <el-switch v-model="autoMergeForm.squashOnMerge" />
+        </el-form-item>
+        <el-form-item label="删除源分支">
+          <el-switch v-model="autoMergeForm.removeSourceBranch" />
+        </el-form-item>
+        <el-form-item class="span-2">
+          <template #label>
+            <span class="auto-merge-label-with-help">
+              合并后触发流水线
+              <el-tooltip content="仅关联业务项目模式可用；开启后必须显式选择要触发的 AI Club / Jenkins 流水线。" placement="top">
+                <el-icon class="auto-merge-help-icon"><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </span>
+          </template>
+          <el-switch v-model="autoMergeForm.triggerPipelineAfterMerge" :disabled="autoMergeForm.executionMode !== 'PROJECT_BOUND'" />
+        </el-form-item>
+        <el-form-item v-if="autoMergeForm.executionMode === 'PROJECT_BOUND' && autoMergeForm.triggerPipelineAfterMerge" class="span-2" label="目标流水线">
+          <el-select
+            v-model="autoMergeSelectedPipelineKeys"
+            multiple
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择至少一条流水线"
+            :loading="autoMergePipelineTargetLoading"
+            :disabled="autoMergeReadonlyMode"
+          >
+            <el-option-group v-if="autoMergeAiClubTargetOptions.length" label="AI Club Pipeline">
+              <el-option
+                v-for="item in autoMergeAiClubTargetOptions"
+                :key="buildPipelineTargetKey(item.entryType, item.entryId)"
+                :label="`${item.displayName} (${item.providerCode})`"
+                :value="buildPipelineTargetKey(item.entryType, item.entryId)"
+              />
+            </el-option-group>
+            <el-option-group v-if="autoMergeJenkinsTargetOptions.length" label="Jenkins">
+              <el-option
+                v-for="item in autoMergeJenkinsTargetOptions"
+                :key="buildPipelineTargetKey(item.entryType, item.entryId)"
+                :label="`${item.displayName} (${item.providerCode})`"
+                :value="buildPipelineTargetKey(item.entryType, item.entryId)"
+              />
+            </el-option-group>
+          </el-select>
+        </el-form-item>
+        </div>
+      </section>
+    </el-form>
+    <template #footer>
+      <div class="platform-dialog-footer mobile-form-drawer-footer">
+        <el-button v-if="autoMergeIsEditing && currentAutoMergeId !== null" class="mobile-form-drawer-footer-btn" @click="openAutoMergeWebhookDialog(currentAutoMergeId)">管理 Webhook</el-button>
+        <el-button class="mobile-form-drawer-footer-btn" @click="autoMergeDialogVisible = false">{{ autoMergeReadonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!autoMergeReadonlyMode" class="mobile-form-drawer-footer-btn is-primary" type="primary" :loading="autoMergeSubmitting" @click="handleAutoMergeSubmit">保存</el-button>
+      </div>
+    </template>
+  </MobileFormDrawer>
+
+  <!-- 自动合并外发 Webhook 管理 dialog：按配置维度展示已挂的全部 Webhook，并提供新增/编辑/删除/测试入口。 -->
+  <el-dialog v-model="autoMergeWebhookDialogVisible" title="Webhook 通知" :width="isMobileViewport ? '92%' : '760px'" class="platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader title="Webhook 通知" subtitle="自动合并产生事件后异步投递到这里配置的地址。" :icon="Bell" />
+    </template>
+    <div class="auto-merge-webhook-toolbar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <span class="form-tip">合并成功 / AI 拒绝 / 失败 / 跳过 等事件可分别订阅；模板留空则发通用 JSON。</span>
+      <el-button type="primary" :icon="Plus" @click="openAutoMergeWebhookCreate">新增 Webhook</el-button>
+    </div>
+    <el-table v-loading="autoMergeWebhookListLoading" :data="autoMergeWebhookList" empty-text="尚未配置 Webhook" size="small" stripe>
+      <el-table-column prop="name" label="名称" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="targetUrlMasked" label="地址（脱敏）" min-width="180" show-overflow-tooltip />
+      <el-table-column label="订阅事件" min-width="180">
+        <template #default="{ row }">
+          <el-tag v-for="ev in row.subscribedEvents" :key="ev" type="info" size="small" style="margin-right:4px;margin-bottom:2px;">
+            {{ autoMergeWebhookEventLabel(ev) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="启用" width="70">
+        <template #default="{ row }">
+          <el-tag :type="row.enabled ? 'success' : 'info'" size="small">{{ row.enabled ? '启用' : '停用' }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="最近投递" min-width="160">
+        <template #default="{ row }">
+          <div v-if="row.lastDeliveryAt" style="font-size:12px;line-height:1.4;">
+            <div>{{ row.lastDeliveryAt }}</div>
+            <el-tag :type="autoMergeWebhookStatusKind(row.lastDeliveryStatus)" size="small">{{ row.lastDeliveryStatus || '-' }}</el-tag>
+          </div>
+          <span v-else style="color:#909399;font-size:12px;">尚未投递</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="200">
+        <template #default="{ row }">
+          <el-button link type="primary" @click="handleAutoMergeWebhookTest(row)">测试</el-button>
+          <el-button link type="primary" @click="openAutoMergeWebhookEdit(row)">编辑</el-button>
+          <el-button link type="danger" @click="handleAutoMergeWebhookDelete(row)">删除</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+    <template #footer>
+      <div class="platform-dialog-footer">
+        <el-button @click="autoMergeWebhookDialogVisible = false">关闭</el-button>
+      </div>
+    </template>
+  </el-dialog>
+
+  <!-- 自动合并 Webhook 新增/编辑子 dialog；URL 出于安全只在新增/更新时携带明文，编辑时不会回填。 -->
+  <el-dialog v-model="autoMergeWebhookEditDialogVisible" :title="autoMergeWebhookEditingId !== null ? '编辑 Webhook' : '新增 Webhook'" :width="isMobileViewport ? '92%' : '600px'" class="platform-form-dialog" append-to-body align-center>
+    <el-form ref="autoMergeWebhookFormRef" :model="autoMergeWebhookForm" :rules="autoMergeWebhookRules" label-position="top">
+      <el-form-item label="名称" prop="name">
+        <el-input v-model="autoMergeWebhookForm.name" maxlength="120" show-word-limit placeholder="例如：发布群通知" />
+      </el-form-item>
+      <el-form-item label="Webhook 地址" prop="targetUrl">
+        <el-input v-model="autoMergeWebhookForm.targetUrl" maxlength="1000" :placeholder="autoMergeWebhookEditingId !== null ? '编辑模式下需重新输入完整地址' : 'https://…'" />
+        <div class="form-tip">支持钉钉/飞书/企业微信群机器人或自建接收端；签名 token 直接拼到 URL 中，落库时整体加密。</div>
+      </el-form-item>
+      <el-form-item label="订阅事件" prop="subscribedEvents">
+        <el-checkbox-group v-model="autoMergeWebhookForm.subscribedEvents">
+          <el-checkbox v-for="opt in GITLAB_AUTO_MERGE_WEBHOOK_EVENT_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</el-checkbox>
+        </el-checkbox-group>
+      </el-form-item>
+      <el-form-item label="自定义消息模板">
+        <el-input
+          v-model="autoMergeWebhookForm.messageTemplate"
+          type="textarea"
+          :rows="4"
+          maxlength="4000"
+          show-word-limit
+          :placeholder="autoMergeWebhookTemplatePlaceholder"
+        />
+        <div class="form-tip">填写后自动包装为钉钉/飞书/企微 text 机器人结构 <code>{&quot;msgtype&quot;:&quot;text&quot;,&quot;text&quot;:{&quot;content&quot;:&quot;渲染结果&quot;}}</code>。</div>
+      </el-form-item>
+      <el-form-item label="启用">
+        <el-switch v-model="autoMergeWebhookForm.enabled" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <div class="platform-dialog-footer">
+        <el-button @click="autoMergeWebhookEditDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="autoMergeWebhookSubmitting" @click="handleAutoMergeWebhookSubmit">保存</el-button>
+      </div>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-if="!isMobileViewport" v-model="productBranchDialogVisible" :title="productBranchDialogTitle" width="680px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="productBranchDialogTitle" :subtitle="productBranchDialogSubtitle" :icon="FolderOpened" />
     </template>
@@ -1500,7 +2145,47 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="productBranchSyncDialogVisible" title="批量同步主线到分线" width="720px" class="platform-form-dialog" align-center>
+  <!-- 移动端主线/分线绑定抽屉。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && productBranchDialogVisible"
+    v-model="productBranchDialogVisible"
+    :title="productBranchDialogTitle"
+    :subtitle="productBranchDialogSubtitle"
+    :submit-text="'保存'"
+    :submitting="productBranchSubmitting"
+    :header-icon="FolderOpened"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleProductBranchSubmit"
+    @cancel="productBranchDialogVisible = false"
+  >
+    <el-form ref="productBranchFormRef" :model="productBranchForm" :rules="productBranchRules" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">分线信息</div>
+          <div class="platform-form-section-subtitle">维护产品线编码、名称和对应的 Git 分支。</div>
+        </div>
+        <el-form-item label="当前绑定">
+          <el-input :model-value="currentProductBinding ? `${currentProductBinding.projectName} / ${currentProductBinding.gitlabProjectPath || currentProductBinding.gitlabProjectRef}` : ''" disabled />
+          <div class="form-tip">产品主线：{{ currentProductBinding?.productMainBranch || '未配置' }}</div>
+        </el-form-item>
+        <el-form-item label="产品线编码" prop="lineCode">
+          <el-input v-model="productBranchForm.lineCode" placeholder="例如：line-a" />
+        </el-form-item>
+        <el-form-item label="产品线名称" prop="lineName">
+          <el-input v-model="productBranchForm.lineName" placeholder="例如：A 产品线" />
+        </el-form-item>
+        <el-form-item label="分线分支" prop="branchName">
+          <el-input v-model="productBranchForm.branchName" placeholder="例如：release/a" />
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="productBranchForm.enabled" />
+        </el-form-item>
+      </section>
+    </el-form>
+  </MobileFormDrawer>
+
+  <el-dialog v-if="!isMobileViewport" v-model="productBranchSyncDialogVisible" title="批量同步主线到分线" width="720px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader title="批量同步主线到分线" subtitle="系统会按所选产品分线创建主线同步 MR，并返回逐条结果。" :icon="Connection" />
     </template>
@@ -1525,6 +2210,36 @@
       </div>
     </template>
   </el-dialog>
+
+  <!-- 移动端批量同步主线到分线抽屉。 -->
+  <MobileFormDrawer
+    v-else-if="isMobileViewport && productBranchSyncDialogVisible"
+    v-model="productBranchSyncDialogVisible"
+    title="批量同步主线到分线"
+    subtitle="系统会按所选产品分线创建主线同步 MR，并返回逐条结果。"
+    :submit-text="'创建同步 MR'"
+    :submitting="productBranchSyncSubmitting"
+    :header-icon="Connection"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleProductBranchSyncSubmit"
+    @cancel="productBranchSyncDialogVisible = false"
+  >
+    <section class="platform-form-section">
+      <div class="platform-form-section-head">
+        <div class="platform-form-section-title">同步范围</div>
+        <div class="platform-form-section-subtitle">本次同步会以当前绑定的产品主线为源分支。</div>
+      </div>
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="当前绑定">{{ currentProductBinding ? `${currentProductBinding.projectName} / ${currentProductBinding.gitlabProjectPath || currentProductBinding.gitlabProjectRef}` : '-' }}</el-descriptions-item>
+        <el-descriptions-item label="产品主线">{{ currentProductBinding?.productMainBranch || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="目标分线数">{{ selectedProductBranchIds.length }}</el-descriptions-item>
+        <el-descriptions-item label="目标列表">
+          {{ productBranchList.filter((item) => selectedProductBranchIds.includes(item.id)).map((item) => item.lineName).join('、') || '-' }}
+        </el-descriptions-item>
+      </el-descriptions>
+    </section>
+  </MobileFormDrawer>
 
   <el-drawer v-model="productBranchSyncLogsVisible" title="产品分支同步日志" size="56%" append-to-body>
     <el-table :data="productBranchSyncLogs" v-loading="productBranchSyncLogsLoading" style="width: 100%">
@@ -1648,9 +2363,11 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Connection, Delete, DocumentCopy, EditPen, Filter, FolderOpened, Plus, RefreshRight, Search, Share, Tickets, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Bell, Connection, Delete, DocumentCopy, EditPen, Filter, FolderOpened, Plus, QuestionFilled, RefreshRight, Search, Share, Tickets, VideoPlay } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
+import { pagePipelineCenterEntries } from '@/api/cicd'
 import { listAgentOptions, listProjectOptions } from '@/api/platform'
 import {
   createGitlabAutoMergeConfig,
@@ -1678,24 +2395,34 @@ import {
   testGitlabBinding,
   updateGitlabAutoMergeConfig,
   updateGitlabBinding,
-  updateGitlabProductBranch
+  updateGitlabProductBranch,
+  listAutoMergeWebhooks,
+  createAutoMergeWebhook,
+  updateAutoMergeWebhook,
+  deleteAutoMergeWebhook,
+  testAutoMergeWebhook
 } from '@/api/gitlab'
+import type { GitlabAutoMergePipelineTargetPayload } from '@/api/gitlab'
 import type {
   AgentItem,
   GitlabAutoMergeConfigItem,
   GitlabAutoMergeLogItem,
+  GitlabAutoMergePipelineTargetItem,
   GitlabAutoMergeRunResult,
   GitlabApiSyncResultItem,
   GitlabBranchItem,
   GitlabMergeRequestItem,
+  PipelineCenterEntryItem,
   GitlabProductBranchItem,
   GitlabProductBranchSyncLogItem,
   GitlabProductBranchSyncRunResult,
   GitlabTagCreateResultItem,
+  GitlabAutoMergeWebhookItem,
   ProjectGitlabBindingItem,
   ProjectItem,
   RepositoryScanRulesetItem
 } from '@/types/platform'
+import { GITLAB_AUTO_MERGE_WEBHOOK_EVENT_OPTIONS } from '@/types/platform'
 import { renderMarkdownToHtml } from '@/utils/markdown'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
@@ -1703,6 +2430,8 @@ import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 const DEFAULT_GITLAB_API_URL = 'http://192.168.110.138:30080/api/v4'
 
 type BindingRepoKind = '' | 'FRONTEND' | 'BACKEND' | 'MIXED'
+type ReviewStrictness = 'HIGH' | 'MEDIUM' | 'LOW'
+type AutoMergePipelineTargetType = 'AI_CLUB' | 'JENKINS'
 
 interface BindingHttpCheckForm { name: string; method: string; path: string; expectedStatus: number }
 interface BindingForm {
@@ -1729,7 +2458,7 @@ interface TagForm { tagName: string; branchName: string; message: string }
 interface ScanTaskForm { branch: string; rulesetCode: string; planAgentId: number | null }
 /** 同步 API 表单只需要确认目标分支。 */
 interface ApiSyncForm { branch: string }
-interface AutoMergeForm { name: string; executionMode: 'PROJECT_BOUND' | 'STANDALONE'; description: string; bindingId: number | null; apiBaseUrl: string; gitlabProjectRef: string; apiToken: string; sourceBranch: string; targetBranch: string; titleKeyword: string; schedulerEnabled: boolean; schedulerCron: string; enabled: boolean; autoMerge: boolean; squashOnMerge: boolean; removeSourceBranch: boolean; triggerPipelineAfterMerge: boolean; requirePipelineSuccess: boolean; reviewAgentId: number | null; aiReviewEnabled: boolean; aiReviewPrompt: string }
+interface AutoMergeForm { name: string; executionMode: 'PROJECT_BOUND' | 'STANDALONE'; description: string; bindingId: number | null; apiBaseUrl: string; gitlabProjectRef: string; apiToken: string; sourceBranch: string; targetBranch: string; titleKeyword: string; schedulerEnabled: boolean; schedulerCron: string; enabled: boolean; autoMerge: boolean; squashOnMerge: boolean; removeSourceBranch: boolean; triggerPipelineAfterMerge: boolean; requirePipelineSuccess: boolean; reviewAgentId: number | null; aiReviewEnabled: boolean; aiReviewPrompt: string; reviewStrictness: ReviewStrictness; pipelineTargets: GitlabAutoMergePipelineTargetPayload[] }
 interface ProductBranchForm { lineCode: string; lineName: string; branchName: string; enabled: boolean }
 
 const router = useRouter()
@@ -1849,8 +2578,88 @@ const {
 })
 const autoMergeFilters = reactive({ keyword: '', executionMode: undefined as 'PROJECT_BOUND' | 'STANDALONE' | undefined, enabled: undefined as boolean | undefined })
 const autoMergeFilterPopoverVisible = ref(false)
-const autoMergeForm = reactive<AutoMergeForm>({ name: '', executionMode: 'PROJECT_BOUND', description: '', bindingId: null, apiBaseUrl: DEFAULT_GITLAB_API_URL, gitlabProjectRef: '', apiToken: '', sourceBranch: '', targetBranch: '', titleKeyword: '', schedulerEnabled: false, schedulerCron: '0 */5 * * * *', enabled: true, autoMerge: true, squashOnMerge: false, removeSourceBranch: true, triggerPipelineAfterMerge: false, requirePipelineSuccess: true, reviewAgentId: null, aiReviewEnabled: false, aiReviewPrompt: '' })
+const autoMergeForm = reactive<AutoMergeForm>({ name: '', executionMode: 'PROJECT_BOUND', description: '', bindingId: null, apiBaseUrl: DEFAULT_GITLAB_API_URL, gitlabProjectRef: '', apiToken: '', sourceBranch: '', targetBranch: '', titleKeyword: '', schedulerEnabled: false, schedulerCron: '0 */5 * * * *', enabled: true, autoMerge: true, squashOnMerge: false, removeSourceBranch: true, triggerPipelineAfterMerge: false, requirePipelineSuccess: true, reviewAgentId: null, aiReviewEnabled: false, aiReviewPrompt: '', reviewStrictness: 'MEDIUM', pipelineTargets: [] })
+const autoMergePipelineTargetOptions = ref<PipelineCenterEntryItem[]>([])
+const autoMergePipelineTargetLoading = ref(false)
+const autoMergePipelineTargetProjectId = ref<number | null>(null)
 const cronTemplate = ref('')
+// ===== 自动合并外发 Webhook 管理 dialog 状态 =====
+interface AutoMergeWebhookForm {
+  name: string
+  targetUrl: string
+  subscribedEvents: string[]
+  messageTemplate: string
+  enabled: boolean
+}
+const autoMergeWebhookDialogVisible = ref(false)
+const autoMergeWebhookConfigId = ref<number | null>(null)
+const autoMergeWebhookList = ref<GitlabAutoMergeWebhookItem[]>([])
+const autoMergeWebhookListLoading = ref(false)
+const autoMergeWebhookEditDialogVisible = ref(false)
+const autoMergeWebhookEditingId = ref<number | null>(null)
+const autoMergeWebhookSubmitting = ref(false)
+const autoMergeWebhookForm = reactive<AutoMergeWebhookForm>({
+  name: '',
+  targetUrl: '',
+  subscribedEvents: ['MERGED', 'AI_REJECTED', 'FAILED'],
+  messageTemplate: '',
+  enabled: true
+})
+const autoMergeWebhookFormRef = ref<any>(null)
+const autoMergeWebhookRules = {
+  name: [{ required: true, message: '请输入 Webhook 名称', trigger: 'blur' }],
+  targetUrl: [
+    { required: true, message: '请输入 Webhook 地址', trigger: 'blur' },
+    { pattern: /^https?:\/\/.+/i, message: '地址必须以 http:// 或 https:// 开头', trigger: 'blur' }
+  ],
+  subscribedEvents: [{ required: true, type: 'array', min: 1, message: '请至少选择一个订阅事件', trigger: 'change' }]
+}
+const buildPipelineTargetKey = (targetType: string, targetId: number | null | undefined) =>
+  targetId ? `${targetType}:${targetId}` : ''
+const parsePipelineTargetKey = (value: string): GitlabAutoMergePipelineTargetPayload | null => {
+  const [targetType, rawTargetId] = value.split(':')
+  const targetId = Number(rawTargetId)
+  if ((targetType !== 'AI_CLUB' && targetType !== 'JENKINS') || !Number.isFinite(targetId) || targetId <= 0) {
+    return null
+  }
+  return { targetType: targetType as AutoMergePipelineTargetType, targetId }
+}
+const autoMergeSelectedPipelineKeys = computed<string[]>({
+  get: () => autoMergeForm.pipelineTargets.map((item) => buildPipelineTargetKey(item.targetType, item.targetId)).filter(Boolean),
+  set: (values) => {
+    autoMergeForm.pipelineTargets = values
+      .map((value) => parsePipelineTargetKey(value))
+      .filter((item): item is GitlabAutoMergePipelineTargetPayload => item !== null)
+  }
+})
+const autoMergeAiClubTargetOptions = computed(() =>
+  autoMergePipelineTargetOptions.value.filter((item) => item.entryType === 'AI_CLUB')
+)
+const autoMergeJenkinsTargetOptions = computed(() =>
+  autoMergePipelineTargetOptions.value.filter((item) => item.entryType === 'JENKINS')
+)
+const autoMergeWebhookEventLabel = (value: string) => {
+  const matched = GITLAB_AUTO_MERGE_WEBHOOK_EVENT_OPTIONS.find(item => item.value === value)
+  return matched ? matched.label : value
+}
+const autoMergeWebhookStatusKind = (status: string | null | undefined) => {
+  if (!status) return 'info'
+  if (status === 'SUCCESS') return 'success'
+  return status.startsWith('FAILED') ? 'danger' : 'warning'
+}
+// 在常量里拼模板占位符提示，避免 Vue 模板把 {{ ... }} 当成插值表达式
+const autoMergeWebhookTemplatePlaceholder = '留空则发送通用 JSON。支持占位符：'
+  + '{' + '{event}} '
+  + '{' + '{configName}} '
+  + '{' + '{projectRef}} '
+  + '{' + '{mergeRequestIid}} '
+  + '{' + '{mergeRequestTitle}} '
+  + '{' + '{mergeRequestAuthor}} '
+  + '{' + '{result}} '
+  + '{' + '{reason}} '
+  + '{' + '{webUrl}} '
+  + '{' + '{executedAt}} '
+  + '{' + '{triggerType}}'
 const logLoading = ref(false)
 const logList = ref<GitlabAutoMergeLogItem[]>([])
 const logPagination = reactive({ page: 1, size: 10, total: 0 })
@@ -2024,6 +2833,21 @@ watch(() => autoMergeForm.executionMode, (mode) => {
   } else {
     autoMergeForm.bindingId = null
     autoMergeForm.triggerPipelineAfterMerge = false
+    autoMergeForm.pipelineTargets = []
+    autoMergePipelineTargetOptions.value = []
+    autoMergePipelineTargetProjectId.value = null
+  }
+})
+
+watch(() => autoMergeForm.bindingId, async (bindingId, previousBindingId) => {
+  if (bindingId === previousBindingId) return
+  autoMergeForm.pipelineTargets = []
+  await loadAutoMergePipelineTargetOptions(bindingId)
+})
+
+watch(() => autoMergeForm.triggerPipelineAfterMerge, (enabled) => {
+  if (!enabled) {
+    autoMergeForm.pipelineTargets = []
   }
 })
 
@@ -2071,6 +2895,7 @@ const formatRunStatusLabel = (status?: string | null) => status === 'SUCCESS' ? 
 const getBindingProjectUrl = (row: ProjectGitlabBindingItem) => resolveGitlabProjectUrl(row.gitlabProjectWebUrl, row.apiBaseUrl, row.gitlabProjectPath || row.gitlabProjectRef)
 const buildBindingSubtitle = (row: ProjectGitlabBindingItem) => `${row.projectName}${row.gitlabProjectName ? ` · ${row.gitlabProjectName}` : ''}${row.tokenConfigured ? '' : ' · Token 未配置'}`
 const buildAutoMergeSubtitle = (row: GitlabAutoMergeConfigItem) => row.description || `${row.projectName || '独立运行'} · ${row.gitlabProjectRef}`
+const formatReviewStrictnessLabel = (value?: ReviewStrictness | string | null) => value === 'HIGH' ? '高' : value === 'LOW' ? '低' : '中'
 const buildLogSubtitle = (row: GitlabAutoMergeLogItem) => {
   const segments = [formatDateTimeText(row.executedAt)]
   if (row.mergeRequestIid) {
@@ -2119,7 +2944,69 @@ const resetProductBranchForm = () => {
   productBranchForm.enabled = true
   productBranchFormRef.value?.clearValidate()
 }
-const resetAutoMergeForm = () => { currentAutoMergeId.value = null; autoMergeForm.name = ''; autoMergeForm.executionMode = 'PROJECT_BOUND'; autoMergeForm.description = ''; autoMergeForm.bindingId = bindingOptions.value[0]?.id ?? null; autoMergeForm.apiBaseUrl = DEFAULT_GITLAB_API_URL; autoMergeForm.gitlabProjectRef = ''; autoMergeForm.apiToken = ''; autoMergeForm.sourceBranch = ''; autoMergeForm.targetBranch = ''; autoMergeForm.titleKeyword = ''; autoMergeForm.schedulerEnabled = false; autoMergeForm.schedulerCron = '0 */5 * * * *'; autoMergeForm.enabled = true; autoMergeForm.autoMerge = true; autoMergeForm.squashOnMerge = false; autoMergeForm.removeSourceBranch = true; autoMergeForm.triggerPipelineAfterMerge = false; autoMergeForm.requirePipelineSuccess = true; autoMergeForm.reviewAgentId = reviewAgentOptions.value[0]?.id ?? null; autoMergeForm.aiReviewEnabled = false; autoMergeForm.aiReviewPrompt = ''; cronTemplate.value = ''; autoMergeFormRef.value?.clearValidate() }
+const resolveAutoMergeProjectId = (bindingId: number | null | undefined) =>
+  bindingOptions.value.find((item) => item.id === bindingId)?.projectId ?? null
+
+const loadAutoMergePipelineTargetOptions = async (bindingId: number | null | undefined) => {
+  const projectId = resolveAutoMergeProjectId(bindingId)
+  autoMergePipelineTargetProjectId.value = projectId
+  if (!projectId || autoMergeForm.executionMode !== 'PROJECT_BOUND') {
+    autoMergePipelineTargetOptions.value = []
+    return
+  }
+  autoMergePipelineTargetLoading.value = true
+  try {
+    const pageData = await pagePipelineCenterEntries({
+      page: 1,
+      size: 200,
+      projectId,
+      enabled: true
+    })
+    autoMergePipelineTargetOptions.value = pageData.records.filter((item) => item.entryType === 'AI_CLUB' || item.entryType === 'JENKINS')
+  } finally {
+    autoMergePipelineTargetLoading.value = false
+  }
+}
+
+const buildAutoMergePipelineSelectionText = (row: Pick<GitlabAutoMergeConfigItem, 'triggerPipelineAfterMerge' | 'pipelineTargets'>) => {
+  if (!row.triggerPipelineAfterMerge) return '关闭'
+  if (!row.pipelineTargets?.length) return '已开启，未配置目标'
+  if (row.pipelineTargets.length === 1) {
+    return `1 条：${row.pipelineTargets[0].targetName}`
+  }
+  return `已开启（${row.pipelineTargets.length} 条）`
+}
+
+const resetAutoMergeForm = () => {
+  currentAutoMergeId.value = null
+  autoMergeForm.name = ''
+  autoMergeForm.executionMode = 'PROJECT_BOUND'
+  autoMergeForm.description = ''
+  autoMergeForm.bindingId = bindingOptions.value[0]?.id ?? null
+  autoMergeForm.apiBaseUrl = DEFAULT_GITLAB_API_URL
+  autoMergeForm.gitlabProjectRef = ''
+  autoMergeForm.apiToken = ''
+  autoMergeForm.sourceBranch = ''
+  autoMergeForm.targetBranch = ''
+  autoMergeForm.titleKeyword = ''
+  autoMergeForm.schedulerEnabled = false
+  autoMergeForm.schedulerCron = '0 */5 * * * *'
+  autoMergeForm.enabled = true
+  autoMergeForm.autoMerge = true
+  autoMergeForm.squashOnMerge = false
+  autoMergeForm.removeSourceBranch = true
+  autoMergeForm.triggerPipelineAfterMerge = false
+  autoMergeForm.requirePipelineSuccess = true
+  autoMergeForm.reviewAgentId = reviewAgentOptions.value[0]?.id ?? null
+  autoMergeForm.aiReviewEnabled = false
+  autoMergeForm.aiReviewPrompt = ''
+  autoMergeForm.reviewStrictness = 'MEDIUM'
+  autoMergeForm.pipelineTargets = []
+  autoMergePipelineTargetOptions.value = []
+  autoMergePipelineTargetProjectId.value = resolveAutoMergeProjectId(autoMergeForm.bindingId)
+  cronTemplate.value = ''
+  autoMergeFormRef.value?.clearValidate()
+}
 
 const loadBaseOptions = async () => {
   const [projects, bindings, agents] = await Promise.all([listProjectOptions(), listGitlabBindingOptions(), listAgentOptions()])
@@ -2134,6 +3021,7 @@ const loadBaseOptions = async () => {
   if (currentProductBindingId.value && !bindingOptions.value.some((item) => item.id === currentProductBindingId.value)) {
     currentProductBindingId.value = bindingOptions.value[0]?.id ?? null
   }
+  await loadAutoMergePipelineTargetOptions(autoMergeForm.bindingId)
 }
 const loadBindings = async () => { bindingLoading.value = true; try { const pageData = await pageGitlabBindings({ page: bindingRequestPage.value, size: bindingRequestSize.value, keyword: bindingFilters.keyword, projectId: bindingFilters.projectId }); bindingList.value = pageData.records; bindingPagination.total = pageData.total } finally { bindingLoading.value = false } }
 const loadProductBranches = async () => {
@@ -2536,15 +3424,223 @@ const openProductBranchSyncLogs = async () => {
   }
 }
 
-const openAutoMergeCreateDialog = () => { autoMergeReadonlyMode.value = false; autoMergeIsEditing.value = false; resetAutoMergeForm(); autoMergeDialogVisible.value = true }
-const fillAutoMergeForm = (row: GitlabAutoMergeConfigItem) => { autoMergeIsEditing.value = true; currentAutoMergeId.value = row.id; autoMergeForm.name = row.name; autoMergeForm.executionMode = row.executionMode; autoMergeForm.description = row.description; autoMergeForm.bindingId = row.bindingId; autoMergeForm.apiBaseUrl = row.apiBaseUrl; autoMergeForm.gitlabProjectRef = row.executionMode === 'STANDALONE' ? row.gitlabProjectRef : ''; autoMergeForm.apiToken = ''; autoMergeForm.sourceBranch = row.sourceBranch || ''; autoMergeForm.targetBranch = row.targetBranch || ''; autoMergeForm.titleKeyword = row.titleKeyword || ''; autoMergeForm.schedulerEnabled = row.schedulerEnabled; autoMergeForm.schedulerCron = row.schedulerCron || '0 */5 * * * *'; autoMergeForm.enabled = row.enabled; autoMergeForm.autoMerge = row.autoMerge; autoMergeForm.squashOnMerge = row.squashOnMerge; autoMergeForm.removeSourceBranch = row.removeSourceBranch; autoMergeForm.triggerPipelineAfterMerge = row.triggerPipelineAfterMerge; autoMergeForm.requirePipelineSuccess = row.requirePipelineSuccess; autoMergeForm.reviewAgentId = row.reviewAgentId; autoMergeForm.aiReviewEnabled = row.aiReviewEnabled; autoMergeForm.aiReviewPrompt = row.aiReviewPrompt || ''; cronTemplate.value = '' }
-const openAutoMergeDetailDialog = (row: GitlabAutoMergeConfigItem) => { autoMergeReadonlyMode.value = true; fillAutoMergeForm(row); autoMergeDialogVisible.value = true }
-const openAutoMergeEditDialog = (row: GitlabAutoMergeConfigItem) => { autoMergeReadonlyMode.value = false; fillAutoMergeForm(row); autoMergeDialogVisible.value = true }
-const handleAutoMergeSubmit = async () => { const valid = await autoMergeFormRef.value?.validate().catch(() => false); if (!valid) return; if (autoMergeForm.executionMode === 'PROJECT_BOUND' && !autoMergeForm.bindingId) { ElMessage.warning('关联业务项目模式必须选择 GitLab 绑定'); return } if (autoMergeForm.executionMode === 'STANDALONE') { if (!autoMergeForm.apiBaseUrl.trim() || !autoMergeForm.gitlabProjectRef.trim()) { ElMessage.warning('独立运行模式必须填写 GitLab API 和项目标识'); return } if (!autoMergeIsEditing.value && !autoMergeForm.apiToken.trim()) { ElMessage.warning('独立运行模式新增时必须填写 APIToken'); return } if (autoMergeForm.triggerPipelineAfterMerge) { ElMessage.warning('独立运行模式不支持合并后自动触发流水线'); return } } if (autoMergeForm.schedulerEnabled && !autoMergeForm.schedulerCron.trim()) { ElMessage.warning('启用调度时必须填写 Cron 表达式'); return } if (autoMergeForm.aiReviewEnabled && !autoMergeForm.reviewAgentId) { ElMessage.warning('启用 AI Review 时必须选择模型'); return } autoMergeSubmitting.value = true; try { const payload = { ...autoMergeForm, schedulerCron: autoMergeForm.schedulerCron.trim() }; if (autoMergeIsEditing.value && currentAutoMergeId.value !== null) { await updateGitlabAutoMergeConfig(currentAutoMergeId.value, payload); ElMessage.success('自动合并策略已更新') } else { await createGitlabAutoMergeConfig(payload); ElMessage.success('自动合并策略已创建') } autoMergeDialogVisible.value = false; await refreshAll() } catch (error: any) { ElMessage.error(error?.response?.data?.message || '保存失败') } finally { autoMergeSubmitting.value = false } }
+const openAutoMergeCreateDialog = async () => {
+  autoMergeReadonlyMode.value = false
+  autoMergeIsEditing.value = false
+  resetAutoMergeForm()
+  await loadAutoMergePipelineTargetOptions(autoMergeForm.bindingId)
+  autoMergeDialogVisible.value = true
+}
+const fillAutoMergeForm = async (row: GitlabAutoMergeConfigItem) => {
+  autoMergeIsEditing.value = true
+  currentAutoMergeId.value = row.id
+  autoMergeForm.name = row.name
+  autoMergeForm.executionMode = row.executionMode
+  autoMergeForm.description = row.description
+  autoMergeForm.bindingId = row.bindingId
+  autoMergeForm.apiBaseUrl = row.apiBaseUrl
+  autoMergeForm.gitlabProjectRef = row.executionMode === 'STANDALONE' ? row.gitlabProjectRef : ''
+  autoMergeForm.apiToken = ''
+  autoMergeForm.sourceBranch = row.sourceBranch || ''
+  autoMergeForm.targetBranch = row.targetBranch || ''
+  autoMergeForm.titleKeyword = row.titleKeyword || ''
+  autoMergeForm.schedulerEnabled = row.schedulerEnabled
+  autoMergeForm.schedulerCron = row.schedulerCron || '0 */5 * * * *'
+  autoMergeForm.enabled = row.enabled
+  autoMergeForm.autoMerge = row.autoMerge
+  autoMergeForm.squashOnMerge = row.squashOnMerge
+  autoMergeForm.removeSourceBranch = row.removeSourceBranch
+  autoMergeForm.triggerPipelineAfterMerge = row.triggerPipelineAfterMerge
+  autoMergeForm.requirePipelineSuccess = row.requirePipelineSuccess
+  autoMergeForm.reviewAgentId = row.reviewAgentId
+  autoMergeForm.aiReviewEnabled = row.aiReviewEnabled
+  autoMergeForm.aiReviewPrompt = row.aiReviewPrompt || ''
+  autoMergeForm.reviewStrictness = row.reviewStrictness || 'MEDIUM'
+  autoMergeForm.pipelineTargets = (row.pipelineTargets || []).map((item) => ({
+    targetType: item.targetType as AutoMergePipelineTargetType,
+    targetId: item.targetId
+  }))
+  cronTemplate.value = ''
+  await loadAutoMergePipelineTargetOptions(row.bindingId)
+}
+const openAutoMergeDetailDialog = async (row: GitlabAutoMergeConfigItem) => {
+  autoMergeReadonlyMode.value = true
+  await fillAutoMergeForm(row)
+  autoMergeDialogVisible.value = true
+}
+const openAutoMergeEditDialog = async (row: GitlabAutoMergeConfigItem) => {
+  autoMergeReadonlyMode.value = false
+  await fillAutoMergeForm(row)
+  autoMergeDialogVisible.value = true
+}
+const handleAutoMergeSubmit = async () => {
+  const valid = await autoMergeFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+  if (autoMergeForm.executionMode === 'PROJECT_BOUND' && !autoMergeForm.bindingId) {
+    ElMessage.warning('关联业务项目模式必须选择 GitLab 绑定')
+    return
+  }
+  if (autoMergeForm.executionMode === 'PROJECT_BOUND' && autoMergeForm.triggerPipelineAfterMerge && autoMergeForm.pipelineTargets.length === 0) {
+    ElMessage.warning('开启合并后触发流水线时，必须至少选择 1 条目标流水线')
+    return
+  }
+  if (autoMergeForm.executionMode === 'STANDALONE') {
+    if (!autoMergeForm.apiBaseUrl.trim() || !autoMergeForm.gitlabProjectRef.trim()) {
+      ElMessage.warning('独立运行模式必须填写 GitLab API 和项目标识')
+      return
+    }
+    if (!autoMergeIsEditing.value && !autoMergeForm.apiToken.trim()) {
+      ElMessage.warning('独立运行模式新增时必须填写 APIToken')
+      return
+    }
+    if (autoMergeForm.triggerPipelineAfterMerge) {
+      ElMessage.warning('独立运行模式不支持合并后自动触发流水线')
+      return
+    }
+  }
+  if (autoMergeForm.schedulerEnabled && !autoMergeForm.schedulerCron.trim()) {
+    ElMessage.warning('启用调度时必须填写 Cron 表达式')
+    return
+  }
+  if (autoMergeForm.aiReviewEnabled && !autoMergeForm.reviewAgentId) {
+    ElMessage.warning('启用 AI Review 时必须选择模型')
+    return
+  }
+  if (!autoMergeForm.aiReviewEnabled) {
+    autoMergeForm.reviewStrictness = 'MEDIUM'
+  }
+  autoMergeSubmitting.value = true
+  try {
+    const payload = {
+      ...autoMergeForm,
+      schedulerCron: autoMergeForm.schedulerCron.trim(),
+      pipelineTargets: autoMergeForm.triggerPipelineAfterMerge ? autoMergeForm.pipelineTargets : []
+    }
+    if (autoMergeIsEditing.value && currentAutoMergeId.value !== null) {
+      await updateGitlabAutoMergeConfig(currentAutoMergeId.value, payload)
+      ElMessage.success('自动合并策略已更新')
+    } else {
+      await createGitlabAutoMergeConfig(payload)
+      ElMessage.success('自动合并策略已创建')
+    }
+    autoMergeDialogVisible.value = false
+    await refreshAll()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '保存失败')
+  } finally {
+    autoMergeSubmitting.value = false
+  }
+}
 const handleAutoMergeDelete = async (id: number) => { try { await ElMessageBox.confirm('确认删除该自动合并策略吗？', '提示', { type: 'warning' }); await deleteGitlabAutoMergeConfig(id); ElMessage.success('自动合并策略已删除'); await refreshAll() } catch (error: any) { if (error !== 'cancel') ElMessage.error(error?.response?.data?.message || '删除失败') } }
 const handleAutoMergeTest = async (id: number) => { try { await testGitlabAutoMergeConfig(id); ElMessage.success('策略测试成功') } catch (error: any) { ElMessage.error(error?.response?.data?.message || '策略测试失败') } }
 const openAutoMergeMergeRequests = async (row: GitlabAutoMergeConfigItem) => { mergeRequestDrawerTitle.value = `自动合并 MR 预览 - ${row.name}`; mergeRequestDrawerVisible.value = true; mergeRequestLoading.value = true; try { mergeRequestList.value = await previewAutoMergeConfigMergeRequests(row.id) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '加载 MR 失败') } finally { mergeRequestLoading.value = false } }
 const handleAutoMergeRun = async (id: number) => { try { const result = await runAutoMergeConfig(id); runResult.value = result; runResultVisible.value = true; ElMessage.success(`执行完成：成功 ${result.mergedCount}，未合并 ${result.skippedCount}`); await Promise.all([loadAutoMergeConfigs(), loadAutoMergeLogs()]) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '执行失败'); await loadAutoMergeLogs() } }
+
+// ===== 自动合并外发 Webhook 管理 =====
+/** 重置编辑表单到默认值。 */
+const resetAutoMergeWebhookForm = () => {
+  autoMergeWebhookEditingId.value = null
+  autoMergeWebhookForm.name = ''
+  autoMergeWebhookForm.targetUrl = ''
+  autoMergeWebhookForm.subscribedEvents = ['MERGED', 'AI_REJECTED', 'FAILED']
+  autoMergeWebhookForm.messageTemplate = ''
+  autoMergeWebhookForm.enabled = true
+}
+
+/** 加载指定配置下的全部 Webhook。 */
+const loadAutoMergeWebhookList = async () => {
+  if (autoMergeWebhookConfigId.value === null) return
+  autoMergeWebhookListLoading.value = true
+  try {
+    autoMergeWebhookList.value = await listAutoMergeWebhooks(autoMergeWebhookConfigId.value)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载 Webhook 失败')
+  } finally {
+    autoMergeWebhookListLoading.value = false
+  }
+}
+
+/** 行操作：打开 Webhook 管理 dialog。 */
+const openAutoMergeWebhookDialog = async (configId: number) => {
+  autoMergeWebhookConfigId.value = configId
+  autoMergeWebhookList.value = []
+  autoMergeWebhookDialogVisible.value = true
+  await loadAutoMergeWebhookList()
+}
+
+/** 打开新建 Webhook 子 dialog。 */
+const openAutoMergeWebhookCreate = () => {
+  resetAutoMergeWebhookForm()
+  autoMergeWebhookEditDialogVisible.value = true
+}
+
+/** 打开编辑 Webhook 子 dialog；URL 出于安全考虑不会回填，需要重新填写。 */
+const openAutoMergeWebhookEdit = (row: GitlabAutoMergeWebhookItem) => {
+  autoMergeWebhookEditingId.value = row.id
+  autoMergeWebhookForm.name = row.name
+  autoMergeWebhookForm.targetUrl = ''
+  autoMergeWebhookForm.subscribedEvents = (row.subscribedEvents || []).slice()
+  autoMergeWebhookForm.messageTemplate = row.messageTemplate || ''
+  autoMergeWebhookForm.enabled = row.enabled
+  autoMergeWebhookEditDialogVisible.value = true
+}
+
+/** 保存（新建/更新）。 */
+const handleAutoMergeWebhookSubmit = async () => {
+  const valid = await autoMergeWebhookFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+  if (autoMergeWebhookConfigId.value === null) return
+  autoMergeWebhookSubmitting.value = true
+  try {
+    const payload = {
+      name: autoMergeWebhookForm.name.trim(),
+      targetUrl: autoMergeWebhookForm.targetUrl.trim(),
+      subscribedEvents: autoMergeWebhookForm.subscribedEvents.slice(),
+      messageTemplate: autoMergeWebhookForm.messageTemplate.trim() || null,
+      enabled: autoMergeWebhookForm.enabled
+    }
+    if (autoMergeWebhookEditingId.value !== null) {
+      await updateAutoMergeWebhook(autoMergeWebhookEditingId.value, payload)
+      ElMessage.success('Webhook 已更新')
+    } else {
+      await createAutoMergeWebhook(autoMergeWebhookConfigId.value, payload)
+      ElMessage.success('Webhook 已创建')
+    }
+    autoMergeWebhookEditDialogVisible.value = false
+    await loadAutoMergeWebhookList()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '保存失败')
+  } finally {
+    autoMergeWebhookSubmitting.value = false
+  }
+}
+
+/** 删除一条 Webhook。 */
+const handleAutoMergeWebhookDelete = async (row: GitlabAutoMergeWebhookItem) => {
+  try {
+    await ElMessageBox.confirm(`确认删除 Webhook「${row.name}」吗？`, '提示', { type: 'warning' })
+    await deleteAutoMergeWebhook(row.id)
+    ElMessage.success('Webhook 已删除')
+    await loadAutoMergeWebhookList()
+  } catch (error: any) {
+    if (error !== 'cancel') ElMessage.error(error?.response?.data?.message || '删除失败')
+  }
+}
+
+/** 触发一次测试投递并刷新列表。 */
+const handleAutoMergeWebhookTest = async (row: GitlabAutoMergeWebhookItem) => {
+  try {
+    const result = await testAutoMergeWebhook(row.id)
+    if (result.lastDeliveryStatus === 'SUCCESS') {
+      ElMessage.success('测试投递成功')
+    } else {
+      ElMessage.warning(`测试投递结果：${result.lastDeliveryStatus || '未知'}`)
+    }
+    await loadAutoMergeWebhookList()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '测试投递失败')
+  }
+}
 
 const bindingSummary = computed(() => bindingOptions.value.length)
 const recentExecutionLogs = computed(() => logList.value.slice(0, 6))
@@ -3059,6 +4155,57 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 .auto-merge-form :deep(.el-divider__text) {
   font-weight: 600;
 }
+.auto-merge-label-with-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.2;
+}
+.auto-merge-help-icon {
+  color: #7a8ca4;
+  font-size: 15px;
+  transition: color 0.18s ease, transform 0.18s ease;
+}
+.auto-merge-help-icon:hover {
+  color: var(--app-tertiary);
+  transform: translateY(-1px);
+}
+.auto-merge-strictness-item :deep(.el-form-item__label),
+.auto-merge-strictness-item :deep(.el-form-item__content) {
+  align-items: center;
+}
+.auto-merge-strictness-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.auto-merge-strictness-group :deep(.el-radio-button) {
+  margin: 0;
+}
+.auto-merge-strictness-group :deep(.el-radio-button__inner) {
+  min-width: 44px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  border-radius: 999px !important;
+  background: #f3f5f7;
+  color: #5f6f82;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px rgba(25, 28, 29, 0.06) !important;
+}
+.auto-merge-strictness-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  background: var(--app-primary-container);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(var(--app-primary-container-rgb), 0.25) !important;
+}
+.auto-merge-strictness-group :deep(.el-radio-button.is-disabled .el-radio-button__inner) {
+  background: #f3f5f7;
+  color: #a6b0bd;
+  box-shadow: inset 0 0 0 1px rgba(25, 28, 29, 0.04) !important;
+}
 .card-header { justify-content: space-between; }
 .filter-form { margin-bottom: 18px; flex-wrap: wrap; }
 .pagination-wrap { justify-content: flex-end; margin-top: 20px; }
@@ -3105,6 +4252,45 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 .log-detail-markdown :deep(ol) { padding-left: 20px; margin: 0 0 12px; }
 .log-detail-markdown :deep(pre) { overflow: auto; padding: 12px; border-radius: 6px; background: var(--el-fill-color-light); }
 .log-detail-markdown :deep(code) { font-family: var(--app-font-mono); }
+
+.gitlab-share-dialog {
+  padding: 6px 4px 2px;
+}
+
+.gitlab-share-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 20px;
+}
+
+.gitlab-share-field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 18px 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(239, 244, 248, 0.92) 100%);
+  border: 1px solid rgba(125, 145, 170, 0.14);
+}
+
+.gitlab-share-field > span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #62738a;
+}
+
+.gitlab-share-field strong {
+  font-size: 18px;
+  color: #1d344d;
+}
+
+.gitlab-share-field-full {
+  grid-column: 1 / -1;
+}
+
+.gitlab-share-switch {
+  justify-content: space-between;
+}
 
 :deep(.el-dialog.gitlab-log-detail-dialog) {
   --platform-dialog-max-height: min(75vh, calc(100vh - 48px));
@@ -3209,6 +4395,14 @@ onMounted(async () => { await refreshAll(); if (bindingSummary.value === 0) acti
 
   .binding-http-check-actions {
     justify-content: space-between;
+  }
+
+  .gitlab-share-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gitlab-share-field-full {
+    grid-column: auto;
   }
 }
 </style>

@@ -71,7 +71,7 @@ class ProjectWorkItemStatsIntegrationTests {
                 1
         ));
 
-        platformStoreService.createTask(buildTaskRequest("需求通过", "需求", "通过", project.id(), iteration.id()));
+        platformStoreService.createTask(buildTaskRequest("需求完成", "需求", "已完成", project.id(), iteration.id()));
         platformStoreService.createTask(buildTaskRequest("需求草稿", "需求", "草稿", project.id(), iteration.id()));
         platformStoreService.createTask(buildTaskRequest("任务完成", "任务", "已完成", project.id(), iteration.id()));
         platformStoreService.createTask(buildTaskRequest("任务进行中", "任务", "进行中", project.id(), iteration.id()));
@@ -94,21 +94,21 @@ class ProjectWorkItemStatsIntegrationTests {
         assertThat(iterationStats.defectCount()).isEqualTo(1);
         assertThat(iterationStats.completionRate()).isEqualTo(60);
 
-        ProjectWorkItemStatsSummary passedStats = platformStoreService.getProjectWorkItemStats(
+        ProjectWorkItemStatsSummary completedStats = platformStoreService.getProjectWorkItemStats(
                 project.id(),
                 null,
                 null,
                 "全部",
                 null,
-                "通过",
+                "已完成",
                 null,
                 null
         );
-        assertThat(passedStats.totalCount()).isEqualTo(2);
-        assertThat(passedStats.completedCount()).isEqualTo(2);
-        assertThat(passedStats.openCount()).isZero();
-        assertThat(passedStats.defectCount()).isEqualTo(1);
-        assertThat(passedStats.completionRate()).isEqualTo(100);
+        assertThat(completedStats.totalCount()).isEqualTo(2);
+        assertThat(completedStats.completedCount()).isEqualTo(2);
+        assertThat(completedStats.openCount()).isZero();
+        assertThat(completedStats.defectCount()).isZero();
+        assertThat(completedStats.completionRate()).isEqualTo(100);
 
         ProjectWorkItemStatsSummary unplannedStats = platformStoreService.getProjectWorkItemStats(
                 project.id(),

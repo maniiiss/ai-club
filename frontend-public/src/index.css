@@ -1,0 +1,364 @@
+@import "tailwindcss";
+@import "./styles/tokens.css";
+
+/* Tailwind v4 主题扩展 */
+@theme {
+  --color-brand: var(--color-primary);
+  --color-brand-hover: var(--color-primary-hover);
+  --color-brand-light: var(--color-primary-light);
+}
+
+/* ── 全局基础样式 ── */
+html {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg-page);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ── 选中文字颜色 ── */
+::selection {
+  background-color: rgba(79, 70, 229, 0.15);
+}
+
+/* ── 入场动画 ── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideLeft {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slideLeft {
+  animation: slideLeft 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ── 自定义滚动条 — 默认隐藏，悬停/滚动时显示 ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 9999px;
+  transition: background 0.2s;
+}
+
+*:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.22);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ── 焦点可见性 ── */
+:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ── 链接 ── */
+a {
+  color: var(--color-text-link);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--color-primary-hover);
+}
+
+/* ── 工具类 ── */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── 页面内容区渐变背景（用于认证页等） ── */
+.bg-gradient-auth {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-500) 50%, var(--color-primary-700) 100%);
+}
+
+.bg-mesh {
+  background-image:
+    radial-gradient(at 20% 80%, color-mix(in srgb, var(--color-primary) 15%, transparent) 0, transparent 50%),
+    radial-gradient(at 80% 20%, color-mix(in srgb, var(--color-primary-500) 12%, transparent) 0, transparent 50%),
+    radial-gradient(at 50% 50%, color-mix(in srgb, var(--color-primary) 8%, transparent) 0, transparent 60%);
+}
+
+/* ── Markdown 渲染样式 ── */
+.prose-markdown {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-text-primary);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.prose-markdown > *:first-child {
+  margin-top: 0;
+}
+
+.prose-markdown > *:last-child {
+  margin-bottom: 0;
+}
+
+/* 标题 */
+.prose-markdown h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 24px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border-light);
+  letter-spacing: -0.02em;
+}
+
+.prose-markdown h2 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 20px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border-light);
+  letter-spacing: -0.015em;
+}
+
+.prose-markdown h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 18px 0 8px;
+}
+
+.prose-markdown h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 16px 0 6px;
+}
+
+.prose-markdown h5,
+.prose-markdown h6 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 14px 0 6px;
+  color: var(--color-text-secondary);
+}
+
+/* 段落 */
+.prose-markdown p {
+  margin: 8px 0;
+}
+
+/* 链接 */
+.prose-markdown a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose-markdown a:hover {
+  color: var(--color-primary-hover);
+}
+
+/* 强调 */
+.prose-markdown strong {
+  font-weight: 600;
+}
+
+.prose-markdown em {
+  font-style: italic;
+}
+
+/* 列表 */
+.prose-markdown ul,
+.prose-markdown ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.prose-markdown ul {
+  list-style-type: disc;
+}
+
+.prose-markdown ol {
+  list-style-type: decimal;
+}
+
+.prose-markdown li {
+  margin: 4px 0;
+}
+
+.prose-markdown li > ul,
+.prose-markdown li > ol {
+  margin: 2px 0;
+}
+
+/* 任务列表 (GFM) */
+.prose-markdown .task-list-item {
+  list-style-type: none;
+  margin-left: -24px;
+  padding-left: 0;
+}
+
+.prose-markdown input[type="checkbox"] {
+  margin-right: 8px;
+  accent-color: var(--color-primary);
+}
+
+/* 引用块 */
+.prose-markdown blockquote {
+  margin: 12px 0;
+  padding: 8px 16px;
+  border-left: 3px solid var(--color-primary);
+  background: var(--color-primary-lighter);
+  color: var(--color-text-secondary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.prose-markdown blockquote p {
+  margin: 4px 0;
+}
+
+/* 代码 - 行内 */
+.prose-markdown code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--color-bg-hover);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--color-primary-700);
+}
+
+/* 代码 - 块 */
+.prose-markdown pre {
+  margin: 12px 0;
+  padding: 16px;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.prose-markdown pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+/* 表格 */
+.prose-markdown table {
+  width: 100%;
+  margin: 12px 0;
+  border-collapse: collapse;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.prose-markdown thead {
+  background: var(--color-bg-page);
+}
+
+.prose-markdown th {
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.prose-markdown td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.prose-markdown tbody tr:hover {
+  background: var(--color-bg-hover);
+}
+
+.prose-markdown tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* 分割线 */
+.prose-markdown hr {
+  margin: 20px 0;
+  border: none;
+  border-top: 1px solid var(--color-border);
+}
+
+/* 图片 */
+.prose-markdown img {
+  max-width: 100%;
+  border-radius: var(--radius-md);
+  margin: 12px 0;
+}
+
+/* 删除线 (GFM) */
+.prose-markdown del {
+  color: var(--color-text-tertiary);
+}

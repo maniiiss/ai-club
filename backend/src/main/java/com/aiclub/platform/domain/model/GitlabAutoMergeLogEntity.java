@@ -50,11 +50,59 @@ public class GitlabAutoMergeLogEntity {
     @Column(name = "merge_request_author_username", length = 100)
     private String mergeRequestAuthorUsername;
 
+    /**
+     * GitLab 项目标识快照，用于在配置变更后仍能按“项目 + MR IID”回溯历史审查记录。
+     */
+    @Column(name = "gitlab_project_ref_snapshot", length = 255)
+    private String gitlabProjectRefSnapshot;
+
     @Column(nullable = false, length = 30)
     private String result;
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String reason;
+
+    /**
+     * 当前这次审查后仍需处理的问题列表，下一次同一 MR 复审时会继续带入。
+     */
+    @Column(name = "review_issues_json", columnDefinition = "TEXT")
+    private String reviewIssuesJson;
+
+    /**
+     * 本次复审已确认修复的历史问题列表。
+     */
+    @Column(name = "resolved_previous_issues_json", columnDefinition = "TEXT")
+    private String resolvedPreviousIssuesJson;
+
+    /**
+     * 本次复审仍未修复的历史问题列表。
+     */
+    @Column(name = "unresolved_previous_issues_json", columnDefinition = "TEXT")
+    private String unresolvedPreviousIssuesJson;
+
+    /**
+     * 当前审查结果对应的 MR 版本指纹；同一指纹命中时可直接复用历史结构化审查结果。
+     */
+    @Column(name = "review_fingerprint", length = 255)
+    private String reviewFingerprint;
+
+    /**
+     * 指纹来源：SHA 或 DIFF，便于排查为何命中或未命中缓存。
+     */
+    @Column(name = "review_fingerprint_source", length = 20)
+    private String reviewFingerprintSource;
+
+    /**
+     * 结构化审查结果快照，用于同一 MR 版本复审时直接复用，避免重复消耗模型调用。
+     */
+    @Column(name = "review_result_json", columnDefinition = "TEXT")
+    private String reviewResultJson;
+
+    /**
+     * 标记本次日志是否复用了历史审查缓存，便于后续统计节省的 token 与排查行为。
+     */
+    @Column(name = "review_cache_hit")
+    private Boolean reviewCacheHit;
 
     @Column(name = "detail_markdown", columnDefinition = "TEXT")
     private String detailMarkdown;
@@ -144,6 +192,14 @@ public class GitlabAutoMergeLogEntity {
         this.mergeRequestAuthorUsername = mergeRequestAuthorUsername;
     }
 
+    public String getGitlabProjectRefSnapshot() {
+        return gitlabProjectRefSnapshot;
+    }
+
+    public void setGitlabProjectRefSnapshot(String gitlabProjectRefSnapshot) {
+        this.gitlabProjectRefSnapshot = gitlabProjectRefSnapshot;
+    }
+
     public String getResult() {
         return result;
     }
@@ -158,6 +214,62 @@ public class GitlabAutoMergeLogEntity {
 
     public void setReason(String reason) {
         this.reason = reason;
+    }
+
+    public String getReviewIssuesJson() {
+        return reviewIssuesJson;
+    }
+
+    public void setReviewIssuesJson(String reviewIssuesJson) {
+        this.reviewIssuesJson = reviewIssuesJson;
+    }
+
+    public String getResolvedPreviousIssuesJson() {
+        return resolvedPreviousIssuesJson;
+    }
+
+    public void setResolvedPreviousIssuesJson(String resolvedPreviousIssuesJson) {
+        this.resolvedPreviousIssuesJson = resolvedPreviousIssuesJson;
+    }
+
+    public String getUnresolvedPreviousIssuesJson() {
+        return unresolvedPreviousIssuesJson;
+    }
+
+    public void setUnresolvedPreviousIssuesJson(String unresolvedPreviousIssuesJson) {
+        this.unresolvedPreviousIssuesJson = unresolvedPreviousIssuesJson;
+    }
+
+    public String getReviewFingerprint() {
+        return reviewFingerprint;
+    }
+
+    public void setReviewFingerprint(String reviewFingerprint) {
+        this.reviewFingerprint = reviewFingerprint;
+    }
+
+    public String getReviewFingerprintSource() {
+        return reviewFingerprintSource;
+    }
+
+    public void setReviewFingerprintSource(String reviewFingerprintSource) {
+        this.reviewFingerprintSource = reviewFingerprintSource;
+    }
+
+    public String getReviewResultJson() {
+        return reviewResultJson;
+    }
+
+    public void setReviewResultJson(String reviewResultJson) {
+        this.reviewResultJson = reviewResultJson;
+    }
+
+    public Boolean getReviewCacheHit() {
+        return reviewCacheHit;
+    }
+
+    public void setReviewCacheHit(Boolean reviewCacheHit) {
+        this.reviewCacheHit = reviewCacheHit;
     }
 
     public String getDetailMarkdown() {

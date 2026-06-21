@@ -1,0 +1,249 @@
+/**
+ * 设计 Token — CSS 自定义属性。
+ * 面向公众 SaaS 产品的视觉系统：
+ * 参考 Linear / Vercel / Notion 的设计语言 — 干净、有层次、克制用色。
+ */
+
+:root {
+  /* ── 品牌色（默认 Indigo，由主题系统覆盖） ── */
+  --color-primary: #4f46e5;
+  --color-primary-hover: #4338ca;
+  --color-primary-light: #eef2ff;
+  --color-primary-lighter: #f5f7ff;
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-900: #312e81;
+
+  /* ── 状态色 ── */
+  --color-success: #059669;
+  --color-success-light: #ecfdf5;
+  --color-warning: #d97706;
+  --color-warning-light: #fffbeb;
+  --color-danger: #dc2626;
+  --color-danger-light: #fef2f2;
+  --color-info: #6b7280;
+  --color-info-light: #f3f4f6;
+
+  /* ── 文字色 ── */
+  --color-text-primary: #111827;
+  --color-text-secondary: #4b5563;
+  --color-text-tertiary: #9ca3af;
+  --color-text-placeholder: #c0c5ce;
+  --color-text-inverse: #ffffff;
+  --color-text-link: #4f46e5;
+
+  /* ── 背景色 ── */
+  --color-bg-page: #f8f9fb;
+  --color-bg-card: #ffffff;
+  --color-bg-sidebar: #fafbfc;
+  --color-bg-hover: #f3f4f6;
+  --color-bg-active: #eef2ff;
+  --color-bg-elevated: #ffffff;
+
+  /* ── 边框色 ── */
+  --color-border: #e5e7eb;
+  --color-border-light: #f0f1f3;
+  --color-border-focus: #4f46e5;
+  --color-border-strong: #d1d5db;
+
+  /* ── 间距系统（4px 基准） ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ── 圆角 ── */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-full: 9999px;
+
+  /* ── 阴影（多层叠加，营造柔和深度感） ── */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 40px -8px rgba(0, 0, 0, 0.1);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.03);
+  --shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.03);
+
+  /* ── 字体 ── */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+
+  /* ── 字号 ── */
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+  --text-4xl: 36px;
+
+  /* ── 行高 ── */
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.625;
+
+  /* ── 过渡 ── */
+  --transition-fast: 120ms ease;
+  --transition-normal: 200ms ease;
+  --transition-slow: 350ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ── 布局 ── */
+  --topbar-height: 52px;
+  --sidebar-width: 240px;
+}
+
+/* ══════════════════════════════════════════════
+   主题色预设 — 通过 html[data-theme] 切换
+   ══════════════════════════════════════════════ */
+
+/* Indigo（默认） */
+[data-theme="indigo"] {
+  --color-primary: #4f46e5;
+  --color-primary-hover: #4338ca;
+  --color-primary-light: #eef2ff;
+  --color-primary-lighter: #f5f7ff;
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-900: #312e81;
+  --color-text-link: #4f46e5;
+  --color-border-focus: #4f46e5;
+  --color-bg-active: #eef2ff;
+}
+
+/* Blue */
+[data-theme="blue"] {
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-light: #eff6ff;
+  --color-primary-lighter: #f0f7ff;
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-900: #1e3a5f;
+  --color-text-link: #2563eb;
+  --color-border-focus: #2563eb;
+  --color-bg-active: #eff6ff;
+}
+
+/* Teal */
+[data-theme="teal"] {
+  --color-primary: #0d9488;
+  --color-primary-hover: #0f766e;
+  --color-primary-light: #f0fdfa;
+  --color-primary-lighter: #f0fdf8;
+  --color-primary-50: #f0fdfa;
+  --color-primary-100: #ccfbf1;
+  --color-primary-500: #14b8a6;
+  --color-primary-600: #0d9488;
+  --color-primary-700: #0f766e;
+  --color-primary-900: #134e4a;
+  --color-text-link: #0d9488;
+  --color-border-focus: #0d9488;
+  --color-bg-active: #f0fdfa;
+}
+
+/* Emerald */
+[data-theme="emerald"] {
+  --color-primary: #059669;
+  --color-primary-hover: #047857;
+  --color-primary-light: #ecfdf5;
+  --color-primary-lighter: #f0fdf4;
+  --color-primary-50: #ecfdf5;
+  --color-primary-100: #d1fae5;
+  --color-primary-500: #10b981;
+  --color-primary-600: #059669;
+  --color-primary-700: #047857;
+  --color-primary-900: #064e3b;
+  --color-text-link: #059669;
+  --color-border-focus: #059669;
+  --color-bg-active: #ecfdf5;
+}
+
+/* Orange */
+[data-theme="orange"] {
+  --color-primary: #ea580c;
+  --color-primary-hover: #c2410c;
+  --color-primary-light: #fff7ed;
+  --color-primary-lighter: #fffaf5;
+  --color-primary-50: #fff7ed;
+  --color-primary-100: #ffedd5;
+  --color-primary-500: #f97316;
+  --color-primary-600: #ea580c;
+  --color-primary-700: #c2410c;
+  --color-primary-900: #7c2d12;
+  --color-text-link: #ea580c;
+  --color-border-focus: #ea580c;
+  --color-bg-active: #fff7ed;
+}
+
+/* Rose */
+[data-theme="rose"] {
+  --color-primary: #e11d48;
+  --color-primary-hover: #be123c;
+  --color-primary-light: #fff1f2;
+  --color-primary-lighter: #fff5f5;
+  --color-primary-50: #fff1f2;
+  --color-primary-100: #ffe4e6;
+  --color-primary-500: #f43f5e;
+  --color-primary-600: #e11d48;
+  --color-primary-700: #be123c;
+  --color-primary-900: #881337;
+  --color-text-link: #e11d48;
+  --color-border-focus: #e11d48;
+  --color-bg-active: #fff1f2;
+}
+
+/* Violet */
+[data-theme="violet"] {
+  --color-primary: #7c3aed;
+  --color-primary-hover: #6d28d9;
+  --color-primary-light: #f5f3ff;
+  --color-primary-lighter: #f8f5ff;
+  --color-primary-50: #f5f3ff;
+  --color-primary-100: #ede9fe;
+  --color-primary-500: #8b5cf6;
+  --color-primary-600: #7c3aed;
+  --color-primary-700: #6d28d9;
+  --color-primary-900: #4c1d95;
+  --color-text-link: #7c3aed;
+  --color-border-focus: #7c3aed;
+  --color-bg-active: #f5f3ff;
+}
+
+/* Slate（中性灰） */
+[data-theme="slate"] {
+  --color-primary: #475569;
+  --color-primary-hover: #334155;
+  --color-primary-light: #f8fafc;
+  --color-primary-lighter: #f9fafb;
+  --color-primary-50: #f8fafc;
+  --color-primary-100: #f1f5f9;
+  --color-primary-500: #64748b;
+  --color-primary-600: #475569;
+  --color-primary-700: #334155;
+  --color-primary-900: #0f172a;
+  --color-text-link: #475569;
+  --color-border-focus: #475569;
+  --color-bg-active: #f1f5f9;
+}

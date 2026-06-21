@@ -157,7 +157,7 @@ class ApiTestCaseAiServiceTests {
     }
 
     private ModelConfigService.ResolvedModelConfig resolved(AiModelConfigEntity entity) {
-        return new ModelConfigService.ResolvedModelConfig(entity.getId(), entity.getName(), entity.getModelType(), entity.getProvider(), entity.getApiBaseUrl(), entity.getModelName(), "key");
+        return new ModelConfigService.ResolvedModelConfig(entity.getId(), entity.getName(), entity.getModelType(), entity.getProvider(), entity.getApiBaseUrl(), entity.getModelName(), ModelConfigService.OPENAI_API_MODE_AUTO, "key");
     }
 
     private String aiJson(int count) {

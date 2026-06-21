@@ -59,7 +59,6 @@
             <div class="api-ai-kicker">SINGLE API ANALYSIS</div>
             <h2>单接口 AI 测试设计</h2>
           </div>
-          <p>选择当前项目 Yaade 工作台中的一个 REST 请求，生成可审核的接口测试用例建议。结果不会写回 Yaade。</p>
         </section>
 
         <section class="api-ai-form" v-loading="apiRequestsLoading || modelOptionsLoading">
@@ -71,18 +70,21 @@
             clearable
             placeholder="选择一个 REST 请求"
             :disabled="generatingApiCases"
+            :teleported="false"
+            popper-class="api-ai-select-popper"
             class="api-ai-select"
           >
             <el-option
               v-for="item in apiRequestOptions"
               :key="item.requestId"
-              :label="`${item.method} ${item.path} · ${item.name}`"
+              :label="`${item.name} · ${item.method} ${item.path}`"
               :value="item.requestId"
             >
               <div class="api-ai-option">
                 <span class="api-ai-method">{{ item.method }}</span>
-                <span class="api-ai-option-main">{{ item.path }}</span>
-                <span class="api-ai-option-sub">{{ item.collectionPath }}</span>
+                <span class="api-ai-option-main">{{ item.name }}</span>
+                <span class="api-ai-option-sub">{{ item.method }} {{ item.path }}</span>
+                <span class="api-ai-option-path">{{ item.collectionPath }}</span>
               </div>
             </el-option>
           </el-select>
@@ -94,6 +96,7 @@
             clearable
             placeholder="默认使用首个启用对话模型"
             :disabled="generatingApiCases"
+            :teleported="false"
             class="api-ai-select"
           >
             <el-option
@@ -135,6 +138,83 @@
             </div>
           </div>
 
+          <div class="api-ai-test-import">
+            <div class="api-ai-test-import-head">
+              <div>
+                <div class="api-ai-kicker">TEST MANAGEMENT</div>
+                <h4>导入测试管理</h4>
+              </div>
+              <span>{{ apiAiResult.testCases.length }} 条用例</span>
+            </div>
+
+            <div v-if="!canManageTests" class="api-ai-empty-line warning">
+              当前账号没有测试管理权限，无法导入测试计划。
+            </div>
+            <template v-else>
+              <div class="api-ai-import-grid" v-loading="testManagementOptionsLoading">
+                <div class="api-ai-import-card">
+                  <label class="api-ai-label" for="api-ai-plan-select">导入已有计划</label>
+                  <el-select
+                    id="api-ai-plan-select"
+                    v-model="selectedImportPlanId"
+                    filterable
+                    clearable
+                    placeholder="选择当前项目测试计划"
+                    :teleported="false"
+                    class="api-ai-select"
+                  >
+                    <el-option
+                      v-for="item in testPlanOptions"
+                      :key="item.id"
+                      :label="`${item.name} · ${item.iterationName || '未关联迭代'}`"
+                      :value="item.id"
+                    />
+                  </el-select>
+                  <el-button
+                    type="primary"
+                    plain
+                    :disabled="!selectedImportPlanId || !apiAiResult.testCases.length"
+                    :loading="importingApiCases"
+                    @click="appendApiCasesToExistingPlan"
+                  >
+                    导入已有计划
+                  </el-button>
+                </div>
+
+                <div class="api-ai-import-card">
+                  <label class="api-ai-label" for="api-ai-plan-name">创建新测试计划</label>
+                  <el-input
+                    id="api-ai-plan-name"
+                    v-model="newTestPlanName"
+                    maxlength="120"
+                    placeholder="测试计划名称"
+                  />
+                  <el-select
+                    v-model="selectedCreateIterationId"
+                    filterable
+                    clearable
+                    placeholder="选择所属迭代"
+                    :teleported="false"
+                    class="api-ai-select"
+                  >
+                    <el-option v-for="item in iterationOptions" :key="item.id" :label="item.name" :value="item.id" />
+                  </el-select>
+                  <el-button
+                    type="primary"
+                    :disabled="!canCreateApiTestPlan"
+                    :loading="creatingApiTestPlan"
+                    @click="createNewApiTestPlan"
+                  >
+                    创建计划并导入
+                  </el-button>
+                  <div v-if="!iterationOptions.length" class="api-ai-empty-line warning">
+                    当前项目暂无迭代，请先创建迭代后再导入测试管理。
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+
           <div class="api-ai-markdown" v-html="renderMarkdownToHtml(apiAiResult.markdown)"></div>
 
           <div class="api-ai-case-list">
@@ -142,7 +222,7 @@
               <header class="api-ai-case-head">
                 <span>用例 {{ index + 1 }}</span>
                 <div>
-                  <span>{{ item.caseType }}</span>
+                  <span>{{ API_TEST_CASE_TYPE }}</span>
                   <span>{{ item.priority }}</span>
                 </div>
               </header>
@@ -166,7 +246,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { CopyDocument, DocumentCopy, MagicStick, RefreshRight } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -181,14 +261,25 @@ import {
   type YaadeProjectContextItem
 } from '@/api/yaade'
 import { listModelConfigOptions } from '@/api/models'
-import { listProjectOptions } from '@/api/platform'
+import {
+  createTestPlan,
+  getTestPlanDetail,
+  listProjectOptions,
+  listTestPlanIterations,
+  pageTestPlans,
+  updateTestPlan,
+  type TestCasePayload,
+  type TestPlanPayload
+} from '@/api/platform'
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
 import { renderMarkdownToHtml } from '@/utils/markdown'
-import type { AiModelConfigItem } from '@/types/platform'
+import type { AiModelConfigItem, IterationItem, TestPlanItem } from '@/types/platform'
 
 const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
+const authStore = useAuthStore()
 
 const loading = ref(true)
 const iframeSrc = ref('')
@@ -204,10 +295,22 @@ const modelOptionsLoading = ref(false)
 const generatingApiCases = ref(false)
 const apiRequestOptions = ref<YaadeApiRequestItem[]>([])
 const modelOptions = ref<AiModelConfigItem[]>([])
+const testPlanOptions = ref<TestPlanItem[]>([])
+const iterationOptions = ref<IterationItem[]>([])
 const selectedApiRequestId = ref<number | null>(null)
 const selectedModelConfigId = ref<number | null>(null)
+const selectedImportPlanId = ref<number | undefined>()
+const selectedCreateIterationId = ref<number | null>(null)
+const newTestPlanName = ref('')
 const apiAiResult = ref<ApiTestCaseAiResultItem | null>(null)
+const testManagementOptionsLoading = ref(false)
+const importingApiCases = ref(false)
+const creatingApiTestPlan = ref(false)
 let bootstrapBroadcastTimer: number | null = null
+
+const API_TEST_CASE_TYPE = '接口测试'
+const canManageTests = computed(() => authStore.hasPermission('test:manage'))
+const canCreateApiTestPlan = computed(() => Boolean(newTestPlanName.value.trim() && selectedCreateIterationId.value && apiAiResult.value?.testCases.length))
 
 onMounted(async () => {
   document.body.classList.add('api-yaade-embed')
@@ -249,6 +352,7 @@ async function initializePage() {
   apiAiResult.value = null
   selectedApiRequestId.value = null
   apiRequestOptions.value = []
+  resetTestManagementImportState()
 
   try {
     const projectOptions = await listProjectOptions()
@@ -423,7 +527,19 @@ function openApiAiDrawer() {
 }
 
 async function loadApiAiOptions() {
-  await Promise.all([loadApiRequestOptions(), loadModelOptions()])
+  await Promise.all([
+    loadApiRequestOptions(),
+    loadModelOptions(),
+    apiAiResult.value ? loadTestManagementOptions() : Promise.resolve()
+  ])
+}
+
+function resetTestManagementImportState() {
+  testPlanOptions.value = []
+  iterationOptions.value = []
+  selectedImportPlanId.value = undefined
+  selectedCreateIterationId.value = null
+  newTestPlanName.value = ''
 }
 
 async function loadApiRequestOptions() {
@@ -459,12 +575,184 @@ async function handleGenerateApiCases() {
   generatingApiCases.value = true
   try {
     apiAiResult.value = await generateYaadeApiTestCases(currentProjectId.value, selectedApiRequestId.value, selectedModelConfigId.value)
+    prepareApiTestPlanDefaults(apiAiResult.value)
+    await loadTestManagementOptions()
     ElMessage.success('AI 测试用例已生成')
   } catch (error) {
     ElMessage.error(extractErrorMessage(error, '生成 AI 测试用例失败'))
   } finally {
     generatingApiCases.value = false
   }
+}
+
+function prepareApiTestPlanDefaults(result: ApiTestCaseAiResultItem) {
+  const baseName = normalizeText(result.requestName) || normalizeText(result.path) || 'API接口'
+  newTestPlanName.value = `${baseName}-API测试计划`.slice(0, 120)
+  selectedImportPlanId.value = undefined
+}
+
+async function loadTestManagementOptions() {
+  if (!canManageTests.value || currentProjectId.value === null) {
+    resetTestManagementImportState()
+    return
+  }
+  testManagementOptionsLoading.value = true
+  try {
+    const [plans, iterations] = await Promise.all([
+      pageTestPlans({ page: 1, size: 100, projectId: currentProjectId.value }),
+      listTestPlanIterations(currentProjectId.value)
+    ])
+    testPlanOptions.value = plans.records
+    iterationOptions.value = iterations
+    if (selectedImportPlanId.value && !testPlanOptions.value.some((item) => item.id === selectedImportPlanId.value)) {
+      selectedImportPlanId.value = undefined
+    }
+    if (selectedCreateIterationId.value && !iterationOptions.value.some((item) => item.id === selectedCreateIterationId.value)) {
+      selectedCreateIterationId.value = null
+    }
+    if (!selectedCreateIterationId.value && iterationOptions.value.length === 1) {
+      selectedCreateIterationId.value = iterationOptions.value[0].id
+    }
+  } catch (error) {
+    testPlanOptions.value = []
+    iterationOptions.value = []
+    ElMessage.error(extractErrorMessage(error, '加载测试管理选项失败'))
+  } finally {
+    testManagementOptionsLoading.value = false
+  }
+}
+
+async function appendApiCasesToExistingPlan() {
+  if (!apiAiResult.value || !selectedImportPlanId.value || !apiAiResult.value.testCases.length) return
+  importingApiCases.value = true
+  try {
+    const detail = await getTestPlanDetail(selectedImportPlanId.value)
+    const nextCases = [...buildExistingCasePayload(detail.cases), ...buildApiTestCasePayload(apiAiResult.value)]
+      .map((item, index) => ({
+        ...item,
+        sortOrder: index
+      }))
+    await updateTestPlan(detail.id, {
+      name: detail.name,
+      projectId: detail.projectId,
+      iterationId: detail.iterationId as number,
+      status: detail.status,
+      description: detail.description,
+      startDate: detail.startDate,
+      endDate: detail.endDate,
+      automationBindingId: detail.automationBindingId,
+      automationTargetBranch: detail.automationTargetBranch,
+      cases: nextCases
+    })
+    ElMessage.success(`已导入 ${apiAiResult.value.testCases.length} 条测试用例`)
+    await router.push({ name: 'test-plan-detail', params: { planId: String(detail.id) } })
+    apiAiDrawerVisible.value = false
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error, '导入测试计划失败'))
+  } finally {
+    importingApiCases.value = false
+  }
+}
+
+async function createNewApiTestPlan() {
+  if (!apiAiResult.value || currentProjectId.value === null || !selectedCreateIterationId.value || !apiAiResult.value.testCases.length) return
+  const planName = newTestPlanName.value.trim()
+  if (!planName) {
+    ElMessage.warning('请填写测试计划名称')
+    return
+  }
+  creatingApiTestPlan.value = true
+  try {
+    const payload: TestPlanPayload = {
+      name: planName,
+      projectId: currentProjectId.value,
+      iterationId: selectedCreateIterationId.value,
+      status: '草稿',
+      description: `由 API 工作台 AI 生成：${apiAiResult.value.method} ${apiAiResult.value.path}`,
+      cases: buildApiTestCasePayload(apiAiResult.value)
+    }
+    const created = await createTestPlan(payload)
+    ElMessage.success(`已创建测试计划并导入 ${apiAiResult.value.testCases.length} 条测试用例`)
+    await router.push({ name: 'test-plan-detail', params: { planId: String(created.id) } })
+    apiAiDrawerVisible.value = false
+  } catch (error) {
+    ElMessage.error(extractErrorMessage(error, '创建测试计划失败'))
+  } finally {
+    creatingApiTestPlan.value = false
+  }
+}
+
+function buildExistingCasePayload(cases: TestPlanItem['cases']): TestCasePayload[] {
+  return (cases || []).map((item, caseIndex) => ({
+    title: normalizeText(item.title),
+    moduleName: normalizeText(item.moduleName),
+    caseType: normalizeText(item.caseType, '功能测试'),
+    priority: normalizeText(item.priority, 'P2'),
+    precondition: normalizeText(item.precondition),
+    remarks: normalizeText(item.remarks),
+    sortOrder: item.sortOrder ?? caseIndex,
+    automationType: normalizeText(item.automationType, '手工'),
+    automationHint: normalizeText(item.automationHint),
+    steps: (item.steps || []).map((step, stepIndex) => ({
+      stepNo: step.stepNo ?? stepIndex + 1,
+      action: normalizeText(step.action),
+      expectedResult: normalizeText(step.expectedResult)
+    }))
+  }))
+}
+
+function buildApiTestCasePayload(result: ApiTestCaseAiResultItem): TestCasePayload[] {
+  const moduleName = normalizeText(result.requestName) || normalizeText(result.path)
+  return (result.testCases || []).map((item, caseIndex) => {
+    const title = normalizeText(item.title) || `${moduleName || 'API接口'}-用例${caseIndex + 1}`
+    return {
+      title,
+      moduleName,
+      caseType: API_TEST_CASE_TYPE,
+      priority: normalizeText(item.priority, 'P2'),
+      precondition: normalizeText(item.precondition),
+      remarks: buildApiTestCaseRemarks(result, item),
+      sortOrder: caseIndex,
+      automationType: '手工',
+      automationHint: '',
+      steps: buildApiTestCaseSteps(result, item)
+    }
+  })
+}
+
+function buildApiTestCaseRemarks(result: ApiTestCaseAiResultItem, item: ApiTestCaseAiResultItem['testCases'][number]) {
+  return [
+    `来源接口：${result.method} ${result.path}`,
+    item.requestExample ? `请求样例：\n${item.requestExample}` : '',
+    item.riskNotes ? `风险说明：${item.riskNotes}` : ''
+  ].filter(Boolean).join('\n\n')
+}
+
+function buildApiTestCaseSteps(result: ApiTestCaseAiResultItem, item: ApiTestCaseAiResultItem['testCases'][number]) {
+  const steps = [{
+    stepNo: 1,
+    action: [`发送 ${result.method} ${result.path} 请求`, item.requestExample ? `请求样例：\n${item.requestExample}` : '按接口定义填写请求参数'].join('\n'),
+    expectedResult: '接口正常返回并可进入断言校验'
+  }]
+  const assertions = Array.isArray(item.assertions) ? item.assertions : []
+  assertions.forEach((assertion, assertionIndex) => {
+    const target = normalizeText(assertion.target, '-')
+    const operator = normalizeText(assertion.operator, '符合')
+    const expected = normalizeText(assertion.expected, '-')
+    steps.push({
+      stepNo: steps.length + 1,
+      action: `校验 ${normalizeText(assertion.type, '响应断言')}：${target} ${operator} ${expected}`,
+      expectedResult: normalizeText(assertion.description) || `${target} ${operator} ${expected}`
+    })
+  })
+  if (!assertions.length) {
+    steps.push({
+      stepNo: 2,
+      action: '检查接口响应符合用例预期',
+      expectedResult: '响应状态、结构和业务结果满足当前测试用例要求'
+    })
+  }
+  return steps
 }
 
 async function copyApiAiMarkdown() {
@@ -490,7 +778,7 @@ function buildApiAiMarkdown(result: ApiTestCaseAiResultItem) {
   const lines = [result.markdown || `## ${result.requestName}`, '']
   result.testCases.forEach((item, index) => {
     lines.push(`### ${index + 1}. ${item.title}`)
-    lines.push(`- 类型：${item.caseType}`)
+    lines.push(`- 类型：${API_TEST_CASE_TYPE}`)
     lines.push(`- 优先级：${item.priority}`)
     if (item.precondition) lines.push(`- 前置条件：${item.precondition}`)
     if (item.requestExample) lines.push(`- 请求样例：\n\n\`\`\`\n${item.requestExample}\n\`\`\``)
@@ -512,6 +800,16 @@ function resolveIframeOrigin() {
   } catch {
     return window.location.origin
   }
+}
+
+function normalizeText(value: unknown, fallback = '') {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (value === null || value === undefined) {
+    return fallback
+  }
+  return String(value)
 }
 
 function extractErrorMessage(error: unknown, fallback: string) {
@@ -556,7 +854,7 @@ function extractErrorMessage(error: unknown, fallback: string) {
 
 .api-ai-trigger {
   position: absolute;
-  top: 18px;
+  top: 52px;
   right: 22px;
   z-index: 4;
   display: inline-flex;
@@ -661,7 +959,7 @@ function extractErrorMessage(error: unknown, fallback: string) {
 }
 
 .api-ai-method {
-  grid-row: span 2;
+  grid-row: span 3;
   min-width: 48px;
   color: #0f766e;
   font-size: 12px;
@@ -669,7 +967,8 @@ function extractErrorMessage(error: unknown, fallback: string) {
 }
 
 .api-ai-option-main,
-.api-ai-option-sub {
+.api-ai-option-sub,
+.api-ai-option-path {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -681,6 +980,11 @@ function extractErrorMessage(error: unknown, fallback: string) {
 }
 
 .api-ai-option-sub {
+  color: #334155;
+  font-size: 12px;
+}
+
+.api-ai-option-path {
   color: #64748b;
   font-size: 12px;
 }
@@ -721,6 +1025,57 @@ function extractErrorMessage(error: unknown, fallback: string) {
 }
 
 .api-ai-copy-actions :deep(.el-button) {
+  margin-left: 0;
+}
+
+.api-ai-test-import {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(15, 118, 110, 0.16);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #f8fffd 0%, #ffffff 100%);
+}
+
+.api-ai-test-import-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.api-ai-test-import-head h4 {
+  margin: 2px 0 0;
+  color: #172033;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.api-ai-test-import-head > span {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.api-ai-import-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.api-ai-import-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.api-ai-import-card :deep(.el-button) {
   margin-left: 0;
 }
 
@@ -851,7 +1206,7 @@ function extractErrorMessage(error: unknown, fallback: string) {
   }
 
   .api-ai-trigger {
-    top: 12px;
+    top: 48px;
     right: 12px;
   }
 }
@@ -867,6 +1222,17 @@ function extractErrorMessage(error: unknown, fallback: string) {
 .api-ai-drawer .el-drawer__body {
   padding: 18px;
   background: #f8fafc;
+}
+
+.api-ai-select-popper .el-select-dropdown__item {
+  height: auto;
+  min-height: 54px;
+  padding: 8px 12px;
+  line-height: 1.35;
+}
+
+.api-ai-select-popper .el-select-dropdown__item.selected {
+  font-weight: 700;
 }
 
 body.api-yaade-embed .layout-shell {

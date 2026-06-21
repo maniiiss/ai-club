@@ -254,7 +254,7 @@
       </div>
     </section>
 
-  <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px" class="platform-form-dialog" align-center>
+  <el-dialog v-if="!isMobileViewport" v-model="dialogVisible" :title="dialogTitle" width="560px" class="platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="UserFilled" />
     </template>
@@ -350,6 +350,113 @@
       </div>
     </template>
   </el-dialog>
+
+  <!-- 移动端用户编辑抽屉，从下往上弹出，与桌面 dialog 共用同一份表单。 -->
+  <MobileFormDrawer
+    v-else
+    v-model="dialogVisible"
+    :title="dialogTitle"
+    :subtitle="dialogSubtitle"
+    :submit-text="'保存'"
+    :submitting="submitting"
+    :header-icon="UserFilled"
+    :close-on-click-modal="true"
+    size="88%"
+    @submit="handleSubmit"
+    @cancel="dialogVisible = false"
+  >
+    <el-form ref="formRef" :model="form" :rules="rules" :disabled="readonlyMode" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">用户信息</div>
+          <div class="platform-form-section-subtitle">配置账号资料、角色和启用状态。</div>
+        </div>
+        <el-form-item label="用户名" prop="username">
+          <el-input v-model="form.username" :disabled="isEditing && currentBuiltIn" placeholder="请输入用户名" />
+        </el-form-item>
+        <el-form-item label="昵称" prop="nickname">
+          <el-input v-model="form.nickname" placeholder="请输入昵称" />
+        </el-form-item>
+        <el-form-item label="GitLab 用户">
+          <el-select
+            v-model="form.gitlabUserId"
+            clearable
+            filterable
+            remote
+            reserve-keyword
+            :remote-method="searchGitlabUsers"
+            :loading="gitlabUserLoading"
+            placeholder="输入姓名、用户名或邮箱搜索 GitLab 用户"
+            style="width: 100%"
+            @change="handleGitlabUserChange"
+            @clear="clearGitlabUser"
+          >
+            <el-option
+              v-for="item in gitlabUserOptions"
+              :key="item.id"
+              :label="formatGitlabUserOption(item)"
+              :value="item.id"
+            >
+              <div class="user-external-option">
+                <span class="user-external-option-main">{{ item.name || item.username }}</span>
+                <span class="user-external-option-sub">{{ [item.username, item.email].filter(Boolean).join(' · ') }}</span>
+              </div>
+            </el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Gitee 成员">
+          <el-select
+            v-model="form.giteeMemberId"
+            clearable
+            filterable
+            remote
+            reserve-keyword
+            :remote-method="searchGiteeMembers"
+            :loading="giteeMemberLoading"
+            placeholder="输入姓名、用户名或邮箱搜索 Gitee 成员"
+            style="width: 100%"
+            @change="handleGiteeMemberChange"
+            @clear="clearGiteeMember"
+          >
+            <el-option
+              v-for="item in giteeMemberOptions"
+              :key="item.id"
+              :label="formatGiteeMemberOption(item)"
+              :value="item.id"
+            >
+              <div class="user-external-option">
+                <span class="user-external-option-main">{{ item.name || item.username }}</span>
+                <span class="user-external-option-sub">{{ [item.username, item.email].filter(Boolean).join(' · ') }}</span>
+              </div>
+            </el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="!isEditing" label="初始密码" prop="password">
+          <el-input v-model="form.password" type="password" show-password placeholder="至少 6 位" />
+        </el-form-item>
+        <el-form-item label="邮箱">
+          <el-input v-model="form.email" placeholder="请输入邮箱" />
+        </el-form-item>
+        <el-form-item label="手机号">
+          <el-input v-model="form.phone" placeholder="请输入手机号" />
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-select v-model="form.roleIds" multiple filterable collapse-tags placeholder="请选择角色" style="width: 100%">
+            <el-option v-for="item in roleOptions" :key="item.id" :label="item.name" :value="item.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="form.enabled" :disabled="currentBuiltIn" />
+        </el-form-item>
+      </section>
+    </el-form>
+    <template #footer>
+      <div class="platform-dialog-footer mobile-form-drawer-footer">
+        <el-button class="mobile-form-drawer-footer-btn" @click="dialogVisible = false">{{ readonlyMode ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="!readonlyMode" class="mobile-form-drawer-footer-btn is-primary" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      </div>
+    </template>
+  </MobileFormDrawer>
   </div>
 </template>
 
@@ -359,6 +466,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Key, Plus, RefreshRight, Search, UserFilled } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 import { createUser, deleteUser, listRoleOptions, pageUsers, resetUserPassword, updateUser } from '@/api/access'
 import { listGiteeMembers } from '@/api/gitee'
 import { listGitlabUsers } from '@/api/gitlab'
