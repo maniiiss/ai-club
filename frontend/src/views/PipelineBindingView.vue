@@ -305,10 +305,8 @@ async function handleTriggerPipeline(row: PipelineCenterEntryItem) {
       ? await triggerAiClubPipeline(row.entryId)
       : await triggerPipelineBuild(row.entryId)
     ElMessage.success(result.message)
-    await loadPipelines()
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '触发流水线失败')
-    await loadPipelines()
   } finally {
     triggeringEntryId.value = null
   }

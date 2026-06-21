@@ -51,7 +51,7 @@ let graphInstance: G6Graph | null = null
 let resizeObserver: ResizeObserver | null = null
 let renderToken = 0
 
-const nodeTypeOrder = ['PROJECT', 'ITERATION', 'REQUIREMENT', 'TASK', 'BUG', 'TEST_PLAN', 'TEST_CASE', 'USER', 'AGENT']
+const nodeTypeOrder = ['PROJECT', 'ITERATION', 'REQUIREMENT', 'TASK', 'BUG', 'TEST_PLAN', 'TEST_CASE', 'WIKI_DIRECTORY', 'WIKI_PAGE', 'USER', 'AGENT']
 
 const nodeTypeOptions = computed(() => {
   const values = new Set(props.nodes.map((item) => item.nodeType))
@@ -69,6 +69,8 @@ const nodeColor = (nodeType: string) => {
     BUG: '#e25555',
     TEST_PLAN: '#f97316',
     TEST_CASE: '#f8b55a',
+    WIKI_DIRECTORY: '#d97706',
+    WIKI_PAGE: '#c0841a',
     USER: '#7c8ea3',
     AGENT: '#475569'
   }
@@ -76,6 +78,8 @@ const nodeColor = (nodeType: string) => {
 }
 
 const edgeColor = (edgeType: string) => {
+  if (edgeType === 'SEMANTIC_SIMILAR') return '#8b5cf6'
+  if (edgeType === 'BELONGS_TO_DIRECTORY' || edgeType.includes('WIKI')) return '#d97706'
   if (edgeType.includes('TEST')) return '#f59e0b'
   if (edgeType.includes('AGENT')) return '#64748b'
   if (edgeType.includes('ASSIGNED') || edgeType.includes('MEMBER') || edgeType.includes('OWNED')) return '#1f7a8c'
@@ -92,6 +96,8 @@ const nodeTypeLabel = (nodeType: string) => {
     BUG: '缺陷',
     TEST_PLAN: '测试计划',
     TEST_CASE: '测试用例',
+    WIKI_DIRECTORY: 'Wiki 目录',
+    WIKI_PAGE: 'Wiki 页面',
     USER: '用户',
     AGENT: 'Agent'
   }

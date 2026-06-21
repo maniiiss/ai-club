@@ -3,6 +3,7 @@ package com.aiclub.platform.service;
 import com.aiclub.platform.domain.model.WikiPageEntity;
 import com.aiclub.platform.domain.model.WikiPageV2Entity;
 import com.aiclub.platform.dto.CurrentUserInfo;
+import com.aiclub.platform.dto.WikiSpaceKnowledgeGraph;
 import com.aiclub.platform.dto.request.HermesChatRequest;
 import com.aiclub.platform.repository.WikiPageRepository;
 import com.aiclub.platform.repository.WikiPageV2Repository;
@@ -27,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 
 /**
  * Wiki 知识检索服务。
@@ -38,6 +40,8 @@ public class WikiKnowledgeSearchService {
 
     private static final Logger log = LoggerFactory.getLogger(WikiKnowledgeSearchService.class);
     private static final int HERMES_EVIDENCE_LIMIT = 3;
+    /** 目录节点 id 偏移量：目录与页面共用一张数值 id 表，用大偏移把两类节点错开避免冲突。 */
+    private static final long DIRECTORY_NODE_ID_OFFSET = 1_000_000_000L;
 
     private final WikiKnowledgeProperties properties;
     private final QdrantClientService qdrantClientService;
@@ -69,7 +73,7 @@ public class WikiKnowledgeSearchService {
     }
 
     public boolean isEnabled() {
-        return properties.isEnabled() && properties.hasEmbeddingModelId();
+        return properties.isEnabled() && properties.hasEmbeddingConfig();
     }
 
     public void indexProjectPage(WikiPageEntity page) {
@@ -128,7 +132,7 @@ public class WikiKnowledgeSearchService {
         if (!isEnabled() || projectId == null || defaultString(query).isBlank()) {
             return List.of();
         }
-        List<Double> vector = modelConfigService.generateEmbedding(properties.getEmbeddingModelId(), query);
+        List<Double> vector = generateEmbedding(query);
         return qdrantClientService.search(
                         properties.getProjectCollection(),
                         vector,
@@ -184,7 +188,7 @@ public class WikiKnowledgeSearchService {
         if (!isEnabled() || spaceId == null || defaultString(query).isBlank()) {
             return List.of();
         }
-        List<Double> vector = modelConfigService.generateEmbedding(properties.getEmbeddingModelId(), query);
+        List<Double> vector = generateEmbedding(query);
         LinkedHashMap<String, Object> filter = new LinkedHashMap<>();
         filter.put("spaceId", spaceId);
         if (projectId != null) {
@@ -347,8 +351,186 @@ public class WikiKnowledgeSearchService {
         return "";
     }
 
-    public WikiKnowledgeRebuildResult rebuildAllIndexes() {
-        if (!isEnabled()) {
+    /**
+     * 构建空间级 Wiki 向量化知识图谱。
+     * 业务意图：把存在 Qdrant 的 chunk 级向量在页面层聚合，
+     * 同时派生目录归属结构边与页面间向量语义相似边，呈现「向量化数据之间的关联」。
+     *
+     * @param spaceId        目标空间 id
+     * @param spaceName      空间名称，仅用于回填展示
+     * @param directoryNames 目录 id -> 目录名称映射，由上层从业务库取得（Qdrant payload 不含目录名）
+     */
+    public WikiSpaceKnowledgeGraph buildSpaceKnowledgeGraph(Long spaceId,
+                                                            String spaceName,
+                                                            Map<Long, String> directoryNames) {
+        String generatedAt = java.time.OffsetDateTime.now().toString();
+        if (!isEnabled() || spaceId == null) {
+            return new WikiSpaceKnowledgeGraph(spaceId, spaceName, false, generatedAt, List.of(), List.of());
+        }
+
+        List<QdrantClientService.QdrantScrollPoint> points = qdrantClientService.scrollPoints(
+                properties.getSpaceCollection(),
+                Map.of("spaceId", spaceId),
+                true,
+                properties.getGraphScrollPageSize()
+        );
+
+        // 第一步：按 pageId 聚合所有 chunk，计算页面向量质心（归一化平均）与基础元数据。
+        Map<Long, PageAccumulator> pageAccumulators = new LinkedHashMap<>();
+        for (QdrantClientService.QdrantScrollPoint point : points) {
+            Map<String, Object> payload = point.payload() == null ? Map.of() : point.payload();
+            Long pageId = longValue(payload.get("pageId"));
+            if (pageId == null || point.vector() == null || point.vector().isEmpty()) {
+                continue;
+            }
+            PageAccumulator accumulator = pageAccumulators.computeIfAbsent(pageId, key -> new PageAccumulator(pageId));
+            accumulator.accept(point.vector(), payload);
+        }
+
+        // 第二步：生成页面节点 + 目录节点 + 目录归属边。
+        List<WikiSpaceKnowledgeGraph.Node> nodes = new ArrayList<>();
+        List<WikiSpaceKnowledgeGraph.Edge> edges = new ArrayList<>();
+        Map<Long, double[]> pageCentroids = new LinkedHashMap<>();
+        Map<Long, String> pageTitles = new LinkedHashMap<>();
+        TreeMap<Long, Boolean> directoryNodeAdded = new TreeMap<>();
+        long edgeSequence = 1L;
+
+        for (PageAccumulator accumulator : pageAccumulators.values()) {
+            double[] centroid = accumulator.centroid();
+            if (centroid == null) {
+                continue;
+            }
+            Long pageId = accumulator.pageId;
+            pageCentroids.put(pageId, centroid);
+            pageTitles.put(pageId, accumulator.title);
+            LinkedHashMap<String, Object> meta = new LinkedHashMap<>();
+            meta.put("chunkCount", accumulator.chunkCount);
+            meta.put("slug", defaultString(accumulator.slug));
+            if (accumulator.directoryId != null) {
+                meta.put("directoryId", accumulator.directoryId);
+            }
+            nodes.add(new WikiSpaceKnowledgeGraph.Node(
+                    pageId,
+                    "WIKI_PAGE",
+                    pageId,
+                    defaultString(accumulator.title),
+                    defaultString(accumulator.slug),
+                    accumulator.directoryId,
+                    accumulator.chunkCount,
+                    writeJsonQuietly(meta)
+            ));
+
+            // 目录节点按需补建，并连一条「页面归属目录」结构边。
+            if (accumulator.directoryId != null) {
+                Long directoryNodeId = DIRECTORY_NODE_ID_OFFSET + accumulator.directoryId;
+                if (!Boolean.TRUE.equals(directoryNodeAdded.get(accumulator.directoryId))) {
+                    String directoryName = directoryNames == null ? null : directoryNames.get(accumulator.directoryId);
+                    nodes.add(new WikiSpaceKnowledgeGraph.Node(
+                            directoryNodeId,
+                            "WIKI_DIRECTORY",
+                            accumulator.directoryId,
+                            directoryName == null || directoryName.isBlank() ? "目录 #" + accumulator.directoryId : directoryName,
+                            "",
+                            accumulator.directoryId,
+                            null,
+                            "{}"
+                    ));
+                    directoryNodeAdded.put(accumulator.directoryId, Boolean.TRUE);
+                }
+                edges.add(new WikiSpaceKnowledgeGraph.Edge(
+                        edgeSequence++,
+                        directoryNodeId,
+                        pageId,
+                        "BELONGS_TO_DIRECTORY",
+                        null,
+                        ""
+                ));
+            }
+        }
+
+        // 第三步：页面质心两两余弦相似度，超过阈值生成语义边，并对每个节点做 topN 截断防止边爆炸。
+        edges.addAll(buildSemanticEdges(pageCentroids, pageTitles, edgeSequence));
+
+        return new WikiSpaceKnowledgeGraph(spaceId, spaceName, true, generatedAt, nodes, edges);
+    }
+
+    private List<WikiSpaceKnowledgeGraph.Edge> buildSemanticEdges(Map<Long, double[]> pageCentroids,
+                                                                  Map<Long, String> pageTitles,
+                                                                  long edgeSequenceStart) {
+        double threshold = properties.getGraphSimilarityThreshold();
+        int maxEdgesPerNode = properties.getGraphMaxEdgesPerNode();
+        List<Long> pageIds = new ArrayList<>(pageCentroids.keySet());
+
+        // 先收集全部超阈值的无向相似对，再按相似度从高到低裁剪每个节点的边数。
+        List<SimilarityPair> candidates = new ArrayList<>();
+        for (int i = 0; i < pageIds.size(); i++) {
+            for (int j = i + 1; j < pageIds.size(); j++) {
+                Long left = pageIds.get(i);
+                Long right = pageIds.get(j);
+                double similarity = cosineSimilarity(pageCentroids.get(left), pageCentroids.get(right));
+                if (similarity >= threshold) {
+                    candidates.add(new SimilarityPair(left, right, similarity));
+                }
+            }
+        }
+        candidates.sort(Comparator.comparingDouble((SimilarityPair pair) -> pair.similarity).reversed());
+
+        Map<Long, Integer> degree = new LinkedHashMap<>();
+        List<WikiSpaceKnowledgeGraph.Edge> edges = new ArrayList<>();
+        long edgeSequence = edgeSequenceStart;
+        for (SimilarityPair pair : candidates) {
+            int leftDegree = degree.getOrDefault(pair.left, 0);
+            int rightDegree = degree.getOrDefault(pair.right, 0);
+            if (leftDegree >= maxEdgesPerNode || rightDegree >= maxEdgesPerNode) {
+                continue;
+            }
+            degree.put(pair.left, leftDegree + 1);
+            degree.put(pair.right, rightDegree + 1);
+            String leftTitle = defaultString(pageTitles.get(pair.left));
+            String rightTitle = defaultString(pageTitles.get(pair.right));
+            edges.add(new WikiSpaceKnowledgeGraph.Edge(
+                    edgeSequence++,
+                    pair.left,
+                    pair.right,
+                    "SEMANTIC_SIMILAR",
+                    roundSimilarity(pair.similarity),
+                    leftTitle + " 与 " + rightTitle + " 语义相近（相似度 " + roundSimilarity(pair.similarity) + "）"
+            ));
+        }
+        return edges;
+    }
+
+    private double cosineSimilarity(double[] left, double[] right) {
+        if (left == null || right == null || left.length == 0 || left.length != right.length) {
+            return 0d;
+        }
+        double dot = 0d;
+        double leftNorm = 0d;
+        double rightNorm = 0d;
+        for (int index = 0; index < left.length; index++) {
+            dot += left[index] * right[index];
+            leftNorm += left[index] * left[index];
+            rightNorm += right[index] * right[index];
+        }
+        if (leftNorm == 0d || rightNorm == 0d) {
+            return 0d;
+        }
+        return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
+    }
+
+    private double roundSimilarity(double value) {
+        return Math.round(value * 10000d) / 10000d;
+    }
+
+    private String writeJsonQuietly(Map<String, Object> payload) {
+        try {
+            return objectMapper.writeValueAsString(payload);
+        } catch (Exception exception) {
+            return "{}";
+        }
+    }
+
+    public WikiKnowledgeRebuildResult rebuildAllIndexes() {        if (!isEnabled()) {
             return new WikiKnowledgeRebuildResult(0, 0, false, "Wiki 知识索引未启用或未配置 Embedding 模型");
         }
         int sampleDimension = resolveSampleDimension();
@@ -381,7 +563,7 @@ public class WikiKnowledgeSearchService {
             return;
         }
         List<String> inputs = chunks.stream().map(WikiChunkingService.WikiChunk::content).toList();
-        List<List<Double>> vectors = modelConfigService.generateEmbeddings(properties.getEmbeddingModelId(), inputs);
+        List<List<Double>> vectors = generateEmbeddings(inputs);
         if (vectors.isEmpty()) {
             return;
         }
@@ -403,7 +585,40 @@ public class WikiKnowledgeSearchService {
     }
 
     private int resolveSampleDimension() {
-        return modelConfigService.generateEmbedding(properties.getEmbeddingModelId(), "wiki knowledge bootstrap").size();
+        return generateEmbedding("wiki knowledge bootstrap").size();
+    }
+
+    private List<Double> generateEmbedding(String input) {
+        if (properties.hasEmbeddingModelId()) {
+            return modelConfigService.generateEmbedding(properties.getEmbeddingModelId(), input);
+        }
+        return modelConfigService.generateEmbedding(resolveFixedEmbeddingConfig(), input);
+    }
+
+    private List<List<Double>> generateEmbeddings(List<String> inputs) {
+        if (properties.hasEmbeddingModelId()) {
+            return modelConfigService.generateEmbeddings(properties.getEmbeddingModelId(), inputs);
+        }
+        return modelConfigService.generateEmbeddings(resolveFixedEmbeddingConfig(), inputs);
+    }
+
+    /**
+     * Wiki 知识索引允许用部署配置固定 Embedding 连接信息，避免必须先在后台模型表创建一条记录。
+     */
+    private ModelConfigService.ResolvedModelConfig resolveFixedEmbeddingConfig() {
+        if (!properties.hasFixedEmbeddingConfig()) {
+            throw new IllegalStateException("Wiki 知识索引未配置 Embedding 模型");
+        }
+        return new ModelConfigService.ResolvedModelConfig(
+                null,
+                "Wiki 知识向量模型",
+                ModelConfigService.MODEL_TYPE_EMBEDDING,
+                properties.getEmbeddingProvider(),
+                properties.getEmbeddingBaseUrl(),
+                properties.getEmbeddingModelName(),
+                ModelConfigService.OPENAI_API_MODE_AUTO,
+                properties.getEmbeddingApiKey()
+        );
     }
 
     private WikiSearchHit toSearchHit(QdrantClientService.QdrantSearchHit hit, String sourceType) {
@@ -564,5 +779,62 @@ public class WikiKnowledgeSearchService {
                                              int spacePageCount,
                                              boolean success,
                                              String message) {
+    }
+
+    /**
+     * 页面级向量聚合器：累加同一页面下所有 chunk 的向量，最终给出归一化质心。
+     */
+    private static final class PageAccumulator {
+        private final Long pageId;
+        private String title;
+        private String slug;
+        private Long directoryId;
+        private int chunkCount;
+        private double[] sum;
+
+        private PageAccumulator(Long pageId) {
+            this.pageId = pageId;
+        }
+
+        private void accept(List<Double> vector, Map<String, Object> payload) {
+            if (sum == null) {
+                sum = new double[vector.size()];
+            }
+            if (sum.length != vector.size()) {
+                // 维度不一致说明索引脏数据，跳过该 chunk，避免污染质心。
+                return;
+            }
+            for (int index = 0; index < vector.size(); index++) {
+                Double value = vector.get(index);
+                sum[index] += value == null ? 0d : value;
+            }
+            chunkCount++;
+            if (title == null && payload.get("title") != null) {
+                title = String.valueOf(payload.get("title"));
+            }
+            if (slug == null && payload.get("slug") != null) {
+                slug = String.valueOf(payload.get("slug"));
+            }
+            if (directoryId == null && payload.get("directoryId") instanceof Number number) {
+                directoryId = number.longValue();
+            }
+        }
+
+        private double[] centroid() {
+            if (sum == null || chunkCount == 0) {
+                return null;
+            }
+            double[] centroid = new double[sum.length];
+            for (int index = 0; index < sum.length; index++) {
+                centroid[index] = sum[index] / chunkCount;
+            }
+            return centroid;
+        }
+    }
+
+    /**
+     * 页面相似对，用于语义边裁剪。
+     */
+    private record SimilarityPair(Long left, Long right, double similarity) {
     }
 }

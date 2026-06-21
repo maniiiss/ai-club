@@ -309,8 +309,7 @@ public class CicdManagementService {
         }
 
         allEntries.sort(Comparator
-                .comparing(PipelineCenterEntryEnvelope::lastTriggeredAt, Comparator.nullsLast(Comparator.reverseOrder()))
-                .thenComparing(PipelineCenterEntryEnvelope::entryType)
+                .comparing(PipelineCenterEntryEnvelope::entryType)
                 .thenComparing(PipelineCenterEntryEnvelope::entryId, Comparator.reverseOrder())
         );
 

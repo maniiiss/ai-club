@@ -48,7 +48,7 @@ export const KnowledgePage = () => {
       <div className="flex-shrink-0 mb-6 flex gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)] w-fit">
         {tabs.map((tab) => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-            className={cn('flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-all duration-150',
+            className={cn('flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-all duration-150 cursor-pointer',
               activeTab === tab.key ? 'bg-[var(--color-primary)] text-white shadow-[var(--shadow-sm)]' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]')}>
             <tab.icon className="h-3.5 w-3.5" strokeWidth={1.75} />{tab.label}
           </button>
@@ -201,7 +201,7 @@ const WikiPanel = () => {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {spaces.map((space) => (
               <button key={space.id} onClick={() => handleSelectSpace(space)}
-                className="group text-left rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-card)] transition-all duration-200 hover:border-[var(--color-primary)]/20 hover:shadow-[var(--shadow-card-hover)]">
+                className="group text-left rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-card)] transition-all duration-200 hover:border-[var(--color-primary)]/20 hover:shadow-[var(--shadow-card-hover)] cursor-pointer">
                 <div className="flex items-start gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary-light)] transition-colors group-hover:bg-[var(--color-primary)]">
                     <BookOpen className="h-5 w-5 text-[var(--color-primary)] group-hover:text-white" strokeWidth={1.75} />
@@ -230,7 +230,7 @@ const WikiPanel = () => {
       <div className="lg:hidden flex-shrink-0">
         <button
           onClick={() => setMobileTreeOpen(!mobileTreeOpen)}
-          className="flex w-full items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-text-primary)]"
+          className="flex w-full items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-4 py-2.5 text-[13px] font-medium text-[var(--color-text-primary)] cursor-pointer"
         >
           <span className="flex items-center gap-2">
             <FolderTree className="h-4 w-4 text-[var(--color-primary)]" />
@@ -247,11 +247,11 @@ const WikiPanel = () => {
         mobileTreeOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0 lg:max-h-none lg:opacity-100',
       )}>
         <div className="pt-2 lg:pt-0">
-          <button onClick={() => { setSelectedSpace(null); setSearchResults([]); setSelectedPage(null); setMobileTreeOpen(false) }} className="mb-3 text-[12px] text-[var(--color-primary)] hover:underline">← 返回空间列表</button>
+          <button onClick={() => { setSelectedSpace(null); setSearchResults([]); setSelectedPage(null); setMobileTreeOpen(false) }} className="mb-3 text-[12px] text-[var(--color-primary)] hover:underline cursor-pointer">← 返回空间列表</button>
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-[13px] font-semibold text-[var(--color-text-primary)] truncate">{selectedSpace.name}</h3>
             <div className="flex gap-0.5">
-              <button onClick={() => setNewDirDialog({ open: true })} className="rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors" title="新建目录"><FolderTree className="h-3.5 w-3.5" /></button>
+              <button onClick={() => setNewDirDialog({ open: true })} className="rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors cursor-pointer" title="新建目录"><FolderTree className="h-3.5 w-3.5" /></button>
             </div>
           </div>
           {treeLoading ? <LoadingSpinner text="加载目录…" /> : tree.length === 0 ? <p className="text-[12px] text-[var(--color-text-tertiary)]">暂无目录</p> : (
@@ -263,36 +263,38 @@ const WikiPanel = () => {
       </div>
 
       {/* 页面内容 */}
-      <div className="flex-1 min-w-0 overflow-y-auto">
+      <div className="flex-1 min-w-0 flex flex-col overflow-y-auto">
         {pageLoading ? <LoadingSpinner text="加载页面…" /> : selectedPage ? (
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]">
+          <div className={cn('rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]', editing && 'flex-1 flex flex-col min-h-0 overflow-hidden')}>
             {/* 页面头部 */}
-            <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-6 py-3">
+            <div className="flex-shrink-0 flex items-center justify-between border-b border-[var(--color-border-light)] px-6 py-3">
               <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-tertiary)]">
                 <span>{selectedPage.directoryName}</span><span>/</span><span>{selectedPage.title}</span>
               </div>
               <div className="flex items-center gap-1">
                 {!editing && selectedPage.canEdit && (
-                  <button onClick={handleStartEdit} className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors">
+                  <button onClick={handleStartEdit} className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors cursor-pointer">
                     <Edit3 className="h-3.5 w-3.5" />编辑
                   </button>
                 )}
                 {selectedPage.canEdit && (
-                  <button onClick={() => setDeleteConfirm({ type: 'page', id: selectedPage.id, name: selectedPage.title })} className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-bg-hover)] transition-colors">
+                  <button onClick={() => setDeleteConfirm({ type: 'page', id: selectedPage.id, name: selectedPage.title })} className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-bg-hover)] transition-colors cursor-pointer">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>
             </div>
 
-            {saveError && <div className="mx-6 mt-4 rounded-lg bg-[var(--color-danger-light)] border border-red-100 px-3 py-2 text-[13px] text-[var(--color-danger)]">{saveError}</div>}
+            {saveError && <div className="flex-shrink-0 mx-6 mt-4 rounded-lg bg-[var(--color-danger-light)] border border-red-100 px-3 py-2 text-[13px] text-[var(--color-danger)]">{saveError}</div>}
 
             {editing ? (
-              /* 编辑模式 */
-              <div className="p-6 flex flex-col gap-4" style={{ minHeight: 'calc(100vh - 220px)' }}>
-                <Input label="标题" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
-                <div className="flex flex-col gap-1.5 flex-1 min-h-0">
-                  <label className="text-[13px] font-medium text-[var(--color-text-secondary)]">内容</label>
+              /* 编辑模式：标题 + 编辑器 + 操作栏一屏展示，仅编辑器内部滚动 */
+              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                <div className="flex-shrink-0 px-6 pt-4 pb-2">
+                  <Input label="标题" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+                </div>
+                <div className="flex-1 flex flex-col min-h-0 px-6 pb-2">
+                  <label className="flex-shrink-0 text-[13px] font-medium text-[var(--color-text-secondary)] mb-1.5">内容</label>
                   <MarkdownEditor
                     value={editContent}
                     onChange={setEditContent}
@@ -302,7 +304,7 @@ const WikiPanel = () => {
                     startInEditMode
                   />
                 </div>
-                <div className="flex justify-end gap-2">
+                <div className="flex-shrink-0 flex justify-end gap-2 px-6 pb-4 pt-2 border-t border-[var(--color-border-light)]">
                   <Button variant="secondary" onClick={() => setEditing(false)}>取消</Button>
                   <Button onClick={handleSavePage} loading={saving} icon={<Save className="h-4 w-4" />}>保存</Button>
                 </div>
@@ -364,15 +366,15 @@ const DirectoryNode = ({ node, spaceId, onSelectPage, onAddPage, onDeleteDir, de
 
   return (
     <div>
-      <div className="group flex items-center rounded-md hover:bg-[var(--color-bg-hover)] transition-colors" style={{ paddingLeft: `${depth * 12}px` }}>
-        <button onClick={() => setExpanded(!expanded)} className="flex flex-1 items-center gap-1 px-2 py-1.5 text-left">
+      <div className="group flex items-center rounded-md hover:bg-[var(--color-bg-hover)] transition-colors cursor-pointer" style={{ paddingLeft: `${depth * 12}px` }}>
+        <button onClick={() => setExpanded(!expanded)} className="flex flex-1 items-center gap-1 px-2 py-1.5 text-left cursor-pointer">
           {hasChildren ? (expanded ? <ChevronDown className="h-3.5 w-3.5 text-[var(--color-text-tertiary)] shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 text-[var(--color-text-tertiary)] shrink-0" />) : <span className="w-3.5 shrink-0" />}
           <FolderTree className="h-3.5 w-3.5 text-amber-600 shrink-0" strokeWidth={1.75} />
           <span className="truncate text-[12.5px] text-[var(--color-text-primary)]">{node.name}</span>
         </button>
         <div className="flex items-center gap-0.5 pr-1 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
-          <button onClick={() => onAddPage(node.id)} className="rounded p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] transition-colors" title="新建页面"><Plus className="h-3 w-3" /></button>
-          <button onClick={() => onDeleteDir(node.id, node.name)} className="rounded p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] transition-colors" title="删除目录"><Trash2 className="h-3 w-3" /></button>
+          <button onClick={() => onAddPage(node.id)} className="rounded p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] transition-colors cursor-pointer" title="新建页面"><Plus className="h-3 w-3" /></button>
+          <button onClick={() => onDeleteDir(node.id, node.name)} className="rounded p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] transition-colors cursor-pointer" title="删除目录"><Trash2 className="h-3 w-3" /></button>
         </div>
       </div>
       {expanded && (
@@ -382,7 +384,7 @@ const DirectoryNode = ({ node, spaceId, onSelectPage, onAddPage, onDeleteDir, de
           ))}
           {node.pages.map((page) => (
             <button key={page.id} onClick={() => onSelectPage(spaceId, page.id)}
-              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[12.5px] text-left transition-colors hover:bg-[var(--color-bg-hover)]"
+              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[12.5px] text-left transition-colors hover:bg-[var(--color-bg-hover)] cursor-pointer"
               style={{ paddingLeft: `${(depth + 1) * 12 + 8}px` }}>
               <FileText className="h-3.5 w-3.5 text-[var(--color-text-tertiary)] shrink-0" strokeWidth={1.75} />
               <span className="truncate text-[var(--color-text-secondary)]">{page.title}</span>
@@ -522,7 +524,7 @@ const MemoryPanel = () => {
                       {node.factCount > 0 && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDrillDown(node.id, node.label) }}
-                          className="text-[11px] text-[var(--color-primary)] hover:underline"
+                          className="text-[11px] text-[var(--color-primary)] hover:underline cursor-pointer"
                         >
                           查看事实
                         </button>
@@ -548,7 +550,7 @@ const MemoryPanel = () => {
                   </div>
                   <button
                     onClick={() => setFactPanel(null)}
-                    className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+                    className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors cursor-pointer"
                   >
                     <X className="h-4 w-4" />
                   </button>

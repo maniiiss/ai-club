@@ -45,9 +45,10 @@ public class AgentExecutionService {
     public static final String RUNNER_PATROL_MODEL = "PATROL_MODEL";
 
     public static final String BUILTIN_CODE_REVIEW = "CODE_REVIEW";
-    public static final String BUILTIN_TEST_SUGGESTION = "TEST_SUGGESTION";
-    public static final String BUILTIN_REQUIREMENT_BREAKDOWN = "REQUIREMENT_BREAKDOWN";
     public static final String BUILTIN_REPOSITORY_SCAN_PLAN = "REPOSITORY_SCAN_PLAN";
+    public static final String BUILTIN_REQUIREMENT_AI_STANDARDIZE = "REQUIREMENT_AI_STANDARDIZE";
+    public static final String BUILTIN_REQUIREMENT_AI_BREAKDOWN = "REQUIREMENT_AI_BREAKDOWN";
+    public static final String BUILTIN_REQUIREMENT_AI_TEST_CASES = "REQUIREMENT_AI_TEST_CASES";
 
     private static final String HTTP_AUTH_NONE = "NONE";
     private static final String HTTP_AUTH_BEARER = "BEARER";
@@ -327,22 +328,6 @@ public class AgentExecutionService {
 
         return switch (normalizeBuiltinCode(builtinCode)) {
             case BUILTIN_CODE_REVIEW -> executeBuiltinCodeReviewAsMarkdown(agent, input);
-            case BUILTIN_TEST_SUGGESTION -> invokeModelAgent(
-                    agent,
-                    hasText(agent.getSystemPrompt()) ? agent.getSystemPrompt() : defaultTestSuggestionPrompt(),
-                    """
-                            请基于以下内容输出测试建议，结果请使用 Markdown 格式。
-
-                            """ + defaultString(input)
-            );
-            case BUILTIN_REQUIREMENT_BREAKDOWN -> invokeModelAgent(
-                    agent,
-                    hasText(agent.getSystemPrompt()) ? agent.getSystemPrompt() : defaultRequirementBreakdownPrompt(),
-                    """
-                            请基于以下内容进行需求拆解，结果请使用 Markdown 格式。
-
-                            """ + defaultString(input)
-            );
             case BUILTIN_REPOSITORY_SCAN_PLAN -> invokeModelAgent(
                     agent,
                     hasText(agent.getSystemPrompt()) ? agent.getSystemPrompt() : defaultRepositoryScanPlanPrompt(),
@@ -354,6 +339,21 @@ public class AgentExecutionService {
                             3. shards 中只能引用输入里出现过的 shardId
 
                             """ + defaultString(input)
+            );
+            case BUILTIN_REQUIREMENT_AI_STANDARDIZE -> invokeModelAgent(
+                    agent,
+                    hasText(agent.getSystemPrompt()) ? agent.getSystemPrompt() : "你是需求标准化助手，请将用户输入的需求描述整理为结构化的标准需求文档，使用 Markdown 格式输出。",
+                    "请将以下需求描述标准化为规范文档格式，使用 Markdown 输出。\n\n" + defaultString(input)
+            );
+            case BUILTIN_REQUIREMENT_AI_BREAKDOWN -> invokeModelAgent(
+                    agent,
+                    hasText(agent.getSystemPrompt()) ? agent.getSystemPrompt() : "你是需求拆解助手，请将用户输入的需求拆解为可执行的子任务列表，使用 Markdown 格式输出。",
+                    "请将以下需求拆解为可执行的子任务列表，使用 Markdown 输出。\n\n" + defaultString(input)
+            );
+            case BUILTIN_REQUIREMENT_AI_TEST_CASES -> invokeModelAgent(
+                    agent,
+                    hasText(agent.getSystemPrompt()) ? agent.getSystemPrompt() : "你是测试用例生成助手，请基于用户输入的需求生成结构化测试用例，使用 Markdown 格式输出。",
+                    "请基于以下需求生成结构化测试用例，使用 Markdown 输出。\n\n" + defaultString(input)
             );
             default -> throw new IllegalArgumentException("错误的Agent配置");
         };
@@ -975,9 +975,10 @@ public class AgentExecutionService {
         }
         normalized = normalized.toUpperCase();
         if (!BUILTIN_CODE_REVIEW.equals(normalized)
-                && !BUILTIN_TEST_SUGGESTION.equals(normalized)
-                && !BUILTIN_REQUIREMENT_BREAKDOWN.equals(normalized)
-                && !BUILTIN_REPOSITORY_SCAN_PLAN.equals(normalized)) {
+                && !BUILTIN_REPOSITORY_SCAN_PLAN.equals(normalized)
+                && !BUILTIN_REQUIREMENT_AI_STANDARDIZE.equals(normalized)
+                && !BUILTIN_REQUIREMENT_AI_BREAKDOWN.equals(normalized)
+                && !BUILTIN_REQUIREMENT_AI_TEST_CASES.equals(normalized)) {
             throw new IllegalArgumentException("?????? Agent ??");
         }
         return normalized;
@@ -1014,31 +1015,6 @@ public class AgentExecutionService {
                 {"approved": true/false, "summary": "...", "issues": ["..."]}
 
                 只要存在高风险问题，approved 必须为 false。
-                """;
-    }
-
-    private String defaultTestSuggestionPrompt() {
-        return """
-                ???????????
-                ????????? Markdown ?????????????
-                1. ????
-                2. ????
-                3. ????
-                4. ???
-                5. ?????
-                ?????????????????????
-                """;
-    }
-
-    private String defaultRequirementBreakdownPrompt() {
-        return """
-                ???????????
-                ??????????????????? Markdown ????????
-                1. ?????
-                2. ????????????????
-                3. ??????
-                4. ????
-                ?????????????????????
                 """;
     }
 

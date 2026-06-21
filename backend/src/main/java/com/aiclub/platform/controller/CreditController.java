@@ -3,6 +3,7 @@ package com.aiclub.platform.controller;
 import com.aiclub.platform.annotation.OperationLog;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
+import com.aiclub.platform.dto.CreditAccountBackfillSummary;
 import com.aiclub.platform.dto.CreditAccountSummary;
 import com.aiclub.platform.dto.CreditFeatureConfigSummary;
 import com.aiclub.platform.dto.CreditGlobalConfigSummary;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 积分管理与公众端积分查询接口。
@@ -72,6 +74,13 @@ public class CreditController {
         return ApiResponse.success(creditService.pageAccounts(page, size, keyword));
     }
 
+    @PostMapping("/accounts/backfill")
+    @RequirePermission("system:credit:manage")
+    @OperationLog(actionCode = "CREDIT_ACCOUNT_BACKFILL", actionName = "批量补建历史用户积分账户")
+    public ApiResponse<CreditAccountBackfillSummary> backfillAccounts() {
+        return ApiResponse.success(creditService.backfillMissingAccounts());
+    }
+
     @PostMapping("/accounts/{userId}/adjust")
     @RequirePermission("system:credit:manage")
     @OperationLog(actionCode = "CREDIT_ACCOUNT_ADJUST", actionName = "调整用户积分", bizIdParam = "userId")
@@ -97,5 +106,10 @@ public class CreditController {
     public ApiResponse<PageResponse<CreditTransactionSummary>> pageCurrentAccountTransactions(@RequestParam(defaultValue = "1") int page,
                                                                                               @RequestParam(defaultValue = "10") int size) {
         return ApiResponse.success(creditService.pageCurrentAccountTransactions(page, size));
+    }
+
+    @GetMapping("/me/feature-costs")
+    public ApiResponse<Map<String, Integer>> getFeatureCosts() {
+        return ApiResponse.success(creditService.getEnabledFeatureCosts());
     }
 }

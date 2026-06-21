@@ -289,7 +289,8 @@
             <el-switch v-model="form.enabled" />
           </el-form-item>
           <el-form-item label="接入方式" prop="accessType" class="span-2">
-            <el-radio-group v-model="form.accessType" class="access-type-group">
+            <el-radio-group v-model="form.accessType" class="access-type-group"
+              :style="{ '--el-radio-button-text-color': 'var(--app-text-soft, #606266)', '--el-radio-button-checked-text-color': '#fff', '--el-radio-button-checked-bg-color': 'var(--el-color-primary)', '--el-radio-button-checked-border-color': 'var(--el-color-primary)' }">
               <el-radio-button v-for="item in accessTypeOptions" :key="item.value" :value="item.value">
                 {{ item.label }}
               </el-radio-button>
@@ -502,7 +503,8 @@
             <el-switch v-model="form.enabled" />
           </el-form-item>
           <el-form-item label="接入方式" prop="accessType" class="span-2">
-            <el-radio-group v-model="form.accessType" class="access-type-group">
+            <el-radio-group v-model="form.accessType" class="access-type-group"
+              :style="{ '--el-radio-button-text-color': 'var(--app-text-soft, #606266)', '--el-radio-button-checked-text-color': '#fff', '--el-radio-button-checked-bg-color': 'var(--el-color-primary)', '--el-radio-button-checked-border-color': 'var(--el-color-primary)' }">
               <el-radio-button v-for="item in accessTypeOptions" :key="item.value" :value="item.value">
                 {{ item.label }}
               </el-radio-button>
@@ -749,7 +751,7 @@ interface AgentForm {
   status: string
   enabled: boolean
   accessType: 'BUILT_IN' | 'LLM_PROMPT' | 'HTTP_API' | 'AGENT_RUNTIME'
-  builtinCode: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | 'REPOSITORY_SCAN_PLAN' | null
+  builtinCode: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | 'REPOSITORY_SCAN_PLAN' | 'REQUIREMENT_AI_STANDARDIZE' | 'REQUIREMENT_AI_BREAKDOWN' | 'REQUIREMENT_AI_TEST_CASES' | null
   capability: string
   description: string
   aiModelConfigId: number | null
@@ -779,9 +781,10 @@ const accessTypeOptions = [
 ] as const
 const builtinOptions = [
   { label: '代码审查智能体', value: 'CODE_REVIEW' },
-  { label: '测试建议智能体', value: 'TEST_SUGGESTION' },
-  { label: '需求拆解智能体', value: 'REQUIREMENT_BREAKDOWN' },
-  { label: '仓库扫描计划智能体', value: 'REPOSITORY_SCAN_PLAN' }
+  { label: '仓库扫描计划智能体', value: 'REPOSITORY_SCAN_PLAN' },
+  { label: '标准化需求智能体', value: 'REQUIREMENT_AI_STANDARDIZE' },
+  { label: '拆解子任务智能体', value: 'REQUIREMENT_AI_BREAKDOWN' },
+  { label: '测试用例生成智能体', value: 'REQUIREMENT_AI_TEST_CASES' }
 ] as const
 const runtimeTypeOptions = [
   { label: 'OpenClaw', value: 'OPENCLAW' },
@@ -1560,6 +1563,14 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: none !important;
+}
+
+:deep(.access-type-group .el-radio-button.is-active .el-radio-button__inner) {
+  color: var(--app-text) !important;
+  background-color: rgba(var(--app-primary-container-rgb), 0.3) !important;
+  border-color: #e4e7ed !important;
+  box-shadow: none !important;
 }
 
 :deep(.el-dialog.agent-editor-dialog) {

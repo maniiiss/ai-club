@@ -5,6 +5,7 @@ import com.aiclub.platform.domain.model.CreditGlobalConfigEntity;
 import com.aiclub.platform.domain.model.UserCreditAccountEntity;
 import com.aiclub.platform.domain.model.UserCreditTransactionEntity;
 import com.aiclub.platform.domain.model.UserEntity;
+import com.aiclub.platform.dto.CreditAccountBackfillSummary;
 import com.aiclub.platform.dto.CreditAccountSummary;
 import com.aiclub.platform.dto.CreditFeatureConfigSummary;
 import com.aiclub.platform.dto.CreditGlobalConfigSummary;
@@ -86,6 +87,20 @@ public class CreditService {
                 .toList();
     }
 
+    /**
+     * 返回所有已启用功能的 featureCode → costAmount 映射，供公众端展示积分消耗提示。
+     */
+    public java.util.Map<String, Integer> getEnabledFeatureCosts() {
+        return creditFeatureConfigRepository.findAllByOrderByIdAsc().stream()
+                .filter(CreditFeatureConfigEntity::isEnabled)
+                .collect(java.util.stream.Collectors.toMap(
+                        CreditFeatureConfigEntity::getFeatureCode,
+                        CreditFeatureConfigEntity::getCostAmount,
+                        (a, b) -> a,
+                        java.util.LinkedHashMap::new
+                ));
+    }
+
     @Transactional
     public CreditFeatureConfigSummary saveFeatureConfig(CreditFeatureConfigRequest request) {
         String featureCode = normalizeFeatureCode(request.featureCode());
@@ -147,6 +162,29 @@ public class CreditService {
             return;
         }
         applyDelta(account, TYPE_REGISTER_GRANT, config.getRegisterGrantAmount(), null, null, "注册赠送积分", null, null);
+    }
+
+    /**
+     * 批量为尚未开通积分账户的历史用户补建账户。
+     * 当注册赠送已启用且赠送积分大于 0 时，按当前配置发放初始积分并记录一条注册赠送流水；
+     * 否则仅开户，余额为 0。
+     */
+    @Transactional
+    public CreditAccountBackfillSummary backfillMissingAccounts() {
+        CreditGlobalConfigEntity config = requireGlobalConfig();
+        boolean shouldGrant = config.isRegisterGrantEnabled() && config.getRegisterGrantAmount() > 0;
+        List<UserEntity> users = userRepository.findAllWithoutCreditAccount();
+        int createdCount = 0;
+        int grantedCount = 0;
+        for (UserEntity user : users) {
+            UserCreditAccountEntity account = createAccount(user);
+            createdCount++;
+            if (shouldGrant) {
+                applyDelta(account, TYPE_REGISTER_GRANT, config.getRegisterGrantAmount(), null, null, "历史用户补发注册积分", currentOperatorUserIdOrNull(), null);
+                grantedCount++;
+            }
+        }
+        return new CreditAccountBackfillSummary(createdCount, grantedCount, shouldGrant ? config.getRegisterGrantAmount() : 0);
     }
 
     @Transactional

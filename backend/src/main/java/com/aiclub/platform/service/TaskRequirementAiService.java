@@ -1,5 +1,6 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.dto.TaskRequirementAiResult;
@@ -7,6 +8,7 @@ import com.aiclub.platform.dto.TaskRequirementAiSuggestion;
 import com.aiclub.platform.dto.TaskRequirementAiTestCaseStepSuggestion;
 import com.aiclub.platform.dto.TaskRequirementAiTestCaseSuggestion;
 import com.aiclub.platform.dto.request.TaskRequirementAiRequest;
+import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.TaskRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -19,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -30,6 +33,13 @@ public class TaskRequirementAiService {
     private static final String ACTION_STANDARDIZE = "STANDARDIZE";
     private static final String ACTION_BREAKDOWN = "BREAKDOWN";
     private static final String ACTION_TEST_CASES = "TEST_CASES";
+
+    /** AI 动作到内置智能体编码的映射，用于查找管理员在智能体管理中绑定的默认模型。 */
+    private static final Map<String, String> ACTION_TO_BUILTIN_AGENT = Map.of(
+            ACTION_STANDARDIZE, "REQUIREMENT_AI_STANDARDIZE",
+            ACTION_BREAKDOWN, "REQUIREMENT_AI_BREAKDOWN",
+            ACTION_TEST_CASES, "REQUIREMENT_AI_TEST_CASES"
+    );
 
     private static final Pattern THINK_BLOCK_PATTERN = Pattern.compile("(?is)<think>.*?</think>");
     private static final Pattern JSON_CODE_BLOCK_PATTERN = Pattern.compile("(?is)```json\\s*(\\{.*?})\\s*```");
@@ -44,17 +54,20 @@ public class TaskRequirementAiService {
 
     private final TaskRepository taskRepository;
     private final AiModelConfigRepository aiModelConfigRepository;
+    private final AgentRepository agentRepository;
     private final ModelConfigService modelConfigService;
     private final ObjectMapper objectMapper;
     private final ProjectDataPermissionService projectDataPermissionService;
 
     public TaskRequirementAiService(TaskRepository taskRepository,
                                     AiModelConfigRepository aiModelConfigRepository,
+                                    AgentRepository agentRepository,
                                     ModelConfigService modelConfigService,
                                     ObjectMapper objectMapper,
                                     ProjectDataPermissionService projectDataPermissionService) {
         this.taskRepository = taskRepository;
         this.aiModelConfigRepository = aiModelConfigRepository;
+        this.agentRepository = agentRepository;
         this.modelConfigService = modelConfigService;
         this.objectMapper = objectMapper;
         this.projectDataPermissionService = projectDataPermissionService;
@@ -62,8 +75,8 @@ public class TaskRequirementAiService {
 
     public TaskRequirementAiResult generate(Long taskId, TaskRequirementAiRequest request) {
         TaskEntity task = requireRequirementTask(taskId);
-        AiModelConfigEntity modelConfig = resolveModelConfig(request.modelConfigId());
         String action = normalizeAction(request.action());
+        AiModelConfigEntity modelConfig = resolveModelConfig(request.modelConfigId(), action);
 
         return switch (action) {
             case ACTION_STANDARDIZE -> buildMarkdownResult(
@@ -343,7 +356,13 @@ public class TaskRequirementAiService {
         return task;
     }
 
-    private AiModelConfigEntity resolveModelConfig(Long modelConfigId) {
+    /**
+     * 解析模型配置。优先级：
+     * 1. 请求显式指定的 modelConfigId
+     * 2. 对应动作的内置智能体所绑定的模型（管理员可在智能体管理中配置）
+     * 3. 回退到第一个已启用的 CHAT 模型配置
+     */
+    private AiModelConfigEntity resolveModelConfig(Long modelConfigId, String action) {
         if (modelConfigId != null) {
             AiModelConfigEntity modelConfig = aiModelConfigRepository.findById(modelConfigId)
                     .orElseThrow(() -> new NoSuchElementException("模型配置不存在或未启用: " + modelConfigId));
@@ -354,6 +373,17 @@ public class TaskRequirementAiService {
                 throw new IllegalArgumentException("需求 AI 助手仅支持对话模型配置");
             }
             return modelConfig;
+        }
+        // 尝试从对应动作的内置智能体获取模型配置
+        String builtinCode = ACTION_TO_BUILTIN_AGENT.get(action);
+        if (builtinCode != null) {
+            AiModelConfigEntity agentModel = agentRepository.findFirstByBuiltinCodeAndEnabledTrue(builtinCode)
+                    .map(AgentEntity::getAiModelConfig)
+                    .filter(mc -> Boolean.TRUE.equals(mc.getEnabled()))
+                    .orElse(null);
+            if (agentModel != null) {
+                return agentModel;
+            }
         }
         return aiModelConfigRepository.findAllByEnabledTrueAndModelTypeOrderByIdAsc(ModelConfigService.MODEL_TYPE_CHAT).stream()
                 .findFirst()

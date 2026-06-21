@@ -16,6 +16,7 @@ import com.aiclub.platform.dto.WikiSpaceMemberSummary;
 import com.aiclub.platform.dto.WikiSpacePageDetail;
 import com.aiclub.platform.dto.WikiSpacePageSummary;
 import com.aiclub.platform.dto.WikiSpacePageVersionSummary;
+import com.aiclub.platform.dto.WikiSpaceKnowledgeGraph;
 import com.aiclub.platform.dto.WikiSpaceSearchResult;
 import com.aiclub.platform.dto.WikiSpaceSummary;
 import com.aiclub.platform.dto.DocumentMarkdownResult;
@@ -327,6 +328,22 @@ public class WikiSpaceService {
         List<WikiDirectoryEntity> directories = wikiDirectoryRepository.findAllBySpace_IdOrderBySortOrderAscIdAsc(spaceId);
         List<WikiPageV2Entity> pages = wikiPageV2Repository.findAllBySpace_IdOrderByUpdatedAtDescIdDesc(spaceId);
         return buildDirectoryTree(directories, pages);
+    }
+
+    /**
+     * 构建空间级 Wiki 向量化知识图谱。
+     * 业务意图：在权限校验通过后，把目录名映射喂给知识检索服务，
+     * 让其从 Qdrant 取回向量并派生页面节点、目录归属边与语义相似边。
+     */
+    public WikiSpaceKnowledgeGraph getKnowledgeGraph(Long spaceId) {
+        UserContext userContext = requireCurrentUserContext();
+        WikiSpaceEntity space = requireSpace(spaceId);
+        requireSpaceVisible(space, userContext);
+        Map<Long, String> directoryNames = new LinkedHashMap<>();
+        for (WikiDirectoryEntity directory : wikiDirectoryRepository.findAllBySpace_IdOrderBySortOrderAscIdAsc(spaceId)) {
+            directoryNames.put(directory.getId(), directory.getName());
+        }
+        return wikiKnowledgeSearchService.buildSpaceKnowledgeGraph(spaceId, space.getName(), directoryNames);
     }
 
     /**

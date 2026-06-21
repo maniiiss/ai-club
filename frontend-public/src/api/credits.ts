@@ -17,3 +17,9 @@ export const pageMyCreditTransactions = async (params: { page?: number; size?: n
   })
   return unwrap(res)
 }
+
+/** 获取当前用户已启用功能的积分费用映射（featureCode → costAmount）。 */
+export const getMyFeatureCosts = async (): Promise<Record<string, number>> => {
+  const res = await http.get<ApiResponse<Record<string, number>>>('/api/credits/me/feature-costs')
+  return unwrap(res)
+}

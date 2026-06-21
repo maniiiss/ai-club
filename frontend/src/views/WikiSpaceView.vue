@@ -18,6 +18,9 @@
             <span>绑定项目：{{ spaceDetail?.boundProjectName || '未绑定' }}</span>
             <span>成员默认：{{ memberDefaultSourceLabel(spaceDetail?.memberDefaultSource) }}</span>
           </div>
+          <button class="wiki-side-text-button wiki-space-graph-button" type="button" @click="goKnowledgeGraph">
+            查看知识图谱
+          </button>
         </div>
 
         <div class="wiki-search-shell">
@@ -513,7 +516,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowDown, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, ArrowRight, DataAnalysis } from '@element-plus/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
 import { MdPreview } from 'md-editor-v3'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
@@ -1505,6 +1508,10 @@ function goBack() {
   router.push({ name: 'wiki-home' })
 }
 
+function goKnowledgeGraph() {
+  router.push({ name: 'wiki-space-knowledge-graph', params: { spaceId: spaceId.value } })
+}
+
 function roleLabel(role?: string | null) {
   if (role === 'ADMIN') return '管理员'
   if (role === 'EDITOR') return '编辑者'
@@ -1831,6 +1838,11 @@ function collectPageRowKeys(pages: WikiSpacePageSummaryItem[]): string[] {
 
 .wiki-header-action.danger {
   color: #b42318;
+}
+
+.wiki-space-graph-button {
+  margin-top: 12px;
+  display: inline-flex;
 }
 
 .wiki-space-card {

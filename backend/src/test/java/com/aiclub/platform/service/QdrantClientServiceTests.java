@@ -80,8 +80,38 @@ class QdrantClientServiceTests {
         assertThat(lastRequestPath.get()).contains("/collections/wiki_project_chunks");
     }
 
-    private QdrantClientService createService() throws Exception {
-        server = HttpServer.create(new InetSocketAddress(0), 0);
+    @Test
+    void shouldScrollAllPointsAcrossPages() throws Exception {
+        QdrantClientService service = createService();
+
+        List<QdrantClientService.QdrantScrollPoint> points = service.scrollPoints(
+                "wiki_space_chunks",
+                Map.of("spaceId", 8L),
+                true,
+                2
+        );
+
+        // mock 第一页返回 1 个 point 且带 next_page_offset，第二页返回 1 个且无 offset，应翻页拉全 2 条。
+        assertThat(points).hasSize(2);
+        assertThat(points.get(0).id()).isEqualTo("p-1");
+        assertThat(points.get(0).vector()).containsExactly(0.1d, 0.2d, 0.3d);
+        assertThat(points.get(0).payload()).containsEntry("pageId", 201);
+        assertThat(points.get(1).id()).isEqualTo("p-2");
+        assertThat(lastRequestPath.get()).contains("/points/scroll");
+        assertThat(lastRequestBody.get()).contains("\"with_vector\":true");
+    }
+
+    @Test
+    void shouldIgnoreDeleteWhenCollectionMissing() throws Exception {
+        QdrantClientService service = createService();
+
+        // collection 不存在时 Qdrant 返回 404，删除应静默降级、不抛异常。
+        org.assertj.core.api.Assertions.assertThatCode(() ->
+                service.deletePointsByFilter("missing_collection", Map.of("spaceId", 8L, "pageId", 5L))
+        ).doesNotThrowAnyException();
+    }
+
+    private QdrantClientService createService() throws Exception {        server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/collections", this::handleRequest);
         server.start();
         return new QdrantClientService(
@@ -93,6 +123,10 @@ class QdrantClientServiceTests {
                         "wiki_project_chunks",
                         "wiki_space_chunks",
                         9L,
+                        "",
+                        "",
+                        "",
+                        "OPENAI",
                         12,
                         24,
                         "",
@@ -100,7 +134,10 @@ class QdrantClientServiceTests {
                         "",
                         "openai-compatible",
                         15,
-                        10
+                        10,
+                        0.78,
+                        6,
+                        256
                 ),
                 new ObjectMapper()
         );
@@ -115,6 +152,32 @@ class QdrantClientServiceTests {
             if (collectionCreateCount.incrementAndGet() > 1) {
                 status = 409;
                 body = "{\"status\":{\"error\":\"Collection wiki_project_chunks already exists\"}}";
+            }
+        }
+        if (exchange.getRequestURI().toString().endsWith("/points/scroll")) {
+            // 第一页带 next_page_offset，第二页无，覆盖翻页拉全逻辑。
+            if (lastRequestBody.get().contains("\"offset\":\"page-2\"")) {
+                body = """
+                        {
+                          "result": {
+                            "points": [
+                              {"id": "p-2", "vector": [0.4, 0.5, 0.6], "payload": {"pageId": 202}}
+                            ],
+                            "next_page_offset": null
+                          }
+                        }
+                        """;
+            } else {
+                body = """
+                        {
+                          "result": {
+                            "points": [
+                              {"id": "p-1", "vector": [0.1, 0.2, 0.3], "payload": {"pageId": 201}}
+                            ],
+                            "next_page_offset": "page-2"
+                          }
+                        }
+                        """;
             }
         }
         if (exchange.getRequestURI().toString().endsWith("/points/search")) {
@@ -133,6 +196,12 @@ class QdrantClientServiceTests {
                       ]
                     }
                     """;
+        }
+        if (exchange.getRequestURI().toString().endsWith("/points/delete?wait=true")
+                && exchange.getRequestURI().toString().contains("missing_collection")) {
+            // 模拟 collection 不存在时 Qdrant 返回 404。
+            status = 404;
+            body = "{\"status\":{\"error\":\"Not found: Collection `missing_collection` doesn't exist!\"}}";
         }
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json");

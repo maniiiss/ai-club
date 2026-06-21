@@ -1266,7 +1266,6 @@ async function handleQuickBuildTrigger(binding: PipelineCenterEntryItem) {
     ElMessage.error(error?.response?.data?.message || '触发流水线失败')
   } finally {
     quickBuildTriggeringId.value = null
-    await loadQuickBuildBindings()
   }
 }
 

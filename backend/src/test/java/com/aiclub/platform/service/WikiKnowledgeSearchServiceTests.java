@@ -5,6 +5,7 @@ import com.aiclub.platform.domain.model.WikiDirectoryEntity;
 import com.aiclub.platform.domain.model.WikiPageEntity;
 import com.aiclub.platform.domain.model.WikiPageV2Entity;
 import com.aiclub.platform.domain.model.WikiSpaceEntity;
+import com.aiclub.platform.dto.WikiSpaceKnowledgeGraph;
 import com.aiclub.platform.repository.WikiPageRepository;
 import com.aiclub.platform.repository.WikiPageV2Repository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,6 +45,73 @@ class WikiKnowledgeSearchServiceTests {
     private WikiPageV2Repository wikiPageV2Repository;
 
     @Test
+    void shouldUseFixedEmbeddingConfigWhenModelIdNotConfigured() {
+        WikiKnowledgeSearchService service = new WikiKnowledgeSearchService(
+                new WikiKnowledgeProperties(
+                        true,
+                        "http://localhost:6333",
+                        "",
+                        20,
+                        "wiki_project_chunks",
+                        "wiki_space_chunks",
+                        0L,
+                        "http://embedding.local/v1",
+                        "local-key",
+                        "qwen3-embedding-4b",
+                        "OPENAI",
+                        12,
+                        24,
+                        "",
+                        "",
+                        "",
+                        "openai-compatible",
+                        15,
+                        10,
+                        0.78,
+                        6,
+                        256
+                ),
+                qdrantClientService,
+                new WikiChunkingService(),
+                modelConfigService,
+                wikiPageRepository,
+                wikiPageV2Repository,
+                new ObjectMapper()
+        );
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(12L);
+        project.setName("支付项目");
+        WikiPageEntity page = new WikiPageEntity();
+        page.setId(101L);
+        page.setProject(project);
+        page.setTitle("证书提醒");
+        page.setSlug("cert-alert");
+        page.setContent("证书提醒正文");
+        page.setVisibilityScope(WikiPageService.VISIBILITY_PROJECT_MEMBERS);
+        page.setCurrentVersionNumber(1);
+
+        when(modelConfigService.generateEmbeddings(
+                org.mockito.ArgumentMatchers.<ModelConfigService.ResolvedModelConfig>argThat(config ->
+                        config.id() == null
+                                && "Wiki 知识向量模型".equals(config.name())
+                                && ModelConfigService.MODEL_TYPE_EMBEDDING.equals(config.modelType())
+                                && ModelConfigService.PROVIDER_OPENAI.equals(config.provider())
+                                && "http://embedding.local/v1".equals(config.apiBaseUrl())
+                                && "qwen3-embedding-4b".equals(config.modelName())
+                                && "local-key".equals(config.apiKey())),
+                org.mockito.ArgumentMatchers.anyList()
+        )).thenReturn(List.of(List.of(0.1d, 0.2d, 0.3d)));
+
+        assertThat(service.isEnabled()).isTrue();
+
+        service.indexProjectPage(page);
+
+        verify(modelConfigService, never()).generateEmbeddings(eq(0L), org.mockito.ArgumentMatchers.anyList());
+        verify(qdrantClientService).upsertPoints(eq("wiki_project_chunks"), org.mockito.ArgumentMatchers.anyList());
+    }
+
+    @Test
     void shouldPreferKeywordCandidateWhenRerankUnavailable() {
         WikiKnowledgeSearchService service = new WikiKnowledgeSearchService(
                 new WikiKnowledgeProperties(
@@ -53,6 +122,10 @@ class WikiKnowledgeSearchServiceTests {
                         "wiki_project_chunks",
                         "wiki_space_chunks",
                         9L,
+                        "",
+                        "",
+                        "",
+                        "OPENAI",
                         12,
                         24,
                         "",
@@ -60,7 +133,10 @@ class WikiKnowledgeSearchServiceTests {
                         "",
                         "openai-compatible",
                         15,
-                        10
+                        10,
+                        0.78,
+                        6,
+                        256
                 ),
                 qdrantClientService,
                 new WikiChunkingService(),
@@ -116,6 +192,10 @@ class WikiKnowledgeSearchServiceTests {
                         "wiki_project_chunks",
                         "wiki_space_chunks",
                         9L,
+                        "",
+                        "",
+                        "",
+                        "OPENAI",
                         12,
                         24,
                         "",
@@ -123,7 +203,10 @@ class WikiKnowledgeSearchServiceTests {
                         "",
                         "openai-compatible",
                         15,
-                        10
+                        10,
+                        0.78,
+                        6,
+                        256
                 ),
                 qdrantClientService,
                 new WikiChunkingService(),
@@ -256,8 +339,86 @@ class WikiKnowledgeSearchServiceTests {
         verify(qdrantClientService).upsertPoints(eq("wiki_project_chunks"), org.mockito.ArgumentMatchers.anyList());
     }
 
-    private WikiKnowledgeSearchService createService() {
+    @Test
+    void shouldBuildSpaceKnowledgeGraphWithDirectoryAndSemanticEdges() {
+        // 阈值 0.9、每节点最多 1 条语义边，便于断言裁剪逻辑。
+        WikiKnowledgeSearchService service = createGraphService(0.9d, 1);
+
+        // 页面 201 两个 chunk，质心方向与 202 几乎一致（应连语义边），与 203 正交（不应连）。
+        when(qdrantClientService.scrollPoints(eq("wiki_space_chunks"), eq(Map.of("spaceId", 8L)), eq(true), anyInt()))
+                .thenReturn(List.of(
+                        scrollPoint("c-201-0", List.of(1.0d, 0.0d, 0.0d), 201L, "登录设计", "login", 30L),
+                        scrollPoint("c-201-1", List.of(0.9d, 0.1d, 0.0d), 201L, "登录设计", "login", 30L),
+                        scrollPoint("c-202-0", List.of(0.95d, 0.05d, 0.0d), 202L, "登录改造", "login-rework", 30L),
+                        scrollPoint("c-203-0", List.of(0.0d, 0.0d, 1.0d), 203L, "部署手册", "deploy", 31L)
+                ));
+
+        WikiSpaceKnowledgeGraph graph = service.buildSpaceKnowledgeGraph(8L, "知识空间", Map.of(30L, "产品目录", 31L, "运维目录"));
+
+        assertThat(graph.vectorEnabled()).isTrue();
+        // 3 个页面节点 + 2 个目录节点。
+        assertThat(graph.nodes().stream().filter(n -> "WIKI_PAGE".equals(n.nodeType()))).hasSize(3);
+        assertThat(graph.nodes().stream().filter(n -> "WIKI_DIRECTORY".equals(n.nodeType()))).hasSize(2);
+        // 页面 201 聚合了 2 个 chunk。
+        assertThat(graph.nodes().stream()
+                .filter(n -> "WIKI_PAGE".equals(n.nodeType()) && n.bizId().equals(201L))
+                .findFirst().orElseThrow().chunkCount()).isEqualTo(2);
+        // 目录归属边：每个页面一条，共 3 条。
+        assertThat(graph.edges().stream().filter(e -> "BELONGS_TO_DIRECTORY".equals(e.edgeType()))).hasSize(3);
+        // 语义边：只有 201↔202 超过阈值。
+        List<WikiSpaceKnowledgeGraph.Edge> semanticEdges = graph.edges().stream()
+                .filter(e -> "SEMANTIC_SIMILAR".equals(e.edgeType()))
+                .toList();
+        assertThat(semanticEdges).hasSize(1);
+        assertThat(semanticEdges.get(0).similarity()).isGreaterThanOrEqualTo(0.9d);
+    }
+
+    @Test
+    void shouldReturnDisabledGraphWhenVectorIndexOff() {
+        // embeddingModelId=0 表示未配置 Embedding，图谱应降级为未启用且不调用 Qdrant。
+        WikiKnowledgeSearchService service = new WikiKnowledgeSearchService(
+                new WikiKnowledgeProperties(
+                        true, "http://localhost:6333", "", 20,
+                        "wiki_project_chunks", "wiki_space_chunks", 0L, "", "", "", "OPENAI", 12, 24,
+                        "", "", "", "openai-compatible", 15, 10, 0.78, 6, 256
+                ),
+                qdrantClientService, new WikiChunkingService(), modelConfigService,
+                wikiPageRepository, wikiPageV2Repository, new ObjectMapper()
+        );
+
+        WikiSpaceKnowledgeGraph graph = service.buildSpaceKnowledgeGraph(8L, "知识空间", Map.of());
+
+        assertThat(graph.vectorEnabled()).isFalse();
+        assertThat(graph.nodes()).isEmpty();
+        assertThat(graph.edges()).isEmpty();
+    }
+
+    private QdrantClientService.QdrantScrollPoint scrollPoint(String id,
+                                                              List<Double> vector,
+                                                              Long pageId,
+                                                              String title,
+                                                              String slug,
+                                                              Long directoryId) {
+        return new QdrantClientService.QdrantScrollPoint(
+                id,
+                vector,
+                Map.of("pageId", pageId, "title", title, "slug", slug, "directoryId", directoryId, "spaceId", 8L)
+        );
+    }
+
+    private WikiKnowledgeSearchService createGraphService(double threshold, int maxEdgesPerNode) {
         return new WikiKnowledgeSearchService(
+                new WikiKnowledgeProperties(
+                        true, "http://localhost:6333", "", 20,
+                        "wiki_project_chunks", "wiki_space_chunks", 9L, "", "", "", "OPENAI", 12, 24,
+                        "", "", "", "openai-compatible", 15, 10, threshold, maxEdgesPerNode, 256
+                ),
+                qdrantClientService, new WikiChunkingService(), modelConfigService,
+                wikiPageRepository, wikiPageV2Repository, new ObjectMapper()
+        );
+    }
+
+    private WikiKnowledgeSearchService createService() {        return new WikiKnowledgeSearchService(
                 new WikiKnowledgeProperties(
                         true,
                         "http://localhost:6333",
@@ -266,6 +427,10 @@ class WikiKnowledgeSearchServiceTests {
                         "wiki_project_chunks",
                         "wiki_space_chunks",
                         9L,
+                        "",
+                        "",
+                        "",
+                        "OPENAI",
                         12,
                         24,
                         "",
@@ -273,7 +438,10 @@ class WikiKnowledgeSearchServiceTests {
                         "",
                         "openai-compatible",
                         15,
-                        10
+                        10,
+                        0.78,
+                        6,
+                        256
                 ),
                 qdrantClientService,
                 new WikiChunkingService(),

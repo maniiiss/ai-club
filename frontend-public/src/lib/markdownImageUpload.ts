@@ -1,6 +1,6 @@
 /**
  * Markdown 编辑器图片上传工具。
- * 封装后端 POST /api/files/upload 接口，校验文件类型和大小后上传并返回 URL。
+ * 封装后端 POST /api/common/files/upload 接口，校验文件类型和大小后上传并返回 URL。
  */
 import { http } from '@/src/api/http'
 
@@ -35,7 +35,7 @@ export const uploadMarkdownImage = async (file: File): Promise<string> => {
     success: boolean
     message: string
     data: { url: string }
-  }>('/api/files/upload', formData, {
+  }>('/api/common/files/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 

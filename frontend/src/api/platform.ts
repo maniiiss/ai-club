@@ -39,6 +39,7 @@ import type {
   DocumentMarkdownResultItem,
   WikiDirectorySummaryItem,
   WikiDirectoryTreeNodeItem,
+  WikiSpaceKnowledgeGraphItem,
   WikiSpaceDetailItem,
   WikiSpaceItem,
   WikiSpaceMemberItem,
@@ -99,7 +100,7 @@ export interface AgentPayload {
   status: string
   enabled: boolean
   accessType: 'BUILT_IN' | 'LLM_PROMPT' | 'HTTP_API' | 'AGENT_RUNTIME'
-  builtinCode?: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | 'REPOSITORY_SCAN_PLAN' | null
+  builtinCode?: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | 'REPOSITORY_SCAN_PLAN' | 'REQUIREMENT_AI_STANDARDIZE' | 'REQUIREMENT_AI_BREAKDOWN' | 'REQUIREMENT_AI_TEST_CASES' | null
   capability: string
   description: string
   aiModelConfigId?: number | null
@@ -850,6 +851,11 @@ export const replaceWikiSpaceMembers = async (spaceId: number, members: WikiSpac
 
 export const getWikiDirectoryTree = async (spaceId: number) => {
   const { data } = await http.get<ApiResponse<WikiDirectoryTreeNodeItem[]>>(`/api/wiki/spaces/${spaceId}/directories/tree`)
+  return data.data
+}
+
+export const getWikiSpaceKnowledgeGraph = async (spaceId: number) => {
+  const { data } = await http.get<ApiResponse<WikiSpaceKnowledgeGraphItem>>(`/api/wiki/spaces/${spaceId}/knowledge-graph`)
   return data.data
 }
 

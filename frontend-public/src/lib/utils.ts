@@ -35,10 +35,14 @@ export const getInitials = (name: string | null | undefined): string => {
 
 /**
  * 从 API 错误中提取用户可读的错误消息。
+ * 优先提取后端 ApiResponse 中的 message 字段，再降级到 Error.message 和默认文案。
+ *
+ * 注意：AxiosError 继承自 Error，必须先检查 response.data.message，
+ * 否则 instanceof Error 会直接返回 Axios 的通用消息（如 "Request failed with status code 400"），
+ * 导致后端返回的具体错误信息被吞掉。
  */
 export const getErrorMessage = (error: unknown): string => {
-  if (error instanceof Error) return error.message
-  if (typeof error === 'string') return error
+  // 1. 优先提取后端 ApiResponse 返回的错误消息（覆盖 Axios 错误和其他带 response 的错误）
   if (
     error &&
     typeof error === 'object' &&
@@ -47,5 +51,10 @@ export const getErrorMessage = (error: unknown): string => {
   ) {
     return (error as { response: { data: { message: string } } }).response.data.message
   }
+  // 2. 普通 Error（含非 API 场景的 Axios 错误，如网络断开）
+  if (error instanceof Error) return error.message
+  // 3. 字符串类型错误
+  if (typeof error === 'string') return error
+  // 4. 兜底
   return '操作失败，请稍后重试'
 }

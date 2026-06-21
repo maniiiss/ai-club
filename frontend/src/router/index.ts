@@ -103,6 +103,7 @@ const router = createRouter({
         { path: 'apis/projects/:projectId', name: 'api-project-detail', component: ProjectApiManagementView, meta: { title: 'API 工作台', permission: 'api:view', activeMenu: '/apis' } },
         { path: 'wiki', name: 'wiki-home', component: WikiHomeView, meta: { title: 'Wiki 中心', permission: 'wiki:view' } },
         { path: 'wiki/spaces/:spaceId', name: 'wiki-space', component: WikiSpaceView, meta: { title: 'Wiki 空间', permission: 'wiki:view' } },
+        { path: 'wiki/spaces/:spaceId/knowledge-graph', name: 'wiki-space-knowledge-graph', component: () => import('@/views/WikiKnowledgeGraphView.vue'), meta: { title: 'Wiki 知识图谱', permission: 'wiki:view', activeMenu: '/wiki' } },
         { path: 'wiki/spaces/:spaceId/pages/:pageId', name: 'wiki-space-page', component: WikiSpaceView, meta: { title: 'Wiki 页面', permission: 'wiki:view' } },
         { path: 'projects/:projectId/iterations', name: 'project-iterations', component: IterationView, meta: { title: '迭代管理', permission: 'project:view' } },
         { path: 'projects/:projectId/knowledge-graph', redirect: (to) => ({ name: 'project-iterations', params: { projectId: to.params.projectId } }), meta: { requiresAuth: true, permission: 'project:view' } },

@@ -7,7 +7,7 @@ import { useParams } from 'react-router-dom'
 import {
   Plus, CalendarRange, CheckSquare, AlertCircle, FileText, Search,
   X, Edit3, Trash2, LayoutList, LayoutGrid, GripVertical, TrendingDown,
-  ChevronDown, MessageSquare, Send, Bot, User, FolderOpen, Link2,
+  ChevronDown, MessageSquare, Send, Bot, User, FolderOpen, Link2, Sparkles,
 } from 'lucide-react'
 import {
   getIterationBoard, pageProjectWorkItems, getWorkItemStats,
@@ -16,6 +16,7 @@ import {
   getProjectBurndown, listTaskComments, createTaskComment,
 } from '@/src/api/planning'
 import { MarkdownEditor } from '@/src/components/common/MarkdownEditor'
+import { RequirementAiDialog } from './RequirementAiDialog'
 import { REQUIREMENT_TEMPLATE, TASK_TEMPLATE } from '@/src/lib/markdownTemplates'
 import { uploadMarkdownImage } from '@/src/lib/markdownImageUpload'
 import type { IterationBoardItem, IterationItem, WorkItem, WorkItemStats, WorkItemPayload, IterationPayload, BurndownItem, TaskComment } from '@/src/types/planning'
@@ -91,6 +92,9 @@ export const PlanningPage = () => {
   const [detailItem, setDetailItem] = useState<WorkItem | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'iteration' | 'workItem'; id: number; name: string } | null>(null)
+  const [requirementAiOpen, setRequirementAiOpen] = useState(false)
+  /** 打开 AI 助手后自动执行的动作（如 'STANDARDIZE'），执行后由 onClose 清理。 */
+  const [autoRunAction, setAutoRunAction] = useState<string | null>(null)
 
   const fetchBoard = async () => {
     setBoardLoading(true); setBoardError(null)
@@ -357,9 +361,10 @@ export const PlanningPage = () => {
 
       {/* ── 弹窗 ── */}
       {iterDialog.open && <IterationDialog projectId={pid} editing={iterDialog.editing} onClose={() => setIterDialog({ open: false })} onSaved={() => { setIterDialog({ open: false }); fetchBoard() }} />}
-      {wiDialog.open && <WorkItemDialog projectId={pid} editing={wiDialog.editing} iterationId={selectedIteration && selectedIteration !== 'unplanned' ? selectedIteration.id : undefined} onClose={() => setWiDialog({ open: false })} onSaved={() => { setWiDialog({ open: false }); refreshAll() }} />}
-      {detailItem && <WorkItemDetailDrawer item={detailItem} loading={detailLoading} onClose={() => setDetailItem(null)} onEdit={() => { setWiDialog({ open: true, editing: detailItem }); setDetailItem(null) }} onDelete={(w) => { setDetailItem(null); setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name }) }} onRefresh={handleOpenDetail} />}
+      {wiDialog.open && <WorkItemDialog projectId={pid} editing={wiDialog.editing} iterationId={selectedIteration && selectedIteration !== 'unplanned' ? selectedIteration.id : undefined} onClose={() => setWiDialog({ open: false })} onSaved={(result) => { setWiDialog({ open: false }); refreshAll(); if (result?.autoStandardize && result.item) { setDetailItem(result.item); setRequirementAiOpen(true); setAutoRunAction('STANDARDIZE') } }} />}
+      {detailItem && <WorkItemDetailDrawer item={detailItem} loading={detailLoading} onClose={() => setDetailItem(null)} onEdit={() => { setWiDialog({ open: true, editing: detailItem }); setDetailItem(null) }} onDelete={(w) => { setDetailItem(null); setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name }) }} onRefresh={handleOpenDetail} onOpenAi={() => setRequirementAiOpen(true)} />}
       {deleteConfirm && <DeleteConfirmDialog name={deleteConfirm.name} onCancel={() => setDeleteConfirm(null)} onConfirm={handleDeleteConfirm} />}
+      {detailItem && detailItem.workItemType === '需求' && <RequirementAiDialog open={requirementAiOpen} workItem={detailItem} onClose={() => { setRequirementAiOpen(false); setAutoRunAction(null) }} onChanged={() => { handleOpenDetail(detailItem.id); refreshAll() }} autoRunAction={autoRunAction} />}
     </div>
   )
 }
@@ -523,7 +528,8 @@ const IterationDialog = ({ projectId, editing, onClose, onSaved }: {
    ═══════════════════════════════════════════════ */
 
 const WorkItemDialog = ({ projectId, editing, iterationId, onClose, onSaved }: {
-  projectId: number; editing?: WorkItem; iterationId?: number; onClose: () => void; onSaved: () => void
+  projectId: number; editing?: WorkItem; iterationId?: number; onClose: () => void
+  onSaved: (result?: { item: WorkItem; autoStandardize: boolean }) => void
 }) => {
   const [form, setForm] = useState({
     name: editing?.name || '', workItemType: editing?.workItemType || '任务', status: editing?.status || '待开始',
@@ -531,6 +537,8 @@ const WorkItemDialog = ({ projectId, editing, iterationId, onClose, onSaved }: {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** 创建需求时是否自动执行标准化需求 */
+  const [autoStandardize, setAutoStandardize] = useState(false)
 
   const currentStatusOptions = statusOptions[form.workItemType] || statusOptions['任务']
 
@@ -541,9 +549,13 @@ const WorkItemDialog = ({ projectId, editing, iterationId, onClose, onSaved }: {
         ...form, projectId, agentId: editing?.agentId ?? null,
         iterationId: editing?.iterationId ?? iterationId ?? null,
       }
-      if (editing) await updateWorkItem(editing.id, payload)
-      else await createWorkItem(payload)
-      onSaved()
+      if (editing) {
+        await updateWorkItem(editing.id, payload)
+        onSaved()
+      } else {
+        const created = await createWorkItem(payload)
+        onSaved({ item: created, autoStandardize })
+      }
     } catch (err) { setError(getErrorMessage(err)) }
     finally { setSaving(false) }
   }
@@ -572,7 +584,7 @@ const WorkItemDialog = ({ projectId, editing, iterationId, onClose, onSaved }: {
                 <Select
                   label="类型"
                   value={form.workItemType}
-                  onChange={(v) => setForm({ ...form, workItemType: v, status: (statusOptions[v] || ['待开始'])[0] })}
+                  onChange={(v) => { setForm({ ...form, workItemType: v, status: (statusOptions[v] || ['待开始'])[0] }); setAutoStandardize(false) }}
                   options={[
                     { value: '需求', label: '需求', icon: <FileText className="h-3.5 w-3.5 text-blue-600" /> },
                     { value: '任务', label: '任务', icon: <CheckSquare className="h-3.5 w-3.5 text-emerald-600" /> },
@@ -609,6 +621,19 @@ const WorkItemDialog = ({ projectId, editing, iterationId, onClose, onSaved }: {
                   startInEditMode={!editing}
                 />
               </div>
+              {/* 创建需求时显示标准化需求复选框 */}
+              {!editing && form.workItemType === '需求' && (
+                <label className="flex items-center gap-2 cursor-pointer select-none rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] px-3 py-2.5 text-[13px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:border-[var(--color-primary)]/30 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={autoStandardize}
+                    onChange={(e) => setAutoStandardize(e.target.checked)}
+                    className="h-4 w-4 rounded border-[var(--color-border-strong)] text-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+                  />
+                  <Sparkles className="h-3.5 w-3.5 text-[var(--color-primary)] flex-shrink-0" />
+                  <span>创建后自动执行「标准化需求」</span>
+                </label>
+              )}
             </div>
             <div className="flex-shrink-0 flex justify-end gap-2 px-6 py-3 border-t border-[var(--color-border-light)]">
               <Button variant="secondary" type="button" onClick={onClose}>取消</Button>
@@ -625,9 +650,9 @@ const WorkItemDialog = ({ projectId, editing, iterationId, onClose, onSaved }: {
    工作项详情抽屉
    ═══════════════════════════════════════════════ */
 
-const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefresh }: {
+const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefresh, onOpenAi }: {
   item: WorkItem; loading: boolean; onClose: () => void; onEdit: () => void
-  onDelete: (item: WorkItem) => void; onRefresh: (id: number) => void
+  onDelete: (item: WorkItem) => void; onRefresh: (id: number) => void; onOpenAi?: () => void
 }) => {
   const TypeIcon = typeIconMap[item.workItemType] || FileText
   const [comments, setComments] = useState<TaskComment[]>([])
@@ -701,6 +726,7 @@ const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefr
             <span className="text-[14px] font-semibold text-[var(--color-text-primary)] truncate">{item.name}</span>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
+            {item.workItemType === '需求' && onOpenAi && <button onClick={onOpenAi} title="AI 助手" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"><Sparkles className="h-4 w-4" /></button>}
             <button onClick={scrollToComments} title="评论" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"><MessageSquare className="h-4 w-4" /></button>
             {item.canDelete && <button onClick={() => onDelete(item)} title="删除" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-bg-hover)] transition-colors"><Trash2 className="h-4 w-4" /></button>}
             <button onClick={onEdit} title="编辑" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"><Edit3 className="h-4 w-4" /></button>
@@ -805,7 +831,7 @@ const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefr
               )}
 
               {/* 评论输入 */}
-              <div className="rounded-lg border border-[var(--color-border-light)] overflow-hidden">
+              <div className="space-y-2">
                 <MarkdownEditor
                   value={commentText}
                   onChange={setCommentText}
@@ -814,7 +840,7 @@ const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefr
                   uploadImage={uploadMarkdownImage}
                   startInEditMode
                 />
-                <div className="flex justify-end px-3 py-2 border-t border-[var(--color-border-light)] bg-[var(--color-bg-page)]">
+                <div className="flex justify-end">
                   <Button
                     onClick={handleSubmitComment}
                     loading={commentSubmitting}

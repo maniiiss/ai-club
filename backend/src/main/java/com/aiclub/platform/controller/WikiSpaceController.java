@@ -5,6 +5,7 @@ import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.WikiDirectorySummary;
 import com.aiclub.platform.dto.WikiDirectoryTreeNode;
 import com.aiclub.platform.dto.WikiSpaceDetail;
+import com.aiclub.platform.dto.WikiSpaceKnowledgeGraph;
 import com.aiclub.platform.dto.WikiSpaceMemberSummary;
 import com.aiclub.platform.dto.WikiSpacePageDetail;
 import com.aiclub.platform.dto.WikiSpacePageSummary;
@@ -129,6 +130,15 @@ public class WikiSpaceController {
     @RequirePermission("wiki:view")
     public ApiResponse<List<WikiDirectoryTreeNode>> directoryTree(@PathVariable Long spaceId) {
         return ApiResponse.success(wikiSpaceService.getDirectoryTree(spaceId));
+    }
+
+    /**
+     * 读取空间级 Wiki 向量化知识图谱：页面节点 + 目录归属边 + 向量语义相似边。
+     */
+    @GetMapping("/spaces/{spaceId}/knowledge-graph")
+    @RequirePermission("wiki:view")
+    public ApiResponse<WikiSpaceKnowledgeGraph> knowledgeGraph(@PathVariable Long spaceId) {
+        return ApiResponse.success(wikiSpaceService.getKnowledgeGraph(spaceId));
     }
 
     /**

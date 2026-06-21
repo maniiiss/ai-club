@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { ApiResponse, CreditAccountItem, CreditFeatureConfigItem, CreditGlobalConfigItem, CreditTransactionItem, DashboardShortcutEntryItem, DataPermissionScopeValue, PageResponse, PermissionItem, PlatformEnvVarDetailItem, PlatformEnvVarItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
+import type { ApiResponse, CreditAccountBackfillResult, CreditAccountItem, CreditFeatureConfigItem, CreditGlobalConfigItem, CreditTransactionItem, DashboardShortcutEntryItem, DataPermissionScopeValue, PageResponse, PermissionItem, PlatformEnvVarDetailItem, PlatformEnvVarItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
 
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
@@ -336,6 +336,11 @@ export const pageCreditAccounts = async (query: CreditAccountQuery) => {
 
 export const adjustCreditAccount = async (userId: number, payload: CreditAdjustmentPayload) => {
   const { data } = await http.post<ApiResponse<CreditAccountItem>>(`/api/credits/accounts/${userId}/adjust`, payload)
+  return data.data
+}
+
+export const backfillCreditAccounts = async () => {
+  const { data } = await http.post<ApiResponse<CreditAccountBackfillResult>>('/api/credits/accounts/backfill')
   return data.data
 }
 

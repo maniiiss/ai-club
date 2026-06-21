@@ -126,6 +126,44 @@ export interface KnowledgeGraphItem {
   edges: KnowledgeGraphEdgeItem[]
 }
 
+/** Wiki 向量化知识图谱节点：页面或目录。 */
+export interface WikiKnowledgeGraphNodeItem {
+  id: number
+  /** WIKI_PAGE | WIKI_DIRECTORY */
+  nodeType: string
+  /** 对应业务主键（页面 id 或目录 id）。 */
+  bizId: number
+  name: string
+  slug: string
+  directoryId: number | null
+  /** 页面下聚合的 chunk 数量，目录节点为 null。 */
+  chunkCount: number | null
+  metadataJson: string
+}
+
+/** Wiki 向量化知识图谱边：目录归属或向量语义相似。 */
+export interface WikiKnowledgeGraphEdgeItem {
+  id: number
+  fromNodeId: number
+  toNodeId: number
+  /** BELONGS_TO_DIRECTORY | SEMANTIC_SIMILAR */
+  edgeType: string
+  /** 语义相似边的余弦相似度，结构边为 null。 */
+  similarity: number | null
+  evidenceText: string
+}
+
+/** Wiki 向量化知识图谱聚合结果。 */
+export interface WikiSpaceKnowledgeGraphItem {
+  spaceId: number
+  spaceName: string
+  /** 向量索引是否启用：false 时仅有目录骨架。 */
+  vectorEnabled: boolean
+  generatedAt: string
+  nodes: WikiKnowledgeGraphNodeItem[]
+  edges: WikiKnowledgeGraphEdgeItem[]
+}
+
 export interface MemoryFactItem {
   id: string
   type: string
@@ -311,7 +349,7 @@ export interface AgentItem {
   status: string
   enabled: boolean
   accessType: 'BUILT_IN' | 'LLM_PROMPT' | 'HTTP_API' | 'AGENT_RUNTIME'
-  builtinCode: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | 'REPOSITORY_SCAN_PLAN' | null
+  builtinCode: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | 'REPOSITORY_SCAN_PLAN' | 'REQUIREMENT_AI_STANDARDIZE' | 'REQUIREMENT_AI_BREAKDOWN' | 'REQUIREMENT_AI_TEST_CASES' | null
   capability: string
   description: string
   aiModelConfigId: number | null
@@ -2005,6 +2043,12 @@ export interface CreditAccountItem {
   totalConsumed: number
   totalRefunded: number
   updatedAt: string | null
+}
+
+export interface CreditAccountBackfillResult {
+  createdCount: number
+  grantedCount: number
+  grantAmount: number
 }
 
 export interface CreditTransactionItem {

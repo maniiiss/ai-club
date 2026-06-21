@@ -20,6 +20,7 @@ class CreditControllerPermissionTests {
         assertPermission("listFeatureConfigs", "system:credit:view");
         assertPermission("saveFeatureConfig", "system:credit:manage", CreditFeatureConfigRequest.class);
         assertPermission("pageAccounts", "system:credit:view", int.class, int.class, String.class);
+        assertPermission("backfillAccounts", "system:credit:manage");
         assertPermission("adjustAccount", "system:credit:manage", Long.class, CreditAdjustmentRequest.class);
         assertPermission("pageAccountTransactions", "system:credit:view", Long.class, int.class, int.class);
     }

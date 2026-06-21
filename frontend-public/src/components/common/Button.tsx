@@ -64,7 +64,7 @@ export const Button = ({
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center rounded-lg font-medium',
+        'inline-flex items-center justify-center rounded-lg font-medium cursor-pointer',
         'transition-all duration-150',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]',
         'disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none',

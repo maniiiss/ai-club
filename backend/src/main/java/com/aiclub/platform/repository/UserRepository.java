@@ -37,6 +37,21 @@ public interface UserRepository extends JpaRepository<UserEntity, Long>, JpaSpec
 
     List<UserEntity> findAllByEnabledTrueOrderByIdAsc();
 
+    /**
+     * 查询所有尚未开通积分账户的用户，用于后台批量补建历史用户的积分账户。
+     */
+    @Query("""
+            select u
+            from UserEntity u
+            where not exists (
+                select 1
+                from UserCreditAccountEntity account
+                where account.user.id = u.id
+            )
+            order by u.id asc
+            """)
+    List<UserEntity> findAllWithoutCreditAccount();
+
     @Query("""
             select distinct u
             from UserEntity u

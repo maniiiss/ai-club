@@ -70,6 +70,68 @@ body {
   animation: scaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* ── 彩虹边框工具类（可复用） ─────────────────────────────
+ *
+ * 用法：在包裹元素上加 .rainbow-border，内部放实际内容。
+ *
+ *   <div class="rainbow-border w-full max-w-md rounded-2xl">
+ *     <div class="bg-white rounded-2xl overflow-hidden">
+ *       内容
+ *     </div>
+ *   </div>
+ *
+ * 状态变体（替换 .rainbow-border 使用）：
+ *   .rainbow-border-success  — 静态绿色边框，用于操作成功
+ *   .rainbow-border-error    — 静态红色边框，用于操作失败
+ *
+ * 内层元素需要设置背景色（如 bg-white）和匹配的 border-radius。
+ * 包裹元素自身控制尺寸、圆角和布局。
+ */
+@property --rainbow-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes rainbow-flow {
+  to { --rainbow-angle: 360deg; }
+}
+
+.rainbow-border,
+.rainbow-border-success,
+.rainbow-border-error {
+  border: 1.5px solid transparent;
+  background: linear-gradient(white, white) padding-box, none border-box;
+}
+
+.rainbow-border {
+  background:
+    linear-gradient(white, white) padding-box,
+    conic-gradient(
+      from var(--rainbow-angle),
+      rgba(255, 150, 150, 0.5),
+      rgba(255, 210, 130, 0.5),
+      rgba(180, 240, 140, 0.5),
+      rgba(130, 210, 255, 0.5),
+      rgba(190, 150, 255, 0.5),
+      rgba(255, 150, 210, 0.5),
+      rgba(255, 150, 150, 0.5)
+    ) border-box;
+  animation: rainbow-flow 6s linear infinite;
+}
+
+.rainbow-border-success {
+  background:
+    linear-gradient(white, white) padding-box,
+    linear-gradient(135deg, rgba(74, 222, 128, 0.6), rgba(34, 197, 94, 0.4)) border-box;
+}
+
+.rainbow-border-error {
+  background:
+    linear-gradient(white, white) padding-box,
+    linear-gradient(135deg, rgba(248, 113, 113, 0.6), rgba(239, 68, 68, 0.4)) border-box;
+}
+
 /* ── 自定义滚动条 — 默认隐藏，悬停/滚动时显示 ── */
 * {
   scrollbar-width: thin;

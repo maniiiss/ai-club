@@ -413,7 +413,7 @@ public class ExecutionWorkflowService {
         return switch (stepCode) {
             case STEP_PLAN -> findFirstByPredicate(candidates, agent ->
                     isCliRuntime(agent, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI)
-                            || "REQUIREMENT_BREAKDOWN".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
+                            || "REQUIREMENT_AI_BREAKDOWN".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
                             || containsAny(agent, "planner", "规划", "需求"));
             case STEP_IMPLEMENT -> findFirstByPredicate(candidates, agent ->
                     isCliRuntime(agent, AgentExecutionService.RUNTIME_CODEX_CLI)
@@ -428,12 +428,12 @@ public class ExecutionWorkflowService {
                                     && containsAny(agent, "coder", "code", "开发", "实现")))
                     .or(() -> findFirstByPredicate(candidates, this::isExecutableAgent));
             case STEP_TEST_DESIGN -> findFirstByPredicate(candidates, agent ->
-                    "TEST_SUGGESTION".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
+                    "REQUIREMENT_AI_TEST_CASES".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
                             || containsAny(agent, "test", "测试", "quality"));
             case STEP_REPORT -> findFirstByPredicate(candidates, agent ->
                     containsAny(agent, "report", "总结", "交付", "review", "评审"))
                     .or(() -> findFirstByPredicate(candidates, agent ->
-                            "REQUIREMENT_BREAKDOWN".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
+                            "REQUIREMENT_AI_BREAKDOWN".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
                                     || containsAny(agent, "planner", "规划", "需求")));
             case STEP_REVIEW -> findFirstByPredicate(candidates, agent ->
                     "CODE_REVIEW".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))

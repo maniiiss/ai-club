@@ -1,7 +1,9 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.dto.CreditAccountBackfillSummary;
 import com.aiclub.platform.dto.CreditAccountSummary;
 import com.aiclub.platform.dto.CreditTransactionSummary;
+import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.request.CreditAdjustmentRequest;
 import com.aiclub.platform.dto.request.CreditFeatureConfigRequest;
 import com.aiclub.platform.dto.request.CreditGlobalConfigRequest;
@@ -208,6 +210,41 @@ class CreditServiceIntegrationTests {
         assertThat(currentTransactions).extracting(CreditTransactionSummary::userId).containsOnly(currentUserId);
     }
 
+    @Test
+    void shouldBackfillMissingAccountsAndGrantRegisterCredits() {
+        creditService.updateGlobalConfig(new CreditGlobalConfigRequest(50, true));
+        Long historicalUserId = createUserWithoutCreditAccount("credit-historical-user");
+
+        CreditAccountBackfillSummary summary = creditService.backfillMissingAccounts();
+
+        assertThat(summary.createdCount()).isGreaterThanOrEqualTo(1);
+        assertThat(summary.grantAmount()).isEqualTo(50);
+
+        CreditAccountSummary account = creditService.getAccount(historicalUserId);
+        assertThat(account.balance()).isEqualTo(50);
+        assertThat(creditService.pageAccountTransactions(historicalUserId, 1, 10).records())
+                .extracting(CreditTransactionSummary::transactionType)
+                .containsExactly("REGISTER_GRANT");
+
+        // 再次执行不应重复开户或重复发放
+        CreditAccountBackfillSummary repeat = creditService.backfillMissingAccounts();
+        assertThat(repeat.createdCount()).isZero();
+        assertThat(creditService.getAccount(historicalUserId).balance()).isEqualTo(50);
+    }
+
+    @Test
+    void shouldBackfillMissingAccountsWithoutGrantWhenRegisterGrantDisabled() {
+        creditService.updateGlobalConfig(new CreditGlobalConfigRequest(0, false));
+        Long historicalUserId = createUserWithoutCreditAccount("credit-historical-no-grant");
+
+        CreditAccountBackfillSummary summary = creditService.backfillMissingAccounts();
+
+        assertThat(summary.createdCount()).isGreaterThanOrEqualTo(1);
+        assertThat(summary.grantedCount()).isZero();
+        assertThat(creditService.getAccount(historicalUserId).balance()).isZero();
+        assertThat(creditService.pageAccountTransactions(historicalUserId, 1, 10).records()).isEmpty();
+    }
+
     private Long createRegisteredUser(String username) {
         authService.register(new RegisterRequest(
                 username,
@@ -218,5 +255,21 @@ class CreditServiceIntegrationTests {
                 "secret123"
         ));
         return userRepository.findByUsernameWithDetails(username).orElseThrow().getId();
+    }
+
+    /**
+     * 直接落库一个不经过注册流程的用户，用于模拟没有积分账户的历史用户。
+     */
+    private Long createUserWithoutCreditAccount(String username) {
+        UserEntity entity = new UserEntity();
+        entity.setUsername(username);
+        entity.setNickname(username);
+        entity.setEmail(username + "@example.com");
+        entity.setPhone("13800002222");
+        entity.setGitlabUsername("");
+        entity.setEnabled(true);
+        entity.setBuiltIn(false);
+        entity.setPasswordHash("placeholder-hash");
+        return userRepository.save(entity).getId();
     }
 }

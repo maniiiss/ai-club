@@ -81,7 +81,17 @@ public class QdrantClientService {
         }
         ObjectNode payload = objectMapper.createObjectNode();
         payload.set("filter", buildFilter(equalsFilter));
-        sendJson("POST", collectionUrl(collectionName) + "/points/delete?wait=true", payload);
+        try {
+            sendJson("POST", collectionUrl(collectionName) + "/points/delete?wait=true", payload);
+        } catch (RuntimeException exception) {
+            // collection 不存在时删除本就是 no-op：首次同步某页面时集合尚未创建，
+            // 与 search / scroll 一致对 404 静默降级，由后续 upsert 负责建表。
+            if (exception.getMessage() != null && exception.getMessage().contains("HTTP 404")) {
+                log.warn("Qdrant collection 不存在，跳过删除：{}", collectionName);
+                return;
+            }
+            throw exception;
+        }
     }
 
     public List<QdrantSearchHit> search(String collectionName,
@@ -124,6 +134,71 @@ public class QdrantClientService {
         }
     }
 
+    /**
+     * 批量滚动拉取某个 collection 下满足过滤条件的全部 point。
+     * 业务意图：Wiki 知识图谱需要把整个空间的 chunk 向量取回本地聚合，
+     * search 只能按相似度召回 topK，无法覆盖全量，这里用 Qdrant scroll 协议翻页拉全。
+     *
+     * @param withVectors 是否要求 Qdrant 返回向量本体，构图需要 true
+     * @param pageSize    单页拉取数量，内部会按 next_page_offset 翻页直到取完
+     */
+    public List<QdrantScrollPoint> scrollPoints(String collectionName,
+                                                Map<String, Object> equalsFilter,
+                                                boolean withVectors,
+                                                int pageSize) {
+        int limit = Math.max(1, pageSize);
+        List<QdrantScrollPoint> points = new ArrayList<>();
+        JsonNode offset = null;
+        try {
+            while (true) {
+                ObjectNode payload = objectMapper.createObjectNode();
+                payload.put("limit", limit);
+                payload.put("with_payload", true);
+                payload.put("with_vector", withVectors);
+                if (equalsFilter != null && !equalsFilter.isEmpty()) {
+                    payload.set("filter", buildFilter(equalsFilter));
+                }
+                if (offset != null && !offset.isNull()) {
+                    payload.set("offset", offset);
+                }
+                HttpResponse<String> response = sendJson("POST", collectionUrl(collectionName) + "/points/scroll", payload);
+                JsonNode result = objectMapper.readTree(response.body()).path("result");
+                for (JsonNode item : result.path("points")) {
+                    Map<String, Object> resultPayload = objectMapper.convertValue(item.path("payload"), Map.class);
+                    points.add(new QdrantScrollPoint(
+                            firstText(item, "id"),
+                            parseVector(item.path("vector")),
+                            resultPayload == null ? Map.of() : resultPayload
+                    ));
+                }
+                offset = result.path("next_page_offset");
+                if (offset == null || offset.isNull() || offset.isMissingNode()) {
+                    break;
+                }
+            }
+            return List.copyOf(points);
+        } catch (IOException exception) {
+            throw new IllegalStateException("解析 Qdrant 滚动结果失败", exception);
+        } catch (RuntimeException exception) {
+            if (exception.getMessage() != null && exception.getMessage().contains("HTTP 404")) {
+                log.warn("Qdrant collection 不存在，跳过本次滚动：{}", collectionName);
+                return List.of();
+            }
+            throw exception;
+        }
+    }
+
+    private List<Double> parseVector(JsonNode vectorNode) {
+        if (vectorNode == null || !vectorNode.isArray()) {
+            return List.of();
+        }
+        List<Double> vector = new ArrayList<>(vectorNode.size());
+        for (JsonNode value : vectorNode) {
+            vector.add(value.isNumber() ? value.asDouble() : 0d);
+        }
+        return vector;
+    }
+
     private void deleteCollectionQuietly(String collectionName) {
         try {
             sendJson("DELETE", collectionUrl(collectionName), null);
@@ -143,7 +218,19 @@ public class QdrantClientService {
             ObjectNode match = condition.putObject("match");
             Object value = entry.getValue();
             if (value instanceof Number number) {
-                match.put("value", number.doubleValue());
+                // Qdrant 的 match.value 对整数字段要求整型，写成浮点（如 5.0）会导致
+                // filter 解析失败、PointsSelector 匹配不上而报 HTTP 400，这里区分整型与小数。
+                if (number instanceof Double || number instanceof Float
+                        || number instanceof java.math.BigDecimal) {
+                    double doubleValue = number.doubleValue();
+                    if (doubleValue == Math.rint(doubleValue) && !Double.isInfinite(doubleValue)) {
+                        match.put("value", (long) doubleValue);
+                    } else {
+                        match.put("value", doubleValue);
+                    }
+                } else {
+                    match.put("value", number.longValue());
+                }
             } else if (value instanceof Boolean bool) {
                 match.put("value", bool);
             } else {
@@ -220,5 +307,11 @@ public class QdrantClientService {
     }
 
     public record QdrantSearchHit(String id, Double score, Map<String, Object> payload) {
+    }
+
+    /**
+     * 滚动拉取结果：携带向量本体与 payload，供知识图谱在本地聚合与计算相似度。
+     */
+    public record QdrantScrollPoint(String id, List<Double> vector, Map<String, Object> payload) {
     }
 }

@@ -5,6 +5,7 @@ import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.dto.TaskRequirementAiResult;
 import com.aiclub.platform.dto.request.TaskRequirementAiRequest;
+import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.TaskRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,6 +38,9 @@ class TaskRequirementAiServiceTests {
     private AiModelConfigRepository aiModelConfigRepository;
 
     @Mock
+    private AgentRepository agentRepository;
+
+    @Mock
     private ModelConfigService modelConfigService;
 
     @Mock
@@ -49,6 +53,7 @@ class TaskRequirementAiServiceTests {
         taskRequirementAiService = new TaskRequirementAiService(
                 taskRepository,
                 aiModelConfigRepository,
+                agentRepository,
                 modelConfigService,
                 new ObjectMapper(),
                 projectDataPermissionService
@@ -82,6 +87,7 @@ class TaskRequirementAiServiceTests {
         AiModelConfigEntity chatModel = buildModelConfig(3L, "对话模型", ModelConfigService.MODEL_TYPE_CHAT);
         when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
         when(projectDataPermissionService.currentScopeOrNull()).thenReturn(null);
+        when(agentRepository.findFirstByBuiltinCodeAndEnabledTrue(anyString())).thenReturn(Optional.empty());
         when(aiModelConfigRepository.findAllByEnabledTrueAndModelTypeOrderByIdAsc(ModelConfigService.MODEL_TYPE_CHAT))
                 .thenReturn(List.of(chatModel));
         when(modelConfigService.resolveModelConfig(3L)).thenReturn(new ModelConfigService.ResolvedModelConfig(

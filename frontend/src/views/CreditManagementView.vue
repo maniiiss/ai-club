@@ -1,60 +1,5 @@
 <template>
   <div class="credit-management-page management-list-page">
-    <section class="credit-config-grid">
-      <div class="credit-panel">
-        <header class="credit-panel-header">
-          <div>
-            <h2>注册赠送</h2>
-            <p>控制新用户开户后的初始积分。</p>
-          </div>
-          <el-tag :type="globalForm.registerGrantEnabled ? 'success' : 'info'" effect="plain">
-            {{ globalForm.registerGrantEnabled ? '已启用' : '已停用' }}
-          </el-tag>
-        </header>
-        <el-form class="credit-inline-form" label-position="top">
-          <el-form-item label="赠送积分">
-            <el-input-number v-model="globalForm.registerGrantAmount" :min="0" :max="999999" :disabled="!canManage" controls-position="right" />
-          </el-form-item>
-          <el-form-item label="自动赠送">
-            <el-switch v-model="globalForm.registerGrantEnabled" :disabled="!canManage" />
-          </el-form-item>
-        </el-form>
-        <div class="credit-panel-footer">
-          <span>更新时间：{{ globalConfig?.updatedAt || '-' }}</span>
-          <el-button v-if="canManage" type="primary" :loading="globalSaving" @click="handleSaveGlobalConfig">保存配置</el-button>
-        </div>
-      </div>
-
-      <div class="credit-panel">
-        <header class="credit-panel-header">
-          <div>
-            <h2>AI 功能扣费规则</h2>
-            <p>后续公众端 AI 能力按功能编码扣减。</p>
-          </div>
-          <el-button v-if="canManage" type="primary" plain @click="openFeatureDialog()">
-            <el-icon><Plus /></el-icon>
-            新增规则
-          </el-button>
-        </header>
-        <div class="credit-feature-list" v-loading="featureLoading">
-          <article v-for="item in featureConfigs" :key="item.featureCode" class="credit-feature-item">
-            <div>
-              <strong>{{ item.featureName }}</strong>
-              <span>{{ item.featureCode }}</span>
-            </div>
-            <div class="credit-feature-meta">
-              <span>{{ item.costAmount }} 分/次</span>
-              <el-tag :type="item.enabled ? 'success' : 'info'" effect="plain">{{ item.enabled ? '启用' : '停用' }}</el-tag>
-              <button v-if="canManage" class="management-list-row-button" type="button" title="编辑规则" @click="openFeatureDialog(item)">
-                <el-icon><EditPen /></el-icon>
-              </button>
-            </div>
-          </article>
-          <el-empty v-if="!featureConfigs.length && !featureLoading" description="暂无扣费规则" />
-        </div>
-      </div>
-    </section>
-
     <section class="management-list-toolbar">
       <div class="management-list-toolbar-main">
         <div class="management-list-search-shell">
@@ -72,6 +17,12 @@
           <el-icon><RefreshRight /></el-icon>
           <span>重置</span>
         </button>
+      </div>
+      <div class="management-list-toolbar-side">
+        <el-button type="primary" plain @click="configDrawerVisible = true">
+          <el-icon><Setting /></el-icon>
+          <span>积分配置</span>
+        </el-button>
       </div>
     </section>
 
@@ -183,6 +134,82 @@
       </div>
     </section>
 
+    <el-drawer v-model="configDrawerVisible" title="积分配置" size="560px" class="credit-config-drawer">
+      <template #header>
+        <PlatformDialogHeader title="积分配置" subtitle="管理积分赠送规则与AI功能扣费标准。" :icon="Setting" />
+      </template>
+      <div class="credit-config-drawer-content">
+        <div v-if="canManage" class="credit-panel credit-backfill-panel">
+          <header class="credit-panel-header">
+            <div>
+              <h2>初始化历史账户</h2>
+              <p>为尚未开通积分账户的历史用户批量开户，并按注册赠送配置发放初始积分。</p>
+            </div>
+          </header>
+          <div class="credit-panel-footer">
+            <span>仅补建缺失账户，不会影响已有用户余额。</span>
+            <el-button type="primary" plain :loading="backfillLoading" @click="handleBackfillAccounts">
+              <el-icon><UserFilled /></el-icon>
+              一键初始化
+            </el-button>
+          </div>
+        </div>
+
+        <div class="credit-panel">
+          <header class="credit-panel-header">
+            <div>
+              <h2>注册赠送</h2>
+              <p>控制新用户开户后的初始积分。</p>
+            </div>
+            <el-tag :type="globalForm.registerGrantEnabled ? 'success' : 'info'" effect="plain">
+              {{ globalForm.registerGrantEnabled ? '已启用' : '已停用' }}
+            </el-tag>
+          </header>
+          <el-form class="credit-inline-form" label-position="top">
+            <el-form-item label="赠送积分">
+              <el-input-number v-model="globalForm.registerGrantAmount" :min="0" :max="999999" :disabled="!canManage" controls-position="right" />
+            </el-form-item>
+            <el-form-item label="自动赠送" class="credit-switch-item">
+              <el-switch v-model="globalForm.registerGrantEnabled" :disabled="!canManage" />
+            </el-form-item>
+          </el-form>
+          <div class="credit-panel-footer">
+            <span>更新时间：{{ globalConfig?.updatedAt || '-' }}</span>
+            <el-button v-if="canManage" type="primary" :loading="globalSaving" @click="handleSaveGlobalConfig">保存配置</el-button>
+          </div>
+        </div>
+
+        <div class="credit-panel">
+          <header class="credit-panel-header">
+            <div>
+              <h2>AI 功能扣费规则</h2>
+              <p>后续公众端 AI 能力按功能编码扣减。</p>
+            </div>
+            <el-button v-if="canManage" type="primary" plain @click="openFeatureDialog()">
+              <el-icon><Plus /></el-icon>
+              新增规则
+            </el-button>
+          </header>
+          <div class="credit-feature-list" v-loading="featureLoading">
+            <article v-for="item in featureConfigs" :key="item.featureCode" class="credit-feature-item">
+              <div>
+                <strong>{{ item.featureName }}</strong>
+                <span>{{ item.featureCode }}</span>
+              </div>
+              <div class="credit-feature-meta">
+                <span>{{ item.costAmount }} 分/次</span>
+                <el-tag :type="item.enabled ? 'success' : 'info'" effect="plain">{{ item.enabled ? '启用' : '停用' }}</el-tag>
+                <button v-if="canManage" class="management-list-row-button" type="button" title="编辑规则" @click="openFeatureDialog(item)">
+                  <el-icon><EditPen /></el-icon>
+                </button>
+              </div>
+            </article>
+            <el-empty v-if="!featureConfigs.length && !featureLoading" description="暂无扣费规则" />
+          </div>
+        </div>
+      </div>
+    </el-drawer>
+
     <el-dialog v-model="featureDialogVisible" :title="featureDialogTitle" width="520px" class="platform-form-dialog" align-center>
       <template #header>
         <PlatformDialogHeader :title="featureDialogTitle" subtitle="维护公众端 AI 功能的固定扣费规则。" :icon="Coin" />
@@ -268,10 +295,11 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Coin, EditPen, Plus, RefreshRight, Search, Tickets } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Coin, EditPen, Plus, RefreshRight, Search, Setting, Tickets, UserFilled } from '@element-plus/icons-vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import {
   adjustCreditAccount,
+  backfillCreditAccounts,
   getCreditGlobalConfig,
   listCreditFeatureConfigs,
   pageCreditAccounts,
@@ -300,6 +328,8 @@ const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('system:credit:manage'))
 const { isMobileViewport } = useMobileViewport()
 
+const configDrawerVisible = ref(false)
+const backfillLoading = ref(false)
 const globalConfig = ref<CreditGlobalConfigItem | null>(null)
 const globalSaving = ref(false)
 const globalForm = reactive({ registerGrantAmount: 0, registerGrantEnabled: true })
@@ -398,6 +428,24 @@ const handleSaveGlobalConfig = async () => {
     ElMessage.success('积分配置已保存')
   } finally {
     globalSaving.value = false
+  }
+}
+
+const handleBackfillAccounts = async () => {
+  backfillLoading.value = true
+  try {
+    const result = await backfillCreditAccounts()
+    if (result.createdCount === 0) {
+      ElMessage.info('所有用户均已开通积分账户，无需补建')
+    } else if (result.grantedCount > 0) {
+      ElMessage.success(`已为 ${result.createdCount} 位历史用户开户，并发放 ${result.grantAmount} 积分`)
+    } else {
+      ElMessage.success(`已为 ${result.createdCount} 位历史用户开户`)
+    }
+    resetMobilePagination()
+    await loadAccounts()
+  } finally {
+    backfillLoading.value = false
   }
 }
 
@@ -530,18 +578,16 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.credit-config-grid {
-  display: grid;
-  grid-template-columns: minmax(280px, 0.8fr) minmax(360px, 1.2fr);
-  gap: 16px;
-}
-
 .credit-panel {
   border: 1px solid var(--app-border);
-  border-radius: 12px;
+  border-radius: var(--app-radius-xl);
   background: var(--app-surface-card);
-  padding: 18px;
+  padding: 20px;
   box-shadow: var(--app-shadow-soft);
+}
+
+.credit-panel + .credit-panel {
+  margin-top: 16px;
 }
 
 .credit-panel-header {
@@ -549,26 +595,57 @@ onMounted(async () => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .credit-panel-header h2 {
   margin: 0;
   font-size: 16px;
+  font-weight: 800;
   color: var(--app-text);
+  font-family: var(--app-font-heading);
 }
 
 .credit-panel-header p {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   color: var(--app-text-muted);
   font-size: 13px;
+  line-height: 1.5;
 }
 
 .credit-inline-form {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 16px;
+  gap: 24px;
   align-items: end;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.credit-inline-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.credit-inline-form :deep(.el-form-item__label) {
+  color: var(--app-text-soft);
+  font-weight: 700;
+  font-size: 13px;
+  padding-bottom: 8px;
+}
+
+.credit-inline-form :deep(.el-input-number) {
+  width: 100%;
+}
+
+.credit-inline-form :deep(.el-input__wrapper) {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.credit-switch-item :deep(.el-form-item__content) {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
 }
 
 .credit-panel-footer {
@@ -576,14 +653,14 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-top: 12px;
+  padding-top: 16px;
   color: var(--app-text-muted);
   font-size: 12px;
 }
 
 .credit-feature-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   min-height: 96px;
 }
 
@@ -591,32 +668,45 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   border: 1px solid var(--app-border);
-  border-radius: 10px;
-  padding: 12px;
+  border-radius: var(--app-radius-lg);
+  padding: 14px 16px;
+  background: var(--app-surface-low);
+  transition: all 0.18s ease;
 }
 
-.credit-feature-item strong,
-.credit-feature-item span {
-  display: block;
+.credit-feature-item:hover {
+  border-color: rgba(var(--app-primary-container-rgb), 0.3);
+  background: var(--app-surface-card);
 }
 
 .credit-feature-item strong {
+  display: block;
   color: var(--app-text);
   font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 2px;
 }
 
-.credit-feature-item span {
+.credit-feature-item > div:first-child span {
   color: var(--app-text-muted);
   font-size: 12px;
+  font-family: var(--app-font-mono);
+  font-weight: 500;
 }
 
 .credit-feature-meta {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   white-space: nowrap;
+}
+
+.credit-feature-meta > span {
+  color: var(--app-text-soft);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .credit-account-table {
@@ -627,11 +717,45 @@ onMounted(async () => {
   min-width: 220px;
 }
 
+.credit-col-user :deep(.management-list-avatar) {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.credit-account-table td strong {
+  color: var(--app-primary);
+  font-size: 16px;
+  font-weight: 800;
+  font-family: var(--app-font-heading);
+}
+
 .credit-mobile-balance {
   margin-left: auto;
   color: var(--app-primary);
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 800;
+  font-family: var(--app-font-heading);
+}
+
+.credit-config-drawer :deep(.el-drawer__header) {
+  margin-bottom: 0;
+  padding-bottom: 8px;
+}
+
+.credit-config-drawer-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.credit-backfill-panel .credit-panel-header {
+  margin-bottom: 12px;
+}
+
+.credit-backfill-panel .credit-panel-footer {
+  padding-top: 0;
 }
 
 .credit-transaction-list {
@@ -641,8 +765,9 @@ onMounted(async () => {
 
 .credit-transaction-item {
   border: 1px solid var(--app-border);
-  border-radius: 10px;
-  padding: 12px;
+  border-radius: var(--app-radius-lg);
+  padding: 14px 16px;
+  background: var(--app-surface-low);
 }
 
 .credit-transaction-main,
@@ -654,16 +779,25 @@ onMounted(async () => {
   gap: 12px;
 }
 
+.credit-transaction-main strong {
+  font-size: 16px;
+  font-weight: 800;
+  font-family: var(--app-font-heading);
+}
+
 .credit-transaction-detail {
   justify-content: flex-start;
   flex-wrap: wrap;
-  margin-top: 8px;
+  gap: 16px;
+  margin-top: 10px;
   color: var(--app-text-muted);
   font-size: 12px;
 }
 
 .credit-transaction-item p {
-  margin: 8px 0 0;
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--app-border);
   color: var(--app-text-soft);
   font-size: 13px;
 }
@@ -676,19 +810,37 @@ onMounted(async () => {
   color: var(--app-danger);
 }
 
-@media (max-width: 900px) {
-  .credit-config-grid {
-    grid-template-columns: 1fr;
-  }
+.credit-drawer-footer {
+  padding-top: 16px;
+  border-top: 1px solid var(--app-border);
 }
 
 @media (max-width: 640px) {
-  .credit-inline-form,
-  .credit-panel-footer,
-  .credit-feature-item {
+  .credit-inline-form {
     grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .credit-panel-footer {
+    flex-direction: column-reverse;
     align-items: stretch;
+  }
+
+  .credit-panel-footer .el-button {
+    width: 100%;
+  }
+
+  .credit-feature-item {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .credit-feature-meta {
+    justify-content: space-between;
+  }
+
+  .credit-config-drawer {
+    --el-drawer-size: 100% !important;
   }
 }
 </style>
