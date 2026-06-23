@@ -4,6 +4,7 @@ import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.GitlabAutoMergeConfigSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
+import com.aiclub.platform.dto.GitlabAutoMergeLogIssueFeedbackSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeProjectShareSummary;
 import com.aiclub.platform.dto.GitlabAutoMergePublicLogPage;
 import com.aiclub.platform.dto.GitlabAutoMergeWebhookSummary;
@@ -30,6 +31,7 @@ import com.aiclub.platform.dto.ProjectPublicPipelineRunPage;
 import com.aiclub.platform.dto.ProjectPublicPipelineSummary;
 import com.aiclub.platform.dto.RepositoryScanRulesetSummary;
 import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
+import com.aiclub.platform.dto.request.GitlabAutoMergeLogIssueFeedbackRequest;
 import com.aiclub.platform.dto.request.GitlabAutoMergeProjectShareRequest;
 import com.aiclub.platform.dto.request.GitlabAutoMergeWebhookRequest;
 import com.aiclub.platform.dto.request.GitlabApiSyncRequest;
@@ -405,6 +407,40 @@ public class GitlabController {
                                                                                       @RequestParam(defaultValue = "10") int size,
                                                                                       @RequestParam(required = false) String result) {
         return ApiResponse.success(gitlabManagementService.pageProjectAutoMergeLogsByShare(projectId, token, page, size, result));
+    }
+
+    /**
+     * 公开侧：基于只读分享 token 提交对某条审查问题的逐条反馈。
+     *
+     * <p>匿名访问，无 @RequirePermission，仅校验分享链接有效性。</p>
+     */
+    @PostMapping("/public/projects/{projectId}/auto-merge-logs/{token}/{logId}/issue-feedback")
+    public ApiResponse<GitlabAutoMergeLogIssueFeedbackSummary> submitIssueFeedback(
+            @PathVariable Long projectId,
+            @PathVariable String token,
+            @PathVariable Long logId,
+            @Valid @RequestBody GitlabAutoMergeLogIssueFeedbackRequest request,
+            HttpServletRequest httpRequest) {
+        String clientIp = httpRequest.getHeader("X-Forwarded-For");
+        if (clientIp == null || clientIp.trim().isEmpty()) {
+            clientIp = httpRequest.getRemoteAddr();
+        }
+        String userAgent = httpRequest.getHeader("User-Agent");
+        return ApiResponse.success(gitlabManagementService.submitIssueFeedback(
+                projectId, token, logId, request, clientIp, userAgent));
+    }
+
+    /**
+     * 公开侧：基于只读分享 token + 当前指纹，查询某条日志的全部已有反馈（详情打开时回显用）。
+     */
+    @GetMapping("/public/projects/{projectId}/auto-merge-logs/{token}/{logId}/issue-feedback")
+    public ApiResponse<List<GitlabAutoMergeLogIssueFeedbackSummary>> listIssueFeedbackByLog(
+            @PathVariable Long projectId,
+            @PathVariable String token,
+            @PathVariable Long logId,
+            @RequestParam String fingerprint) {
+        return ApiResponse.success(gitlabManagementService.listIssueFeedbackByLog(
+                projectId, token, logId, fingerprint));
     }
 
     /**

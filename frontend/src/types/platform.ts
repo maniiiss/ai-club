@@ -1828,6 +1828,36 @@ export interface GitlabAutoMergeProjectShareItem {
   shareUrl: string | null
 }
 
+/**
+ * 自动合并日志逐条审查问题反馈。
+ *
+ * 分享页访问者可以对 detail_markdown 中"本次新增问题"或"当前仍需处理问题"
+ * 区块里的每条 issue 单独评价（分析正确 / 分析错误 + 可选理由），后续 LLM 复盘
+ * 智能体按 issueId 聚合所有反馈，分析自动合并审查智能体的失败模式。
+ */
+export interface GitlabAutoMergeLogIssueFeedbackItem {
+  id: number
+  logId: number
+  issueId: string
+  issueTextSnapshot: string
+  /** issue 所在区块：NEWLY_RAISED（本次新增） / PENDING（当前仍需处理）。 */
+  section: 'NEWLY_RAISED' | 'PENDING'
+  /** 评价：CORRECT（分析正确） / INCORRECT（分析错误）。 */
+  verdict: 'CORRECT' | 'INCORRECT'
+  reason: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** 提交反馈的请求体。 */
+export interface GitlabAutoMergeLogIssueFeedbackPayload {
+  issueId: string
+  verdict: 'CORRECT' | 'INCORRECT'
+  reason?: string
+  fingerprint: string
+  section: 'NEWLY_RAISED' | 'PENDING'
+}
+
 export type AiModelType = 'CHAT' | 'EMBEDDING'
 export type OpenAiApiMode = 'AUTO' | 'RESPONSES' | 'CHAT_COMPLETIONS' | 'CHAT_COMPLETIONS_PLAIN'
 

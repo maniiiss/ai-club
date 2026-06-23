@@ -28,6 +28,7 @@ import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergePipelineTargetRepository;
 import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
+import com.aiclub.platform.repository.GitlabAutoMergeLogIssueFeedbackRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeProjectShareRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeWebhookRepository;
 import com.aiclub.platform.repository.GitlabProductBranchRepository;
@@ -85,6 +86,9 @@ class GitlabManagementGitlabActionsTests {
 
     @Mock
     private GitlabAutoMergeLogRepository autoMergeLogRepository;
+
+    @Mock
+    private GitlabAutoMergeLogIssueFeedbackRepository autoMergeLogIssueFeedbackRepository;
 
     @Mock
     private GitlabAutoMergeProjectShareRepository autoMergeProjectShareRepository;
@@ -182,6 +186,8 @@ class GitlabManagementGitlabActionsTests {
                 autoMergeConfigRepository,
                 autoMergePipelineTargetRepository,
                 autoMergeLogRepository,
+
+                autoMergeLogIssueFeedbackRepository,
                 autoMergeProjectShareRepository,
                 autoMergeWebhookRepository,
                 aiClubPipelineRepository,
@@ -824,7 +830,9 @@ class GitlabManagementGitlabActionsTests {
         assertThat(result.items()).singleElement().satisfies(item -> assertThat(item.action()).isEqualTo("MERGED"));
         verify(autoMergeLogRepository).save(argThat(log ->
                 "MERGED".equals(log.getResult())
-                        && "[\"补充登录空值判断\"]".equals(log.getResolvedPreviousIssuesJson())
+                        // 持久化后每条 issue 会带 id，但 text 必须匹配
+                        && log.getResolvedPreviousIssuesJson() != null
+                        && log.getResolvedPreviousIssuesJson().contains("\"text\":\"\u8865\u5145\u767b\u5f55\u7a7a\u503c\u5224\u65ad\"")
                         && "[]".equals(log.getReviewIssuesJson())
                         && log.getDetailMarkdown() != null
                         && log.getDetailMarkdown().contains("已修复项")

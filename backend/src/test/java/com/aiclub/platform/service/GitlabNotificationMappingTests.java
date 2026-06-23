@@ -8,6 +8,7 @@ import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeConfigRepository;
 import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
+import com.aiclub.platform.repository.GitlabAutoMergeLogIssueFeedbackRepository;
 import com.aiclub.platform.repository.GitlabAutoMergePipelineTargetRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeProjectShareRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeWebhookRepository;
@@ -47,6 +48,9 @@ class GitlabNotificationMappingTests {
 
     @Mock
     private GitlabAutoMergeLogRepository autoMergeLogRepository;
+
+    @Mock
+    private GitlabAutoMergeLogIssueFeedbackRepository autoMergeLogIssueFeedbackRepository;
 
     @Mock
     private GitlabAutoMergePipelineTargetRepository autoMergePipelineTargetRepository;
@@ -147,6 +151,8 @@ class GitlabNotificationMappingTests {
                 autoMergeConfigRepository,
                 autoMergePipelineTargetRepository,
                 autoMergeLogRepository,
+
+                autoMergeLogIssueFeedbackRepository,
                 autoMergeProjectShareRepository,
                 autoMergeWebhookRepository,
                 aiClubPipelineRepository,

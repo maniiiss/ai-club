@@ -74,17 +74,17 @@ platform:
     serve-public-port: ${PLATFORM_GITNEXUS_SERVE_PUBLIC_PORT:4747}
   gitlab:
     default-api-url: ${PLATFORM_GITLAB_DEFAULT_API_URL:}
+    oauth:
+      client-id: ${PLATFORM_GITLAB_OAUTH_CLIENT_ID:}
+      client-secret: ${PLATFORM_GITLAB_OAUTH_CLIENT_SECRET:}
+      redirect-uri: ${PLATFORM_GITLAB_OAUTH_REDIRECT_URI:}
+      state-expire-minutes: ${PLATFORM_GITLAB_OAUTH_STATE_EXPIRE_MINUTES:10}
   auto-merge:
     log:
       retention-days: ${PLATFORM_AUTO_MERGE_LOG_RETENTION_DAYS:5}
       cleanup-interval-ms: ${PLATFORM_AUTO_MERGE_LOG_CLEANUP_INTERVAL_MS:3600000}
   frontend:
     public-base-url: ${PLATFORM_FRONTEND_PUBLIC_BASE_URL:}
-    oauth:
-      client-id: ${PLATFORM_GITLAB_OAUTH_CLIENT_ID:}
-      client-secret: ${PLATFORM_GITLAB_OAUTH_CLIENT_SECRET:}
-      redirect-uri: ${PLATFORM_GITLAB_OAUTH_REDIRECT_URI:}
-      state-expire-minutes: ${PLATFORM_GITLAB_OAUTH_STATE_EXPIRE_MINUTES:10}
   woodpecker:
     enabled: ${WOODPECKER_ENABLED:true}
     internal-base-url: ${PLATFORM_WOODPECKER_INTERNAL_BASE_URL:http://localhost:18000}

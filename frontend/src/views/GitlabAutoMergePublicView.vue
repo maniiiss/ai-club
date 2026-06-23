@@ -178,6 +178,70 @@
           <span>{{ formatDateTimeText(currentLogDetail.executedAt) }}</span>
           <span>{{ currentLogDetail.reason || '-' }}</span>
         </div>
+
+        <!--
+          逐条审查问题反馈：仅展示 "本次新增问题" 和 "当前仍需处理问题" 两个区块里的 issue，
+          每条独立提供"分析正确 / 分析错误 + 可选理由"控件，同来源覆盖式提交。
+        -->
+        <section v-if="detailIssues.length" class="gitlab-public-feedback-panel">
+          <header class="gitlab-public-feedback-head">
+            <h3>这次 AI 审查准确吗？</h3>
+            <p>对下面每一条问题单独打标，理由可选。后续会用作智能体复盘优化。</p>
+          </header>
+          <ul class="gitlab-public-feedback-list">
+            <li v-for="issue in detailIssues" :key="issue.issueId" class="gitlab-public-feedback-item">
+              <div class="gitlab-public-feedback-item-head">
+                <span class="gitlab-public-feedback-section-tag" :class="`section-${issue.section.toLowerCase()}`">
+                  {{ issue.section === 'NEWLY_RAISED' ? '本次新增' : '仍需处理' }}
+                </span>
+                <p class="gitlab-public-feedback-item-text">{{ issue.text }}</p>
+              </div>
+              <div class="gitlab-public-feedback-controls">
+                <label class="gitlab-public-feedback-radio">
+                  <input
+                    type="radio"
+                    :name="`verdict-${issue.issueId}`"
+                    value="CORRECT"
+                    :checked="feedbackState[issue.issueId]?.verdict === 'CORRECT'"
+                    @change="onVerdictChange(issue.issueId, 'CORRECT')"
+                  />
+                  <span>分析正确</span>
+                </label>
+                <label class="gitlab-public-feedback-radio">
+                  <input
+                    type="radio"
+                    :name="`verdict-${issue.issueId}`"
+                    value="INCORRECT"
+                    :checked="feedbackState[issue.issueId]?.verdict === 'INCORRECT'"
+                    @change="onVerdictChange(issue.issueId, 'INCORRECT')"
+                  />
+                  <span>分析错误</span>
+                </label>
+                <input
+                  type="text"
+                  class="gitlab-public-feedback-reason"
+                  :placeholder="feedbackState[issue.issueId]?.verdict === 'INCORRECT' ? '请简述错在哪（可选）' : '理由（可选）'"
+                  maxlength="2000"
+                  :value="feedbackState[issue.issueId]?.reason || ''"
+                  @input="onReasonChange(issue.issueId, ($event.target as HTMLInputElement).value)"
+                />
+                <button
+                  type="button"
+                  class="gitlab-public-feedback-submit"
+                  :disabled="!feedbackState[issue.issueId]?.verdict || feedbackState[issue.issueId]?.submitting"
+                  @click="submitFeedback(issue)"
+                >
+                  {{ feedbackState[issue.issueId]?.persistedId ? '更新反馈' : '提交反馈' }}
+                </button>
+              </div>
+              <p v-if="feedbackState[issue.issueId]?.persistedId" class="gitlab-public-feedback-status">
+                您已反馈：{{ feedbackState[issue.issueId]?.verdict === 'CORRECT' ? '分析正确' : '分析错误' }}
+                <span v-if="feedbackState[issue.issueId]?.updatedAt">（{{ feedbackState[issue.issueId]?.updatedAt }}）</span>
+              </p>
+            </li>
+          </ul>
+        </section>
+
         <div class="log-detail-markdown" v-html="detailHtml"></div>
       </div>
     </el-dialog>
@@ -185,19 +249,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { useRoute } from 'vue-router'
 import {
+  listIssueFeedbackByLog,
   listPublicPipelinesByShare,
   pageProjectAutoMergeLogsByShare,
   pagePublicPipelineRunsByShare,
+  submitIssueFeedback,
   type ProjectPublicPipelineItem,
   type ProjectPublicPipelineRunItem
 } from '@/api/gitlab'
-import type { GitlabAutoMergeLogItem } from '@/types/platform'
+import type {
+  GitlabAutoMergeLogItem,
+  GitlabAutoMergeLogIssueFeedbackItem
+} from '@/types/platform'
 import { renderMarkdownToHtml } from '@/utils/markdown'
+import { getVisitorFingerprint } from '@/utils/visitorFingerprint'
 
 const route = useRoute()
 const projectId = Number(route.params.projectId)
@@ -230,6 +300,130 @@ const currentLogDetail = ref<GitlabAutoMergeLogItem | null>(null)
 
 const logTotalPages = computed(() => Math.max(1, Math.ceil(logTotal.value / logSize.value) || 1))
 const detailHtml = computed(() => renderMarkdownToHtml(currentLogDetail.value?.detailMarkdown || '无日志详情'))
+
+// ===== 逐条审查问题反馈 =====
+/** 当前访问者指纹，会话级缓存。 */
+const visitorFingerprint = ref<string>('')
+
+/** 详情对话框内解析出的可反馈 issue 列表（仅本次新增 + 当前仍需处理两个区块）。 */
+interface DetailIssue {
+  issueId: string
+  text: string
+  section: 'NEWLY_RAISED' | 'PENDING'
+}
+const detailIssues = ref<DetailIssue[]>([])
+
+/** 每条 issue 的反馈表单状态，key 是 issueId。 */
+interface IssueFeedbackState {
+  verdict: 'CORRECT' | 'INCORRECT' | null
+  reason: string
+  submitting: boolean
+  persistedId: number | null
+  updatedAt: string | null
+}
+const feedbackState = reactive<Record<string, IssueFeedbackState>>({})
+
+/**
+ * 从 markdown 文本里抽取 "### 本次新增问题" 与 "### 当前仍需处理问题" 两个区块下
+ * 带 `<!-- issue-id: xxx -->` 注释的 bullet。后端在序列化时为每条 issue 分配了稳定 issueId，
+ * 这里按区块和 id 抽取即可。
+ */
+const parseDetailIssues = (markdown: string): DetailIssue[] => {
+  if (!markdown) return []
+  const issues: DetailIssue[] = []
+  const lines = markdown.split(/\r?\n/)
+  let currentSection: 'NEWLY_RAISED' | 'PENDING' | null = null
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    if (line.startsWith('### ')) {
+      // 新区块开始，切换 section
+      if (line.includes('本次新增问题')) {
+        currentSection = 'NEWLY_RAISED'
+      } else if (line.includes('当前仍需处理问题')) {
+        currentSection = 'PENDING'
+      } else {
+        currentSection = null
+      }
+      continue
+    }
+    if (currentSection && line.startsWith('-')) {
+      const match = line.match(/<!--\s*issue-id:\s*([\w-]+)\s*-->/)
+      if (!match) continue
+      const issueId = match[1]
+      // 提取 bullet 文本，去掉前导 -、注释本身
+      const text = line.replace(/^-\s*/, '').replace(/<!--\s*issue-id:[^>]+-->/, '').trim()
+      if (text) {
+        issues.push({ issueId, text, section: currentSection })
+      }
+    }
+  }
+  return issues
+}
+
+const onVerdictChange = (issueId: string, verdict: 'CORRECT' | 'INCORRECT') => {
+  if (!feedbackState[issueId]) {
+    feedbackState[issueId] = { verdict, reason: '', submitting: false, persistedId: null, updatedAt: null }
+  } else {
+    feedbackState[issueId].verdict = verdict
+  }
+}
+
+const onReasonChange = (issueId: string, reason: string) => {
+  if (!feedbackState[issueId]) {
+    feedbackState[issueId] = { verdict: null, reason, submitting: false, persistedId: null, updatedAt: null }
+  } else {
+    feedbackState[issueId].reason = reason
+  }
+}
+
+const submitFeedback = async (issue: DetailIssue) => {
+  if (!currentLogDetail.value) return
+  const state = feedbackState[issue.issueId]
+  if (!state || !state.verdict) {
+    ElMessage.warning('请先选择"分析正确"或"分析错误"')
+    return
+  }
+  if (!visitorFingerprint.value) {
+    ElMessage.error('指纹生成失败，无法提交反馈')
+    return
+  }
+  state.submitting = true
+  try {
+    const saved = await submitIssueFeedback(projectId, token, currentLogDetail.value.id, {
+      issueId: issue.issueId,
+      verdict: state.verdict,
+      reason: state.reason || undefined,
+      fingerprint: visitorFingerprint.value,
+      section: issue.section
+    })
+    state.persistedId = saved.id
+    state.updatedAt = saved.updatedAt
+    ElMessage.success('感谢反馈')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '提交反馈失败')
+  } finally {
+    state.submitting = false
+  }
+}
+
+const loadExistingFeedback = async (logId: number) => {
+  if (!visitorFingerprint.value) return
+  try {
+    const list = await listIssueFeedbackByLog(projectId, token, logId, visitorFingerprint.value)
+    for (const fb of list) {
+      feedbackState[fb.issueId] = {
+        verdict: fb.verdict,
+        reason: fb.reason || '',
+        submitting: false,
+        persistedId: fb.id,
+        updatedAt: fb.updatedAt
+      }
+    }
+  } catch (error) {
+    // 反馈拉取失败不影响主流程，静默处理
+    console.warn('加载已有反馈失败', error)
+  }
+}
 
 // ===== 流水线发布记录 tab 状态 =====
 const pipelineLoading = ref(false)
@@ -377,9 +571,25 @@ const refreshActiveTab = async () => {
   }
 }
 
-const openDetail = (item: GitlabAutoMergeLogItem) => {
+const openDetail = async (item: GitlabAutoMergeLogItem) => {
   currentLogDetail.value = item
   detailVisible.value = true
+  // 清空上次状态，避免不同 log 之间反馈表单残留
+  for (const key of Object.keys(feedbackState)) {
+    delete feedbackState[key]
+  }
+  detailIssues.value = parseDetailIssues(item.detailMarkdown || '')
+  // 先初始化空状态，再用已有反馈覆盖
+  for (const issue of detailIssues.value) {
+    feedbackState[issue.issueId] = {
+      verdict: null,
+      reason: '',
+      submitting: false,
+      persistedId: null,
+      updatedAt: null
+    }
+  }
+  await loadExistingFeedback(item.id)
 }
 
 const resultText = (value: string) => {
@@ -415,6 +625,13 @@ const statusTone = (value?: string | null) => {
 const formatDateTimeText = (value?: string | null) => value || '-'
 
 onMounted(async () => {
+  // 先生成访客指纹，反馈接口需要用到；失败时降级为空字符串（提交反馈会被前端拦截）
+  try {
+    visitorFingerprint.value = await getVisitorFingerprint()
+  } catch (error) {
+    console.warn('生成访客指纹失败', error)
+    visitorFingerprint.value = ''
+  }
   await loadLogs()
   if (logErrorMessage.value) {
     ElMessage.warning(logErrorMessage.value)
@@ -883,5 +1100,144 @@ onMounted(async () => {
   .gitlab-public-pipeline-shell {
     grid-template-columns: 1fr;
   }
+}
+
+/* ===== 面板卡片 ===== */
+.gitlab-public-feedback-panel {
+  margin-bottom: 20px;
+  padding: 16px 20px;
+  background: #fbfbfd;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.gitlab-public-feedback-head h3 {
+  margin: 0 0 2px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.gitlab-public-feedback-head p {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.gitlab-public-feedback-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gitlab-public-feedback-item {
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.gitlab-public-feedback-item-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.gitlab-public-feedback-section-tag {
+  flex-shrink: 0;
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.gitlab-public-feedback-section-tag.section-newly_raised {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.gitlab-public-feedback-section-tag.section-pending {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.gitlab-public-feedback-item-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #374151;
+}
+
+.gitlab-public-feedback-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.gitlab-public-feedback-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #374151;
+}
+
+.gitlab-public-feedback-radio input[type='radio'] {
+  margin: 0;
+  accent-color: #6366f1;
+}
+
+.gitlab-public-feedback-reason {
+  flex: 1 1 180px;
+  min-width: 120px;
+  padding: 5px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #374151;
+  background: #fff;
+  outline: none;
+}
+
+.gitlab-public-feedback-reason:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+.gitlab-public-feedback-submit {
+  flex-shrink: 0;
+  padding: 5px 14px;
+  border: 1px solid #6366f1;
+  border-radius: 6px;
+  background: #6366f1;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s;
+}
+
+.gitlab-public-feedback-submit:hover:not(:disabled) {
+  background: #4f46e5;
+}
+
+.gitlab-public-feedback-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gitlab-public-feedback-status {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #6b7280;
 }
 </style>

@@ -6,6 +6,8 @@ import type {
   ExecutionTaskItem,
   GitlabAutoMergeConfigItem,
   GitlabAutoMergeLogItem,
+  GitlabAutoMergeLogIssueFeedbackItem,
+  GitlabAutoMergeLogIssueFeedbackPayload,
   GitlabAutoMergeRunResult,
   GitlabAutoMergeWebhookItem,
   GitlabApiSyncRequestItem,
@@ -393,6 +395,40 @@ export const pageProjectAutoMergeLogsByShare = async (
   const { data } = await publicHttp.get<ApiResponse<GitlabAutoMergePublicLogPageItem>>(`/api/gitlab/public/projects/${projectId}/auto-merge-logs/${token}`, {
     params: cleanParams(query)
   })
+  return data.data
+}
+
+/**
+ * 分享页：提交对某条审查问题的逐条反馈（分析正确/错误 + 理由）。
+ *
+ * 匿名访问，无 Bearer token，由 share token 控制权限。
+ */
+export const submitIssueFeedback = async (
+  projectId: number,
+  token: string,
+  logId: number,
+  payload: GitlabAutoMergeLogIssueFeedbackPayload
+) => {
+  const { data } = await publicHttp.post<ApiResponse<GitlabAutoMergeLogIssueFeedbackItem>>(
+    `/api/gitlab/public/projects/${projectId}/auto-merge-logs/${token}/${logId}/issue-feedback`,
+    payload
+  )
+  return data.data
+}
+
+/**
+ * 分享页：打开详情对话框时，按当前指纹拉取该日志的全部已有反馈，前端按 issueId 回填。
+ */
+export const listIssueFeedbackByLog = async (
+  projectId: number,
+  token: string,
+  logId: number,
+  fingerprint: string
+) => {
+  const { data } = await publicHttp.get<ApiResponse<GitlabAutoMergeLogIssueFeedbackItem[]>>(
+    `/api/gitlab/public/projects/${projectId}/auto-merge-logs/${token}/${logId}/issue-feedback`,
+    { params: { fingerprint } }
+  )
   return data.data
 }
 

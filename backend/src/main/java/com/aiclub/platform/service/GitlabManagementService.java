@@ -10,6 +10,7 @@ import com.aiclub.platform.domain.model.GitlabAutoMergeConfigEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeWebhookEntity;
 import com.aiclub.platform.domain.model.GitlabCodeStructureSnapshotEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeLogEntity;
+import com.aiclub.platform.domain.model.GitlabAutoMergeLogIssueFeedbackEntity;
 import com.aiclub.platform.domain.model.GitlabAutoMergeProjectShareEntity;
 import com.aiclub.platform.domain.model.AiClubPipelineEntity;
 import com.aiclub.platform.domain.model.ProjectPipelineBindingEntity;
@@ -19,9 +20,11 @@ import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
 import com.aiclub.platform.domain.model.RepositoryScanRulesetEntity;
 import com.aiclub.platform.dto.CodeReviewResult;
+import com.aiclub.platform.dto.ReviewIssueItem;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeConfigSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
+import com.aiclub.platform.dto.GitlabAutoMergeLogIssueFeedbackSummary;
 import com.aiclub.platform.dto.GitlabAutoMergePipelineTargetSummary;
 import com.aiclub.platform.dto.GitlabAutoMergeProjectShareSummary;
 import com.aiclub.platform.dto.GitlabAutoMergePublicLogPage;
@@ -58,6 +61,7 @@ import com.aiclub.platform.dto.request.GitlabAutoMergeConfigRequest;
 import com.aiclub.platform.dto.request.GitlabAutoMergePipelineTargetRequest;
 import com.aiclub.platform.dto.request.GitlabAutoMergeProjectShareRequest;
 import com.aiclub.platform.dto.request.GitlabAutoMergeWebhookRequest;
+import com.aiclub.platform.dto.request.GitlabAutoMergeLogIssueFeedbackRequest;
 import com.aiclub.platform.dto.request.GitlabCreateProductBranchSyncRequest;
 import com.aiclub.platform.dto.request.GitlabBindingScanTaskRequest;
 import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
@@ -77,6 +81,7 @@ import com.aiclub.platform.repository.GitlabAutoMergePipelineTargetRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeWebhookRepository;
 import com.aiclub.platform.repository.GitlabCodeStructureSnapshotRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeLogRepository;
+import com.aiclub.platform.repository.GitlabAutoMergeLogIssueFeedbackRepository;
 import com.aiclub.platform.repository.GitlabAutoMergeProjectShareRepository;
 import com.aiclub.platform.repository.GitlabProductBranchRepository;
 import com.aiclub.platform.repository.GitlabProductBranchSyncLogRepository;
@@ -157,6 +162,7 @@ public class GitlabManagementService {
     private final GitlabAutoMergeConfigRepository autoMergeConfigRepository;
     private final GitlabAutoMergePipelineTargetRepository autoMergePipelineTargetRepository;
     private final GitlabAutoMergeLogRepository autoMergeLogRepository;
+    private final GitlabAutoMergeLogIssueFeedbackRepository autoMergeLogIssueFeedbackRepository;
     private final GitlabAutoMergeProjectShareRepository autoMergeProjectShareRepository;
     private final GitlabAutoMergeWebhookRepository autoMergeWebhookRepository;
     private final AiClubPipelineRepository aiClubPipelineRepository;
@@ -193,6 +199,7 @@ public class GitlabManagementService {
                                    GitlabAutoMergeConfigRepository autoMergeConfigRepository,
                                    GitlabAutoMergePipelineTargetRepository autoMergePipelineTargetRepository,
                                    GitlabAutoMergeLogRepository autoMergeLogRepository,
+                                   GitlabAutoMergeLogIssueFeedbackRepository autoMergeLogIssueFeedbackRepository,
                                    GitlabAutoMergeProjectShareRepository autoMergeProjectShareRepository,
                                    GitlabAutoMergeWebhookRepository autoMergeWebhookRepository,
                                    AiClubPipelineRepository aiClubPipelineRepository,
@@ -230,6 +237,7 @@ public class GitlabManagementService {
         this.autoMergeConfigRepository = autoMergeConfigRepository;
         this.autoMergePipelineTargetRepository = autoMergePipelineTargetRepository;
         this.autoMergeLogRepository = autoMergeLogRepository;
+        this.autoMergeLogIssueFeedbackRepository = autoMergeLogIssueFeedbackRepository;
         this.autoMergeProjectShareRepository = autoMergeProjectShareRepository;
         this.autoMergeWebhookRepository = autoMergeWebhookRepository;
         this.aiClubPipelineRepository = aiClubPipelineRepository;
@@ -844,6 +852,188 @@ public class GitlabManagementService {
         Page<GitlabAutoMergeLogSummary> pageData = autoMergeLogRepository.findAll(publicAutoMergeLogSpecification(projectId, result), pageable)
                 .map(this::toAutoMergeLogSummary);
         return new GitlabAutoMergePublicLogPage(projectId, project.getName(), resolveProjectNextMergeAt(projectId), PageResponse.from(pageData));
+    }
+
+    // ========================================================================
+    //  审查问题逐条反馈
+    // ========================================================================
+
+    /**
+     * 分享页提交对某条 AI 审查问题的逐条反馈。
+     *
+     * <p>流程：</p>
+     * <ol>
+     *     <li>校验 share token 有效</li>
+     *     <li>校验 logId 归属于该 project</li>
+     *     <li>校验 issueId + section 有效，且在 detailMarkdown 中存在</li>
+     *     <li>对前端指纹做服务端二次哈希 (SHA-256(fp + salt)) 后入库</li>
+     *     <li>按 (logId, issueId, fingerprintHash) 唯一 upsert：已存在则覆盖（允许同来源改评价）</li>
+     * </ol>
+     */
+    @Transactional
+    public GitlabAutoMergeLogIssueFeedbackSummary submitIssueFeedback(
+            Long projectId,
+            String token,
+            Long logId,
+            GitlabAutoMergeLogIssueFeedbackRequest request,
+            String clientIp,
+            String userAgent) {
+        // 1. 校验分享链接
+        requireValidProjectShare(projectId, token);
+
+        // 2. 校验日志归属
+        GitlabAutoMergeLogEntity log = autoMergeLogRepository.findById(logId)
+                .orElseThrow(() -> new NoSuchElementException("日志不存在: " + logId));
+        if (log.getProject() == null || !log.getProject().getId().equals(projectId)) {
+            throw new IllegalArgumentException("该日志不属于当前项目");
+        }
+
+        // 3. 校验请求参数
+        String issueId = trimToNull(request.getIssueId());
+        String verdict = trimToNull(request.getVerdict());
+        String reason = trimToNull(request.getReason());
+        String clientFingerprint = trimToNull(request.getFingerprint());
+        String section = trimToNull(request.getSection());
+
+        if (issueId == null) {
+            throw new IllegalArgumentException("issueId 不能为空");
+        }
+        if (!"CORRECT".equalsIgnoreCase(verdict) && !"INCORRECT".equalsIgnoreCase(verdict)) {
+            throw new IllegalArgumentException("verdict 仅允许 CORRECT 或 INCORRECT");
+        }
+        if (!"NEWLY_RAISED".equalsIgnoreCase(section) && !"PENDING".equalsIgnoreCase(section)) {
+            throw new IllegalArgumentException("section 仅允许 NEWLY_RAISED 或 PENDING");
+        }
+        if (reason != null && reason.length() > 2000) {
+            throw new IllegalArgumentException("反馈理由最长 2000 字符");
+        }
+        if (clientFingerprint == null || clientFingerprint.length() < 8) {
+            throw new IllegalArgumentException("缺少有效的客户端指纹");
+        }
+
+        // 4. 验证 issueId 确实属于该 log 的 detailMarkdown
+        validateIssueIdBelongsToLog(log, issueId);
+
+        // 5. 服务端指纹再哈希
+        String fingerPrintSalt = "aiclub-feedback-salt"; // TODO: 后续按需抽取到配置
+        String serverFingerprintHash = hashText(clientFingerprint + fingerPrintSalt);
+
+        // 6. IP 哈希（仅用于流量回溯，不存明文的 IP）
+        String ipHash = hasText(clientIp) ? hashText(clientIp + fingerPrintSalt) : null;
+
+        // 7. 查找已有反馈做 upsert
+        GitlabAutoMergeLogIssueFeedbackEntity entity = autoMergeLogIssueFeedbackRepository
+                .findByLog_IdAndIssueIdAndSubmitterFingerprintHash(logId, issueId, serverFingerprintHash)
+                .orElseGet(() -> {
+                    GitlabAutoMergeLogIssueFeedbackEntity created = new GitlabAutoMergeLogIssueFeedbackEntity();
+                    created.setLog(log);
+                    created.setProjectId(projectId);
+                    created.setConfigId(log.getConfig() == null ? null : log.getConfig().getId());
+                    created.setIssueId(issueId);
+                    created.setSubmitterFingerprintHash(serverFingerprintHash);
+                    return created;
+                });
+
+        // 从 issue_id 找到当时渲染的文本快照（用于给 LLM 复盘时还原反馈上下文）
+        String issueTextSnapshot = resolveIssueTextSnapshot(log, issueId);
+        entity.setIssueTextSnapshot(issueTextSnapshot != null ? issueTextSnapshot : "");
+        entity.setSection(section.toUpperCase());
+        entity.setVerdict(verdict.toUpperCase());
+        entity.setReason(reason);
+        entity.setSubmitterIpHash(ipHash);
+        entity.setUserAgent(limitLength(userAgent, 512));
+        entity.setReviewResultSnapshot(log.getResult());
+        autoMergeLogIssueFeedbackRepository.save(entity);
+
+        return toIssueFeedbackSummary(entity);
+    }
+
+    /**
+     * 分享页打开详情时，按当前指纹拉取该日志的全部已有反馈，前端按 issueId 回填。
+     */
+    public List<GitlabAutoMergeLogIssueFeedbackSummary> listIssueFeedbackByLog(
+            Long projectId, String token, Long logId, String fingerprint) {
+        requireValidProjectShare(projectId, token);
+        if (!hasText(fingerprint) || fingerprint.length() < 8) {
+            return List.of();
+        }
+        String fingerPrintSalt = "aiclub-feedback-salt";
+        String serverFingerprintHash = hashText(fingerprint + fingerPrintSalt);
+        return autoMergeLogIssueFeedbackRepository
+                .findAllByLog_IdAndSubmitterFingerprintHashOrderByIssueIdAsc(logId, serverFingerprintHash)
+                .stream()
+                .map(this::toIssueFeedbackSummary)
+                .toList();
+    }
+
+    /**
+     * (预留) 未来 LLM 复盘智能体接口：查询项目的反馈抽样。
+     *
+     * <p>TODO: 本期不暴露 Controller，复盘智能体需要时再按需暴露。
+     * 按 issueId 汇总全项目下所有 INCORRECT 反馈，提供给 LLM 分析失败模式。</p>
+     */
+    public List<GitlabAutoMergeLogIssueFeedbackSummary> listFeedbackForReview(
+            Long projectId, String issueId) {
+        return autoMergeLogIssueFeedbackRepository
+                .findAllByProjectIdAndIssueIdOrderByCreatedAtDesc(projectId, issueId)
+                .stream()
+                .map(this::toIssueFeedbackSummary)
+                .toList();
+    }
+
+    /**
+     * 校验传入的 issueId 是否确实存在于该日志的 detailMarkdown 中，
+     * 防止恶意客户端提交不存在的 issueId。
+     */
+    private void validateIssueIdBelongsToLog(GitlabAutoMergeLogEntity log, String issueId) {
+        String markdown = trimToNull(log.getDetailMarkdown());
+        if (markdown == null) {
+            throw new IllegalArgumentException("该日志没有 markdown 详情，无法提交反馈");
+        }
+        // issue-id 在 markdown 中是以 HTML 注释出现的：<!-- issue-id: xxx -->
+        if (!markdown.contains("<!-- issue-id: " + issueId + " -->")) {
+            throw new IllegalArgumentException("issueId " + issueId + " 不存在于该日志的详情中");
+        }
+    }
+
+    /**
+     * 从 detailMarkdown 中提取一条 issue 文本快照（即 bullet 内容，不含注释）。
+     * 查找逻辑：找到包含对应 issueId 注释的 bullet，提取其前面的文本。
+     */
+    private String resolveIssueTextSnapshot(GitlabAutoMergeLogEntity log, String issueId) {
+        String markdown = trimToNull(log.getDetailMarkdown());
+        if (markdown == null) {
+            return null;
+        }
+        // 按行查找，寻找包含 <!-- issue-id: xxx --> 的那一行
+        String targetMarker = "<!-- issue-id: " + issueId + " -->";
+        for (String line : markdown.split("\\R")) {
+            if (line.contains(targetMarker)) {
+                // 去掉注释标记和前导 - ，取纯文本
+                String text = line.replace(targetMarker, "").replaceAll("^-\\s*", "").trim();
+                return hasText(text) ? text : line.trim();
+            }
+        }
+        return null;
+    }
+
+    private GitlabAutoMergeLogIssueFeedbackSummary toIssueFeedbackSummary(GitlabAutoMergeLogIssueFeedbackEntity entity) {
+        return new GitlabAutoMergeLogIssueFeedbackSummary(
+                entity.getId(),
+                entity.getLog() == null ? null : entity.getLog().getId(),
+                entity.getIssueId(),
+                entity.getIssueTextSnapshot(),
+                entity.getSection(),
+                entity.getVerdict(),
+                entity.getReason(),
+                formatTime(entity.getCreatedAt()),
+                formatTime(entity.getUpdatedAt())
+        );
+    }
+
+    private String limitLength(String value, int max) {
+        if (value == null) return null;
+        return value.length() > max ? value.substring(0, max) : value;
     }
 
     /**
@@ -2061,6 +2251,10 @@ public class GitlabManagementService {
         List<String> unresolvedPreviousIssues = normalizeIssueList(reviewResult.unresolvedPreviousIssues());
         List<String> pendingIssues = normalizeIssueList(reviewResult.issues());
         List<String> newlyRaisedIssues = subtractIssues(pendingIssues, unresolvedPreviousIssues);
+        // 仅为"本次新增问题"和"当前仍需处理问题"两个区块挂稳定 issueId，
+        // 让前端分享页能逐条挂反馈；其它三个区块（上次问题/已修复项/未修复项）保持纯文本，避免歧义。
+        List<ReviewIssueItem> newlyRaisedItems = toReviewIssueItems(newlyRaisedIssues);
+        List<ReviewIssueItem> pendingItems = toReviewIssueItems(pendingIssues);
         StringBuilder builder = new StringBuilder();
         if (reviewCacheHit) {
             builder.append("> 本次 AI 审查复用历史结果，未重新调用模型。\n\n");
@@ -2069,8 +2263,8 @@ public class GitlabManagementService {
         appendMarkdownIssueSection(builder, "### \u4e0a\u6b21\u95ee\u9898", normalizedPreviousIssues);
         appendMarkdownIssueSection(builder, "### \u5df2\u4fee\u590d\u9879", resolvedPreviousIssues);
         appendMarkdownIssueSection(builder, "### \u672a\u4fee\u590d\u9879", unresolvedPreviousIssues);
-        appendMarkdownIssueSection(builder, "### \u672c\u6b21\u65b0\u589e\u95ee\u9898", newlyRaisedIssues);
-        appendMarkdownIssueSection(builder, "### \u5f53\u524d\u4ecd\u9700\u5904\u7406\u95ee\u9898", pendingIssues);
+        appendMarkdownIssueItemSection(builder, "### \u672c\u6b21\u65b0\u589e\u95ee\u9898", newlyRaisedItems);
+        appendMarkdownIssueItemSection(builder, "### \u5f53\u524d\u4ecd\u9700\u5904\u7406\u95ee\u9898", pendingItems);
         if (hasText(reviewResult.reviewMarkdown())) {
             builder.append("\n## Code Review \u8f93\u51fa\n\n").append(reviewResult.reviewMarkdown().trim());
             return builder.toString();
@@ -2241,10 +2435,47 @@ public class GitlabManagementService {
 
     private String writeIssueListJson(List<String> issues) {
         try {
-            return objectMapper.writeValueAsString(normalizeIssueList(issues));
+            // 持久化前给每条问题分配稳定 issueId：
+            //   issueId = "i-" + SHA-256(issueSemanticKey).substring(0,16)
+            // 同一条问题（按 issueSemanticKey 归一化）在不同 log 中拿到同一个 id，
+            // 这样前端分享页可以按 issueId 挂逐条反馈，后续 LLM 复盘智能体也能按 issueId 聚合。
+            List<ReviewIssueItem> items = toReviewIssueItems(issues);
+            return objectMapper.writeValueAsString(items);
         } catch (Exception exception) {
             throw new IllegalStateException("自动合并日志问题列表序列化失败", exception);
         }
+    }
+
+    /**
+     * 将一组字符串问题转换为带稳定 id 的 {@link ReviewIssueItem} 列表。
+     *
+     * <p>id 的产生规则：</p>
+     * <ul>
+     *     <li>先按 {@link #issueSemanticKey(String)} 归一化得到语义键，再做 SHA-256 取前 16 位</li>
+     *     <li>语义键为空时退化为对 text 做哈希，保证 id 不空</li>
+     *     <li>同一 list 内若有 id 冲突（极少见），后续条目自动补 -1 -2 … 后缀避免重复</li>
+     * </ul>
+     */
+    private List<ReviewIssueItem> toReviewIssueItems(List<String> issues) {
+        List<String> normalized = normalizeIssueList(issues);
+        if (normalized.isEmpty()) {
+            return List.of();
+        }
+        List<ReviewIssueItem> items = new ArrayList<>(normalized.size());
+        Set<String> usedIds = new LinkedHashSet<>();
+        for (String issue : normalized) {
+            String semantic = issueSemanticKey(issue);
+            String basis = hasText(semantic) ? semantic : issue.toLowerCase();
+            String baseId = "i-" + hashText(basis).substring(0, 16);
+            String finalId = baseId;
+            int suffix = 1;
+            while (!usedIds.add(finalId)) {
+                finalId = baseId + "-" + suffix;
+                suffix++;
+            }
+            items.add(new ReviewIssueItem(finalId, issue));
+        }
+        return items;
     }
 
     private String writeReviewResultJson(CodeReviewResult reviewResult) {
@@ -2270,7 +2501,15 @@ public class GitlabManagementService {
         }
     }
 
-    private List<String> readIssueListJson(String json) {
+    /**
+     * 读取 issue JSON 列，返回 {@link ReviewIssueItem} 列表。
+     * 兼容两种格式：
+     * <ul>
+     *     <li>新格式：{@code [{"id":"i-xxx","text":"问题描述"}]} — 直接取 id + text</li>
+     *     <li>旧格式：{@code ["问题描述"]} — 退化为 id 补空 + text</li>
+     * </ul>
+     */
+    private List<ReviewIssueItem> readIssueItemsJson(String json) {
         if (!hasText(json)) {
             return List.of();
         }
@@ -2279,18 +2518,39 @@ public class GitlabManagementService {
             if (!node.isArray()) {
                 return List.of();
             }
-            List<String> issues = new ArrayList<>();
+            List<ReviewIssueItem> items = new ArrayList<>();
+            // 探测第一个元素来判断新旧格式
             for (JsonNode item : node) {
-                String value = item.asText("");
-                if (hasText(value)) {
-                    issues.add(value.trim());
+                if (item.isObject()) {
+                    // 新格式：{"id":"i-xxx","text":"问题描述"}
+                    String id = item.path("id").asText("");
+                    String text = item.path("text").asText("");
+                    if (hasText(text)) {
+                        items.add(new ReviewIssueItem(hasText(id) ? id : "", text.trim()));
+                    }
+                } else {
+                    // 旧格式：纯字符串
+                    String text = item.asText("");
+                    if (hasText(text)) {
+                        items.add(new ReviewIssueItem("", text.trim()));
+                    }
                 }
             }
-            return issues;
+            return items;
         } catch (Exception exception) {
             log.warn("自动合并日志问题列表解析失败: {}", exception.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * 读取 issue JSON 列，只取问题文本（丢弃 id），供既有 {@link #issueSemanticKey(String)},
+     * {@link #subtractIssues(List, List)} 等纯文本逻辑使用。
+     */
+    private List<String> readIssueListJson(String json) {
+        return readIssueItemsJson(json).stream()
+                .map(ReviewIssueItem::text)
+                .toList();
     }
 
     private List<String> normalizeIssueList(List<String> issues) {
@@ -2368,6 +2628,32 @@ public class GitlabManagementService {
         }
         for (String issue : issues) {
             builder.append("- ").append(issue).append("\n");
+        }
+        builder.append("\n");
+    }
+
+    /**
+     * 带 issueId 的渲染版本：每条 bullet 末尾追加 {@code <!-- issue-id: xxx -->} HTML 注释，
+     * 让前端分享页可以在 markdown 渲染后逐条挂反馈控件（按 id 定位）。
+     *
+     * <p>注意：渲染时不要把 id 显示给人类用户，所以采用 HTML 注释而非 markdown 内联。
+     * markdown 渲染器会把注释原样保留在输出 HTML 中。</p>
+     */
+    private void appendMarkdownIssueItemSection(StringBuilder builder, String title, List<ReviewIssueItem> items) {
+        builder.append(title).append("\n");
+        if (items == null || items.isEmpty()) {
+            builder.append("- \u65e0\n\n");
+            return;
+        }
+        for (ReviewIssueItem item : items) {
+            if (item == null || !hasText(item.text())) {
+                continue;
+            }
+            builder.append("- ").append(item.text());
+            if (hasText(item.id())) {
+                builder.append(" <!-- issue-id: ").append(item.id()).append(" -->");
+            }
+            builder.append("\n");
         }
         builder.append("\n");
     }
