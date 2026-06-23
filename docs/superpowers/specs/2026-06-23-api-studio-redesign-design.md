@@ -1,9 +1,12 @@
-# API Studio 前端重写设计（保留 Yaade API 能力，重做平台前端）
+# API Studio 前端重写设计（已被原生 API 工作台方案取代）
 
-- 状态：已确认 v1，待实施
+- 状态：已废弃。2026-06-24 已确认改为建设平台原生 API 工作台，不再保留 Yaade 作为底层能力层
 - 日期：2026-06-23
 - 负责模块：`frontend/src/modules/api-studio/`、`backend/.../yaade/**`、`docker/yaade/**`
 - 关联文档：`docs/generated/yaade-integration-technical-design-v1.md`
+- 取代文档：`docs/api-studio-native-technical-design-v1.md`
+
+> 本文档保留为历史决策记录。后续实施以 `docs/api-studio-native-technical-design-v1.md` 为准。
 
 ## 1. 背景与目标
 
