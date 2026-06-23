@@ -168,9 +168,9 @@ platform:
       top-k: ${PLATFORM_WIKI_KNOWLEDGE_RERANK_TOP_K:10}
   lightrag:
     enabled: ${PLATFORM_LIGHTRAG_ENABLED:true}
-    # 阶段三切流开关：默认关闭走旧链路，灰度按需开启。
+    # 阶段三切流开关：hermes 证据默认关闭灰度按需开启；图谱默认开启走 LightRAG+Neo4j。
     hermes-evidence-enabled: ${PLATFORM_LIGHTRAG_HERMES_EVIDENCE_ENABLED:false}
-    graph-enabled: ${PLATFORM_LIGHTRAG_GRAPH_ENABLED:false}
+    graph-enabled: ${PLATFORM_LIGHTRAG_GRAPH_ENABLED:true}
     query:
       top-k: ${PLATFORM_LIGHTRAG_QUERY_TOP_K:3}
       default-mode: ${PLATFORM_LIGHTRAG_QUERY_DEFAULT_MODE:local}

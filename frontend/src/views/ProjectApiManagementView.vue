@@ -479,7 +479,7 @@ function handleYaadeMessage(event: MessageEvent) {
     return
   }
   if (data.type === 'AI_CLUB_BACK_TO_API_GROUPS') {
-    void router.push({ name: 'api-groups' })
+    void router.push({ name: 'api-groups-legacy' })
     return
   }
   if (data.type === 'AI_CLUB_PROJECT_CHANGED') {
@@ -516,9 +516,9 @@ function stopBootstrapBroadcast() {
 
 async function syncRouteProjectId(projectId: number | null) {
   if (projectId === null) {
-    await router.replace({ name: 'api-groups' })
+    await router.replace({ name: 'api-groups-legacy' })
   } else {
-    await router.replace({ name: 'api-project-detail', params: { projectId: String(projectId) } })
+    await router.replace({ name: 'api-project-detail-legacy', params: { projectId: String(projectId) } })
   }
 }
 

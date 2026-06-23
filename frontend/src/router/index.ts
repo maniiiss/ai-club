@@ -89,22 +89,35 @@ const router = createRouter({
         { path: 'projects', name: 'projects', component: ProjectView, meta: { title: '项目管理', permission: 'project:view' } },
         {
           path: 'apis',
-          name: 'api-groups',
-          component: ApiGroupHomeView,
-          meta: { title: 'API 项目', permission: 'api:view' },
+          name: 'api-studio-home',
+          component: () => import('@/views/apistudio/ApiStudioHomeView.vue'),
+          meta: { title: 'API 管理', permission: 'api:view' },
           beforeEnter: (to) => {
             const projectId = Number(to.query.projectId ?? '')
             if (Number.isFinite(projectId) && projectId > 0) {
-              return { name: 'api-project-detail', params: { projectId: String(projectId) } }
+              return { name: 'api-studio-workbench', params: { projectId: String(projectId) } }
             }
             return true
           }
         },
-        { path: 'apis/projects/:projectId', name: 'api-project-detail', component: ProjectApiManagementView, meta: { title: 'API 工作台', permission: 'api:view', activeMenu: '/apis' } },
+        {
+          path: 'apis/projects/:projectId',
+          name: 'api-studio-workbench',
+          component: () => import('@/views/apistudio/ApiStudioWorkbenchView.vue'),
+          meta: { title: 'API 工作台', permission: 'api:view', activeMenu: '/apis' }
+        },
+        {
+          path: 'apis/projects/:projectId/endpoints/:endpointId',
+          name: 'api-studio-endpoint',
+          component: () => import('@/views/apistudio/ApiStudioWorkbenchView.vue'),
+          meta: { title: 'API 详情', permission: 'api:view', activeMenu: '/apis' }
+        },
+        // Legacy Yaade 入口（保留过渡，后续清栈阶段删除）
+        { path: 'apis/legacy', name: 'api-groups-legacy', component: ApiGroupHomeView, meta: { title: 'API 管理 (Legacy)', permission: 'api:view', activeMenu: '/apis' } },
+        { path: 'apis/legacy/projects/:projectId', name: 'api-project-detail-legacy', component: ProjectApiManagementView, meta: { title: 'Yaade 工作台 (Legacy)', permission: 'api:view', activeMenu: '/apis' } },
         { path: 'wiki', name: 'wiki-home', component: WikiHomeView, meta: { title: 'Wiki 中心', permission: 'wiki:view' } },
         { path: 'wiki/spaces/:spaceId', name: 'wiki-space', component: WikiSpaceView, meta: { title: 'Wiki 空间', permission: 'wiki:view' } },
         { path: 'wiki/spaces/:spaceId/knowledge-graph', name: 'wiki-space-knowledge-graph', component: () => import('@/views/WikiKnowledgeGraphView.vue'), meta: { title: 'Wiki 知识图谱', permission: 'wiki:view', activeMenu: '/wiki' } },
-        { path: 'projects/:projectId/knowledge-graph', name: 'project-knowledge-graph', component: () => import('@/views/ProjectKnowledgeGraphView.vue'), meta: { title: '项目知识图谱', permission: 'project:view', activeMenu: '/projects' } },
         { path: 'wiki/spaces/:spaceId/pages/:pageId', name: 'wiki-space-page', component: WikiSpaceView, meta: { title: 'Wiki 页面', permission: 'wiki:view' } },
         { path: 'projects/:projectId/iterations', name: 'project-iterations', component: IterationView, meta: { title: '迭代管理', permission: 'project:view' } },
         { path: 'projects/:projectId/knowledge-graph', redirect: (to) => ({ name: 'project-iterations', params: { projectId: to.params.projectId } }), meta: { requiresAuth: true, permission: 'project:view' } },

@@ -767,7 +767,7 @@ const iconRegistry: Record<string, unknown> = {
 const primaryMenuSeeds: MenuSeed[] = [
   { permission: 'dashboard:view', fallbackPath: '/dashboard', fallbackLabel: '首页看板', shortLabel: '首页', fallbackIcon: Odometer, matchNames: ['dashboard'] },
   { permission: 'project:view', fallbackPath: '/projects', fallbackLabel: '项目管理', shortLabel: '项目', fallbackIcon: FolderOpened, matchNames: ['projects', 'project-iterations'] },
-  { permission: 'api:view', fallbackPath: '/apis', fallbackLabel: 'API管理', shortLabel: 'API', fallbackIcon: Connection, matchNames: ['api-groups', 'api-project-detail'] },
+  { permission: 'api:view', fallbackPath: '/apis', fallbackLabel: 'API管理', shortLabel: 'API', fallbackIcon: Connection, matchNames: ['api-studio-home', 'api-studio-workbench', 'api-studio-endpoint', 'api-groups-legacy', 'api-project-detail-legacy'] },
   { permission: 'wiki:view', fallbackPath: '/wiki', fallbackLabel: 'Wiki 中心', shortLabel: 'Wiki', fallbackIcon: Document, matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page'] },
   { permission: 'agent:view', fallbackPath: '/agents', fallbackLabel: '智能体管理', shortLabel: '智能体', fallbackIcon: Connection, matchNames: ['agents'] },
   { permission: 'task:view', fallbackPath: '/tasks', fallbackLabel: '执行中心', shortLabel: '执行', fallbackIcon: Tickets, matchNames: ['tasks', 'execution-task-detail'] },
@@ -862,7 +862,7 @@ const visibleSystemMenus = computed(() => systemMenuItems.value.filter((item) =>
 const isDashboardRoute = computed(() => route.name === 'dashboard')
 const isIterationWorkspaceRoute = computed(() => route.name === 'project-iterations')
 const isWikiSpaceRoute = computed(() => route.name === 'wiki-space' || route.name === 'wiki-space-page')
-const isApiProjectDetailRoute = computed(() => route.name === 'api-project-detail')
+const isApiProjectDetailRoute = computed(() => route.name === 'api-studio-workbench' || route.name === 'api-studio-endpoint' || route.name === 'api-project-detail-legacy')
 const effectiveSidebarCollapsed = computed(() => isMobileViewport.value || appStore.sidebarCollapsed)
 const asideWidth = computed(() => (effectiveSidebarCollapsed.value ? '80px' : '256px'))
 const userInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
@@ -936,8 +936,9 @@ const hermesQuickPrompts = computed(() => {
     'project-iterations': hermesIterationId.value
       ? ['帮我总结当前迭代发版内容', '当前迭代修复了多少缺陷', '当前迭代开发了哪些需求']
       : ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个任务为什么延期了'],
-    'api-groups': ['哪些项目还没初始化 API 工作台', '帮我找某个项目的 API GROUP', '最近哪个项目接口最需要同步'],
-    'api-project-detail': ['帮我总结当前项目的接口资产', '这个项目有哪些接口同步风险', '当前 API 工作台下一步该检查什么'],
+    'api-studio-home': ['哪些项目还没初始化 API 工作台', '帮我找某个项目的 API GROUP', '最近哪个项目接口最需要同步'],
+    'api-studio-workbench': ['帮我总结当前项目的接口资产', '这个项目有哪些接口同步风险', '当前 API 工作台下一步该检查什么'],
+    'api-studio-endpoint': ['帮我总结当前接口的设计要点', '这个接口可能有哪些边界问题', '当前接口下一步该补哪些校验'],
     'wiki-home': ['有哪些空间与当前项目相关', '帮我找某个项目关联的知识目录', '当前最值得看的空间是哪个'],
     'wiki-space': ['这个空间最近有哪些知识更新', '帮我梳理这个空间里的重点内容', '这个空间目前最值得关注的页面是什么'],
     'wiki-space-page': ['帮我总结当前 Wiki 页面', '这个页面和哪些知识有关', '基于 Wiki 内容下一步应该做什么'],
@@ -1003,7 +1004,7 @@ async function handleNavigate(path: string) {
 }
 
 async function goBackToApiGroups() {
-  await router.push({ name: 'api-groups' })
+  await router.push({ name: 'api-studio-home' })
 }
 
 /**

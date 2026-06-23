@@ -141,6 +141,41 @@ export interface KnowledgeGraphItem {
   edges: KnowledgeGraphEdgeItem[]
 }
 
+/* ── Wiki 空间级 LightRAG 知识图谱 ── */
+
+/** LightRAG 抽取的实体节点；真实实体类型在 metadataJson.entityType 里。 */
+export interface WikiKnowledgeGraphNodeItem {
+  id: number
+  nodeType: string
+  bizId: number | null
+  name: string
+  slug: string | null
+  directoryId: number | null
+  chunkCount: number | null
+  metadataJson: string
+}
+
+/** LightRAG 抽取的实体关系边。 */
+export interface WikiKnowledgeGraphEdgeItem {
+  id: number
+  fromNodeId: number
+  toNodeId: number
+  edgeType: string
+  similarity: number | null
+  evidenceText: string
+}
+
+/** 空间级 LightRAG 知识图谱聚合结果。 */
+export interface WikiSpaceKnowledgeGraphItem {
+  spaceId: number
+  spaceName: string
+  /** 向量/图谱索引是否就绪；false 时通常无可展示数据。 */
+  vectorEnabled: boolean
+  generatedAt: string
+  nodes: WikiKnowledgeGraphNodeItem[]
+  edges: WikiKnowledgeGraphEdgeItem[]
+}
+
 /* ── 记忆事实 ── */
 
 export interface MemoryFactNodeItem {

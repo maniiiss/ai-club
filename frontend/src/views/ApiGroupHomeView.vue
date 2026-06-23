@@ -146,7 +146,7 @@ function handleReset() {
 }
 
 function openApiProject(projectId: number) {
-  router.push({ name: 'api-project-detail', params: { projectId } })
+  router.push({ name: 'api-project-detail-legacy', params: { projectId } })
 }
 
 function buildSearchText(row: ApiGroupRow) {

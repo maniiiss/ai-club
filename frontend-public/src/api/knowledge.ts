@@ -16,6 +16,7 @@ import type {
   WikiSpacePageSummaryItem,
   WikiSpacePageVersionItem,
   WikiDirectoryTreeNodeItem,
+  WikiSpaceKnowledgeGraphItem,
 } from '@/src/types/knowledge'
 
 /* ── Wiki 空间 ── */
@@ -154,6 +155,12 @@ export const importWikiPage = async (spaceId: number, payload: WikiImportPagePay
 
 export const getProjectKnowledgeGraph = async (projectId: number): Promise<KnowledgeGraphItem> => {
   const res = await http.get<ApiResponse<KnowledgeGraphItem>>(`/api/projects/${projectId}/knowledge-graph`)
+  return unwrap(res)
+}
+
+/** 读取 Wiki 空间级 LightRAG 知识图谱（Neo4j 真实实体关系）。 */
+export const getWikiSpaceKnowledgeGraph = async (spaceId: number): Promise<WikiSpaceKnowledgeGraphItem> => {
+  const res = await http.get<ApiResponse<WikiSpaceKnowledgeGraphItem>>(`/api/wiki/spaces/${spaceId}/knowledge-graph`)
   return unwrap(res)
 }
 

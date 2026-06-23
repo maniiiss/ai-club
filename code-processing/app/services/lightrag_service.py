@@ -39,6 +39,19 @@ _embedding_dim_lock = asyncio.Lock()
 # 存储后端环境变量是否已写入，保证只设置一次。
 _storage_env_ready = False
 
+# 需求领域实体类型 schema。
+# 业务意图：把 LightRAG 默认的通用实体类型（Person/Content/Data/Artifact...）替换为
+# 需求文档专用类型，让 LLM 抽取「需求项→模块→功能点→数据来源」这种产品经理可回溯的领域关系，
+# 而不是把需求文档当普通文本拆成泛化实体。通过 addon_params['entity_types_guidance'] 注入。
+_REQUIREMENT_ENTITY_TYPES_GUIDANCE = """将每个实体归类为以下类型之一。如果都不适用，使用 `Other`。
+
+- Requirement: 需求项，例如「统计报表需求」「企业信息管理需求」，通常对应一份需求文档或文档里的一条需求条目（含报表编号 R01、需求编号等）
+- Module: 功能模块/系统模块，例如「项目管理」「投标资源管理」「营销激励模块」「经营费用管理」，是需求归属或数据来源的业务模块
+- Feature: 功能点/具体能力，例如「数据自动汇总」「条件筛选」「在线导出」「营销激励申报」，是需求下的具体功能
+- DataSource: 数据来源/数据对象，例如「项目全流程台账」「合同数据」「营销激励数据」，是功能依赖的数据
+- BusinessRule: 业务规则/约束，例如「没有发起营销激励申请的数据不统计」「按联投外部业务排名」，是需求中明确的计算或过滤规则
+- Role: 角色/干系人/部门，例如「业主方」「投资经营中心」「编制负责人」，是需求相关的人或组织"""
+
 
 def _apply_storage_env() -> None:
     """把 settings 里的三后端连接信息写进 os.environ，供 LightRAG 存储类读取。
@@ -146,17 +159,19 @@ async def _build_embedding_func():
     if not base_url or not model_name:
         raise RuntimeError("LightRAG embedding 未配置，请检查 PLATFORM_WIKI_KNOWLEDGE_EMBEDDING_*")
 
-    from lightrag.llm.openai import openai_embed
+    import numpy as np
+    from openai import AsyncOpenAI
     from lightrag.utils import EmbeddingFunc
 
+    # 直接用 OpenAI 兼容客户端裸调用，绕开 LightRAG 自带 openai_embed —— 它被
+    # @wrap_embedding_func_with_attrs(embedding_dim=1536) 装饰，会用 1536 校验返回维度，
+    # 与 Qwen3-Embedding-4B 实际输出的 2560 维冲突，导致维度校验直接抛 ValueError。
+    # 这里让维度自适应为模型真实输出，与 Qdrant 已建集合维度保持一致。
+    client = AsyncOpenAI(base_url=base_url, api_key=api_key or "empty")
+
     async def _embed(texts: list[str], **kwargs: Any):
-        # 复用 LightRAG 的 OpenAI 兼容 embedding 适配器，返回 numpy 数组。
-        return await openai_embed(
-            texts,
-            model=model_name,
-            base_url=base_url,
-            api_key=api_key or "empty",
-        )
+        response = await client.embeddings.create(model=model_name, input=texts)
+        return np.array([item.embedding for item in response.data], dtype=np.float32)
 
     dim = await _get_embedding_dim(_embed)
     return EmbeddingFunc(embedding_dim=dim, max_token_size=8192, func=_embed)
@@ -200,6 +215,8 @@ async def get_rag(namespace: str) -> Any:
             vector_storage="QdrantVectorDBStorage",
             graph_storage="Neo4JStorage",
             doc_status_storage="PGDocStatusStorage",
+            # 注入需求领域实体类型，让 LLM 抽取需求/模块/功能点等领域实体而非通用文档实体。
+            addon_params={"entity_types_guidance": _REQUIREMENT_ENTITY_TYPES_GUIDANCE},
         )
         await rag.initialize_storages()
         _rag_instances[workspace] = rag
