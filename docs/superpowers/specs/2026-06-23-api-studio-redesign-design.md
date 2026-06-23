@@ -1,6 +1,6 @@
-# API Studio 前端重写设计（取代 Yaade iframe + 构建期补丁）
+# API Studio 前端重写设计（保留 Yaade API 能力，重做平台前端）
 
-- 状态：草案 v1，待评审
+- 状态：已确认 v1，待实施
 - 日期：2026-06-23
 - 负责模块：`frontend/src/modules/api-studio/`、`backend/.../yaade/**`、`docker/yaade/**`
 - 关联文档：`docs/generated/yaade-integration-technical-design-v1.md`
@@ -15,7 +15,7 @@
 - 每次升级 `YAADE_REF`，补丁脚本都需要重新对齐选择器与 className，是脆弱点。
 - 平台已经在 backend 写了 `YaadeClientService / YaadeApiCatalogService / YaadeProjectSyncService` 等服务，证明把 Yaade 当成"纯数据后端"完全可行。
 
-**本次目标**：在 `frontend/` 内用 Vue 3 + Element Plus 重写一套"API Studio"前端，1:1 覆盖 Yaade 现有能力（Collection 树、Request 编辑/发送、Response、环境变量、Cookie、历史、脚本、JWT、文件附件、OpenAPI 导入导出、Mock、自动化测试 Runner），把 Yaade 镜像收敛为只跑 server，最终拿掉 iframe + 两个补丁脚本。
+**本次目标**：保留 Yaade 的 API 能力、数据存储与请求执行链路，在 `frontend/` 内用 Vue 3 + Element Plus 重写一套"API Studio"前端，1:1 覆盖 Yaade 现有能力（Collection 树、Request 编辑/发送、Response、环境变量、Cookie、历史、脚本、JWT、文件附件、OpenAPI 导入导出、Mock、自动化测试 Runner），让页面样式和交互完全统一到平台体系，同时把 Yaade 镜像收敛为只跑 server，最终拿掉 iframe + 两个补丁脚本。
 
 **非目标**：
 
@@ -37,6 +37,12 @@
 7. **项目作用域**：项目隔离在 backend proxy 层落地，前端拿到的就是"已经按项目过滤的视图"。
 8. **AI 入口**：AI 测试用例从浮动按钮收口到 Request 详情页内部（菜单/按钮形式）。
 9. **清栈**：迭代末期删除 `apply-zh-cn.mjs`、`apply-aiclub-branding.mjs`、Dockerfile 的 `client-builder` 阶段、`YaadeEmbedSessionService` 中 iframe 专用逻辑、`YaadeProxyController` 中的 HTML / asset 改写。
+
+## 2.1 设计确认记录
+
+- 2026-06-23 已确认方向：使用 Yaade 的 API 能力，但不再使用 Yaade 原生前端样式。
+- 2026-06-23 已确认范围：新版 API Studio 按 Yaade 全功能 1:1 替换，而不是只做核心功能子集。
+- 2026-06-23 已确认策略：不直接铲掉 Yaade 服务端；优先把 Yaade 收敛为 server-only 能力层，平台负责前端、鉴权、项目隔离与统一交互。
 
 ## 3. 架构总览
 
