@@ -26,6 +26,7 @@ Wait-Port -Port $ports.Redis -TimeoutSeconds 180 -ServiceName 'Redis'
 Wait-Port -Port $ports.Minio -TimeoutSeconds 180 -ServiceName 'MinIO'
 Wait-Port -Port $ports.CodeProcessing -TimeoutSeconds 180 -ServiceName 'Code processing'
 Wait-Port -Port $ports.Qdrant -TimeoutSeconds 180 -ServiceName 'Qdrant'
+Wait-Port -Port $ports.Neo4j -TimeoutSeconds 180 -ServiceName 'Neo4j'
 Wait-Port -Port $ports.Hindsight -TimeoutSeconds 180 -ServiceName 'Hindsight'
 Wait-Port -Port $ports.Hermes -TimeoutSeconds 180 -ServiceName 'Hermes'
 Wait-Port -Port $ports.GitNexusUi -TimeoutSeconds 180 -ServiceName 'GitNexus Web UI'
@@ -42,6 +43,7 @@ Write-Host "Backend: http://localhost:$($ports.Backend)"
 Write-Host "Code processing: http://localhost:$($ports.CodeProcessing)"
 Write-Host "Hermes: http://localhost:$($ports.Hermes)"
 Write-Host "Qdrant: http://localhost:$($ports.Qdrant)"
+Write-Host "Neo4j: http://localhost:$($ports.Neo4j)"
 Write-Host "Hindsight: http://localhost:$($ports.Hindsight)"
 Write-Host "GitNexus Web UI: http://localhost:$($ports.GitNexusUi)"
 if (Test-WoodpeckerEnabled) {

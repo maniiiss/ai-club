@@ -98,6 +98,8 @@ class GitlabNotificationMappingTests {
 
     @Mock
     private GitlabAutoMergeWebhookDispatcher autoMergeWebhookDispatcher;
+    @Mock
+    private CreditConsumptionService creditConsumptionService;
 
     @Mock
     private ProjectDataPermissionService projectDataPermissionService;
@@ -161,6 +163,7 @@ class GitlabNotificationMappingTests {
                 cicdManagementService,
                 notificationService,
                 autoMergeWebhookDispatcher,
+                creditConsumptionService,
                 projectDataPermissionService,
                 gitlabUserOauthService,
                 executionTaskService,

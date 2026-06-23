@@ -115,6 +115,8 @@ class GitlabProductBranchManagementTests {
 
     @Mock
     private GitlabAutoMergeWebhookDispatcher autoMergeWebhookDispatcher;
+    @Mock
+    private CreditConsumptionService creditConsumptionService;
 
     @Mock
     private ProjectDataPermissionService projectDataPermissionService;
@@ -178,6 +180,7 @@ class GitlabProductBranchManagementTests {
                 cicdManagementService,
                 notificationService,
                 autoMergeWebhookDispatcher,
+                creditConsumptionService,
                 projectDataPermissionService,
                 gitlabUserOauthService,
                 executionTaskService,

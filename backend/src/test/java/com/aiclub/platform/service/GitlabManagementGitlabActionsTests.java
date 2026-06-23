@@ -133,6 +133,8 @@ class GitlabManagementGitlabActionsTests {
 
     @Mock
     private GitlabAutoMergeWebhookDispatcher autoMergeWebhookDispatcher;
+    @Mock
+    private CreditConsumptionService creditConsumptionService;
 
     @Mock
     private ProjectDataPermissionService projectDataPermissionService;
@@ -196,6 +198,7 @@ class GitlabManagementGitlabActionsTests {
                 cicdManagementService,
                 notificationService,
                 autoMergeWebhookDispatcher,
+                creditConsumptionService,
                 projectDataPermissionService,
                 gitlabUserOauthService,
                 executionTaskService,

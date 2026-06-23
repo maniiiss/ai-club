@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.api.routes import document_router, execution_workspace_router, repo_scan_router, router
+from app.api.lightrag_routes import router as lightrag_router
 from app.mcp_server import mcp_lifespan, mcp_server
 from app.settings import settings
 
@@ -17,6 +18,7 @@ app.include_router(router)
 app.include_router(repo_scan_router)
 app.include_router(document_router)
 app.include_router(execution_workspace_router)
+app.include_router(lightrag_router)
 mcp_http_app = mcp_server.streamable_http_app()
 app.mount("/mcp", mcp_http_app)
 

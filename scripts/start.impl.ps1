@@ -17,7 +17,7 @@ if (-not $SkipInfrastructure) {
     Assert-Command -Name 'docker' -Hint 'Docker Desktop'
 
     $codeProcessingHost = Set-HybridDockerRuntimeEnvironment
-    $infrastructureArguments = @('up', '-d', 'postgres', 'redis', 'minio', 'qdrant', 'hindsight', 'gitnexus-web', 'hermes')
+    $infrastructureArguments = @('up', '-d', 'postgres', 'redis', 'minio', 'qdrant', 'neo4j', 'hindsight', 'gitnexus-web', 'hermes')
     if (Test-WoodpeckerEnabled) {
         $infrastructureArguments += @('woodpecker-server', 'woodpecker-agent')
     }
@@ -31,6 +31,7 @@ if (-not $SkipInfrastructure) {
     Wait-Port -Port $ports.Redis -TimeoutSeconds 120 -ServiceName 'Redis'
     Wait-Port -Port $ports.Minio -TimeoutSeconds 120 -ServiceName 'MinIO'
     Wait-Port -Port $ports.Qdrant -TimeoutSeconds 120 -ServiceName 'Qdrant'
+    Wait-Port -Port $ports.Neo4j -TimeoutSeconds 120 -ServiceName 'Neo4j'
     Wait-Port -Port $ports.Hindsight -TimeoutSeconds 120 -ServiceName 'Hindsight'
     Wait-Port -Port $ports.GitNexusUi -TimeoutSeconds 120 -ServiceName 'GitNexus Web UI'
     Wait-Port -Port $ports.Hermes -TimeoutSeconds 120 -ServiceName 'Hermes'

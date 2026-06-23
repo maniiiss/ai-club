@@ -134,6 +134,9 @@ public class WikiSpaceService {
     private final DocumentAssetService documentAssetService;
     private final DocumentMarkdownService documentMarkdownService;
     private final WikiKnowledgeSearchService wikiKnowledgeSearchService;
+    private final LightRagIngestQueueService lightRagIngestQueueService;
+    private final LightRagProperties lightRagProperties;
+    private final LightRagClientService lightRagClientService;
 
     @Autowired
     public WikiSpaceService(WikiSpaceRepository wikiSpaceRepository,
@@ -148,7 +151,10 @@ public class WikiSpaceService {
                             HindsightClientService hindsightClientService,
                             DocumentAssetService documentAssetService,
                             DocumentMarkdownService documentMarkdownService,
-                            WikiKnowledgeSearchService wikiKnowledgeSearchService) {
+                            WikiKnowledgeSearchService wikiKnowledgeSearchService,
+                            LightRagIngestQueueService lightRagIngestQueueService,
+                            LightRagProperties lightRagProperties,
+                            LightRagClientService lightRagClientService) {
         this.wikiSpaceRepository = wikiSpaceRepository;
         this.wikiSpaceMemberRepository = wikiSpaceMemberRepository;
         this.wikiDirectoryRepository = wikiDirectoryRepository;
@@ -162,10 +168,13 @@ public class WikiSpaceService {
         this.documentAssetService = documentAssetService;
         this.documentMarkdownService = documentMarkdownService;
         this.wikiKnowledgeSearchService = wikiKnowledgeSearchService;
+        this.lightRagIngestQueueService = lightRagIngestQueueService;
+        this.lightRagProperties = lightRagProperties;
+        this.lightRagClientService = lightRagClientService;
     }
 
     /**
-     * 兼容旧测试构造方式。
+     * 兼容旧测试构造方式（12 参数，不含 wikiKnowledgeSearchService）。
      */
     public WikiSpaceService(WikiSpaceRepository wikiSpaceRepository,
                             WikiSpaceMemberRepository wikiSpaceMemberRepository,
@@ -192,6 +201,45 @@ public class WikiSpaceService {
                 hindsightClientService,
                 documentAssetService,
                 documentMarkdownService,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    /**
+     * 兼容旧测试构造方式（13 参数，含 wikiKnowledgeSearchService）。
+     */
+    public WikiSpaceService(WikiSpaceRepository wikiSpaceRepository,
+                            WikiSpaceMemberRepository wikiSpaceMemberRepository,
+                            WikiDirectoryRepository wikiDirectoryRepository,
+                            WikiPageV2Repository wikiPageV2Repository,
+                            WikiPageVersionV2Repository wikiPageVersionV2Repository,
+                            WikiPageSyncTaskV2Repository wikiPageSyncTaskV2Repository,
+                            UserRepository userRepository,
+                            ProjectRepository projectRepository,
+                            ProjectDataPermissionService projectDataPermissionService,
+                            HindsightClientService hindsightClientService,
+                            DocumentAssetService documentAssetService,
+                            DocumentMarkdownService documentMarkdownService,
+                            WikiKnowledgeSearchService wikiKnowledgeSearchService) {
+        this(
+                wikiSpaceRepository,
+                wikiSpaceMemberRepository,
+                wikiDirectoryRepository,
+                wikiPageV2Repository,
+                wikiPageVersionV2Repository,
+                wikiPageSyncTaskV2Repository,
+                userRepository,
+                projectRepository,
+                projectDataPermissionService,
+                hindsightClientService,
+                documentAssetService,
+                documentMarkdownService,
+                wikiKnowledgeSearchService,
+                null,
+                null,
                 null
         );
     }
@@ -334,16 +382,87 @@ public class WikiSpaceService {
      * 构建空间级 Wiki 向量化知识图谱。
      * 业务意图：在权限校验通过后，把目录名映射喂给知识检索服务，
      * 让其从 Qdrant 取回向量并派生页面节点、目录归属边与语义相似边。
+     * 阶段三切流开关开启时改读 LightRAG 图谱（Neo4j 真实实体关系），关闭时走原质心相似度图谱。
      */
     public WikiSpaceKnowledgeGraph getKnowledgeGraph(Long spaceId) {
         UserContext userContext = requireCurrentUserContext();
         WikiSpaceEntity space = requireSpace(spaceId);
         requireSpaceVisible(space, userContext);
+        // 阶段三切流：开启时走 LightRAG 图谱。
+        if (lightRagProperties != null && lightRagProperties.isGraphEnabled() && lightRagClientService != null) {
+            try {
+                LightRagClientService.LightRagGraphResponse graph = lightRagClientService.getGraph(
+                        "space:" + spaceId, lightRagProperties.getGraphNodeLimit());
+                return adaptLightRagGraph(spaceId, space.getName(), graph);
+            } catch (RuntimeException exception) {
+                // LightRAG 图谱读取失败时降级走原质心图谱，保证可视化可用。
+            }
+        }
         Map<Long, String> directoryNames = new LinkedHashMap<>();
         for (WikiDirectoryEntity directory : wikiDirectoryRepository.findAllBySpace_IdOrderBySortOrderAscIdAsc(spaceId)) {
             directoryNames.put(directory.getId(), directory.getName());
         }
         return wikiKnowledgeSearchService.buildSpaceKnowledgeGraph(spaceId, space.getName(), directoryNames);
+    }
+
+    /**
+     * 把 LightRAG 图谱响应适配成现有 WikiSpaceKnowledgeGraph DTO，前端画布组件无需改。
+     */
+    private WikiSpaceKnowledgeGraph adaptLightRagGraph(Long spaceId, String spaceName,
+                                                       LightRagClientService.LightRagGraphResponse graph) {
+        if (graph == null) {
+            return new WikiSpaceKnowledgeGraph(spaceId, spaceName, false, java.time.OffsetDateTime.now().toString(), List.of(), List.of());
+        }
+        List<WikiSpaceKnowledgeGraph.Node> nodes = new ArrayList<>();
+        List<WikiSpaceKnowledgeGraph.Edge> edges = new ArrayList<>();
+        long nodeSeq = 1L;
+        java.util.Map<String, Long> entityIdToNodeId = new java.util.HashMap<>();
+        if (graph.nodes() != null) {
+            for (LightRagClientService.GraphNode node : graph.nodes()) {
+                long nodeId = nodeSeq++;
+                entityIdToNodeId.put(node.id(), nodeId);
+                java.util.LinkedHashMap<String, Object> meta = new java.util.LinkedHashMap<>();
+                meta.put("sourceId", node.sourceId());
+                meta.put("entityType", node.type());
+                nodes.add(new WikiSpaceKnowledgeGraph.Node(
+                        nodeId,
+                        "WIKI_PAGE",
+                        null,
+                        defaultString(node.name()),
+                        "",
+                        null,
+                        null,
+                        writeJsonQuietly(meta)
+                ));
+            }
+        }
+        long edgeSeq = 1L;
+        if (graph.edges() != null) {
+            for (LightRagClientService.GraphEdge edge : graph.edges()) {
+                Long fromId = entityIdToNodeId.get(edge.from());
+                Long toId = entityIdToNodeId.get(edge.to());
+                if (fromId == null || toId == null) {
+                    continue;
+                }
+                edges.add(new WikiSpaceKnowledgeGraph.Edge(
+                        edgeSeq++,
+                        fromId,
+                        toId,
+                        defaultString(edge.type()),
+                        edge.weight(),
+                        defaultString(edge.description())
+                ));
+            }
+        }
+        return new WikiSpaceKnowledgeGraph(spaceId, spaceName, true, java.time.OffsetDateTime.now().toString(), nodes, edges);
+    }
+
+    private String writeJsonQuietly(java.util.Map<String, Object> payload) {
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(payload);
+        } catch (Exception exception) {
+            return "{}";
+        }
     }
 
     /**
@@ -1314,6 +1433,10 @@ public class WikiSpaceService {
         task.setDocumentId(documentId(page.getId()));
         task.setStatus(SYNC_STATUS_PENDING);
         wikiPageSyncTaskV2Repository.save(task);
+        // 同事务入 LightRAG 队列，enabled 关闭时不入队，保证灰度可回滚。
+        if (lightRagProperties != null && lightRagProperties.isEnabled() && lightRagIngestQueueService != null) {
+            lightRagIngestQueueService.enqueueUpsert(page);
+        }
     }
 
     /**
@@ -1342,6 +1465,10 @@ public class WikiSpaceService {
         task.setDocumentId(documentId(page.getId()));
         task.setStatus(SYNC_STATUS_PENDING);
         wikiPageSyncTaskV2Repository.save(task);
+        // 同事务入 LightRAG 删除队列，enabled 关闭时不入队。
+        if (lightRagProperties != null && lightRagProperties.isEnabled() && lightRagIngestQueueService != null) {
+            lightRagIngestQueueService.enqueueDelete(page.getSpace().getId(), page.getId());
+        }
     }
 
     private String buildDirectoryPath(WikiDirectoryEntity directory) {

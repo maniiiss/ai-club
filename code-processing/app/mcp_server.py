@@ -7,6 +7,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
 
 from app.services.hermes_internal_client import hermes_internal_client
+from app.services.lightrag_queue_consumer import lightrag_queue_consumer
 
 
 mcp_server = FastMCP(
@@ -421,7 +422,9 @@ async def test_plan_create_draft(
 
 @asynccontextmanager
 async def mcp_lifespan(_: FastAPI):
-    """确保 FastMCP 的 session manager 与 FastAPI 生命周期保持一致。"""
+    """确保 FastMCP 的 session manager 与 FastAPI 生命周期保持一致，并启动 LightRAG 队列消费者。"""
+    lightrag_queue_consumer.start()
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(mcp_server.session_manager.run())
         yield
+    await lightrag_queue_consumer.stop()

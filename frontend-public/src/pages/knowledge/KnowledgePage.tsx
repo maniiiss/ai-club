@@ -568,22 +568,49 @@ const GraphPanel = () => {
   const edgeTypeCounts: Record<string, number> = {}
   graph.edges.forEach((e) => { edgeTypeCounts[e.edgeType] = (edgeTypeCounts[e.edgeType] || 0) + 1 })
 
+  // 仅展示主要的业务节点类型（排除 WIKI_PAGE/WIKI_DIRECTORY 等细节类型）
+  const mainNodeTypes = ['PROJECT', 'ITERATION', 'REQUIREMENT', 'TASK', 'BUG', 'TEST_PLAN', 'TEST_CASE']
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-3">
-        <Card title="节点"><p className="text-[28px] font-bold text-[var(--color-primary)]">{graph.nodeCount}</p></Card>
-        <Card title="关系"><p className="text-[28px] font-bold text-[var(--color-text-primary)]">{graph.edgeCount}</p></Card>
+        <Card title="节点总数"><p className="text-[28px] font-bold text-[var(--color-primary)]">{graph.nodeCount}</p></Card>
+        <Card title="关系总数"><p className="text-[28px] font-bold text-[var(--color-text-primary)]">{graph.edgeCount}</p></Card>
         <Card title="生成时间"><p className="text-[14px] font-medium text-[var(--color-text-primary)]">{formatDate(graph.generatedAt)}</p></Card>
       </div>
-      <Card title="节点类型分布">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(nodeTypeCounts).map(([type, count]) => (
-          <div key={type} className="rounded-lg bg-[var(--color-bg-hover)] px-3 py-2"><p className="text-[11px] text-[var(--color-text-tertiary)] truncate">{type}</p><p className="text-[18px] font-bold text-[var(--color-text-primary)]">{count}</p></div>
-        ))}</div>
+
+      {/* 简化的节点类型分布 - 仅展示业务主节点 */}
+      <Card title="业务节点分布">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {mainNodeTypes.map((type) => {
+            const count = nodeTypeCounts[type] || 0
+            if (count > 0) return (
+              <div key={type} className="rounded-lg bg-[var(--color-bg-hover)] px-3 py-2">
+                <p className="text-[11px] text-[var(--color-text-tertiary)] truncate">{type === 'REQUIREMENT' ? '需求' : type === 'TASK' ? '任务' : type === 'BUG' ? '缺陷' : type === 'ITERATION' ? '迭代' : type === 'TEST_PLAN' ? '测试计划' : type === 'TEST_CASE' ? '测试用例' : '项目'}</p>
+                <p className="text-[18px] font-bold text-[var(--color-text-primary)]">{count}</p>
+              </div>
+            )
+            return null
+          })}
+          {Object.entries(nodeTypeCounts).filter(([type]) => !mainNodeTypes.includes(type) && (nodeTypeCounts[type] || 0) > 0).map(([type, count]) => (
+            <div key={type} className="rounded-lg bg-[var(--color-bg-hover)] px-3 py-2">
+              <p className="text-[11px] text-[var(--color-text-tertiary)] truncate">{type}</p>
+              <p className="text-[18px] font-bold text-[var(--color-text-primary)]">{count}</p>
+            </div>
+          ))}
+        </div>
       </Card>
+
+      {/* 简化的关系类型分布 */}
       <Card title="关系类型分布">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(edgeTypeCounts).map(([type, count]) => (
-          <div key={type} className="rounded-lg bg-[var(--color-bg-hover)] px-3 py-2"><p className="text-[11px] text-[var(--color-text-tertiary)] truncate">{type}</p><p className="text-[18px] font-bold text-[var(--color-text-primary)]">{count}</p></div>
-        ))}</div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {Object.entries(edgeTypeCounts).map(([type, count]) => (
+            <div key={type} className="rounded-lg bg-[var(--color-bg-hover)] px-3 py-2">
+              <p className="text-[11px] text-[var(--color-text-tertiary)] truncate">{type}</p>
+              <p className="text-[18px] font-bold text-[var(--color-text-primary)]">{count}</p>
+            </div>
+          ))}
+        </div>
       </Card>
     </div>
   )

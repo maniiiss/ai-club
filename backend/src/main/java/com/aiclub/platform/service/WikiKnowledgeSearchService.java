@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -48,17 +49,23 @@ public class WikiKnowledgeSearchService {
     private final WikiChunkingService wikiChunkingService;
     private final ModelConfigService modelConfigService;
     private final WikiPageRepository wikiPageRepository;
+    // LightRAG 切流依赖：阶段三开关开启时走 LightRAG query，否则走原向量+rerank 链路。
+    private final LightRagClientService lightRagClientService;
+    private final LightRagProperties lightRagProperties;
     private final WikiPageV2Repository wikiPageV2Repository;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
 
+    @Autowired
     public WikiKnowledgeSearchService(WikiKnowledgeProperties properties,
                                       QdrantClientService qdrantClientService,
                                       WikiChunkingService wikiChunkingService,
                                       ModelConfigService modelConfigService,
                                       WikiPageRepository wikiPageRepository,
                                       WikiPageV2Repository wikiPageV2Repository,
-                                      ObjectMapper objectMapper) {
+                                      ObjectMapper objectMapper,
+                                      LightRagClientService lightRagClientService,
+                                      LightRagProperties lightRagProperties) {
         this.properties = properties;
         this.qdrantClientService = qdrantClientService;
         this.wikiChunkingService = wikiChunkingService;
@@ -66,10 +73,26 @@ public class WikiKnowledgeSearchService {
         this.wikiPageRepository = wikiPageRepository;
         this.wikiPageV2Repository = wikiPageV2Repository;
         this.objectMapper = objectMapper;
+        this.lightRagClientService = lightRagClientService;
+        this.lightRagProperties = lightRagProperties;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(properties.getRerankTimeoutSeconds()))
                 .version(HttpClient.Version.HTTP_1_1)
                 .build();
+    }
+
+    /**
+     * 兼容旧测试构造方式：LightRAG 切流依赖置空，走原向量+rerank 链路。
+     */
+    public WikiKnowledgeSearchService(WikiKnowledgeProperties properties,
+                                      QdrantClientService qdrantClientService,
+                                      WikiChunkingService wikiChunkingService,
+                                      ModelConfigService modelConfigService,
+                                      WikiPageRepository wikiPageRepository,
+                                      WikiPageV2Repository wikiPageV2Repository,
+                                      ObjectMapper objectMapper) {
+        this(properties, qdrantClientService, wikiChunkingService, modelConfigService,
+                wikiPageRepository, wikiPageV2Repository, objectMapper, null, null);
     }
 
     public boolean isEnabled() {
@@ -318,6 +341,17 @@ public class WikiKnowledgeSearchService {
         Long wikiPageId = context != null && context.wikiPageId() != null
                 ? context.wikiPageId()
                 : request == null ? null : request.wikiPageId();
+        // 阶段三切流开关：开启时走 LightRAG query，对 Hermes 透明（签名不变）。
+        if (lightRagProperties != null && lightRagProperties.isHermesEvidenceEnabled() && lightRagClientService != null
+                && wikiSpaceId != null) {
+            try {
+                LightRagClientService.LightRagQueryResponse response = lightRagClientService.query(
+                        "space:" + wikiSpaceId, query, lightRagProperties.getQueryDefaultMode(), lightRagProperties.getQueryTopK());
+                return renderLightRagEvidence(response, wikiPageId);
+            } catch (RuntimeException exception) {
+                log.warn("LightRAG 证据召回失败，降级走原向量+rerank 链路：{}", exception.getMessage());
+            }
+        }
         if (wikiSpaceId != null) {
             List<WikiSearchHit> hits = searchSpaceWiki(
                     wikiSpaceId,
@@ -649,6 +683,31 @@ public class WikiKnowledgeSearchService {
             builder.append("- ")
                     .append(defaultString(hit.snippet()))
                     .append("（来源：Wiki 知识库）\n");
+        }
+        return builder.toString().trim();
+    }
+
+    /**
+     * 渲染 LightRAG query 返回的证据为 Markdown，与 renderEvidenceMarkdown 保持同一出口格式。
+     */
+    private String renderLightRagEvidence(LightRagClientService.LightRagQueryResponse response, Long currentPageId) {
+        if (response == null) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        List<String> contexts = response.contexts();
+        if (contexts != null && !contexts.isEmpty()) {
+            for (String ctx : contexts) {
+                String normalized = defaultString(ctx);
+                if (normalized.isBlank()) {
+                    continue;
+                }
+                builder.append("- ").append(abbreviate(normalized, 400)).append("（来源：Wiki 知识库）\n");
+            }
+        }
+        // 若 contexts 为空但有 answer，退而用 answer 摘要。
+        if (builder.length() == 0 && defaultString(response.answer()).length() > 0) {
+            builder.append("- ").append(abbreviate(defaultString(response.answer()), 400)).append("（来源：Wiki 知识库）\n");
         }
         return builder.toString().trim();
     }

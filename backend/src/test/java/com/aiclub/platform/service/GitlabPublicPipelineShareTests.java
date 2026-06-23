@@ -116,6 +116,8 @@ class GitlabPublicPipelineShareTests {
 
     @Mock
     private GitlabAutoMergeWebhookDispatcher autoMergeWebhookDispatcher;
+    @Mock
+    private CreditConsumptionService creditConsumptionService;
 
     @Mock
     private ProjectDataPermissionService projectDataPermissionService;
@@ -174,6 +176,7 @@ class GitlabPublicPipelineShareTests {
                 cicdManagementService,
                 notificationService,
                 autoMergeWebhookDispatcher,
+                creditConsumptionService,
                 projectDataPermissionService,
                 gitlabUserOauthService,
                 executionTaskService,

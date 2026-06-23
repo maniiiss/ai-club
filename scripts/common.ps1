@@ -241,6 +241,7 @@ function Get-PortConfiguration {
         Hermes         = [int](Get-EnvOrDefault -Name 'HERMES_PORT' -DefaultValue '18080')
         Hindsight      = [int](Get-EnvOrDefault -Name 'HINDSIGHT_PORT' -DefaultValue '18888')
         Qdrant         = [int](Get-EnvOrDefault -Name 'QDRANT_PORT' -DefaultValue '16333')
+        Neo4j          = [int](Get-EnvOrDefault -Name 'NEO4J_HTTP_PORT' -DefaultValue '17474')
         GitNexusUi     = [int](Get-EnvOrDefault -Name 'PLATFORM_GITNEXUS_UI_PUBLIC_PORT' -DefaultValue '5174')
         Woodpecker     = [int](Get-EnvOrDefault -Name 'WOODPECKER_PORT' -DefaultValue '18000')
     }

@@ -166,6 +166,18 @@ platform:
       model: ${PLATFORM_WIKI_KNOWLEDGE_RERANK_MODEL:}
       timeout-seconds: ${PLATFORM_WIKI_KNOWLEDGE_RERANK_TIMEOUT_SECONDS:15}
       top-k: ${PLATFORM_WIKI_KNOWLEDGE_RERANK_TOP_K:10}
+  lightrag:
+    enabled: ${PLATFORM_LIGHTRAG_ENABLED:true}
+    # 阶段三切流开关：默认关闭走旧链路，灰度按需开启。
+    hermes-evidence-enabled: ${PLATFORM_LIGHTRAG_HERMES_EVIDENCE_ENABLED:false}
+    graph-enabled: ${PLATFORM_LIGHTRAG_GRAPH_ENABLED:false}
+    query:
+      top-k: ${PLATFORM_LIGHTRAG_QUERY_TOP_K:3}
+      default-mode: ${PLATFORM_LIGHTRAG_QUERY_DEFAULT_MODE:local}
+    graph-node-limit: ${PLATFORM_LIGHTRAG_GRAPH_NODE_LIMIT:500}
+    ingest:
+      retry-max: ${PLATFORM_LIGHTRAG_INGEST_RETRY_MAX:5}
+      scan-interval-ms: ${PLATFORM_LIGHTRAG_INGEST_SCAN_INTERVAL_MS:600000}
   yaade:
     base-url: ${PLATFORM_YAADE_BASE_URL:}
     admin-username: ${PLATFORM_YAADE_ADMIN_USERNAME:}
