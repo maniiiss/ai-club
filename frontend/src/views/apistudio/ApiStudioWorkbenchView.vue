@@ -2,11 +2,23 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  ArrowLeft,
+  Connection,
+  Delete,
+  Document,
+  Edit,
+  FolderOpened,
+  Plus,
+  Promotion,
+  RefreshRight,
+  Search,
+  Setting
+} from '@element-plus/icons-vue'
 import { useApiStudioStore } from '@/stores/apiStudio'
 import type {
   ApiStudioDirectoryItem,
   ApiStudioEndpointPayload,
-  ApiStudioEndpointSummary,
   ApiStudioMethod,
   ApiStudioTreeNode,
   ApiStudioDebugExecutionPayload
@@ -15,6 +27,7 @@ import type {
 // 原生 API 工作台 - 项目级三栏工作区。
 // 左：目录树 + API 列表；中：编辑器；右/下：调试与响应。
 // 设计文档：docs/api-studio-native-technical-design-v1.md 第 9 节。
+// UI 风格参考 ProjectView / TestPlanView，复用 management-list-* 全局设计系统。
 
 const route = useRoute()
 const router = useRouter()
@@ -99,6 +112,42 @@ const flatNodes = computed(() => {
   walk(store.tree.nodes, 0)
   return flat
 })
+
+const treeKeyword = ref('')
+
+const matchKeyword = (text?: string | null) => {
+  if (!treeKeyword.value.trim()) return true
+  return (text ?? '').toLowerCase().includes(treeKeyword.value.trim().toLowerCase())
+}
+
+const filteredRootEndpoints = computed(() => {
+  const list = store.tree?.rootEndpoints ?? []
+  if (!treeKeyword.value.trim()) return list
+  return list.filter((ep) => matchKeyword(ep.name) || matchKeyword(ep.path))
+})
+
+const filterEndpointsOf = (node: ApiStudioTreeNode) => {
+  if (!treeKeyword.value.trim()) return node.endpoints
+  return node.endpoints.filter((ep) => matchKeyword(ep.name) || matchKeyword(ep.path))
+}
+
+const statusTone = (status?: string) => {
+  switch (status) {
+    case 'PUBLISHED':
+      return 'success'
+    case 'DEPRECATED':
+      return 'neutral'
+    case 'DRAFT':
+    default:
+      return 'warning'
+  }
+}
+
+const statusLabel = (status?: string) => {
+  if (status === 'PUBLISHED') return '已发布'
+  if (status === 'DEPRECATED') return '已废弃'
+  return '草稿'
+}
 
 // ========== 初始化 ==========
 
@@ -401,26 +450,35 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
 <template>
   <div class="api-studio-workbench">
     <!-- 顶部工具栏 -->
-    <div class="toolbar">
-      <el-button text @click="backToHome">
-        <el-icon><i-ep-back /></el-icon> 返回项目列表
-      </el-button>
-      <div class="title">
-        <strong>API 工作台</strong>
-        <span v-if="store.overview" class="meta">
-          目录 {{ store.overview.directoryCount }} · API {{ store.overview.endpointCount }} ·
-          环境 {{ store.overview.environmentCount }}
-          <span v-if="store.overview.defaultEnvironmentName">
-            · 默认 {{ store.overview.defaultEnvironmentName }}
-          </span>
-        </span>
+    <section class="management-list-toolbar api-studio-workbench-toolbar">
+      <div class="management-list-toolbar-main">
+        <button class="management-list-toolbar-button" type="button" @click="backToHome">
+          <el-icon><ArrowLeft /></el-icon>
+          <span>项目列表</span>
+        </button>
+
+        <span class="management-list-toolbar-divider" aria-hidden="true"></span>
+
+        <div class="api-studio-workbench-title">
+          <span class="api-studio-workbench-kicker">API 工作台</span>
+          <div v-if="store.overview" class="api-studio-workbench-meta">
+            <span class="management-list-chip">目录 {{ store.overview.directoryCount }}</span>
+            <span class="management-list-chip">API {{ store.overview.endpointCount }}</span>
+            <span class="management-list-chip">环境 {{ store.overview.environmentCount }}</span>
+            <span v-if="store.overview.defaultEnvironmentName" class="management-list-pill success">
+              默认 {{ store.overview.defaultEnvironmentName }}
+            </span>
+          </div>
+        </div>
       </div>
-      <div class="right">
+
+      <div class="management-list-toolbar-side">
         <el-select
           v-model="store.selectedEnvironmentId"
-          placeholder="选择环境"
-          style="width: 180px"
+          placeholder="选择调试环境"
           clearable
+          size="default"
+          class="api-studio-env-select"
         >
           <el-option
             v-for="env in store.environments"
@@ -429,194 +487,304 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
             :value="env.id"
           />
         </el-select>
-        <el-button @click="openEnvironments">环境管理</el-button>
+        <button class="management-list-toolbar-button" type="button" @click="openEnvironments">
+          <el-icon><Setting /></el-icon>
+          <span>环境管理</span>
+        </button>
       </div>
-    </div>
+    </section>
 
-    <div class="layout">
+    <div class="api-studio-workbench-body">
       <!-- 左侧目录树 -->
-      <aside class="left" v-loading="store.treeLoading">
-        <div class="left-header">
-          <span>目录与 API</span>
-          <div>
-            <el-button size="small" @click="openNewDir(null)">+ 目录</el-button>
-            <el-button size="small" type="primary" @click="openNewEndpoint(null)">+ API</el-button>
+      <aside class="api-studio-tree-shell" v-loading="store.treeLoading">
+        <header class="api-studio-tree-header">
+          <div class="api-studio-tree-header-title">
+            <el-icon><FolderOpened /></el-icon>
+            <span>目录与 API</span>
+          </div>
+          <div class="api-studio-tree-header-actions">
+            <button class="management-list-toolbar-button" type="button" @click="openNewDir(null)">
+              <el-icon><Plus /></el-icon>
+              <span>目录</span>
+            </button>
+            <button class="management-list-create-button api-studio-tree-create" type="button" @click="openNewEndpoint(null)">
+              <el-icon><Plus /></el-icon>
+              <span>新建 API</span>
+            </button>
+          </div>
+        </header>
+
+        <div class="api-studio-tree-search">
+          <div class="management-list-search-shell">
+            <el-icon class="management-list-search-icon"><Search /></el-icon>
+            <input
+              v-model="treeKeyword"
+              class="management-list-search-input"
+              type="text"
+              placeholder="搜索 API 名称或路径"
+            />
           </div>
         </div>
 
-        <div class="tree-area">
+        <div class="api-studio-tree-area">
           <!-- 根级 API -->
           <div
-            v-for="ep in store.tree?.rootEndpoints ?? []"
+            v-for="ep in filteredRootEndpoints"
             :key="'root-ep-' + ep.id"
-            class="endpoint-row"
+            class="api-studio-endpoint-row"
             :class="{ active: store.currentEndpoint?.id === ep.id }"
             @click="selectEndpoint(ep.id)"
           >
-            <span class="method-badge" :style="{ background: methodColor(ep.method) }">{{ ep.method }}</span>
-            <span class="ep-name">{{ ep.name }}</span>
-            <span class="ep-path">{{ ep.path }}</span>
+            <span class="api-studio-method-badge" :style="{ background: methodColor(ep.method) }">{{ ep.method }}</span>
+            <span class="api-studio-endpoint-name">{{ ep.name }}</span>
+            <span class="api-studio-endpoint-path">{{ ep.path }}</span>
           </div>
 
           <!-- 目录递归 -->
-          <div v-for="entry in flatNodes" :key="'dir-' + entry.node.directory.id" class="dir-block">
-            <div class="dir-row" :style="{ paddingLeft: 8 + entry.depth * 12 + 'px' }">
-              <el-icon><i-ep-folder /></el-icon>
-              <span class="dir-name">{{ entry.node.directory.name }}</span>
-              <span class="dir-actions">
-                <el-button text size="small" @click="openNewEndpoint(entry.node.directory.id)">+ API</el-button>
-                <el-button text size="small" @click="openNewDir(entry.node.directory.id)">+ 子目录</el-button>
-                <el-button text size="small" @click="deleteDir(entry.node.directory)">删除</el-button>
+          <div v-for="entry in flatNodes" :key="'dir-' + entry.node.directory.id" class="api-studio-dir-block">
+            <div class="api-studio-dir-row" :style="{ paddingLeft: 12 + entry.depth * 16 + 'px' }">
+              <el-icon class="api-studio-dir-icon"><FolderOpened /></el-icon>
+              <span class="api-studio-dir-name">{{ entry.node.directory.name }}</span>
+              <span class="api-studio-dir-count">{{ entry.node.endpoints.length }}</span>
+              <span class="api-studio-dir-actions">
+                <button
+                  class="api-studio-icon-button"
+                  type="button"
+                  title="新建 API"
+                  @click.stop="openNewEndpoint(entry.node.directory.id)"
+                >
+                  <el-icon><Plus /></el-icon>
+                </button>
+                <button
+                  class="api-studio-icon-button"
+                  type="button"
+                  title="新建子目录"
+                  @click.stop="openNewDir(entry.node.directory.id)"
+                >
+                  <el-icon><FolderOpened /></el-icon>
+                </button>
+                <button
+                  class="api-studio-icon-button danger"
+                  type="button"
+                  title="删除目录"
+                  @click.stop="deleteDir(entry.node.directory)"
+                >
+                  <el-icon><Delete /></el-icon>
+                </button>
               </span>
             </div>
             <div
-              v-for="ep in entry.node.endpoints"
+              v-for="ep in filterEndpointsOf(entry.node)"
               :key="'ep-' + ep.id"
-              class="endpoint-row"
+              class="api-studio-endpoint-row"
               :class="{ active: store.currentEndpoint?.id === ep.id }"
-              :style="{ paddingLeft: 24 + entry.depth * 12 + 'px' }"
+              :style="{ paddingLeft: 30 + entry.depth * 16 + 'px' }"
               @click="selectEndpoint(ep.id)"
             >
-              <span class="method-badge" :style="{ background: methodColor(ep.method) }">{{ ep.method }}</span>
-              <span class="ep-name">{{ ep.name }}</span>
-              <span class="ep-path">{{ ep.path }}</span>
+              <span class="api-studio-method-badge" :style="{ background: methodColor(ep.method) }">{{ ep.method }}</span>
+              <span class="api-studio-endpoint-name">{{ ep.name }}</span>
+              <span class="api-studio-endpoint-path">{{ ep.path }}</span>
             </div>
+          </div>
+
+          <div
+            v-if="!store.treeLoading && filteredRootEndpoints.length === 0 && flatNodes.length === 0"
+            class="api-studio-tree-empty"
+          >
+            <el-empty
+              :image-size="64"
+              description="尚无目录或 API"
+            />
           </div>
         </div>
       </aside>
 
       <!-- 中间编辑器 -->
-      <main class="center" v-loading="store.endpointLoading">
-        <div v-if="!store.currentEndpoint" class="empty">
-          <el-empty description="请选择左侧 API 或点击 + API 创建新接口" />
+      <main class="api-studio-editor-shell" v-loading="store.endpointLoading">
+        <div v-if="!store.currentEndpoint" class="api-studio-editor-empty">
+          <el-empty description="请选择左侧 API 或点击右上角按钮创建新接口" />
         </div>
 
         <template v-else>
-          <div class="editor-header">
-            <el-tag :style="{ background: methodColor(store.currentEndpoint.method), color: '#fff', border: 'none' }">
-              {{ store.currentEndpoint.method }}
-            </el-tag>
-            <strong>{{ store.currentEndpoint.name }}</strong>
-            <span class="path">{{ store.currentEndpoint.path }}</span>
-            <el-tag size="small" :type="store.currentEndpoint.status === 'PUBLISHED' ? 'success' : store.currentEndpoint.status === 'DEPRECATED' ? 'info' : 'warning'">
-              {{ store.currentEndpoint.status }}
-            </el-tag>
-            <div class="header-actions">
-              <el-button size="small" type="primary" @click="saveCurrent">保存</el-button>
-              <el-button size="small" @click="publishCurrent" :disabled="store.currentEndpoint.status === 'PUBLISHED'">发布</el-button>
-              <el-button size="small" @click="deprecateCurrent" :disabled="store.currentEndpoint.status === 'DEPRECATED'">废弃</el-button>
-              <el-button size="small" type="danger" @click="removeCurrent">删除</el-button>
+          <header class="api-studio-editor-header">
+            <div class="api-studio-editor-title">
+              <span class="api-studio-method-badge large" :style="{ background: methodColor(store.currentEndpoint.method) }">
+                {{ store.currentEndpoint.method }}
+              </span>
+              <div class="api-studio-editor-title-copy">
+                <h2>{{ store.currentEndpoint.name || '未命名 API' }}</h2>
+                <span class="api-studio-editor-path">{{ store.currentEndpoint.path }}</span>
+              </div>
+              <span class="management-list-pill" :class="statusTone(store.currentEndpoint.status)">
+                {{ statusLabel(store.currentEndpoint.status) }}
+              </span>
             </div>
-          </div>
+            <div class="api-studio-editor-actions">
+              <button class="management-list-toolbar-button" type="button" @click="publishCurrent" :disabled="store.currentEndpoint.status === 'PUBLISHED'">
+                <el-icon><Promotion /></el-icon>
+                <span>发布</span>
+              </button>
+              <button class="management-list-toolbar-button" type="button" @click="deprecateCurrent" :disabled="store.currentEndpoint.status === 'DEPRECATED'">
+                <el-icon><RefreshRight /></el-icon>
+                <span>废弃</span>
+              </button>
+              <button class="management-list-toolbar-button danger" type="button" @click="removeCurrent">
+                <el-icon><Delete /></el-icon>
+                <span>删除</span>
+              </button>
+              <button class="management-list-create-button" type="button" @click="saveCurrent">
+                <el-icon><Edit /></el-icon>
+                <span>保存</span>
+              </button>
+            </div>
+          </header>
 
-          <el-tabs v-model="activeEditorTab" class="editor-tabs">
+          <el-tabs v-model="activeEditorTab" class="api-studio-editor-tabs">
             <el-tab-pane label="基础信息" name="basic">
-              <el-form label-width="120px" class="editor-form">
-                <el-form-item label="名称">
-                  <el-input v-model="store.currentEndpoint.name" />
-                </el-form-item>
-                <el-form-item label="方法">
-                  <el-select v-model="store.currentEndpoint.method" style="width: 160px">
-                    <el-option v-for="m in methodOptions" :key="m" :label="m" :value="m" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="路径">
-                  <el-input v-model="store.currentEndpoint.path" placeholder="/users/{id}" />
-                </el-form-item>
-                <el-form-item label="状态">
-                  <el-select v-model="store.currentEndpoint.status" style="width: 160px">
-                    <el-option v-for="s in statusOptions" :key="s" :label="s" :value="s" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="摘要">
-                  <el-input v-model="store.currentEndpoint.summary" />
-                </el-form-item>
-                <el-form-item label="详细说明">
-                  <el-input v-model="store.currentEndpoint.descriptionMarkdown" type="textarea" :rows="6" />
-                </el-form-item>
-              </el-form>
+              <div class="api-studio-form-card">
+                <el-form label-width="120px" class="api-studio-editor-form">
+                  <el-form-item label="名称">
+                    <el-input v-model="store.currentEndpoint.name" />
+                  </el-form-item>
+                  <el-form-item label="方法">
+                    <el-select v-model="store.currentEndpoint.method" style="width: 160px">
+                      <el-option v-for="m in methodOptions" :key="m" :label="m" :value="m" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item label="路径">
+                    <el-input v-model="store.currentEndpoint.path" placeholder="/users/{id}" />
+                  </el-form-item>
+                  <el-form-item label="状态">
+                    <el-select v-model="store.currentEndpoint.status" style="width: 200px">
+                      <el-option v-for="s in statusOptions" :key="s" :label="statusLabel(s)" :value="s" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item label="摘要">
+                    <el-input v-model="store.currentEndpoint.summary" placeholder="一句话描述这个接口的用途" />
+                  </el-form-item>
+                  <el-form-item label="详细说明">
+                    <el-input v-model="store.currentEndpoint.descriptionMarkdown" type="textarea" :rows="6" placeholder="Markdown 描述" />
+                  </el-form-item>
+                </el-form>
+              </div>
             </el-tab-pane>
 
             <el-tab-pane label="参数" name="params">
-              <div class="param-toolbar">
-                <el-button size="small" @click="addParameter('PATH')">+ Path</el-button>
-                <el-button size="small" @click="addParameter('QUERY')">+ Query</el-button>
-                <el-button size="small" @click="addParameter('HEADER')">+ Header</el-button>
+              <div class="api-studio-form-card">
+                <div class="api-studio-section-toolbar">
+                  <span class="api-studio-section-title">请求参数</span>
+                  <div class="api-studio-section-actions">
+                    <button class="management-list-toolbar-button" type="button" @click="addParameter('PATH')">
+                      <el-icon><Plus /></el-icon><span>Path</span>
+                    </button>
+                    <button class="management-list-toolbar-button" type="button" @click="addParameter('QUERY')">
+                      <el-icon><Plus /></el-icon><span>Query</span>
+                    </button>
+                    <button class="management-list-toolbar-button" type="button" @click="addParameter('HEADER')">
+                      <el-icon><Plus /></el-icon><span>Header</span>
+                    </button>
+                  </div>
+                </div>
+                <el-table :data="store.currentEndpoint.parameters" size="small" class="api-studio-inline-table">
+                  <el-table-column label="位置" width="130">
+                    <template #default="{ row }">
+                      <el-select v-model="row.location" size="small">
+                        <el-option v-for="l in paramLocationOptions" :key="l" :label="l" :value="l" />
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="名称" min-width="160">
+                    <template #default="{ row }"><el-input v-model="row.name" size="small" /></template>
+                  </el-table-column>
+                  <el-table-column label="类型" width="130">
+                    <template #default="{ row }">
+                      <el-select v-model="row.dataType" size="small">
+                        <el-option v-for="t in dataTypeOptions" :key="t" :label="t" :value="t" />
+                      </el-select>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="必填" width="80" align="center">
+                    <template #default="{ row }"><el-checkbox v-model="row.required" /></template>
+                  </el-table-column>
+                  <el-table-column label="示例值" min-width="160">
+                    <template #default="{ row }"><el-input v-model="row.exampleValue" size="small" /></template>
+                  </el-table-column>
+                  <el-table-column label="说明" min-width="180">
+                    <template #default="{ row }"><el-input v-model="row.description" size="small" /></template>
+                  </el-table-column>
+                  <el-table-column width="80" align="center">
+                    <template #default="{ $index }">
+                      <button class="api-studio-icon-button danger" type="button" title="删除" @click="removeParameter($index)">
+                        <el-icon><Delete /></el-icon>
+                      </button>
+                    </template>
+                  </el-table-column>
+                </el-table>
               </div>
-              <el-table :data="store.currentEndpoint.parameters" size="small" border>
-                <el-table-column label="位置" width="130">
-                  <template #default="{ row }">
-                    <el-select v-model="row.location" size="small">
-                      <el-option v-for="l in paramLocationOptions" :key="l" :label="l" :value="l" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="名称">
-                  <template #default="{ row }"><el-input v-model="row.name" size="small" /></template>
-                </el-table-column>
-                <el-table-column label="类型" width="130">
-                  <template #default="{ row }">
-                    <el-select v-model="row.dataType" size="small">
-                      <el-option v-for="t in dataTypeOptions" :key="t" :label="t" :value="t" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="必填" width="80">
-                  <template #default="{ row }"><el-checkbox v-model="row.required" /></template>
-                </el-table-column>
-                <el-table-column label="示例">
-                  <template #default="{ row }"><el-input v-model="row.exampleValue" size="small" /></template>
-                </el-table-column>
-                <el-table-column label="说明">
-                  <template #default="{ row }"><el-input v-model="row.description" size="small" /></template>
-                </el-table-column>
-                <el-table-column width="80">
-                  <template #default="{ $index }">
-                    <el-button link type="danger" size="small" @click="removeParameter($index)">删除</el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
             </el-tab-pane>
 
             <el-tab-pane label="Body" name="body">
-              <el-form label-width="120px">
-                <el-form-item label="Body 类型">
-                  <el-select v-model="store.currentEndpoint.requestBodyType" style="width: 200px">
-                    <el-option v-for="t in bodyTypeOptions" :key="t" :label="t" :value="t" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="Body 示例">
-                  <el-input v-model="store.currentEndpoint.requestBodyExample" type="textarea" :rows="10" />
-                </el-form-item>
-                <el-form-item label="结构 (JSON)">
-                  <el-input v-model="store.currentEndpoint.requestBodySchemaJson" type="textarea" :rows="6" placeholder="可选：保存 JSON Schema 结构" />
-                </el-form-item>
-              </el-form>
+              <div class="api-studio-form-card">
+                <el-form label-width="120px">
+                  <el-form-item label="Body 类型">
+                    <el-select v-model="store.currentEndpoint.requestBodyType" style="width: 220px">
+                      <el-option v-for="t in bodyTypeOptions" :key="t" :label="t" :value="t" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item label="Body 示例">
+                    <el-input v-model="store.currentEndpoint.requestBodyExample" type="textarea" :rows="10" placeholder="例如 JSON 请求体示例" />
+                  </el-form-item>
+                  <el-form-item label="结构 (JSON)">
+                    <el-input v-model="store.currentEndpoint.requestBodySchemaJson" type="textarea" :rows="6" placeholder="可选：保存 JSON Schema 或结构化字段树" />
+                  </el-form-item>
+                </el-form>
+              </div>
             </el-tab-pane>
 
             <el-tab-pane label="响应" name="responses">
-              <el-button size="small" @click="addResponse" style="margin-bottom: 12px">+ 响应</el-button>
-              <div v-for="(resp, idx) in store.currentEndpoint.responses" :key="idx" class="response-block">
-                <div class="response-header">
-                  <span>状态码</span>
-                  <el-input-number v-model="resp.statusCode" :min="100" :max="599" size="small" />
-                  <span>Content-Type</span>
-                  <el-input v-model="resp.contentType" size="small" style="width: 220px" />
-                  <el-button link type="danger" size="small" @click="removeResponse(idx)">删除</el-button>
+              <div class="api-studio-form-card">
+                <div class="api-studio-section-toolbar">
+                  <span class="api-studio-section-title">响应定义</span>
+                  <div class="api-studio-section-actions">
+                    <button class="management-list-toolbar-button" type="button" @click="addResponse">
+                      <el-icon><Plus /></el-icon><span>新增响应</span>
+                    </button>
+                  </div>
                 </div>
-                <el-input v-model="resp.description" placeholder="响应说明" size="small" style="margin-bottom: 8px" />
-                <el-input v-model="resp.exampleBody" type="textarea" :rows="6" placeholder="响应示例 JSON" />
+                <div
+                  v-for="(resp, idx) in store.currentEndpoint.responses"
+                  :key="idx"
+                  class="api-studio-response-block"
+                >
+                  <div class="api-studio-response-head">
+                    <span class="api-studio-section-subtitle">状态码</span>
+                    <el-input-number v-model="resp.statusCode" :min="100" :max="599" size="small" />
+                    <span class="api-studio-section-subtitle">Content-Type</span>
+                    <el-input v-model="resp.contentType" size="small" style="width: 220px" />
+                    <button class="api-studio-icon-button danger" type="button" title="删除响应" @click="removeResponse(idx)">
+                      <el-icon><Delete /></el-icon>
+                    </button>
+                  </div>
+                  <el-input v-model="resp.description" placeholder="响应说明" size="small" style="margin-bottom: 8px" />
+                  <el-input v-model="resp.exampleBody" type="textarea" :rows="6" placeholder="响应示例 JSON" />
+                </div>
+                <el-empty v-if="!store.currentEndpoint.responses.length" :image-size="64" description="尚未定义响应" />
               </div>
             </el-tab-pane>
 
             <el-tab-pane label="调试" name="debug">
-              <div class="debug-section">
-                <el-alert type="info" :closable="false" show-icon style="margin-bottom: 12px">
+              <div class="api-studio-form-card">
+                <el-alert
+                  type="info"
+                  :closable="false"
+                  show-icon
+                  class="api-studio-debug-hint"
+                >
                   调试请求由平台后端代理发出，仅允许访问所选环境 baseUrl 同源目标。
                 </el-alert>
                 <el-form label-width="120px">
                   <el-form-item label="环境">
-                    <el-select v-model="store.selectedEnvironmentId" style="width: 240px" placeholder="选择环境">
+                    <el-select v-model="store.selectedEnvironmentId" style="width: 320px" placeholder="选择环境">
                       <el-option
                         v-for="env in store.environments"
                         :key="env.id"
@@ -634,22 +802,29 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
                     />
                   </el-form-item>
                 </el-form>
-                <el-button type="primary" :loading="store.debugRunning" @click="runDebug">发送请求</el-button>
+                <button
+                  class="management-list-create-button api-studio-debug-run"
+                  type="button"
+                  :disabled="store.debugRunning"
+                  @click="runDebug"
+                >
+                  <el-icon><Connection /></el-icon>
+                  <span>{{ store.debugRunning ? '发送中...' : '发送请求' }}</span>
+                </button>
 
-                <div v-if="store.debugResult" class="debug-result">
-                  <h4>结果</h4>
-                  <div class="result-meta">
-                    <el-tag :type="store.debugResult.success ? 'success' : 'danger'">
+                <div v-if="store.debugResult" class="api-studio-debug-result">
+                  <div class="api-studio-debug-result-head">
+                    <span class="management-list-pill" :class="store.debugResult.success ? 'success' : 'danger'">
                       {{ store.debugResult.statusCode ?? 'ERR' }}
-                    </el-tag>
-                    <span>{{ store.debugResult.durationMillis }} ms</span>
-                    <span>{{ store.debugResult.responseBytes }} bytes</span>
-                    <span v-if="store.debugResult.responseTruncated">[已截断]</span>
+                    </span>
+                    <span class="api-studio-debug-meta">{{ store.debugResult.durationMillis }} ms</span>
+                    <span class="api-studio-debug-meta">{{ store.debugResult.responseBytes }} bytes</span>
+                    <span v-if="store.debugResult.responseTruncated" class="management-list-pill warning">已截断</span>
                   </div>
-                  <div v-if="store.debugResult.errorMessage" class="error-msg">
+                  <div v-if="store.debugResult.errorMessage" class="api-studio-debug-error">
                     {{ store.debugResult.errorMessage }}
                   </div>
-                  <div class="final-url">{{ store.debugResult.finalUrl }}</div>
+                  <div class="api-studio-debug-url">{{ store.debugResult.finalUrl }}</div>
                   <el-input
                     :model-value="store.debugResult.responseBody"
                     type="textarea"
@@ -661,17 +836,22 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
             </el-tab-pane>
 
             <el-tab-pane label="版本" name="versions">
-              <el-table :data="store.versions" size="small" border v-loading="store.versionsLoading">
-                <el-table-column prop="versionNo" label="版本" width="80" />
-                <el-table-column prop="changeType" label="类型" width="120" />
-                <el-table-column prop="changeSummary" label="说明" />
-                <el-table-column prop="createdAt" label="时间" width="180" />
-                <el-table-column width="100">
-                  <template #default="{ row }">
-                    <el-button link type="primary" size="small" @click="rollbackTo(row.id)">回滚</el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
+              <div class="api-studio-form-card">
+                <el-table :data="store.versions" size="small" class="api-studio-inline-table" v-loading="store.versionsLoading">
+                  <el-table-column prop="versionNo" label="版本" width="80" />
+                  <el-table-column prop="changeType" label="类型" width="140" />
+                  <el-table-column prop="changeSummary" label="说明" min-width="240" />
+                  <el-table-column prop="createdAt" label="时间" width="200" />
+                  <el-table-column label="操作" width="100" align="center">
+                    <template #default="{ row }">
+                      <button class="api-studio-icon-button primary" type="button" title="回滚到该版本" @click="rollbackTo(row.id)">
+                        <el-icon><RefreshRight /></el-icon>
+                      </button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <el-empty v-if="!store.versions.length" :image-size="64" description="尚无版本快照" />
+              </div>
             </el-tab-pane>
           </el-tabs>
         </template>
@@ -679,10 +859,10 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
     </div>
 
     <!-- 新建目录对话框 -->
-    <el-dialog v-model="newDirDialog" title="新建目录" width="480px">
+    <el-dialog v-model="newDirDialog" title="新建目录" width="480px" class="platform-form-dialog">
       <el-form label-width="80px">
-        <el-form-item label="名称"><el-input v-model="newDirForm.name" /></el-form-item>
-        <el-form-item label="说明"><el-input v-model="newDirForm.description" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="名称"><el-input v-model="newDirForm.name" placeholder="目录名" /></el-form-item>
+        <el-form-item label="说明"><el-input v-model="newDirForm.description" type="textarea" :rows="3" placeholder="可选" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="newDirDialog = false">取消</el-button>
@@ -691,16 +871,16 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
     </el-dialog>
 
     <!-- 新建 API 对话框 -->
-    <el-dialog v-model="newEndpointDialog" title="新建 API" width="560px">
+    <el-dialog v-model="newEndpointDialog" title="新建 API" width="560px" class="platform-form-dialog">
       <el-form label-width="100px">
-        <el-form-item label="名称"><el-input v-model="newEndpointForm.name" /></el-form-item>
+        <el-form-item label="名称"><el-input v-model="newEndpointForm.name" placeholder="例如：查询用户详情" /></el-form-item>
         <el-form-item label="方法">
           <el-select v-model="newEndpointForm.method" style="width: 160px">
             <el-option v-for="m in methodOptions" :key="m" :label="m" :value="m" />
           </el-select>
         </el-form-item>
         <el-form-item label="路径"><el-input v-model="newEndpointForm.path" placeholder="/users/{id}" /></el-form-item>
-        <el-form-item label="摘要"><el-input v-model="newEndpointForm.summary" /></el-form-item>
+        <el-form-item label="摘要"><el-input v-model="newEndpointForm.summary" placeholder="可选" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="newEndpointDialog = false">取消</el-button>
@@ -709,32 +889,48 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
     </el-dialog>
 
     <!-- 环境管理抽屉 -->
-    <el-drawer v-model="envManagerVisible" title="环境管理" size="640px">
-      <div class="env-layout">
-        <div class="env-list">
-          <h4>已配置环境</h4>
-          <div v-for="env in store.environments" :key="env.id" class="env-item">
-            <div>
-              <strong>{{ env.name }}</strong>
-              <el-tag v-if="env.isDefault" size="small" type="success" style="margin-left: 6px">默认</el-tag>
-              <div class="env-meta">{{ env.baseUrl }} · auth {{ env.authType }}</div>
+    <el-drawer v-model="envManagerVisible" title="环境管理" size="680px">
+      <div class="api-studio-env-layout">
+        <section class="api-studio-env-list-section">
+          <header class="api-studio-section-toolbar">
+            <span class="api-studio-section-title">已配置环境</span>
+            <span class="api-studio-section-subtitle">{{ store.environments.length }} 个</span>
+          </header>
+          <div v-for="env in store.environments" :key="env.id" class="api-studio-env-item">
+            <div class="api-studio-env-item-main">
+              <div class="api-studio-env-name-line">
+                <strong>{{ env.name }}</strong>
+                <span v-if="env.isDefault" class="management-list-pill success">默认</span>
+              </div>
+              <div class="api-studio-env-meta">{{ env.baseUrl }} · auth {{ env.authType }}</div>
             </div>
-            <div>
-              <el-button link size="small" @click="editEnvironment(env)">编辑</el-button>
-              <el-button link size="small" @click="setEnvDefault(env.id)" :disabled="env.isDefault">设为默认</el-button>
-              <el-button link type="danger" size="small" @click="removeEnvironment(env.id)">删除</el-button>
+            <div class="api-studio-env-item-actions">
+              <button class="management-list-toolbar-button" type="button" @click="editEnvironment(env)">
+                <el-icon><Edit /></el-icon><span>编辑</span>
+              </button>
+              <button class="management-list-toolbar-button" type="button" :disabled="env.isDefault" @click="setEnvDefault(env.id)">
+                <span>{{ env.isDefault ? '已是默认' : '设为默认' }}</span>
+              </button>
+              <button class="management-list-toolbar-button danger" type="button" @click="removeEnvironment(env.id)">
+                <el-icon><Delete /></el-icon><span>删除</span>
+              </button>
             </div>
           </div>
-          <el-empty v-if="store.environments.length === 0" description="尚未配置环境" />
-        </div>
+          <el-empty v-if="store.environments.length === 0" :image-size="80" description="尚未配置环境" />
+        </section>
 
-        <div class="env-editor">
-          <h4>{{ editingEnvironment ? '编辑环境' : '新建环境' }}</h4>
+        <section class="api-studio-env-editor-section">
+          <header class="api-studio-section-toolbar">
+            <span class="api-studio-section-title">{{ editingEnvironment ? '编辑环境' : '新建环境' }}</span>
+            <button v-if="editingEnvironment" class="management-list-toolbar-button" type="button" @click="editingEnvironment = null; resetEnvForm()">
+              <span>取消编辑</span>
+            </button>
+          </header>
           <el-form label-width="120px">
-            <el-form-item label="名称"><el-input v-model="environmentForm.name" /></el-form-item>
+            <el-form-item label="名称"><el-input v-model="environmentForm.name" placeholder="例如：dev / test / prod" /></el-form-item>
             <el-form-item label="baseUrl"><el-input v-model="environmentForm.baseUrl" placeholder="https://api.example.com" /></el-form-item>
             <el-form-item label="认证类型">
-              <el-select v-model="environmentForm.authType" style="width: 160px">
+              <el-select v-model="environmentForm.authType" style="width: 200px">
                 <el-option label="NONE" value="NONE" />
                 <el-option label="BEARER" value="BEARER" />
                 <el-option label="API_KEY" value="API_KEY" />
@@ -760,260 +956,566 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
               <el-switch v-model="environmentForm.isDefault" />
             </el-form-item>
           </el-form>
-          <el-button type="primary" @click="submitEnvironment">{{ editingEnvironment ? '更新环境' : '新建环境' }}</el-button>
-          <el-button v-if="editingEnvironment" @click="editingEnvironment = null; resetEnvForm()">取消编辑</el-button>
-        </div>
+          <div class="api-studio-env-editor-footer">
+            <button class="management-list-create-button" type="button" @click="submitEnvironment">
+              <el-icon><Document /></el-icon>
+              <span>{{ editingEnvironment ? '更新环境' : '新建环境' }}</span>
+            </button>
+          </div>
+        </section>
       </div>
     </el-drawer>
   </div>
 </template>
 
+
 <style scoped>
 .api-studio-workbench {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 60px);
-  background: var(--el-bg-color-page);
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  background: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color-light);
   gap: 16px;
+  min-height: 100%;
 }
 
-.toolbar .title {
-  flex: 1;
+.api-studio-workbench-toolbar {
+  margin-bottom: 0;
+}
+
+.api-studio-workbench-title {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.api-studio-workbench-kicker {
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(144, 77, 0, 0.08);
+  color: var(--app-primary);
+  font-family: var(--app-font-heading);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.api-studio-workbench-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   align-items: center;
-  gap: 12px;
 }
 
-.toolbar .meta {
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
+.api-studio-env-select {
+  width: 220px;
 }
 
-.toolbar .right {
-  display: flex;
-  gap: 8px;
-}
-
-.layout {
+.api-studio-workbench-body {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  flex: 1;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
   min-height: 0;
+  flex: 1 1 auto;
 }
 
-.left {
-  border-right: 1px solid var(--el-border-color-light);
-  background: var(--el-bg-color);
-  overflow-y: auto;
+/* ===================== 左侧树 ===================== */
+
+.api-studio-tree-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 540px;
+  background: rgba(255, 255, 255, 0.98);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(25, 28, 29, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  overflow: hidden;
 }
 
-.left-header {
-  position: sticky;
-  top: 0;
-  background: var(--el-bg-color);
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--el-border-color-light);
+.api-studio-tree-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-weight: 600;
-  z-index: 1;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--app-border);
+  background: rgba(243, 244, 245, 0.52);
 }
 
-.tree-area {
-  padding: 6px 0;
-}
-
-.dir-block {
-  margin-bottom: 4px;
-}
-
-.dir-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  font-size: 13px;
-  color: var(--el-text-color-regular);
-}
-
-.dir-actions {
-  margin-left: auto;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.dir-row:hover .dir-actions {
-  opacity: 1;
-}
-
-.endpoint-row {
+.api-studio-tree-header-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 8px 4px 24px;
-  cursor: pointer;
-  font-size: 12px;
-  border-left: 2px solid transparent;
-}
-
-.endpoint-row:hover {
-  background: var(--el-fill-color-light);
-}
-
-.endpoint-row.active {
-  background: var(--el-color-primary-light-9);
-  border-left-color: var(--el-color-primary);
-}
-
-.method-badge {
-  display: inline-block;
-  padding: 1px 6px;
+  font-family: var(--app-font-heading);
   font-size: 11px;
-  color: #fff;
-  border-radius: 3px;
-  font-weight: 600;
-  min-width: 48px;
-  text-align: center;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #94a3b8;
 }
 
-.ep-name {
+.api-studio-tree-header-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.api-studio-tree-create {
+  padding-inline: 12px;
+}
+
+.api-studio-tree-search {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.api-studio-tree-area {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 6px 0 12px;
+}
+
+.api-studio-tree-empty {
+  padding: 24px 0;
+}
+
+.api-studio-dir-block {
+  margin-bottom: 2px;
+}
+
+.api-studio-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.api-studio-dir-icon {
+  color: var(--app-primary);
+}
+
+.api-studio-dir-name {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ep-path {
-  color: var(--el-text-color-secondary);
-  font-family: monospace;
+.api-studio-dir-count {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--app-text-soft);
   font-size: 11px;
+  font-weight: 700;
 }
 
-.center {
-  background: var(--el-bg-color);
-  overflow-y: auto;
-  padding: 16px 24px;
+.api-studio-dir-actions {
+  display: inline-flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
 
-.empty {
-  height: 100%;
+.api-studio-dir-row:hover .api-studio-dir-actions {
+  opacity: 1;
+}
+
+.api-studio-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--app-text-soft);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.api-studio-icon-button:hover {
+  background: rgba(148, 163, 184, 0.18);
+  color: var(--app-text);
+}
+
+.api-studio-icon-button.danger:hover {
+  background: rgba(186, 26, 26, 0.12);
+  color: var(--app-danger);
+}
+
+.api-studio-icon-button.primary:hover {
+  background: rgba(144, 77, 0, 0.12);
+  color: var(--app-primary);
+}
+
+.api-studio-endpoint-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 30px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--app-text);
+  border-left: 2px solid transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.api-studio-endpoint-row:hover {
+  background: rgba(243, 244, 245, 0.65);
+}
+
+.api-studio-endpoint-row.active {
+  background: rgba(144, 77, 0, 0.08);
+  border-left-color: var(--app-primary-container);
+}
+
+.api-studio-method-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  min-width: 52px;
+  font-family: var(--app-font-heading);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #fff;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.api-studio-method-badge.large {
+  padding: 6px 10px;
+  font-size: 12px;
+  min-width: 64px;
+}
+
+.api-studio-endpoint-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.api-studio-endpoint-path {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  color: var(--app-text-soft);
+  font-size: 11px;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ===================== 中间编辑器 ===================== */
+
+.api-studio-editor-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 540px;
+  background: rgba(255, 255, 255, 0.98);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(25, 28, 29, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  overflow: hidden;
+}
+
+.api-studio-editor-empty {
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 360px;
 }
 
-.editor-header {
+.api-studio-editor-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--app-border);
+  background: rgba(243, 244, 245, 0.36);
+  flex-wrap: wrap;
+}
+
+.api-studio-editor-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.api-studio-editor-title-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.api-studio-editor-title-copy h2 {
+  margin: 0;
+  font-family: var(--app-font-heading);
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--app-text);
+  line-height: 1.3;
+}
+
+.api-studio-editor-path {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  color: var(--app-text-soft);
+  font-size: 12px;
+}
+
+.api-studio-editor-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.management-list-toolbar-button.danger {
+  color: var(--app-danger);
+}
+
+.management-list-toolbar-button.danger:hover {
+  background: rgba(186, 26, 26, 0.08);
+  border-color: rgba(186, 26, 26, 0.4);
+}
+
+.api-studio-editor-tabs {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.api-studio-editor-tabs :deep(.el-tabs__header) {
+  margin: 0;
+  padding: 0 20px;
+  background: transparent;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.api-studio-editor-tabs :deep(.el-tabs__nav-wrap)::after {
+  display: none;
+}
+
+.api-studio-editor-tabs :deep(.el-tabs__item) {
+  font-family: var(--app-font-heading);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 0 16px;
+  color: var(--app-text-soft);
+}
+
+.api-studio-editor-tabs :deep(.el-tabs__item.is-active) {
+  color: var(--app-text);
+}
+
+.api-studio-editor-tabs :deep(.el-tabs__content) {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 16px 20px 24px;
+}
+
+.api-studio-form-card {
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  padding: 18px 20px;
+  box-shadow: 0 1px 2px rgba(25, 28, 29, 0.03);
+}
+
+.api-studio-editor-form {
+  max-width: 760px;
+}
+
+.api-studio-section-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
 }
 
-.editor-header .path {
-  font-family: monospace;
-  color: var(--el-text-color-secondary);
+.api-studio-section-title {
+  font-family: var(--app-font-heading);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--app-text-soft);
 }
 
-.header-actions {
-  margin-left: auto;
+.api-studio-section-subtitle {
+  font-size: 12px;
+  color: var(--app-text-muted);
+}
+
+.api-studio-section-actions {
   display: flex;
   gap: 6px;
 }
 
-.editor-tabs {
-  background: var(--el-bg-color);
-}
-
-.editor-form {
-  max-width: 720px;
-}
-
-.param-toolbar {
-  margin-bottom: 12px;
-  display: flex;
-  gap: 8px;
-}
-
-.response-block {
-  border: 1px solid var(--el-border-color-light);
+.api-studio-inline-table {
   border-radius: 6px;
-  padding: 12px;
+  overflow: hidden;
+  border: 1px solid var(--app-border);
+}
+
+.api-studio-inline-table :deep(.el-table__header) {
+  background: rgba(243, 244, 245, 0.52);
+}
+
+.api-studio-response-block {
+  border: 1px solid var(--app-border);
+  background: rgba(248, 249, 250, 0.6);
+  border-radius: 8px;
+  padding: 14px 16px;
   margin-bottom: 12px;
 }
 
-.response-header {
+.api-studio-response-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
 }
 
-.debug-section {
-  max-width: 920px;
-}
-
-.debug-result {
-  margin-top: 16px;
-  padding: 12px;
-  background: var(--el-fill-color-lighter);
+.api-studio-debug-hint {
+  margin-bottom: 14px;
   border-radius: 6px;
 }
 
-.debug-result h4 {
-  margin: 0 0 8px;
+.api-studio-debug-run {
+  margin-top: 4px;
 }
 
-.result-meta {
+.api-studio-debug-result {
+  margin-top: 18px;
+  padding: 14px 16px;
+  background: rgba(248, 249, 250, 0.86);
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+}
+
+.api-studio-debug-result-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.api-studio-debug-meta {
+  font-size: 12px;
+  color: var(--app-text-soft);
+}
+
+.api-studio-debug-error {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background: rgba(186, 26, 26, 0.08);
+  border-radius: 6px;
+  color: var(--app-danger);
   font-size: 13px;
 }
 
-.error-msg {
-  color: var(--el-color-danger);
-  margin-bottom: 8px;
-}
-
-.final-url {
-  font-family: monospace;
+.api-studio-debug-url {
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  background: rgba(15, 23, 42, 0.04);
+  border-radius: 6px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 8px;
+  color: var(--app-text);
   word-break: break-all;
 }
 
-.env-layout {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-  padding: 0 16px;
+/* ===================== 环境管理抽屉 ===================== */
+
+.api-studio-env-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 0 4px 24px;
 }
 
-.env-item {
+.api-studio-env-list-section,
+.api-studio-env-editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.api-studio-env-item {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 1px 2px rgba(25, 28, 29, 0.03);
+}
+
+.api-studio-env-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.api-studio-env-name-line {
+  display: flex;
   align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  gap: 8px;
+  font-family: var(--app-font-heading);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--app-text);
 }
 
-.env-meta {
-  color: var(--el-text-color-secondary);
+.api-studio-env-meta {
+  color: var(--app-text-soft);
   font-size: 12px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  word-break: break-all;
 }
 
-.env-editor h4 {
-  margin: 0 0 12px;
+.api-studio-env-item-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.api-studio-env-editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 1024px) {
+  .api-studio-workbench-body {
+    grid-template-columns: 1fr;
+  }
+
+  .api-studio-tree-shell {
+    min-height: 360px;
+  }
 }
 </style>
