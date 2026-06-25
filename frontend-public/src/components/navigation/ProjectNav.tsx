@@ -16,7 +16,7 @@ import { cn } from '@/src/lib/utils'
 const projectTabs = [
   { path: '', label: '概览', icon: LayoutDashboard, exact: true },
   { path: 'planning', label: '计划', icon: CalendarRange, exact: false },
-  { path: 'knowledge', label: '知识', icon: BookOpen, exact: false },
+  { path: 'knowledge', label: '文档', icon: BookOpen, exact: false },
   { path: 'development', label: '研发', icon: Code2, exact: false },
   { path: 'execution', label: '测试与执行', icon: FlaskConical, exact: false },
   { path: 'release', label: '发布与观测', icon: Rocket, exact: false },

@@ -10,7 +10,6 @@ import {
   Edit,
   FolderOpened,
   Plus,
-  Promotion,
   RefreshRight,
   Search,
   Setting
@@ -23,6 +22,7 @@ import type {
   ApiStudioTreeNode,
   ApiStudioDebugExecutionPayload
 } from '@/types/api-studio'
+import MarkdownEditor from '@/components/MarkdownEditor.vue'
 
 // 原生 API 工作台 - 项目级三栏工作区。
 // 左：目录树 + API 列表；中：编辑器；右/下：调试与响应。
@@ -58,28 +58,76 @@ const newEndpointForm = ref<ApiStudioEndpointPayload>({
   responses: [{ statusCode: 200, contentType: 'application/json' }]
 })
 
+type KvEntry = { name: string; value: string }
+
 const envManagerVisible = ref(false)
 const editingEnvironment = ref<number | null>(null)
-const environmentForm = ref({
+const environmentForm = ref<{
+  name: string
+  baseUrl: string
+  authType: 'NONE' | 'BEARER' | 'API_KEY'
+  authBearerToken: string
+  authApiKeyHeader: string
+  authApiKeyValue: string
+  isDefault: boolean
+  commonHeaders: KvEntry[]
+  variables: Array<{ name: string; value: string; secret: boolean; description?: string | null }>
+}>({
   name: '',
   baseUrl: '',
-  authType: 'NONE' as 'NONE' | 'BEARER' | 'API_KEY',
-  authConfigJson: '',
+  authType: 'NONE',
+  authBearerToken: '',
+  authApiKeyHeader: 'X-Api-Key',
+  authApiKeyValue: '',
   isDefault: false,
-  variablesText: ''
+  commonHeaders: [],
+  variables: []
 })
 
 const debugForm = ref<{
-  pathOverrides: Record<string, string>
-  queryOverrides: Record<string, string>
-  headerOverrides: Record<string, string>
+  pathOverrides: KvEntry[]
+  queryOverrides: KvEntry[]
+  headerOverrides: KvEntry[]
   requestBody: string
 }>({
-  pathOverrides: {},
-  queryOverrides: {},
-  headerOverrides: {},
+  pathOverrides: [],
+  queryOverrides: [],
+  headerOverrides: [],
   requestBody: ''
 })
+
+// 把 KV 数组转成 Record<string,string>，丢掉空 name。
+const kvToRecord = (entries: KvEntry[]): Record<string, string> => {
+  const out: Record<string, string> = {}
+  for (const item of entries) {
+    if (item.name && item.name.trim()) {
+      out[item.name.trim()] = item.value ?? ''
+    }
+  }
+  return out
+}
+
+// JSON 美化；解析失败时原样返回。
+const tryFormatJson = (raw: string | null | undefined): { ok: boolean; text: string } => {
+  if (raw == null || raw === '') return { ok: true, text: '' }
+  try {
+    const obj = JSON.parse(raw)
+    return { ok: true, text: JSON.stringify(obj, null, 2) }
+  } catch (e: any) {
+    return { ok: false, text: e?.message ?? '无效 JSON' }
+  }
+}
+
+// 通用：把字符串字段格式化为美化 JSON；解析失败时弹出错误。
+const formatJsonField = (current: string | null | undefined, apply: (formatted: string) => void) => {
+  const result = tryFormatJson(current ?? '')
+  if (!result.ok) {
+    ElMessage.error('JSON 解析失败：' + result.text)
+    return
+  }
+  apply(result.text)
+  ElMessage.success('已格式化 JSON')
+}
 
 const activeEditorTab = ref<'basic' | 'params' | 'body' | 'responses' | 'debug' | 'versions'>('basic')
 
@@ -247,7 +295,7 @@ const submitNewEndpoint = async () => {
 const saveCurrent = async () => {
   if (!store.currentEndpoint) return
   const ep = store.currentEndpoint
-  const payload: ApiStudioEndpointPayload = {
+  const buildPayload = (revision: number | null): ApiStudioEndpointPayload => ({
     directoryId: ep.directoryId,
     name: ep.name,
     method: ep.method,
@@ -258,16 +306,31 @@ const saveCurrent = async () => {
     requestBodyType: ep.requestBodyType,
     requestBodySchemaJson: ep.requestBodySchemaJson,
     requestBodyExample: ep.requestBodyExample,
-    revision: ep.revision,
+    revision,
     parameters: ep.parameters,
     responses: ep.responses,
     changeSummary: 'Manual save'
-  }
+  })
   try {
-    await store.saveEndpoint(ep.id, payload)
+    await store.saveEndpoint(ep.id, buildPayload(ep.revision))
     ElMessage.success('已保存')
   } catch (e: any) {
-    ElMessage.error('保存失败: ' + (e?.response?.data?.message ?? e?.message))
+    const message = e?.response?.data?.message ?? e?.message ?? ''
+    // 乐观锁版本不一致时，自动重新拉取最新 revision 重试一次，避免用户被中间态卡住。
+    if (typeof message === 'string' && message.includes('接口已被其他会话修改')) {
+      try {
+        const fresh = await store.loadEndpoint(ep.id)
+        if (fresh) {
+          await store.saveEndpoint(ep.id, buildPayload(fresh.revision))
+          ElMessage.success('已保存（已自动同步最新版本）')
+          return
+        }
+      } catch (retryError: any) {
+        ElMessage.error('保存失败: ' + (retryError?.response?.data?.message ?? retryError?.message ?? message))
+        return
+      }
+    }
+    ElMessage.error('保存失败: ' + message)
   }
 }
 
@@ -293,6 +356,54 @@ const deprecateCurrent = async () => {
   await store.deprecateEndpoint(store.currentEndpoint.id)
   ElMessage.success('已标记废弃')
 }
+
+// 通过下拉选择切换 API 生命周期。
+// DRAFT → PUBLISHED 走 publish 接口（含同 method+path 冲突校验）
+// PUBLISHED/DRAFT → DEPRECATED 走 deprecate 接口
+// DEPRECATED/PUBLISHED → DRAFT 走整体保存
+// 每个分支都会让 store 用服务端最新返回覆盖 currentEndpoint，保证 revision 同步。
+const changeStatus = async (next: 'DRAFT' | 'PUBLISHED' | 'DEPRECATED') => {
+  if (!store.currentEndpoint) return
+  const endpointId = store.currentEndpoint.id
+  const current = store.currentEndpoint.status
+  if (current === next) return
+  try {
+    if (next === 'PUBLISHED') {
+      await store.publishEndpoint(endpointId)
+      // 显式重新拉取一遍，保险地把 revision 同步成 DB 最新值。
+      await store.loadEndpoint(endpointId)
+      ElMessage.success('已发布')
+      return
+    }
+    if (next === 'DEPRECATED') {
+      await store.deprecateEndpoint(endpointId)
+      await store.loadEndpoint(endpointId)
+      ElMessage.success('已标记废弃')
+      return
+    }
+    // 切回 DRAFT 通过整体保存（status 已经在本地修改）
+    store.currentEndpoint.status = 'DRAFT'
+    await saveCurrent()
+    await store.loadEndpoint(endpointId)
+  } catch (e: any) {
+    // 回滚下拉选中，并尝试同步最新 revision，避免连环失败
+    if (store.currentEndpoint) {
+      store.currentEndpoint.status = current
+    }
+    try {
+      await store.loadEndpoint(endpointId)
+    } catch (_ignored) {
+      /* 忽略二次错误 */
+    }
+    ElMessage.error('状态切换失败: ' + (e?.response?.data?.message ?? e?.message))
+  }
+}
+
+const statusOptionList = [
+  { value: 'DRAFT', label: '草稿' },
+  { value: 'PUBLISHED', label: '已发布' },
+  { value: 'DEPRECATED', label: '已废弃' }
+] as const
 
 // ========== 参数操作 ==========
 
@@ -339,22 +450,88 @@ const resetEnvForm = () => {
     name: '',
     baseUrl: '',
     authType: 'NONE',
-    authConfigJson: '',
+    authBearerToken: '',
+    authApiKeyHeader: 'X-Api-Key',
+    authApiKeyValue: '',
     isDefault: false,
-    variablesText: ''
+    commonHeaders: [],
+    variables: []
   }
 }
 
-const editEnvironment = (env: { id: number; name: string; baseUrl: string; authType: string; authConfigJson: string | null; isDefault: boolean; variables: Array<{ name: string; value: string | null }> }) => {
+const parseHeadersJson = (raw: string | null | undefined): KvEntry[] => {
+  if (!raw) return []
+  try {
+    const obj = JSON.parse(raw)
+    if (!obj || typeof obj !== 'object') return []
+    return Object.entries(obj).map(([name, value]) => ({ name, value: String(value ?? '') }))
+  } catch {
+    return []
+  }
+}
+
+const parseAuthConfig = (authType: string, raw: string | null | undefined) => {
+  const out = { bearer: '', apiKeyHeader: 'X-Api-Key', apiKeyValue: '' }
+  if (!raw) return out
+  try {
+    const obj = JSON.parse(raw) ?? {}
+    if (authType === 'BEARER') {
+      out.bearer = obj.token ?? ''
+    } else if (authType === 'API_KEY') {
+      out.apiKeyHeader = obj.headerName ?? 'X-Api-Key'
+      out.apiKeyValue = obj.value ?? ''
+    }
+  } catch {
+    /* ignore */
+  }
+  return out
+}
+
+const editEnvironment = (env: {
+  id: number
+  name: string
+  baseUrl: string
+  authType: string
+  authConfigJson: string | null
+  commonHeadersJson?: string | null
+  isDefault: boolean
+  variables: Array<{ id?: number | null; name: string; value: string | null; secret?: boolean; description?: string | null }>
+}) => {
   editingEnvironment.value = env.id
+  const authType = (env.authType as 'NONE' | 'BEARER' | 'API_KEY') ?? 'NONE'
+  const authParsed = parseAuthConfig(authType, env.authConfigJson)
   environmentForm.value = {
     name: env.name,
     baseUrl: env.baseUrl,
-    authType: env.authType as 'NONE' | 'BEARER' | 'API_KEY',
-    authConfigJson: env.authConfigJson ?? '',
+    authType,
+    authBearerToken: authParsed.bearer,
+    authApiKeyHeader: authParsed.apiKeyHeader,
+    authApiKeyValue: authParsed.apiKeyValue,
     isDefault: env.isDefault,
-    variablesText: env.variables.map((v) => `${v.name}=${v.value ?? ''}`).join('\n')
+    commonHeaders: parseHeadersJson(env.commonHeadersJson),
+    variables: (env.variables ?? []).map((v) => ({
+      name: v.name,
+      value: v.value ?? '',
+      secret: Boolean(v.secret),
+      description: v.description ?? ''
+    }))
   }
+}
+
+const addCommonHeader = () => {
+  environmentForm.value.commonHeaders.push({ name: '', value: '' })
+}
+
+const removeCommonHeader = (idx: number) => {
+  environmentForm.value.commonHeaders.splice(idx, 1)
+}
+
+const addEnvVariable = () => {
+  environmentForm.value.variables.push({ name: '', value: '', secret: false })
+}
+
+const removeEnvVariable = (idx: number) => {
+  environmentForm.value.variables.splice(idx, 1)
 }
 
 const submitEnvironment = async () => {
@@ -362,23 +539,38 @@ const submitEnvironment = async () => {
     ElMessage.warning('请填写名称和 baseUrl')
     return
   }
-  const variables = environmentForm.value.variablesText
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && line.includes('='))
-    .map((line) => {
-      const idx = line.indexOf('=')
-      return {
-        name: line.slice(0, idx).trim(),
-        value: line.slice(idx + 1),
-        secret: false
-      }
-    })
+  // 公共 Header 序列化成 JSON 字符串
+  const headerRecord = kvToRecord(environmentForm.value.commonHeaders)
+  const commonHeadersJson = Object.keys(headerRecord).length ? JSON.stringify(headerRecord) : null
+
+  // 认证配置序列化
+  let authConfigJson: string | null = null
+  if (environmentForm.value.authType === 'BEARER' && environmentForm.value.authBearerToken.trim()) {
+    authConfigJson = JSON.stringify({ token: environmentForm.value.authBearerToken.trim() })
+  } else if (environmentForm.value.authType === 'API_KEY') {
+    const header = environmentForm.value.authApiKeyHeader.trim() || 'X-Api-Key'
+    const value = environmentForm.value.authApiKeyValue.trim()
+    if (value) {
+      authConfigJson = JSON.stringify({ headerName: header, value })
+    }
+  }
+
+  // 过滤空变量名
+  const variables = environmentForm.value.variables
+    .filter((v) => v.name && v.name.trim())
+    .map((v) => ({
+      name: v.name.trim(),
+      value: v.value,
+      secret: Boolean(v.secret),
+      description: v.description ?? null
+    }))
+
   const payload = {
     name: environmentForm.value.name.trim(),
     baseUrl: environmentForm.value.baseUrl.trim(),
     authType: environmentForm.value.authType,
-    authConfigJson: environmentForm.value.authConfigJson.trim() || null,
+    authConfigJson,
+    commonHeadersJson,
     isDefault: environmentForm.value.isDefault,
     variables
   }
@@ -409,6 +601,25 @@ const setEnvDefault = async (envId: number) => {
 
 // ========== 调试 ==========
 
+const addDebugHeader = () => {
+  debugForm.value.headerOverrides.push({ name: '', value: '' })
+}
+const removeDebugHeader = (idx: number) => {
+  debugForm.value.headerOverrides.splice(idx, 1)
+}
+const addDebugQuery = () => {
+  debugForm.value.queryOverrides.push({ name: '', value: '' })
+}
+const removeDebugQuery = (idx: number) => {
+  debugForm.value.queryOverrides.splice(idx, 1)
+}
+const addDebugPath = () => {
+  debugForm.value.pathOverrides.push({ name: '', value: '' })
+}
+const removeDebugPath = (idx: number) => {
+  debugForm.value.pathOverrides.splice(idx, 1)
+}
+
 const runDebug = async () => {
   if (!store.currentEndpoint) return
   if (!store.selectedEnvironmentId) {
@@ -417,9 +628,9 @@ const runDebug = async () => {
   }
   const payload: ApiStudioDebugExecutionPayload = {
     environmentId: store.selectedEnvironmentId,
-    pathOverrides: debugForm.value.pathOverrides,
-    queryOverrides: debugForm.value.queryOverrides,
-    headerOverrides: debugForm.value.headerOverrides,
+    pathOverrides: kvToRecord(debugForm.value.pathOverrides),
+    queryOverrides: kvToRecord(debugForm.value.queryOverrides),
+    headerOverrides: kvToRecord(debugForm.value.headerOverrides),
     requestBody: debugForm.value.requestBody || undefined
   }
   try {
@@ -430,6 +641,17 @@ const runDebug = async () => {
     ElMessage.error('调试失败: ' + (e?.response?.data?.message ?? e?.message))
   }
 }
+
+// 美化调试响应体（仅本地显示用，不影响存档快照）。
+const prettyResponseBody = computed(() => {
+  const raw = store.debugResult?.responseBody ?? ''
+  const result = tryFormatJson(raw)
+  return result.ok ? result.text : raw
+})
+const responseBodyMode = ref<'pretty' | 'raw'>('pretty')
+
+// Vue 模板里直接写 {{baseUrl}} 会被当成插值，这里用常量绕开。
+const varRefSyntax = '{{baseUrl}}'
 
 // ========== 版本 ==========
 
@@ -449,61 +671,21 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
 
 <template>
   <div class="api-studio-workbench">
-    <!-- 顶部工具栏 -->
-    <section class="management-list-toolbar api-studio-workbench-toolbar">
-      <div class="management-list-toolbar-main">
-        <button class="management-list-toolbar-button" type="button" @click="backToHome">
-          <el-icon><ArrowLeft /></el-icon>
-          <span>项目列表</span>
-        </button>
-
-        <span class="management-list-toolbar-divider" aria-hidden="true"></span>
-
-        <div class="api-studio-workbench-title">
-          <span class="api-studio-workbench-kicker">API 工作台</span>
-          <div v-if="store.overview" class="api-studio-workbench-meta">
-            <span class="management-list-chip">目录 {{ store.overview.directoryCount }}</span>
-            <span class="management-list-chip">API {{ store.overview.endpointCount }}</span>
-            <span class="management-list-chip">环境 {{ store.overview.environmentCount }}</span>
-            <span v-if="store.overview.defaultEnvironmentName" class="management-list-pill success">
-              默认 {{ store.overview.defaultEnvironmentName }}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div class="management-list-toolbar-side">
-        <el-select
-          v-model="store.selectedEnvironmentId"
-          placeholder="选择调试环境"
-          clearable
-          size="default"
-          class="api-studio-env-select"
-        >
-          <el-option
-            v-for="env in store.environments"
-            :key="env.id"
-            :label="env.name + (env.isDefault ? ' (默认)' : '')"
-            :value="env.id"
-          />
-        </el-select>
-        <button class="management-list-toolbar-button" type="button" @click="openEnvironments">
-          <el-icon><Setting /></el-icon>
-          <span>环境管理</span>
-        </button>
-      </div>
-    </section>
-
     <div class="api-studio-workbench-body">
       <!-- 左侧目录树 -->
       <aside class="api-studio-tree-shell" v-loading="store.treeLoading">
         <header class="api-studio-tree-header">
-          <div class="api-studio-tree-header-title">
-            <el-icon><FolderOpened /></el-icon>
-            <span>目录与 API</span>
-          </div>
+          <button
+            class="api-studio-back-button"
+            type="button"
+            :title="store.overview?.projectName || '返回项目列表'"
+            @click="backToHome"
+          >
+            <el-icon><ArrowLeft /></el-icon>
+            <span>项目列表</span>
+          </button>
           <div class="api-studio-tree-header-actions">
-            <button class="management-list-toolbar-button" type="button" @click="openNewDir(null)">
+            <button class="management-list-toolbar-button" type="button" @click="openNewDir(null)" title="新建目录">
               <el-icon><Plus /></el-icon>
               <span>目录</span>
             </button>
@@ -532,19 +714,39 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
             v-for="ep in filteredRootEndpoints"
             :key="'root-ep-' + ep.id"
             class="api-studio-endpoint-row"
-            :class="{ active: store.currentEndpoint?.id === ep.id }"
+            :class="[
+              'is-status-' + (ep.status || 'DRAFT').toLowerCase(),
+              { active: store.currentEndpoint?.id === ep.id }
+            ]"
             @click="selectEndpoint(ep.id)"
           >
             <span class="api-studio-method-badge" :style="{ background: methodColor(ep.method) }">{{ ep.method }}</span>
-            <span class="api-studio-endpoint-name">{{ ep.name }}</span>
-            <span class="api-studio-endpoint-path">{{ ep.path }}</span>
+            <el-tooltip
+              :content="ep.name + ' · ' + ep.path"
+              placement="right"
+              :show-after="400"
+              :hide-after="0"
+            >
+              <span class="api-studio-endpoint-text">
+                <span class="api-studio-endpoint-name">{{ ep.name }}</span>
+                <span class="api-studio-endpoint-path">{{ ep.path }}</span>
+              </span>
+            </el-tooltip>
+            <span class="api-studio-status-dot" :class="'is-' + (ep.status || 'DRAFT').toLowerCase()" :title="statusLabel(ep.status)"></span>
           </div>
 
           <!-- 目录递归 -->
           <div v-for="entry in flatNodes" :key="'dir-' + entry.node.directory.id" class="api-studio-dir-block">
             <div class="api-studio-dir-row" :style="{ paddingLeft: 12 + entry.depth * 16 + 'px' }">
               <el-icon class="api-studio-dir-icon"><FolderOpened /></el-icon>
-              <span class="api-studio-dir-name">{{ entry.node.directory.name }}</span>
+              <el-tooltip
+                :content="entry.node.directory.name"
+                placement="right"
+                :show-after="400"
+                :hide-after="0"
+              >
+                <span class="api-studio-dir-name">{{ entry.node.directory.name }}</span>
+              </el-tooltip>
               <span class="api-studio-dir-count">{{ entry.node.endpoints.length }}</span>
               <span class="api-studio-dir-actions">
                 <button
@@ -577,13 +779,26 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
               v-for="ep in filterEndpointsOf(entry.node)"
               :key="'ep-' + ep.id"
               class="api-studio-endpoint-row"
-              :class="{ active: store.currentEndpoint?.id === ep.id }"
+              :class="[
+                'is-status-' + (ep.status || 'DRAFT').toLowerCase(),
+                { active: store.currentEndpoint?.id === ep.id }
+              ]"
               :style="{ paddingLeft: 30 + entry.depth * 16 + 'px' }"
               @click="selectEndpoint(ep.id)"
             >
               <span class="api-studio-method-badge" :style="{ background: methodColor(ep.method) }">{{ ep.method }}</span>
-              <span class="api-studio-endpoint-name">{{ ep.name }}</span>
-              <span class="api-studio-endpoint-path">{{ ep.path }}</span>
+              <el-tooltip
+                :content="ep.name + ' · ' + ep.path"
+                placement="right"
+                :show-after="400"
+                :hide-after="0"
+              >
+                <span class="api-studio-endpoint-text">
+                  <span class="api-studio-endpoint-name">{{ ep.name }}</span>
+                  <span class="api-studio-endpoint-path">{{ ep.path }}</span>
+                </span>
+              </el-tooltip>
+              <span class="api-studio-status-dot" :class="'is-' + (ep.status || 'DRAFT').toLowerCase()" :title="statusLabel(ep.status)"></span>
             </div>
           </div>
 
@@ -612,22 +827,47 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
                 {{ store.currentEndpoint.method }}
               </span>
               <div class="api-studio-editor-title-copy">
-                <h2>{{ store.currentEndpoint.name || '未命名 API' }}</h2>
-                <span class="api-studio-editor-path">{{ store.currentEndpoint.path }}</span>
+                <el-tooltip
+                  :content="store.currentEndpoint.name || '未命名 API'"
+                  placement="bottom-start"
+                  :show-after="400"
+                  :hide-after="0"
+                >
+                  <h2>{{ store.currentEndpoint.name || '未命名 API' }}</h2>
+                </el-tooltip>
+                <el-tooltip
+                  :content="store.currentEndpoint.path"
+                  placement="bottom-start"
+                  :show-after="400"
+                  :hide-after="0"
+                >
+                  <span class="api-studio-editor-path">{{ store.currentEndpoint.path }}</span>
+                </el-tooltip>
               </div>
-              <span class="management-list-pill" :class="statusTone(store.currentEndpoint.status)">
-                {{ statusLabel(store.currentEndpoint.status) }}
-              </span>
+              <el-select
+                :model-value="store.currentEndpoint.status"
+                size="default"
+                class="api-studio-status-select"
+                :class="'api-studio-status-select-' + (store.currentEndpoint.status || 'DRAFT').toLowerCase()"
+                @change="(val: 'DRAFT' | 'PUBLISHED' | 'DEPRECATED') => changeStatus(val)"
+              >
+                <template #prefix>
+                  <span class="api-studio-status-dot" :class="'is-' + (store.currentEndpoint.status || 'DRAFT').toLowerCase()" />
+                </template>
+                <el-option
+                  v-for="opt in statusOptionList"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                >
+                  <span class="api-studio-status-option">
+                    <span class="api-studio-status-dot" :class="'is-' + opt.value.toLowerCase()" />
+                    <span>{{ opt.label }}</span>
+                  </span>
+                </el-option>
+              </el-select>
             </div>
             <div class="api-studio-editor-actions">
-              <button class="management-list-toolbar-button" type="button" @click="publishCurrent" :disabled="store.currentEndpoint.status === 'PUBLISHED'">
-                <el-icon><Promotion /></el-icon>
-                <span>发布</span>
-              </button>
-              <button class="management-list-toolbar-button" type="button" @click="deprecateCurrent" :disabled="store.currentEndpoint.status === 'DEPRECATED'">
-                <el-icon><RefreshRight /></el-icon>
-                <span>废弃</span>
-              </button>
               <button class="management-list-toolbar-button danger" type="button" @click="removeCurrent">
                 <el-icon><Delete /></el-icon>
                 <span>删除</span>
@@ -635,6 +875,25 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
               <button class="management-list-create-button" type="button" @click="saveCurrent">
                 <el-icon><Edit /></el-icon>
                 <span>保存</span>
+              </button>
+              <span class="api-studio-editor-actions-divider" aria-hidden="true"></span>
+              <el-select
+                v-model="store.selectedEnvironmentId"
+                placeholder="选择调试环境"
+                clearable
+                size="default"
+                class="api-studio-env-select"
+              >
+                <el-option
+                  v-for="env in store.environments"
+                  :key="env.id"
+                  :label="env.name + (env.isDefault ? ' (默认)' : '')"
+                  :value="env.id"
+                />
+              </el-select>
+              <button class="management-list-toolbar-button" type="button" @click="openEnvironments">
+                <el-icon><Setting /></el-icon>
+                <span>环境管理</span>
               </button>
             </div>
           </header>
@@ -654,16 +913,17 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
                   <el-form-item label="路径">
                     <el-input v-model="store.currentEndpoint.path" placeholder="/users/{id}" />
                   </el-form-item>
-                  <el-form-item label="状态">
-                    <el-select v-model="store.currentEndpoint.status" style="width: 200px">
-                      <el-option v-for="s in statusOptions" :key="s" :label="statusLabel(s)" :value="s" />
-                    </el-select>
-                  </el-form-item>
                   <el-form-item label="摘要">
                     <el-input v-model="store.currentEndpoint.summary" placeholder="一句话描述这个接口的用途" />
                   </el-form-item>
                   <el-form-item label="详细说明">
-                    <el-input v-model="store.currentEndpoint.descriptionMarkdown" type="textarea" :rows="6" placeholder="Markdown 描述" />
+                    <MarkdownEditor
+                      :model-value="store.currentEndpoint.descriptionMarkdown ?? ''"
+                      @update:modelValue="(val: string) => { if (store.currentEndpoint) store.currentEndpoint.descriptionMarkdown = val }"
+                      :height="320"
+                      :start-in-edit-mode="true"
+                      placeholder="支持 Markdown，双击预览/进入编辑"
+                    />
                   </el-form-item>
                 </el-form>
               </div>
@@ -732,10 +992,32 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
                     </el-select>
                   </el-form-item>
                   <el-form-item label="Body 示例">
-                    <el-input v-model="store.currentEndpoint.requestBodyExample" type="textarea" :rows="10" placeholder="例如 JSON 请求体示例" />
+                    <div class="api-studio-textarea-block">
+                      <div class="api-studio-textarea-toolbar">
+                        <button
+                          type="button"
+                          class="management-list-toolbar-button"
+                          @click="formatJsonField(store.currentEndpoint.requestBodyExample, (v) => (store.currentEndpoint!.requestBodyExample = v))"
+                        >
+                          <span>格式化 JSON</span>
+                        </button>
+                      </div>
+                      <el-input v-model="store.currentEndpoint.requestBodyExample" type="textarea" :rows="10" placeholder="例如 JSON 请求体示例" class="api-studio-mono-textarea" />
+                    </div>
                   </el-form-item>
                   <el-form-item label="结构 (JSON)">
-                    <el-input v-model="store.currentEndpoint.requestBodySchemaJson" type="textarea" :rows="6" placeholder="可选：保存 JSON Schema 或结构化字段树" />
+                    <div class="api-studio-textarea-block">
+                      <div class="api-studio-textarea-toolbar">
+                        <button
+                          type="button"
+                          class="management-list-toolbar-button"
+                          @click="formatJsonField(store.currentEndpoint.requestBodySchemaJson, (v) => (store.currentEndpoint!.requestBodySchemaJson = v))"
+                        >
+                          <span>格式化 JSON</span>
+                        </button>
+                      </div>
+                      <el-input v-model="store.currentEndpoint.requestBodySchemaJson" type="textarea" :rows="6" placeholder="可选：保存 JSON Schema 或结构化字段树" class="api-studio-mono-textarea" />
+                    </div>
                   </el-form-item>
                 </el-form>
               </div>
@@ -766,7 +1048,18 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
                     </button>
                   </div>
                   <el-input v-model="resp.description" placeholder="响应说明" size="small" style="margin-bottom: 8px" />
-                  <el-input v-model="resp.exampleBody" type="textarea" :rows="6" placeholder="响应示例 JSON" />
+                  <div class="api-studio-textarea-block">
+                    <div class="api-studio-textarea-toolbar">
+                      <button
+                        type="button"
+                        class="management-list-toolbar-button"
+                        @click="formatJsonField(resp.exampleBody, (v) => (resp.exampleBody = v))"
+                      >
+                        <span>格式化 JSON</span>
+                      </button>
+                    </div>
+                    <el-input v-model="resp.exampleBody" type="textarea" :rows="6" placeholder="响应示例 JSON" class="api-studio-mono-textarea" />
+                  </div>
                 </div>
                 <el-empty v-if="!store.currentEndpoint.responses.length" :image-size="64" description="尚未定义响应" />
               </div>
@@ -780,7 +1073,7 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
                   show-icon
                   class="api-studio-debug-hint"
                 >
-                  调试请求由平台后端代理发出，仅允许访问所选环境 baseUrl 同源目标。
+                  调试请求由平台后端代理发出，仅允许访问所选环境 baseUrl 同源目标。Header / Query / Path 临时覆盖优先级高于 API 定义与环境公共值。
                 </el-alert>
                 <el-form label-width="120px">
                   <el-form-item label="环境">
@@ -793,24 +1086,100 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
                       />
                     </el-select>
                   </el-form-item>
-                  <el-form-item label="临时 Body">
-                    <el-input
-                      v-model="debugForm.requestBody"
-                      type="textarea"
-                      :rows="6"
-                      placeholder="临时覆盖请求体（留空则使用 API 定义中的示例）"
-                    />
-                  </el-form-item>
                 </el-form>
-                <button
-                  class="management-list-create-button api-studio-debug-run"
-                  type="button"
-                  :disabled="store.debugRunning"
-                  @click="runDebug"
-                >
-                  <el-icon><Connection /></el-icon>
-                  <span>{{ store.debugRunning ? '发送中...' : '发送请求' }}</span>
-                </button>
+
+                <!-- 临时 Header 覆盖 -->
+                <div class="api-studio-section-toolbar">
+                  <span class="api-studio-section-title">临时 Header</span>
+                  <div class="api-studio-section-actions">
+                    <button class="management-list-toolbar-button" type="button" @click="addDebugHeader">
+                      <el-icon><Plus /></el-icon><span>添加 Header</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="api-studio-kv-table">
+                  <div v-if="!debugForm.headerOverrides.length" class="api-studio-kv-empty">未配置临时 Header（将使用 API 与环境公共 Header）</div>
+                  <div v-for="(row, idx) in debugForm.headerOverrides" :key="'dbgh-' + idx" class="api-studio-kv-row">
+                    <el-input v-model="row.name" placeholder="Header 名" size="small" class="api-studio-kv-name" />
+                    <el-input v-model="row.value" placeholder="Header 值（支持 {{var}}）" size="small" class="api-studio-kv-value" />
+                    <button class="api-studio-icon-button danger" type="button" title="删除" @click="removeDebugHeader(idx)">
+                      <el-icon><Delete /></el-icon>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 临时 Query 覆盖 -->
+                <div class="api-studio-section-toolbar">
+                  <span class="api-studio-section-title">临时 Query</span>
+                  <div class="api-studio-section-actions">
+                    <button class="management-list-toolbar-button" type="button" @click="addDebugQuery">
+                      <el-icon><Plus /></el-icon><span>添加 Query</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="api-studio-kv-table">
+                  <div v-if="!debugForm.queryOverrides.length" class="api-studio-kv-empty">未配置临时 Query</div>
+                  <div v-for="(row, idx) in debugForm.queryOverrides" :key="'dbgq-' + idx" class="api-studio-kv-row">
+                    <el-input v-model="row.name" placeholder="Query 名" size="small" class="api-studio-kv-name" />
+                    <el-input v-model="row.value" placeholder="Query 值（支持 {{var}}）" size="small" class="api-studio-kv-value" />
+                    <button class="api-studio-icon-button danger" type="button" title="删除" @click="removeDebugQuery(idx)">
+                      <el-icon><Delete /></el-icon>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 临时 Path 变量 -->
+                <div class="api-studio-section-toolbar">
+                  <span class="api-studio-section-title">Path 参数</span>
+                  <div class="api-studio-section-actions">
+                    <button class="management-list-toolbar-button" type="button" @click="addDebugPath">
+                      <el-icon><Plus /></el-icon><span>添加 Path</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="api-studio-kv-table">
+                  <div v-if="!debugForm.pathOverrides.length" class="api-studio-kv-empty">未配置 Path 覆盖（将使用参数定义中的默认/示例值）</div>
+                  <div v-for="(row, idx) in debugForm.pathOverrides" :key="'dbgp-' + idx" class="api-studio-kv-row">
+                    <el-input v-model="row.name" placeholder="参数名（例：id）" size="small" class="api-studio-kv-name" />
+                    <el-input v-model="row.value" placeholder="值" size="small" class="api-studio-kv-value" />
+                    <button class="api-studio-icon-button danger" type="button" title="删除" @click="removeDebugPath(idx)">
+                      <el-icon><Delete /></el-icon>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- 临时 Body -->
+                <div class="api-studio-section-toolbar">
+                  <span class="api-studio-section-title">临时 Body</span>
+                  <div class="api-studio-section-actions">
+                    <button
+                      type="button"
+                      class="management-list-toolbar-button"
+                      @click="formatJsonField(debugForm.requestBody, (v) => (debugForm.requestBody = v))"
+                    >
+                      <span>格式化 JSON</span>
+                    </button>
+                  </div>
+                </div>
+                <el-input
+                  v-model="debugForm.requestBody"
+                  type="textarea"
+                  :rows="8"
+                  placeholder="临时覆盖请求体（留空则使用 API 定义中的示例）"
+                  class="api-studio-mono-textarea"
+                />
+
+                <div class="api-studio-debug-runbar">
+                  <button
+                    class="management-list-create-button api-studio-debug-run"
+                    type="button"
+                    :disabled="store.debugRunning"
+                    @click="runDebug"
+                  >
+                    <el-icon><Connection /></el-icon>
+                    <span>{{ store.debugRunning ? '发送中...' : '发送请求' }}</span>
+                  </button>
+                </div>
 
                 <div v-if="store.debugResult" class="api-studio-debug-result">
                   <div class="api-studio-debug-result-head">
@@ -820,16 +1189,23 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
                     <span class="api-studio-debug-meta">{{ store.debugResult.durationMillis }} ms</span>
                     <span class="api-studio-debug-meta">{{ store.debugResult.responseBytes }} bytes</span>
                     <span v-if="store.debugResult.responseTruncated" class="management-list-pill warning">已截断</span>
+                    <div class="api-studio-debug-result-tools">
+                      <el-radio-group v-model="responseBodyMode" size="small">
+                        <el-radio-button label="pretty">美化</el-radio-button>
+                        <el-radio-button label="raw">原始</el-radio-button>
+                      </el-radio-group>
+                    </div>
                   </div>
                   <div v-if="store.debugResult.errorMessage" class="api-studio-debug-error">
                     {{ store.debugResult.errorMessage }}
                   </div>
                   <div class="api-studio-debug-url">{{ store.debugResult.finalUrl }}</div>
                   <el-input
-                    :model-value="store.debugResult.responseBody"
+                    :model-value="responseBodyMode === 'pretty' ? prettyResponseBody : store.debugResult.responseBody"
                     type="textarea"
                     :rows="14"
                     readonly
+                    class="api-studio-mono-textarea"
                   />
                 </div>
               </div>
@@ -936,26 +1312,73 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
                 <el-option label="API_KEY" value="API_KEY" />
               </el-select>
             </el-form-item>
-            <el-form-item label="认证配置 JSON">
+            <el-form-item v-if="environmentForm.authType === 'BEARER'" label="Bearer Token">
               <el-input
-                v-model="environmentForm.authConfigJson"
-                type="textarea"
-                :rows="3"
-                placeholder='Bearer: {"token":"xxx"} · API_KEY: {"headerName":"X-Api-Key","value":"xxx"}'
+                v-model="environmentForm.authBearerToken"
+                placeholder="将作为 Authorization: Bearer <token> 注入"
+                show-password
               />
             </el-form-item>
-            <el-form-item label="变量 (k=v)">
-              <el-input
-                v-model="environmentForm.variablesText"
-                type="textarea"
-                :rows="6"
-                placeholder="每行 name=value"
-              />
-            </el-form-item>
+            <template v-if="environmentForm.authType === 'API_KEY'">
+              <el-form-item label="API Key Header">
+                <el-input v-model="environmentForm.authApiKeyHeader" placeholder="X-Api-Key" />
+              </el-form-item>
+              <el-form-item label="API Key 值">
+                <el-input v-model="environmentForm.authApiKeyValue" placeholder="密钥值" show-password />
+              </el-form-item>
+            </template>
             <el-form-item label="默认环境">
               <el-switch v-model="environmentForm.isDefault" />
             </el-form-item>
           </el-form>
+
+          <!-- 公共请求头 -->
+          <div class="api-studio-section-toolbar">
+            <span class="api-studio-section-title">公共请求头</span>
+            <div class="api-studio-section-actions">
+              <button class="management-list-toolbar-button" type="button" @click="addCommonHeader">
+                <el-icon><Plus /></el-icon><span>添加 Header</span>
+              </button>
+            </div>
+          </div>
+          <div class="api-studio-kv-table">
+            <div v-if="!environmentForm.commonHeaders.length" class="api-studio-kv-empty">尚未配置公共请求头，调试时不会自动注入。</div>
+            <div v-for="(row, idx) in environmentForm.commonHeaders" :key="'envh-' + idx" class="api-studio-kv-row">
+              <el-input v-model="row.name" placeholder="Header 名（例：Accept）" size="small" class="api-studio-kv-name" />
+              <el-input v-model="row.value" placeholder="Header 值（支持 {{var}}）" size="small" class="api-studio-kv-value" />
+              <button class="api-studio-icon-button danger" type="button" title="删除" @click="removeCommonHeader(idx)">
+                <el-icon><Delete /></el-icon>
+              </button>
+            </div>
+          </div>
+
+          <!-- 环境变量 -->
+          <div class="api-studio-section-toolbar">
+            <span class="api-studio-section-title">环境变量</span>
+            <div class="api-studio-section-actions">
+              <button class="management-list-toolbar-button" type="button" @click="addEnvVariable">
+                <el-icon><Plus /></el-icon><span>添加变量</span>
+              </button>
+            </div>
+          </div>
+          <div class="api-studio-kv-table">
+            <div v-if="!environmentForm.variables.length" class="api-studio-kv-empty">尚未配置环境变量。内置 baseUrl 变量始终可用，可在 URL/Header/Body 中通过 {{ varRefSyntax }} 形式引用。</div>
+            <div v-for="(row, idx) in environmentForm.variables" :key="'envv-' + idx" class="api-studio-kv-row">
+              <el-input v-model="row.name" placeholder="变量名" size="small" class="api-studio-kv-name" />
+              <el-input
+                v-model="row.value"
+                :placeholder="row.secret ? '修改可重新设置；留空保持原值' : '值'"
+                :show-password="row.secret"
+                size="small"
+                class="api-studio-kv-value"
+              />
+              <el-checkbox v-model="row.secret" class="api-studio-kv-secret">敏感</el-checkbox>
+              <button class="api-studio-icon-button danger" type="button" title="删除" @click="removeEnvVariable(idx)">
+                <el-icon><Delete /></el-icon>
+              </button>
+            </div>
+          </div>
+
           <div class="api-studio-env-editor-footer">
             <button class="management-list-create-button" type="button" @click="submitEnvironment">
               <el-icon><Document /></el-icon>
@@ -973,43 +1396,19 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
 .api-studio-workbench {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 0;
   min-height: 100%;
 }
 
-.api-studio-workbench-toolbar {
-  margin-bottom: 0;
-}
-
-.api-studio-workbench-title {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.api-studio-workbench-kicker {
-  width: fit-content;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(144, 77, 0, 0.08);
-  color: var(--app-primary);
-  font-family: var(--app-font-heading);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.api-studio-workbench-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-
 .api-studio-env-select {
-  width: 220px;
+  width: 200px;
+}
+
+.api-studio-editor-actions-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--app-border);
+  margin: 0 4px;
 }
 
 .api-studio-workbench-body {
@@ -1044,16 +1443,27 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
   background: rgba(243, 244, 245, 0.52);
 }
 
-.api-studio-tree-header-title {
-  display: flex;
+.api-studio-back-button {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
   font-family: var(--app-font-heading);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #94a3b8;
+  letter-spacing: 0.08em;
+  color: var(--app-text);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.api-studio-back-button:hover {
+  background: rgba(148, 163, 184, 0.18);
+  border-color: var(--app-border);
+  color: var(--app-primary);
 }
 
 .api-studio-tree-header-actions {
@@ -1092,6 +1502,7 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
   font-size: 13px;
   font-weight: 600;
   color: var(--app-text);
+  min-width: 0;
 }
 
 .api-studio-dir-icon {
@@ -1166,6 +1577,7 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
   color: var(--app-text);
   border-left: 2px solid transparent;
   transition: background 0.15s ease, border-color 0.15s ease;
+  min-width: 0;
 }
 
 .api-studio-endpoint-row:hover {
@@ -1183,6 +1595,7 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
   justify-content: center;
   padding: 2px 6px;
   min-width: 52px;
+  flex: 0 0 auto;
   font-family: var(--app-font-heading);
   font-size: 10px;
   font-weight: 800;
@@ -1198,22 +1611,161 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
   min-width: 64px;
 }
 
+.api-studio-endpoint-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .api-studio-endpoint-name {
-  flex: 1;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 600;
+  min-width: 0;
 }
 
 .api-studio-endpoint-path {
   font-family: "JetBrains Mono", "Fira Code", monospace;
   color: var(--app-text-soft);
   font-size: 11px;
-  max-width: 50%;
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ===== 状态指示 ===== */
+.api-studio-status-dot {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.6);
+  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.15);
+}
+
+.api-studio-status-dot.is-draft {
+  background: #d4a300;
+  box-shadow: 0 0 0 2px rgba(212, 163, 0, 0.18);
+}
+
+.api-studio-status-dot.is-published {
+  background: var(--app-success, #3d6f38);
+  box-shadow: 0 0 0 2px rgba(61, 111, 56, 0.2);
+}
+
+.api-studio-status-dot.is-deprecated {
+  background: var(--app-text-muted, #758393);
+  box-shadow: 0 0 0 2px rgba(117, 131, 147, 0.2);
+}
+
+/* 草稿：黄色描边 + 黄色名字 */
+.api-studio-endpoint-row.is-status-draft .api-studio-endpoint-name {
+  color: #9d5b00;
+}
+
+.api-studio-endpoint-row.is-status-draft.active {
+  background: rgba(212, 163, 0, 0.08);
+  border-left-color: #d4a300;
+}
+
+/* 已发布：绿色名字 + 加粗 */
+.api-studio-endpoint-row.is-status-published .api-studio-endpoint-name {
+  color: var(--app-success, #3d6f38);
+  font-weight: 700;
+}
+
+.api-studio-endpoint-row.is-status-published.active {
+  background: rgba(61, 111, 56, 0.08);
+  border-left-color: var(--app-success, #3d6f38);
+}
+
+/* 已废弃：删除线 + 灰色 + 整体降透明 */
+.api-studio-endpoint-row.is-status-deprecated {
+  opacity: 0.6;
+}
+
+.api-studio-endpoint-row.is-status-deprecated .api-studio-method-badge {
+  filter: grayscale(0.7);
+}
+
+.api-studio-endpoint-row.is-status-deprecated .api-studio-endpoint-name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  color: var(--app-text-muted, #758393);
+}
+
+.api-studio-endpoint-row.is-status-deprecated .api-studio-endpoint-path {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  color: var(--app-text-muted, #758393);
+}
+
+.api-studio-endpoint-row.is-status-deprecated.active {
+  background: rgba(117, 131, 147, 0.1);
+  border-left-color: var(--app-text-muted, #758393);
+  opacity: 0.85;
+}
+
+/* ===== 编辑器头部的状态下拉 ===== */
+.api-studio-status-select {
+  width: 140px;
+}
+
+.api-studio-status-select :deep(.el-input__wrapper) {
+  border-radius: 999px;
+  padding-inline: 12px;
+  box-shadow: none;
+  border: 1px solid var(--app-border);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.api-studio-status-select :deep(.el-input__inner) {
+  font-family: var(--app-font-heading);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.api-studio-status-select-draft :deep(.el-input__wrapper) {
+  background: rgba(212, 163, 0, 0.12);
+  border-color: rgba(212, 163, 0, 0.4);
+}
+
+.api-studio-status-select-draft :deep(.el-input__inner) {
+  color: #9d5b00;
+}
+
+.api-studio-status-select-published :deep(.el-input__wrapper) {
+  background: rgba(61, 111, 56, 0.12);
+  border-color: rgba(61, 111, 56, 0.4);
+}
+
+.api-studio-status-select-published :deep(.el-input__inner) {
+  color: var(--app-success, #3d6f38);
+}
+
+.api-studio-status-select-deprecated :deep(.el-input__wrapper) {
+  background: rgba(117, 131, 147, 0.16);
+  border-color: rgba(117, 131, 147, 0.4);
+}
+
+.api-studio-status-select-deprecated :deep(.el-input__inner) {
+  color: var(--app-text-muted, #758393);
+}
+
+.api-studio-status-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* ===================== 中间编辑器 ===================== */
@@ -1253,6 +1805,8 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
   align-items: center;
   gap: 12px;
   min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .api-studio-editor-title-copy {
@@ -1260,6 +1814,8 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .api-studio-editor-title-copy h2 {
@@ -1269,12 +1825,18 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
   font-weight: 800;
   color: var(--app-text);
   line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .api-studio-editor-path {
   font-family: "JetBrains Mono", "Fira Code", monospace;
   color: var(--app-text-soft);
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .api-studio-editor-actions {
@@ -1506,6 +2068,81 @@ const backToHome = () => router.push({ name: 'api-studio-home' })
 .api-studio-env-editor-footer {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* ===================== 通用 KV 编辑器（Header / Query / Path / 变量） ===================== */
+
+.api-studio-kv-table {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.api-studio-kv-empty {
+  padding: 12px 14px;
+  border: 1px dashed var(--app-border);
+  border-radius: 8px;
+  color: var(--app-text-muted, #94a3b8);
+  font-size: 12px;
+  background: rgba(248, 249, 250, 0.6);
+}
+
+.api-studio-kv-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(220px, 2fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.api-studio-kv-row .api-studio-kv-name {
+  width: 100%;
+}
+
+.api-studio-kv-row .api-studio-kv-value {
+  width: 100%;
+}
+
+.api-studio-kv-secret {
+  margin-right: 0;
+  white-space: nowrap;
+}
+
+/* ===================== Textarea 工具条 + 等宽风格 ===================== */
+
+.api-studio-textarea-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.api-studio-textarea-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.api-studio-mono-textarea :deep(.el-textarea__inner) {
+  font-family: "JetBrains Mono", "Fira Code", "Menlo", monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+/* 调试发送按钮 */
+
+.api-studio-debug-runbar {
+  display: flex;
+  margin: 12px 0 4px;
+}
+
+.api-studio-debug-result-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 

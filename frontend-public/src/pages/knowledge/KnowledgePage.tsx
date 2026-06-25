@@ -1,13 +1,13 @@
 /**
- * 知识模块页面。
- * 三个子 Tab：Wiki 空间（含 CRUD）、知识图谱、记忆事实。
+ * 文档模块页面。
+ * 四个子 Tab：Wiki 空间（含 CRUD）、知识图谱、记忆事实、API。
  */
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   BookOpen, FolderTree, FileText, Network, Brain, Search,
   ChevronRight, ChevronDown, Edit3, Trash2, Plus, X, Save, AlertTriangle,
-  History, Upload, RotateCcw, FileUp,
+  History, Upload, RotateCcw, FileUp, Code2,
 } from 'lucide-react'
 import { Markdown } from '@/src/components/common/Markdown'
 import { MarkdownEditor } from '@/src/components/common/MarkdownEditor'
@@ -30,6 +30,7 @@ import type {
   MemoryFactFactsResponseItem, MemoryFactItem,
 } from '@/src/types/knowledge'
 import { KnowledgeGraphView } from '@/src/components/knowledge/KnowledgeGraphView'
+import { ApiStudioPanel } from './ApiStudioPanel'
 import { Card } from '@/src/components/common/Card'
 import { Button } from '@/src/components/common/Button'
 import { Input } from '@/src/components/common/Input'
@@ -38,16 +39,18 @@ import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
 import { cn, formatDate, getErrorMessage } from '@/src/lib/utils'
 
-type KnowledgeTab = 'wiki' | 'graph' | 'memory'
+type KnowledgeTab = 'wiki' | 'graph' | 'memory' | 'api'
 
 const tabs: { key: KnowledgeTab; label: string; icon: typeof BookOpen }[] = [
   { key: 'wiki', label: 'Wiki', icon: BookOpen },
   { key: 'graph', label: '知识图谱', icon: Network },
   { key: 'memory', label: '记忆事实', icon: Brain },
+  { key: 'api', label: 'API', icon: Code2 },
 ]
 
 export const KnowledgePage = () => {
   const [activeTab, setActiveTab] = useState<KnowledgeTab>('wiki')
+
   return (
     <div className="h-full flex flex-col overflow-hidden animate-fadeIn">
       <div className="flex-shrink-0 mb-6 flex gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)] w-fit">
@@ -63,6 +66,7 @@ export const KnowledgePage = () => {
       {activeTab === 'wiki' && <WikiPanel />}
       {activeTab === 'graph' && <GraphPanel />}
       {activeTab === 'memory' && <MemoryPanel />}
+      {activeTab === 'api' && <ApiStudioPanel />}
       </div>
     </div>
   )
@@ -552,10 +556,13 @@ const GraphPanel = () => {
   const { projectId } = useParams<{ projectId: string }>()
   const pid = Number(projectId)
   const [graph, setGraph] = useState<WikiSpaceKnowledgeGraphItem | null>(null)
+  const [selectedSpaceId, setSelectedSpaceId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   // 项目是否绑定了 Wiki 空间；未绑定时给出引导而非报错。
   const [noSpace, setNoSpace] = useState(false)
+  // pageId -> 页面标题，供图谱「来源文档」召回段展示。
+  const [pageMap, setPageMap] = useState<Map<number, string>>(new Map())
 
   useEffect(() => {
     const fetch = async () => {
@@ -570,7 +577,28 @@ const GraphPanel = () => {
           setNoSpace(true)
           return
         }
-        setGraph(await getWikiSpaceKnowledgeGraph(space.id))
+        setSelectedSpaceId(space.id)
+        // 并行拉图谱与目录树：目录树用于构建「来源文档」段的 pageId → 标题映射。
+        const [g, tree] = await Promise.all([
+          getWikiSpaceKnowledgeGraph(space.id),
+          getWikiDirectoryTree(space.id).catch(() => [] as WikiDirectoryTreeNodeItem[]),
+        ])
+        const pm = new Map<number, string>()
+        const walkPages = (pages: WikiSpacePageSummaryItem[]) => {
+          for (const p of pages) {
+            pm.set(p.id, p.title)
+            if (p.children?.length) walkPages(p.children)
+          }
+        }
+        const walkDirs = (nodes: WikiDirectoryTreeNodeItem[]) => {
+          for (const n of nodes) {
+            walkPages(n.pages)
+            walkDirs(n.children)
+          }
+        }
+        walkDirs(tree)
+        setPageMap(pm)
+        setGraph(g)
       } catch (err) {
         setError(getErrorMessage(err))
       } finally {
@@ -585,7 +613,7 @@ const GraphPanel = () => {
   if (noSpace) return <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]"><EmptyState title="尚未绑定 Wiki 空间" description="为该项目绑定一个 Wiki 空间并补充文档后，即可看到从文档中抽取的知识图谱。" icon={<Network className="h-6 w-6" strokeWidth={1.5} />} /></div>
   if (!graph || graph.nodes.length === 0) return <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]"><EmptyState title="暂无知识图谱" description="该空间尚未抽取出知识实体，补充文档内容后稍候重试。" icon={<Network className="h-6 w-6" strokeWidth={1.5} />} /></div>
 
-  return <KnowledgeGraphView graph={graph} />
+  return <KnowledgeGraphView graph={graph} pageMap={pageMap} spaceId={selectedSpaceId!} />
 }
 
 /* ════════════════════════════════════════════

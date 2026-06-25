@@ -1,5 +1,5 @@
 /**
- * 知识模块 API。
+ * 文档模块 API。
  * Wiki 空间/目录/页面 + 知识图谱 + 记忆事实图。
  */
 import { http, unwrap, cleanParams } from './http'

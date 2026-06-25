@@ -130,7 +130,8 @@ public class ApiStudioEndpointService {
         entity.setSortOrder(request.sortOrder() == null ? defaultSortOrder(projectId, request.directoryId()) : request.sortOrder());
         entity.setCreatedBy(userId);
         entity.setUpdatedBy(userId);
-        ApiStudioEndpointEntity saved = endpointRepository.save(entity);
+        // saveAndFlush 触发 INSERT 并把 @Version 同步到内存中，确保返回 DTO 的 revision 与 DB 一致。
+        ApiStudioEndpointEntity saved = endpointRepository.saveAndFlush(entity);
 
         persistParameters(saved.getId(), request.parameters());
         persistResponses(saved.getId(), request.responses());
@@ -170,7 +171,8 @@ public class ApiStudioEndpointService {
         }
         entity.setUpdatedBy(currentUserId());
         entity.setUpdatedAt(LocalDateTime.now());
-        endpointRepository.save(entity);
+        // saveAndFlush 让 @Version 立即递增并写库，避免下方 buildDetail 看到陈旧的 revision。
+        endpointRepository.saveAndFlush(entity);
 
         parameterRepository.deleteByEndpointId(endpointId);
         persistParameters(endpointId, request.parameters());
@@ -228,7 +230,8 @@ public class ApiStudioEndpointService {
         entity.setStatus("PUBLISHED");
         entity.setUpdatedBy(currentUserId());
         entity.setUpdatedAt(LocalDateTime.now());
-        endpointRepository.save(entity);
+        // saveAndFlush 让 @Version 立即递增并写库，避免 buildDetail 返回陈旧 revision。
+        endpointRepository.saveAndFlush(entity);
         snapshot(endpointId, "STATUS_CHANGE", "Published");
         return buildDetail(loadAndValidate(projectId, endpointId));
     }
@@ -240,7 +243,8 @@ public class ApiStudioEndpointService {
         entity.setStatus("DEPRECATED");
         entity.setUpdatedBy(currentUserId());
         entity.setUpdatedAt(LocalDateTime.now());
-        endpointRepository.save(entity);
+        // saveAndFlush 让 @Version 立即递增并写库，避免 buildDetail 返回陈旧 revision。
+        endpointRepository.saveAndFlush(entity);
         snapshot(endpointId, "STATUS_CHANGE", "Deprecated");
         return buildDetail(loadAndValidate(projectId, endpointId));
     }
@@ -284,7 +288,8 @@ public class ApiStudioEndpointService {
             applySnapshotToEntity(entity, snap);
             entity.setUpdatedBy(currentUserId());
             entity.setUpdatedAt(LocalDateTime.now());
-            endpointRepository.save(entity);
+            // 同样使用 saveAndFlush 确保返回的 detail 携带最新 revision。
+            endpointRepository.saveAndFlush(entity);
             // 简化：参数和响应保留 - 仅恢复主体定义；如需完整恢复后续迭代扩展。
             snapshot(endpointId, "ROLLBACK", "Rolled back to v" + v.getVersionNo());
         } catch (JsonProcessingException e) {

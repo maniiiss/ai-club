@@ -132,7 +132,14 @@ onMounted(loadProjects)
         <header class="api-studio-home-card-head">
           <div>
             <span class="api-studio-home-kicker">API 工作台</span>
-            <h2>{{ project.name || '未命名项目' }}</h2>
+            <el-tooltip
+              :content="project.name || '未命名项目'"
+              placement="top"
+              :show-after="400"
+              :hide-after="0"
+            >
+              <h2>{{ project.name || '未命名项目' }}</h2>
+            </el-tooltip>
           </div>
           <div class="api-studio-home-tag-group">
             <span class="management-list-pill" :class="projectStatusTone((project as any).status)">
@@ -146,9 +153,16 @@ onMounted(loadProjects)
           <span>负责人：{{ ownerName(project) }}</span>
         </div>
 
-        <p class="api-studio-home-desc">
-          {{ (project as any).description?.trim() || '点击进入项目级 API 工作台，管理目录、API、环境、调试与版本。' }}
-        </p>
+        <el-tooltip
+          :content="(project as any).description?.trim() || '点击进入项目级 API 工作台，管理目录、API、环境、调试与版本。'"
+          placement="top"
+          :show-after="500"
+          :hide-after="0"
+        >
+          <p class="api-studio-home-desc">
+            {{ (project as any).description?.trim() || '点击进入项目级 API 工作台，管理目录、API、环境、调试与版本。' }}
+          </p>
+        </el-tooltip>
 
         <div class="api-studio-home-chip-list">
           <span class="management-list-chip">任务 {{ (project as any).taskCount ?? 0 }}</span>
