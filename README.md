@@ -66,7 +66,7 @@ git-ai-club/
    作用：只重启 `code-processing / backend / frontend / frontend-public`，不重新拉起 Docker 中间件。
 4. 全量 Docker 启动：
    `bash ./scripts/start-docker-linux.sh`
-   作用：使用 `docker-compose.server.yml` 启动整套项目。
+   作用：使用 `docker-compose.server.yml` 启动整套项目；默认复用已有镜像，加 `--rebuild` 才会重新 build 业务镜像（也可设置 `REBUILD=true` 环境变量）。
 5. 全量 Docker 关闭：
    `bash ./scripts/stop-docker-linux.sh`
 6. 全量 Docker 打包：
