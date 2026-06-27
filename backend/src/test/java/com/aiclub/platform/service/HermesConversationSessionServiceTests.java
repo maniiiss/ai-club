@@ -34,6 +34,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -147,6 +149,152 @@ class HermesConversationSessionServiceTests {
         assertThat(restored.archived()).isFalse();
         assertThat(session.getArchivedAt()).isNull();
         verify(hermesConversationSessionRepository).delete(session);
+    }
+
+    /**
+     * 公众端纯聊天页只应读取没有任何项目/任务/Wiki 绑定的全局会话，避免把项目助手会话混进纯聊天历史。
+     */
+    @Test
+    void shouldPageGlobalSessionsWithoutBoundContext() {
+        HermesConversationSessionService service = new HermesConversationSessionService(
+                authService,
+                userRepository,
+                hermesConversationSessionRepository,
+                hermesConversationMessageRepository,
+                new ObjectMapper()
+        );
+
+        CurrentUserInfo currentUser = buildCurrentUser();
+        HermesConversationSessionEntity globalSession = buildSessionEntity();
+        globalSession.setProjectId(null);
+        globalSession.setTaskId(null);
+        globalSession.setIterationId(null);
+        globalSession.setPlanId(null);
+        globalSession.setWikiSpaceId(null);
+        globalSession.setWikiPageId(null);
+        globalSession.setRouteName("public-hermes-chat");
+
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(hermesConversationSessionRepository.findGlobalSessions(eq(5L), eq(false), any(PageRequest.class)))
+                .thenReturn(new PageImpl<>(List.of(globalSession), PageRequest.of(0, 20), 1));
+
+        PageResponse<HermesConversationSessionSummary> pageResponse =
+                service.pageSessions(1, 20, false, "GLOBAL", null);
+
+        assertThat(pageResponse.records()).hasSize(1);
+        assertThat(pageResponse.records().get(0).routeName()).isEqualTo("public-hermes-chat");
+        assertThat(pageResponse.records().get(0).projectId()).isNull();
+        verify(hermesConversationSessionRepository).findGlobalSessions(eq(5L), eq(false), any(PageRequest.class));
+    }
+
+    /**
+     * 项目浮标只读取当前项目的 Hermes 会话，避免不同项目之间的历史互相串扰。
+     */
+    @Test
+    void shouldPageProjectSessionsByProjectId() {
+        HermesConversationSessionService service = new HermesConversationSessionService(
+                authService,
+                userRepository,
+                hermesConversationSessionRepository,
+                hermesConversationMessageRepository,
+                new ObjectMapper()
+        );
+
+        CurrentUserInfo currentUser = buildCurrentUser();
+        HermesConversationSessionEntity projectSession = buildSessionEntity();
+        projectSession.setProjectId(12L);
+
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(hermesConversationSessionRepository.findByUser_IdAndArchivedAndProjectId(
+                eq(5L),
+                eq(false),
+                eq(12L),
+                any(PageRequest.class)
+        )).thenReturn(new PageImpl<>(List.of(projectSession), PageRequest.of(0, 20), 1));
+
+        PageResponse<HermesConversationSessionSummary> pageResponse =
+                service.pageSessions(1, 20, false, "PROJECT", 12L);
+
+        assertThat(pageResponse.records()).hasSize(1);
+        assertThat(pageResponse.records().get(0).projectId()).isEqualTo(12L);
+        verify(hermesConversationSessionRepository).findByUser_IdAndArchivedAndProjectId(
+                eq(5L),
+                eq(false),
+                eq(12L),
+                any(PageRequest.class)
+        );
+    }
+
+    /**
+     * 空会话复用必须按完整上下文隔离，避免纯聊天页新建的空会话被项目页浮标抢走。
+     */
+    @Test
+    void shouldReuseOnlyEmptySessionWithSameContext() {
+        HermesConversationSessionService service = new HermesConversationSessionService(
+                authService,
+                userRepository,
+                hermesConversationSessionRepository,
+                hermesConversationMessageRepository,
+                new ObjectMapper()
+        );
+
+        CurrentUserInfo currentUser = buildCurrentUser();
+        UserEntity userEntity = new UserEntity();
+        userEntity.setId(5L);
+        userEntity.setUsername("pm-user");
+        userEntity.setNickname("项目经理");
+        HermesConversationSessionEntity existingProjectSession = buildSessionEntity();
+        existingProjectSession.setRouteName("projects");
+        existingProjectSession.setProjectId(12L);
+        existingProjectSession.setTaskId(null);
+        existingProjectSession.setIterationId(null);
+        existingProjectSession.setPlanId(null);
+        existingProjectSession.setWikiSpaceId(null);
+        existingProjectSession.setWikiPageId(null);
+
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
+        when(hermesConversationSessionRepository.findUnusedSessionByContext(
+                nullable(Long.class),
+                nullable(String.class),
+                nullable(Long.class),
+                nullable(Long.class),
+                nullable(Long.class),
+                nullable(Long.class),
+                nullable(Long.class),
+                nullable(Long.class)
+        ))
+                .thenReturn(List.of(existingProjectSession));
+
+        HermesConversationSessionSummary reused = service.createSession(new CreateHermesConversationSessionRequest(
+                "projects",
+                12L,
+                null,
+                null,
+                null,
+                null,
+                null
+        ));
+
+        assertThat(reused.id()).isEqualTo(10L);
+        assertThat(reused.routeName()).isEqualTo("projects");
+        assertThat(reused.projectId()).isEqualTo(12L);
+        ArgumentCaptor<Long> userIdCaptor = ArgumentCaptor.forClass(Long.class);
+        ArgumentCaptor<String> routeNameCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<Long> projectIdCaptor = ArgumentCaptor.forClass(Long.class);
+        verify(hermesConversationSessionRepository).findUnusedSessionByContext(
+                userIdCaptor.capture(),
+                routeNameCaptor.capture(),
+                projectIdCaptor.capture(),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull()
+        );
+        assertThat(userIdCaptor.getValue()).isEqualTo(5L);
+        assertThat(routeNameCaptor.getValue()).isEqualTo("projects");
+        assertThat(projectIdCaptor.getValue()).isEqualTo(12L);
     }
 
     /**

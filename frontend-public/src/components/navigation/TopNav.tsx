@@ -10,7 +10,13 @@ import { useAuthStore } from '@/src/stores/auth'
 import { getMyCreditAccount } from '@/src/api/credits'
 import { cn, getInitials } from '@/src/lib/utils'
 
-const navItems = [
+interface NavItem {
+  to: string
+  label: string
+  permission?: string
+}
+
+const navItems: NavItem[] = [
   { to: '/dashboard', label: '工作台' },
   { to: '/projects', label: '项目' },
   { to: '/settings/profile', label: '设置' },
@@ -20,6 +26,7 @@ export const TopNav = () => {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
+  const hasPermission = useAuthStore((s) => s.hasPermission)
   const [menuOpen, setMenuOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [creditBalance, setCreditBalance] = useState<number | null>(null)
@@ -60,6 +67,7 @@ export const TopNav = () => {
 
   const displayName = user?.nickname || user?.username || '用户'
   const avatarUrl = user?.avatarUrl
+  const visibleNavItems = navItems.filter((item) => !item.permission || hasPermission(item.permission))
 
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[var(--color-bg-card)]/80 backdrop-blur-md">
@@ -79,7 +87,7 @@ export const TopNav = () => {
 
         {/* 桌面端导航链接 */}
         <nav className="hidden sm:flex items-center gap-1">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -191,7 +199,7 @@ export const TopNav = () => {
       {mobileOpen && (
         <div className="sm:hidden border-t border-[var(--color-border)] bg-[var(--color-bg-card)] animate-fadeIn">
           <nav className="flex flex-col px-4 py-3 gap-1">
-            {navItems.map((item) => (
+            {visibleNavItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

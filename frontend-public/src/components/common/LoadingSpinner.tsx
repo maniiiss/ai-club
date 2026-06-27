@@ -11,6 +11,8 @@ interface LoadingSpinnerProps {
   fullscreen?: boolean
   /** 尺寸，默认 md。 */
   size?: 'sm' | 'md' | 'lg'
+  /** 额外 CSS class，作用在旋转图标本身。 */
+  className?: string
 }
 
 const sizeMap = {
@@ -19,10 +21,10 @@ const sizeMap = {
   lg: 'h-12 w-12',
 }
 
-export const LoadingSpinner = ({ text, fullscreen = false, size = 'md' }: LoadingSpinnerProps) => {
+export const LoadingSpinner = ({ text, fullscreen = false, size = 'md', className }: LoadingSpinnerProps) => {
   const spinner = (
     <svg
-      className={cn('animate-spin text-[var(--color-primary)]', sizeMap[size])}
+      className={cn('animate-spin text-[var(--color-primary)]', sizeMap[size], className)}
       xmlns="http://www.w3.org/2000/svg"
       fill="none"
       viewBox="0 0 24 24"
