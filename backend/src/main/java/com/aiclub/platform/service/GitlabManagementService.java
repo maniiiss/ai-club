@@ -2251,10 +2251,15 @@ public class GitlabManagementService {
         List<String> unresolvedPreviousIssues = normalizeIssueList(reviewResult.unresolvedPreviousIssues());
         List<String> pendingIssues = normalizeIssueList(reviewResult.issues());
         List<String> newlyRaisedIssues = subtractIssues(pendingIssues, unresolvedPreviousIssues);
+        // “本次新增”按定义就是 pendingIssues 的子集，若同一条 issue 同时落到两个区块，
+        // 前端会得到相同的 issueId，导致单选 name、v-for key、feedbackState key 全部冲突，
+        // 表现为勾选串扰、状态被覆盖。这里把"仍需处理"中已出现在"本次新增"里的条目剔除，
+        // 保证整篇 detailMarkdown 内 issueId 全局唯一。
+        List<String> pendingOnlyIssues = subtractIssues(pendingIssues, newlyRaisedIssues);
         // 仅为"本次新增问题"和"当前仍需处理问题"两个区块挂稳定 issueId，
         // 让前端分享页能逐条挂反馈；其它三个区块（上次问题/已修复项/未修复项）保持纯文本，避免歧义。
         List<ReviewIssueItem> newlyRaisedItems = toReviewIssueItems(newlyRaisedIssues);
-        List<ReviewIssueItem> pendingItems = toReviewIssueItems(pendingIssues);
+        List<ReviewIssueItem> pendingItems = toReviewIssueItems(pendingOnlyIssues);
         StringBuilder builder = new StringBuilder();
         if (reviewCacheHit) {
             builder.append("> 本次 AI 审查复用历史结果，未重新调用模型。\n\n");
