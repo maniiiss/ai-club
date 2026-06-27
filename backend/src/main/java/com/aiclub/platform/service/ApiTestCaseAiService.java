@@ -1,5 +1,8 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.agentusage.AgentInvocationContext;
+import com.aiclub.platform.agentusage.AgentInvocationRecorder;
+import com.aiclub.platform.agentusage.AgentType;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.dto.ApiTestAssertionSuggestion;
 import com.aiclub.platform.dto.ApiTestCaseAiResult;
@@ -46,25 +49,48 @@ public class ApiTestCaseAiService {
     private final AiModelConfigRepository aiModelConfigRepository;
     private final ModelConfigService modelConfigService;
     private final ObjectMapper objectMapper;
+    private final AgentInvocationRecorder agentInvocationRecorder;
 
     public ApiTestCaseAiService(ApiTestContextSource contextSource,
                                 AiModelConfigRepository aiModelConfigRepository,
                                 ModelConfigService modelConfigService,
-                                ObjectMapper objectMapper) {
+                                ObjectMapper objectMapper,
+                                AgentInvocationRecorder agentInvocationRecorder) {
         this.contextSource = contextSource;
         this.aiModelConfigRepository = aiModelConfigRepository;
         this.modelConfigService = modelConfigService;
         this.objectMapper = objectMapper;
+        this.agentInvocationRecorder = agentInvocationRecorder;
     }
 
     public ApiTestCaseAiResult generate(Long projectId, Long endpointId, ApiTestGenerationRequest request) {
         ApiTestGenerationContext context = contextSource.requireContext(projectId, endpointId);
         AiModelConfigEntity modelConfig = resolveModelConfig(request == null ? null : request.modelConfigId());
-        String raw = invokePrompt(modelConfig, buildUserPrompt(context));
+        String userPrompt = buildUserPrompt(context);
+        AgentInvocationContext ctx = AgentInvocationContext.builder(AgentType.API_TEST_CASE_AI)
+                .action("GENERATE")
+                .modelConfig(modelConfig)
+                .projectId(projectId)
+                .bizId(endpointId)
+                .inputChars(systemPrompt().length() + userPrompt.length())
+                .build();
+        String raw = agentInvocationRecorder.trackWithUsage(ctx, sink -> {
+            ModelConfigService.ModelInvocation inv = modelConfigService.invokePromptWithUsage(
+                    modelConfigService.resolveModelConfig(modelConfig.getId()),
+                    systemPrompt(),
+                    userPrompt,
+                    2800,
+                    false
+            );
+            sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens());
+            sink.setOutputChars(inv.text() == null ? 0 : inv.text().length());
+            return inv.text();
+        });
         return parseResult(raw, context, modelConfig);
     }
 
     private String invokePrompt(AiModelConfigEntity modelConfig, String userPrompt) {
+        // 保留旧入口以兼容潜在调用方；不再被 generate 使用。
         return modelConfigService.invokePrompt(
                 modelConfigService.resolveModelConfig(modelConfig.getId()),
                 systemPrompt(),

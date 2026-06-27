@@ -2,7 +2,7 @@
  * 文档模块页面。
  * 三个子 Tab：Wiki 空间（含 CRUD）、知识图谱、API。
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   BookOpen, FolderTree, FileText, Network, Search,
@@ -15,13 +15,13 @@ import { WIKI_PAGE_TEMPLATE } from '@/src/lib/markdownTemplates'
 import { uploadMarkdownImage } from '@/src/lib/markdownImageUpload'
 import {
   listWikiSpaces, getWikiDirectoryTree, getWikiPage, searchWikiPages,
-  getWikiSpaceKnowledgeGraph,
+  getWikiSpaceKnowledgeGraph, createProjectWikiSpace,
   createWikiPage, updateWikiPage, deleteWikiPage,
-  createWikiDirectory, deleteWikiDirectory,
+  createWikiDirectory, updateWikiDirectory, deleteWikiDirectory,
   listWikiPageVersions, restoreWikiPageVersion,
   uploadDocumentAsset, previewWikiImport, importWikiPage,
 } from '@/src/api/knowledge'
-import type { WikiPagePayload, WikiDirectoryPayload, WikiImportPagePayload } from '@/src/api/knowledge'
+import type { WikiPagePayload, WikiDirectoryPayload, WikiImportPagePayload, WikiSpacePayload } from '@/src/api/knowledge'
 import type {
   WikiSpaceItem, WikiDirectoryTreeNodeItem, WikiSpacePageSummaryItem,
   WikiSpacePageDetailItem, WikiSpacePageVersionItem, DocumentMarkdownResultItem,
@@ -29,7 +29,6 @@ import type {
 } from '@/src/types/knowledge'
 import { KnowledgeGraphView } from '@/src/components/knowledge/KnowledgeGraphView'
 import { ApiStudioPanel } from './ApiStudioPanel'
-import { Card } from '@/src/components/common/Card'
 import { Button } from '@/src/components/common/Button'
 import { Input } from '@/src/components/common/Input'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
@@ -97,8 +96,10 @@ const WikiPanel = () => {
   const [searchResults, setSearchResults] = useState<WikiSpacePageSummaryItem[]>([])
 
   // 弹窗
+  const [spaceDialogOpen, setSpaceDialogOpen] = useState(false)
   const [newPageDialog, setNewPageDialog] = useState<{ open: boolean; directoryId: number; pages: WikiSpacePageSummaryItem[] }>({ open: false, directoryId: 0, pages: [] })
   const [newDirDialog, setNewDirDialog] = useState<{ open: boolean; parentDirectoryId?: number }>({ open: false })
+  const [editDirDialog, setEditDirDialog] = useState<{ open: boolean; directory: WikiDirectoryTreeNodeItem | null }>({ open: false, directory: null })
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'page' | 'directory'; id: number; name: string } | null>(null)
 
   // 版本历史面板
@@ -114,10 +115,28 @@ const WikiPanel = () => {
   // 移动端目录树展开状态
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false)
 
-  useEffect(() => {
-    const fetch = async () => { setLoading(true); try { setSpaces(await listWikiSpaces({ projectId: pid })) } catch (err) { setError(getErrorMessage(err)) } finally { setLoading(false) } }
-    fetch()
+  const fetchSpaces = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      setSpaces(await listWikiSpaces({ projectId: pid }))
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
   }, [pid])
+
+  useEffect(() => {
+    fetchSpaces()
+  }, [fetchSpaces])
+
+  const handleCreateSpace = async (payload: WikiSpacePayload) => {
+    const created = await createProjectWikiSpace(pid, payload)
+    await fetchSpaces()
+    await handleSelectSpace(created)
+    setSpaceDialogOpen(false)
+  }
 
   const handleSelectSpace = async (space: WikiSpaceItem) => {
     setSelectedSpace(space); setSelectedPage(null); setTreeLoading(true)
@@ -167,6 +186,21 @@ const WikiPanel = () => {
       await refreshTree()
     } catch { /* ignore */ }
     setNewDirDialog({ open: false })
+  }
+
+  const handleUpdateDirectory = async (directory: WikiDirectoryTreeNodeItem, name: string) => {
+    if (!selectedSpace) return
+    try {
+      const payload: WikiDirectoryPayload = {
+        name,
+        content: directory.content || '',
+        parentDirectoryId: directory.parentDirectoryId,
+        boundProjectId: directory.boundProjectId ?? pid,
+      }
+      await updateWikiDirectory(selectedSpace.id, directory.id, payload)
+      await refreshTree()
+    } catch { /* ignore */ }
+    setEditDirDialog({ open: false, directory: null })
   }
 
   const handleDeleteConfirm = async () => {
@@ -288,7 +322,14 @@ const WikiPanel = () => {
           </div>
         ) : spaces.length === 0 ? (
           <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]">
-            <EmptyState title="暂无 Wiki 空间" description="该项目还没有关联的 Wiki 空间。" icon={<BookOpen className="h-6 w-6" strokeWidth={1.5} />} />
+            <div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-10 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-primary-light)]">
+                <BookOpen className="h-6 w-6 text-[var(--color-primary)]" strokeWidth={1.5} />
+              </div>
+              <h3 className="mt-4 text-[16px] font-semibold text-[var(--color-text-primary)]">暂无项目 Wiki</h3>
+              <p className="mt-1 max-w-md text-[13px] leading-6 text-[var(--color-text-tertiary)]">为当前项目初始化一个 Wiki 空间后，可以在这里维护目录、页面和导入文档。</p>
+              <Button className="mt-5" icon={<Plus className="h-4 w-4" />} onClick={() => setSpaceDialogOpen(true)}>初始化项目 Wiki</Button>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -312,6 +353,7 @@ const WikiPanel = () => {
             ))}
           </div>
         )}
+        {spaceDialogOpen && <CreateProjectWikiDialog projectId={pid} onSubmit={handleCreateSpace} onClose={() => setSpaceDialogOpen(false)} />}
       </div>
     )
   }
@@ -351,6 +393,7 @@ const WikiPanel = () => {
           {treeLoading ? <LoadingSpinner text="加载目录…" /> : tree.length === 0 ? <p className="text-[12px] text-[var(--color-text-tertiary)]">暂无目录</p> : (
             <DirectoryTree nodes={tree} spaceId={selectedSpace.id} onSelectPage={(sId, pId) => { handleSelectPage(sId, pId); setMobileTreeOpen(false) }}
               onAddPage={(dirId) => setNewPageDialog({ open: true, directoryId: dirId, pages: collectDirPages(dirId) })}
+              onEditDir={(directory) => setEditDirDialog({ open: true, directory })}
               onDeleteDir={(dirId, name) => setDeleteConfirm({ type: 'directory', id: dirId, name })} />
           )}
         </div>
@@ -477,8 +520,10 @@ const WikiPanel = () => {
       )}
 
       {/* 弹窗 */}
+      {spaceDialogOpen && <CreateProjectWikiDialog projectId={pid} onSubmit={handleCreateSpace} onClose={() => setSpaceDialogOpen(false)} />}
       {newPageDialog.open && <CreatePageDialog directoryId={newPageDialog.directoryId} pages={newPageDialog.pages} onSubmit={(title, parentPageId) => handleCreatePage(newPageDialog.directoryId, title, parentPageId)} onClose={() => setNewPageDialog({ open: false, directoryId: 0, pages: [] })} />}
       {newDirDialog.open && <SimpleInputDialog title="新建目录" label="目录名称" placeholder="输入目录名称" onSubmit={(v) => handleCreateDirectory(v, newDirDialog.parentDirectoryId)} onClose={() => setNewDirDialog({ open: false })} />}
+      {editDirDialog.open && editDirDialog.directory && <SimpleInputDialog title="编辑目录" label="目录名称" placeholder="输入目录名称" initialValue={editDirDialog.directory.name} onSubmit={(v) => handleUpdateDirectory(editDirDialog.directory!, v)} onClose={() => setEditDirDialog({ open: false, directory: null })} />}
       {deleteConfirm && <DeleteConfirmDialog name={deleteConfirm.name} onCancel={() => setDeleteConfirm(null)} onConfirm={handleDeleteConfirm} />}
       {versionRestoreConfirm && <VersionRestoreConfirmDialog versionNumber={versionRestoreConfirm.versionNumber} onCancel={() => setVersionRestoreConfirm(null)} onConfirm={() => handleRestoreVersion(versionRestoreConfirm.versionNumber)} />}
       {importDialog.open && <ImportDialog directoryId={importDialog.directoryId} loading={importLoading} preview={importPreview} error={importError} onFileSelect={handleImportFile} onCreate={(dirId, title, parentPageId) => handleImportCreate(dirId, title, parentPageId)} onClose={() => { setImportDialog({ open: false, directoryId: 0 }); setImportPreview(null); setImportError(null) }} />}
@@ -488,24 +533,26 @@ const WikiPanel = () => {
 
 /* ── 目录树 ── */
 
-const DirectoryTree = ({ nodes, spaceId, onSelectPage, onAddPage, onDeleteDir, depth = 0 }: {
+const DirectoryTree = ({ nodes, spaceId, onSelectPage, onAddPage, onEditDir, onDeleteDir, depth = 0 }: {
   nodes: WikiDirectoryTreeNodeItem[]; spaceId: number
   onSelectPage: (spaceId: number, pageId: number) => void
   onAddPage: (dirId: number) => void
+  onEditDir: (directory: WikiDirectoryTreeNodeItem) => void
   onDeleteDir: (dirId: number, name: string) => void
   depth?: number
 }) => (
   <div className="space-y-0.5">
     {nodes.map((node) => (
-      <DirectoryNode key={node.id} node={node} spaceId={spaceId} onSelectPage={onSelectPage} onAddPage={onAddPage} onDeleteDir={onDeleteDir} depth={depth} />
+      <DirectoryNode key={node.id} node={node} spaceId={spaceId} onSelectPage={onSelectPage} onAddPage={onAddPage} onEditDir={onEditDir} onDeleteDir={onDeleteDir} depth={depth} />
     ))}
   </div>
 )
 
-const DirectoryNode = ({ node, spaceId, onSelectPage, onAddPage, onDeleteDir, depth }: {
+const DirectoryNode = ({ node, spaceId, onSelectPage, onAddPage, onEditDir, onDeleteDir, depth }: {
   node: WikiDirectoryTreeNodeItem; spaceId: number
   onSelectPage: (spaceId: number, pageId: number) => void
   onAddPage: (dirId: number) => void
+  onEditDir: (directory: WikiDirectoryTreeNodeItem) => void
   onDeleteDir: (dirId: number, name: string) => void
   depth: number
 }) => {
@@ -522,13 +569,14 @@ const DirectoryNode = ({ node, spaceId, onSelectPage, onAddPage, onDeleteDir, de
         </button>
         <div className="flex items-center gap-0.5 pr-1 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
           <button onClick={() => onAddPage(node.id)} className="rounded p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] transition-colors cursor-pointer" title="新建页面"><Plus className="h-3 w-3" /></button>
+          <button onClick={() => onEditDir(node)} className="rounded p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] transition-colors cursor-pointer" title="编辑目录"><Edit3 className="h-3 w-3" /></button>
           <button onClick={() => onDeleteDir(node.id, node.name)} className="rounded p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] transition-colors cursor-pointer" title="删除目录"><Trash2 className="h-3 w-3" /></button>
         </div>
       </div>
       {expanded && (
         <div>
           {node.children.map((child) => (
-            <DirectoryNode key={child.id} node={child} spaceId={spaceId} onSelectPage={onSelectPage} onAddPage={onAddPage} onDeleteDir={onDeleteDir} depth={depth + 1} />
+            <DirectoryNode key={child.id} node={child} spaceId={spaceId} onSelectPage={onSelectPage} onAddPage={onAddPage} onEditDir={onEditDir} onDeleteDir={onDeleteDir} depth={depth + 1} />
           ))}
           {node.pages.map((page) => (
             <button key={page.id} onClick={() => onSelectPage(spaceId, page.id)}
@@ -616,10 +664,66 @@ const GraphPanel = () => {
    公共小组件
    ════════════════════════════════════════════ */
 
-const SimpleInputDialog = ({ title, label, placeholder, onSubmit, onClose }: {
-  title: string; label: string; placeholder: string; onSubmit: (value: string) => void; onClose: () => void
+const CreateProjectWikiDialog = ({ projectId, onSubmit, onClose }: {
+  projectId: number
+  onSubmit: (payload: WikiSpacePayload) => Promise<void>
+  onClose: () => void
 }) => {
-  const [value, setValue] = useState('')
+  const [name, setName] = useState('项目 Wiki')
+  const [description, setDescription] = useState('项目知识沉淀与协作文档')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSubmit = async () => {
+    if (!name.trim()) return
+    setSaving(true)
+    setError(null)
+    try {
+      await onSubmit({
+        name: name.trim(),
+        description: description.trim(),
+        readScope: 'MEMBERS_ONLY',
+        boundProjectId: projectId,
+        memberDefaultSource: 'PROJECT_MEMBERS',
+      })
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-xl)] animate-scaleIn">
+        <div className="mb-4 flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-light)]">
+            <BookOpen className="h-5 w-5 text-[var(--color-primary)]" strokeWidth={1.75} />
+          </div>
+          <div>
+            <h2 className="text-[16px] font-bold text-[var(--color-text-primary)]">初始化项目 Wiki</h2>
+            <p className="mt-0.5 text-[12px] text-[var(--color-text-tertiary)]">空间将自动绑定当前项目。</p>
+          </div>
+        </div>
+        {error && <div className="mb-3 rounded-lg bg-[var(--color-danger-light)] border border-red-100 px-3 py-2 text-[13px] text-[var(--color-danger)]">{error}</div>}
+        <div className="space-y-3">
+          <Input label="空间名称" value={name} onChange={(e) => setName(e.target.value)} placeholder="输入空间名称" autoFocus />
+          <Input label="空间说明" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="输入空间说明" />
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>取消</Button>
+          <Button onClick={handleSubmit} loading={saving} disabled={!name.trim()} icon={<Plus className="h-4 w-4" />}>创建</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const SimpleInputDialog = ({ title, label, placeholder, initialValue = '', onSubmit, onClose }: {
+  title: string; label: string; placeholder: string; initialValue?: string; onSubmit: (value: string) => void; onClose: () => void
+}) => {
+  const [value, setValue] = useState(initialValue)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={onClose} />

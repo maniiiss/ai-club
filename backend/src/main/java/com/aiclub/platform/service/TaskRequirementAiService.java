@@ -1,5 +1,9 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.agentusage.AgentInvocationContext;
+import com.aiclub.platform.agentusage.AgentInvocationRecorder;
+import com.aiclub.platform.agentusage.AgentType;
+import com.aiclub.platform.agentusage.TriggerSource;
 import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
@@ -58,19 +62,22 @@ public class TaskRequirementAiService {
     private final ModelConfigService modelConfigService;
     private final ObjectMapper objectMapper;
     private final ProjectDataPermissionService projectDataPermissionService;
+    private final AgentInvocationRecorder agentInvocationRecorder;
 
     public TaskRequirementAiService(TaskRepository taskRepository,
                                     AiModelConfigRepository aiModelConfigRepository,
                                     AgentRepository agentRepository,
                                     ModelConfigService modelConfigService,
                                     ObjectMapper objectMapper,
-                                    ProjectDataPermissionService projectDataPermissionService) {
+                                    ProjectDataPermissionService projectDataPermissionService,
+                                    AgentInvocationRecorder agentInvocationRecorder) {
         this.taskRepository = taskRepository;
         this.aiModelConfigRepository = aiModelConfigRepository;
         this.agentRepository = agentRepository;
         this.modelConfigService = modelConfigService;
         this.objectMapper = objectMapper;
         this.projectDataPermissionService = projectDataPermissionService;
+        this.agentInvocationRecorder = agentInvocationRecorder;
     }
 
     public TaskRequirementAiResult generate(Long taskId, TaskRequirementAiRequest request) {
@@ -101,7 +108,7 @@ public class TaskRequirementAiService {
                                                         String systemPrompt,
                                                         String userPrompt,
                                                         int maxTokens) {
-        String raw = invokePrompt(modelConfig, systemPrompt, userPrompt, maxTokens, false);
+        String raw = invokePrompt(action, task, modelConfig, systemPrompt, userPrompt, maxTokens, false);
         return new TaskRequirementAiResult(
                 action,
                 title,
@@ -114,7 +121,7 @@ public class TaskRequirementAiService {
     }
 
     private TaskRequirementAiResult buildBreakdownResult(TaskEntity task, AiModelConfigEntity modelConfig) {
-        String raw = invokePrompt(modelConfig, breakdownPrompt(), buildTaskContext(task), 2600, false);
+        String raw = invokePrompt(ACTION_BREAKDOWN, task, modelConfig, breakdownPrompt(), buildTaskContext(task), 2600, false);
         String markdown = cleanMarkdownOutput(raw);
         List<TaskRequirementAiSuggestion> taskSuggestions = List.of();
 
@@ -158,7 +165,7 @@ public class TaskRequirementAiService {
         RuntimeException primaryFailure = null;
 
         try {
-            String raw = invokePrompt(modelConfig, testCasesPrompt(), buildTaskContext(task), 1800, true);
+            String raw = invokePrompt(ACTION_TEST_CASES, task, modelConfig, testCasesPrompt(), buildTaskContext(task), 1800, true);
             TestCaseParseResult parsed = parseTestCaseResult(raw);
             markdown = parsed.markdown();
             testCaseSuggestions = parsed.suggestions();
@@ -171,7 +178,7 @@ public class TaskRequirementAiService {
         }
 
         if (!hasText(markdown) && testCaseSuggestions.isEmpty()) {
-            String fallbackRaw = invokePrompt(modelConfig, testCasesFallbackPrompt(), buildTaskContext(task), 1200, false);
+            String fallbackRaw = invokePrompt(ACTION_TEST_CASES, task, modelConfig, testCasesFallbackPrompt(), buildTaskContext(task), 1200, false);
             TestCaseParseResult fallbackParsed = parseTestCaseResult(fallbackRaw);
             markdown = fallbackParsed.markdown();
             testCaseSuggestions = fallbackParsed.suggestions();
@@ -527,13 +534,46 @@ public class TaskRequirementAiService {
     }
 
     private String invokePrompt(AiModelConfigEntity modelConfig, String systemPrompt, String userPrompt, int maxTokens, boolean jsonMode) {
-        return modelConfigService.invokePrompt(
-                modelConfigService.resolveModelConfig(modelConfig.getId()),
-                systemPrompt,
-                userPrompt,
-                maxTokens,
-                jsonMode
-        );
+        return invokePrompt(null, null, modelConfig, systemPrompt, userPrompt, maxTokens, jsonMode);
+    }
+
+    private String invokePrompt(String action, TaskEntity task, AiModelConfigEntity modelConfig, String systemPrompt, String userPrompt, int maxTokens, boolean jsonMode) {
+        AgentType agentType = actionToAgentType(action);
+        AgentInvocationContext.Builder ctxBuilder = AgentInvocationContext.builder(agentType)
+                .action(action)
+                .modelConfig(modelConfig)
+                .inputChars((systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length()));
+        if (task != null) {
+            ctxBuilder.taskId(task.getId());
+            if (task.getProject() != null) {
+                ctxBuilder.projectId(task.getProject().getId());
+            }
+        }
+        return agentInvocationRecorder.trackWithUsage(ctxBuilder.build(), sink -> {
+            ModelConfigService.ModelInvocation inv = modelConfigService.invokePromptWithUsage(
+                    modelConfigService.resolveModelConfig(modelConfig.getId()),
+                    systemPrompt,
+                    userPrompt,
+                    maxTokens,
+                    jsonMode
+            );
+            sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens());
+            sink.setOutputChars(inv.text() == null ? 0 : inv.text().length());
+            return inv.text();
+        });
+    }
+
+    /**
+     * 根据 action 字符串获取对应的 AgentType 枚举。
+     */
+    private static AgentType actionToAgentType(String action) {
+        if (action == null) return AgentType.REQUIREMENT_AI_STANDARDIZE;
+        return switch (action) {
+            case ACTION_STANDARDIZE -> AgentType.REQUIREMENT_AI_STANDARDIZE;
+            case ACTION_BREAKDOWN -> AgentType.REQUIREMENT_AI_BREAKDOWN;
+            case ACTION_TEST_CASES -> AgentType.REQUIREMENT_AI_TEST_CASES;
+            default -> AgentType.REQUIREMENT_AI_STANDARDIZE;
+        };
     }
 
     /**

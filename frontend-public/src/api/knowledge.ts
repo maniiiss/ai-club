@@ -34,6 +34,19 @@ export const getWikiSpaceDetail = async (spaceId: number): Promise<WikiSpaceDeta
   return unwrap(res)
 }
 
+export interface WikiSpacePayload {
+  name: string
+  description?: string
+  readScope?: 'MEMBERS_ONLY' | 'ALL_LOGGED_IN'
+  boundProjectId: number
+  memberDefaultSource?: 'MANUAL' | 'PROJECT_MEMBERS'
+}
+
+export const createProjectWikiSpace = async (projectId: number, payload: WikiSpacePayload): Promise<WikiSpaceDetailItem> => {
+  const res = await http.post<ApiResponse<WikiSpaceDetailItem>>(`/api/wiki/projects/${projectId}/space`, payload)
+  return unwrap(res)
+}
+
 /* ── Wiki 目录树 ── */
 
 export const getWikiDirectoryTree = async (spaceId: number): Promise<WikiDirectoryTreeNodeItem[]> => {
@@ -81,6 +94,10 @@ export interface WikiDirectoryPayload {
 
 export const createWikiDirectory = async (spaceId: number, payload: WikiDirectoryPayload): Promise<void> => {
   await http.post<ApiResponse<null>>(`/api/wiki/spaces/${spaceId}/directories`, payload)
+}
+
+export const updateWikiDirectory = async (spaceId: number, directoryId: number, payload: WikiDirectoryPayload): Promise<void> => {
+  await http.put<ApiResponse<null>>(`/api/wiki/spaces/${spaceId}/directories/${directoryId}`, payload)
 }
 
 export const deleteWikiDirectory = async (spaceId: number, directoryId: number): Promise<void> => {

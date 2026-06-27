@@ -1,5 +1,10 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.agentusage.AgentInvocationContext;
+import com.aiclub.platform.agentusage.AgentInvocationContextHolder;
+import com.aiclub.platform.agentusage.AgentInvocationRecorder;
+import com.aiclub.platform.agentusage.AgentType;
+import com.aiclub.platform.agentusage.TriggerSource;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.dto.AiModelConfigSummary;
 import com.aiclub.platform.dto.ModelTestResult;
@@ -11,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.persistence.criteria.Predicate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -52,6 +58,13 @@ public class ModelConfigService {
     private final TokenCipherService tokenCipherService;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+
+    /**
+     * 智能体调用日志记录器，仅在 {@code invokePromptWithUsage} 兜底分支使用。
+     * 业务层主动埋点的调用不会重复落账。@Autowired(required=false) 兼容启动期单元测试环境。
+     */
+    @Autowired(required = false)
+    private AgentInvocationRecorder agentInvocationRecorder;
 
     public ModelConfigService(AiModelConfigRepository aiModelConfigRepository,
                               TokenCipherService tokenCipherService,
@@ -153,6 +166,13 @@ public class ModelConfigService {
     }
 
     /**
+     * 快捷重载：通过模型配置 ID 调用并返回 usage 信息。
+     */
+    public ModelInvocation invokePromptWithUsage(Long id, String systemPrompt, String userPrompt) {
+        return invokePromptWithUsage(resolveModelConfig(id), systemPrompt, userPrompt, 2048, false);
+    }
+
+    /**
      * 生成单条文本的向量，供 Wiki 知识索引等业务复用平台统一的 Embedding 模型配置。
      */
     public List<Double> generateEmbedding(Long id, String input) {
@@ -171,6 +191,52 @@ public class ModelConfigService {
     }
 
     public String invokePrompt(ResolvedModelConfig config, String systemPrompt, String userPrompt, Integer maxTokens, boolean jsonMode) {
+        return invokePromptWithUsage(config, systemPrompt, userPrompt, maxTokens, jsonMode).text();
+    }
+
+    /**
+     * 调用模型生成文本并返回 token usage 信息。
+     *
+     * <p>若当前线程没有显式埋点上下文（{@link AgentInvocationContextHolder}），自动以
+     * {@link AgentType#UNKNOWN_MODEL_CALL} 兜底落账，便于运维发现未埋点的 AI 服务。
+     * Provider 解析 usage 字段：
+     * <ul>
+     *   <li>OpenAI Responses: {@code usage.input_tokens / output_tokens / total_tokens}</li>
+     *   <li>OpenAI Chat Completions: {@code usage.prompt_tokens / completion_tokens / total_tokens}</li>
+     *   <li>Anthropic: {@code usage.input_tokens / output_tokens}（total 应用层累加）</li>
+     * </ul>
+     */
+    public ModelInvocation invokePromptWithUsage(ResolvedModelConfig config,
+                                                  String systemPrompt,
+                                                  String userPrompt,
+                                                  Integer maxTokens,
+                                                  boolean jsonMode) {
+        // 底层兜底：未显式埋点时自动以 UNKNOWN_MODEL_CALL 落账。
+        if (agentInvocationRecorder != null && !AgentInvocationContextHolder.isPresent()) {
+            AiModelConfigEntity entity = aiModelConfigRepository.findById(config.id()).orElse(null);
+            AgentInvocationContext fallbackCtx = AgentInvocationContext.builder(AgentType.UNKNOWN_MODEL_CALL)
+                    .action(detectCallerClassName())
+                    .triggerSource(TriggerSource.SYSTEM)
+                    .modelConfigId(config.id())
+                    .modelName(config.modelName())
+                    .provider(config.provider())
+                    .inputChars(charLength(systemPrompt) + charLength(userPrompt))
+                    .build();
+            return agentInvocationRecorder.trackWithUsage(fallbackCtx, sink -> {
+                ModelInvocation inv = doInvokePromptWithUsage(config, systemPrompt, userPrompt, maxTokens, jsonMode);
+                sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens());
+                sink.setOutputChars(charLength(inv.text()));
+                return inv;
+            });
+        }
+        return doInvokePromptWithUsage(config, systemPrompt, userPrompt, maxTokens, jsonMode);
+    }
+
+    private ModelInvocation doInvokePromptWithUsage(ResolvedModelConfig config,
+                                                     String systemPrompt,
+                                                     String userPrompt,
+                                                     Integer maxTokens,
+                                                     boolean jsonMode) {
         String modelType = normalizeModelType(config.modelType());
         if (!MODEL_TYPE_CHAT.equals(modelType)) {
             throw new IllegalArgumentException("Embedding 模型不支持文本生成调用，请选择对话模型");
@@ -179,10 +245,10 @@ public class ModelConfigService {
         int safeMaxTokens = maxTokens == null ? 2048 : Math.max(64, Math.min(maxTokens, 8192));
         try {
             if (PROVIDER_OPENAI.equals(provider)) {
-                return invokeOpenAiPrompt(config, systemPrompt, userPrompt, safeMaxTokens, jsonMode);
+                return invokeOpenAiPromptWithUsage(config, systemPrompt, userPrompt, safeMaxTokens, jsonMode);
             }
             if (PROVIDER_ANTHROPIC.equals(provider)) {
-                return invokeAnthropicPrompt(config, systemPrompt, userPrompt, safeMaxTokens);
+                return invokeAnthropicPromptWithUsage(config, systemPrompt, userPrompt, safeMaxTokens);
             }
             throw new IllegalArgumentException("仅支持 OPENAI 和 ANTHROPIC");
         } catch (IllegalArgumentException exception) {
@@ -514,6 +580,115 @@ public class ModelConfigService {
         return extractAnthropicText(objectMapper.readTree(response.body()));
     }
 
+    /**
+     * OpenAI Prompt 调用并返回 usage 信息，行为与 {@link #invokeOpenAiPrompt} 保持一致。
+     */
+    private ModelInvocation invokeOpenAiPromptWithUsage(ResolvedModelConfig config,
+                                                         String systemPrompt,
+                                                         String userPrompt,
+                                                         int maxTokens,
+                                                         boolean jsonMode) throws IOException, InterruptedException {
+        String baseUrl = trimSlash(config.apiBaseUrl());
+        if (OPENAI_API_MODE_CHAT_COMPLETIONS.equals(config.openaiApiMode())
+                || OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN.equals(config.openaiApiMode())) {
+            return invokeOpenAiChatCompletionsPromptWithUsage(baseUrl, config, systemPrompt, userPrompt, maxTokens, jsonMode);
+        }
+        JsonNode input = objectMapper.createArrayNode()
+                .add(objectMapper.createObjectNode().put("role", "system").put("content", defaultString(systemPrompt)))
+                .add(objectMapper.createObjectNode().put("role", "user").put("content", defaultString(userPrompt)));
+        ObjectNode payload = objectMapper.createObjectNode()
+                .put("model", config.modelName())
+                .set("input", input);
+        payload.put("max_output_tokens", maxTokens);
+
+        HttpResponse<String> response = sendJsonPost(baseUrl + "/responses", config.apiKey(), payload);
+        if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            JsonNode tree = objectMapper.readTree(response.body());
+            String text = extractOpenAiText(tree);
+            ModelInvocationUsage usage = extractOpenAiUsage(tree);
+            return new ModelInvocation(text,
+                    usage == null ? null : usage.input(),
+                    usage == null ? null : usage.output(),
+                    usage == null ? null : usage.total());
+        }
+        if (response.statusCode() == 404) {
+            return invokeOpenAiChatCompletionsPromptWithUsage(baseUrl, config, systemPrompt, userPrompt, maxTokens, jsonMode);
+        }
+        throw new IllegalStateException("OpenAI 接口调用失败：" + extractHttpError(response));
+    }
+
+    private ModelInvocation invokeOpenAiChatCompletionsPromptWithUsage(String baseUrl,
+                                                                       ResolvedModelConfig config,
+                                                                       String systemPrompt,
+                                                                       String userPrompt,
+                                                                       int maxTokens,
+                                                                       boolean jsonMode) throws IOException, InterruptedException {
+        ObjectNode payload = objectMapper.createObjectNode()
+                .put("model", config.modelName())
+                .put("temperature", 0)
+                .put("max_tokens", maxTokens)
+                .set("messages", objectMapper.createArrayNode()
+                        .add(objectMapper.createObjectNode()
+                                .put("role", "system")
+                                .put("content", defaultString(systemPrompt)))
+                        .add(objectMapper.createObjectNode()
+                                .put("role", "user")
+                                .put("content", defaultString(userPrompt))));
+
+        if (jsonMode && !OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN.equals(config.openaiApiMode())) {
+            payload.set("response_format", objectMapper.createObjectNode().put("type", "json_object"));
+        }
+
+        HttpResponse<String> response = sendJsonPost(baseUrl + "/chat/completions", config.apiKey(), payload);
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("OpenAI Chat Completions 调用失败：" + extractHttpError(response));
+        }
+        JsonNode tree = objectMapper.readTree(response.body());
+        String text = extractOpenAiChatText(tree);
+        ModelInvocationUsage usage = extractOpenAiChatUsage(tree);
+        return new ModelInvocation(text,
+                usage == null ? null : usage.input(),
+                usage == null ? null : usage.output(),
+                usage == null ? null : usage.total());
+    }
+
+    private ModelInvocation invokeAnthropicPromptWithUsage(ResolvedModelConfig config,
+                                                            String systemPrompt,
+                                                            String userPrompt,
+                                                            int maxTokens) throws IOException, InterruptedException {
+        JsonNode payload = objectMapper.createObjectNode()
+                .put("model", config.modelName())
+                .put("max_tokens", maxTokens)
+                .put("temperature", 0)
+                .put("system", defaultString(systemPrompt))
+                .set("messages", objectMapper.createArrayNode().add(
+                        objectMapper.createObjectNode()
+                                .put("role", "user")
+                                .put("content", defaultString(userPrompt))
+                ));
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(trimSlash(config.apiBaseUrl()) + "/messages"))
+                .timeout(MODEL_REQUEST_TIMEOUT)
+                .header("x-api-key", config.apiKey())
+                .header("anthropic-version", "2023-06-01")
+                .header("content-type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload), StandardCharsets.UTF_8))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("Anthropic 接口调用失败：" + extractHttpError(response));
+        }
+        JsonNode tree = objectMapper.readTree(response.body());
+        String text = extractAnthropicText(tree);
+        ModelInvocationUsage usage = extractAnthropicUsage(tree);
+        return new ModelInvocation(text,
+                usage == null ? null : usage.input(),
+                usage == null ? null : usage.output(),
+                usage == null ? null : usage.total());
+    }
+
     private String extractOpenAiText(JsonNode body) {
         if (body.path("output_text").isTextual() && hasText(body.path("output_text").asText())) {
             return body.path("output_text").asText();
@@ -527,6 +702,57 @@ public class ModelConfigService {
             }
         }
         return body.toString();
+    }
+
+    /**
+     * 从 OpenAI Responses API 响应中提取 usage 信息。
+     */
+    private ModelInvocationUsage extractOpenAiUsage(JsonNode body) {
+        JsonNode usage = body.path("usage");
+        if (usage.isMissingNode() || usage.isNull()) {
+            return null;
+        }
+        Integer inputTokens = jsonIntOrNull(usage.path("input_tokens"));
+        Integer outputTokens = jsonIntOrNull(usage.path("output_tokens"));
+        Integer totalTokens = jsonIntOrNull(usage.path("total_tokens"));
+        if (inputTokens == null && outputTokens == null && totalTokens == null) {
+            return null;
+        }
+        return new ModelInvocationUsage(inputTokens, outputTokens, totalTokens);
+    }
+
+    /**
+     * 从 OpenAI Chat Completions 响应中提取 usage 信息。
+     */
+    private ModelInvocationUsage extractOpenAiChatUsage(JsonNode body) {
+        JsonNode usage = body.path("usage");
+        if (usage.isMissingNode() || usage.isNull()) {
+            return null;
+        }
+        Integer prompt = jsonIntOrNull(usage.path("prompt_tokens"));
+        Integer completion = jsonIntOrNull(usage.path("completion_tokens"));
+        Integer total = jsonIntOrNull(usage.path("total_tokens"));
+        if (prompt == null && completion == null && total == null) {
+            return null;
+        }
+        return new ModelInvocationUsage(prompt, completion, total);
+    }
+
+    /**
+     * 从 Anthropic Messages API 响应中提取 usage 信息。
+     */
+    private ModelInvocationUsage extractAnthropicUsage(JsonNode body) {
+        JsonNode usage = body.path("usage");
+        if (usage.isMissingNode() || usage.isNull()) {
+            return null;
+        }
+        Integer inputTokens = jsonIntOrNull(usage.path("input_tokens"));
+        Integer outputTokens = jsonIntOrNull(usage.path("output_tokens"));
+        if (inputTokens == null && outputTokens == null) {
+            return null;
+        }
+        Integer total = (inputTokens == null ? 0 : inputTokens) + (outputTokens == null ? 0 : outputTokens);
+        return new ModelInvocationUsage(inputTokens, outputTokens, total);
     }
 
     private String extractOpenAiChatText(JsonNode body) {
@@ -725,5 +951,63 @@ public class ModelConfigService {
      * 下游统一使用该载荷读取模型连接信息，modelType 用于保护文本生成链路不误用 Embedding 模型。
      */
     public record ResolvedModelConfig(Long id, String name, String modelType, String provider, String apiBaseUrl, String modelName, String openaiApiMode, String apiKey) {
+    }
+
+    /**
+     * 模型调用返回结果，含文本和 usage 信息。
+     */
+    public record ModelInvocation(String text, Integer promptTokens, Integer completionTokens, Integer totalTokens) {
+    }
+
+    // ---------- 内部用法解析 ----------
+
+    /**
+     * OpenAI / Anthropic usage 的私有解析中间类型。
+     */
+    private record ModelInvocationUsage(Integer input, Integer output, Integer total) {
+    }
+
+    /**
+     * 从 JSON 节点中提取整数，缺失或非整型返回 null。
+     */
+    private static Integer jsonIntOrNull(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        if (node.canConvertToInt()) {
+            return node.asInt();
+        }
+        return null;
+    }
+
+    /**
+     * 计算字符串字符数（包括 null == 0）。
+     */
+    private static int charLength(String s) {
+        return s == null ? 0 : s.length();
+    }
+
+    /**
+     * 检测调用 ModelConfigService 的栈顶 Service 类名，供兜底埋点使用。
+     */
+    private static String detectCallerClassName() {
+        StackWalker walker = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE);
+        return walker.walk(frames ->
+                frames.skip(1) // 跳过自身
+                        .filter(f -> {
+                            String cn = f.getClassName();
+                            return !cn.startsWith("com.aiclub.platform.service.ModelConfigService")
+                                    && !cn.startsWith("java.")
+                                    && !cn.startsWith("jdk.")
+                                    && !cn.startsWith("org.springframework");
+                        })
+                        .findFirst()
+                        .map(f -> {
+                            String simpleName = f.getClassName();
+                            int dot = simpleName.lastIndexOf('.');
+                            return dot >= 0 ? simpleName.substring(dot + 1) : simpleName;
+                        })
+                        .orElse("UNKNOWN")
+        );
     }
 }

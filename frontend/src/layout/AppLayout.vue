@@ -785,7 +785,8 @@ const integrationMenuSeeds: MenuSeed[] = [
 
 const trailingMenuSeeds: MenuSeed[] = [
   { permission: 'model:view', fallbackPath: '/models', fallbackLabel: '模型管理', shortLabel: '模型', fallbackIcon: Cpu, matchNames: ['models', 'model-benchmark-configs'] },
-  { permission: 'system:pr-review:view', fallbackPath: '/pr-review-stats', fallbackLabel: 'PR评审统计', shortLabel: 'PR评审', fallbackIcon: DataAnalysis, matchNames: ['pr-review-stats'] }
+  { permission: 'system:pr-review:view', fallbackPath: '/pr-review-stats', fallbackLabel: 'PR评审统计', shortLabel: 'PR评审', fallbackIcon: DataAnalysis, matchNames: ['pr-review-stats'] },
+  { permission: 'system:agent-usage:view', fallbackPath: '/agent-usage-stats', fallbackLabel: '智能体调用统计', shortLabel: '智能体', fallbackIcon: DataAnalysis, matchNames: ['agent-usage-stats'] }
 ]
 
 const systemMenuSeeds: MenuSeed[] = [

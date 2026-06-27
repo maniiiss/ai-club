@@ -1,6 +1,7 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.DocumentAssetEntity;
+import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.domain.model.WikiDirectoryEntity;
 import com.aiclub.platform.domain.model.WikiPageSyncTaskV2Entity;
@@ -10,6 +11,7 @@ import com.aiclub.platform.domain.model.WikiSpaceEntity;
 import com.aiclub.platform.dto.DocumentMarkdownResult;
 import com.aiclub.platform.dto.WikiSpacePageDetail;
 import com.aiclub.platform.dto.request.CreateWikiImportPageRequest;
+import com.aiclub.platform.exception.ForbiddenException;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.repository.WikiDirectoryRepository;
@@ -34,11 +36,13 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -174,6 +178,38 @@ class WikiSpaceServiceImportTests {
                 "wiki-spaces/space-10/imports/asset-30"
         );
         assertThat(detail.content()).isEqualTo("# 转换后的正文");
+    }
+
+    @Test
+    void shouldRequireProjectVisibilityForProjectBoundPublicSpace() {
+        AuthContextHolder.set(new AuthContext(
+                2L,
+                "member",
+                "普通用户",
+                Set.of(),
+                Set.of("wiki:view")
+        ));
+        UserEntity user = new UserEntity();
+        user.setId(2L);
+        user.setUsername("member");
+        user.setNickname("普通用户");
+        ProjectEntity project = new ProjectEntity();
+        project.setId(99L);
+        project.setName("受限项目");
+        WikiSpaceEntity space = new WikiSpaceEntity();
+        space.setId(10L);
+        space.setName("项目 Wiki");
+        space.setReadScope(WikiSpaceService.READ_SCOPE_ALL_LOGGED_IN);
+        space.setBoundProject(project);
+
+        when(userRepository.findWithDetailsById(2L)).thenReturn(Optional.of(user));
+        when(wikiSpaceRepository.findById(10L)).thenReturn(Optional.of(space));
+        doThrow(new ForbiddenException("无权访问项目数据"))
+                .when(projectDataPermissionService).requireProjectVisible(project);
+
+        assertThatThrownBy(() -> wikiSpaceService.getSpaceDetail(10L))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessageContaining("无权访问项目数据");
     }
 
     private TestFixture prepareFixture() {

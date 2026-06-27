@@ -253,6 +253,9 @@ public class WikiSpaceService {
      */
     public List<WikiSpaceSummary> listSpaces(String keyword, Boolean mineOnly, Boolean publicOnly, Long projectId) {
         UserContext userContext = requireCurrentUserContext();
+        if (projectId != null) {
+            requireVisibleProject(projectId);
+        }
         List<WikiSpaceEntity> spaces = wikiSpaceRepository.findAll(Sort.by(Sort.Direction.ASC, "name", "id"));
         return spaces.stream()
                 .filter(space -> canViewSpace(space, userContext))
@@ -285,6 +288,29 @@ public class WikiSpaceService {
         ProjectEntity boundProject = request.boundProjectId() == null ? null : requireVisibleProject(request.boundProjectId());
         requireProjectNotBound(boundProject, null);
         String memberDefaultSource = normalizeMemberDefaultSource(request.memberDefaultSource(), boundProject);
+        WikiSpaceEntity entity = new WikiSpaceEntity();
+        entity.setName(defaultString(request.name()));
+        entity.setDescription(defaultString(request.description()));
+        entity.setReadScope(normalizeReadScope(request.readScope()));
+        entity.setBoundProject(boundProject);
+        entity.setMemberDefaultSource(memberDefaultSource);
+        entity.setCreatorUser(userContext.user());
+        WikiSpaceEntity saved = wikiSpaceRepository.save(entity);
+        applyDefaultMembers(saved, userContext.user(), boundProject, memberDefaultSource, true);
+        ensureDefaultDirectory(saved, userContext.user());
+        return toSpaceDetail(saved, userContext);
+    }
+
+    /**
+     * 从项目入口初始化 Wiki 空间。
+     * 业务意图：公众端只允许创建绑定当前项目的 Wiki，项目 ID 以路径参数为准，避免前端伪造绑定到其它项目。
+     */
+    @Transactional
+    public WikiSpaceDetail createProjectSpace(Long projectId, CreateWikiSpaceRequest request) {
+        UserContext userContext = requireCurrentUserContext();
+        ProjectEntity boundProject = requireVisibleProject(projectId);
+        requireProjectNotBound(boundProject, null);
+        String memberDefaultSource = normalizeMemberDefaultSource(MEMBER_SOURCE_PROJECT_MEMBERS, boundProject);
         WikiSpaceEntity entity = new WikiSpaceEntity();
         entity.setName(defaultString(request.name()));
         entity.setDescription(defaultString(request.description()));
@@ -755,6 +781,9 @@ public class WikiSpaceService {
      */
     public List<WikiSpacePageSummary> searchPages(String keyword, Long spaceId, Long projectId) {
         UserContext userContext = requireCurrentUserContext();
+        if (projectId != null) {
+            requireVisibleProject(projectId);
+        }
         List<WikiPageV2Entity> pages = resolveCandidatePages(spaceId);
         String normalizedKeyword = defaultString(keyword).toLowerCase(Locale.ROOT);
         return pages.stream()
@@ -775,6 +804,9 @@ public class WikiSpaceService {
      */
     public List<WikiSpaceSearchResult> semanticSearchPages(String query, Long spaceId, Long projectId) {
         UserContext userContext = requireCurrentUserContext();
+        if (projectId != null) {
+            requireVisibleProject(projectId);
+        }
         List<WikiSpaceEntity> visibleSpaces = resolveVisibleSpaces(spaceId, userContext);
         LinkedHashMap<Long, WikiSpaceSearchResult> merged = new LinkedHashMap<>();
         for (WikiSpaceEntity space : visibleSpaces) {
@@ -1111,24 +1143,34 @@ public class WikiSpaceService {
     }
 
     private void requireSpaceVisible(WikiSpaceEntity space, UserContext userContext) {
-        if (!canViewSpace(space, userContext)) {
+        if (!hasWikiSpaceReadAccess(space, userContext)) {
             throw new ForbiddenException("无权访问当前 Wiki 空间");
         }
+        requireBoundProjectVisible(space);
     }
 
     private void requireSpaceEditable(WikiSpaceEntity space, UserContext userContext) {
         if (!canEditSpace(space, userContext)) {
             throw new ForbiddenException("无权维护当前 Wiki 空间内容");
         }
+        requireBoundProjectVisible(space);
     }
 
     private void requireSpaceManageable(WikiSpaceEntity space, UserContext userContext) {
         if (!canManageSpace(space, userContext)) {
             throw new ForbiddenException("无权管理当前 Wiki 空间");
         }
+        requireBoundProjectVisible(space);
     }
 
     private boolean canViewSpace(WikiSpaceEntity space, UserContext userContext) {
+        if (!hasWikiSpaceReadAccess(space, userContext)) {
+            return false;
+        }
+        return isBoundProjectVisible(space, userContext);
+    }
+
+    private boolean hasWikiSpaceReadAccess(WikiSpaceEntity space, UserContext userContext) {
         if (space == null || userContext == null) {
             return false;
         }
@@ -1137,6 +1179,26 @@ public class WikiSpaceService {
         }
         return READ_SCOPE_ALL_LOGGED_IN.equalsIgnoreCase(space.getReadScope())
                 || memberRole(space.getId(), userContext.userId()) != null;
+    }
+
+    /**
+     * 项目 Wiki 以项目数据权限为最终边界：空间公开不代表可以越过绑定项目。
+     */
+    private void requireBoundProjectVisible(WikiSpaceEntity space) {
+        if (space != null && space.getBoundProject() != null) {
+            projectDataPermissionService.requireProjectVisible(space.getBoundProject());
+        }
+    }
+
+    /**
+     * 列表/搜索类入口使用布尔过滤，避免把不可见项目绑定的 Wiki 暴露给公众端。
+     */
+    private boolean isBoundProjectVisible(WikiSpaceEntity space, UserContext userContext) {
+        if (space == null || space.getBoundProject() == null || userContext.superAdmin()) {
+            return true;
+        }
+        ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.currentScopeOrNull();
+        return scope != null && projectDataPermissionService.isProjectVisible(space.getBoundProject(), scope);
     }
 
     private boolean canEditSpace(WikiSpaceEntity space, UserContext userContext) {

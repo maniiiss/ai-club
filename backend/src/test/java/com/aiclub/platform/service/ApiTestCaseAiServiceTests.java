@@ -1,5 +1,6 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.agentusage.AgentInvocationRecorder;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.dto.ApiTestCaseAiResult;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -21,8 +23,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -43,17 +47,28 @@ class ApiTestCaseAiServiceTests {
     @Mock
     private ModelConfigService modelConfigService;
 
+    @Mock
+    private AgentInvocationRecorder agentInvocationRecorder;
+
     private ObjectMapper objectMapper;
     private ApiTestCaseAiService apiTestCaseAiService;
 
     @BeforeEach
     void setUp() {
+        lenient().when(agentInvocationRecorder.track(any(), ArgumentMatchers.<java.util.function.Supplier<Object>>any()))
+                .thenAnswer(invocation -> invocation.getArgument(1, java.util.function.Supplier.class).get());
+        lenient().when(agentInvocationRecorder.trackWithUsage(any(), ArgumentMatchers.<java.util.function.Function<com.aiclub.platform.agentusage.UsageSink, Object>>any()))
+                .thenAnswer(invocation -> {
+                    java.util.function.Function<com.aiclub.platform.agentusage.UsageSink, Object> fn = invocation.getArgument(1);
+                    return fn.apply(new com.aiclub.platform.agentusage.UsageSink());
+                });
         objectMapper = new ObjectMapper();
         apiTestCaseAiService = new ApiTestCaseAiService(
                 contextSource,
                 aiModelConfigRepository,
                 modelConfigService,
-                objectMapper
+                objectMapper,
+                agentInvocationRecorder
         );
     }
 
@@ -63,7 +78,8 @@ class ApiTestCaseAiServiceTests {
         when(contextSource.requireContext(10L, 101L)).thenReturn(context());
         when(aiModelConfigRepository.findAllByEnabledTrueAndModelTypeOrderByIdAsc(ModelConfigService.MODEL_TYPE_CHAT)).thenReturn(List.of(chatModel));
         when(modelConfigService.resolveModelConfig(3L)).thenReturn(resolved(chatModel));
-        when(modelConfigService.invokePrompt(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt())).thenReturn(aiJson(9));
+        when(modelConfigService.invokePromptWithUsage(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt(), anyBoolean()))
+                .thenReturn(new ModelConfigService.ModelInvocation(aiJson(9), null, null, null));
 
         ApiTestCaseAiResult result = apiTestCaseAiService.generate(10L, 101L, new ApiTestGenerationRequest(null));
 
@@ -94,12 +110,13 @@ class ApiTestCaseAiServiceTests {
         when(contextSource.requireContext(10L, 101L)).thenReturn(context());
         when(aiModelConfigRepository.findAllByEnabledTrueAndModelTypeOrderByIdAsc(ModelConfigService.MODEL_TYPE_CHAT)).thenReturn(List.of(chatModel));
         when(modelConfigService.resolveModelConfig(3L)).thenReturn(resolved(chatModel));
-        when(modelConfigService.invokePrompt(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt())).thenReturn(aiJson(1));
+        when(modelConfigService.invokePromptWithUsage(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt(), anyBoolean()))
+                .thenReturn(new ModelConfigService.ModelInvocation(aiJson(1), null, null, null));
 
         apiTestCaseAiService.generate(10L, 101L, new ApiTestGenerationRequest(null));
 
         ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(modelConfigService).invokePrompt(any(ModelConfigService.ResolvedModelConfig.class), anyString(), userPromptCaptor.capture(), anyInt());
+        verify(modelConfigService).invokePromptWithUsage(any(ModelConfigService.ResolvedModelConfig.class), anyString(), userPromptCaptor.capture(), anyInt(), anyBoolean());
         assertThat(userPromptCaptor.getValue()).contains("***已脱敏***");
         assertThat(userPromptCaptor.getValue()).doesNotContain("Bearer real-token");
         assertThat(userPromptCaptor.getValue()).doesNotContain("plain-password");
