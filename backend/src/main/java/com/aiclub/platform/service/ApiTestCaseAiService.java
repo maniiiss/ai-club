@@ -4,8 +4,9 @@ import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.dto.ApiTestAssertionSuggestion;
 import com.aiclub.platform.dto.ApiTestCaseAiResult;
 import com.aiclub.platform.dto.ApiTestCaseSuggestion;
-import com.aiclub.platform.dto.request.YaadeApiTestCaseGenerationRequest;
+import com.aiclub.platform.dto.request.ApiTestGenerationRequest;
 import com.aiclub.platform.repository.AiModelConfigRepository;
+import com.aiclub.platform.service.ApiTestContextSource.ApiTestGenerationContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -26,7 +27,8 @@ import java.util.regex.Pattern;
 
 /**
  * 单接口 AI 测试用例生成服务。
- * V1 只生成可审核建议，不保存、不执行、不写回 Yaade，避免把不确定的 AI 输出直接变成自动化资产。
+ * V1 只生成可审核建议，不保存、不执行、不写回主接口表，避免把不确定的 AI 输出直接变成自动化资产。
+ * 数据源通过 {@link ApiTestContextSource} 解耦，主实现为原生 API Studio。
  */
 @Service
 @Transactional(readOnly = true)
@@ -40,26 +42,26 @@ public class ApiTestCaseAiService {
             "(?i)(authorization|cookie|token|password|secret|api[-_]?key|access[-_]?key|refresh[-_]?key)(\\s*[:=]\\s*)([^,;\\n\\r}]+)"
     );
 
-    private final YaadeApiCatalogService yaadeApiCatalogService;
+    private final ApiTestContextSource contextSource;
     private final AiModelConfigRepository aiModelConfigRepository;
     private final ModelConfigService modelConfigService;
     private final ObjectMapper objectMapper;
 
-    public ApiTestCaseAiService(YaadeApiCatalogService yaadeApiCatalogService,
+    public ApiTestCaseAiService(ApiTestContextSource contextSource,
                                 AiModelConfigRepository aiModelConfigRepository,
                                 ModelConfigService modelConfigService,
                                 ObjectMapper objectMapper) {
-        this.yaadeApiCatalogService = yaadeApiCatalogService;
+        this.contextSource = contextSource;
         this.aiModelConfigRepository = aiModelConfigRepository;
         this.modelConfigService = modelConfigService;
         this.objectMapper = objectMapper;
     }
 
-    public ApiTestCaseAiResult generate(Long projectId, Long requestId, YaadeApiTestCaseGenerationRequest request) {
-        YaadeApiCatalogService.RequestLookupResult lookup = yaadeApiCatalogService.requireRequest(projectId, requestId);
+    public ApiTestCaseAiResult generate(Long projectId, Long endpointId, ApiTestGenerationRequest request) {
+        ApiTestGenerationContext context = contextSource.requireContext(projectId, endpointId);
         AiModelConfigEntity modelConfig = resolveModelConfig(request == null ? null : request.modelConfigId());
-        String raw = invokePrompt(modelConfig, buildUserPrompt(lookup));
-        return parseResult(raw, lookup, modelConfig);
+        String raw = invokePrompt(modelConfig, buildUserPrompt(context));
+        return parseResult(raw, context, modelConfig);
     }
 
     private String invokePrompt(AiModelConfigEntity modelConfig, String userPrompt) {
@@ -126,15 +128,15 @@ public class ApiTestCaseAiService {
                 """;
     }
 
-    private String buildUserPrompt(YaadeApiCatalogService.RequestLookupResult lookup) {
-        ObjectNode context = objectMapper.createObjectNode();
-        context.put("projectName", defaultString(lookup.project().getName()));
-        context.put("collectionPath", defaultString(lookup.collectionPath()));
-        context.put("requestId", lookup.request().id());
-        context.set("request", buildSanitizedRequestContext(lookup.request().data()));
+    private String buildUserPrompt(ApiTestGenerationContext context) {
+        ObjectNode contextNode = objectMapper.createObjectNode();
+        contextNode.put("projectName", defaultString(context.project().getName()));
+        contextNode.put("collectionPath", defaultString(context.collectionPath()));
+        contextNode.put("requestId", context.endpointId());
+        contextNode.set("request", buildSanitizedRequestContext(context.requestData()));
         try {
-            return "请基于以下已脱敏的 Yaade REST API 定义生成接口测试用例建议：\n"
-                    + objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(context);
+            return "请基于以下已脱敏的 REST API 定义生成接口测试用例建议：\n"
+                    + objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(contextNode);
         } catch (Exception exception) {
             throw new IllegalStateException("序列化 API 测试用例 AI 上下文失败", exception);
         }
@@ -152,7 +154,6 @@ public class ApiTestCaseAiService {
         request.set("formDataBody", sanitizeJson(data.path("formDataBody"), "formDataBody"));
         request.set("auth", sanitizeJson(data.path("auth"), "auth"));
         request.put("body", sanitizeBodyText(text(data, "body")));
-        request.set("syncMetadata", sanitizeJson(data.path("aiclubSync"), "aiclubSync"));
         return request;
     }
 
@@ -209,7 +210,7 @@ public class ApiTestCaseAiService {
     }
 
     private ApiTestCaseAiResult parseResult(String raw,
-                                            YaadeApiCatalogService.RequestLookupResult lookup,
+                                            ApiTestGenerationContext context,
                                             AiModelConfigEntity modelConfig) {
         try {
             JsonNode root = objectMapper.readTree(extractJsonObject(raw));
@@ -221,9 +222,9 @@ public class ApiTestCaseAiService {
             if (markdown == null) {
                 markdown = buildFallbackMarkdown(cases);
             }
-            JsonNode data = lookup.request().data();
+            JsonNode data = context.requestData();
             return new ApiTestCaseAiResult(
-                    lookup.request().id(),
+                    context.endpointId(),
                     defaultString(data.path("name").asText("")),
                     defaultString(data.path("method").asText("GET")).toUpperCase(Locale.ROOT),
                     normalizePath(data.path("uri").asText("/")),

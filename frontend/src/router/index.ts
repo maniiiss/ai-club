@@ -20,8 +20,6 @@ const AiClubPipelineDetailView = () => import('@/views/AiClubPipelineDetailView.
 const ObservabilityProjectListView = () => import('@/views/ObservabilityProjectListView.vue')
 const ObservabilityProjectDetailView = () => import('@/views/ObservabilityProjectDetailView.vue')
 import ModelView from '@/views/ModelView.vue'
-const ApiGroupHomeView = () => import('@/views/ApiGroupHomeView.vue')
-const ProjectApiManagementView = () => import('@/views/ProjectApiManagementView.vue')
 import LoginView from '@/views/LoginView.vue'
 import ForbiddenView from '@/views/ForbiddenView.vue'
 import UserView from '@/views/UserView.vue'
@@ -112,9 +110,6 @@ const router = createRouter({
           component: () => import('@/views/apistudio/ApiStudioWorkbenchView.vue'),
           meta: { title: 'API 详情', permission: 'api:view', activeMenu: '/apis' }
         },
-        // Legacy Yaade 入口（保留过渡，后续清栈阶段删除）
-        { path: 'apis/legacy', name: 'api-groups-legacy', component: ApiGroupHomeView, meta: { title: 'API 管理 (Legacy)', permission: 'api:view', activeMenu: '/apis' } },
-        { path: 'apis/legacy/projects/:projectId', name: 'api-project-detail-legacy', component: ProjectApiManagementView, meta: { title: 'Yaade 工作台 (Legacy)', permission: 'api:view', activeMenu: '/apis' } },
         { path: 'wiki', name: 'wiki-home', component: WikiHomeView, meta: { title: 'Wiki 中心', permission: 'wiki:view' } },
         { path: 'wiki/spaces/:spaceId', name: 'wiki-space', component: WikiSpaceView, meta: { title: 'Wiki 空间', permission: 'wiki:view' } },
         { path: 'wiki/spaces/:spaceId/knowledge-graph', name: 'wiki-space-knowledge-graph', component: () => import('@/views/WikiKnowledgeGraphView.vue'), meta: { title: 'Wiki 知识图谱', permission: 'wiki:view', activeMenu: '/wiki' } },

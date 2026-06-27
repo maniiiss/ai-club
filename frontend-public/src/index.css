@@ -22,10 +22,33 @@ html {
 body {
   margin: 0;
   background-color: var(--color-bg-page);
+  /* 默认箭头光标，避免悬停普通文字出现 I-beam 文字光标
+   * 注意：仅改 cursor，user-select 保持默认（允许选中复制） */
+  cursor: default;
 }
 
 #root {
   min-height: 100vh;
+}
+
+/* ── 全局隐藏 caret（插入光标）──
+ * 让普通文字点击/获焦时不出现闪烁的竖线光标，
+ * 但完全不影响选中复制（user-select 没有禁用）。
+ * 真正需要输入的位置在下方白名单中恢复 caret-color。
+ */
+*,
+*::before,
+*::after {
+  caret-color: transparent;
+}
+
+/* ── 仅在「真正需要输入/编辑」的元素上恢复文字光标与 caret ── */
+input,
+textarea,
+[contenteditable="true"],
+[contenteditable=""] {
+  cursor: text;
+  caret-color: auto;
 }
 
 /* ── 选中文字颜色 ── */

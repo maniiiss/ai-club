@@ -17,7 +17,7 @@ import java.util.List;
 
 /**
  * GitLab Spring 接口抽取内部客户端。
- * 负责调用 code-processing，把绑定仓库源码转换成可同步到 Yaade 的接口清单。
+ * 负责调用 code-processing，把绑定仓库源码转换成可同步到 API Studio 的接口清单。
  */
 @Service
 public class GitlabSpringApiExtractClientService {
@@ -163,7 +163,7 @@ public class GitlabSpringApiExtractClientService {
              */
             String name,
             /**
-             * 接口详情说明，供 Yaade 描述字段使用。
+             * 接口详情说明。
              */
             String description,
             /**
@@ -175,7 +175,7 @@ public class GitlabSpringApiExtractClientService {
              */
             String controllerClassName,
             /**
-             * Controller 展示名，供 Yaade 子目录命名。
+             * 展示名，用于 Controller 目录命名。
              */
             String controllerDisplayName,
             /**

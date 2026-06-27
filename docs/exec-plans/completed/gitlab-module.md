@@ -1,5 +1,7 @@
 ﻿# GitLab 管理模块设计
 
+> 历史背景说明：本文档撰写时 GitLab→API 同步写入 Yaade collection。当前实现已迁移到原生 API Studio（`api_studio_*` 表），幂等 marker 落在 `api_studio_sync_binding`。详见 `docs/architecture.md` 3.2.5 节。
+
 ## 目标
 
 在现有 AI 代理工程管理平台中增加 GitLab 管理能力，既支持和业务项目关联，也支持“脱离业务任务独立运行”的自动合并中心。

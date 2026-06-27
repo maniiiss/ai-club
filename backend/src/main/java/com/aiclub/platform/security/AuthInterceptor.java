@@ -86,8 +86,6 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || requestUri.startsWith("/api/auth/register")
                 || requestUri.startsWith("/api/cicd/public/")
                 || requestUri.startsWith("/api/gitlab/public/")
-                || requestUri.startsWith("/api/yaade/health")
-                || requestUri.startsWith("/api/yaade/proxy")
                 || requestUri.startsWith("/api/common/public-files/")
                 || requestUri.startsWith("/comment-images")
                 || requestUri.startsWith("/actuator/health")

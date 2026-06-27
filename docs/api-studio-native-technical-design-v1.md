@@ -1,10 +1,12 @@
 # 原生 API 工作台技术设计 v1
 
-- 状态：已确认设计，待实施
+- 状态：**已实施完成**（Yaade 全栈已下线）
 - 日期：2026-06-24
 - 范围：`frontend/`、`backend/`、Flyway 迁移、`docs/`
 - 关联模块：独立菜单 `API 管理`
-- 取代方向：本设计取代 `docs/superpowers/specs/2026-06-23-api-studio-redesign-design.md` 中“保留 Yaade 作为能力层”的方案
+- 取代方向：本设计取代 `docs/superpowers/specs/2026-06-23-api-studio-redesign-design.md` 中基于嵌入式 iframe 的方案
+
+> 历史背景说明：本文档撰写时平台 API 管理基于 Yaade iframe。本设计描述的"原生 API 工作台"已经落地（`api_studio_*` 表 + `ApiStudioController` 等），Yaade 模块（控制器、服务、表、Docker、env、前端 iframe 视图）整体已删除。文中残留的 Yaade 描述保留作为迁移背景参考。
 
 ## 1. 背景
 

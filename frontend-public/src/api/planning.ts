@@ -101,7 +101,16 @@ export const createTaskComment = async (taskId: number, content: string): Promis
 
 /* ── 燃尽图 ── */
 
-export const getProjectBurndown = async (projectId: number): Promise<BurndownItem> => {
-  const res = await http.get<ApiResponse<BurndownItem>>(`/api/projects/${projectId}/burndown`)
+export interface BurndownQuery {
+  /** 仅统计该迭代的工作项；不传则按项目全量 */
+  iterationId?: number
+  /** 项目全量视图下是否排除未规划（iterationId 为空）的工作项 */
+  excludeUnplanned?: boolean
+}
+
+export const getProjectBurndown = async (projectId: number, query?: BurndownQuery): Promise<BurndownItem> => {
+  const res = await http.get<ApiResponse<BurndownItem>>(`/api/projects/${projectId}/burndown`, {
+    params: query ? cleanParams(query) : undefined,
+  })
   return unwrap(res)
 }

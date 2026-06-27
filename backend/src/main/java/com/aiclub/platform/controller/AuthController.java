@@ -9,7 +9,6 @@ import com.aiclub.platform.dto.request.LoginRequest;
 import com.aiclub.platform.dto.request.RegisterRequest;
 import com.aiclub.platform.dto.request.UpdateProfileRequest;
 import com.aiclub.platform.service.AuthService;
-import com.aiclub.platform.service.YaadeEmbedSessionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -28,11 +27,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
-    private final YaadeEmbedSessionService yaadeEmbedSessionService;
 
-    public AuthController(AuthService authService, YaadeEmbedSessionService yaadeEmbedSessionService) {
+    public AuthController(AuthService authService) {
         this.authService = authService;
-        this.yaadeEmbedSessionService = yaadeEmbedSessionService;
     }
 
     @PostMapping("/login")
@@ -72,7 +69,6 @@ public class AuthController {
                                     HttpServletRequest servletRequest,
                                     HttpServletResponse servletResponse) {
         authService.logout(authorization);
-        yaadeEmbedSessionService.clearProxySession(servletRequest, servletResponse);
         return new ApiResponse<>(true, "Logged out successfully", null);
     }
 }

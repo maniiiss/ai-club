@@ -384,7 +384,7 @@ bash ./scripts/harness-linux.sh <target>
 
 - 在后端逐步引入更清晰的分层(`domain / application / infrastructure / interface`)，收敛偏重的 `service` 层。
 - 为 Hermes、执行中心、仓库扫描、GitLab 管理分别补齐专项架构文档与时序说明。
-- 推进原生 API 工作台(`api-studio`)闭环，逐步下线 Yaade iframe 过渡方案。
+- 推进原生 API 工作台(`api-studio`)闭环。
 - 扩展可观测性中心,补充更多健康维度与项目级 SLA 汇总。
 - 把项目只读分享页升级为更完整的发布记录视图(版本号、关联 MR、上线说明)。
 - 沉淀用户侧帮助文档与典型角色操作手册。

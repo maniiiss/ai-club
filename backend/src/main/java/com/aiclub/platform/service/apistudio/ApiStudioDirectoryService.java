@@ -215,6 +215,47 @@ public class ApiStudioDirectoryService {
         }
     }
 
+    // ========== 服务内部写入路径（绕过 AuthContextHolder，供外部数据源同步使用） ==========
+
+    /**
+     * 不经过 HTTP 鉴权上下文的创建路径。调用方必须自行做权限检查。
+     */
+    @Transactional
+    ApiStudioDirectoryEntity createInternal(Long projectId,
+                                            Long parentId,
+                                            String name,
+                                            String description,
+                                            Integer sortOrder,
+                                            Long actorUserId) {
+        ApiStudioDirectoryEntity entity = new ApiStudioDirectoryEntity();
+        entity.setProjectId(projectId);
+        entity.setParentId(validatedParent(projectId, parentId));
+        entity.setName(name);
+        entity.setDescription(description);
+        entity.setSortOrder(sortOrder == null ? nextSortOrder(projectId, entity.getParentId()) : sortOrder);
+        entity.setCreatedBy(actorUserId);
+        entity.setUpdatedBy(actorUserId);
+        return directoryRepository.save(entity);
+    }
+
+    /**
+     * 不经过 HTTP 鉴权上下文的删除路径。要求目录非空时拒绝。
+     */
+    @Transactional
+    void deleteInternal(Long projectId, Long directoryId) {
+        ApiStudioDirectoryEntity entity = directoryRepository.findById(directoryId)
+                .orElseThrow(() -> new NoSuchElementException("目录不存在: " + directoryId));
+        if (!Objects.equals(entity.getProjectId(), projectId)) {
+            throw new ForbiddenException("目录不属于当前项目");
+        }
+        long childDirs = directoryRepository.countByParentId(directoryId);
+        long childEndpoints = endpointRepository.countByDirectoryId(directoryId);
+        if (childDirs > 0 || childEndpoints > 0) {
+            throw new IllegalArgumentException("目录非空，无法删除: " + directoryId);
+        }
+        directoryRepository.delete(entity);
+    }
+
     // ========== 辅助 ==========
 
     private Long validatedParent(Long projectId, Long parentId) {

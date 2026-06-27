@@ -1,7 +1,9 @@
 package com.aiclub.platform.controller;
 
+import com.aiclub.platform.annotation.OperationLog;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
+import com.aiclub.platform.dto.ApiTestCaseAiResult;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.apistudio.ApiStudioDebugExecutionResult;
 import com.aiclub.platform.dto.apistudio.ApiStudioDebugRecordItem;
@@ -12,12 +14,14 @@ import com.aiclub.platform.dto.apistudio.ApiStudioEndpointVersionItem;
 import com.aiclub.platform.dto.apistudio.ApiStudioEnvironmentDetail;
 import com.aiclub.platform.dto.apistudio.ApiStudioProjectOverview;
 import com.aiclub.platform.dto.apistudio.ApiStudioProjectTree;
+import com.aiclub.platform.dto.request.ApiTestGenerationRequest;
 import com.aiclub.platform.dto.request.apistudio.ApiStudioDebugExecutionRequest;
 import com.aiclub.platform.dto.request.apistudio.ApiStudioDirectoryReorderRequest;
 import com.aiclub.platform.dto.request.apistudio.ApiStudioDirectoryRequest;
 import com.aiclub.platform.dto.request.apistudio.ApiStudioEndpointReorderRequest;
 import com.aiclub.platform.dto.request.apistudio.ApiStudioEndpointRequest;
 import com.aiclub.platform.dto.request.apistudio.ApiStudioEnvironmentRequest;
+import com.aiclub.platform.service.ApiTestCaseAiService;
 import com.aiclub.platform.service.apistudio.ApiStudioDebugProxyService;
 import com.aiclub.platform.service.apistudio.ApiStudioDirectoryService;
 import com.aiclub.platform.service.apistudio.ApiStudioEndpointService;
@@ -55,15 +59,18 @@ public class ApiStudioController {
     private final ApiStudioEndpointService endpointService;
     private final ApiStudioEnvironmentService environmentService;
     private final ApiStudioDebugProxyService debugProxyService;
+    private final ApiTestCaseAiService apiTestCaseAiService;
 
     public ApiStudioController(ApiStudioDirectoryService directoryService,
                                ApiStudioEndpointService endpointService,
                                ApiStudioEnvironmentService environmentService,
-                               ApiStudioDebugProxyService debugProxyService) {
+                               ApiStudioDebugProxyService debugProxyService,
+                               ApiTestCaseAiService apiTestCaseAiService) {
         this.directoryService = directoryService;
         this.endpointService = endpointService;
         this.environmentService = environmentService;
         this.debugProxyService = debugProxyService;
+        this.apiTestCaseAiService = apiTestCaseAiService;
     }
 
     // ========== 7.1 项目入口 ==========
@@ -282,8 +289,11 @@ public class ApiStudioController {
 
     @PostMapping("/projects/{projectId}/endpoints/{endpointId}/ai-test-cases")
     @RequirePermission("api:manage")
-    public ResponseEntity<ApiResponse<Void>> aiTestCases(@PathVariable Long projectId, @PathVariable Long endpointId) {
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(ApiResponse.fail("AI 测试用例生成将在后续版本接入"));
+    @OperationLog(actionCode = "API_STUDIO_TEST_CASE_AI_GENERATE", actionName = "生成 API AI 测试用例")
+    public ApiResponse<ApiTestCaseAiResult> aiTestCases(@PathVariable Long projectId,
+                                                        @PathVariable Long endpointId,
+                                                        @RequestBody(required = false) ApiTestGenerationRequest request) {
+        return ApiResponse.success(apiTestCaseAiService.generate(projectId, endpointId, request));
     }
 
     @GetMapping("/projects/{projectId}/mock-rules")

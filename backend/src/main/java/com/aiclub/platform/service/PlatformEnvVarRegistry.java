@@ -32,12 +32,6 @@ public class PlatformEnvVarRegistry {
     public static final String KEY_PR_REVIEW_DEFAULT_DEV_GROUP_NAME = "PLATFORM_PR_REVIEW_DEFAULT_DEV_GROUP_NAME";
     public static final String KEY_PR_REVIEW_OA_USER_ID = "PLATFORM_PR_REVIEW_OA_USER_ID";
     public static final String KEY_PR_REVIEW_OA_TOKEN = "PLATFORM_PR_REVIEW_OA_TOKEN";
-    public static final String KEY_YAADE_BASE_URL = "PLATFORM_YAADE_BASE_URL";
-    public static final String KEY_YAADE_ADMIN_USERNAME = "PLATFORM_YAADE_ADMIN_USERNAME";
-    public static final String KEY_YAADE_ADMIN_PASSWORD = "PLATFORM_YAADE_ADMIN_PASSWORD";
-    public static final String KEY_YAADE_DEFAULT_USER_PASSWORD = "PLATFORM_YAADE_DEFAULT_USER_PASSWORD";
-    public static final String KEY_YAADE_PUBLIC_COLLECTION_NAME = "PLATFORM_YAADE_PUBLIC_COLLECTION_NAME";
-    public static final String KEY_YAADE_PROXY_SESSION_TTL_MINUTES = "PLATFORM_YAADE_PROXY_SESSION_TTL_MINUTES";
     public static final String KEY_HERMES_BASE_URL = "PLATFORM_HERMES_BASE_URL";
     public static final String KEY_HERMES_API_KEY = "PLATFORM_HERMES_API_KEY";
     public static final String KEY_HERMES_MODEL = "PLATFORM_HERMES_MODEL";
@@ -172,53 +166,6 @@ public class PlatformEnvVarRegistry {
                 "PR 评审统计访问 OA 接口时使用的全局认证令牌。",
                 true
         ));
-
-        // Yaade 代登与公共集合配置影响接口管理链路。
-        // 其中默认用户密码必须与 Yaade 服务端 YAADE_DEFAULT_PASSWORD 保持一致，
-        // 后台运行时覆盖不能实时改变远端 resetpassword 行为，因此不再暴露给环境变量管理。
-        registerUrl(new PlatformEnvVarDefinition(
-                KEY_YAADE_BASE_URL,
-                "platform.yaade.base-url",
-                "Yaade 代理地址",
-                "平台调用 Yaade 独立服务的 API 代理基础地址。",
-                false
-        ));
-        registerText(new PlatformEnvVarDefinition(
-                KEY_YAADE_ADMIN_USERNAME,
-                "platform.yaade.admin-username",
-                "Yaade 管理员用户名",
-                "平台自动创建用户、集合和授权时使用的 Yaade 管理员账号。",
-                false
-        ));
-        registerText(new PlatformEnvVarDefinition(
-                KEY_YAADE_ADMIN_PASSWORD,
-                "platform.yaade.admin-password",
-                "Yaade 管理员密码",
-                "平台自动创建用户、集合和授权时使用的 Yaade 管理员密码。",
-                true
-        ));
-        registerText(new PlatformEnvVarDefinition(
-                KEY_YAADE_DEFAULT_USER_PASSWORD,
-                "platform.yaade.default-user-password",
-                "Yaade 默认用户密码",
-                "平台为受管 Yaade 用户初始化或修复账号时使用的默认密码，必须与 Yaade 服务端 YAADE_DEFAULT_PASSWORD 保持一致。",
-                true,
-                false
-        ));
-        registerText(new PlatformEnvVarDefinition(
-                KEY_YAADE_PUBLIC_COLLECTION_NAME,
-                "platform.yaade.public-collection-name",
-                "Yaade 公共集合名称",
-                "未关联具体项目的接口文档同步到 Yaade 时使用的公共集合名称。",
-                false
-        ));
-        registerIntegerRange(new PlatformEnvVarDefinition(
-                KEY_YAADE_PROXY_SESSION_TTL_MINUTES,
-                "platform.yaade.proxy-session-ttl-minutes",
-                "Yaade 代理会话有效期",
-                "平台生成 Yaade 代登会话后的有效分钟数。",
-                false
-        ), 10, 720);
 
         // Hermes / Hindsight 的基础连接地址与鉴权密钥继续固定走部署配置，
         // 避免后台覆盖值与容器真实接入参数漂移；模型、预算、超时这类调优项仍允许后台维护。

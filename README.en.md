@@ -384,7 +384,7 @@ bash ./scripts/harness-linux.sh <target>
 
 - Gradually introduce clearer layering in the backend (`domain / application / infrastructure / interface`) to slim down the heavy `service` layer.
 - Add dedicated architecture docs and sequence descriptions for Hermes, the execution center, repo scanning, and GitLab management.
-- Advance the native API workbench (`api-studio`) to closure and gradually retire the Yaade iframe transitional approach.
+- Advance the native API workbench (`api-studio`) to closure.
 - Extend the observability center with more health dimensions and project-level SLA aggregation.
 - Upgrade the project read-only sharing page into a fuller release-record view (version numbers, related MRs, release notes).
 - Build out user-facing help docs and operation manuals for typical roles.

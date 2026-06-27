@@ -178,13 +178,6 @@ platform:
     ingest:
       retry-max: ${PLATFORM_LIGHTRAG_INGEST_RETRY_MAX:5}
       scan-interval-ms: ${PLATFORM_LIGHTRAG_INGEST_SCAN_INTERVAL_MS:600000}
-  yaade:
-    base-url: ${PLATFORM_YAADE_BASE_URL:}
-    admin-username: ${PLATFORM_YAADE_ADMIN_USERNAME:}
-    admin-password: ${PLATFORM_YAADE_ADMIN_PASSWORD:}
-    default-user-password: ${PLATFORM_YAADE_DEFAULT_USER_PASSWORD:}
-    public-collection-name: ${PLATFORM_YAADE_PUBLIC_COLLECTION_NAME:}
-    proxy-session-ttl-minutes: ${PLATFORM_YAADE_PROXY_SESSION_TTL_MINUTES:}
   internal:
     allow-local-bypass: ${PLATFORM_INTERNAL_ALLOW_LOCAL_BYPASS:true}
     service-token: ${PLATFORM_INTERNAL_SERVICE_TOKEN:git-ai-club-internal-service-token}

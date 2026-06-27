@@ -298,6 +298,107 @@ public class ApiStudioEndpointService {
         return buildDetail(loadAndValidate(projectId, endpointId));
     }
 
+    // ========== 服务内部写入路径（绕过 AuthContextHolder，供外部数据源同步使用） ==========
+
+    /**
+     * 不经过 HTTP 鉴权上下文的创建路径。调用方必须自行做权限检查（如 gitlab:manage）。
+     * actorUserId 用作 createdBy/updatedBy（来源数据无人工用户时可传 binding 创建者）。
+     * writeSnapshot=false 用于批量同步避免污染版本历史；首次创建仍建议写 CREATE 快照。
+     */
+    @Transactional
+    ApiStudioEndpointEntity createInternal(Long projectId,
+                                           ApiStudioEndpointRequest request,
+                                           Long actorUserId,
+                                           boolean writeSnapshot) {
+        validateMethodPathStatusBody(request);
+        validateDirectory(projectId, request.directoryId());
+
+        ApiStudioEndpointEntity entity = new ApiStudioEndpointEntity();
+        entity.setProjectId(projectId);
+        entity.setDirectoryId(request.directoryId());
+        entity.setName(request.name());
+        entity.setMethod(request.method().toUpperCase());
+        entity.setPath(normalizePath(request.path()));
+        entity.setSummary(request.summary());
+        entity.setDescriptionMarkdown(request.descriptionMarkdown());
+        entity.setStatus(request.status() == null ? "DRAFT" : request.status().toUpperCase());
+        entity.setRequestBodyType(request.requestBodyType() == null ? "NONE" : request.requestBodyType().toUpperCase());
+        entity.setRequestBodySchemaJson(request.requestBodySchemaJson());
+        entity.setRequestBodyExample(request.requestBodyExample());
+        entity.setSortOrder(request.sortOrder() == null ? defaultSortOrder(projectId, request.directoryId()) : request.sortOrder());
+        entity.setCreatedBy(actorUserId);
+        entity.setUpdatedBy(actorUserId);
+        ApiStudioEndpointEntity saved = endpointRepository.saveAndFlush(entity);
+
+        persistParameters(saved.getId(), request.parameters());
+        persistResponses(saved.getId(), request.responses());
+        if (writeSnapshot) {
+            snapshotInternal(saved.getId(), "CREATE", request.changeSummary(), actorUserId);
+        }
+        return saved;
+    }
+
+    /**
+     * 不经过 HTTP 鉴权上下文的更新路径。乐观锁保留；调用方传入 revision 才校验。
+     */
+    @Transactional
+    ApiStudioEndpointEntity updateInternal(Long projectId,
+                                           Long endpointId,
+                                           ApiStudioEndpointRequest request,
+                                           Long actorUserId,
+                                           boolean writeSnapshot) {
+        validateMethodPathStatusBody(request);
+        validateDirectory(projectId, request.directoryId());
+
+        ApiStudioEndpointEntity entity = loadAndValidate(projectId, endpointId);
+        if (request.revision() != null && !Objects.equals(request.revision(), entity.getRevision())) {
+            throw new IllegalArgumentException("接口已被其他会话修改，请刷新后重试 (revision: 期望 " + entity.getRevision() + ", 提交 " + request.revision() + ")");
+        }
+
+        entity.setDirectoryId(request.directoryId());
+        entity.setName(request.name());
+        entity.setMethod(request.method().toUpperCase());
+        entity.setPath(normalizePath(request.path()));
+        entity.setSummary(request.summary());
+        entity.setDescriptionMarkdown(request.descriptionMarkdown());
+        if (request.status() != null) {
+            entity.setStatus(request.status().toUpperCase());
+        }
+        entity.setRequestBodyType(request.requestBodyType() == null ? "NONE" : request.requestBodyType().toUpperCase());
+        entity.setRequestBodySchemaJson(request.requestBodySchemaJson());
+        entity.setRequestBodyExample(request.requestBodyExample());
+        if (request.sortOrder() != null) {
+            entity.setSortOrder(request.sortOrder());
+        }
+        entity.setUpdatedBy(actorUserId);
+        entity.setUpdatedAt(LocalDateTime.now());
+        endpointRepository.saveAndFlush(entity);
+
+        parameterRepository.deleteByEndpointId(endpointId);
+        persistParameters(endpointId, request.parameters());
+        replaceResponses(endpointId, request.responses());
+        if (writeSnapshot) {
+            snapshotInternal(endpointId, "UPDATE", request.changeSummary(), actorUserId);
+        }
+        return loadAndValidate(projectId, endpointId);
+    }
+
+    /**
+     * 不经过 HTTP 鉴权上下文的删除路径。外键级联会清理参数/响应/版本/sync_binding。
+     */
+    @Transactional
+    void deleteInternal(Long projectId, Long endpointId) {
+        ApiStudioEndpointEntity entity = loadAndValidate(projectId, endpointId);
+        endpointRepository.delete(entity);
+    }
+
+    /**
+     * 暴露给同包 sync service 的 detail 构建器，避免重复读 DB。
+     */
+    ApiStudioEndpointDetail buildDetailForInternal(ApiStudioEndpointEntity entity) {
+        return buildDetail(entity);
+    }
+
     // ========== 内部 ==========
 
     private void applySnapshotToEntity(ApiStudioEndpointEntity entity, Map<String, Object> snap) {
@@ -313,6 +414,10 @@ public class ApiStudioEndpointService {
     }
 
     private void snapshot(Long endpointId, String changeType, String changeSummary) {
+        snapshotInternal(endpointId, changeType, changeSummary, currentUserId());
+    }
+
+    private void snapshotInternal(Long endpointId, String changeType, String changeSummary, Long actorUserId) {
         ApiStudioEndpointEntity entity = endpointRepository.findById(endpointId).orElseThrow();
         ApiStudioEndpointDetail detail = buildDetail(entity);
         int nextVersion = versionRepository.findFirstByEndpointIdOrderByVersionNoDesc(endpointId)
@@ -325,7 +430,7 @@ public class ApiStudioEndpointService {
             v.setChangeType(changeType);
             v.setChangeSummary(changeSummary);
             v.setSnapshotJson(snapJson);
-            v.setCreatorUserId(currentUserId());
+            v.setCreatorUserId(actorUserId);
             versionRepository.save(v);
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("生成 API 版本快照失败", e);

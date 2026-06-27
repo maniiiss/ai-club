@@ -30,11 +30,3 @@ command = '''
 cd scripts
 ./restart-source.ps1
 '''
-
-[[actions]]
-name = "重启yaade"
-icon = "tool"
-command = '''
-docker-compose -f docker-compose.yaade.yml down
-docker-compose -f docker-compose.yaade.yml up -d
-'''

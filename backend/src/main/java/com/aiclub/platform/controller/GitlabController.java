@@ -177,7 +177,7 @@ public class GitlabController {
     }
 
     /**
-     * 从后端或混合仓库抽取 Spring 接口，并同步为 Yaade API 请求。
+     * 从后端或混合仓库抽取 Spring 接口，并同步到原生 API Studio。
      */
     @PostMapping("/bindings/{id}/api-sync")
     @RequirePermission("gitlab:manage")

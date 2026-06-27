@@ -15,7 +15,6 @@ FULL_DOCKER_ENV_FILE="${REPO_ROOT}/.env.server"
 FULL_DOCKER_ENV_EXAMPLE_FILE="${REPO_ROOT}/.env.server.example"
 HYBRID_COMPOSE_FILE="${REPO_ROOT}/docker-compose.yml"
 FULL_DOCKER_COMPOSE_FILE="${REPO_ROOT}/docker-compose.server.yml"
-YAADE_COMPOSE_FILE="${REPO_ROOT}/docker-compose.yaade.yml"
 DOCKER_DIR="${REPO_ROOT}/docker"
 POSTGRES_INIT_DIR="${REPO_ROOT}/docker/postgres/init"
 COMPOSE_PROJECT_NAME="$(basename "${REPO_ROOT}")"
@@ -222,36 +221,6 @@ ensure_full_docker_env_file() {
   if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_WOODPECKER_PUBLIC_BASE_URL' '')" ]]; then
     set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_WOODPECKER_PUBLIC_BASE_URL' 'http://localhost:18000'
   fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_PORT' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_PORT' '9339'
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_DATA_DIR' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_DATA_DIR' './.data/yaade'
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_BASE_PATH' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_BASE_PATH' '/api/yaade/proxy'
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_ADMIN_USERNAME' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_ADMIN_USERNAME' 'admin'
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_DEFAULT_PASSWORD' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_DEFAULT_PASSWORD' 'password'
-  fi
-  local platform_yaade_base_url
-  platform_yaade_base_url="$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_BASE_URL' '')"
-  if [[ -z "${platform_yaade_base_url}" || "${platform_yaade_base_url}" == 'http://host.docker.internal:9339/api/yaade/proxy' ]]; then
-    # 全量 Docker 模式下后端通过 compose 服务名访问 Yaade，浏览器仍通过后端代理访问。
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_BASE_URL' 'http://yaade:9339/api/yaade/proxy'
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_ADMIN_USERNAME' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_ADMIN_USERNAME' "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_ADMIN_USERNAME' 'admin')"
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_ADMIN_PASSWORD' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_ADMIN_PASSWORD' "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_DEFAULT_PASSWORD' 'password')"
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_DEFAULT_USER_PASSWORD' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_DEFAULT_USER_PASSWORD' "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_DEFAULT_PASSWORD' 'password')"
-  fi
 
   ok "已准备全量 Docker 环境文件：${FULL_DOCKER_ENV_FILE}"
 }
@@ -269,7 +238,6 @@ load_ports() {
   NEO4J_PORT="$(get_env_or_default 'NEO4J_HTTP_PORT' '17474')"
   GITNEXUS_UI_PORT="$(get_env_or_default 'PLATFORM_GITNEXUS_UI_PUBLIC_PORT' '5174')"
   WOODPECKER_PORT="$(get_env_or_default 'WOODPECKER_PORT' '18000')"
-  YAADE_PORT="$(get_env_or_default 'YAADE_PORT' '9339')"
 }
 
 ensure_compose_cmd() {
@@ -749,14 +717,6 @@ start_full_docker_stack() {
   invoke_compose "${FULL_DOCKER_COMPOSE_FILE}" "${FULL_DOCKER_ENV_FILE}" '启动全量 Docker 项目' \
     "${compose_args[@]}"
 
-  local yaade_compose_args=(up -d)
-  if [[ "${skip_build}" != 'true' ]]; then
-    yaade_compose_args+=(--build)
-  fi
-
-  invoke_compose "${YAADE_COMPOSE_FILE}" "${FULL_DOCKER_ENV_FILE}" '启动 Yaade Docker 服务' \
-    "${yaade_compose_args[@]}"
-
   wait_port "${POSTGRES_PORT}" 180 'PostgreSQL'
   wait_port "${REDIS_PORT}" 180 'Redis'
   wait_port "${MINIO_PORT}" 180 'MinIO'
@@ -766,7 +726,6 @@ start_full_docker_stack() {
   wait_port "${HINDSIGHT_PORT}" 180 'Hindsight'
   wait_port "${HERMES_PORT}" 180 'Hermes'
   wait_port "${GITNEXUS_UI_PORT}" 180 'GitNexus Web UI'
-  wait_port "${YAADE_PORT}" 180 'Yaade'
   if woodpecker_enabled; then
     wait_port "${WOODPECKER_PORT}" 180 'Woodpecker'
   fi
@@ -783,7 +742,6 @@ start_full_docker_stack() {
   printf 'Neo4j: http://localhost:%s\n' "${NEO4J_PORT}"
   printf 'Hindsight: http://localhost:%s\n' "${HINDSIGHT_PORT}"
   printf 'GitNexus Web UI: http://localhost:%s\n' "${GITNEXUS_UI_PORT}"
-  printf 'Yaade: http://localhost:%s%s\n' "${YAADE_PORT}" "$(get_env_or_default 'YAADE_BASE_PATH' '/api/yaade/proxy')"
   if woodpecker_enabled; then
     printf 'Woodpecker: http://localhost:%s\n' "${WOODPECKER_PORT}"
   fi
@@ -797,9 +755,6 @@ stop_full_docker_stack() {
 
   # 停止全量 Docker 时始终显式带上 woodpecker profile，避免启动时开启过 profile
   # 但停止时因为未带 profile 而遗漏 woodpecker-server / woodpecker-agent 容器。
-  invoke_compose "${YAADE_COMPOSE_FILE}" "${env_file}" '关闭 Yaade Docker 服务' \
-    down
-
   invoke_compose "${FULL_DOCKER_COMPOSE_FILE}" "${env_file}" '关闭全量 Docker 项目' \
     --profile woodpecker down --remove-orphans
 
