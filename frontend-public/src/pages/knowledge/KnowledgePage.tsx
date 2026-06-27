@@ -1,11 +1,11 @@
 /**
  * 文档模块页面。
- * 四个子 Tab：Wiki 空间（含 CRUD）、知识图谱、记忆事实、API。
+ * 三个子 Tab：Wiki 空间（含 CRUD）、知识图谱、API。
  */
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
-  BookOpen, FolderTree, FileText, Network, Brain, Search,
+  BookOpen, FolderTree, FileText, Network, Search,
   ChevronRight, ChevronDown, Edit3, Trash2, Plus, X, Save, AlertTriangle,
   History, Upload, RotateCcw, FileUp, Code2,
 } from 'lucide-react'
@@ -15,8 +15,7 @@ import { WIKI_PAGE_TEMPLATE } from '@/src/lib/markdownTemplates'
 import { uploadMarkdownImage } from '@/src/lib/markdownImageUpload'
 import {
   listWikiSpaces, getWikiDirectoryTree, getWikiPage, searchWikiPages,
-  getWikiSpaceKnowledgeGraph, getProjectMemoryFactGraph,
-  getProjectMemoryFactFacts,
+  getWikiSpaceKnowledgeGraph,
   createWikiPage, updateWikiPage, deleteWikiPage,
   createWikiDirectory, deleteWikiDirectory,
   listWikiPageVersions, restoreWikiPageVersion,
@@ -26,8 +25,7 @@ import type { WikiPagePayload, WikiDirectoryPayload, WikiImportPagePayload } fro
 import type {
   WikiSpaceItem, WikiDirectoryTreeNodeItem, WikiSpacePageSummaryItem,
   WikiSpacePageDetailItem, WikiSpacePageVersionItem, DocumentMarkdownResultItem,
-  WikiSpaceKnowledgeGraphItem, MemoryFactGraphItem,
-  MemoryFactFactsResponseItem, MemoryFactItem,
+  WikiSpaceKnowledgeGraphItem,
 } from '@/src/types/knowledge'
 import { KnowledgeGraphView } from '@/src/components/knowledge/KnowledgeGraphView'
 import { ApiStudioPanel } from './ApiStudioPanel'
@@ -39,12 +37,11 @@ import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
 import { cn, formatDate, getErrorMessage } from '@/src/lib/utils'
 
-type KnowledgeTab = 'wiki' | 'graph' | 'memory' | 'api'
+type KnowledgeTab = 'wiki' | 'graph' | 'api'
 
 const tabs: { key: KnowledgeTab; label: string; icon: typeof BookOpen }[] = [
   { key: 'wiki', label: 'Wiki', icon: BookOpen },
   { key: 'graph', label: '知识图谱', icon: Network },
-  { key: 'memory', label: '记忆事实', icon: Brain },
   { key: 'api', label: 'API', icon: Code2 },
 ]
 
@@ -65,7 +62,6 @@ export const KnowledgePage = () => {
       <div className="flex-1 overflow-hidden">
       {activeTab === 'wiki' && <WikiPanel />}
       {activeTab === 'graph' && <GraphPanel />}
-      {activeTab === 'memory' && <MemoryPanel />}
       {activeTab === 'api' && <ApiStudioPanel />}
       </div>
     </div>
@@ -615,181 +611,6 @@ const GraphPanel = () => {
 
   return <KnowledgeGraphView graph={graph} pageMap={pageMap} spaceId={selectedSpaceId!} />
 }
-
-/* ════════════════════════════════════════════
-   记忆事实面板（含实体事实钻取）
-   ════════════════════════════════════════════ */
-
-const MemoryPanel = () => {
-  const { projectId } = useParams<{ projectId: string }>()
-  const pid = Number(projectId)
-  const [graph, setGraph] = useState<MemoryFactGraphItem | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  /* 事实钻取 */
-  const [factPanel, setFactPanel] = useState<{
-    entityId: string
-    entityLabel: string
-    facts: MemoryFactFactsResponseItem | null
-    loading: boolean
-  } | null>(null)
-
-  useEffect(() => {
-    const fetch = async () => { setLoading(true); try { setGraph(await getProjectMemoryFactGraph(pid)) } catch (err) { setError(getErrorMessage(err)) } finally { setLoading(false) } }
-    fetch()
-  }, [pid])
-
-  const handleDrillDown = async (entityId: string, entityLabel: string) => {
-    setFactPanel({ entityId, entityLabel, facts: null, loading: true })
-    try {
-      const facts = await getProjectMemoryFactFacts(pid, { entityId, limit: 50 })
-      setFactPanel({ entityId, entityLabel, facts, loading: false })
-    } catch {
-      setFactPanel({ entityId, entityLabel, facts: null, loading: false })
-    }
-  }
-
-  if (loading) return <LoadingSpinner text="加载记忆事实…" />
-  if (error) return <ErrorState description={error} />
-  if (!graph || graph.nodeCount === 0) return <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]"><EmptyState title="暂无记忆事实" description="项目记忆事实图尚未生成。" icon={<Brain className="h-6 w-6" strokeWidth={1.5} />} /></div>
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3">
-        <Card title="实体"><p className="text-[28px] font-bold text-[var(--color-primary)]">{graph.nodeCount}</p></Card>
-        <Card title="关系"><p className="text-[28px] font-bold text-[var(--color-text-primary)]">{graph.edgeCount}</p></Card>
-        <Card title="事实"><p className="text-[28px] font-bold text-emerald-600">{graph.factCount}</p></Card>
-      </div>
-      {graph.warnings.length > 0 && (
-        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
-          <div className="flex items-center gap-2 text-amber-800 text-[13px] font-medium mb-1"><AlertTriangle className="h-4 w-4" />警告</div>
-          {graph.warnings.map((w, i) => <p key={i} className="text-[12px] text-amber-700">{w}</p>)}
-        </div>
-      )}
-
-      <div className="flex gap-5">
-        {/* 实体列表 */}
-        <div className="flex-1 min-w-0">
-          <Card title="实体列表">
-            <div className="overflow-x-auto">
-              <table className="w-full"><thead><tr className="border-b border-[var(--color-border-light)]">
-                <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase">实体</th>
-                <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase">类型</th>
-                <th className="px-3 py-2 text-right text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase">关联度</th>
-                <th className="px-3 py-2 text-right text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase">事实数</th>
-                <th className="px-3 py-2 w-[60px]" />
-              </tr></thead>
-              <tbody className="divide-y divide-[var(--color-border-light)]">
-                {graph.nodes.slice(0, 50).map((node) => (
-                  <tr
-                    key={node.id}
-                    className={cn(
-                      'hover:bg-[var(--color-bg-hover)]/50 transition-colors cursor-pointer',
-                      factPanel?.entityId === node.id && 'bg-[var(--color-primary-light)]',
-                    )}
-                    onClick={() => handleDrillDown(node.id, node.label)}
-                  >
-                    <td className="px-3 py-2.5 text-[13px] font-medium text-[var(--color-text-primary)]">{node.label}</td>
-                    <td className="px-3 py-2.5"><span className="rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary)]">{node.entityType}</span></td>
-                    <td className="px-3 py-2.5 text-[13px] text-right text-[var(--color-text-secondary)]">{node.degree}</td>
-                    <td className="px-3 py-2.5 text-[13px] text-right text-[var(--color-text-secondary)]">{node.factCount}</td>
-                    <td className="px-3 py-2.5 text-right">
-                      {node.factCount > 0 && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDrillDown(node.id, node.label) }}
-                          className="text-[11px] text-[var(--color-primary)] hover:underline cursor-pointer"
-                        >
-                          查看事实
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody></table>
-              {graph.nodes.length > 50 && <p className="mt-2 text-center text-[12px] text-[var(--color-text-tertiary)]">显示前 50 个，共 {graph.nodeCount} 个</p>}
-            </div>
-          </Card>
-        </div>
-
-        {/* 事实详情面板 */}
-        {factPanel && (
-          <div className="w-[380px] shrink-0">
-            <div className="sticky top-[68px]">
-              <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] overflow-hidden">
-                <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-4 py-3">
-                  <div>
-                    <h4 className="text-[14px] font-semibold text-[var(--color-text-primary)]">{factPanel.entityLabel}</h4>
-                    <p className="text-[11px] text-[var(--color-text-tertiary)]">事实详情</p>
-                  </div>
-                  <button
-                    onClick={() => setFactPanel(null)}
-                    className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors cursor-pointer"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-
-                {factPanel.loading ? (
-                  <div className="p-6"><LoadingSpinner text="加载事实…" /></div>
-                ) : !factPanel.facts || factPanel.facts.facts.length === 0 ? (
-                  <div className="p-6 text-center">
-                    <Brain className="mx-auto h-8 w-8 text-[var(--color-text-tertiary)]" strokeWidth={1.5} />
-                    <p className="mt-2 text-[13px] text-[var(--color-text-tertiary)]">暂无关联事实</p>
-                  </div>
-                ) : (
-                  <div className="max-h-[500px] overflow-y-auto p-4 space-y-2">
-                    <p className="text-[11px] text-[var(--color-text-tertiary)] mb-2">
-                      共 {factPanel.facts.factCount} 条事实
-                    </p>
-                    {factPanel.facts.facts.map((fact) => (
-                      <FactCard key={fact.id} fact={fact} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/** 单条事实卡片。 */
-const FactCard = ({ fact }: { fact: MemoryFactItem }) => (
-  <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] p-3">
-    <div className="flex items-start justify-between gap-2 mb-1.5">
-      <span className="rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
-        {fact.type}
-      </span>
-      {fact.confidence != null && (
-        <span className="text-[10px] text-[var(--color-text-tertiary)]">
-          置信度: {(fact.confidence * 100).toFixed(0)}%
-        </span>
-      )}
-    </div>
-    <p className="text-[13px] font-medium text-[var(--color-text-primary)] mb-1">{fact.summary}</p>
-    <div className="text-[11px] text-[var(--color-text-tertiary)] space-y-0.5">
-      <p><span className="font-medium">主体:</span> {fact.subject}</p>
-      <p><span className="font-medium">谓词:</span> {fact.predicate}</p>
-      <p><span className="font-medium">客体:</span> {fact.object}</p>
-    </div>
-    <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--color-text-tertiary)]">
-      <span>{fact.sourceType}</span>
-      {fact.createdAt && <span>{formatDate(fact.createdAt)}</span>}
-    </div>
-    {fact.tags.length > 0 && (
-      <div className="mt-1.5 flex flex-wrap gap-1">
-        {fact.tags.map((tag) => (
-          <span key={tag} className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-tertiary)]">
-            {tag}
-          </span>
-        ))}
-      </div>
-    )}
-  </div>
-)
 
 /* ════════════════════════════════════════════
    公共小组件

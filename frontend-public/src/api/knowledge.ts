@@ -1,6 +1,6 @@
 /**
  * 文档模块 API。
- * Wiki 空间/目录/页面 + 知识图谱 + 记忆事实图。
+ * Wiki 空间/目录/页面 + 知识图谱。
  */
 import { http, unwrap, cleanParams } from './http'
 import type { ApiResponse } from '@/src/types/api'
@@ -8,8 +8,6 @@ import type {
   DocumentAssetItem,
   DocumentMarkdownResultItem,
   KnowledgeGraphItem,
-  MemoryFactFactsResponseItem,
-  MemoryFactGraphItem,
   WikiSpaceDetailItem,
   WikiSpaceItem,
   WikiSpacePageDetailItem,
@@ -161,22 +159,5 @@ export const getProjectKnowledgeGraph = async (projectId: number): Promise<Knowl
 /** 读取 Wiki 空间级 LightRAG 知识图谱（Neo4j 真实实体关系）。 */
 export const getWikiSpaceKnowledgeGraph = async (spaceId: number): Promise<WikiSpaceKnowledgeGraphItem> => {
   const res = await http.get<ApiResponse<WikiSpaceKnowledgeGraphItem>>(`/api/wiki/spaces/${spaceId}/knowledge-graph`)
-  return unwrap(res)
-}
-
-/* ── 记忆事实图 ── */
-
-export const getProjectMemoryFactGraph = async (projectId: number): Promise<MemoryFactGraphItem> => {
-  const res = await http.get<ApiResponse<MemoryFactGraphItem>>(`/api/projects/${projectId}/memory-fact-graph`)
-  return unwrap(res)
-}
-
-export const getProjectMemoryFactFacts = async (
-  projectId: number,
-  params?: { entityId?: string; query?: string; limit?: number },
-): Promise<MemoryFactFactsResponseItem> => {
-  const res = await http.get<ApiResponse<MemoryFactFactsResponseItem>>(`/api/projects/${projectId}/memory-fact-graph/facts`, {
-    params: params ? cleanParams(params) : undefined,
-  })
   return unwrap(res)
 }

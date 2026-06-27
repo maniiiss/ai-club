@@ -1,6 +1,6 @@
 /**
  * 文档模块类型定义。
- * 涵盖 Wiki 空间/页面/目录、知识图谱、记忆事实图。
+ * 涵盖 Wiki 空间/页面/目录、知识图谱。
  */
 
 /* ── Wiki ── */
@@ -174,62 +174,4 @@ export interface WikiSpaceKnowledgeGraphItem {
   generatedAt: string
   nodes: WikiKnowledgeGraphNodeItem[]
   edges: WikiKnowledgeGraphEdgeItem[]
-}
-
-/* ── 记忆事实 ── */
-
-export interface MemoryFactNodeItem {
-  id: string
-  entityType: string
-  label: string
-  aliases: string[]
-  degree: number
-  factCount: number
-  metadataJson: string
-}
-
-export interface MemoryFactEdgeItem {
-  id: string
-  sourceId: string
-  targetId: string
-  relationType: string
-  weight: number | null
-  factIds: string[]
-  metadataJson: string
-}
-
-export interface MemoryFactGraphItem {
-  projectId: number | null
-  bankId: string
-  generatedAt: string
-  nodeCount: number
-  edgeCount: number
-  factCount: number
-  warnings: string[]
-  nodes: MemoryFactNodeItem[]
-  edges: MemoryFactEdgeItem[]
-}
-
-export interface MemoryFactItem {
-  id: string
-  type: string
-  subject: string
-  predicate: string
-  object: string
-  summary: string
-  confidence: number | null
-  sourceType: string
-  createdAt: string
-  tags: string[]
-  metadataJson: string
-}
-
-export interface MemoryFactFactsResponseItem {
-  projectId: number | null
-  scopeType: string
-  scopeId: string
-  query: string
-  factCount: number
-  warnings: string[]
-  facts: MemoryFactItem[]
 }
