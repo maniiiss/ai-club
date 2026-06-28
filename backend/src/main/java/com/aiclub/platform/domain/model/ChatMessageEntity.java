@@ -64,6 +64,11 @@ public class ChatMessageEntity {
     @Column(name = "mentions_hermes", nullable = false)
     private boolean mentionsHermes = false;
 
+    /** 关联的 Agent 任务；普通成员消息为空，Hermes 占位/回复消息可回指后台任务。 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "agent_task_id")
+    private ChatRoomAgentTaskEntity agentTask;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -164,6 +169,14 @@ public class ChatMessageEntity {
 
     public void setMentionsHermes(boolean mentionsHermes) {
         this.mentionsHermes = mentionsHermes;
+    }
+
+    public ChatRoomAgentTaskEntity getAgentTask() {
+        return agentTask;
+    }
+
+    public void setAgentTask(ChatRoomAgentTaskEntity agentTask) {
+        this.agentTask = agentTask;
     }
 
     public LocalDateTime getCreatedAt() {

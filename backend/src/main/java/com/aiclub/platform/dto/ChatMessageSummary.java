@@ -17,10 +17,33 @@ public record ChatMessageSummary(
         String status,
         boolean mentionsHermes,
         List<ChatAttachmentSummary> attachments,
+        Long agentTaskId,
+        String agentTaskStatus,
+        List<HermesActionSummary> actions,
+        List<HermesSelectionCard> selectionCards,
         String createdAt,
         String updatedAt
 ) {
+    public ChatMessageSummary(Long id,
+                              Long roomId,
+                              String role,
+                              Long senderUserId,
+                              String senderUsername,
+                              String senderName,
+                              String senderAvatarUrl,
+                              String content,
+                              String status,
+                              boolean mentionsHermes,
+                              List<ChatAttachmentSummary> attachments,
+                              String createdAt,
+                              String updatedAt) {
+        this(id, roomId, role, senderUserId, senderUsername, senderName, senderAvatarUrl, content, status, mentionsHermes,
+                attachments, null, "", List.of(), List.of(), createdAt, updatedAt);
+    }
+
     public ChatMessageSummary {
         attachments = attachments == null ? List.of() : List.copyOf(attachments);
+        actions = actions == null ? List.of() : List.copyOf(actions);
+        selectionCards = selectionCards == null ? List.of() : List.copyOf(selectionCards);
     }
 }

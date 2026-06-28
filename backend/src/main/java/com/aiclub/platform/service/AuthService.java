@@ -90,9 +90,7 @@ public class AuthService {
                 .orElseThrow(() -> new UnauthorizedException("Not logged in"));
 
         if (authContext.token() != null && !authContext.token().isBlank()) {
-            return loginSessionStore.get(authContext.token())
-                    .map(LoginSession::toCurrentUserInfo)
-                    .orElseGet(() -> rebuildSession(authContext.token(), tokenService.parseToken(authContext.token())).toCurrentUserInfo());
+            return rebuildSession(authContext.token(), tokenService.parseToken(authContext.token())).toCurrentUserInfo();
         }
 
         UserEntity user = userRepository.findWithDetailsById(authContext.userId())
@@ -209,8 +207,8 @@ public class AuthService {
         if (loginSessionStore.isLoggedOut(rawToken)) {
             throw new UnauthorizedException("Not logged in or session expired");
         }
-        LoginSession loginSession = loginSessionStore.get(rawToken)
-                .orElseGet(() -> rebuildSession(rawToken, claims));
+        // 每次认证都按数据库最新角色重建权限快照，避免角色权限调整后旧 Redis 会话继续放行写操作。
+        LoginSession loginSession = rebuildSession(rawToken, claims);
 
         if (!loginSession.enabled()) {
             throw new UnauthorizedException("Current account is disabled");

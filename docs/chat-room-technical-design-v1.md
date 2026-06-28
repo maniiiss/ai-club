@@ -49,12 +49,49 @@ WebSocket 注册在 `/ws/chat?token=...`，握手阶段复用现有登录 token 
 - `HERMES_MESSAGE_DONE`
 - `HERMES_MESSAGE_ERROR`
 - `ROOM_UPDATED`
+- `AGENT_CONFIG_UPDATED`
+- `AGENT_TOOLS_UPDATED`
+- `AGENT_TASK_CREATED`
+- `AGENT_TASK_UPDATED`
+- `AGENT_TASK_EVENT`
+- `AGENT_ACTION_PENDING`
+- `AGENT_ACTION_EXECUTED`
 
 ## Hermes 上下文压缩
 
 `@hermes` 或 `@Hermes` 出现在普通用户消息正文中时，后端先创建一条 `assistant` 占位消息并广播。占位消息落库事务提交后，Hermes 回复交由后台执行线程池生成，REST 发送接口不等待完整模型输出。
 
-同一房间同一时间只允许一个 Hermes 回复任务运行。并发触发时，占位消息会被标记为错误并提示 Hermes 正在回复中。
+Agent 化 v1 将这条链路改为持久化任务：`@hermes` 先写入 `chat_room_agent_task`，事务提交后只向 RabbitMQ 投递轻量 `{ taskId }` 信号。消费者收到消息后仍通过数据库条件更新 `claimPendingTask(taskId, PENDING/RETRYING, RUNNING)` 原子领取，保证重复消息、补偿消息和并发消费者不会重复执行同一任务，并更新 `PENDING / RETRYING / RUNNING / DONE / ERROR / CANCELED` 状态。占位消息通过 `agent_task_id` 回指任务，WebSocket 同步广播 `AGENT_TASK_CREATED`、`AGENT_TASK_UPDATED` 和 `AGENT_TASK_EVENT`，前端可在消息流和右侧上下文面板展示进度。动作卡片事件预留 `AGENT_ACTION_PENDING` 与 `AGENT_ACTION_EXECUTED`，消息流会以只读卡片展示待确认动作和候选对象。
+
+房间级 Agent 配置保存在 `chat_room_agent_config`，包括启用状态、展示名、房间系统指令、主动总结、关键字监听、任务状态回写开关以及授权人快照。主动总结支持消息阈值与最小间隔；关键字监听支持关键词列表和冷却时间；任务状态回写支持房主选择 `SUCCESS / FAILED / CANCELED` 等执行任务状态集合。工具授权保存在 `chat_room_agent_tool_policy`，默认读工具可启用；写工具只有 `execution_task.create`、`repo_scan.start`、`work_item.create_draft`、`test_plan.create_draft` 允许被标记为自动执行，其余写工具仍应降级为确认动作。
+
+## Agent RabbitMQ 队列
+
+聊天室 Agent 的运行可靠性采用“数据库事实表 + RabbitMQ 信号”：
+
+- `chat_room_agent_task` 是权威任务表，保存触发类型、状态、来源、`source_ref`、`payload_json`、开始/结束时间和错误信息。
+- RabbitMQ 消息只携带 `taskId` 和重试次数，不复制房间上下文；消费者每次从数据库读取最新任务。
+- 创建任务时先写数据库和事件，事务提交后通过 `TransactionSynchronization` 发布 RabbitMQ 消息，避免消息早于事务可见。
+- 轻量补偿调度器定期扫描仍为 `PENDING` 的任务并重新发布消息，用于覆盖服务重启、事务提交后发布失败或 RabbitMQ 短暂不可用后的恢复。
+
+RabbitMQ 拓扑：
+
+- `chat.agent.exchange`：Direct exchange。
+- `chat.agent.task.queue`：主任务队列，绑定 `chat.agent.task`。
+- `chat.agent.retry.queue`：延迟重试队列，消息 TTL 到期后通过 dead-letter 回投主队列。
+- `chat.agent.dlq`：超过最大尝试次数或无法处理的消息进入死信队列。
+
+消费者并发由 `PLATFORM_CHAT_AGENT_QUEUE_CONCURRENCY` 控制。任务执行异常会抛回消费者，由消费者先把任务标记为 `RETRYING`，再按 attempt 发布到 retry queue；补偿调度器只扫描 `PENDING`，不会绕过 retry TTL 抢跑。超过 `PLATFORM_CHAT_AGENT_RABBIT_MAX_ATTEMPTS` 后才把任务写为 `ERROR` 并记录 `TASK_ERROR` 事件。重复消息即使再次进入主队列，也会因为数据库条件更新失败而直接跳过。
+
+## 主动触发源
+
+主动能力复用同一张任务表和同一条 RabbitMQ 队列：
+
+- 主动总结：用户消息落库后统计房间自上次总结后的用户消息数，达到房主配置阈值且满足最小间隔时创建 `SUMMARY` 任务。`source_ref` 使用房间和目标消息 ID 去重。
+- 关键字监听：用户消息命中房主关键词后创建 `KEYWORD` 任务，按消息 ID 去重，并用房间配置里的最近触发时间实现冷却。
+- 任务状态回写：执行中心任务进入配置状态时，后端查找同项目绑定房间中开启回写的 Agent 配置，创建 `TASK_STATUS` 任务；全局邀请房间不监听执行中心状态。
+
+前端 Agent 设置弹窗通过 `GET/PUT /api/chat/rooms/{roomId}/agent` 维护上述配置，最近任务列表展示 `triggerType / sourceRef / payloadJson`，便于定位任务由 mention、总结、关键词还是执行任务状态触发。
 
 Hermes 提示词由 `ChatHermesService` 组装，包含：
 

@@ -188,8 +188,8 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
 
         <div
           className={cn(
-            'relative rounded-xl border bg-white shadow-[var(--shadow-xs)] transition-all',
-            hasHermesMention ? 'border-amber-300 ring-2 ring-amber-100' : 'border-[var(--color-border-strong)] focus-within:border-[var(--color-primary)] focus-within:ring-2 focus-within:ring-[var(--color-primary)]/20',
+            'relative rounded-xl border bg-white shadow-[var(--shadow-xs)] transition-colors',
+            hasHermesMention ? 'border-amber-300' : 'border-[var(--color-border-strong)] focus-within:border-[var(--color-primary)]',
           )}
         >
           {mentionOpen && (
@@ -240,7 +240,7 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
             rows={3}
             disabled={disabled || sending}
             placeholder="写一条消息，输入 @ 提及成员或 Hermes 助手..."
-            className="max-h-44 min-h-24 w-full resize-y rounded-t-xl border-0 bg-transparent px-3.5 py-3 text-[14px] leading-relaxed text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-placeholder)] disabled:opacity-60"
+            className="max-h-44 min-h-24 w-full resize-y rounded-t-xl border-0 bg-transparent px-3.5 py-3 text-[14px] leading-relaxed text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-placeholder)] focus:outline-none focus-visible:outline-none disabled:opacity-60"
           />
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border-light)] px-3 py-2">
             <div className="flex items-center gap-1.5">

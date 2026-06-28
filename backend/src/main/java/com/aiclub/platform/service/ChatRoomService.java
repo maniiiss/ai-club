@@ -73,6 +73,7 @@ public class ChatRoomService {
     private final ChatWebSocketPushService chatWebSocketPushService;
     private final ChatHermesService chatHermesService;
     private final ChatAttachmentService chatAttachmentService;
+    private final ChatRoomAgentService chatRoomAgentService;
     private final Executor hermesReplyExecutor;
 
     @Autowired
@@ -86,6 +87,7 @@ public class ChatRoomService {
                            ChatWebSocketPushService chatWebSocketPushService,
                            ChatHermesService chatHermesService,
                            ChatAttachmentService chatAttachmentService,
+                           ChatRoomAgentService chatRoomAgentService,
                            @Qualifier("executionTaskExecutor") Executor hermesReplyExecutor) {
         this.authService = authService;
         this.userRepository = userRepository;
@@ -97,6 +99,7 @@ public class ChatRoomService {
         this.chatWebSocketPushService = chatWebSocketPushService;
         this.chatHermesService = chatHermesService;
         this.chatAttachmentService = chatAttachmentService;
+        this.chatRoomAgentService = chatRoomAgentService;
         this.hermesReplyExecutor = hermesReplyExecutor;
     }
 
@@ -113,7 +116,21 @@ public class ChatRoomService {
                            ChatWebSocketPushService chatWebSocketPushService,
                            ChatHermesService chatHermesService) {
         this(authService, userRepository, projectRepository, chatRoomRepository, chatRoomMemberRepository, chatMessageRepository,
-                projectDataPermissionService, chatWebSocketPushService, chatHermesService, null, null);
+                projectDataPermissionService, chatWebSocketPushService, chatHermesService, null, null, null);
+    }
+
+    public ChatRoomService(AuthService authService,
+                           UserRepository userRepository,
+                           ProjectRepository projectRepository,
+                           ChatRoomRepository chatRoomRepository,
+                           ChatRoomMemberRepository chatRoomMemberRepository,
+                           ChatMessageRepository chatMessageRepository,
+                           ProjectDataPermissionService projectDataPermissionService,
+                           ChatWebSocketPushService chatWebSocketPushService,
+                           ChatHermesService chatHermesService,
+                           ChatRoomAgentService chatRoomAgentService) {
+        this(authService, userRepository, projectRepository, chatRoomRepository, chatRoomMemberRepository, chatMessageRepository,
+                projectDataPermissionService, chatWebSocketPushService, chatHermesService, null, chatRoomAgentService, null);
     }
 
     public List<ChatRoomSummary> listRooms() {
@@ -193,13 +210,16 @@ public class ChatRoomService {
         chatRoomRepository.save(room);
         ChatMessageSummary summary = toMessageSummary(saved);
         chatWebSocketPushService.broadcastMessageCreated(roomId, summary);
+        if (chatRoomAgentService != null) {
+            chatRoomAgentService.handleUserMessageCreated(roomId, saved.getId());
+        }
 
         if (mentionsHermes) {
             ChatMessageEntity assistantMessage = buildAssistantPlaceholder(room);
             assistantMessage = chatMessageRepository.save(assistantMessage);
             ChatMessageSummary assistantSummary = toMessageSummary(assistantMessage);
             chatWebSocketPushService.broadcastMessageCreated(roomId, assistantSummary);
-            startHermesReplyAfterCommit(roomId, assistantMessage.getId(), saved.getId());
+            startHermesReplyAfterCommit(roomId, assistantMessage.getId(), saved.getId(), currentUser.id());
         }
         return summary;
     }
@@ -208,8 +228,14 @@ public class ChatRoomService {
      * Hermes 回复在事务提交后异步执行。
      * 业务意图：REST 发送消息只负责落库和广播占位消息，模型流式输出由后台任务继续推送，避免请求线程被长回复占满。
      */
-    private void startHermesReplyAfterCommit(Long roomId, Long assistantMessageId, Long triggerMessageId) {
-        Runnable task = () -> chatHermesService.startHermesReply(roomId, assistantMessageId, triggerMessageId);
+    private void startHermesReplyAfterCommit(Long roomId, Long assistantMessageId, Long triggerMessageId, Long triggerUserId) {
+        Runnable task = () -> {
+            if (chatRoomAgentService != null) {
+                chatRoomAgentService.createMentionTask(roomId, assistantMessageId, triggerMessageId, triggerUserId);
+            } else {
+                chatHermesService.startHermesReply(roomId, assistantMessageId, triggerMessageId);
+            }
+        };
         if (hermesReplyExecutor == null) {
             task.run();
             return;
@@ -284,6 +310,10 @@ public class ChatRoomService {
                 normalizeMessageStatus(message.getStatus()).toLowerCase(),
                 message.isMentionsHermes(),
                 attachments,
+                message.getAgentTask() == null ? null : message.getAgentTask().getId(),
+                message.getAgentTask() == null ? "" : defaultString(message.getAgentTask().getStatus()).toLowerCase(),
+                List.of(),
+                List.of(),
                 formatTime(message.getCreatedAt()),
                 formatTime(message.getUpdatedAt())
         );

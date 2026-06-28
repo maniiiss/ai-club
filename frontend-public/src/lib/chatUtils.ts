@@ -1,4 +1,5 @@
 import type { ChatMessageItem, ChatSocketEvent } from '@/src/types/chat'
+import type { HermesActionItem } from '@/src/types/hermes'
 
 const hermesMentionPattern = /(^|\s)@hermes\b/i
 
@@ -32,6 +33,40 @@ export const appendChatStreamDelta = (
       ? { ...message, content: `${message.content || ''}${delta || ''}`, status: 'streaming' }
       : message
   ))
+
+export const mergeAgentActionsIntoMessage = (
+  messages: ChatMessageItem[],
+  messageId: number | null | undefined,
+  taskId: number | null | undefined,
+  actions: HermesActionItem[],
+): ChatMessageItem[] =>
+  messages.map((message) => {
+    const matchesMessage = messageId != null && message.id === messageId
+    const matchesTask = taskId != null && message.agentTaskId === taskId
+    if (!matchesMessage && !matchesTask) return message
+    return {
+      ...message,
+      agentTaskId: message.agentTaskId ?? taskId ?? null,
+      agentTaskStatus: message.agentTaskStatus || 'awaiting_confirmation',
+      actions: actions || [],
+    }
+  })
+
+export const markAgentActionExecutedInMessage = (
+  messages: ChatMessageItem[],
+  messageId: number | null | undefined,
+  taskId: number | null | undefined,
+  status: string,
+): ChatMessageItem[] =>
+  messages.map((message) => {
+    const matchesMessage = messageId != null && message.id === messageId
+    const matchesTask = taskId != null && message.agentTaskId === taskId
+    if (!matchesMessage && !matchesTask) return message
+    return {
+      ...message,
+      agentTaskStatus: status || 'executed',
+    }
+  })
 
 export const formatChatFileSize = (size: number) => {
   if (size < 1024) return `${size} B`

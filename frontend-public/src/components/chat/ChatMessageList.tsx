@@ -3,8 +3,9 @@
  * 业务意图：用户消息、附件与 Hermes 流式回复在同一条时间线上呈现，确保协作上下文对房间成员一致。
  */
 import { useEffect, useRef } from 'react'
-import { AlertTriangle, Bot, FileText, RefreshCcw, UserRound } from 'lucide-react'
+import { AlertTriangle, Bot, CheckCircle2, FileText, MousePointer2, PlayCircle, RefreshCcw, UserRound } from 'lucide-react'
 import type { ChatMessageItem } from '@/src/types/chat'
+import type { HermesActionItem } from '@/src/types/hermes'
 import { Button } from '@/src/components/common/Button'
 import { Markdown } from '@/src/components/common/Markdown'
 import { formatChatFileSize } from '@/src/lib/chatUtils'
@@ -101,6 +102,39 @@ export const ChatMessageList = ({ messages, currentUserId, loading, onRetryHerme
                       Hermes 正在回复
                     </span>
                   )}
+                  {isAssistant && message.agentTaskId && (
+                    <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/75 px-2 py-1 text-[11px] font-medium text-amber-800">
+                      Agent task #{message.agentTaskId} · {formatAgentTaskStatus(message.agentTaskStatus)}
+                    </span>
+                  )}
+                  {isAssistant && Boolean(message.actions?.length) && (
+                    <div className="mt-3 grid gap-2">
+                      {message.actions?.map((action, index) => (
+                        <AgentActionPreview key={`${action.type}-${index}`} action={action} status={message.agentTaskStatus} />
+                      ))}
+                    </div>
+                  )}
+                  {isAssistant && Boolean(message.selectionCards?.length) && (
+                    <div className="mt-3 grid gap-2">
+                      {message.selectionCards?.map((card) => (
+                        <article key={`${card.slot}-${card.title}`} className="rounded-lg border border-[var(--color-border-light)] bg-white/80 p-3">
+                          <div className="text-[12.5px] font-semibold text-[var(--color-text-primary)]">{card.title || '候选对象待确认'}</div>
+                          {card.description && <p className="mt-1 text-[11.5px] text-[var(--color-text-secondary)]">{card.description}</p>}
+                          <div className="mt-2 grid gap-1.5">
+                            {card.options.map((option) => (
+                              <div key={`${option.entityType}-${option.entityId}-${option.title}`} className="flex items-start gap-2 rounded-lg border border-[var(--color-border-light)] bg-white px-2.5 py-2">
+                                <MousePointer2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" />
+                                <span className="min-w-0">
+                                  <span className="block truncate text-[12px] font-medium text-[var(--color-text-primary)]">{option.title}</span>
+                                  <span className="block text-[11px] text-[var(--color-text-tertiary)]">{option.subtitle || option.entityType}</span>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
                   {message.attachments.length > 0 && (
                     <div className="mt-3 grid gap-2">
                       {message.attachments.map((attachment) => (
@@ -145,6 +179,40 @@ export const ChatMessageList = ({ messages, currentUserId, loading, onRetryHerme
       </div>
     </div>
   )
+}
+
+const AgentActionPreview = ({ action, status }: { action: HermesActionItem; status?: string }) => {
+  const executed = status === 'executed' || status === 'done'
+  return (
+    <article className="rounded-lg border border-amber-200 bg-white/85 p-3">
+      <div className="flex items-start gap-2">
+        {executed ? (
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+        ) : (
+          <PlayCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[12.5px] font-semibold text-[var(--color-text-primary)]">{action.title || action.type}</div>
+          {action.description && <p className="mt-1 text-[11.5px] leading-5 text-[var(--color-text-secondary)]">{action.description}</p>}
+          <span className="mt-2 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-700">
+            {executed ? '已执行' : '待确认'}
+          </span>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+const formatAgentTaskStatus = (status?: string) => {
+  const normalized = (status || '').toLowerCase()
+  if (normalized === 'pending') return '排队中'
+  if (normalized === 'running' || normalized === 'streaming') return '处理中'
+  if (normalized === 'done') return '已完成'
+  if (normalized === 'error') return '失败'
+  if (normalized === 'canceled') return '已取消'
+  if (normalized === 'awaiting_confirmation') return '待确认'
+  if (normalized === 'executed') return '已执行'
+  return normalized || '已创建'
 }
 
 const MessageAvatar = ({ message }: { message: ChatMessageItem }) => {

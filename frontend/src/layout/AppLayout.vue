@@ -402,6 +402,7 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="profile">个人中心</el-dropdown-item>
+                  <el-dropdown-item command="public-portal">前往公众端</el-dropdown-item>
                   <el-dropdown-item command="feedback">反馈与建议</el-dropdown-item>
                   <el-dropdown-item command="roles" disabled>
                     {{ authStore.user?.roleNames?.join(' / ') || '暂无角色' }}
@@ -528,6 +529,10 @@
           <button class="mobile-more-item" type="button" @click="handleMobileCommand('feedback')">
             <el-icon class="mobile-more-item-icon"><ChatDotRound /></el-icon>
             <span class="mobile-more-item-label">反馈与建议</span>
+          </button>
+          <button class="mobile-more-item" type="button" @click="handleMobileCommand('public-portal')">
+            <el-icon class="mobile-more-item-icon"><Link /></el-icon>
+            <span class="mobile-more-item-label">前往公众端</span>
           </button>
           <button class="mobile-more-item" type="button" @click="handleMobileCommand('logout')">
             <el-icon class="mobile-more-item-icon"><SwitchButton /></el-icon>
@@ -753,6 +758,8 @@ interface HermesDrawerExpose {
   openWithQuestion: (question: string) => Promise<void>
 }
 
+type AccountCommand = 'profile' | 'feedback' | 'public-portal' | 'logout'
+
 interface MenuSeed {
   /** 菜单权限码。 */
   permission: string
@@ -815,6 +822,30 @@ const feedbackRules: FormRules<typeof feedbackForm> = {
     { required: true, message: '请输入反馈内容', trigger: 'blur' },
     { max: 2000, message: '反馈内容长度不能超过2000', trigger: 'blur' }
   ]
+}
+
+/**
+ * 管理端与公众端通常部署在同一主机的不同端口；这里集中解析公众端地址，
+ * 让头像菜单的 SSO 跳转在本地源码模式和 Docker 部署中都能复用同一规则。
+ */
+function resolvePublicPortalBaseUrl() {
+  const configuredBaseUrl = import.meta.env.VITE_PUBLIC_FRONTEND_BASE_URL
+  if (configuredBaseUrl !== undefined && configuredBaseUrl.trim() !== '') {
+    return configuredBaseUrl.replace(/\/+$/, '')
+  }
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:'
+    const publicPort = import.meta.env.VITE_PUBLIC_FRONTEND_PORT?.trim() || '5175'
+    const portSegment = publicPort ? `:${publicPort}` : ''
+    return `${protocol}//${window.location.hostname}${portSegment}`
+  }
+  return 'http://localhost:5175'
+}
+
+function buildPublicPortalSsoUrl(token: string) {
+  const target = new URL('/dashboard', `${resolvePublicPortalBaseUrl()}/`)
+  target.hash = `ssoToken=${encodeURIComponent(token)}`
+  return target.toString()
 }
 
 const iconRegistry: Record<string, unknown> = {
@@ -1148,6 +1179,14 @@ const handleCommand = async (command: string) => {
     openFeedbackDialog()
     return
   }
+  if (command === 'public-portal') {
+    if (!authStore.token) {
+      ElMessage.warning('当前登录态异常，请重新登录后再前往公众端')
+      return
+    }
+    window.location.assign(buildPublicPortalSsoUrl(authStore.token))
+    return
+  }
   if (command !== 'logout') {
     return
   }
@@ -1157,7 +1196,7 @@ const handleCommand = async (command: string) => {
   await router.replace('/login')
 }
 
-async function handleMobileCommand(command: 'profile' | 'feedback' | 'logout') {
+async function handleMobileCommand(command: AccountCommand) {
   await handleCommand(command)
 }
 

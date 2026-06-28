@@ -1,3 +1,5 @@
+import type { HermesActionItem, HermesSelectionCardItem } from './hermes'
+
 /**
  * 多人聊天室类型定义。
  * 与后端 /api/chat/** 和 /ws/chat 事件契约对齐。
@@ -41,6 +43,67 @@ export interface ChatRoomItem {
   lastMessageAt: string | null
 }
 
+export interface ChatRoomAgentConfig {
+  roomId: number
+  enabled: boolean
+  displayName: string
+  systemInstruction: string
+  proactiveSummaryEnabled: boolean
+  keywordWatchEnabled: boolean
+  taskStatusCallbackEnabled: boolean
+  proactiveSummaryMessageThreshold: number
+  proactiveSummaryMinIntervalMinutes: number
+  keywordWatchTerms: string[]
+  keywordWatchCooldownMinutes: number
+  taskStatusCallbackStatuses: string[]
+  authorizedByUserId: number | null
+  authorizedByName: string
+  authorizedAt: string | null
+  updatedAt: string | null
+}
+
+export interface ChatRoomAgentToolPolicy {
+  toolCode: string
+  toolName: string
+  moduleCode: string
+  readOnly: boolean
+  riskLevel: string
+  enabled: boolean
+  autoExecute: boolean
+  autoExecuteAllowed: boolean
+  permissionCode: string
+  updatedAt: string | null
+}
+
+export interface ChatRoomAgentTask {
+  id: number
+  roomId: number
+  assistantMessageId: number | null
+  triggerMessageId: number | null
+  triggerUserId: number | null
+  authorizedByUserId: number | null
+  triggerType: string
+  status: string
+  source: string
+  sourceRef: string
+  payloadJson: string
+  errorMessage: string
+  startedAt: string | null
+  finishedAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export interface ChatRoomAgentTaskEvent {
+  id: number | null
+  taskId: number
+  roomId: number
+  eventType: string
+  message: string
+  payloadJson: string
+  createdAt: string | null
+}
+
 export interface ChatMessageItem {
   id: number
   roomId: number
@@ -53,6 +116,10 @@ export interface ChatMessageItem {
   status: 'done' | 'streaming' | 'error'
   mentionsHermes: boolean
   attachments: ChatAttachmentItem[]
+  agentTaskId?: number | null
+  agentTaskStatus?: string
+  actions?: HermesActionItem[]
+  selectionCards?: HermesSelectionCardItem[]
   createdAt: string | null
   updatedAt: string | null
 }
@@ -77,6 +144,28 @@ export interface UpdateChatRoomMembersPayload {
   memberUserIds: number[]
 }
 
+export interface UpdateChatRoomAgentConfigPayload {
+  enabled: boolean
+  displayName: string
+  systemInstruction: string
+  proactiveSummaryEnabled: boolean
+  keywordWatchEnabled: boolean
+  taskStatusCallbackEnabled: boolean
+  proactiveSummaryMessageThreshold: number
+  proactiveSummaryMinIntervalMinutes: number
+  keywordWatchTerms: string[]
+  keywordWatchCooldownMinutes: number
+  taskStatusCallbackStatuses: string[]
+}
+
+export interface UpdateChatRoomAgentToolPoliciesPayload {
+  tools: Array<{
+    toolCode: string
+    enabled: boolean
+    autoExecute: boolean
+  }>
+}
+
 export type ChatSocketEvent =
   | { type: 'ROOM_JOINED'; roomId: number }
   | { type: 'ROOM_LEFT' }
@@ -86,4 +175,11 @@ export type ChatSocketEvent =
   | { type: 'HERMES_MESSAGE_DONE'; message: ChatMessageItem }
   | { type: 'HERMES_MESSAGE_ERROR'; message: ChatMessageItem }
   | { type: 'ROOM_UPDATED'; room: ChatRoomItem }
+  | { type: 'AGENT_CONFIG_UPDATED'; config: ChatRoomAgentConfig }
+  | { type: 'AGENT_TOOLS_UPDATED'; tools: ChatRoomAgentToolPolicy[] }
+  | { type: 'AGENT_TASK_CREATED'; task: ChatRoomAgentTask }
+  | { type: 'AGENT_TASK_UPDATED'; task: ChatRoomAgentTask }
+  | { type: 'AGENT_TASK_EVENT'; event: ChatRoomAgentTaskEvent }
+  | { type: 'AGENT_ACTION_PENDING'; taskId: number | null; messageId: number | null; actions: HermesActionItem[] }
+  | { type: 'AGENT_ACTION_EXECUTED'; taskId: number | null; messageId: number | null; action: HermesActionItem | null; status: string }
   | { type: string; [key: string]: unknown }

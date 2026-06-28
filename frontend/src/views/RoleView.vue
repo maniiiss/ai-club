@@ -219,7 +219,7 @@
       </div>
     </section>
 
-  <el-dialog v-if="!isMobileViewport" v-model="dialogVisible" :title="dialogTitle" width="760px" class="platform-form-dialog" align-center>
+  <el-dialog v-if="!isMobileViewport" v-model="dialogVisible" :title="dialogTitle" width="920px" class="platform-form-dialog role-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="dialogTitle" :subtitle="dialogSubtitle" :icon="UserFilled" />
     </template>
@@ -781,17 +781,23 @@ onMounted(async () => {
   width: 7%;
 }
 
+:deep(.role-form-dialog .el-dialog__body) {
+  padding-bottom: 32px;
+}
+
 .permission-group-selector {
   display: flex;
   flex-direction: column;
   gap: 12px;
   width: 100%;
-  max-height: min(52vh, 520px);
+  max-height: clamp(320px, 38vh, 430px);
   overflow-y: auto;
-  padding-right: 4px;
+  padding: 0 6px 4px 0;
+  overscroll-behavior: contain;
 }
 
 .permission-group {
+  flex: 0 0 auto;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 8px;
   background: #ffffff;
@@ -899,6 +905,7 @@ onMounted(async () => {
 @media (max-width: 900px) {
   .permission-group-selector {
     max-height: none;
+    overflow: visible;
     padding-right: 0;
   }
 

@@ -68,6 +68,9 @@ class ChatRoomServiceTests {
     @Mock
     private ChatHermesService chatHermesService;
 
+    @Mock
+    private ChatRoomAgentService chatRoomAgentService;
+
     @Test
     void shouldCreateProjectRoomVisibleToProjectParticipants() {
         ChatRoomService service = buildService();
@@ -220,7 +223,7 @@ class ChatRoomServiceTests {
     }
 
     @Test
-    void shouldPersistUserMessageAndStartHermesWhenMentioned() {
+    void shouldPersistUserMessageAndCreateAgentTaskWhenMentioned() {
         ChatRoomService service = buildService();
         CurrentUserInfo currentUser = currentUser(5L);
         UserEntity creator = user(5L, "creator", "创建人");
@@ -243,7 +246,7 @@ class ChatRoomServiceTests {
         assertThat(message.id()).isEqualTo(101L);
         assertThat(message.mentionsHermes()).isTrue();
         verify(chatWebSocketPushService, times(2)).broadcastMessageCreated(eq(41L), any(ChatMessageSummary.class));
-        verify(chatHermesService).startHermesReply(eq(41L), eq(102L), eq(101L));
+        verify(chatRoomAgentService).createMentionTask(eq(41L), eq(102L), eq(101L), eq(5L));
     }
 
     private ChatRoomService buildService() {
@@ -256,7 +259,8 @@ class ChatRoomServiceTests {
                 chatMessageRepository,
                 projectDataPermissionService,
                 chatWebSocketPushService,
-                chatHermesService
+                chatHermesService,
+                chatRoomAgentService
         );
     }
 

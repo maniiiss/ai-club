@@ -433,6 +433,12 @@ public class HermesChatService {
             log.info("Hermes fallback activated for question: {}", abbreviate(request == null ? "" : request.question(), 120));
             HermesActionFallbackService.HermesFallbackResult fallbackResult = hermesActionFallbackService.tryStartRepositoryScan(latestState, request);
             if (fallbackResult == null) {
+                fallbackResult = hermesActionFallbackService.tryReadProjectInfo(latestState, request);
+            }
+            if (fallbackResult == null) {
+                fallbackResult = hermesActionFallbackService.trySearchWorkItems(latestState, request);
+            }
+            if (fallbackResult == null) {
                 fallbackResult = hermesActionFallbackService.tryCreateWorkItemDraft(latestState, request);
             }
             if (fallbackResult != null) {

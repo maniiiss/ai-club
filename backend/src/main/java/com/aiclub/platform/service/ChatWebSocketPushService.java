@@ -1,7 +1,12 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.dto.ChatMessageSummary;
+import com.aiclub.platform.dto.ChatRoomAgentConfigSummary;
+import com.aiclub.platform.dto.ChatRoomAgentTaskEventSummary;
+import com.aiclub.platform.dto.ChatRoomAgentTaskSummary;
+import com.aiclub.platform.dto.ChatRoomAgentToolPolicySummary;
 import com.aiclub.platform.dto.ChatRoomSummary;
+import com.aiclub.platform.dto.HermesActionSummary;
 import com.aiclub.platform.security.AuthContext;
 import com.aiclub.platform.security.AuthContextHolder;
 import com.aiclub.platform.websocket.ChatAuthHandshakeInterceptor;
@@ -12,8 +17,10 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -85,6 +92,45 @@ public class ChatWebSocketPushService {
 
     public void broadcastRoomUpdated(Long roomId, ChatRoomSummary room) {
         broadcast(roomId, Map.of("type", "ROOM_UPDATED", "room", room));
+    }
+
+    public void broadcastAgentConfigUpdated(Long roomId, ChatRoomAgentConfigSummary config) {
+        broadcast(roomId, Map.of("type", "AGENT_CONFIG_UPDATED", "config", config));
+    }
+
+    public void broadcastAgentToolsUpdated(Long roomId, List<ChatRoomAgentToolPolicySummary> tools) {
+        broadcast(roomId, Map.of("type", "AGENT_TOOLS_UPDATED", "tools", tools == null ? List.of() : tools));
+    }
+
+    public void broadcastAgentTaskCreated(Long roomId, ChatRoomAgentTaskSummary task) {
+        broadcast(roomId, Map.of("type", "AGENT_TASK_CREATED", "task", task));
+    }
+
+    public void broadcastAgentTaskUpdated(Long roomId, ChatRoomAgentTaskSummary task) {
+        broadcast(roomId, Map.of("type", "AGENT_TASK_UPDATED", "task", task));
+    }
+
+    public void broadcastAgentTaskEvent(Long roomId, ChatRoomAgentTaskEventSummary event) {
+        broadcast(roomId, Map.of("type", "AGENT_TASK_EVENT", "event", event));
+    }
+
+    public void broadcastAgentActionPending(Long roomId, Long taskId, Long messageId, List<HermesActionSummary> actions) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "AGENT_ACTION_PENDING");
+        payload.put("taskId", taskId);
+        payload.put("messageId", messageId);
+        payload.put("actions", actions == null ? List.of() : actions);
+        broadcast(roomId, payload);
+    }
+
+    public void broadcastAgentActionExecuted(Long roomId, Long taskId, Long messageId, HermesActionSummary action, String status) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "AGENT_ACTION_EXECUTED");
+        payload.put("taskId", taskId);
+        payload.put("messageId", messageId);
+        payload.put("action", action);
+        payload.put("status", status == null ? "" : status);
+        broadcast(roomId, payload);
     }
 
     private void broadcast(Long roomId, Object payload) {

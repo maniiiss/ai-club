@@ -3,11 +3,17 @@ package com.aiclub.platform.controller;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.ChatMessageSummary;
+import com.aiclub.platform.dto.ChatRoomAgentConfigSummary;
+import com.aiclub.platform.dto.ChatRoomAgentTaskSummary;
+import com.aiclub.platform.dto.ChatRoomAgentToolPolicySummary;
 import com.aiclub.platform.dto.ChatRoomDetail;
 import com.aiclub.platform.dto.ChatRoomSummary;
 import com.aiclub.platform.dto.request.CreateChatRoomRequest;
 import com.aiclub.platform.dto.request.SendChatMessageRequest;
+import com.aiclub.platform.dto.request.UpdateChatRoomAgentConfigRequest;
+import com.aiclub.platform.dto.request.UpdateChatRoomAgentToolPoliciesRequest;
 import com.aiclub.platform.dto.request.UpdateChatRoomMembersRequest;
+import com.aiclub.platform.service.ChatRoomAgentService;
 import com.aiclub.platform.service.ChatRoomService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
@@ -31,9 +37,11 @@ import java.util.List;
 public class ChatController {
 
     private final ChatRoomService chatRoomService;
+    private final ChatRoomAgentService chatRoomAgentService;
 
-    public ChatController(ChatRoomService chatRoomService) {
+    public ChatController(ChatRoomService chatRoomService, ChatRoomAgentService chatRoomAgentService) {
         this.chatRoomService = chatRoomService;
+        this.chatRoomAgentService = chatRoomAgentService;
     }
 
     @GetMapping("/rooms")
@@ -80,5 +88,49 @@ public class ChatController {
     public ApiResponse<ChatRoomSummary> updateMembers(@PathVariable Long roomId,
                                                       @Valid @RequestBody UpdateChatRoomMembersRequest request) {
         return ApiResponse.success(chatRoomService.updateMembers(roomId, request));
+    }
+
+    @GetMapping("/rooms/{roomId}/agent")
+    @RequirePermission("chat:view")
+    public ApiResponse<ChatRoomAgentConfigSummary> getAgentConfig(@PathVariable Long roomId) {
+        return ApiResponse.success(chatRoomAgentService.getConfig(roomId));
+    }
+
+    @PutMapping("/rooms/{roomId}/agent")
+    @RequirePermission("chat:view")
+    public ApiResponse<ChatRoomAgentConfigSummary> updateAgentConfig(@PathVariable Long roomId,
+                                                                     @Valid @RequestBody UpdateChatRoomAgentConfigRequest request) {
+        return ApiResponse.success(chatRoomAgentService.updateConfig(roomId, request));
+    }
+
+    @GetMapping("/rooms/{roomId}/agent/tools")
+    @RequirePermission("chat:view")
+    public ApiResponse<List<ChatRoomAgentToolPolicySummary>> listAgentTools(@PathVariable Long roomId) {
+        return ApiResponse.success(chatRoomAgentService.listToolPolicies(roomId));
+    }
+
+    @PutMapping("/rooms/{roomId}/agent/tools")
+    @RequirePermission("chat:view")
+    public ApiResponse<List<ChatRoomAgentToolPolicySummary>> updateAgentTools(@PathVariable Long roomId,
+                                                                              @Valid @RequestBody UpdateChatRoomAgentToolPoliciesRequest request) {
+        return ApiResponse.success(chatRoomAgentService.updateToolPolicies(roomId, request));
+    }
+
+    @GetMapping("/rooms/{roomId}/agent/tasks")
+    @RequirePermission("chat:view")
+    public ApiResponse<List<ChatRoomAgentTaskSummary>> listAgentTasks(@PathVariable Long roomId) {
+        return ApiResponse.success(chatRoomAgentService.listTasks(roomId));
+    }
+
+    @PostMapping("/rooms/{roomId}/agent/tasks/{taskId}/retry")
+    @RequirePermission("chat:view")
+    public ApiResponse<ChatRoomAgentTaskSummary> retryAgentTask(@PathVariable Long roomId, @PathVariable Long taskId) {
+        return ApiResponse.success(chatRoomAgentService.retryTask(roomId, taskId));
+    }
+
+    @PostMapping("/rooms/{roomId}/agent/tasks/{taskId}/cancel")
+    @RequirePermission("chat:view")
+    public ApiResponse<ChatRoomAgentTaskSummary> cancelAgentTask(@PathVariable Long roomId, @PathVariable Long taskId) {
+        return ApiResponse.success(chatRoomAgentService.cancelTask(roomId, taskId));
     }
 }
