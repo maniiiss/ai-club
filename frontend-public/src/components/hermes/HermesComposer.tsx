@@ -109,7 +109,8 @@ export const HermesComposer = ({
           className="block w-full resize-none border-0 bg-transparent px-2 py-1 text-[13px] leading-6 text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-placeholder)] disabled:opacity-60"
           onChange={(event) => setQuestion(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+            if (event.nativeEvent.isComposing) return
+            if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault()
               submit()
             }
@@ -135,7 +136,7 @@ export const HermesComposer = ({
             >
               <Mic className={recording ? 'h-4 w-4 text-red-500' : 'h-4 w-4'} />
             </button>
-            <span className="hidden text-[11px] text-[var(--color-text-tertiary)] sm:inline">Ctrl/⌘ + Enter 发送</span>
+            <span className="hidden text-[11px] text-[var(--color-text-tertiary)] sm:inline">Enter 发送 · Shift + Enter 换行</span>
           </div>
           {sending ? (
             <Button type="button" variant="secondary" size="sm" icon={<Square className="h-4 w-4" />} onClick={onStop}>

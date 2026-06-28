@@ -236,14 +236,47 @@
           <el-input v-model="form.code" :disabled="currentBuiltIn" placeholder="例如：DEV_MANAGER" />
         </el-form-item>
         <el-form-item label="权限配置">
-          <el-select v-model="form.permissionIds" multiple filterable collapse-tags placeholder="请选择权限" style="width: 100%">
-            <el-option
-              v-for="item in permissionOptions"
-              :key="item.id"
-              :label="`${item.name} (${item.code})`"
-              :value="item.id"
-            />
-          </el-select>
+          <div class="permission-group-selector">
+            <section
+              v-for="group in permissionGroups"
+              :key="group.key"
+              class="permission-group"
+            >
+              <header class="permission-group-head">
+                <el-checkbox
+                  :model-value="isPermissionGroupChecked(group.items)"
+                  :indeterminate="isPermissionGroupIndeterminate(group.items)"
+                  @change="togglePermissionGroup(group.items, $event)"
+                >
+                  {{ group.label }}
+                </el-checkbox>
+                <div class="permission-group-meta">
+                  <span class="permission-taxonomy-pill" :class="group.tone">{{ group.usageLabel }}</span>
+                  <span class="permission-count">{{ group.items.length }} 项</span>
+                </div>
+              </header>
+              <div class="permission-option-list">
+                <label
+                  v-for="item in group.items"
+                  :key="item.id"
+                  class="permission-option"
+                >
+                  <el-checkbox
+                    :model-value="selectedPermissionIdSet.has(item.id)"
+                    @change="togglePermission(item.id, $event)"
+                  />
+                  <span class="permission-option-copy">
+                    <span class="permission-option-title">
+                      <span>{{ item.name }}</span>
+                      <span class="permission-type-pill" :class="item.type === 'MENU' ? 'info' : 'warning'">{{ item.type === 'MENU' ? '菜单' : '动作' }}</span>
+                    </span>
+                    <span class="permission-option-code">{{ item.code }}</span>
+                    <span v-if="item.description" class="permission-option-description">{{ item.description }}</span>
+                  </span>
+                </label>
+              </div>
+            </section>
+          </div>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" :disabled="currentBuiltIn" />
@@ -317,14 +350,47 @@
           <el-input v-model="form.code" :disabled="currentBuiltIn" placeholder="例如：DEV_MANAGER" />
         </el-form-item>
         <el-form-item label="权限配置">
-          <el-select v-model="form.permissionIds" multiple filterable collapse-tags placeholder="请选择权限" style="width: 100%">
-            <el-option
-              v-for="item in permissionOptions"
-              :key="item.id"
-              :label="`${item.name} (${item.code})`"
-              :value="item.id"
-            />
-          </el-select>
+          <div class="permission-group-selector">
+            <section
+              v-for="group in permissionGroups"
+              :key="group.key"
+              class="permission-group"
+            >
+              <header class="permission-group-head">
+                <el-checkbox
+                  :model-value="isPermissionGroupChecked(group.items)"
+                  :indeterminate="isPermissionGroupIndeterminate(group.items)"
+                  @change="togglePermissionGroup(group.items, $event)"
+                >
+                  {{ group.label }}
+                </el-checkbox>
+                <div class="permission-group-meta">
+                  <span class="permission-taxonomy-pill" :class="group.tone">{{ group.usageLabel }}</span>
+                  <span class="permission-count">{{ group.items.length }} 项</span>
+                </div>
+              </header>
+              <div class="permission-option-list">
+                <label
+                  v-for="item in group.items"
+                  :key="item.id"
+                  class="permission-option"
+                >
+                  <el-checkbox
+                    :model-value="selectedPermissionIdSet.has(item.id)"
+                    @change="togglePermission(item.id, $event)"
+                  />
+                  <span class="permission-option-copy">
+                    <span class="permission-option-title">
+                      <span>{{ item.name }}</span>
+                      <span class="permission-type-pill" :class="item.type === 'MENU' ? 'info' : 'warning'">{{ item.type === 'MENU' ? '菜单' : '动作' }}</span>
+                    </span>
+                    <span class="permission-option-code">{{ item.code }}</span>
+                    <span v-if="item.description" class="permission-option-description">{{ item.description }}</span>
+                  </span>
+                </label>
+              </div>
+            </section>
+          </div>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" :disabled="currentBuiltIn" />
@@ -385,6 +451,7 @@ import { useAuthStore } from '@/stores/auth'
 import type { DataPermissionScopeValue, PermissionItem, RoleItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
+import { groupPermissionsByTaxonomy } from '@/utils/permissionTaxonomy'
 
 interface RoleForm {
   name: string
@@ -461,6 +528,8 @@ const dataPermissionScopeLabelMap: Record<DataPermissionScopeValue, string> = {
   ALL: '所有人'
 }
 
+const permissionGroups = computed(() => groupPermissionsByTaxonomy(permissionOptions.value))
+
 const form = reactive<RoleForm>({
   name: '',
   code: '',
@@ -502,6 +571,46 @@ const resetForm = () => {
  */
 const buildDataScopeLabel = (label: string, scope: DataPermissionScopeValue) =>
   `${label}：${dataPermissionScopeLabelMap[scope]}`
+
+const selectedPermissionIdSet = computed(() => new Set(form.permissionIds))
+
+const sortSelectedPermissionIds = (selectedIds: Set<number>) =>
+  permissionOptions.value
+    .filter((item) => selectedIds.has(item.id))
+    .map((item) => item.id)
+
+const isPermissionGroupChecked = (items: PermissionItem[]) =>
+  items.length > 0 && items.every((item) => selectedPermissionIdSet.value.has(item.id))
+
+const isPermissionGroupIndeterminate = (items: PermissionItem[]) =>
+  items.some((item) => selectedPermissionIdSet.value.has(item.id)) && !isPermissionGroupChecked(items)
+
+/**
+ * 权限勾选器只改写角色表单的 permissionIds，目录和用途提示来自前端 taxonomy，不影响后端权限码。
+ */
+const isChecked = (value: unknown) => value === true
+
+const togglePermissionGroup = (items: PermissionItem[], checked: unknown) => {
+  const nextSelectedIds = new Set(form.permissionIds)
+  items.forEach((item) => {
+    if (isChecked(checked)) {
+      nextSelectedIds.add(item.id)
+    } else {
+      nextSelectedIds.delete(item.id)
+    }
+  })
+  form.permissionIds = sortSelectedPermissionIds(nextSelectedIds)
+}
+
+const togglePermission = (permissionId: number, checked: unknown) => {
+  const nextSelectedIds = new Set(form.permissionIds)
+  if (isChecked(checked)) {
+    nextSelectedIds.add(permissionId)
+  } else {
+    nextSelectedIds.delete(permissionId)
+  }
+  form.permissionIds = sortSelectedPermissionIds(nextSelectedIds)
+}
 
 const loadPermissionOptions = async () => {
   permissionOptions.value = await listPermissionOptions()
@@ -670,5 +779,136 @@ onMounted(async () => {
 
 .role-col-actions {
   width: 7%;
+}
+
+.permission-group-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-height: min(52vh, 520px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.permission-group {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.permission-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.permission-group-meta,
+.permission-option-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.permission-taxonomy-pill,
+.permission-type-pill,
+.permission-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.permission-taxonomy-pill.primary {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.permission-taxonomy-pill.success {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.permission-taxonomy-pill.warning {
+  color: #b45309;
+  background: #fef3c7;
+}
+
+.permission-taxonomy-pill.info {
+  color: #0369a1;
+  background: #e0f2fe;
+}
+
+.permission-taxonomy-pill.neutral,
+.permission-count {
+  color: #475569;
+  background: #e2e8f0;
+}
+
+.permission-type-pill.info {
+  color: #0369a1;
+  background: #e0f2fe;
+}
+
+.permission-type-pill.warning {
+  color: #b45309;
+  background: #fef3c7;
+}
+
+.permission-option-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: rgba(15, 23, 42, 0.06);
+}
+
+.permission-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.permission-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.permission-option-code,
+.permission-option-description {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .permission-group-selector {
+    max-height: none;
+    padding-right: 0;
+  }
+
+  .permission-group-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .permission-option-list {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

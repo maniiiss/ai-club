@@ -35,6 +35,17 @@
                 <el-option label="禁用" :value="false" />
               </el-select>
             </div>
+            <div class="management-list-filter-field">
+              <label>目录/用途</label>
+              <el-select v-model="filters.taxonomy" clearable placeholder="目录或用途" style="width: 100%" :teleported="false">
+                <el-option
+                  v-for="group in taxonomyGroups"
+                  :key="group.key"
+                  :label="`${group.label} · ${group.usageLabel}`"
+                  :value="group.key"
+                />
+              </el-select>
+            </div>
             <div class="management-list-filter-actions">
               <el-button type="primary" @click="handleSearch">查询</el-button>
               <el-button @click="handleReset">重置</el-button>
@@ -68,6 +79,7 @@
               <th class="permission-col-main">功能</th>
               <th class="permission-col-code">编码</th>
               <th class="permission-col-type center">类型</th>
+              <th class="permission-col-taxonomy">归属/用途</th>
               <th class="permission-col-parent">上级</th>
               <th class="permission-col-path">路径</th>
               <th class="permission-col-sort center">排序</th>
@@ -94,6 +106,12 @@
               </td>
               <td class="permission-col-type center" data-label="类型">
                 <span class="management-list-pill" :class="row.type === 'MENU' ? 'info' : 'warning'">{{ row.type === 'MENU' ? '菜单' : '动作' }}</span>
+              </td>
+              <td class="permission-col-taxonomy" data-label="归属/用途">
+                <div class="permission-taxonomy-stack">
+                  <span class="permission-taxonomy-pill" :class="taxonomyOf(row).tone">{{ taxonomyOf(row).label }}</span>
+                  <span class="permission-taxonomy-pill neutral">{{ taxonomyOf(row).usageLabel }}</span>
+                </div>
               </td>
               <td class="permission-col-parent" data-label="上级">
                 <span class="management-list-empty">{{ parentName(row.parentId) }}</span>
@@ -148,6 +166,13 @@
                     <span class="mobile-entity-field-label">类型</span>
                     <div class="mobile-entity-field-content">
                       <span class="management-list-pill" :class="row.type === 'MENU' ? 'info' : 'warning'">{{ row.type === 'MENU' ? '菜单' : '动作' }}</span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">归属/用途</span>
+                    <div class="mobile-entity-field-content permission-taxonomy-stack">
+                      <span class="permission-taxonomy-pill" :class="taxonomyOf(row).tone">{{ taxonomyOf(row).label }}</span>
+                      <span class="permission-taxonomy-pill neutral">{{ taxonomyOf(row).usageLabel }}</span>
                     </div>
                   </div>
                   <div class="mobile-entity-field">
@@ -244,6 +269,12 @@
         <el-form-item label="功能编码" prop="code">
           <el-input v-model="form.code" :disabled="currentBuiltIn" placeholder="例如：project:view" />
         </el-form-item>
+        <el-form-item label="目录/用途">
+          <div class="permission-taxonomy-preview">
+            <span class="permission-taxonomy-pill" :class="formTaxonomy.tone">{{ formTaxonomy.label }}</span>
+            <span class="permission-taxonomy-pill neutral">{{ formTaxonomy.usageLabel }}</span>
+          </div>
+        </el-form-item>
         <el-form-item label="功能类型" prop="type">
           <el-radio-group v-model="form.type">
             <el-radio label="MENU">菜单</el-radio>
@@ -309,6 +340,12 @@
         <el-form-item label="功能编码" prop="code">
           <el-input v-model="form.code" :disabled="currentBuiltIn" placeholder="例如：project:view" />
         </el-form-item>
+        <el-form-item label="目录/用途">
+          <div class="permission-taxonomy-preview">
+            <span class="permission-taxonomy-pill" :class="formTaxonomy.tone">{{ formTaxonomy.label }}</span>
+            <span class="permission-taxonomy-pill neutral">{{ formTaxonomy.usageLabel }}</span>
+          </div>
+        </el-form-item>
         <el-form-item label="功能类型" prop="type">
           <el-radio-group v-model="form.type">
             <el-radio label="MENU">菜单</el-radio>
@@ -362,6 +399,11 @@ import { useAuthStore } from '@/stores/auth'
 import type { PermissionItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
+import {
+  PERMISSION_TAXONOMY_GROUPS,
+  resolvePermissionTaxonomy,
+  type PermissionTaxonomyGroupKey
+} from '@/utils/permissionTaxonomy'
 
 interface PermissionForm {
   name: string
@@ -386,9 +428,23 @@ const isEditing = ref(false)
 const readonlyMode = ref(false)
 const currentId = ref<number | null>(null)
 const currentBuiltIn = ref(false)
-const permissionList = ref<PermissionItem[]>([])
+const rawPermissionList = ref<PermissionItem[]>([])
 const allPermissions = ref<PermissionItem[]>([])
 const formRef = ref<FormInstance>()
+const filters = reactive<{ keyword: string; type: '' | 'MENU' | 'ACTION'; enabled: boolean | ''; taxonomy: PermissionTaxonomyGroupKey | '' }>({
+  keyword: '',
+  type: '',
+  enabled: '',
+  taxonomy: ''
+})
+const taxonomyGroups = PERMISSION_TAXONOMY_GROUPS
+const taxonomyOf = (permission: Pick<PermissionItem, 'code'>) => resolvePermissionTaxonomy(permission)
+const permissionList = computed(() =>
+  filters.taxonomy
+    ? rawPermissionList.value.filter((item) => taxonomyOf(item).key === filters.taxonomy)
+    : rawPermissionList.value
+)
+const permissionFilterPopoverVisible = ref(false)
 
 const pagination = reactive({ page: 1, size: 10, total: 0 })
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
@@ -399,12 +455,6 @@ const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMob
   pagination,
   loadPage: async () => loadPermissions()
 })
-const filters = reactive<{ keyword: string; type: '' | 'MENU' | 'ACTION'; enabled: boolean | '' }>({
-  keyword: '',
-  type: '',
-  enabled: ''
-})
-const permissionFilterPopoverVisible = ref(false)
 const dialogTitle = computed(() => {
   if (readonlyMode.value) {
     return '查看功能'
@@ -442,6 +492,7 @@ const rules: FormRules<PermissionForm> = {
 
 const permissionMap = computed(() => new Map(allPermissions.value.map((item) => [item.id, item.name])))
 const parentOptions = computed(() => allPermissions.value.filter((item) => item.id !== currentId.value))
+const formTaxonomy = computed(() => resolvePermissionTaxonomy({ code: form.code }))
 
 const parentName = (parentId: number | null) => {
   if (!parentId) return '-'
@@ -478,7 +529,7 @@ const loadPermissions = async () => {
       type: filters.type,
       enabled: filters.enabled
     })
-    permissionList.value = data.records
+    rawPermissionList.value = data.records
     pagination.total = data.total
   } finally {
     loading.value = false
@@ -495,6 +546,7 @@ const handleReset = async () => {
   filters.keyword = ''
   filters.type = ''
   filters.enabled = ''
+  filters.taxonomy = ''
   resetMobilePagination()
   await loadPermissions()
 }
@@ -608,27 +660,31 @@ onMounted(async () => {
 
 <style scoped>
 .permission-list-table {
-  min-width: 1180px;
+  min-width: 1280px;
 }
 
 .permission-col-main {
-  width: 23%;
+  width: 21%;
 }
 
 .permission-col-code {
-  width: 16%;
+  width: 15%;
 }
 
 .permission-col-type {
   width: 8%;
 }
 
-.permission-col-parent {
+.permission-col-taxonomy {
   width: 12%;
 }
 
+.permission-col-parent {
+  width: 10%;
+}
+
 .permission-col-path {
-  width: 14%;
+  width: 13%;
 }
 
 .permission-col-sort {
@@ -645,5 +701,49 @@ onMounted(async () => {
 
 .permission-col-actions {
   width: 7%;
+}
+
+.permission-taxonomy-stack,
+.permission-taxonomy-preview {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.permission-taxonomy-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.permission-taxonomy-pill.primary {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.permission-taxonomy-pill.success {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.permission-taxonomy-pill.warning {
+  color: #b45309;
+  background: #fef3c7;
+}
+
+.permission-taxonomy-pill.info {
+  color: #0369a1;
+  background: #e0f2fe;
+}
+
+.permission-taxonomy-pill.neutral {
+  color: #475569;
+  background: #e2e8f0;
 }
 </style>

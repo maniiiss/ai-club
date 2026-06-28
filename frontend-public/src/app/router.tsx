@@ -22,6 +22,7 @@ import { ExecutionPage } from '@/src/pages/execution/ExecutionPage'
 import { TestPlanDetailPage } from '@/src/pages/execution/TestPlanDetailPage'
 import { ExecutionTaskDetailPage } from '@/src/pages/execution/ExecutionTaskDetailPage'
 import { ReleasePage } from '@/src/pages/release/ReleasePage'
+import { ChatPage } from '@/src/pages/chat/ChatPage'
 
 
 /* ── 路由定义 ── */
@@ -43,6 +44,7 @@ export const router = createBrowserRouter([
       { path: '/', element: <Navigate to="/dashboard" replace /> },
       { path: '/dashboard', element: <DashboardPage /> },
       { path: '/projects', element: <ProjectsPage /> },
+      { path: '/chat', element: <ChatPage /> },
       { path: '/settings/profile', element: <ProfilePage /> },
       // 测试与执行详情页（独立页面，不嵌套在项目布局内）
       { path: '/projects/:projectId/execution/test-plans/:planId', element: <TestPlanDetailPage /> },

@@ -19,6 +19,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { to: '/dashboard', label: '工作台' },
   { to: '/projects', label: '项目' },
+  { to: '/chat', label: '聊天室' },
   { to: '/settings/profile', label: '设置' },
 ]
 
