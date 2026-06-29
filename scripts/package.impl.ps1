@@ -23,7 +23,7 @@ Invoke-Compose -ComposeFile $context.FullDockerComposeFile `
     -Arguments (Add-WoodpeckerProfileIfEnabled -Arguments @('build', '--pull')) `
     -Description '构建全量 Docker 业务镜像'
 
-$middlewareServices = @('postgres', 'redis', 'minio', 'qdrant', 'hindsight', 'hermes')
+$middlewareServices = @('postgres', 'redis', 'rabbitmq', 'minio', 'qdrant', 'hindsight', 'hermes')
 if (Test-WoodpeckerEnabled) {
     $middlewareServices += @('woodpecker-server', 'woodpecker-agent')
 }
@@ -76,6 +76,7 @@ AI Club Docker 打包说明
 $(@(if (Test-WoodpeckerEnabled) { "- Woodpecker: http://localhost:$($ports.Woodpecker)" }) -join [Environment]::NewLine)
 - PostgreSQL: localhost:$($ports.Postgres)
 - Redis: localhost:$($ports.Redis)
+- RabbitMQ: localhost:$($ports.RabbitMq)
 - MinIO: http://localhost:$($ports.Minio)
 
 镜像清单

@@ -53,6 +53,15 @@ public class HermesConversationSessionService {
     /** 会话时间统一输出格式。 */
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    /** 公众端纯聊天页使用的全局会话过滤标记。 */
+    private static final String SESSION_SCOPE_GLOBAL = "GLOBAL";
+
+    /** 公众端项目浮标使用的项目会话过滤标记。 */
+    private static final String SESSION_SCOPE_PROJECT = "PROJECT";
+
+    /** 兼容管理端和旧调用方的全部会话过滤标记。 */
+    private static final String SESSION_SCOPE_ALL = "ALL";
+
     private final AuthService authService;
     private final UserRepository userRepository;
     private final HermesConversationSessionRepository hermesConversationSessionRepository;
@@ -96,23 +105,23 @@ public class HermesConversationSessionService {
         UserEntity userEntity = userRepository.findById(currentUser.id())
                 .orElseThrow(() -> new NoSuchElementException("当前用户不存在"));
 
-        // 检查是否有未使用的会话（没有消息的会话）
+        // 检查完全相同上下文下是否有未使用的会话（没有消息的会话）。
+        // 业务意图：纯聊天页和项目浮标都可能先创建空会话，复用时必须按上下文隔离。
         List<HermesConversationSessionEntity> unusedSessions = hermesConversationSessionRepository
-                .findByUser_IdAndArchivedAndLastMessageAtIsNull(currentUser.id(), false);
+                .findUnusedSessionByContext(
+                        currentUser.id(),
+                        defaultString(request.routeName()),
+                        request.projectId(),
+                        request.taskId(),
+                        request.iterationId(),
+                        request.planId(),
+                        request.wikiSpaceId(),
+                        request.wikiPageId()
+                );
 
         if (!unusedSessions.isEmpty()) {
-            // 如果有未使用的会话，返回第一个
-            HermesConversationSessionEntity existingSession = unusedSessions.get(0);
-            // 更新会话的上下文信息为当前页面
-            existingSession.setRouteName(defaultString(request.routeName()));
-            existingSession.setProjectId(request.projectId());
-            existingSession.setTaskId(request.taskId());
-            existingSession.setIterationId(request.iterationId());
-            existingSession.setPlanId(request.planId());
-            existingSession.setWikiSpaceId(request.wikiSpaceId());
-            existingSession.setWikiPageId(request.wikiPageId());
-            HermesConversationSessionEntity updated = hermesConversationSessionRepository.save(existingSession);
-            return toSummary(updated);
+            // 如果有同上下文未使用的会话，直接复用，避免重复创建空会话。
+            return toSummary(unusedSessions.get(0));
         }
 
         // 如果没有未使用的会话，创建新会话
@@ -138,15 +147,42 @@ public class HermesConversationSessionService {
      * 分页读取当前用户的会话列表。
      */
     public PageResponse<HermesConversationSessionSummary> pageSessions(int page, int size, boolean archived) {
+        return pageSessions(page, size, archived, SESSION_SCOPE_ALL, null);
+    }
+
+    /**
+     * 按公众端会话作用域分页读取当前用户的会话列表。
+     * scope=GLOBAL 用于纯聊天页，scope=PROJECT 用于项目浮标，scope=ALL 保持旧管理端行为。
+     */
+    public PageResponse<HermesConversationSessionSummary> pageSessions(int page,
+                                                                       int size,
+                                                                       boolean archived,
+                                                                       String scope,
+                                                                       Long projectId) {
         CurrentUserInfo currentUser = authService.currentUser();
         Pageable pageable = PageRequest.of(
                 Math.max(page, 1) - 1,
                 Math.max(1, Math.min(size, 100)),
                 Sort.by(Sort.Direction.DESC, "lastMessageAt").and(Sort.by(Sort.Direction.DESC, "id"))
         );
-        Page<HermesConversationSessionSummary> pageData = hermesConversationSessionRepository
-                .findByUser_IdAndArchived(currentUser.id(), archived, pageable)
-                .map(this::toSummary);
+        String normalizedScope = normalizeSessionScope(scope);
+        Page<HermesConversationSessionEntity> entityPage;
+        if (SESSION_SCOPE_GLOBAL.equals(normalizedScope)) {
+            entityPage = hermesConversationSessionRepository.findGlobalSessions(currentUser.id(), archived, pageable);
+        } else if (SESSION_SCOPE_PROJECT.equals(normalizedScope)) {
+            if (projectId == null) {
+                throw new IllegalArgumentException("项目会话列表需要提供 projectId");
+            }
+            entityPage = hermesConversationSessionRepository.findByUser_IdAndArchivedAndProjectId(
+                    currentUser.id(),
+                    archived,
+                    projectId,
+                    pageable
+            );
+        } else {
+            entityPage = hermesConversationSessionRepository.findByUser_IdAndArchived(currentUser.id(), archived, pageable);
+        }
+        Page<HermesConversationSessionSummary> pageData = entityPage.map(this::toSummary);
         return PageResponse.from(pageData);
     }
 
@@ -591,6 +627,17 @@ public class HermesConversationSessionService {
      */
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    /**
+     * 归一化会话列表作用域，未知值回退为 ALL，避免旧客户端传空或拼写错误导致接口不可用。
+     */
+    private String normalizeSessionScope(String scope) {
+        String normalized = defaultString(scope).toUpperCase();
+        if (SESSION_SCOPE_GLOBAL.equals(normalized) || SESSION_SCOPE_PROJECT.equals(normalized)) {
+            return normalized;
+        }
+        return SESSION_SCOPE_ALL;
     }
 
     /**

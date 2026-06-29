@@ -96,8 +96,10 @@ public class HermesController {
     public ApiResponse<PageResponse<HermesConversationSessionSummary>> pageSessions(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(defaultValue = "false") boolean archived) {
-        return ApiResponse.success(hermesConversationSessionService.pageSessions(page, size, archived));
+            @RequestParam(defaultValue = "false") boolean archived,
+            @RequestParam(defaultValue = "ALL") String scope,
+            @RequestParam(required = false) Long projectId) {
+        return ApiResponse.success(hermesConversationSessionService.pageSessions(page, size, archived, scope, projectId));
     }
 
     /**

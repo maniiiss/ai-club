@@ -1,6 +1,6 @@
 # 当前权限模型与权限码说明
 
-> 更新时间：2026-04-25
+> 更新时间：2026-06-28
 
 ## 1. 文档目标
 
@@ -26,6 +26,7 @@
 
 - 前端路由 `meta.permission`
 - 后端控制器上的 `@RequirePermission`
+- 管理端导航和权限配置页的前端权限目录映射 `frontend/src/utils/permissionTaxonomy.ts`
 
 典型例子：
 
@@ -79,6 +80,22 @@
 - 它不仅包含成员列表中的用户，也包含项目负责人和项目创建人
 
 ## 4. 当前模块归类规则
+
+### 4.0 管理端导航与权限配置目录
+
+管理端侧边栏只按后台操作习惯展示两个治理目录，不在导航文案里标注“管理端/公众端”：
+
+- `系统管理`：用户管理、角色管理、功能管理、环境变量管理、操作日志。
+- `平台管理`：积分管理、快捷入口管理、模型管理、工具配置、扫描规则集、PR 评审统计、智能体调用统计。
+
+权限配置页和功能管理页会额外展示用途标签，用来帮助管理员理解权限边界。当前用途标签由前端统一 taxonomy 映射生成，不新增数据库字段，也不改变 `/api/permissions/options`、`/api/roles` 等接口结构：
+
+- `管理端治理`：用户、角色、功能、环境变量、操作日志等后台治理能力。
+- `公众平台运营`：积分、快捷入口、模型、工具、扫描规则集、PR 评审统计、智能体调用统计等面向平台运营的能力。
+- `业务协作`：首页、项目、API、Wiki、智能体、执行、测试、自升级、Hermes 等业务协作能力。
+- `集成能力`：GitLab、CI/CD、服务器、可观测性等外部系统或基础设施集成能力。
+
+这层目录只影响前端展示和管理员配置体验，不重命名现有权限码，不迁移已有 URL。`PUBLIC_DEFAULT` 是否能进入管理端首页完全由角色权限决定，系统不自动补 `dashboard:view`。
 
 ## 4.1 跟项目走的资源
 
@@ -168,8 +185,12 @@
 - 用户管理
 - 角色管理
 - 功能管理
+- 积分管理
+- 快捷入口管理
 - 工具配置
 - 扫描规则集
+- PR 评审统计
+- 智能体调用统计
 - 操作日志
 
 ## 4.3 混合模型资源
@@ -281,7 +302,10 @@
 - `backend/src/main/java/com/aiclub/platform/service/ProjectDataPermissionService.java`
 - `backend/src/main/java/com/aiclub/platform/controller/*Controller.java`
 - `frontend/src/router/index.ts`
+- `frontend/src/layout/AppLayout.vue`
 - `frontend/src/views/RoleView.vue`
+- `frontend/src/views/PermissionView.vue`
+- `frontend/src/utils/permissionTaxonomy.ts`
 
 ## 8. 一句话结论
 

@@ -25,6 +25,12 @@ spring:
       timeout: 5s
       repositories:
         enabled: false
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:aiclub}
+    password: ${RABBITMQ_PASSWORD:aiclub123}
+    virtual-host: ${RABBITMQ_VHOST:/}
   jpa:
     open-in-view: false
     hibernate:
@@ -207,3 +213,16 @@ platform:
       access-key: ${PLATFORM_MINIO_ACCESS_KEY:minioadmin}
       secret-key: ${PLATFORM_MINIO_SECRET_KEY:minioadmin}
       bucket: ${PLATFORM_MINIO_BUCKET:ai-club-assets}
+  chat:
+    agent:
+      rabbit:
+        exchange: ${PLATFORM_CHAT_AGENT_RABBIT_EXCHANGE:chat.agent.exchange}
+        queue-name: ${PLATFORM_CHAT_AGENT_RABBIT_QUEUE:chat.agent.task.queue}
+        routing-key: ${PLATFORM_CHAT_AGENT_RABBIT_ROUTING_KEY:chat.agent.task}
+        retry-queue-name: ${PLATFORM_CHAT_AGENT_RABBIT_RETRY_QUEUE:chat.agent.retry.queue}
+        retry-routing-key: ${PLATFORM_CHAT_AGENT_RABBIT_RETRY_ROUTING_KEY:chat.agent.retry}
+        dead-letter-queue-name: ${PLATFORM_CHAT_AGENT_RABBIT_DLQ:chat.agent.dlq}
+        dead-letter-routing-key: ${PLATFORM_CHAT_AGENT_RABBIT_DLQ_ROUTING_KEY:chat.agent.dead}
+        retry-delay-ms: ${PLATFORM_CHAT_AGENT_RABBIT_RETRY_DELAY_MS:30000}
+        max-attempts: ${PLATFORM_CHAT_AGENT_RABBIT_MAX_ATTEMPTS:3}
+        consumer-concurrency: ${PLATFORM_CHAT_AGENT_QUEUE_CONCURRENCY:2}

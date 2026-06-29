@@ -85,6 +85,26 @@ services:
       timeout: 5s
       retries: 10
 
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:3.13-management}
+    container_name: git-ai-club-server-rabbitmq
+    restart: unless-stopped
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-aiclub}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-aiclub123}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - "${RABBITMQ_DATA_DIR:-/data/git-ai-club/rabbitmq}:/var/lib/rabbitmq"
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   minio:
     image: ${MINIO_IMAGE:-minio/minio:RELEASE.2025-02-28T09-55-16Z}
     container_name: git-ai-club-server-minio
@@ -431,6 +451,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       minio:
         condition: service_started
       code-processing:
@@ -450,6 +472,12 @@ services:
       REDIS_PORT: 6379
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-aiclub}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-aiclub123}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/}
+      PLATFORM_CHAT_AGENT_QUEUE_CONCURRENCY: ${PLATFORM_CHAT_AGENT_QUEUE_CONCURRENCY:-2}
       # backend 调用 code-processing 走容器内服务名，避免被 MCP Host 校验或宿主机防火墙拦截。
       PLATFORM_CODE_PROCESSING_BASE_URL: http://code-processing:9000
       PLATFORM_HERMES_BASE_URL: http://hermes:18080/v1
@@ -527,6 +555,8 @@ services:
         # 前端默认按“当前主机名 + 后端端口”直连真实后端，也支持显式传完整接口地址。
         VITE_API_BASE_URL: "${VITE_API_BASE_URL:-}"
         VITE_API_PORT: "${VITE_API_PORT:-8080}"
+        VITE_PUBLIC_FRONTEND_BASE_URL: "${VITE_PUBLIC_FRONTEND_BASE_URL:-}"
+        VITE_PUBLIC_FRONTEND_PORT: "${VITE_PUBLIC_FRONTEND_PORT:-5175}"
     image: ${FRONTEND_IMAGE:-git-ai-club-frontend:latest}
     container_name: git-ai-club-server-frontend
     restart: unless-stopped

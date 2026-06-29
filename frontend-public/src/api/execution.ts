@@ -78,6 +78,20 @@ export const generateAndRunTestPlanAutomation = async (id: number): Promise<Exec
 
 /* ── 执行任务 ── */
 
+/** 创建执行任务。 */
+export const createExecutionTask = async (payload: {
+  scenarioCode: string
+  projectId: number
+  workItemId?: number | null
+  title?: string
+  triggerSource?: string
+  planConfirmationRequired?: boolean
+  inputPayload?: Record<string, unknown>
+}): Promise<ExecutionTaskItem> => {
+  const res = await http.post<ApiResponse<ExecutionTaskItem>>('/api/execution-tasks', payload)
+  return unwrap(res)
+}
+
 /** 分页查询执行任务。 */
 export const pageExecutionTasks = async (query: {
   page: number

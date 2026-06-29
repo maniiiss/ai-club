@@ -192,21 +192,6 @@
             </div>
           </el-popover>
 
-          <button
-            v-for="item in visibleTrailingMenus"
-            :key="item.path"
-            class="sidebar-menu-button"
-            :class="{ active: isMenuActive(item), compact: effectiveSidebarCollapsed }"
-            :title="item.label"
-            type="button"
-            @click="handleNavigate(item.path)"
-          >
-            <span class="menu-active-bar" aria-hidden="true"></span>
-            <el-icon class="menu-icon"><component :is="item.icon" /></el-icon>
-            <span v-if="!effectiveSidebarCollapsed" class="menu-label">{{ item.label }}</span>
-            <span v-else class="menu-short-label">{{ item.shortLabel }}</span>
-          </button>
-
           <div v-if="visibleSystemMenus.length && !effectiveSidebarCollapsed" class="system-menu-group">
             <button
               class="sidebar-menu-button"
@@ -216,7 +201,7 @@
             >
               <span class="menu-active-bar" aria-hidden="true"></span>
               <el-icon class="menu-icon"><Setting /></el-icon>
-              <span class="menu-label">系统设置</span>
+              <span class="menu-label">系统管理</span>
               <el-icon class="menu-arrow">
                 <ArrowDown v-if="systemMenuExpanded" />
                 <ArrowRight v-else />
@@ -250,18 +235,85 @@
               <button
                 class="sidebar-menu-button compact"
                 :class="{ active: isSystemSectionActive }"
-                title="系统设置"
+                title="系统管理"
                 type="button"
               >
                 <span class="menu-active-bar" aria-hidden="true"></span>
                 <el-icon class="menu-icon"><Setting /></el-icon>
-                <span class="menu-short-label">设置</span>
+                <span class="menu-short-label">系统</span>
               </button>
             </template>
 
             <div class="system-popover-menu">
               <button
                 v-for="item in visibleSystemMenus"
+                :key="item.path"
+                class="system-popover-button"
+                :class="{ active: isMenuActive(item) }"
+                type="button"
+                @click="handleNavigate(item.path)"
+              >
+                <el-icon><component :is="item.icon" /></el-icon>
+                <span>{{ item.label }}</span>
+              </button>
+            </div>
+          </el-popover>
+
+          <div v-if="visiblePlatformMenus.length && !effectiveSidebarCollapsed" class="system-menu-group">
+            <button
+              class="sidebar-menu-button"
+              :class="{ active: isPlatformSectionActive }"
+              type="button"
+              @click="platformMenuExpanded = !platformMenuExpanded"
+            >
+              <span class="menu-active-bar" aria-hidden="true"></span>
+              <el-icon class="menu-icon"><DataAnalysis /></el-icon>
+              <span class="menu-label">平台管理</span>
+              <el-icon class="menu-arrow">
+                <ArrowDown v-if="platformMenuExpanded" />
+                <ArrowRight v-else />
+              </el-icon>
+            </button>
+
+            <div v-show="platformMenuExpanded" class="system-submenu">
+              <button
+                v-for="item in visiblePlatformMenus"
+                :key="item.path"
+                class="system-submenu-button"
+                :class="{ active: isMenuActive(item) }"
+                type="button"
+                @click="handleNavigate(item.path)"
+              >
+                <el-icon><component :is="item.icon" /></el-icon>
+                <span>{{ item.label }}</span>
+              </button>
+            </div>
+          </div>
+
+          <el-popover
+            v-if="visiblePlatformMenus.length && effectiveSidebarCollapsed"
+            trigger="click"
+            placement="right-start"
+            :show-arrow="false"
+            :width="220"
+            popper-class="sidebar-system-popper"
+          >
+            <template #reference>
+              <button
+                class="sidebar-menu-button compact"
+                :class="{ active: isPlatformSectionActive }"
+                title="平台管理"
+                type="button"
+              >
+                <span class="menu-active-bar" aria-hidden="true"></span>
+                <el-icon class="menu-icon"><DataAnalysis /></el-icon>
+                <span class="menu-short-label">平台</span>
+              </button>
+            </template>
+
+            <div class="system-popover-menu">
+              <button
+                v-for="item in visiblePlatformMenus"
                 :key="item.path"
                 class="system-popover-button"
                 :class="{ active: isMenuActive(item) }"
@@ -350,6 +402,7 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="profile">个人中心</el-dropdown-item>
+                  <el-dropdown-item command="public-portal">前往公众端</el-dropdown-item>
                   <el-dropdown-item command="feedback">反馈与建议</el-dropdown-item>
                   <el-dropdown-item command="roles" disabled>
                     {{ authStore.user?.roleNames?.join(' / ') || '暂无角色' }}
@@ -433,10 +486,27 @@
       </section>
 
       <section v-if="mobileSystemMoreItems.length" class="mobile-more-section">
-        <div class="mobile-more-section-title">系统设置</div>
+        <div class="mobile-more-section-title">系统管理</div>
         <div class="mobile-more-list">
           <button
             v-for="item in mobileSystemMoreItems"
+            :key="item.path"
+            class="mobile-more-item"
+            :class="{ active: isMenuActive(item) }"
+            type="button"
+            @click="handleMobileNavigate(item.path)"
+          >
+            <el-icon class="mobile-more-item-icon"><component :is="item.icon" /></el-icon>
+            <span class="mobile-more-item-label">{{ item.label }}</span>
+          </button>
+        </div>
+      </section>
+
+      <section v-if="mobilePlatformMoreItems.length" class="mobile-more-section">
+        <div class="mobile-more-section-title">平台管理</div>
+        <div class="mobile-more-list">
+          <button
+            v-for="item in mobilePlatformMoreItems"
             :key="item.path"
             class="mobile-more-item"
             :class="{ active: isMenuActive(item) }"
@@ -459,6 +529,10 @@
           <button class="mobile-more-item" type="button" @click="handleMobileCommand('feedback')">
             <el-icon class="mobile-more-item-icon"><ChatDotRound /></el-icon>
             <span class="mobile-more-item-label">反馈与建议</span>
+          </button>
+          <button class="mobile-more-item" type="button" @click="handleMobileCommand('public-portal')">
+            <el-icon class="mobile-more-item-icon"><Link /></el-icon>
+            <span class="mobile-more-item-label">前往公众端</span>
           </button>
           <button class="mobile-more-item" type="button" @click="handleMobileCommand('logout')">
             <el-icon class="mobile-more-item-icon"><SwitchButton /></el-icon>
@@ -659,6 +733,10 @@ import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
 import type { CreateFeedbackPayload, FeedbackType, NotificationItem, PermissionItem } from '@/types/platform'
 import { resolveAssetUrl } from '@/utils/asset'
+import {
+  PLATFORM_MANAGEMENT_PERMISSION_CODES,
+  SYSTEM_MANAGEMENT_PERMISSION_CODES
+} from '@/utils/permissionTaxonomy'
 
 interface MenuItem {
   /** 菜单路由路径。 */
@@ -679,6 +757,8 @@ interface HermesDrawerExpose {
   openDrawer: () => void
   openWithQuestion: (question: string) => Promise<void>
 }
+
+type AccountCommand = 'profile' | 'feedback' | 'public-portal' | 'logout'
 
 interface MenuSeed {
   /** 菜单权限码。 */
@@ -701,6 +781,7 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const notificationStore = useNotificationStore()
 const systemMenuExpanded = ref(false)
+const platformMenuExpanded = ref(false)
 const integrationMenuExpanded = ref(false)
 const projectWorkspaceExpanded = ref(false)
 const isMobileViewport = ref(false)
@@ -743,6 +824,30 @@ const feedbackRules: FormRules<typeof feedbackForm> = {
   ]
 }
 
+/**
+ * 管理端与公众端通常部署在同一主机的不同端口；这里集中解析公众端地址，
+ * 让头像菜单的 SSO 跳转在本地源码模式和 Docker 部署中都能复用同一规则。
+ */
+function resolvePublicPortalBaseUrl() {
+  const configuredBaseUrl = import.meta.env.VITE_PUBLIC_FRONTEND_BASE_URL
+  if (configuredBaseUrl !== undefined && configuredBaseUrl.trim() !== '') {
+    return configuredBaseUrl.replace(/\/+$/, '')
+  }
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:'
+    const publicPort = import.meta.env.VITE_PUBLIC_FRONTEND_PORT?.trim() || '5175'
+    const portSegment = publicPort ? `:${publicPort}` : ''
+    return `${protocol}//${window.location.hostname}${portSegment}`
+  }
+  return 'http://localhost:5175'
+}
+
+function buildPublicPortalSsoUrl(token: string) {
+  const target = new URL('/dashboard', `${resolvePublicPortalBaseUrl()}/`)
+  target.hash = `ssoToken=${encodeURIComponent(token)}`
+  return target.toString()
+}
+
 const iconRegistry: Record<string, unknown> = {
   Bell,
   ChatDotRound,
@@ -783,23 +888,27 @@ const integrationMenuSeeds: MenuSeed[] = [
   { permission: 'cicd:view', fallbackPath: '/cicd/jenkins-servers', fallbackLabel: 'Jenkins 服务管理', shortLabel: 'Jenkins', fallbackIcon: DataAnalysis, matchNames: ['cicd-servers'] }
 ]
 
-const trailingMenuSeeds: MenuSeed[] = [
-  { permission: 'model:view', fallbackPath: '/models', fallbackLabel: '模型管理', shortLabel: '模型', fallbackIcon: Cpu, matchNames: ['models', 'model-benchmark-configs'] },
-  { permission: 'system:pr-review:view', fallbackPath: '/pr-review-stats', fallbackLabel: 'PR评审统计', shortLabel: 'PR评审', fallbackIcon: DataAnalysis, matchNames: ['pr-review-stats'] },
-  { permission: 'system:agent-usage:view', fallbackPath: '/agent-usage-stats', fallbackLabel: '智能体调用统计', shortLabel: '智能体', fallbackIcon: DataAnalysis, matchNames: ['agent-usage-stats'] }
-]
+const systemMenuSeedMap: Record<(typeof SYSTEM_MANAGEMENT_PERMISSION_CODES)[number], MenuSeed> = {
+  'system:user:view': { permission: 'system:user:view', fallbackPath: '/users', fallbackLabel: '用户管理', shortLabel: '用户', fallbackIcon: UserFilled, matchNames: ['users'] },
+  'system:role:view': { permission: 'system:role:view', fallbackPath: '/roles', fallbackLabel: '角色管理', shortLabel: '角色', fallbackIcon: Management, matchNames: ['roles'] },
+  'system:permission:view': { permission: 'system:permission:view', fallbackPath: '/permissions', fallbackLabel: '功能管理', shortLabel: '功能', fallbackIcon: Setting, matchNames: ['permissions'] },
+  'system:env:view': { permission: 'system:env:view', fallbackPath: '/env-vars', fallbackLabel: '环境变量管理', shortLabel: '变量', fallbackIcon: Key, matchNames: ['env-vars'] },
+  'system:operation-log:view': { permission: 'system:operation-log:view', fallbackPath: '/operation-logs', fallbackLabel: '操作日志', shortLabel: '日志', fallbackIcon: Document, matchNames: ['operation-logs'] }
+}
 
-const systemMenuSeeds: MenuSeed[] = [
-  { permission: 'system:user:view', fallbackPath: '/users', fallbackLabel: '用户管理', shortLabel: '用户', fallbackIcon: UserFilled, matchNames: ['users'] },
-  { permission: 'system:role:view', fallbackPath: '/roles', fallbackLabel: '角色管理', shortLabel: '角色', fallbackIcon: Management, matchNames: ['roles'] },
-  { permission: 'system:permission:view', fallbackPath: '/permissions', fallbackLabel: '功能管理', shortLabel: '功能', fallbackIcon: Setting, matchNames: ['permissions'] },
-  { permission: 'system:credit:view', fallbackPath: '/credits', fallbackLabel: '积分管理', shortLabel: '积分', fallbackIcon: Coin, matchNames: ['credits'] },
-  { permission: 'system:tool:view', fallbackPath: '/tools', fallbackLabel: '工具配置', shortLabel: '工具', fallbackIcon: Connection, matchNames: ['tools'] },
-  { permission: 'system:env:view', fallbackPath: '/env-vars', fallbackLabel: '环境变量管理', shortLabel: '变量', fallbackIcon: Key, matchNames: ['env-vars'] },
-  { permission: 'system:shortcut:view', fallbackPath: '/shortcuts', fallbackLabel: '快捷入口管理', shortLabel: '入口', fallbackIcon: Link, matchNames: ['shortcuts'] },
-  { permission: 'scan:ruleset:view', fallbackPath: '/scan-rulesets', fallbackLabel: '扫描规则集', shortLabel: '规则集', fallbackIcon: Search, matchNames: ['scan-rulesets'] },
-  { permission: 'system:operation-log:view', fallbackPath: '/operation-logs', fallbackLabel: '操作日志', shortLabel: '日志', fallbackIcon: Document, matchNames: ['operation-logs'] }
-]
+const platformMenuSeedMap: Record<(typeof PLATFORM_MANAGEMENT_PERMISSION_CODES)[number], MenuSeed> = {
+  'system:credit:view': { permission: 'system:credit:view', fallbackPath: '/credits', fallbackLabel: '积分管理', shortLabel: '积分', fallbackIcon: Coin, matchNames: ['credits'] },
+  'system:shortcut:view': { permission: 'system:shortcut:view', fallbackPath: '/shortcuts', fallbackLabel: '快捷入口管理', shortLabel: '入口', fallbackIcon: Link, matchNames: ['shortcuts'] },
+  'model:view': { permission: 'model:view', fallbackPath: '/models', fallbackLabel: '模型管理', shortLabel: '模型', fallbackIcon: Cpu, matchNames: ['models', 'model-benchmark-configs'] },
+  'system:tool:view': { permission: 'system:tool:view', fallbackPath: '/tools', fallbackLabel: '工具配置', shortLabel: '工具', fallbackIcon: Connection, matchNames: ['tools'] },
+  'scan:ruleset:view': { permission: 'scan:ruleset:view', fallbackPath: '/scan-rulesets', fallbackLabel: '扫描规则集', shortLabel: '规则集', fallbackIcon: Search, matchNames: ['scan-rulesets'] },
+  'system:pr-review:view': { permission: 'system:pr-review:view', fallbackPath: '/pr-review-stats', fallbackLabel: 'PR评审统计', shortLabel: 'PR评审', fallbackIcon: DataAnalysis, matchNames: ['pr-review-stats'] },
+  'system:agent-usage:view': { permission: 'system:agent-usage:view', fallbackPath: '/agent-usage-stats', fallbackLabel: '智能体调用统计', shortLabel: '智能体', fallbackIcon: DataAnalysis, matchNames: ['agent-usage-stats'] }
+}
+
+// 管理端菜单目录顺序由权限 taxonomy 统一维护，避免角色页与导航各自硬编码分组。
+const systemMenuSeeds: MenuSeed[] = SYSTEM_MANAGEMENT_PERMISSION_CODES.map((code) => systemMenuSeedMap[code])
+const platformMenuSeeds: MenuSeed[] = PLATFORM_MANAGEMENT_PERMISSION_CODES.map((code) => platformMenuSeedMap[code])
 
 const menuPermissionMap = computed(() => {
   const map = new Map<string, PermissionItem>()
@@ -837,8 +946,8 @@ function buildMenuItems(seeds: MenuSeed[]) {
 
 const primaryMenuItems = computed(() => buildMenuItems(primaryMenuSeeds))
 const integrationMenuItems = computed(() => buildMenuItems(integrationMenuSeeds))
-const trailingMenuItems = computed(() => buildMenuItems(trailingMenuSeeds))
 const systemMenuItems = computed(() => buildMenuItems(systemMenuSeeds))
+const platformMenuItems = computed(() => buildMenuItems(platformMenuSeeds))
 
 const pageTitle = computed(() => {
   if (appStore.dynamicPageTitle && appStore.dynamicPageTitleRouteName === String(route.name || '')) {
@@ -858,8 +967,8 @@ const visibleIntegrationMenus = computed(() =>
     return true
   })
 )
-const visibleTrailingMenus = computed(() => trailingMenuItems.value.filter((item) => authStore.hasPermission(item.permission)))
 const visibleSystemMenus = computed(() => systemMenuItems.value.filter((item) => authStore.hasPermission(item.permission)))
+const visiblePlatformMenus = computed(() => platformMenuItems.value.filter((item) => authStore.hasPermission(item.permission)))
 const isDashboardRoute = computed(() => route.name === 'dashboard')
 const isIterationWorkspaceRoute = computed(() => route.name === 'project-iterations')
 const isWikiSpaceRoute = computed(() => route.name === 'wiki-space' || route.name === 'wiki-space-page')
@@ -962,20 +1071,22 @@ const mobileBottomNavItems = computed(() =>
 const mobileWorkspaceMoreItems = computed(() => [
   ...visibleProjectWorkspaceMenus.value,
   ...visiblePrimaryMenus.value.filter((item) => !mobilePrimaryMenuPaths.includes(item.path)),
-  ...visibleIntegrationMenus.value,
-  ...visibleTrailingMenus.value
+  ...visibleIntegrationMenus.value
 ])
 const mobileSystemMoreItems = computed(() => visibleSystemMenus.value)
+const mobilePlatformMoreItems = computed(() => visiblePlatformMenus.value)
 const isMobileMoreActive = computed(() =>
   route.path === '/profile'
   || mobileWorkspaceMoreItems.value.some((item) => isMenuActive(item))
   || mobileSystemMoreItems.value.some((item) => isMenuActive(item))
+  || mobilePlatformMoreItems.value.some((item) => isMenuActive(item))
 )
 let runtimeCapabilityTimer: number | null = null
 
 const isProjectWorkspaceActive = computed(() => visibleProjectWorkspaceMenus.value.some((item) => isMenuActive(item)))
 const isIntegrationSectionActive = computed(() => visibleIntegrationMenus.value.some((item) => isMenuActive(item)))
 const isSystemSectionActive = computed(() => visibleSystemMenus.value.some((item) => isMenuActive(item)))
+const isPlatformSectionActive = computed(() => visiblePlatformMenus.value.some((item) => isMenuActive(item)))
 
 // 手机端强制使用折叠导航，只影响当前视口展示，不覆盖用户桌面端保存的侧边栏偏好。
 function syncViewportMode() {
@@ -1068,6 +1179,14 @@ const handleCommand = async (command: string) => {
     openFeedbackDialog()
     return
   }
+  if (command === 'public-portal') {
+    if (!authStore.token) {
+      ElMessage.warning('当前登录态异常，请重新登录后再前往公众端')
+      return
+    }
+    window.location.assign(buildPublicPortalSsoUrl(authStore.token))
+    return
+  }
   if (command !== 'logout') {
     return
   }
@@ -1077,7 +1196,7 @@ const handleCommand = async (command: string) => {
   await router.replace('/login')
 }
 
-async function handleMobileCommand(command: 'profile' | 'feedback' | 'logout') {
+async function handleMobileCommand(command: AccountCommand) {
   await handleCommand(command)
 }
 
@@ -1307,20 +1426,22 @@ async function refreshRuntimeCapabilities() {
   }
 }
 
-// 当用户进入系统管理子页时，展开态自动展开对应分组，避免丢失当前定位。
+// 当用户进入管理目录子页时，展开态自动展开对应分组，避免丢失当前定位。
 watch(
   [
     () => route.fullPath,
     () => effectiveSidebarCollapsed.value,
     () => visibleProjectWorkspaceMenus.value.length,
     () => visibleIntegrationMenus.value.length,
-    () => visibleSystemMenus.value.length
+    () => visibleSystemMenus.value.length,
+    () => visiblePlatformMenus.value.length
   ],
   () => {
     if (effectiveSidebarCollapsed.value) {
       projectWorkspaceExpanded.value = false
       integrationMenuExpanded.value = false
       systemMenuExpanded.value = false
+      platformMenuExpanded.value = false
       return
     }
     if (isProjectWorkspaceActive.value) {
@@ -1331,6 +1452,9 @@ watch(
     }
     if (isSystemSectionActive.value) {
       systemMenuExpanded.value = true
+    }
+    if (isPlatformSectionActive.value) {
+      platformMenuExpanded.value = true
     }
   },
   { immediate: true }

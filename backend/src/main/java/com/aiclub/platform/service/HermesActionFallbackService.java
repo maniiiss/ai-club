@@ -29,6 +29,7 @@ public class HermesActionFallbackService {
     private static final Pattern REPOSITORY_PATH_PATTERN = Pattern.compile("([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){1,4})");
     private static final Pattern PROJECT_OF_REPOSITORY_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5A-Za-z0-9][\\u4e00-\\u9fa5A-Za-z0-9 _-]{1,40})\\s*的\\s*([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){1,4})");
     private static final Pattern BRANCH_PATTERN = Pattern.compile("(?:分支|branch)[：:\\s]*([A-Za-z0-9._/-]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PROJECT_ID_PATTERN = Pattern.compile("#\\s*(\\d+)");
 
     private final HermesInternalToolExecutionService hermesInternalToolExecutionService;
     private final HermesConversationStateStore hermesConversationStateStore;
@@ -256,6 +257,115 @@ public class HermesActionFallbackService {
         return null;
     }
 
+    /**
+     * 尝试执行工作项查询兜底。
+     * 业务意图：当模型已经识别出要查工作项，但 MCP 调用漏传 system_session_token 时，
+     * 后端复用 Redis 会话态中的令牌完成只读查询，避免把内部令牌问题暴露给用户。
+     */
+    public HermesFallbackResult trySearchWorkItems(HermesConversationState state,
+                                                   HermesChatRequest request) {
+        if (state == null || request == null || state.currentRequest() == null) {
+            return null;
+        }
+        if (!isWorkItemSearchIntent(request.question())) {
+            return null;
+        }
+        String sessionToken = state.mcpSessionToken();
+        if (sessionToken == null || sessionToken.isBlank()) {
+            return null;
+        }
+
+        Long projectId = extractProjectId(request.question());
+        HermesConversationState workingState = state;
+        if (projectId == null) {
+            String projectKeyword = extractProjectKeyword(request.question());
+            if (projectKeyword != null && !projectKeyword.isBlank()) {
+                hermesInternalToolExecutionService.execute(new HermesInternalToolExecuteRequest(
+                        sessionToken,
+                        "project.search",
+                        Map.of("keyword", projectKeyword)
+                ));
+                workingState = loadState(state);
+                if (!workingState.selectionCards().isEmpty()) {
+                    return new HermesFallbackResult(
+                            workingState,
+                            "我已经找到候选项目了，请先确认要查询哪个项目的工作项。"
+                    );
+                }
+                HermesGroundingTarget projectTarget = workingState.groundingState() == null
+                        ? null
+                        : workingState.groundingState().boundSlot("project");
+                if (projectTarget != null && projectTarget.entityId() != null) {
+                    projectId = projectTarget.entityId();
+                }
+            }
+        }
+        if (projectId == null && request.projectId() != null) {
+            projectId = request.projectId();
+        }
+        if (projectId == null && state.groundingState() != null) {
+            HermesGroundingTarget projectTarget = state.groundingState().boundSlot("project");
+            if (projectTarget != null) {
+                projectId = projectTarget.entityId();
+            }
+        }
+
+        LinkedHashMap<String, Object> arguments = new LinkedHashMap<>();
+        String keyword = extractWorkItemKeyword(request.question());
+        if (!keyword.isBlank()) {
+            arguments.put("keyword", keyword);
+        }
+        if (projectId != null) {
+            arguments.put("projectId", projectId);
+        }
+        var result = hermesInternalToolExecutionService.execute(new HermesInternalToolExecuteRequest(
+                sessionToken,
+                "work_item.search",
+                arguments
+        ));
+        return new HermesFallbackResult(loadState(workingState), result.message());
+    }
+
+    /**
+     * 尝试执行项目详情 / 迭代查询兜底。
+     * 业务意图：项目类只读工具最容易被模型在 token 参数处卡住，后端可用会话态令牌安全接管。
+     */
+    public HermesFallbackResult tryReadProjectInfo(HermesConversationState state,
+                                                   HermesChatRequest request) {
+        if (state == null || request == null || state.currentRequest() == null) {
+            return null;
+        }
+        if (!isProjectReadIntent(request.question())) {
+            return null;
+        }
+        String sessionToken = state.mcpSessionToken();
+        if (sessionToken == null || sessionToken.isBlank()) {
+            return null;
+        }
+
+        Long projectId = resolveProjectIdForFallback(state, request, sessionToken);
+        HermesConversationState workingState = loadState(state);
+        if (projectId == null && workingState != null && !workingState.selectionCards().isEmpty()) {
+            return new HermesFallbackResult(
+                    workingState,
+                    "我已经找到候选项目了，请先确认要查询哪一个项目。"
+            );
+        }
+        if (projectId == null) {
+            return null;
+        }
+
+        String toolCode = isIterationReadIntent(request.question())
+                ? "project.list_iterations"
+                : "project.get_detail";
+        var result = hermesInternalToolExecutionService.execute(new HermesInternalToolExecuteRequest(
+                sessionToken,
+                toolCode,
+                Map.of("projectId", projectId)
+        ));
+        return new HermesFallbackResult(loadState(workingState == null ? state : workingState), result.message());
+    }
+
     private HermesConversationState loadState(HermesConversationState state) {
         return hermesConversationStateStore.load(state.scopeKey(), state.clientConversationId()).orElse(state);
     }
@@ -272,6 +382,54 @@ public class HermesActionFallbackService {
             return "CRM";
         }
         return "";
+    }
+
+    private Long extractProjectId(String question) {
+        if (question == null || question.isBlank()) {
+            return null;
+        }
+        Matcher matcher = PROJECT_ID_PATTERN.matcher(question);
+        if (!matcher.find()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(matcher.group(1));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private Long resolveProjectIdForFallback(HermesConversationState state,
+                                             HermesChatRequest request,
+                                             String sessionToken) {
+        Long projectId = extractProjectId(request.question());
+        if (projectId != null) {
+            return projectId;
+        }
+        if (request.projectId() != null) {
+            return request.projectId();
+        }
+        if (state.groundingState() != null) {
+            HermesGroundingTarget projectTarget = state.groundingState().boundSlot("project");
+            if (projectTarget != null && projectTarget.entityId() != null) {
+                return projectTarget.entityId();
+            }
+        }
+        String projectKeyword = extractProjectKeyword(request.question());
+        if (projectKeyword == null || projectKeyword.isBlank()) {
+            return null;
+        }
+        hermesInternalToolExecutionService.execute(new HermesInternalToolExecuteRequest(
+                sessionToken,
+                "project.search",
+                Map.of("keyword", projectKeyword)
+        ));
+        HermesConversationState afterProjectSearch = loadState(state);
+        if (afterProjectSearch.groundingState() == null) {
+            return null;
+        }
+        HermesGroundingTarget projectTarget = afterProjectSearch.groundingState().boundSlot("project");
+        return projectTarget == null ? null : projectTarget.entityId();
     }
 
     private String extractAssigneeKeyword(String question) {
@@ -326,6 +484,67 @@ public class HermesActionFallbackService {
                 || normalized.contains("code scan")
                 || normalized.contains("scan"))
                 && (normalized.contains("/") || normalized.contains("仓库") || normalized.contains("repo"));
+    }
+
+    private boolean isWorkItemSearchIntent(String question) {
+        if (question == null || question.isBlank()) {
+            return false;
+        }
+        String normalized = question.toLowerCase(Locale.ROOT);
+        boolean hasWorkItemNoun = question.contains("工作项")
+                || question.contains("需求")
+                || question.contains("任务")
+                || question.contains("缺陷")
+                || normalized.contains("work item");
+        boolean hasSearchVerb = question.contains("查")
+                || question.contains("找")
+                || question.contains("列")
+                || question.contains("最近")
+                || question.contains("哪些")
+                || normalized.contains("search")
+                || normalized.contains("list");
+        return hasWorkItemNoun && hasSearchVerb;
+    }
+
+    private boolean isProjectReadIntent(String question) {
+        if (question == null || question.isBlank()) {
+            return false;
+        }
+        String normalized = question.toLowerCase(Locale.ROOT);
+        boolean hasProjectNoun = question.contains("项目") || normalized.contains("project");
+        boolean hasReadVerb = question.contains("查")
+                || question.contains("看")
+                || question.contains("信息")
+                || question.contains("详情")
+                || question.contains("迭代")
+                || normalized.contains("search")
+                || normalized.contains("detail")
+                || normalized.contains("list");
+        return hasProjectNoun && hasReadVerb;
+    }
+
+    private boolean isIterationReadIntent(String question) {
+        if (question == null || question.isBlank()) {
+            return false;
+        }
+        String normalized = question.toLowerCase(Locale.ROOT);
+        return question.contains("迭代") || normalized.contains("iteration");
+    }
+
+    private String extractWorkItemKeyword(String question) {
+        if (question == null || question.isBlank()) {
+            return "";
+        }
+        if (question.contains("需求")) {
+            return "需求";
+        }
+        if (question.contains("缺陷")) {
+            return "缺陷";
+        }
+        if (question.contains("任务")) {
+            return "任务";
+        }
+        return "";
     }
 
     /**

@@ -30,6 +30,7 @@ import { Input } from '@/src/components/common/Input'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
+import { useAuth } from '@/src/hooks/useAuth'
 import { cn, getInitials, getErrorMessage } from '@/src/lib/utils'
 
 type StatusFilter = 'all' | 'conducting' | 'archived'
@@ -54,6 +55,7 @@ export const ProjectsPage = () => {
   /* 弹窗状态 */
   const [dialog, setDialog] = useState<{ open: boolean; editing?: ProjectItem }>({ open: false })
   const [deleteConfirm, setDeleteConfirm] = useState<ProjectItem | null>(null)
+  const canManageProject = useAuth((state) => state.hasPermission('project:manage'))
 
   const fetchProjects = useCallback(async () => {
     setLoading(true)
@@ -123,14 +125,16 @@ export const ProjectsPage = () => {
             管理你的研发项目空间
           </p>
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          icon={<Plus className="h-4 w-4" />}
-          onClick={() => setDialog({ open: true })}
-        >
-          创建项目
-        </Button>
+        {canManageProject && (
+          <Button
+            variant="primary"
+            size="sm"
+            icon={<Plus className="h-4 w-4" />}
+            onClick={() => setDialog({ open: true })}
+          >
+            创建项目
+          </Button>
+        )}
       </div>
 
       {/* 统计卡片 */}
@@ -188,7 +192,7 @@ export const ProjectsPage = () => {
             title={keyword ? '没有找到匹配的项目' : '还没有项目'}
             description={keyword ? '尝试其他关键词或清除筛选条件。' : '创建第一个项目开始协作。'}
             action={
-              !keyword ? (
+              !keyword && canManageProject ? (
                 <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setDialog({ open: true })}>
                   创建项目
                 </Button>
@@ -203,6 +207,7 @@ export const ProjectsPage = () => {
               <ProjectListItem
                 key={project.id}
                 project={project}
+                canManageProject={canManageProject}
                 onEdit={() => setDialog({ open: true, editing: project })}
                 onDelete={() => setDeleteConfirm(project)}
               />
@@ -242,6 +247,7 @@ export const ProjectsPage = () => {
       {dialog.open && (
         <ProjectDialog
           editing={dialog.editing}
+          canManageProject={canManageProject}
           onClose={() => setDialog({ open: false })}
           onSaved={() => {
             setDialog({ open: false })
@@ -264,10 +270,12 @@ export const ProjectsPage = () => {
 /** 项目列表卡片（含编辑/删除操作）。 */
 const ProjectListItem = ({
   project,
+  canManageProject,
   onEdit,
   onDelete,
 }: {
   project: ProjectItem
+  canManageProject: boolean
   onEdit: () => void
   onDelete: () => void
 }) => (
@@ -322,7 +330,7 @@ const ProjectListItem = ({
       </div>
       {/* 操作按钮：移动端默认显示，桌面端 hover 显示 */}
       <div className="flex items-center gap-1 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
-        {project.canEdit && (
+        {canManageProject && project.canEdit && (
           <button
             onClick={(e) => { e.preventDefault(); onEdit() }}
             className="rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
@@ -331,7 +339,7 @@ const ProjectListItem = ({
             <Edit3 className="h-3.5 w-3.5" />
           </button>
         )}
-        {project.canDelete && (
+        {canManageProject && project.canDelete && (
           <button
             onClick={(e) => { e.preventDefault(); onDelete() }}
             className="rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-bg-hover)] transition-colors"
@@ -351,10 +359,12 @@ const ProjectListItem = ({
 
 const ProjectDialog = ({
   editing,
+  canManageProject,
   onClose,
   onSaved,
 }: {
   editing?: ProjectItem
+  canManageProject: boolean
   onClose: () => void
   onSaved: () => void
 }) => {
@@ -369,6 +379,10 @@ const ProjectDialog = ({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    if (!canManageProject) {
+      setError('当前账号没有项目维护权限')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
