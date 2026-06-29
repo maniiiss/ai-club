@@ -1,5 +1,8 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.agentusage.AgentInvocationContext;
+import com.aiclub.platform.agentusage.AgentInvocationRecorder;
+import com.aiclub.platform.agentusage.AgentType;
 import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.dto.AgentTestResult;
 import com.aiclub.platform.dto.CodeReviewResult;
@@ -65,6 +68,7 @@ public class AgentExecutionService {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final String codeProcessingBaseUrl;
+    private final AgentInvocationRecorder agentInvocationRecorder;
 
     public AgentExecutionService(AgentRepository agentRepository,
                                  TokenCipherService tokenCipherService,
@@ -72,6 +76,7 @@ public class AgentExecutionService {
                                  CodeReviewClientService codeReviewClientService,
                                  ObjectMapper objectMapper,
                                  InternalServiceAuthenticator internalServiceAuthenticator,
+                                 AgentInvocationRecorder agentInvocationRecorder,
                                  @Value("${platform.code-processing.base-url}") String codeProcessingBaseUrl) {
         this.agentRepository = agentRepository;
         this.tokenCipherService = tokenCipherService;
@@ -79,6 +84,7 @@ public class AgentExecutionService {
         this.codeReviewClientService = codeReviewClientService;
         this.internalServiceAuthenticator = internalServiceAuthenticator;
         this.objectMapper = objectMapper;
+        this.agentInvocationRecorder = agentInvocationRecorder;
         this.codeProcessingBaseUrl = trimToNull(codeProcessingBaseUrl);
         // 本地 code-processing 运行在 Uvicorn/FastAPI 上，对 Java HttpClient 的 HTTP/2 升级握手兼容性较差；
         // 固定使用 HTTP/1.1，避免请求在到达应用层前就被 Uvicorn 以“Invalid HTTP request received”拒绝。
@@ -913,7 +919,22 @@ public class AgentExecutionService {
 
     private String invokeModelAgent(AgentEntity agent, String systemPrompt, String userPrompt) {
         Long modelConfigId = requireAiModelConfigId(agent);
-        return modelConfigService.invokePrompt(modelConfigId, systemPrompt, userPrompt);
+        String builtinCode = trimToNull(agent.getBuiltinCode());
+        AgentType agentType = builtinCode != null ? AgentType.AGENT_TEST : AgentType.USER_DEFINED_AGENT;
+        AgentInvocationContext ctx = AgentInvocationContext.builder(agentType)
+                .action(builtinCode != null ? builtinCode : "RUN")
+                .agentId(agent.getId())
+                .agentCode(builtinCode)
+                .modelConfig(agent.getAiModelConfig())
+                .inputChars((systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length()))
+                .build();
+        return agentInvocationRecorder.trackWithUsage(ctx, sink -> {
+            ModelConfigService.ModelInvocation inv =
+                    modelConfigService.invokePromptWithUsage(modelConfigId, systemPrompt, userPrompt);
+            sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens());
+            sink.setOutputChars(inv.text() == null ? 0 : inv.text().length());
+            return inv.text();
+        });
     }
 
     private Long requireAiModelConfigId(AgentEntity agent) {

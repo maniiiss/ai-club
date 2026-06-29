@@ -144,12 +144,15 @@ function Ensure-FullDockerEnvFile {
     }
 
     $backendPort = Get-DotEnvValue -Path $context.FullDockerEnvFile -Name 'BACKEND_PORT' -DefaultValue '8080'
+    $frontendPublicPort = Get-DotEnvValue -Path $context.FullDockerEnvFile -Name 'FRONTEND_PUBLIC_PORT' -DefaultValue '5175'
     $normalizedValues = @{
         # BACKEND_PORT 是宿主机映射端口；全量 Docker 内部服务互访始终使用 backend 容器端口 8080。
         PLATFORM_BACKEND_INTERNAL_BASE_URL = 'http://backend:8080'
         PLATFORM_INTERNAL_ALLOW_LOCAL_BYPASS = 'false'
         VITE_API_BASE_URL = ''
         VITE_API_PORT = $backendPort
+        VITE_PUBLIC_FRONTEND_BASE_URL = ''
+        VITE_PUBLIC_FRONTEND_PORT = $frontendPublicPort
     }
 
     # 补齐全量 Docker 独有的数据目录配置，避免 .env.server 直接从 .env 复制后回落到
@@ -158,6 +161,7 @@ function Ensure-FullDockerEnvFile {
     $fullDockerDefaults = @{
         POSTGRES_DATA_DIR = './.data/postgres'
         REDIS_DATA_DIR = './.data/redis'
+        RABBITMQ_DATA_DIR = './.data/rabbitmq'
         MINIO_DATA_DIR = './.data/minio'
         HERMES_PORT = '18080'
         HERMES_DATA_DIR = './.data/hermes'
@@ -237,6 +241,7 @@ function Get-PortConfiguration {
         CodeProcessing = [int](Get-EnvOrDefault -Name 'CODE_PROCESSING_PORT' -DefaultValue '9000')
         Postgres       = [int](Get-EnvOrDefault -Name 'POSTGRES_PORT' -DefaultValue '5432')
         Redis          = [int](Get-EnvOrDefault -Name 'REDIS_PORT' -DefaultValue '6379')
+        RabbitMq       = [int](Get-EnvOrDefault -Name 'RABBITMQ_PORT' -DefaultValue '5672')
         Minio          = [int](Get-EnvOrDefault -Name 'MINIO_PORT' -DefaultValue '19000')
         Hermes         = [int](Get-EnvOrDefault -Name 'HERMES_PORT' -DefaultValue '18080')
         Hindsight      = [int](Get-EnvOrDefault -Name 'HINDSIGHT_PORT' -DefaultValue '18888')
@@ -722,6 +727,7 @@ function Start-LocalApplicationServices(
     Set-Item -Path 'Env:PLATFORM_BACKEND_INTERNAL_BASE_URL' -Value "http://localhost:$($PortConfiguration.Backend)"
     Set-Item -Path 'Env:PLATFORM_CODE_PROCESSING_BASE_URL' -Value "http://localhost:$($PortConfiguration.CodeProcessing)"
     Set-Item -Path 'Env:VITE_API_PORT' -Value "$($PortConfiguration.Backend)"
+    Set-Item -Path 'Env:VITE_PUBLIC_FRONTEND_PORT' -Value "$($PortConfiguration.FrontendPublic)"
 
     $mvnCmd = (Get-Command mvn).Source
     $npmCmd = Get-NpmCommandPath
@@ -874,6 +880,7 @@ function Get-ComposeImages([string]$ComposeFile, [string]$EnvFile) {
         (Get-DotEnvValue -Path $EnvFile -Name 'CODE_PROCESSING_IMAGE' -DefaultValue 'git-ai-club-code-processing:latest'),
         (Get-DotEnvValue -Path $EnvFile -Name 'POSTGRES_IMAGE' -DefaultValue 'postgres:16'),
         (Get-DotEnvValue -Path $EnvFile -Name 'REDIS_IMAGE' -DefaultValue 'redis:7-alpine'),
+        (Get-DotEnvValue -Path $EnvFile -Name 'RABBITMQ_IMAGE' -DefaultValue 'rabbitmq:3.13-management'),
         (Get-DotEnvValue -Path $EnvFile -Name 'MINIO_IMAGE' -DefaultValue 'minio/minio:RELEASE.2025-02-28T09-55-16Z'),
         (Get-DotEnvValue -Path $EnvFile -Name 'QDRANT_IMAGE' -DefaultValue 'qdrant/qdrant:v1.13.4'),
         (Get-DotEnvValue -Path $EnvFile -Name 'HERMES_IMAGE' -DefaultValue 'ghcr.io/nousresearch/hermes-agent:latest'),

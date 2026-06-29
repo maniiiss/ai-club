@@ -70,6 +70,7 @@ public class ExecutionDispatchService {
     private final ExecutionAsyncSessionService executionAsyncSessionService;
     private final ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
     private final TestPlanAutomationPersistenceService testPlanAutomationPersistenceService;
+    private final ChatRoomAgentService chatRoomAgentService;
     private final Executor executionTaskExecutor;
     private final Set<Long> dispatchingTaskIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
@@ -89,6 +90,7 @@ public class ExecutionDispatchService {
                                     ExecutionAsyncSessionService executionAsyncSessionService,
                                     ExecutionWorkspaceCleanupService executionWorkspaceCleanupService,
                                     TestPlanAutomationPersistenceService testPlanAutomationPersistenceService,
+                                    ChatRoomAgentService chatRoomAgentService,
                                     @Qualifier("executionTaskExecutor") Executor executionTaskExecutor) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
@@ -106,6 +108,7 @@ public class ExecutionDispatchService {
         this.executionAsyncSessionService = executionAsyncSessionService;
         this.executionWorkspaceCleanupService = executionWorkspaceCleanupService;
         this.testPlanAutomationPersistenceService = testPlanAutomationPersistenceService;
+        this.chatRoomAgentService = chatRoomAgentService;
         this.executionTaskExecutor = executionTaskExecutor;
     }
 
@@ -520,6 +523,7 @@ public class ExecutionDispatchService {
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "SUCCESS");
+        notifyChatRoomsWhenExecutionStatusChanged(executionTask, RESULT_STATUS_SUCCESS);
         boolean hasCleanupWorkspace = scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_SUCCESS) > 0;
         notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_SUCCESS, hasCleanupWorkspace);
         return executionRun;
@@ -564,6 +568,7 @@ public class ExecutionDispatchService {
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "FAILED");
+        notifyChatRoomsWhenExecutionStatusChanged(executionTask, RESULT_STATUS_FAILED);
         boolean hasCleanupWorkspace = scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_FAILED) > 0;
         notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_FAILED, hasCleanupWorkspace);
         // 业务意图：通用步骤失败兜底也要把测试计划状态收敛，
@@ -602,6 +607,7 @@ public class ExecutionDispatchService {
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "FAILED");
+        notifyChatRoomsWhenExecutionStatusChanged(executionTask, RESULT_STATUS_FAILED);
         boolean hasCleanupWorkspace = scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_FAILED) > 0;
         notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_FAILED, hasCleanupWorkspace);
         writeBackTestPlanFailedIfNeeded(executionTask, executionRun, executionRun.getErrorMessage());
@@ -636,6 +642,7 @@ public class ExecutionDispatchService {
 
         executionWritebackService.writeBackToWorkItem(executionTask, executionRun, artifacts);
         selfUpgradeExecutionWritebackService.handleExecutionFinished(executionTask, executionRun, "CANCELED");
+        notifyChatRoomsWhenExecutionStatusChanged(executionTask, RESULT_STATUS_CANCELED);
         boolean hasCleanupWorkspace = scheduleWorkspaceCleanup(executionRun, RESULT_STATUS_CANCELED) > 0;
         notifyRequesterWhenExecutionFinished(executionTask, executionRun, RESULT_STATUS_CANCELED, hasCleanupWorkspace);
         writeBackTestPlanCanceledIfNeeded(executionTask, executionRun, "执行任务已取消，未继续后续步骤");
@@ -849,6 +856,22 @@ public class ExecutionDispatchService {
                 BIZ_TYPE_DEVELOPMENT_EXECUTION_COMPLETED,
                 executionTask.getId()
         );
+    }
+
+    /**
+     * 执行中心终态同步到聊天室 Agent。
+     * 业务意图：聊天室回写是协作通知能力，不能反向影响执行中心的终态收口。
+     */
+    private void notifyChatRoomsWhenExecutionStatusChanged(ExecutionTaskEntity executionTask, String status) {
+        if (chatRoomAgentService == null) {
+            return;
+        }
+        try {
+            chatRoomAgentService.handleExecutionTaskStatusChanged(executionTask, status);
+        } catch (RuntimeException exception) {
+            log.warn("执行任务状态回写聊天室失败: executionTaskId={}, status={}",
+                    executionTask == null ? null : executionTask.getId(), status, exception);
+        }
     }
 
     /**

@@ -30,7 +30,7 @@ const modules = [
   },
   {
     path: 'knowledge',
-    label: '知识',
+    label: '文档',
     description: 'Wiki 文档、项目记忆与上下文',
     icon: BookOpen,
     color: 'bg-emerald-50 text-emerald-600',

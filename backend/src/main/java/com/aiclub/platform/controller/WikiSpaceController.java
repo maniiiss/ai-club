@@ -76,6 +76,16 @@ public class WikiSpaceController {
     }
 
     /**
+     * 从项目入口初始化绑定当前项目的 Wiki 空间。
+     */
+    @PostMapping("/projects/{projectId}/space")
+    @RequirePermission("wiki:view")
+    public ApiResponse<WikiSpaceDetail> createProjectSpace(@PathVariable Long projectId,
+                                                           @Valid @RequestBody CreateWikiSpaceRequest request) {
+        return ApiResponse.success(wikiSpaceService.createProjectSpace(projectId, request));
+    }
+
+    /**
      * 读取空间详情。
      */
     @GetMapping("/spaces/{spaceId}")

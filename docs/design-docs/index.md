@@ -17,6 +17,7 @@
 
 ### 模块设计
 
+- [原生 API 工作台设计](../api-studio-native-technical-design-v1.md) - 平台原生 API 资产与调试工作台
 - [API 管理设计](../generated/api-management-technical-design-v1.md) - API 工作台设计
 - [GitLab 集成设计](../exec-plans/completed/gitlab-module.md) - 代码仓库集成
 - [GitLab 代码结构](../generated/gitlab-code-structure-technical-design-v1.md) - 代码结构分析
@@ -38,7 +39,6 @@
 
 ### 第三方集成
 
-- [Yaade 集成设计](../generated/yaade-integration-technical-design-v1.md) - API 工具集成
 - [Gitee 工作项同步](../generated/gitee-work-item-sync-technical-design-v1.md) - 工作项同步
 - [Gitee 测试计划推送](../generated/gitee-test-plan-push-technical-design-v1.md) - 测试计划推送
 

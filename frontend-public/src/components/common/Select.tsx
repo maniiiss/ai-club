@@ -2,8 +2,10 @@
  * 自定义下拉选择组件。
  * 替代原生 <select>，提供一致的设计风格和更好的交互体验。
  */
-import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, Check } from 'lucide-react'
+import { computeFloatingDropdownStyle, type FloatingDropdownStyle } from '@/src/lib/floatingUi'
 import { cn } from '@/src/lib/utils'
 
 interface SelectOption {
@@ -48,14 +50,20 @@ export const Select = ({
   className,
 }: SelectProps) => {
   const [open, setOpen] = useState(false)
+  const [menuStyle, setMenuStyle] = useState<FloatingDropdownStyle | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const selected = options.find((o) => o.value === value)
 
   // 点击外部关闭
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      const target = e.target as Node
+      const clickedTrigger = ref.current?.contains(target)
+      const clickedMenu = menuRef.current?.contains(target)
+      if (!clickedTrigger && !clickedMenu) {
         setOpen(false)
       }
     }
@@ -72,6 +80,81 @@ export const Select = ({
     return () => document.removeEventListener('keydown', handleKey)
   }, [open])
 
+  useLayoutEffect(() => {
+    if (!open) return
+    const updateMenuPosition = () => {
+      const rect = buttonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      setMenuStyle(computeFloatingDropdownStyle({
+        triggerRect: rect,
+        viewportHeight: window.innerHeight,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY,
+      }))
+    }
+    updateMenuPosition()
+    window.addEventListener('resize', updateMenuPosition)
+    window.addEventListener('scroll', updateMenuPosition, true)
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition)
+      window.removeEventListener('scroll', updateMenuPosition, true)
+    }
+  }, [open, options.length])
+
+  const dropdown = open && menuStyle ? createPortal(
+    <div
+      ref={menuRef}
+      className="absolute z-[70] rounded-xl border border-[var(--color-border)] bg-white py-1.5 shadow-[var(--shadow-lg)] animate-scaleIn overflow-y-auto"
+      style={{
+        top: menuStyle.top,
+        left: menuStyle.left,
+        width: menuStyle.width,
+        maxHeight: menuStyle.maxHeight,
+      }}
+    >
+      {options.map((option) => {
+        const isSelected = option.value === value
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => {
+              onChange(option.value)
+              setOpen(false)
+            }}
+            className={cn(
+              'flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors',
+              isSelected
+                ? 'bg-[var(--color-primary-light)] text-[var(--color-primary)]'
+                : 'text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]',
+            )}
+          >
+            {option.icon && (
+              <span className="shrink-0">{option.icon}</span>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className={cn(
+                'text-[13px] truncate',
+                isSelected ? 'font-medium' : 'font-normal',
+              )}>
+                {option.label}
+              </p>
+              {option.description && (
+                <p className="text-[11px] text-[var(--color-text-tertiary)] truncate mt-0.5">
+                  {option.description}
+                </p>
+              )}
+            </div>
+            {isSelected && (
+              <Check className="h-4 w-4 text-[var(--color-primary)] shrink-0" strokeWidth={2} />
+            )}
+          </button>
+        )
+      })}
+    </div>,
+    document.body,
+  ) : null
+
   return (
     <div className={cn('flex flex-col gap-1.5', className)} ref={ref}>
       {label && (
@@ -81,6 +164,7 @@ export const Select = ({
       )}
       <div className="relative">
         <button
+          ref={buttonRef}
           type="button"
           onClick={() => !disabled && setOpen(!open)}
           disabled={disabled}
@@ -108,51 +192,8 @@ export const Select = ({
             open && 'rotate-180',
           )} />
         </button>
-
-        {open && (
-          <div className="absolute z-50 mt-1.5 w-full rounded-xl border border-[var(--color-border)] bg-white py-1.5 shadow-[var(--shadow-lg)] animate-scaleIn max-h-[240px] overflow-y-auto">
-            {options.map((option) => {
-              const isSelected = option.value === value
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => {
-                    onChange(option.value)
-                    setOpen(false)
-                  }}
-                  className={cn(
-                    'flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors',
-                    isSelected
-                      ? 'bg-[var(--color-primary-light)] text-[var(--color-primary)]'
-                      : 'text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]',
-                  )}
-                >
-                  {option.icon && (
-                    <span className="shrink-0">{option.icon}</span>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className={cn(
-                      'text-[13px] truncate',
-                      isSelected ? 'font-medium' : 'font-normal',
-                    )}>
-                      {option.label}
-                    </p>
-                    {option.description && (
-                      <p className="text-[11px] text-[var(--color-text-tertiary)] truncate mt-0.5">
-                        {option.description}
-                      </p>
-                    )}
-                  </div>
-                  {isSelected && (
-                    <Check className="h-4 w-4 text-[var(--color-primary)] shrink-0" strokeWidth={2} />
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        )}
       </div>
+      {dropdown}
       {error && (
         <p className="text-[12px] text-[var(--color-danger)]">{error}</p>
       )}

@@ -46,8 +46,10 @@ public class IterationController {
 
     @GetMapping("/burndown")
     @RequirePermission("project:view")
-    public ApiResponse<ProjectBurndownSummary> getProjectBurndown(@PathVariable Long projectId) {
-        return ApiResponse.success(platformStoreService.getProjectBurndown(projectId));
+    public ApiResponse<ProjectBurndownSummary> getProjectBurndown(@PathVariable Long projectId,
+                                                                  @RequestParam(required = false) Long iterationId,
+                                                                  @RequestParam(required = false, defaultValue = "false") Boolean excludeUnplanned) {
+        return ApiResponse.success(platformStoreService.getProjectBurndown(projectId, iterationId, excludeUnplanned));
     }
 
     @GetMapping("/iterations")

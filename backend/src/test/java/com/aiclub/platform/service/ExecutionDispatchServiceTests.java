@@ -87,6 +87,9 @@ class ExecutionDispatchServiceTests {
     @Mock
     private TestPlanAutomationPersistenceService testPlanAutomationPersistenceService;
 
+    @Mock
+    private ChatRoomAgentService chatRoomAgentService;
+
     private ExecutionDispatchService executionDispatchService;
 
     @BeforeEach
@@ -108,6 +111,7 @@ class ExecutionDispatchServiceTests {
                 executionAsyncSessionService,
                 executionWorkspaceCleanupService,
                 testPlanAutomationPersistenceService,
+                chatRoomAgentService,
                 Runnable::run
         );
     }

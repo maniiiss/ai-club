@@ -6,7 +6,7 @@
 
 - 服务器资源监控：`ServerMonitorScheduler` 定时 SSH 探测，落 `server_metric_sample`，由 `ServerAlertService` 驱动告警。
 - 用户操作审计：`operationlog` 包通过拦截器自动记录请求/响应，落 `user_operation_log`。
-- 依赖组件健康：`WoodpeckerHealthSummary` / `YaadeHealthSummary` 等零散摘要。
+- 依赖组件健康：`WoodpeckerHealthSummary` 等零散摘要。
 - 执行过程留痕：`ExecutionStepEventEntity` / `TaskAgentRunEntity` / 各类 `*SyncLogEntity`。
 
 这些能力都是**面向平台自身**的。但平台的核心价值对象是「**入驻项目**」——项目通过流水线构建、`部署到服务器` 后运行。当前对「入驻项目运行起来之后到底健不健康、日志去哪看」缺少统一收口：

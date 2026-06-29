@@ -1,17 +1,19 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.agentusage.AgentInvocationRecorder;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.dto.ApiTestCaseAiResult;
-import com.aiclub.platform.dto.YaadeProjectBindingSummary;
-import com.aiclub.platform.dto.request.YaadeApiTestCaseGenerationRequest;
+import com.aiclub.platform.dto.request.ApiTestGenerationRequest;
 import com.aiclub.platform.repository.AiModelConfigRepository;
+import com.aiclub.platform.service.ApiTestContextSource.ApiTestGenerationContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -21,17 +23,23 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+/**
+ * 数据源通过 {@link ApiTestContextSource} 提供，
+ * 行为契约（脱敏 / 模型回退 / 拒绝 Embedding）完全保留。
+ */
 @ExtendWith(MockitoExtension.class)
 class ApiTestCaseAiServiceTests {
 
     @Mock
-    private YaadeApiCatalogService yaadeApiCatalogService;
+    private ApiTestContextSource contextSource;
 
     @Mock
     private AiModelConfigRepository aiModelConfigRepository;
@@ -39,48 +47,54 @@ class ApiTestCaseAiServiceTests {
     @Mock
     private ModelConfigService modelConfigService;
 
+    @Mock
+    private AgentInvocationRecorder agentInvocationRecorder;
+
     private ObjectMapper objectMapper;
     private ApiTestCaseAiService apiTestCaseAiService;
 
     @BeforeEach
     void setUp() {
+        lenient().when(agentInvocationRecorder.track(any(), ArgumentMatchers.<java.util.function.Supplier<Object>>any()))
+                .thenAnswer(invocation -> invocation.getArgument(1, java.util.function.Supplier.class).get());
+        lenient().when(agentInvocationRecorder.trackWithUsage(any(), ArgumentMatchers.<java.util.function.Function<com.aiclub.platform.agentusage.UsageSink, Object>>any()))
+                .thenAnswer(invocation -> {
+                    java.util.function.Function<com.aiclub.platform.agentusage.UsageSink, Object> fn = invocation.getArgument(1);
+                    return fn.apply(new com.aiclub.platform.agentusage.UsageSink());
+                });
         objectMapper = new ObjectMapper();
         apiTestCaseAiService = new ApiTestCaseAiService(
-                yaadeApiCatalogService,
+                contextSource,
                 aiModelConfigRepository,
                 modelConfigService,
-                objectMapper
+                objectMapper,
+                agentInvocationRecorder
         );
     }
 
-    /**
-     * 未指定模型时，应只从启用的对话模型里取默认项，避免误用 Embedding 配置。
-     */
     @Test
     void shouldFallbackToFirstEnabledChatModel() {
         AiModelConfigEntity chatModel = model(3L, "默认对话模型", ModelConfigService.MODEL_TYPE_CHAT);
-        when(yaadeApiCatalogService.requireRequest(10L, 101L)).thenReturn(lookup());
+        when(contextSource.requireContext(10L, 101L)).thenReturn(context());
         when(aiModelConfigRepository.findAllByEnabledTrueAndModelTypeOrderByIdAsc(ModelConfigService.MODEL_TYPE_CHAT)).thenReturn(List.of(chatModel));
         when(modelConfigService.resolveModelConfig(3L)).thenReturn(resolved(chatModel));
-        when(modelConfigService.invokePrompt(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt())).thenReturn(aiJson(9));
+        when(modelConfigService.invokePromptWithUsage(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt(), anyBoolean()))
+                .thenReturn(new ModelConfigService.ModelInvocation(aiJson(9), null, null, null));
 
-        ApiTestCaseAiResult result = apiTestCaseAiService.generate(10L, 101L, new YaadeApiTestCaseGenerationRequest(null));
+        ApiTestCaseAiResult result = apiTestCaseAiService.generate(10L, 101L, new ApiTestGenerationRequest(null));
 
         assertThat(result.modelConfigId()).isEqualTo(3L);
         assertThat(result.testCases()).hasSize(8);
         verify(aiModelConfigRepository).findAllByEnabledTrueAndModelTypeOrderByIdAsc(ModelConfigService.MODEL_TYPE_CHAT);
     }
 
-    /**
-     * 显式传入 Embedding 模型时，需要在模型调用前直接拒绝。
-     */
     @Test
     void shouldRejectExplicitEmbeddingModel() {
         AiModelConfigEntity embeddingModel = model(4L, "向量模型", ModelConfigService.MODEL_TYPE_EMBEDDING);
-        when(yaadeApiCatalogService.requireRequest(10L, 101L)).thenReturn(lookup());
+        when(contextSource.requireContext(10L, 101L)).thenReturn(context());
         when(aiModelConfigRepository.findById(4L)).thenReturn(Optional.of(embeddingModel));
 
-        assertThatThrownBy(() -> apiTestCaseAiService.generate(10L, 101L, new YaadeApiTestCaseGenerationRequest(4L)))
+        assertThatThrownBy(() -> apiTestCaseAiService.generate(10L, 101L, new ApiTestGenerationRequest(4L)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("API 测试用例 AI 仅支持对话模型配置");
 
@@ -88,46 +102,30 @@ class ApiTestCaseAiServiceTests {
     }
 
     /**
-     * Prompt 上下文必须脱敏，避免把 Yaade 中保存的 token、密码或 API Key 送进模型。
+     * Prompt 上下文必须脱敏，避免把 token、密码或 API Key 送进模型。
      */
     @Test
     void shouldMaskSecretsBeforeInvokingModel() {
         AiModelConfigEntity chatModel = model(3L, "默认对话模型", ModelConfigService.MODEL_TYPE_CHAT);
-        when(yaadeApiCatalogService.requireRequest(10L, 101L)).thenReturn(lookup());
+        when(contextSource.requireContext(10L, 101L)).thenReturn(context());
         when(aiModelConfigRepository.findAllByEnabledTrueAndModelTypeOrderByIdAsc(ModelConfigService.MODEL_TYPE_CHAT)).thenReturn(List.of(chatModel));
         when(modelConfigService.resolveModelConfig(3L)).thenReturn(resolved(chatModel));
-        when(modelConfigService.invokePrompt(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt())).thenReturn(aiJson(1));
+        when(modelConfigService.invokePromptWithUsage(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt(), anyBoolean()))
+                .thenReturn(new ModelConfigService.ModelInvocation(aiJson(1), null, null, null));
 
-        apiTestCaseAiService.generate(10L, 101L, new YaadeApiTestCaseGenerationRequest(null));
+        apiTestCaseAiService.generate(10L, 101L, new ApiTestGenerationRequest(null));
 
         ArgumentCaptor<String> userPromptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(modelConfigService).invokePrompt(any(ModelConfigService.ResolvedModelConfig.class), anyString(), userPromptCaptor.capture(), anyInt());
+        verify(modelConfigService).invokePromptWithUsage(any(ModelConfigService.ResolvedModelConfig.class), anyString(), userPromptCaptor.capture(), anyInt(), anyBoolean());
         assertThat(userPromptCaptor.getValue()).contains("***已脱敏***");
         assertThat(userPromptCaptor.getValue()).doesNotContain("Bearer real-token");
         assertThat(userPromptCaptor.getValue()).doesNotContain("plain-password");
         assertThat(userPromptCaptor.getValue()).doesNotContain("secret-api-key");
     }
 
-    private YaadeApiCatalogService.RequestLookupResult lookup() {
+    private ApiTestGenerationContext context() {
         ProjectEntity project = new ProjectEntity("CRM项目", "张三", "进行中", "API AI 测试");
         project.setId(10L);
-        YaadeProjectBindingSummary binding = new YaadeProjectBindingSummary(10L, false, true, 51L, "aiclub-project-10", YaadeProjectSyncService.STATUS_ACTIVE, "CRM项目", null, null);
-        YaadeClientService.YaadeRemoteCollection collection = collection();
-        YaadeClientService.YaadeRemoteRequest request = request();
-        return new YaadeApiCatalogService.RequestLookupResult(project, binding, collection, request, "CRM项目 / 用户管理");
-    }
-
-    private YaadeClientService.YaadeRemoteCollection collection() {
-        ObjectNode data = objectMapper.createObjectNode().put("name", "用户管理").put("parentId", 51).put("rank", 0);
-        data.putArray("groups").add("aiclub-project-10");
-        ObjectNode raw = objectMapper.createObjectNode().put("id", 61).put("ownerId", 1).put("version", "1.0.0");
-        raw.set("data", data);
-        raw.set("requests", objectMapper.createArrayNode());
-        raw.set("scripts", objectMapper.createArrayNode());
-        return new YaadeClientService.YaadeRemoteCollection(61L, 1L, "1.0.0", "用户管理", 51L, 0, List.of("aiclub-project-10"), raw);
-    }
-
-    private YaadeClientService.YaadeRemoteRequest request() {
         ObjectNode data = objectMapper.createObjectNode()
                 .put("name", "创建用户")
                 .put("method", "POST")
@@ -138,9 +136,10 @@ class ApiTestCaseAiServiceTests {
         data.putArray("headers")
                 .add(objectMapper.createObjectNode().put("key", "Authorization").put("value", "Bearer real-token"))
                 .add(objectMapper.createObjectNode().put("key", "X-Trace").put("value", "trace-1"));
-        ObjectNode raw = objectMapper.createObjectNode().put("id", 101).put("collectionId", 61).put("type", "REST").put("version", "1.0.0");
-        raw.set("data", data.deepCopy());
-        return new YaadeClientService.YaadeRemoteRequest(101L, 61L, "REST", "1.0.0", data, raw);
+        data.set("params", objectMapper.createArrayNode());
+        data.set("formDataBody", objectMapper.createArrayNode());
+        data.set("auth", objectMapper.createObjectNode());
+        return new ApiTestGenerationContext(project, 101L, "CRM项目 / 用户管理", data);
     }
 
     private AiModelConfigEntity model(Long id, String name, String modelType) {

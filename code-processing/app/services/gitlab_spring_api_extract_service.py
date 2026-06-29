@@ -634,7 +634,7 @@ def _extract_javadoc_params(comment: str) -> dict[str, str]:
 def _body_field_parameters(body_type: str,
                            dto_fields: dict[str, list[JavaFieldDoc]],
                            enum_values: dict[str, list[str]]) -> list[GitlabSpringApiParameter]:
-    """把 DTO 字段说明转换成统一参数结构，供下游写入 Yaade 描述。"""
+    """把 DTO 字段说明转换成统一参数结构，供下游写入 API Studio 描述。"""
     result: list[GitlabSpringApiParameter] = []
     for field in dto_fields.get(_simple_type(body_type), []):
         result.append(GitlabSpringApiParameter(

@@ -25,6 +25,12 @@ spring:
       timeout: 5s
       repositories:
         enabled: false
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:aiclub}
+    password: ${RABBITMQ_PASSWORD:aiclub123}
+    virtual-host: ${RABBITMQ_VHOST:/}
   jpa:
     open-in-view: false
     hibernate:
@@ -168,9 +174,9 @@ platform:
       top-k: ${PLATFORM_WIKI_KNOWLEDGE_RERANK_TOP_K:10}
   lightrag:
     enabled: ${PLATFORM_LIGHTRAG_ENABLED:true}
-    # 阶段三切流开关：默认关闭走旧链路，灰度按需开启。
+    # 阶段三切流开关：hermes 证据默认关闭灰度按需开启；图谱默认开启走 LightRAG+Neo4j。
     hermes-evidence-enabled: ${PLATFORM_LIGHTRAG_HERMES_EVIDENCE_ENABLED:false}
-    graph-enabled: ${PLATFORM_LIGHTRAG_GRAPH_ENABLED:false}
+    graph-enabled: ${PLATFORM_LIGHTRAG_GRAPH_ENABLED:true}
     query:
       top-k: ${PLATFORM_LIGHTRAG_QUERY_TOP_K:3}
       default-mode: ${PLATFORM_LIGHTRAG_QUERY_DEFAULT_MODE:local}
@@ -178,13 +184,6 @@ platform:
     ingest:
       retry-max: ${PLATFORM_LIGHTRAG_INGEST_RETRY_MAX:5}
       scan-interval-ms: ${PLATFORM_LIGHTRAG_INGEST_SCAN_INTERVAL_MS:600000}
-  yaade:
-    base-url: ${PLATFORM_YAADE_BASE_URL:}
-    admin-username: ${PLATFORM_YAADE_ADMIN_USERNAME:}
-    admin-password: ${PLATFORM_YAADE_ADMIN_PASSWORD:}
-    default-user-password: ${PLATFORM_YAADE_DEFAULT_USER_PASSWORD:}
-    public-collection-name: ${PLATFORM_YAADE_PUBLIC_COLLECTION_NAME:}
-    proxy-session-ttl-minutes: ${PLATFORM_YAADE_PROXY_SESSION_TTL_MINUTES:}
   internal:
     allow-local-bypass: ${PLATFORM_INTERNAL_ALLOW_LOCAL_BYPASS:true}
     service-token: ${PLATFORM_INTERNAL_SERVICE_TOKEN:git-ai-club-internal-service-token}
@@ -214,3 +213,16 @@ platform:
       access-key: ${PLATFORM_MINIO_ACCESS_KEY:minioadmin}
       secret-key: ${PLATFORM_MINIO_SECRET_KEY:minioadmin}
       bucket: ${PLATFORM_MINIO_BUCKET:ai-club-assets}
+  chat:
+    agent:
+      rabbit:
+        exchange: ${PLATFORM_CHAT_AGENT_RABBIT_EXCHANGE:chat.agent.exchange}
+        queue-name: ${PLATFORM_CHAT_AGENT_RABBIT_QUEUE:chat.agent.task.queue}
+        routing-key: ${PLATFORM_CHAT_AGENT_RABBIT_ROUTING_KEY:chat.agent.task}
+        retry-queue-name: ${PLATFORM_CHAT_AGENT_RABBIT_RETRY_QUEUE:chat.agent.retry.queue}
+        retry-routing-key: ${PLATFORM_CHAT_AGENT_RABBIT_RETRY_ROUTING_KEY:chat.agent.retry}
+        dead-letter-queue-name: ${PLATFORM_CHAT_AGENT_RABBIT_DLQ:chat.agent.dlq}
+        dead-letter-routing-key: ${PLATFORM_CHAT_AGENT_RABBIT_DLQ_ROUTING_KEY:chat.agent.dead}
+        retry-delay-ms: ${PLATFORM_CHAT_AGENT_RABBIT_RETRY_DELAY_MS:30000}
+        max-attempts: ${PLATFORM_CHAT_AGENT_RABBIT_MAX_ATTEMPTS:3}
+        consumer-concurrency: ${PLATFORM_CHAT_AGENT_QUEUE_CONCURRENCY:2}

@@ -1,5 +1,7 @@
 # API AI 测试用例生成技术设计 v1
 
+> 历史背景说明：本文档撰写时数据源为 Yaade。Yaade 已下线，AI 测试用例生成已迁移到原生 API Studio（`POST /api/api-studio/projects/{id}/endpoints/{eid}/ai-test-cases`），数据从 `api_studio_endpoint` 读取，脱敏与 Prompt 逻辑保持不变。详见 `docs/api-studio-native-technical-design-v1.md`。
+
 ## 1. 背景
 
 API 管理已经切换为 Yaade 嵌入式工作台，接口资产的主数据由 Yaade 保存。平台侧仍负责项目入口、权限、身份桥接和智能体能力，因此可以在不改造 Yaade 主链路的前提下，为单个接口提供 AI 测试用例分析能力。

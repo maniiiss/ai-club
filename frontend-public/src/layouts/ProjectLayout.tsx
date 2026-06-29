@@ -4,19 +4,24 @@
  */
 import { Outlet, useParams, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Users, CheckSquare, GitBranch } from 'lucide-react'
+import { ArrowLeft, Users, CheckSquare, GitBranch, Sparkles } from 'lucide-react'
 import { ProjectNav } from '@/src/components/navigation/ProjectNav'
 import { getProjectDetail } from '@/src/api/projects'
 import type { ProjectItem } from '@/src/types/project'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
+import { SlideDrawer } from '@/src/components/common/SlideDrawer'
+import { HermesWorkspace } from '@/src/components/hermes/HermesWorkspace'
+import { useAuthStore } from '@/src/stores/auth'
 
 export const ProjectLayout = () => {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
+  const canUseHermes = useAuthStore((s) => s.hasPermission('hermes:chat'))
   const [project, setProject] = useState<ProjectItem | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [hermesOpen, setHermesOpen] = useState(false)
 
   const fetchProject = async () => {
     if (!projectId) return
@@ -106,6 +111,33 @@ export const ProjectLayout = () => {
       <div className="flex-1 overflow-y-auto bg-[var(--color-bg-page)] px-4 pt-4 pb-2 lg:px-6 lg:pt-5 lg:pb-2">
         <Outlet />
       </div>
+
+      {canUseHermes && projectId && (
+        <>
+          <button
+            type="button"
+            className="fixed bottom-5 right-5 z-40 inline-flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-primary)] text-white shadow-[var(--shadow-xl)] transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
+            title="打开 Hermes 项目助手"
+            aria-label="打开 Hermes 项目助手"
+            onClick={() => setHermesOpen(true)}
+          >
+            <Sparkles className="h-5 w-5" />
+          </button>
+          <SlideDrawer
+            open={hermesOpen}
+            onClose={() => setHermesOpen(false)}
+            title="Hermes 项目助手"
+            description={project?.name || '当前项目'}
+            maxWidth="min(1080px, 100vw)"
+          >
+            <HermesWorkspace
+              mode="project"
+              projectId={Number(projectId)}
+              compact
+            />
+          </SlideDrawer>
+        </>
+      )}
     </div>
   )
 }

@@ -331,6 +331,10 @@ const feedbackState = reactive<Record<string, IssueFeedbackState>>({})
 const parseDetailIssues = (markdown: string): DetailIssue[] => {
   if (!markdown) return []
   const issues: DetailIssue[] = []
+  // 同一 issueId 只保留首次出现（按 markdown 顺序，"本次新增"先于"仍需处理"），
+  // 避免历史日志里残留的跨区块重复 issue 导致 feedbackState / radio name / v-for key 冲突
+  // 进而引发勾选串扰。新写入的日志由后端 buildReviewExtraMarkdown 保证不重复。
+  const seenIds = new Set<string>()
   const lines = markdown.split(/\r?\n/)
   let currentSection: 'NEWLY_RAISED' | 'PENDING' | null = null
   for (const rawLine of lines) {
@@ -350,9 +354,11 @@ const parseDetailIssues = (markdown: string): DetailIssue[] => {
       const match = line.match(/<!--\s*issue-id:\s*([\w-]+)\s*-->/)
       if (!match) continue
       const issueId = match[1]
+      if (seenIds.has(issueId)) continue
       // 提取 bullet 文本，去掉前导 -、注释本身
       const text = line.replace(/^-\s*/, '').replace(/<!--\s*issue-id:[^>]+-->/, '').trim()
       if (text) {
+        seenIds.add(issueId)
         issues.push({ issueId, text, section: currentSection })
       }
     }

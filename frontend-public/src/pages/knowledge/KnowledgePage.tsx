@@ -1,13 +1,13 @@
 /**
- * 知识模块页面。
- * 三个子 Tab：Wiki 空间（含 CRUD）、知识图谱、记忆事实。
+ * 文档模块页面。
+ * 三个子 Tab：Wiki 空间（含 CRUD）、知识图谱、API。
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
-  BookOpen, FolderTree, FileText, Network, Brain, Search,
+  BookOpen, FolderTree, FileText, Network, Search,
   ChevronRight, ChevronDown, Edit3, Trash2, Plus, X, Save, AlertTriangle,
-  History, Upload, RotateCcw, FileUp,
+  History, Upload, RotateCcw, FileUp, Code2,
 } from 'lucide-react'
 import { Markdown } from '@/src/components/common/Markdown'
 import { MarkdownEditor } from '@/src/components/common/MarkdownEditor'
@@ -15,21 +15,20 @@ import { WIKI_PAGE_TEMPLATE } from '@/src/lib/markdownTemplates'
 import { uploadMarkdownImage } from '@/src/lib/markdownImageUpload'
 import {
   listWikiSpaces, getWikiDirectoryTree, getWikiPage, searchWikiPages,
-  getProjectKnowledgeGraph, getProjectMemoryFactGraph,
-  getProjectMemoryFactFacts,
+  getWikiSpaceKnowledgeGraph, createProjectWikiSpace,
   createWikiPage, updateWikiPage, deleteWikiPage,
-  createWikiDirectory, deleteWikiDirectory,
+  createWikiDirectory, updateWikiDirectory, deleteWikiDirectory,
   listWikiPageVersions, restoreWikiPageVersion,
   uploadDocumentAsset, previewWikiImport, importWikiPage,
 } from '@/src/api/knowledge'
-import type { WikiPagePayload, WikiDirectoryPayload, WikiImportPagePayload } from '@/src/api/knowledge'
+import type { WikiPagePayload, WikiDirectoryPayload, WikiImportPagePayload, WikiSpacePayload } from '@/src/api/knowledge'
 import type {
   WikiSpaceItem, WikiDirectoryTreeNodeItem, WikiSpacePageSummaryItem,
   WikiSpacePageDetailItem, WikiSpacePageVersionItem, DocumentMarkdownResultItem,
-  KnowledgeGraphItem, MemoryFactGraphItem,
-  MemoryFactFactsResponseItem, MemoryFactItem,
+  WikiSpaceKnowledgeGraphItem,
 } from '@/src/types/knowledge'
-import { Card } from '@/src/components/common/Card'
+import { KnowledgeGraphView } from '@/src/components/knowledge/KnowledgeGraphView'
+import { ApiStudioPanel } from './ApiStudioPanel'
 import { Button } from '@/src/components/common/Button'
 import { Input } from '@/src/components/common/Input'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
@@ -37,16 +36,17 @@ import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
 import { cn, formatDate, getErrorMessage } from '@/src/lib/utils'
 
-type KnowledgeTab = 'wiki' | 'graph' | 'memory'
+type KnowledgeTab = 'wiki' | 'graph' | 'api'
 
 const tabs: { key: KnowledgeTab; label: string; icon: typeof BookOpen }[] = [
   { key: 'wiki', label: 'Wiki', icon: BookOpen },
   { key: 'graph', label: '知识图谱', icon: Network },
-  { key: 'memory', label: '记忆事实', icon: Brain },
+  { key: 'api', label: 'API', icon: Code2 },
 ]
 
 export const KnowledgePage = () => {
   const [activeTab, setActiveTab] = useState<KnowledgeTab>('wiki')
+
   return (
     <div className="h-full flex flex-col overflow-hidden animate-fadeIn">
       <div className="flex-shrink-0 mb-6 flex gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)] w-fit">
@@ -61,7 +61,7 @@ export const KnowledgePage = () => {
       <div className="flex-1 overflow-hidden">
       {activeTab === 'wiki' && <WikiPanel />}
       {activeTab === 'graph' && <GraphPanel />}
-      {activeTab === 'memory' && <MemoryPanel />}
+      {activeTab === 'api' && <ApiStudioPanel />}
       </div>
     </div>
   )
@@ -96,8 +96,10 @@ const WikiPanel = () => {
   const [searchResults, setSearchResults] = useState<WikiSpacePageSummaryItem[]>([])
 
   // 弹窗
+  const [spaceDialogOpen, setSpaceDialogOpen] = useState(false)
   const [newPageDialog, setNewPageDialog] = useState<{ open: boolean; directoryId: number; pages: WikiSpacePageSummaryItem[] }>({ open: false, directoryId: 0, pages: [] })
   const [newDirDialog, setNewDirDialog] = useState<{ open: boolean; parentDirectoryId?: number }>({ open: false })
+  const [editDirDialog, setEditDirDialog] = useState<{ open: boolean; directory: WikiDirectoryTreeNodeItem | null }>({ open: false, directory: null })
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'page' | 'directory'; id: number; name: string } | null>(null)
 
   // 版本历史面板
@@ -113,10 +115,28 @@ const WikiPanel = () => {
   // 移动端目录树展开状态
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false)
 
-  useEffect(() => {
-    const fetch = async () => { setLoading(true); try { setSpaces(await listWikiSpaces({ projectId: pid })) } catch (err) { setError(getErrorMessage(err)) } finally { setLoading(false) } }
-    fetch()
+  const fetchSpaces = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      setSpaces(await listWikiSpaces({ projectId: pid }))
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setLoading(false)
+    }
   }, [pid])
+
+  useEffect(() => {
+    fetchSpaces()
+  }, [fetchSpaces])
+
+  const handleCreateSpace = async (payload: WikiSpacePayload) => {
+    const created = await createProjectWikiSpace(pid, payload)
+    await fetchSpaces()
+    await handleSelectSpace(created)
+    setSpaceDialogOpen(false)
+  }
 
   const handleSelectSpace = async (space: WikiSpaceItem) => {
     setSelectedSpace(space); setSelectedPage(null); setTreeLoading(true)
@@ -166,6 +186,21 @@ const WikiPanel = () => {
       await refreshTree()
     } catch { /* ignore */ }
     setNewDirDialog({ open: false })
+  }
+
+  const handleUpdateDirectory = async (directory: WikiDirectoryTreeNodeItem, name: string) => {
+    if (!selectedSpace) return
+    try {
+      const payload: WikiDirectoryPayload = {
+        name,
+        content: directory.content || '',
+        parentDirectoryId: directory.parentDirectoryId,
+        boundProjectId: directory.boundProjectId ?? pid,
+      }
+      await updateWikiDirectory(selectedSpace.id, directory.id, payload)
+      await refreshTree()
+    } catch { /* ignore */ }
+    setEditDirDialog({ open: false, directory: null })
   }
 
   const handleDeleteConfirm = async () => {
@@ -287,7 +322,14 @@ const WikiPanel = () => {
           </div>
         ) : spaces.length === 0 ? (
           <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]">
-            <EmptyState title="暂无 Wiki 空间" description="该项目还没有关联的 Wiki 空间。" icon={<BookOpen className="h-6 w-6" strokeWidth={1.5} />} />
+            <div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-10 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-primary-light)]">
+                <BookOpen className="h-6 w-6 text-[var(--color-primary)]" strokeWidth={1.5} />
+              </div>
+              <h3 className="mt-4 text-[16px] font-semibold text-[var(--color-text-primary)]">暂无项目 Wiki</h3>
+              <p className="mt-1 max-w-md text-[13px] leading-6 text-[var(--color-text-tertiary)]">为当前项目初始化一个 Wiki 空间后，可以在这里维护目录、页面和导入文档。</p>
+              <Button className="mt-5" icon={<Plus className="h-4 w-4" />} onClick={() => setSpaceDialogOpen(true)}>初始化项目 Wiki</Button>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -311,6 +353,7 @@ const WikiPanel = () => {
             ))}
           </div>
         )}
+        {spaceDialogOpen && <CreateProjectWikiDialog projectId={pid} onSubmit={handleCreateSpace} onClose={() => setSpaceDialogOpen(false)} />}
       </div>
     )
   }
@@ -350,6 +393,7 @@ const WikiPanel = () => {
           {treeLoading ? <LoadingSpinner text="加载目录…" /> : tree.length === 0 ? <p className="text-[12px] text-[var(--color-text-tertiary)]">暂无目录</p> : (
             <DirectoryTree nodes={tree} spaceId={selectedSpace.id} onSelectPage={(sId, pId) => { handleSelectPage(sId, pId); setMobileTreeOpen(false) }}
               onAddPage={(dirId) => setNewPageDialog({ open: true, directoryId: dirId, pages: collectDirPages(dirId) })}
+              onEditDir={(directory) => setEditDirDialog({ open: true, directory })}
               onDeleteDir={(dirId, name) => setDeleteConfirm({ type: 'directory', id: dirId, name })} />
           )}
         </div>
@@ -476,8 +520,10 @@ const WikiPanel = () => {
       )}
 
       {/* 弹窗 */}
+      {spaceDialogOpen && <CreateProjectWikiDialog projectId={pid} onSubmit={handleCreateSpace} onClose={() => setSpaceDialogOpen(false)} />}
       {newPageDialog.open && <CreatePageDialog directoryId={newPageDialog.directoryId} pages={newPageDialog.pages} onSubmit={(title, parentPageId) => handleCreatePage(newPageDialog.directoryId, title, parentPageId)} onClose={() => setNewPageDialog({ open: false, directoryId: 0, pages: [] })} />}
       {newDirDialog.open && <SimpleInputDialog title="新建目录" label="目录名称" placeholder="输入目录名称" onSubmit={(v) => handleCreateDirectory(v, newDirDialog.parentDirectoryId)} onClose={() => setNewDirDialog({ open: false })} />}
+      {editDirDialog.open && editDirDialog.directory && <SimpleInputDialog title="编辑目录" label="目录名称" placeholder="输入目录名称" initialValue={editDirDialog.directory.name} onSubmit={(v) => handleUpdateDirectory(editDirDialog.directory!, v)} onClose={() => setEditDirDialog({ open: false, directory: null })} />}
       {deleteConfirm && <DeleteConfirmDialog name={deleteConfirm.name} onCancel={() => setDeleteConfirm(null)} onConfirm={handleDeleteConfirm} />}
       {versionRestoreConfirm && <VersionRestoreConfirmDialog versionNumber={versionRestoreConfirm.versionNumber} onCancel={() => setVersionRestoreConfirm(null)} onConfirm={() => handleRestoreVersion(versionRestoreConfirm.versionNumber)} />}
       {importDialog.open && <ImportDialog directoryId={importDialog.directoryId} loading={importLoading} preview={importPreview} error={importError} onFileSelect={handleImportFile} onCreate={(dirId, title, parentPageId) => handleImportCreate(dirId, title, parentPageId)} onClose={() => { setImportDialog({ open: false, directoryId: 0 }); setImportPreview(null); setImportError(null) }} />}
@@ -487,24 +533,26 @@ const WikiPanel = () => {
 
 /* ── 目录树 ── */
 
-const DirectoryTree = ({ nodes, spaceId, onSelectPage, onAddPage, onDeleteDir, depth = 0 }: {
+const DirectoryTree = ({ nodes, spaceId, onSelectPage, onAddPage, onEditDir, onDeleteDir, depth = 0 }: {
   nodes: WikiDirectoryTreeNodeItem[]; spaceId: number
   onSelectPage: (spaceId: number, pageId: number) => void
   onAddPage: (dirId: number) => void
+  onEditDir: (directory: WikiDirectoryTreeNodeItem) => void
   onDeleteDir: (dirId: number, name: string) => void
   depth?: number
 }) => (
   <div className="space-y-0.5">
     {nodes.map((node) => (
-      <DirectoryNode key={node.id} node={node} spaceId={spaceId} onSelectPage={onSelectPage} onAddPage={onAddPage} onDeleteDir={onDeleteDir} depth={depth} />
+      <DirectoryNode key={node.id} node={node} spaceId={spaceId} onSelectPage={onSelectPage} onAddPage={onAddPage} onEditDir={onEditDir} onDeleteDir={onDeleteDir} depth={depth} />
     ))}
   </div>
 )
 
-const DirectoryNode = ({ node, spaceId, onSelectPage, onAddPage, onDeleteDir, depth }: {
+const DirectoryNode = ({ node, spaceId, onSelectPage, onAddPage, onEditDir, onDeleteDir, depth }: {
   node: WikiDirectoryTreeNodeItem; spaceId: number
   onSelectPage: (spaceId: number, pageId: number) => void
   onAddPage: (dirId: number) => void
+  onEditDir: (directory: WikiDirectoryTreeNodeItem) => void
   onDeleteDir: (dirId: number, name: string) => void
   depth: number
 }) => {
@@ -521,13 +569,14 @@ const DirectoryNode = ({ node, spaceId, onSelectPage, onAddPage, onDeleteDir, de
         </button>
         <div className="flex items-center gap-0.5 pr-1 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
           <button onClick={() => onAddPage(node.id)} className="rounded p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] transition-colors cursor-pointer" title="新建页面"><Plus className="h-3 w-3" /></button>
+          <button onClick={() => onEditDir(node)} className="rounded p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] transition-colors cursor-pointer" title="编辑目录"><Edit3 className="h-3 w-3" /></button>
           <button onClick={() => onDeleteDir(node.id, node.name)} className="rounded p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] transition-colors cursor-pointer" title="删除目录"><Trash2 className="h-3 w-3" /></button>
         </div>
       </div>
       {expanded && (
         <div>
           {node.children.map((child) => (
-            <DirectoryNode key={child.id} node={child} spaceId={spaceId} onSelectPage={onSelectPage} onAddPage={onAddPage} onDeleteDir={onDeleteDir} depth={depth + 1} />
+            <DirectoryNode key={child.id} node={child} spaceId={spaceId} onSelectPage={onSelectPage} onAddPage={onAddPage} onEditDir={onEditDir} onDeleteDir={onDeleteDir} depth={depth + 1} />
           ))}
           {node.pages.map((page) => (
             <button key={page.id} onClick={() => onSelectPage(spaceId, page.id)}
@@ -550,255 +599,131 @@ const DirectoryNode = ({ node, spaceId, onSelectPage, onAddPage, onDeleteDir, de
 const GraphPanel = () => {
   const { projectId } = useParams<{ projectId: string }>()
   const pid = Number(projectId)
-  const [graph, setGraph] = useState<KnowledgeGraphItem | null>(null)
+  const [graph, setGraph] = useState<WikiSpaceKnowledgeGraphItem | null>(null)
+  const [selectedSpaceId, setSelectedSpaceId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // 项目是否绑定了 Wiki 空间；未绑定时给出引导而非报错。
+  const [noSpace, setNoSpace] = useState(false)
+  // pageId -> 页面标题，供图谱「来源文档」召回段展示。
+  const [pageMap, setPageMap] = useState<Map<number, string>>(new Map())
 
   useEffect(() => {
-    const fetch = async () => { setLoading(true); try { setGraph(await getProjectKnowledgeGraph(pid)) } catch (err) { setError(getErrorMessage(err)) } finally { setLoading(false) } }
+    const fetch = async () => {
+      setLoading(true)
+      setError(null)
+      setNoSpace(false)
+      try {
+        // 项目与 Wiki 空间一对一绑定，取绑定空间后读其 LightRAG 图谱。
+        const spaces = await listWikiSpaces({ projectId: pid })
+        const space = spaces[0]
+        if (!space) {
+          setNoSpace(true)
+          return
+        }
+        setSelectedSpaceId(space.id)
+        // 并行拉图谱与目录树：目录树用于构建「来源文档」段的 pageId → 标题映射。
+        const [g, tree] = await Promise.all([
+          getWikiSpaceKnowledgeGraph(space.id),
+          getWikiDirectoryTree(space.id).catch(() => [] as WikiDirectoryTreeNodeItem[]),
+        ])
+        const pm = new Map<number, string>()
+        const walkPages = (pages: WikiSpacePageSummaryItem[]) => {
+          for (const p of pages) {
+            pm.set(p.id, p.title)
+            if (p.children?.length) walkPages(p.children)
+          }
+        }
+        const walkDirs = (nodes: WikiDirectoryTreeNodeItem[]) => {
+          for (const n of nodes) {
+            walkPages(n.pages)
+            walkDirs(n.children)
+          }
+        }
+        walkDirs(tree)
+        setPageMap(pm)
+        setGraph(g)
+      } catch (err) {
+        setError(getErrorMessage(err))
+      } finally {
+        setLoading(false)
+      }
+    }
     fetch()
   }, [pid])
 
   if (loading) return <LoadingSpinner text="加载知识图谱…" />
   if (error) return <ErrorState description={error} />
-  if (!graph || graph.nodeCount === 0) return <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]"><EmptyState title="暂无知识图谱" description="项目知识图谱尚未生成。" icon={<Network className="h-6 w-6" strokeWidth={1.5} />} /></div>
+  if (noSpace) return <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]"><EmptyState title="尚未绑定 Wiki 空间" description="为该项目绑定一个 Wiki 空间并补充文档后，即可看到从文档中抽取的知识图谱。" icon={<Network className="h-6 w-6" strokeWidth={1.5} />} /></div>
+  if (!graph || graph.nodes.length === 0) return <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]"><EmptyState title="暂无知识图谱" description="该空间尚未抽取出知识实体，补充文档内容后稍候重试。" icon={<Network className="h-6 w-6" strokeWidth={1.5} />} /></div>
 
-  const nodeTypeCounts: Record<string, number> = {}
-  graph.nodes.forEach((n) => { nodeTypeCounts[n.nodeType] = (nodeTypeCounts[n.nodeType] || 0) + 1 })
-  const edgeTypeCounts: Record<string, number> = {}
-  graph.edges.forEach((e) => { edgeTypeCounts[e.edgeType] = (edgeTypeCounts[e.edgeType] || 0) + 1 })
-
-  // 仅展示主要的业务节点类型（排除 WIKI_PAGE/WIKI_DIRECTORY 等细节类型）
-  const mainNodeTypes = ['PROJECT', 'ITERATION', 'REQUIREMENT', 'TASK', 'BUG', 'TEST_PLAN', 'TEST_CASE']
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3">
-        <Card title="节点总数"><p className="text-[28px] font-bold text-[var(--color-primary)]">{graph.nodeCount}</p></Card>
-        <Card title="关系总数"><p className="text-[28px] font-bold text-[var(--color-text-primary)]">{graph.edgeCount}</p></Card>
-        <Card title="生成时间"><p className="text-[14px] font-medium text-[var(--color-text-primary)]">{formatDate(graph.generatedAt)}</p></Card>
-      </div>
-
-      {/* 简化的节点类型分布 - 仅展示业务主节点 */}
-      <Card title="业务节点分布">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {mainNodeTypes.map((type) => {
-            const count = nodeTypeCounts[type] || 0
-            if (count > 0) return (
-              <div key={type} className="rounded-lg bg-[var(--color-bg-hover)] px-3 py-2">
-                <p className="text-[11px] text-[var(--color-text-tertiary)] truncate">{type === 'REQUIREMENT' ? '需求' : type === 'TASK' ? '任务' : type === 'BUG' ? '缺陷' : type === 'ITERATION' ? '迭代' : type === 'TEST_PLAN' ? '测试计划' : type === 'TEST_CASE' ? '测试用例' : '项目'}</p>
-                <p className="text-[18px] font-bold text-[var(--color-text-primary)]">{count}</p>
-              </div>
-            )
-            return null
-          })}
-          {Object.entries(nodeTypeCounts).filter(([type]) => !mainNodeTypes.includes(type) && (nodeTypeCounts[type] || 0) > 0).map(([type, count]) => (
-            <div key={type} className="rounded-lg bg-[var(--color-bg-hover)] px-3 py-2">
-              <p className="text-[11px] text-[var(--color-text-tertiary)] truncate">{type}</p>
-              <p className="text-[18px] font-bold text-[var(--color-text-primary)]">{count}</p>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* 简化的关系类型分布 */}
-      <Card title="关系类型分布">
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {Object.entries(edgeTypeCounts).map(([type, count]) => (
-            <div key={type} className="rounded-lg bg-[var(--color-bg-hover)] px-3 py-2">
-              <p className="text-[11px] text-[var(--color-text-tertiary)] truncate">{type}</p>
-              <p className="text-[18px] font-bold text-[var(--color-text-primary)]">{count}</p>
-            </div>
-          ))}
-        </div>
-      </Card>
-    </div>
-  )
+  return <KnowledgeGraphView graph={graph} pageMap={pageMap} spaceId={selectedSpaceId!} />
 }
-
-/* ════════════════════════════════════════════
-   记忆事实面板（含实体事实钻取）
-   ════════════════════════════════════════════ */
-
-const MemoryPanel = () => {
-  const { projectId } = useParams<{ projectId: string }>()
-  const pid = Number(projectId)
-  const [graph, setGraph] = useState<MemoryFactGraphItem | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  /* 事实钻取 */
-  const [factPanel, setFactPanel] = useState<{
-    entityId: string
-    entityLabel: string
-    facts: MemoryFactFactsResponseItem | null
-    loading: boolean
-  } | null>(null)
-
-  useEffect(() => {
-    const fetch = async () => { setLoading(true); try { setGraph(await getProjectMemoryFactGraph(pid)) } catch (err) { setError(getErrorMessage(err)) } finally { setLoading(false) } }
-    fetch()
-  }, [pid])
-
-  const handleDrillDown = async (entityId: string, entityLabel: string) => {
-    setFactPanel({ entityId, entityLabel, facts: null, loading: true })
-    try {
-      const facts = await getProjectMemoryFactFacts(pid, { entityId, limit: 50 })
-      setFactPanel({ entityId, entityLabel, facts, loading: false })
-    } catch {
-      setFactPanel({ entityId, entityLabel, facts: null, loading: false })
-    }
-  }
-
-  if (loading) return <LoadingSpinner text="加载记忆事实…" />
-  if (error) return <ErrorState description={error} />
-  if (!graph || graph.nodeCount === 0) return <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]"><EmptyState title="暂无记忆事实" description="项目记忆事实图尚未生成。" icon={<Brain className="h-6 w-6" strokeWidth={1.5} />} /></div>
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3">
-        <Card title="实体"><p className="text-[28px] font-bold text-[var(--color-primary)]">{graph.nodeCount}</p></Card>
-        <Card title="关系"><p className="text-[28px] font-bold text-[var(--color-text-primary)]">{graph.edgeCount}</p></Card>
-        <Card title="事实"><p className="text-[28px] font-bold text-emerald-600">{graph.factCount}</p></Card>
-      </div>
-      {graph.warnings.length > 0 && (
-        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
-          <div className="flex items-center gap-2 text-amber-800 text-[13px] font-medium mb-1"><AlertTriangle className="h-4 w-4" />警告</div>
-          {graph.warnings.map((w, i) => <p key={i} className="text-[12px] text-amber-700">{w}</p>)}
-        </div>
-      )}
-
-      <div className="flex gap-5">
-        {/* 实体列表 */}
-        <div className="flex-1 min-w-0">
-          <Card title="实体列表">
-            <div className="overflow-x-auto">
-              <table className="w-full"><thead><tr className="border-b border-[var(--color-border-light)]">
-                <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase">实体</th>
-                <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase">类型</th>
-                <th className="px-3 py-2 text-right text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase">关联度</th>
-                <th className="px-3 py-2 text-right text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase">事实数</th>
-                <th className="px-3 py-2 w-[60px]" />
-              </tr></thead>
-              <tbody className="divide-y divide-[var(--color-border-light)]">
-                {graph.nodes.slice(0, 50).map((node) => (
-                  <tr
-                    key={node.id}
-                    className={cn(
-                      'hover:bg-[var(--color-bg-hover)]/50 transition-colors cursor-pointer',
-                      factPanel?.entityId === node.id && 'bg-[var(--color-primary-light)]',
-                    )}
-                    onClick={() => handleDrillDown(node.id, node.label)}
-                  >
-                    <td className="px-3 py-2.5 text-[13px] font-medium text-[var(--color-text-primary)]">{node.label}</td>
-                    <td className="px-3 py-2.5"><span className="rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary)]">{node.entityType}</span></td>
-                    <td className="px-3 py-2.5 text-[13px] text-right text-[var(--color-text-secondary)]">{node.degree}</td>
-                    <td className="px-3 py-2.5 text-[13px] text-right text-[var(--color-text-secondary)]">{node.factCount}</td>
-                    <td className="px-3 py-2.5 text-right">
-                      {node.factCount > 0 && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDrillDown(node.id, node.label) }}
-                          className="text-[11px] text-[var(--color-primary)] hover:underline cursor-pointer"
-                        >
-                          查看事实
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody></table>
-              {graph.nodes.length > 50 && <p className="mt-2 text-center text-[12px] text-[var(--color-text-tertiary)]">显示前 50 个，共 {graph.nodeCount} 个</p>}
-            </div>
-          </Card>
-        </div>
-
-        {/* 事实详情面板 */}
-        {factPanel && (
-          <div className="w-[380px] shrink-0">
-            <div className="sticky top-[68px]">
-              <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] overflow-hidden">
-                <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-4 py-3">
-                  <div>
-                    <h4 className="text-[14px] font-semibold text-[var(--color-text-primary)]">{factPanel.entityLabel}</h4>
-                    <p className="text-[11px] text-[var(--color-text-tertiary)]">事实详情</p>
-                  </div>
-                  <button
-                    onClick={() => setFactPanel(null)}
-                    className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors cursor-pointer"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-
-                {factPanel.loading ? (
-                  <div className="p-6"><LoadingSpinner text="加载事实…" /></div>
-                ) : !factPanel.facts || factPanel.facts.facts.length === 0 ? (
-                  <div className="p-6 text-center">
-                    <Brain className="mx-auto h-8 w-8 text-[var(--color-text-tertiary)]" strokeWidth={1.5} />
-                    <p className="mt-2 text-[13px] text-[var(--color-text-tertiary)]">暂无关联事实</p>
-                  </div>
-                ) : (
-                  <div className="max-h-[500px] overflow-y-auto p-4 space-y-2">
-                    <p className="text-[11px] text-[var(--color-text-tertiary)] mb-2">
-                      共 {factPanel.facts.factCount} 条事实
-                    </p>
-                    {factPanel.facts.facts.map((fact) => (
-                      <FactCard key={fact.id} fact={fact} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/** 单条事实卡片。 */
-const FactCard = ({ fact }: { fact: MemoryFactItem }) => (
-  <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] p-3">
-    <div className="flex items-start justify-between gap-2 mb-1.5">
-      <span className="rounded-full bg-[var(--color-primary-light)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-primary)]">
-        {fact.type}
-      </span>
-      {fact.confidence != null && (
-        <span className="text-[10px] text-[var(--color-text-tertiary)]">
-          置信度: {(fact.confidence * 100).toFixed(0)}%
-        </span>
-      )}
-    </div>
-    <p className="text-[13px] font-medium text-[var(--color-text-primary)] mb-1">{fact.summary}</p>
-    <div className="text-[11px] text-[var(--color-text-tertiary)] space-y-0.5">
-      <p><span className="font-medium">主体:</span> {fact.subject}</p>
-      <p><span className="font-medium">谓词:</span> {fact.predicate}</p>
-      <p><span className="font-medium">客体:</span> {fact.object}</p>
-    </div>
-    <div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--color-text-tertiary)]">
-      <span>{fact.sourceType}</span>
-      {fact.createdAt && <span>{formatDate(fact.createdAt)}</span>}
-    </div>
-    {fact.tags.length > 0 && (
-      <div className="mt-1.5 flex flex-wrap gap-1">
-        {fact.tags.map((tag) => (
-          <span key={tag} className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-tertiary)]">
-            {tag}
-          </span>
-        ))}
-      </div>
-    )}
-  </div>
-)
 
 /* ════════════════════════════════════════════
    公共小组件
    ════════════════════════════════════════════ */
 
-const SimpleInputDialog = ({ title, label, placeholder, onSubmit, onClose }: {
-  title: string; label: string; placeholder: string; onSubmit: (value: string) => void; onClose: () => void
+const CreateProjectWikiDialog = ({ projectId, onSubmit, onClose }: {
+  projectId: number
+  onSubmit: (payload: WikiSpacePayload) => Promise<void>
+  onClose: () => void
 }) => {
-  const [value, setValue] = useState('')
+  const [name, setName] = useState('项目 Wiki')
+  const [description, setDescription] = useState('项目知识沉淀与协作文档')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSubmit = async () => {
+    if (!name.trim()) return
+    setSaving(true)
+    setError(null)
+    try {
+      await onSubmit({
+        name: name.trim(),
+        description: description.trim(),
+        readScope: 'MEMBERS_ONLY',
+        boundProjectId: projectId,
+        memberDefaultSource: 'PROJECT_MEMBERS',
+      })
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-xl)] animate-scaleIn">
+        <div className="mb-4 flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-light)]">
+            <BookOpen className="h-5 w-5 text-[var(--color-primary)]" strokeWidth={1.75} />
+          </div>
+          <div>
+            <h2 className="text-[16px] font-bold text-[var(--color-text-primary)]">初始化项目 Wiki</h2>
+            <p className="mt-0.5 text-[12px] text-[var(--color-text-tertiary)]">空间将自动绑定当前项目。</p>
+          </div>
+        </div>
+        {error && <div className="mb-3 rounded-lg bg-[var(--color-danger-light)] border border-red-100 px-3 py-2 text-[13px] text-[var(--color-danger)]">{error}</div>}
+        <div className="space-y-3">
+          <Input label="空间名称" value={name} onChange={(e) => setName(e.target.value)} placeholder="输入空间名称" autoFocus />
+          <Input label="空间说明" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="输入空间说明" />
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>取消</Button>
+          <Button onClick={handleSubmit} loading={saving} disabled={!name.trim()} icon={<Plus className="h-4 w-4" />}>创建</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const SimpleInputDialog = ({ title, label, placeholder, initialValue = '', onSubmit, onClose }: {
+  title: string; label: string; placeholder: string; initialValue?: string; onSubmit: (value: string) => void; onClose: () => void
+}) => {
+  const [value, setValue] = useState(initialValue)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={onClose} />

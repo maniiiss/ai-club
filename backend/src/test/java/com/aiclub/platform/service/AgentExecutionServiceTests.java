@@ -1,5 +1,6 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.agentusage.AgentInvocationRecorder;
 import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.dto.CodeReviewResult;
@@ -9,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -52,11 +54,21 @@ class AgentExecutionServiceTests {
     @Mock
     private InternalServiceAuthenticator internalServiceAuthenticator;
 
+    @Mock
+    private AgentInvocationRecorder agentInvocationRecorder;
+
     private AgentExecutionService agentExecutionService;
 
     @BeforeEach
     void setUp() {
         lenient().when(internalServiceAuthenticator.authorizationHeaderValue()).thenReturn("Bearer internal-token");
+        lenient().when(agentInvocationRecorder.track(any(), ArgumentMatchers.<java.util.function.Supplier<Object>>any()))
+                .thenAnswer(invocation -> invocation.getArgument(1, java.util.function.Supplier.class).get());
+        lenient().when(agentInvocationRecorder.trackWithUsage(any(), ArgumentMatchers.<java.util.function.Function<com.aiclub.platform.agentusage.UsageSink, Object>>any()))
+                .thenAnswer(invocation -> {
+                    java.util.function.Function<com.aiclub.platform.agentusage.UsageSink, Object> fn = invocation.getArgument(1);
+                    return fn.apply(new com.aiclub.platform.agentusage.UsageSink());
+                });
         agentExecutionService = buildService("http://127.0.0.1:9000");
     }
 
@@ -94,18 +106,18 @@ class AgentExecutionServiceTests {
     void shouldRunRepositoryScanPlanBuiltinAgent() {
         AgentEntity agent = buildRepositoryScanPlanAgent();
         when(agentRepository.findById(11L)).thenReturn(Optional.of(agent));
-        when(modelConfigService.invokePrompt(
+        when(modelConfigService.invokePromptWithUsage(
                 eq(5L),
                 contains("仓库扫描计划智能体"),
                 contains("生成 AI 可执行计划")
-        )).thenReturn("""
+        )).thenReturn(new ModelConfigService.ModelInvocation("""
                 {"summary":"AI 计划已生成","executionMarkdown":"# 计划","recommendedMode":"SEQUENTIAL","shards":[],"manualItems":[],"notes":[]}
-                """);
+                """, null, null, null));
 
         String output = agentExecutionService.runAgent(11L, "仓库：demo");
 
         assertThat(output).contains("AI 计划已生成");
-        verify(modelConfigService).invokePrompt(
+        verify(modelConfigService).invokePromptWithUsage(
                 eq(5L),
                 contains("仓库扫描计划智能体"),
                 contains("生成 AI 可执行计划")
@@ -505,6 +517,7 @@ class AgentExecutionServiceTests {
                 codeReviewClientService,
                 new ObjectMapper(),
                 internalServiceAuthenticator,
+                agentInvocationRecorder,
                 codeProcessingBaseUrl
         );
     }

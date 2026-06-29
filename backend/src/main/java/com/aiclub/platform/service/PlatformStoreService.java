@@ -104,7 +104,6 @@ public class PlatformStoreService {
     private final RequirementModuleOptionService requirementModuleOptionService;
     private final TaskPrdService taskPrdService;
     private final DashboardShortcutEntryService dashboardShortcutEntryService;
-    private final YaadeProjectSyncService yaadeProjectSyncService;
     private final SecureRandom workItemCodeRandom = new SecureRandom();
 
     public PlatformStoreService(ProjectRepository projectRepository,
@@ -123,8 +122,7 @@ public class PlatformStoreService {
                                 ProjectDataPermissionService projectDataPermissionService,
                                 RequirementModuleOptionService requirementModuleOptionService,
                                 TaskPrdService taskPrdService,
-                                DashboardShortcutEntryService dashboardShortcutEntryService,
-                                YaadeProjectSyncService yaadeProjectSyncService) {
+                                DashboardShortcutEntryService dashboardShortcutEntryService) {
         this.projectRepository = projectRepository;
         this.projectGitlabBindingRepository = projectGitlabBindingRepository;
         this.agentRepository = agentRepository;
@@ -142,7 +140,6 @@ public class PlatformStoreService {
         this.requirementModuleOptionService = requirementModuleOptionService;
         this.taskPrdService = taskPrdService;
         this.dashboardShortcutEntryService = dashboardShortcutEntryService;
-        this.yaadeProjectSyncService = yaadeProjectSyncService;
     }
 
     public DashboardOverview getDashboardOverview() {
@@ -279,32 +276,80 @@ public class PlatformStoreService {
                 .toList();
     }
 
-    public ProjectBurndownSummary getProjectBurndown(Long projectId) {
+    public ProjectBurndownSummary getProjectBurndown(Long projectId, Long iterationId, Boolean excludeUnplanned) {
         requireProject(projectId);
+        boolean excludeUnplannedFlag = Boolean.TRUE.equals(excludeUnplanned);
+
+        // 1) 确定时间窗 startDate / endDate ──
+        //    若指定 iterationId，则使用该迭代的周期；否则使用所有迭代拼接的最早~最晚区间
         List<IterationEntity> iterations = iterationRepository.findAllByProject_IdOrderBySortOrderAscIdAsc(projectId);
-        List<TaskEntity> tasks = taskRepository.findAllByProject_IdOrderByUpdatedAtAscIdAsc(projectId);
+        final IterationEntity selectedIteration = iterationId == null
+                ? null
+                : iterations.stream()
+                        .filter(it -> iterationId.equals(it.getId()))
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalArgumentException("迭代不存在或不属于该项目"));
+
+        // 2) 加载任务并按筛选条件过滤 ──
+        //    - 指定迭代：只取该迭代的工作项
+        //    - 未指定迭代 + excludeUnplanned=true：剔除 iterationId 为空的工作项
+        //    - 否则：项目下全部工作项
+        List<TaskEntity> tasks = taskRepository.findAllByProject_IdOrderByUpdatedAtAscIdAsc(projectId).stream()
+                .filter(task -> {
+                    if (selectedIteration != null) {
+                        return task.getIteration() != null
+                                && selectedIteration.getId().equals(task.getIteration().getId());
+                    }
+                    if (excludeUnplannedFlag) {
+                        return task.getIteration() != null;
+                    }
+                    return true;
+                })
+                .toList();
 
         LocalDate today = LocalDate.now();
-        LocalDate startDate = iterations.stream()
-                .map(IterationEntity::getStartDate)
-                .filter(date -> date != null)
-                .min(LocalDate::compareTo)
-                .orElseGet(() -> tasks.stream()
+        LocalDate startDate;
+        LocalDate endDate;
+
+        if (selectedIteration != null) {
+            // 单个迭代：直接使用该迭代周期，缺失时回退
+            startDate = selectedIteration.getStartDate();
+            endDate = selectedIteration.getEndDate();
+            if (startDate == null) {
+                startDate = tasks.stream()
                         .map(TaskEntity::getUpdatedAt)
-                        .filter(time -> time != null)
+                        .filter(Objects::nonNull)
                         .map(LocalDateTime::toLocalDate)
                         .min(LocalDate::compareTo)
-                        .orElse(today.minusDays(6)));
+                        .orElse(today.minusDays(6));
+            }
+            if (endDate == null) {
+                endDate = today;
+            }
+        } else {
+            startDate = iterations.stream()
+                    .map(IterationEntity::getStartDate)
+                    .filter(Objects::nonNull)
+                    .min(LocalDate::compareTo)
+                    .orElseGet(() -> tasks.stream()
+                            .map(TaskEntity::getUpdatedAt)
+                            .filter(Objects::nonNull)
+                            .map(LocalDateTime::toLocalDate)
+                            .min(LocalDate::compareTo)
+                            .orElse(today.minusDays(6)));
 
-        LocalDate endDate = iterations.stream()
-                .map(IterationEntity::getEndDate)
-                .filter(date -> date != null)
-                .max(LocalDate::compareTo)
-                .orElse(today);
+            endDate = iterations.stream()
+                    .map(IterationEntity::getEndDate)
+                    .filter(Objects::nonNull)
+                    .max(LocalDate::compareTo)
+                    .orElse(today);
 
-        if (endDate.isBefore(today)) {
-            endDate = today;
+            // 项目级视图强制延伸到今天；单迭代视图保留迭代真实结束日（不强制延伸）
+            if (endDate.isBefore(today)) {
+                endDate = today;
+            }
         }
+
         if (ChronoUnit.DAYS.between(startDate, endDate) < 6) {
             startDate = endDate.minusDays(6);
         }
@@ -362,6 +407,11 @@ public class PlatformStoreService {
         );
     }
 
+    /** 向后兼容入口（无筛选条件）：等价于全项目所有工作项的燃尽图。 */
+    public ProjectBurndownSummary getProjectBurndown(Long projectId) {
+        return getProjectBurndown(projectId, null, Boolean.FALSE);
+    }
+
     @Transactional
     public IterationSummary createIteration(Long projectId, IterationRequest request) {
         ProjectEntity project = requireProject(projectId);
@@ -413,11 +463,6 @@ public class PlatformStoreService {
         entity.setMembers(members);
         ProjectSummary summary = toProjectSummary(projectRepository.save(entity));
         knowledgeGraphService.rebuildProjectGraph(summary.id());
-        try {
-            yaadeProjectSyncService.ensureProjectBinding(entity);
-        } catch (RuntimeException ex) {
-            log.warn("创建项目后同步 Yaade 绑定失败, projectId={}", summary.id(), ex);
-        }
         return summary;
     }
 
@@ -439,11 +484,6 @@ public class PlatformStoreService {
         entity.setDescription(defaultString(request.description()));
         ProjectSummary summary = toProjectSummary(projectRepository.save(entity));
         knowledgeGraphService.rebuildProjectGraph(id);
-        try {
-            yaadeProjectSyncService.syncProjectRename(entity);
-        } catch (RuntimeException ex) {
-            log.warn("更新项目后同步 Yaade 绑定失败, projectId={}", id, ex);
-        }
         return summary;
     }
 
@@ -451,11 +491,6 @@ public class PlatformStoreService {
     public void deleteProject(Long id) {
         ProjectEntity entity = requireProject(id);
         projectDataPermissionService.requireProjectEditable(entity);
-        try {
-            yaadeProjectSyncService.archiveProjectBinding(id, entity.getName());
-        } catch (RuntimeException ex) {
-            log.warn("删除项目前归档 Yaade collection 失败, projectId={}", id, ex);
-        }
         projectRepository.delete(entity);
     }
 

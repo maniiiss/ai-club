@@ -4,6 +4,7 @@
  * 调用公众端接口（自带积分扣费），提供 AI 结果预览、评论/描述写入、子任务创建、测试计划导入等后续操作。
  */
 import { useEffect, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import {
   X, Sparkles, MessageSquare, FileDown, Replace, Plus, Trash2,
   Coins, FlaskConical, ListChecks, FileText,
@@ -347,8 +348,8 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
 
   /* ── 渲染 ── */
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  const dialogContent = (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       {/* 透明点击区域，用于点击弹框外部关闭 */}
       <div className="absolute inset-0" onClick={onClose} />
 
@@ -592,7 +593,7 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
         {/* ── Toast ── */}
         {toast && (
           <div className={cn(
-            'absolute bottom-4 left-1/2 -translate-x-1/2 z-50 rounded-lg px-4 py-2 text-[13px] font-medium shadow-[var(--shadow-lg)] animate-fadeIn',
+            'absolute bottom-4 left-1/2 -translate-x-1/2 z-[70] rounded-lg px-4 py-2 text-[13px] font-medium shadow-[var(--shadow-lg)] animate-fadeIn',
             toast.type === 'success'
               ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
               : 'bg-red-50 text-red-700 border border-red-200',
@@ -604,6 +605,8 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
       </div>
     </div>
   )
+
+  return createPortal(dialogContent, document.body)
 }
 
 /* ── 辅助组件 ── */

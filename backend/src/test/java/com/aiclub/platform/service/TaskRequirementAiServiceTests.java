@@ -1,5 +1,6 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.agentusage.AgentInvocationRecorder;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
@@ -12,6 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -24,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -46,17 +49,29 @@ class TaskRequirementAiServiceTests {
     @Mock
     private ProjectDataPermissionService projectDataPermissionService;
 
+    @Mock
+    private AgentInvocationRecorder agentInvocationRecorder;
+
     private TaskRequirementAiService taskRequirementAiService;
 
     @BeforeEach
     void setUp() {
+        // mock recorder：直接透传 supplier，避免在单元测试里依赖 JPA
+        lenient().when(agentInvocationRecorder.track(any(), ArgumentMatchers.<java.util.function.Supplier<Object>>any()))
+                .thenAnswer(invocation -> invocation.getArgument(1, java.util.function.Supplier.class).get());
+        lenient().when(agentInvocationRecorder.trackWithUsage(any(), ArgumentMatchers.<java.util.function.Function<com.aiclub.platform.agentusage.UsageSink, Object>>any()))
+                .thenAnswer(invocation -> {
+                    java.util.function.Function<com.aiclub.platform.agentusage.UsageSink, Object> fn = invocation.getArgument(1);
+                    return fn.apply(new com.aiclub.platform.agentusage.UsageSink());
+                });
         taskRequirementAiService = new TaskRequirementAiService(
                 taskRepository,
                 aiModelConfigRepository,
                 agentRepository,
                 modelConfigService,
                 new ObjectMapper(),
-                projectDataPermissionService
+                projectDataPermissionService,
+                agentInvocationRecorder
         );
     }
 
@@ -100,8 +115,8 @@ class TaskRequirementAiServiceTests {
                 ModelConfigService.OPENAI_API_MODE_AUTO,
                 "chat-key"
         ));
-        when(modelConfigService.invokePrompt(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt(), anyBoolean()))
-                .thenReturn("# 用户故事\n\n补充说明");
+        when(modelConfigService.invokePromptWithUsage(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt(), anyBoolean()))
+                .thenReturn(new ModelConfigService.ModelInvocation("# 用户故事\n\n补充说明", null, null, null));
 
         TaskRequirementAiResult result = taskRequirementAiService.generate(1L, new TaskRequirementAiRequest("STANDARDIZE", null));
 

@@ -20,8 +20,6 @@ const AiClubPipelineDetailView = () => import('@/views/AiClubPipelineDetailView.
 const ObservabilityProjectListView = () => import('@/views/ObservabilityProjectListView.vue')
 const ObservabilityProjectDetailView = () => import('@/views/ObservabilityProjectDetailView.vue')
 import ModelView from '@/views/ModelView.vue'
-const ApiGroupHomeView = () => import('@/views/ApiGroupHomeView.vue')
-const ProjectApiManagementView = () => import('@/views/ProjectApiManagementView.vue')
 import LoginView from '@/views/LoginView.vue'
 import ForbiddenView from '@/views/ForbiddenView.vue'
 import UserView from '@/views/UserView.vue'
@@ -41,6 +39,7 @@ import WikiSpaceView from '@/views/WikiSpaceView.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 const PrReviewStatsView = () => import('@/views/PrReviewStatsView.vue')
+const AgentUsageStatsView = () => import('@/views/AgentUsageStatsView.vue')
 
 const APP_TITLE = 'AI代理工程管理平台'
 
@@ -89,22 +88,32 @@ const router = createRouter({
         { path: 'projects', name: 'projects', component: ProjectView, meta: { title: '项目管理', permission: 'project:view' } },
         {
           path: 'apis',
-          name: 'api-groups',
-          component: ApiGroupHomeView,
-          meta: { title: 'API 项目', permission: 'api:view' },
+          name: 'api-studio-home',
+          component: () => import('@/views/apistudio/ApiStudioHomeView.vue'),
+          meta: { title: 'API 管理', permission: 'api:view' },
           beforeEnter: (to) => {
             const projectId = Number(to.query.projectId ?? '')
             if (Number.isFinite(projectId) && projectId > 0) {
-              return { name: 'api-project-detail', params: { projectId: String(projectId) } }
+              return { name: 'api-studio-workbench', params: { projectId: String(projectId) } }
             }
             return true
           }
         },
-        { path: 'apis/projects/:projectId', name: 'api-project-detail', component: ProjectApiManagementView, meta: { title: 'API 工作台', permission: 'api:view', activeMenu: '/apis' } },
+        {
+          path: 'apis/projects/:projectId',
+          name: 'api-studio-workbench',
+          component: () => import('@/views/apistudio/ApiStudioWorkbenchView.vue'),
+          meta: { title: 'API 工作台', permission: 'api:view', activeMenu: '/apis' }
+        },
+        {
+          path: 'apis/projects/:projectId/endpoints/:endpointId',
+          name: 'api-studio-endpoint',
+          component: () => import('@/views/apistudio/ApiStudioWorkbenchView.vue'),
+          meta: { title: 'API 详情', permission: 'api:view', activeMenu: '/apis' }
+        },
         { path: 'wiki', name: 'wiki-home', component: WikiHomeView, meta: { title: 'Wiki 中心', permission: 'wiki:view' } },
         { path: 'wiki/spaces/:spaceId', name: 'wiki-space', component: WikiSpaceView, meta: { title: 'Wiki 空间', permission: 'wiki:view' } },
         { path: 'wiki/spaces/:spaceId/knowledge-graph', name: 'wiki-space-knowledge-graph', component: () => import('@/views/WikiKnowledgeGraphView.vue'), meta: { title: 'Wiki 知识图谱', permission: 'wiki:view', activeMenu: '/wiki' } },
-        { path: 'projects/:projectId/knowledge-graph', name: 'project-knowledge-graph', component: () => import('@/views/ProjectKnowledgeGraphView.vue'), meta: { title: '项目知识图谱', permission: 'project:view', activeMenu: '/projects' } },
         { path: 'wiki/spaces/:spaceId/pages/:pageId', name: 'wiki-space-page', component: WikiSpaceView, meta: { title: 'Wiki 页面', permission: 'wiki:view' } },
         { path: 'projects/:projectId/iterations', name: 'project-iterations', component: IterationView, meta: { title: '迭代管理', permission: 'project:view' } },
         { path: 'projects/:projectId/knowledge-graph', redirect: (to) => ({ name: 'project-iterations', params: { projectId: to.params.projectId } }), meta: { requiresAuth: true, permission: 'project:view' } },
@@ -135,6 +144,7 @@ const router = createRouter({
         { path: 'env-vars', name: 'env-vars', component: EnvironmentVariableManagementView, meta: { title: '环境变量管理', permission: 'system:env:view' } },
         { path: 'shortcuts', name: 'shortcuts', component: ShortcutEntryManagementView, meta: { title: '快捷入口管理', permission: 'system:shortcut:view' } },
         { path: 'pr-review-stats', name: 'pr-review-stats', component: PrReviewStatsView, meta: { title: 'PR评审统计', permission: 'system:pr-review:view' } },
+        { path: 'agent-usage-stats', name: 'agent-usage-stats', component: AgentUsageStatsView, meta: { title: '智能体调用统计', permission: 'system:agent-usage:view' } },
         { path: 'scan-rulesets', name: 'scan-rulesets', component: RepositoryScanRulesetView, meta: { title: '扫描规则集', permission: 'scan:ruleset:view' } },
         { path: 'operation-logs', name: 'operation-logs', component: OperationLogView, meta: { title: '操作日志', permission: 'system:operation-log:view' } }
       ]

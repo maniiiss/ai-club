@@ -180,20 +180,6 @@ class PlatformEnvVarManagementServiceTests {
     }
 
     @Test
-    void shouldHideYaadeDefaultUserPasswordFromEnvVarManagement() {
-        when(platformEnvVarConfigRepository.findAll()).thenReturn(java.util.List.of());
-
-        assertThat(platformEnvVarManagementService.listEnvVars())
-                .extracting(com.aiclub.platform.dto.PlatformEnvVarSummary::envKey)
-                .doesNotContain(PlatformEnvVarRegistry.KEY_YAADE_DEFAULT_USER_PASSWORD);
-
-        assertThatThrownBy(() -> platformEnvVarManagementService.getEnvVarDetail(
-                PlatformEnvVarRegistry.KEY_YAADE_DEFAULT_USER_PASSWORD
-        )).isInstanceOf(NoSuchElementException.class)
-                .hasMessageContaining(PlatformEnvVarRegistry.KEY_YAADE_DEFAULT_USER_PASSWORD);
-    }
-
-    @Test
     void shouldHideHermesAndHindsightConnectionSettingsFromEnvVarManagement() {
         when(platformEnvVarConfigRepository.findAll()).thenReturn(java.util.List.of());
 

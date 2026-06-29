@@ -3,7 +3,7 @@ package com.aiclub.platform.dto;
 import java.util.List;
 
 /**
- * GitLab 仓库同步 API 到 Yaade 后返回给前端的结果摘要。
+ * GitLab 仓库同步 API 到 API Studio 后返回给前端的结果摘要。
  */
 public record GitlabApiSyncResult(
         /**
@@ -27,11 +27,11 @@ public record GitlabApiSyncResult(
          */
         int scannedCount,
         /**
-         * 新建的 Yaade 请求数量。
+         * 新建的接口数量。
          */
         int createdCount,
         /**
-         * 更新的 Yaade 请求数量。
+         * 更新的接口数量。
          */
         int updatedCount,
         /**

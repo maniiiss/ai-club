@@ -15,7 +15,6 @@ FULL_DOCKER_ENV_FILE="${REPO_ROOT}/.env.server"
 FULL_DOCKER_ENV_EXAMPLE_FILE="${REPO_ROOT}/.env.server.example"
 HYBRID_COMPOSE_FILE="${REPO_ROOT}/docker-compose.yml"
 FULL_DOCKER_COMPOSE_FILE="${REPO_ROOT}/docker-compose.server.yml"
-YAADE_COMPOSE_FILE="${REPO_ROOT}/docker-compose.yaade.yml"
 DOCKER_DIR="${REPO_ROOT}/docker"
 POSTGRES_INIT_DIR="${REPO_ROOT}/docker/postgres/init"
 COMPOSE_PROJECT_NAME="$(basename "${REPO_ROOT}")"
@@ -175,11 +174,15 @@ ensure_full_docker_env_file() {
 
   local backend_port
   backend_port="$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'BACKEND_PORT' '8080')"
+  local frontend_public_port
+  frontend_public_port="$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'FRONTEND_PUBLIC_PORT' '5175')"
   # BACKEND_PORT 是宿主机映射端口；全量 Docker 内部服务互访始终使用 backend 容器端口 8080。
   set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_BACKEND_INTERNAL_BASE_URL' 'http://backend:8080'
   set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_INTERNAL_ALLOW_LOCAL_BYPASS' 'false'
   set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'VITE_API_BASE_URL' ''
   set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'VITE_API_PORT' "${backend_port}"
+  set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'VITE_PUBLIC_FRONTEND_BASE_URL' ''
+  set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'VITE_PUBLIC_FRONTEND_PORT' "${frontend_public_port}"
 
   # 补齐全量 Docker 独有的数据目录配置，避免 .env.server 直接从 .env 复制后，
   # 回落到 docker-compose.server.yml 中仅适合 Linux 服务器的 /data/... 默认路径。
@@ -188,6 +191,9 @@ ensure_full_docker_env_file() {
   fi
   if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'REDIS_DATA_DIR' '')" ]]; then
     set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'REDIS_DATA_DIR' './.data/redis'
+  fi
+  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'RABBITMQ_DATA_DIR' '')" ]]; then
+    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'RABBITMQ_DATA_DIR' './.data/rabbitmq'
   fi
   if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'MINIO_DATA_DIR' '')" ]]; then
     set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'MINIO_DATA_DIR' './.data/minio'
@@ -222,36 +228,6 @@ ensure_full_docker_env_file() {
   if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_WOODPECKER_PUBLIC_BASE_URL' '')" ]]; then
     set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_WOODPECKER_PUBLIC_BASE_URL' 'http://localhost:18000'
   fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_PORT' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_PORT' '9339'
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_DATA_DIR' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_DATA_DIR' './.data/yaade'
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_BASE_PATH' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_BASE_PATH' '/api/yaade/proxy'
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_ADMIN_USERNAME' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_ADMIN_USERNAME' 'admin'
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_DEFAULT_PASSWORD' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_DEFAULT_PASSWORD' 'password'
-  fi
-  local platform_yaade_base_url
-  platform_yaade_base_url="$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_BASE_URL' '')"
-  if [[ -z "${platform_yaade_base_url}" || "${platform_yaade_base_url}" == 'http://host.docker.internal:9339/api/yaade/proxy' ]]; then
-    # 全量 Docker 模式下后端通过 compose 服务名访问 Yaade，浏览器仍通过后端代理访问。
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_BASE_URL' 'http://yaade:9339/api/yaade/proxy'
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_ADMIN_USERNAME' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_ADMIN_USERNAME' "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_ADMIN_USERNAME' 'admin')"
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_ADMIN_PASSWORD' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_ADMIN_PASSWORD' "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_DEFAULT_PASSWORD' 'password')"
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_DEFAULT_USER_PASSWORD' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PLATFORM_YAADE_DEFAULT_USER_PASSWORD' "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'YAADE_DEFAULT_PASSWORD' 'password')"
-  fi
 
   ok "已准备全量 Docker 环境文件：${FULL_DOCKER_ENV_FILE}"
 }
@@ -262,6 +238,7 @@ load_ports() {
   CODE_PROCESSING_PORT="$(get_env_or_default 'CODE_PROCESSING_PORT' '9000')"
   POSTGRES_PORT="$(get_env_or_default 'POSTGRES_PORT' '5432')"
   REDIS_PORT="$(get_env_or_default 'REDIS_PORT' '6379')"
+  RABBITMQ_PORT="$(get_env_or_default 'RABBITMQ_PORT' '5672')"
   MINIO_PORT="$(get_env_or_default 'MINIO_PORT' '19000')"
   HERMES_PORT="$(get_env_or_default 'HERMES_PORT' '18080')"
   HINDSIGHT_PORT="$(get_env_or_default 'HINDSIGHT_PORT' '18888')"
@@ -269,7 +246,6 @@ load_ports() {
   NEO4J_PORT="$(get_env_or_default 'NEO4J_HTTP_PORT' '17474')"
   GITNEXUS_UI_PORT="$(get_env_or_default 'PLATFORM_GITNEXUS_UI_PUBLIC_PORT' '5174')"
   WOODPECKER_PORT="$(get_env_or_default 'WOODPECKER_PORT' '18000')"
-  YAADE_PORT="$(get_env_or_default 'YAADE_PORT' '9339')"
 }
 
 ensure_compose_cmd() {
@@ -629,6 +605,7 @@ start_local_application_services() {
   export PLATFORM_BACKEND_INTERNAL_BASE_URL="http://localhost:${BACKEND_PORT}"
   export PLATFORM_CODE_PROCESSING_BASE_URL="http://localhost:${CODE_PROCESSING_PORT}"
   export VITE_API_PORT="${BACKEND_PORT}"
+  export VITE_PUBLIC_FRONTEND_PORT="${FRONTEND_PUBLIC_PORT}"
 
   start_service_if_needed \
     'code-processing' "${CODE_PROCESSING_PORT}" "${CODE_DIR}" \
@@ -667,13 +644,13 @@ start_source_stack() {
 
   if [[ "${skip_infrastructure}" != 'true' ]]; then
     local profile_args=()
-    local infrastructure_services=(postgres redis minio qdrant neo4j hindsight gitnexus-web hermes)
+    local infrastructure_services=(postgres redis rabbitmq minio qdrant neo4j hindsight gitnexus-web hermes)
     if woodpecker_enabled; then
       profile_args+=(--profile woodpecker)
       infrastructure_services+=(woodpecker-server woodpecker-agent)
     fi
 
-    invoke_compose "${HYBRID_COMPOSE_FILE}" "${DEFAULT_ENV_FILE}" '启动源码模式依赖容器（PostgreSQL / Redis / MinIO / Qdrant / Hindsight）' \
+    invoke_compose "${HYBRID_COMPOSE_FILE}" "${DEFAULT_ENV_FILE}" '启动源码模式依赖容器（PostgreSQL / Redis / RabbitMQ / MinIO / Qdrant / Hindsight）' \
       "${profile_args[@]}" up -d "${infrastructure_services[@]}"
 
     local hybrid_code_processing_host
@@ -685,6 +662,7 @@ start_source_stack() {
 
     wait_port "${POSTGRES_PORT}" 120 'PostgreSQL'
     wait_port "${REDIS_PORT}" 120 'Redis'
+    wait_port "${RABBITMQ_PORT}" 120 'RabbitMQ'
     wait_port "${MINIO_PORT}" 120 'MinIO'
     wait_port "${QDRANT_PORT}" 120 'Qdrant'
     wait_port "${NEO4J_PORT}" 120 'Neo4j'
@@ -712,7 +690,7 @@ stop_source_stack() {
   fi
 
   invoke_compose "${HYBRID_COMPOSE_FILE}" "${env_file}" '停止源码模式依赖容器' \
-    --profile woodpecker stop postgres redis minio qdrant neo4j hindsight gitnexus-web hermes woodpecker-server woodpecker-agent
+    --profile woodpecker stop postgres redis rabbitmq minio qdrant neo4j hindsight gitnexus-web hermes woodpecker-server woodpecker-agent
 
   printf '\n'
   ok '源码模式项目已停止'
@@ -749,16 +727,9 @@ start_full_docker_stack() {
   invoke_compose "${FULL_DOCKER_COMPOSE_FILE}" "${FULL_DOCKER_ENV_FILE}" '启动全量 Docker 项目' \
     "${compose_args[@]}"
 
-  local yaade_compose_args=(up -d)
-  if [[ "${skip_build}" != 'true' ]]; then
-    yaade_compose_args+=(--build)
-  fi
-
-  invoke_compose "${YAADE_COMPOSE_FILE}" "${FULL_DOCKER_ENV_FILE}" '启动 Yaade Docker 服务' \
-    "${yaade_compose_args[@]}"
-
   wait_port "${POSTGRES_PORT}" 180 'PostgreSQL'
   wait_port "${REDIS_PORT}" 180 'Redis'
+  wait_port "${RABBITMQ_PORT}" 180 'RabbitMQ'
   wait_port "${MINIO_PORT}" 180 'MinIO'
   wait_port "${CODE_PROCESSING_PORT}" 180 'Code processing'
   wait_port "${QDRANT_PORT}" 180 'Qdrant'
@@ -766,7 +737,6 @@ start_full_docker_stack() {
   wait_port "${HINDSIGHT_PORT}" 180 'Hindsight'
   wait_port "${HERMES_PORT}" 180 'Hermes'
   wait_port "${GITNEXUS_UI_PORT}" 180 'GitNexus Web UI'
-  wait_port "${YAADE_PORT}" 180 'Yaade'
   if woodpecker_enabled; then
     wait_port "${WOODPECKER_PORT}" 180 'Woodpecker'
   fi
@@ -779,11 +749,11 @@ start_full_docker_stack() {
   printf 'Backend: http://localhost:%s\n' "${BACKEND_PORT}"
   printf 'Code processing: http://localhost:%s\n' "${CODE_PROCESSING_PORT}"
   printf 'Hermes: http://localhost:%s\n' "${HERMES_PORT}"
+  printf 'RabbitMQ: amqp://localhost:%s\n' "${RABBITMQ_PORT}"
   printf 'Qdrant: http://localhost:%s\n' "${QDRANT_PORT}"
   printf 'Neo4j: http://localhost:%s\n' "${NEO4J_PORT}"
   printf 'Hindsight: http://localhost:%s\n' "${HINDSIGHT_PORT}"
   printf 'GitNexus Web UI: http://localhost:%s\n' "${GITNEXUS_UI_PORT}"
-  printf 'Yaade: http://localhost:%s%s\n' "${YAADE_PORT}" "$(get_env_or_default 'YAADE_BASE_PATH' '/api/yaade/proxy')"
   if woodpecker_enabled; then
     printf 'Woodpecker: http://localhost:%s\n' "${WOODPECKER_PORT}"
   fi
@@ -797,9 +767,6 @@ stop_full_docker_stack() {
 
   # 停止全量 Docker 时始终显式带上 woodpecker profile，避免启动时开启过 profile
   # 但停止时因为未带 profile 而遗漏 woodpecker-server / woodpecker-agent 容器。
-  invoke_compose "${YAADE_COMPOSE_FILE}" "${env_file}" '关闭 Yaade Docker 服务' \
-    down
-
   invoke_compose "${FULL_DOCKER_COMPOSE_FILE}" "${env_file}" '关闭全量 Docker 项目' \
     --profile woodpecker down --remove-orphans
 
@@ -831,7 +798,7 @@ package_full_docker_stack() {
   invoke_compose "${FULL_DOCKER_COMPOSE_FILE}" "${FULL_DOCKER_ENV_FILE}" '构建全量 Docker 业务镜像' \
     "${compose_profile_args[@]}" build --pull
 
-  local middleware_services=(postgres redis minio qdrant neo4j hindsight hermes)
+  local middleware_services=(postgres redis rabbitmq minio qdrant neo4j hindsight hermes)
   if woodpecker_enabled; then
     middleware_services+=(woodpecker-server woodpecker-agent)
   fi
@@ -859,6 +826,7 @@ package_full_docker_stack() {
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'CODE_PROCESSING_IMAGE' 'git-ai-club-code-processing:latest')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'POSTGRES_IMAGE' 'postgres:16')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'REDIS_IMAGE' 'redis:7-alpine')"
+      "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'RABBITMQ_IMAGE' 'rabbitmq:3.13-management')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'MINIO_IMAGE' 'minio/minio:RELEASE.2025-02-28T09-55-16Z')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'QDRANT_IMAGE' 'qdrant/qdrant:v1.13.4')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'NEO4J_IMAGE' 'neo4j:5.26-community')"
@@ -901,6 +869,7 @@ AI Club Docker 打包说明
 $(if woodpecker_enabled; then printf -- '- Woodpecker: http://localhost:%s\n' "${WOODPECKER_PORT}"; fi)
 - PostgreSQL: localhost:${POSTGRES_PORT}
 - Redis: localhost:${REDIS_PORT}
+- RabbitMQ: localhost:${RABBITMQ_PORT}
 - MinIO: http://localhost:${MINIO_PORT}
 
 镜像清单

@@ -1,6 +1,6 @@
 /**
- * 知识模块 API。
- * Wiki 空间/目录/页面 + 知识图谱 + 记忆事实图。
+ * 文档模块 API。
+ * Wiki 空间/目录/页面 + 知识图谱。
  */
 import { http, unwrap, cleanParams } from './http'
 import type { ApiResponse } from '@/src/types/api'
@@ -8,14 +8,13 @@ import type {
   DocumentAssetItem,
   DocumentMarkdownResultItem,
   KnowledgeGraphItem,
-  MemoryFactFactsResponseItem,
-  MemoryFactGraphItem,
   WikiSpaceDetailItem,
   WikiSpaceItem,
   WikiSpacePageDetailItem,
   WikiSpacePageSummaryItem,
   WikiSpacePageVersionItem,
   WikiDirectoryTreeNodeItem,
+  WikiSpaceKnowledgeGraphItem,
 } from '@/src/types/knowledge'
 
 /* ── Wiki 空间 ── */
@@ -32,6 +31,19 @@ export const listWikiSpaces = async (query?: {
 
 export const getWikiSpaceDetail = async (spaceId: number): Promise<WikiSpaceDetailItem> => {
   const res = await http.get<ApiResponse<WikiSpaceDetailItem>>(`/api/wiki/spaces/${spaceId}`)
+  return unwrap(res)
+}
+
+export interface WikiSpacePayload {
+  name: string
+  description?: string
+  readScope?: 'MEMBERS_ONLY' | 'ALL_LOGGED_IN'
+  boundProjectId: number
+  memberDefaultSource?: 'MANUAL' | 'PROJECT_MEMBERS'
+}
+
+export const createProjectWikiSpace = async (projectId: number, payload: WikiSpacePayload): Promise<WikiSpaceDetailItem> => {
+  const res = await http.post<ApiResponse<WikiSpaceDetailItem>>(`/api/wiki/projects/${projectId}/space`, payload)
   return unwrap(res)
 }
 
@@ -82,6 +94,10 @@ export interface WikiDirectoryPayload {
 
 export const createWikiDirectory = async (spaceId: number, payload: WikiDirectoryPayload): Promise<void> => {
   await http.post<ApiResponse<null>>(`/api/wiki/spaces/${spaceId}/directories`, payload)
+}
+
+export const updateWikiDirectory = async (spaceId: number, directoryId: number, payload: WikiDirectoryPayload): Promise<void> => {
+  await http.put<ApiResponse<null>>(`/api/wiki/spaces/${spaceId}/directories/${directoryId}`, payload)
 }
 
 export const deleteWikiDirectory = async (spaceId: number, directoryId: number): Promise<void> => {
@@ -157,19 +173,8 @@ export const getProjectKnowledgeGraph = async (projectId: number): Promise<Knowl
   return unwrap(res)
 }
 
-/* ── 记忆事实图 ── */
-
-export const getProjectMemoryFactGraph = async (projectId: number): Promise<MemoryFactGraphItem> => {
-  const res = await http.get<ApiResponse<MemoryFactGraphItem>>(`/api/projects/${projectId}/memory-fact-graph`)
-  return unwrap(res)
-}
-
-export const getProjectMemoryFactFacts = async (
-  projectId: number,
-  params?: { entityId?: string; query?: string; limit?: number },
-): Promise<MemoryFactFactsResponseItem> => {
-  const res = await http.get<ApiResponse<MemoryFactFactsResponseItem>>(`/api/projects/${projectId}/memory-fact-graph/facts`, {
-    params: params ? cleanParams(params) : undefined,
-  })
+/** 读取 Wiki 空间级 LightRAG 知识图谱（Neo4j 真实实体关系）。 */
+export const getWikiSpaceKnowledgeGraph = async (spaceId: number): Promise<WikiSpaceKnowledgeGraphItem> => {
+  const res = await http.get<ApiResponse<WikiSpaceKnowledgeGraphItem>>(`/api/wiki/spaces/${spaceId}/knowledge-graph`)
   return unwrap(res)
 }

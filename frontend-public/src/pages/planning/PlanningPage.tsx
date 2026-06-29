@@ -86,6 +86,8 @@ export const PlanningPage = () => {
   const [stats, setStats] = useState<WorkItemStats | null>(null)
   const [burndown, setBurndown] = useState<BurndownItem | null>(null)
   const [burndownExpanded, setBurndownExpanded] = useState(false)
+  /** 燃尽图范围：'all' = 项目全部 | 'planned' = 项目全部但剔除未规划 | number = 指定迭代 id */
+  const [burndownScope, setBurndownScope] = useState<'all' | 'planned' | number>('planned')
 
   // 弹窗状态
   const [iterDialog, setIterDialog] = useState<{ open: boolean; editing?: IterationItem }>({ open: false })
@@ -93,7 +95,11 @@ export const PlanningPage = () => {
   const [detailItem, setDetailItem] = useState<WorkItem | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'iteration' | 'workItem'; id: number; name: string } | null>(null)
-  const [requirementAiOpen, setRequirementAiOpen] = useState(false)
+  /**
+   * 需求 AI 助手弹窗的目标工作项。
+   * 独立于 detailItem——编辑抽屉打开/关闭、详情抽屉关闭都不应影响 AI 助手的存活。
+   */
+  const [aiAssistantItem, setAiAssistantItem] = useState<WorkItem | null>(null)
   /** 打开 AI 助手后自动执行的动作（如 'STANDARDIZE'），执行后由 onClose 清理。 */
   const [autoRunAction, setAutoRunAction] = useState<string | null>(null)
 
@@ -128,11 +134,20 @@ export const PlanningPage = () => {
     try { setStats(await getWorkItemStats(pid)) } catch { /* ignore */ }
   }
 
-  const fetchBurndown = async () => {
-    try { setBurndown(await getProjectBurndown(pid)) } catch { setBurndown(null) }
-  }
+  const fetchBurndown = useCallback(async () => {
+    try {
+      const query =
+        typeof burndownScope === 'number'
+          ? { iterationId: burndownScope }
+          : burndownScope === 'planned'
+            ? { excludeUnplanned: true }
+            : undefined
+      setBurndown(await getProjectBurndown(pid, query))
+    } catch { setBurndown(null) }
+  }, [pid, burndownScope])
 
-  useEffect(() => { fetchBoard(); fetchStats(); fetchBurndown() }, [pid])
+  useEffect(() => { fetchBoard(); fetchStats() }, [pid])
+  useEffect(() => { fetchBurndown() }, [fetchBurndown])
   // 等迭代列表加载完成并选定迭代后再拉工作项，避免先拉全量再按迭代拉导致闪烁。
   useEffect(() => {
     if (!boardLoading) fetchWorkItems()
@@ -161,33 +176,28 @@ export const PlanningPage = () => {
     <div className="h-full flex flex-col overflow-hidden animate-fadeIn">
       {/* 顶部区域（不滚动） */}
       <div className="flex-shrink-0">
-      {/* 统计卡片 */}
-      {stats && (
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <StatCard label="总计" value={stats.totalCount} />
-          <StatCard label="进行中" value={stats.openCount} color="text-blue-600" />
-          <StatCard label="已完成" value={stats.completedCount} color="text-emerald-600" />
-          <StatCard label="缺陷" value={stats.defectCount} color="text-red-600" />
-          <StatCard label="完成率" value={`${stats.completionRate}%`} color="text-[var(--color-primary)]" />
-        </div>
-      )}
-
-      {/* 燃尽图（可折叠，默认收起） */}
+      {/* 燃尽图（可折叠，默认收起） —— 统计信息已合并到折叠头 */}
       {burndown && burndown.labels.length > 0 && (
         <div className="mb-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] overflow-hidden">
           <button
             onClick={() => setBurndownExpanded(!burndownExpanded)}
-            className="flex w-full items-center justify-between px-5 py-3.5 hover:bg-[var(--color-bg-hover)]/50 transition-colors"
+            className="flex w-full items-center justify-between gap-4 px-5 py-3 hover:bg-[var(--color-bg-hover)]/50 transition-colors"
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-shrink-0">
               <TrendingDown className="h-4 w-4 text-[var(--color-primary)]" strokeWidth={1.75} />
               <h3 className="text-[14px] font-semibold text-[var(--color-text-primary)]">燃尽图</h3>
-              <span className="text-[12px] text-[var(--color-text-tertiary)]">
-                总计 {burndown.totalWorkItemCount} · 已完成 {burndown.completedWorkItemCount} · 剩余 {burndown.remainingWorkItemCount}
-              </span>
             </div>
+            {stats && (
+              <div className="flex items-center gap-4 sm:gap-6 flex-1 justify-end pr-2 text-[12px]">
+                <StatInline label="总计" value={stats.totalCount} />
+                <StatInline label="进行中" value={stats.openCount} color="text-blue-600" />
+                <StatInline label="已完成" value={stats.completedCount} color="text-emerald-600" />
+                <StatInline label="缺陷" value={stats.defectCount} color="text-red-600" />
+                <StatInline label="完成率" value={`${stats.completionRate}%`} color="text-[var(--color-primary)]" />
+              </div>
+            )}
             <ChevronDown className={cn(
-              'h-4 w-4 text-[var(--color-text-tertiary)] transition-transform duration-200',
+              'h-4 w-4 text-[var(--color-text-tertiary)] transition-transform duration-200 flex-shrink-0',
               burndownExpanded && 'rotate-180',
             )} />
           </button>
@@ -197,9 +207,45 @@ export const PlanningPage = () => {
           )}>
             <div className="overflow-hidden">
               <div className="px-5 pb-5 pt-1">
-                <div className="flex items-center justify-between mb-2 text-[12px] text-[var(--color-text-tertiary)]">
+                <div className="flex items-center justify-between gap-3 mb-2 text-[12px] text-[var(--color-text-tertiary)]">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[var(--color-text-tertiary)]">范围</span>
+                    <Select
+                      value={typeof burndownScope === 'number' ? `iter:${burndownScope}` : burndownScope}
+                      onChange={(v) => {
+                        if (v === 'all' || v === 'planned') setBurndownScope(v)
+                        else if (v.startsWith('iter:')) setBurndownScope(Number(v.slice(5)))
+                      }}
+                      options={[
+                        {
+                          value: 'planned',
+                          label: '已规划工作项',
+                          description: '推荐 · 排除未规划任务',
+                          icon: <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />,
+                        },
+                        {
+                          value: 'all',
+                          label: '项目全部',
+                          description: '含未规划工作项',
+                          icon: <span className="inline-block h-2 w-2 rounded-full bg-gray-400" />,
+                        },
+                        ...(board?.iterations?.map((it) => ({
+                          value: `iter:${it.id}`,
+                          label: it.name,
+                          description: it.status,
+                          icon: <span className={cn(
+                            'inline-block h-2 w-2 rounded-full',
+                            it.status === '进行中' ? 'bg-blue-500'
+                              : it.status === '已完成' ? 'bg-emerald-500'
+                              : 'bg-gray-300',
+                          )} />,
+                        })) ?? []),
+                      ]}
+                      className="w-[220px]"
+                    />
+                  </div>
                   {burndown.startDate && burndown.endDate && (
-                    <span>周期: {formatDate(burndown.startDate)} ~ {formatDate(burndown.endDate)}</span>
+                    <span>周期: {formatDate(burndown.startDate)} ~ {formatDate(burndown.endDate)} · 剩余 {burndown.remainingWorkItemCount}</span>
                   )}
                 </div>
                 <BurndownChart data={burndown} />
@@ -362,10 +408,10 @@ export const PlanningPage = () => {
 
       {/* ── 弹窗 ── */}
       {iterDialog.open && <IterationDialog projectId={pid} editing={iterDialog.editing} onClose={() => setIterDialog({ open: false })} onSaved={() => { setIterDialog({ open: false }); fetchBoard() }} />}
-      {wiDialog.open && <WorkItemDialog projectId={pid} editing={wiDialog.editing} iterationId={selectedIteration && selectedIteration !== 'unplanned' ? selectedIteration.id : undefined} onClose={() => setWiDialog({ open: false })} onSaved={(result) => { setWiDialog({ open: false }); refreshAll(); if (result?.autoStandardize && result.item) { setDetailItem(result.item); setRequirementAiOpen(true); setAutoRunAction('STANDARDIZE') } }} />}
-      {detailItem && <WorkItemDetailDrawer item={detailItem} loading={detailLoading} onClose={() => setDetailItem(null)} onEdit={() => { setWiDialog({ open: true, editing: detailItem }); setDetailItem(null) }} onDelete={(w) => { setDetailItem(null); setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name }) }} onRefresh={handleOpenDetail} onOpenAi={() => setRequirementAiOpen(true)} />}
+      {wiDialog.open && <WorkItemDialog projectId={pid} editing={wiDialog.editing} iterationId={selectedIteration && selectedIteration !== 'unplanned' ? selectedIteration.id : undefined} onClose={() => setWiDialog({ open: false })} onSaved={(result) => { setWiDialog({ open: false }); refreshAll(); if (result?.autoStandardize && result.item) { setAiAssistantItem(result.item); setAutoRunAction('STANDARDIZE') } }} />}
+      {detailItem && <WorkItemDetailDrawer item={detailItem} loading={detailLoading} onClose={() => setDetailItem(null)} onEdit={() => { setWiDialog({ open: true, editing: detailItem }); setDetailItem(null) }} onDelete={(w) => { setDetailItem(null); setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name }) }} onRefresh={handleOpenDetail} onOpenAi={() => setAiAssistantItem(detailItem)} />}
       {deleteConfirm && <DeleteConfirmDialog name={deleteConfirm.name} onCancel={() => setDeleteConfirm(null)} onConfirm={handleDeleteConfirm} />}
-      {detailItem && detailItem.workItemType === '需求' && <RequirementAiDialog open={requirementAiOpen} workItem={detailItem} onClose={() => { setRequirementAiOpen(false); setAutoRunAction(null) }} onChanged={() => { handleOpenDetail(detailItem.id); refreshAll() }} autoRunAction={autoRunAction} />}
+      {aiAssistantItem && aiAssistantItem.workItemType === '需求' && <RequirementAiDialog open={true} workItem={aiAssistantItem} onClose={() => { setAiAssistantItem(null); setAutoRunAction(null) }} onChanged={() => { if (detailItem?.id === aiAssistantItem.id) handleOpenDetail(aiAssistantItem.id); refreshAll() }} autoRunAction={autoRunAction} />}
     </div>
   )
 }
@@ -916,11 +962,11 @@ const DialogOverlay = ({ children, onClose }: { children: React.ReactNode; onClo
   </div>
 )
 
-const StatCard = ({ label, value, color }: { label: string; value: number | string; color?: string }) => (
-  <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] px-4 py-3 shadow-[var(--shadow-xs)]">
-    <p className="text-[11px] font-medium text-[var(--color-text-tertiary)] uppercase tracking-wider">{label}</p>
-    <p className={cn('mt-1 text-[22px] font-bold tracking-tight', color || 'text-[var(--color-text-primary)]')}>{value}</p>
-  </div>
+const StatInline = ({ label, value, color }: { label: string; value: number | string; color?: string }) => (
+  <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+    <span className="text-[11px] font-medium text-[var(--color-text-tertiary)] uppercase tracking-wider">{label}</span>
+    <span className={cn('text-[15px] font-bold tracking-tight', color || 'text-[var(--color-text-primary)]')}>{value}</span>
+  </span>
 )
 
 /* ═══════════════════════════════════════════════
@@ -929,16 +975,40 @@ const StatCard = ({ label, value, color }: { label: string; value: number | stri
 
 const BurndownChart = ({ data }: { data: BurndownItem }) => {
   const { labels, idealRemaining, actualRemaining } = data
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(700)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+
+  /* 监听容器宽度变化（横向铺满） */
+  useEffect(() => {
+    if (!containerRef.current) return
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width
+      if (w && w > 0) setContainerWidth(w)
+    })
+    ro.observe(containerRef.current)
+    return () => ro.disconnect()
+  }, [])
+
   if (labels.length === 0) return null
 
-  const width = 700
-  const height = 220
-  const padding = { top: 16, right: 20, bottom: 32, left: 45 }
-  const chartWidth = width - padding.left - padding.right
+  /* 每个时间点的合适宽度：≥ 56px，铺满优先 */
+  const MIN_STEP = 56
+  const height = 240
+  const padding = { top: 20, right: 24, bottom: 36, left: 48 }
+  const segments = Math.max(labels.length - 1, 1)
+
+  // 容器内可用绘图宽度（去掉左右 padding）
+  const availInner = Math.max(containerWidth - padding.left - padding.right, 100)
+  // 需要的最小内绘图宽度
+  const needInner = MIN_STEP * segments
+  // 实际内绘图宽度：能铺满就铺满，铺不下就用 needInner（外层会横向滚动）
+  const chartWidth = Math.max(availInner, needInner)
+  const width = chartWidth + padding.left + padding.right
   const chartHeight = height - padding.top - padding.bottom
 
   const maxVal = Math.max(...idealRemaining, ...actualRemaining, 1)
-  const xScale = (i: number) => padding.left + (i / Math.max(labels.length - 1, 1)) * chartWidth
+  const xScale = (i: number) => padding.left + (i / segments) * chartWidth
   const yScale = (v: number) => padding.top + chartHeight - (v / maxVal) * chartHeight
 
   const idealPath = idealRemaining.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(v)}`).join(' ')
@@ -947,41 +1017,134 @@ const BurndownChart = ({ data }: { data: BurndownItem }) => {
     .filter(Boolean)
     .join(' ')
 
-  /* X 轴标签取采样：最多显示 7 个 */
-  const labelStep = Math.max(1, Math.ceil(labels.length / 7))
+  /* X 轴标签自适应密度：保证标签之间至少 60px 间距 */
+  const labelStep = Math.max(1, Math.ceil((labels.length * 60) / chartWidth))
+
+  /* hover tooltip 内容 */
+  const hover = hoverIdx != null ? {
+    label: labels[hoverIdx],
+    ideal: idealRemaining[hoverIdx],
+    actual: actualRemaining[hoverIdx],
+    x: xScale(hoverIdx),
+    yActual: actualRemaining[hoverIdx] != null ? yScale(actualRemaining[hoverIdx] as number) : null,
+    yIdeal: yScale(idealRemaining[hoverIdx]),
+  } : null
+
+  // tooltip 像素位置（按 SVG 像素与容器像素一致渲染）
+  const tooltipLeftPct = hover ? (hover.x / width) * 100 : 0
 
   return (
-    <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full max-w-[700px] h-auto">
-        {/* 网格线 */}
-        {Array.from({ length: 5 }, (_, i) => Math.round((maxVal / 4) * i)).map((v) => (
-          <g key={v}>
-            <line x1={padding.left} y1={yScale(v)} x2={width - padding.right} y2={yScale(v)} stroke="var(--color-border-light)" strokeWidth={0.5} />
-            <text x={padding.left - 8} y={yScale(v) + 4} textAnchor="end" className="fill-[var(--color-text-tertiary)]" fontSize={10}>{v}</text>
+    <div ref={containerRef} className="relative w-full">
+      <div className="overflow-x-auto">
+        <svg
+          width={width}
+          height={height}
+          viewBox={`0 0 ${width} ${height}`}
+          className="block"
+          onMouseLeave={() => setHoverIdx(null)}
+        >
+          {/* 网格线 */}
+          {Array.from({ length: 5 }, (_, i) => Math.round((maxVal / 4) * i)).map((v) => (
+            <g key={v}>
+              <line x1={padding.left} y1={yScale(v)} x2={width - padding.right} y2={yScale(v)} stroke="var(--color-border-light)" strokeWidth={0.5} />
+              <text x={padding.left - 8} y={yScale(v) + 4} textAnchor="end" className="fill-[var(--color-text-tertiary)]" fontSize={10}>{v}</text>
+            </g>
+          ))}
+
+          {/* 理想线 */}
+          <path d={idealPath} fill="none" stroke="var(--color-text-tertiary)" strokeWidth={1.5} strokeDasharray="6 3" opacity={0.6} />
+          {/* 实际线 */}
+          <path d={actualPath} fill="none" stroke="var(--color-primary)" strokeWidth={2.5} strokeLinejoin="round" />
+
+          {/* hover 竖向参考线 */}
+          {hover && (
+            <line x1={hover.x} y1={padding.top} x2={hover.x} y2={padding.top + chartHeight}
+                  stroke="var(--color-primary)" strokeWidth={1} strokeDasharray="3 3" opacity={0.45} />
+          )}
+
+          {/* 数据点（实际） */}
+          {actualRemaining.map((v, i) =>
+            v != null ? (
+              <circle key={`a-${i}`} cx={xScale(i)} cy={yScale(v)}
+                      r={hoverIdx === i ? 5 : 3}
+                      fill="var(--color-primary)"
+                      stroke="var(--color-bg-card)" strokeWidth={hoverIdx === i ? 2 : 0} />
+            ) : null,
+          )}
+
+          {/* X 轴标签 */}
+          {labels.map((label, i) =>
+            i % labelStep === 0 || i === labels.length - 1 ? (
+              <text key={i} x={xScale(i)} y={height - 8} textAnchor="middle" className="fill-[var(--color-text-tertiary)]" fontSize={10}>
+                {label}
+              </text>
+            ) : null,
+          )}
+
+          {/* 图例 */}
+          <g>
+            <line x1={width - 170} y1={10} x2={width - 150} y2={10} stroke="var(--color-text-tertiary)" strokeWidth={1.5} strokeDasharray="6 3" opacity={0.6} />
+            <text x={width - 146} y={14} className="fill-[var(--color-text-tertiary)]" fontSize={10}>理想</text>
+            <line x1={width - 105} y1={10} x2={width - 85} y2={10} stroke="var(--color-primary)" strokeWidth={2.5} />
+            <text x={width - 81} y={14} className="fill-[var(--color-primary)]" fontSize={10}>实际</text>
           </g>
-        ))}
-        {/* 理想线 */}
-        <path d={idealPath} fill="none" stroke="var(--color-text-tertiary)" strokeWidth={1.5} strokeDasharray="6 3" opacity={0.6} />
-        {/* 实际线 */}
-        <path d={actualPath} fill="none" stroke="var(--color-primary)" strokeWidth={2.5} strokeLinejoin="round" />
-        {/* 数据点 */}
-        {actualRemaining.map((v, i) =>
-          v != null ? <circle key={i} cx={xScale(i)} cy={yScale(v)} r={3} fill="var(--color-primary)" /> : null
-        )}
-        {/* X 轴标签 */}
-        {labels.map((label, i) =>
-          i % labelStep === 0 || i === labels.length - 1 ? (
-            <text key={i} x={xScale(i)} y={height - 6} textAnchor="middle" className="fill-[var(--color-text-tertiary)]" fontSize={9}>
-              {label}
-            </text>
-          ) : null
-        )}
-        {/* 图例 */}
-        <line x1={width - 170} y1={8} x2={width - 150} y2={8} stroke="var(--color-text-tertiary)" strokeWidth={1.5} strokeDasharray="6 3" opacity={0.6} />
-        <text x={width - 146} y={12} className="fill-[var(--color-text-tertiary)]" fontSize={10}>理想</text>
-        <line x1={width - 105} y1={8} x2={width - 85} y2={8} stroke="var(--color-primary)" strokeWidth={2.5} />
-        <text x={width - 81} y={12} className="fill-[var(--color-primary)]" fontSize={10}>实际</text>
-      </svg>
+
+          {/* 透明 hover hit-area：每个数据点一个宽条带 */}
+          {labels.map((_, i) => {
+            const half = chartWidth / segments / 2
+            const x = xScale(i) - half
+            return (
+              <rect
+                key={`hit-${i}`}
+                x={Math.max(x, 0)}
+                y={padding.top}
+                width={Math.max(chartWidth / segments, 1)}
+                height={chartHeight}
+                fill="transparent"
+                onMouseEnter={() => setHoverIdx(i)}
+                style={{ cursor: 'pointer' }}
+              />
+            )
+          })}
+        </svg>
+      </div>
+
+      {/* Tooltip（HTML 浮层） */}
+      {hover && (
+        <div
+          className="pointer-events-none absolute z-10 -translate-x-1/2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 py-2 shadow-[var(--shadow-card)] text-[12px] whitespace-nowrap"
+          style={{
+            left: `${tooltipLeftPct}%`,
+            top: 4,
+          }}
+        >
+          <div className="font-semibold text-[var(--color-text-primary)] mb-1">{hover.label}</div>
+          <div className="flex items-center gap-2 text-[var(--color-text-secondary)]">
+            <span className="inline-block w-2.5 h-0.5 bg-[var(--color-primary)]" />
+            <span>实际剩余</span>
+            <span className="font-semibold text-[var(--color-primary)]">
+              {hover.actual != null ? hover.actual : '—'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-[var(--color-text-tertiary)] mt-0.5">
+            <span className="inline-block w-2.5 h-0.5 border-t border-dashed border-[var(--color-text-tertiary)]" />
+            <span>理想剩余</span>
+            <span className="font-semibold">{hover.ideal}</span>
+          </div>
+          {hover.actual != null && (
+            <div className="mt-1 pt-1 border-t border-[var(--color-border-light)] text-[11px]">
+              <span className="text-[var(--color-text-tertiary)]">偏差: </span>
+              <span className={cn(
+                'font-semibold',
+                (hover.actual as number) > hover.ideal ? 'text-red-600' : 'text-emerald-600',
+              )}>
+                {(hover.actual as number) > hover.ideal ? '+' : ''}
+                {(hover.actual as number) - hover.ideal}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

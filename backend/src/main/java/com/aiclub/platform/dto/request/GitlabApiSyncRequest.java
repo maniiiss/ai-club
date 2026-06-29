@@ -3,7 +3,7 @@ package com.aiclub.platform.dto.request;
 import jakarta.validation.constraints.Size;
 
 /**
- * GitLab 绑定仓库同步 API 到 Yaade 的请求体。
+ * GitLab 绑定仓库同步 API 到 API Studio 的请求体。
  */
 public record GitlabApiSyncRequest(
         /**

@@ -1,6 +1,6 @@
 /**
- * 知识模块类型定义。
- * 涵盖 Wiki 空间/页面/目录、知识图谱、记忆事实图。
+ * 文档模块类型定义。
+ * 涵盖 Wiki 空间/页面/目录、知识图谱。
  */
 
 /* ── Wiki ── */
@@ -141,60 +141,37 @@ export interface KnowledgeGraphItem {
   edges: KnowledgeGraphEdgeItem[]
 }
 
-/* ── 记忆事实 ── */
+/* ── Wiki 空间级 LightRAG 知识图谱 ── */
 
-export interface MemoryFactNodeItem {
-  id: string
-  entityType: string
-  label: string
-  aliases: string[]
-  degree: number
-  factCount: number
+/** LightRAG 抽取的实体节点；真实实体类型在 metadataJson.entityType 里。 */
+export interface WikiKnowledgeGraphNodeItem {
+  id: number
+  nodeType: string
+  bizId: number | null
+  name: string
+  slug: string | null
+  directoryId: number | null
+  chunkCount: number | null
   metadataJson: string
 }
 
-export interface MemoryFactEdgeItem {
-  id: string
-  sourceId: string
-  targetId: string
-  relationType: string
-  weight: number | null
-  factIds: string[]
-  metadataJson: string
+/** LightRAG 抽取的实体关系边。 */
+export interface WikiKnowledgeGraphEdgeItem {
+  id: number
+  fromNodeId: number
+  toNodeId: number
+  edgeType: string
+  similarity: number | null
+  evidenceText: string
 }
 
-export interface MemoryFactGraphItem {
-  projectId: number | null
-  bankId: string
+/** 空间级 LightRAG 知识图谱聚合结果。 */
+export interface WikiSpaceKnowledgeGraphItem {
+  spaceId: number
+  spaceName: string
+  /** 向量/图谱索引是否就绪；false 时通常无可展示数据。 */
+  vectorEnabled: boolean
   generatedAt: string
-  nodeCount: number
-  edgeCount: number
-  factCount: number
-  warnings: string[]
-  nodes: MemoryFactNodeItem[]
-  edges: MemoryFactEdgeItem[]
-}
-
-export interface MemoryFactItem {
-  id: string
-  type: string
-  subject: string
-  predicate: string
-  object: string
-  summary: string
-  confidence: number | null
-  sourceType: string
-  createdAt: string
-  tags: string[]
-  metadataJson: string
-}
-
-export interface MemoryFactFactsResponseItem {
-  projectId: number | null
-  scopeType: string
-  scopeId: string
-  query: string
-  factCount: number
-  warnings: string[]
-  facts: MemoryFactItem[]
+  nodes: WikiKnowledgeGraphNodeItem[]
+  edges: WikiKnowledgeGraphEdgeItem[]
 }
