@@ -8,6 +8,7 @@ import com.aiclub.platform.dto.HermesSelectionCard;
 import com.aiclub.platform.dto.HermesSelectionOption;
 import com.aiclub.platform.dto.HermesToolCallRequest;
 import com.aiclub.platform.dto.HermesToolExecutionOutcome;
+import com.aiclub.platform.dto.HermesToolExecutionPolicy;
 import com.aiclub.platform.dto.PlatformToolCandidate;
 import com.aiclub.platform.dto.PlatformToolRequest;
 import com.aiclub.platform.dto.PlatformToolResult;
@@ -185,6 +186,18 @@ public class HermesToolOrchestrator {
                                                       HermesContextAssembler.HermesConversationContext context,
                                                       HermesChatRequest request,
                                                       HermesGroundingState groundingState) {
+        return executeToolCall(toolCall, scopeKey, context, request, groundingState, HermesToolExecutionPolicy.empty());
+    }
+
+    /**
+     * 执行一次 Hermes 发起的工具调用，并允许聊天室 Agent 按房间策略自动执行低中风险写工具。
+     */
+    public HermesToolExecutionOutcome executeToolCall(HermesToolCallRequest toolCall,
+                                                      String scopeKey,
+                                                      HermesContextAssembler.HermesConversationContext context,
+                                                      HermesChatRequest request,
+                                                      HermesGroundingState groundingState,
+                                                      HermesToolExecutionPolicy executionPolicy) {
         String toolCode = defaultString(toolCall == null ? null : toolCall.toolCode());
         if (toolCode.isBlank()) {
             return stopWithFailure(groundingState, "模型返回了无效的工具调用。", toolCall, Map.of());
@@ -198,6 +211,37 @@ public class HermesToolOrchestrator {
             String writeToolFailureMessage = resolveWriteToolFailureMessage(toolCode, toolCall.arguments(), groundingState);
             if (!writeToolFailureMessage.isBlank()) {
                 return stopWithFailure(groundingState, writeToolFailureMessage, toolCall, toolCall.arguments());
+            }
+            if (executionPolicy != null && executionPolicy.hasChatRoomAgentTask()) {
+                if (!executionPolicy.isToolEnabled(toolCode)) {
+                    return stopWithFailure(groundingState, "聊天室 Agent 未授权使用工具：" + toolCode, toolCall, toolCall.arguments());
+                }
+                if (executionPolicy.canAutoExecute(toolCode)) {
+                    ValidatedToolCall validatedToolCall = validateWriteToolCall(toolCall, context, request, groundingState);
+                    if (validatedToolCall == null) {
+                        return stopWithFailure(groundingState, "工具参数不完整或不合法，平台已拒绝本次写操作。", toolCall, Map.of());
+                    }
+                    PlatformToolResult rawResult = safeExecute(
+                            validatedToolCall.toolCode(),
+                            scopeKey,
+                            validatedToolCall.projectId(),
+                            validatedToolCall.arguments()
+                    );
+                    return new HermesToolExecutionOutcome(
+                            groundingState,
+                            List.of(rawResult),
+                            List.of(),
+                            List.of(),
+                            toToolMessageContent(rawResult),
+                            false,
+                            "",
+                            defaultString(rawResult == null ? null : rawResult.summary()),
+                            debugExecution(toolCall,
+                                    isFailedToolResult(rawResult) ? "FAILED" : "SUCCESS",
+                                    validatedToolCall.arguments(),
+                                    rawResult == null ? "" : rawResult.summary())
+                    );
+                }
             }
             HermesActionSummary action = hermesActionPlannerService.createActionFromToolCall(
                     toolCode,
@@ -280,6 +324,39 @@ public class HermesToolOrchestrator {
         );
     }
 
+    /**
+     * 写工具自动执行前仍要按工具 schema 过滤参数，并只补齐会话中已安全确定的业务主键。
+     */
+    private ValidatedToolCall validateWriteToolCall(HermesToolCallRequest toolCall,
+                                                    HermesContextAssembler.HermesConversationContext context,
+                                                    HermesChatRequest request,
+                                                    HermesGroundingState groundingState) {
+        String toolCode = defaultString(toolCall.toolCode());
+        var definition = platformToolRegistry.requireDefinition(toolCode);
+        if (definition.readOnly()) {
+            return null;
+        }
+        LinkedHashMap<String, Object> arguments = new LinkedHashMap<>();
+        Map<String, Object> rawArguments = toolCall.arguments() == null ? Map.of() : toolCall.arguments();
+        for (String inputKey : definition.inputSchema().keySet()) {
+            Object value = rawArguments.get(inputKey);
+            if (value != null) {
+                arguments.put(inputKey, value);
+            }
+        }
+        putIfAbsent(arguments, "projectId", context == null ? null : context.projectId());
+        putIfAbsent(arguments, "iterationId", resolveGroundedEntityId(groundingState, "iteration", request == null ? null : request.iterationId()));
+        putIfAbsent(arguments, "workItemId", resolveGroundedEntityId(groundingState, "workItem", context == null ? null : context.taskId()));
+        putIfAbsent(arguments, "bindingId", resolveGroundedEntityId(groundingState, "gitlabBinding", null));
+        putIfAbsent(arguments, "testPlanId", resolveGroundedEntityId(groundingState, "testPlan", request == null ? null : request.planId()));
+        Long projectId = resolveLong(arguments.get("projectId"));
+        if (projectId == null && PlatformToolRegistry.TOOL_REPO_SCAN_START.equals(toolCode)) {
+            HermesGroundingTarget binding = groundingState == null ? null : groundingState.boundSlot("gitlabBinding");
+            projectId = binding == null ? null : binding.projectId();
+        }
+        return new ValidatedToolCall(toolCode, normalizeSlot(toolCode), projectId, Map.copyOf(arguments));
+    }
+
     private HermesToolExecutionOutcome stopWithFailure(HermesGroundingState groundingState,
                                                        String message,
                                                        HermesToolCallRequest toolCall,
@@ -295,6 +372,10 @@ public class HermesToolOrchestrator {
                 message,
                 debugExecution(toolCall, "FAILED", arguments, message)
         );
+    }
+
+    private boolean isFailedToolResult(PlatformToolResult result) {
+        return result != null && result.metadata() != null && Boolean.TRUE.equals(result.metadata().get("failed"));
     }
 
     /**

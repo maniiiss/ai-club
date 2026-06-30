@@ -115,3 +115,15 @@ export const replaceMentionAtCaret = (
     caret: activeMention.start + token.length,
   }
 }
+
+export const insertTextAtCaret = (
+  content: string,
+  caret: number,
+  textToInsert: string,
+): { text: string; caret: number } => {
+  const safeCaret = Math.max(0, Math.min(caret, content.length))
+  return {
+    text: `${content.slice(0, safeCaret)}${textToInsert}${content.slice(safeCaret)}`,
+    caret: safeCaret + textToInsert.length,
+  }
+}

@@ -11,6 +11,7 @@ import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.MessageConversionException;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -71,13 +72,15 @@ public class ChatRoomAgentRabbitConfig {
 
     @Bean
     SimpleRabbitListenerContainerFactory chatAgentRabbitListenerContainerFactory(ConnectionFactory connectionFactory,
-                                                                                ChatRoomAgentRabbitProperties properties) {
+                                                                                ChatRoomAgentRabbitProperties properties,
+                                                                                @Value("${spring.rabbitmq.listener.simple.auto-startup:true}") boolean autoStartup) {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         factory.setConnectionFactory(connectionFactory);
         int consumers = parseConsumerCount(properties.getConsumerConcurrency());
         factory.setConcurrentConsumers(consumers);
         factory.setMaxConcurrentConsumers(consumers);
         factory.setPrefetchCount(1);
+        factory.setAutoStartup(autoStartup);
         // 业务意图：Agent 队列只承载轻量 taskId JSON 信号，消费者自行解析原始 AMQP Message。
         // 这样历史 Java 序列化消息也会被交给消费者跳过，不会卡在 Spring AMQP 反序列化阶段。
         factory.setMessageConverter(new RawAmqpMessageConverter());

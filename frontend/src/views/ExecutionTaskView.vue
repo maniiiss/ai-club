@@ -51,6 +51,7 @@
                 <label>执行状态</label>
                 <el-select v-model="filters.status" clearable placeholder="全部状态" style="width: 100%" :teleported="false">
                   <el-option label="待执行" value="PENDING" />
+                  <el-option label="重试等待" value="RETRYING" />
                   <el-option label="待确认" value="WAITING_CONFIRMATION" />
                   <el-option label="执行中" value="RUNNING" />
                   <el-option label="成功" value="SUCCESS" />
@@ -426,12 +427,13 @@ const summaryCards = computed<ExecutionSummaryCard[]>(() => {
   ]
 })
 
-const canCancel = (status: string) => ['PENDING', 'RUNNING', 'WAITING_CONFIRMATION'].includes(status)
+const canCancel = (status: string) => ['PENDING', 'RETRYING', 'RUNNING', 'WAITING_CONFIRMATION'].includes(status)
 const canRetry = (status: string) => ['SUCCESS', 'FAILED', 'CANCELED'].includes(status)
 
 const statusLabel = (status: string) => {
   const labelMap: Record<string, string> = {
     PENDING: '待执行',
+    RETRYING: '重试等待',
     WAITING_CONFIRMATION: '待确认',
     RUNNING: '执行中',
     SUCCESS: '成功',
@@ -444,6 +446,7 @@ const statusLabel = (status: string) => {
 const statusTone = (status: string) => {
   const toneMap: Record<string, string> = {
     PENDING: 'pending',
+    RETRYING: 'pending',
     WAITING_CONFIRMATION: 'waiting',
     RUNNING: 'running',
     SUCCESS: 'success',
@@ -635,7 +638,7 @@ const startPolling = () => {
     return
   }
   refreshTimer.value = window.setInterval(() => {
-    if (executionTasks.value.some((item) => ['PENDING', 'RUNNING'].includes(item.status))) {
+    if (executionTasks.value.some((item) => ['PENDING', 'RETRYING', 'RUNNING'].includes(item.status))) {
       void loadExecutionTasks()
     }
   }, 8000)

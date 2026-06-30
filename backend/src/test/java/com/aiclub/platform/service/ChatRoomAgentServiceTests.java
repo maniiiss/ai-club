@@ -12,6 +12,9 @@ import com.aiclub.platform.dto.ChatRoomAgentConfigSummary;
 import com.aiclub.platform.dto.ChatRoomAgentTaskSummary;
 import com.aiclub.platform.dto.ChatRoomAgentToolPolicySummary;
 import com.aiclub.platform.dto.CurrentUserInfo;
+import com.aiclub.platform.dto.HermesActionSummary;
+import com.aiclub.platform.dto.HermesChatRoomAgentTaskResult;
+import com.aiclub.platform.dto.HermesToolExecutionPolicy;
 import com.aiclub.platform.dto.PlatformToolDefinition;
 import com.aiclub.platform.dto.request.UpdateChatRoomAgentConfigRequest;
 import com.aiclub.platform.dto.request.UpdateChatRoomAgentToolPoliciesRequest;
@@ -41,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -363,7 +367,7 @@ class ChatRoomAgentServiceTests {
         when(taskEventRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         org.mockito.Mockito.doThrow(new IllegalStateException("Hermes 暂不可用"))
                 .when(chatHermesService)
-                .startHermesReply(room.getId(), assistant.getId(), trigger.getId());
+                .startHermesReply(eq(room.getId()), eq(assistant.getId()), eq(trigger.getId()), any(HermesToolExecutionPolicy.class));
 
         assertThatThrownBy(() -> service.runTask(603L))
                 .isInstanceOf(IllegalStateException.class)
@@ -371,6 +375,65 @@ class ChatRoomAgentServiceTests {
 
         verify(taskRepository, never()).save(org.mockito.ArgumentMatchers.argThat(savedTask ->
                 ChatRoomAgentService.TASK_ERROR.equals(savedTask.getStatus())));
+    }
+
+    @Test
+    void shouldPassRoomToolPolicyToHermesTaskRuntimeAndBroadcastPendingActions() {
+        ChatRoomAgentService service = buildService();
+        UserEntity owner = user(1L);
+        ChatRoomEntity room = room(owner);
+        ChatMessageEntity assistant = message(room, owner, 601L, "");
+        assistant.setRole(ChatRoomService.ROLE_ASSISTANT);
+        ChatMessageEntity trigger = message(room, owner, 602L, "Hermes 帮我创建执行任务");
+        ChatRoomAgentTaskEntity task = new ChatRoomAgentTaskEntity();
+        task.setId(603L);
+        task.setRoom(room);
+        task.setAssistantMessage(assistant);
+        task.setTriggerMessage(trigger);
+        task.setAuthorizedByUser(owner);
+        task.setTriggerType(ChatRoomAgentService.TRIGGER_MENTION);
+        task.setStatus(ChatRoomAgentService.TASK_RUNNING);
+        ChatRoomAgentToolPolicyEntity readPolicy = new ChatRoomAgentToolPolicyEntity();
+        readPolicy.setToolCode(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH);
+        readPolicy.setEnabled(true);
+        readPolicy.setAutoExecute(true);
+        ChatRoomAgentToolPolicyEntity writePolicy = new ChatRoomAgentToolPolicyEntity();
+        writePolicy.setToolCode(PlatformToolRegistry.TOOL_EXECUTION_TASK_CREATE);
+        writePolicy.setEnabled(true);
+        writePolicy.setAutoExecute(false);
+        HermesActionSummary action = new HermesActionSummary(
+                "CREATE_EXECUTION_TASK",
+                "发起执行任务",
+                "确认后会基于当前工作项创建执行中心任务。",
+                true,
+                Map.of("projectId", 41L, "workItemId", 99L)
+        );
+
+        when(taskRepository.claimPendingTask(any(), anyString(), anyString(), anyString(), any())).thenReturn(1);
+        when(taskRepository.findById(603L)).thenReturn(Optional.of(task));
+        when(toolPolicyRepository.findByRoom_IdOrderByToolCodeAsc(41L)).thenReturn(List.of(readPolicy, writePolicy));
+        when(platformToolRegistry.requireDefinition(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH))
+                .thenReturn(tool(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH, true, "LOW"));
+        when(taskEventRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(chatHermesService.startHermesReply(
+                eq(room.getId()),
+                eq(assistant.getId()),
+                eq(trigger.getId()),
+                any(HermesToolExecutionPolicy.class)
+        )).thenReturn(new HermesChatRoomAgentTaskResult("需要确认后执行。", List.of(action), List.of(), List.of()));
+
+        service.runTask(603L);
+
+        org.mockito.ArgumentCaptor<HermesToolExecutionPolicy> policyCaptor = org.mockito.ArgumentCaptor.forClass(HermesToolExecutionPolicy.class);
+        verify(chatHermesService).startHermesReply(eq(room.getId()), eq(assistant.getId()), eq(trigger.getId()), policyCaptor.capture());
+        assertThat(policyCaptor.getValue().taskId()).isEqualTo(603L);
+        assertThat(policyCaptor.getValue().enabledToolCodes()).containsExactlyInAnyOrder(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                PlatformToolRegistry.TOOL_EXECUTION_TASK_CREATE
+        );
+        assertThat(policyCaptor.getValue().autoExecutableToolCodes()).containsExactly(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH);
+        verify(chatWebSocketPushService).broadcastAgentActionPending(41L, 603L, 601L, List.of(action));
     }
 
     private ChatRoomAgentService buildService() {
@@ -406,7 +469,7 @@ class ChatRoomAgentServiceTests {
     }
 
     private CurrentUserInfo currentUser(Long id) {
-        return new CurrentUserInfo(id, "user-" + id, "用户" + id, "", "", "", "", true, List.of(), List.of(), List.of("chat:view", "chat:manage", "hermes:chat"));
+        return new CurrentUserInfo(id, "user-" + id, "用户" + id, "", "", "", "", true, List.of(), List.of(), List.of("chat:view", "chat:manage", "hermes:chat"), List.of());
     }
 
     private UserEntity user(Long id) {

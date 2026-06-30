@@ -14,6 +14,8 @@ public record CurrentUserInfo(
         boolean enabled,
         List<String> roleCodes,
         List<String> roleNames,
-        List<String> permissionCodes
+        List<String> permissionCodes,
+        /** 用户已完成新手引导的页面 key 列表。 */
+        List<String> guideCompleted
 ) {
 }

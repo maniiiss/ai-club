@@ -90,6 +90,9 @@ class ExecutionDispatchServiceTests {
     @Mock
     private ChatRoomAgentService chatRoomAgentService;
 
+    @Mock
+    private ExecutionTaskQueuePublisher executionTaskQueuePublisher;
+
     private ExecutionDispatchService executionDispatchService;
 
     @BeforeEach
@@ -112,8 +115,86 @@ class ExecutionDispatchServiceTests {
                 executionWorkspaceCleanupService,
                 testPlanAutomationPersistenceService,
                 chatRoomAgentService,
+                executionTaskQueuePublisher,
                 Runnable::run
         );
+    }
+
+    /**
+     * 补偿调度器只负责重新发布 PENDING 任务信号，真实领取由 MQ 消费端完成。
+     */
+    @Test
+    void shouldRepublishPendingExecutionTasksDuringCompensationScan() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        when(executionTaskRepository.findTop10ByStatusOrderByCreatedAtAscIdAsc("PENDING"))
+                .thenReturn(List.of(executionTask));
+
+        executionDispatchService.dispatchPendingTasks();
+
+        verify(executionTaskQueuePublisher).publishNow(99L);
+        verify(executionTaskRepository, never()).findWithExecutionContextById(99L);
+    }
+
+    /**
+     * MQ 消费端必须先用数据库状态条件领取任务，避免重复消息或多实例并发重复执行。
+     */
+    @Test
+    void shouldClaimPendingTaskBeforeConsumingQueuedTask() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setStatus("RUNNING");
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION,
+                "开发执行",
+                List.of(
+                        new ExecutionWorkflowService.ExecutionStepPlan(1, "PLAN", "执行规划", buildAgent(11L), null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(2, "IMPLEMENT", "开发实现 · demo/repo", buildAgent(12L), 1L, "main", "demo/repo"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(3, "TEST", "执行测试 · demo/repo", buildAgent(13L), 1L, "main", "demo/repo"),
+                        new ExecutionWorkflowService.ExecutionStepPlan(4, "REPORT", "交付报告", buildAgent(14L), null, null, null)
+                )
+        );
+
+        when(executionTaskRepository.claimQueuedTask(eq(99L), eq("PENDING"), eq("PENDING"), eq("RUNNING"),
+                eq("执行已入队，开始运行"), any()))
+                .thenReturn(1);
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionRunRepository.countByExecutionTask_Id(99L)).thenReturn(0L);
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> {
+            ExecutionRunEntity run = invocation.getArgument(0);
+            if (run.getId() == null) {
+                run.setId(301L);
+            }
+            return run;
+        });
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionWorkflowService.restoreWorkflow(
+                eq(ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION),
+                eq(7L),
+                eq("[]")
+        )).thenReturn(workflowPlan);
+        when(developmentExecutionService.executeDevelopmentTask(eq(executionTask), any(ExecutionRunEntity.class), eq(workflowPlan)))
+                .thenReturn(new DevelopmentExecutionService.DevelopmentExecutionResult("开发执行已完成", List.of(), false, false));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        executionDispatchService.consumeQueuedTask(99L, false);
+
+        verify(executionTaskRepository).claimQueuedTask(eq(99L), eq("PENDING"), eq("PENDING"), eq("RUNNING"),
+                eq("执行已入队，开始运行"), any());
+        verify(developmentExecutionService).executeDevelopmentTask(eq(executionTask), any(ExecutionRunEntity.class), eq(workflowPlan));
+    }
+
+    /**
+     * 重复消息或补偿消息若没有抢到状态锁，应直接 ack 跳过。
+     */
+    @Test
+    void shouldSkipQueuedTaskWhenClaimFails() {
+        when(executionTaskRepository.claimQueuedTask(eq(99L), eq("PENDING"), eq("PENDING"), eq("RUNNING"),
+                eq("执行已入队，开始运行"), any()))
+                .thenReturn(0);
+
+        executionDispatchService.consumeQueuedTask(99L, false);
+
+        verify(executionTaskRepository, never()).findWithExecutionContextById(99L);
+        verify(agentExecutionService, never()).runAgent(anyLong(), any(), any());
     }
 
     /**

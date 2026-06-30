@@ -5,7 +5,7 @@
 import { useEffect, useState, useCallback, useRef, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import {
-  Plus, CalendarRange, CheckSquare, AlertCircle, FileText, Search,
+  Plus, CheckSquare, AlertCircle, FileText, Search,
   X, Edit3, Trash2, LayoutList, LayoutGrid, GripVertical, TrendingDown,
   ChevronDown, MessageSquare, Send, Bot, User, FolderOpen, Link2, Sparkles,
 } from 'lucide-react'
@@ -15,6 +15,8 @@ import {
   createWorkItem, updateWorkItem, deleteWorkItem, getWorkItemDetail,
   getProjectBurndown, listTaskComments, createTaskComment,
 } from '@/src/api/planning'
+import { listUserOptions } from '@/src/api/users'
+import type { UserOptionItem } from '@/src/api/users'
 import { MarkdownEditor } from '@/src/components/common/MarkdownEditor'
 import { RequirementAiDialog } from './RequirementAiDialog'
 import { REQUIREMENT_TEMPLATE, TASK_TEMPLATE } from '@/src/lib/markdownTemplates'
@@ -30,7 +32,9 @@ import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
 import { Select } from '@/src/components/common/Select'
 import { SlideDrawer, SlideDrawerFooter } from '@/src/components/common/SlideDrawer'
-import { cn, formatDate, getErrorMessage } from '@/src/lib/utils'
+import { DateRangePicker } from '@/src/components/common/DateRangePicker'
+import { AssigneePicker } from '@/src/components/common/AssigneePicker'
+import { cn, formatDate, formatDateTime, getErrorMessage } from '@/src/lib/utils'
 
 /* ── 常量 ── */
 
@@ -102,12 +106,17 @@ export const PlanningPage = () => {
   const [aiAssistantItem, setAiAssistantItem] = useState<WorkItem | null>(null)
   /** 打开 AI 助手后自动执行的动作（如 'STANDARDIZE'），执行后由 onClose 清理。 */
   const [autoRunAction, setAutoRunAction] = useState<string | null>(null)
+  /** 全部可选企业用户。 */
+  const [userOptions, setUserOptions] = useState<UserOptionItem[]>([])
+  /** 项目成员 ID 列表，用于负责人选人分组。 */
+  const projectMemberIds = board?.project?.memberUserIds ?? []
 
   const fetchBoard = async () => {
     setBoardLoading(true); setBoardError(null)
     try {
-      const data = await getIterationBoard(pid)
+      const [data, users] = await Promise.all([getIterationBoard(pid), listUserOptions()])
       setBoard(data)
+      setUserOptions(users)
       const active = data.iterations.find((i) => i.status === '进行中')
       if (active && !selectedIteration) setSelectedIteration(active)
     } catch (err) { setBoardError(getErrorMessage(err)) }
@@ -408,7 +417,7 @@ export const PlanningPage = () => {
 
       {/* ── 弹窗 ── */}
       {iterDialog.open && <IterationDialog projectId={pid} editing={iterDialog.editing} onClose={() => setIterDialog({ open: false })} onSaved={() => { setIterDialog({ open: false }); fetchBoard() }} />}
-      {wiDialog.open && <WorkItemDialog projectId={pid} editing={wiDialog.editing} iterationId={selectedIteration && selectedIteration !== 'unplanned' ? selectedIteration.id : undefined} onClose={() => setWiDialog({ open: false })} onSaved={(result) => { setWiDialog({ open: false }); refreshAll(); if (result?.autoStandardize && result.item) { setAiAssistantItem(result.item); setAutoRunAction('STANDARDIZE') } }} />}
+      {wiDialog.open && <WorkItemDialog projectId={pid} editing={wiDialog.editing} iterationId={selectedIteration && selectedIteration !== 'unplanned' ? selectedIteration.id : undefined} userOptions={userOptions} projectMemberIds={projectMemberIds} onClose={() => setWiDialog({ open: false })} onSaved={(result) => { setWiDialog({ open: false }); refreshAll(); if (result?.autoStandardize && result.item) { setAiAssistantItem(result.item); setAutoRunAction('STANDARDIZE') } }} />}
       {detailItem && <WorkItemDetailDrawer item={detailItem} loading={detailLoading} onClose={() => setDetailItem(null)} onEdit={() => { setWiDialog({ open: true, editing: detailItem }); setDetailItem(null) }} onDelete={(w) => { setDetailItem(null); setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name }) }} onRefresh={handleOpenDetail} onOpenAi={() => setAiAssistantItem(detailItem)} />}
       {deleteConfirm && <DeleteConfirmDialog name={deleteConfirm.name} onCancel={() => setDeleteConfirm(null)} onConfirm={handleDeleteConfirm} />}
       {aiAssistantItem && aiAssistantItem.workItemType === '需求' && <RequirementAiDialog open={true} workItem={aiAssistantItem} onClose={() => { setAiAssistantItem(null); setAutoRunAction(null) }} onChanged={() => { if (detailItem?.id === aiAssistantItem.id) handleOpenDetail(aiAssistantItem.id); refreshAll() }} autoRunAction={autoRunAction} />}
@@ -434,6 +443,8 @@ const WorkItemTable = ({ items, onOpenDetail, onEdit, onDelete, page, totalPages
             <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider w-[80px]">状态</th>
             <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider w-[55px]">优先级</th>
             <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider w-[70px]">负责人</th>
+            <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider w-[140px]">计划时间</th>
+            <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider w-[120px]">创建时间</th>
             <th className="px-3 py-2 w-[70px]" />
           </tr>
         </thead>
@@ -447,6 +458,8 @@ const WorkItemTable = ({ items, onOpenDetail, onEdit, onDelete, page, totalPages
               <td className="px-3 py-2 whitespace-nowrap"><span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium', statusColorMap[item.status] || 'bg-gray-100 text-gray-600')}>{item.status}</span></td>
               <td className="px-3 py-2 whitespace-nowrap"><span className={cn('text-[12px]', priorityColorMap[item.priority] || 'text-gray-500')}>{item.priority}</span></td>
               <td className="px-3 py-2 whitespace-nowrap text-[12px] text-[var(--color-text-secondary)] truncate max-w-[70px]">{item.assignee || '-'}</td>
+              <td className="px-3 py-2 whitespace-nowrap text-[12px] text-[var(--color-text-secondary)]">{item.planStartDate ? <span>{formatDate(item.planStartDate)}{item.planEndDate ? <span className="text-[var(--color-text-tertiary)]"> ~ {formatDate(item.planEndDate)}</span> : ''}</span> : <span className="text-[var(--color-text-tertiary)]">-</span>}</td>
+              <td className="px-3 py-2 whitespace-nowrap text-[12px] text-[var(--color-text-tertiary)]">{formatDateTime(item.createdAt)}</td>
               <td className="px-3 py-2">
                 <div className="flex items-center gap-1 justify-end lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                   <button onClick={(e) => { e.stopPropagation(); onEdit(item) }} className="rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"><Edit3 className="h-3.5 w-3.5" /></button>
@@ -574,13 +587,14 @@ const IterationDialog = ({ projectId, editing, onClose, onSaved }: {
    工作项对话框
    ═══════════════════════════════════════════════ */
 
-const WorkItemDialog = ({ projectId, editing, iterationId, onClose, onSaved }: {
-  projectId: number; editing?: WorkItem; iterationId?: number; onClose: () => void
+const WorkItemDialog = ({ projectId, editing, iterationId, userOptions, projectMemberIds, onClose, onSaved }: {
+  projectId: number; editing?: WorkItem; iterationId?: number; userOptions: UserOptionItem[]; projectMemberIds: number[]; onClose: () => void
   onSaved: (result?: { item: WorkItem; autoStandardize: boolean }) => void
 }) => {
   const [form, setForm] = useState({
     name: editing?.name || '', workItemType: editing?.workItemType || '任务', status: editing?.status || '待开始',
-    priority: editing?.priority || '中', assignee: editing?.assignee || '', description: editing?.description || '',
+    priority: editing?.priority || '中', assignee: editing?.assignee || '', assigneeUserId: editing?.assigneeUserId ?? null,
+    description: editing?.description || '', planStartDate: editing?.planStartDate || '', planEndDate: editing?.planEndDate || '',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -603,6 +617,9 @@ const WorkItemDialog = ({ projectId, editing, iterationId, onClose, onSaved }: {
       const payload: WorkItemPayload = {
         ...form, projectId, agentId: editing?.agentId ?? null,
         iterationId: editing?.iterationId ?? iterationId ?? null,
+        planStartDate: form.planStartDate || null,
+        planEndDate: form.planEndDate || null,
+        assigneeUserId: form.assigneeUserId,
       }
       if (editing) {
         await updateWorkItem(editing.id, payload)
@@ -662,7 +679,24 @@ const WorkItemDialog = ({ projectId, editing, iterationId, onClose, onSaved }: {
             ]}
           />
         </div>
-        <Input label="负责人" value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })} />
+        <div className="grid grid-cols-2 gap-3">
+          <AssigneePicker
+            label="负责人"
+            value={form.assigneeUserId}
+            userOptions={userOptions}
+            projectMemberIds={projectMemberIds}
+            onChange={(userId) => {
+              const selected = userOptions.find((u) => u.id === userId)
+              setForm({ ...form, assigneeUserId: userId, assignee: selected?.nickname || selected?.username || '' })
+            }}
+          />
+          <DateRangePicker
+            label="计划时间"
+            startDate={form.planStartDate}
+            endDate={form.planEndDate}
+            onChange={(start, end) => setForm({ ...form, planStartDate: start, planEndDate: end })}
+          />
+        </div>
         <div className="flex flex-col gap-1.5 flex-1 min-h-0">
           <label className="text-[13px] font-medium text-[var(--color-text-secondary)]">描述</label>
           <MarkdownEditor
@@ -842,6 +876,7 @@ const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefr
             <DetailField label="迭代"><span className="text-[13px]">{item.iterationName || '未规划'}</span></DetailField>
             <DetailField label="所属项目"><span className="text-[13px]">{item.projectName}</span></DetailField>
             <DetailField label="创建人"><span className="inline-flex items-center gap-1 text-[13px]"><User className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />{item.creatorName || '未知'}</span></DetailField>
+            <DetailField label="创建时间"><span className="text-[13px] text-[var(--color-text-secondary)]">{formatDateTime(item.createdAt)}</span></DetailField>
             {item.moduleName && <DetailField label="模块"><span className="inline-flex items-center gap-1 text-[13px]"><FolderOpen className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />{item.moduleName}</span></DetailField>}
             {item.agentName && <DetailField label="关联 Agent"><span className="inline-flex items-center gap-1 text-[13px]"><Bot className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />{item.agentName}</span></DetailField>}
             {item.requirementTaskName && <DetailField label="关联需求"><span className="inline-flex items-center gap-1 text-[13px]"><Link2 className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />{item.requirementTaskName}</span></DetailField>}

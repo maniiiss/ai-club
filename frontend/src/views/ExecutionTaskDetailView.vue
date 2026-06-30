@@ -1257,12 +1257,13 @@ watch(
   { immediate: true }
 )
 
-const canCancel = (status: string) => ['PENDING', 'RUNNING', 'WAITING_CONFIRMATION'].includes(status)
+const canCancel = (status: string) => ['PENDING', 'RETRYING', 'RUNNING', 'WAITING_CONFIRMATION'].includes(status)
 const canRetry = (status: string) => ['SUCCESS', 'FAILED', 'CANCELED'].includes(status)
 
 const statusLabel = (status: string) => {
   const labelMap: Record<string, string> = {
     PENDING: '待执行',
+    RETRYING: '重试等待',
     WAITING_CONFIRMATION: '待确认',
     RUNNING: '执行中',
     SUCCESS: '成功',
@@ -1276,7 +1277,7 @@ const statusTagType = (status: string) => {
   if (status === 'SUCCESS') return 'success'
   if (status === 'FAILED') return 'danger'
   if (status === 'CANCELED') return 'info'
-  if (status === 'WAITING_CONFIRMATION') return 'warning'
+  if (status === 'WAITING_CONFIRMATION' || status === 'RETRYING') return 'warning'
   if (status === 'RUNNING') return 'warning'
   return 'primary'
 }
@@ -1290,7 +1291,7 @@ const progressStatus = (status: string) => {
 const timelineType = (status: string) => {
   if (status === 'SUCCESS') return 'success'
   if (status === 'FAILED') return 'danger'
-  if (status === 'WAITING_CONFIRMATION') return 'warning'
+  if (status === 'WAITING_CONFIRMATION' || status === 'RETRYING') return 'warning'
   if (status === 'RUNNING') return 'warning'
   return 'info'
 }
@@ -1809,6 +1810,7 @@ const pickPreferredArtifactText = (currentText: string | null | undefined, nextT
 const statusRank = (status: string | null | undefined) => {
   switch (String(status || '').toUpperCase()) {
     case 'PENDING':
+    case 'RETRYING':
       return 0
     case 'RUNNING':
     case 'WAITING_CONFIRMATION':
@@ -2268,7 +2270,7 @@ watch(
  * 历史成功/失败 run 即使带有 hasLiveStream，也只需要展示快照，不应该继续频繁重连 stream。
  */
 const shouldKeepStreaming = (detail: ExecutionRunDetailItem | null) =>
-  Boolean(detail && !isTerminalRunStatus(detail.status) && ['PENDING', 'RUNNING'].includes(detail.status))
+  Boolean(detail && !isTerminalRunStatus(detail.status) && ['PENDING', 'RETRYING', 'RUNNING'].includes(detail.status))
 
 const stopRunStream = () => {
   if (runStreamReconnectTimer.value != null && typeof window !== 'undefined') {

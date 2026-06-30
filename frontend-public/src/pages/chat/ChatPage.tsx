@@ -24,6 +24,7 @@ import { ChatRoomList } from '@/src/components/chat/ChatRoomList'
 import { Button } from '@/src/components/common/Button'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { useAuthStore } from '@/src/stores/auth'
+import { useGuide } from '@/src/components/guide'
 import type { ChatMessageItem, ChatRoomAgentConfig, ChatRoomAgentTask, ChatRoomAgentToolPolicy, ChatRoomItem, ChatSocketEvent } from '@/src/types/chat'
 import type { HermesActionItem } from '@/src/types/hermes'
 import {
@@ -39,6 +40,25 @@ import { cn, getErrorMessage, getInitials } from '@/src/lib/utils'
 type RoomFilter = 'all' | 'project' | 'global'
 type SocketState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'
 const TASK_STATUS_OPTIONS = ['SUCCESS', 'FAILED', 'CANCELED', 'RUNNING', 'WAITING_CONFIRMATION']
+const AGENT_TASK_STATUS_LABELS: Record<string, string> = {
+  SUCCESS: '成功',
+  FAILED: '失败',
+  CANCELED: '已取消',
+  RUNNING: '运行中',
+  WAITING_CONFIRMATION: '待确认',
+  DONE: '已完成',
+  ERROR: '异常',
+  PENDING: '待处理',
+  CREATED: '已创建',
+  EXECUTED: '已执行',
+}
+const TOOL_RISK_LEVEL_LABELS: Record<string, string> = {
+  NONE: '无风险',
+  LOW: '低风险',
+  MEDIUM: '中风险',
+  HIGH: '高风险',
+  CRITICAL: '关键风险',
+}
 
 export const ChatPage = () => {
   const currentUser = useAuthStore((state) => state.user)
@@ -59,6 +79,8 @@ export const ChatPage = () => {
   const [agentTools, setAgentTools] = useState<ChatRoomAgentToolPolicy[]>([])
   const [agentTasks, setAgentTasks] = useState<ChatRoomAgentTask[]>([])
   const socketRef = useRef<WebSocket | null>(null)
+  const { isCompleted: guideCompleted, startGuide } = useGuide('chat')
+  const authUser = useAuthStore((s) => s.user)
 
   const selectedRoom = useMemo(
     () => rooms.find((room) => room.id === selectedRoomId) || null,
@@ -100,6 +122,13 @@ export const ChatPage = () => {
   useEffect(() => {
     refreshRooms()
   }, [refreshRooms])
+
+  useEffect(() => {
+    if (!guideCompleted && authUser && !loadingRooms && !error) {
+      const timer = setTimeout(() => startGuide(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [guideCompleted, authUser, loadingRooms, error, startGuide])
 
   useEffect(() => {
     if (!selectedRoomId) {
@@ -255,9 +284,10 @@ export const ChatPage = () => {
         onFilterChange={setRoomFilter}
         onSelectRoom={(room) => setSelectedRoomId(room.id)}
         onCreateRoom={() => setDialogOpen(true)}
+        data-guide-id="chat-room-list"
       />
 
-      <section className="flex min-h-[560px] min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] lg:min-h-0">
+      <section className="flex min-h-[560px] min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] lg:min-h-0" data-guide-id="chat-message-area">
         <ChatHeader
           room={selectedRoom}
           socketState={socketState}
@@ -277,6 +307,7 @@ export const ChatPage = () => {
               sending={sending}
               members={selectedRoom.members}
               onSend={handleSend}
+              data-guide-id="chat-input"
             />
           </>
         ) : loadingRooms ? (
@@ -364,6 +395,17 @@ const toNullableNumber = (value: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+/** 业务意图：后端仍使用稳定英文枚举，前端右侧助手区域统一翻译为中文展示。 */
+const formatAgentTaskStatus = (status: string): string => {
+  const normalized = (status || '').trim().toUpperCase()
+  return AGENT_TASK_STATUS_LABELS[normalized] || status || '-'
+}
+
+const formatToolRiskLevel = (riskLevel: string): string => {
+  const normalized = (riskLevel || '').trim().toUpperCase()
+  return TOOL_RISK_LEVEL_LABELS[normalized] || riskLevel || '-'
+}
+
 const ChatHeader = ({
   room,
   socketState,
@@ -444,7 +486,7 @@ const ChatContextPanel = ({
             <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50/70 p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-[12px] font-semibold text-amber-900">房间 Agent</p>
+                  <p className="text-[12px] font-semibold text-amber-900">房间助手</p>
                   <p className="mt-0.5 truncate text-[12px] text-amber-700">
                     {agentConfig?.enabled ? `${agentConfig.displayName || 'Hermes'} 已启用` : 'Hermes 已关闭'}
                   </p>
@@ -470,12 +512,12 @@ const ChatContextPanel = ({
                   <div key={task.id} className="flex items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1.5 text-[11.5px]">
                     <span className="truncate text-[var(--color-text-secondary)]">{task.source || task.triggerType}</span>
                     <span className={cn('shrink-0 font-semibold', task.status === 'ERROR' ? 'text-red-600' : task.status === 'DONE' ? 'text-emerald-600' : 'text-amber-700')}>
-                      {task.status}
+                      {formatAgentTaskStatus(task.status)}
                     </span>
                   </div>
                 ))}
                 {agentTasks.length === 0 && (
-                  <p className="text-[11.5px] text-amber-700">暂无 Agent 任务。</p>
+                  <p className="text-[11.5px] text-amber-700">暂无助手任务。</p>
                 )}
               </div>
             </div>
@@ -775,14 +817,14 @@ const ChatAgentSettingsDialog = ({
       <div className="absolute inset-0 bg-black/25 backdrop-blur-[2px]" onClick={onClose} />
       <div className="relative z-10 flex max-h-[88vh] w-full max-w-2xl flex-col rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-xl)]">
         <div className="border-b border-[var(--color-border-light)] px-5 py-4">
-          <h3 className="text-[17px] font-bold text-[var(--color-text-primary)]">房间 Agent 设置</h3>
+          <h3 className="text-[17px] font-bold text-[var(--color-text-primary)]">房间助手设置</h3>
           {!isOwner && <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">只有房主可以修改授权。</p>}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p>}
           <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
             <label className="flex items-center justify-between rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] px-3 py-2.5 text-[13px] font-semibold text-[var(--color-text-primary)]">
-              启用 Hermes Agent
+              启用 Hermes 助手
               <input type="checkbox" checked={enabled} disabled={!isOwner} onChange={(event) => setEnabled(event.target.checked)} />
             </label>
             <label className="flex flex-col gap-1.5 text-[13px] font-medium text-[var(--color-text-secondary)]">
@@ -870,7 +912,7 @@ const ChatAgentSettingsDialog = ({
                       disabled={!isOwner || !taskStatusCallbackEnabled}
                       onChange={() => toggleStatus(status)}
                     />
-                    {status}
+                    {formatAgentTaskStatus(status)}
                   </label>
                 ))}
               </div>
@@ -887,7 +929,7 @@ const ChatAgentSettingsDialog = ({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate text-[13px] font-semibold text-[var(--color-text-primary)]">{tool.toolName}</p>
-                      <p className="text-[11.5px] text-[var(--color-text-tertiary)]">{tool.toolCode} · {tool.readOnly ? '只读' : tool.riskLevel}</p>
+                      <p className="text-[11.5px] text-[var(--color-text-tertiary)]">{tool.toolCode} · {tool.readOnly ? '只读' : formatToolRiskLevel(tool.riskLevel)}</p>
                     </div>
                     <div className="flex items-center gap-3 text-[12px] text-[var(--color-text-secondary)]">
                       <label className="inline-flex items-center gap-1.5">

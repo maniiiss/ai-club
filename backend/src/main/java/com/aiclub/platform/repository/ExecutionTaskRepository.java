@@ -3,9 +3,12 @@ package com.aiclub.platform.repository;
 import com.aiclub.platform.domain.model.ExecutionTaskEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -33,4 +36,25 @@ public interface ExecutionTaskRepository extends JpaRepository<ExecutionTaskEnti
      */
     @Query("select task.cancelRequested from ExecutionTaskEntity task where task.id = :id")
     Boolean findCancelRequestedFlagById(@Param("id") Long id);
+
+    /**
+     * 以状态条件原子领取执行任务。
+     * 业务意图：RabbitMQ 可能重复投递，多个后端实例也可能同时消费，同一任务只能被一个执行者切到 RUNNING。
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query("""
+            update ExecutionTaskEntity task
+            set task.status = :runningStatus,
+                task.latestSummary = :runningSummary,
+                task.updatedAt = :updatedAt
+            where task.id = :executionTaskId
+              and task.status in (:pendingStatus, :retryingStatus)
+            """)
+    int claimQueuedTask(@Param("executionTaskId") Long executionTaskId,
+                        @Param("pendingStatus") String pendingStatus,
+                        @Param("retryingStatus") String retryingStatus,
+                        @Param("runningStatus") String runningStatus,
+                        @Param("runningSummary") String runningSummary,
+                        @Param("updatedAt") LocalDateTime updatedAt);
 }

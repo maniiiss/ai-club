@@ -24,6 +24,22 @@ export const formatDate = (date: string | Date | null | undefined): string => {
 }
 
 /**
+ * 格式化日期时间为本地可读格式（YYYY-MM-DD HH:mm）。
+ * 输入为 ISO 8601 字符串或 Date 对象。
+ */
+export const formatDateTime = (date: string | Date | null | undefined): string => {
+  if (!date) return '-'
+  const d = typeof date === 'string' ? new Date(date) : date
+  if (isNaN(d.getTime())) return '-'
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  const hours = String(d.getHours()).padStart(2, '0')
+  const minutes = String(d.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
+/**
  * 获取用户展示名称的首字，用于头像回退显示。
  */
 export const getInitials = (name: string | null | undefined): string => {

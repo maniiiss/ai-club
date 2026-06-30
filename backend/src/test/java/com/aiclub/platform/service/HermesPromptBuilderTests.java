@@ -320,7 +320,8 @@ class HermesPromptBuilderTests {
                 true,
                 List.of("SUPER_ADMIN"),
                 List.of("超级管理员"),
-                List.of("hermes:chat", "wiki:view", "project:view", "task:view", "task:manage")
+                List.of("hermes:chat", "wiki:view", "project:view", "task:view", "task:manage"),
+                List.of()
         );
     }
 }

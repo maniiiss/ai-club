@@ -213,6 +213,54 @@ platform:
       access-key: ${PLATFORM_MINIO_ACCESS_KEY:minioadmin}
       secret-key: ${PLATFORM_MINIO_SECRET_KEY:minioadmin}
       bucket: ${PLATFORM_MINIO_BUCKET:ai-club-assets}
+  execution:
+    task:
+      # 执行中心任务队列：数据库保存任务事实，RabbitMQ 只投递 executionTaskId 调度信号。
+      rabbit:
+        # 主交换机，统一承载执行任务主队列、延迟重试队列和死信队列路由。
+        exchange: ${PLATFORM_EXECUTION_TASK_RABBIT_EXCHANGE:execution.task.exchange}
+        # 主队列，消费者从这里领取待执行任务信号。
+        queue-name: ${PLATFORM_EXECUTION_TASK_RABBIT_QUEUE:execution.task.queue}
+        # 创建、重试确认和补偿扫描发布待执行任务时使用的主路由键。
+        routing-key: ${PLATFORM_EXECUTION_TASK_RABBIT_ROUTING_KEY:execution.task}
+        # 延迟重试队列，仅用于 claim 前或消息调度入口异常后的 MQ 级重试。
+        retry-queue-name: ${PLATFORM_EXECUTION_TASK_RABBIT_RETRY_QUEUE:execution.task.retry.queue}
+        # 投递到延迟重试队列时使用的路由键。
+        retry-routing-key: ${PLATFORM_EXECUTION_TASK_RABBIT_RETRY_ROUTING_KEY:execution.task.retry}
+        # 死信队列，超过最大 MQ 调度尝试次数后进入这里便于运维诊断。
+        dead-letter-queue-name: ${PLATFORM_EXECUTION_TASK_RABBIT_DLQ:execution.task.dlq}
+        # 投递到死信队列时使用的路由键。
+        dead-letter-routing-key: ${PLATFORM_EXECUTION_TASK_RABBIT_DLQ_ROUTING_KEY:execution.task.dead}
+        # MQ 级延迟重试等待时间，业务执行已开始后的失败不通过 MQ 重放。
+        retry-delay-ms: ${PLATFORM_EXECUTION_TASK_RABBIT_RETRY_DELAY_MS:30000}
+        # MQ 调度入口最大尝试次数，超过后写入 DLQ 并标记任务失败摘要。
+        max-attempts: ${PLATFORM_EXECUTION_TASK_RABBIT_MAX_ATTEMPTS:3}
+        # 执行中心消费者并发数，prefetch 固定为 1，避免单消费者预取过多长任务。
+        consumer-concurrency: ${PLATFORM_EXECUTION_TASK_QUEUE_CONCURRENCY:2}
+  wiki:
+    sync:
+      # Wiki Hindsight/知识索引同步队列：数据库同步任务表是事实源，RabbitMQ 只投递 syncTaskId 唤醒信号。
+      rabbit:
+        # 主交换机，统一承载 Wiki 同步主队列、延迟重试队列和死信队列路由。
+        exchange: ${PLATFORM_WIKI_SYNC_RABBIT_EXCHANGE:wiki.sync.exchange}
+        # 主队列，消费者从这里领取项目 Wiki 与空间化 Wiki 同步任务。
+        queue-name: ${PLATFORM_WIKI_SYNC_RABBIT_QUEUE:wiki.sync.queue}
+        # 主路由键，用于页面保存、重试和补偿扫描发布同步信号。
+        routing-key: ${PLATFORM_WIKI_SYNC_RABBIT_ROUTING_KEY:wiki.sync}
+        # 延迟重试队列，仅用于消费入口或 claim 前异常，业务同步失败继续走同步任务表退避。
+        retry-queue-name: ${PLATFORM_WIKI_SYNC_RABBIT_RETRY_QUEUE:wiki.sync.retry.queue}
+        # 投递到 Wiki 同步延迟重试队列时使用的路由键。
+        retry-routing-key: ${PLATFORM_WIKI_SYNC_RABBIT_RETRY_ROUTING_KEY:wiki.sync.retry}
+        # 死信队列，超过最大 MQ 调度尝试次数后进入这里便于运维诊断。
+        dead-letter-queue-name: ${PLATFORM_WIKI_SYNC_RABBIT_DLQ:wiki.sync.dlq}
+        # 投递到 Wiki 同步死信队列时使用的路由键。
+        dead-letter-routing-key: ${PLATFORM_WIKI_SYNC_RABBIT_DLQ_ROUTING_KEY:wiki.sync.dead}
+        # MQ 级延迟重试等待时间，单位毫秒。
+        retry-delay-ms: ${PLATFORM_WIKI_SYNC_RABBIT_RETRY_DELAY_MS:30000}
+        # MQ 调度入口最大尝试次数，业务同步自身重试次数仍由同步任务表 maxAttempts 控制。
+        max-attempts: ${PLATFORM_WIKI_SYNC_RABBIT_MAX_ATTEMPTS:3}
+        # Wiki 同步消费者并发数，prefetch 固定为 1，避免单消费者预取过多外部索引任务。
+        consumer-concurrency: ${PLATFORM_WIKI_SYNC_QUEUE_CONCURRENCY:2}
   chat:
     agent:
       rabbit:

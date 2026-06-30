@@ -484,7 +484,8 @@ class HermesHindsightMemoryServiceTests {
                 true,
                 List.of("PM"),
                 List.of("项目经理"),
-                List.of("hermes:chat")
+                List.of("hermes:chat"),
+                List.of()
         );
     }
 }

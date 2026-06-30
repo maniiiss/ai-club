@@ -104,6 +104,7 @@ public class WikiPageService {
     private final ProjectDataPermissionService projectDataPermissionService;
     private final HindsightClientService hindsightClientService;
     private final WikiKnowledgeSearchService wikiKnowledgeSearchService;
+    private final WikiSyncQueuePublisher wikiSyncQueuePublisher;
 
     @Autowired
     public WikiPageService(ProjectRepository projectRepository,
@@ -114,7 +115,8 @@ public class WikiPageService {
                            WikiPageSyncTaskRepository wikiPageSyncTaskRepository,
                            ProjectDataPermissionService projectDataPermissionService,
                            HindsightClientService hindsightClientService,
-                           WikiKnowledgeSearchService wikiKnowledgeSearchService) {
+                           WikiKnowledgeSearchService wikiKnowledgeSearchService,
+                           WikiSyncQueuePublisher wikiSyncQueuePublisher) {
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
         this.wikiPageRepository = wikiPageRepository;
@@ -124,6 +126,7 @@ public class WikiPageService {
         this.projectDataPermissionService = projectDataPermissionService;
         this.hindsightClientService = hindsightClientService;
         this.wikiKnowledgeSearchService = wikiKnowledgeSearchService;
+        this.wikiSyncQueuePublisher = wikiSyncQueuePublisher;
     }
 
     /**
@@ -146,6 +149,33 @@ public class WikiPageService {
                 wikiPageSyncTaskRepository,
                 projectDataPermissionService,
                 hindsightClientService,
+                null,
+                null
+        );
+    }
+
+    /**
+     * 兼容旧测试构造方式，同时允许测试注入 Wiki 同步队列发布器。
+     */
+    public WikiPageService(ProjectRepository projectRepository,
+                           UserRepository userRepository,
+                           WikiPageRepository wikiPageRepository,
+                           WikiPageVersionRepository wikiPageVersionRepository,
+                           WikiPageAccessRepository wikiPageAccessRepository,
+                           WikiPageSyncTaskRepository wikiPageSyncTaskRepository,
+                           ProjectDataPermissionService projectDataPermissionService,
+                           HindsightClientService hindsightClientService,
+                           WikiKnowledgeSearchService wikiKnowledgeSearchService) {
+        this(
+                projectRepository,
+                userRepository,
+                wikiPageRepository,
+                wikiPageVersionRepository,
+                wikiPageAccessRepository,
+                wikiPageSyncTaskRepository,
+                projectDataPermissionService,
+                hindsightClientService,
+                wikiKnowledgeSearchService,
                 null
         );
     }
@@ -411,7 +441,8 @@ public class WikiPageService {
     }
 
     /**
-     * 调度并执行一批 Wiki 知识索引同步任务。
+     * 补偿发布一批 Wiki 知识索引同步任务。
+     * 业务意图：保存页面后的事务提交发布失败、RabbitMQ 短暂不可用或服务重启后，仍能靠数据库任务表补发信号。
      */
     @Transactional
     public void processPendingSyncTasks() {
@@ -422,7 +453,7 @@ public class WikiPageService {
                         PageRequest.of(0, 5, Sort.by(Sort.Direction.ASC, "nextAttemptAt", "id"))
                 );
         for (WikiPageSyncTaskEntity task : tasks) {
-            processSyncTask(task);
+            publishSyncTaskNow(task.getId());
         }
     }
 
@@ -440,10 +471,51 @@ public class WikiPageService {
         return wikiPageVersionRepository.countByPage_Id(pageId);
     }
 
+    /**
+     * Wiki 同步 MQ 消费入口。
+     * 业务意图：先通过数据库状态条件原子领取任务，重复消息和多实例竞争领取失败即跳过。
+     */
+    @Transactional
+    public boolean consumeQueuedSyncTask(Long syncTaskId, boolean retryMessage) {
+        if (syncTaskId == null) {
+            return false;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        int claimed = wikiPageSyncTaskRepository.claimQueuedTask(
+                syncTaskId,
+                SYNC_STATUS_PENDING,
+                SYNC_STATUS_RUNNING,
+                now,
+                now
+        );
+        if (claimed == 0) {
+            return false;
+        }
+        WikiPageSyncTaskEntity task = wikiPageSyncTaskRepository.findById(syncTaskId)
+                .orElseThrow(() -> new NoSuchElementException("Wiki 同步任务不存在: " + syncTaskId));
+        processSyncTask(task);
+        return true;
+    }
+
+    @Transactional
+    public void markQueuedSyncTaskFailed(Long syncTaskId, String errorMessage) {
+        if (syncTaskId == null) {
+            return;
+        }
+        wikiPageSyncTaskRepository.findById(syncTaskId).ifPresent(task -> {
+            String message = abbreviate(errorMessage, 1000);
+            task.setStatus(SYNC_STATUS_FAILED);
+            task.setLastError(message);
+            if (task.getPage() != null) {
+                task.getPage().setSyncStatus(SYNC_STATUS_FAILED);
+                task.getPage().setLastSyncError(message);
+                wikiPageRepository.save(task.getPage());
+            }
+            wikiPageSyncTaskRepository.save(task);
+        });
+    }
+
     private void processSyncTask(WikiPageSyncTaskEntity task) {
-        task.setStatus(SYNC_STATUS_RUNNING);
-        task.setAttemptCount(task.getAttemptCount() + 1);
-        wikiPageSyncTaskRepository.save(task);
         try {
             if (SYNC_OPERATION_DELETE.equalsIgnoreCase(task.getOperation())) {
                 if (wikiKnowledgeSearchService != null) {
@@ -626,7 +698,8 @@ public class WikiPageService {
         task.setOperation(SYNC_OPERATION_RETAIN);
         task.setDocumentId(documentId(page.getId()));
         task.setStatus(SYNC_STATUS_PENDING);
-        wikiPageSyncTaskRepository.save(task);
+        WikiPageSyncTaskEntity saved = wikiPageSyncTaskRepository.save(task);
+        publishSyncTaskAfterCommit(saved.getId());
     }
 
     /**
@@ -644,7 +717,8 @@ public class WikiPageService {
         task.setAttemptCount(0);
         task.setNextAttemptAt(LocalDateTime.now());
         task.setLastError("");
-        wikiPageSyncTaskRepository.save(task);
+        WikiPageSyncTaskEntity saved = wikiPageSyncTaskRepository.save(task);
+        publishSyncTaskAfterCommit(saved.getId());
     }
 
     private void enqueueDeleteTask(WikiPageEntity page) {
@@ -653,7 +727,20 @@ public class WikiPageService {
         task.setOperation(SYNC_OPERATION_DELETE);
         task.setDocumentId(documentId(page.getId()));
         task.setStatus(SYNC_STATUS_PENDING);
-        wikiPageSyncTaskRepository.save(task);
+        WikiPageSyncTaskEntity saved = wikiPageSyncTaskRepository.save(task);
+        publishSyncTaskAfterCommit(saved.getId());
+    }
+
+    private void publishSyncTaskAfterCommit(Long syncTaskId) {
+        if (wikiSyncQueuePublisher != null) {
+            wikiSyncQueuePublisher.publishAfterCommit(WikiSyncQueuePublisher.TYPE_PROJECT_WIKI, syncTaskId);
+        }
+    }
+
+    private void publishSyncTaskNow(Long syncTaskId) {
+        if (wikiSyncQueuePublisher != null) {
+            wikiSyncQueuePublisher.publishNow(WikiSyncQueuePublisher.TYPE_PROJECT_WIKI, syncTaskId);
+        }
     }
 
     private void ensureNoParentCycle(WikiPageEntity page, WikiPageEntity parentPage) {

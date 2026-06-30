@@ -23,7 +23,6 @@ export const ProfilePage = () => {
   const [creditAccount, setCreditAccount] = useState<CreditAccount | null>(null)
   const [creditTransactions, setCreditTransactions] = useState<CreditTransaction[]>([])
   const [creditLoading, setCreditLoading] = useState(false)
-  const [creditError, setCreditError] = useState<string | null>(null)
 
   // 个人资料编辑。
   const [profileForm, setProfileForm] = useState({
@@ -50,17 +49,16 @@ export const ProfilePage = () => {
     let alive = true
     const loadCredits = async () => {
       setCreditLoading(true)
-      setCreditError(null)
       try {
         const [account, transactions] = await Promise.all([
           getMyCreditAccount(),
-          pageMyCreditTransactions({ page: 1, size: 8 }),
+          pageMyCreditTransactions({ page: 1, size: 5 }),
         ])
         if (!alive) return
         setCreditAccount(account)
         setCreditTransactions(transactions.records)
-      } catch (err) {
-        if (alive) setCreditError(getErrorMessage(err))
+      } catch {
+        // 积分加载失败不阻塞页面展示，余额默认显示 0。
       } finally {
         if (alive) setCreditLoading(false)
       }
@@ -120,6 +118,11 @@ export const ProfilePage = () => {
 
   const displayName = user?.nickname || user?.username || '用户'
   const formatAmount = (value: number) => (value > 0 ? `+${value}` : String(value))
+  // 失败退回的 reason 只保留前缀，去掉冒号后的异常详情。
+  const sanitizeReason = (reason: string) => {
+    const prefix = '业务执行失败自动退回'
+    return reason.startsWith(prefix) ? prefix : reason
+  }
   const transactionTypeLabel = (type: string) => ({
     REGISTER_GRANT: '注册赠送',
     ADJUST_INCREASE: '调账增加',
@@ -205,19 +208,13 @@ export const ProfilePage = () => {
               )}
             </div>
 
-            {creditError && (
-              <div className="mt-4 rounded-[var(--radius-md)] bg-[var(--color-danger-light)] px-3 py-2 text-[var(--text-sm)] text-[var(--color-danger)]">
-                {creditError}
-              </div>
-            )}
-
-            <div className="mt-5 space-y-2">
+            <div className="mt-5 max-h-[260px] space-y-2 overflow-y-auto">
               {creditTransactions.map((item) => (
                 <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg bg-[var(--color-bg-hover)] px-3 py-2">
                   <div className="min-w-0">
                     <p className="text-[13px] font-medium text-[var(--color-text-primary)]">{transactionTypeLabel(item.transactionType)}</p>
                     <p className="truncate text-[12px] text-[var(--color-text-tertiary)]">
-                      {item.reason || item.featureCode || '积分变动'} · {item.createdAt || '-'}
+                      {item.reason ? sanitizeReason(item.reason) : (item.featureCode || '积分变动')} · {item.createdAt || '-'}
                     </p>
                   </div>
                   <div className="text-right">

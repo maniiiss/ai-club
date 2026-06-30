@@ -32,6 +32,8 @@ import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
 import { useAuth } from '@/src/hooks/useAuth'
 import { cn, getInitials, getErrorMessage } from '@/src/lib/utils'
+import { useGuide } from '@/src/components/guide'
+import { useAuthStore } from '@/src/stores/auth'
 
 type StatusFilter = 'all' | 'conducting' | 'archived'
 
@@ -56,6 +58,8 @@ export const ProjectsPage = () => {
   const [dialog, setDialog] = useState<{ open: boolean; editing?: ProjectItem }>({ open: false })
   const [deleteConfirm, setDeleteConfirm] = useState<ProjectItem | null>(null)
   const canManageProject = useAuth((state) => state.hasPermission('project:manage'))
+  const { isCompleted: guideCompleted, startGuide } = useGuide('projects')
+  const authUser = useAuthStore((s) => s.user)
 
   const fetchProjects = useCallback(async () => {
     setLoading(true)
@@ -91,6 +95,13 @@ export const ProjectsPage = () => {
     fetchProjects()
     fetchStats()
   }, [fetchProjects])
+
+  useEffect(() => {
+    if (!guideCompleted && authUser && !loading && !error) {
+      const timer = setTimeout(() => startGuide(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [guideCompleted, authUser, loading, error, startGuide])
 
   const handleStatusChange = (status: StatusFilter) => {
     setStatusFilter(status)
@@ -131,6 +142,7 @@ export const ProjectsPage = () => {
             size="sm"
             icon={<Plus className="h-4 w-4" />}
             onClick={() => setDialog({ open: true })}
+            data-guide-id="projects-create"
           >
             创建项目
           </Button>
@@ -139,7 +151,7 @@ export const ProjectsPage = () => {
 
       {/* 统计卡片 */}
       {stats && (
-        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4" data-guide-id="projects-stats">
           <StatCard label="活跃项目" value={stats.activeProjectCount} color="text-[var(--color-primary)]" />
           <StatCard label="总任务数" value={stats.totalTaskCount} />
           <StatCard label="进行中占比" value={`${stats.resourceLoadPercent}%`} color="text-emerald-600" />
@@ -148,7 +160,7 @@ export const ProjectsPage = () => {
       )}
 
       {/* 搜索和筛选 */}
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" data-guide-id="projects-filter">
         <div className="flex gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)]">
           {statusTabs.map((tab) => (
             <button
@@ -202,7 +214,7 @@ export const ProjectsPage = () => {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-guide-id="projects-list">
             {data.records.map((project) => (
               <ProjectListItem
                 key={project.id}

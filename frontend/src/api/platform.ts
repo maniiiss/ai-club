@@ -577,7 +577,7 @@ export const generateTaskRequirementAi = async (
 }
 
 export const runTaskAgent = async (id: number, input: string) => {
-  const { data } = await http.post<ApiResponse<TaskAgentRunItem>>(`/api/tasks/${id}/agent-runs`, { input })
+  const { data } = await http.post<ApiResponse<ExecutionTaskItem>>(`/api/tasks/${id}/agent-runs`, { input })
   return data.data
 }
 
