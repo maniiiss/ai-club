@@ -1,6 +1,6 @@
 /**
  * 研发模块类型定义。
- * 涵盖 GitLab 仓库绑定、分支、合并请求、代码结构。
+ * 涵盖 GitLab 仓库绑定、产品分支、代码结构。
  */
 
 /** 项目 GitLab 仓库绑定。 */
@@ -36,6 +36,26 @@ export interface GitlabBranchItem {
   latestCommitTitle?: string | null
 }
 
+/** 创建 GitLab Tag 的载荷。 */
+export interface GitlabTagPayload {
+  tagName: string
+  branchName: string
+  message?: string
+}
+
+/** GitLab Tag 创建结果。 */
+export interface GitlabTagCreateResultItem {
+  projectName: string
+  projectRef: string
+  branchName: string
+  tagName: string
+  message: string | null
+  targetSha: string | null
+  protectedTag: boolean
+  webUrl: string | null
+  createdAt: string
+}
+
 /** GitLab 合并请求。 */
 export interface GitlabMergeRequestItem {
   iid: number
@@ -50,6 +70,84 @@ export interface GitlabMergeRequestItem {
   authorName: string
   webUrl: string
   updatedAt: string
+}
+
+/** 产品分支条目。 */
+export interface GitlabProductBranchItem {
+  id: number
+  bindingId: number
+  lineCode: string
+  lineName: string
+  branchName: string
+  enabled: boolean
+  behindCount: number
+  hasDiffWithMainline: boolean
+  hasOpenSyncMr: boolean
+  openSyncMergeRequestIid: number | null
+  openSyncMergeRequestTitle: string | null
+  openSyncMergeRequestWebUrl: string | null
+  lastSyncStatus: string | null
+  lastSyncMessage: string | null
+  lastSyncAt: string | null
+  lastSyncMrUrl: string | null
+}
+
+/** 创建或更新产品分支的载荷。 */
+export interface GitlabProductBranchPayload {
+  lineCode: string
+  lineName: string
+  branchName: string
+  enabled: boolean
+}
+
+/** 产品分支同步日志。 */
+export interface GitlabProductBranchSyncLogItem {
+  id: number
+  productBranchId: number | null
+  lineCode: string
+  lineName: string
+  sourceBranchName: string
+  targetBranchName: string
+  sourceCommitSha: string | null
+  targetCommitSha: string | null
+  mergeRequestIid: number | null
+  mergeRequestTitle: string | null
+  mergeRequestWebUrl: string | null
+  result: string
+  reason: string | null
+  executedByUserId: number | null
+  executedAt: string
+}
+
+/** 产品分支批量同步请求。 */
+export interface GitlabProductBranchSyncPayload {
+  productBranchIds: number[]
+}
+
+/** 产品分支同步结果明细。 */
+export interface GitlabProductBranchSyncRunItem {
+  productBranchId: number
+  lineCode: string
+  lineName: string
+  targetBranchName: string
+  result: string
+  message: string
+  behindCount: number | null
+  mergeRequestIid: number | null
+  mergeRequestWebUrl: string | null
+}
+
+/** 产品分支批量同步结果。 */
+export interface GitlabProductBranchSyncRunResult {
+  bindingId: number
+  projectName: string
+  sourceBranchName: string
+  targetCount: number
+  createdCount: number
+  noChangeCount: number
+  existingOpenMrCount: number
+  failedCount: number
+  items: GitlabProductBranchSyncRunItem[]
 }
 
 /** 代码结构快照。 */

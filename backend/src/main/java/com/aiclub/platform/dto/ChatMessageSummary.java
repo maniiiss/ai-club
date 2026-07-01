@@ -1,6 +1,7 @@
 package com.aiclub.platform.dto;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 聊天室消息摘要。
@@ -20,6 +21,7 @@ public record ChatMessageSummary(
         Long agentTaskId,
         String agentTaskStatus,
         List<HermesActionSummary> actions,
+        Map<String, String> actionStatuses,
         List<HermesSelectionCard> selectionCards,
         String createdAt,
         String updatedAt
@@ -38,12 +40,13 @@ public record ChatMessageSummary(
                               String createdAt,
                               String updatedAt) {
         this(id, roomId, role, senderUserId, senderUsername, senderName, senderAvatarUrl, content, status, mentionsHermes,
-                attachments, null, "", List.of(), List.of(), createdAt, updatedAt);
+                attachments, null, "", List.of(), Map.of(), List.of(), createdAt, updatedAt);
     }
 
     public ChatMessageSummary {
         attachments = attachments == null ? List.of() : List.copyOf(attachments);
         actions = actions == null ? List.of() : List.copyOf(actions);
+        actionStatuses = actionStatuses == null ? Map.of() : Map.copyOf(actionStatuses);
         selectionCards = selectionCards == null ? List.of() : List.copyOf(selectionCards);
     }
 }

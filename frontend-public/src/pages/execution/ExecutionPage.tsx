@@ -45,6 +45,8 @@ import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
 import { cn, formatDate } from '@/src/lib/utils'
+import { DateRangePicker } from '@/src/components/common/DateRangePicker'
+import { Select } from '@/src/components/common/Select'
 
 type ExecutionTab = 'test-plans' | 'execution-center'
 
@@ -589,61 +591,30 @@ const TestPlanFormDialog = ({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1.5 block text-[13px] font-medium text-[var(--color-text-secondary)]">
-                所属迭代
-              </label>
-              <select
-                value={iterationId ?? ''}
-                onChange={(e) => handleIterationChange(Number(e.target.value))}
-                className="h-10 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[14px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-              >
-                <option value="">请选择迭代</option>
-                {iterations.map((iter) => (
-                  <option key={iter.id} value={iter.id}>{iter.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-[13px] font-medium text-[var(--color-text-secondary)]">
-                状态
-              </label>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="h-10 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[14px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-              >
-                {planStatusOptions.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-            </div>
+            <Select
+              label="所属迭代"
+              value={iterationId ? String(iterationId) : ''}
+              onChange={(v) => handleIterationChange(v ? Number(v) : 0)}
+              placeholder="请选择迭代"
+              options={iterations.map((iter) => ({ value: String(iter.id), label: iter.name }))}
+            />
+            <Select
+              label="状态"
+              value={status}
+              onChange={(v) => setStatus(v)}
+              options={planStatusOptions.map((opt) => ({ value: opt, label: opt }))}
+            />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1.5 block text-[13px] font-medium text-[var(--color-text-secondary)]">
-                开始日期
-              </label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="h-10 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[14px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-[13px] font-medium text-[var(--color-text-secondary)]">
-                结束日期
-              </label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="h-10 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[14px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-              />
-            </div>
-          </div>
+          <DateRangePicker
+            label="计划时间"
+            startDate={startDate}
+            endDate={endDate}
+            onChange={(start, end) => {
+              setStartDate(start)
+              setEndDate(end)
+            }}
+          />
 
           <div>
             <label className="mb-1.5 block text-[13px] font-medium text-[var(--color-text-secondary)]">

@@ -1,4 +1,5 @@
 import type { HermesActionItem, HermesSelectionCardItem } from './hermes'
+import type { HermesSelectionPayload } from './hermes'
 
 /**
  * 多人聊天室类型定义。
@@ -119,6 +120,7 @@ export interface ChatMessageItem {
   agentTaskId?: number | null
   agentTaskStatus?: string
   actions?: HermesActionItem[]
+  actionStatuses?: Record<string, string>
   selectionCards?: HermesSelectionCardItem[]
   createdAt: string | null
   updatedAt: string | null
@@ -181,5 +183,12 @@ export type ChatSocketEvent =
   | { type: 'AGENT_TASK_UPDATED'; task: ChatRoomAgentTask }
   | { type: 'AGENT_TASK_EVENT'; event: ChatRoomAgentTaskEvent }
   | { type: 'AGENT_ACTION_PENDING'; taskId: number | null; messageId: number | null; actions: HermesActionItem[] }
-  | { type: 'AGENT_ACTION_EXECUTED'; taskId: number | null; messageId: number | null; action: HermesActionItem | null; status: string }
+  | { type: 'AGENT_SELECTION_PENDING'; taskId: number | null; messageId: number | null; selectionCards: HermesSelectionCardItem[] }
+  | { type: 'AGENT_ACTION_EXECUTED'; taskId: number | null; messageId: number | null; action: HermesActionItem | null; status: string; actionKey?: string }
   | { type: string; [key: string]: unknown }
+
+export interface ChatRoomAgentActionResolutionPayload {
+  actionKey: string
+}
+
+export type ChatRoomAgentSelectionPayload = HermesSelectionPayload

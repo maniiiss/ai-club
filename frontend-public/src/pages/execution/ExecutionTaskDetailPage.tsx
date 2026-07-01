@@ -299,9 +299,11 @@ export const ExecutionTaskDetailPage = () => {
   })
 
   return (
-    <div className="h-full overflow-y-auto animate-fadeIn">
-      {/* Hero */}
-      <div className="mb-6">
+    <div className="h-full overflow-hidden flex flex-col animate-fadeIn">
+      {/* ── 顶部固定区域 ── */}
+      <div className="shrink-0 overflow-y-auto">
+        {/* Hero */}
+        <div className="mb-4">
         <button
           onClick={() => navigate(`/projects/${projectId}/execution`)}
           className="mb-3 inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] transition-colors"
@@ -349,11 +351,11 @@ export const ExecutionTaskDetailPage = () => {
             {taskDetail.latestSummary}
           </p>
         )}
-      </div>
+        </div>
 
-      {/* 运行进度 */}
-      {taskDetail.runs.length > 0 && (
-        <section className="mb-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-card)]">
+        {/* 运行进度 */}
+        {taskDetail.runs.length > 0 && (
+          <section className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-card)]">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">运行进度</h3>
             <select
@@ -406,9 +408,9 @@ export const ExecutionTaskDetailPage = () => {
         </section>
       )}
 
-      {/* 规划确认 */}
-      {showPlanConfirmation && (
-        <section className="mb-6 rounded-xl border border-purple-200 bg-purple-50/50 p-5">
+        {/* 规划确认 */}
+        {showPlanConfirmation && (
+          <section className="mb-4 rounded-xl border border-purple-200 bg-purple-50/50 p-5">
           <div className="flex items-center gap-2 mb-3">
             <AlertCircle className="h-4 w-4 text-purple-600" />
             <h3 className="text-[15px] font-semibold text-purple-800">规划确认</h3>
@@ -442,42 +444,51 @@ export const ExecutionTaskDetailPage = () => {
           )}
         </section>
       )}
+      </div>
 
-      {/* 步骤日志 + 执行产物 */}
+      {/* ── 底部滚动区域：步骤日志 + 执行产物各自独立滚动 ── */}
       {runDetail && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="flex-1 min-h-0 grid grid-cols-1 gap-6 lg:grid-cols-2 pb-4">
           {/* 步骤日志 */}
-          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-card)]">
-            <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)] mb-4">步骤日志</h3>
-            {runDetail.steps.length === 0 ? (
-              <p className="text-[13px] text-[var(--color-text-tertiary)]">暂无步骤</p>
-            ) : (
-              <div className="space-y-4">
-                {runDetail.steps.map((step) => (
-                  <StepTimelineItem key={step.id} step={step} />
-                ))}
-              </div>
-            )}
+          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] flex flex-col min-h-0">
+            <div className="shrink-0 px-5 pt-5 pb-3">
+              <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">步骤日志</h3>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5">
+              {runDetail.steps.length === 0 ? (
+                <p className="text-[13px] text-[var(--color-text-tertiary)]">暂无步骤</p>
+              ) : (
+                <div className="space-y-4">
+                  {runDetail.steps.map((step) => (
+                    <StepTimelineItem key={step.id} step={step} />
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
 
           {/* 执行产物 */}
-          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-card)]">
-            <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)] mb-4">
-              执行产物 ({displayArtifacts.length})
-            </h3>
-            {displayArtifacts.length === 0 ? (
-              <p className="text-[13px] text-[var(--color-text-tertiary)]">暂无产物</p>
-            ) : (
-              <div className="space-y-3">
-                {displayArtifacts.map((artifact) => (
-                  <ArtifactCard
-                    key={artifact.id}
-                    artifact={artifact}
-                    onDownload={() => handleDownloadArtifact(artifact)}
-                  />
-                ))}
-              </div>
-            )}
+          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] flex flex-col min-h-0">
+            <div className="shrink-0 px-5 pt-5 pb-3">
+              <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">
+                执行产物 ({displayArtifacts.length})
+              </h3>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-5">
+              {displayArtifacts.length === 0 ? (
+                <p className="text-[13px] text-[var(--color-text-tertiary)]">暂无产物</p>
+              ) : (
+                <div className="space-y-3">
+                  {displayArtifacts.map((artifact) => (
+                    <ArtifactCard
+                      key={artifact.id}
+                      artifact={artifact}
+                      onDownload={() => handleDownloadArtifact(artifact)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
         </div>
       )}

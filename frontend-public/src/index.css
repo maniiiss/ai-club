@@ -484,9 +484,14 @@ a:hover {
   --rdp-day_button-height: 34px;
   --rdp-day_button-width: 34px;
   --rdp-day_button-border-radius: 8px;
+  --rdp-range_start-color: #fff;
   --rdp-range_start-date-background-color: var(--color-primary);
+  --rdp-range_end-color: #fff;
   --rdp-range_end-date-background-color: var(--color-primary);
   --rdp-range_middle-background-color: var(--color-primary-light);
+  --rdp-range_middle-color: var(--color-primary);
+  --rdp-selected-border: 2px solid var(--color-primary);
+  --rdp-today-color: var(--color-primary);
   --rdp-nav_button-height: 2rem;
   --rdp-nav_button-width: 2rem;
   --rdp-nav-height: 2.25rem;
@@ -538,18 +543,45 @@ a:hover {
   background-color: var(--color-bg-hover);
 }
 
-.date-range-picker .rdp-day_today .rdp-day_button {
+.date-range-picker .rdp-today .rdp-day_button {
   font-weight: 700;
   color: var(--color-primary);
 }
 
-.date-range-picker .rdp-day_outside .rdp-day_button {
+.date-range-picker .rdp-outside .rdp-day_button {
   color: var(--color-text-placeholder);
 }
 
-.date-range-picker .rdp-day_selected .rdp-day_button {
+.date-range-picker .rdp-selected .rdp-day_button {
   background-color: var(--color-primary);
-  color: white;
+  color: #fff;
   border-color: var(--color-primary);
+}
+
+/* 范围起止日：实心主色 + 白字 */
+.date-range-picker .rdp-range_start .rdp-day_button,
+.date-range-picker .rdp-range_end .rdp-day_button {
+  background-color: var(--color-primary) !important;
+  color: #fff !important;
+  border-color: var(--color-primary) !important;
+  font-weight: 600;
+}
+
+/* 范围起止日单元格背景（覆盖 v10 内置渐变） */
+.date-range-picker .rdp-range_start,
+.date-range-picker .rdp-range_end {
+  background: transparent !important;
+}
+
+/* 范围中间日：浅底 + 深色字 */
+.date-range-picker .rdp-range_middle .rdp-day_button {
+  background-color: var(--color-primary-light) !important;
+  color: var(--color-primary) !important;
+  border-color: transparent !important;
+}
+
+/* 范围中间日悬停 */
+.date-range-picker .rdp-range_middle .rdp-day_button:hover {
+  background-color: var(--color-primary-100) !important;
 }
 

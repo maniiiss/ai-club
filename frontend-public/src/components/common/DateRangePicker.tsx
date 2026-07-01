@@ -47,8 +47,8 @@ const prevMonth = (d: Date): Date => new Date(d.getFullYear(), d.getMonth() - 1,
 export const DateRangePicker = ({ startDate, endDate, onChange, label }: DateRangePickerProps) => {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  /** 记录是否已完成第一次点击（选开始日期），第二次点击后才自动关闭。 */
-  const hasStartRef = useRef(false)
+  /** 打开后已点击日历的次数，用于判断是否完成一轮开始+结束选择后再自动关闭。 */
+  const clickCountRef = useRef(0)
   /** 左面板当前显示月份。 */
   const [leftMonth, setLeftMonth] = useState(() => {
     const d = parseDate(startDate)
@@ -64,15 +64,12 @@ export const DateRangePicker = ({ startDate, endDate, onChange, label }: DateRan
     const to = toDateString(newRange?.to)
     onChange(from, to)
 
-    if (!from) {
-      hasStartRef.current = false
-    } else if (!to || from === to) {
-      hasStartRef.current = true
-    } else {
-      if (hasStartRef.current) {
-        setTimeout(() => setOpen(false), 200)
-      }
-      hasStartRef.current = false
+    clickCountRef.current += 1
+
+    /* 只在第二次点击且产生了完整范围时才自动关闭，
+       保证重新编辑已有范围时第一次点击不会直接关掉面板。 */
+    if (clickCountRef.current >= 2 && from && to && from !== to) {
+      setTimeout(() => setOpen(false), 60)
     }
   }
 
@@ -116,15 +113,15 @@ export const DateRangePicker = ({ startDate, endDate, onChange, label }: DateRan
   }
 
   return (
-    <div ref={containerRef} className="relative flex flex-col gap-1.5">
+    <div ref={containerRef} className="relative flex flex-col gap-1.5 w-full">
       {label && (
         <label className="text-[13px] font-medium text-[var(--color-text-secondary)]">{label}</label>
       )}
       <button
         type="button"
-        onClick={() => { hasStartRef.current = !!startDate; setOpen(!open) }}
+        onClick={() => { clickCountRef.current = 0; setOpen(!open) }}
         className={cn(
-          'flex items-center h-10 rounded-lg border bg-white transition-all duration-150 text-left',
+          'flex items-center w-full h-10 rounded-lg border bg-white transition-all duration-150 text-left',
           'hover:border-[var(--color-border-strong)]',
           open
             ? 'border-[var(--color-primary)] ring-2 ring-[var(--color-primary)]/20'
@@ -133,17 +130,19 @@ export const DateRangePicker = ({ startDate, endDate, onChange, label }: DateRan
       >
         <CalendarRange className="ml-2.5 h-3.5 w-3.5 text-[var(--color-text-tertiary)] shrink-0" strokeWidth={1.75} />
         <span className={cn(
-          'ml-2 text-[13px] truncate',
+          'ml-2 mr-2.5 text-[13px] flex items-center gap-0 flex-1 min-w-0',
           hasValue ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-placeholder)]',
         )}>
-          {startDate || '开始日期'} <span className="mx-1.5 text-[var(--color-text-tertiary)]">~</span> {endDate || '结束日期'}
+          <span className="truncate">{startDate || '开始日期'}</span>
+          <span className="mx-2 text-[var(--color-text-tertiary)] shrink-0">~</span>
+          <span className="truncate">{endDate || '结束日期'}</span>
         </span>
       </button>
 
       {open && (
         <div className="absolute right-0 top-full z-50 mt-1 animate-fadeIn">
-          <div className="rounded-xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-xl)] p-3 date-range-picker">
-            <div className="flex gap-4">
+          <div className="rounded-xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-xl)] p-4 date-range-picker">
+            <div className="flex gap-6">
               {/* 左面板：显示 leftMonth，隐藏内置导航，用自定义按钮控制 */}
               <div className="relative">
                 <DayPicker
@@ -154,6 +153,8 @@ export const DateRangePicker = ({ startDate, endDate, onChange, label }: DateRan
                   hideNavigation
                 />
               </div>
+              {/* 竖分隔线 */}
+              <div className="w-px bg-[var(--color-border-light)]" />
               {/* 右面板：显示 rightMonth，隐藏内置导航，用自定义按钮控制 */}
               <div className="relative">
                 <DayPicker
@@ -165,7 +166,7 @@ export const DateRangePicker = ({ startDate, endDate, onChange, label }: DateRan
               </div>
             </div>
             {/* 自定义导航按钮覆盖在两侧 */}
-            <div className="absolute inset-x-0 top-3 flex items-center justify-between px-1 pointer-events-none">
+            <div className="absolute inset-x-0 top-4 flex items-center justify-between px-2 pointer-events-none">
               <button
                 type="button"
                 onClick={() => setLeftMonth(prevMonth(leftMonth))}

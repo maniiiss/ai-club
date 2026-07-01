@@ -6,7 +6,9 @@ import { AUTH_TOKEN_KEY, http, resolvedApiBaseUrl, unwrap } from './http'
 import type { ApiResponse } from '@/src/types/api'
 import type {
   ChatMessageItem,
+  ChatRoomAgentActionResolutionPayload,
   ChatRoomAgentConfig,
+  ChatRoomAgentSelectionPayload,
   ChatRoomAgentTask,
   ChatRoomAgentToolPolicy,
   ChatRoomDetail,
@@ -103,6 +105,42 @@ export const retryChatRoomAgentTask = async (roomId: number, taskId: number): Pr
 
 export const cancelChatRoomAgentTask = async (roomId: number, taskId: number): Promise<ChatRoomAgentTask> => {
   const response = await http.post<ApiResponse<ChatRoomAgentTask>>(`/api/chat/rooms/${roomId}/agent/tasks/${taskId}/cancel`)
+  return unwrap(response)
+}
+
+export const markChatRoomAgentActionExecuted = async (
+  roomId: number,
+  taskId: number,
+  payload: ChatRoomAgentActionResolutionPayload,
+): Promise<ChatRoomAgentTask> => {
+  const response = await http.post<ApiResponse<ChatRoomAgentTask>>(
+    `/api/chat/rooms/${roomId}/agent/tasks/${taskId}/actions/executed`,
+    payload,
+  )
+  return unwrap(response)
+}
+
+export const cancelChatRoomAgentAction = async (
+  roomId: number,
+  taskId: number,
+  payload: ChatRoomAgentActionResolutionPayload,
+): Promise<ChatRoomAgentTask> => {
+  const response = await http.post<ApiResponse<ChatRoomAgentTask>>(
+    `/api/chat/rooms/${roomId}/agent/tasks/${taskId}/actions/canceled`,
+    payload,
+  )
+  return unwrap(response)
+}
+
+export const selectChatRoomAgentCandidate = async (
+  roomId: number,
+  taskId: number,
+  payload: ChatRoomAgentSelectionPayload,
+): Promise<ChatRoomAgentTask> => {
+  const response = await http.post<ApiResponse<ChatRoomAgentTask>>(
+    `/api/chat/rooms/${roomId}/agent/tasks/${taskId}/selections`,
+    payload,
+  )
   return unwrap(response)
 }
 

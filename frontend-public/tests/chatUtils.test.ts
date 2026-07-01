@@ -4,6 +4,9 @@ import { describe, it } from 'node:test'
 import {
   appendChatStreamDelta,
   containsHermesMention,
+  markAgentActionStatusInMessage,
+  mergeAgentActionsIntoMessage,
+  mergeAgentSelectionCardsIntoMessage,
   mergeChatMessage,
   parseChatSocketEvent,
   replaceMentionAtCaret,
@@ -37,6 +40,55 @@ describe('chat utilities', () => {
     const merged = appendChatStreamDelta(existing, 2, '你好')
     assert.equal(merged[0].content, '你好')
     assert.equal(merged[0].status, 'streaming')
+  })
+
+  it('merges pending actions into the matching assistant message', () => {
+    const existing: ChatMessageItem[] = [message(2, '待确认', 'assistant')]
+    existing[0].agentTaskId = 88
+    const merged = mergeAgentActionsIntoMessage(existing, null, 88, [
+      { type: 'CREATE_EXECUTION_TASK', title: '发起执行任务', description: '', requiresConfirm: true, params: { projectId: 1 } },
+    ])
+
+    assert.equal(merged[0].actions?.[0]?.title, '发起执行任务')
+    assert.equal(merged[0].agentTaskStatus, 'awaiting_confirmation')
+  })
+
+  it('merges pending selection cards into the matching assistant message', () => {
+    const existing: ChatMessageItem[] = [message(2, '请选择', 'assistant')]
+    existing[0].agentTaskId = 88
+    const merged = mergeAgentSelectionCardsIntoMessage(existing, null, 88, [{
+      slot: 'workItem',
+      title: '请选择需求',
+      description: '命中多个候选需求',
+      resumeQuestion: '继续创建执行任务',
+      options: [{
+        slot: 'workItem',
+        entityType: 'WORK_ITEM',
+        entityId: 99,
+        title: '支付回调',
+        subtitle: '需求 #99',
+        route: '',
+        matchScore: 0.9,
+        matchReasons: ['标题命中'],
+      }],
+    }])
+
+    assert.equal(merged[0].selectionCards?.[0]?.options[0]?.title, '支付回调')
+    assert.equal(merged[0].agentTaskStatus, 'awaiting_selection')
+  })
+
+  it('marks action task status without replacing existing actions', () => {
+    const existing: ChatMessageItem[] = [message(2, '待确认', 'assistant')]
+    existing[0].agentTaskId = 88
+    existing[0].actions = [
+      { type: 'CREATE_EXECUTION_TASK', title: '发起执行任务', description: '', requiresConfirm: true, params: { projectId: 1 } },
+      { type: 'CREATE_TEST_PLAN_DRAFT', title: '创建测试计划', description: '', requiresConfirm: true, params: { projectId: 1 } },
+    ]
+    const merged = markAgentActionStatusInMessage(existing, null, 88, 'CREATE_EXECUTION_TASK:0:key', 'executed')
+
+    assert.equal(merged[0].agentTaskStatus, 'executed')
+    assert.equal(merged[0].actionStatuses?.['CREATE_EXECUTION_TASK:0:key'], 'executed')
+    assert.equal(merged[0].actions?.length, 2)
   })
 
   it('detects the active mention query before the caret', () => {

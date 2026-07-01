@@ -10,11 +10,14 @@ import {
   listChatRoomAgentTasks,
   listChatRoomAgentTools,
   listChatRooms,
+  markChatRoomAgentActionExecuted,
   openChatSocket,
   sendChatMessage,
+  selectChatRoomAgentCandidate,
   updateChatRoomAgentConfig,
   updateChatRoomAgentTools,
   updateChatRoomMembers,
+  cancelChatRoomAgentAction,
 } from '@/src/api/chat'
 import { listUserOptions, type UserOptionItem } from '@/src/api/users'
 import { ChatComposer } from '@/src/components/chat/ChatComposer'
@@ -26,15 +29,18 @@ import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { useAuthStore } from '@/src/stores/auth'
 import { useGuide } from '@/src/components/guide'
 import type { ChatMessageItem, ChatRoomAgentConfig, ChatRoomAgentTask, ChatRoomAgentToolPolicy, ChatRoomItem, ChatSocketEvent } from '@/src/types/chat'
-import type { HermesActionItem } from '@/src/types/hermes'
+import type { HermesActionItem, HermesSelectionCardItem, HermesSelectionPayload } from '@/src/types/hermes'
 import {
   appendChatStreamDelta,
-  markAgentActionExecutedInMessage,
+  markAgentActionStatusInMessage,
   mergeAgentActionsIntoMessage,
+  mergeAgentSelectionCardsIntoMessage,
   mergeChatMessage,
   parseChatSocketEvent,
   shouldCollapseChatSummary,
 } from '@/src/lib/chatUtils'
+import { executeHermesAction, getHermesActionErrorMessage } from '@/src/lib/hermesActionExecutor'
+import { computeHermesActionKey } from '@/src/lib/hermesUtils'
 import { cn, getErrorMessage, getInitials } from '@/src/lib/utils'
 
 type RoomFilter = 'all' | 'project' | 'global'
@@ -78,6 +84,8 @@ export const ChatPage = () => {
   const [agentConfig, setAgentConfig] = useState<ChatRoomAgentConfig | null>(null)
   const [agentTools, setAgentTools] = useState<ChatRoomAgentToolPolicy[]>([])
   const [agentTasks, setAgentTasks] = useState<ChatRoomAgentTask[]>([])
+  const [resolvingActionKey, setResolvingActionKey] = useState('')
+  const [resolvingSelectionKey, setResolvingSelectionKey] = useState('')
   const socketRef = useRef<WebSocket | null>(null)
   const { isCompleted: guideCompleted, startGuide } = useGuide('chat')
   const authUser = useAuthStore((s) => s.user)
@@ -202,11 +210,15 @@ export const ChatPage = () => {
     } else if (event.type === 'AGENT_ACTION_PENDING') {
       const actions = Array.isArray(event.actions) ? event.actions as HermesActionItem[] : []
       setMessages((current) => mergeAgentActionsIntoMessage(current, toNullableNumber(event.messageId), toNullableNumber(event.taskId), actions))
+    } else if (event.type === 'AGENT_SELECTION_PENDING') {
+      const selectionCards = Array.isArray(event.selectionCards) ? event.selectionCards as HermesSelectionCardItem[] : []
+      setMessages((current) => mergeAgentSelectionCardsIntoMessage(current, toNullableNumber(event.messageId), toNullableNumber(event.taskId), selectionCards))
     } else if (event.type === 'AGENT_ACTION_EXECUTED') {
-      setMessages((current) => markAgentActionExecutedInMessage(
+      setMessages((current) => markAgentActionStatusInMessage(
         current,
         toNullableNumber(event.messageId),
         toNullableNumber(event.taskId),
+        typeof event.actionKey === 'string' ? event.actionKey : '',
         typeof event.status === 'string' ? event.status : 'executed',
       ))
     }
@@ -266,6 +278,50 @@ export const ChatPage = () => {
     }
   }
 
+  const handleConfirmAgentAction = async (message: ChatMessageItem, action: HermesActionItem, index: number, actionKey: string) => {
+    if (!selectedRoomId || !message.agentTaskId) return
+    setResolvingActionKey(actionKey)
+    setError(null)
+    try {
+      await executeHermesAction(action)
+      await markChatRoomAgentActionExecuted(selectedRoomId, message.agentTaskId, { actionKey })
+      setMessages((current) => markAgentActionStatusInMessage(current, message.id, message.agentTaskId, actionKey, 'executed'))
+    } catch (err) {
+      setError(getHermesActionErrorMessage(err))
+    } finally {
+      setResolvingActionKey('')
+    }
+  }
+
+  const handleCancelAgentAction = async (message: ChatMessageItem, actionKey: string) => {
+    if (!selectedRoomId || !message.agentTaskId) return
+    setResolvingActionKey(actionKey)
+    setError(null)
+    try {
+      await cancelChatRoomAgentAction(selectedRoomId, message.agentTaskId, { actionKey })
+      setMessages((current) => markAgentActionStatusInMessage(current, message.id, message.agentTaskId, actionKey, 'canceled'))
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setResolvingActionKey('')
+    }
+  }
+
+  const handleSelectAgentCandidate = async (message: ChatMessageItem, selection: HermesSelectionPayload) => {
+    if (!selectedRoomId || !message.agentTaskId) return
+    const selectionKey = `${message.agentTaskId}:${selection.slot}:${selection.entityType}:${selection.entityId}`
+    setResolvingSelectionKey(selectionKey)
+    setError(null)
+    try {
+      const task = await selectChatRoomAgentCandidate(selectedRoomId, message.agentTaskId, selection)
+      setAgentTasks((current) => mergeAgentTask(current, task))
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setResolvingSelectionKey('')
+    }
+  }
+
   const handleRoomCreated = (room: ChatRoomItem) => {
     setRooms((current) => mergeRoom(current, room))
     setSelectedRoomId(room.id)
@@ -301,6 +357,12 @@ export const ChatPage = () => {
               currentUserId={currentUser?.id}
               loading={loadingMessages}
               onRetryHermes={() => handleSend('@hermes 请重试上一条问题，并基于当前房间上下文重新回复。', [])}
+              resolvingActionKey={resolvingActionKey}
+              resolvingSelectionKey={resolvingSelectionKey}
+              computeActionKey={computeHermesActionKey}
+              onConfirmAgentAction={handleConfirmAgentAction}
+              onCancelAgentAction={handleCancelAgentAction}
+              onSelectAgentCandidate={handleSelectAgentCandidate}
             />
             <ChatComposer
               disabled={!selectedRoom}

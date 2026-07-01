@@ -55,13 +55,16 @@ WebSocket 注册在 `/ws/chat?token=...`，握手阶段复用现有登录 token 
 - `AGENT_TASK_UPDATED`
 - `AGENT_TASK_EVENT`
 - `AGENT_ACTION_PENDING`
+- `AGENT_SELECTION_PENDING`
 - `AGENT_ACTION_EXECUTED`
 
 ## Hermes 上下文压缩
 
 `@hermes` 或 `@Hermes` 出现在普通用户消息正文中时，后端先创建一条 `assistant` 占位消息并广播。占位消息落库事务提交后，Hermes 回复交由后台执行线程池生成，REST 发送接口不等待完整模型输出。
 
-Agent 化 v1 将这条链路改为持久化任务：`@hermes` 先写入 `chat_room_agent_task`，事务提交后只向 RabbitMQ 投递轻量 `{ taskId }` 信号。消费者收到消息后仍通过数据库条件更新 `claimPendingTask(taskId, PENDING/RETRYING, RUNNING)` 原子领取，保证重复消息、补偿消息和并发消费者不会重复执行同一任务，并更新 `PENDING / RETRYING / RUNNING / DONE / ERROR / CANCELED` 状态。占位消息通过 `agent_task_id` 回指任务，WebSocket 同步广播 `AGENT_TASK_CREATED`、`AGENT_TASK_UPDATED` 和 `AGENT_TASK_EVENT`，前端可在消息流和右侧上下文面板展示进度。动作卡片事件预留 `AGENT_ACTION_PENDING` 与 `AGENT_ACTION_EXECUTED`，消息流会以只读卡片展示待确认动作和候选对象。
+Agent 化 v1 将这条链路改为持久化任务：`@hermes` 先写入 `chat_room_agent_task`，事务提交后只向 RabbitMQ 投递轻量 `{ taskId }` 信号。消费者收到消息后仍通过数据库条件更新 `claimPendingTask(taskId, PENDING/RETRYING, RUNNING)` 原子领取，保证重复消息、补偿消息和并发消费者不会重复执行同一任务，并更新 `PENDING / RETRYING / RUNNING / DONE / ERROR / CANCELED` 状态。占位消息通过 `agent_task_id` 回指任务，WebSocket 同步广播 `AGENT_TASK_CREATED`、`AGENT_TASK_UPDATED` 和 `AGENT_TASK_EVENT`，前端可在消息流和右侧上下文面板展示进度。Hermes 生成的待确认动作和候选卡片会写回 `chat_room_agent_task.payload_json`，消息列表刷新时仍能恢复卡片；实时通道分别通过 `AGENT_ACTION_PENDING`、`AGENT_SELECTION_PENDING` 和 `AGENT_ACTION_EXECUTED` 同步给房间成员。
+
+聊天室消息流中的动作确认不新建动作协议：卡片仍使用 Hermes 原有 `HermesActionSummary`，前端确认后调用既有业务 API（例如执行中心任务创建、仓库扫描、工作项草稿和测试计划草稿），再通过 `POST /api/chat/rooms/{roomId}/agent/tasks/{taskId}/actions/executed` 携带既有 `HermesActionExecutedRequest.actionKey` 回写状态；取消动作走 `.../actions/canceled`，只记录状态和广播事件，不执行业务 API。候选选择复用 `HermesSelectionRequest` 载荷，通过 `POST /api/chat/rooms/{roomId}/agent/tasks/{taskId}/selections` 创建一个 `SELECTION` 类型后续 Agent 任务继续处理，避免把聊天室强行塞进私有 Hermes 会话表。
 
 房间级 Agent 配置保存在 `chat_room_agent_config`，包括启用状态、展示名、房间系统指令、主动总结、关键字监听、任务状态回写开关以及授权人快照。主动总结支持消息阈值与最小间隔；关键字监听支持关键词列表和冷却时间；任务状态回写支持房主选择 `SUCCESS / FAILED / CANCELED` 等执行任务状态集合。工具授权保存在 `chat_room_agent_tool_policy`，默认读工具可启用；写工具只有 `execution_task.create`、`repo_scan.start`、`work_item.create_draft`、`test_plan.create_draft` 允许被标记为自动执行，其余写工具仍应降级为确认动作。
 

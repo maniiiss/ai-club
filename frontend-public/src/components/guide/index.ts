@@ -1,3 +1,3 @@
 export { useGuide } from './useGuide'
-export type { GuidePageKey } from './useGuide'
-export { getGuideSteps, getAllGuidePageKeys } from './guideSteps'
+export { getGuideSteps, getAllGuidePageKeys, GUIDE_PAGE_KEYS } from './guideSteps'
+export type { GuidePageKey } from './guideSteps'

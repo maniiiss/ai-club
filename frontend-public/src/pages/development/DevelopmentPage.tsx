@@ -1,67 +1,82 @@
 /**
  * 研发模块页面。
- * 左侧仓库绑定列表 + 右侧详情（分支/合并请求/代码结构/扫描/自动合并中心/自动合并日志 六 Tab 切换）。
+ * 左侧仓库绑定列表 + 右侧详情（产品分支/代码结构/扫描/自动合并中心/自动合并日志 五 Tab 切换）。
  */
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams } from 'react-router-dom'
 import {
   GitBranch,
-  GitPullRequest,
   Code2,
-  Search,
   ExternalLink,
   CheckCircle,
   XCircle,
-  Clock,
   Shield,
   History,
   Play,
   Zap,
+  Plus,
+  Pencil,
+  Trash2,
+  X,
+  GitCompareArrows,
+  ClipboardList,
+  Tag,
 } from 'lucide-react'
 import {
   pageGitlabBindings,
   listGitlabBranches,
-  previewBindingMergeRequests,
   getGitlabCodeStructure,
   listRepositoryScanRulesets,
   createGitlabBindingScanTask,
   pageGitlabAutoMergeLogs,
+  createGitlabTag,
+  listGitlabProductBranches,
+  createGitlabProductBranch,
+  updateGitlabProductBranch,
+  deleteGitlabProductBranch,
+  listGitlabProductBranchSyncLogs,
+  createGitlabProductBranchSyncMergeRequests,
 } from '@/src/api/development'
 import type {
   ProjectGitlabBindingItem,
   GitlabBranchItem,
-  GitlabMergeRequestItem,
   GitlabCodeStructureSnapshotItem,
   RepositoryScanRulesetItem,
   GitlabAutoMergeLogItem,
+  GitlabTagCreateResultItem,
+  GitlabProductBranchItem,
+  GitlabProductBranchPayload,
+  GitlabProductBranchSyncLogItem,
+  GitlabProductBranchSyncRunResult,
 } from '@/src/types/development'
 import { Card } from '@/src/components/common/Card'
 import { Button } from '@/src/components/common/Button'
+import { Input } from '@/src/components/common/Input'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
 import { Select } from '@/src/components/common/Select'
-import { cn, formatDate } from '@/src/lib/utils'
+import { cn, formatDate, getErrorMessage } from '@/src/lib/utils'
 import { AutoMergeCenterPanel } from './AutoMergeCenterPanel'
 import { useGuide } from '@/src/components/guide'
 import { useAuthStore } from '@/src/stores/auth'
+import {
+  getEnabledProductBranchIds,
+  productBranchSyncResultLabel,
+  productBranchSyncResultStyle,
+} from '@/src/lib/productBranchUtils'
+import { buildGitlabTagPayload, resolveDefaultTagBranch } from '@/src/lib/gitlabTagUtils'
 
-type DetailTab = 'branches' | 'merge-requests' | 'code-structure' | 'scan' | 'auto-merge-center' | 'auto-merge-logs'
+type DetailTab = 'product-branches' | 'code-structure' | 'scan' | 'auto-merge-center' | 'auto-merge-logs'
 
 const detailTabs: { key: DetailTab; label: string; icon: typeof GitBranch }[] = [
-  { key: 'branches', label: '分支', icon: GitBranch },
-  { key: 'merge-requests', label: '合并请求', icon: GitPullRequest },
+  { key: 'product-branches', label: '产品分支', icon: GitBranch },
   { key: 'code-structure', label: '代码结构', icon: Code2 },
   { key: 'scan', label: '扫描', icon: Shield },
   { key: 'auto-merge-center', label: '自动合并中心', icon: Zap },
   { key: 'auto-merge-logs', label: '合并日志', icon: History },
 ]
-
-const statusColorMap: Record<string, string> = {
-  opened: 'bg-blue-50 text-blue-700',
-  merged: 'bg-purple-50 text-purple-700',
-  closed: 'bg-gray-100 text-gray-600',
-}
 
 export const DevelopmentPage = () => {
   const { projectId } = useParams<{ projectId: string }>()
@@ -71,7 +86,8 @@ export const DevelopmentPage = () => {
   const [bindingsLoading, setBindingsLoading] = useState(true)
   const [bindingsError, setBindingsError] = useState<string | null>(null)
   const [selectedBinding, setSelectedBinding] = useState<ProjectGitlabBindingItem | null>(null)
-  const [activeTab, setActiveTab] = useState<DetailTab>('branches')
+  const [activeTab, setActiveTab] = useState<DetailTab>('product-branches')
+  const [tagDialogBinding, setTagDialogBinding] = useState<ProjectGitlabBindingItem | null>(null)
   const { isCompleted: guideCompleted, startGuide } = useGuide('development')
   const authUser = useAuthStore((s) => s.user)
 
@@ -109,7 +125,7 @@ export const DevelopmentPage = () => {
         研发
       </h2>
       <p className="mb-6 text-[14px] text-[var(--color-text-tertiary)]">
-        管理代码仓库绑定、分支、合并请求、代码结构和自动合并策略
+        管理代码仓库绑定、产品分支、代码结构和自动合并策略
       </p>
       </div>
 
@@ -212,7 +228,7 @@ export const DevelopmentPage = () => {
               {/* 仓库信息 */}
               <div className="flex-shrink-0" data-guide-id="dev-tab-nav">
                 <Card>
-                  <div className="flex items-start justify-between">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <h3 className="text-[16px] font-semibold text-[var(--color-text-primary)]">
                         {selectedBinding.gitlabProjectName || selectedBinding.gitlabProjectRef}
@@ -221,16 +237,26 @@ export const DevelopmentPage = () => {
                         {selectedBinding.gitlabProjectPath}
                       </p>
                     </div>
-                    {selectedBinding.gitlabProjectWebUrl && (
-                      <a
-                        href={selectedBinding.gitlabProjectWebUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-[13px] text-[var(--color-primary)] hover:underline"
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setTagDialogBinding(selectedBinding)}
+                        icon={<Tag className="h-4 w-4" />}
                       >
-                        在 GitLab 中查看 <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                    )}
+                        创建 Tag
+                      </Button>
+                      {selectedBinding.gitlabProjectWebUrl && (
+                        <a
+                          href={selectedBinding.gitlabProjectWebUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-[13px] text-[var(--color-primary)] hover:underline"
+                        >
+                          在 GitLab 中查看 <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </Card>
 
@@ -256,8 +282,7 @@ export const DevelopmentPage = () => {
 
               {/* Tab 内容 */}
               <div className="mt-4 flex-1 min-h-0">
-                {activeTab === 'branches' && <BranchesPanel bindingId={selectedBinding.id} />}
-                {activeTab === 'merge-requests' && <MergeRequestsPanel bindingId={selectedBinding.id} />}
+                {activeTab === 'product-branches' && <ProductBranchesPanel binding={selectedBinding} />}
                 {activeTab === 'code-structure' && <CodeStructurePanel bindingId={selectedBinding.id} />}
                 {activeTab === 'scan' && <ScanPanel bindingId={selectedBinding.id} branch={selectedBinding.defaultTargetBranch || 'main'} />}
                 {activeTab === 'auto-merge-center' && <AutoMergeCenterPanel />}
@@ -267,204 +292,737 @@ export const DevelopmentPage = () => {
           )}
         </div>
       </div>
+      {tagDialogBinding && (
+        <GitlabTagDialog
+          binding={tagDialogBinding}
+          onClose={() => setTagDialogBinding(null)}
+        />
+      )}
     </div>
   )
 }
 
 /* ════════════════════════════════════════════
-   分支面板
+   创建 GitLab Tag 弹窗
    ════════════════════════════════════════════ */
 
-const BranchesPanel = ({ bindingId }: { bindingId: number }) => {
+interface GitlabTagForm {
+  tagName: string
+  branchName: string
+  message: string
+}
+
+const defaultGitlabTagForm: GitlabTagForm = {
+  tagName: '',
+  branchName: '',
+  message: '',
+}
+
+const GitlabTagDialog = ({
+  binding,
+  onClose,
+}: {
+  binding: ProjectGitlabBindingItem
+  onClose: () => void
+}) => {
   const [branches, setBranches] = useState<GitlabBranchItem[]>([])
+  const [branchLoading, setBranchLoading] = useState(true)
+  const [form, setForm] = useState<GitlabTagForm>(defaultGitlabTagForm)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [result, setResult] = useState<GitlabTagCreateResultItem | null>(null)
+
+  const branchOptions = useMemo(() => {
+    const options = branches.map((branch) => ({
+      value: branch.name,
+      label: branch.defaultBranch ? `${branch.name}（默认）` : branch.name,
+      description: branch.latestCommitTitle || undefined,
+    }))
+    if (form.branchName && !options.some((option) => option.value === form.branchName)) {
+      return [{ value: form.branchName, label: form.branchName }, ...options]
+    }
+    return options
+  }, [branches, form.branchName])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadBranches = async () => {
+      setBranchLoading(true)
+      setForm(defaultGitlabTagForm)
+      setFormError(null)
+      setResult(null)
+      try {
+        const data = await listGitlabBranches(binding.id)
+        if (cancelled) return
+        setBranches(data)
+        setForm((current) => ({
+          ...current,
+          branchName: resolveDefaultTagBranch(binding.defaultTargetBranch, data),
+        }))
+      } catch (err) {
+        if (!cancelled) setFormError(getErrorMessage(err))
+      } finally {
+        if (!cancelled) setBranchLoading(false)
+      }
+    }
+    loadBranches()
+    return () => { cancelled = true }
+  }, [binding.id, binding.defaultTargetBranch])
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    const payload = buildGitlabTagPayload(form)
+    if (!payload.tagName || !payload.branchName) {
+      setFormError('请填写 Tag 名称并选择来源分支。')
+      return
+    }
+    setSubmitting(true)
+    setFormError(null)
+    try {
+      setResult(await createGitlabTag(binding.id, payload))
+    } catch (err) {
+      setFormError(getErrorMessage(err))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={() => !submitting && onClose()} />
+      <div className="relative z-10 w-full max-w-2xl rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-xl)] animate-scaleIn">
+        <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50">
+              <Tag className="h-4.5 w-4.5 text-blue-600" strokeWidth={1.75} />
+            </div>
+            <div>
+              <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">
+                {result ? 'Tag 创建结果' : '创建 GitLab Tag'}
+              </h2>
+              <p className="text-[12px] text-[var(--color-text-tertiary)]">
+                {binding.projectName} / {binding.gitlabProjectPath || binding.gitlabProjectRef}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] disabled:opacity-40"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {result ? (
+          <div className="space-y-4 px-6 py-5">
+            <div className="grid gap-3 text-[12px] sm:grid-cols-2">
+              <ProductBranchField label="Tag 名称" value={result.tagName} />
+              <ProductBranchField label="来源分支" value={result.branchName} />
+              <ProductBranchField label="Tag 类型" value={result.message ? '注释 Tag' : '轻量 Tag'} />
+              <ProductBranchField label="目标 SHA" value={result.targetSha || '-'} />
+              <ProductBranchField label="创建时间" value={formatDateTimeText(result.createdAt)} />
+              <ProductBranchField label="受保护" value={result.protectedTag ? '是' : '否'} />
+            </div>
+            <div className="rounded-lg bg-[var(--color-bg-hover)] px-3 py-2">
+              <p className="text-[11px] text-[var(--color-text-tertiary)]">备注说明</p>
+              <p className="mt-0.5 whitespace-pre-wrap text-[12px] font-medium text-[var(--color-text-primary)]">{result.message || '-'}</p>
+            </div>
+            <div className="flex justify-end gap-2">
+              {result.webUrl && (
+                <a
+                  href={result.webUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[var(--color-border-strong)] bg-white px-4 text-[13.5px] font-medium text-[var(--color-text-primary)] shadow-[var(--shadow-xs)] transition-all hover:bg-[var(--color-bg-hover)]"
+                >
+                  打开 GitLab Tag <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+              <Button onClick={onClose}>关闭</Button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <div className="space-y-4 px-6 py-5">
+              {formError && (
+                <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[13px] text-red-700">{formError}</div>
+              )}
+              <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-hover)] px-3.5 py-2.5 text-[12px] text-[var(--color-text-secondary)]">
+                默认目标分支：<strong className="text-[var(--color-text-primary)]">{binding.defaultTargetBranch || '未配置'}</strong>
+              </div>
+              <Input
+                label="Tag 名称"
+                value={form.tagName}
+                onChange={(event) => setForm((current) => ({ ...current, tagName: event.target.value }))}
+                placeholder="例如：v1.2.0"
+              />
+              <Select
+                label="来源分支"
+                value={form.branchName}
+                onChange={(branchName) => setForm((current) => ({ ...current, branchName }))}
+                options={branchOptions}
+                placeholder={branchLoading ? '加载分支…' : '请选择来源分支'}
+                disabled={branchLoading}
+              />
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[13px] font-medium text-[var(--color-text-secondary)]">备注说明</label>
+                <textarea
+                  value={form.message}
+                  onChange={(event) => setForm((current) => ({ ...current, message: event.target.value }))}
+                  placeholder="留空将创建轻量 Tag"
+                  rows={3}
+                  className="w-full resize-none rounded-lg border border-[var(--color-border-strong)] bg-white px-3.5 py-2 text-[14px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-placeholder)] transition-all focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-[var(--color-border-light)] px-6 py-4">
+              <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>取消</Button>
+              <Button type="submit" loading={submitting} disabled={branchLoading}>创建</Button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+/* ════════════════════════════════════════════
+   产品分支面板
+   ════════════════════════════════════════════ */
+
+const defaultProductBranchForm: GitlabProductBranchPayload = {
+  lineCode: '',
+  lineName: '',
+  branchName: '',
+  enabled: true,
+}
+
+const Toggle = ({ checked, onChange, disabled }: { checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) => (
+  <button
+    type="button"
+    role="switch"
+    aria-checked={checked}
+    disabled={disabled}
+    onClick={() => onChange(!checked)}
+    className={cn(
+      'relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 disabled:cursor-not-allowed disabled:opacity-40',
+      checked ? 'bg-[var(--color-primary)]' : 'bg-gray-200',
+    )}
+  >
+    <span
+      className={cn(
+        'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow ring-0 transition duration-200',
+        checked ? 'translate-x-4' : 'translate-x-0',
+      )}
+    />
+  </button>
+)
+
+const formatDateTimeText = (value: string | null | undefined) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
+const ProductBranchesPanel = ({ binding }: { binding: ProjectGitlabBindingItem }) => {
+  const [branches, setBranches] = useState<GitlabProductBranchItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [keyword, setKeyword] = useState('')
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const [formOpen, setFormOpen] = useState(false)
+  const [editingBranch, setEditingBranch] = useState<GitlabProductBranchItem | null>(null)
+  const [form, setForm] = useState<GitlabProductBranchPayload>(defaultProductBranchForm)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [syncConfirm, setSyncConfirm] = useState<{ open: boolean; ids: number[]; running: boolean }>({ open: false, ids: [], running: false })
+  const [syncResult, setSyncResult] = useState<GitlabProductBranchSyncRunResult | null>(null)
+  const [logsOpen, setLogsOpen] = useState(false)
+  const [logsLoading, setLogsLoading] = useState(false)
+  const [logs, setLogs] = useState<GitlabProductBranchSyncLogItem[]>([])
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
+
+  const hasProductMainBranch = Boolean(binding.productMainBranch?.trim())
+  const enabledBranchIds = useMemo(() => getEnabledProductBranchIds(branches), [branches])
+  const allEnabledSelected = enabledBranchIds.length > 0 && enabledBranchIds.every((id) => selectedIds.includes(id))
+
+  const showToast = useCallback((type: 'success' | 'error', message: string) => {
+    setToast({ type, message })
+    setTimeout(() => setToast(null), 3000)
+  }, [])
 
   const fetchBranches = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await listGitlabBranches(bindingId, keyword || undefined)
+      const data = await listGitlabProductBranches(binding.id)
       setBranches(data)
+      setSelectedIds((current) => current.filter((id) => data.some((branch) => branch.id === id && branch.enabled)))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '加载分支失败')
+      setError(getErrorMessage(err))
     } finally {
       setLoading(false)
     }
-  }, [bindingId, keyword])
+  }, [binding.id])
+
+  const fetchLogs = useCallback(async () => {
+    setLogsLoading(true)
+    try {
+      setLogs(await listGitlabProductBranchSyncLogs(binding.id))
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    } finally {
+      setLogsLoading(false)
+    }
+  }, [binding.id, showToast])
 
   useEffect(() => {
+    setSelectedIds([])
+    setLogs([])
     fetchBranches()
   }, [fetchBranches])
 
+  const openCreate = () => {
+    setEditingBranch(null)
+    setForm(defaultProductBranchForm)
+    setFormError(null)
+    setFormOpen(true)
+  }
+
+  const openEdit = (branch: GitlabProductBranchItem) => {
+    setEditingBranch(branch)
+    setForm({
+      lineCode: branch.lineCode,
+      lineName: branch.lineName,
+      branchName: branch.branchName,
+      enabled: branch.enabled,
+    })
+    setFormError(null)
+    setFormOpen(true)
+  }
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    const payload = {
+      lineCode: form.lineCode.trim(),
+      lineName: form.lineName.trim(),
+      branchName: form.branchName.trim(),
+      enabled: form.enabled,
+    }
+    if (!payload.lineCode || !payload.lineName || !payload.branchName) {
+      setFormError('请填写产品线编码、产品线名称和分线分支。')
+      return
+    }
+    setSaving(true)
+    setFormError(null)
+    try {
+      if (editingBranch) {
+        await updateGitlabProductBranch(binding.id, editingBranch.id, payload)
+        showToast('success', '产品分支已更新')
+      } else {
+        await createGitlabProductBranch(binding.id, payload)
+        showToast('success', '产品分支已创建')
+      }
+      setFormOpen(false)
+      await fetchBranches()
+    } catch (err) {
+      setFormError(getErrorMessage(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async (branch: GitlabProductBranchItem) => {
+    if (!confirm(`确认删除产品分支「${branch.lineName}」吗？`)) return
+    try {
+      await deleteGitlabProductBranch(binding.id, branch.id)
+      setSelectedIds((current) => current.filter((id) => id !== branch.id))
+      showToast('success', '产品分支已删除')
+      await fetchBranches()
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+    }
+  }
+
+  const toggleBranchSelection = (branch: GitlabProductBranchItem, checked: boolean) => {
+    if (!branch.enabled) return
+    setSelectedIds((current) => checked
+      ? [...new Set([...current, branch.id])]
+      : current.filter((id) => id !== branch.id))
+  }
+
+  const toggleAllEnabled = (checked: boolean) => {
+    setSelectedIds(checked ? enabledBranchIds : [])
+  }
+
+  const openSyncConfirm = (ids = selectedIds) => {
+    if (!hasProductMainBranch) {
+      showToast('error', '请先在管理端 GitLab 绑定中配置产品主线分支')
+      return
+    }
+    const syncIds = ids.filter((id) => branches.some((branch) => branch.id === id && branch.enabled))
+    if (!syncIds.length) {
+      showToast('error', '请至少选择一个已启用的产品分支')
+      return
+    }
+    setSyncConfirm({ open: true, ids: syncIds, running: false })
+  }
+
+  const handleSyncSubmit = async () => {
+    setSyncConfirm((current) => ({ ...current, running: true }))
+    try {
+      const result = await createGitlabProductBranchSyncMergeRequests(binding.id, {
+        productBranchIds: syncConfirm.ids,
+      })
+      setSyncResult(result)
+      setSyncConfirm({ open: false, ids: [], running: false })
+      await Promise.all([fetchBranches(), fetchLogs()])
+      showToast('success', `同步完成：创建 ${result.createdCount}，无变更 ${result.noChangeCount}，已有 MR ${result.existingOpenMrCount}，失败 ${result.failedCount}`)
+    } catch (err) {
+      showToast('error', getErrorMessage(err))
+      setSyncConfirm((current) => ({ ...current, running: false }))
+    }
+  }
+
+  const openLogs = async () => {
+    setLogsOpen(true)
+    await fetchLogs()
+  }
+
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-shrink-0 mb-3 relative max-w-xs">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
-        <input
-          type="text"
-          placeholder="搜索分支…"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white pl-9 pr-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-        />
+    <div className="h-full flex flex-col animate-fadeIn">
+      {toast && (
+        <div className={cn(
+          'fixed right-5 top-5 z-[60] rounded-lg px-4 py-2 text-[13px] font-medium shadow-lg animate-slideDown',
+          toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white',
+        )}>
+          {toast.message}
+        </div>
+      )}
+
+      <div className="flex-shrink-0 mb-4 flex flex-col gap-3">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="grid gap-2 text-[12px] text-[var(--color-text-secondary)] sm:grid-cols-2">
+            <span className="rounded-lg border border-[var(--color-border)] bg-white px-3 py-2">
+              产品主线：<strong className="text-[var(--color-text-primary)]">{binding.productMainBranch || '未配置'}</strong>
+            </span>
+            <span className="rounded-lg border border-[var(--color-border)] bg-white px-3 py-2">
+              默认目标分支：<strong className="text-[var(--color-text-primary)]">{binding.defaultTargetBranch || '-'}</strong>
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" size="sm" onClick={openLogs} icon={<ClipboardList className="h-4 w-4" />}>
+              同步日志
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!hasProductMainBranch || selectedIds.length === 0}
+              onClick={() => openSyncConfirm()}
+              icon={<GitCompareArrows className="h-4 w-4" />}
+            >
+              批量同步
+            </Button>
+            <Button size="sm" onClick={openCreate} icon={<Plus className="h-4 w-4" />}>
+              新增分支
+            </Button>
+          </div>
+        </div>
+        {!hasProductMainBranch && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[13px] text-amber-800">
+            当前绑定尚未配置产品主线分支，产品分支可维护，但同步主线功能会暂时禁用。
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         {loading ? (
-          <LoadingSpinner text="加载分支…" />
+          <LoadingSpinner text="加载产品分支…" />
         ) : error ? (
           <ErrorState description={error} onRetry={fetchBranches} />
         ) : branches.length === 0 ? (
-          <EmptyState title="暂无分支" icon={<GitBranch className="h-6 w-6" strokeWidth={1.5} />} />
+          <div className="flex-1 min-h-[320px] flex items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]">
+            <EmptyState
+              title="暂无产品分支"
+              description="新增产品分支后，可以按产品线同步主线变更。"
+              icon={<GitBranch className="h-6 w-6" strokeWidth={1.5} />}
+            />
+          </div>
         ) : (
-          <div className="space-y-2 pr-1">
+          <div className="space-y-3 pr-1">
+            <label className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-[12px] text-[var(--color-text-secondary)]">
+              <input
+                type="checkbox"
+                checked={allEnabledSelected}
+                onChange={(event) => toggleAllEnabled(event.target.checked)}
+                className="h-4 w-4 rounded border-[var(--color-border-strong)]"
+              />
+              选择全部已启用分支
+            </label>
+
             {branches.map((branch) => (
-              <div
-                key={branch.name}
-                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3"
+              <article
+                key={branch.id}
+                className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-xs)] transition-shadow hover:shadow-[var(--shadow-sm)]"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <GitBranch className="h-4 w-4 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />
-                    <span className="text-[13px] font-medium text-[var(--color-text-primary)]">
-                      {branch.name}
-                    </span>
-                    {branch.defaultBranch && (
-                      <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
-                        默认
-                      </span>
-                    )}
-                    {branch.protectedBranch && (
-                      <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                        受保护
-                      </span>
-                    )}
-                  </div>
-                  {branch.webUrl && (
-                    <a
-                      href={branch.webUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[var(--color-primary)] hover:underline"
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
-                  )}
-                </div>
-                {branch.latestCommitTitle && (
-                  <p className="mt-1 truncate text-[12px] text-[var(--color-text-tertiary)]">
-                    {branch.latestCommitTitle}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/* ════════════════════════════════════════════
-   合并请求面板
-   ════════════════════════════════════════════ */
-
-const MergeRequestsPanel = ({ bindingId }: { bindingId: number }) => {
-  const [mergeRequests, setMergeRequests] = useState<GitlabMergeRequestItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  const fetchMergeRequests = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const data = await previewBindingMergeRequests(bindingId)
-      setMergeRequests(data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '加载合并请求失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [bindingId])
-
-  useEffect(() => {
-    fetchMergeRequests()
-  }, [fetchMergeRequests])
-
-  return (
-    <div className="h-full flex flex-col">
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {loading ? (
-          <LoadingSpinner text="加载合并请求…" />
-        ) : error ? (
-          <ErrorState description={error} onRetry={fetchMergeRequests} />
-        ) : mergeRequests.length === 0 ? (
-          <EmptyState
-            title="暂无合并请求"
-            icon={<GitPullRequest className="h-6 w-6" strokeWidth={1.5} />}
-          />
-        ) : (
-          <div className="space-y-2 pr-1">
-            {mergeRequests.map((mr) => (
-              <div
-                key={mr.iid}
-                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4"
-              >
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <GitPullRequest className="h-4 w-4 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />
-                      <span className="text-[11px] font-mono text-[var(--color-text-tertiary)]">
-                        !{mr.iid}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(branch.id)}
+                        disabled={!branch.enabled}
+                        onChange={(event) => toggleBranchSelection(branch, event.target.checked)}
+                        className="h-4 w-4 rounded border-[var(--color-border-strong)] disabled:opacity-40"
+                      />
+                      <GitBranch className="h-4 w-4 text-[var(--color-primary)]" strokeWidth={1.75} />
+                      <h4 className="text-[14px] font-semibold text-[var(--color-text-primary)]">{branch.lineName}</h4>
+                      <span className="rounded-full bg-[var(--color-bg-hover)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-tertiary)]">{branch.lineCode}</span>
+                      <span className={cn(
+                        'rounded-full px-2 py-0.5 text-[10px] font-medium',
+                        branch.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600',
+                      )}>
+                        {branch.enabled ? '启用' : '停用'}
                       </span>
-                      <h4 className="truncate text-[14px] font-semibold text-[var(--color-text-primary)]">
-                        {mr.title}
-                      </h4>
                     </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--color-text-tertiary)]">
-                      <span className="truncate">{mr.sourceBranch}</span>
-                      <span>→</span>
-                      <span className="truncate">{mr.targetBranch}</span>
-                      <span>·</span>
-                      <span>{mr.authorName}</span>
-                      <span>·</span>
-                      <span>{formatDate(mr.updatedAt)}</span>
+
+                    <div className="mt-3 grid gap-2 text-[12px] sm:grid-cols-2 xl:grid-cols-4">
+                      <ProductBranchField label="分线分支" value={branch.branchName} />
+                      <ProductBranchField label="落后提交" value={`${branch.behindCount ?? 0} 个`} />
+                      <ProductBranchField label="主线差异" value={branch.hasDiffWithMainline ? '有待同步变更' : '已与主线对齐'} />
+                      <ProductBranchField label="上次同步" value={formatDateTimeText(branch.lastSyncAt)} />
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px]">
+                      <span className={cn(
+                        'rounded-full px-2 py-0.5 text-[11px] font-medium',
+                        productBranchSyncResultStyle(branch.lastSyncStatus),
+                      )}>
+                        {productBranchSyncResultLabel(branch.lastSyncStatus)}
+                      </span>
+                      <span className="max-w-full truncate text-[var(--color-text-tertiary)]">{branch.lastSyncMessage || '暂无同步记录'}</span>
+                      {branch.openSyncMergeRequestWebUrl ? (
+                        <a href={branch.openSyncMergeRequestWebUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline">
+                          开放 MR !{branch.openSyncMergeRequestIid} <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : branch.lastSyncMrUrl ? (
+                        <a href={branch.lastSyncMrUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[var(--color-primary)] hover:underline">
+                          最近同步 MR <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : null}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        'rounded-full px-2 py-0.5 text-[11px] font-medium',
-                        statusColorMap[mr.state] || 'bg-gray-100 text-gray-600',
-                      )}
+
+                  <div className="flex flex-wrap items-center gap-1 lg:flex-shrink-0">
+                    <button
+                      type="button"
+                      title="同步主线"
+                      disabled={!hasProductMainBranch || !branch.enabled}
+                      onClick={() => openSyncConfirm([branch.id])}
+                      className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] transition-colors hover:bg-emerald-50 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {mr.state}
-                    </span>
-                    <a
-                      href={mr.webUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[var(--color-primary)] hover:underline"
+                      <GitCompareArrows className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      title="编辑"
+                      onClick={() => openEdit(branch)}
+                      className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
                     >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                    </a>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      title="删除"
+                      onClick={() => handleDelete(branch)}
+                      className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] transition-colors hover:bg-red-50 hover:text-red-600"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </div>
-                {mr.hasConflicts && (
-                  <div className="mt-2 rounded bg-red-50 px-2 py-1 text-[11px] text-red-700">
-                    存在冲突
-                  </div>
-                )}
-              </div>
+              </article>
             ))}
           </div>
         )}
       </div>
+
+      {formOpen && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={() => !saving && setFormOpen(false)} />
+          <form onSubmit={handleSubmit} className="relative z-10 w-full max-w-lg rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-xl)] animate-scaleIn">
+            <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-6 py-4">
+              <div>
+                <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">{editingBranch ? '编辑产品分支' : '新增产品分支'}</h2>
+                <p className="text-[12px] text-[var(--color-text-tertiary)]">维护产品线编码、名称和对应的 Git 分支。</p>
+              </div>
+              <button type="button" onClick={() => setFormOpen(false)} disabled={saving} className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] disabled:opacity-40">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4 px-6 py-5">
+              {formError && (
+                <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[13px] text-red-700">{formError}</div>
+              )}
+              <Input label="产品线编码" value={form.lineCode} onChange={(event) => setForm((current) => ({ ...current, lineCode: event.target.value }))} placeholder="例如：line-a" />
+              <Input label="产品线名称" value={form.lineName} onChange={(event) => setForm((current) => ({ ...current, lineName: event.target.value }))} placeholder="例如：A 产品线" />
+              <Input label="分线分支" value={form.branchName} onChange={(event) => setForm((current) => ({ ...current, branchName: event.target.value }))} placeholder="例如：release/a" />
+              <div className="flex items-center justify-between rounded-lg border border-[var(--color-border)] px-3.5 py-3">
+                <div>
+                  <p className="text-[13px] font-medium text-[var(--color-text-primary)]">启用</p>
+                  <p className="text-[12px] text-[var(--color-text-tertiary)]">停用后不会参与批量同步。</p>
+                </div>
+                <Toggle checked={form.enabled} onChange={(enabled) => setForm((current) => ({ ...current, enabled }))} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-[var(--color-border-light)] px-6 py-4">
+              <Button type="button" variant="secondary" onClick={() => setFormOpen(false)} disabled={saving}>取消</Button>
+              <Button type="submit" loading={saving}>保存</Button>
+            </div>
+          </form>
+        </div>,
+        document.body,
+      )}
+
+      {syncConfirm.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={() => !syncConfirm.running && setSyncConfirm({ open: false, ids: [], running: false })} />
+          <div className="relative z-10 w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-xl)] animate-scaleIn">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50">
+              <GitCompareArrows className="h-5 w-5 text-emerald-600" />
+            </div>
+            <h3 className="text-center text-[16px] font-semibold text-[var(--color-text-primary)]">确认同步主线</h3>
+            <p className="mt-2 text-center text-[13px] text-[var(--color-text-tertiary)]">
+              将从产品主线「{binding.productMainBranch || '-'}」为 {syncConfirm.ids.length} 条产品分支创建同步 MR。
+            </p>
+            <div className="mt-5 flex justify-center gap-2">
+              <Button variant="secondary" onClick={() => setSyncConfirm({ open: false, ids: [], running: false })} disabled={syncConfirm.running}>取消</Button>
+              <Button onClick={handleSyncSubmit} loading={syncConfirm.running}>创建同步 MR</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {syncResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={() => setSyncResult(null)} />
+          <div className="relative z-10 flex max-h-[82vh] w-full max-w-3xl flex-col rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-xl)] animate-scaleIn">
+            <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-6 py-4">
+              <div>
+                <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">同步结果</h2>
+                <p className="text-[12px] text-[var(--color-text-tertiary)]">{syncResult.projectName} · 主线 {syncResult.sourceBranchName}</p>
+              </div>
+              <button type="button" onClick={() => setSyncResult(null)} className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)]">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-6">
+              <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <MetricCard title="创建" value={syncResult.createdCount} tone="text-emerald-600" />
+                <MetricCard title="无变更" value={syncResult.noChangeCount} tone="text-gray-600" />
+                <MetricCard title="已有 MR" value={syncResult.existingOpenMrCount} tone="text-blue-600" />
+                <MetricCard title="失败" value={syncResult.failedCount} tone="text-red-600" />
+              </div>
+              <div className="space-y-2">
+                {syncResult.items.map((item) => (
+                  <div key={`${item.productBranchId}-${item.targetBranchName}`} className="rounded-lg border border-[var(--color-border)] p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[13px] font-medium text-[var(--color-text-primary)]">{item.lineName}</span>
+                          <span className="rounded-full bg-[var(--color-bg-hover)] px-2 py-0.5 text-[10px] text-[var(--color-text-tertiary)]">{item.targetBranchName}</span>
+                          <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', productBranchSyncResultStyle(item.result))}>
+                            {productBranchSyncResultLabel(item.result)}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">{item.message}</p>
+                      </div>
+                      {item.mergeRequestWebUrl && (
+                        <a href={item.mergeRequestWebUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] text-[var(--color-primary)] hover:underline">
+                          打开 MR <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {logsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-[2px]" onClick={() => setLogsOpen(false)} />
+          <div className="relative z-10 flex max-h-[82vh] w-full max-w-4xl flex-col rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-xl)] animate-scaleIn">
+            <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-6 py-4">
+              <div>
+                <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">产品分支同步日志</h2>
+                <p className="text-[12px] text-[var(--color-text-tertiary)]">查看主线同步到各产品分线的历史记录。</p>
+              </div>
+              <button type="button" onClick={() => setLogsOpen(false)} className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)]">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-6">
+              {logsLoading ? (
+                <LoadingSpinner text="加载同步日志…" />
+              ) : logs.length === 0 ? (
+                <EmptyState title="暂无同步日志" icon={<ClipboardList className="h-6 w-6" strokeWidth={1.5} />} />
+              ) : (
+                <div className="space-y-2">
+                  {logs.map((log) => (
+                    <div key={log.id} className="rounded-lg border border-[var(--color-border)] p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[13px] font-medium text-[var(--color-text-primary)]">{log.lineName}</span>
+                            <span className="text-[11px] text-[var(--color-text-tertiary)]">{log.sourceBranchName} → {log.targetBranchName}</span>
+                            <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', productBranchSyncResultStyle(log.result))}>
+                              {productBranchSyncResultLabel(log.result)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">{log.reason || '-'}</p>
+                          <p className="mt-1 text-[11px] text-[var(--color-text-tertiary)]">{formatDateTimeText(log.executedAt)}</p>
+                        </div>
+                        {log.mergeRequestWebUrl && (
+                          <a href={log.mergeRequestWebUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] text-[var(--color-primary)] hover:underline">
+                            打开 MR <ExternalLink className="h-3 w-3" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
+const ProductBranchField = ({ label, value }: { label: string; value: string }) => (
+  <div className="rounded-lg bg-[var(--color-bg-hover)] px-3 py-2">
+    <p className="text-[11px] text-[var(--color-text-tertiary)]">{label}</p>
+    <p className="mt-0.5 truncate text-[12px] font-medium text-[var(--color-text-primary)]">{value}</p>
+  </div>
+)
+
+const MetricCard = ({ title, value, tone }: { title: string; value: number; tone: string }) => (
+  <Card title={title}>
+    <p className={cn('text-[24px] font-bold', tone)}>{value}</p>
+  </Card>
+)
 
 /* ════════════════════════════════════════════
    代码结构面板
@@ -739,8 +1297,10 @@ const AutoMergeLogsPanel = () => {
   return (
     <div className="h-full flex flex-col animate-fadeIn">
       {/* 筛选栏 */}
-      <div className="flex-shrink-0 mb-4 flex flex-wrap items-end gap-3">
+      <div className="flex-shrink-0 mb-4 flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2">
         <Select
+          layout="inline"
+          className="[&>div]:w-36 max-sm:w-full max-sm:[&>div]:flex-1"
           label="结果"
           value={filterResult}
           onChange={(v) => { setFilterResult(v); setPage(1) }}
@@ -756,6 +1316,8 @@ const AutoMergeLogsPanel = () => {
           placeholder="全部结果"
         />
         <Select
+          layout="inline"
+          className="[&>div]:w-36 max-sm:w-full max-sm:[&>div]:flex-1"
           label="触发方式"
           value={filterTrigger}
           onChange={(v) => { setFilterTrigger(v); setPage(1) }}

@@ -13,6 +13,8 @@ import com.aiclub.platform.dto.ChatMessageSummary;
 import com.aiclub.platform.dto.ChatRoomDetail;
 import com.aiclub.platform.dto.ChatRoomSummary;
 import com.aiclub.platform.dto.CurrentUserInfo;
+import com.aiclub.platform.dto.HermesActionSummary;
+import com.aiclub.platform.dto.HermesSelectionCard;
 import com.aiclub.platform.dto.request.CreateChatRoomRequest;
 import com.aiclub.platform.dto.request.SendChatMessageRequest;
 import com.aiclub.platform.dto.request.UpdateChatRoomMembersRequest;
@@ -23,6 +25,8 @@ import com.aiclub.platform.repository.ChatRoomMemberRepository;
 import com.aiclub.platform.repository.ChatRoomRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.aiclub.platform.repository.UserRepository;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -62,6 +66,9 @@ public class ChatRoomService {
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final Pattern HERMES_MENTION_PATTERN = Pattern.compile("(^|\\s)@hermes\\b", Pattern.CASE_INSENSITIVE);
     private static final int MAX_PREVIEW_LENGTH = 500;
+    private static final String PAYLOAD_HERMES_ACTIONS = "hermesActions";
+    private static final String PAYLOAD_ACTION_STATUSES = "actionStatuses";
+    private static final String PAYLOAD_HERMES_SELECTION_CARDS = "hermesSelectionCards";
 
     private final AuthService authService;
     private final UserRepository userRepository;
@@ -75,6 +82,7 @@ public class ChatRoomService {
     private final ChatAttachmentService chatAttachmentService;
     private final ChatRoomAgentService chatRoomAgentService;
     private final Executor hermesReplyExecutor;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
     public ChatRoomService(AuthService authService,
@@ -298,6 +306,7 @@ public class ChatRoomService {
 
     public ChatMessageSummary toMessageSummary(ChatMessageEntity message, List<ChatAttachmentSummary> attachments) {
         UserEntity sender = message.getSenderUser();
+        Map<String, Object> agentPayload = readAgentPayload(message);
         return new ChatMessageSummary(
                 message.getId(),
                 message.getRoom() == null ? null : message.getRoom().getId(),
@@ -312,11 +321,50 @@ public class ChatRoomService {
                 attachments,
                 message.getAgentTask() == null ? null : message.getAgentTask().getId(),
                 message.getAgentTask() == null ? "" : defaultString(message.getAgentTask().getStatus()).toLowerCase(),
-                List.of(),
-                List.of(),
+                readPayloadList(agentPayload, PAYLOAD_HERMES_ACTIONS, new TypeReference<List<HermesActionSummary>>() {}),
+                readActionStatuses(agentPayload),
+                readPayloadList(agentPayload, PAYLOAD_HERMES_SELECTION_CARDS, new TypeReference<List<HermesSelectionCard>>() {}),
                 formatTime(message.getCreatedAt()),
                 formatTime(message.getUpdatedAt())
         );
+    }
+
+    /**
+     * 业务意图：聊天室 Agent 任务是消息卡片状态的事实来源，刷新消息流时要能恢复待确认动作和候选卡片。
+     */
+    private Map<String, Object> readAgentPayload(ChatMessageEntity message) {
+        if (message == null || message.getAgentTask() == null || defaultString(message.getAgentTask().getPayloadJson()).isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(message.getAgentTask().getPayloadJson(), new TypeReference<Map<String, Object>>() {});
+        } catch (Exception exception) {
+            return Map.of();
+        }
+    }
+
+    private <T> List<T> readPayloadList(Map<String, Object> payload, String key, TypeReference<List<T>> typeReference) {
+        if (payload == null || !payload.containsKey(key)) {
+            return List.of();
+        }
+        try {
+            List<T> items = objectMapper.convertValue(payload.get(key), typeReference);
+            return items == null ? List.of() : items;
+        } catch (IllegalArgumentException exception) {
+            return List.of();
+        }
+    }
+
+    private Map<String, String> readActionStatuses(Map<String, Object> payload) {
+        if (payload == null || !payload.containsKey(PAYLOAD_ACTION_STATUSES)) {
+            return Map.of();
+        }
+        try {
+            Map<String, String> statuses = objectMapper.convertValue(payload.get(PAYLOAD_ACTION_STATUSES), new TypeReference<Map<String, String>>() {});
+            return statuses == null ? Map.of() : statuses;
+        } catch (IllegalArgumentException exception) {
+            return Map.of();
+        }
     }
 
     public ChatRoomSummary toRoomSummary(ChatRoomEntity room) {

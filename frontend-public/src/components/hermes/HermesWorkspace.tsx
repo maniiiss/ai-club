@@ -2,10 +2,6 @@ import { Brain } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/src/components/common/Button'
 import { ConfirmDialog } from '@/src/components/common/ConfirmDialog'
-import { createExecutionTask } from '@/src/api/execution'
-import { createGitlabBindingScanTask } from '@/src/api/development'
-import { createTestPlan } from '@/src/api/execution'
-import { createWorkItem } from '@/src/api/planning'
 import {
   archiveHermesConversationSession,
   createHermesConversationSession,
@@ -21,6 +17,7 @@ import {
   type HermesStreamHandlers,
 } from '@/src/api/hermes'
 import { buildHermesSessionQuery, shouldRenderHermesWorkspaceHeader } from '@/src/lib/hermesUtils'
+import { executeHermesAction } from '@/src/lib/hermesActionExecutor'
 import { getErrorMessage } from '@/src/lib/utils'
 import { HermesActionCards } from './HermesActionCards'
 import { HermesComposer } from './HermesComposer'
@@ -286,50 +283,7 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
     if (!selectedSessionId) return
     setExecutingActionKey(actionKey)
     try {
-      const params = action.params || {}
-      if (action.type === 'CREATE_EXECUTION_TASK') {
-        await createExecutionTask({
-          scenarioCode: String(params.scenarioCode || ''),
-          projectId: Number(params.projectId),
-          workItemId: params.workItemId == null ? null : Number(params.workItemId),
-          title: params.title == null ? undefined : String(params.title),
-          triggerSource: String(params.triggerSource || 'HERMES'),
-          inputPayload: (params.inputPayload || {}) as Record<string, unknown>,
-        })
-      } else if (action.type === 'CREATE_REPOSITORY_SCAN_TASK') {
-        await createGitlabBindingScanTask(Number(params.bindingId), {
-          branch: String(params.branch || ''),
-          rulesetCode: String(params.rulesetCode || ''),
-        })
-      } else if (action.type === 'CREATE_WORK_ITEM_DRAFT') {
-        const workItemType = String(params.workItemType || '需求')
-        const content = String(params.content || '')
-        await createWorkItem({
-          name: String(params.name || content.slice(0, 40) || `Hermes 创建的${workItemType}草稿`),
-          workItemType,
-          status: '草稿',
-          priority: '中',
-          assignee: params.assigneeUserId ? '待确认' : '',
-          assigneeUserId: params.assigneeUserId == null ? null : Number(params.assigneeUserId),
-          collaboratorUserIds: [],
-          description: content,
-          projectId: Number(params.projectId),
-          agentId: null,
-          iterationId: params.iterationId == null ? null : Number(params.iterationId),
-          requirementTaskId: null,
-        })
-      } else if (action.type === 'CREATE_TEST_PLAN_DRAFT') {
-        await createTestPlan({
-          name: String(params.name || 'Hermes 测试计划草稿'),
-          projectId: Number(params.projectId),
-          iterationId: params.iterationId == null ? null : Number(params.iterationId),
-          status: '草稿',
-          description: String(params.description || ''),
-        })
-      } else {
-        setError('暂不支持该动作类型')
-        return
-      }
+      await executeHermesAction(action)
       setExecutedActionKeys((prev) => new Set([...prev, actionKey]))
       await markHermesActionExecuted(selectedSessionId, actionKey)
     } catch (err) {

@@ -19,7 +19,7 @@ interface GuideStepDef {
 }
 
 /** 各页面的引导步骤定义。 */
-const stepDefinitions: Record<string, GuideStepDef[]> = {
+const stepDefinitions = {
   dashboard: [
     {
       element: '[data-guide-id="dashboard-stats"]',
@@ -114,32 +114,38 @@ const stepDefinitions: Record<string, GuideStepDef[]> = {
     {
       element: '[data-guide-id="dev-tab-nav"]',
       title: '研发工具',
-      description: '这里集成了分支管理、合并请求、代码结构、扫描和自动合并等研发工具。',
+      description: '这里集成了产品分支、代码结构、扫描和自动合并等研发工具。',
       side: 'bottom',
       align: 'start',
     },
     {
       element: '[data-guide-id="dev-binding-list"]',
       title: '代码仓库',
-      description: '选择已绑定的代码仓库，查看和管理对应的分支、合并请求等信息。',
+      description: '选择已绑定的代码仓库，查看和管理对应的产品分支与自动合并信息。',
       side: 'right',
       align: 'start',
     },
     {
       element: '[data-guide-id="dev-detail-tabs"]',
       title: '功能标签',
-      description: '切换分支、合并请求、代码结构、扫描、自动合并中心等功能。',
+      description: '切换产品分支、代码结构、扫描、自动合并中心等功能。',
       side: 'bottom',
       align: 'start',
     },
   ],
-}
+} satisfies Record<string, GuideStepDef[]>
+
+/** 公众端新手引导合法页面 key；必须与后端 AuthService 白名单保持一致。 */
+export const GUIDE_PAGE_KEYS = Object.keys(stepDefinitions) as Array<keyof typeof stepDefinitions>
+
+/** 引导页面 key 类型。 */
+export type GuidePageKey = (typeof GUIDE_PAGE_KEYS)[number]
 
 /**
  * 将步骤定义转换为 Driver.js 的 DriveStep 数组。
  * 自动过滤掉当前 DOM 中不存在的目标元素，避免引导中断。
  */
-export function getGuideSteps(pageKey: string): DriveStep[] {
+export function getGuideSteps(pageKey: GuidePageKey): DriveStep[] {
   const defs = stepDefinitions[pageKey]
   if (!defs) return []
 
@@ -160,6 +166,6 @@ export function getGuideSteps(pageKey: string): DriveStep[] {
 }
 
 /** 获取所有合法的引导页面 key。 */
-export function getAllGuidePageKeys(): string[] {
-  return Object.keys(stepDefinitions)
+export function getAllGuidePageKeys(): GuidePageKey[] {
+  return [...GUIDE_PAGE_KEYS]
 }

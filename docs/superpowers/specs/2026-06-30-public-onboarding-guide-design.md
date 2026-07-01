@@ -6,9 +6,9 @@
 
 ## 需求摘要
 
-- **覆盖范围**：Dashboard 首页、项目管理、AI 助手/知识库、开发工具四个核心页面
+- **覆盖范围**：Dashboard 首页、项目管理、聊天室、研发四个核心页面
 - **交互风格**：遮罩式分步引导（高亮目标元素 + 半透明遮罩 + 上一步/下一步/跳过按钮）
-- **触发策略**：仅首次登录自动触发，完成后可通过设置手动重新触发
+- **触发策略**：仅首次进入未完成页面时自动触发，完成后可通过用户菜单手动重播
 - **状态持久化**：后端用户表存储已完成状态
 
 ## 技术方案
@@ -31,9 +31,9 @@
 frontend-public/src/
 ├── components/guide/           ← 新增引导组件目录
 │   ├── useGuide.ts             ← 核心 Hook，封装 Driver.js 实例管理
-│   ├── guideSteps.ts           ← 所有页面的引导步骤配置（集中管理）
-│   ├── GuideWrapper.tsx        ← 引导遮罩的自定义 Popover 渲染组件
-│   └── guide.css               ← 引导相关自定义样式（覆盖 Driver.js 默认样式）
+│   ├── guideSteps.ts           ← 所有页面的引导步骤配置与合法 page key（集中管理）
+│   ├── guide.css               ← 引导相关自定义样式（覆盖 Driver.js 默认样式）
+│   └── index.ts                ← 对外导出 Hook、步骤读取函数和 page key 类型
 ├── api/guide.ts                ← 新增 API 模块，调用后端引导状态接口
 ```
 
@@ -45,8 +45,8 @@ frontend-public/src/
 └── pages/
     ├── dashboard/DashboardPage.tsx       ← 添加 data-guide-id 属性 + useGuide 集成
     ├── projects/ProjectsPage.tsx         ← 添加 data-guide-id 属性 + useGuide 集成
-    ├── knowledge/KnowledgePage.tsx       ← 添加 data-guide-id 属性 + useGuide 集成
-    └── api-studio/ApiStudioPage.tsx      ← 添加 data-guide-id 属性 + useGuide 集成
+    ├── chat/ChatPage.tsx                 ← 添加 data-guide-id 属性 + useGuide 集成
+    └── development/DevelopmentPage.tsx   ← 添加 data-guide-id 属性 + useGuide 集成
 ```
 
 ### 核心组件职责
@@ -54,8 +54,7 @@ frontend-public/src/
 | 组件 | 职责 |
 |------|------|
 | `useGuide` | 封装 Driver.js 的 `driver()` 实例创建、步骤启动、完成回调；接收页面 key 作为参数 |
-| `guideSteps` | 按页面 key 导出步骤数组，每步定义目标选择器（CSS selector）、标题、描述 |
-| `GuideWrapper` | Driver.js 的自定义 Popover 组件，渲染标题、描述、进度指示器、上一步/下一步/跳过按钮 |
+| `guideSteps` | 按页面 key 导出步骤数组与 `GUIDE_PAGE_KEYS`，每步定义目标选择器（CSS selector）、标题、描述 |
 | `guide.css` | 覆盖 Driver.js 默认样式，使用 Tailwind 设计变量统一配色（主色、圆角、阴影） |
 
 ### 引导触发流程
@@ -69,7 +68,7 @@ frontend-public/src/
              → 否：延迟 500ms 自动启动引导
              → 是：不触发
          → 用户完成引导或点击跳过
-             → 调用 API: PUT /api/users/guide-status
+             → 调用 API: PUT /api/auth/guide-status
              → 后端更新 user.guideCompleted += "dashboard"
 ```
 
@@ -90,12 +89,14 @@ interface GuideStep {
 }
 
 // 按页面 key 组织
-const guideStepsConfig: Record<string, GuideStep[]> = {
+const guideStepsConfig = {
   dashboard: [/* 5 steps */],
   projects: [/* 4 steps */],
-  'ai-assistant': [/* 4 steps */],
-  'dev-tools': [/* 3 steps */],
-};
+  chat: [/* 3 steps */],
+  development: [/* 3 steps */],
+} satisfies Record<string, GuideStep[]>;
+
+export const GUIDE_PAGE_KEYS = Object.keys(guideStepsConfig);
 ```
 
 ### Dashboard 首页（5 步）
@@ -117,22 +118,21 @@ const guideStepsConfig: Record<string, GuideStep[]> = {
 | 3 | 创建项目入口 | 新建项目 | 创建项目时可选择关联 Git 仓库，配置智能体和 CICD 流水线 |
 | 4 | 分页/筛选 | 管理项目 | 项目较多时可使用搜索和筛选快速定位目标项目 |
 
-### AI 助手/知识库页（4 步）
+### 聊天室页（3 步）
 
 | 步骤 | 目标区域 | 标题 | 描述 |
 |------|----------|------|------|
-| 1 | Hermes 对话区 | AI 助手 | Hermes 是您的 AI 编程助手，可以进行代码分析、问题解答和知识问答 |
-| 2 | 聊天输入框 | 开始对话 | 在这里输入问题或指令，Hermes 会实时回复 |
-| 3 | 知识库入口 | 知识库 | 管理项目的知识文档，AI 助手会参考这些文档提供更精准的回答 |
-| 4 | 会话列表 | 历史会话 | 查看和管理之前的对话记录，可随时继续未完成的讨论 |
+| 1 | 聊天室列表 | 聊天室列表 | 查看和管理您参与的所有聊天室，支持创建新房间和邀请成员 |
+| 2 | 消息区域 | 消息区域 | 这里是实时消息流，您可以 @Hermes 调用 AI 助手进行代码分析和问答 |
+| 3 | 消息输入框 | 发送消息 | 在这里输入消息或 @Hermes 指令，按 Enter 发送 |
 
-### 开发工具页（3 步）
+### 研发页（3 步）
 
 | 步骤 | 目标区域 | 标题 | 描述 |
 |------|----------|------|------|
-| 1 | API Studio 入口 | API 调试 | API Studio 让您直接在浏览器中调试和测试项目 API |
-| 2 | 代码审查区 | 代码审查 | 查看和管理代码合并请求，AI 自动审查代码质量 |
-| 3 | CICD 流水线 | 持续集成 | 监控构建和部署流水线的运行状态 |
+| 1 | 研发工具标签 | 研发工具 | 这里集成了分支管理、合并请求、代码结构、扫描和自动合并等研发工具 |
+| 2 | 代码仓库列表 | 代码仓库 | 选择已绑定的代码仓库，查看和管理对应的分支、合并请求等信息 |
+| 3 | 功能标签 | 功能标签 | 切换分支、合并请求、代码结构、扫描、自动合并中心等功能 |
 
 ### 页面锚点标记
 
@@ -151,13 +151,13 @@ const guideStepsConfig: Record<string, GuideStep[]> = {
 
 ### 数据模型变更
 
-在现有 `users` 表新增字段（不需要新建表）：
+在现有 `user_info` 表新增字段（不需要新建表）：
 
 ```sql
 -- Flyway 迁移脚本
-ALTER TABLE users ADD COLUMN guide_completed VARCHAR(500) DEFAULT '';
--- 存储格式：逗号分隔的页面 key，如 "dashboard,projects,ai-assistant"
--- 合法 key 白名单：dashboard, projects, ai-assistant, dev-tools
+ALTER TABLE user_info ADD COLUMN guide_completed VARCHAR(500) NOT NULL DEFAULT '';
+-- 存储格式：逗号分隔的页面 key，如 "dashboard,projects,chat"
+-- 合法 key 白名单：dashboard, projects, chat, development
 ```
 
 ### API 接口
@@ -178,15 +178,15 @@ ALTER TABLE users ADD COLUMN guide_completed VARCHAR(500) DEFAULT '';
 **2. 更新引导状态**
 
 ```
-PUT /api/users/guide-status
+PUT /api/auth/guide-status
 Authorization: Bearer <token>
-Body: { "pageKeys": ["dashboard", "projects", "ai-assistant"] }
+Body: { "pageKeys": ["dashboard", "projects", "chat"] }
 Response: 200 OK
 ```
 
 - 接收完整的已完成页面 key 列表（全量覆盖，非增量）
 - 需要认证（携带 token）
-- 后端校验 pageKey 是否在白名单内（`dashboard`, `projects`, `ai-assistant`, `dev-tools`），防止注入非法值
+- 后端校验 pageKey 是否在白名单内（`dashboard`, `projects`, `chat`, `development`），防止注入非法值；旧版助手/研发工具页面 key 明确拒绝写入
 
 ### 后端代码变更点
 
@@ -195,9 +195,8 @@ Response: 200 OK
 | 数据库 | Flyway 迁移脚本 | 新增 `guide_completed` 字段 |
 | Entity | `UserEntity` | 新增 `guideCompleted` 字段 |
 | DTO | `CurrentUserInfo` | 新增 `guideCompleted: List<String>` |
-| Service | `UserService` | 新增 `updateGuideStatus(userId, pageKeys)` 方法 |
-| Controller | `UserController` | 新增 `PUT /api/users/guide-status` 端点 |
-| Mapper | `UserMapper` | 新增字段映射 |
+| Service | `AuthService` | 新增 `updateGuideStatus(pageKeys)` 方法，维护合法 key 白名单 |
+| Controller | `AuthController` | 新增 `PUT /api/auth/guide-status` 端点 |
 
 ## 前端集成
 
@@ -205,7 +204,7 @@ Response: 200 OK
 
 ```typescript
 // useGuide.ts
-function useGuide(pageKey: string) {
+function useGuide(pageKey: GuidePageKey) {
   const authStore = useAuthStore();
   const isCompleted = authStore.user?.guideCompleted?.includes(pageKey) ?? false;
 
@@ -238,7 +237,7 @@ function useGuide(pageKey: string) {
     }
   };
 
-  const resetGuide = async () => {
+  const resetAllGuides = async () => {
     try {
       await guideApi.updateGuideStatus([]);
       authStore.updateGuideCompleted([]);
@@ -247,7 +246,7 @@ function useGuide(pageKey: string) {
     }
   };
 
-  return { isCompleted, startGuide, resetGuide };
+  return { isCompleted, startGuide, resetAllGuides };
 }
 ```
 
@@ -268,7 +267,7 @@ useEffect(() => {
 
 ### 手动重新触发
 
-在用户菜单中增加"重新播放新手引导"选项：
+在用户菜单中增加"重播新手引导"选项：
 
 ```typescript
 async function handleResetGuide() {
@@ -283,7 +282,7 @@ async function handleResetGuide() {
 | 场景 | 处理方式 |
 |------|----------|
 | API 调用失败（更新引导状态） | 静默失败，下次进入页面重试引导，不阻断用户操作 |
-| 引导目标元素不存在（如页面数据为空） | 跳过该步骤，继续下一步；如果所有步骤都跳过则直接标记完成 |
+| 引导目标元素不存在（如页面数据为空） | 自动过滤不存在的步骤；如果当前页面无可用步骤则不标记完成，下次进入页面再尝试 |
 | 用户中途刷新页面 | 引导中断但状态未更新，下次进入同页面会重新触发 |
 | SSO 登录用户 | 与普通登录一致，`restoreSession` 获取用户信息后检查引导状态 |
 | 移动端/小屏幕 | 引导步骤配置 `side` 属性自动适配，Driver.js 内置响应式定位 |
@@ -313,6 +312,6 @@ async function handleResetGuide() {
 
 ## 影响范围
 
-- **前端**：新增 4 个文件（`components/guide/*`）、新增 1 个 API 文件、修改 4 个页面组件、修改 1 个 Store、修改 `package.json`
-- **后端**：新增 1 个 Flyway 迁移脚本、修改 Entity/DTO/Service/Controller/Mapper 各 1 个文件
+- **前端**：新增 `components/guide/*` 与 `api/guide.ts`，修改 Dashboard、项目、聊天室、研发页面和顶部用户菜单，补充 `frontend-public/tests/guideKeys.test.ts`
+- **后端**：新增 Flyway 迁移脚本，修改 `UserEntity`、`CurrentUserInfo`、`AuthService`、`AuthController`，补充 `AuthServiceTests`
 - **风险**：低风险。纯增量功能，不影响现有业务流程

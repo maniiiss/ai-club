@@ -8,11 +8,9 @@ import type { Driver } from 'driver.js'
 import 'driver.js/dist/driver.css'
 import './guide.css'
 import { getGuideSteps } from './guideSteps'
+import type { GuidePageKey } from './guideSteps'
 import { updateGuideStatus } from '@/src/api/guide'
 import { useAuthStore } from '@/src/stores/auth'
-
-/** 引导页面 key 类型。 */
-export type GuidePageKey = 'dashboard' | 'projects' | 'chat' | 'development'
 
 /** 自动关闭倒计时秒数。 */
 const COUNTDOWN_SECONDS = 10
@@ -73,8 +71,8 @@ export function useGuide(pageKey: GuidePageKey): UseGuideResult {
       doneBtnText: '完成 ✓',
       progressText: '{{current}} / {{total}}',
       steps,
-      onPopoverRender: (state) => {
-        const popover = state.popover as HTMLElement
+      onPopoverRender: (popoverDom) => {
+        const popover = popoverDom.wrapper
 
         // 移除上一步渲染时残留的自定义区域，避免重复追加
         popover.querySelector('.guide-custom-footer')?.remove()

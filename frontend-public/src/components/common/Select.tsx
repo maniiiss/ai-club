@@ -18,6 +18,8 @@ interface SelectOption {
 }
 
 interface SelectProps {
+  /** 布局方式：普通表单默认上下排列；筛选工具栏可使用 inline 横向展示标签与下拉框。 */
+  layout?: 'vertical' | 'inline'
   /** 字段标签。 */
   label?: string
   /** 当前选中值。 */
@@ -38,7 +40,17 @@ interface SelectProps {
   className?: string
 }
 
+export const buildSelectRootClassName = (
+  layout: SelectProps['layout'] = 'vertical',
+  className?: string,
+): string => cn(
+  'flex',
+  layout === 'inline' ? 'flex-row items-center gap-2' : 'flex-col gap-1.5',
+  className,
+)
+
 export const Select = ({
+  layout = 'vertical',
   label,
   value,
   onChange,
@@ -156,9 +168,12 @@ export const Select = ({
   ) : null
 
   return (
-    <div className={cn('flex flex-col gap-1.5', className)} ref={ref}>
+    <div className={buildSelectRootClassName(layout, className)} ref={ref}>
       {label && (
-        <label className="text-[13px] font-medium text-[var(--color-text-secondary)]">
+        <label className={cn(
+          'text-[13px] font-medium text-[var(--color-text-secondary)]',
+          layout === 'inline' && 'shrink-0 whitespace-nowrap',
+        )}>
           {label}
         </label>
       )}

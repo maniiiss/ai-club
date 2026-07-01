@@ -15,6 +15,13 @@ import type {
   GitlabBranchItem,
   GitlabCodeStructureSnapshotItem,
   GitlabMergeRequestItem,
+  GitlabProductBranchItem,
+  GitlabProductBranchPayload,
+  GitlabProductBranchSyncLogItem,
+  GitlabProductBranchSyncPayload,
+  GitlabProductBranchSyncRunResult,
+  GitlabTagCreateResultItem,
+  GitlabTagPayload,
   ProjectGitlabBindingItem,
   RepositoryScanRulesetItem,
 } from '@/src/types/development'
@@ -62,6 +69,87 @@ export const previewBindingMergeRequests = async (
   return unwrap(res)
 }
 
+/** 在指定 GitLab 绑定中创建 Tag。 */
+export const createGitlabTag = async (
+  bindingId: number,
+  payload: GitlabTagPayload,
+): Promise<GitlabTagCreateResultItem> => {
+  const res = await http.post<ApiResponse<GitlabTagCreateResultItem>>(
+    `/api/gitlab/bindings/${bindingId}/tags`,
+    payload,
+  )
+  return unwrap(res)
+}
+
+/* ── 产品分支管理 ── */
+
+/** 获取指定绑定的产品分支列表。 */
+export const listGitlabProductBranches = async (
+  bindingId: number,
+): Promise<GitlabProductBranchItem[]> => {
+  const res = await http.get<ApiResponse<GitlabProductBranchItem[]>>(
+    `/api/gitlab/bindings/${bindingId}/product-branches`,
+  )
+  return unwrap(res)
+}
+
+/** 创建产品分支。 */
+export const createGitlabProductBranch = async (
+  bindingId: number,
+  payload: GitlabProductBranchPayload,
+): Promise<GitlabProductBranchItem> => {
+  const res = await http.post<ApiResponse<GitlabProductBranchItem>>(
+    `/api/gitlab/bindings/${bindingId}/product-branches`,
+    payload,
+  )
+  return unwrap(res)
+}
+
+/** 更新产品分支。 */
+export const updateGitlabProductBranch = async (
+  bindingId: number,
+  productBranchId: number,
+  payload: GitlabProductBranchPayload,
+): Promise<GitlabProductBranchItem> => {
+  const res = await http.put<ApiResponse<GitlabProductBranchItem>>(
+    `/api/gitlab/bindings/${bindingId}/product-branches/${productBranchId}`,
+    payload,
+  )
+  return unwrap(res)
+}
+
+/** 删除产品分支。 */
+export const deleteGitlabProductBranch = async (
+  bindingId: number,
+  productBranchId: number,
+): Promise<void> => {
+  await http.delete<ApiResponse<null>>(
+    `/api/gitlab/bindings/${bindingId}/product-branches/${productBranchId}`,
+  )
+}
+
+/** 获取产品分支同步日志。 */
+export const listGitlabProductBranchSyncLogs = async (
+  bindingId: number,
+): Promise<GitlabProductBranchSyncLogItem[]> => {
+  const res = await http.get<ApiResponse<GitlabProductBranchSyncLogItem[]>>(
+    `/api/gitlab/bindings/${bindingId}/product-branches/sync-logs`,
+  )
+  return unwrap(res)
+}
+
+/** 为所选产品分支创建主线同步 MR。 */
+export const createGitlabProductBranchSyncMergeRequests = async (
+  bindingId: number,
+  payload: GitlabProductBranchSyncPayload,
+): Promise<GitlabProductBranchSyncRunResult> => {
+  const res = await http.post<ApiResponse<GitlabProductBranchSyncRunResult>>(
+    `/api/gitlab/bindings/${bindingId}/product-branches/sync-merge-requests`,
+    payload,
+  )
+  return unwrap(res)
+}
+
 /** 获取代码结构快照。 */
 export const getGitlabCodeStructure = async (
   bindingId: number,
@@ -88,7 +176,7 @@ export const createGitlabBindingScanTask = async (
   payload: { branch: string; rulesetCode: string; planAgentId?: number | null },
 ): Promise<{ id: number }> => {
   const res = await http.post<ApiResponse<{ id: number }>>(
-    `/api/gitlab/bindings/${bindingId}/scan`,
+    `/api/gitlab/bindings/${bindingId}/scan-tasks`,
     payload,
   )
   return unwrap(res)

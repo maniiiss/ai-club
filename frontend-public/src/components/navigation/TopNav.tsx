@@ -184,7 +184,7 @@ export const TopNav = () => {
                 className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
               >
                 <PlayCircle className="h-4 w-4" strokeWidth={1.75} />
-                重新播放新手引导
+                重播新手引导
               </button>
               <button
                 onClick={() => {
@@ -261,7 +261,7 @@ export const TopNav = () => {
               className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[14px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors"
             >
               <PlayCircle className="h-4 w-4" />
-              重新播放新手引导
+              重播新手引导
             </button>
             <button
               onClick={() => {
