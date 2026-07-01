@@ -18,13 +18,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -74,6 +75,9 @@ class WikiSpaceServiceMemoryTagTests {
     @Mock
     private WikiKnowledgeSearchService wikiKnowledgeSearchService;
 
+    @Mock
+    private WikiSyncQueuePublisher wikiSyncQueuePublisher;
+
     @Test
     void shouldIndexWikiSpacePageIntoKnowledgeStore() {
         WikiSpaceService wikiSpaceService = new WikiSpaceService(
@@ -119,17 +123,93 @@ class WikiSpaceServiceMemoryTagTests {
         task.setStatus("PENDING");
         task.setNextAttemptAt(LocalDateTime.now().minusMinutes(1));
 
-        when(wikiPageSyncTaskV2Repository.findAllByStatusAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
-                org.mockito.ArgumentMatchers.eq("PENDING"),
+        when(wikiPageSyncTaskV2Repository.claimQueuedTask(
+                eq(1L),
+                eq("PENDING"),
+                eq("RUNNING"),
                 any(LocalDateTime.class),
-                any(PageRequest.class)
-        )).thenReturn(List.of(task));
+                any(LocalDateTime.class)
+        )).thenReturn(1);
+        when(wikiPageSyncTaskV2Repository.findById(1L)).thenReturn(Optional.of(task));
         when(wikiPageSyncTaskV2Repository.save(any(WikiPageSyncTaskV2Entity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(wikiPageV2Repository.save(any(WikiPageV2Entity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        wikiSpaceService.processPendingSyncTasks();
+        wikiSpaceService.consumeQueuedSyncTask(1L, false);
 
         verify(wikiKnowledgeSearchService).indexSpacePage(page);
         verify(hindsightClientService, org.mockito.Mockito.never()).retainWikiSpaceDocument(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void shouldSkipSpaceWikiSyncWhenClaimFails() {
+        WikiSpaceService wikiSpaceService = new WikiSpaceService(
+                wikiSpaceRepository,
+                wikiSpaceMemberRepository,
+                wikiDirectoryRepository,
+                wikiPageV2Repository,
+                wikiPageVersionV2Repository,
+                wikiPageSyncTaskV2Repository,
+                userRepository,
+                projectRepository,
+                projectDataPermissionService,
+                hindsightClientService,
+                documentAssetService,
+                documentMarkdownService,
+                wikiKnowledgeSearchService,
+                null,
+                null,
+                null,
+                wikiSyncQueuePublisher
+        );
+        when(wikiPageSyncTaskV2Repository.claimQueuedTask(
+                eq(99L),
+                eq("PENDING"),
+                eq("RUNNING"),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class)
+        )).thenReturn(0);
+
+        boolean consumed = wikiSpaceService.consumeQueuedSyncTask(99L, false);
+
+        assertThat(consumed).isFalse();
+        verify(wikiPageSyncTaskV2Repository, never()).findById(99L);
+        verify(wikiKnowledgeSearchService, never()).indexSpacePage(any());
+    }
+
+    @Test
+    void shouldRepublishPendingSpaceWikiSyncTaskForRabbitCompensation() {
+        WikiSpaceService wikiSpaceService = new WikiSpaceService(
+                wikiSpaceRepository,
+                wikiSpaceMemberRepository,
+                wikiDirectoryRepository,
+                wikiPageV2Repository,
+                wikiPageVersionV2Repository,
+                wikiPageSyncTaskV2Repository,
+                userRepository,
+                projectRepository,
+                projectDataPermissionService,
+                hindsightClientService,
+                documentAssetService,
+                documentMarkdownService,
+                wikiKnowledgeSearchService,
+                null,
+                null,
+                null,
+                wikiSyncQueuePublisher
+        );
+        WikiPageSyncTaskV2Entity task = new WikiPageSyncTaskV2Entity();
+        task.setId(12L);
+        task.setStatus("PENDING");
+        task.setNextAttemptAt(LocalDateTime.now().minusMinutes(1));
+        when(wikiPageSyncTaskV2Repository.findAllByStatusAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
+                eq("PENDING"),
+                any(LocalDateTime.class),
+                any(org.springframework.data.domain.PageRequest.class)
+        )).thenReturn(java.util.List.of(task));
+
+        wikiSpaceService.processPendingSyncTasks();
+
+        verify(wikiSyncQueuePublisher).publishNow(WikiSyncQueuePublisher.TYPE_SPACE_WIKI, 12L);
+        verify(wikiKnowledgeSearchService, never()).indexSpacePage(any());
     }
 }

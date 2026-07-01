@@ -4,7 +4,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * Wiki Hindsight 同步调度器，周期性消费出站任务并做失败补偿。
+ * Wiki Hindsight 同步补偿调度器，周期性补发出站任务队列信号。
  */
 @Service
 public class WikiPageSyncScheduler {
@@ -16,7 +16,7 @@ public class WikiPageSyncScheduler {
     }
 
     /**
-     * 固定间隔扫描待同步任务，避免用户保存页面时等待外部 Hindsight 服务。
+     * 固定间隔扫描待同步任务，只补发 RabbitMQ 信号，实际同步由队列消费者领取执行。
      */
     @Scheduled(fixedDelay = 30000L)
     public void runPendingSyncTasks() {

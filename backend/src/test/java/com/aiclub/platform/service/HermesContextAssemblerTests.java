@@ -321,7 +321,8 @@ class HermesContextAssemblerTests {
                 user.isEnabled(),
                 user.getRoles().stream().map(RoleEntity::getCode).toList(),
                 user.getRoles().stream().map(RoleEntity::getName).toList(),
-                List.of("dashboard:view", "project:view", "task:view", "hermes:chat")
+                List.of("dashboard:view", "project:view", "task:view", "hermes:chat"),
+                List.of()
         );
     }
 }

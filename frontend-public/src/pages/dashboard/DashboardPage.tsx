@@ -18,11 +18,15 @@ import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
 import { cn, formatDate, getInitials } from '@/src/lib/utils'
+import { useGuide } from '@/src/components/guide'
+import { useAuthStore } from '@/src/stores/auth'
 
 export const DashboardPage = () => {
   const [overview, setOverview] = useState<DashboardOverview | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { isCompleted: guideCompleted, startGuide } = useGuide('dashboard')
+  const authUser = useAuthStore((s) => s.user)
 
   const fetchDashboard = async () => {
     setLoading(true)
@@ -41,6 +45,13 @@ export const DashboardPage = () => {
     fetchDashboard()
   }, [])
 
+  useEffect(() => {
+    if (!guideCompleted && authUser && !loading && !error) {
+      const timer = setTimeout(() => startGuide(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [guideCompleted, authUser, loading, error, startGuide])
+
   const stats = overview?.stats
   const activeProjects = overview?.activeProjects || []
   const recentTasks = overview?.recentTasks || []
@@ -57,7 +68,7 @@ export const DashboardPage = () => {
             查看项目动态、待办任务和研发数据
           </p>
         </div>
-        <Link to="/projects">
+        <Link to="/projects" data-guide-id="dashboard-create-project">
           <Button variant="primary" icon={<Plus className="h-4 w-4" />}>
             新建项目
           </Button>
@@ -72,7 +83,7 @@ export const DashboardPage = () => {
         <>
           {/* 统计卡片 */}
           {stats && (
-            <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-4" data-guide-id="dashboard-stats">
               <Card title="项目总数">
                 <p className="text-[28px] font-bold text-[var(--color-primary)]">{stats.projectCount}</p>
               </Card>
@@ -90,7 +101,7 @@ export const DashboardPage = () => {
 
           {/* 我的任务统计 */}
           {stats && (stats.myTaskCount || stats.myInProgressTaskCount || stats.myPendingTaskCount) && (
-            <div className="mb-8 rounded-xl border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary-light)] to-white p-6 shadow-[var(--shadow-card)]">
+            <div className="mb-8 rounded-xl border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary-light)] to-white p-6 shadow-[var(--shadow-card)]" data-guide-id="dashboard-my-tasks">
               <h2 className="mb-4 text-[16px] font-semibold text-[var(--color-text-primary)]">
                 我的任务
               </h2>
@@ -120,6 +131,7 @@ export const DashboardPage = () => {
           {/* 活跃项目 */}
           <Card
             title="活跃项目"
+            data-guide-id="dashboard-active-projects"
             action={
               <Link to="/projects">
                 <Button variant="ghost" size="sm">
@@ -151,7 +163,7 @@ export const DashboardPage = () => {
 
           {/* 最近任务 */}
           {recentTasks.length > 0 && (
-            <Card title="最近任务" className="mt-6">
+            <Card title="最近任务" className="mt-6" data-guide-id="dashboard-recent-tasks">
               <div className="space-y-2">
                 {recentTasks.slice(0, 5).map((task) => (
                   <div

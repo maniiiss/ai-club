@@ -65,7 +65,8 @@ class AuthServiceTests {
                 true,
                 List.of("PUBLIC_DEFAULT"),
                 List.of("公众用户"),
-                List.of("project:view", "project:manage")
+                List.of("project:view", "project:manage"),
+                List.of()
         )));
         when(userRepository.findWithDetailsById(5L)).thenReturn(Optional.of(userWithProjectViewOnly()));
 

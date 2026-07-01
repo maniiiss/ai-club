@@ -4,6 +4,11 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password:
+  rabbitmq:
+    listener:
+      simple:
+        # 单元/集成测试不依赖本机 RabbitMQ，队列消费者由专项测试直接调用。
+        auto-startup: false
   flyway:
     enabled: false
   jpa:

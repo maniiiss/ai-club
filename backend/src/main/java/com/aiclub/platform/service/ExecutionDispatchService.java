@@ -18,23 +18,24 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 
 /**
  * 执行调度服务。
- * 第一版使用数据库轮询方式驱动异步执行，不引入额外消息队列中间件。
+ * 以数据库任务表作为事实源，RabbitMQ 只承载轻量执行任务调度信号。
  */
 @Service
 public class ExecutionDispatchService {
 
     private static final Logger log = LoggerFactory.getLogger(ExecutionDispatchService.class);
+    private static final String STATUS_PENDING = "PENDING";
+    private static final String STATUS_RETRYING = "RETRYING";
+    private static final String STATUS_RUNNING = "RUNNING";
+    private static final String STATUS_FAILED = "FAILED";
     private static final String STATUS_WAITING_CONFIRMATION = "WAITING_CONFIRMATION";
     private static final String BIZ_TYPE_DEVELOPMENT_EXECUTION_COMPLETED = "DEVELOPMENT_EXECUTION_COMPLETED";
     private static final String BIZ_TYPE_DEVELOPMENT_EXECUTION_FAILED = "DEVELOPMENT_EXECUTION_FAILED";
@@ -71,8 +72,8 @@ public class ExecutionDispatchService {
     private final ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
     private final TestPlanAutomationPersistenceService testPlanAutomationPersistenceService;
     private final ChatRoomAgentService chatRoomAgentService;
+    private final ExecutionTaskQueuePublisher executionTaskQueuePublisher;
     private final Executor executionTaskExecutor;
-    private final Set<Long> dispatchingTaskIds = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     public ExecutionDispatchService(ExecutionTaskRepository executionTaskRepository,
                                     ExecutionRunRepository executionRunRepository,
@@ -91,6 +92,7 @@ public class ExecutionDispatchService {
                                     ExecutionWorkspaceCleanupService executionWorkspaceCleanupService,
                                     TestPlanAutomationPersistenceService testPlanAutomationPersistenceService,
                                     ChatRoomAgentService chatRoomAgentService,
+                                    ExecutionTaskQueuePublisher executionTaskQueuePublisher,
                                     @Qualifier("executionTaskExecutor") Executor executionTaskExecutor) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
@@ -109,35 +111,82 @@ public class ExecutionDispatchService {
         this.executionWorkspaceCleanupService = executionWorkspaceCleanupService;
         this.testPlanAutomationPersistenceService = testPlanAutomationPersistenceService;
         this.chatRoomAgentService = chatRoomAgentService;
+        this.executionTaskQueuePublisher = executionTaskQueuePublisher;
         this.executionTaskExecutor = executionTaskExecutor;
     }
 
     /**
-     * 周期性轮询待执行任务并依次处理。
+     * 周期性补偿发布待执行任务信号。
+     * 业务意图：覆盖事务提交后发布失败、服务重启、RabbitMQ 短暂不可用后的漏发场景。
      */
     @Scheduled(fixedDelay = 5000L)
     public void dispatchPendingTasks() {
-        List<Long> pendingTaskIds = executionTaskRepository.findTop10ByStatusOrderByCreatedAtAscIdAsc("PENDING").stream()
+        List<Long> pendingTaskIds = executionTaskRepository.findTop10ByStatusOrderByCreatedAtAscIdAsc(STATUS_PENDING).stream()
                 .map(ExecutionTaskEntity::getId)
                 .toList();
         for (Long pendingTaskId : pendingTaskIds) {
-            dispatchTaskAsync(pendingTaskId);
+            executionTaskQueuePublisher.publishNow(pendingTaskId);
         }
     }
 
     public void dispatchTaskAsync(Long executionTaskId) {
-        if (executionTaskId == null || !dispatchingTaskIds.add(executionTaskId)) {
+        if (executionTaskId == null) {
+            return;
+        }
+        executionTaskQueuePublisher.publishAfterCommit(executionTaskId);
+    }
+
+    /**
+     * MQ 消费入口。普通消息只领取 PENDING；retry queue 回投消息才允许领取 RETRYING。
+     */
+    public void consumeQueuedTask(Long executionTaskId, boolean allowRetrying) {
+        if (executionTaskId == null) {
+            return;
+        }
+        String retryingStatus = allowRetrying ? STATUS_RETRYING : STATUS_PENDING;
+        int claimed = executionTaskRepository.claimQueuedTask(
+                executionTaskId,
+                STATUS_PENDING,
+                retryingStatus,
+                STATUS_RUNNING,
+                "执行已入队，开始运行",
+                LocalDateTime.now()
+        );
+        if (claimed == 0) {
             return;
         }
         executionTaskExecutor.execute(() -> {
             try {
-                dispatchTaskNow(executionTaskId);
-            } catch (Exception exception) {
-                log.warn("执行任务调度失败: executionTaskId={}, message={}", executionTaskId, exception.getMessage(), exception);
-            } finally {
-                dispatchingTaskIds.remove(executionTaskId);
+                dispatchTaskInternal(executionTaskId, true);
+            } catch (RuntimeException exception) {
+                log.warn("执行中心队列任务已领取但执行入口异常: executionTaskId={}, message={}",
+                        executionTaskId, exception.getMessage(), exception);
+                markTaskQueueFailed(executionTaskId, exception.getMessage());
             }
         });
+    }
+
+    @Transactional
+    public void markTaskRetrying(Long executionTaskId, String errorMessage) {
+        ExecutionTaskEntity executionTask = requireExecutionTask(executionTaskId);
+        executionTask.setStatus(STATUS_RETRYING);
+        executionTask.setLatestSummary("执行调度失败，已进入延迟重试：" + abbreviate(resolveMessage(
+                new IllegalStateException(errorMessage),
+                "执行调度失败"
+        ), 400));
+        executionTaskRepository.save(executionTask);
+    }
+
+    @Transactional
+    public void markTaskQueueFailed(Long executionTaskId, String errorMessage) {
+        ExecutionTaskEntity executionTask = requireExecutionTask(executionTaskId);
+        executionTask.setStatus(STATUS_FAILED);
+        executionTask.setCancelRequested(false);
+        executionTask.setLatestSummary("执行调度失败，已进入死信队列：" + abbreviate(resolveMessage(
+                new IllegalStateException(errorMessage),
+                "执行调度失败"
+        ), 400));
+        executionTaskRepository.save(executionTask);
     }
 
     /**
@@ -172,8 +221,15 @@ public class ExecutionDispatchService {
      * 该能力供旧兼容接口和测试场景复用。
      */
     public ExecutionRunEntity dispatchTaskNow(Long executionTaskId) {
+        return dispatchTaskInternal(executionTaskId, false);
+    }
+
+    private ExecutionRunEntity dispatchTaskInternal(Long executionTaskId, boolean alreadyClaimed) {
         ExecutionTaskEntity executionTask = requireExecutionTask(executionTaskId);
-        if (!"PENDING".equals(executionTask.getStatus())) {
+        if (!alreadyClaimed && !STATUS_PENDING.equals(executionTask.getStatus())) {
+            return executionTask.getCurrentRun();
+        }
+        if (alreadyClaimed && !STATUS_RUNNING.equals(executionTask.getStatus())) {
             return executionTask.getCurrentRun();
         }
         if (executionTask.isCancelRequested()) {
@@ -189,7 +245,7 @@ public class ExecutionDispatchService {
         boolean resumeWaitingRun = shouldResumeWaitingDevelopmentRun(executionTask);
         ExecutionRunEntity executionRun = resumeWaitingRun ? executionTask.getCurrentRun() : createRun(executionTask);
         ExecutionTaskEntity runningTask = requireExecutionTask(executionTaskId);
-        runningTask.setStatus("RUNNING");
+        runningTask.setStatus(STATUS_RUNNING);
         runningTask.setCurrentRun(executionRun);
         runningTask.setLatestSummary(resumeWaitingRun ? "执行规划已确认，继续执行" : "执行已入队，开始运行");
         executionTaskRepository.save(runningTask);

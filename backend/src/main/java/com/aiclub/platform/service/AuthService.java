@@ -179,6 +179,31 @@ public class AuthService {
         return currentUserInfo;
     }
 
+    /** 合法引导页面 key 白名单。 */
+    private static final java.util.Set<String> VALID_GUIDE_KEYS = java.util.Set.of(
+            "dashboard", "projects", "chat", "development"
+    );
+
+    /** 更新当前用户的新手引导完成状态。 */
+    @Transactional
+    public CurrentUserInfo updateGuideStatus(java.util.List<String> pageKeys) {
+        // 校验所有 key 是否在白名单内
+        for (String key : pageKeys) {
+            if (!VALID_GUIDE_KEYS.contains(key)) {
+                throw new IllegalArgumentException("非法的引导页面 key: " + key);
+            }
+        }
+        AuthContext authContext = AuthContextHolder.get()
+                .orElseThrow(() -> new UnauthorizedException("Not logged in"));
+        UserEntity user = userRepository.findWithDetailsById(authContext.userId())
+                .orElseThrow(() -> new UnauthorizedException("User not found"));
+        user.setGuideCompleted(String.join(",", pageKeys));
+        userRepository.save(user);
+        CurrentUserInfo currentUserInfo = toCurrentUserInfo(user);
+        refreshCurrentSession(authContext, currentUserInfo);
+        return currentUserInfo;
+    }
+
     @Transactional
     public void changePassword(ChangePasswordRequest request) {
         AuthContext authContext = AuthContextHolder.get()
@@ -242,6 +267,7 @@ public class AuthService {
                 .sorted(Comparator.comparing(RoleEntity::getId))
                 .toList();
         List<String> permissionCodes = collectPermissionCodes(user).stream().toList();
+        List<String> guideCompleted = parseGuideCompleted(user.getGuideCompleted());
         return new CurrentUserInfo(
                 user.getId(),
                 user.getUsername(),
@@ -253,12 +279,24 @@ public class AuthService {
                 user.isEnabled(),
                 roles.stream().map(RoleEntity::getCode).toList(),
                 roles.stream().map(RoleEntity::getName).toList(),
-                permissionCodes
+                permissionCodes,
+                guideCompleted
         );
     }
 
     private String defaultString(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    /** 将逗号分隔的引导完成状态字符串解析为列表。 */
+    private List<String> parseGuideCompleted(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return java.util.List.of();
+        }
+        return java.util.Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
     }
 
     private Set<String> collectRoleCodes(UserEntity user) {

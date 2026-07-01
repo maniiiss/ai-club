@@ -8,6 +8,7 @@ import {
   parseChatSocketEvent,
   replaceMentionAtCaret,
   resolveMentionQuery,
+  insertTextAtCaret,
   shouldCollapseChatSummary,
 } from '../src/lib/chatUtils'
 import type { ChatMessageItem } from '../src/types/chat'
@@ -57,6 +58,20 @@ describe('chat utilities', () => {
     assert.deepEqual(replaceMentionAtCaret('没有 mention', 3, '@hermes '), {
       text: '没有 mention',
       caret: 3,
+    })
+  })
+
+  it('inserts emoji text at the current caret position', () => {
+    assert.deepEqual(insertTextAtCaret('今天状态很好', 2, ' 😊'), {
+      text: '今天 😊状态很好',
+      caret: 5,
+    })
+  })
+
+  it('can replace member mentions with nickname display tokens', () => {
+    assert.deepEqual(replaceMentionAtCaret('请 @zhang 看看', 8, '@张三 '), {
+      text: '请 @张三 看看',
+      caret: 6,
     })
   })
 

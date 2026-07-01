@@ -43,6 +43,8 @@ import { EmptyState } from '@/src/components/common/EmptyState'
 import { Select } from '@/src/components/common/Select'
 import { cn, formatDate } from '@/src/lib/utils'
 import { AutoMergeCenterPanel } from './AutoMergeCenterPanel'
+import { useGuide } from '@/src/components/guide'
+import { useAuthStore } from '@/src/stores/auth'
 
 type DetailTab = 'branches' | 'merge-requests' | 'code-structure' | 'scan' | 'auto-merge-center' | 'auto-merge-logs'
 
@@ -70,6 +72,8 @@ export const DevelopmentPage = () => {
   const [bindingsError, setBindingsError] = useState<string | null>(null)
   const [selectedBinding, setSelectedBinding] = useState<ProjectGitlabBindingItem | null>(null)
   const [activeTab, setActiveTab] = useState<DetailTab>('branches')
+  const { isCompleted: guideCompleted, startGuide } = useGuide('development')
+  const authUser = useAuthStore((s) => s.user)
 
   const fetchBindings = useCallback(async () => {
     setBindingsLoading(true)
@@ -91,6 +95,13 @@ export const DevelopmentPage = () => {
     fetchBindings()
   }, [fetchBindings])
 
+  useEffect(() => {
+    if (!guideCompleted && authUser && !bindingsLoading && !bindingsError && selectedBinding) {
+      const timer = setTimeout(() => startGuide(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [guideCompleted, authUser, bindingsLoading, bindingsError, selectedBinding, startGuide])
+
   return (
     <div className="h-full flex flex-col overflow-hidden animate-fadeIn">
       <div className="flex-shrink-0">
@@ -104,7 +115,7 @@ export const DevelopmentPage = () => {
 
       <div className="flex-1 flex gap-5 overflow-hidden">
         {/* 左侧：仓库绑定列表 */}
-        <div className="hidden lg:flex lg:flex-col w-[280px] shrink-0 overflow-y-auto">
+        <div className="hidden lg:flex lg:flex-col w-[280px] shrink-0 overflow-y-auto" data-guide-id="dev-binding-list">
           <div>
             <h3 className="mb-3 text-[13px] font-semibold text-[var(--color-text-primary)]">
               仓库绑定
@@ -199,7 +210,7 @@ export const DevelopmentPage = () => {
           ) : (
             <div className="flex flex-col h-full">
               {/* 仓库信息 */}
-              <div className="flex-shrink-0">
+              <div className="flex-shrink-0" data-guide-id="dev-tab-nav">
                 <Card>
                   <div className="flex items-start justify-between">
                     <div>
@@ -224,7 +235,7 @@ export const DevelopmentPage = () => {
                 </Card>
 
                 {/* Tab 切换 */}
-                <div className="mt-4 flex gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)] w-fit">
+                <div className="mt-4 flex gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)] w-fit" data-guide-id="dev-detail-tabs">
                   {detailTabs.map((tab) => (
                     <button
                       key={tab.key}

@@ -84,7 +84,8 @@ public class HermesInternalToolExecutionService {
                     state.scopeKey(),
                     state.context().toContext(),
                     restoreCurrentRequest(state),
-                    state.groundingState() == null ? HermesGroundingState.empty() : state.groundingState()
+                    state.groundingState() == null ? HermesGroundingState.empty() : state.groundingState(),
+                    state.toolExecutionPolicy()
             );
         } finally {
             AuthContextHolder.clear();
@@ -106,7 +107,8 @@ public class HermesInternalToolExecutionService {
                 mergeToolExecutions(state.toolExecutions(), outcome.debugExecution(), toolCode),
                 "failed".equalsIgnoreCase(defaultString(outcome.stopReason()))
                         ? resolveToolMessage(outcome)
-                        : ""
+                        : "",
+                state.toolExecutionPolicy()
         );
         hermesConversationStateStore.save(nextState);
         return new HermesInternalToolExecuteResponse(resolveToolMessage(outcome));

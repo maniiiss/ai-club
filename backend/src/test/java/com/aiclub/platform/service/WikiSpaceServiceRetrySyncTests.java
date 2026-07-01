@@ -73,6 +73,12 @@ class WikiSpaceServiceRetrySyncTests {
     @Mock
     private DocumentMarkdownService documentMarkdownService;
 
+    @Mock
+    private WikiKnowledgeSearchService wikiKnowledgeSearchService;
+
+    @Mock
+    private WikiSyncQueuePublisher wikiSyncQueuePublisher;
+
     @Test
     void shouldResetLatestRetainTaskAndPageStatusWhenRetryingFailedSync() {
         WikiSpaceService wikiSpaceService = new WikiSpaceService(
@@ -87,7 +93,12 @@ class WikiSpaceServiceRetrySyncTests {
                 projectDataPermissionService,
                 hindsightClientService,
                 documentAssetService,
-                documentMarkdownService
+                documentMarkdownService,
+                wikiKnowledgeSearchService,
+                null,
+                null,
+                null,
+                wikiSyncQueuePublisher
         );
 
         UserEntity user = new UserEntity();
@@ -153,6 +164,7 @@ class WikiSpaceServiceRetrySyncTests {
 
             assertThat(detail.syncStatus()).isEqualTo("PENDING");
             assertThat(detail.lastSyncError()).isEmpty();
+            verify(wikiSyncQueuePublisher).publishAfterCommit(WikiSyncQueuePublisher.TYPE_SPACE_WIKI, 7L);
         } finally {
             AuthContextHolder.clear();
         }

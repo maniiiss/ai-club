@@ -96,6 +96,9 @@ class ExecutionTaskServiceTests {
     @Mock
     private ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
 
+    @Mock
+    private ExecutionTaskQueuePublisher executionTaskQueuePublisher;
+
     private ExecutionTaskService executionTaskService;
 
     @BeforeEach
@@ -115,6 +118,7 @@ class ExecutionTaskServiceTests {
                 executionEventService,
                 selfUpgradeExecutionWritebackService,
                 executionWorkspaceCleanupService,
+                executionTaskQueuePublisher,
                 new ObjectMapper()
         );
         AuthContextHolder.set(new AuthContext(1001L, "alice", "Alice", Set.of(), Set.of()));
@@ -320,6 +324,7 @@ class ExecutionTaskServiceTests {
         verify(executionTaskRepository).save(argThat(task ->
                 String.valueOf(task.getInputPayload()).contains("\"planConfirmationRequired\":true")
         ));
+        verify(executionTaskQueuePublisher).publishAfterCommit(501L);
     }
 
     /**
@@ -400,7 +405,8 @@ class ExecutionTaskServiceTests {
         assertThat(planArtifact.getContentText()).isEqualTo("# 新规划\n\n- 先改前端\n- 再改后端");
         assertThat(executionTask.getStatus()).isEqualTo("PENDING");
         assertThat(detail.planConfirmationPending()).isFalse();
-        verify(executionDispatchService).dispatchTaskAsync(99L);
+        verify(executionTaskQueuePublisher).publishAfterCommit(99L);
+        verify(executionDispatchService, never()).dispatchTaskAsync(99L);
     }
 
     /**
@@ -467,6 +473,115 @@ class ExecutionTaskServiceTests {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("重试“需求拆解”执行任务已下线，请改用需求 AI 助手中的“拆解子任务”能力");
         verify(executionTaskRepository, never()).save(any(ExecutionTaskEntity.class));
+    }
+
+    /**
+     * 重试执行任务只负责重新排队并发布 MQ 信号，不再直接提交到本机线程池。
+     */
+    @Test
+    void shouldPublishQueueSignalWhenRetryingExecutionTask() {
+        ExecutionTaskEntity executionTask = buildWaitingConfirmationTask(1001L);
+        executionTask.setStatus("FAILED");
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ExecutionTaskSummary summary = executionTaskService.retryExecutionTask(99L);
+
+        assertThat(summary.status()).isEqualTo("PENDING");
+        verify(executionTaskQueuePublisher).publishAfterCommit(99L);
+    }
+
+    /**
+     * 平台内部入口创建执行任务后也要发布 MQ 信号，避免内部任务继续依赖补偿扫描兜底。
+     */
+    @Test
+    void shouldPublishQueueSignalWhenCreatingInternalExecutionTask() {
+        when(executionWorkflowService.buildWorkflow(
+                eq(ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL),
+                eq(11L),
+                anyList(),
+                anyList()
+        )).thenReturn(new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL,
+                "自升级巡检",
+                List.of(new ExecutionWorkflowService.ExecutionStepPlan(
+                        1,
+                        ExecutionWorkflowService.STEP_PATROL,
+                        "平台巡检",
+                        buildAgent(91L, AgentExecutionService.ACCESS_AGENT_RUNTIME),
+                        null,
+                        null,
+                        null
+                ))
+        ));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> {
+            ExecutionTaskEntity entity = invocation.getArgument(0);
+            entity.setId(910L);
+            return entity;
+        });
+
+        ExecutionTaskEntity created = executionTaskService.createInternalExecutionTask(
+                new ExecutionTaskService.InternalCreateExecutionTaskCommand(
+                        ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL,
+                        11L,
+                        null,
+                        "夜间巡检",
+                        "SELF_UPGRADE_CENTER",
+                        "SELF_UPGRADE_PATROL",
+                        501L,
+                        1001L,
+                        false,
+                        List.of(),
+                        Map.of("runTimeoutSeconds", 1200)
+                )
+        );
+
+        assertThat(created.getId()).isEqualTo(910L);
+        verify(executionTaskQueuePublisher).publishAfterCommit(910L);
+    }
+
+    /**
+     * 兼容旧任务 Agent 运行入口改为异步创建执行任务，返回 PENDING 的执行任务摘要。
+     */
+    @Test
+    void shouldCreateLegacyExecutionTaskAsQueuedExecutionTask() {
+        com.aiclub.platform.domain.model.TaskEntity workItem = new com.aiclub.platform.domain.model.TaskEntity();
+        workItem.setId(77L);
+        workItem.setName("兼容运行工作项");
+        workItem.setWorkItemType("任务");
+        workItem.setProject(buildProject());
+        workItem.setAgent(buildAgent(88L, AgentExecutionService.ACCESS_HTTP_API));
+        when(taskRepository.findById(77L)).thenReturn(Optional.of(workItem));
+        when(executionWorkflowService.buildWorkflow(
+                eq(ExecutionWorkflowService.SCENARIO_AD_HOC_AGENT_RUN),
+                eq(11L),
+                anyList(),
+                anyList()
+        )).thenReturn(new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_AD_HOC_AGENT_RUN,
+                "兼容单次执行",
+                List.of(new ExecutionWorkflowService.ExecutionStepPlan(
+                        1,
+                        ExecutionWorkflowService.STEP_AD_HOC_RUN,
+                        "单次执行",
+                        buildAgent(88L, AgentExecutionService.ACCESS_HTTP_API),
+                        null,
+                        null,
+                        null
+                ))
+        ));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> {
+            ExecutionTaskEntity entity = invocation.getArgument(0);
+            entity.setId(909L);
+            return entity;
+        });
+
+        ExecutionTaskSummary summary = executionTaskService.createLegacyExecutionTask(77L, "请异步运行");
+
+        assertThat(summary.id()).isEqualTo(909L);
+        assertThat(summary.status()).isEqualTo("PENDING");
+        verify(executionTaskQueuePublisher).publishAfterCommit(909L);
+        verify(executionDispatchService, never()).dispatchTaskNow(909L);
     }
 
     private ProjectEntity buildProject() {

@@ -474,3 +474,82 @@ a:hover {
 .prose-markdown del {
   color: var(--color-text-tertiary);
 }
+
+/* ── react-day-picker 主题覆盖 ── */
+.date-range-picker .rdp-root {
+  --rdp-accent-color: var(--color-primary);
+  --rdp-accent-background-color: var(--color-primary-light);
+  --rdp-day-height: 36px;
+  --rdp-day-width: 36px;
+  --rdp-day_button-height: 34px;
+  --rdp-day_button-width: 34px;
+  --rdp-day_button-border-radius: 8px;
+  --rdp-range_start-date-background-color: var(--color-primary);
+  --rdp-range_end-date-background-color: var(--color-primary);
+  --rdp-range_middle-background-color: var(--color-primary-light);
+  --rdp-nav_button-height: 2rem;
+  --rdp-nav_button-width: 2rem;
+  --rdp-nav-height: 2.25rem;
+  --rdp-months_gap: 1.5rem;
+
+  font-size: 13px;
+}
+
+/* 双月左右并排，不换行 */
+.date-range-picker .rdp-months {
+  flex-wrap: nowrap;
+}
+
+.date-range-picker .rdp-month {
+  min-width: 0;
+}
+
+.date-range-picker .rdp-month_caption {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  justify-content: center;
+}
+
+.date-range-picker .rdp-button_next,
+.date-range-picker .rdp-button_previous {
+  border-radius: 6px;
+  color: var(--color-text-secondary);
+}
+
+.date-range-picker .rdp-button_next:hover,
+.date-range-picker .rdp-button_previous:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.date-range-picker .rdp-weekday {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+}
+
+.date-range-picker .rdp-day_button {
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.date-range-picker .rdp-day_button:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.date-range-picker .rdp-day_today .rdp-day_button {
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.date-range-picker .rdp-day_outside .rdp-day_button {
+  color: var(--color-text-placeholder);
+}
+
+.date-range-picker .rdp-day_selected .rdp-day_button {
+  background-color: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+

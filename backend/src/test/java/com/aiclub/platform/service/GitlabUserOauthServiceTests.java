@@ -122,6 +122,7 @@ class GitlabUserOauthServiceTests {
                 true,
                 java.util.List.of(),
                 java.util.List.of(),
+                java.util.List.of(),
                 java.util.List.of()
         ));
 

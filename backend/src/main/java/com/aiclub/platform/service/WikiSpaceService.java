@@ -141,6 +141,7 @@ public class WikiSpaceService {
     private final LightRagIngestQueueService lightRagIngestQueueService;
     private final LightRagProperties lightRagProperties;
     private final LightRagClientService lightRagClientService;
+    private final WikiSyncQueuePublisher wikiSyncQueuePublisher;
 
     @Autowired
     public WikiSpaceService(WikiSpaceRepository wikiSpaceRepository,
@@ -158,7 +159,8 @@ public class WikiSpaceService {
                             WikiKnowledgeSearchService wikiKnowledgeSearchService,
                             LightRagIngestQueueService lightRagIngestQueueService,
                             LightRagProperties lightRagProperties,
-                            LightRagClientService lightRagClientService) {
+                            LightRagClientService lightRagClientService,
+                            WikiSyncQueuePublisher wikiSyncQueuePublisher) {
         this.wikiSpaceRepository = wikiSpaceRepository;
         this.wikiSpaceMemberRepository = wikiSpaceMemberRepository;
         this.wikiDirectoryRepository = wikiDirectoryRepository;
@@ -175,6 +177,7 @@ public class WikiSpaceService {
         this.lightRagIngestQueueService = lightRagIngestQueueService;
         this.lightRagProperties = lightRagProperties;
         this.lightRagClientService = lightRagClientService;
+        this.wikiSyncQueuePublisher = wikiSyncQueuePublisher;
     }
 
     /**
@@ -205,6 +208,7 @@ public class WikiSpaceService {
                 hindsightClientService,
                 documentAssetService,
                 documentMarkdownService,
+                null,
                 null,
                 null,
                 null,
@@ -244,6 +248,47 @@ public class WikiSpaceService {
                 wikiKnowledgeSearchService,
                 null,
                 null,
+                null,
+                null
+        );
+    }
+
+    /**
+     * 兼容旧测试构造方式（16 参数，含 LightRAG 能力，不含 Wiki 同步队列发布器）。
+     */
+    public WikiSpaceService(WikiSpaceRepository wikiSpaceRepository,
+                            WikiSpaceMemberRepository wikiSpaceMemberRepository,
+                            WikiDirectoryRepository wikiDirectoryRepository,
+                            WikiPageV2Repository wikiPageV2Repository,
+                            WikiPageVersionV2Repository wikiPageVersionV2Repository,
+                            WikiPageSyncTaskV2Repository wikiPageSyncTaskV2Repository,
+                            UserRepository userRepository,
+                            ProjectRepository projectRepository,
+                            ProjectDataPermissionService projectDataPermissionService,
+                            HindsightClientService hindsightClientService,
+                            DocumentAssetService documentAssetService,
+                            DocumentMarkdownService documentMarkdownService,
+                            WikiKnowledgeSearchService wikiKnowledgeSearchService,
+                            LightRagIngestQueueService lightRagIngestQueueService,
+                            LightRagProperties lightRagProperties,
+                            LightRagClientService lightRagClientService) {
+        this(
+                wikiSpaceRepository,
+                wikiSpaceMemberRepository,
+                wikiDirectoryRepository,
+                wikiPageV2Repository,
+                wikiPageVersionV2Repository,
+                wikiPageSyncTaskV2Repository,
+                userRepository,
+                projectRepository,
+                projectDataPermissionService,
+                hindsightClientService,
+                documentAssetService,
+                documentMarkdownService,
+                wikiKnowledgeSearchService,
+                lightRagIngestQueueService,
+                lightRagProperties,
+                lightRagClientService,
                 null
         );
     }
@@ -887,7 +932,8 @@ public class WikiSpaceService {
     }
 
     /**
-     * 轮询并处理空间化 Wiki 的知识索引同步任务。
+     * 补偿发布空间化 Wiki 的知识索引同步任务。
+     * 业务意图：页面保存后 MQ 发布失败或服务重启时，仍可通过数据库任务表补发同步信号。
      */
     @Transactional
     public void processPendingSyncTasks() {
@@ -898,7 +944,7 @@ public class WikiSpaceService {
                         PageRequest.of(0, 5, Sort.by(Sort.Direction.ASC, "nextAttemptAt", "id"))
                 );
         for (WikiPageSyncTaskV2Entity task : tasks) {
-            processSyncTask(task);
+            publishSyncTaskNow(task.getId());
         }
     }
 
@@ -1033,10 +1079,51 @@ public class WikiSpaceService {
         requireSpaceEditable(space, userContext);
     }
 
+    /**
+     * 空间化 Wiki 同步 MQ 消费入口。
+     * 业务意图：先原子领取数据库任务，再执行外部知识索引同步，重复消息领取失败直接跳过。
+     */
+    @Transactional
+    public boolean consumeQueuedSyncTask(Long syncTaskId, boolean retryMessage) {
+        if (syncTaskId == null) {
+            return false;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        int claimed = wikiPageSyncTaskV2Repository.claimQueuedTask(
+                syncTaskId,
+                SYNC_STATUS_PENDING,
+                SYNC_STATUS_RUNNING,
+                now,
+                now
+        );
+        if (claimed == 0) {
+            return false;
+        }
+        WikiPageSyncTaskV2Entity task = wikiPageSyncTaskV2Repository.findById(syncTaskId)
+                .orElseThrow(() -> new NoSuchElementException("空间化 Wiki 同步任务不存在: " + syncTaskId));
+        processSyncTask(task);
+        return true;
+    }
+
+    @Transactional
+    public void markQueuedSyncTaskFailed(Long syncTaskId, String errorMessage) {
+        if (syncTaskId == null) {
+            return;
+        }
+        wikiPageSyncTaskV2Repository.findById(syncTaskId).ifPresent(task -> {
+            String message = abbreviate(errorMessage, 1000);
+            task.setStatus(SYNC_STATUS_FAILED);
+            task.setLastError(message);
+            if (task.getPage() != null) {
+                task.getPage().setSyncStatus(SYNC_STATUS_FAILED);
+                task.getPage().setLastSyncError(message);
+                wikiPageV2Repository.save(task.getPage());
+            }
+            wikiPageSyncTaskV2Repository.save(task);
+        });
+    }
+
     private void processSyncTask(WikiPageSyncTaskV2Entity task) {
-        task.setStatus(SYNC_STATUS_RUNNING);
-        task.setAttemptCount(task.getAttemptCount() + 1);
-        wikiPageSyncTaskV2Repository.save(task);
         try {
             if (SYNC_OPERATION_DELETE.equalsIgnoreCase(task.getOperation())) {
                 if (wikiKnowledgeSearchService != null) {
@@ -1520,7 +1607,8 @@ public class WikiSpaceService {
         task.setOperation(SYNC_OPERATION_RETAIN);
         task.setDocumentId(documentId(page.getId()));
         task.setStatus(SYNC_STATUS_PENDING);
-        wikiPageSyncTaskV2Repository.save(task);
+        WikiPageSyncTaskV2Entity saved = wikiPageSyncTaskV2Repository.save(task);
+        publishSyncTaskAfterCommit(saved.getId());
         // 同事务入 LightRAG 队列，enabled 关闭时不入队，保证灰度可回滚。
         if (lightRagProperties != null && lightRagProperties.isEnabled() && lightRagIngestQueueService != null) {
             lightRagIngestQueueService.enqueueUpsert(page);
@@ -1543,7 +1631,8 @@ public class WikiSpaceService {
         task.setAttemptCount(0);
         task.setNextAttemptAt(LocalDateTime.now());
         task.setLastError("");
-        wikiPageSyncTaskV2Repository.save(task);
+        WikiPageSyncTaskV2Entity saved = wikiPageSyncTaskV2Repository.save(task);
+        publishSyncTaskAfterCommit(saved.getId());
     }
 
     private void enqueueDeleteTask(WikiPageV2Entity page) {
@@ -1552,10 +1641,23 @@ public class WikiSpaceService {
         task.setOperation(SYNC_OPERATION_DELETE);
         task.setDocumentId(documentId(page.getId()));
         task.setStatus(SYNC_STATUS_PENDING);
-        wikiPageSyncTaskV2Repository.save(task);
+        WikiPageSyncTaskV2Entity saved = wikiPageSyncTaskV2Repository.save(task);
+        publishSyncTaskAfterCommit(saved.getId());
         // 同事务入 LightRAG 删除队列，enabled 关闭时不入队。
         if (lightRagProperties != null && lightRagProperties.isEnabled() && lightRagIngestQueueService != null) {
             lightRagIngestQueueService.enqueueDelete(page.getSpace().getId(), page.getId());
+        }
+    }
+
+    private void publishSyncTaskAfterCommit(Long syncTaskId) {
+        if (wikiSyncQueuePublisher != null) {
+            wikiSyncQueuePublisher.publishAfterCommit(WikiSyncQueuePublisher.TYPE_SPACE_WIKI, syncTaskId);
+        }
+    }
+
+    private void publishSyncTaskNow(Long syncTaskId) {
+        if (wikiSyncQueuePublisher != null) {
+            wikiSyncQueuePublisher.publishNow(WikiSyncQueuePublisher.TYPE_SPACE_WIKI, syncTaskId);
         }
     }
 

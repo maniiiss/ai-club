@@ -5,6 +5,7 @@ import com.aiclub.platform.dto.HermesGroundingState;
 import com.aiclub.platform.dto.HermesReferenceSummary;
 import com.aiclub.platform.dto.HermesToolCallRequest;
 import com.aiclub.platform.dto.HermesToolExecutionOutcome;
+import com.aiclub.platform.dto.HermesToolExecutionPolicy;
 import com.aiclub.platform.dto.PlatformToolCandidate;
 import com.aiclub.platform.dto.PlatformToolDefinition;
 import com.aiclub.platform.dto.PlatformToolRequest;
@@ -798,6 +799,108 @@ class HermesToolOrchestratorTests {
         assertThat(outcome.stopReason()).isEqualTo("awaiting_confirmation");
         assertThat(outcome.actions()).hasSize(1);
         assertThat(outcome.actions().get(0).type()).isEqualTo("CREATE_WORK_ITEM_DRAFT");
+    }
+
+    /**
+     * 聊天室 Agent 授权自动执行的写工具应复用 Hermes 原生工具执行入口，而不是退回确认卡片。
+     */
+    @Test
+    void shouldAutoExecuteWriteToolWhenChatRoomAgentPolicyAllowsIt() {
+        HermesToolOrchestrator orchestrator = new HermesToolOrchestrator(
+                platformToolExecutor,
+                platformToolRegistry,
+                hermesActionPlannerService,
+                new ObjectMapper()
+        );
+
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "chat-room",
+                12L,
+                null,
+                "聊天室成员",
+                List.of(new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations")),
+                List.of(),
+                "聊天室上下文"
+        );
+        HermesChatRequest request = new HermesChatRequest(
+                "帮我创建一个需求草稿",
+                "chat-room",
+                12L,
+                null,
+                null,
+                null,
+                "chat-room-41-agent-task-601",
+                null,
+                null
+        );
+        PlatformToolDefinition repoScanStart = new PlatformToolDefinition(
+                PlatformToolRegistry.TOOL_REPO_SCAN_START,
+                "发起仓库扫描",
+                "GITLAB",
+                "基于指定绑定仓库创建仓库规范扫描任务",
+                false,
+                "MEDIUM",
+                "gitlab:manage",
+                true,
+                Map.of("bindingId", "绑定ID", "branch", "分支", "rulesetCode", "规则集")
+        );
+        PlatformToolResult createdResult = new PlatformToolResult(
+                PlatformToolRegistry.TOOL_REPO_SCAN_START,
+                "发起仓库扫描",
+                "已创建仓库规范扫描任务",
+                List.of(),
+                List.of(),
+                Map.of("executionTaskId", 901L)
+        );
+
+        when(platformToolRegistry.isEnabled(PlatformToolRegistry.TOOL_REPO_SCAN_START)).thenReturn(true);
+        when(platformToolRegistry.requireDefinition(PlatformToolRegistry.TOOL_REPO_SCAN_START)).thenReturn(repoScanStart);
+        when(platformToolExecutor.execute(argThat((PlatformToolRequest toolRequest) ->
+                Objects.equals(toolRequest.toolCode(), PlatformToolRegistry.TOOL_REPO_SCAN_START)
+                        && Objects.equals(toolRequest.projectId(), 12L)
+                        && Objects.equals(toolRequest.payload().get("bindingId"), 31L)
+                        && Objects.equals(toolRequest.payload().get("rulesetCode"), "team-default")
+        ))).thenReturn(createdResult);
+
+        HermesGroundingState groundingState = HermesGroundingState.empty().withBoundSlot(
+                "gitlabBinding",
+                new com.aiclub.platform.dto.HermesGroundingTarget(
+                        "gitlabBinding",
+                        "GITLAB_BINDING",
+                        31L,
+                        "group/payment-service",
+                        "/gitlab",
+                        12L,
+                        "TOOL_RESULT",
+                        Map.of("bindingId", 31L, "projectId", 12L)
+                )
+        );
+
+        HermesToolExecutionOutcome outcome = orchestrator.executeToolCall(
+                new HermesToolCallRequest(
+                        "call-chat-agent-1",
+                        PlatformToolRegistry.TOOL_REPO_SCAN_START,
+                        "repo_scan__start",
+                        Map.of("rulesetCode", "team-default")
+                ),
+                "scope-chat-agent-1",
+                context,
+                request,
+                groundingState,
+                new HermesToolExecutionPolicy(
+                        603L,
+                        41L,
+                        601L,
+                        5L,
+                        List.of(PlatformToolRegistry.TOOL_REPO_SCAN_START),
+                        List.of(PlatformToolRegistry.TOOL_REPO_SCAN_START)
+                )
+        );
+
+        assertThat(outcome.stopLoop()).isFalse();
+        assertThat(outcome.actions()).isEmpty();
+        assertThat(outcome.toolResults()).hasSize(1);
+        assertThat(outcome.toolMessageContent()).contains("已创建仓库规范扫描任务");
     }
 
     /**

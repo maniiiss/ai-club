@@ -30,6 +30,10 @@ public record TaskSummary(
          * 工作项计划结束日期。
          */
         String planEndDate,
+        /**
+         * 创建时间。
+         */
+        String createdAt,
         String updatedAt,
         String description,
         /**

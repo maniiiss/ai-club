@@ -2,6 +2,7 @@ package com.aiclub.platform.controller;
 
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
+import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.TaskPrdAnalyzeResult;
 import com.aiclub.platform.dto.TaskPrdDetail;
@@ -145,8 +146,8 @@ public class TaskController {
 
     @PostMapping("/{id}/agent-runs")
     @RequirePermission("task:manage")
-    public ApiResponse<TaskAgentRunSummary> runAgent(@PathVariable Long id,
-                                                     @Valid @RequestBody TaskAgentRunRequest request) {
+    public ApiResponse<ExecutionTaskSummary> runAgent(@PathVariable Long id,
+                                                      @Valid @RequestBody TaskAgentRunRequest request) {
         return ApiResponse.success(taskAgentRunService.runTaskAgent(id, request.input()));
     }
 }

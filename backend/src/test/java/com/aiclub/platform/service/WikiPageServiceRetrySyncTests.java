@@ -56,6 +56,12 @@ class WikiPageServiceRetrySyncTests {
     @Mock
     private HindsightClientService hindsightClientService;
 
+    @Mock
+    private WikiKnowledgeSearchService wikiKnowledgeSearchService;
+
+    @Mock
+    private WikiSyncQueuePublisher wikiSyncQueuePublisher;
+
     @Test
     void shouldResetLatestRetainTaskAndPageStatusWhenRetryingFailedSync() {
         WikiPageService wikiPageService = new WikiPageService(
@@ -66,7 +72,9 @@ class WikiPageServiceRetrySyncTests {
                 wikiPageAccessRepository,
                 wikiPageSyncTaskRepository,
                 projectDataPermissionService,
-                hindsightClientService
+                hindsightClientService,
+                wikiKnowledgeSearchService,
+                wikiSyncQueuePublisher
         );
 
         ProjectEntity project = new ProjectEntity();
@@ -124,5 +132,6 @@ class WikiPageServiceRetrySyncTests {
 
         assertThat(detail.syncStatus()).isEqualTo("PENDING");
         assertThat(detail.lastSyncError()).isEmpty();
+        verify(wikiSyncQueuePublisher).publishAfterCommit(WikiSyncQueuePublisher.TYPE_PROJECT_WIKI, 5L);
     }
 }
