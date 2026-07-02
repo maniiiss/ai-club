@@ -4,8 +4,11 @@ import com.aiclub.platform.annotation.OperationLog;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.DataWorkbenchDtos.DataWorkbenchEntityItem;
+import com.aiclub.platform.dto.DataWorkbenchDtos.DataWorkbenchEntityParseResult;
+import com.aiclub.platform.dto.request.DataWorkbenchRequests.DataWorkbenchEntityParseRequest;
 import com.aiclub.platform.dto.request.DataWorkbenchRequests.DataWorkbenchEntityRequest;
 import com.aiclub.platform.service.DataWorkbenchConfigService;
+import com.aiclub.platform.service.DataWorkbenchEntityParser;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,14 +32,18 @@ import java.util.List;
 public class DataWorkbenchConfigController {
 
     private final DataWorkbenchConfigService configService;
+    private final DataWorkbenchEntityParser entityParser;
 
-    public DataWorkbenchConfigController(DataWorkbenchConfigService configService) {
+    public DataWorkbenchConfigController(DataWorkbenchConfigService configService,
+                                         DataWorkbenchEntityParser entityParser) {
         this.configService = configService;
+        this.entityParser = entityParser;
     }
 
     @GetMapping
-    public ApiResponse<List<DataWorkbenchEntityItem>> list(@RequestParam(defaultValue = "true") boolean includeDisabled) {
-        return ApiResponse.success(configService.listEntities(includeDisabled));
+    public ApiResponse<List<DataWorkbenchEntityItem>> list(@RequestParam(defaultValue = "true") boolean includeDisabled,
+                                                           @RequestParam(required = false) Long platformProjectId) {
+        return ApiResponse.success(configService.listEntities(includeDisabled, platformProjectId));
     }
 
     @GetMapping("/{id}")
@@ -62,5 +69,15 @@ public class DataWorkbenchConfigController {
     public ApiResponse<Void> delete(@PathVariable Long id) {
         configService.deleteEntity(id);
         return ApiResponse.success(null);
+    }
+
+    /**
+     * 从 DDL / Java 实体类源码解析出实体草稿。
+     * 只读操作，不落库；实际保存仍需管理员点击“保存”走 create/update 流程。
+     */
+    @PostMapping("/parse")
+    @OperationLog(actionCode = "DATA_WORKBENCH_ENTITY_PARSE", actionName = "解析数据实体草稿")
+    public ApiResponse<DataWorkbenchEntityParseResult> parse(@Valid @RequestBody DataWorkbenchEntityParseRequest request) {
+        return ApiResponse.success(entityParser.parse(request.sourceType(), request.content()));
     }
 }

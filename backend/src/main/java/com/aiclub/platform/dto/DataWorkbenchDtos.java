@@ -44,7 +44,8 @@ public final class DataWorkbenchDtos {
             String description,
             String tableName,
             String primaryKeyColumn,
-            String projectIdColumn,
+            Long platformProjectId,
+            String platformProjectName,
             Integer maxAffectedRows,
             DataPermissionScopeType requestScope,
             DataPermissionScopeType executeScope,
@@ -115,6 +116,37 @@ public final class DataWorkbenchDtos {
             String rollbackConflictReason,
             String createdAt,
             String rolledBackAt
+    ) {
+    }
+
+    /**
+     * 数据实体解析草稿。
+     * 业务意图：管理员粘贴 DDL 或 Java 实体类后，后端返回一份可直接回填表单的实体骨架 + 字段清单，
+     * 前端按“合并”策略与当前 form 状态合并。platformProjectId 由管理员在下拉里显式选择，解析器不推断。
+     */
+    public record DataWorkbenchEntityDraft(
+            String entityCode,
+            String entityName,
+            String description,
+            String tableName,
+            String primaryKeyColumn,
+            Long platformProjectId,
+            Integer maxAffectedRows,
+            DataPermissionScopeType requestScope,
+            DataPermissionScopeType executeScope,
+            DataPermissionScopeType rollbackScope,
+            Boolean enabled,
+            List<DataWorkbenchFieldItem> fields
+    ) {
+    }
+
+    /**
+     * 数据实体解析结果：草稿 + 解析过程中的 warning 列表。
+     * warnings 用于提示无法完全识别的类型、缺失注解等情况，不阻塞回填。
+     */
+    public record DataWorkbenchEntityParseResult(
+            DataWorkbenchEntityDraft draft,
+            List<String> warnings
     ) {
     }
 }

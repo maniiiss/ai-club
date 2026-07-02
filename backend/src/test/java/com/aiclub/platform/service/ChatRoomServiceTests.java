@@ -305,4 +305,22 @@ class ChatRoomServiceTests {
         entity.setRole(role);
         return entity;
     }
+
+    // ---- @hermes 提及识别边界 ----
+    // 业务意图：只有当 @hermes 独立成一个 token（尾部是空白或字符串结尾）时才算助手提及，
+    // 避免 @hermes-dev、@hermes队长 之类的用户名被误判触发 Hermes 回复。
+    @Test
+    void containsHermesMention_matchesStandaloneToken() {
+        assertThat(ChatRoomService.containsHermesMention("@hermes 帮我看下")).isTrue();
+        assertThat(ChatRoomService.containsHermesMention("请 @hermes")).isTrue();
+        assertThat(ChatRoomService.containsHermesMention("请 @Hermes 看看")).isTrue();
+    }
+
+    @Test
+    void containsHermesMention_ignoresUsernamesThatStartWithHermes() {
+        assertThat(ChatRoomService.containsHermesMention("@hermes-dev 请看")).isFalse();
+        assertThat(ChatRoomService.containsHermesMention("@hermes队长 你好")).isFalse();
+        assertThat(ChatRoomService.containsHermesMention("@hermes.log 上传")).isFalse();
+        assertThat(ChatRoomService.containsHermesMention("邮箱 foo@hermes.io")).isFalse();
+    }
 }

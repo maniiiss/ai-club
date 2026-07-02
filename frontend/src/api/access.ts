@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { ApiResponse, CreditAccountBackfillResult, CreditAccountItem, CreditFeatureConfigItem, CreditGlobalConfigItem, CreditTransactionItem, DashboardShortcutEntryItem, DataChangeAuditItem, DataChangeDsl, DataChangePreviewResult, DataChangeRequestItem, DataPermissionScopeValue, DataWorkbenchEntityItem, PageResponse, PermissionItem, PlatformEnvVarDetailItem, PlatformEnvVarItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
+import type { ApiResponse, CreditAccountBackfillResult, CreditAccountItem, CreditFeatureConfigItem, CreditGlobalConfigItem, CreditTransactionItem, DashboardShortcutEntryItem, DataChangeAuditItem, DataChangeDsl, DataChangePreviewResult, DataChangeRequestItem, DataPermissionScopeValue, DataWorkbenchEntityItem, DataWorkbenchEntityParseResult, PageResponse, PermissionItem, PlatformEnvVarDetailItem, PlatformEnvVarItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
 
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
@@ -92,7 +92,8 @@ export interface DataWorkbenchEntityPayload {
   description: string
   tableName: string
   primaryKeyColumn: string
-  projectIdColumn: string
+  /** 归属的平台项目 ID，替代 v1 的动态 project_id 列。 */
+  platformProjectId: number | null
   maxAffectedRows: number
   requestScope: DataPermissionScopeValue
   executeScope: DataPermissionScopeValue
@@ -335,9 +336,9 @@ export const pageProjectDataChangeRequests = async (projectId: number, page: num
   return data.data
 }
 
-export const listDataWorkbenchEntities = async (includeDisabled = true) => {
+export const listDataWorkbenchEntities = async (includeDisabled = true, platformProjectId?: number) => {
   const { data } = await http.get<ApiResponse<DataWorkbenchEntityItem[]>>('/api/data-workbench/config/entities', {
-    params: { includeDisabled }
+    params: cleanParams({ includeDisabled, platformProjectId })
   })
   return data.data
 }
@@ -354,6 +355,15 @@ export const updateDataWorkbenchEntity = async (id: number, payload: DataWorkben
 
 export const deleteDataWorkbenchEntity = async (id: number) => {
   await http.delete<ApiResponse<null>>(`/api/data-workbench/config/entities/${id}`)
+}
+
+/**
+ * 从 DDL / Java 实体类源码解析出实体草稿，用于在“新增实体”弹窗中一键回填表单。
+ * 只读操作，后端不落库；实际保存仍走 create/update。
+ */
+export const parseDataWorkbenchEntityDraft = async (payload: { sourceType: 'DDL' | 'JAVA'; content: string }) => {
+  const { data } = await http.post<ApiResponse<DataWorkbenchEntityParseResult>>('/api/data-workbench/config/entities/parse', payload)
+  return data.data
 }
 
 export const listPlatformEnvVars = async () => {

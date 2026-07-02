@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
 /**
  * DataChange SQL 执行器。
  * 业务意图：SQL 永远由后端根据实体/字段白名单生成，并在执行事务中保存 before/after 快照。
+ * v2 起实体在配置层就绑定平台项目，此处不再向业务表拼接项目隔离条件；项目一致性由 DataChangeService 提前校验。
  */
 @Service
 public class DataChangeSqlExecutor {
@@ -51,8 +52,8 @@ public class DataChangeSqlExecutor {
         this.objectMapper = objectMapper;
     }
 
-    public DataChangePreviewResult preview(Long projectId, DataWorkbenchEntity entity, DataChangeDsl dsl) {
-        PreparedChange prepared = prepare(projectId, entity, dsl);
+    public DataChangePreviewResult preview(DataWorkbenchEntity entity, DataChangeDsl dsl) {
+        PreparedChange prepared = prepare(entity, dsl);
         List<Map<String, Object>> rows = selectRows(entity, prepared.whereParams(), false);
         List<String> risks = new ArrayList<>(prepared.riskReasons());
         int affectedRows = rows.size();
@@ -80,7 +81,7 @@ public class DataChangeSqlExecutor {
     public DataChangeRequestEntity execute(DataChangeRequestEntity request) {
         DataWorkbenchEntity entity = request.getEntity();
         DataChangeDsl dsl = mapper.parseDsl(request.getDslJson());
-        PreparedChange prepared = prepare(request.getProject().getId(), entity, dsl);
+        PreparedChange prepared = prepare(entity, dsl);
         List<Map<String, Object>> beforeRows = selectRows(entity, prepared.whereParams(), true);
         if (beforeRows.isEmpty()) {
             throw new IllegalArgumentException("执行失败：定位条件未命中任何数据");
@@ -93,7 +94,7 @@ public class DataChangeSqlExecutor {
         prepared.setParams().getValues().forEach(updateParams::addValue);
         prepared.whereParams().getValues().forEach(updateParams::addValue);
         int updated = jdbcTemplate.update(prepared.updateSql(), updateParams);
-        List<Map<String, Object>> afterRows = selectRowsByIds(entity, request.getProject().getId(), primaryKeys(entity, beforeRows), true);
+        List<Map<String, Object>> afterRows = selectRowsByIds(entity, primaryKeys(entity, beforeRows), true);
         Map<String, Map<String, Object>> afterById = afterRows.stream()
                 .collect(Collectors.toMap(row -> stringValue(row.get(entity.getPrimaryKeyColumn())), row -> row, (left, right) -> left, LinkedHashMap::new));
 
@@ -119,13 +120,22 @@ public class DataChangeSqlExecutor {
     @Transactional
     public DataChangeRequestEntity rollback(DataChangeRequestEntity request) {
         DataWorkbenchEntity entity = request.getEntity();
+        // 二重校验：审计快照上的 project_id 必须与实体当前绑定的平台项目一致，避免实体重新绑定后误回滚旧项目数据。
+        Long entityProjectId = entity.getPlatformProject() == null ? null : entity.getPlatformProject().getId();
         List<DataChangeAuditEntity> audits = auditRepository.findAllByRequest_IdOrderByIdAsc(request.getId());
         if (audits.isEmpty()) {
             throw new IllegalArgumentException("没有可回滚的执行审计");
         }
         List<String> conflicts = new ArrayList<>();
         for (DataChangeAuditEntity audit : audits) {
-            Map<String, Object> current = selectRowById(entity, request.getProject().getId(), audit.getPrimaryKeyValue());
+            Long snapshotProjectId = audit.getProject() == null ? null : audit.getProject().getId();
+            if (entityProjectId != null && snapshotProjectId != null && !entityProjectId.equals(snapshotProjectId)) {
+                audit.setRollbackStatus("CONFLICT");
+                audit.setRollbackConflictReason("实体绑定项目与审计快照不一致，拒绝回滚");
+                conflicts.add("主键 " + audit.getPrimaryKeyValue() + " 项目归属变化");
+                continue;
+            }
+            Map<String, Object> current = selectRowById(entity, audit.getPrimaryKeyValue());
             Map<String, Object> after = readMap(audit.getAfterSnapshot());
             if (!snapshotsEqual(current, after)) {
                 audit.setRollbackStatus("CONFLICT");
@@ -148,10 +158,9 @@ public class DataChangeSqlExecutor {
         return requestRepository.save(request);
     }
 
-    private PreparedChange prepare(Long projectId, DataWorkbenchEntity entity, DataChangeDsl dsl) {
+    private PreparedChange prepare(DataWorkbenchEntity entity, DataChangeDsl dsl) {
         validateIdentifier(entity.getTableName());
         validateIdentifier(entity.getPrimaryKeyColumn());
-        validateIdentifier(entity.getProjectIdColumn());
         if (!"UPDATE".equalsIgnoreCase(dsl.operation())) {
             throw new IllegalArgumentException("DataChange v1 仅支持 UPDATE");
         }
@@ -169,9 +178,8 @@ public class DataChangeSqlExecutor {
                 throw new IllegalArgumentException("字段不允许修改: " + entry.getKey());
             }
             validateIdentifier(field.getColumnName());
-            if (field.getColumnName().equalsIgnoreCase(entity.getPrimaryKeyColumn())
-                    || field.getColumnName().equalsIgnoreCase(entity.getProjectIdColumn())) {
-                throw new IllegalArgumentException("禁止修改主键或项目列");
+            if (field.getColumnName().equalsIgnoreCase(entity.getPrimaryKeyColumn())) {
+                throw new IllegalArgumentException("禁止修改主键列");
             }
             setFields.add(field);
             setParams.put(field.getColumnName(), convertValue(field, entry.getValue()));
@@ -181,13 +189,9 @@ public class DataChangeSqlExecutor {
         }
 
         MapSqlParameterSource whereParams = new MapSqlParameterSource();
-        whereParams.addValue("projectId", projectId);
         LinkedHashMap<String, Object> locatorParams = new LinkedHashMap<>();
         List<String> riskReasons = new ArrayList<>();
         for (Map.Entry<String, Object> entry : dsl.where().entrySet()) {
-            if ("projectId".equalsIgnoreCase(entry.getKey())) {
-                continue;
-            }
             DataWorkbenchFieldEntity field = fieldsByCode.get(entry.getKey().toLowerCase(Locale.ROOT));
             if (field == null || !field.isLocator()) {
                 throw new IllegalArgumentException("字段不允许作为定位条件: " + entry.getKey());
@@ -205,7 +209,6 @@ public class DataChangeSqlExecutor {
         MapSqlParameterSource setSqlParams = new MapSqlParameterSource();
         setParams.forEach((column, value) -> setSqlParams.addValue("s_" + column, value));
         List<String> whereFragments = new ArrayList<>();
-        whereFragments.add(entity.getProjectIdColumn() + " = :projectId");
         locatorParams.keySet().forEach(column -> whereFragments.add(column + " = :w_" + column));
         String updateSql = "UPDATE " + entity.getTableName() + " SET " + String.join(", ", setFragments)
                 + " WHERE " + String.join(" AND ", whereFragments);
@@ -215,40 +218,36 @@ public class DataChangeSqlExecutor {
 
     private List<Map<String, Object>> selectRows(DataWorkbenchEntity entity, MapSqlParameterSource whereParams, boolean forUpdate) {
         List<String> whereFragments = new ArrayList<>();
-        whereFragments.add(entity.getProjectIdColumn() + " = :projectId");
         whereParams.getValues().keySet().stream()
                 .filter(key -> key.startsWith("w_"))
                 .forEach(key -> whereFragments.add(key.substring(2) + " = :" + key));
+        if (whereFragments.isEmpty()) {
+            throw new IllegalArgumentException("缺少配置允许的定位字段条件");
+        }
         String sql = "SELECT * FROM " + entity.getTableName() + " WHERE " + String.join(" AND ", whereFragments)
                 + " ORDER BY " + entity.getPrimaryKeyColumn()
                 + (forUpdate ? " FOR UPDATE" : "");
         return jdbcTemplate.queryForList(sql, whereParams);
     }
 
-    private List<Map<String, Object>> selectRowsByIds(DataWorkbenchEntity entity, Long projectId, List<String> ids, boolean forUpdate) {
-        MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("projectId", projectId)
-                .addValue("ids", ids);
+    private List<Map<String, Object>> selectRowsByIds(DataWorkbenchEntity entity, List<String> ids, boolean forUpdate) {
+        MapSqlParameterSource params = new MapSqlParameterSource().addValue("ids", ids);
         String sql = "SELECT * FROM " + entity.getTableName()
-                + " WHERE " + entity.getProjectIdColumn() + " = :projectId"
-                + " AND CAST(" + entity.getPrimaryKeyColumn() + " AS VARCHAR) IN (:ids)"
+                + " WHERE CAST(" + entity.getPrimaryKeyColumn() + " AS VARCHAR) IN (:ids)"
                 + " ORDER BY " + entity.getPrimaryKeyColumn()
                 + (forUpdate ? " FOR UPDATE" : "");
         return jdbcTemplate.queryForList(sql, params);
     }
 
-    private Map<String, Object> selectRowById(DataWorkbenchEntity entity, Long projectId, String id) {
-        List<Map<String, Object>> rows = selectRowsByIds(entity, projectId, List.of(id), true);
+    private Map<String, Object> selectRowById(DataWorkbenchEntity entity, String id) {
+        List<Map<String, Object>> rows = selectRowsByIds(entity, List.of(id), true);
         return rows.isEmpty() ? Map.of() : rows.get(0);
     }
 
     private void rollbackRow(DataWorkbenchEntity entity, String primaryKeyValue, Map<String, Object> before) {
         LinkedHashMap<String, Object> setValues = new LinkedHashMap<>(before);
         setValues.remove(entity.getPrimaryKeyColumn());
-        setValues.remove(entity.getProjectIdColumn());
-        MapSqlParameterSource params = new MapSqlParameterSource()
-                .addValue("primaryKeyValue", primaryKeyValue)
-                .addValue("projectId", before.get(entity.getProjectIdColumn()));
+        MapSqlParameterSource params = new MapSqlParameterSource().addValue("primaryKeyValue", primaryKeyValue);
         List<String> setFragments = new ArrayList<>();
         setValues.forEach((column, value) -> {
             validateIdentifier(column);
@@ -257,8 +256,7 @@ public class DataChangeSqlExecutor {
         });
         String sql = "UPDATE " + entity.getTableName()
                 + " SET " + String.join(", ", setFragments)
-                + " WHERE CAST(" + entity.getPrimaryKeyColumn() + " AS VARCHAR) = :primaryKeyValue"
-                + " AND " + entity.getProjectIdColumn() + " = :projectId";
+                + " WHERE CAST(" + entity.getPrimaryKeyColumn() + " AS VARCHAR) = :primaryKeyValue";
         jdbcTemplate.update(sql, params);
     }
 

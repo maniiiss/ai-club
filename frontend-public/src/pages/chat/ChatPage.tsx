@@ -33,6 +33,7 @@ import type { HermesActionItem, HermesSelectionCardItem, HermesSelectionPayload 
 import {
   appendChatStreamDelta,
   markAgentActionStatusInMessage,
+  markAgentSelectionStatusInMessage,
   mergeAgentActionsIntoMessage,
   mergeAgentSelectionCardsIntoMessage,
   mergeChatMessage,
@@ -213,6 +214,14 @@ export const ChatPage = () => {
     } else if (event.type === 'AGENT_SELECTION_PENDING') {
       const selectionCards = Array.isArray(event.selectionCards) ? event.selectionCards as HermesSelectionCardItem[] : []
       setMessages((current) => mergeAgentSelectionCardsIntoMessage(current, toNullableNumber(event.messageId), toNullableNumber(event.taskId), selectionCards))
+    } else if (event.type === 'AGENT_SELECTION_RESOLVED') {
+      setMessages((current) => markAgentSelectionStatusInMessage(
+        current,
+        toNullableNumber(event.messageId),
+        toNullableNumber(event.taskId),
+        typeof event.selectionKey === 'string' ? event.selectionKey : '',
+        typeof event.status === 'string' ? event.status : 'selected',
+      ))
     } else if (event.type === 'AGENT_ACTION_EXECUTED') {
       setMessages((current) => markAgentActionStatusInMessage(
         current,
@@ -315,6 +324,7 @@ export const ChatPage = () => {
     try {
       const task = await selectChatRoomAgentCandidate(selectedRoomId, message.agentTaskId, selection)
       setAgentTasks((current) => mergeAgentTask(current, task))
+      setMessages((current) => markAgentSelectionStatusInMessage(current, message.id, message.agentTaskId, `${selection.slot}:${selection.entityType}:${selection.entityId}`, 'selected'))
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {

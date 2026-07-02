@@ -39,6 +39,7 @@ public class DataWorkbenchMapper {
     }
 
     public DataWorkbenchEntityItem toEntityItem(DataWorkbenchEntity entity) {
+        var project = entity.getPlatformProject();
         return new DataWorkbenchEntityItem(
                 entity.getId(),
                 entity.getEntityCode(),
@@ -46,7 +47,8 @@ public class DataWorkbenchMapper {
                 entity.getDescription(),
                 entity.getTableName(),
                 entity.getPrimaryKeyColumn(),
-                entity.getProjectIdColumn(),
+                project == null ? null : project.getId(),
+                project == null ? "" : project.getName(),
                 entity.getMaxAffectedRows(),
                 entity.getRequestScope(),
                 entity.getExecuteScope(),

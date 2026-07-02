@@ -53,7 +53,7 @@ class DataChangeSqlExecutorTests {
     void shouldRejectFieldOutsideUpdateWhitelist() {
         DataChangeDsl dsl = dsl(Map.of("projectCode", "XMBM001"), Map.of("projectCode", "HACK"));
 
-        assertThatThrownBy(() -> executor.preview(1L, entity, dsl))
+        assertThatThrownBy(() -> executor.preview(entity, dsl))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("字段不允许修改");
     }
@@ -65,7 +65,7 @@ class DataChangeSqlExecutorTests {
     void shouldRejectMissingLocatorCondition() {
         DataChangeDsl dsl = dsl(Map.of(), Map.of("qualificationRequired", true));
 
-        assertThatThrownBy(() -> executor.preview(1L, entity, dsl))
+        assertThatThrownBy(() -> executor.preview(entity, dsl))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("缺少配置允许的定位字段条件");
     }
@@ -78,7 +78,7 @@ class DataChangeSqlExecutorTests {
         when(jdbcTemplate.queryForList(anyString(), any(MapSqlParameterSource.class)))
                 .thenReturn(List.of(row(1L), row(2L)));
 
-        var preview = executor.preview(1L, entity, dsl(Map.of("projectCode", "XMBM001"), Map.of("qualificationRequired", true)));
+        var preview = executor.preview(entity, dsl(Map.of("projectCode", "XMBM001"), Map.of("qualificationRequired", true)));
 
         assertThat(preview.affectedRows()).isEqualTo(2);
         assertThat(preview.riskLevel()).isEqualTo("HIGH");
@@ -95,7 +95,7 @@ class DataChangeSqlExecutorTests {
         when(jdbcTemplate.queryForList(anyString(), any(MapSqlParameterSource.class)))
                 .thenReturn(List.of(row(1L)));
 
-        var preview = executor.preview(1L, entity, dsl(Map.of("projectCode", "XMBM001"), Map.of("qualificationRequired", true)));
+        var preview = executor.preview(entity, dsl(Map.of("projectCode", "XMBM001"), Map.of("qualificationRequired", true)));
 
         assertThat(preview.affectedRows()).isEqualTo(1);
         assertThat(preview.riskLevel()).isEqualTo("HIGH");
@@ -109,7 +109,7 @@ class DataChangeSqlExecutorTests {
         target.setEntityName("项目");
         target.setTableName("project_info");
         target.setPrimaryKeyColumn("id");
-        target.setProjectIdColumn("project_id");
+        // v2 起实体在配置层绑定平台项目，SQL 执行不再需要 projectIdColumn。
         target.setMaxAffectedRows(1);
 
         DataWorkbenchFieldEntity projectCode = field("projectCode", "项目编码", "project_code", false, true, false, 1);

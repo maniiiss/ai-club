@@ -57,9 +57,8 @@ public final class DataWorkbenchRequests {
             @NotBlank(message = "主键列不能为空")
             @Size(max = 80, message = "主键列长度不能超过80")
             String primaryKeyColumn,
-            @NotBlank(message = "项目列不能为空")
-            @Size(max = 80, message = "项目列长度不能超过80")
-            String projectIdColumn,
+            @NotNull(message = "绑定平台项目不能为空")
+            Long platformProjectId,
             @NotNull(message = "最大影响行数不能为空")
             @Min(value = 1, message = "最大影响行数必须大于0")
             Integer maxAffectedRows,
@@ -97,6 +96,20 @@ public final class DataWorkbenchRequests {
             Boolean sensitive,
             Boolean enabled,
             Integer sortOrder
+    ) {
+    }
+
+    /**
+     * 管理端“从 DDL / Java 类解析生成实体草稿”接口的请求体。
+     * sourceType 目前支持 DDL（CREATE TABLE 语句）和 JAVA（实体类源码）。
+     */
+    public record DataWorkbenchEntityParseRequest(
+            @NotBlank(message = "源类型不能为空")
+            @Size(max = 16, message = "源类型长度不能超过16")
+            String sourceType,
+            @NotBlank(message = "解析内容不能为空")
+            @Size(max = 20000, message = "解析内容长度不能超过20000")
+            String content
     ) {
     }
 }

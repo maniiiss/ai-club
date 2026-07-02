@@ -10,10 +10,13 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -22,9 +25,12 @@ import java.util.List;
 /**
  * DataWorkbench 业务实体配置。
  * 业务意图：用可维护的白名单描述业务实体到物理表的映射，DataChange 只能在这些配置内生成 SQL。
+ * v2 起每个实体一对一绑定一个平台项目，替代动态 project_id 列，SQL 执行不再向业务表注入项目隔离条件。
  */
 @Entity
-@Table(name = "data_workbench_entity")
+@Table(name = "data_workbench_entity", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_data_workbench_entity_project_code", columnNames = {"platform_project_id", "entity_code"})
+})
 public class DataWorkbenchEntity {
 
     @Id
@@ -32,9 +38,16 @@ public class DataWorkbenchEntity {
     private Long id;
 
     /**
-     * 业务实体编码，供 DSL 引用。
+     * 归属的平台项目。DataChange 提交/执行/回滚的项目 ID 必须与该字段一致，否则视为跨项目违规。
      */
-    @Column(name = "entity_code", nullable = false, unique = true, length = 80)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "platform_project_id", nullable = false)
+    private ProjectEntity platformProject;
+
+    /**
+     * 业务实体编码，供 DSL 引用。项目内唯一。
+     */
+    @Column(name = "entity_code", nullable = false, length = 80)
     private String entityCode;
 
     /**
@@ -57,12 +70,6 @@ public class DataWorkbenchEntity {
      */
     @Column(name = "primary_key_column", nullable = false, length = 80)
     private String primaryKeyColumn = "id";
-
-    /**
-     * 项目列名，所有 DataChange 都必须带上该列条件。
-     */
-    @Column(name = "project_id_column", nullable = false, length = 80)
-    private String projectIdColumn;
 
     /**
      * 单次允许影响的最大行数。
@@ -126,6 +133,14 @@ public class DataWorkbenchEntity {
         this.id = id;
     }
 
+    public ProjectEntity getPlatformProject() {
+        return platformProject;
+    }
+
+    public void setPlatformProject(ProjectEntity platformProject) {
+        this.platformProject = platformProject;
+    }
+
     public String getEntityCode() {
         return entityCode;
     }
@@ -164,14 +179,6 @@ public class DataWorkbenchEntity {
 
     public void setPrimaryKeyColumn(String primaryKeyColumn) {
         this.primaryKeyColumn = primaryKeyColumn;
-    }
-
-    public String getProjectIdColumn() {
-        return projectIdColumn;
-    }
-
-    public void setProjectIdColumn(String projectIdColumn) {
-        this.projectIdColumn = projectIdColumn;
     }
 
     public Integer getMaxAffectedRows() {

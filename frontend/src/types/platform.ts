@@ -2196,7 +2196,10 @@ export interface DataWorkbenchEntityItem {
   description: string
   tableName: string
   primaryKeyColumn: string
-  projectIdColumn: string
+  /** 归属的平台项目 ID，v2 起替代动态 project_id_column。 */
+  platformProjectId: number | null
+  /** 归属项目展示名称，供列表快速渲染，避免二次请求。 */
+  platformProjectName: string
   maxAffectedRows: number
   requestScope: DataPermissionScopeValue
   executeScope: DataPermissionScopeValue
@@ -2263,6 +2266,33 @@ export interface DataChangeAuditItem {
   rollbackConflictReason: string
   createdAt: string
   rolledBackAt: string
+}
+
+/**
+ * DataWorkbench 实体解析草稿（后端返回，用于回填新增/编辑弹窗）。
+ */
+export interface DataWorkbenchEntityDraft {
+  entityCode: string
+  entityName: string
+  description: string
+  tableName: string
+  primaryKeyColumn: string
+  /** 由管理员在弹窗里选择平台项目，解析器不推断，返回 null。 */
+  platformProjectId: number | null
+  maxAffectedRows: number
+  requestScope: DataPermissionScopeValue
+  executeScope: DataPermissionScopeValue
+  rollbackScope: DataPermissionScopeValue
+  enabled: boolean
+  fields: DataWorkbenchFieldItem[]
+}
+
+/**
+ * DataWorkbench 实体解析结果：草稿 + warning 列表。
+ */
+export interface DataWorkbenchEntityParseResult {
+  draft: DataWorkbenchEntityDraft
+  warnings: string[]
 }
 
 export interface PlatformEnvVarItem {

@@ -1,7 +1,8 @@
 import type { ChatMessageItem, ChatSocketEvent } from '@/src/types/chat'
 import type { HermesActionItem, HermesSelectionCardItem } from '@/src/types/hermes'
 
-const hermesMentionPattern = /(^|\s)@hermes\b/i
+// 只允许 @hermes 独立成一个 token（后接空白或字符串结尾），避免把 @hermes-dev、@hermes队长 等用户名误判为助手提及
+const hermesMentionPattern = /(^|\s)@hermes(?=\s|$)/i
 
 export const containsHermesMention = (content: string): boolean => hermesMentionPattern.test(content || '')
 
@@ -70,6 +71,14 @@ export const mergeAgentSelectionCardsIntoMessage = (
     }
   })
 
+export const resolveAgentActionStatus = (
+  message: Pick<ChatMessageItem, 'actionStatuses'>,
+  actionKey: string | null | undefined,
+): string => {
+  const normalizedKey = actionKey || ''
+  return normalizedKey ? message.actionStatuses?.[normalizedKey] || '' : ''
+}
+
 export const markAgentActionStatusInMessage = (
   messages: ChatMessageItem[],
   messageId: number | null | undefined,
@@ -82,6 +91,7 @@ export const markAgentActionStatusInMessage = (
     const matchesTask = taskId != null && message.agentTaskId === taskId
     if (!matchesMessage && !matchesTask) return message
     const normalizedKey = actionKey || ''
+    if (!normalizedKey) return message
     const actionStatuses = normalizedKey
       ? { ...(message.actionStatuses || {}), [normalizedKey]: status || 'executed' }
       : message.actionStatuses || {}
@@ -91,6 +101,35 @@ export const markAgentActionStatusInMessage = (
       actionStatuses,
     }
   })
+
+export const markAgentSelectionStatusInMessage = (
+  messages: ChatMessageItem[],
+  messageId: number | null | undefined,
+  taskId: number | null | undefined,
+  selectionKey: string | null | undefined,
+  status: string,
+): ChatMessageItem[] =>
+  messages.map((message) => {
+    const matchesMessage = messageId != null && message.id === messageId
+    const matchesTask = taskId != null && message.agentTaskId === taskId
+    if (!matchesMessage && !matchesTask) return message
+    const normalizedKey = selectionKey || ''
+    const selectionStatuses = normalizedKey
+      ? { ...(message.selectionStatuses || {}), [normalizedKey]: status || 'selected' }
+      : message.selectionStatuses || {}
+    return {
+      ...message,
+      agentTaskStatus: status || 'selected',
+      selectionStatuses,
+    }
+  })
+
+/**
+ * 规范模型常见的 Markdown 粗体标签空格，例如 `**标题： **内容`。
+ * 业务意图：Hermes 流式文本偶尔会把结束粗体标记前塞入空格，导致整段按纯文本展示。
+ */
+export const normalizeGeneratedMarkdown = (content: string): string =>
+  (content || '').replace(/\*\*([^*\n]{1,24}[：:])\s+\*\*\s*/g, '**$1** ')
 
 export const formatChatFileSize = (size: number) => {
   if (size < 1024) return `${size} B`

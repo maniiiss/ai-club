@@ -5,11 +5,14 @@ import {
   appendChatStreamDelta,
   containsHermesMention,
   markAgentActionStatusInMessage,
+  markAgentSelectionStatusInMessage,
   mergeAgentActionsIntoMessage,
   mergeAgentSelectionCardsIntoMessage,
   mergeChatMessage,
+  normalizeGeneratedMarkdown,
   parseChatSocketEvent,
   replaceMentionAtCaret,
+  resolveAgentActionStatus,
   resolveMentionQuery,
   insertTextAtCaret,
   shouldCollapseChatSummary,
@@ -89,6 +92,62 @@ describe('chat utilities', () => {
     assert.equal(merged[0].agentTaskStatus, 'executed')
     assert.equal(merged[0].actionStatuses?.['CREATE_EXECUTION_TASK:0:key'], 'executed')
     assert.equal(merged[0].actions?.length, 2)
+  })
+
+  it('ignores executed action events without a concrete action key', () => {
+    const existing: ChatMessageItem[] = [message(2, '待确认', 'assistant')]
+    existing[0].agentTaskId = 88
+    existing[0].agentTaskStatus = 'awaiting_confirmation'
+    existing[0].actions = [
+      { type: 'CREATE_WORK_ITEM_DRAFT', title: '创建需求草稿', description: '', requiresConfirm: true, params: { projectId: 1 } },
+    ]
+
+    const merged = markAgentActionStatusInMessage(existing, null, 88, '', 'executed')
+
+    assert.equal(merged[0].agentTaskStatus, 'awaiting_confirmation')
+    assert.deepEqual(merged[0].actionStatuses || {}, {})
+  })
+
+  it('resolves action card status only from the action key status', () => {
+    const item = message(2, '待确认', 'assistant')
+    item.agentTaskStatus = 'done'
+    item.actionStatuses = { 'CREATE_WORK_ITEM_DRAFT:0:key': 'executed' }
+
+    assert.equal(resolveAgentActionStatus(item, 'CREATE_WORK_ITEM_DRAFT:0:key'), 'executed')
+    assert.equal(resolveAgentActionStatus(item, 'CREATE_WORK_ITEM_DRAFT:1:other'), '')
+  })
+
+  it('normalizes generated bold label markdown with stray inner spaces', () => {
+    assert.equal(
+      normalizeGeneratedMarkdown('**迭代： **迭代2（进行中，ID:2）\n**需求标题： **营销激励数据权限调整 **需求内容： **营销激励数据权限改为本单位及子单位'),
+      '**迭代：** 迭代2（进行中，ID:2）\n**需求标题：** 营销激励数据权限调整 **需求内容：** 营销激励数据权限改为本单位及子单位',
+    )
+  })
+
+  it('marks selection status without replacing existing selection cards', () => {
+    const existing: ChatMessageItem[] = [message(2, '请选择', 'assistant')]
+    existing[0].agentTaskId = 88
+    existing[0].selectionCards = [{
+      slot: 'iteration',
+      title: '请选择迭代',
+      description: '命中多个候选迭代',
+      resumeQuestion: '继续创建需求草稿',
+      options: [{
+        slot: 'iteration',
+        entityType: 'ITERATION',
+        entityId: 77,
+        title: 'CRM 二期迭代',
+        subtitle: '状态：进行中',
+        route: '',
+        matchScore: 0.9,
+        matchReasons: ['名称命中'],
+      }],
+    }]
+    const merged = markAgentSelectionStatusInMessage(existing, null, 88, 'iteration:ITERATION:77', 'selected')
+
+    assert.equal(merged[0].agentTaskStatus, 'selected')
+    assert.equal(merged[0].selectionStatuses?.['iteration:ITERATION:77'], 'selected')
+    assert.equal(merged[0].selectionCards?.[0]?.options[0]?.title, 'CRM 二期迭代')
   })
 
   it('detects the active mention query before the caret', () => {

@@ -4,8 +4,12 @@ import com.aiclub.platform.domain.model.ChatMessageEntity;
 import com.aiclub.platform.domain.model.ChatRoomEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.UserEntity;
+import com.aiclub.platform.dto.HermesChatRoomAgentTaskResult;
 import com.aiclub.platform.dto.HermesConversationState;
 import com.aiclub.platform.dto.HermesConversationTurn;
+import com.aiclub.platform.dto.HermesGroundingState;
+import com.aiclub.platform.dto.HermesGroundingTarget;
+import com.aiclub.platform.dto.HermesToolExecutionPolicy;
 import com.aiclub.platform.repository.ChatMessageRepository;
 import com.aiclub.platform.repository.ChatRoomRepository;
 import org.junit.jupiter.api.Test;
@@ -16,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -142,6 +147,81 @@ class ChatHermesServiceTests {
         assertThat(stateCaptor.getValue().currentRequest().routeName()).isEqualTo("chat-room");
         assertThat(stateCaptor.getValue().currentRequest().projectId()).isEqualTo(12L);
         assertThat(stateCaptor.getValue().currentUser().id()).isEqualTo(5L);
+    }
+
+    @Test
+    void shouldCreateWorkItemDraftActionWhenAgentResolvedIterationTextAfterCreationRequest() {
+        ChatRoomEntity room = room();
+        ChatMessageEntity assistant = message(202L, room, null, "assistant", "", "STREAMING");
+        ChatHermesService service = new ChatHermesService(
+                chatRoomRepository,
+                chatMessageRepository,
+                hermesGatewayService,
+                chatWebSocketPushService,
+                null,
+                hermesConversationStateStore,
+                hermesMcpSessionTokenService
+        );
+        String content = "最新的进行中迭代是 迭代2 (ID:2)。\n"
+                + "现在我来帮您创建需求草稿，放到迭代2中。"
+                + "需求标题是“营销激励数据权限调整”，内容是“营销激励数据权限改为本单位及子单位”，请确认是否要这样创建?";
+        HermesGroundingState groundingState = HermesGroundingState.empty()
+                .withBoundSlot("project", new HermesGroundingTarget(
+                        "project",
+                        "PROJECT",
+                        12L,
+                        "支付项目",
+                        "/projects/12",
+                        12L,
+                        "ROOM",
+                        Map.of()
+                ));
+        HermesConversationState afterToolCall = new HermesConversationState(
+                "chat-room:41:agent-task:202:user:5",
+                "chat-room-41-agent-task-202",
+                null,
+                null,
+                null,
+                "hcs_chat_token_1234",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                groundingState,
+                List.of(),
+                ""
+        );
+
+        when(chatRoomRepository.findById(41L)).thenReturn(Optional.of(room));
+        when(chatMessageRepository.findById(202L)).thenReturn(Optional.of(assistant));
+        when(hermesMcpSessionTokenService.issueToken(any(), eq("chat-room:41:agent-task:202:user:5"), eq("chat-room-41-agent-task-202")))
+                .thenReturn("hcs_chat_token_1234");
+        when(hermesConversationStateStore.save(any(HermesConversationState.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(hermesConversationStateStore.load("chat-room:41:agent-task:202:user:5", "chat-room-41-agent-task-202"))
+                .thenReturn(Optional.of(afterToolCall));
+        when(hermesGatewayService.streamChatCompletion(any(), any(), any()))
+                .thenReturn(new HermesGatewayService.HermesGatewayResult("resp-2", content));
+        when(chatMessageRepository.findTop80ByRoom_IdOrderByCreatedAtDescIdDesc(41L)).thenReturn(List.of());
+        when(chatMessageRepository.save(any(ChatMessageEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(chatRoomRepository.save(any(ChatRoomEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        HermesChatRoomAgentTaskResult result = service.startAgentTaskReply(
+                41L,
+                202L,
+                "帮我创建一个需求，标题是营销激励数据权限调整，内容是营销激励数据权限改为本单位及子单位",
+                user(5L, "pm", "产品"),
+                HermesToolExecutionPolicy.empty()
+        );
+
+        assertThat(result.actions()).hasSize(1);
+        assertThat(result.actions().get(0).type()).isEqualTo("CREATE_WORK_ITEM_DRAFT");
+        assertThat(result.actions().get(0).params())
+                .containsEntry("projectId", 12L)
+                .containsEntry("iterationId", 2L)
+                .containsEntry("workItemType", "需求")
+                .containsEntry("name", "营销激励数据权限调整")
+                .containsEntry("content", "营销激励数据权限改为本单位及子单位");
     }
 
     private ChatRoomEntity room() {

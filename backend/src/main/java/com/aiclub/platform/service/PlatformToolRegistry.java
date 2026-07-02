@@ -143,7 +143,7 @@ public class PlatformToolRegistry {
                 schema("workItemId", "工作项ID"),
                 workItemOutputSchema());
         register(result, TOOL_WORK_ITEM_CREATE_DRAFT, "创建工作项草稿", "WORK_ITEM", "创建需求/任务/缺陷草稿", false, "MEDIUM", "task:manage", true,
-                schema("projectId", "项目ID", "name", "标题", "content", "内容"),
+                schema("projectId", "项目ID", "iterationId", "迭代ID，可选但创建需求时优先确认", "workItemType", "工作项类型：需求/任务/缺陷", "name", "标题", "content", "内容", "assigneeUserId", "负责人用户ID，可选"),
                 pendingActionOutputSchema("CREATE_WORK_ITEM_DRAFT", "确认后创建工作项草稿", "创建草稿所需的项目、标题、正文与负责人参数"));
         register(result, TOOL_WORK_ITEM_ASSIGN, "指派工作项", "WORK_ITEM", "修改工作项负责人或协作人", false, "MEDIUM", "task:manage", true,
                 schema("workItemId", "工作项ID", "assigneeUserId", "负责人ID"),

@@ -13,9 +13,9 @@ DataWorkbench 是平台内轻量级数据工作台能力域，首个落地应用
 
 ## 2. 数据模型
 
-Flyway 迁移 `V105__data_workbench_v1.sql` 新增四类核心表：
+Flyway 迁移 `V108__data_workbench_v1.sql` 新增四类核心表：
 
-- `data_workbench_entity`：业务实体配置，记录实体编码、物理表、主键列、项目列、最大影响行数和请求/执行/回滚数据权限范围。
+- `data_workbench_entity`：业务实体配置，记录实体编码、物理表、主键列、平台项目列（业务表里存放平台项目 ID 的列，用于租户隔离，由管理员在实体配置里显式声明）、最大影响行数和请求/执行/回滚数据权限范围。
 - `data_workbench_field`：字段映射配置，记录字段编码、物理列、类型、同义词、是否可修改、是否可定位、是否敏感。
 - `data_change_request`：DataChange 工单，记录自然语言原文、DSL JSON、SQL 摘要、风险等级、审批状态、执行状态和操作人。
 - `data_change_audit`：执行审计，记录影响行主键、before/after JSON 快照、SQL 摘要、回滚状态和冲突原因。
@@ -51,7 +51,10 @@ POST /api/data-workbench/data-change/requests/{id}/execute
 POST /api/data-workbench/data-change/requests/{id}/rollback
 GET  /api/data-workbench/data-change/requests/{id}/audits
 GET/POST/PUT/DELETE /api/data-workbench/config/entities/**
+POST /api/data-workbench/config/entities/parse
 ```
+
+`POST /api/data-workbench/config/entities/parse` 是「新增实体」弹窗内的辅助入口：管理员粘贴 CREATE TABLE DDL 或 Java 实体类源码，服务端用 JSqlParser / JavaParser 解析出实体骨架 + 字段清单，返回一份草稿由前端按“合并”策略回填到表单。这个接口只读、不落库，实际保存仍走原有的 create / update 流程；未识别的 SQL / Java 类型会退化为 STRING 并附带 warning，管理员必须在表单上再复核 updatable/locator/sensitive 才能保存。
 
 ## 4. NL -> DSL -> SQL 链路
 

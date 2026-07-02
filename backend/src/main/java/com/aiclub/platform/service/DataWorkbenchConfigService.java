@@ -2,9 +2,11 @@ package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.DataWorkbenchEntity;
 import com.aiclub.platform.domain.model.DataWorkbenchFieldEntity;
+import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.dto.DataWorkbenchDtos.DataWorkbenchEntityItem;
 import com.aiclub.platform.dto.request.DataWorkbenchRequests.DataWorkbenchEntityRequest;
 import com.aiclub.platform.repository.DataWorkbenchEntityRepository;
+import com.aiclub.platform.repository.ProjectRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +18,7 @@ import java.util.regex.Pattern;
 /**
  * DataWorkbench 实体配置服务。
  * 业务意图：管理端通过配置维护实体、字段、同义词、定位字段和执行阈值，DataChange 运行时只消费这些白名单。
+ * v2 起每个实体强制绑定一个平台项目，SQL 执行不再向业务表注入项目隔离条件。
  */
 @Service
 @Transactional(readOnly = true)
@@ -24,15 +27,30 @@ public class DataWorkbenchConfigService {
     private static final Pattern SQL_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     private final DataWorkbenchEntityRepository entityRepository;
+    private final ProjectRepository projectRepository;
     private final DataWorkbenchMapper mapper;
 
-    public DataWorkbenchConfigService(DataWorkbenchEntityRepository entityRepository, DataWorkbenchMapper mapper) {
+    public DataWorkbenchConfigService(DataWorkbenchEntityRepository entityRepository,
+                                      ProjectRepository projectRepository,
+                                      DataWorkbenchMapper mapper) {
         this.entityRepository = entityRepository;
+        this.projectRepository = projectRepository;
         this.mapper = mapper;
     }
 
-    public List<DataWorkbenchEntityItem> listEntities(boolean includeDisabled) {
-        return entityRepository.findAll().stream()
+    /**
+     * 管理端全量列表，可选按平台项目过滤。
+     * @param includeDisabled 是否包含停用的实体
+     * @param platformProjectId 传入时仅返回该平台项目下的实体；为 null 时返回全量
+     */
+    public List<DataWorkbenchEntityItem> listEntities(boolean includeDisabled, Long platformProjectId) {
+        List<DataWorkbenchEntity> source;
+        if (platformProjectId != null) {
+            source = entityRepository.findAllByPlatformProjectIdOrderByIdAsc(platformProjectId);
+        } else {
+            source = entityRepository.findAll();
+        }
+        return source.stream()
                 .filter(entity -> includeDisabled || entity.isEnabled())
                 .sorted(Comparator.comparing(DataWorkbenchEntity::getId))
                 .map(entity -> entityRepository.findWithFieldsById(entity.getId()).orElse(entity))
@@ -46,8 +64,9 @@ public class DataWorkbenchConfigService {
 
     @Transactional
     public DataWorkbenchEntityItem createEntity(DataWorkbenchEntityRequest request) {
-        if (entityRepository.existsByEntityCodeIgnoreCase(request.entityCode())) {
-            throw new IllegalArgumentException("实体编码已存在: " + request.entityCode());
+        Long platformProjectId = request.platformProjectId();
+        if (entityRepository.existsByPlatformProjectIdAndEntityCodeIgnoreCase(platformProjectId, request.entityCode().trim())) {
+            throw new IllegalArgumentException("该项目下实体编码已存在: " + request.entityCode());
         }
         DataWorkbenchEntity entity = new DataWorkbenchEntity();
         apply(entity, request);
@@ -57,6 +76,14 @@ public class DataWorkbenchConfigService {
     @Transactional
     public DataWorkbenchEntityItem updateEntity(Long id, DataWorkbenchEntityRequest request) {
         DataWorkbenchEntity entity = requireEntity(id);
+        // 若变更了 entityCode 或 platformProjectId，需要重新做“项目内唯一”校验。
+        Long currentProjectId = entity.getPlatformProject() == null ? null : entity.getPlatformProject().getId();
+        boolean codeChanged = !entity.getEntityCode().equalsIgnoreCase(request.entityCode().trim());
+        boolean projectChanged = currentProjectId == null || !currentProjectId.equals(request.platformProjectId());
+        if ((codeChanged || projectChanged)
+                && entityRepository.existsByPlatformProjectIdAndEntityCodeIgnoreCase(request.platformProjectId(), request.entityCode().trim())) {
+            throw new IllegalArgumentException("该项目下实体编码已存在: " + request.entityCode());
+        }
         apply(entity, request);
         return mapper.toEntityItem(entityRepository.save(entity));
     }
@@ -74,13 +101,14 @@ public class DataWorkbenchConfigService {
     private void apply(DataWorkbenchEntity entity, DataWorkbenchEntityRequest request) {
         validateIdentifier(request.tableName());
         validateIdentifier(request.primaryKeyColumn());
-        validateIdentifier(request.projectIdColumn());
+        ProjectEntity project = projectRepository.findById(request.platformProjectId())
+                .orElseThrow(() -> new IllegalArgumentException("平台项目不存在: " + request.platformProjectId()));
+        entity.setPlatformProject(project);
         entity.setEntityCode(request.entityCode().trim());
         entity.setEntityName(request.entityName().trim());
         entity.setDescription(defaultString(request.description()));
         entity.setTableName(request.tableName().trim());
         entity.setPrimaryKeyColumn(request.primaryKeyColumn().trim());
-        entity.setProjectIdColumn(request.projectIdColumn().trim());
         entity.setMaxAffectedRows(Math.max(1, request.maxAffectedRows()));
         entity.setRequestScope(request.requestScope());
         entity.setExecuteScope(request.executeScope());

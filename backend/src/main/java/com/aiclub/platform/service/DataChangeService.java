@@ -68,7 +68,9 @@ public class DataChangeService {
 
     public List<com.aiclub.platform.dto.DataWorkbenchDtos.DataWorkbenchEntityItem> listProjectEntities(Long projectId) {
         ProjectEntity project = requireVisibleProject(projectId);
-        return entityRepository.findAllByEnabledTrueOrderByIdAsc().stream()
+        // 项目实体在配置层已经与平台项目一一绑定，直接按项目查即可，不再依赖 requestScope 二次过滤可见性；
+        // requestScope 只在“能否提交/预览”环节使用。
+        return entityRepository.findAllByPlatformProjectIdAndEnabledTrueOrderByIdAsc(projectId).stream()
                 .filter(entity -> canRequest(project, entity))
                 .map(mapper::toEntityItem)
                 .toList();
@@ -90,16 +92,16 @@ public class DataChangeService {
     public DataChangePreviewResult preview(Long projectId, String text, String entityCode, java.util.Map<String, Object> rawDsl) {
         ProjectEntity project = requireVisibleProject(projectId);
         DataChangeDsl dsl = dslService.resolveDsl(projectId, text, entityCode, rawDsl);
-        DataWorkbenchEntity entity = requireEntity(dsl.entityCode());
+        DataWorkbenchEntity entity = requireProjectEntity(projectId, dsl.entityCode());
         permissionSupport.requireProjectScope(project, entity.getRequestScope(), "当前角色不允许在该项目提交数据变更");
-        return sqlExecutor.preview(projectId, entity, dsl);
+        return sqlExecutor.preview(entity, dsl);
     }
 
     @Transactional
     public DataChangeRequestItem submit(Long projectId, String text, String entityCode, java.util.Map<String, Object> rawDsl) {
         ProjectEntity project = requireVisibleProject(projectId);
         DataChangePreviewResult preview = preview(projectId, text, entityCode, rawDsl);
-        DataWorkbenchEntity entity = requireEntity(preview.dsl().entityCode());
+        DataWorkbenchEntity entity = requireProjectEntity(projectId, preview.dsl().entityCode());
         DataChangeRequestEntity request = new DataChangeRequestEntity();
         request.setProject(project);
         request.setEntity(entity);
@@ -139,6 +141,7 @@ public class DataChangeService {
     @Transactional
     public DataChangeRequestItem approve(Long id) {
         DataChangeRequestEntity request = requireRequest(id);
+        requireProjectMatchesEntity(request);
         permissionSupport.requireProjectScope(request.getProject(), request.getEntity().getExecuteScope(), "当前角色不允许审批该项目数据变更");
         request.setApprovalStatus("APPROVED");
         request.setApproverUser(currentUser());
@@ -149,6 +152,7 @@ public class DataChangeService {
     @Transactional
     public DataChangeRequestItem reject(Long id, String reason) {
         DataChangeRequestEntity request = requireRequest(id);
+        requireProjectMatchesEntity(request);
         permissionSupport.requireProjectScope(request.getProject(), request.getEntity().getExecuteScope(), "当前角色不允许驳回该项目数据变更");
         request.setApprovalStatus("REJECTED");
         request.setExecutionStatus("REJECTED");
@@ -161,6 +165,7 @@ public class DataChangeService {
     @Transactional
     public DataChangeRequestItem execute(Long id) {
         DataChangeRequestEntity request = requireRequest(id);
+        requireProjectMatchesEntity(request);
         permissionSupport.requireProjectScope(request.getProject(), request.getEntity().getExecuteScope(), "当前角色不允许执行该项目数据变更");
         if ("PENDING".equals(request.getApprovalStatus())) {
             throw new IllegalArgumentException("数据变更尚未审批通过");
@@ -177,6 +182,7 @@ public class DataChangeService {
     @Transactional
     public DataChangeRequestItem rollback(Long id) {
         DataChangeRequestEntity request = requireRequest(id);
+        requireProjectMatchesEntity(request);
         permissionSupport.requireProjectScope(request.getProject(), request.getEntity().getRollbackScope(), "当前角色不允许回滚该项目数据变更");
         request.setRollbackUser(currentUser());
         return mapper.toRequestItem(sqlExecutor.rollback(request));
@@ -214,9 +220,25 @@ public class DataChangeService {
         return project;
     }
 
-    private DataWorkbenchEntity requireEntity(String entityCode) {
-        return entityRepository.findWithFieldsByEntityCode(entityCode)
-                .orElseThrow(() -> new NoSuchElementException("DataWorkbench 实体不存在: " + entityCode));
+    /**
+     * 工单归属项目必须与实体绑定的平台项目一致，否则视为跨项目串数据。
+     */
+    private void requireProjectMatchesEntity(DataChangeRequestEntity request) {
+        Long requestProjectId = request.getProject() == null ? null : request.getProject().getId();
+        Long entityProjectId = request.getEntity() == null || request.getEntity().getPlatformProject() == null
+                ? null
+                : request.getEntity().getPlatformProject().getId();
+        if (requestProjectId == null || entityProjectId == null || !requestProjectId.equals(entityProjectId)) {
+            throw new IllegalArgumentException("实体绑定项目与工单项目不一致，禁止操作");
+        }
+    }
+
+    /**
+     * 按平台项目 + 实体编码定位实体，避免跨项目引用他人配置。
+     */
+    private DataWorkbenchEntity requireProjectEntity(Long projectId, String entityCode) {
+        return entityRepository.findWithFieldsByPlatformProjectIdAndEntityCode(projectId, entityCode)
+                .orElseThrow(() -> new NoSuchElementException("项目内未找到 DataWorkbench 实体: " + entityCode));
     }
 
     private DataChangeRequestEntity requireRequest(Long id) {

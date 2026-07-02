@@ -31,7 +31,7 @@ public class DataChangeDslService {
         if (explicitDsl != null && !explicitDsl.isEmpty()) {
             return normalizeDsl(explicitDsl, entityCode);
         }
-        DataWorkbenchEntity entity = resolveEntity(entityCode);
+        DataWorkbenchEntity entity = resolveEntity(projectId, entityCode);
         String normalizedText = defaultString(text);
         LinkedHashMap<String, Object> set = new LinkedHashMap<>();
         LinkedHashMap<String, Object> where = new LinkedHashMap<>();
@@ -53,7 +53,7 @@ public class DataChangeDslService {
                 }
             }
         }
-        where.put("projectId", projectId);
+        // 项目隔离已由实体绑定平台项目 + 服务层校验保障，DSL 不再注入 projectId。
         return new DataChangeDsl("1", "UPDATE", entity.getEntityCode(), set, where);
     }
 
@@ -73,14 +73,14 @@ public class DataChangeDslService {
         );
     }
 
-    private DataWorkbenchEntity resolveEntity(String entityCode) {
+    private DataWorkbenchEntity resolveEntity(Long projectId, String entityCode) {
         if (entityCode != null && !entityCode.isBlank()) {
-            return entityRepository.findWithFieldsByEntityCode(entityCode.trim())
-                    .orElseThrow(() -> new NoSuchElementException("DataWorkbench 实体不存在: " + entityCode));
+            return entityRepository.findWithFieldsByPlatformProjectIdAndEntityCode(projectId, entityCode.trim())
+                    .orElseThrow(() -> new NoSuchElementException("项目内未找到 DataWorkbench 实体: " + entityCode));
         }
-        return entityRepository.findAllByEnabledTrueOrderByIdAsc().stream()
+        return entityRepository.findAllByPlatformProjectIdAndEnabledTrueOrderByIdAsc(projectId).stream()
                 .findFirst()
-                .orElseThrow(() -> new NoSuchElementException("请先配置 DataWorkbench 实体"));
+                .orElseThrow(() -> new NoSuchElementException("请先为当前项目配置 DataWorkbench 实体"));
     }
 
     private Object extractSetValue(String text, DataWorkbenchFieldEntity field) {

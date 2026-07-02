@@ -19,13 +19,13 @@ import static org.mockito.Mockito.when;
 class DataChangeDslServiceTests {
 
     /**
-     * 验证中文自然语言能解析出修改字段、定位字段和后端注入的项目条件。
+     * 验证中文自然语言能解析出修改字段与定位字段（v2 起 DSL 不再注入 projectId）。
      */
     @Test
     void shouldResolveChineseTextToUpdateDsl() {
         DataWorkbenchEntityRepository repository = mock(DataWorkbenchEntityRepository.class);
         DataWorkbenchEntity entity = buildEntity();
-        when(repository.findWithFieldsByEntityCode("project")).thenReturn(Optional.of(entity));
+        when(repository.findWithFieldsByPlatformProjectIdAndEntityCode(9L, "project")).thenReturn(Optional.of(entity));
         DataChangeDslService service = new DataChangeDslService(repository);
 
         var dsl = service.resolveDsl(
@@ -39,7 +39,8 @@ class DataChangeDslServiceTests {
         assertThat(dsl.entityCode()).isEqualTo("project");
         assertThat(dsl.set()).containsEntry("qualificationRequired", true);
         assertThat(dsl.where()).containsEntry("projectCode", "XMBM202606180004");
-        assertThat(dsl.where()).containsEntry("projectId", 9L);
+        // 平台项目隔离改由实体绑定和服务层校验负责，DSL 内不再注入 projectId。
+        assertThat(dsl.where()).doesNotContainKey("projectId");
     }
 
     private DataWorkbenchEntity buildEntity() {

@@ -114,9 +114,13 @@ public class HermesActionPlannerService {
 
         String workItemType = defaultString(arguments.get("workItemType"), "需求");
         String content = defaultString(arguments.get("content"), "");
+        Long iterationId = resolveLong(arguments.get("iterationId"));
+        if (iterationId == null && groundingState != null && groundingState.boundSlot("iteration") != null) {
+            iterationId = groundingState.boundSlot("iteration").entityId();
+        }
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("projectId", projectId);
-        params.put("iterationId", resolveLong(arguments.get("iterationId")));
+        params.put("iterationId", iterationId);
         params.put("workItemType", workItemType);
         params.put("name", defaultString(arguments.get("name"), buildTitle(content, workItemType)));
         params.put("content", content);

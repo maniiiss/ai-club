@@ -13,11 +13,29 @@ public interface DataWorkbenchEntityRepository extends JpaRepository<DataWorkben
     @EntityGraph(attributePaths = "fields")
     Optional<DataWorkbenchEntity> findWithFieldsById(Long id);
 
+    /**
+     * 项目内按实体编码查找，用于公众端 DataChange DSL 引用。
+     */
     @EntityGraph(attributePaths = "fields")
-    Optional<DataWorkbenchEntity> findWithFieldsByEntityCode(String entityCode);
+    Optional<DataWorkbenchEntity> findWithFieldsByPlatformProjectIdAndEntityCode(Long platformProjectId, String entityCode);
 
     @EntityGraph(attributePaths = "fields")
     List<DataWorkbenchEntity> findAllByEnabledTrueOrderByIdAsc();
 
-    boolean existsByEntityCodeIgnoreCase(String entityCode);
+    /**
+     * 项目内启用状态的实体，公众端项目研发模块使用。
+     */
+    @EntityGraph(attributePaths = "fields")
+    List<DataWorkbenchEntity> findAllByPlatformProjectIdAndEnabledTrueOrderByIdAsc(Long platformProjectId);
+
+    /**
+     * 管理端按项目筛选实体列表。
+     */
+    @EntityGraph(attributePaths = "fields")
+    List<DataWorkbenchEntity> findAllByPlatformProjectIdOrderByIdAsc(Long platformProjectId);
+
+    /**
+     * 判断项目内是否已有同名实体编码。
+     */
+    boolean existsByPlatformProjectIdAndEntityCodeIgnoreCase(Long platformProjectId, String entityCode);
 }
