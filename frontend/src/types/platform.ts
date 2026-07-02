@@ -2168,6 +2168,103 @@ export interface PlatformToolItem {
   descriptionOverride: string
 }
 
+export interface DataWorkbenchAppItem {
+  code: string
+  name: string
+  description: string
+  enabled: boolean
+}
+
+export interface DataWorkbenchFieldItem {
+  id: number | null
+  fieldCode: string
+  fieldName: string
+  columnName: string
+  dataType: string
+  synonyms: string
+  updatable: boolean
+  locator: boolean
+  sensitive: boolean
+  enabled: boolean
+  sortOrder: number
+}
+
+export interface DataWorkbenchEntityItem {
+  id: number
+  entityCode: string
+  entityName: string
+  description: string
+  tableName: string
+  primaryKeyColumn: string
+  projectIdColumn: string
+  maxAffectedRows: number
+  requestScope: DataPermissionScopeValue
+  executeScope: DataPermissionScopeValue
+  rollbackScope: DataPermissionScopeValue
+  enabled: boolean
+  fields: DataWorkbenchFieldItem[]
+}
+
+export interface DataChangeDsl {
+  version: string
+  operation: string
+  entityCode: string
+  set: Record<string, unknown>
+  where: Record<string, unknown>
+}
+
+export interface DataChangePreviewResult {
+  dsl: DataChangeDsl
+  entity: DataWorkbenchEntityItem
+  sqlSummary: string
+  affectedRows: number
+  riskLevel: string
+  riskReasons: string[]
+  approvalRequired: boolean
+}
+
+export interface DataChangeRequestItem {
+  id: number
+  projectId: number
+  projectName: string
+  entityId: number
+  entityCode: string
+  entityName: string
+  originalText: string
+  dsl: DataChangeDsl
+  previewSqlSummary: string
+  riskLevel: string
+  approvalStatus: string
+  executionStatus: string
+  rollbackStatus: string
+  affectedRows: number
+  riskReasons: string[]
+  rejectReason: string
+  rollbackConflictReason: string
+  requesterName: string
+  approverName: string
+  executorName: string
+  rollbackUserName: string
+  createdAt: string
+  approvedAt: string
+  executedAt: string
+  rolledBackAt: string
+}
+
+export interface DataChangeAuditItem {
+  id: number
+  requestId: number
+  entityName: string
+  primaryKeyValue: string
+  beforeSnapshot: Record<string, unknown>
+  afterSnapshot: Record<string, unknown>
+  sqlSummary: string
+  rollbackStatus: string
+  rollbackConflictReason: string
+  createdAt: string
+  rolledBackAt: string
+}
+
 export interface PlatformEnvVarItem {
   envKey: string
   displayName: string

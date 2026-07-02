@@ -1,6 +1,6 @@
 /**
  * 研发模块页面。
- * 左侧仓库绑定列表 + 右侧详情（产品分支/代码结构/扫描/自动合并中心/自动合并日志 五 Tab 切换）。
+ * 左侧仓库绑定列表 + 右侧详情（产品分支/代码结构/扫描/自动合并中心/自动合并日志/数据工作台 六 Tab 切换）。
  */
 import { useEffect, useState, useCallback, useMemo, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
@@ -22,6 +22,7 @@ import {
   GitCompareArrows,
   ClipboardList,
   Tag,
+  Database,
 } from 'lucide-react'
 import {
   pageGitlabBindings,
@@ -67,8 +68,9 @@ import {
   productBranchSyncResultStyle,
 } from '@/src/lib/productBranchUtils'
 import { buildGitlabTagPayload, resolveDefaultTagBranch } from '@/src/lib/gitlabTagUtils'
+import { DataWorkbenchPanel } from './DataWorkbenchPanel'
 
-type DetailTab = 'product-branches' | 'code-structure' | 'scan' | 'auto-merge-center' | 'auto-merge-logs'
+type DetailTab = 'product-branches' | 'code-structure' | 'scan' | 'auto-merge-center' | 'auto-merge-logs' | 'data-workbench'
 
 const detailTabs: { key: DetailTab; label: string; icon: typeof GitBranch }[] = [
   { key: 'product-branches', label: '产品分支', icon: GitBranch },
@@ -76,6 +78,7 @@ const detailTabs: { key: DetailTab; label: string; icon: typeof GitBranch }[] = 
   { key: 'scan', label: '扫描', icon: Shield },
   { key: 'auto-merge-center', label: '自动合并中心', icon: Zap },
   { key: 'auto-merge-logs', label: '合并日志', icon: History },
+  { key: 'data-workbench', label: '数据工作台', icon: Database },
 ]
 
 export const DevelopmentPage = () => {
@@ -112,6 +115,12 @@ export const DevelopmentPage = () => {
   }, [fetchBindings])
 
   useEffect(() => {
+    if (!bindingsLoading && !bindingsError && bindings.length === 0) {
+      setActiveTab('data-workbench')
+    }
+  }, [bindings.length, bindingsError, bindingsLoading])
+
+  useEffect(() => {
     if (!guideCompleted && authUser && !bindingsLoading && !bindingsError && selectedBinding) {
       const timer = setTimeout(() => startGuide(), 500)
       return () => clearTimeout(timer)
@@ -125,7 +134,7 @@ export const DevelopmentPage = () => {
         研发
       </h2>
       <p className="mb-6 text-[14px] text-[var(--color-text-tertiary)]">
-        管理代码仓库绑定、产品分支、代码结构和自动合并策略
+        管理代码仓库绑定、产品分支、代码结构、自动合并策略和项目数据工作台
       </p>
       </div>
 
@@ -215,12 +224,42 @@ export const DevelopmentPage = () => {
           )}
 
           {!selectedBinding ? (
-            <div className="flex-1 flex items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-card)] p-16 text-center">
-              <div>
-                <GitBranch className="mx-auto h-10 w-10 text-[var(--color-text-tertiary)]" strokeWidth={1.5} />
-                <p className="mt-3 text-[14px] text-[var(--color-text-tertiary)]">
-                  从左侧选择一个仓库绑定查看详情
-                </p>
+            <div className="flex h-full flex-col">
+              <div className="flex-shrink-0">
+                <Card>
+                  <div>
+                    <h3 className="text-[16px] font-semibold text-[var(--color-text-primary)]">
+                      项目数据工作台
+                    </h3>
+                    <p className="mt-1 text-[13px] text-[var(--color-text-tertiary)]">
+                      仓库绑定为空时，仍可在项目范围内提交 DataChange 工单。
+                    </p>
+                  </div>
+                </Card>
+                <div className="mt-4 flex w-fit gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)]">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('data-workbench')}
+                    className="flex items-center gap-1.5 rounded-md bg-[var(--color-primary)] px-3.5 py-1.5 text-[13px] font-medium text-white shadow-[var(--shadow-sm)]"
+                  >
+                    <Database className="h-3.5 w-3.5" strokeWidth={1.75} />
+                    数据工作台
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 min-h-0 flex-1">
+                {activeTab === 'data-workbench' ? (
+                  <DataWorkbenchPanel projectId={pid} />
+                ) : (
+                  <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-card)] p-16 text-center">
+                    <div>
+                      <GitBranch className="mx-auto h-10 w-10 text-[var(--color-text-tertiary)]" strokeWidth={1.5} />
+                      <p className="mt-3 text-[14px] text-[var(--color-text-tertiary)]">
+                        从左侧选择一个仓库绑定查看详情
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -287,6 +326,7 @@ export const DevelopmentPage = () => {
                 {activeTab === 'scan' && <ScanPanel bindingId={selectedBinding.id} branch={selectedBinding.defaultTargetBranch || 'main'} />}
                 {activeTab === 'auto-merge-center' && <AutoMergeCenterPanel />}
                 {activeTab === 'auto-merge-logs' && <AutoMergeLogsPanel />}
+                {activeTab === 'data-workbench' && <DataWorkbenchPanel projectId={pid} />}
               </div>
             </div>
           )}

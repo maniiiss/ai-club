@@ -901,6 +901,7 @@ const platformMenuSeedMap: Record<(typeof PLATFORM_MANAGEMENT_PERMISSION_CODES)[
   'system:shortcut:view': { permission: 'system:shortcut:view', fallbackPath: '/shortcuts', fallbackLabel: '快捷入口管理', shortLabel: '入口', fallbackIcon: Link, matchNames: ['shortcuts'] },
   'model:view': { permission: 'model:view', fallbackPath: '/models', fallbackLabel: '模型管理', shortLabel: '模型', fallbackIcon: Cpu, matchNames: ['models', 'model-benchmark-configs'] },
   'system:tool:view': { permission: 'system:tool:view', fallbackPath: '/tools', fallbackLabel: '工具配置', shortLabel: '工具', fallbackIcon: Connection, matchNames: ['tools'] },
+  'data-workbench:view': { permission: 'data-workbench:view', fallbackPath: '/data-workbench', fallbackLabel: '数据工作台', shortLabel: '数据', fallbackIcon: DataAnalysis, matchNames: ['data-workbench'] },
   'scan:ruleset:view': { permission: 'scan:ruleset:view', fallbackPath: '/scan-rulesets', fallbackLabel: '扫描规则集', shortLabel: '规则集', fallbackIcon: Search, matchNames: ['scan-rulesets'] },
   'system:pr-review:view': { permission: 'system:pr-review:view', fallbackPath: '/pr-review-stats', fallbackLabel: 'PR评审统计', shortLabel: 'PR评审', fallbackIcon: DataAnalysis, matchNames: ['pr-review-stats'] },
   'system:agent-usage:view': { permission: 'system:agent-usage:view', fallbackPath: '/agent-usage-stats', fallbackLabel: '智能体调用统计', shortLabel: '智能体', fallbackIcon: DataAnalysis, matchNames: ['agent-usage-stats'] }
