@@ -59,6 +59,8 @@ export interface WorkItem {
   collaboratorNames: string[]
   planStartDate: string | null
   planEndDate: string | null
+  /** 创建时间。 */
+  createdAt: string | null
   updatedAt: string
   description: string
   moduleName?: string | null

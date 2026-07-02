@@ -45,8 +45,6 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.time.LocalDateTime;
@@ -95,6 +93,7 @@ public class ExecutionTaskService {
     private final ExecutionEventService executionEventService;
     private final SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
     private final ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
+    private final ExecutionTaskQueuePublisher executionTaskQueuePublisher;
     private final ObjectMapper objectMapper;
 
     public ExecutionTaskService(ExecutionTaskRepository executionTaskRepository,
@@ -111,6 +110,7 @@ public class ExecutionTaskService {
                                 ExecutionEventService executionEventService,
                                 SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService,
                                 ExecutionWorkspaceCleanupService executionWorkspaceCleanupService,
+                                ExecutionTaskQueuePublisher executionTaskQueuePublisher,
                                 ObjectMapper objectMapper) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
@@ -126,6 +126,7 @@ public class ExecutionTaskService {
         this.executionEventService = executionEventService;
         this.selfUpgradeExecutionWritebackService = selfUpgradeExecutionWritebackService;
         this.executionWorkspaceCleanupService = executionWorkspaceCleanupService;
+        this.executionTaskQueuePublisher = executionTaskQueuePublisher;
         this.objectMapper = objectMapper;
     }
 
@@ -227,7 +228,9 @@ public class ExecutionTaskService {
                 request.inputPayload(),
                 false
         );
-        return toTaskSummary(executionTaskRepository.save(entity));
+        ExecutionTaskEntity saved = executionTaskRepository.save(entity);
+        scheduleDispatchAfterCommit(saved.getId());
+        return toTaskSummary(saved);
     }
 
     /**
@@ -253,7 +256,9 @@ public class ExecutionTaskService {
                 command.inputPayload(),
                 true
         );
-        return executionTaskRepository.save(entity);
+        ExecutionTaskEntity saved = executionTaskRepository.save(entity);
+        scheduleDispatchAfterCommit(saved.getId());
+        return saved;
     }
 
     /**
@@ -302,14 +307,16 @@ public class ExecutionTaskService {
         executionTask.setStatus("PENDING");
         executionTask.setCancelRequested(false);
         executionTask.setLatestSummary("已重新排队");
-        return toTaskSummary(executionTaskRepository.save(executionTask));
+        ExecutionTaskEntity saved = executionTaskRepository.save(executionTask);
+        scheduleDispatchAfterCommit(saved.getId());
+        return toTaskSummary(saved);
     }
 
     /**
      * 兼容旧任务 Agent 运行入口：创建执行任务并立即执行。
      */
     @Transactional
-    public TaskAgentRunSummary createLegacyExecutionTask(Long workItemId, String inputText) {
+    public ExecutionTaskSummary createLegacyExecutionTask(Long workItemId, String inputText) {
         TaskEntity workItem = requireWorkItemVisible(workItemId);
         if (workItem.getAgent() == null) {
             throw new IllegalArgumentException("当前任务未绑定执行 Agent");
@@ -325,9 +332,7 @@ public class ExecutionTaskService {
                 List.of(new ExecutionAgentBindingRequest(ExecutionWorkflowService.STEP_AD_HOC_RUN, workItem.getAgent().getId())),
                 Map.of("inputText", defaultString(inputText).trim())
         );
-        ExecutionTaskSummary executionTaskSummary = createExecutionTask(request);
-        ExecutionRunEntity executionRun = executionDispatchService.dispatchTaskNow(executionTaskSummary.id());
-        return toLegacyRunSummary(executionRun);
+        return createExecutionTask(request);
     }
 
     /**
@@ -808,16 +813,7 @@ public class ExecutionTaskService {
     }
 
     private void scheduleDispatchAfterCommit(Long executionTaskId) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            executionDispatchService.dispatchTaskAsync(executionTaskId);
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                executionDispatchService.dispatchTaskAsync(executionTaskId);
-            }
-        });
+        executionTaskQueuePublisher.publishAfterCommit(executionTaskId);
     }
 
     /**

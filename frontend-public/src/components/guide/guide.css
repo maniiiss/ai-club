@@ -1,0 +1,137 @@
+/**
+ * 新手引导自定义样式。
+ * 覆盖 Driver.js 默认样式，与项目 Tailwind 设计风格融合。
+ */
+
+/* 遮罩层 */
+.driver-overlay {
+  background-color: rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Popover 容器 */
+.driver-popover {
+  background-color: #ffffff !important;
+  border-radius: 12px !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15) !important;
+  max-width: 360px !important;
+  padding: 0 !important;
+  font-family: inherit !important;
+}
+
+/* Popover 标题 */
+.driver-popover .driver-popover-title {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  color: var(--color-text-primary, #111827) !important;
+  margin: 0 !important;
+  padding: 16px 20px 4px !important;
+}
+
+/* Popover 描述 */
+.driver-popover .driver-popover-description {
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  color: var(--color-text-secondary, #6b7280) !important;
+  margin: 0 !important;
+  padding: 4px 20px 16px !important;
+}
+
+/* 进度文本 */
+.driver-popover .driver-popover-progress-text {
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: var(--color-text-tertiary, #9ca3af) !important;
+}
+
+/* 按钮区域 */
+.driver-popover .driver-popover-navigation-btns {
+  display: flex !important;
+  gap: 8px !important;
+  padding: 0 20px 16px !important;
+}
+
+/* 通用按钮样式 */
+.driver-popover .driver-popover-prev-btn,
+.driver-popover .driver-popover-next-btn,
+.driver-popover .driver-popover-close-btn-text {
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  padding: 6px 16px !important;
+  border: none !important;
+  text-shadow: none !important;
+}
+
+/* 上一步按钮 */
+.driver-popover .driver-popover-prev-btn {
+  background-color: var(--color-bg-hover, #f3f4f6) !important;
+  color: var(--color-text-secondary, #6b7280) !important;
+}
+
+.driver-popover .driver-popover-prev-btn:hover {
+  background-color: var(--color-border, #e5e7eb) !important;
+}
+
+/* 下一步按钮 */
+.driver-popover .driver-popover-next-btn {
+  background-color: var(--color-primary, #2563eb) !important;
+  color: #ffffff !important;
+}
+
+.driver-popover .driver-popover-next-btn:hover {
+  opacity: 0.9 !important;
+}
+
+/* 关闭按钮 */
+.driver-popover .driver-popover-close-btn {
+  top: 12px !important;
+  right: 12px !important;
+}
+
+.driver-popover .driver-popover-close-btn-text {
+  background: none !important;
+  color: var(--color-text-tertiary, #9ca3af) !important;
+  font-size: 12px !important;
+  padding: 4px 8px !important;
+}
+
+.driver-popover .driver-popover-close-btn-text:hover {
+  color: var(--color-text-secondary, #6b7280) !important;
+}
+
+/* 箭头 */
+.driver-popover .driver-popover-arrow {
+  display: none !important;
+}
+
+/* 自定义底部区域：倒计时 + 跳过按钮 */
+.guide-custom-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px 12px;
+  border-top: 1px solid var(--color-border-light, #f3f4f6);
+  margin-top: 0;
+}
+
+.guide-countdown {
+  font-size: 12px;
+  color: var(--color-text-tertiary, #9ca3af);
+  user-select: none;
+}
+
+.guide-skip-btn {
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: var(--color-text-tertiary, #9ca3af);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.guide-skip-btn:hover {
+  color: var(--color-text-secondary, #6b7280);
+  background-color: var(--color-bg-hover, #f3f4f6);
+}

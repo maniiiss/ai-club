@@ -15,13 +15,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.PageRequest;
 
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -58,6 +59,9 @@ class WikiPageServiceMemoryTagTests {
 
     @Mock
     private WikiKnowledgeSearchService wikiKnowledgeSearchService;
+
+    @Mock
+    private WikiSyncQueuePublisher wikiSyncQueuePublisher;
 
     @Test
     void shouldIndexProjectPageIntoKnowledgeStore() {
@@ -96,17 +100,79 @@ class WikiPageServiceMemoryTagTests {
         task.setStatus("PENDING");
         task.setNextAttemptAt(LocalDateTime.now().minusMinutes(1));
 
-        when(wikiPageSyncTaskRepository.findAllByStatusAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
-                org.mockito.ArgumentMatchers.eq("PENDING"),
+        when(wikiPageSyncTaskRepository.claimQueuedTask(
+                eq(1L),
+                eq("PENDING"),
+                eq("RUNNING"),
                 any(LocalDateTime.class),
-                any(PageRequest.class)
-        )).thenReturn(List.of(task));
+                any(LocalDateTime.class)
+        )).thenReturn(1);
+        when(wikiPageSyncTaskRepository.findById(1L)).thenReturn(Optional.of(task));
         when(wikiPageSyncTaskRepository.save(any(WikiPageSyncTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(wikiPageRepository.save(any(WikiPageEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        wikiPageService.processPendingSyncTasks();
+        wikiPageService.consumeQueuedSyncTask(1L, false);
 
         verify(wikiKnowledgeSearchService).indexProjectPage(page);
         verify(hindsightClientService, org.mockito.Mockito.never()).retainWikiDocument(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void shouldSkipProjectWikiSyncWhenClaimFails() {
+        WikiPageService wikiPageService = new WikiPageService(
+                projectRepository,
+                userRepository,
+                wikiPageRepository,
+                wikiPageVersionRepository,
+                wikiPageAccessRepository,
+                wikiPageSyncTaskRepository,
+                projectDataPermissionService,
+                hindsightClientService,
+                wikiKnowledgeSearchService,
+                wikiSyncQueuePublisher
+        );
+        when(wikiPageSyncTaskRepository.claimQueuedTask(
+                eq(99L),
+                eq("PENDING"),
+                eq("RUNNING"),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class)
+        )).thenReturn(0);
+
+        boolean consumed = wikiPageService.consumeQueuedSyncTask(99L, false);
+
+        assertThat(consumed).isFalse();
+        verify(wikiPageSyncTaskRepository, never()).findById(99L);
+        verify(wikiKnowledgeSearchService, never()).indexProjectPage(any());
+    }
+
+    @Test
+    void shouldRepublishPendingProjectWikiSyncTaskForRabbitCompensation() {
+        WikiPageService wikiPageService = new WikiPageService(
+                projectRepository,
+                userRepository,
+                wikiPageRepository,
+                wikiPageVersionRepository,
+                wikiPageAccessRepository,
+                wikiPageSyncTaskRepository,
+                projectDataPermissionService,
+                hindsightClientService,
+                wikiKnowledgeSearchService,
+                wikiSyncQueuePublisher
+        );
+        WikiPageSyncTaskEntity task = new WikiPageSyncTaskEntity();
+        task.setId(11L);
+        task.setStatus("PENDING");
+        task.setNextAttemptAt(LocalDateTime.now().minusMinutes(1));
+        when(wikiPageSyncTaskRepository.findAllByStatusAndNextAttemptAtLessThanEqualOrderByNextAttemptAtAscIdAsc(
+                eq("PENDING"),
+                any(LocalDateTime.class),
+                any(org.springframework.data.domain.PageRequest.class)
+        )).thenReturn(java.util.List.of(task));
+
+        wikiPageService.processPendingSyncTasks();
+
+        verify(wikiSyncQueuePublisher).publishNow(WikiSyncQueuePublisher.TYPE_PROJECT_WIKI, 11L);
+        verify(wikiKnowledgeSearchService, never()).indexProjectPage(any());
     }
 }

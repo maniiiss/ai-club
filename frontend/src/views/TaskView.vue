@@ -1092,10 +1092,10 @@ const handleRunAgent = async () => {
   }
   runningAgent.value = true
   try {
-    const result = await runTaskAgent(currentRunTask.value.id, runInput.value)
-    runHistory.value = [result, ...runHistory.value.filter(item => item.id !== result.id)]
-    ElMessage.success(result.status === 'SUCCESS' ? '任务智能体运行成功' : '任务智能体运行失败')
+    const executionTask = await runTaskAgent(currentRunTask.value.id, runInput.value)
+    ElMessage.success(`已提交到执行中心：${executionTask.title}`)
     await loadTasks()
+    await loadRunHistory()
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '运行失败')
   } finally {

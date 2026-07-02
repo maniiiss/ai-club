@@ -61,6 +61,12 @@ public class TaskEntity {
     )
     private Set<UserEntity> collaborators = new LinkedHashSet<>();
 
+    /**
+     * 创建时间。
+     */
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
@@ -161,8 +167,14 @@ public class TaskEntity {
     }
 
     @PrePersist
+    public void onCreate() {
+        LocalDateTime now = LocalDateTime.now();
+        this.createdAt = now;
+        this.updatedAt = now;
+    }
+
     @PreUpdate
-    public void touchUpdatedAt() {
+    public void onUpdate() {
         this.updatedAt = LocalDateTime.now();
     }
 
@@ -236,6 +248,14 @@ public class TaskEntity {
 
     public void setCollaborators(Set<UserEntity> collaborators) {
         this.collaborators = collaborators;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
     }
 
     public LocalDateTime getUpdatedAt() {

@@ -13,7 +13,13 @@ import com.aiclub.platform.dto.ChatRoomAgentTaskEventSummary;
 import com.aiclub.platform.dto.ChatRoomAgentTaskSummary;
 import com.aiclub.platform.dto.ChatRoomAgentToolPolicySummary;
 import com.aiclub.platform.dto.CurrentUserInfo;
+import com.aiclub.platform.dto.HermesActionSummary;
+import com.aiclub.platform.dto.HermesChatRoomAgentTaskResult;
+import com.aiclub.platform.dto.HermesSelectionCard;
+import com.aiclub.platform.dto.HermesToolExecutionPolicy;
 import com.aiclub.platform.dto.PlatformToolDefinition;
+import com.aiclub.platform.dto.request.HermesActionExecutedRequest;
+import com.aiclub.platform.dto.request.HermesSelectionRequest;
 import com.aiclub.platform.dto.request.UpdateChatRoomAgentConfigRequest;
 import com.aiclub.platform.dto.request.UpdateChatRoomAgentToolPoliciesRequest;
 import com.aiclub.platform.exception.ForbiddenException;
@@ -58,6 +64,7 @@ public class ChatRoomAgentService {
     public static final String TRIGGER_SUMMARY = "SUMMARY";
     public static final String TRIGGER_KEYWORD = "KEYWORD";
     public static final String TRIGGER_TASK_STATUS = "TASK_STATUS";
+    public static final String TRIGGER_SELECTION = "SELECTION";
 
     public static final String TASK_PENDING = "PENDING";
     public static final String TASK_RETRYING = "RETRYING";
@@ -73,6 +80,10 @@ public class ChatRoomAgentService {
             PlatformToolRegistry.TOOL_TEST_PLAN_CREATE_DRAFT
     );
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final String PAYLOAD_HERMES_ACTIONS = "hermesActions";
+    private static final String PAYLOAD_ACTION_STATUSES = "actionStatuses";
+    private static final String PAYLOAD_HERMES_SELECTION_CARDS = "hermesSelectionCards";
+    private static final String PAYLOAD_SELECTION_STATUSES = "selectionStatuses";
 
     private final AuthService authService;
     private final ChatRoomService chatRoomService;
@@ -298,6 +309,77 @@ public class ChatRoomAgentService {
         return toTaskSummary(taskRepository.save(task));
     }
 
+    /**
+     * 用户已经在消息流中确认并完成动作执行后，回写聊天室 Agent 任务状态。
+     * 业务意图：动作本身仍复用 Hermes 公众端既有业务 API，这里只负责房间内状态同步和审计事件。
+     */
+    @Transactional
+    public ChatRoomAgentTaskSummary markActionExecuted(Long roomId, Long taskId, HermesActionExecutedRequest request) {
+        return resolveAction(roomId, taskId, request, "executed", "用户已确认并执行动作");
+    }
+
+    /**
+     * 用户在消息流中取消待确认动作。
+     */
+    @Transactional
+    public ChatRoomAgentTaskSummary cancelAction(Long roomId, Long taskId, HermesActionExecutedRequest request) {
+        return resolveAction(roomId, taskId, request, "canceled", "用户取消了待确认动作");
+    }
+
+    /**
+     * 用户从候选卡片中完成选择后，创建一个后续 Agent 任务继续处理。
+     * 业务意图：候选选择沿用 HermesSelectionRequest 载荷，聊天室只把它包装成房间级持久化任务。
+     */
+    @Transactional
+    public ChatRoomAgentTaskSummary selectCandidate(Long roomId, Long taskId, HermesSelectionRequest request) {
+        ChatRoomAgentTaskEntity sourceTask = requireTask(roomId, taskId);
+        Map<String, Object> sourcePayload = readPayload(sourceTask.getPayloadJson());
+        String selectionKey = selectionKey(request);
+        sourceTask.setPayloadJson(writePayload(putNestedStatus(sourcePayload, PAYLOAD_SELECTION_STATUSES, selectionKey, "selected")));
+        taskRepository.save(sourceTask);
+        appendEvent(sourceTask, "SELECTION_SELECTED", "用户选择了候选对象", Map.of(
+                "selectionKey", selectionKey,
+                "selection", selectionPayload(request)
+        ));
+        chatWebSocketPushService.broadcastAgentActionExecuted(
+                roomId,
+                taskId,
+                sourceTask.getAssistantMessage() == null ? null : sourceTask.getAssistantMessage().getId(),
+                null,
+                "selected"
+        );
+
+        ChatRoomEntity room = sourceTask.getRoom();
+        ChatMessageEntity assistantMessage = buildAssistantPlaceholder(room);
+        ChatMessageEntity savedAssistant = chatMessageRepository == null ? assistantMessage : chatMessageRepository.save(assistantMessage);
+        ChatRoomAgentTaskEntity nextTask = new ChatRoomAgentTaskEntity();
+        nextTask.setRoom(room);
+        nextTask.setAssistantMessage(savedAssistant);
+        nextTask.setTriggerMessage(sourceTask.getTriggerMessage());
+        nextTask.setTriggerUser(sourceTask.getTriggerUser());
+        nextTask.setAuthorizedByUser(sourceTask.getAuthorizedByUser());
+        nextTask.setTriggerType(TRIGGER_SELECTION);
+        nextTask.setStatus(TASK_PENDING);
+        nextTask.setSource("selection-card");
+        nextTask.setSourceRef("selection:task:" + taskId + ":" + selectionKey);
+        nextTask.setPayloadJson(writePayload(Map.of(
+                "sourceTaskId", taskId,
+                "selection", selectionPayload(request)
+        )));
+        ChatRoomAgentTaskEntity savedTask = taskRepository.save(nextTask);
+        savedAssistant.setAgentTask(savedTask);
+        if (chatMessageRepository != null) {
+            chatMessageRepository.save(savedAssistant);
+        }
+        appendEvent(savedTask, "TASK_CREATED", "Hermes 候选选择后续任务已进入队列", Map.of("sourceTaskId", taskId, "selection", selectionPayload(request)));
+        if (chatRoomService != null) {
+            chatWebSocketPushService.broadcastMessageCreated(roomId, chatRoomService.toMessageSummary(savedAssistant));
+        }
+        chatWebSocketPushService.broadcastAgentTaskCreated(roomId, toTaskSummary(savedTask));
+        publishTaskIfPending(savedTask);
+        return toTaskSummary(savedTask);
+    }
+
     @Scheduled(fixedDelayString = "${platform.chat.agent.scheduler-fixed-delay-ms:5000}")
     @Transactional(readOnly = false)
     public void runPendingTasks() {
@@ -341,18 +423,31 @@ public class ChatRoomAgentService {
         if (chatHermesService == null || task.getAssistantMessage() == null) {
             throw new IllegalStateException("聊天室 Agent 运行时尚未就绪");
         }
+        HermesToolExecutionPolicy toolExecutionPolicy = buildToolExecutionPolicy(task);
+        HermesChatRoomAgentTaskResult hermesResult;
         if (TRIGGER_MENTION.equals(task.getTriggerType())) {
             if (task.getTriggerMessage() == null) {
                 throw new IllegalStateException("聊天室 Agent 触发消息缺失");
             }
-            chatHermesService.startHermesReply(task.getRoom().getId(), task.getAssistantMessage().getId(), task.getTriggerMessage().getId());
+            hermesResult = chatHermesService.startHermesReply(
+                    task.getRoom().getId(),
+                    task.getAssistantMessage().getId(),
+                    task.getTriggerMessage().getId(),
+                    toolExecutionPolicy
+            );
         } else {
-            chatHermesService.startAgentTaskReply(task.getRoom().getId(), task.getAssistantMessage().getId(),
-                    buildTaskInstruction(task), task.getAuthorizedByUser());
+            hermesResult = chatHermesService.startAgentTaskReply(
+                    task.getRoom().getId(),
+                    task.getAssistantMessage().getId(),
+                    buildTaskInstruction(task),
+                    task.getAuthorizedByUser(),
+                    toolExecutionPolicy
+            );
         }
         task.setStatus(TASK_DONE);
         task.setFinishedAt(LocalDateTime.now());
         taskRepository.save(task);
+        appendHermesRuntimeEvents(task, hermesResult);
         appendEvent(task, "TASK_DONE", "Hermes 已完成房间回复", Map.of());
         chatWebSocketPushService.broadcastAgentTaskUpdated(task.getRoom().getId(), toTaskSummary(task));
     }
@@ -384,6 +479,250 @@ public class ChatRoomAgentService {
 
     public boolean isAutoWriteToolAllowlisted(String toolCode) {
         return AUTO_WRITE_TOOL_ALLOWLIST.contains(defaultString(toolCode));
+    }
+
+    /**
+     * 将房间工具授权固化为本轮 Hermes MCP 会话策略。
+     * 业务意图：MCP bridge 执行工具时只能看到 Redis 热状态，因此这里必须把授权快照随任务一起传入。
+     */
+    private HermesToolExecutionPolicy buildToolExecutionPolicy(ChatRoomAgentTaskEntity task) {
+        if (task == null || task.getRoom() == null || task.getRoom().getId() == null) {
+            return HermesToolExecutionPolicy.empty();
+        }
+        List<ChatRoomAgentToolPolicyEntity> policies = toolPolicyRepository.findByRoom_IdOrderByToolCodeAsc(task.getRoom().getId());
+        List<String> enabledToolCodes = policies.stream()
+                .filter(ChatRoomAgentToolPolicyEntity::isEnabled)
+                .map(ChatRoomAgentToolPolicyEntity::getToolCode)
+                .map(this::defaultString)
+                .filter(toolCode -> !toolCode.isBlank())
+                .distinct()
+                .toList();
+        List<String> autoExecutableToolCodes = policies.stream()
+                .filter(ChatRoomAgentToolPolicyEntity::isEnabled)
+                .filter(ChatRoomAgentToolPolicyEntity::isAutoExecute)
+                .map(ChatRoomAgentToolPolicyEntity::getToolCode)
+                .map(this::defaultString)
+                .filter(toolCode -> !toolCode.isBlank())
+                .filter(toolCode -> {
+                    PlatformToolDefinition definition = platformToolRegistry.requireDefinition(toolCode);
+                    return definition.readOnly() || AUTO_WRITE_TOOL_ALLOWLIST.contains(toolCode);
+                })
+                .distinct()
+                .toList();
+        return new HermesToolExecutionPolicy(
+                task.getId(),
+                task.getRoom().getId(),
+                task.getAssistantMessage() == null ? null : task.getAssistantMessage().getId(),
+                task.getAuthorizedByUser() == null ? null : task.getAuthorizedByUser().getId(),
+                enabledToolCodes,
+                autoExecutableToolCodes
+        );
+    }
+
+    /**
+     * 将 Hermes 原生工具状态同步到聊天室任务事件。
+     * 业务意图：工具确认卡片和自动执行结果都来自同一个 Hermes 状态机，聊天室只负责事件化展示。
+     */
+    private void appendHermesRuntimeEvents(ChatRoomAgentTaskEntity task, HermesChatRoomAgentTaskResult result) {
+        if (task == null || result == null) {
+            return;
+        }
+        persistHermesRuntimeCards(task, result.actions(), result.selectionCards());
+        if (!result.actions().isEmpty()) {
+            appendEvent(task, "ACTION_PENDING", "Hermes 生成了待确认动作", Map.of("actionCount", result.actions().size()));
+            chatWebSocketPushService.broadcastAgentActionPending(
+                    task.getRoom().getId(),
+                    task.getId(),
+                    task.getAssistantMessage() == null ? null : task.getAssistantMessage().getId(),
+                    result.actions()
+            );
+        }
+        if (!result.selectionCards().isEmpty()) {
+            appendEvent(task, "SELECTION_PENDING", "Hermes 生成了候选选择卡片", Map.of("selectionCount", result.selectionCards().size()));
+            chatWebSocketPushService.broadcastAgentSelectionPending(
+                    task.getRoom().getId(),
+                    task.getId(),
+                    task.getAssistantMessage() == null ? null : task.getAssistantMessage().getId(),
+                    result.selectionCards()
+            );
+        }
+        for (Map<String, Object> execution : result.toolExecutions()) {
+            String status = defaultString(String.valueOf(execution.getOrDefault("status", "")));
+            if (!"SUCCESS".equalsIgnoreCase(status)) {
+                continue;
+            }
+            HermesActionSummary executedAction = toExecutedAction(execution);
+            appendEvent(task, "ACTION_EXECUTED", "Hermes 已自动执行授权工具", execution);
+            chatWebSocketPushService.broadcastAgentActionExecuted(
+                    task.getRoom().getId(),
+                    task.getId(),
+                    task.getAssistantMessage() == null ? null : task.getAssistantMessage().getId(),
+                    executedAction,
+                    "executed"
+            );
+        }
+    }
+
+    /**
+     * 将 Hermes 运行态保存进任务 payload，保证刷新消息列表后仍能恢复动作与候选卡片。
+     */
+    private void persistHermesRuntimeCards(ChatRoomAgentTaskEntity task,
+                                           List<HermesActionSummary> actions,
+                                           List<HermesSelectionCard> selectionCards) {
+        if (task == null) {
+            return;
+        }
+        Map<String, Object> payload = readPayload(task.getPayloadJson());
+        if (actions != null && !actions.isEmpty()) {
+            payload.put(PAYLOAD_HERMES_ACTIONS, actions);
+        }
+        if (selectionCards != null && !selectionCards.isEmpty()) {
+            payload.put(PAYLOAD_HERMES_SELECTION_CARDS, selectionCards);
+        }
+        task.setPayloadJson(writePayload(payload));
+        taskRepository.save(task);
+    }
+
+    private ChatRoomAgentTaskSummary resolveAction(Long roomId,
+                                                   Long taskId,
+                                                   HermesActionExecutedRequest request,
+                                                   String status,
+                                                   String eventMessage) {
+        ChatRoomAgentTaskEntity task = requireTask(roomId, taskId);
+        String actionKey = defaultString(request == null ? "" : request.actionKey());
+        if (actionKey.isBlank()) {
+            throw new IllegalArgumentException("动作标识不能为空");
+        }
+        Map<String, Object> payload = readPayload(task.getPayloadJson());
+        task.setPayloadJson(writePayload(putNestedStatus(payload, PAYLOAD_ACTION_STATUSES, actionKey, status)));
+        ChatRoomAgentTaskEntity saved = taskRepository.save(task);
+        HermesActionSummary action = findAction(payload, actionKey);
+        appendEvent(saved, "ACTION_" + status.toUpperCase(Locale.ROOT), eventMessage, Map.of(
+                "actionKey", actionKey,
+                "status", status
+        ));
+        chatWebSocketPushService.broadcastAgentActionExecuted(
+                roomId,
+                taskId,
+                task.getAssistantMessage() == null ? null : task.getAssistantMessage().getId(),
+                action,
+                status,
+                actionKey
+        );
+        return toTaskSummary(saved);
+    }
+
+    private HermesActionSummary findAction(Map<String, Object> payload, String actionKey) {
+        List<HermesActionSummary> actions = readPayloadList(payload, PAYLOAD_HERMES_ACTIONS, new TypeReference<List<HermesActionSummary>>() {});
+        int index = parseActionIndex(actionKey);
+        if (index >= 0 && index < actions.size()) {
+            return actions.get(index);
+        }
+        return actions.isEmpty() ? null : actions.get(0);
+    }
+
+    private int parseActionIndex(String actionKey) {
+        if (actionKey == null) {
+            return -1;
+        }
+        String[] parts = actionKey.split(":", 3);
+        if (parts.length < 2) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(parts[1]);
+        } catch (NumberFormatException exception) {
+            return -1;
+        }
+    }
+
+    private Map<String, Object> putNestedStatus(Map<String, Object> payload,
+                                                String payloadKey,
+                                                String itemKey,
+                                                String status) {
+        Map<String, Object> next = new LinkedHashMap<>(payload == null ? Map.of() : payload);
+        Map<String, String> statuses = readStringMap(next.get(payloadKey));
+        statuses.put(defaultString(itemKey), defaultString(status));
+        next.put(payloadKey, statuses);
+        return next;
+    }
+
+    private Map<String, String> readStringMap(Object value) {
+        if (value == null) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            Map<String, String> parsed = objectMapper.convertValue(value, new TypeReference<Map<String, String>>() {});
+            return parsed == null ? new LinkedHashMap<>() : new LinkedHashMap<>(parsed);
+        } catch (IllegalArgumentException exception) {
+            return new LinkedHashMap<>();
+        }
+    }
+
+    private Map<String, Object> readPayload(String rawPayload) {
+        if (defaultString(rawPayload).isBlank()) {
+            return new LinkedHashMap<>();
+        }
+        try {
+            Map<String, Object> payload = objectMapper.readValue(rawPayload, new TypeReference<Map<String, Object>>() {});
+            return payload == null ? new LinkedHashMap<>() : new LinkedHashMap<>(payload);
+        } catch (Exception exception) {
+            return new LinkedHashMap<>();
+        }
+    }
+
+    private <T> List<T> readPayloadList(Map<String, Object> payload, String key, TypeReference<List<T>> typeReference) {
+        if (payload == null || !payload.containsKey(key)) {
+            return List.of();
+        }
+        try {
+            List<T> items = objectMapper.convertValue(payload.get(key), typeReference);
+            return items == null ? List.of() : items;
+        } catch (IllegalArgumentException exception) {
+            return List.of();
+        }
+    }
+
+    private Map<String, Object> selectionPayload(HermesSelectionRequest request) {
+        if (request == null) {
+            return Map.of();
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("slot", defaultString(request.slot()));
+        payload.put("entityType", defaultString(request.entityType()));
+        payload.put("entityId", request.entityId());
+        payload.put("resumeQuestion", defaultString(request.resumeQuestion()));
+        return payload;
+    }
+
+    private String selectionKey(HermesSelectionRequest request) {
+        if (request == null) {
+            return "";
+        }
+        return defaultString(request.slot()) + ":" + defaultString(request.entityType()) + ":" + request.entityId();
+    }
+
+    private HermesActionSummary toExecutedAction(Map<String, Object> execution) {
+        String toolCode = defaultString(String.valueOf(execution.getOrDefault("toolCode", "")));
+        String message = defaultString(String.valueOf(execution.getOrDefault("message", "")));
+        Object arguments = execution.getOrDefault("arguments", Map.of());
+        Map<String, Object> params = arguments instanceof Map<?, ?> rawMap
+                ? rawMap.entrySet().stream()
+                .filter(entry -> entry.getKey() != null)
+                .collect(java.util.stream.Collectors.toMap(
+                        entry -> String.valueOf(entry.getKey()),
+                        Map.Entry::getValue,
+                        (left, right) -> right,
+                        LinkedHashMap::new
+                ))
+                : Map.of();
+        return new HermesActionSummary(
+                toolCode,
+                toolCode.isBlank() ? "已执行工具" : "已执行 " + toolCode,
+                message,
+                false,
+                params
+        );
     }
 
     public ChatRoomAgentTaskSummary toTaskSummary(ChatRoomAgentTaskEntity task) {
@@ -721,6 +1060,13 @@ public class ChatRoomAgentService {
         }
         if (TRIGGER_TASK_STATUS.equals(triggerType)) {
             return "执行中心任务状态发生变化，请向聊天室回写状态、影响和下一步。触发上下文：" + payload;
+        }
+        if (TRIGGER_SELECTION.equals(triggerType)) {
+            return """
+                    用户刚刚在聊天室 Hermes 候选卡片中完成对象选择。
+                    请基于这个已确认对象继续处理原始问题或待办事项。
+                    选择上下文：%s
+                    """.formatted(payload).trim();
         }
         return "请处理聊天室 Agent 任务。触发上下文：" + payload;
     }

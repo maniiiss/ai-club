@@ -3,9 +3,9 @@
  * 业务意图：用户消息、附件与 Hermes 流式回复在同一条时间线上呈现，确保协作上下文对房间成员一致。
  */
 import { useEffect, useRef } from 'react'
-import { AlertTriangle, Bot, CheckCircle2, FileText, MousePointer2, PlayCircle, RefreshCcw, UserRound } from 'lucide-react'
+import { AlertTriangle, Bot, CheckCircle2, FileText, MousePointer2, PlayCircle, RefreshCcw, UserRound, XCircle } from 'lucide-react'
 import type { ChatMessageItem } from '@/src/types/chat'
-import type { HermesActionItem } from '@/src/types/hermes'
+import type { HermesActionItem, HermesSelectionOptionItem, HermesSelectionPayload } from '@/src/types/hermes'
 import { Button } from '@/src/components/common/Button'
 import { Markdown } from '@/src/components/common/Markdown'
 import { formatChatFileSize } from '@/src/lib/chatUtils'
@@ -16,6 +16,12 @@ interface ChatMessageListProps {
   currentUserId?: number | null
   loading: boolean
   onRetryHermes: () => void
+  resolvingActionKey?: string
+  resolvingSelectionKey?: string
+  computeActionKey: (action: Pick<HermesActionItem, 'type' | 'title' | 'params'>, index: number) => string
+  onConfirmAgentAction: (message: ChatMessageItem, action: HermesActionItem, index: number, actionKey: string) => void
+  onCancelAgentAction: (message: ChatMessageItem, actionKey: string) => void
+  onSelectAgentCandidate: (message: ChatMessageItem, selection: HermesSelectionPayload) => void
 }
 
 const formatMessageTime = (value: string | null) => {
@@ -25,7 +31,18 @@ const formatMessageTime = (value: string | null) => {
   return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-export const ChatMessageList = ({ messages, currentUserId, loading, onRetryHermes }: ChatMessageListProps) => {
+export const ChatMessageList = ({
+  messages,
+  currentUserId,
+  loading,
+  onRetryHermes,
+  resolvingActionKey = '',
+  resolvingSelectionKey = '',
+  computeActionKey,
+  onConfirmAgentAction,
+  onCancelAgentAction,
+  onSelectAgentCandidate,
+}: ChatMessageListProps) => {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -110,7 +127,17 @@ export const ChatMessageList = ({ messages, currentUserId, loading, onRetryHerme
                   {isAssistant && Boolean(message.actions?.length) && (
                     <div className="mt-3 grid gap-2">
                       {message.actions?.map((action, index) => (
-                        <AgentActionPreview key={`${action.type}-${index}`} action={action} status={message.agentTaskStatus} />
+                        <AgentActionPreview
+                          key={`${action.type}-${index}`}
+                          message={message}
+                          action={action}
+                          index={index}
+                          actionKey={computeActionKey(action, index)}
+                          status={message.actionStatuses?.[computeActionKey(action, index)] || message.agentTaskStatus}
+                          busy={resolvingActionKey === computeActionKey(action, index)}
+                          onConfirm={onConfirmAgentAction}
+                          onCancel={onCancelAgentAction}
+                        />
                       ))}
                     </div>
                   )}
@@ -121,15 +148,24 @@ export const ChatMessageList = ({ messages, currentUserId, loading, onRetryHerme
                           <div className="text-[12.5px] font-semibold text-[var(--color-text-primary)]">{card.title || '候选对象待确认'}</div>
                           {card.description && <p className="mt-1 text-[11.5px] text-[var(--color-text-secondary)]">{card.description}</p>}
                           <div className="mt-2 grid gap-1.5">
-                            {card.options.map((option) => (
-                              <div key={`${option.entityType}-${option.entityId}-${option.title}`} className="flex items-start gap-2 rounded-lg border border-[var(--color-border-light)] bg-white px-2.5 py-2">
+                            {card.options.map((option) => {
+                              const selection = toSelection(card.resumeQuestion, option)
+                              const selectionKey = `${message.agentTaskId || ''}:${selection?.slot || ''}:${selection?.entityType || ''}:${selection?.entityId || ''}`
+                              return (
+                              <button
+                                key={`${option.entityType}-${option.entityId}-${option.title}`}
+                                type="button"
+                                disabled={!selection || resolvingSelectionKey === selectionKey}
+                                onClick={() => selection && onSelectAgentCandidate(message, selection)}
+                                className="flex items-start gap-2 rounded-lg border border-[var(--color-border-light)] bg-white px-2.5 py-2 text-left transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
                                 <MousePointer2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" />
                                 <span className="min-w-0">
                                   <span className="block truncate text-[12px] font-medium text-[var(--color-text-primary)]">{option.title}</span>
                                   <span className="block text-[11px] text-[var(--color-text-tertiary)]">{option.subtitle || option.entityType}</span>
                                 </span>
-                              </div>
-                            ))}
+                              </button>
+                            )})}
                           </div>
                         </article>
                       ))}
@@ -181,13 +217,36 @@ export const ChatMessageList = ({ messages, currentUserId, loading, onRetryHerme
   )
 }
 
-const AgentActionPreview = ({ action, status }: { action: HermesActionItem; status?: string }) => {
-  const executed = status === 'executed' || status === 'done'
+const AgentActionPreview = ({
+  message,
+  action,
+  index,
+  actionKey,
+  status,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  message: ChatMessageItem
+  action: HermesActionItem
+  index: number
+  actionKey: string
+  status?: string
+  busy: boolean
+  onConfirm: (message: ChatMessageItem, action: HermesActionItem, index: number, actionKey: string) => void
+  onCancel: (message: ChatMessageItem, actionKey: string) => void
+}) => {
+  const normalizedStatus = (status || '').toLowerCase()
+  const executed = normalizedStatus === 'executed' || normalizedStatus === 'done'
+  const canceled = normalizedStatus === 'canceled'
+  const resolved = executed || canceled
   return (
     <article className="rounded-lg border border-amber-200 bg-white/85 p-3">
       <div className="flex items-start gap-2">
         {executed ? (
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+        ) : canceled ? (
+          <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
         ) : (
           <PlayCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
         )}
@@ -195,12 +254,46 @@ const AgentActionPreview = ({ action, status }: { action: HermesActionItem; stat
           <div className="truncate text-[12.5px] font-semibold text-[var(--color-text-primary)]">{action.title || action.type}</div>
           {action.description && <p className="mt-1 text-[11.5px] leading-5 text-[var(--color-text-secondary)]">{action.description}</p>}
           <span className="mt-2 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-700">
-            {executed ? '已执行' : '待确认'}
+            {executed ? '已执行' : canceled ? '已取消' : '待确认'}
           </span>
+          {!resolved && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 px-2 text-[11.5px]"
+                loading={busy}
+                disabled={busy || !message.agentTaskId}
+                onClick={() => onConfirm(message, action, index, actionKey)}
+              >
+                确认执行
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 px-2 text-[11.5px]"
+                disabled={busy || !message.agentTaskId}
+                onClick={() => onCancel(message, actionKey)}
+              >
+                取消
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </article>
   )
+}
+
+const toSelection = (resumeQuestion: string, option: HermesSelectionOptionItem): HermesSelectionPayload | null => {
+  if (option.entityId == null) return null
+  return {
+    slot: option.slot,
+    entityType: option.entityType,
+    entityId: option.entityId,
+    resumeQuestion,
+  }
 }
 
 const formatAgentTaskStatus = (status?: string) => {

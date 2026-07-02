@@ -59,6 +59,8 @@ interface AuthActions {
   hasPermission: (permission?: string | string[]) => boolean
   /** 清除错误状态。 */
   clearError: () => void
+  /** 更新引导完成状态缓存。 */
+  updateGuideCompleted: (keys: string[]) => void
 }
 
 export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
@@ -154,4 +156,13 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  updateGuideCompleted: (keys: string[]) => {
+    const { user } = get()
+    if (user) {
+      const updated = { ...user, guideCompleted: keys }
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(updated))
+      set({ user: updated })
+    }
+  },
 }))

@@ -22,8 +22,28 @@ public record HermesConversationState(
         List<HermesSelectionCard> selectionCards,
         HermesGroundingState groundingState,
         List<Map<String, Object>> toolExecutions,
-        String lastErrorMessage
+        String lastErrorMessage,
+        HermesToolExecutionPolicy toolExecutionPolicy
 ) {
+    public HermesConversationState(String scopeKey,
+                                   String clientConversationId,
+                                   CurrentUserInfo currentUser,
+                                   HermesConversationContextSnapshot context,
+                                   HermesConversationRequestSnapshot currentRequest,
+                                   String mcpSessionToken,
+                                   List<HermesConversationTurn> transcript,
+                                   List<HermesReferenceSummary> references,
+                                   List<String> suggestions,
+                                   List<HermesActionSummary> actions,
+                                   List<HermesSelectionCard> selectionCards,
+                                   HermesGroundingState groundingState,
+                                   List<Map<String, Object>> toolExecutions,
+                                   String lastErrorMessage) {
+        this(scopeKey, clientConversationId, currentUser, context, currentRequest, mcpSessionToken, transcript,
+                references, suggestions, actions, selectionCards, groundingState, toolExecutions, lastErrorMessage,
+                HermesToolExecutionPolicy.empty());
+    }
+
     public HermesConversationState {
         scopeKey = scopeKey == null ? "" : scopeKey.trim();
         clientConversationId = clientConversationId == null ? "" : clientConversationId.trim();
@@ -40,5 +60,6 @@ public record HermesConversationState(
                 .map(item -> item == null ? Map.<String, Object>of() : Map.copyOf(new LinkedHashMap<>(item)))
                 .toList();
         lastErrorMessage = lastErrorMessage == null ? "" : lastErrorMessage.trim();
+        toolExecutionPolicy = toolExecutionPolicy == null ? HermesToolExecutionPolicy.empty() : toolExecutionPolicy;
     }
 }

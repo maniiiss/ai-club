@@ -265,7 +265,7 @@ class ChatRoomServiceTests {
     }
 
     private CurrentUserInfo currentUser(Long id) {
-        return new CurrentUserInfo(id, "user-" + id, "用户" + id, "", "", "", "", true, List.of(), List.of(), List.of("chat:view", "chat:manage", "hermes:chat"));
+        return new CurrentUserInfo(id, "user-" + id, "用户" + id, "", "", "", "", true, List.of(), List.of(), List.of("chat:view", "chat:manage", "hermes:chat"), List.of());
     }
 
     private UserEntity user(Long id, String username, String nickname) {

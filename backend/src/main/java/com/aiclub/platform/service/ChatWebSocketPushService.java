@@ -7,6 +7,7 @@ import com.aiclub.platform.dto.ChatRoomAgentTaskSummary;
 import com.aiclub.platform.dto.ChatRoomAgentToolPolicySummary;
 import com.aiclub.platform.dto.ChatRoomSummary;
 import com.aiclub.platform.dto.HermesActionSummary;
+import com.aiclub.platform.dto.HermesSelectionCard;
 import com.aiclub.platform.security.AuthContext;
 import com.aiclub.platform.security.AuthContextHolder;
 import com.aiclub.platform.websocket.ChatAuthHandshakeInterceptor;
@@ -124,12 +125,26 @@ public class ChatWebSocketPushService {
     }
 
     public void broadcastAgentActionExecuted(Long roomId, Long taskId, Long messageId, HermesActionSummary action, String status) {
+        broadcastAgentActionExecuted(roomId, taskId, messageId, action, status, "");
+    }
+
+    public void broadcastAgentActionExecuted(Long roomId, Long taskId, Long messageId, HermesActionSummary action, String status, String actionKey) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", "AGENT_ACTION_EXECUTED");
         payload.put("taskId", taskId);
         payload.put("messageId", messageId);
         payload.put("action", action);
         payload.put("status", status == null ? "" : status);
+        payload.put("actionKey", actionKey == null ? "" : actionKey);
+        broadcast(roomId, payload);
+    }
+
+    public void broadcastAgentSelectionPending(Long roomId, Long taskId, Long messageId, List<HermesSelectionCard> selectionCards) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "AGENT_SELECTION_PENDING");
+        payload.put("taskId", taskId);
+        payload.put("messageId", messageId);
+        payload.put("selectionCards", selectionCards == null ? List.of() : selectionCards);
         broadcast(roomId, payload);
     }
 

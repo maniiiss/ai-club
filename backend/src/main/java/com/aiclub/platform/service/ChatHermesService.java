@@ -8,11 +8,13 @@ import com.aiclub.platform.domain.model.RoleEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.ChatMessageSummary;
 import com.aiclub.platform.dto.CurrentUserInfo;
+import com.aiclub.platform.dto.HermesChatRoomAgentTaskResult;
 import com.aiclub.platform.dto.HermesConversationContextSnapshot;
 import com.aiclub.platform.dto.HermesConversationRequestSnapshot;
 import com.aiclub.platform.dto.HermesConversationState;
 import com.aiclub.platform.dto.HermesConversationTurn;
 import com.aiclub.platform.dto.HermesGroundingState;
+import com.aiclub.platform.dto.HermesToolExecutionPolicy;
 import com.aiclub.platform.repository.ChatMessageRepository;
 import com.aiclub.platform.repository.ChatRoomRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -75,9 +77,20 @@ public class ChatHermesService {
 
     @Transactional
     public void startHermesReply(Long roomId, Long assistantMessageId, Long triggerMessageId) {
+        startHermesReply(roomId, assistantMessageId, triggerMessageId, HermesToolExecutionPolicy.empty());
+    }
+
+    /**
+     * 执行聊天室 Agent 的 @Hermes 回复，并返回 MCP tool calling 写入的最终展示态。
+     */
+    @Transactional
+    public HermesChatRoomAgentTaskResult startHermesReply(Long roomId,
+                                                          Long assistantMessageId,
+                                                          Long triggerMessageId,
+                                                          HermesToolExecutionPolicy toolExecutionPolicy) {
         if (!runningRoomIds.add(roomId)) {
             markAssistantError(roomId, assistantMessageId, "Hermes 正在回复中，请稍后再试");
-            return;
+            return HermesChatRoomAgentTaskResult.empty("Hermes 正在回复中，请稍后再试");
         }
         try {
             ChatRoomEntity room = chatRoomRepository.findById(roomId)
@@ -87,7 +100,7 @@ public class ChatHermesService {
             ChatMessageEntity triggerMessage = chatMessageRepository.findById(triggerMessageId)
                     .orElseThrow(() -> new NoSuchElementException("触发消息不存在"));
 
-            PreparedChatHermesSession preparedSession = prepareMcpSession(room, triggerMessage);
+            PreparedChatHermesSession preparedSession = prepareMcpSession(room, triggerMessage, toolExecutionPolicy);
             List<HermesConversationTurn> transcript = buildTranscript(room, triggerMessage);
             StringBuilder streamedContent = new StringBuilder();
             HermesGatewayService.HermesGatewayResult result = hermesGatewayService.streamChatCompletion(
@@ -106,8 +119,10 @@ public class ChatHermesService {
             refreshRoomAfterHermes(room, content);
             chatRoomRepository.save(room);
             chatWebSocketPushService.broadcastHermesMessageDone(roomId, toAssistantSummary(assistantMessage));
+            return toAgentTaskResult(preparedSession, content);
         } catch (Exception exception) {
             markAssistantError(roomId, assistantMessageId, resolveErrorMessage(exception));
+            return HermesChatRoomAgentTaskResult.empty(resolveErrorMessage(exception));
         } finally {
             runningRoomIds.remove(roomId);
         }
@@ -120,9 +135,21 @@ public class ChatHermesService {
      */
     @Transactional
     public void startAgentTaskReply(Long roomId, Long assistantMessageId, String taskInstruction, UserEntity authorizedByUser) {
+        startAgentTaskReply(roomId, assistantMessageId, taskInstruction, authorizedByUser, HermesToolExecutionPolicy.empty());
+    }
+
+    /**
+     * 执行聊天室主动 Agent 任务，并返回 Hermes 原生 tool calling 的最终展示态。
+     */
+    @Transactional
+    public HermesChatRoomAgentTaskResult startAgentTaskReply(Long roomId,
+                                                             Long assistantMessageId,
+                                                             String taskInstruction,
+                                                             UserEntity authorizedByUser,
+                                                             HermesToolExecutionPolicy toolExecutionPolicy) {
         if (!runningRoomIds.add(roomId)) {
             markAssistantError(roomId, assistantMessageId, "Hermes 正在回复中，请稍后再试");
-            return;
+            return HermesChatRoomAgentTaskResult.empty("Hermes 正在回复中，请稍后再试");
         }
         try {
             ChatRoomEntity room = chatRoomRepository.findById(roomId)
@@ -130,7 +157,7 @@ public class ChatHermesService {
             ChatMessageEntity assistantMessage = chatMessageRepository.findById(assistantMessageId)
                     .orElseThrow(() -> new NoSuchElementException("Hermes 消息不存在"));
 
-            PreparedChatHermesSession preparedSession = prepareMcpSessionForAgentTask(room, authorizedByUser, assistantMessageId, taskInstruction);
+            PreparedChatHermesSession preparedSession = prepareMcpSessionForAgentTask(room, authorizedByUser, assistantMessageId, taskInstruction, toolExecutionPolicy);
             List<HermesConversationTurn> transcript = buildAgentTaskTranscript(room, taskInstruction);
             StringBuilder streamedContent = new StringBuilder();
             HermesGatewayService.HermesGatewayResult result = hermesGatewayService.streamChatCompletion(
@@ -149,8 +176,10 @@ public class ChatHermesService {
             refreshRoomAfterHermes(room, content);
             chatRoomRepository.save(room);
             chatWebSocketPushService.broadcastHermesMessageDone(roomId, toAssistantSummary(assistantMessage));
+            return toAgentTaskResult(preparedSession, content);
         } catch (Exception exception) {
             markAssistantError(roomId, assistantMessageId, resolveErrorMessage(exception));
+            return HermesChatRoomAgentTaskResult.empty(resolveErrorMessage(exception));
         } finally {
             runningRoomIds.remove(roomId);
         }
@@ -211,9 +240,11 @@ public class ChatHermesService {
      * 为聊天室 @Hermes 准备 MCP 可恢复会话态。
      * 业务意图：聊天室回复不走标准 Hermes 会话页，但模型仍可能调用平台 MCP 工具，因此这里补齐一次性 token 与 Redis 状态。
      */
-    private PreparedChatHermesSession prepareMcpSession(ChatRoomEntity room, ChatMessageEntity triggerMessage) {
+    private PreparedChatHermesSession prepareMcpSession(ChatRoomEntity room,
+                                                        ChatMessageEntity triggerMessage,
+                                                        HermesToolExecutionPolicy toolExecutionPolicy) {
         if (hermesConversationStateStore == null || hermesMcpSessionTokenService == null) {
-            return new PreparedChatHermesSession("");
+            return new PreparedChatHermesSession("", "", "");
         }
         CurrentUserInfo currentUser = toCurrentUserInfo(triggerMessage.getSenderUser());
         String clientConversationId = "chat-room-" + room.getId() + "-message-" + triggerMessage.getId();
@@ -256,18 +287,20 @@ public class ChatHermesService {
                 List.of(),
                 HermesGroundingState.empty(),
                 List.of(),
-                ""
+                "",
+                toolExecutionPolicy
         );
         hermesConversationStateStore.save(state);
-        return new PreparedChatHermesSession(sessionToken);
+        return new PreparedChatHermesSession(sessionToken, scopeKey, clientConversationId);
     }
 
     private PreparedChatHermesSession prepareMcpSessionForAgentTask(ChatRoomEntity room,
                                                                     UserEntity authorizedByUser,
                                                                     Long assistantMessageId,
-                                                                    String taskInstruction) {
+                                                                    String taskInstruction,
+                                                                    HermesToolExecutionPolicy toolExecutionPolicy) {
         if (hermesConversationStateStore == null || hermesMcpSessionTokenService == null) {
-            return new PreparedChatHermesSession("");
+            return new PreparedChatHermesSession("", "", "");
         }
         CurrentUserInfo currentUser = toCurrentUserInfo(authorizedByUser == null ? room.getCreatorUser() : authorizedByUser);
         String clientConversationId = "chat-room-" + room.getId() + "-agent-task-" + assistantMessageId;
@@ -309,10 +342,11 @@ public class ChatHermesService {
                 List.of(),
                 HermesGroundingState.empty(),
                 List.of(),
-                ""
+                "",
+                toolExecutionPolicy
         );
         hermesConversationStateStore.save(state);
-        return new PreparedChatHermesSession(sessionToken);
+        return new PreparedChatHermesSession(sessionToken, scopeKey, clientConversationId);
     }
 
     private HermesPromptBuilder.HermesPrompt buildPrompt(ChatRoomEntity room, String sessionToken) {
@@ -418,6 +452,7 @@ public class ChatHermesService {
                 .distinct()
                 .sorted()
                 .toList();
+        List<String> guideCompleted = parseGuideCompleted(user.getGuideCompleted());
         return new CurrentUserInfo(
                 user.getId(),
                 defaultString(user.getUsername()),
@@ -429,7 +464,8 @@ public class ChatHermesService {
                 user.isEnabled(),
                 roleCodes,
                 roleNames,
-                permissionCodes
+                permissionCodes,
+                guideCompleted
         );
     }
 
@@ -452,6 +488,27 @@ public class ChatHermesService {
         return builder.toString();
     }
 
+    /**
+     * 从 Hermes Redis 热状态读取 MCP tool calling 最终展示态。
+     * 业务意图：模型调用工具时，内部 MCP bridge 会把动作卡片、候选卡片和执行轨迹写回同一会话态，聊天室任务在这里统一收口。
+     */
+    private HermesChatRoomAgentTaskResult toAgentTaskResult(PreparedChatHermesSession preparedSession, String content) {
+        if (hermesConversationStateStore == null
+                || preparedSession == null
+                || defaultString(preparedSession.scopeKey()).isBlank()
+                || defaultString(preparedSession.clientConversationId()).isBlank()) {
+            return HermesChatRoomAgentTaskResult.empty(content);
+        }
+        return hermesConversationStateStore.load(preparedSession.scopeKey(), preparedSession.clientConversationId())
+                .map(state -> new HermesChatRoomAgentTaskResult(
+                        content,
+                        state.actions(),
+                        state.selectionCards(),
+                        state.toolExecutions()
+                ))
+                .orElseGet(() -> HermesChatRoomAgentTaskResult.empty(content));
+    }
+
     private String resolveErrorMessage(Exception exception) {
         if (exception == null || exception.getMessage() == null || exception.getMessage().isBlank()) {
             return "Hermes 助手暂时不可用";
@@ -472,6 +529,16 @@ public class ChatHermesService {
         return value == null ? "" : value.trim();
     }
 
-    private record PreparedChatHermesSession(String sessionToken) {
+    private List<String> parseGuideCompleted(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(raw.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+    }
+
+    private record PreparedChatHermesSession(String sessionToken, String scopeKey, String clientConversationId) {
     }
 }

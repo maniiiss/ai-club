@@ -17,7 +17,8 @@ public record LoginSession(
         boolean enabled,
         List<String> roleCodes,
         List<String> roleNames,
-        List<String> permissionCodes
+        List<String> permissionCodes,
+        List<String> guideCompleted
 ) {
 
     public static LoginSession fromCurrentUserInfo(CurrentUserInfo currentUserInfo) {
@@ -32,7 +33,8 @@ public record LoginSession(
                 currentUserInfo.enabled(),
                 List.copyOf(currentUserInfo.roleCodes()),
                 List.copyOf(currentUserInfo.roleNames()),
-                List.copyOf(currentUserInfo.permissionCodes())
+                List.copyOf(currentUserInfo.permissionCodes()),
+                List.copyOf(currentUserInfo.guideCompleted())
         );
     }
 
@@ -48,7 +50,8 @@ public record LoginSession(
                 enabled,
                 List.copyOf(roleCodes),
                 List.copyOf(roleNames),
-                List.copyOf(permissionCodes)
+                List.copyOf(permissionCodes),
+                List.copyOf(guideCompleted)
         );
     }
 

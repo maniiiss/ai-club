@@ -5,10 +5,11 @@
  */
 import { useState, useRef, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { Menu, X, LogOut, User, ChevronDown, Coins } from 'lucide-react'
+import { Menu, X, LogOut, User, ChevronDown, Coins, PlayCircle } from 'lucide-react'
 import { useAuthStore } from '@/src/stores/auth'
 import { getMyCreditAccount } from '@/src/api/credits'
 import { cn, getInitials } from '@/src/lib/utils'
+import { useGuide } from '@/src/components/guide'
 
 interface NavItem {
   to: string
@@ -31,6 +32,7 @@ export const TopNav = () => {
   const [menuOpen, setMenuOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [creditBalance, setCreditBalance] = useState<number | null>(null)
+  const { resetAllGuides } = useGuide('dashboard')
   const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -175,6 +177,18 @@ export const TopNav = () => {
               <button
                 onClick={() => {
                   setMenuOpen(false)
+                  resetAllGuides().then(() => {
+                    window.location.href = '/dashboard'
+                  })
+                }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                <PlayCircle className="h-4 w-4" strokeWidth={1.75} />
+                重播新手引导
+              </button>
+              <button
+                onClick={() => {
+                  setMenuOpen(false)
                   handleLogout()
                 }}
                 className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-[var(--color-text-secondary)] hover:bg-[var(--color-danger-light)] hover:text-[var(--color-danger)] transition-colors"
@@ -236,6 +250,18 @@ export const TopNav = () => {
             >
               <User className="h-4 w-4" />
               个人资料
+            </button>
+            <button
+              onClick={() => {
+                setMobileOpen(false)
+                resetAllGuides().then(() => {
+                  window.location.href = '/dashboard'
+                })
+              }}
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[14px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+            >
+              <PlayCircle className="h-4 w-4" />
+              重播新手引导
             </button>
             <button
               onClick={() => {

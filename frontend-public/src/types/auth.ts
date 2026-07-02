@@ -55,4 +55,6 @@ export interface CurrentUserInfo {
   roleNames: string[]
   /** 用户拥有的权限码集合，用于前端路由守卫和按钮级权限控制。 */
   permissionCodes: string[]
+  /** 用户已完成新手引导的页面 key 列表。 */
+  guideCompleted: string[]
 }

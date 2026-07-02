@@ -1581,6 +1581,7 @@ public class PlatformStoreService {
                 collaborators.stream().map(this::displayName).toList(),
                 formatDate(entity.getPlanStartDate()),
                 formatDate(entity.getPlanEndDate()),
+                entity.getCreatedAt() == null ? null : entity.getCreatedAt().format(TIME_FORMATTER),
                 entity.getUpdatedAt().format(TIME_FORMATTER),
                 entity.getDescription(),
                 entity.getRequirementMarkdown(),

@@ -886,7 +886,8 @@ class HermesChatServiceTests {
                 true,
                 List.of("PM"),
                 List.of("项目经理"),
-                List.of("hermes:chat", "project:view", "task:view", "task:manage")
+                List.of("hermes:chat", "project:view", "task:view", "task:manage"),
+                List.of()
         );
     }
 

@@ -75,6 +75,10 @@ public class UserEntity {
     @Column
     private LocalDateTime lastLoginAt;
 
+    /** 用户已完成新手引导的页面 key，逗号分隔，如 "dashboard,projects,chat"。 */
+    @Column(name = "guide_completed", nullable = false, length = 500)
+    private String guideCompleted = "";
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "user_role_rel",
@@ -212,6 +216,14 @@ public class UserEntity {
 
     public void setLastLoginAt(LocalDateTime lastLoginAt) {
         this.lastLoginAt = lastLoginAt;
+    }
+
+    public String getGuideCompleted() {
+        return guideCompleted;
+    }
+
+    public void setGuideCompleted(String guideCompleted) {
+        this.guideCompleted = guideCompleted;
     }
 
     public Set<RoleEntity> getRoles() {

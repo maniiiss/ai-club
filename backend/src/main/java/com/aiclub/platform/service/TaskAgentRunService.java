@@ -1,6 +1,7 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.TaskAgentRunEntity;
+import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.TaskAgentRunSummary;
 import com.aiclub.platform.repository.TaskAgentRunRepository;
 import org.springframework.stereotype.Service;
@@ -39,7 +40,7 @@ public class TaskAgentRunService {
     }
 
     @Transactional
-    public TaskAgentRunSummary runTaskAgent(Long taskId, String input) {
+    public ExecutionTaskSummary runTaskAgent(Long taskId, String input) {
         return executionTaskService.createLegacyExecutionTask(taskId, input);
     }
 

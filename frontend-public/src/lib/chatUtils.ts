@@ -1,5 +1,5 @@
 import type { ChatMessageItem, ChatSocketEvent } from '@/src/types/chat'
-import type { HermesActionItem } from '@/src/types/hermes'
+import type { HermesActionItem, HermesSelectionCardItem } from '@/src/types/hermes'
 
 const hermesMentionPattern = /(^|\s)@hermes\b/i
 
@@ -52,11 +52,11 @@ export const mergeAgentActionsIntoMessage = (
     }
   })
 
-export const markAgentActionExecutedInMessage = (
+export const mergeAgentSelectionCardsIntoMessage = (
   messages: ChatMessageItem[],
   messageId: number | null | undefined,
   taskId: number | null | undefined,
-  status: string,
+  selectionCards: HermesSelectionCardItem[],
 ): ChatMessageItem[] =>
   messages.map((message) => {
     const matchesMessage = messageId != null && message.id === messageId
@@ -64,7 +64,31 @@ export const markAgentActionExecutedInMessage = (
     if (!matchesMessage && !matchesTask) return message
     return {
       ...message,
+      agentTaskId: message.agentTaskId ?? taskId ?? null,
+      agentTaskStatus: message.agentTaskStatus || 'awaiting_selection',
+      selectionCards: selectionCards || [],
+    }
+  })
+
+export const markAgentActionStatusInMessage = (
+  messages: ChatMessageItem[],
+  messageId: number | null | undefined,
+  taskId: number | null | undefined,
+  actionKey: string | null | undefined,
+  status: string,
+): ChatMessageItem[] =>
+  messages.map((message) => {
+    const matchesMessage = messageId != null && message.id === messageId
+    const matchesTask = taskId != null && message.agentTaskId === taskId
+    if (!matchesMessage && !matchesTask) return message
+    const normalizedKey = actionKey || ''
+    const actionStatuses = normalizedKey
+      ? { ...(message.actionStatuses || {}), [normalizedKey]: status || 'executed' }
+      : message.actionStatuses || {}
+    return {
+      ...message,
       agentTaskStatus: status || 'executed',
+      actionStatuses,
     }
   })
 
@@ -113,5 +137,17 @@ export const replaceMentionAtCaret = (
   return {
     text,
     caret: activeMention.start + token.length,
+  }
+}
+
+export const insertTextAtCaret = (
+  content: string,
+  caret: number,
+  textToInsert: string,
+): { text: string; caret: number } => {
+  const safeCaret = Math.max(0, Math.min(caret, content.length))
+  return {
+    text: `${content.slice(0, safeCaret)}${textToInsert}${content.slice(safeCaret)}`,
+    caret: safeCaret + textToInsert.length,
   }
 }

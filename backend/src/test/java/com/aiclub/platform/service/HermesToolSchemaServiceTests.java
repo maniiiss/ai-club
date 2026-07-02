@@ -103,7 +103,8 @@ class HermesToolSchemaServiceTests {
                 true,
                 List.of("SUPER_ADMIN"),
                 List.of("超级管理员"),
-                List.of("gitlab:view", "gitlab:manage")
+                List.of("gitlab:view", "gitlab:manage"),
+                List.of()
         );
     }
 }

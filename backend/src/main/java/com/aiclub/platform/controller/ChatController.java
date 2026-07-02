@@ -9,6 +9,8 @@ import com.aiclub.platform.dto.ChatRoomAgentToolPolicySummary;
 import com.aiclub.platform.dto.ChatRoomDetail;
 import com.aiclub.platform.dto.ChatRoomSummary;
 import com.aiclub.platform.dto.request.CreateChatRoomRequest;
+import com.aiclub.platform.dto.request.HermesActionExecutedRequest;
+import com.aiclub.platform.dto.request.HermesSelectionRequest;
 import com.aiclub.platform.dto.request.SendChatMessageRequest;
 import com.aiclub.platform.dto.request.UpdateChatRoomAgentConfigRequest;
 import com.aiclub.platform.dto.request.UpdateChatRoomAgentToolPoliciesRequest;
@@ -132,5 +134,29 @@ public class ChatController {
     @RequirePermission("chat:view")
     public ApiResponse<ChatRoomAgentTaskSummary> cancelAgentTask(@PathVariable Long roomId, @PathVariable Long taskId) {
         return ApiResponse.success(chatRoomAgentService.cancelTask(roomId, taskId));
+    }
+
+    @PostMapping("/rooms/{roomId}/agent/tasks/{taskId}/actions/executed")
+    @RequirePermission("chat:view")
+    public ApiResponse<ChatRoomAgentTaskSummary> markAgentActionExecuted(@PathVariable Long roomId,
+                                                                         @PathVariable Long taskId,
+                                                                         @Valid @RequestBody HermesActionExecutedRequest request) {
+        return ApiResponse.success(chatRoomAgentService.markActionExecuted(roomId, taskId, request));
+    }
+
+    @PostMapping("/rooms/{roomId}/agent/tasks/{taskId}/actions/canceled")
+    @RequirePermission("chat:view")
+    public ApiResponse<ChatRoomAgentTaskSummary> cancelAgentAction(@PathVariable Long roomId,
+                                                                   @PathVariable Long taskId,
+                                                                   @Valid @RequestBody HermesActionExecutedRequest request) {
+        return ApiResponse.success(chatRoomAgentService.cancelAction(roomId, taskId, request));
+    }
+
+    @PostMapping("/rooms/{roomId}/agent/tasks/{taskId}/selections")
+    @RequirePermission("chat:view")
+    public ApiResponse<ChatRoomAgentTaskSummary> selectAgentCandidate(@PathVariable Long roomId,
+                                                                      @PathVariable Long taskId,
+                                                                      @Valid @RequestBody HermesSelectionRequest request) {
+        return ApiResponse.success(chatRoomAgentService.selectCandidate(roomId, taskId, request));
     }
 }

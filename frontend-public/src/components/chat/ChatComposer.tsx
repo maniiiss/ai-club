@@ -3,11 +3,12 @@
  * 业务意图：统一处理 Markdown 文本、附件和 @hermes mention，让发送动作始终走 REST 落库。
  */
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { AtSign, Bot, Paperclip, Send, UserRound, X } from 'lucide-react'
+import { AtSign, Bot, Laugh, Paperclip, Send, UserRound, X } from 'lucide-react'
 import { Button } from '@/src/components/common/Button'
 import {
   containsHermesMention,
   formatChatFileSize,
+  insertTextAtCaret,
   replaceMentionAtCaret,
   resolveMentionQuery,
 } from '@/src/lib/chatUtils'
@@ -29,14 +30,28 @@ interface MentionOption {
   type: 'assistant' | 'member'
 }
 
+const EMOJI_PACKS = [
+  {
+    title: '常用',
+    items: ['😀', '😄', '😂', '😊', '😍', '😭', '😅', '😎', '🤔', '👍', '👏', '🙏'],
+  },
+  {
+    title: '协作',
+    items: ['🚀', '🔥', '✨', '✅', '🎉', '💡', '📌', '👀', '🙌', '💪', '🫡', '☕'],
+  },
+]
+
 export const ChatComposer = ({ disabled = false, sending, members = [], onSend }: ChatComposerProps) => {
   const [content, setContent] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const [error, setError] = useState<string | null>(null)
   const [caret, setCaret] = useState(0)
   const [activeMentionIndex, setActiveMentionIndex] = useState(0)
+  const [emojiOpen, setEmojiOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const emojiButtonRef = useRef<HTMLButtonElement>(null)
+  const emojiPanelRef = useRef<HTMLDivElement>(null)
 
   const hasHermesMention = containsHermesMention(content)
   const activeMention = useMemo(() => resolveMentionQuery(content, caret), [content, caret])
@@ -56,7 +71,7 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
           key: `member-${member.userId}`,
           label,
           description: member.nickname ? member.username : member.role,
-          token: `@${member.username} `,
+          token: `@${label} `,
           type: 'member' as const,
         }
       }),
@@ -73,6 +88,22 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
     setActiveMentionIndex(0)
   }, [activeMention?.start, activeMention?.query, mentionOptions.length])
 
+  useEffect(() => {
+    if (activeMention) setEmojiOpen(false)
+  }, [activeMention])
+
+  useEffect(() => {
+    if (!emojiOpen) return
+    const closeWhenClickOutside = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (emojiPanelRef.current?.contains(target) || emojiButtonRef.current?.contains(target)) return
+      setEmojiOpen(false)
+    }
+    document.addEventListener('pointerdown', closeWhenClickOutside)
+    return () => document.removeEventListener('pointerdown', closeWhenClickOutside)
+  }, [emojiOpen])
+
   const syncCaret = () => {
     setCaret(textareaRef.current?.selectionStart || 0)
   }
@@ -83,6 +114,20 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
     const next = replaceMentionAtCaret(content, currentCaret, option.token)
     setContent(next.text)
     setCaret(next.caret)
+    setEmojiOpen(false)
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus()
+      textareaRef.current?.setSelectionRange(next.caret, next.caret)
+    })
+  }
+
+  const insertEmoji = (emoji: string) => {
+    const textarea = textareaRef.current
+    const currentCaret = textarea?.selectionStart ?? caret
+    const next = insertTextAtCaret(content, currentCaret, emoji)
+    setContent(next.text)
+    setCaret(next.caret)
+    setEmojiOpen(false)
     requestAnimationFrame(() => {
       textareaRef.current?.focus()
       textareaRef.current?.setSelectionRange(next.caret, next.caret)
@@ -105,6 +150,7 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
       }
     setContent(next.text)
     setCaret(next.caret)
+    setEmojiOpen(false)
     requestAnimationFrame(() => {
       textareaRef.current?.focus()
       textareaRef.current?.setSelectionRange(next.caret, next.caret)
@@ -149,6 +195,11 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
     if (mentionOpen && (event.key === 'Enter' || event.key === 'Tab')) {
       event.preventDefault()
       selectMention(mentionOptions[activeMentionIndex] || mentionOptions[0])
+      return
+    }
+    if (event.key === 'Escape' && emojiOpen) {
+      event.preventDefault()
+      setEmojiOpen(false)
       return
     }
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -226,6 +277,39 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
               ))}
             </div>
           )}
+          {emojiOpen && !disabled && !sending && (
+            <div
+              ref={emojiPanelRef}
+              className="absolute bottom-12 left-2 z-20 w-[min(320px,calc(100%-16px))] overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-lg)]"
+            >
+              <div className="border-b border-[var(--color-border-light)] px-3 py-2 text-[12px] font-semibold text-[var(--color-text-secondary)]">
+                表情
+              </div>
+              <div className="max-h-56 overflow-y-auto p-3">
+                {EMOJI_PACKS.map((pack) => (
+                  <div key={pack.title} className="mb-3 last:mb-0">
+                    <p className="mb-1.5 text-[11px] font-medium text-[var(--color-text-tertiary)]">{pack.title}</p>
+                    <div className="grid grid-cols-8 gap-1">
+                      {pack.items.map((emoji) => (
+                        <button
+                          key={`${pack.title}-${emoji}`}
+                          type="button"
+                          onMouseDown={(event) => {
+                            event.preventDefault()
+                            insertEmoji(emoji)
+                          }}
+                          className="flex aspect-square items-center justify-center rounded-lg text-[19px] transition-colors hover:bg-[var(--color-bg-hover)]"
+                          title={emoji}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={content}
@@ -236,6 +320,9 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
             onClick={syncCaret}
             onKeyUp={syncCaret}
             onSelect={syncCaret}
+            onFocus={() => {
+              if (mentionOpen) setEmojiOpen(false)
+            }}
             onKeyDown={handleTextareaKeyDown}
             rows={3}
             disabled={disabled || sending}
@@ -259,6 +346,21 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
               >
                 <Paperclip className="h-4 w-4" />
                 附件
+              </button>
+              <button
+                ref={emojiButtonRef}
+                type="button"
+                onClick={() => setEmojiOpen((open) => !open)}
+                disabled={disabled || sending}
+                className={cn(
+                  'inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium transition-colors disabled:opacity-50',
+                  emojiOpen
+                    ? 'bg-[var(--color-primary-light)] text-[var(--color-primary)]'
+                    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]',
+                )}
+              >
+                <Laugh className="h-4 w-4" />
+                表情
               </button>
               <button
                 type="button"
