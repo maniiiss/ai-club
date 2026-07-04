@@ -47,6 +47,8 @@ export interface WorkItem {
   name: string
   /** '需求' | '任务' | '缺陷' */
   workItemType: string
+  /** 任务细分类型，仅 workItemType 为“任务”时有效。 */
+  taskType: string | null
   creatorUserId: number | null
   creatorName: string
   status: string
@@ -79,6 +81,8 @@ export interface WorkItem {
 export interface WorkItemPayload {
   name: string
   workItemType?: string
+  /** 任务细分类型，仅创建或更新“任务”工作项时提交。 */
+  taskType?: string | null
   status: string
   priority: string
   workHours?: number | null

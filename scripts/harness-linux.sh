@@ -7,11 +7,11 @@ source "${SCRIPT_DIR}/common-linux.sh"
 TARGET="${1:-all}"
 
 case "${TARGET}" in
-  docs|backend|frontend|code-processing|all)
+  docs|backend|frontend|frontend-public|code-processing|all)
     ;;
   *)
     printf '未知 harness 目标：%s\n' "${TARGET}" >&2
-    printf '可用目标：docs, backend, frontend, code-processing, all\n' >&2
+    printf '可用目标：docs, backend, frontend, frontend-public, code-processing, all\n' >&2
     exit 1
     ;;
 esac
@@ -36,6 +36,9 @@ run_encoding_check() {
       ;;
     frontend)
       targets=('frontend')
+      ;;
+    frontend-public)
+      targets=('frontend-public')
       ;;
     code-processing)
       targets=('code-processing')
@@ -62,7 +65,14 @@ run_backend_tests() {
 run_frontend_build() {
   (
     cd "${FRONTEND_DIR}"
-    run_step '运行前端类型检查与构建' npm run build
+    run_step '运行管理端前端类型检查与构建' npm run build
+  )
+}
+
+run_frontend_public_build() {
+  (
+    cd "${FRONTEND_PUBLIC_DIR}"
+    run_step '运行公众端前端类型检查与构建' npm run build
   )
 }
 
@@ -74,7 +84,7 @@ run_code_processing_install_check() {
 }
 
 print_architecture_doc_reminder() {
-  warn '如果本次改动涉及技术架构调整、跨模块边界变化或大型技术设计，请同步更新 docs/architecture.md 或新增 docs/*-architecture-vN.md / docs/*-technical-design-vN.md；模板见 docs/architecture-design-template.md。'
+  warn '如果本次改动涉及技术架构调整、跨模块边界变化或大型技术设计，请同步更新 docs/architecture.md 或新增 docs/design-docs/*-architecture-vN.md / docs/design-docs/*-technical-design-vN.md；模板见 docs/design-docs/architecture-design-template.md。'
 }
 
 run_encoding_check
@@ -86,6 +96,10 @@ fi
 
 if [[ "${TARGET}" == 'frontend' || "${TARGET}" == 'all' ]]; then
   run_frontend_build
+fi
+
+if [[ "${TARGET}" == 'frontend-public' || "${TARGET}" == 'all' ]]; then
+  run_frontend_public_build
 fi
 
 if [[ "${TARGET}" == 'code-processing' || "${TARGET}" == 'all' ]]; then

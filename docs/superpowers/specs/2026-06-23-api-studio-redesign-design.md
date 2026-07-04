@@ -3,10 +3,10 @@
 - 状态：已废弃。2026-06-24 已确认改为建设平台原生 API 工作台，不再保留 Yaade 作为底层能力层
 - 日期：2026-06-23
 - 负责模块：`frontend/src/modules/api-studio/`、`backend/.../yaade/**`、`docker/yaade/**`
-- 关联文档：`docs/generated/yaade-integration-technical-design-v1.md`
-- 取代文档：`docs/api-studio-native-technical-design-v1.md`
+- 关联文档：`docs/design-docs/yaade-integration-technical-design-v1.md`
+- 取代文档：`docs/design-docs/api-studio-native-technical-design-v1.md`
 
-> 本文档保留为历史决策记录。后续实施以 `docs/api-studio-native-technical-design-v1.md` 为准。
+> 本文档保留为历史决策记录。后续实施以 `docs/design-docs/api-studio-native-technical-design-v1.md` 为准。
 
 ## 1. 背景与目标
 
@@ -270,3 +270,4 @@ frontend/src/modules/api-studio/
 - 公共空间是否完全保持隐式入口（仅在某些项目下浮现），还是显式在顶部加 tab？建议显式，避免 iframe 时期"找不到入口"的老问题。
 
 这些问题进入实施计划阶段再决，不影响架构与切片节奏。
+

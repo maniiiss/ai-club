@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOG_DIR="${REPO_ROOT}/.run-logs"
 FRONTEND_DIR="${REPO_ROOT}/frontend"
+FRONTEND_PUBLIC_DIR="${REPO_ROOT}/frontend-public"
 BACKEND_DIR="${REPO_ROOT}/backend"
 CODE_DIR="${REPO_ROOT}/code-processing"
 CODE_VENV_DIR="${CODE_DIR}/.venv"
@@ -235,6 +236,7 @@ ensure_full_docker_env_file() {
 load_ports() {
   BACKEND_PORT="$(get_env_or_default 'BACKEND_PORT' '8080')"
   FRONTEND_PORT="$(get_env_or_default 'FRONTEND_PORT' '5173')"
+  FRONTEND_PUBLIC_PORT="$(get_env_or_default 'FRONTEND_PUBLIC_PORT' '5175')"
   CODE_PROCESSING_PORT="$(get_env_or_default 'CODE_PROCESSING_PORT' '9000')"
   POSTGRES_PORT="$(get_env_or_default 'POSTGRES_PORT' '5432')"
   REDIS_PORT="$(get_env_or_default 'REDIS_PORT' '6379')"
@@ -438,6 +440,7 @@ stop_service_by_pid_file() {
 }
 
 stop_local_services() {
+  stop_service_by_pid_file 'frontend-public'
   stop_service_by_pid_file 'frontend'
   stop_service_by_pid_file 'backend'
   stop_service_by_pid_file 'code-processing'
@@ -591,9 +594,17 @@ start_local_application_services() {
   require_cmd ss 'iproute2 / ss'
 
   if [[ "${install_frontend_dependencies}" == 'true' || ! -d "${FRONTEND_DIR}/node_modules" ]]; then
-    log '安装前端依赖'
+    log '安装管理端前端依赖'
     (
       cd "${FRONTEND_DIR}"
+      npm install --legacy-peer-deps
+    )
+  fi
+
+  if [[ "${install_frontend_dependencies}" == 'true' || ! -d "${FRONTEND_PUBLIC_DIR}/node_modules" ]]; then
+    log '安装公众端前端依赖'
+    (
+      cd "${FRONTEND_PUBLIC_DIR}"
       npm install --legacy-peer-deps
     )
   fi
@@ -622,9 +633,15 @@ start_local_application_services() {
     "${FRONTEND_DIR}|vite|--port ${FRONTEND_PORT}" \
     npm run dev -- --host 0.0.0.0 --port "${FRONTEND_PORT}" --strictPort
 
+  start_service_if_needed \
+    'frontend-public' "${FRONTEND_PUBLIC_PORT}" "${FRONTEND_PUBLIC_DIR}" \
+    "${FRONTEND_PUBLIC_DIR}|vite|--port ${FRONTEND_PUBLIC_PORT}" \
+    npm run dev -- --host 0.0.0.0 --port "${FRONTEND_PUBLIC_PORT}" --strictPort
+
   printf '\n'
   ok '源码服务启动完成'
   printf 'Frontend: http://localhost:%s\n' "${FRONTEND_PORT}"
+  printf 'Frontend public: http://localhost:%s\n' "${FRONTEND_PUBLIC_PORT}"
   printf 'Backend: http://localhost:%s\n' "${BACKEND_PORT}"
   printf 'Code processing: http://localhost:%s\n' "${CODE_PROCESSING_PORT}"
   printf 'Logs: %s\n' "${LOG_DIR}"
@@ -742,10 +759,12 @@ start_full_docker_stack() {
   fi
   wait_port "${BACKEND_PORT}" 180 'Backend'
   wait_port "${FRONTEND_PORT}" 180 'Frontend'
+  wait_port "${FRONTEND_PUBLIC_PORT}" 180 'Frontend public'
 
   printf '\n'
   ok '全量 Docker 项目启动完成'
   printf 'Frontend: http://localhost:%s\n' "${FRONTEND_PORT}"
+  printf 'Frontend public: http://localhost:%s\n' "${FRONTEND_PUBLIC_PORT}"
   printf 'Backend: http://localhost:%s\n' "${BACKEND_PORT}"
   printf 'Code processing: http://localhost:%s\n' "${CODE_PROCESSING_PORT}"
   printf 'Hermes: http://localhost:%s\n' "${HERMES_PORT}"
@@ -861,6 +880,7 @@ AI Club Docker 打包说明
 
 默认访问地址
 - Frontend: http://localhost:${FRONTEND_PORT}
+- Frontend public: http://localhost:${FRONTEND_PUBLIC_PORT}
 - Backend: http://localhost:${BACKEND_PORT}
 - Code processing: http://localhost:${CODE_PROCESSING_PORT}
 - Hermes: http://localhost:${HERMES_PORT}

@@ -27,9 +27,9 @@
           <el-option v-for="item in modelOptions" :key="item.id" :label="item.name" :value="item.id" />
         </el-select>
         <el-space wrap>
-          <el-button :loading="runningAction === 'STANDARDIZE'" @click="runAction('STANDARDIZE')">标准化需求</el-button>
-          <el-button :loading="runningAction === 'BREAKDOWN'" @click="runAction('BREAKDOWN')">拆解子任务</el-button>
-          <el-button :loading="runningAction === 'TEST_CASES'" @click="runAction('TEST_CASES')">生成测试用例</el-button>
+          <el-button v-if="availableActions.includes('STANDARDIZE')" :loading="runningAction === 'STANDARDIZE'" @click="runAction('STANDARDIZE')">标准化需求</el-button>
+          <el-button v-if="availableActions.includes('BREAKDOWN')" :loading="runningAction === 'BREAKDOWN'" @click="runAction('BREAKDOWN')">拆解子任务</el-button>
+          <el-button v-if="availableActions.includes('TEST_CASES')" :loading="runningAction === 'TEST_CASES'" @click="runAction('TEST_CASES')">生成测试用例</el-button>
           <el-button
             v-if="prdReady"
             :loading="runningAction === 'GAP_CHECK'"
@@ -61,6 +61,13 @@
             <el-space v-if="result">
               <el-button @click="postAsComment">发到评论</el-button>
               <el-button v-if="canManage && !isRequirementTask" @click="appendToDescription">追加到描述</el-button>
+              <el-button
+                v-if="result.action === 'STANDARDIZE'"
+                plain
+                @click="standardizeEditMode = !standardizeEditMode"
+              >
+                {{ standardizeEditMode ? '预览结果' : '编辑结果' }}
+              </el-button>
               <el-button v-if="canManage && result.action === 'STANDARDIZE'" type="primary" @click="replaceDescription">替换描述</el-button>
               <el-button
                 v-if="canManage && result.action === 'SUGGEST_UPDATE' && result.suggestionMarkdown"
@@ -72,7 +79,14 @@
               </el-button>
             </el-space>
           </div>
-          <div class="requirement-ai-markdown" v-html="renderMarkdownToHtml(result?.markdown)"></div>
+          <MarkdownEditor
+            v-if="result?.action === 'STANDARDIZE' && standardizeEditMode"
+            v-model="standardizeMarkdownDraft"
+            class="requirement-ai-standardize-editor"
+            :height="520"
+            placeholder="可在写入需求前调整 AI 标准化结果"
+          />
+          <div v-else class="requirement-ai-markdown" v-html="renderMarkdownToHtml(currentResultMarkdown)"></div>
         </div>
 
         <div class="requirement-ai-side">
@@ -158,7 +172,7 @@
               >
                 <div class="requirement-ai-card-head">
                   <span class="requirement-ai-card-index">子任务 {{ index + 1 }}</span>
-                  <span class="requirement-ai-card-type">{{ item.category }} / {{ item.priority }}</span>
+                  <span class="requirement-ai-card-type">{{ item.taskType }} / {{ item.priority }}</span>
                 </div>
                 <div class="requirement-ai-suggestion-actions">
                   <el-button text type="primary" @click="openTaskSuggestionDrawer(index)">展开编辑</el-button>
@@ -166,8 +180,8 @@
                 </div>
                 <el-input v-model="item.name" placeholder="任务标题" />
                 <div class="requirement-ai-suggestion-grid">
-                  <el-select v-model="item.category">
-                    <el-option v-for="option in taskCategoryOptions" :key="option" :label="option" :value="option" />
+                  <el-select v-model="item.taskType">
+                    <el-option v-for="option in taskTypeOptions" :key="option" :label="option" :value="option" />
                   </el-select>
                   <el-select v-model="item.priority">
                     <el-option v-for="option in taskPriorityOptions" :key="option" :label="option" :value="option" />
@@ -286,9 +300,9 @@
           <el-option v-for="item in modelOptions" :key="item.id" :label="item.name" :value="item.id" />
         </el-select>
         <el-space wrap>
-          <el-button :loading="runningAction === 'STANDARDIZE'" @click="runAction('STANDARDIZE')">标准化需求</el-button>
-          <el-button :loading="runningAction === 'BREAKDOWN'" @click="runAction('BREAKDOWN')">拆解子任务</el-button>
-          <el-button :loading="runningAction === 'TEST_CASES'" @click="runAction('TEST_CASES')">生成测试用例</el-button>
+          <el-button v-if="availableActions.includes('STANDARDIZE')" :loading="runningAction === 'STANDARDIZE'" @click="runAction('STANDARDIZE')">标准化需求</el-button>
+          <el-button v-if="availableActions.includes('BREAKDOWN')" :loading="runningAction === 'BREAKDOWN'" @click="runAction('BREAKDOWN')">拆解子任务</el-button>
+          <el-button v-if="availableActions.includes('TEST_CASES')" :loading="runningAction === 'TEST_CASES'" @click="runAction('TEST_CASES')">生成测试用例</el-button>
           <el-button
             v-if="prdReady"
             :loading="runningAction === 'GAP_CHECK'"
@@ -320,6 +334,13 @@
             <el-space v-if="result">
               <el-button @click="postAsComment">发到评论</el-button>
               <el-button v-if="canManage && !isRequirementTask" @click="appendToDescription">追加到描述</el-button>
+              <el-button
+                v-if="result.action === 'STANDARDIZE'"
+                plain
+                @click="standardizeEditMode = !standardizeEditMode"
+              >
+                {{ standardizeEditMode ? '预览结果' : '编辑结果' }}
+              </el-button>
               <el-button v-if="canManage && result.action === 'STANDARDIZE'" type="primary" @click="replaceDescription">替换描述</el-button>
               <el-button
                 v-if="canManage && result.action === 'SUGGEST_UPDATE' && result.suggestionMarkdown"
@@ -331,7 +352,14 @@
               </el-button>
             </el-space>
           </div>
-          <div class="requirement-ai-markdown" v-html="renderMarkdownToHtml(result?.markdown)"></div>
+          <MarkdownEditor
+            v-if="result?.action === 'STANDARDIZE' && standardizeEditMode"
+            v-model="standardizeMarkdownDraft"
+            class="requirement-ai-standardize-editor"
+            :height="520"
+            placeholder="可在写入需求前调整 AI 标准化结果"
+          />
+          <div v-else class="requirement-ai-markdown" v-html="renderMarkdownToHtml(currentResultMarkdown)"></div>
         </div>
 
         <div class="requirement-ai-side">
@@ -417,7 +445,7 @@
               >
                 <div class="requirement-ai-card-head">
                   <span class="requirement-ai-card-index">子任务 {{ index + 1 }}</span>
-                  <span class="requirement-ai-card-type">{{ item.category }} / {{ item.priority }}</span>
+                  <span class="requirement-ai-card-type">{{ item.taskType }} / {{ item.priority }}</span>
                 </div>
                 <div class="requirement-ai-suggestion-actions">
                   <el-button text type="primary" @click="openTaskSuggestionDrawer(index)">展开编辑</el-button>
@@ -425,8 +453,8 @@
                 </div>
                 <el-input v-model="item.name" placeholder="任务标题" />
                 <div class="requirement-ai-suggestion-grid">
-                  <el-select v-model="item.category">
-                    <el-option v-for="option in taskCategoryOptions" :key="option" :label="option" :value="option" />
+                  <el-select v-model="item.taskType">
+                    <el-option v-for="option in taskTypeOptions" :key="option" :label="option" :value="option" />
                   </el-select>
                   <el-select v-model="item.priority">
                     <el-option v-for="option in taskPriorityOptions" :key="option" :label="option" :value="option" />
@@ -546,8 +574,8 @@
       <div class="requirement-ai-drawer-body">
         <el-input v-model="currentTaskSuggestion.name" placeholder="任务标题" />
         <div class="requirement-ai-suggestion-grid">
-          <el-select v-model="currentTaskSuggestion.category">
-            <el-option v-for="option in taskCategoryOptions" :key="option" :label="option" :value="option" />
+          <el-select v-model="currentTaskSuggestion.taskType">
+            <el-option v-for="option in taskTypeOptions" :key="option" :label="option" :value="option" />
           </el-select>
           <el-select v-model="currentTaskSuggestion.priority">
             <el-option v-for="option in taskPriorityOptions" :key="option" :label="option" :value="option" />
@@ -604,7 +632,7 @@ const emit = defineEmits<{
   changed: []
 }>()
 
-const taskCategoryOptions = ['需求设计', 'UI设计', '技术设计', '开发', '测试', '部署']
+const taskTypeOptions = ['需求设计', 'UI设计', '技术设计', '开发任务', '测试任务', '运维任务']
 const taskPriorityOptions = ['高', '中', '低']
 const caseTypeOptions = ['功能测试', '接口测试', '回归测试', '异常测试', '兼容性测试', '性能测试']
 const casePriorityOptions = ['P0', 'P1', 'P2', 'P3']
@@ -636,6 +664,8 @@ const selectedPlanId = ref<number | undefined>()
 const testPlanOptions = ref<TestPlanItem[]>([])
 const result = ref<RequirementAiDialogResult | null>(null)
 const prdDetail = ref<TaskPrdDetailItem | null>(null)
+const standardizeMarkdownDraft = ref('')
+const standardizeEditMode = ref(false)
 const editableTaskSuggestions = ref<TaskRequirementAiSuggestionItem[]>([])
 const editableTestCaseSuggestions = ref<TaskRequirementAiTestCaseSuggestionItem[]>([])
 const taskSuggestionDrawerVisible = ref(false)
@@ -656,6 +686,9 @@ const prdStatusText = computed(() => {
   if (prdDetail.value.status === 'FAILED') return '初始化失败'
   return '未初始化'
 })
+const currentResultMarkdown = computed(() =>
+  result.value?.action === 'STANDARDIZE' ? standardizeMarkdownDraft.value : result.value?.markdown
+)
 
 const loadModelOptions = async () => {
   modelOptions.value = await listModelConfigOptions()
@@ -681,10 +714,31 @@ const loadTestPlanOptions = async () => {
 const cloneTaskSuggestions = (suggestions: TaskRequirementAiSuggestionItem[] = []) =>
   suggestions.map((item) => ({
     name: item.name,
-    category: item.category,
+    taskType: normalizeTaskType(item.taskType),
     priority: item.priority,
     description: item.description
   }))
+
+const normalizeTaskType = (taskType?: string | null) => {
+  const value = String(taskType || '').trim()
+  if (taskTypeOptions.includes(value)) {
+    return value
+  }
+  if (value === '开发') return '开发任务'
+  if (value === '测试') return '测试任务'
+  if (value === '部署' || value === '运维' || value === '部署任务') return '运维任务'
+  return '开发任务'
+}
+const isTestingTask = computed(() => props.task?.workItemType === '任务' && normalizeTaskType(props.task?.taskType) === '测试任务')
+const availableActions = computed(() => {
+  if (isRequirementTask.value) {
+    return ['STANDARDIZE', 'BREAKDOWN']
+  }
+  if (isTestingTask.value) {
+    return ['TEST_CASES']
+  }
+  return []
+})
 
 const cloneTestCaseSuggestions = (suggestions: TaskRequirementAiTestCaseSuggestionItem[] = []) =>
   suggestions.map((item) => ({
@@ -749,6 +803,10 @@ const runAction = async (action: string) => {
   if (!props.task) {
     return
   }
+  if (!availableActions.value.includes(action)) {
+    ElMessage.warning('当前工作项不支持该 AI 动作')
+    return
+  }
   runningAction.value = action
   try {
     const response = await generateTaskRequirementAi(props.task.id, {
@@ -756,6 +814,8 @@ const runAction = async (action: string) => {
       modelConfigId: selectedModelConfigId.value
     })
     result.value = normalizeRequirementAiResult(response)
+    standardizeMarkdownDraft.value = action === 'STANDARDIZE' ? response.markdown : ''
+    standardizeEditMode.value = action === 'STANDARDIZE'
     editableTaskSuggestions.value = cloneTaskSuggestions(response.taskSuggestions)
     editableTestCaseSuggestions.value = cloneTestCaseSuggestions(response.testCaseSuggestions)
     if (action === 'TEST_CASES') {
@@ -783,6 +843,8 @@ const runPrdAction = async (action: 'GAP_CHECK' | 'SUGGEST_UPDATE') => {
       modelConfigId: selectedModelConfigId.value
     })
     result.value = normalizePrdAnalyzeResult(response)
+    standardizeMarkdownDraft.value = ''
+    standardizeEditMode.value = false
     editableTaskSuggestions.value = []
     editableTestCaseSuggestions.value = []
     await loadPrdDetail()
@@ -805,6 +867,7 @@ const buildTaskUpdatePayload = (nextDescription: string, nextRequirementMarkdown
     workItemType: props.task.workItemType,
     status: props.task.status,
     priority: props.task.priority,
+    taskType: props.task.taskType,
     assignee: props.task.assignee,
     assigneeUserId: props.task.assigneeUserId,
     collaboratorUserIds: props.task.collaboratorUserIds,
@@ -826,7 +889,8 @@ const replaceDescription = async () => {
     return
   }
   try {
-    const payload = buildTaskUpdatePayload(result.value.markdown, result.value.markdown)
+    const markdown = standardizeMarkdownDraft.value
+    const payload = buildTaskUpdatePayload(markdown, markdown)
     if (!payload) {
       return
     }
@@ -842,7 +906,8 @@ const appendToDescription = async () => {
   if (!props.task || !result.value || !props.canManage) {
     return
   }
-  const nextDescription = [props.task.description?.trim(), result.value.markdown?.trim()].filter(Boolean).join('\n\n')
+  const nextMarkdown = currentResultMarkdown.value?.trim()
+  const nextDescription = [props.task.description?.trim(), nextMarkdown].filter(Boolean).join('\n\n')
   try {
     const payload = buildTaskUpdatePayload(nextDescription, nextDescription)
     if (!payload) {
@@ -861,7 +926,7 @@ const postAsComment = async () => {
     return
   }
   try {
-    await createTaskComment(props.task.id, `## ${result.value.title}\n\n${result.value.markdown}`)
+    await createTaskComment(props.task.id, `## ${result.value.title}\n\n${currentResultMarkdown.value || ''}`)
     ElMessage.success('AI 结果已发布到评论')
     emit('changed')
   } catch (error: any) {
@@ -927,6 +992,7 @@ const createSuggestedTasks = async () => {
       await createTask({
         name: item.name.trim(),
         workItemType: '任务',
+        taskType: normalizeTaskType(item.taskType),
         status: '草稿',
         priority: item.priority,
         assignee: '',
@@ -1049,6 +1115,8 @@ watch(
   (visible) => {
     if (!visible) {
       result.value = null
+      standardizeMarkdownDraft.value = ''
+      standardizeEditMode.value = false
       editableTaskSuggestions.value = []
       editableTestCaseSuggestions.value = []
       selectedPlanId.value = undefined
@@ -1067,6 +1135,8 @@ watch(
   () => props.task?.id,
   () => {
     result.value = null
+    standardizeMarkdownDraft.value = ''
+    standardizeEditMode.value = false
     editableTaskSuggestions.value = []
     editableTestCaseSuggestions.value = []
     selectedPlanId.value = undefined
@@ -1196,6 +1266,11 @@ onMounted(async () => {
   overflow: auto;
   line-height: 1.7;
   color: var(--el-text-color-primary);
+}
+
+.requirement-ai-standardize-editor {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .requirement-ai-markdown :deep(p),

@@ -1,6 +1,6 @@
 # API AI 测试用例生成技术设计 v1
 
-> 历史背景说明：本文档撰写时数据源为 Yaade。Yaade 已下线，AI 测试用例生成已迁移到原生 API Studio（`POST /api/api-studio/projects/{id}/endpoints/{eid}/ai-test-cases`），数据从 `api_studio_endpoint` 读取，脱敏与 Prompt 逻辑保持不变。详见 `docs/api-studio-native-technical-design-v1.md`。
+> 历史背景说明：本文档撰写时数据源为 Yaade。Yaade 已下线，AI 测试用例生成已迁移到原生 API Studio（`POST /api/api-studio/projects/{id}/endpoints/{eid}/ai-test-cases`），数据从 `api_studio_endpoint` 读取，脱敏与 Prompt 逻辑保持不变。详见 `api-studio-native-technical-design-v1.md`。
 
 ## 1. 背景
 
@@ -50,3 +50,5 @@ API 管理已经切换为 Yaade 嵌入式工作台，接口资产的主数据由
 - `python scripts/check_encoding.py`
 - `cd backend && mvn -s maven-settings-central.xml "-Dtest=YaadeApiCatalogServiceTests,ApiTestCaseAiServiceTests,YaadeControllerPermissionTests" test`
 - `cd frontend && npm run build`
+
+

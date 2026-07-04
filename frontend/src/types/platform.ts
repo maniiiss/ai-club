@@ -393,6 +393,8 @@ export interface TaskItem {
   creatorName: string
   status: string
   priority: string
+  /** 任务细分类型，仅任务工作项返回。 */
+  taskType: string | null
   /** 预估工时，单位为小时。 */
   workHours: number | null
   devPassed: boolean
@@ -465,7 +467,8 @@ export interface UploadedFileItem {
 
 export interface TaskRequirementAiSuggestionItem {
   name: string
-  category: string
+  /** 任务细分类型，创建拆解子任务时写入 taskType。 */
+  taskType: string
   priority: string
   description: string
 }

@@ -83,6 +83,12 @@ class PlatformStoreServiceModelConfigTests {
     @Mock
     private DashboardShortcutEntryService dashboardShortcutEntryService;
 
+    @Mock
+    private GitlabUserOauthService gitlabUserOauthService;
+
+    @Mock
+    private GitlabManagementService gitlabManagementService;
+
     private PlatformStoreService platformStoreService;
 
     @BeforeEach
@@ -104,7 +110,9 @@ class PlatformStoreServiceModelConfigTests {
                 projectDataPermissionService,
                 requirementModuleOptionService,
                 taskPrdService,
-                dashboardShortcutEntryService
+                dashboardShortcutEntryService,
+                gitlabUserOauthService,
+                gitlabManagementService
         );
     }
 

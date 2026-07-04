@@ -148,7 +148,9 @@ export const Select = ({
               <p className={cn(
                 'text-[13px] truncate',
                 isSelected ? 'font-medium' : 'font-normal',
-              )}>
+              )}
+              title={option.label}
+              >
                 {option.label}
               </p>
               {option.description && (
@@ -198,7 +200,9 @@ export const Select = ({
           <span className={cn(
             'flex items-center gap-2 truncate',
             selected ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-placeholder)]',
-          )}>
+          )}
+          title={selected?.label || placeholder}
+          >
             {selected?.icon}
             {selected?.label || placeholder}
           </span>

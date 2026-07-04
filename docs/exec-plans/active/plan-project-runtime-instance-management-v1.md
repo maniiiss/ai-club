@@ -8,7 +8,7 @@
 | 负责人 | AI 协作 |
 | 开始日期 | 2026-06-08 |
 | 最近更新 | 2026-06-09 |
-| 关联设计 | `docs/observability-technical-design-v1.md` |
+| 关联设计 | `docs/design-docs/observability-technical-design-v1.md` |
 | 关联模块 | 后端 Spring Boot、前端 Vue 3 + Vite、Flyway、Jenkins 集成 |
 
 ## 目标
@@ -57,7 +57,7 @@
 
 | 文件 | 职责 |
 |------|------|
-| `docs/observability-technical-design-v1.md` | 同步“项目运行实例”设计定位和采集目标来源原则 |
+| `docs/design-docs/observability-technical-design-v1.md` | 同步“项目运行实例”设计定位和采集目标来源原则 |
 | `docs/exec-plans/active/plan-project-runtime-instance-management-v1.md` | 本执行方案和进度记录 |
 
 ## 任务清单
@@ -102,7 +102,7 @@
 
 ### Task 5: 文档同步
 
-- [x] `docs/observability-technical-design-v1.md` 增加“项目运行实例”章节。
+- [x] `docs/design-docs/observability-technical-design-v1.md` 增加“项目运行实例”章节。
 - [x] 明确日志采集和健康探测后续统一从 `project_runtime_instance` 读取目标。
 - [x] 明确 Woodpecker 本期仅预留来源枚举，不做自动生成。
 - [x] 补充本 exec-plan 文档，沉淀执行步骤、文件边界和验证记录。
@@ -162,3 +162,4 @@
 ## 当前结论
 
 项目运行实例第一版已经形成可用闭环：后端主数据和 Jenkins 同步链路已落地，Jenkins 表单和独立菜单均可维护运行实例，可观测性设计文档已同步。后续日志归集、健康探测应直接依赖 `project_runtime_instance`，不要再从项目或流水线参数推断采集目标。
+

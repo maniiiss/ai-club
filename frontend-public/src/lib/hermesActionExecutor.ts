@@ -3,6 +3,7 @@ import { createExecutionTask, createTestPlan } from '@/src/api/execution'
 import { createWorkItem } from '@/src/api/planning'
 import type { HermesActionItem } from '@/src/types/hermes'
 import { getErrorMessage } from '@/src/lib/utils'
+import { normalizeTaskType } from '@/src/lib/requirementAiUtils'
 
 /**
  * 执行 Hermes 动作卡片对应的既有业务 API。
@@ -34,6 +35,7 @@ export const executeHermesAction = async (action: HermesActionItem): Promise<voi
     await createWorkItem({
       name: String(params.name || content.slice(0, 40) || `Hermes 创建的${workItemType}草稿`),
       workItemType,
+      taskType: workItemType === '任务' ? normalizeTaskType(String(params.taskType || '')) : null,
       status: '草稿',
       priority: '中',
       assignee: params.assigneeUserId ? '待确认' : '',

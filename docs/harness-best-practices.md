@@ -2,7 +2,7 @@
 
 ## 背景
 
-本文根据 OpenAI 官方文章《Harness engineering for context engineering》整理，并结合本仓库的 `frontend`、`backend`、`code-processing`、`scripts`、`docs` 多模块结构，定义适合 AI Club 项目的 harness 最佳实践。
+本文根据 OpenAI 官方文章《Harness engineering for context engineering》整理，并结合本仓库的 `frontend`、`frontend-public`、`backend`、`code-processing`、`scripts`、`docs` 多模块结构，定义适合 AI Club 项目的 harness 最佳实践。
 
 这里的 harness 不是单一测试框架，而是一组帮助人和智能体稳定工作的工程脚手架：项目入口说明、模块文档、可复现命令、验证脚本、日志路径、回归样例、失败诊断和清理策略。目标是让每次修改都能被快速定位、快速运行、快速验证、快速恢复。
 
@@ -34,7 +34,7 @@
 
 - `docs/architecture.md`：系统级架构总览、模块边界、跨服务调用链路，是全局视角的主入口。
 - `docs/design-docs/index.md`：正式设计文档导航页，用来串起架构设计、技术设计和专题方案入口。
-- `docs/generated/`：已经成型的正式技术设计 / 架构设计交付物，适合沉淀 `*-technical-design-vN.md`、`*-architecture-vN.md`。
+- `docs/design-docs/`：已经成型的正式技术设计 / 架构设计交付物，统一沉淀 `*-technical-design-vN.md`、`*-architecture-vN.md`、权限模型和设计模板。
 - `docs/exec-plans/active/`：进行中的执行方案、阶段计划和落地编排，属于过程文档，不替代正式设计结论。
 - `docs/exec-plans/completed/`：历史执行方案归档，用于复盘和追溯，不替代当前有效架构说明。
 - `docs/design-docs/design-draft/`：设计草稿、界面草图、探索性方案素材，默认不作为正式架构结论交付。
@@ -58,16 +58,16 @@
 | 场景 | 是否必须落文档 | 合格交付位置 |
 | --- | --- | --- |
 | 服务拓扑、模块边界、职责归属发生变化 | 是 | `docs/architecture.md` + 1 份正式专题设计文档 |
-| 新增跨服务链路、异步任务、调度流程、权限模型或共享数据模型 | 是 | `docs/generated/*.md` 或 `docs/*-technical-design-vN.md`，必要时同步更新 `docs/architecture.md` |
+| 新增跨服务链路、异步任务、调度流程、权限模型或共享数据模型 | 是 | `docs/design-docs/*.md`，必要时同步更新 `docs/architecture.md` |
 | 引入新中间件、新运行模式、新部署方式、新环境变量或新日志路径 | 是 | 正式专题设计文档 + `README.md` + `AGENTS.md` |
-| 影响 `frontend` / `backend` / `code-processing` / `scripts` 中两个及以上目录的方案设计 | 是 | 正式专题设计文档，必要时补一份执行方案到 `docs/exec-plans/active/` |
+| 影响 `frontend` / `frontend-public` / `backend` / `code-processing` / `scripts` 中两个及以上目录的方案设计 | 是 | 正式专题设计文档，必要时补一份执行方案到 `docs/exec-plans/active/` |
 | 只改局部实现细节，不改变边界、链路和约束 | 否 | 只在代码注释或模块文档中补充说明即可 |
 
 “正式专题设计文档”建议优先放在以下位置之一：
 
-- `docs/generated/*-technical-design-vN.md`
-- `docs/generated/*-architecture-vN.md`
-- `docs/` 根目录下已有同类正式设计文件
+- `docs/design-docs/*-technical-design-vN.md`
+- `docs/design-docs/*-architecture-vN.md`
+- `docs/design-docs/current-permission-model.md` 等同类正式设计文件
 
 以下内容**不能单独作为完成条件**：
 
@@ -79,7 +79,7 @@
 最低交付要求如下：
 
 - 全局架构变化：至少更新 `docs/architecture.md`，说明新的边界、链路、依赖关系和受影响模块。
-- 专题方案设计：新增或更新 1 份正式设计文档，推荐从 `docs/architecture-design-template.md` 开始，文件名遵循 `*-technical-design-vN.md` 或 `*-architecture-vN.md`。
+- 专题方案设计：新增或更新 1 份正式设计文档，推荐从 `docs/design-docs/architecture-design-template.md` 开始，文件名遵循 `*-technical-design-vN.md` 或 `*-architecture-vN.md`。
 - 文档导航同步：如果新增的是正式设计文档，原则上同步更新 `docs/design-docs/index.md`，确保后续入口可发现。
 - 执行计划分离：需要分阶段落地时，可额外在 `docs/exec-plans/active/` 维护执行方案，但它不能替代正式设计文档。
 - 启动、环境、harness、日志路径变化：同一次交付内同步更新 `README.md`、`AGENTS.md` 和相关专题文档。
@@ -139,6 +139,7 @@
 powershell -ExecutionPolicy Bypass -File .\scripts\harness.ps1 -Target docs
 powershell -ExecutionPolicy Bypass -File .\scripts\harness.ps1 -Target backend
 powershell -ExecutionPolicy Bypass -File .\scripts\harness.ps1 -Target frontend
+powershell -ExecutionPolicy Bypass -File .\scripts\harness.ps1 -Target frontend-public
 powershell -ExecutionPolicy Bypass -File .\scripts\harness.ps1 -Target all
 ```
 
@@ -146,6 +147,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\harness.ps1 -Target all
 bash ./scripts/harness-linux.sh docs
 bash ./scripts/harness-linux.sh backend
 bash ./scripts/harness-linux.sh frontend
+bash ./scripts/harness-linux.sh frontend-public
 bash ./scripts/harness-linux.sh all
 ```
 
@@ -154,8 +156,9 @@ bash ./scripts/harness-linux.sh all
 - `docs`：对 `AGENTS.md`、`README.md`、`docs/`、`scripts/` 运行编码检查，适合文档和脚本小改。
 - `backend`：对 `backend/` 运行编码检查，再执行后端测试。
 - `frontend`：对 `frontend/` 运行编码检查，再执行前端构建。
+- `frontend-public`：对 `frontend-public/` 运行编码检查，再执行公众端构建。
 - `code-processing`：对 `code-processing/` 运行编码检查，再执行 Python 包安装检查。
-- `all`：对整个仓库运行编码检查、后端测试、前端构建、code-processing 安装检查。
+- `all`：对整个仓库运行编码检查、后端测试、管理端构建、公众端构建、code-processing 安装检查。
 
 ## 智能体工作流
 
@@ -184,7 +187,7 @@ bash ./scripts/harness-linux.sh all
 
 ## Harness 文档模板
 
-新增重要模块或专题设计时，建议优先在正式设计文档位置新增对应文档，并包含以下章节。也可以直接复制 `docs/architecture-design-template.md` 作为起点；如果文档已经定稿，记得同步补到 `docs/design-docs/index.md`：
+新增重要模块或专题设计时，建议优先在正式设计文档位置新增对应文档，并包含以下章节。也可以直接复制 `docs/design-docs/architecture-design-template.md` 作为起点；如果文档已经定稿，记得同步补到 `docs/design-docs/index.md`：
 
 ```markdown
 # 模块名称
@@ -263,3 +266,4 @@ bash ./scripts/harness-linux.sh all
 - 清理策略和维护规则对应 harness 的长期健康，避免过期上下文污染后续任务。
 
 参考来源：[OpenAI《Harness engineering for context engineering》](https://openai.com/zh-Hans-CN/index/harness-engineering/)。
+

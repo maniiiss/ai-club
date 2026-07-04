@@ -22,7 +22,7 @@
 - [x] 在公众端聊天室右侧上下文面板增加 Agent 设置、工具授权和最近任务展示。
 - [x] 为任务调度增加数据库条件更新领取，避免同一 PENDING 任务被重复执行。
 - [x] 补齐 `AGENT_ACTION_PENDING` / `AGENT_ACTION_EXECUTED` 事件契约，并在消息流展示待确认动作与候选卡片。
-- [x] 更新 `docs/architecture.md` 与 `docs/chat-room-technical-design-v1.md`。
+- [x] 更新 `docs/architecture.md` 与 `docs/design-docs/chat-room-technical-design-v1.md`。
 - [x] 深化聊天室 Agent 与 Hermes MCP 工具循环的同态复用，让自动执行策略参与真实 tool calling。
 - [x] 实现主动总结、关键字监听和任务状态回写调度器的业务触发源。
 - [x] 将 Agent 任务调度从纯数据库轮询升级为 RabbitMQ 信号队列，并保留数据库补偿发布。
@@ -69,3 +69,4 @@
 - 聊天室任务已复用 Hermes 会话的 MCP tool calling 状态机；当前前端仍以只读方式展示待确认动作和候选卡片，聊天室内点击确认执行可作为后续交互增强。
 - 主动能力已接入消息和执行任务状态触发源，后续可继续补更细的房间内摘要质量评估和状态回写模板治理。
 - 自动执行必须始终使用授权人身份重新校验功能权限和项目数据权限，不能仅依赖房间策略。
+

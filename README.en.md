@@ -102,7 +102,7 @@ The platform is built around three core ideas:
 
 Users / roles / function permissions / project data permissions · tool configuration · environment-variable fixed registry · home-page shortcuts · PR review stats · notification center · feedback management · operation audit log · public-side credit billing · project read-only sharing · self-upgrade center (patrol → suggestion → remediation loop)
 
-> Permissions are split into two layers: **function permissions** (whether a user can enter a page / call an API) and **data permissions** (which projects and their bound resources a user can see once they have function permission). See [docs/current-permission-model.md](docs/current-permission-model.md).
+> Permissions are split into two layers: **function permissions** (whether a user can enter a page / call an API) and **data permissions** (which projects and their bound resources a user can see once they have function permission). See [docs/design-docs/current-permission-model.md](docs/design-docs/current-permission-model.md).
 
 ---
 
@@ -329,7 +329,7 @@ AI Club does not carry Woodpecker's GitLab OAuth config in `.env`. GitLab repo i
 docker compose --env-file .env --profile woodpecker -f docker-compose.yml up -d woodpecker-server woodpecker-agent
 ```
 
-When the target branch lacks `.woodpecker.yml`, the "complete config" action on the detail page generates the config via a template parameter form: the user fills in project root directory, push server address, branch, Docker credentials, SSH host and private key, etc.; the platform creates a GitLab MR and writes sensitive values into Woodpecker repo secrets. "Deploy to server" is a shared post-action attached to Java / Node / Python / Docker templates. Advanced users can still switch to manual YAML mode. See [docs/generated/pipeline-woodpecker-provider-technical-design-v1.md](docs/generated/pipeline-woodpecker-provider-technical-design-v1.md) for the detailed design.
+When the target branch lacks `.woodpecker.yml`, the "complete config" action on the detail page generates the config via a template parameter form: the user fills in project root directory, push server address, branch, Docker credentials, SSH host and private key, etc.; the platform creates a GitLab MR and writes sensitive values into Woodpecker repo secrets. "Deploy to server" is a shared post-action attached to Java / Node / Python / Docker templates. Advanced users can still switch to manual YAML mode. See [docs/design-docs/pipeline-woodpecker-provider-technical-design-v1.md](docs/design-docs/pipeline-woodpecker-provider-technical-design-v1.md) for the detailed design.
 
 ---
 
@@ -356,7 +356,7 @@ bash ./scripts/harness-linux.sh <target>
 **Architecture & design-doc conventions:**
 
 - After any technical architecture change, cross-module redesign, or large technical design, you must update [docs/architecture.md](docs/architecture.md) or add a topic design doc.
-- Prefer creating `docs/<topic>-architecture-v1.md` or `docs/<topic>-technical-design-v1.md` based on [docs/architecture-design-template.md](docs/architecture-design-template.md).
+- Prefer creating `docs/design-docs/<topic>-architecture-v1.md` or `docs/design-docs/<topic>-technical-design-v1.md` based on [docs/design-docs/architecture-design-template.md](docs/design-docs/architecture-design-template.md).
 - If a change also affects startup, environment variables, log paths, or the harness, update `README.md`, `AGENTS.md`, and the corresponding topic doc in the same delivery.
 
 ---
@@ -367,13 +367,13 @@ bash ./scripts/harness-linux.sh <target>
 | --- | --- |
 | [docs/ai-club-user-prd-v1.md](docs/ai-club-user-prd-v1.md) | **User-side PRD** — product overview, roles, business flows, feature scope, and acceptance criteria |
 | [docs/architecture.md](docs/architecture.md) | **Architecture** — module responsibilities, core business chains, data & config, run modes |
-| [docs/current-permission-model.md](docs/current-permission-model.md) | Current permission model (function + data permissions) |
-| [docs/observability-technical-design-v1.md](docs/observability-technical-design-v1.md) | Observability center (project logs + health monitoring) technical design |
-| [docs/public-saas-frontend-technical-design-v1.md](docs/public-saas-frontend-technical-design-v1.md) | Public SaaS product frontend technical design |
-| [docs/public-credit-technical-design-v1.md](docs/public-credit-technical-design-v1.md) | Public-side credit billing technical design |
-| [docs/api-studio-native-technical-design-v1.md](docs/api-studio-native-technical-design-v1.md) | Native API workbench technical design |
-| [docs/wiki-knowledge-graph-technical-design-v1.md](docs/wiki-knowledge-graph-technical-design-v1.md) | Wiki knowledge-graph technical design |
-| [docs/model-benchmark-technical-design-v1.md](docs/model-benchmark-technical-design-v1.md) | Model benchmark technical design |
+| [docs/design-docs/current-permission-model.md](docs/design-docs/current-permission-model.md) | Current permission model (function + data permissions) |
+| [docs/design-docs/observability-technical-design-v1.md](docs/design-docs/observability-technical-design-v1.md) | Observability center (project logs + health monitoring) technical design |
+| [docs/design-docs/public-saas-frontend-technical-design-v1.md](docs/design-docs/public-saas-frontend-technical-design-v1.md) | Public SaaS product frontend technical design |
+| [docs/design-docs/public-credit-technical-design-v1.md](docs/design-docs/public-credit-technical-design-v1.md) | Public-side credit billing technical design |
+| [docs/design-docs/api-studio-native-technical-design-v1.md](docs/design-docs/api-studio-native-technical-design-v1.md) | Native API workbench technical design |
+| [docs/design-docs/wiki-knowledge-graph-technical-design-v1.md](docs/design-docs/wiki-knowledge-graph-technical-design-v1.md) | Wiki knowledge-graph technical design |
+| [docs/design-docs/model-benchmark-technical-design-v1.md](docs/design-docs/model-benchmark-technical-design-v1.md) | Model benchmark technical design |
 | [docs/encoding-guide.md](docs/encoding-guide.md) | UTF-8 and Chinese anti-mojibake conventions |
 | [docs/harness-best-practices.md](docs/harness-best-practices.md) | Harness best practices and agent collaboration conventions |
 | [AGENTS.md](AGENTS.md) | Repo-level agent entry point |
@@ -396,3 +396,4 @@ bash ./scripts/harness-linux.sh <target>
 **AI Club** · Bring the critical context of dev tools together under a single project lens.
 
 </div>
+

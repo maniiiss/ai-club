@@ -40,6 +40,12 @@ public class TaskEntity {
     @Column(name = "work_item_type", nullable = false, length = 50)
     private String workItemType = "任务";
 
+    /**
+     * 任务细分类型，用于区分需求设计、UI设计、开发、测试、运维等任务交付形态。
+     */
+    @Column(name = "task_type", length = 30)
+    private String taskType;
+
     @Column(nullable = false, length = 50)
     private String status;
 
@@ -208,6 +214,14 @@ public class TaskEntity {
 
     public void setWorkItemType(String workItemType) {
         this.workItemType = workItemType;
+    }
+
+    public String getTaskType() {
+        return taskType;
+    }
+
+    public void setTaskType(String taskType) {
+        this.taskType = taskType;
     }
 
     public String getStatus() {

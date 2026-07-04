@@ -14,6 +14,8 @@ import type {
   GitlabAutoMergeWebhookPayload,
   GitlabBranchItem,
   GitlabCodeStructureSnapshotItem,
+  GitlabCreateMergeRequestPayload,
+  GitlabCreateMergeRequestResultItem,
   GitlabMergeRequestItem,
   GitlabProductBranchItem,
   GitlabProductBranchPayload,
@@ -22,6 +24,7 @@ import type {
   GitlabProductBranchSyncRunResult,
   GitlabTagCreateResultItem,
   GitlabTagPayload,
+  GitlabUserOauthBindingItem,
   ProjectGitlabBindingItem,
   RepositoryScanRulesetItem,
 } from '@/src/types/development'
@@ -334,5 +337,25 @@ export const listAgentOptions = async (
   const res = await http.get<ApiResponse<AgentOptionItem[]>>('/api/agents/options', {
     params: cleanParams({ projectId }),
   })
+  return unwrap(res)
+}
+
+/* ── GitLab OAuth 与快速发起 MR ── */
+
+/** 获取当前登录用户的 GitLab OAuth 绑定状态（用于判断能否以本人身份发起 MR）。 */
+export const getCurrentUserGitlabOauthBinding = async (): Promise<GitlabUserOauthBindingItem> => {
+  const res = await http.get<ApiResponse<GitlabUserOauthBindingItem>>('/api/gitlab/user-oauth-binding')
+  return unwrap(res)
+}
+
+/** 在指定 GitLab 绑定中快速发起一条 Merge Request。 */
+export const createGitlabMergeRequest = async (
+  bindingId: number,
+  payload: GitlabCreateMergeRequestPayload,
+): Promise<GitlabCreateMergeRequestResultItem> => {
+  const res = await http.post<ApiResponse<GitlabCreateMergeRequestResultItem>>(
+    `/api/gitlab/bindings/${bindingId}/merge-requests`,
+    payload,
+  )
   return unwrap(res)
 }

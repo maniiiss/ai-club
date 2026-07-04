@@ -951,10 +951,17 @@
               </div>
 
               <div class="work-item-field-block work-item-field-iteration">
-                <div class="work-item-editor-label">所属迭代</div>
+                <div class="work-item-editor-label">{{ workItemForm.workItemType === '任务' ? '所属迭代 / 任务类型' : '所属迭代' }}</div>
                 <el-form-item class="work-item-form-item-plain">
                   <el-select v-model="workItemForm.iterationId" clearable placeholder="未选择则放入未规划工作项" style="width: 100%">
                     <el-option v-for="item in board.iterations" :key="item.id" :label="item.name" :value="item.id" />
+                  </el-select>
+                  <el-select
+                    v-if="workItemForm.workItemType === '任务'"
+                    v-model="workItemForm.taskType"
+                    style="width: 100%; margin-top: 8px"
+                  >
+                    <el-option v-for="item in TASK_TYPE_OPTIONS" :key="item" :label="item" :value="item" />
                   </el-select>
                 </el-form-item>
               </div>
@@ -1435,6 +1442,8 @@ interface WorkItemForm {
   workItemCode: string
   name: string
   workItemType: string
+  /** 任务细分类型，仅工作项类型为“任务”时提交。 */
+  taskType: string
   status: string
   priority: string
   /** 预估工时，单位为小时。 */
@@ -1467,6 +1476,7 @@ interface CommentForm {
 }
 
 const BASE_PRIORITY_OPTIONS = ['高', '中', '低']
+const TASK_TYPE_OPTIONS = ['需求设计', 'UI设计', '技术设计', '开发任务', '测试任务', '运维任务']
 
 const route = useRoute()
 const router = useRouter()
@@ -1721,6 +1731,7 @@ const workItemForm = reactive<WorkItemForm>({
   workItemCode: '',
   name: '',
   workItemType: '任务',
+  taskType: '开发任务',
   status: getDefaultWorkItemStatus('任务'),
   priority: '中',
   workHours: null,
@@ -2346,6 +2357,15 @@ const workItemTypeOptions = computed(() => {
   return Array.from(values)
 })
 
+const normalizeTaskType = (taskType?: string | null) => {
+  const value = String(taskType || '').trim()
+  if (TASK_TYPE_OPTIONS.includes(value)) return value
+  if (value === '开发') return '开发任务'
+  if (value === '测试') return '测试任务'
+  if (value === '部署' || value === '运维' || value === '部署任务') return '运维任务'
+  return '开发任务'
+}
+
 const assigneeSelectOptions = computed<CompactSelectOption[]>(() => [
   { label: '未分配', value: -1, tone: 'info' },
   ...projectParticipantUsers.value.map((item) => ({
@@ -2395,6 +2415,7 @@ const resetWorkItemForm = () => {
   workItemForm.workItemCode = ''
   workItemForm.name = ''
   workItemForm.workItemType = defaultWorkItemType
+  workItemForm.taskType = defaultWorkItemType === '任务' ? '开发任务' : ''
   workItemForm.status = getDefaultWorkItemStatus(defaultWorkItemType)
   workItemForm.priority = '中'
   workItemForm.workHours = null
@@ -2954,6 +2975,7 @@ const openEditWorkItemDialog = (item: TaskItem) => {
   workItemForm.workItemCode = item.workItemCode
   workItemForm.name = item.name
   workItemForm.workItemType = item.workItemType
+  workItemForm.taskType = item.workItemType === '任务' ? normalizeTaskType(item.taskType) : ''
   workItemForm.status = item.status
   workItemForm.priority = item.priority
   workItemForm.workHours = item.workHours
@@ -3056,6 +3078,7 @@ const handleSubmitWorkItem = async () => {
     const payload = {
       name: workItemForm.name,
       workItemType: workItemForm.workItemType,
+      taskType: workItemForm.workItemType === '任务' ? normalizeTaskType(workItemForm.taskType) : null,
       status: workItemForm.status,
       priority: workItemForm.priority,
       workHours: workItemForm.workItemType === '任务' ? workItemForm.workHours : null,
@@ -3125,6 +3148,7 @@ const updateInlineWorkItem = async (
     const updated = await updateTask(row.id, {
       name: row.name,
       workItemType: row.workItemType,
+      taskType: row.taskType,
       status: overrides.status ?? row.status,
       priority: overrides.priority ?? row.priority,
       workHours: overrides.workHours === undefined ? row.workHours : overrides.workHours,
@@ -3253,6 +3277,7 @@ watch(
       // 用户切换到需求类型时，自动带出固定模板，并清空关联需求关系。
       workItemForm.requirementTaskId = null
       workItemForm.workHours = null
+      workItemForm.taskType = ''
       workItemWorkHoursInput.value = ''
       if (!workItemForm.requirementMarkdown.trim()) {
         workItemForm.requirementMarkdown = DEFAULT_REQUIREMENT_TEMPLATE
@@ -3265,6 +3290,9 @@ watch(
 
     if (workItemType !== '任务') {
       workItemForm.workHours = null
+      workItemForm.taskType = ''
+    } else {
+      workItemForm.taskType = normalizeTaskType(workItemForm.taskType)
     }
 
     if (previousType === '需求') {
@@ -3279,6 +3307,8 @@ watch(
     if (workItemType !== '任务') {
       workItemForm.workHours = null
       workItemWorkHoursInput.value = ''
+    } else {
+      workItemForm.taskType = normalizeTaskType(workItemForm.taskType)
     }
   }
 )

@@ -81,8 +81,8 @@ public class TaskRequirementAiService {
     }
 
     public TaskRequirementAiResult generate(Long taskId, TaskRequirementAiRequest request) {
-        TaskEntity task = requireRequirementTask(taskId);
         String action = normalizeAction(request.action());
+        TaskEntity task = requireSupportedAiWorkItem(taskId, action);
         AiModelConfigEntity modelConfig = resolveModelConfig(request.modelConfigId(), action);
 
         return switch (action) {
@@ -92,7 +92,7 @@ public class TaskRequirementAiService {
                     task,
                     modelConfig,
                     standardizePrompt(),
-                    buildTaskContext(task),
+                    buildTaskContext(task, action),
                     2200
             );
             case ACTION_BREAKDOWN -> buildBreakdownResult(task, modelConfig);
@@ -121,7 +121,7 @@ public class TaskRequirementAiService {
     }
 
     private TaskRequirementAiResult buildBreakdownResult(TaskEntity task, AiModelConfigEntity modelConfig) {
-        String raw = invokePrompt(ACTION_BREAKDOWN, task, modelConfig, breakdownPrompt(), buildTaskContext(task), 2600, false);
+        String raw = invokePrompt(ACTION_BREAKDOWN, task, modelConfig, breakdownPrompt(), buildTaskContext(task, ACTION_BREAKDOWN), 2600, false);
         String markdown = cleanMarkdownOutput(raw);
         List<TaskRequirementAiSuggestion> taskSuggestions = List.of();
 
@@ -139,7 +139,7 @@ public class TaskRequirementAiService {
                 }
                 parsed.add(new TaskRequirementAiSuggestion(
                         name,
-                        normalizeTaskCategory(node.path("category").asText()),
+                        normalizeTaskType(firstText(node, "taskType", "category")),
                         normalizeTaskPriority(node.path("priority").asText()),
                         defaultString(node.path("description").asText())
                 ));
@@ -165,7 +165,7 @@ public class TaskRequirementAiService {
         RuntimeException primaryFailure = null;
 
         try {
-            String raw = invokePrompt(ACTION_TEST_CASES, task, modelConfig, testCasesPrompt(), buildTaskContext(task), 1800, true);
+            String raw = invokePrompt(ACTION_TEST_CASES, task, modelConfig, testCasesPrompt(), buildTaskContext(task, ACTION_TEST_CASES), 1800, true);
             TestCaseParseResult parsed = parseTestCaseResult(raw);
             markdown = parsed.markdown();
             testCaseSuggestions = parsed.suggestions();
@@ -178,7 +178,7 @@ public class TaskRequirementAiService {
         }
 
         if (!hasText(markdown) && testCaseSuggestions.isEmpty()) {
-            String fallbackRaw = invokePrompt(ACTION_TEST_CASES, task, modelConfig, testCasesFallbackPrompt(), buildTaskContext(task), 1200, false);
+            String fallbackRaw = invokePrompt(ACTION_TEST_CASES, task, modelConfig, testCasesFallbackPrompt(), buildTaskContext(task, ACTION_TEST_CASES), 1200, false);
             TestCaseParseResult fallbackParsed = parseTestCaseResult(fallbackRaw);
             markdown = fallbackParsed.markdown();
             testCaseSuggestions = fallbackParsed.suggestions();
@@ -350,17 +350,29 @@ public class TaskRequirementAiService {
         );
     }
 
-    private TaskEntity requireRequirementTask(Long taskId) {
+    private TaskEntity requireSupportedAiWorkItem(Long taskId, String action) {
         TaskEntity task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new NoSuchElementException("工作项不存在: " + taskId));
         ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.currentScopeOrNull();
         if (scope != null) {
             projectDataPermissionService.requireTaskVisible(task);
         }
-        if (!"需求".equals(defaultString(task.getWorkItemType()))) {
-            throw new IllegalArgumentException("仅需求类型工作项支持 AI 助手");
+        if ("需求".equals(defaultString(task.getWorkItemType()))) {
+            return task;
         }
-        return task;
+        // 测试任务只开放测试用例生成，避免其它需求 AI 能力误用于任务工作项。
+        if (ACTION_TEST_CASES.equals(action)) {
+            if ("任务".equals(defaultString(task.getWorkItemType()))
+                    && "测试任务".equals(normalizeTaskType(task.getTaskType()))) {
+                return task;
+            }
+            throw new IllegalArgumentException("仅需求或测试任务支持生成测试用例");
+        }
+        throw new IllegalArgumentException("仅需求类型工作项支持 AI 助手");
+    }
+
+    private TaskEntity requireRequirementTask(Long taskId) {
+        return requireSupportedAiWorkItem(taskId, ACTION_STANDARDIZE);
     }
 
     /**
@@ -450,14 +462,14 @@ public class TaskRequirementAiService {
                   "tasks": [
                     {
                       "name": "任务标题",
-                      "category": "开发",
+                      "taskType": "开发任务",
                       "priority": "中",
                       "description": "任务说明"
                     }
                   ]
                 }
                 4. tasks 最多 8 条。
-                5. category 仅允许：需求设计、UI设计、技术设计、开发、测试、部署。
+                5. taskType 仅允许：需求设计、UI设计、技术设计、开发任务、测试任务、运维任务。
                 6. priority 仅允许：高、中、低。
                 7. description 使用 Markdown。
                 8. 不要生成“需求澄清”“需求确认”“与产品确认”等沟通类任务，直接按已知需求拆解可执行任务。
@@ -512,7 +524,12 @@ public class TaskRequirementAiService {
                 """;
     }
 
-    private String buildTaskContext(TaskEntity task) {
+    private String buildTaskContext(TaskEntity task, String action) {
+        if (ACTION_TEST_CASES.equals(action)
+                && "任务".equals(defaultString(task.getWorkItemType()))
+                && "测试任务".equals(normalizeTaskType(task.getTaskType()))) {
+            return buildTestingTaskContext(task);
+        }
         return """
                 需求标题：%s
                 项目：%s
@@ -530,6 +547,50 @@ public class TaskRequirementAiService {
                 defaultString(task.getPriority()),
                 defaultString(task.getPrototypeUrl()),
                 defaultString(task.getDescription())
+        ).trim();
+    }
+
+    /**
+     * 测试任务生成用例时以当前测试任务为主，并补充关联需求摘要，让 QA 智能体同时理解测试范围和业务背景。
+     */
+    private String buildTestingTaskContext(TaskEntity task) {
+        TaskEntity requirementTask = task.getRequirementTask();
+        String requirementSummary = "未关联需求";
+        if (requirementTask != null) {
+            requirementSummary = """
+                    关联需求标题：%s
+                    关联需求状态：%s
+                    关联需求优先级：%s
+                    关联需求原型链接：%s
+                    关联需求描述：
+                    %s
+                    """.formatted(
+                    defaultString(requirementTask.getName()),
+                    defaultString(requirementTask.getStatus()),
+                    defaultString(requirementTask.getPriority()),
+                    defaultString(requirementTask.getPrototypeUrl()),
+                    defaultString(requirementTask.getDescription())
+            ).trim();
+        }
+        return """
+                测试任务标题：%s
+                项目：%s
+                所属迭代：%s
+                当前状态：%s
+                优先级：%s
+                测试任务描述：
+                %s
+
+                关联需求摘要：
+                %s
+                """.formatted(
+                task.getName(),
+                task.getProject().getName(),
+                task.getIteration() == null ? "未规划" : task.getIteration().getName(),
+                defaultString(task.getStatus()),
+                defaultString(task.getPriority()),
+                defaultString(task.getDescription()),
+                requirementSummary
         ).trim();
     }
 
@@ -642,15 +703,31 @@ public class TaskRequirementAiService {
         return cleaned;
     }
 
-    private String normalizeTaskCategory(String category) {
-        String value = trimToNull(category);
+    private String normalizeTaskType(String taskType) {
+        String value = trimToNull(taskType);
         if (value == null) {
-            return "开发";
+            return "开发任务";
         }
         return switch (value) {
-            case "需求设计", "UI设计", "技术设计", "开发", "测试", "部署" -> value;
-            default -> "开发";
+            case "需求设计", "UI设计", "技术设计", "开发任务", "测试任务", "运维任务" -> value;
+            case "开发" -> "开发任务";
+            case "测试" -> "测试任务";
+            case "部署", "运维", "部署任务" -> "运维任务";
+            default -> "开发任务";
         };
+    }
+
+    private String firstText(JsonNode node, String... fieldNames) {
+        if (node == null) {
+            return "";
+        }
+        for (String fieldName : fieldNames) {
+            String value = trimToNull(node.path(fieldName).asText());
+            if (value != null) {
+                return value;
+            }
+        }
+        return "";
     }
 
     private String normalizeTaskPriority(String priority) {

@@ -126,6 +126,8 @@ export interface TaskPayload {
   workItemType?: '需求' | '任务' | '缺陷' | string
   status: string
   priority: string
+  /** 任务细分类型，仅 workItemType 为任务时生效。 */
+  taskType?: string | null
   /** 预估工时，单位为小时。 */
   workHours?: number | null
   assignee: string

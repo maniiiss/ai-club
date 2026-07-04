@@ -1,26 +1,38 @@
 /**
  * 需求 AI 助手弹窗组件。
- * 支持标准化需求、拆解子任务、生成测试用例三个动作，
+ * 支持标准化需求、拆解子任务等动作，
  * 调用公众端接口（自带积分扣费），提供 AI 结果预览、评论/描述写入、子任务创建、测试计划导入等后续操作。
  */
 import { useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import {
   X, Sparkles, MessageSquare, FileDown, Replace, Plus, Trash2,
-  Coins, FlaskConical, ListChecks, FileText,
+  Coins, ListChecks, FileText,
 } from 'lucide-react'
 import { generateRequirementAi } from '@/src/api/requirementAi'
 import { getMyFeatureCosts } from '@/src/api/credits'
 import { createTaskComment, updateWorkItem, createWorkItem } from '@/src/api/planning'
 import { pageTestPlans, getTestPlanDetail, createTestPlan, updateTestPlan } from '@/src/api/execution'
 import { Markdown } from '@/src/components/common/Markdown'
+import { MarkdownEditor } from '@/src/components/common/MarkdownEditor'
 import { Button } from '@/src/components/common/Button'
 import { Input } from '@/src/components/common/Input'
 import { Select } from '@/src/components/common/Select'
+import { WorkItemMemberPicker } from '@/src/components/common/AssigneePicker'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { cn, getErrorMessage } from '@/src/lib/utils'
-import type { WorkItem } from '@/src/types/planning'
+import { uploadMarkdownImage } from '@/src/lib/markdownImageUpload'
+import {
+  TASK_TYPE_OPTIONS,
+  buildCurrentRequirementAiMarkdown,
+  getRequirementAiActions,
+  mergeTaskSuggestions,
+  normalizeTaskSuggestion,
+  normalizeTaskType,
+} from '@/src/lib/requirementAiUtils'
+import type { WorkItem, WorkItemPayload } from '@/src/types/planning'
 import type { TestPlanItem } from '@/src/types/execution'
+import type { UserOptionItem } from '@/src/api/users'
 import type {
   RequirementAiResult,
   TaskSuggestionItem,
@@ -30,23 +42,30 @@ import type {
 
 /* ── 常量 ── */
 
-const taskCategoryOptions = ['需求设计', 'UI设计', '技术设计', '开发', '测试', '部署']
 const taskPriorityOptions = ['高', '中', '低']
 const caseTypeOptions = ['功能测试', '接口测试', '回归测试', '异常测试', '兼容性测试', '性能测试']
 const casePriorityOptions = ['P0', 'P1', 'P2', 'P3']
+
+interface EditableTaskSuggestion extends TaskSuggestionItem {
+  assignee: string
+  assigneeUserId: number | null
+  collaboratorUserIds: number[]
+}
 
 /* ── Props ── */
 
 interface RequirementAiDialogProps {
   open: boolean
   workItem: WorkItem
+  userOptions: UserOptionItem[]
+  projectMemberIds: number[]
   onClose: () => void
   onChanged: () => void
   /** 打开后自动执行的 AI 动作（如 'STANDARDIZE'），执行一次后忽略。 */
   autoRunAction?: string
 }
 
-export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRunAction }: RequirementAiDialogProps) => {
+export const RequirementAiDialog = ({ open, workItem, userOptions, projectMemberIds, onClose, onChanged, autoRunAction }: RequirementAiDialogProps) => {
   /* ── 积分费用 ── */
   const [featureCosts, setFeatureCosts] = useState<Record<string, number>>({})
 
@@ -54,9 +73,13 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
   const [result, setResult] = useState<RequirementAiResult | null>(null)
   const [runningAction, setRunningAction] = useState<string | null>(null)
   const [generationStatus, setGenerationStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [standardizeMarkdownDraft, setStandardizeMarkdownDraft] = useState('')
+  const [standardizeEditMode, setStandardizeEditMode] = useState(false)
 
   /* ── 拆解建议编辑态 ── */
-  const [taskSuggestions, setTaskSuggestions] = useState<TaskSuggestionItem[]>([])
+  const [taskSuggestions, setTaskSuggestions] = useState<EditableTaskSuggestion[]>([])
+  const [selectedTaskSuggestionIndexes, setSelectedTaskSuggestionIndexes] = useState<Set<number>>(new Set())
+  const [editingDescriptionIndexes, setEditingDescriptionIndexes] = useState<Set<number>>(new Set())
   const [creatingTasks, setCreatingTasks] = useState(false)
 
   /* ── 测试用例建议编辑态 ── */
@@ -93,7 +116,11 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
       setResult(null)
       setRunningAction(null)
       setGenerationStatus('idle')
+      setStandardizeMarkdownDraft('')
+      setStandardizeEditMode(false)
       setTaskSuggestions([])
+      setSelectedTaskSuggestionIndexes(new Set())
+      setEditingDescriptionIndexes(new Set())
       setTestCaseSuggestions([])
       setTestPlanOptions([])
       setSelectedPlanId('')
@@ -113,22 +140,44 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
   if (!open) return null
 
   const requirementAiCost = featureCosts['REQUIREMENT_AI']
-  const testCaseAiCost = featureCosts['TEST_CASE_AI']
-
+  const testCaseAiCost = featureCosts['TEST_CASE_AI'] ?? requirementAiCost
+  const availableActions = getRequirementAiActions(workItem)
+  const dialogTitle = workItem.workItemType === '任务' && normalizeTaskType(workItem.taskType) === '测试任务'
+    ? '测试用例生成'
+    : '需求 AI 助手'
   /* 拆解子任务和测试用例需要右侧操作面板，标准化需求仅展示 Markdown 全宽即可 */
   const showRightPanel = result?.action === 'BREAKDOWN' || result?.action === 'TEST_CASES'
+  const useTallStandardizeEditor = result?.action === 'STANDARDIZE' && standardizeEditMode
+  const currentResultMarkdown = buildCurrentRequirementAiMarkdown(
+    result?.action,
+    result?.markdown,
+    standardizeMarkdownDraft,
+  )
 
   /* ── AI 生成 ── */
 
   const runAction = async (action: string) => {
+    if (!availableActions.includes(action)) {
+      showToast('error', '当前工作项不支持该 AI 动作')
+      return
+    }
     setRunningAction(action)
     setGenerationStatus('idle')
     try {
       const data = await generateRequirementAi(workItem.id, { action })
       setResult(data)
       setGenerationStatus('success')
+      setStandardizeMarkdownDraft(action === 'STANDARDIZE' ? data.markdown : '')
+      setStandardizeEditMode(false)
       // 克隆建议数据到编辑态
-      setTaskSuggestions(data.taskSuggestions.map((s) => ({ ...s })))
+      setTaskSuggestions(data.taskSuggestions.map((suggestion) => ({
+        ...normalizeTaskSuggestion(suggestion),
+        assignee: workItem.assignee,
+        assigneeUserId: workItem.assigneeUserId,
+        collaboratorUserIds: [],
+      })))
+      setSelectedTaskSuggestionIndexes(new Set())
+      setEditingDescriptionIndexes(new Set())
       setTestCaseSuggestions(data.testCaseSuggestions.map((s) => ({
         ...s,
         steps: s.steps.map((step) => ({ ...step })),
@@ -162,11 +211,34 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
 
   /* ── 结果操作 ── */
 
+  /**
+   * 统一构建工作项更新载荷，AI 写入描述时保留任务类型、负责人、迭代等元数据。
+   */
+  const buildWorkItemUpdatePayload = (description: string): WorkItemPayload => ({
+    name: workItem.name,
+    workItemType: workItem.workItemType,
+    taskType: workItem.workItemType === '任务' ? normalizeTaskType(workItem.taskType) : null,
+    status: workItem.status,
+    priority: workItem.priority,
+    workHours: workItem.workHours,
+    assignee: workItem.assignee,
+    assigneeUserId: workItem.assigneeUserId,
+    collaboratorUserIds: workItem.collaboratorUserIds,
+    description,
+    moduleName: workItem.moduleName || '',
+    planStartDate: workItem.planStartDate,
+    planEndDate: workItem.planEndDate,
+    projectId: workItem.projectId,
+    agentId: workItem.agentId,
+    iterationId: workItem.iterationId,
+    requirementTaskId: workItem.requirementTaskId,
+  })
+
   const postAsComment = async () => {
-    if (!result?.markdown) return
+    if (!currentResultMarkdown) return
     setPostingComment(true)
     try {
-      await createTaskComment(workItem.id, result.markdown)
+      await createTaskComment(workItem.id, currentResultMarkdown)
       showToast('success', '已发到评论')
       onChanged()
     } catch (err) {
@@ -177,19 +249,11 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
   }
 
   const appendToDescription = async () => {
-    if (!result?.markdown) return
+    if (!currentResultMarkdown) return
     setAppendingDesc(true)
     try {
-      const newDesc = (workItem.description || '') + '\n\n' + result.markdown
-      await updateWorkItem(workItem.id, {
-        name: workItem.name,
-        status: workItem.status,
-        priority: workItem.priority,
-        assignee: workItem.assignee,
-        description: newDesc,
-        projectId: workItem.projectId,
-        agentId: workItem.agentId,
-      })
+      const newDesc = [workItem.description?.trim(), currentResultMarkdown.trim()].filter(Boolean).join('\n\n')
+      await updateWorkItem(workItem.id, buildWorkItemUpdatePayload(newDesc))
       workItem.description = newDesc
       showToast('success', '已追加到描述')
       onChanged()
@@ -201,19 +265,11 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
   }
 
   const replaceDescription = async () => {
-    if (!result?.markdown) return
+    if (!currentResultMarkdown) return
     setReplacingDesc(true)
     try {
-      await updateWorkItem(workItem.id, {
-        name: workItem.name,
-        status: workItem.status,
-        priority: workItem.priority,
-        assignee: workItem.assignee,
-        description: result.markdown,
-        projectId: workItem.projectId,
-        agentId: workItem.agentId,
-      })
-      workItem.description = result.markdown
+      await updateWorkItem(workItem.id, buildWorkItemUpdatePayload(currentResultMarkdown))
+      workItem.description = currentResultMarkdown
       showToast('success', '已替换描述')
       onChanged()
     } catch (err) {
@@ -233,9 +289,12 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
         await createWorkItem({
           name: item.name,
           workItemType: '任务',
+          taskType: normalizeTaskType(item.taskType),
           status: '待开始',
           priority: item.priority,
-          assignee: workItem.assignee,
+          assignee: item.assignee,
+          assigneeUserId: item.assigneeUserId,
+          collaboratorUserIds: item.collaboratorUserIds,
           description: item.description,
           projectId: workItem.projectId,
           agentId: null,
@@ -254,10 +313,68 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
 
   const removeTaskSuggestion = (index: number) => {
     setTaskSuggestions((prev) => prev.filter((_, i) => i !== index))
+    setSelectedTaskSuggestionIndexes((prev) => {
+      const next = new Set<number>()
+      prev.forEach((value) => {
+        if (value < index) next.add(value)
+        else if (value > index) next.add(value - 1)
+      })
+      return next
+    })
+    setEditingDescriptionIndexes((prev) => {
+      const next = new Set<number>()
+      prev.forEach((value) => {
+        if (value < index) next.add(value)
+        else if (value > index) next.add(value - 1)
+      })
+      return next
+    })
   }
 
-  const updateTaskSuggestion = (index: number, patch: Partial<TaskSuggestionItem>) => {
+  const updateTaskSuggestion = (index: number, patch: Partial<EditableTaskSuggestion>) => {
     setTaskSuggestions((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)))
+  }
+
+  const toggleTaskSuggestionSelection = (index: number) => {
+    setSelectedTaskSuggestionIndexes((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  const toggleTaskDescriptionEditing = (index: number) => {
+    setEditingDescriptionIndexes((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }
+
+  /**
+   * 将多条 AI 拆解建议合并成一条任务，便于用户把过细任务收敛后再创建。
+   */
+  const mergeSelectedTaskSuggestions = () => {
+    const indexes = Array.from(selectedTaskSuggestionIndexes).sort((a, b) => a - b)
+    if (indexes.length < 2) return
+    const selectedSuggestions = indexes.map((index) => taskSuggestions[index]).filter(Boolean)
+    const merged = mergeTaskSuggestions(selectedSuggestions)
+    const first = selectedSuggestions[0]
+    const insertIndex = indexes[0]
+    setTaskSuggestions((prev) => [
+      ...prev.slice(0, insertIndex),
+      {
+        ...merged,
+        assignee: first?.assignee || workItem.assignee,
+        assigneeUserId: first?.assigneeUserId ?? workItem.assigneeUserId,
+        collaboratorUserIds: first?.collaboratorUserIds || [],
+      },
+      ...prev.filter((_, index) => !selectedTaskSuggestionIndexes.has(index) && index > insertIndex),
+    ])
+    setSelectedTaskSuggestionIndexes(new Set())
+    setEditingDescriptionIndexes(new Set([insertIndex]))
   }
 
   /* ── 测试用例操作 ── */
@@ -308,13 +425,16 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
       const plan = await getTestPlanDetail(Number(selectedPlanId))
       const existingCases = plan.cases || []
       const newCases = buildCasesPayload(testCaseSuggestions)
-      const allCases = [...existingCases, ...newCases]
+      const allCases = [...existingCases, ...newCases].map((item, index) => ({ ...item, sortOrder: index }))
       await updateTestPlan(Number(selectedPlanId), {
         name: plan.name,
         projectId: plan.projectId,
         iterationId: plan.iterationId,
         status: plan.status,
         description: plan.description,
+        startDate: plan.startDate,
+        endDate: plan.endDate,
+        cases: allCases,
       })
       showToast('success', `已导入 ${testCaseSuggestions.length} 条用例到「${plan.name}」`)
       onChanged()
@@ -336,8 +456,9 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
         iterationId: workItem.iterationId,
         status: '待执行',
         description: `由需求 AI 助手自动生成，基于工作项「${workItem.name}」`,
+        cases: buildCasesPayload(testCaseSuggestions),
       })
-      showToast('success', `已新建测试计划「${planName}」`)
+      showToast('success', `已新建测试计划「${planName}」并导入 ${testCaseSuggestions.length} 条用例`)
       onChanged()
     } catch (err) {
       showToast('error', getErrorMessage(err) || '创建测试计划失败')
@@ -355,19 +476,23 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
 
       {/* 彩虹边框包裹层：成功后绿色，失败后红色 */}
       <div className={cn(
-        'relative z-5 flex flex-col pointer-events-none w-full max-h-[70vh] rounded-2xl animate-scaleIn',
+        'relative z-5 flex flex-col pointer-events-none w-full rounded-2xl animate-scaleIn',
+        useTallStandardizeEditor ? 'max-h-[94vh]' : 'max-h-[70vh]',
         showRightPanel ? 'max-w-[1080px]' : 'max-w-[640px]',
         generationStatus === 'success' ? 'rainbow-border-success'
           : generationStatus === 'error' ? 'rainbow-border-error'
           : 'rainbow-border',
       )}>
         {/* 弹窗主体 */}
-        <div className="flex flex-col w-full h-full max-h-[70vh] rounded-2xl bg-white shadow-[var(--shadow-xl)] overflow-hidden pointer-events-auto">
+        <div className={cn(
+          'flex flex-col w-full h-full rounded-2xl bg-white shadow-[var(--shadow-xl)] overflow-hidden pointer-events-auto',
+          useTallStandardizeEditor ? 'max-h-[94vh]' : 'max-h-[70vh]',
+        )}>
         {/* ── 头部 ── */}
         <div className="flex-shrink-0 flex items-center justify-between border-b border-[var(--color-border)] px-6 py-3">
           <div className="flex items-center gap-2 min-w-0">
             <Sparkles className="h-5 w-5 text-[var(--color-primary)] flex-shrink-0" />
-            <span className="text-[15px] font-semibold text-[var(--color-text-primary)] whitespace-nowrap flex-shrink-0">需求 AI 助手</span>
+            <span className="text-[15px] font-semibold text-[var(--color-text-primary)] whitespace-nowrap flex-shrink-0">{dialogTitle}</span>
             <span className="text-[13px] text-[var(--color-text-tertiary)] truncate" title={workItem.name}>— {workItem.name}</span>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors">
@@ -378,27 +503,33 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
         {/* ── 工具栏 ── */}
         <div className="flex-shrink-0 flex items-center gap-3 flex-wrap border-b border-[var(--color-border-light)] px-6 py-3 bg-[var(--color-bg-page)]">
           <div className="flex items-center gap-2 flex-wrap">
-            <ActionButton
-              label="标准化需求"
-              icon={<FileText className="h-3.5 w-3.5" />}
-              cost={requirementAiCost}
-              loading={runningAction === 'STANDARDIZE'}
-              onClick={() => runAction('STANDARDIZE')}
-            />
-            <ActionButton
-              label="拆解子任务"
-              icon={<ListChecks className="h-3.5 w-3.5" />}
-              cost={requirementAiCost}
-              loading={runningAction === 'BREAKDOWN'}
-              onClick={() => runAction('BREAKDOWN')}
-            />
-            <ActionButton
-              label="生成测试用例"
-              icon={<FlaskConical className="h-3.5 w-3.5" />}
-              cost={testCaseAiCost}
-              loading={runningAction === 'TEST_CASES'}
-              onClick={() => runAction('TEST_CASES')}
-            />
+            {availableActions.includes('STANDARDIZE') && (
+              <ActionButton
+                label="标准化需求"
+                icon={<FileText className="h-3.5 w-3.5" />}
+                cost={requirementAiCost}
+                loading={runningAction === 'STANDARDIZE'}
+                onClick={() => runAction('STANDARDIZE')}
+              />
+            )}
+            {availableActions.includes('BREAKDOWN') && (
+              <ActionButton
+                label="拆解子任务"
+                icon={<ListChecks className="h-3.5 w-3.5" />}
+                cost={requirementAiCost}
+                loading={runningAction === 'BREAKDOWN'}
+                onClick={() => runAction('BREAKDOWN')}
+              />
+            )}
+            {availableActions.includes('TEST_CASES') && (
+              <ActionButton
+                label="生成测试用例"
+                icon={<ListChecks className="h-3.5 w-3.5" />}
+                cost={testCaseAiCost}
+                loading={runningAction === 'TEST_CASES'}
+                onClick={() => runAction('TEST_CASES')}
+              />
+            )}
           </div>
         </div>
 
@@ -443,6 +574,16 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
                   </button>
                   {result.action === 'STANDARDIZE' && (
                     <button
+                      onClick={() => setStandardizeEditMode((editing) => !editing)}
+                      className={actionBtnClass}
+                      title={standardizeEditMode ? '预览结果' : '编辑结果'}
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      <span>{standardizeEditMode ? '预览' : '编辑'}</span>
+                    </button>
+                  )}
+                  {result.action === 'STANDARDIZE' && (
+                    <button
                       onClick={replaceDescription}
                       disabled={replacingDesc}
                       className={cn(actionBtnClass, 'text-[var(--color-primary)]')}
@@ -455,14 +596,29 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
                 </div>
               )}
             </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4">
+            <div className={cn(
+              'flex-1 min-h-0 px-5 py-4',
+              result?.action === 'STANDARDIZE' && standardizeEditMode
+                ? 'flex flex-col overflow-hidden'
+                : 'overflow-y-auto',
+            )}>
               {runningAction ? (
                 <div className="flex flex-col items-center justify-center h-full gap-3">
                   <LoadingSpinner />
                   <p className="text-[13px] text-[var(--color-text-tertiary)]">AI 正在生成中，请稍候…</p>
                 </div>
-              ) : result?.markdown ? (
-                <Markdown content={result.markdown} />
+              ) : result?.action === 'STANDARDIZE' && standardizeEditMode ? (
+                <MarkdownEditor
+                  value={standardizeMarkdownDraft}
+                  onChange={setStandardizeMarkdownDraft}
+                  placeholder="可在写入需求前调整 AI 标准化结果"
+                  height="auto"
+                  uploadImage={uploadMarkdownImage}
+                  startInEditMode
+                  className="min-h-[680px]"
+                />
+              ) : currentResultMarkdown ? (
+                <Markdown content={currentResultMarkdown} />
               ) : (
                 <div className="flex flex-col items-center justify-center h-full gap-2 text-[var(--color-text-tertiary)]">
                   <Sparkles className="h-8 w-8 opacity-30" />
@@ -483,11 +639,18 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
                     <div className="text-[13px] font-semibold text-[var(--color-text-primary)]">拆解建议</div>
                     <div className="text-[11px] text-[var(--color-text-tertiary)]">支持编辑、删除后再创建任务</div>
                   </div>
-                  {taskSuggestions.length > 0 && (
-                    <Button size="sm" onClick={createSuggestedTasks} loading={creatingTasks} icon={<Plus className="h-3.5 w-3.5" />}>
-                      创建任务
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {selectedTaskSuggestionIndexes.size >= 2 && (
+                      <Button size="sm" variant="secondary" onClick={mergeSelectedTaskSuggestions}>
+                        合并任务
+                      </Button>
+                    )}
+                    {taskSuggestions.length > 0 && (
+                      <Button size="sm" onClick={createSuggestedTasks} loading={creatingTasks} icon={<Plus className="h-3.5 w-3.5" />}>
+                        创建任务
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
                   {taskSuggestions.length === 0 ? (
@@ -496,9 +659,17 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
                     taskSuggestions.map((item, index) => (
                       <div key={index} className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] p-3 space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-medium text-[var(--color-primary)]">子任务 {index + 1}</span>
+                          <label className="inline-flex items-center gap-2 text-[11px] font-medium text-[var(--color-primary)]">
+                            <input
+                              type="checkbox"
+                              checked={selectedTaskSuggestionIndexes.has(index)}
+                              onChange={() => toggleTaskSuggestionSelection(index)}
+                              className="h-3.5 w-3.5 rounded border-[var(--color-border-strong)] text-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+                            />
+                            <span>子任务 {index + 1}</span>
+                          </label>
                           <div className="flex items-center gap-2">
-                            <span className="text-[11px] text-[var(--color-text-tertiary)]">{item.category} / {item.priority}</span>
+                            <span className="text-[11px] text-[var(--color-text-tertiary)]">{item.taskType} / {item.priority}</span>
                             <button onClick={() => removeTaskSuggestion(index)} className="text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] transition-colors">
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -512,10 +683,10 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
                         />
                         <div className="grid grid-cols-2 gap-2">
                           <Select
-                            value={item.category}
-                            onChange={(v) => updateTaskSuggestion(index, { category: v })}
-                            options={taskCategoryOptions.map((o) => ({ value: o, label: o }))}
-                            placeholder="类别"
+                            value={item.taskType}
+                            onChange={(v) => updateTaskSuggestion(index, { taskType: v })}
+                            options={TASK_TYPE_OPTIONS.map((o) => ({ value: o, label: o }))}
+                            placeholder="任务类型"
                             className="[&_.h-10]:h-8"
                           />
                           <Select
@@ -526,11 +697,48 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
                             className="[&_.h-10]:h-8"
                           />
                         </div>
-                        {item.description && (
-                          <div className="text-[12px] text-[var(--color-text-secondary)] max-h-[80px] overflow-y-auto">
-                            <Markdown content={item.description} />
+                        <div className="grid grid-cols-1 gap-2">
+                          <WorkItemMemberPicker
+                            label="负责人 / 协作人"
+                            assigneeUserId={item.assigneeUserId}
+                            collaboratorUserIds={item.collaboratorUserIds}
+                            userOptions={userOptions}
+                            projectMemberIds={projectMemberIds}
+                            onChange={({ assigneeUserId, collaboratorUserIds }) => {
+                              const selected = userOptions.find((u) => u.id === assigneeUserId)
+                              updateTaskSuggestion(index, {
+                                assigneeUserId,
+                                assignee: selected?.nickname || selected?.username || '',
+                                collaboratorUserIds,
+                              })
+                            }}
+                          />
+                        </div>
+                        <div className="rounded-md border border-[var(--color-border-light)] bg-white">
+                          <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-2.5 py-1.5">
+                            <span className="text-[11px] font-medium text-[var(--color-text-tertiary)]">任务描述</span>
+                            <button
+                              type="button"
+                              onClick={() => toggleTaskDescriptionEditing(index)}
+                              className="text-[11px] text-[var(--color-primary)] hover:underline"
+                            >
+                              {editingDescriptionIndexes.has(index) ? '预览' : '编辑'}
+                            </button>
                           </div>
-                        )}
+                          {editingDescriptionIndexes.has(index) ? (
+                            <textarea
+                              value={item.description}
+                              onChange={(e) => updateTaskSuggestion(index, { description: e.target.value })}
+                              placeholder="任务描述，支持 Markdown"
+                              rows={5}
+                              className="w-full resize-y rounded-b-md border-0 bg-white px-2.5 py-2 text-[12px] leading-relaxed text-[var(--color-text-primary)] placeholder:text-[var(--color-text-placeholder)] focus:outline-none focus:ring-1 focus:ring-[var(--color-primary)]"
+                            />
+                          ) : (
+                            <div className="max-h-[140px] overflow-y-auto px-2.5 py-2 text-[12px] text-[var(--color-text-secondary)]">
+                              {item.description ? <Markdown content={item.description} /> : <span className="text-[var(--color-text-tertiary)]">暂无描述</span>}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ))
                   )}
@@ -546,21 +754,21 @@ export const RequirementAiDialog = ({ open, workItem, onClose, onChanged, autoRu
                     <div className="text-[13px] font-semibold text-[var(--color-text-primary)]">测试用例建议</div>
                     <div className="text-[11px] text-[var(--color-text-tertiary)]">可导入现有测试计划，或新建计划后导入</div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <Select
                       value={selectedPlanId}
                       onChange={setSelectedPlanId}
                       options={testPlanOptions.map((p) => ({ value: String(p.id), label: p.name }))}
                       placeholder="选择已有测试计划"
-                      className="flex-1"
+                      className="min-w-0 flex-1 [&>div]:min-w-0 [&_button>span]:min-w-0 [&_button>span]:flex-1"
                     />
                     {selectedPlanId && testCaseSuggestions.length > 0 && (
-                      <Button size="sm" variant="secondary" onClick={importToExistingPlan} loading={importingTestCases}>
+                      <Button size="sm" variant="secondary" onClick={importToExistingPlan} loading={importingTestCases} className="shrink-0">
                         导入
                       </Button>
                     )}
                     {testCaseSuggestions.length > 0 && (
-                      <Button size="sm" onClick={createNewPlanWithCases} loading={creatingTestPlan} icon={<Plus className="h-3.5 w-3.5" />}>
+                      <Button size="sm" onClick={createNewPlanWithCases} loading={creatingTestPlan} icon={<Plus className="h-3.5 w-3.5" />} className="shrink-0">
                         新建计划
                       </Button>
                     )}

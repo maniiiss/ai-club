@@ -14,6 +14,25 @@ import type {
   TestPlanItem,
 } from '@/src/types/execution'
 
+type TestPlanCasePayload = {
+  id?: number | null
+  title: string
+  moduleName: string
+  caseType: string
+  priority: string
+  precondition: string
+  remarks: string
+  sortOrder: number
+  automationType?: string
+  automationHint?: string
+  steps: {
+    id?: number | null
+    stepNo: number
+    action: string
+    expectedResult: string
+  }[]
+}
+
 /* ── 测试计划 ── */
 
 /** 分页查询测试计划。 */
@@ -46,6 +65,7 @@ export const createTestPlan = async (payload: {
   description: string
   startDate?: string | null
   endDate?: string | null
+  cases?: TestPlanCasePayload[]
 }): Promise<TestPlanItem> => {
   const res = await http.post<ApiResponse<TestPlanItem>>('/api/test-plans', payload)
   return unwrap(res)
@@ -60,6 +80,7 @@ export const updateTestPlan = async (id: number, payload: {
   description: string
   startDate?: string | null
   endDate?: string | null
+  cases?: TestPlanCasePayload[]
 }): Promise<TestPlanItem> => {
   const res = await http.put<ApiResponse<TestPlanItem>>(`/api/test-plans/${id}`, payload)
   return unwrap(res)

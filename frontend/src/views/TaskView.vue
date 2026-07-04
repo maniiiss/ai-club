@@ -345,6 +345,11 @@
           </el-tooltip>
           <div v-if="taskFormWorkHoursLockedReason" class="form-tip">{{ taskFormWorkHoursLockedReason }}</div>
         </el-form-item>
+        <el-form-item v-if="form.workItemType === '任务'" label="任务类型" class="compact-form-item">
+          <el-select v-model="form.taskType" style="width: 100%">
+            <el-option v-for="item in TASK_TYPE_OPTIONS" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="状态" prop="status" class="compact-form-item">
           <el-select v-model="form.status" placeholder="请选择状态" style="width: 100%">
             <el-option v-for="item in taskFormStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
@@ -374,6 +379,14 @@
             </el-button>
             <el-button v-if="currentRequirementTask.prdWikiSpaceId && currentRequirementTask.prdWikiPageId" type="primary" plain @click="openRequirementAiDialog(currentRequirementTask)">
               AI 完善 PRD
+            </el-button>
+          </div>
+        </div>
+        <div v-else-if="isEditing && currentRequirementTask && canOpenRequirementAiDialog(currentRequirementTask)" class="task-prd-actions">
+          <span class="task-prd-status">测试任务可使用 AI 生成测试用例</span>
+          <div class="task-prd-action-buttons">
+            <el-button type="primary" plain @click="openRequirementAiDialog(currentRequirementTask)">
+              AI 生成测试用例
             </el-button>
           </div>
         </div>
@@ -514,6 +527,8 @@ import { useMobileViewport } from '@/utils/mobileViewport'
 interface TaskForm {
   name: string
   workItemType: string
+  /** 任务细分类型，仅工作项类型为“任务”时提交。 */
+  taskType: string
   status: string
   priority: string
   workHours: number | null
@@ -583,6 +598,7 @@ const taskFilterStatusOptions = computed(() => getAllWorkItemStatusOptions())
 const form = reactive<TaskForm>({
   name: '',
   workItemType: '任务',
+  taskType: '开发任务',
   status: getDefaultWorkItemStatus('任务'),
   priority: '中',
   workHours: null,
@@ -601,6 +617,19 @@ const form = reactive<TaskForm>({
   requirementTaskId: null
 })
 const taskFormStatusOptions = computed(() => getWorkItemStatusOptions(form.workItemType))
+const TASK_TYPE_OPTIONS = ['需求设计', 'UI设计', '技术设计', '开发任务', '测试任务', '运维任务']
+
+const normalizeTaskType = (taskType?: string | null) => {
+  const value = String(taskType || '').trim()
+  if (TASK_TYPE_OPTIONS.includes(value)) return value
+  if (value === '开发') return '开发任务'
+  if (value === '测试') return '测试任务'
+  if (value === '部署' || value === '运维' || value === '部署任务') return '运维任务'
+  return '开发任务'
+}
+
+const canOpenRequirementAiDialog = (task?: TaskItem | null) =>
+  task?.workItemType === '需求' || (task?.workItemType === '任务' && normalizeTaskType(task.taskType) === '测试任务')
 
 const rules: FormRules<TaskForm> = {
   name: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],
@@ -778,6 +807,9 @@ const openTaskPrd = async (task: TaskItem) => {
 }
 
 const openRequirementAiDialog = (task: TaskItem) => {
+  if (!canOpenRequirementAiDialog(task)) {
+    return
+  }
   currentRequirementTask.value = task
   requirementAiDialogVisible.value = true
 }
@@ -819,6 +851,7 @@ const resetForm = () => {
   currentRequirementTask.value = null
   form.name = ''
   form.workItemType = defaultWorkItemType
+  form.taskType = '开发任务'
   form.status = getDefaultWorkItemStatus(defaultWorkItemType)
   form.priority = '中'
   form.workHours = null
@@ -947,9 +980,10 @@ const openEditDialog = async (row: TaskItem) => {
   }
   isEditing.value = true
   currentId.value = row.id
-  currentRequirementTask.value = row.workItemType === '需求' ? row : null
+  currentRequirementTask.value = canOpenRequirementAiDialog(row) ? row : null
   form.name = row.name
   form.workItemType = row.workItemType
+  form.taskType = row.workItemType === '任务' ? normalizeTaskType(row.taskType) : ''
   form.status = row.status
   form.priority = row.priority
   form.workHours = row.workHours
@@ -985,7 +1019,7 @@ const refreshCurrentRequirementTask = async () => {
   }
   try {
     const latest = await getTaskDetail(currentId.value)
-    currentRequirementTask.value = latest.workItemType === '需求' ? latest : null
+    currentRequirementTask.value = canOpenRequirementAiDialog(latest) ? latest : null
   } catch (error) {
     // 当前编辑弹窗允许继续工作，刷新失败由列表重载兜底。
   }
@@ -1048,6 +1082,7 @@ const handleSubmit = async () => {
     const payload = {
       name: form.name,
       workItemType: form.workItemType,
+      taskType: form.workItemType === '任务' ? normalizeTaskType(form.taskType) : null,
       status: form.status,
       priority: form.priority,
       workHours: form.workItemType === '任务' ? form.workHours : null,
@@ -1129,6 +1164,7 @@ watch(
     if (workItemType === '需求') {
       form.requirementTaskId = null
       form.workHours = null
+      form.taskType = ''
       if (!form.requirementMarkdown.trim()) {
         form.requirementMarkdown = DEFAULT_REQUIREMENT_TEMPLATE
       }
@@ -1146,6 +1182,9 @@ watch(
 
     if (workItemType !== '任务') {
       form.workHours = null
+      form.taskType = ''
+    } else {
+      form.taskType = normalizeTaskType(form.taskType)
     }
   }
 )

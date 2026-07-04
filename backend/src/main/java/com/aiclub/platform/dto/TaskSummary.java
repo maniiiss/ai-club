@@ -88,6 +88,10 @@ public record TaskSummary(
          * 任务工时，单位为小时。
          */
         BigDecimal workHours,
+        /**
+         * 任务细分类型，仅任务工作项返回。
+         */
+        String taskType,
         Long projectId,
         String projectName,
         Long agentId,

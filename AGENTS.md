@@ -7,22 +7,27 @@
 - 新增或修改类、接口方法、实体字段、复杂流程时，需要补充中文注释说明业务意图。
 - 修改前先阅读关联模块和现有测试，避免只按文件名猜测职责。
 - 不要回滚、覆盖或格式化与当前任务无关的改动。
-- 完成技术架构调整、跨模块边界变化或大型技术设计后，必须同步更新 `docs/architecture.md` 或新增专题设计文档，不能只把结论留在聊天记录里。
+- 完成技术架构调整、跨模块边界变化或大型技术设计后，必须同步更新 `docs/architecture.md` 或在 `docs/design-docs/` 新增专题设计文档，不能只把结论留在聊天记录里。
 
 ## 项目地图
 
 - `frontend/`：Vue 3 + Vite + Element Plus 控制台。
+- `frontend-public/`：React + Vite + Tailwind CSS 公众端，面向公开注册、项目协作和 SaaS 化产品体验。
 - `backend/`：Spring Boot 业务后端，数据库迁移由 Flyway 管理。
 - `code-processing/`：FastAPI 代码处理服务，负责代码扫描、MR 审查和 MCP 工具服务。
 - `scripts/`：本地启动、停止、打包、校验脚本。
-- `docs/`：架构、模块设计和智能体协作规范。
+- `docs/architecture.md`：系统架构总览、模块边界、跨服务链路和运行模式主入口。
+- `docs/design-docs/`：正式专题设计文档目录，架构设计、技术设计、权限模型和设计模板统一放这里。
+- `docs/design-docs/design-draft/`：探索草稿、原型和截图素材，不作为正式架构结论。
+- `docs/exec-plans/`：执行计划与落地编排，不替代正式专题设计文档。
 - `.run-logs/`：本地源码模式运行日志，排查启动和集成问题优先查看这里。
 
 ## 常用命令
 
 - 编码检查：`python scripts/check_encoding.py`
 - 后端测试：`cd backend && mvn -s maven-settings-central.xml test`
-- 前端构建：`cd frontend && npm run build`
+- 管理端构建：`cd frontend && npm run build`
+- 公众端构建：`cd frontend-public && npm run build`
 - 代码处理服务安装：`cd code-processing && pip install -e .`
 - Windows 源码模式启动：`powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1`
 - Windows 源码模式停止：`powershell -ExecutionPolicy Bypass -File .\scripts\stop-windows.ps1`
@@ -34,14 +39,15 @@
 - 接到任务后先判断影响范围，再选择最小可验证 harness。
 - 文档、脚本、配置变更至少运行编码检查。
 - 后端业务变更优先运行相关 JUnit 测试，再视影响范围运行 Maven 全量测试。
-- 前端类型或页面变更优先运行 `npm run build`。
-- 跨服务改动需要至少验证对应服务能启动，必要时使用源码模式脚本串起 `backend`、`frontend`、`code-processing`。
-- 涉及技术架构调整、大型技术设计或重要模块边界变化时，交付物必须包含文档更新，优先补充 `docs/architecture.md` 或新增 `docs/*-architecture-vN.md` / `docs/*-technical-design-vN.md`。
+- 管理端类型或页面变更优先运行 `cd frontend && npm run build`。
+- 公众端类型或页面变更优先运行 `cd frontend-public && npm run build`。
+- 跨服务改动需要至少验证对应服务能启动，必要时使用源码模式脚本串起 `backend`、`frontend`、`frontend-public`、`code-processing`。
+- 涉及技术架构调整、大型技术设计或重要模块边界变化时，交付物必须包含文档更新，优先补充 `docs/architecture.md` 或新增 `docs/design-docs/*-architecture-vN.md` / `docs/design-docs/*-technical-design-vN.md`。
 - 详细规范见 `docs/harness-best-practices.md`。
 
 ## 移动端样式设计
 
-- 移动端样式设计方案见 `docs/mobile-console-technical-design-v1.md`。
+- 移动端样式设计方案见 `docs/design-docs/mobile-console-technical-design-v1.md`。
 - 后续新增移动端模块或继续改造首页、项目管理、执行中心、迭代管理与各类管理列表时，优先按这份方案复用布局、分页和交互规则，而不是重新各做一套。
 
 ## GitNexus 路由
@@ -112,3 +118,4 @@ RETURN caller.name, caller.filePath
 ```
 
 <!-- gitnexus:end -->
+
