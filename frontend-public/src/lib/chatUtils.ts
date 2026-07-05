@@ -1,5 +1,6 @@
 import type { ChatMessageItem, ChatSocketEvent } from '@/src/types/chat'
 import type { HermesActionItem, HermesSelectionCardItem } from '@/src/types/hermes'
+export { normalizeGeneratedMarkdown } from '@/src/lib/markdownUtils'
 
 // 只允许 @hermes 独立成一个 token（后接空白或字符串结尾），避免把 @hermes-dev、@hermes队长 等用户名误判为助手提及
 const hermesMentionPattern = /(^|\s)@hermes(?=\s|$)/i
@@ -123,13 +124,6 @@ export const markAgentSelectionStatusInMessage = (
       selectionStatuses,
     }
   })
-
-/**
- * 规范模型常见的 Markdown 粗体标签空格，例如 `**标题： **内容`。
- * 业务意图：Hermes 流式文本偶尔会把结束粗体标记前塞入空格，导致整段按纯文本展示。
- */
-export const normalizeGeneratedMarkdown = (content: string): string =>
-  (content || '').replace(/\*\*([^*\n]{1,24}[：:])\s+\*\*\s*/g, '**$1** ')
 
 export const formatChatFileSize = (size: number) => {
   if (size < 1024) return `${size} B`

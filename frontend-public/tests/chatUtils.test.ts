@@ -124,6 +124,20 @@ describe('chat utilities', () => {
     )
   })
 
+  it('normalizes generated headings that are glued to previous text', () => {
+    assert.equal(
+      normalizeGeneratedMarkdown('P1mini组装说明书### 1️⃣ 底框部分\n内容### 2️⃣ 底框组装图- 4件脚垫座安装脚垫'),
+      'P1mini组装说明书\n\n### 1️⃣ 底框部分\n内容\n\n### 2️⃣ 底框组装图\n\n- 4件脚垫座安装脚垫',
+    )
+  })
+
+  it('normalizes generated emphasis and headings missing marker spaces', () => {
+    assert.equal(
+      normalizeGeneratedMarkdown('确认了 **P1mini安装说明书（完整版） **这篇 Wiki 页面。\nP1mini组装说明书**作者： **怂人刘###1.底框部分-使用 p1mini打印文件内"底部框架"文件夹中的 *四个底座文件'),
+      '确认了 **P1mini安装说明书（完整版）** 这篇 Wiki 页面。\nP1mini组装说明书**作者：** 怂人刘\n\n### 1.底框部分-使用 p1mini打印文件内"底部框架"文件夹中的 *四个底座文件',
+    )
+  })
+
   it('marks selection status without replacing existing selection cards', () => {
     const existing: ChatMessageItem[] = [message(2, '请选择', 'assistant')]
     existing[0].agentTaskId = 88

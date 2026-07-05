@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
+import { normalizeGeneratedMarkdown } from '@/src/lib/markdownUtils'
 import { cn } from '@/src/lib/utils'
 
 interface MarkdownProps {
@@ -211,8 +212,9 @@ const ImageLightbox = ({
 
 export const Markdown = ({ content, className }: MarkdownProps) => {
   const [lightbox, setLightbox] = useState<LightboxState | null>(null)
+  const normalizedContent = normalizeGeneratedMarkdown(content)
 
-  if (!content) {
+  if (!normalizedContent) {
     return <p className="text-[var(--color-text-tertiary)] text-[14px]">（内容为空）</p>
   }
 
@@ -234,7 +236,7 @@ export const Markdown = ({ content, className }: MarkdownProps) => {
               ) : null,
           }}
         >
-          {content}
+          {normalizedContent}
         </ReactMarkdown>
       </div>
 

@@ -4,6 +4,7 @@ import type { ApiResponse, PageResponse } from '@/types/platform'
 import type {
   CreateHermesConversationSessionPayload,
   HermesAttachmentItem,
+  HermesFileLibraryItem,
   HermesMemoryConsolidationStatus,
   HermesMemoryConsolidationTask,
   HermesMemoryOverview,
@@ -19,7 +20,8 @@ import type {
   HermesStreamMetaEvent,
   HermesStreamStatusEvent,
   HermesUserMemoryItem,
-  RenameHermesConversationSessionPayload
+  RenameHermesConversationSessionPayload,
+  UpdateHermesFileLibraryItemPayload
 } from '@/types/hermes'
 
 interface StreamHandlers {
@@ -168,6 +170,49 @@ export const consolidateHermesUserMemories = async () => {
  */
 export const getHermesMemoryConsolidationStatus = async (operationId: string) => {
   const { data } = await http.get<ApiResponse<HermesMemoryConsolidationStatus>>(`/api/hermes/memories/consolidate/${encodeURIComponent(operationId)}`)
+  return data.data
+}
+
+/**
+ * 列出当前用户的 Hermes 个人文件库。
+ */
+export const listHermesFileLibraryItems = async (query?: string) => {
+  const { data } = await http.get<ApiResponse<HermesFileLibraryItem[]>>('/api/hermes/file-library', {
+    params: cleanParams({ query })
+  })
+  return data.data || []
+}
+
+/**
+ * 上传文档到当前用户的 Hermes 个人文件库。
+ */
+export const uploadHermesFileLibraryItem = async (file: File) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const { data } = await http.post<ApiResponse<HermesFileLibraryItem>>('/api/hermes/file-library/upload', formData)
+  return data.data
+}
+
+/**
+ * 更新个人文件库条目的标题、描述或启停状态。
+ */
+export const updateHermesFileLibraryItem = async (id: number, payload: UpdateHermesFileLibraryItemPayload) => {
+  const { data } = await http.patch<ApiResponse<HermesFileLibraryItem>>(`/api/hermes/file-library/${id}`, payload)
+  return data.data
+}
+
+/**
+ * 删除当前用户的个人文件库条目。
+ */
+export const deleteHermesFileLibraryItem = async (id: number) => {
+  await http.delete<ApiResponse<null>>(`/api/hermes/file-library/${id}`)
+}
+
+/**
+ * 重新转换并索引个人文件库条目。
+ */
+export const reindexHermesFileLibraryItem = async (id: number) => {
+  const { data } = await http.post<ApiResponse<HermesFileLibraryItem>>(`/api/hermes/file-library/${id}/reindex`)
   return data.data
 }
 
@@ -324,6 +369,9 @@ export const streamHermesSessionChatWithFiles = async (
   }
   if (payload.debug != null) {
     formData.append('debug', String(payload.debug))
+  }
+  if (payload.slashCommand) {
+    formData.append('slashCommand', payload.slashCommand)
   }
   files.forEach((file) => formData.append('files', file))
 

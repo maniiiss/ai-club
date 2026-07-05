@@ -189,8 +189,9 @@ public class HermesController {
                                                          @RequestParam("question") String question,
                                                          @RequestParam(value = "selectionJson", required = false) String selectionJson,
                                                          @RequestParam(value = "debug", required = false) Boolean debug,
+                                                         @RequestParam(value = "slashCommand", required = false) String slashCommand,
                                                          @RequestParam(value = "files", required = false) List<MultipartFile> files) {
-        return ApiResponse.success(hermesChatService.chat(sessionId, buildMultipartCommand(question, selectionJson, debug, files)));
+        return ApiResponse.success(hermesChatService.chat(sessionId, buildMultipartCommand(question, selectionJson, debug, slashCommand, files)));
     }
 
     /**
@@ -216,12 +217,13 @@ public class HermesController {
                                                                      @RequestParam("question") String question,
                                                                      @RequestParam(value = "selectionJson", required = false) String selectionJson,
                                                                      @RequestParam(value = "debug", required = false) Boolean debug,
+                                                                     @RequestParam(value = "slashCommand", required = false) String slashCommand,
                                                                      @RequestParam(value = "files", required = false) List<MultipartFile> files) {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CACHE_CONTROL, "no-cache")
                 .header(HttpHeaders.CONNECTION, "keep-alive")
                 .contentType(MediaType.TEXT_EVENT_STREAM)
-                .body(hermesChatService.streamChat(sessionId, buildMultipartCommand(question, selectionJson, debug, files)));
+                .body(hermesChatService.streamChat(sessionId, buildMultipartCommand(question, selectionJson, debug, slashCommand, files)));
     }
 
     /**
@@ -230,11 +232,13 @@ public class HermesController {
     private HermesMultipartChatCommand buildMultipartCommand(String question,
                                                              String selectionJson,
                                                              Boolean debug,
+                                                             String slashCommand,
                                                              List<MultipartFile> files) {
         return new HermesMultipartChatCommand(
                 question == null ? "" : question.trim(),
                 parseSelection(selectionJson),
                 debug,
+                slashCommand,
                 files
         );
     }

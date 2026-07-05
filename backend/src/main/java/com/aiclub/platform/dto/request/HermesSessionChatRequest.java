@@ -19,6 +19,19 @@ public record HermesSessionChatRequest(
         /**
          * 调试模式仅用于前端展示内部规划轨迹，默认关闭。
          */
-        Boolean debug
+        Boolean debug,
+        /**
+         * 前端 Slash 命令菜单传入的结构化 Skill 唤起指令，例如 /需求、/wiki。
+         */
+        @Size(max = 40, message = "Slash 命令长度不能超过 40 个字符")
+        String slashCommand
 ) {
+    /**
+     * 兼容旧调用方：未提供 Slash 命令时不启用业务 Skill。
+     */
+    public HermesSessionChatRequest(String question,
+                                    HermesSelectionRequest selection,
+                                    Boolean debug) {
+        this(question, selection, debug, null);
+    }
 }

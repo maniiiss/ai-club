@@ -10,6 +10,7 @@ import { useAuthStore } from '@/src/stores/auth'
 import { getMyCreditAccount } from '@/src/api/credits'
 import { cn, getInitials } from '@/src/lib/utils'
 import { useGuide } from '@/src/components/guide'
+import { BrandMark } from '@/src/components/common/BrandMark'
 
 interface NavItem {
   to: string
@@ -77,9 +78,7 @@ export const TopNav = () => {
       <div className="flex h-[52px] items-center gap-4 px-4 sm:px-6 lg:px-8">
         {/* Logo */}
         <NavLink to="/dashboard" className="flex items-center gap-2 shrink-0">
-          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--color-primary)]">
-            <span className="text-[10px] font-bold text-white tracking-tight">AI</span>
-          </div>
+          <BrandMark className="h-7 w-7 rounded-lg shadow-[0_8px_18px_rgba(79,70,229,0.22)]" />
           <span className="text-[15px] font-semibold text-[var(--color-text-primary)] tracking-tight hidden sm:inline">
             AI Club
           </span>

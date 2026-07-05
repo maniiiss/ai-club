@@ -40,6 +40,7 @@ export interface HermesSessionChatRequestPayload {
   question: string
   selection?: HermesSelectionPayload | null
   debug?: boolean
+  slashCommand?: string | null
 }
 
 export interface HermesSpeechTranscriptionPayload {
@@ -246,4 +247,26 @@ export interface HermesMemoryConsolidationStatus {
   createdAt: string | null
   updatedAt: string | null
   completedAt: string | null
+}
+
+export interface HermesFileLibraryItem {
+  id: number
+  assetId: number
+  fileName: string
+  title: string
+  description: string
+  sourceFormat: string
+  fileSize: number
+  enabled: boolean
+  indexStatus: 'PENDING' | 'INDEXED' | 'FAILED' | string
+  warnings: string[]
+  lastError: string
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+export interface UpdateHermesFileLibraryItemPayload {
+  title?: string
+  description?: string
+  enabled?: boolean
 }

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AI Club">
+  <defs>
+    <linearGradient id="mark-bg" x1="10" y1="8" x2="55" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#312e81"/>
+      <stop offset="0.56" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#0f766e"/>
+    </linearGradient>
+    <linearGradient id="mark-line" x1="15" y1="48" x2="50" y2="15" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#67e8f9"/>
+      <stop offset="1" stop-color="#a7f3d0"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#mark-bg)"/>
+  <path d="M18 45.5L27.5 22h7L44 45.5h-6.4l-1.7-4.8H25.7L24 45.5h-6zm9.3-10h6.9L30.8 26h-.2l-3.3 9.5z" fill="#fff"/>
+  <path d="M46 22v23.5h-6V22h6z" fill="#fff" opacity=".94"/>
+  <path d="M16.5 47.5c11.4-1.8 19.4-8.4 23.6-21.8" fill="none" stroke="url(#mark-line)" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="17" cy="47" r="3.7" fill="#67e8f9"/>
+  <circle cx="31" cy="37" r="3.1" fill="#a7f3d0"/>
+  <circle cx="41" cy="24" r="3.7" fill="#67e8f9"/>
+  <path d="M14 13.5h36" stroke="#fff" stroke-opacity=".16" stroke-width="2" stroke-linecap="round"/>
+  <path d="M14 52h36" stroke="#020617" stroke-opacity=".12" stroke-width="2" stroke-linecap="round"/>
+</svg>

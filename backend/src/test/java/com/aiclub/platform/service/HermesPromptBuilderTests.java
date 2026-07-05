@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 验证 Hermes Prompt 已切换到“基础规则 + 按需 Skill”的装配模式。
+ * 验证 Hermes Prompt 已切换到“基础规则 + Slash 显式 Skill”的装配模式。
  */
 class HermesPromptBuilderTests {
 
@@ -28,7 +28,7 @@ class HermesPromptBuilderTests {
      * Wiki 页面场景应命中 wiki-qa Skill，并继续保留基础安全规则。
      */
     @Test
-    void shouldIncludeWikiSkillAndBaseRulesForWikiScene() {
+    void shouldIncludeWikiSkillAndBaseRulesForSlashWikiCommand() {
         HermesPromptBuilder promptBuilder = createPromptBuilder();
         HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
                 "wiki-space-page",
@@ -48,7 +48,7 @@ class HermesPromptBuilderTests {
         HermesPromptBuilder.HermesPrompt prompt = promptBuilder.buildConversationPrompt(
                 currentUser(),
                 context,
-                new HermesChatRequest("帮我总结当前页", "wiki-space-page", null, null, null, null, 8L, 15L, "client-1", null, false),
+                new HermesChatRequest("帮我总结当前页", "wiki-space-page", null, null, null, null, 8L, 15L, "client-1", null, false, "/wiki"),
                 HermesGroundingState.empty(),
                 "hcs_test_token"
         );
@@ -67,7 +67,7 @@ class HermesPromptBuilderTests {
      * 创建需求类问题应命中工作项创建 Skill，指导模型优先走项目/成员解析与草稿创建流程。
      */
     @Test
-    void shouldMatchWorkItemCreateSkillForCreateQuestion() {
+    void shouldMatchWorkItemCreateSkillOnlyForSlashCommand() {
         HermesPromptBuilder promptBuilder = createPromptBuilder();
         HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
                 "project",
@@ -82,7 +82,7 @@ class HermesPromptBuilderTests {
         HermesPromptBuilder.HermesPrompt prompt = promptBuilder.buildConversationPrompt(
                 currentUser(),
                 context,
-                new HermesChatRequest("帮我创建一个需求并指派给张三", "project-iterations", 12L, null, null, null, null, null, "client-2", null, false),
+                new HermesChatRequest("帮我创建一个需求并指派给张三", "project-iterations", 12L, null, null, null, null, null, "client-2", null, false, "/需求"),
                 HermesGroundingState.empty(),
                 "hcs_test_token"
         );
@@ -97,7 +97,7 @@ class HermesPromptBuilderTests {
      * 仓库扫描请求应命中 repo-scan Skill，保留规则集确认与默认规则集约束。
      */
     @Test
-    void shouldMatchRepoScanSkillForScanQuestion() {
+    void shouldMatchRepoScanSkillOnlyForSlashCommand() {
         HermesPromptBuilder promptBuilder = createPromptBuilder();
 
         HermesPromptBuilder.HermesPrompt prompt = promptBuilder.buildConversationPrompt(
@@ -111,7 +111,7 @@ class HermesPromptBuilderTests {
                         List.of(),
                         "项目上下文"
                 ),
-                new HermesChatRequest("帮我用默认规则集扫描这个仓库", "project-iterations", 12L, null, null, null, null, null, "client-3", null, false),
+                new HermesChatRequest("帮我用默认规则集扫描这个仓库", "project-iterations", 12L, null, null, null, null, null, "client-3", null, false, "/仓库扫描"),
                 HermesGroundingState.empty().withBoundSlot(
                         "gitlabBinding",
                         new HermesGroundingTarget("gitlabBinding", "GITLAB_BINDING", 31L, "git-ai-club/backend", "", 12L, "TEST", Map.of())
@@ -129,7 +129,7 @@ class HermesPromptBuilderTests {
      * 执行任务结果查询应命中 execution-task-query Skill。
      */
     @Test
-    void shouldMatchExecutionTaskQuerySkillForExecutionQuestion() {
+    void shouldMatchExecutionTaskQuerySkillOnlyForSlashCommand() {
         HermesPromptBuilder promptBuilder = createPromptBuilder();
 
         HermesPromptBuilder.HermesPrompt prompt = promptBuilder.buildConversationPrompt(
@@ -143,7 +143,7 @@ class HermesPromptBuilderTests {
                         List.of(),
                         "项目上下文"
                 ),
-                new HermesChatRequest("帮我看一下刚才那个扫描结果和执行日志", "project-iterations", 12L, null, null, null, null, null, "client-4", null, false),
+                new HermesChatRequest("帮我看一下刚才那个扫描结果和执行日志", "project-iterations", 12L, null, null, null, null, null, "client-4", null, false, "/执行任务"),
                 HermesGroundingState.empty().withBoundSlot(
                         "executionTask",
                         new HermesGroundingTarget("executionTask", "EXECUTION_TASK", 88L, "后端规范扫描", "", 12L, "TEST", Map.of())
@@ -187,6 +187,40 @@ class HermesPromptBuilderTests {
                 .doesNotContain("### Skill: work-item-create")
                 .doesNotContain("### Skill: repo-scan")
                 .doesNotContain("### Skill: execution-task-query");
+    }
+
+    /**
+     * 普通问题即使包含业务关键词，也不能自动注入平台业务 Skill；必须由 Slash 命令显式唤起。
+     */
+    @Test
+    void shouldNotAutoMatchBusinessSkillWithoutSlashCommand() {
+        HermesPromptBuilder promptBuilder = createPromptBuilder();
+
+        HermesPromptBuilder.HermesPrompt prompt = promptBuilder.buildConversationPrompt(
+                currentUser(),
+                new HermesContextAssembler.HermesConversationContext(
+                        "project",
+                        12L,
+                        null,
+                        "项目经理",
+                        List.of(new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations")),
+                        List.of(),
+                        "项目上下文"
+                ),
+                new HermesChatRequest("帮我创建一个需求并用默认规则集扫描仓库", "project-iterations", 12L, null, null, null, null, null, "client-plain", null, false),
+                HermesGroundingState.empty().withBoundSlot(
+                        "gitlabBinding",
+                        new HermesGroundingTarget("gitlabBinding", "GITLAB_BINDING", 31L, "git-ai-club/backend", "", 12L, "TEST", Map.of())
+                ),
+                "hcs_test_token"
+        );
+
+        assertThat(prompt.systemPrompt())
+                .contains("当前未命中额外业务 Skill")
+                .doesNotContain("### Skill: work-item-create")
+                .doesNotContain("### Skill: repo-scan")
+                .doesNotContain("### Skill: execution-task-query")
+                .doesNotContain("### Skill: wiki-qa");
     }
 
     /**
@@ -271,7 +305,7 @@ class HermesPromptBuilderTests {
                         List.of(),
                         "迭代上下文"
                 ),
-                new HermesChatRequest("帮我总结当前迭代发版内容，修复了多少缺陷，开发了哪些需求", "project-iterations", 12L, null, 35L, null, null, null, "client-8", null, false),
+                new HermesChatRequest("帮我总结当前迭代发版内容，修复了多少缺陷，开发了哪些需求", "project-iterations", 12L, null, 35L, null, null, null, "client-8", null, false, "/执行任务"),
                 HermesGroundingState.empty(),
                 "hcs_test_token"
         );

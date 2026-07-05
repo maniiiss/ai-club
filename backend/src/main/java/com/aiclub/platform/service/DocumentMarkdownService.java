@@ -18,6 +18,9 @@ public class DocumentMarkdownService {
     /** 转换场景：Hermes 附件。 */
     public static final String SCENE_HERMES_ATTACHMENT = "HERMES_ATTACHMENT";
 
+    /** 转换场景：Hermes 个人文件库。 */
+    public static final String SCENE_HERMES_FILE_LIBRARY = "HERMES_FILE_LIBRARY";
+
     private final DocumentAssetService documentAssetService;
     private final DocumentMarkdownClientService documentMarkdownClientService;
 

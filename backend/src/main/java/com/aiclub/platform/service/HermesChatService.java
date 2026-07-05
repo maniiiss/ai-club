@@ -62,6 +62,7 @@ public class HermesChatService {
     private final HermesConversationSessionService hermesConversationSessionService;
     private final HermesAttachmentService hermesAttachmentService;
     private final WikiKnowledgeSearchService wikiKnowledgeSearchService;
+    private final HermesFileLibraryService hermesFileLibraryService;
     private final ObjectMapper objectMapper;
 
     @Autowired
@@ -80,6 +81,7 @@ public class HermesChatService {
                              HermesConversationSessionService hermesConversationSessionService,
                              HermesAttachmentService hermesAttachmentService,
                              WikiKnowledgeSearchService wikiKnowledgeSearchService,
+                             HermesFileLibraryService hermesFileLibraryService,
                              ObjectMapper objectMapper) {
         this.authService = authService;
         this.userRepository = userRepository;
@@ -96,7 +98,32 @@ public class HermesChatService {
         this.hermesConversationSessionService = hermesConversationSessionService;
         this.hermesAttachmentService = hermesAttachmentService;
         this.wikiKnowledgeSearchService = wikiKnowledgeSearchService;
+        this.hermesFileLibraryService = hermesFileLibraryService;
         this.objectMapper = objectMapper;
+    }
+
+    /**
+     * 兼容旧测试构造方式：未注入个人文件库时仅跳过个人文件库证据召回。
+     */
+    public HermesChatService(AuthService authService,
+                             UserRepository userRepository,
+                             HermesProperties hermesProperties,
+                             HermesContextAssembler hermesContextAssembler,
+                             HermesPromptBuilder hermesPromptBuilder,
+                             HermesGatewayService hermesGatewayService,
+                             HermesHindsightMemoryService hermesHindsightMemoryService,
+                             HermesToolOrchestrator hermesToolOrchestrator,
+                             HermesActionFallbackService hermesActionFallbackService,
+                             HermesConversationStateStore hermesConversationStateStore,
+                             HermesMcpSessionTokenService hermesMcpSessionTokenService,
+                             HermesChatAuditRepository hermesChatAuditRepository,
+                             HermesConversationSessionService hermesConversationSessionService,
+                             HermesAttachmentService hermesAttachmentService,
+                             WikiKnowledgeSearchService wikiKnowledgeSearchService,
+                             ObjectMapper objectMapper) {
+        this(authService, userRepository, hermesProperties, hermesContextAssembler, hermesPromptBuilder, hermesGatewayService,
+                hermesHindsightMemoryService, hermesToolOrchestrator, hermesActionFallbackService, hermesConversationStateStore, hermesMcpSessionTokenService,
+                hermesChatAuditRepository, hermesConversationSessionService, hermesAttachmentService, wikiKnowledgeSearchService, null, objectMapper);
     }
 
     /**
@@ -118,7 +145,7 @@ public class HermesChatService {
                              ObjectMapper objectMapper) {
         this(authService, userRepository, hermesProperties, hermesContextAssembler, hermesPromptBuilder, hermesGatewayService,
                 hermesHindsightMemoryService, hermesToolOrchestrator, hermesActionFallbackService, hermesConversationStateStore, hermesMcpSessionTokenService,
-                hermesChatAuditRepository, hermesConversationSessionService, null, null, objectMapper);
+                hermesChatAuditRepository, hermesConversationSessionService, null, null, null, objectMapper);
     }
 
     /**
@@ -134,7 +161,7 @@ public class HermesChatService {
     public StreamingResponseBody streamChat(Long sessionId, HermesMultipartChatCommand command) {
         return streamChatInternal(
                 sessionId,
-                new HermesSessionChatRequest(command.question(), command.selection(), command.debug()),
+                new HermesSessionChatRequest(command.question(), command.selection(), command.debug(), command.slashCommand()),
                 uploadAndConvert(command.files())
         );
     }
@@ -238,7 +265,7 @@ public class HermesChatService {
     public HermesChatResponse chat(Long sessionId, HermesMultipartChatCommand command) {
         return chatInternal(
                 sessionId,
-                new HermesSessionChatRequest(command.question(), command.selection(), command.debug()),
+                new HermesSessionChatRequest(command.question(), command.selection(), command.debug(), command.slashCommand()),
                 uploadAndConvert(command.files())
         );
     }
@@ -341,7 +368,8 @@ public class HermesChatService {
                 session.getWikiPageId(),
                 session.getClientConversationId(),
                 request.selection(),
-                request.debug()
+                request.debug(),
+                request.slashCommand()
         );
     }
 
@@ -557,9 +585,26 @@ public class HermesChatService {
         } catch (RuntimeException exception) {
             log.warn("Hermes 组装 Wiki 知识证据失败：{}", resolveErrorMessage(exception));
         }
+        String fileLibraryEvidenceMarkdown = "";
+        try {
+            if (hermesFileLibraryService != null) {
+                fileLibraryEvidenceMarkdown = defaultString(hermesFileLibraryService.buildEvidenceMarkdown(
+                        currentUser,
+                        request == null ? "" : request.question()
+                ));
+            }
+        } catch (RuntimeException exception) {
+            log.warn("Hermes 组装个人文件库证据失败：{}", resolveErrorMessage(exception));
+        }
         StringBuilder builder = new StringBuilder();
         if (hasText(memoryMarkdown)) {
             builder.append("### Hindsight 记忆\n").append(memoryMarkdown.trim());
+        }
+        if (hasText(fileLibraryEvidenceMarkdown)) {
+            if (!builder.isEmpty()) {
+                builder.append("\n\n");
+            }
+            builder.append("### 个人文件库证据\n").append(fileLibraryEvidenceMarkdown.trim());
         }
         if (hasText(wikiEvidenceMarkdown)) {
             if (!builder.isEmpty()) {
@@ -803,7 +848,8 @@ public class HermesChatService {
                 request.wikiPageId(),
                 sanitizedConversationId,
                 request.selection(),
-                request.debug()
+                request.debug(),
+                request.slashCommand()
         );
     }
 

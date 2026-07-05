@@ -4,7 +4,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 工作项创建 Skill。
- * 当用户意图是“创建需求/任务/缺陷”这类写操作时启用。
+ * 只有用户通过 Slash 菜单显式选择 /需求 时启用。
  */
 @Component
 public class WorkItemCreateHermesPromptSkill extends AbstractHermesPromptSkill {
@@ -30,14 +30,6 @@ public class WorkItemCreateHermesPromptSkill extends AbstractHermesPromptSkill {
         if (context == null) {
             return false;
         }
-        String question = context.question();
-        boolean hasCreateAction = containsAny(question, "创建", "新建", "新增", "提一个", "提个", "建一个", "建个");
-        boolean hasWorkItemTarget = containsAny(question, "需求", "任务", "缺陷", "bug", "负责人", "指派");
-        boolean hasBoundBusinessObject = context.hasReferenceType("PROJECT")
-                || context.hasReferenceType("TASK")
-                || context.hasGroundingEntityType("WORK_ITEM")
-                || context.hasGroundingEntityType("PROJECT");
-        return (hasCreateAction && hasWorkItemTarget)
-                || (hasWorkItemTarget && containsAny(question, "负责人", "指派") && hasBoundBusinessObject);
+        return context.hasSlashCommand("/需求");
     }
 }

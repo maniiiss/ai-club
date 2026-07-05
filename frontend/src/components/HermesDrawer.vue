@@ -11,7 +11,7 @@
         <div class="hermes-head-left">
           <button v-if="memoryViewVisible" class="hermes-back-button" type="button" @click="memoryViewVisible = false">返回</button>
           <div class="hermes-title-wrap">
-            <div class="hermes-title">{{ memoryViewVisible ? '记忆管理' : 'Hermes 助手' }}</div>
+            <div class="hermes-title">{{ memoryViewVisible ? '知识' : 'Hermes 助手' }}</div>
             <el-tooltip v-if="!memoryViewVisible" placement="bottom-start" effect="light">
               <button class="hermes-help-button" type="button" aria-label="查看 Hermes 能力边界说明">
                 <el-icon><QuestionFilled /></el-icon>
@@ -27,7 +27,7 @@
           </div>
         </div>
         <div class="hermes-head-right">
-          <button v-if="!memoryViewVisible" class="hermes-memory-entry" type="button" @click="handleOpenMemoryView">记忆管理</button>
+          <button v-if="!memoryViewVisible" class="hermes-memory-entry" type="button" @click="handleOpenMemoryView">知识</button>
           <button v-if="!isMobileViewport" class="hermes-close-button hermes-view-toggle-button" type="button" @click="toggleDesktopFullscreen">
             {{ desktopFullscreen ? '退出全屏' : '全屏' }}
           </button>
@@ -110,10 +110,14 @@
       <section v-if="memoryViewVisible" class="hermes-memory-view">
         <div class="hermes-memory-header">
           <div class="hermes-memory-tabs">
+            <button class="hermes-tab" :class="{ active: knowledgeTab === 'memory' }" type="button" @click="knowledgeTab = 'memory'">会话记忆</button>
+            <button class="hermes-tab" :class="{ active: knowledgeTab === 'fileLibrary' }" type="button" @click="handleOpenFileLibraryTab">文件库</button>
+          </div>
+          <div v-if="knowledgeTab === 'memory'" class="hermes-memory-tabs secondary">
             <button class="hermes-tab" :class="{ active: memoryTab === 'conversation' }" type="button" @click="memoryTab = 'conversation'">原始会话记忆</button>
             <button class="hermes-tab" :class="{ active: memoryTab === 'consolidated' }" type="button" @click="memoryTab = 'consolidated'">整理后摘要</button>
           </div>
-          <div class="hermes-memory-search">
+          <div v-if="knowledgeTab === 'memory'" class="hermes-memory-search">
             <input
               v-model="memoryQuery"
               class="hermes-memory-search-input"
@@ -122,8 +126,17 @@
               @input="handleMemorySearch"
             />
           </div>
+          <div v-else class="hermes-memory-search">
+            <input
+              v-model="fileLibraryQuery"
+              class="hermes-memory-search-input"
+              type="text"
+              placeholder="搜索文件库..."
+              @input="handleFileLibrarySearch"
+            />
+          </div>
         </div>
-        <div class="hermes-memory-body">
+        <div v-if="knowledgeTab === 'memory'" class="hermes-memory-body">
           <div v-if="memoryConsolidating" class="hermes-muted-card">{{ memoryConsolidationHint }}</div>
           <div v-if="memoryLoading" class="hermes-muted-card">正在加载记忆...</div>
 
@@ -190,9 +203,40 @@
             </div>
           </template>
         </div>
-        <div class="hermes-memory-footer">
+        <div v-if="knowledgeTab === 'memory'" class="hermes-memory-footer">
           <button class="hermes-primary-button" type="button" :disabled="memoryLoading || memoryConsolidating" @click="handleConsolidateMemories">{{ memoryConsolidating ? '整理中...' : '整理记忆' }}</button>
           <button v-if="memoryConversationList.length" class="hermes-danger-button" type="button" :disabled="memoryLoading || memoryConsolidating" @click="handleClearMemories">清空全部</button>
+        </div>
+        <div v-if="knowledgeTab === 'fileLibrary'" class="hermes-memory-body">
+          <input ref="fileLibraryInputRef" type="file" accept=".pdf,.docx,.pptx,.xlsx" style="display: none" @change="handleFileLibraryInputChange" />
+          <div v-if="fileLibraryLoading" class="hermes-muted-card">正在加载文件库...</div>
+          <div v-if="fileLibraryUploading" class="hermes-muted-card">正在上传并索引文件...</div>
+          <template v-if="!fileLibraryLoading && fileLibraryItems.length">
+            <article v-for="item in fileLibraryItems" :key="item.id" class="hermes-memory-item">
+              <div class="hermes-memory-content">
+                <div class="hermes-memory-scene">{{ item.sourceFormat || 'FILE' }} · {{ formatFileSize(item.fileSize) }} · {{ resolveFileLibraryStatusText(item) }}</div>
+                <div class="hermes-memory-question">{{ item.title || item.fileName || '未命名文件' }}</div>
+                <div v-if="item.description" class="hermes-memory-answer">{{ item.description }}</div>
+                <div v-if="item.warnings.length" class="hermes-memory-answer warning">转换警告：{{ item.warnings.join('；') }}</div>
+                <div v-if="item.lastError" class="hermes-memory-answer warning">索引错误：{{ item.lastError }}</div>
+                <div v-if="item.updatedAt" class="hermes-memory-time">{{ formatMemoryTime(item.updatedAt) }}</div>
+              </div>
+              <div class="hermes-memory-actions">
+                <button class="hermes-memory-toggle" type="button" :disabled="fileLibraryUpdatingId === item.id" @click="handleToggleFileLibraryItem(item)">{{ item.enabled ? '停用' : '启用' }}</button>
+                <button class="hermes-memory-toggle" type="button" :disabled="fileLibraryUpdatingId === item.id" @click="handleReindexFileLibraryItem(item)">重索引</button>
+                <button class="hermes-memory-toggle" type="button" @click="handleDownloadFileLibraryItem(item)">下载</button>
+                <button class="hermes-memory-delete" type="button" :disabled="fileLibraryUpdatingId === item.id" @click="handleDeleteFileLibraryItem(item)">删除</button>
+              </div>
+            </article>
+          </template>
+          <div v-if="!fileLibraryLoading && !fileLibraryItems.length" class="hermes-empty-state compact">
+            <div class="hermes-empty-kicker">文件库</div>
+            <div class="hermes-empty-title">暂无个人知识文件</div>
+            <p>上传 PDF、Word、PPT 或 Excel 后，Hermes 会在普通问答中按需召回这些个人资料。</p>
+          </div>
+        </div>
+        <div v-if="knowledgeTab === 'fileLibrary'" class="hermes-memory-footer">
+          <button class="hermes-primary-button" type="button" :disabled="fileLibraryUploading" @click="openFileLibraryPicker">{{ fileLibraryUploading ? '上传中...' : '上传文件' }}</button>
         </div>
       </section>
 
@@ -385,6 +429,18 @@
               <button class="hermes-pending-file-remove-button" type="button" :disabled="footerDisabled" @click="removePendingFile(file)">移除</button>
             </div>
           </div>
+          <div v-if="slashMenuVisible" class="hermes-slash-menu">
+            <button v-for="command in slashCommands" :key="command.command" class="hermes-slash-item" type="button" @click="selectSlashCommand(command.command)">
+              <strong>{{ command.command }}</strong>
+              <span>{{ command.label }}</span>
+            </button>
+          </div>
+          <div v-if="selectedSlashCommand" class="hermes-selected-skill">
+            <span class="hermes-selected-skill-kicker">Skill</span>
+            <strong>{{ selectedSlashCommand }}</strong>
+            <span>{{ resolveSlashCommandLabel(selectedSlashCommand) }}</span>
+            <button type="button" title="移除已选 Skill" @click="clearSelectedSlashCommand">×</button>
+          </div>
           <el-input ref="questionInputRef" v-model="draftQuestion" type="textarea" :rows="3" resize="none" :disabled="footerDisabled" :placeholder="footerPlaceholder" @keydown.enter.exact.prevent="handleSubmit()" />
           <div class="hermes-footer-actions">
             <span>{{ footerTip }}</span>
@@ -403,7 +459,7 @@ import { MoreFilled, QuestionFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { openCommonFileDownload } from '@/api/common'
-import { archiveHermesConversationSession, clearHermesUserMemories, consolidateHermesUserMemories, createHermesConversationSession, deleteHermesConversationSession, deleteHermesUserMemory, getHermesConversationDetail, getHermesMemoryConsolidationStatus, listHermesUserMemories, markHermesActionExecuted, pageHermesConversationSessions, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat, streamHermesSessionChatWithFiles, transcribeHermesSpeech } from '@/api/hermes'
+import { archiveHermesConversationSession, clearHermesUserMemories, consolidateHermesUserMemories, createHermesConversationSession, deleteHermesConversationSession, deleteHermesFileLibraryItem, deleteHermesUserMemory, getHermesConversationDetail, getHermesMemoryConsolidationStatus, listHermesFileLibraryItems, listHermesUserMemories, markHermesActionExecuted, pageHermesConversationSessions, reindexHermesFileLibraryItem, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat, streamHermesSessionChatWithFiles, transcribeHermesSpeech, updateHermesFileLibraryItem, uploadHermesFileLibraryItem } from '@/api/hermes'
 import { createGitlabBindingScanTask } from '@/api/gitlab'
 import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
@@ -411,7 +467,7 @@ import { renderHermesMarkdownToHtml } from '@/utils/hermesMarkdown'
 import { resolveHermesDrawerPresentation } from '@/utils/hermesDrawerLayout'
 import { buildHermesToolTraceSummary, normalizeHermesToolExecutions } from '@/utils/hermesProcessTrace'
 import { DEFAULT_REQUIREMENT_TEMPLATE } from '@/utils/requirementTemplate'
-import type { CreateHermesConversationSessionPayload, HermesActionItem, HermesAttachmentItem, HermesConversationDetailItem, HermesConversationSessionSummaryItem, HermesDebugInfoItem, HermesMemoryConsolidationStatus, HermesMemoryFactItem, HermesMessageItem, HermesReferenceItem, HermesSelectionCardItem, HermesSelectionOptionItem, HermesSelectionPayload, HermesSessionChatRequestPayload, HermesStreamDeltaEvent, HermesStreamDoneEvent, HermesStreamErrorEvent, HermesStreamMetaEvent, HermesStreamStatusEvent, HermesUserMemoryItem } from '@/types/hermes'
+import type { CreateHermesConversationSessionPayload, HermesActionItem, HermesAttachmentItem, HermesConversationDetailItem, HermesConversationSessionSummaryItem, HermesDebugInfoItem, HermesFileLibraryItem, HermesMemoryConsolidationStatus, HermesMemoryFactItem, HermesMessageItem, HermesReferenceItem, HermesSelectionCardItem, HermesSelectionOptionItem, HermesSelectionPayload, HermesSessionChatRequestPayload, HermesStreamDeltaEvent, HermesStreamDoneEvent, HermesStreamErrorEvent, HermesStreamMetaEvent, HermesStreamStatusEvent, HermesUserMemoryItem } from '@/types/hermes'
 import type { HermesToolExecutionViewItem, HermesToolTraceSummary } from '@/utils/hermesProcessTrace'
 
 interface HermesDrawerProps {
@@ -436,10 +492,12 @@ const authStore = useAuthStore()
 const messageScrollRef = ref<HTMLDivElement>()
 const questionInputRef = ref<HermesQuestionInputExpose | null>(null)
 const fileInputRef = ref<HTMLInputElement>()
+const fileLibraryInputRef = ref<HTMLInputElement>()
 const isMobileViewport = ref(false)
 // 桌面端全屏只影响当前抽屉展示，不做持久化，关闭后恢复默认宽度。
 const desktopFullscreen = ref(false)
 const draftQuestion = ref('')
+const selectedSlashCommand = ref<string | null>(null)
 const pendingFiles = ref<File[]>([])
 const sending = ref(false)
 const recording = ref(false)
@@ -501,6 +559,7 @@ let hermesDrawerDisposed = false
 
 // 记忆管理相关状态
 const memoryViewVisible = ref(false)
+const knowledgeTab = ref<'memory' | 'fileLibrary'>('memory')
 const memoryTab = ref<'conversation' | 'consolidated'>('conversation')
 const memoryList = ref<HermesUserMemoryItem[]>([])
 const memoryFactList = ref<HermesMemoryFactItem[]>([])
@@ -510,6 +569,19 @@ const memoryConsolidationMessage = ref('')
 const memoryQuery = ref('')
 const memorySearchTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 const expandedMemoryIds = reactive<Record<string, boolean>>({})
+const fileLibraryItems = ref<HermesFileLibraryItem[]>([])
+const fileLibraryLoading = ref(false)
+const fileLibraryUploading = ref(false)
+const fileLibraryUpdatingId = ref<number | null>(null)
+const fileLibraryQuery = ref('')
+const fileLibrarySearchTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+
+const slashCommands = [
+  { command: '/wiki', label: 'Wiki 问答' },
+  { command: '/需求', label: '创建或整理需求' },
+  { command: '/仓库扫描', label: '发起仓库扫描' },
+  { command: '/执行任务', label: '查询或发起执行任务' }
+] as const
 
 // 统一把 Hermes 返回的引用类型转成前端可读的中文标签，避免直接暴露后端枚举值。
 const HERMES_REFERENCE_TYPE_LABELS: Record<string, string> = {
@@ -581,6 +653,10 @@ const currentStreamStatusText = computed(() => {
 })
 const memoryConsolidationHint = computed(() => memoryConsolidationMessage.value || '正在整理记忆，这个过程通常需要几十秒。')
 const memoryConversationList = computed(() => memoryList.value)
+const slashMenuVisible = computed(() => {
+  const normalized = draftQuestion.value.trimStart()
+  return !footerDisabled.value && !selectedSlashCommand.value && normalized.startsWith('/') && !normalized.includes(' ')
+})
 const canLoadMoreSessions = computed(() => sessionSummaries.value.length < sessionTotal.value)
 const mobileSessionToggleValue = computed(() => {
   const count = sessionTotal.value || sessionSummaries.value.length
@@ -731,6 +807,20 @@ const loadMemoryList = async (query?: string) => {
 }
 
 /**
+ * 加载个人文件库列表，文件库与会话记忆共同组成 Hermes 的个人知识入口。
+ */
+const loadFileLibraryItems = async (query?: string) => {
+  fileLibraryLoading.value = true
+  try {
+    fileLibraryItems.value = await listHermesFileLibraryItems(query)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载 Hermes 文件库失败')
+  } finally {
+    fileLibraryLoading.value = false
+  }
+}
+
+/**
  * 搜索记忆，带 debounce。
  */
 const handleMemorySearch = () => {
@@ -740,6 +830,101 @@ const handleMemorySearch = () => {
   memorySearchTimer.value = setTimeout(() => {
     void loadMemoryList(memoryQuery.value)
   }, 300)
+}
+
+const handleFileLibrarySearch = () => {
+  if (fileLibrarySearchTimer.value) {
+    clearTimeout(fileLibrarySearchTimer.value)
+  }
+  fileLibrarySearchTimer.value = setTimeout(() => {
+    void loadFileLibraryItems(fileLibraryQuery.value)
+  }, 300)
+}
+
+const handleOpenFileLibraryTab = () => {
+  knowledgeTab.value = 'fileLibrary'
+  void loadFileLibraryItems(fileLibraryQuery.value)
+}
+
+const openFileLibraryPicker = () => {
+  fileLibraryInputRef.value?.click()
+}
+
+const handleFileLibraryInputChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  fileLibraryUploading.value = true
+  try {
+    await uploadHermesFileLibraryItem(file)
+    ElMessage.success('文件已加入 Hermes 文件库')
+    await loadFileLibraryItems(fileLibraryQuery.value)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '上传文件库失败')
+  } finally {
+    fileLibraryUploading.value = false
+  }
+}
+
+const handleToggleFileLibraryItem = async (item: HermesFileLibraryItem) => {
+  fileLibraryUpdatingId.value = item.id
+  try {
+    await updateHermesFileLibraryItem(item.id, { enabled: !item.enabled })
+    await loadFileLibraryItems(fileLibraryQuery.value)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '更新文件库失败')
+  } finally {
+    fileLibraryUpdatingId.value = null
+  }
+}
+
+const handleReindexFileLibraryItem = async (item: HermesFileLibraryItem) => {
+  fileLibraryUpdatingId.value = item.id
+  try {
+    await reindexHermesFileLibraryItem(item.id)
+    ElMessage.success('已提交重新索引')
+    await loadFileLibraryItems(fileLibraryQuery.value)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '重新索引失败')
+  } finally {
+    fileLibraryUpdatingId.value = null
+  }
+}
+
+const handleDeleteFileLibraryItem = async (item: HermesFileLibraryItem) => {
+  try {
+    await ElMessageBox.confirm('确定删除这个文件库条目吗？删除后不可恢复。', '删除文件', { type: 'warning' })
+    fileLibraryUpdatingId.value = item.id
+    await deleteHermesFileLibraryItem(item.id)
+    ElMessage.success('文件已删除')
+    await loadFileLibraryItems(fileLibraryQuery.value)
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || '删除文件失败')
+    }
+  } finally {
+    fileLibraryUpdatingId.value = null
+  }
+}
+
+const handleDownloadFileLibraryItem = (item: HermesFileLibraryItem) => {
+  openCommonFileDownload(item.assetId)
+}
+
+const resolveFileLibraryStatusText = (item: HermesFileLibraryItem) => {
+  const status = (item.indexStatus || '').toUpperCase()
+  if (!item.enabled) return '已停用'
+  if (status === 'INDEXED') return '已索引'
+  if (status === 'FAILED') return '索引失败'
+  return '索引中'
+}
+
+const formatFileSize = (size: number) => {
+  if (!Number.isFinite(size) || size <= 0) return '0 B'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
 /**
@@ -1179,7 +1364,44 @@ const queueStreamDelta = (messageId: string, delta: string) => {
   ensurePendingStreamDrainLoop()
 }
 
-const buildPayload = (question: string, selection?: HermesSelectionPayload | null): HermesSessionChatRequestPayload => ({ question, selection: selection || null, debug: isDebugMode.value })
+const parseSlashQuestion = (rawQuestion: string) => {
+  const normalized = (rawQuestion || '').trim()
+  if (selectedSlashCommand.value) {
+    return {
+      slashCommand: selectedSlashCommand.value,
+      question: normalized || resolveSlashCommandLabel(selectedSlashCommand.value)
+    }
+  }
+  const matchedCommand = slashCommands.find((item) => normalized === item.command || normalized.startsWith(`${item.command} `))
+  if (!matchedCommand) {
+    return { slashCommand: null as string | null, question: normalized }
+  }
+  const strippedQuestion = normalized.slice(matchedCommand.command.length).trim()
+  return {
+    slashCommand: matchedCommand.command,
+    question: strippedQuestion || matchedCommand.label
+  }
+}
+
+const resolveSlashCommandLabel = (command: string) => slashCommands.find((item) => item.command === command)?.label || '业务 Skill'
+
+const selectSlashCommand = (command: string) => {
+  selectedSlashCommand.value = command
+  draftQuestion.value = ''
+  nextTick(() => questionInputRef.value?.focus?.())
+}
+
+const clearSelectedSlashCommand = () => {
+  selectedSlashCommand.value = null
+  nextTick(() => questionInputRef.value?.focus?.())
+}
+
+const buildPayload = (question: string, selection?: HermesSelectionPayload | null, slashCommand?: string | null): HermesSessionChatRequestPayload => ({
+  question,
+  selection: selection || null,
+  debug: isDebugMode.value,
+  slashCommand: slashCommand || null
+})
 
 /**
  * 流式阶段已经拿到的文本通常最完整地保留了 `<think>` 思考过程。
@@ -1315,7 +1537,7 @@ function resolveHermesStreamErrorMessage(message?: string) {
   return normalized
 }
 
-const submitConversation = async (question: string, userContent: string, selection?: HermesSelectionPayload | null) => {
+const submitConversation = async (question: string, userContent: string, selection?: HermesSelectionPayload | null, slashCommand?: string | null) => {
   const normalizedQuestion = question.trim()
   const normalizedUserContent = userContent.trim() || normalizedQuestion
   if (!normalizedQuestion || sending.value) return
@@ -1344,10 +1566,11 @@ const submitConversation = async (question: string, userContent: string, selecti
   ]
   isPinnedToBottom.value = true
   draftQuestion.value = ''
+  selectedSlashCommand.value = null
   void restoreThinkBlocksAndScroll()
 
   try {
-    const payload = buildPayload(normalizedQuestion, selection)
+    const payload = buildPayload(normalizedQuestion, selection, slashCommand)
     const streamController = pendingFiles.value.length
       ? await streamHermesSessionChatWithFiles(writableSessionId, payload, pendingFiles.value, {
           onStatus: (streamPayload: HermesStreamStatusEvent) => { applyStreamStatus(streamPayload) },
@@ -1419,8 +1642,8 @@ const submitConversation = async (question: string, userContent: string, selecti
 }
 
 const handleSubmit = async (questionOverride?: string) => {
-  const normalizedQuestion = (questionOverride ?? draftQuestion.value).trim()
-  await submitConversation(normalizedQuestion, normalizedQuestion)
+  const parsed = parseSlashQuestion(questionOverride ?? draftQuestion.value)
+  await submitConversation(parsed.question, parsed.question, null, parsed.slashCommand)
 }
 
 const handleSelectOption = async (selectionCard: HermesSelectionCardItem, option: HermesSelectionOptionItem) => {
@@ -3760,6 +3983,80 @@ function persistSelectedSessionId(sessionId: number | null) {
 .hermes-footer-actions span {
   color: #94a3b8;
   font-size: 11px;
+}
+
+.hermes-slash-menu {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(var(--app-primary-rgb), 0.18);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+}
+
+.hermes-slash-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #475569;
+  text-align: left;
+}
+
+.hermes-slash-item:hover {
+  background: rgba(var(--app-primary-rgb), 0.08);
+}
+
+.hermes-slash-item strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.hermes-slash-item span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.hermes-selected-skill {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid rgba(var(--app-primary-rgb), 0.28);
+  border-radius: 999px;
+  background: rgba(var(--app-primary-rgb), 0.08);
+  color: #334155;
+  font-size: 12px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.62);
+}
+
+.hermes-selected-skill-kicker {
+  color: var(--app-primary);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hermes-selected-skill strong {
+  color: #0f172a;
+  font-weight: 900;
+}
+
+.hermes-selected-skill button {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  color: #475569;
+  line-height: 1;
 }
 
 :deep(.hermes-drawer .el-drawer__header) {

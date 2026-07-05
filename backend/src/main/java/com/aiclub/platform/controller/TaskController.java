@@ -8,11 +8,13 @@ import com.aiclub.platform.dto.TaskPrdAnalyzeResult;
 import com.aiclub.platform.dto.TaskPrdDetail;
 import com.aiclub.platform.dto.TaskAgentRunSummary;
 import com.aiclub.platform.dto.TaskCommentSummary;
+import com.aiclub.platform.dto.TaskLinksSummary;
 import com.aiclub.platform.dto.TaskRequirementAiResult;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.request.ApplyTaskPrdSuggestionRequest;
 import com.aiclub.platform.dto.request.TaskAgentRunRequest;
 import com.aiclub.platform.dto.request.TaskCommentRequest;
+import com.aiclub.platform.dto.request.TaskLinkRequest;
 import com.aiclub.platform.dto.request.TaskPrdAnalyzeRequest;
 import com.aiclub.platform.dto.request.TaskRequirementAiRequest;
 import com.aiclub.platform.dto.request.TaskRequest;
@@ -20,7 +22,9 @@ import com.aiclub.platform.service.PlatformStoreService;
 import com.aiclub.platform.service.TaskRequirementAiService;
 import com.aiclub.platform.service.TaskAgentRunService;
 import com.aiclub.platform.service.TaskPrdService;
+import com.aiclub.platform.service.WorkItemLinkService;
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,6 +34,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -41,15 +46,18 @@ public class TaskController {
     private final TaskAgentRunService taskAgentRunService;
     private final TaskRequirementAiService taskRequirementAiService;
     private final TaskPrdService taskPrdService;
+    private final WorkItemLinkService workItemLinkService;
 
     public TaskController(PlatformStoreService platformStoreService,
                           TaskAgentRunService taskAgentRunService,
                           TaskRequirementAiService taskRequirementAiService,
-                          TaskPrdService taskPrdService) {
+                          TaskPrdService taskPrdService,
+                          WorkItemLinkService workItemLinkService) {
         this.platformStoreService = platformStoreService;
         this.taskAgentRunService = taskAgentRunService;
         this.taskRequirementAiService = taskRequirementAiService;
         this.taskPrdService = taskPrdService;
+        this.workItemLinkService = workItemLinkService;
     }
 
     @GetMapping
@@ -70,6 +78,75 @@ public class TaskController {
     @RequirePermission("task:view")
     public ApiResponse<TaskSummary> detail(@PathVariable Long id) {
         return ApiResponse.success(platformStoreService.getTask(id));
+    }
+
+    @GetMapping("/{id}/links")
+    @RequirePermission("task:view")
+    public ApiResponse<TaskLinksSummary> links(@PathVariable Long id) {
+        return ApiResponse.success(workItemLinkService.getLinks(id));
+    }
+
+    @PostMapping("/{id}/children")
+    @RequirePermission("task:manage")
+    public ApiResponse<TaskLinksSummary> addChild(@PathVariable Long id,
+                                                  @Valid @RequestBody TaskLinkRequest request) {
+        return ApiResponse.success(workItemLinkService.addChild(id, request));
+    }
+
+    @DeleteMapping("/{id}/children/{childTaskId}")
+    @RequirePermission("task:manage")
+    public ApiResponse<TaskLinksSummary> removeChild(@PathVariable Long id,
+                                                     @PathVariable Long childTaskId) {
+        return ApiResponse.success(workItemLinkService.removeChild(id, childTaskId));
+    }
+
+    @PostMapping("/{id}/related-work-items")
+    @RequirePermission("task:manage")
+    public ApiResponse<TaskLinksSummary> addRelatedWorkItem(@PathVariable Long id,
+                                                            @Valid @RequestBody TaskLinkRequest request) {
+        return ApiResponse.success(workItemLinkService.addRelatedWorkItem(id, request));
+    }
+
+    @DeleteMapping("/{id}/related-work-items/{relatedTaskId}")
+    @RequirePermission("task:manage")
+    public ApiResponse<TaskLinksSummary> removeRelatedWorkItem(@PathVariable Long id,
+                                                               @PathVariable Long relatedTaskId) {
+        return ApiResponse.success(workItemLinkService.removeRelatedWorkItem(id, relatedTaskId));
+    }
+
+    @PostMapping("/{id}/test-cases")
+    @RequirePermission("task:manage")
+    public ApiResponse<TaskLinksSummary> addTestCase(@PathVariable Long id,
+                                                     @Valid @RequestBody TaskLinkRequest request) {
+        return ApiResponse.success(workItemLinkService.addTestCase(id, request));
+    }
+
+    @DeleteMapping("/{id}/test-cases/{testCaseId}")
+    @RequirePermission("task:manage")
+    public ApiResponse<TaskLinksSummary> removeTestCase(@PathVariable Long id,
+                                                        @PathVariable Long testCaseId) {
+        return ApiResponse.success(workItemLinkService.removeTestCase(id, testCaseId));
+    }
+
+    @PostMapping("/{id}/attachments")
+    @RequirePermission("task:manage")
+    public ApiResponse<TaskLinksSummary.TaskAttachmentSummary> uploadAttachment(@PathVariable Long id,
+                                                                                @RequestParam("file") MultipartFile file) {
+        return ApiResponse.success(workItemLinkService.uploadAttachment(id, file));
+    }
+
+    @GetMapping("/{id}/attachments/{attachmentId}/download")
+    @RequirePermission("task:view")
+    public ResponseEntity<byte[]> downloadAttachment(@PathVariable Long id,
+                                                     @PathVariable Long attachmentId) {
+        return workItemLinkService.downloadAttachment(id, attachmentId);
+    }
+
+    @DeleteMapping("/{id}/attachments/{attachmentId}")
+    @RequirePermission("task:manage")
+    public ApiResponse<TaskLinksSummary> removeAttachment(@PathVariable Long id,
+                                                          @PathVariable Long attachmentId) {
+        return ApiResponse.success(workItemLinkService.removeAttachment(id, attachmentId));
     }
 
     @GetMapping("/{id}/prd")

@@ -9,8 +9,11 @@ import type {
   IterationBoardItem,
   IterationItem,
   IterationPayload,
+  LinkedTestCase,
+  TaskAttachment,
   TaskComment,
   WorkItem,
+  WorkItemLinks,
   WorkItemPayload,
   WorkItemQuery,
   WorkItemStats,
@@ -85,6 +88,75 @@ export const updateWorkItem = async (id: number, payload: WorkItemPayload): Prom
 
 export const deleteWorkItem = async (id: number): Promise<void> => {
   await http.delete<ApiResponse<null>>(`/api/tasks/${id}`)
+}
+
+export const getWorkItemLinks = async (id: number): Promise<WorkItemLinks> => {
+  const res = await http.get<ApiResponse<WorkItemLinks>>(`/api/tasks/${id}/links`)
+  return unwrap(res)
+}
+
+export const addWorkItemChild = async (id: number, targetId: number): Promise<WorkItemLinks> => {
+  const res = await http.post<ApiResponse<WorkItemLinks>>(`/api/tasks/${id}/children`, { targetId })
+  return unwrap(res)
+}
+
+export const removeWorkItemChild = async (id: number, childTaskId: number): Promise<WorkItemLinks> => {
+  const res = await http.delete<ApiResponse<WorkItemLinks>>(`/api/tasks/${id}/children/${childTaskId}`)
+  return unwrap(res)
+}
+
+export const addRelatedWorkItem = async (id: number, targetId: number): Promise<WorkItemLinks> => {
+  const res = await http.post<ApiResponse<WorkItemLinks>>(`/api/tasks/${id}/related-work-items`, { targetId })
+  return unwrap(res)
+}
+
+export const removeRelatedWorkItem = async (id: number, relatedTaskId: number): Promise<WorkItemLinks> => {
+  const res = await http.delete<ApiResponse<WorkItemLinks>>(`/api/tasks/${id}/related-work-items/${relatedTaskId}`)
+  return unwrap(res)
+}
+
+export const addWorkItemTestCase = async (id: number, targetId: number): Promise<WorkItemLinks> => {
+  const res = await http.post<ApiResponse<WorkItemLinks>>(`/api/tasks/${id}/test-cases`, { targetId })
+  return unwrap(res)
+}
+
+export const removeWorkItemTestCase = async (id: number, testCaseId: number): Promise<WorkItemLinks> => {
+  const res = await http.delete<ApiResponse<WorkItemLinks>>(`/api/tasks/${id}/test-cases/${testCaseId}`)
+  return unwrap(res)
+}
+
+export const pageProjectTestCases = async (
+  projectId: number,
+  query: { page: number; size: number; keyword?: string },
+): Promise<PageResponse<LinkedTestCase>> => {
+  const res = await http.get<ApiResponse<PageResponse<LinkedTestCase>>>(`/api/projects/${projectId}/test-cases`, {
+    params: cleanParams(query),
+  })
+  return unwrap(res)
+}
+
+export const uploadWorkItemAttachment = async (id: number, file: File): Promise<TaskAttachment> => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await http.post<ApiResponse<TaskAttachment>>(`/api/tasks/${id}/attachments`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return unwrap(res)
+}
+
+export const deleteWorkItemAttachment = async (id: number, attachmentId: number): Promise<WorkItemLinks> => {
+  const res = await http.delete<ApiResponse<WorkItemLinks>>(`/api/tasks/${id}/attachments/${attachmentId}`)
+  return unwrap(res)
+}
+
+export const downloadWorkItemAttachment = async (id: number, attachmentId: number): Promise<{ blob: Blob; fileName: string }> => {
+  const res = await http.get(`/api/tasks/${id}/attachments/${attachmentId}/download`, { responseType: 'blob' })
+  const disposition = String(res.headers['content-disposition'] || '')
+  const matched = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/)
+  return {
+    blob: res.data as Blob,
+    fileName: matched ? decodeURIComponent(matched[1]) : `work-item-attachment-${attachmentId}`,
+  }
 }
 
 /* ── 评论 ── */

@@ -7,13 +7,29 @@ interface HermesComposerProps {
   sending: boolean
   pendingFiles: File[]
   onFilesChange: (files: File[]) => void
-  onSubmit: (question: string) => void
+  onSubmit: (question: string, slashCommand?: string | null) => void
   onStop: () => void
   onTranscribe: (file: File) => Promise<string>
   onError: (message: string) => void
 }
 
 const acceptedFileTypes = '.pdf,.docx,.pptx,.xlsx'
+const slashCommands = [
+  { command: '/wiki', label: 'Wiki 问答' },
+  { command: '/需求', label: '创建或整理需求' },
+  { command: '/仓库扫描', label: '发起仓库扫描' },
+  { command: '/执行任务', label: '查询或发起执行任务' },
+] as const
+
+const parseSlashQuestion = (rawQuestion: string) => {
+  const normalized = rawQuestion.trim()
+  const matchedCommand = slashCommands.find((item) => normalized === item.command || normalized.startsWith(`${item.command} `))
+  if (!matchedCommand) return { question: normalized, slashCommand: null as string | null }
+  return {
+    question: normalized.slice(matchedCommand.command.length).trim() || matchedCommand.label,
+    slashCommand: matchedCommand.command,
+  }
+}
 
 export const HermesComposer = ({
   disabled,
@@ -26,6 +42,7 @@ export const HermesComposer = ({
   onError,
 }: HermesComposerProps) => {
   const [question, setQuestion] = useState('')
+  const [selectedSlashCommand, setSelectedSlashCommand] = useState<string | null>(null)
   const [recording, setRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -33,10 +50,16 @@ export const HermesComposer = ({
   const chunksRef = useRef<Blob[]>([])
 
   const submit = () => {
-    const normalized = question.trim()
-    if (!normalized || disabled || sending) return
-    onSubmit(normalized)
+    const parsed = selectedSlashCommand
+      ? {
+          question: question.trim() || slashCommands.find((item) => item.command === selectedSlashCommand)?.label || '业务 Skill',
+          slashCommand: selectedSlashCommand,
+        }
+      : parseSlashQuestion(question)
+    if (!parsed.question || disabled || sending) return
+    onSubmit(parsed.question, parsed.slashCommand)
     setQuestion('')
+    setSelectedSlashCommand(null)
   }
 
   const handleFileInput = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -101,6 +124,38 @@ export const HermesComposer = ({
         </div>
       )}
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-2 shadow-[var(--shadow-xs)]">
+        {question.trimStart().startsWith('/') && !question.trim().includes(' ') && !selectedSlashCommand && (
+          <div className="mb-2 grid gap-1 rounded-lg border border-[var(--color-border-light)] bg-white p-1 shadow-[var(--shadow-xs)]">
+            {slashCommands.map((item) => (
+              <button
+                key={item.command}
+                type="button"
+                className="flex items-center justify-between rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-[var(--color-bg-hover)]"
+                onClick={() => {
+                  setSelectedSlashCommand(item.command)
+                  setQuestion('')
+                }}
+              >
+                <strong className="text-[var(--color-text-primary)]">{item.command}</strong>
+                <span className="text-[var(--color-text-tertiary)]">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {selectedSlashCommand && (
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[var(--color-primary-light)] bg-[var(--color-primary-soft)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)]">
+            <span className="text-[10px] font-black uppercase tracking-wide text-[var(--color-primary)]">Skill</span>
+            <strong className="text-[var(--color-text-primary)]">{selectedSlashCommand}</strong>
+            <span>{slashCommands.find((item) => item.command === selectedSlashCommand)?.label}</span>
+            <button
+              type="button"
+              className="ml-1 rounded-full bg-black/5 px-1.5 text-[var(--color-text-tertiary)] hover:bg-black/10"
+              onClick={() => setSelectedSlashCommand(null)}
+            >
+              ×
+            </button>
+          </div>
+        )}
         <textarea
           value={question}
           rows={3}

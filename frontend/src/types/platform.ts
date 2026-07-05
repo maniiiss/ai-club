@@ -437,6 +437,38 @@ export interface TaskItem {
   canDelete: boolean
 }
 
+export interface LinkedTestCaseItem {
+  id: number
+  title: string
+  moduleName: string
+  caseType: string
+  priority: string
+  testPlanId: number
+  testPlanName: string
+  projectId: number
+  projectName: string
+}
+
+export interface TaskAttachmentItem {
+  id: number
+  assetId: number
+  fileName: string
+  contentType: string
+  fileSize: number
+  sourceFormat: string
+  uploaderUserId: number | null
+  uploaderName: string
+  createdAt: string | null
+}
+
+export interface TaskLinksItem {
+  children: TaskItem[]
+  parentWorkItems: TaskItem[]
+  relatedWorkItems: TaskItem[]
+  testCases: LinkedTestCaseItem[]
+  attachments: TaskAttachmentItem[]
+}
+
 export interface ProjectWorkItemStatsItem {
   /** 当前筛选结果总数。 */
   totalCount: number

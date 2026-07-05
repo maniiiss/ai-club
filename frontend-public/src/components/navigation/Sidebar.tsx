@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react'
 import { cn } from '@/src/lib/utils'
+import { BrandMark } from '@/src/components/common/BrandMark'
 
 interface SidebarProps {
   mobileOpen: boolean
@@ -28,9 +29,7 @@ export const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
     <nav className="flex h-full flex-col">
       {/* 品牌区 */}
       <div className="flex h-[var(--topbar-height)] items-center gap-2.5 px-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--color-primary)]">
-          <span className="text-[11px] font-bold text-white tracking-tight">AI</span>
-        </div>
+        <BrandMark className="h-8 w-8 rounded-lg shadow-[0_8px_18px_rgba(79,70,229,0.22)]" />
         <div className="flex flex-col">
           <span className="text-[15px] font-semibold text-[var(--color-text-primary)] leading-tight tracking-tight">
             AI Club
