@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('docs', 'backend', 'frontend', 'code-processing', 'all')]
+    [ValidateSet('docs', 'backend', 'frontend', 'frontend-public', 'code-processing', 'all')]
     [string]$Target = 'all'
 )
 
@@ -46,6 +46,9 @@ function Get-EncodingCheckTargets {
         'frontend' {
             return @('frontend')
         }
+        'frontend-public' {
+            return @('frontend-public')
+        }
         'code-processing' {
             return @('code-processing')
         }
@@ -73,7 +76,7 @@ function Invoke-EncodingCheck {
 }
 
 function Write-ArchitectureDocReminder {
-    Write-WarnMessage '如果本次改动涉及技术架构调整、跨模块边界变化或大型技术设计，请同步更新 docs/architecture.md 或新增 docs/*-architecture-vN.md / docs/*-technical-design-vN.md；模板见 docs/architecture-design-template.md。'
+    Write-WarnMessage '如果本次改动涉及技术架构调整、跨模块边界变化或大型技术设计，请同步更新 docs/architecture.md 或新增 docs/design-docs/*-architecture-vN.md / docs/design-docs/*-technical-design-vN.md；模板见 docs/design-docs/architecture-design-template.md。'
 }
 
 function Invoke-BackendTests {
@@ -89,8 +92,20 @@ function Invoke-BackendTests {
 }
 
 function Invoke-FrontendBuild {
-    Invoke-HarnessStep -Name '运行前端类型检查与构建' -Action {
+    Invoke-HarnessStep -Name '运行管理端前端类型检查与构建' -Action {
         Push-Location $context.FrontendDir
+        try {
+            npm run build
+            Assert-LastExitCode -CommandName 'npm run build'
+        } finally {
+            Pop-Location
+        }
+    }
+}
+
+function Invoke-FrontendPublicBuild {
+    Invoke-HarnessStep -Name '运行公众端前端类型检查与构建' -Action {
+        Push-Location $context.FrontendPublicDir
         try {
             npm run build
             Assert-LastExitCode -CommandName 'npm run build'
@@ -122,6 +137,10 @@ if ($Target -in @('backend', 'all')) {
 
 if ($Target -in @('frontend', 'all')) {
     Invoke-FrontendBuild
+}
+
+if ($Target -in @('frontend-public', 'all')) {
+    Invoke-FrontendPublicBuild
 }
 
 if ($Target -in @('code-processing', 'all')) {

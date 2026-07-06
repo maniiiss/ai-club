@@ -8,12 +8,16 @@ import {
   Plus, CheckSquare, AlertCircle, FileText, Search,
   X, Edit3, Trash2, LayoutList, LayoutGrid, GripVertical, TrendingDown,
   ChevronDown, MessageSquare, Send, Bot, User, FolderOpen, Link2, Sparkles,
+  Download, Paperclip, ArrowLeft,
 } from 'lucide-react'
 import {
-  getIterationBoard, pageProjectWorkItems, getWorkItemStats,
+  getIterationBoard, pageProjectWorkItems, listProjectWorkItems, getWorkItemStats,
   createIteration, updateIteration, deleteIteration,
   createWorkItem, updateWorkItem, deleteWorkItem, getWorkItemDetail,
   getProjectBurndown, listTaskComments, createTaskComment,
+  getWorkItemLinks, addWorkItemChild, removeWorkItemChild,
+  addRelatedWorkItem, removeRelatedWorkItem, addWorkItemTestCase, removeWorkItemTestCase,
+  pageProjectTestCases, uploadWorkItemAttachment, deleteWorkItemAttachment, downloadWorkItemAttachment,
 } from '@/src/api/planning'
 import { listUserOptions } from '@/src/api/users'
 import type { UserOptionItem } from '@/src/api/users'
@@ -21,7 +25,9 @@ import { MarkdownEditor } from '@/src/components/common/MarkdownEditor'
 import { RequirementAiDialog } from './RequirementAiDialog'
 import { REQUIREMENT_TEMPLATE, TASK_TEMPLATE } from '@/src/lib/markdownTemplates'
 import { uploadMarkdownImage } from '@/src/lib/markdownImageUpload'
-import type { IterationBoardItem, IterationItem, WorkItem, WorkItemStats, WorkItemPayload, IterationPayload, BurndownItem, TaskComment } from '@/src/types/planning'
+import { buildWorkItemInlineEditPayload } from '@/src/lib/planningInlineEditUtils'
+import { TASK_TYPE_OPTIONS, isRequirementAiEntryVisible, normalizeTaskType } from '@/src/lib/requirementAiUtils'
+import type { IterationBoardItem, IterationItem, WorkItem, WorkItemStats, WorkItemPayload, IterationPayload, BurndownItem, TaskComment, WorkItemLinks, LinkedTestCase } from '@/src/types/planning'
 import type { PageResponse } from '@/src/types/api'
 import { Button } from '@/src/components/common/Button'
 import { Input } from '@/src/components/common/Input'
@@ -33,13 +39,14 @@ import { EmptyState } from '@/src/components/common/EmptyState'
 import { Select } from '@/src/components/common/Select'
 import { SlideDrawer, SlideDrawerFooter } from '@/src/components/common/SlideDrawer'
 import { DateRangePicker } from '@/src/components/common/DateRangePicker'
-import { AssigneePicker } from '@/src/components/common/AssigneePicker'
+import { UserAvatar, WorkItemMemberPicker } from '@/src/components/common/AssigneePicker'
 import { cn, formatDate, formatDateTime, getErrorMessage } from '@/src/lib/utils'
 
 /* ── 常量 ── */
 
 type WorkItemTypeFilter = '全部' | '需求' | '任务' | '缺陷'
 type ViewMode = 'list' | 'kanban'
+type DetailTab = 'detail' | 'children' | 'related' | 'testCases' | 'attachments'
 
 const typeTabs: WorkItemTypeFilter[] = ['全部', '需求', '任务', '缺陷']
 
@@ -51,8 +58,33 @@ const statusColorMap: Record<string, string> = {
   '已阻塞': 'bg-red-50 text-red-700', '通过': 'bg-emerald-50 text-emerald-700',
   '已拒绝': 'bg-gray-100 text-gray-500', '延期解决': 'bg-orange-50 text-orange-700',
 }
+const statusInlineSelectClassMap: Record<string, string> = {
+  '草稿': '[&>div>button]:bg-gray-100 [&>div>button]:text-gray-600',
+  '待开始': '[&>div>button]:bg-amber-50 [&>div>button]:text-amber-700',
+  '进行中': '[&>div>button]:bg-blue-50 [&>div>button]:text-blue-700',
+  '已完成': '[&>div>button]:bg-emerald-50 [&>div>button]:text-emerald-700',
+  '已阻塞': '[&>div>button]:bg-red-50 [&>div>button]:text-red-700',
+  '通过': '[&>div>button]:bg-emerald-50 [&>div>button]:text-emerald-700',
+  '已拒绝': '[&>div>button]:bg-gray-100 [&>div>button]:text-gray-500',
+  '延期解决': '[&>div>button]:bg-orange-50 [&>div>button]:text-orange-700',
+}
+const statusDotColorMap: Record<string, string> = {
+  '草稿': 'bg-gray-400', '待开始': 'bg-amber-500', '进行中': 'bg-blue-500',
+  '已完成': 'bg-emerald-500', '已阻塞': 'bg-red-500', '通过': 'bg-emerald-500',
+  '已拒绝': 'bg-gray-400', '延期解决': 'bg-orange-500',
+}
 
 const priorityColorMap: Record<string, string> = { '高': 'text-red-600 font-semibold', '中': 'text-amber-600', '低': 'text-gray-500' }
+const priorityBadgeColorMap: Record<string, string> = {
+  '高': '[&>div>button]:bg-red-50 [&>div>button]:text-red-700 [&>div>button]:border-red-100',
+  '中': '[&>div>button]:bg-amber-50 [&>div>button]:text-amber-700 [&>div>button]:border-amber-100',
+  '低': '[&>div>button]:bg-slate-100 [&>div>button]:text-slate-600 [&>div>button]:border-slate-200',
+}
+const priorityDotColorMap: Record<string, string> = {
+  '高': 'bg-red-500',
+  '中': 'bg-amber-500',
+  '低': 'bg-slate-400',
+}
 
 const iterationStatusColor: Record<string, string> = { '未开始': 'bg-gray-100 text-gray-500', '进行中': 'bg-blue-50 text-blue-700', '已完成': 'bg-emerald-50 text-emerald-700' }
 
@@ -63,6 +95,23 @@ const statusOptions: Record<string, string[]> = {
 }
 
 const kanbanColumns = ['待开始', '进行中', '已完成']
+
+const detailTabs: Array<{ key: DetailTab; label: string }> = [
+  { key: 'detail', label: '详情' },
+  { key: 'children', label: '子工作项' },
+  { key: 'related', label: '关联项' },
+  { key: 'testCases', label: '测试用例' },
+  { key: 'attachments', label: '附件' },
+]
+
+const getDetailTabCount = (tab: DetailTab, links: WorkItemLinks | null) => {
+  if (!links) return 0
+  if (tab === 'children') return links.children.length
+  if (tab === 'related') return links.relatedWorkItems.length
+  if (tab === 'testCases') return links.testCases.length
+  if (tab === 'attachments') return links.attachments.length
+  return 0
+}
 
 /* ═══════════════════════════════════════════════
    主页面
@@ -86,6 +135,7 @@ export const PlanningPage = () => {
   const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
+  const [inlineEditError, setInlineEditError] = useState<string | null>(null)
 
   const [stats, setStats] = useState<WorkItemStats | null>(null)
   const [burndown, setBurndown] = useState<BurndownItem | null>(null)
@@ -98,6 +148,10 @@ export const PlanningPage = () => {
   const [wiDialog, setWiDialog] = useState<{ open: boolean; editing?: WorkItem }>({ open: false })
   const [detailItem, setDetailItem] = useState<WorkItem | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  /**
+   * 详情抽屉内关联跳转历史。列表/看板首次打开详情会清空，关联项跳转会入栈，便于原路返回。
+   */
+  const [detailNavigationStack, setDetailNavigationStack] = useState<WorkItem[]>([])
   const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'iteration' | 'workItem'; id: number; name: string } | null>(null)
   /**
    * 需求 AI 助手弹窗的目标工作项。
@@ -164,10 +218,25 @@ export const PlanningPage = () => {
 
   const refreshAll = () => { fetchBoard(); fetchWorkItems(); fetchStats() }
 
-  const handleOpenDetail = async (id: number) => {
+  const handleOpenDetail = async (id: number, options: { pushHistory?: boolean; preserveHistory?: boolean; previousItem?: WorkItem | null } = {}) => {
+    if (options.pushHistory && options.previousItem && options.previousItem.id !== id) {
+      setDetailNavigationStack((prev) => [...prev, options.previousItem!])
+    } else if (!options.pushHistory && !options.preserveHistory) {
+      setDetailNavigationStack([])
+    }
     setDetailLoading(true)
     try { setDetailItem(await getWorkItemDetail(id)) }
     catch { setDetailItem(null) }
+    finally { setDetailLoading(false) }
+  }
+
+  const handleBackDetail = async () => {
+    const previous = detailNavigationStack[detailNavigationStack.length - 1]
+    if (!previous) return
+    setDetailNavigationStack((prev) => prev.slice(0, -1))
+    setDetailLoading(true)
+    try { setDetailItem(await getWorkItemDetail(previous.id)) }
+    catch { setDetailItem(previous) }
     finally { setDetailLoading(false) }
   }
 
@@ -179,6 +248,18 @@ export const PlanningPage = () => {
       setDeleteConfirm(null)
       refreshAll()
     } catch { /* show error inline */ }
+  }
+
+  const handleInlineWorkItemChange = async (item: WorkItem, field: 'status' | 'priority', value: string) => {
+    if (item[field] === value) return
+    setInlineEditError(null)
+    try {
+      await updateWorkItem(item.id, buildWorkItemInlineEditPayload(item, { [field]: value }))
+      refreshAll()
+      if (detailItem?.id === item.id) handleOpenDetail(item.id, { preserveHistory: true })
+    } catch (err) {
+      setInlineEditError(getErrorMessage(err) || '更新工作项失败')
+    }
   }
 
   return (
@@ -408,7 +489,7 @@ export const PlanningPage = () => {
             : !workItems || workItems.records.length === 0
               ? <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]"><EmptyState title="暂无工作项" description="点击右上角「新建工作项」开始。" icon={<CheckSquare className="h-6 w-6" strokeWidth={1.5} />} /></div>
               : viewMode === 'list'
-                ? <WorkItemTable items={workItems} onOpenDetail={handleOpenDetail} onEdit={(w) => setWiDialog({ open: true, editing: w })} onDelete={(w) => setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name })} page={page} totalPages={workItems.totalPages} total={workItems.total} onPageChange={setPage} />
+                ? <WorkItemTable items={workItems} onOpenDetail={handleOpenDetail} onEdit={(w) => setWiDialog({ open: true, editing: w })} onDelete={(w) => setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name })} onInlineChange={handleInlineWorkItemChange} error={inlineEditError} page={page} totalPages={workItems.totalPages} total={workItems.total} onPageChange={setPage} />
                 : <KanbanBoard items={workItems.records} onOpenDetail={handleOpenDetail} />
           }
           </div>
@@ -418,9 +499,9 @@ export const PlanningPage = () => {
       {/* ── 弹窗 ── */}
       {iterDialog.open && <IterationDialog projectId={pid} editing={iterDialog.editing} onClose={() => setIterDialog({ open: false })} onSaved={() => { setIterDialog({ open: false }); fetchBoard() }} />}
       {wiDialog.open && <WorkItemDialog projectId={pid} editing={wiDialog.editing} iterationId={selectedIteration && selectedIteration !== 'unplanned' ? selectedIteration.id : undefined} userOptions={userOptions} projectMemberIds={projectMemberIds} onClose={() => setWiDialog({ open: false })} onSaved={(result) => { setWiDialog({ open: false }); refreshAll(); if (result?.autoStandardize && result.item) { setAiAssistantItem(result.item); setAutoRunAction('STANDARDIZE') } }} />}
-      {detailItem && <WorkItemDetailDrawer item={detailItem} loading={detailLoading} onClose={() => setDetailItem(null)} onEdit={() => { setWiDialog({ open: true, editing: detailItem }); setDetailItem(null) }} onDelete={(w) => { setDetailItem(null); setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name }) }} onRefresh={handleOpenDetail} onOpenAi={() => setAiAssistantItem(detailItem)} />}
+      {detailItem && <WorkItemDetailDrawer item={detailItem} loading={detailLoading} userOptions={userOptions} canGoBack={detailNavigationStack.length > 0} onBack={handleBackDetail} onClose={() => { setDetailItem(null); setDetailNavigationStack([]) }} onEdit={() => { setWiDialog({ open: true, editing: detailItem }); setDetailItem(null); setDetailNavigationStack([]) }} onDelete={(w) => { setDetailItem(null); setDetailNavigationStack([]); setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name }) }} onRefresh={(id) => handleOpenDetail(id, { preserveHistory: true })} onOpenLinkedWorkItem={(id) => handleOpenDetail(id, { pushHistory: true, previousItem: detailItem })} onOpenAi={() => setAiAssistantItem(detailItem)} />}
       {deleteConfirm && <DeleteConfirmDialog name={deleteConfirm.name} onCancel={() => setDeleteConfirm(null)} onConfirm={handleDeleteConfirm} />}
-      {aiAssistantItem && aiAssistantItem.workItemType === '需求' && <RequirementAiDialog open={true} workItem={aiAssistantItem} onClose={() => { setAiAssistantItem(null); setAutoRunAction(null) }} onChanged={() => { if (detailItem?.id === aiAssistantItem.id) handleOpenDetail(aiAssistantItem.id); refreshAll() }} autoRunAction={autoRunAction} />}
+      {aiAssistantItem && isRequirementAiEntryVisible(aiAssistantItem) && <RequirementAiDialog open={true} workItem={aiAssistantItem} userOptions={userOptions} projectMemberIds={projectMemberIds} onClose={() => { setAiAssistantItem(null); setAutoRunAction(null) }} onChanged={() => { if (detailItem?.id === aiAssistantItem.id) handleOpenDetail(aiAssistantItem.id); refreshAll() }} autoRunAction={autoRunAction} />}
     </div>
   )
 }
@@ -429,11 +510,17 @@ export const PlanningPage = () => {
    工作项表格
    ═══════════════════════════════════════════════ */
 
-const WorkItemTable = ({ items, onOpenDetail, onEdit, onDelete, page, totalPages, total, onPageChange }: {
+const WorkItemTable = ({ items, onOpenDetail, onEdit, onDelete, onInlineChange, error, page, totalPages, total, onPageChange }: {
   items: PageResponse<WorkItem>; onOpenDetail: (id: number) => void; onEdit: (w: WorkItem) => void; onDelete: (w: WorkItem) => void
+  onInlineChange: (item: WorkItem, field: 'status' | 'priority', value: string) => void; error: string | null
   page: number; totalPages: number; total: number; onPageChange: (p: number) => void
 }) => (
   <div className="h-full flex flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] overflow-hidden">
+    {error && (
+      <div className="border-b border-red-100 bg-[var(--color-danger-light)] px-4 py-2 text-[12px] text-[var(--color-danger)]">
+        {error}
+      </div>
+    )}
     <div className="flex-1 overflow-y-auto">
       <table className="w-full">
         <thead className="sticky top-0 z-10">
@@ -455,8 +542,18 @@ const WorkItemTable = ({ items, onOpenDetail, onEdit, onDelete, page, totalPages
             <tr key={item.id} className="group hover:bg-[var(--color-bg-hover)]/50 transition-colors cursor-pointer" onClick={() => onOpenDetail(item.id)}>
               <td className="px-4 py-2 max-w-0"><div className="flex items-center gap-2 min-w-0">{item.workItemCode && <span className="text-[11px] font-mono text-[var(--color-text-tertiary)] shrink-0">{item.workItemCode}</span>}<span className="text-[13px] font-medium text-[var(--color-text-primary)] truncate">{item.name}</span></div></td>
               <td className="px-3 py-2 whitespace-nowrap"><span className="inline-flex items-center gap-1 text-[12px] text-[var(--color-text-secondary)]"><TypeIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />{item.workItemType}</span></td>
-              <td className="px-3 py-2 whitespace-nowrap"><span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium', statusColorMap[item.status] || 'bg-gray-100 text-gray-600')}>{item.status}</span></td>
-              <td className="px-3 py-2 whitespace-nowrap"><span className={cn('text-[12px]', priorityColorMap[item.priority] || 'text-gray-500')}>{item.priority}</span></td>
+              <td className="px-3 py-2 whitespace-nowrap" onClick={(event) => event.stopPropagation()}>
+                <InlineStatusSelect
+                  item={item}
+                  onChange={(value) => onInlineChange(item, 'status', value)}
+                />
+              </td>
+              <td className="px-3 py-2 whitespace-nowrap" onClick={(event) => event.stopPropagation()}>
+                <InlinePrioritySelect
+                  value={item.priority}
+                  onChange={(value) => onInlineChange(item, 'priority', value)}
+                />
+              </td>
               <td className="px-3 py-2 whitespace-nowrap text-[12px] text-[var(--color-text-secondary)] truncate max-w-[70px]">{item.assignee || '-'}</td>
               <td className="px-3 py-2 whitespace-nowrap text-[12px] text-[var(--color-text-secondary)]">{item.planStartDate ? <span>{formatDate(item.planStartDate)}{item.planEndDate ? <span className="text-[var(--color-text-tertiary)]"> ~ {formatDate(item.planEndDate)}</span> : ''}</span> : <span className="text-[var(--color-text-tertiary)]">-</span>}</td>
               <td className="px-3 py-2 whitespace-nowrap text-[12px] text-[var(--color-text-tertiary)]">{formatDateTime(item.createdAt)}</td>
@@ -482,6 +579,48 @@ const WorkItemTable = ({ items, onOpenDetail, onEdit, onDelete, page, totalPages
       </div>
     )}
   </div>
+)
+
+const InlineStatusSelect = ({ item, onChange }: { item: WorkItem; onChange: (value: string) => void }) => {
+  const options = statusOptions[item.workItemType] || statusOptions['任务']
+
+  return (
+    <Select
+      title="修改工作项状态"
+      value={item.status}
+      onChange={onChange}
+      options={options.map((option) => ({
+        value: option,
+        label: option,
+        icon: <span className={cn('h-2 w-2 rounded-full', statusDotColorMap[option] || 'bg-slate-400')} />,
+      }))}
+      className={cn(
+        'w-[116px]',
+        '[&>div>button]:h-8 [&>div>button]:rounded-full [&>div>button]:border-transparent [&>div>button]:px-3 [&>div>button]:text-[12px] [&>div>button]:font-semibold',
+        '[&>div>button]:hover:border-[var(--color-border-strong)]',
+        statusInlineSelectClassMap[item.status] || '[&>div>button]:bg-gray-100 [&>div>button]:text-gray-600',
+      )}
+    />
+  )
+}
+
+const InlinePrioritySelect = ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
+  <Select
+    title="修改工作项优先级"
+    value={value}
+    onChange={onChange}
+    options={['高', '中', '低'].map((option) => ({
+      value: option,
+      label: option,
+      icon: <span className={cn('h-2 w-2 rounded-full', priorityDotColorMap[option])} />,
+    }))}
+    className={cn(
+      'w-[86px]',
+      '[&>div>button]:h-8 [&>div>button]:rounded-full [&>div>button]:border-transparent [&>div>button]:px-3 [&>div>button]:text-[12px] [&>div>button]:font-semibold',
+      '[&>div>button]:hover:border-[var(--color-border-strong)]',
+      priorityBadgeColorMap[value] || '[&>div>button]:border-slate-200 [&>div>button]:bg-slate-100 [&>div>button]:text-slate-600',
+    )}
+  />
 )
 
 /* ═══════════════════════════════════════════════
@@ -593,7 +732,9 @@ const WorkItemDialog = ({ projectId, editing, iterationId, userOptions, projectM
 }) => {
   const [form, setForm] = useState({
     name: editing?.name || '', workItemType: editing?.workItemType || '任务', status: editing?.status || '待开始',
+    taskType: (editing?.workItemType || '任务') === '任务' ? normalizeTaskType(editing?.taskType) : '',
     priority: editing?.priority || '中', assignee: editing?.assignee || '', assigneeUserId: editing?.assigneeUserId ?? null,
+    collaboratorUserIds: editing?.collaboratorUserIds || [],
     description: editing?.description || '', planStartDate: editing?.planStartDate || '', planEndDate: editing?.planEndDate || '',
   })
   const [saving, setSaving] = useState(false)
@@ -616,10 +757,12 @@ const WorkItemDialog = ({ projectId, editing, iterationId, userOptions, projectM
     try {
       const payload: WorkItemPayload = {
         ...form, projectId, agentId: editing?.agentId ?? null,
+        taskType: form.workItemType === '任务' ? normalizeTaskType(form.taskType) : null,
         iterationId: editing?.iterationId ?? iterationId ?? null,
         planStartDate: form.planStartDate || null,
         planEndDate: form.planEndDate || null,
         assigneeUserId: form.assigneeUserId,
+        collaboratorUserIds: form.collaboratorUserIds,
       }
       if (editing) {
         await updateWorkItem(editing.id, payload)
@@ -637,7 +780,8 @@ const WorkItemDialog = ({ projectId, editing, iterationId, userOptions, projectM
       open={!isClosing}
       onClose={handleClose}
       title={editing ? '编辑工作项' : '新建工作项'}
-      maxWidth="800px"
+      width="clamp(720px, 50vw, 960px)"
+      maxWidth="calc(100vw - 48px)"
       footer={
         <SlideDrawerFooter
           cancelText="取消"
@@ -655,7 +799,15 @@ const WorkItemDialog = ({ projectId, editing, iterationId, userOptions, projectM
           <Select
             label="类型"
             value={form.workItemType}
-            onChange={(v) => { setForm({ ...form, workItemType: v, status: (statusOptions[v] || ['待开始'])[0] }); setAutoStandardize(false) }}
+            onChange={(v) => {
+              setForm({
+                ...form,
+                workItemType: v,
+                taskType: v === '任务' ? normalizeTaskType(form.taskType) : '',
+                status: (statusOptions[v] || ['待开始'])[0],
+              })
+              setAutoStandardize(false)
+            }}
             options={[
               { value: '需求', label: '需求', icon: <FileText className="h-3.5 w-3.5 text-blue-600" /> },
               { value: '任务', label: '任务', icon: <CheckSquare className="h-3.5 w-3.5 text-emerald-600" /> },
@@ -679,15 +831,29 @@ const WorkItemDialog = ({ projectId, editing, iterationId, userOptions, projectM
             ]}
           />
         </div>
+        {form.workItemType === '任务' && (
+          <Select
+            label="任务类型"
+            value={form.taskType}
+            onChange={(v) => setForm({ ...form, taskType: v })}
+            options={TASK_TYPE_OPTIONS.map((o) => ({ value: o, label: o }))}
+          />
+        )}
         <div className="grid grid-cols-2 gap-3">
-          <AssigneePicker
-            label="负责人"
-            value={form.assigneeUserId}
+          <WorkItemMemberPicker
+            label="负责人 / 协作人"
+            assigneeUserId={form.assigneeUserId}
+            collaboratorUserIds={form.collaboratorUserIds}
             userOptions={userOptions}
             projectMemberIds={projectMemberIds}
-            onChange={(userId) => {
-              const selected = userOptions.find((u) => u.id === userId)
-              setForm({ ...form, assigneeUserId: userId, assignee: selected?.nickname || selected?.username || '' })
+            onChange={({ assigneeUserId, collaboratorUserIds }) => {
+              const selected = userOptions.find((u) => u.id === assigneeUserId)
+              setForm({
+                ...form,
+                assigneeUserId,
+                assignee: selected?.nickname || selected?.username || '',
+                collaboratorUserIds,
+              })
             }}
           />
           <DateRangePicker
@@ -731,15 +897,25 @@ const WorkItemDialog = ({ projectId, editing, iterationId, userOptions, projectM
    工作项详情抽屉
    ═══════════════════════════════════════════════ */
 
-const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefresh, onOpenAi }: {
-  item: WorkItem; loading: boolean; onClose: () => void; onEdit: () => void
-  onDelete: (item: WorkItem) => void; onRefresh: (id: number) => void; onOpenAi?: () => void
+const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, onBack, onClose, onEdit, onDelete, onRefresh, onOpenLinkedWorkItem, onOpenAi }: {
+  item: WorkItem; loading: boolean; userOptions: UserOptionItem[]; onClose: () => void; onEdit: () => void
+  canGoBack: boolean; onBack: () => void; onDelete: (item: WorkItem) => void; onRefresh: (id: number) => void
+  onOpenLinkedWorkItem: (id: number) => void; onOpenAi?: () => void
 }) => {
   const TypeIcon = typeIconMap[item.workItemType] || FileText
   const [comments, setComments] = useState<TaskComment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(false)
   const [commentText, setCommentText] = useState('')
   const [commentSubmitting, setCommentSubmitting] = useState(false)
+  const [activeTab, setActiveTab] = useState<DetailTab>('detail')
+  const [links, setLinks] = useState<WorkItemLinks | null>(null)
+  const [linksLoading, setLinksLoading] = useState(false)
+  const [workItemOptions, setWorkItemOptions] = useState<WorkItem[]>([])
+  const [selectedWorkItemId, setSelectedWorkItemId] = useState('')
+  const [testCaseOptions, setTestCaseOptions] = useState<LinkedTestCase[]>([])
+  const [selectedTestCaseId, setSelectedTestCaseId] = useState('')
+  const [linkSubmitting, setLinkSubmitting] = useState(false)
+  const [attachmentUploading, setAttachmentUploading] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [showStatusSelect, setShowStatusSelect] = useState(false)
   /** 关闭动画播放中，延迟父组件卸载 */
@@ -753,6 +929,10 @@ const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefr
   }
 
   const currentStatusOptions = statusOptions[item.workItemType] || statusOptions['任务']
+  const assigneeUser = userOptions.find((user) => user.id === item.assigneeUserId) || null
+  const collaboratorUsers = item.collaboratorUserIds
+    .map((id) => userOptions.find((user) => user.id === id))
+    .filter((user): user is UserOptionItem => Boolean(user))
 
   // 关闭状态下拉（点击外部）
   useEffect(() => {
@@ -772,6 +952,30 @@ const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefr
       .finally(() => { if (!cancelled) setCommentsLoading(false) })
     return () => { cancelled = true }
   }, [item.id])
+
+  useEffect(() => {
+    let cancelled = false
+    setLinksLoading(true)
+    Promise.all([
+      getWorkItemLinks(item.id),
+      listProjectWorkItems(item.projectId, {}),
+      pageProjectTestCases(item.projectId, { page: 1, size: 50 }),
+    ])
+      .then(([linkData, workItems, testCases]) => {
+        if (cancelled) return
+        setLinks(linkData)
+        setWorkItemOptions(workItems.filter((option) => option.id !== item.id))
+        setTestCaseOptions(testCases.records)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setLinks(null)
+        setWorkItemOptions([])
+        setTestCaseOptions([])
+      })
+      .finally(() => { if (!cancelled) setLinksLoading(false) })
+    return () => { cancelled = true }
+  }, [item.id, item.projectId])
 
   // 提交评论
   const handleSubmitComment = async () => {
@@ -793,19 +997,65 @@ const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefr
     try {
       await updateWorkItem(item.id, {
         name: item.name, status: newStatus, priority: item.priority,
+        workItemType: item.workItemType,
+        taskType: item.workItemType === '任务' ? normalizeTaskType(item.taskType) : null,
         assignee: item.assignee, description: item.description,
+        assigneeUserId: item.assigneeUserId,
+        collaboratorUserIds: item.collaboratorUserIds,
+        planStartDate: item.planStartDate,
+        planEndDate: item.planEndDate,
         projectId: item.projectId, agentId: item.agentId,
         iterationId: item.iterationId,
+        requirementTaskId: item.requirementTaskId,
       })
       onRefresh(item.id)
     } catch { /* 静默 */ }
     finally { setStatusUpdating(false) }
   }
 
+  const updateLinks = async (operation: () => Promise<WorkItemLinks>) => {
+    if (linkSubmitting) return
+    setLinkSubmitting(true)
+    try {
+      setLinks(await operation())
+      setSelectedWorkItemId('')
+      setSelectedTestCaseId('')
+    } catch { /* 静默，由后续统一错误提示补充 */ }
+    finally { setLinkSubmitting(false) }
+  }
+
+  const handleUploadAttachment = async (file: File | null) => {
+    if (!file || attachmentUploading) return
+    setAttachmentUploading(true)
+    try {
+      await uploadWorkItemAttachment(item.id, file)
+      setLinks(await getWorkItemLinks(item.id))
+    } catch { /* 静默 */ }
+    finally { setAttachmentUploading(false) }
+  }
+
+  const handleDownloadAttachment = async (attachmentId: number) => {
+    const result = await downloadWorkItemAttachment(item.id, attachmentId)
+    const url = URL.createObjectURL(result.blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = result.fileName
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
+  }
+
   /** 头部操作按钮，渲染在 SlideDrawer 关闭按钮之前 */
   const headerActions = (
     <>
-      {item.workItemType === '需求' && onOpenAi && (
+      {canGoBack && (
+        <button onClick={onBack} title="返回上一工作项" className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/10 px-2.5 text-[12px] font-semibold whitespace-nowrap text-[var(--color-primary)] transition-colors hover:border-[var(--color-primary)]/35 hover:bg-[var(--color-primary)]/15">
+          <ArrowLeft className="h-3.5 w-3.5" />
+          返回
+        </button>
+      )}
+      {isRequirementAiEntryVisible(item) && onOpenAi && (
         <button onClick={onOpenAi} title="AI 助手" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors">
           <Sparkles className="h-4 w-4" />
         </button>
@@ -830,14 +1080,40 @@ const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefr
       onClose={handleClose}
       title={item.name}
       description={item.workItemCode || undefined}
-      maxWidth="800px"
+      width="clamp(720px, 50vw, 960px)"
+      maxWidth="calc(100vw - 48px)"
       headerActions={headerActions}
     >
       {loading ? <LoadingSpinner fullscreen text="加载中…" /> : (
-        <div className="p-6 pb-4 space-y-5">
+        <div className="p-6 pb-4">
+          <div className="mb-5 flex gap-1 overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] p-1">
+            {detailTabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={cn(
+                  'inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-colors',
+                  activeTab === tab.key
+                    ? 'bg-white text-[var(--color-primary)] shadow-[var(--shadow-xs)]'
+                    : 'text-[var(--color-text-secondary)] hover:bg-white/70',
+                )}
+              >
+                <span>{tab.label}</span>
+                {getDetailTabCount(tab.key, links) > 0 && (
+                  <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-primary)] px-1 text-[11px] font-bold leading-none text-white">
+                    {getDetailTabCount(tab.key, links)}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === 'detail' ? (
+          <div className="space-y-5">
           {/* 属性网格 */}
           <div className="grid grid-cols-2 gap-4">
             <DetailField label="类型"><span className="inline-flex items-center gap-1.5 text-[13px]"><TypeIcon className="h-4 w-4" strokeWidth={1.75} />{item.workItemType}</span></DetailField>
+            {item.workItemType === '任务' && <DetailField label="任务类型"><span className="text-[13px]">{normalizeTaskType(item.taskType)}</span></DetailField>}
             {/* 内联状态切换 */}
             <DetailField label="状态">
               <div className="relative">
@@ -872,7 +1148,9 @@ const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefr
               </div>
             </DetailField>
             <DetailField label="优先级"><span className={cn('text-[13px]', priorityColorMap[item.priority])}>{item.priority}</span></DetailField>
-            <DetailField label="负责人"><span className="text-[13px]">{item.assignee || '未分配'}</span></DetailField>
+            <DetailField label="成员">
+              <WorkItemMemberSummary assigneeUser={assigneeUser} assigneeName={item.assignee} collaboratorUsers={collaboratorUsers} collaboratorNames={item.collaboratorNames} />
+            </DetailField>
             <DetailField label="迭代"><span className="text-[13px]">{item.iterationName || '未规划'}</span></DetailField>
             <DetailField label="所属项目"><span className="text-[13px]">{item.projectName}</span></DetailField>
             <DetailField label="创建人"><span className="inline-flex items-center gap-1 text-[13px]"><User className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />{item.creatorName || '未知'}</span></DetailField>
@@ -891,16 +1169,6 @@ const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefr
               {item.description ? <Markdown content={item.description} /> : <span className="text-[var(--color-text-tertiary)] text-[14px]">暂无描述</span>}
             </div>
           </div>
-
-          {/* 协作者 */}
-          {item.collaboratorNames.length > 0 && (
-            <div>
-              <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">协作者</h4>
-              <div className="flex flex-wrap gap-1.5">
-                {item.collaboratorNames.map((n) => <span key={n} className="rounded-full bg-[var(--color-bg-hover)] px-2.5 py-1 text-[12px] text-[var(--color-text-secondary)]">{n}</span>)}
-              </div>
-            </div>
-          )}
 
           {/* ── 评论区 ── */}
           <div id="comments-section">
@@ -953,16 +1221,305 @@ const WorkItemDetailDrawer = ({ item, loading, onClose, onEdit, onDelete, onRefr
           </div>
 
           <p className="text-[11px] text-[var(--color-text-tertiary)]">最后更新：{formatDate(item.updatedAt)}</p>
+          </div>
+          ) : (
+            <WorkItemLinksPanel
+              tab={activeTab}
+              item={item}
+              links={links}
+              loading={linksLoading}
+              linkSubmitting={linkSubmitting}
+              workItemOptions={workItemOptions}
+              selectedWorkItemId={selectedWorkItemId}
+              onSelectedWorkItemChange={setSelectedWorkItemId}
+              testCaseOptions={testCaseOptions}
+              selectedTestCaseId={selectedTestCaseId}
+              onSelectedTestCaseChange={setSelectedTestCaseId}
+              onOpenWorkItem={onOpenLinkedWorkItem}
+              onAddChild={() => selectedWorkItemId && updateLinks(() => addWorkItemChild(item.id, Number(selectedWorkItemId)))}
+              onRemoveChild={(id) => updateLinks(() => removeWorkItemChild(item.id, id))}
+              onAddRelated={() => selectedWorkItemId && updateLinks(() => addRelatedWorkItem(item.id, Number(selectedWorkItemId)))}
+              onRemoveRelated={(id) => updateLinks(() => removeRelatedWorkItem(item.id, id))}
+              onAddTestCase={() => selectedTestCaseId && updateLinks(() => addWorkItemTestCase(item.id, Number(selectedTestCaseId)))}
+              onRemoveTestCase={(id) => updateLinks(() => removeWorkItemTestCase(item.id, id))}
+              attachmentUploading={attachmentUploading}
+              onUploadAttachment={handleUploadAttachment}
+              onDownloadAttachment={handleDownloadAttachment}
+              onDeleteAttachment={(id) => updateLinks(() => deleteWorkItemAttachment(item.id, id))}
+            />
+          )}
         </div>
       )}
     </SlideDrawer>
   )
 }
 
+const WorkItemLinksPanel = ({
+  tab,
+  item,
+  links,
+  loading,
+  linkSubmitting,
+  workItemOptions,
+  selectedWorkItemId,
+  onSelectedWorkItemChange,
+  testCaseOptions,
+  selectedTestCaseId,
+  onSelectedTestCaseChange,
+  onOpenWorkItem,
+  onAddChild,
+  onRemoveChild,
+  onAddRelated,
+  onRemoveRelated,
+  onAddTestCase,
+  onRemoveTestCase,
+  attachmentUploading,
+  onUploadAttachment,
+  onDownloadAttachment,
+  onDeleteAttachment,
+}: {
+  tab: DetailTab
+  item: WorkItem
+  links: WorkItemLinks | null
+  loading: boolean
+  linkSubmitting: boolean
+  workItemOptions: WorkItem[]
+  selectedWorkItemId: string
+  onSelectedWorkItemChange: (value: string) => void
+  testCaseOptions: LinkedTestCase[]
+  selectedTestCaseId: string
+  onSelectedTestCaseChange: (value: string) => void
+  onOpenWorkItem: (id: number) => void
+  onAddChild: () => void
+  onRemoveChild: (id: number) => void
+  onAddRelated: () => void
+  onRemoveRelated: (id: number) => void
+  onAddTestCase: () => void
+  onRemoveTestCase: (id: number) => void
+  attachmentUploading: boolean
+  onUploadAttachment: (file: File | null) => void
+  onDownloadAttachment: (id: number) => void
+  onDeleteAttachment: (id: number) => void
+}) => {
+  if (loading) return <div className="py-10"><LoadingSpinner text="加载关联…" /></div>
+  if (!links) return <EmptyState title="暂无关联数据" description="稍后刷新后再试。" />
+
+  if (tab === 'children') {
+    return (
+      <div className="space-y-4">
+        <WorkItemPicker options={workItemOptions} value={selectedWorkItemId} onChange={onSelectedWorkItemChange} onSubmit={onAddChild} submitting={linkSubmitting} placeholder="选择子工作项" />
+        <LinkedWorkItemList items={links.children} emptyText="暂无子工作项" onOpen={onOpenWorkItem} onRemove={onRemoveChild} />
+        {links.parentWorkItems.length > 0 && (
+          <div className="border-t border-[var(--color-border-light)] pt-4">
+            <h4 className="mb-2 text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">父工作项</h4>
+            <LinkedWorkItemList items={links.parentWorkItems} emptyText="暂无父工作项" onOpen={onOpenWorkItem} />
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (tab === 'related') {
+    return (
+      <div className="space-y-4">
+        <WorkItemPicker options={workItemOptions} value={selectedWorkItemId} onChange={onSelectedWorkItemChange} onSubmit={onAddRelated} submitting={linkSubmitting} placeholder="选择关联工作项" />
+        <LinkedWorkItemList items={links.relatedWorkItems} emptyText="暂无关联工作项" onOpen={onOpenWorkItem} onRemove={onRemoveRelated} />
+      </div>
+    )
+  }
+
+  if (tab === 'testCases') {
+    return (
+      <div className="space-y-4">
+        <TestCasePicker options={testCaseOptions} value={selectedTestCaseId} onChange={onSelectedTestCaseChange} onSubmit={onAddTestCase} submitting={linkSubmitting} />
+        {links.testCases.length === 0 ? <EmptyState title="暂无测试用例" description="关联已有测试用例后会显示在这里。" /> : (
+          <div className="space-y-2">
+            {links.testCases.map((testCase) => (
+              <div key={testCase.id} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border-light)] bg-white p-3">
+                <div className="min-w-0">
+                  <div className="truncate text-[13px] font-semibold text-[var(--color-text-primary)]">{testCase.title}</div>
+                  <div className="mt-1 truncate text-[12px] text-[var(--color-text-tertiary)]">{testCase.testPlanName} · {testCase.moduleName || '未分组'} · {testCase.priority || '-'}</div>
+                </div>
+                <button onClick={() => onRemoveTestCase(testCase.id)} className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-danger)]">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-[var(--color-primary)] px-3 py-2 text-[13px] font-medium text-white">
+        <Paperclip className="h-4 w-4" />
+        {attachmentUploading ? '上传中…' : '上传附件'}
+        <input type="file" className="hidden" disabled={attachmentUploading} onChange={(event) => onUploadAttachment(event.target.files?.[0] ?? null)} />
+      </label>
+      {links.attachments.length === 0 ? <EmptyState title="暂无附件" description="上传后的附件会按工作项权限受控下载。" /> : (
+        <div className="space-y-2">
+          {links.attachments.map((attachment) => (
+            <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border-light)] bg-white p-3">
+              <div className="min-w-0">
+                <div className="truncate text-[13px] font-semibold text-[var(--color-text-primary)]">{attachment.fileName}</div>
+                <div className="mt-1 truncate text-[12px] text-[var(--color-text-tertiary)]">{formatBytes(attachment.fileSize)} · {attachment.uploaderName || '未知用户'} · {formatDate(attachment.createdAt)}</div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button onClick={() => onDownloadAttachment(attachment.id)} className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-primary)]">
+                  <Download className="h-4 w-4" />
+                </button>
+                <button onClick={() => onDeleteAttachment(attachment.id)} className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-danger)]">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const WorkItemPicker = ({ options, value, onChange, onSubmit, submitting, placeholder }: {
+  options: WorkItem[]
+  value: string
+  onChange: (value: string) => void
+  onSubmit: () => void
+  submitting: boolean
+  placeholder: string
+}) => (
+  <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+    <Select
+      value={value}
+      onChange={onChange}
+      searchable
+      placeholder={placeholder}
+      className="min-w-0 flex-1"
+      options={[
+        { value: '', label: placeholder },
+        ...options.map((option) => ({
+          value: String(option.id),
+          label: option.name,
+          description: `${option.workItemCode || option.id} · ${option.workItemType} · ${option.status}`,
+        })),
+      ]}
+    />
+    <Button size="sm" onClick={onSubmit} disabled={!value || submitting} loading={submitting}>关联</Button>
+  </div>
+)
+
+const TestCasePicker = ({ options, value, onChange, onSubmit, submitting }: {
+  options: LinkedTestCase[]
+  value: string
+  onChange: (value: string) => void
+  onSubmit: () => void
+  submitting: boolean
+}) => (
+  <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+    <Select
+      value={value}
+      onChange={onChange}
+      searchable
+      placeholder="选择测试用例"
+      className="min-w-0 flex-1"
+      options={[
+        { value: '', label: '选择测试用例' },
+        ...options.map((option) => ({
+          value: String(option.id),
+          label: option.title,
+          description: `${option.testPlanName} · ${option.moduleName || '未分组'} · ${option.priority || '-'}`,
+        })),
+      ]}
+    />
+    <Button size="sm" onClick={onSubmit} disabled={!value || submitting} loading={submitting}>关联</Button>
+  </div>
+)
+
+const LinkedWorkItemList = ({ items, emptyText, onOpen, onRemove }: {
+  items: WorkItem[]
+  emptyText: string
+  onOpen: (id: number) => void
+  onRemove?: (id: number) => void
+}) => items.length === 0 ? <EmptyState title={emptyText} description="关联已有工作项后会显示在这里。" /> : (
+  <div className="space-y-2">
+    {items.map((workItem) => (
+      <div key={workItem.id} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border-light)] bg-white p-3">
+        <button
+          onClick={() => onOpen(workItem.id)}
+          title="打开工作项详情"
+          className="group min-w-0 flex-1 cursor-pointer text-left"
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-[13px] font-semibold text-[var(--color-text-primary)] transition-colors group-hover:text-[var(--color-primary)] group-hover:underline group-hover:underline-offset-4 group-focus-visible:text-[var(--color-primary)] group-focus-visible:underline">
+              {workItem.name}
+            </span>
+            <span className="shrink-0 rounded-full bg-[var(--color-primary)]/10 px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+              查看详情
+            </span>
+          </div>
+          <div className="mt-1 truncate text-[12px] text-[var(--color-text-tertiary)]">{workItem.workItemCode || workItem.id} · {workItem.workItemType} · {workItem.status}</div>
+        </button>
+        {onRemove && (
+          <button onClick={() => onRemove(workItem.id)} className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-danger)]">
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+    ))}
+  </div>
+)
+
+const formatBytes = (value: number) => {
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / 1024 / 1024).toFixed(1)} MB`
+}
+
 const DetailField = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <div>
     <p className="text-[11px] font-medium text-[var(--color-text-tertiary)] uppercase tracking-wider mb-1">{label}</p>
     {children}
+  </div>
+)
+
+const WorkItemMemberSummary = ({
+  assigneeUser,
+  assigneeName,
+  collaboratorUsers,
+  collaboratorNames,
+}: {
+  assigneeUser: UserOptionItem | null
+  assigneeName: string
+  collaboratorUsers: UserOptionItem[]
+  collaboratorNames: string[]
+}) => (
+  <div className="inline-flex min-w-0 items-center gap-2">
+    {assigneeUser ? (
+      <span className="inline-flex min-w-0 items-center gap-1.5">
+        <UserAvatar user={assigneeUser} size={22} />
+        <span className="truncate text-[13px]">{assigneeUser.nickname || assigneeUser.username}</span>
+      </span>
+    ) : (
+      <span className="text-[13px] text-[var(--color-text-tertiary)]">{assigneeName || '未分配'}</span>
+    )}
+    {collaboratorUsers.length > 0 ? (
+      <span className="flex items-center -space-x-1">
+        {collaboratorUsers.slice(0, 4).map((user) => (
+          <span key={user.id} title={user.nickname || user.username} className="rounded-full border border-white">
+            <UserAvatar user={user} size={22} />
+          </span>
+        ))}
+        {collaboratorUsers.length > 4 && (
+          <span className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-full border border-white bg-[var(--color-bg-hover)] px-1 text-[10px] text-[var(--color-text-tertiary)]">
+            +{collaboratorUsers.length - 4}
+          </span>
+        )}
+      </span>
+    ) : collaboratorNames.length > 0 ? (
+      <span className="text-[12px] text-[var(--color-text-tertiary)]">协作人 {collaboratorNames.length}</span>
+    ) : null}
   </div>
 )
 

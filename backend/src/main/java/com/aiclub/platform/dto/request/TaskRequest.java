@@ -59,6 +59,11 @@ public record TaskRequest(
         @Digits(integer = 2, fraction = 1, message = "工时最多保留1位小数")
         BigDecimal workHours,
         /**
+         * 任务细分类型，仅工作项类型为“任务”时持久化。
+         */
+        @Size(max = 30, message = "任务类型长度不能超过30")
+        String taskType,
+        /**
          * 计划开始日期，格式为 yyyy-MM-dd。
          */
         String planStartDate,
@@ -72,4 +77,28 @@ public record TaskRequest(
         Long iterationId,
         Long requirementTaskId
 ) {
+        public TaskRequest(String name,
+                           String workItemType,
+                           String status,
+                           String priority,
+                           String assignee,
+                           Long assigneeUserId,
+                           List<Long> collaboratorUserIds,
+                           String description,
+                           String requirementMarkdown,
+                           String prototypeUrl,
+                           String moduleName,
+                           Boolean devPassed,
+                           Boolean testPassed,
+                           BigDecimal workHours,
+                           String planStartDate,
+                           String planEndDate,
+                           Long projectId,
+                           Long agentId,
+                           Long iterationId,
+                           Long requirementTaskId) {
+                this(name, workItemType, status, priority, assignee, assigneeUserId, collaboratorUserIds,
+                        description, requirementMarkdown, prototypeUrl, moduleName, devPassed, testPassed,
+                        workHours, null, planStartDate, planEndDate, projectId, agentId, iterationId, requirementTaskId);
+        }
 }

@@ -1,7 +1,9 @@
 import type { ChatMessageItem, ChatSocketEvent } from '@/src/types/chat'
 import type { HermesActionItem, HermesSelectionCardItem } from '@/src/types/hermes'
+export { normalizeGeneratedMarkdown } from '@/src/lib/markdownUtils'
 
-const hermesMentionPattern = /(^|\s)@hermes\b/i
+// 只允许 @hermes 独立成一个 token（后接空白或字符串结尾），避免把 @hermes-dev、@hermes队长 等用户名误判为助手提及
+const hermesMentionPattern = /(^|\s)@hermes(?=\s|$)/i
 
 export const containsHermesMention = (content: string): boolean => hermesMentionPattern.test(content || '')
 
@@ -70,6 +72,14 @@ export const mergeAgentSelectionCardsIntoMessage = (
     }
   })
 
+export const resolveAgentActionStatus = (
+  message: Pick<ChatMessageItem, 'actionStatuses'>,
+  actionKey: string | null | undefined,
+): string => {
+  const normalizedKey = actionKey || ''
+  return normalizedKey ? message.actionStatuses?.[normalizedKey] || '' : ''
+}
+
 export const markAgentActionStatusInMessage = (
   messages: ChatMessageItem[],
   messageId: number | null | undefined,
@@ -82,6 +92,7 @@ export const markAgentActionStatusInMessage = (
     const matchesTask = taskId != null && message.agentTaskId === taskId
     if (!matchesMessage && !matchesTask) return message
     const normalizedKey = actionKey || ''
+    if (!normalizedKey) return message
     const actionStatuses = normalizedKey
       ? { ...(message.actionStatuses || {}), [normalizedKey]: status || 'executed' }
       : message.actionStatuses || {}
@@ -89,6 +100,28 @@ export const markAgentActionStatusInMessage = (
       ...message,
       agentTaskStatus: status || 'executed',
       actionStatuses,
+    }
+  })
+
+export const markAgentSelectionStatusInMessage = (
+  messages: ChatMessageItem[],
+  messageId: number | null | undefined,
+  taskId: number | null | undefined,
+  selectionKey: string | null | undefined,
+  status: string,
+): ChatMessageItem[] =>
+  messages.map((message) => {
+    const matchesMessage = messageId != null && message.id === messageId
+    const matchesTask = taskId != null && message.agentTaskId === taskId
+    if (!matchesMessage && !matchesTask) return message
+    const normalizedKey = selectionKey || ''
+    const selectionStatuses = normalizedKey
+      ? { ...(message.selectionStatuses || {}), [normalizedKey]: status || 'selected' }
+      : message.selectionStatuses || {}
+    return {
+      ...message,
+      agentTaskStatus: status || 'selected',
+      selectionStatuses,
     }
   })
 

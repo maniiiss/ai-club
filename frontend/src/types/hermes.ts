@@ -44,6 +44,7 @@ export interface HermesSessionChatRequestPayload {
   question: string
   selection?: HermesSelectionPayload | null
   debug?: boolean
+  slashCommand?: string | null
 }
 
 /**
@@ -322,4 +323,32 @@ export interface HermesMemoryConsolidationStatus {
   createdAt: string | null
   updatedAt: string | null
   completedAt: string | null
+}
+
+/**
+ * Hermes 个人文件库条目。
+ */
+export interface HermesFileLibraryItem {
+  id: number
+  assetId: number
+  fileName: string
+  title: string
+  description: string
+  sourceFormat: string
+  fileSize: number
+  enabled: boolean
+  indexStatus: 'PENDING' | 'INDEXED' | 'FAILED' | string
+  warnings: string[]
+  lastError: string
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+/**
+ * 更新 Hermes 个人文件库条目时使用的请求体。
+ */
+export interface UpdateHermesFileLibraryItemPayload {
+  title?: string
+  description?: string
+  enabled?: boolean
 }

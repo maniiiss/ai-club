@@ -20,6 +20,11 @@ import { EmptyState } from '@/src/components/common/EmptyState'
 import { cn, formatDate, getInitials } from '@/src/lib/utils'
 import { useGuide } from '@/src/components/guide'
 import { useAuthStore } from '@/src/stores/auth'
+import { QuickMergeWidget } from './widgets/QuickMergeWidget'
+import { QuickBuildWidget } from './widgets/QuickBuildWidget'
+import { OnlineAgentWidget } from './widgets/OnlineAgentWidget'
+import { ShortcutEntriesWidget } from './widgets/ShortcutEntriesWidget'
+import { QuickTaskWidget } from './widgets/QuickTaskWidget'
 
 export const DashboardPage = () => {
   const [overview, setOverview] = useState<DashboardOverview | null>(null)
@@ -55,6 +60,10 @@ export const DashboardPage = () => {
   const stats = overview?.stats
   const activeProjects = overview?.activeProjects || []
   const recentTasks = overview?.recentTasks || []
+  const onlineAgents = overview?.onlineAgents || []
+  const shortcutOverview = overview?.shortcutOverview ?? null
+  const gitlabUsername = overview?.currentUserGitlabUsername ?? null
+  const mergeAlerts = overview?.mergeAlerts || []
 
   return (
     <div className="h-full overflow-y-auto animate-fadeIn">
@@ -99,6 +108,12 @@ export const DashboardPage = () => {
             </div>
           )}
 
+          {/* 快捷操作区：GitLab 发起 MR + 快速构建 */}
+          <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2" data-guide-id="dashboard-quick-actions">
+            <QuickMergeWidget gitlabUsername={gitlabUsername} mergeAlerts={mergeAlerts} />
+            <QuickBuildWidget />
+          </div>
+
           {/* 我的任务统计 */}
           {stats && (stats.myTaskCount || stats.myInProgressTaskCount || stats.myPendingTaskCount) && (
             <div className="mb-8 rounded-xl border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary-light)] to-white p-6 shadow-[var(--shadow-card)]" data-guide-id="dashboard-my-tasks">
@@ -127,6 +142,13 @@ export const DashboardPage = () => {
               </div>
             </div>
           )}
+
+          {/* 在线智能体 / 系统入口 / 便签 三栏 */}
+          <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" data-guide-id="dashboard-side-cards">
+            <OnlineAgentWidget agents={onlineAgents} />
+            <ShortcutEntriesWidget overview={shortcutOverview} />
+            <QuickTaskWidget />
+          </div>
 
           {/* 活跃项目 */}
           <Card

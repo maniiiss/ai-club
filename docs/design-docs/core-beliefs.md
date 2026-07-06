@@ -155,7 +155,7 @@
 
 **必须做到**：
 - 核心流程移动端可用
-- 遵循移动端设计规范（见 [移动端设计文档](../mobile-console-technical-design-v1.md)）
+- 遵循移动端设计规范（见 [移动端设计文档](mobile-console-technical-design-v1.md)）
 - 响应式布局适配主流屏幕
 
 ---

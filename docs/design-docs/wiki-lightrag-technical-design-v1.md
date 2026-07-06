@@ -517,4 +517,6 @@ PoC 结果补到本文档附录或 `docs/wiki-lightrag-poc-result.md`。
 
 版本：v1
 日期：2026-06-22
-关联：`docs/wiki-knowledge-graph-technical-design-v1.md`（被本设计取代）、`docs/architecture.md`（需同步更新知识图谱段落）
+关联：`wiki-knowledge-graph-technical-design-v1.md`（被本设计取代）、`../architecture.md`（需同步更新知识图谱段落）
+
+

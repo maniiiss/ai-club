@@ -4,7 +4,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 仓库扫描 Skill。
- * 面向 GitLab 绑定、规则集选择和仓库规范扫描发起场景。
+ * 只有用户通过 Slash 菜单显式选择 /仓库扫描 时启用。
  */
 @Component
 public class RepoScanHermesPromptSkill extends AbstractHermesPromptSkill {
@@ -30,8 +30,6 @@ public class RepoScanHermesPromptSkill extends AbstractHermesPromptSkill {
         if (context == null) {
             return false;
         }
-        return context.hasReferenceType("GITLAB_BINDING")
-                || context.hasGroundingEntityType("GITLAB_BINDING")
-                || containsAny(context.question(), "仓库", "repo", "扫描", "规则集", "规范检查", "代码扫描", "仓库规范");
+        return context.hasSlashCommand("/仓库扫描");
     }
 }

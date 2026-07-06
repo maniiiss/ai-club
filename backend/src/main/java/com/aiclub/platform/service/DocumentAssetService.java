@@ -33,6 +33,12 @@ public class DocumentAssetService {
     /** 业务类型：Hermes 会话附件。 */
     public static final String BIZ_TYPE_HERMES_ATTACHMENT = "HERMES_ATTACHMENT";
 
+    /** 业务类型：工作项附件。 */
+    public static final String BIZ_TYPE_TASK_ATTACHMENT = "TASK_ATTACHMENT";
+
+    /** 业务类型：Hermes 个人文件库。 */
+    public static final String BIZ_TYPE_HERMES_FILE_LIBRARY = "HERMES_FILE_LIBRARY";
+
     private final AuthService authService;
     private final UserRepository userRepository;
     private final DocumentAssetRepository documentAssetRepository;

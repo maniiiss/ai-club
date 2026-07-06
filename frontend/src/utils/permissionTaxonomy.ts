@@ -26,6 +26,7 @@ export const PLATFORM_MANAGEMENT_PERMISSION_CODES = [
   'system:shortcut:view',
   'model:view',
   'system:tool:view',
+  'data-workbench:view',
   'scan:ruleset:view',
   'system:pr-review:view',
   'system:agent-usage:view'
@@ -54,6 +55,11 @@ const PLATFORM_PERMISSION_SET = new Set<string>([
   'dashboard:shortcut:upload',
   'model:manage',
   'system:tool:manage',
+  'data-workbench:request',
+  'data-workbench:approve',
+  'data-workbench:execute',
+  'data-workbench:rollback',
+  'data-workbench:config',
   'scan:ruleset:manage'
 ])
 

@@ -341,3 +341,36 @@ export interface AgentOptionItem {
   builtinCode: string | null
   description: string
 }
+
+/** 当前登录用户在默认 GitLab 实例上的 OAuth 绑定状态（用于 MR 卡片判断发起身份）。 */
+export interface GitlabUserOauthBindingItem {
+  connected: boolean
+  apiBaseUrl: string
+  gitlabUserId: number | null
+  gitlabUsername: string | null
+  gitlabName: string | null
+  expiresAt: string | null
+}
+
+/** 工作台快速发起 MR 的请求体。 */
+export interface GitlabCreateMergeRequestPayload {
+  sourceBranch: string
+  targetBranch: string
+  title: string
+  description?: string
+}
+
+/** 工作台快速发起 MR 的创建结果。 */
+export interface GitlabCreateMergeRequestResultItem {
+  projectName: string
+  projectRef: string
+  iid: number
+  title: string
+  sourceBranch: string
+  targetBranch: string
+  state: string
+  webUrl: string | null
+  createdAt: string
+  actorName: string | null
+  actorUsername: string | null
+}

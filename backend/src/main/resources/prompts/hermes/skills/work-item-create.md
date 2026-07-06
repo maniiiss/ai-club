@@ -4,6 +4,7 @@
 核心规则：
 - 当用户要求“创建需求/任务/缺陷”时，默认先尝试通过平台 MCP 工具完成，而不是先反问用户是否有配置。
 - 对创建工作项类请求，若项目未绑定，先调用 `mcp_git_ai_club_project_search` 搜索项目。
+- 对创建需求类请求，若用户没有明确“不放入迭代”，优先确认目标迭代：当前页面已有 iterationId 时直接使用；否则调用 `mcp_git_ai_club_project_list_iterations`，让用户选择迭代后再继续创建。
 - 若负责人未绑定，再调用 `mcp_git_ai_club_user_resolve_project_member` 解析负责人。
 - 信息足够后调用 `mcp_git_ai_club_work_item_create_draft` 生成草稿。
 - 如果工具结果提示“需要确认动作”或“需要选择候选对象”，只需说明平台已生成相应卡片，等待用户确认或选择。

@@ -64,11 +64,13 @@ public class ChatRoomService {
     public static final String STATUS_ERROR = "ERROR";
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    private static final Pattern HERMES_MENTION_PATTERN = Pattern.compile("(^|\\s)@hermes\\b", Pattern.CASE_INSENSITIVE);
+    // 只允许 @hermes 独立成一个 token（后接空白/字符串结尾），避免把 @hermes-dev、@hermes队长 这类用户名误判为助手提及
+    private static final Pattern HERMES_MENTION_PATTERN = Pattern.compile("(^|\\s)@hermes(?=\\s|$)", Pattern.CASE_INSENSITIVE);
     private static final int MAX_PREVIEW_LENGTH = 500;
     private static final String PAYLOAD_HERMES_ACTIONS = "hermesActions";
     private static final String PAYLOAD_ACTION_STATUSES = "actionStatuses";
     private static final String PAYLOAD_HERMES_SELECTION_CARDS = "hermesSelectionCards";
+    private static final String PAYLOAD_SELECTION_STATUSES = "selectionStatuses";
 
     private final AuthService authService;
     private final UserRepository userRepository;
@@ -324,6 +326,7 @@ public class ChatRoomService {
                 readPayloadList(agentPayload, PAYLOAD_HERMES_ACTIONS, new TypeReference<List<HermesActionSummary>>() {}),
                 readActionStatuses(agentPayload),
                 readPayloadList(agentPayload, PAYLOAD_HERMES_SELECTION_CARDS, new TypeReference<List<HermesSelectionCard>>() {}),
+                readSelectionStatuses(agentPayload),
                 formatTime(message.getCreatedAt()),
                 formatTime(message.getUpdatedAt())
         );
@@ -356,11 +359,19 @@ public class ChatRoomService {
     }
 
     private Map<String, String> readActionStatuses(Map<String, Object> payload) {
-        if (payload == null || !payload.containsKey(PAYLOAD_ACTION_STATUSES)) {
+        return readStatusMap(payload, PAYLOAD_ACTION_STATUSES);
+    }
+
+    private Map<String, String> readSelectionStatuses(Map<String, Object> payload) {
+        return readStatusMap(payload, PAYLOAD_SELECTION_STATUSES);
+    }
+
+    private Map<String, String> readStatusMap(Map<String, Object> payload, String payloadKey) {
+        if (payload == null || !payload.containsKey(payloadKey)) {
             return Map.of();
         }
         try {
-            Map<String, String> statuses = objectMapper.convertValue(payload.get(PAYLOAD_ACTION_STATUSES), new TypeReference<Map<String, String>>() {});
+            Map<String, String> statuses = objectMapper.convertValue(payload.get(payloadKey), new TypeReference<Map<String, String>>() {});
             return statuses == null ? Map.of() : statuses;
         } catch (IllegalArgumentException exception) {
             return Map.of();

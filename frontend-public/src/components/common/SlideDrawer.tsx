@@ -21,7 +21,9 @@ interface SlideDrawerProps {
   children: ReactNode
   /** 底部操作栏 */
   footer?: ReactNode
-  /** 最大宽度，默认 720px */
+  /** 抽屉宽度，支持 clamp/min/vw 等响应式 CSS 表达式，默认 100%。 */
+  width?: string
+  /** 最大宽度，默认 720px。传入 width 时仍作为安全上限。 */
   maxWidth?: string
   /** 是否禁用点击外部关闭，默认 false */
   disableCloseOnOutsideClick?: boolean
@@ -36,6 +38,7 @@ export const SlideDrawer = ({
   description,
   children,
   footer,
+  width = '100%',
   maxWidth = '720px',
   disableCloseOnOutsideClick = false,
   headerActions,
@@ -78,14 +81,14 @@ export const SlideDrawer = ({
     >
       <div
         className={`absolute inset-y-0 right-0 flex flex-col w-full bg-white shadow-[var(--shadow-xl)] ${isClosing ? 'animate-slideRight' : 'animate-slideLeft'} overflow-hidden`}
-        style={{ maxWidth }}
+        style={{ width, maxWidth }}
       >
         {/* 头部 */}
         {(title || description) && (
-          <div className="flex flex-shrink-0 items-center justify-between border-b border-[var(--color-border-light)] px-6 py-4">
-            <div>
+          <div className="flex flex-shrink-0 items-start justify-between gap-4 border-b border-[var(--color-border-light)] px-6 py-4">
+            <div className="min-w-0 flex-1">
               {title && (
-                <h2 className="text-[16px] font-semibold text-[var(--color-text-primary)]">
+                <h2 className="text-[16px] font-semibold leading-snug text-[var(--color-text-primary)]">
                   {title}
                 </h2>
               )}
@@ -95,7 +98,7 @@ export const SlideDrawer = ({
                 </p>
               )}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1">
               {headerActions}
               <button
                 type="button"

@@ -337,6 +337,106 @@ class HermesToolOrchestratorTests {
     }
 
     /**
+     * 创建需求时如果用户没有指定迭代，即使模型误调用工作项搜索，也必须先让用户确认迭代。
+     */
+    @Test
+    void shouldRedirectCreateRequirementWorkItemSearchToIterationSelection() {
+        HermesToolOrchestrator orchestrator = new HermesToolOrchestrator(
+                platformToolExecutor,
+                platformToolRegistry,
+                hermesActionPlannerService,
+                new ObjectMapper()
+        );
+
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "chat-room",
+                12L,
+                null,
+                "项目经理",
+                List.of(new HermesReferenceSummary("PROJECT", 12L, "CRM项目", "/projects/12/iterations")),
+                List.of(),
+                "聊天室项目上下文"
+        );
+        HermesChatRequest request = new HermesChatRequest(
+                "帮忙加一个需求",
+                "chat-room",
+                12L,
+                null,
+                null,
+                null,
+                "conversation-create-requirement",
+                null,
+                null
+        );
+        PlatformToolDefinition workItemSearch = new PlatformToolDefinition(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "搜索工作项",
+                "WORK_ITEM",
+                "按项目、迭代、标题、编号或说明搜索需求/任务/缺陷",
+                true,
+                "LOW",
+                "task:view",
+                false,
+                Map.of("keyword", "工作项关键词", "projectId", "项目ID", "iterationId", "迭代ID", "workItemType", "工作项类型")
+        );
+        PlatformToolResult iterationResult = new PlatformToolResult(
+                PlatformToolRegistry.TOOL_PROJECT_LIST_ITERATIONS,
+                "项目迭代列表",
+                "项目 “CRM项目” 有 2 个迭代",
+                List.of(
+                        new PlatformToolCandidate(
+                                "ITERATION",
+                                77L,
+                                "CRM 二期迭代",
+                                "状态：进行中 / 目标：需求补录",
+                                "/projects/12/iterations?iterationId=77",
+                                Map.of("projectId", 12L, "status", "进行中"),
+                                List.of()
+                        ),
+                        new PlatformToolCandidate(
+                                "ITERATION",
+                                78L,
+                                "CRM 三期迭代",
+                                "状态：待开始 / 目标：后续规划",
+                                "/projects/12/iterations?iterationId=78",
+                                Map.of("projectId", 12L, "status", "待开始"),
+                                List.of()
+                        )
+                ),
+                List.of(),
+                Map.of("projectId", 12L)
+        );
+
+        when(platformToolRegistry.isEnabled(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.isAllowAutoExecute(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.requireDefinition(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(workItemSearch);
+        when(platformToolExecutor.execute(argThat(toolRequest ->
+                PlatformToolRegistry.TOOL_PROJECT_LIST_ITERATIONS.equals(toolRequest.toolCode())
+                        && Objects.equals(toolRequest.payload().get("projectId"), 12L)
+        ))).thenReturn(iterationResult);
+
+        HermesToolExecutionOutcome outcome = orchestrator.executeToolCall(
+                new HermesToolCallRequest(
+                        "call-create-requirement-iteration",
+                        PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                        "work_item__search",
+                        Map.of("keyword", "需求", "projectId", 12L)
+                ),
+                "scope-create-requirement",
+                context,
+                request,
+                HermesGroundingState.empty()
+        );
+
+        assertThat(outcome.stopLoop()).isTrue();
+        assertThat(outcome.stopReason()).isEqualTo("awaiting_selection");
+        assertThat(outcome.selectionCards()).hasSize(1);
+        assertThat(outcome.selectionCards().get(0).title()).contains("迭代");
+        assertThat(outcome.selectionCards().get(0).options()).extracting(option -> option.entityType())
+                .containsOnly("ITERATION");
+    }
+
+    /**
      * 当前迭代下的工作项集合查询用于汇总发版内容时，不应被误判成“必须先选一个工作项”。
      */
     @Test

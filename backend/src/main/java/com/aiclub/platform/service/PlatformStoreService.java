@@ -13,6 +13,8 @@ import com.aiclub.platform.dto.AgentSummary;
 import com.aiclub.platform.dto.DashboardCardOverview;
 import com.aiclub.platform.dto.DashboardOverview;
 import com.aiclub.platform.dto.DashboardStats;
+import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
+import com.aiclub.platform.dto.GitlabUserOauthBindingSummary;
 import com.aiclub.platform.dto.IterationBoardSummary;
 import com.aiclub.platform.dto.IterationSummary;
 import com.aiclub.platform.dto.PageResponse;
@@ -86,6 +88,7 @@ public class PlatformStoreService {
     private static final String WORK_ITEM_CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final int WORK_ITEM_CODE_RANDOM_LENGTH = 6;
     private static final String DEFAULT_REQUIREMENT_MODULE_NAME = "未分类";
+    private static final Set<String> TASK_TYPE_OPTIONS = Set.of("需求设计", "UI设计", "技术设计", "开发任务", "测试任务", "运维任务");
 
     private final ProjectRepository projectRepository;
     private final ProjectGitlabBindingRepository projectGitlabBindingRepository;
@@ -104,6 +107,8 @@ public class PlatformStoreService {
     private final RequirementModuleOptionService requirementModuleOptionService;
     private final TaskPrdService taskPrdService;
     private final DashboardShortcutEntryService dashboardShortcutEntryService;
+    private final GitlabUserOauthService gitlabUserOauthService;
+    private final GitlabManagementService gitlabManagementService;
     private final SecureRandom workItemCodeRandom = new SecureRandom();
 
     public PlatformStoreService(ProjectRepository projectRepository,
@@ -122,7 +127,9 @@ public class PlatformStoreService {
                                 ProjectDataPermissionService projectDataPermissionService,
                                 RequirementModuleOptionService requirementModuleOptionService,
                                 TaskPrdService taskPrdService,
-                                DashboardShortcutEntryService dashboardShortcutEntryService) {
+                                DashboardShortcutEntryService dashboardShortcutEntryService,
+                                GitlabUserOauthService gitlabUserOauthService,
+                                GitlabManagementService gitlabManagementService) {
         this.projectRepository = projectRepository;
         this.projectGitlabBindingRepository = projectGitlabBindingRepository;
         this.agentRepository = agentRepository;
@@ -140,12 +147,27 @@ public class PlatformStoreService {
         this.requirementModuleOptionService = requirementModuleOptionService;
         this.taskPrdService = taskPrdService;
         this.dashboardShortcutEntryService = dashboardShortcutEntryService;
+        this.gitlabUserOauthService = gitlabUserOauthService;
+        this.gitlabManagementService = gitlabManagementService;
     }
 
     public DashboardOverview getDashboardOverview() {
         List<ProjectSummary> projectList = listAllProjects();
         List<AgentSummary> agentList = listAllAgents();
         List<TaskSummary> taskList = listAllTasks();
+
+        // 当前用户的 GitLab 身份：已 OAuth 绑定取绑定用户名，否则回退用户快照，均可能为 null
+        GitlabUserOauthBindingSummary oauthSummary = gitlabUserOauthService.getCurrentUserBindingSummary();
+        String currentGitlabUsername = oauthSummary.gitlabUsername();
+
+        // 当前用户作为 MR 作者的最近合并日志：未绑定 GitLab 时返回空列表，自带项目数据权限过滤
+        List<GitlabAutoMergeLogSummary> myMergeLogs =
+                gitlabManagementService.listLogsByMergeRequestAuthorUsername(currentGitlabUsername, 50);
+        // 合并告警：自动合并失败或 AI 审核拒绝的记录
+        List<GitlabAutoMergeLogSummary> mergeAlerts = myMergeLogs.stream()
+                .filter(log -> "FAILED".equalsIgnoreCase(log.result())
+                        || "AI_REJECTED".equalsIgnoreCase(log.result()))
+                .toList();
 
         DashboardStats stats = new DashboardStats(
                 projectList.size(),
@@ -156,7 +178,7 @@ public class PlatformStoreService {
                 0,
                 0,
                 0,
-                0
+                mergeAlerts.size()
         );
 
         return new DashboardOverview(
@@ -165,10 +187,10 @@ public class PlatformStoreService {
                 agentList,
                 taskList.stream().limit(8).toList(),
                 dashboardShortcutEntryService.getCurrentUserShortcutOverview(),
-                null,
+                currentGitlabUsername,
+                myMergeLogs,
                 List.of(),
-                List.of(),
-                List.of(),
+                mergeAlerts,
                 null,
                 null
         );
@@ -699,6 +721,7 @@ public class PlatformStoreService {
         RequirementDocumentPayload requirementDocument = buildRequirementDocument(workItemType, request, true);
         TaskPlanDateRange taskPlanDateRange = resolveTaskPlanDateRange(request.planStartDate(), request.planEndDate());
         String moduleName = normalizeModuleName(workItemType, request.moduleName());
+        String taskType = normalizeTaskType(workItemType, request.taskType());
         UserEntity creatorUser = requireCurrentUser();
         validateAgentProject(project.getId(), agent);
         validateRequirementRelation(workItemType, requirementTask);
@@ -727,6 +750,7 @@ public class PlatformStoreService {
         entity.setDevPassed(false);
         entity.setTestPassed(false);
         entity.setWorkHours(normalizeWorkHours(workItemType, request.workHours()));
+        entity.setTaskType(taskType);
         entity.setPlanStartDate(taskPlanDateRange.planStartDate());
         entity.setPlanEndDate(taskPlanDateRange.planEndDate());
         syncOverdueNotificationState(entity);
@@ -783,6 +807,7 @@ public class PlatformStoreService {
         RequirementDocumentPayload requirementDocument = buildRequirementDocument(workItemType, request, false);
         TaskPlanDateRange taskPlanDateRange = resolveTaskPlanDateRange(request.planStartDate(), request.planEndDate());
         String moduleName = normalizeModuleName(workItemType, request.moduleName());
+        String taskType = normalizeTaskType(workItemType, request.taskType());
         validateAgentProject(project.getId(), agent);
         validateRequirementRelation(workItemType, requirementTask);
         validateWorkItemStatus(workItemType, status);
@@ -808,6 +833,7 @@ public class PlatformStoreService {
             entity.setTestPassed(false);
         }
         entity.setWorkHours(normalizeWorkHours(workItemType, request.workHours()));
+        entity.setTaskType(taskType);
         entity.setPlanStartDate(taskPlanDateRange.planStartDate());
         entity.setPlanEndDate(taskPlanDateRange.planEndDate());
         syncOverdueNotificationState(entity);
@@ -1424,6 +1450,29 @@ public class PlatformStoreService {
     }
 
     /**
+     * 标准化任务细分类型。只有任务工作项保留该字段，避免需求和缺陷污染任务分类统计。
+     */
+    private String normalizeTaskType(String workItemType, String taskType) {
+        if (!"任务".equals(workItemType)) {
+            return null;
+        }
+        String value = defaultString(taskType).trim();
+        if (value.isBlank()) {
+            return "开发任务";
+        }
+        value = switch (value) {
+            case "开发" -> "开发任务";
+            case "测试" -> "测试任务";
+            case "部署", "运维", "部署任务" -> "运维任务";
+            default -> value;
+        };
+        if (!TASK_TYPE_OPTIONS.contains(value)) {
+            throw new IllegalArgumentException("任务类型仅支持：需求设计、UI设计、技术设计、开发任务、测试任务、运维任务");
+        }
+        return value;
+    }
+
+    /**
      * 统一解析工作项计划时间，并在开始和结束同时存在时校验时间先后关系。
      */
     private TaskPlanDateRange resolveTaskPlanDateRange(String planStartDate, String planEndDate) {
@@ -1597,6 +1646,7 @@ public class PlatformStoreService {
                 requirementTask == null ? null : requirementTask.isDevPassed(),
                 requirementTask == null ? null : requirementTask.isTestPassed(),
                 entity.getWorkHours(),
+                "任务".equals(normalizeWorkItemType(entity.getWorkItemType())) ? entity.getTaskType() : null,
                 entity.getProject().getId(),
                 entity.getProject().getName(),
                 entity.getAgent() == null ? null : entity.getAgent().getId(),

@@ -74,7 +74,18 @@ const emit = defineEmits<{
 const dialogVisible = defineModel<boolean>({ default: false })
 const activeTab = ref<'requirement-ai' | 'execution'>('execution')
 
-const showRequirementAiTab = computed(() => props.workItem?.workItemType === '需求')
+const normalizeTaskType = (taskType?: string | null) => {
+  const value = String(taskType || '').trim()
+  if (value === '测试' || value === '测试任务') {
+    return '测试任务'
+  }
+  return value
+}
+
+const showRequirementAiTab = computed(() =>
+  props.workItem?.workItemType === '需求'
+  || (props.workItem?.workItemType === '任务' && normalizeTaskType(props.workItem?.taskType) === '测试任务')
+)
 const showExecutionTab = computed(() => props.canExecute)
 
 const resetActiveTab = () => {

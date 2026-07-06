@@ -93,6 +93,18 @@
             <artifactId>minio</artifactId>
             <version>8.5.12</version>
         </dependency>
+        <!-- 数据工作台实体解析：JSqlParser 用于识别 CREATE TABLE DDL。 -->
+        <dependency>
+            <groupId>com.github.jsqlparser</groupId>
+            <artifactId>jsqlparser</artifactId>
+            <version>4.9</version>
+        </dependency>
+        <!-- 数据工作台实体解析：JavaParser 用于识别 Java 实体类注解（JPA / MyBatis-Plus / Lombok）。 -->
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>3.26.2</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

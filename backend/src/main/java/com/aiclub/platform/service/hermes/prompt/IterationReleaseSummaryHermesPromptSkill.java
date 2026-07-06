@@ -4,7 +4,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 迭代发版总结 Skill。
- * 当用户在迭代详情中询问发版内容、缺陷修复数量、需求交付清单等汇总问题时启用。
+ * 作为执行任务类业务回答的一部分，只有用户显式选择 /执行任务 时启用。
  */
 @Component
 public class IterationReleaseSummaryHermesPromptSkill extends AbstractHermesPromptSkill {
@@ -30,13 +30,6 @@ public class IterationReleaseSummaryHermesPromptSkill extends AbstractHermesProm
         if (context == null) {
             return false;
         }
-        String question = context.question();
-        boolean inIterationScene = "project-iterations".equals(context.sceneCode())
-                || context.hasReferenceType("ITERATION")
-                || context.hasGroundingEntityType("ITERATION");
-        boolean hasIterationTopic = containsAny(question, "迭代", "发版", "发布", "上线", "版本内容");
-        boolean hasSummaryIntent = containsAny(question, "总结", "汇总", "概览", "修复", "开发了哪些", "发了哪些", "内容");
-        boolean hasWorkItemAggregateIntent = containsAny(question, "需求", "缺陷", "任务", "工作项");
-        return inIterationScene && hasIterationTopic && (hasSummaryIntent || hasWorkItemAggregateIntent);
+        return context.hasSlashCommand("/执行任务");
     }
 }

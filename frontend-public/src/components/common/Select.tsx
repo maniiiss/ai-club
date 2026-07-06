@@ -28,6 +28,8 @@ interface SelectProps {
   onChange: (value: string) => void
   /** 选项列表。 */
   options: SelectOption[]
+  /** 是否在下拉内启用本地搜索。 */
+  searchable?: boolean
   /** 占位文本。 */
   placeholder?: string
   /** 是否禁用。 */
@@ -55,6 +57,7 @@ export const Select = ({
   value,
   onChange,
   options,
+  searchable = false,
   placeholder = '请选择',
   disabled = false,
   error,
@@ -62,12 +65,20 @@ export const Select = ({
   className,
 }: SelectProps) => {
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const [menuStyle, setMenuStyle] = useState<FloatingDropdownStyle | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const selected = options.find((o) => o.value === value)
+  const filteredOptions = searchable && query.trim()
+    ? options.filter((option) => {
+      const keyword = query.trim().toLowerCase()
+      return option.label.toLowerCase().includes(keyword)
+        || option.description?.toLowerCase().includes(keyword)
+    })
+    : options
 
   // 点击外部关闭
   useEffect(() => {
@@ -113,6 +124,10 @@ export const Select = ({
     }
   }, [open, options.length])
 
+  useEffect(() => {
+    if (!open) setQuery('')
+  }, [open])
+
   const dropdown = open && menuStyle ? createPortal(
     <div
       ref={menuRef}
@@ -124,7 +139,18 @@ export const Select = ({
         maxHeight: menuStyle.maxHeight,
       }}
     >
-      {options.map((option) => {
+      {searchable && (
+        <div className="sticky top-0 z-10 bg-white px-2 pb-1.5">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            autoFocus
+            placeholder="搜索..."
+            className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[13px] outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+          />
+        </div>
+      )}
+      {filteredOptions.map((option) => {
         const isSelected = option.value === value
         return (
           <button
@@ -148,7 +174,9 @@ export const Select = ({
               <p className={cn(
                 'text-[13px] truncate',
                 isSelected ? 'font-medium' : 'font-normal',
-              )}>
+              )}
+              title={option.label}
+              >
                 {option.label}
               </p>
               {option.description && (
@@ -163,6 +191,11 @@ export const Select = ({
           </button>
         )
       })}
+      {filteredOptions.length === 0 && (
+        <div className="px-3 py-5 text-center text-[13px] text-[var(--color-text-tertiary)]">
+          暂无匹配选项
+        </div>
+      )}
     </div>,
     document.body,
   ) : null
@@ -198,7 +231,9 @@ export const Select = ({
           <span className={cn(
             'flex items-center gap-2 truncate',
             selected ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-placeholder)]',
-          )}>
+          )}
+          title={selected?.label || placeholder}
+          >
             {selected?.icon}
             {selected?.label || placeholder}
           </span>

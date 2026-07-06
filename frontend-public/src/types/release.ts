@@ -122,3 +122,27 @@ export interface ObservabilityHealthTimelinePointItem {
   healthScore: number | null
   healthLevel: string | null
 }
+
+/** 触发 AI Club 流水线的结果。 */
+export interface AiClubPipelineTriggerResult {
+  pipelineId: number
+  projectName: string
+  pipelineName: string
+  providerCode: string
+  runNumber: number | null
+  status: string
+  triggerUrl: string | null
+  message: string
+  triggeredAt: string
+}
+
+/** 触发 Jenkins 构建的结果。 */
+export interface JenkinsBuildTriggerResult {
+  bindingId: number
+  projectName: string
+  jenkinsServerName: string
+  jobName: string
+  triggerUrl: string | null
+  message: string
+  triggeredAt: string
+}

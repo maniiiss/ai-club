@@ -38,6 +38,23 @@ public record HermesSkillContext(
     }
 
     /**
+     * 返回前端 Slash 命令菜单提交的结构化命令。
+     */
+    public String slashCommand() {
+        return request == null || request.slashCommand() == null ? "" : request.slashCommand().trim();
+    }
+
+    /**
+     * 判断当前请求是否显式选择了指定 Slash 命令。
+     */
+    public boolean hasSlashCommand(String command) {
+        if (command == null || command.isBlank()) {
+            return false;
+        }
+        return command.trim().equalsIgnoreCase(slashCommand());
+    }
+
+    /**
      * 返回上下文引用对象，供 Skill 从业务对象类型判断是否命中。
      */
     public List<HermesReferenceSummary> references() {

@@ -72,7 +72,8 @@ public record HermesConversationRequestSnapshot(
                 wikiPageId,
                 clientConversationId,
                 null,
-                Boolean.FALSE
+                Boolean.FALSE,
+                null
         );
     }
 }

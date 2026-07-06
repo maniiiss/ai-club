@@ -1,7 +1,7 @@
 # 原生 API 工作台设计确认记录
 
 - 日期：2026-06-24
-- 状态：已确认，正式设计已落到 `docs/api-studio-native-technical-design-v1.md`
+- 状态：已确认，正式设计已落到 `docs/design-docs/api-studio-native-technical-design-v1.md`
 - 取代：`docs/superpowers/specs/2026-06-23-api-studio-redesign-design.md`
 
 ## 设计结论
@@ -29,6 +29,7 @@
 
 完整技术设计见：
 
-- `docs/api-studio-native-technical-design-v1.md`
+- `docs/design-docs/api-studio-native-technical-design-v1.md`
 
 后续实施计划应以正式技术设计为准，并在进入编码前拆分阶段计划。
+

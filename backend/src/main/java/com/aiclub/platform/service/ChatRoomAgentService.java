@@ -15,6 +15,7 @@ import com.aiclub.platform.dto.ChatRoomAgentToolPolicySummary;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.HermesActionSummary;
 import com.aiclub.platform.dto.HermesChatRoomAgentTaskResult;
+import com.aiclub.platform.dto.HermesGroundingState;
 import com.aiclub.platform.dto.HermesSelectionCard;
 import com.aiclub.platform.dto.HermesToolExecutionPolicy;
 import com.aiclub.platform.dto.PlatformToolDefinition;
@@ -49,6 +50,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * 聊天室房间级 Agent 服务。
@@ -84,6 +86,11 @@ public class ChatRoomAgentService {
     private static final String PAYLOAD_ACTION_STATUSES = "actionStatuses";
     private static final String PAYLOAD_HERMES_SELECTION_CARDS = "hermesSelectionCards";
     private static final String PAYLOAD_SELECTION_STATUSES = "selectionStatuses";
+    // @mention 段：任何 @ 后到下一个空白之前的连续非空白串都视为 mention。
+    // 用于关键字匹配前剥除 @用户名，避免用户名字面串误命中关键字。
+    // 说明：前端 composer 会把 `@name ` 直接插到光标位置，@ 前不一定有空白（如 "你好@bug-master"），
+    // 因此这里不再限制 @ 前必须是空白/行首，宁可多剥（如邮箱里的 @），也不能让用户名字面串触发关键字。
+    private static final Pattern MENTION_TOKEN_PATTERN = Pattern.compile("@\\S+");
 
     private final AuthService authService;
     private final ChatRoomService chatRoomService;
@@ -341,11 +348,11 @@ public class ChatRoomAgentService {
                 "selectionKey", selectionKey,
                 "selection", selectionPayload(request)
         ));
-        chatWebSocketPushService.broadcastAgentActionExecuted(
+        chatWebSocketPushService.broadcastAgentSelectionResolved(
                 roomId,
                 taskId,
                 sourceTask.getAssistantMessage() == null ? null : sourceTask.getAssistantMessage().getId(),
-                null,
+                selectionKey,
                 "selected"
         );
 
@@ -362,10 +369,14 @@ public class ChatRoomAgentService {
         nextTask.setStatus(TASK_PENDING);
         nextTask.setSource("selection-card");
         nextTask.setSourceRef("selection:task:" + taskId + ":" + selectionKey);
-        nextTask.setPayloadJson(writePayload(Map.of(
-                "sourceTaskId", taskId,
-                "selection", selectionPayload(request)
-        )));
+        Map<String, Object> nextPayload = new LinkedHashMap<>();
+        nextPayload.put("sourceTaskId", taskId);
+        nextPayload.put("selection", selectionPayload(request));
+        List<HermesSelectionCard> sourceSelectionCards = readPayloadList(sourcePayload, PAYLOAD_HERMES_SELECTION_CARDS, new TypeReference<List<HermesSelectionCard>>() {});
+        if (!sourceSelectionCards.isEmpty()) {
+            nextPayload.put(PAYLOAD_HERMES_SELECTION_CARDS, sourceSelectionCards);
+        }
+        nextTask.setPayloadJson(writePayload(nextPayload));
         ChatRoomAgentTaskEntity savedTask = taskRepository.save(nextTask);
         savedAssistant.setAgentTask(savedTask);
         if (chatMessageRepository != null) {
@@ -436,12 +447,16 @@ public class ChatRoomAgentService {
                     toolExecutionPolicy
             );
         } else {
+            HermesGroundingState groundingState = TRIGGER_SELECTION.equals(task.getTriggerType())
+                    ? buildSelectionGroundingState(task)
+                    : HermesGroundingState.empty();
             hermesResult = chatHermesService.startAgentTaskReply(
                     task.getRoom().getId(),
                     task.getAssistantMessage().getId(),
                     buildTaskInstruction(task),
                     task.getAuthorizedByUser(),
-                    toolExecutionPolicy
+                    toolExecutionPolicy,
+                    groundingState
             );
         }
         task.setStatus(TASK_DONE);
@@ -551,6 +566,9 @@ public class ChatRoomAgentService {
             if (!"SUCCESS".equalsIgnoreCase(status)) {
                 continue;
             }
+            if (!isWriteToolExecution(execution)) {
+                continue;
+            }
             HermesActionSummary executedAction = toExecutedAction(execution);
             appendEvent(task, "ACTION_EXECUTED", "Hermes 已自动执行授权工具", execution);
             chatWebSocketPushService.broadcastAgentActionExecuted(
@@ -560,6 +578,23 @@ public class ChatRoomAgentService {
                     executedAction,
                     "executed"
             );
+        }
+    }
+
+    /**
+     * 只有写工具的自动执行才应回写为动作已执行；只读工具查询结果只是运行轨迹。
+     * 业务意图：避免“查迭代列表”这类只读成功事件把待确认的创建草稿卡片误标为已执行。
+     */
+    private boolean isWriteToolExecution(Map<String, Object> execution) {
+        String toolCode = defaultString(String.valueOf(execution == null ? "" : execution.getOrDefault("toolCode", "")));
+        if (toolCode.isBlank()) {
+            return false;
+        }
+        try {
+            PlatformToolDefinition definition = platformToolRegistry.requireDefinition(toolCode);
+            return definition != null && !definition.readOnly();
+        } catch (Exception exception) {
+            return false;
         }
     }
 
@@ -902,6 +937,18 @@ public class ChatRoomAgentService {
         return value == null ? "" : value.trim();
     }
 
+    /**
+     * 剥除消息文本里的 @mention 段（形如 " @foo"、"@张三"），返回用于关键字匹配的裸文本。
+     * 业务意图：关键字监听走的是子串匹配，遇到 `@bug-master` / `@紧急联系人` 这类用户名会误命中关键字，
+     * 这里在匹配前统一把 @mention 段替换成空格，避免误触发 Hermes 助手任务。
+     */
+    static String stripMentionsForKeyword(String content) {
+        if (content == null || content.isEmpty()) {
+            return "";
+        }
+        return MENTION_TOKEN_PATTERN.matcher(content).replaceAll(" ");
+    }
+
     private ChatRoomAgentTaskEntity maybeCreateKeywordTask(ChatRoomEntity room,
                                                            ChatRoomAgentConfigEntity config,
                                                            ChatMessageEntity message) {
@@ -912,7 +959,9 @@ public class ChatRoomAgentService {
         if (terms.isEmpty()) {
             return null;
         }
-        String content = defaultString(message.getContent()).toLowerCase(Locale.ROOT);
+        // 先剥除消息里的 @mention 段，再做关键字匹配，避免 @用户名 里的字面串误触发。
+        String content = stripMentionsForKeyword(defaultString(message.getContent()))
+                .toLowerCase(Locale.ROOT);
         String matched = terms.stream()
                 .filter(term -> !term.isBlank() && content.contains(term.toLowerCase(Locale.ROOT)))
                 .findFirst()
@@ -1078,6 +1127,27 @@ public class ChatRoomAgentService {
                 .distinct()
                 .toList();
         return normalized.isEmpty() ? List.of("SUCCESS", "FAILED", "CANCELED") : normalized;
+    }
+
+    private HermesGroundingState buildSelectionGroundingState(ChatRoomAgentTaskEntity task) {
+        if (task == null || chatHermesService == null) {
+            return HermesGroundingState.empty();
+        }
+        Map<String, Object> payload = readPayload(task.getPayloadJson());
+        HermesSelectionRequest selection = readSelectionRequest(payload.get("selection"));
+        List<HermesSelectionCard> selectionCards = readPayloadList(payload, PAYLOAD_HERMES_SELECTION_CARDS, new TypeReference<List<HermesSelectionCard>>() {});
+        return chatHermesService.buildGroundingStateFromSelection(selectionCards, selection);
+    }
+
+    private HermesSelectionRequest readSelectionRequest(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return objectMapper.convertValue(value, HermesSelectionRequest.class);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
     }
 
     private List<String> normalizeStringList(List<String> values) {

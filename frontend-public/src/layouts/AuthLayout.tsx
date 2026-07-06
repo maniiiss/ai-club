@@ -13,6 +13,7 @@ import {
   Rocket,
   Sparkles,
 } from 'lucide-react'
+import { BrandMark } from '@/src/components/common/BrandMark'
 
 const features = [
   { icon: FolderKanban, text: '项目空间协作' },
@@ -53,9 +54,7 @@ export const AuthLayout = () => {
         {/* Logo + 品牌名 */}
         <div className="relative z-10">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
-              <span className="text-sm font-bold text-white">AI</span>
-            </div>
+            <BrandMark className="h-10 w-10 rounded-xl shadow-[0_14px_32px_rgba(15,23,42,0.24)]" />
             <span className="text-xl font-bold text-white tracking-tight">AI Club</span>
           </div>
           <h2 className="mt-10 text-3xl font-bold text-white leading-tight">
@@ -88,9 +87,7 @@ export const AuthLayout = () => {
       <div className="flex flex-1 flex-col items-center justify-center bg-[var(--color-bg-page)] px-6 py-10 lg:px-12">
         {/* 移动端品牌标识 */}
         <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-primary)]">
-            <span className="text-xs font-bold text-white">AI</span>
-          </div>
+          <BrandMark className="h-9 w-9 rounded-lg shadow-[0_10px_24px_rgba(79,70,229,0.2)]" />
           <span className="text-lg font-bold text-[var(--color-text-primary)] tracking-tight">
             AI Club
           </span>

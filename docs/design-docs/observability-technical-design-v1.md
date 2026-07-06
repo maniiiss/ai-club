@@ -187,7 +187,7 @@ PLATFORM_OBSERVABILITY_INGEST_TOKEN=<随机强密钥>
 **前端新增**
 - 「可观测性中心」一级菜单：统一大盘 / 项目日志 / 项目健康 / 执行健康。
 - 项目详情页内嵌「日志」「健康」Tab。
-- 遵循 `docs/mobile-console-technical-design-v1.md` 的移动端布局与分页规则。
+- 遵循 `mobile-console-technical-design-v1.md` 的移动端布局与分页规则。
 
 ## 6. 方案取舍
 
@@ -226,7 +226,7 @@ PLATFORM_OBSERVABILITY_INGEST_TOKEN=<随机强密钥>
 
 > 本期交付物 = 本设计文档。以下为后续实现分阶段建议。
 
-- **阶段 0（本期）**：完成本设计文档，评审对齐四支柱边界与数据模型。交付：`docs/observability-technical-design-v1.md` + `docs/architecture.md` 引用。
+- **阶段 0（本期）**：完成本设计文档，评审对齐四支柱边界与数据模型。交付：`observability-technical-design-v1.md` + `../architecture.md` 引用。
 - **阶段 1：标准埋点底座**（依赖：无）。引入 Micrometer/Prometheus 出口、结构化 JSON 日志、新增依赖与 Actuator 配置。交付：可访问 `/actuator/prometheus`，平台日志结构化。
 - **阶段 2：入驻项目运行日志归集**（依赖：阶段 1 的日志模型约定）。Flyway V76+、采集调度、游标、配置、查询接口与前端日志页。这是最痛缺口，建议作为首个 MVP。
 - **阶段 3：入驻项目健康度**（依赖：阶段 2 的服务器/项目关联与调度模式）。健康探测、评分、快照、告警接入、前端健康页。
@@ -241,3 +241,5 @@ PLATFORM_OBSERVABILITY_INGEST_TOKEN=<随机强密钥>
 4. **健康探针来源**：项目健康探针目标（URL/端口）由谁配置——平台管理员、项目负责人，还是从部署配置自动推导？
 5. **权限粒度**：项目日志/健康的可见范围是项目成员可见，还是仅管理员？是否需要字段级脱敏。
 6. **MVP 优先级**：是否同意按「阶段 2 入驻项目日志归集」作为第一个落地 MVP。
+
+

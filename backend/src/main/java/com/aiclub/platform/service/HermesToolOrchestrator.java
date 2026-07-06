@@ -433,8 +433,68 @@ public class HermesToolOrchestrator {
             arguments.put("query", normalizedQuery);
         }
 
+        if (shouldRedirectRequirementCreationToIterationSelection(toolCode, request, groundingState, arguments)) {
+            LinkedHashMap<String, Object> iterationArguments = new LinkedHashMap<>();
+            iterationArguments.put("projectId", arguments.get("projectId"));
+            Long projectId = resolveLong(iterationArguments.get("projectId"));
+            return new ValidatedToolCall(
+                    PlatformToolRegistry.TOOL_PROJECT_LIST_ITERATIONS,
+                    "iteration",
+                    projectId,
+                    Map.copyOf(iterationArguments)
+            );
+        }
+
         Long projectId = resolveLong(arguments.get("projectId"));
         return new ValidatedToolCall(toolCode, normalizeSlot(toolCode), projectId, Map.copyOf(arguments));
+    }
+
+    /**
+     * 创建需求时迭代是落点，不是从既有工作项里选一个对象。
+     * 即使模型误调用 work_item.search，也在平台侧改查迭代候选，避免弹出工作项列表。
+     */
+    private boolean shouldRedirectRequirementCreationToIterationSelection(String toolCode,
+                                                                          HermesChatRequest request,
+                                                                          HermesGroundingState groundingState,
+                                                                          Map<String, Object> arguments) {
+        if (!PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH.equals(toolCode)) {
+            return false;
+        }
+        if (!isRequirementCreationIntent(request == null ? "" : request.question())) {
+            return false;
+        }
+        if (resolveLong(arguments == null ? null : arguments.get("iterationId")) != null) {
+            return false;
+        }
+        HermesGroundingTarget iterationTarget = groundingState == null ? null : groundingState.boundSlot("iteration");
+        return iterationTarget == null || iterationTarget.entityId() == null;
+    }
+
+    private boolean isRequirementCreationIntent(String question) {
+        String normalized = defaultString(question).toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        boolean createIntent = normalized.contains("创建")
+                || normalized.contains("新建")
+                || normalized.contains("新增")
+                || normalized.contains("加一个")
+                || normalized.contains("加个")
+                || normalized.contains("提一个")
+                || normalized.contains("提个")
+                || normalized.contains("建一个")
+                || normalized.contains("建个")
+                || normalized.contains("create")
+                || normalized.contains("add");
+        boolean requirementIntent = normalized.contains("需求")
+                || normalized.contains("requirement");
+        boolean queryIntent = isCollectionIntentQuestion(normalized)
+                || normalized.contains("查询")
+                || normalized.contains("搜索")
+                || normalized.contains("看看")
+                || normalized.contains("汇总")
+                || normalized.contains("总结");
+        return createIntent && requirementIntent && !queryIntent;
     }
 
     /**
@@ -544,11 +604,29 @@ public class HermesToolOrchestrator {
                 .toList();
         return new HermesSelectionCard(
                 slot,
-                "请确认你指的是哪个对象",
+                "请确认你指的是哪个" + selectionEntityLabel(result),
                 "当前有多个候选命中，Hermes 需要你先选定一个对象再继续。",
                 question,
                 options
         );
+    }
+
+    private String selectionEntityLabel(PlatformToolResult result) {
+        String entityType = result == null || result.candidates() == null || result.candidates().isEmpty()
+                ? ""
+                : defaultString(result.candidates().get(0).type()).toUpperCase(Locale.ROOT);
+        return switch (entityType) {
+            case "ITERATION" -> "迭代";
+            case "PROJECT" -> "项目";
+            case "WORK_ITEM" -> "工作项";
+            case "USER" -> "成员";
+            case "TEST_PLAN" -> "测试计划";
+            case "GITLAB_BINDING" -> "仓库绑定";
+            case "EXECUTION_TASK" -> "执行任务";
+            case "WIKI_PAGE" -> "Wiki 页面";
+            case "WIKI_SPACE" -> "Wiki 空间";
+            default -> "对象";
+        };
     }
 
     /**

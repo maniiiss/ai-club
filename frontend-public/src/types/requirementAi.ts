@@ -7,7 +7,10 @@
 /** AI 生成的子任务拆解建议。 */
 export interface TaskSuggestionItem {
   name: string
-  category: string
+  /** 任务细分类型，创建拆解子任务时写入 taskType。 */
+  taskType: string
+  /** 兼容旧版后端/缓存返回的 category，前端统一归一化为 taskType。 */
+  category?: string
   priority: string
   description: string
 }

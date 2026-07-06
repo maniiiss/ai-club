@@ -220,7 +220,7 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
     setDebug(nextDebug || null)
   }
 
-  const submitQuestion = async (question: string, selection?: HermesSelectionPayload | null) => {
+  const submitQuestion = async (question: string, selection?: HermesSelectionPayload | null, slashCommand?: string | null) => {
     if (!question.trim() || sending) return
     setSending(true)
     setError('')
@@ -235,7 +235,7 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
     ])
     try {
       const sessionId = await ensureSession()
-      const payload = { question, selection: selection || null, debug: Boolean(debug) }
+      const payload = { question, selection: selection || null, debug: Boolean(debug), slashCommand: slashCommand || null }
       const handlers: HermesStreamHandlers = {
         onStatus: (event) => setStreamStatusText(event.message || event.stage || 'Hermes 正在处理'),
         onMeta: (event) => applyStreamDisplayState(event.roleName, event.references, event.suggestions, event.actions, event.selectionCards, event.debug),
@@ -340,7 +340,7 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
   const headerActions = (
     <div className="flex items-center gap-2">
       <Button type="button" variant="secondary" size="sm" onClick={() => setMemoryVisible(true)}>
-        记忆管理
+        知识
       </Button>
     </div>
   )
@@ -417,7 +417,7 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
             sending={sending}
             pendingFiles={pendingFiles}
             onFilesChange={(files) => setPendingFiles(files.slice(0, 3))}
-            onSubmit={submitQuestion}
+            onSubmit={(question, slashCommand) => submitQuestion(question, null, slashCommand)}
             onStop={stopStream}
             onTranscribe={transcribeHermesSpeech}
             onError={setError}

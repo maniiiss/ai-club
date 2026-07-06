@@ -47,6 +47,8 @@ export interface WorkItem {
   name: string
   /** '需求' | '任务' | '缺陷' */
   workItemType: string
+  /** 任务细分类型，仅 workItemType 为“任务”时有效。 */
+  taskType: string | null
   creatorUserId: number | null
   creatorName: string
   status: string
@@ -75,10 +77,47 @@ export interface WorkItem {
   canDelete: boolean
 }
 
+/** 工作项关联测试用例摘要。 */
+export interface LinkedTestCase {
+  id: number
+  title: string
+  moduleName: string
+  caseType: string
+  priority: string
+  testPlanId: number
+  testPlanName: string
+  projectId: number
+  projectName: string
+}
+
+/** 工作项附件摘要。 */
+export interface TaskAttachment {
+  id: number
+  assetId: number
+  fileName: string
+  contentType: string
+  fileSize: number
+  sourceFormat: string
+  uploaderUserId: number | null
+  uploaderName: string
+  createdAt: string | null
+}
+
+/** 工作项详情页签聚合关联。 */
+export interface WorkItemLinks {
+  children: WorkItem[]
+  parentWorkItems: WorkItem[]
+  relatedWorkItems: WorkItem[]
+  testCases: LinkedTestCase[]
+  attachments: TaskAttachment[]
+}
+
 /** 创建/更新工作项载荷。 */
 export interface WorkItemPayload {
   name: string
   workItemType?: string
+  /** 任务细分类型，仅创建或更新“任务”工作项时提交。 */
+  taskType?: string | null
   status: string
   priority: string
   workHours?: number | null

@@ -10,6 +10,7 @@ import type {
   HermesConversationDetailItem,
   HermesConversationSessionQuery,
   HermesConversationSessionSummaryItem,
+  HermesFileLibraryItem,
   HermesMemoryConsolidationStatus,
   HermesMemoryConsolidationTask,
   HermesMemoryOverview,
@@ -22,6 +23,7 @@ import type {
   HermesStreamMetaEvent,
   HermesStreamStatusEvent,
   RenameHermesConversationSessionPayload,
+  UpdateHermesFileLibraryItemPayload,
 } from '@/src/types/hermes'
 
 export interface HermesStreamHandlers {
@@ -128,6 +130,40 @@ export const getHermesMemoryConsolidationStatus = async (
   )
   return unwrap(res)
 }
+
+export const listHermesFileLibraryItems = async (query?: string): Promise<HermesFileLibraryItem[]> => {
+  const res = await http.get<ApiResponse<HermesFileLibraryItem[]>>('/api/hermes/file-library', {
+    params: cleanParams({ query }),
+  })
+  return unwrap(res) || []
+}
+
+export const uploadHermesFileLibraryItem = async (file: File): Promise<HermesFileLibraryItem> => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await http.post<ApiResponse<HermesFileLibraryItem>>('/api/hermes/file-library/upload', formData)
+  return unwrap(res)
+}
+
+export const updateHermesFileLibraryItem = async (
+  id: number,
+  payload: UpdateHermesFileLibraryItemPayload,
+): Promise<HermesFileLibraryItem> => {
+  const res = await http.patch<ApiResponse<HermesFileLibraryItem>>(`/api/hermes/file-library/${id}`, payload)
+  return unwrap(res)
+}
+
+export const deleteHermesFileLibraryItem = async (id: number): Promise<void> => {
+  await http.delete<ApiResponse<null>>(`/api/hermes/file-library/${id}`)
+}
+
+export const reindexHermesFileLibraryItem = async (id: number): Promise<HermesFileLibraryItem> => {
+  const res = await http.post<ApiResponse<HermesFileLibraryItem>>(`/api/hermes/file-library/${id}/reindex`)
+  return unwrap(res)
+}
+
+export const getHermesFileLibraryDownloadUrl = (assetId: number, inline = false): string =>
+  `${resolvedApiBaseUrl}/api/common/files/${assetId}?inline=${inline ? 'true' : 'false'}`
 
 export const transcribeHermesSpeech = async (file: File): Promise<string> => {
   const formData = new FormData()
@@ -238,6 +274,7 @@ export const streamHermesSessionChatWithFiles = async (
   formData.append('question', payload.question)
   if (payload.selection) formData.append('selectionJson', JSON.stringify(payload.selection))
   if (payload.debug != null) formData.append('debug', String(payload.debug))
+  if (payload.slashCommand) formData.append('slashCommand', payload.slashCommand)
   files.forEach((file) => formData.append('files', file))
 
   const response = await fetch(`${resolvedApiBaseUrl}/api/hermes/sessions/${sessionId}/chat/stream`, {

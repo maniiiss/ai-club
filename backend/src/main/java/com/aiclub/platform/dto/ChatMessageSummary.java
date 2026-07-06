@@ -23,6 +23,7 @@ public record ChatMessageSummary(
         List<HermesActionSummary> actions,
         Map<String, String> actionStatuses,
         List<HermesSelectionCard> selectionCards,
+        Map<String, String> selectionStatuses,
         String createdAt,
         String updatedAt
 ) {
@@ -40,7 +41,7 @@ public record ChatMessageSummary(
                               String createdAt,
                               String updatedAt) {
         this(id, roomId, role, senderUserId, senderUsername, senderName, senderAvatarUrl, content, status, mentionsHermes,
-                attachments, null, "", List.of(), Map.of(), List.of(), createdAt, updatedAt);
+                attachments, null, "", List.of(), Map.of(), List.of(), Map.of(), createdAt, updatedAt);
     }
 
     public ChatMessageSummary {
@@ -48,5 +49,6 @@ public record ChatMessageSummary(
         actions = actions == null ? List.of() : List.copyOf(actions);
         actionStatuses = actionStatuses == null ? Map.of() : Map.copyOf(actionStatuses);
         selectionCards = selectionCards == null ? List.of() : List.copyOf(selectionCards);
+        selectionStatuses = selectionStatuses == null ? Map.of() : Map.copyOf(selectionStatuses);
     }
 }

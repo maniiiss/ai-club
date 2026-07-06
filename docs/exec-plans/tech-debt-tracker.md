@@ -288,10 +288,11 @@
 ## 参考资料
 
 - [核心设计理念](../docs/design-docs/core-beliefs.md)
-- [移动端设计方案](../docs/mobile-console-technical-design-v1.md)
+- [移动端设计方案](../docs/design-docs/mobile-console-technical-design-v1.md)
 - [前端工程规范](../FRONTEND.md)
 - [编码指南](../docs/encoding-guide.md)
 
 ---
 
 *本追踪表持续更新，技术债清理是团队的共同责任。*
+

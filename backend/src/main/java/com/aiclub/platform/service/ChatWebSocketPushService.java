@@ -148,6 +148,16 @@ public class ChatWebSocketPushService {
         broadcast(roomId, payload);
     }
 
+    public void broadcastAgentSelectionResolved(Long roomId, Long taskId, Long messageId, String selectionKey, String status) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "AGENT_SELECTION_RESOLVED");
+        payload.put("taskId", taskId);
+        payload.put("messageId", messageId);
+        payload.put("selectionKey", selectionKey == null ? "" : selectionKey);
+        payload.put("status", status == null ? "" : status);
+        broadcast(roomId, payload);
+    }
+
     private void broadcast(Long roomId, Object payload) {
         Set<WebSocketSession> sessions = roomSessions.get(roomId);
         if (sessions == null || sessions.isEmpty()) {

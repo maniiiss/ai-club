@@ -393,6 +393,8 @@ export interface TaskItem {
   creatorName: string
   status: string
   priority: string
+  /** 任务细分类型，仅任务工作项返回。 */
+  taskType: string | null
   /** 预估工时，单位为小时。 */
   workHours: number | null
   devPassed: boolean
@@ -435,6 +437,38 @@ export interface TaskItem {
   canDelete: boolean
 }
 
+export interface LinkedTestCaseItem {
+  id: number
+  title: string
+  moduleName: string
+  caseType: string
+  priority: string
+  testPlanId: number
+  testPlanName: string
+  projectId: number
+  projectName: string
+}
+
+export interface TaskAttachmentItem {
+  id: number
+  assetId: number
+  fileName: string
+  contentType: string
+  fileSize: number
+  sourceFormat: string
+  uploaderUserId: number | null
+  uploaderName: string
+  createdAt: string | null
+}
+
+export interface TaskLinksItem {
+  children: TaskItem[]
+  parentWorkItems: TaskItem[]
+  relatedWorkItems: TaskItem[]
+  testCases: LinkedTestCaseItem[]
+  attachments: TaskAttachmentItem[]
+}
+
 export interface ProjectWorkItemStatsItem {
   /** 当前筛选结果总数。 */
   totalCount: number
@@ -465,7 +499,8 @@ export interface UploadedFileItem {
 
 export interface TaskRequirementAiSuggestionItem {
   name: string
-  category: string
+  /** 任务细分类型，创建拆解子任务时写入 taskType。 */
+  taskType: string
   priority: string
   description: string
 }
@@ -2166,6 +2201,133 @@ export interface PlatformToolItem {
   allowAutoExecute: boolean
   displayNameOverride: string
   descriptionOverride: string
+}
+
+export interface DataWorkbenchAppItem {
+  code: string
+  name: string
+  description: string
+  enabled: boolean
+}
+
+export interface DataWorkbenchFieldItem {
+  id: number | null
+  fieldCode: string
+  fieldName: string
+  columnName: string
+  dataType: string
+  synonyms: string
+  updatable: boolean
+  locator: boolean
+  sensitive: boolean
+  enabled: boolean
+  sortOrder: number
+}
+
+export interface DataWorkbenchEntityItem {
+  id: number
+  entityCode: string
+  entityName: string
+  description: string
+  tableName: string
+  primaryKeyColumn: string
+  /** 归属的平台项目 ID，v2 起替代动态 project_id_column。 */
+  platformProjectId: number | null
+  /** 归属项目展示名称，供列表快速渲染，避免二次请求。 */
+  platformProjectName: string
+  maxAffectedRows: number
+  requestScope: DataPermissionScopeValue
+  executeScope: DataPermissionScopeValue
+  rollbackScope: DataPermissionScopeValue
+  enabled: boolean
+  fields: DataWorkbenchFieldItem[]
+}
+
+export interface DataChangeDsl {
+  version: string
+  operation: string
+  entityCode: string
+  set: Record<string, unknown>
+  where: Record<string, unknown>
+}
+
+export interface DataChangePreviewResult {
+  dsl: DataChangeDsl
+  entity: DataWorkbenchEntityItem
+  sqlSummary: string
+  affectedRows: number
+  riskLevel: string
+  riskReasons: string[]
+  approvalRequired: boolean
+}
+
+export interface DataChangeRequestItem {
+  id: number
+  projectId: number
+  projectName: string
+  entityId: number
+  entityCode: string
+  entityName: string
+  originalText: string
+  dsl: DataChangeDsl
+  previewSqlSummary: string
+  riskLevel: string
+  approvalStatus: string
+  executionStatus: string
+  rollbackStatus: string
+  affectedRows: number
+  riskReasons: string[]
+  rejectReason: string
+  rollbackConflictReason: string
+  requesterName: string
+  approverName: string
+  executorName: string
+  rollbackUserName: string
+  createdAt: string
+  approvedAt: string
+  executedAt: string
+  rolledBackAt: string
+}
+
+export interface DataChangeAuditItem {
+  id: number
+  requestId: number
+  entityName: string
+  primaryKeyValue: string
+  beforeSnapshot: Record<string, unknown>
+  afterSnapshot: Record<string, unknown>
+  sqlSummary: string
+  rollbackStatus: string
+  rollbackConflictReason: string
+  createdAt: string
+  rolledBackAt: string
+}
+
+/**
+ * DataWorkbench 实体解析草稿（后端返回，用于回填新增/编辑弹窗）。
+ */
+export interface DataWorkbenchEntityDraft {
+  entityCode: string
+  entityName: string
+  description: string
+  tableName: string
+  primaryKeyColumn: string
+  /** 由管理员在弹窗里选择平台项目，解析器不推断，返回 null。 */
+  platformProjectId: number | null
+  maxAffectedRows: number
+  requestScope: DataPermissionScopeValue
+  executeScope: DataPermissionScopeValue
+  rollbackScope: DataPermissionScopeValue
+  enabled: boolean
+  fields: DataWorkbenchFieldItem[]
+}
+
+/**
+ * DataWorkbench 实体解析结果：草稿 + warning 列表。
+ */
+export interface DataWorkbenchEntityParseResult {
+  draft: DataWorkbenchEntityDraft
+  warnings: string[]
 }
 
 export interface PlatformEnvVarItem {

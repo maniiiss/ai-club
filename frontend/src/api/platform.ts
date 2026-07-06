@@ -29,11 +29,14 @@ import type {
   ProjectRequirementModuleOptionItem,
   TestPlanItem,
   TaskAgentRunItem,
+  TaskAttachmentItem,
   TaskCommentItem,
+  TaskLinksItem,
   TaskPrdAnalyzeResultItem,
   TaskPrdDetailItem,
   TaskRequirementAiResultItem,
   TaskItem,
+  LinkedTestCaseItem,
   UploadedFileItem,
   DocumentAssetItem,
   DocumentMarkdownResultItem,
@@ -126,6 +129,8 @@ export interface TaskPayload {
   workItemType?: '需求' | '任务' | '缺陷' | string
   status: string
   priority: string
+  /** 任务细分类型，仅 workItemType 为任务时生效。 */
+  taskType?: string | null
   /** 预估工时，单位为小时。 */
   workHours?: number | null
   assignee: string
@@ -531,6 +536,74 @@ export const deleteTask = async (id: number) => {
 export const getTaskDetail = async (id: number) => {
   const { data } = await http.get<ApiResponse<TaskItem>>(`/api/tasks/${id}`)
   return normalizeTaskItem(data.data)
+}
+
+const normalizeTaskLinks = (links: TaskLinksItem): TaskLinksItem => ({
+  ...links,
+  children: links.children.map(normalizeTaskItem),
+  parentWorkItems: links.parentWorkItems.map(normalizeTaskItem),
+  relatedWorkItems: links.relatedWorkItems.map(normalizeTaskItem)
+})
+
+export const getTaskLinks = async (id: number) => {
+  const { data } = await http.get<ApiResponse<TaskLinksItem>>(`/api/tasks/${id}/links`)
+  return normalizeTaskLinks(data.data)
+}
+
+export const addTaskChild = async (id: number, targetId: number) => {
+  const { data } = await http.post<ApiResponse<TaskLinksItem>>(`/api/tasks/${id}/children`, { targetId })
+  return normalizeTaskLinks(data.data)
+}
+
+export const removeTaskChild = async (id: number, childTaskId: number) => {
+  const { data } = await http.delete<ApiResponse<TaskLinksItem>>(`/api/tasks/${id}/children/${childTaskId}`)
+  return normalizeTaskLinks(data.data)
+}
+
+export const addTaskRelatedWorkItem = async (id: number, targetId: number) => {
+  const { data } = await http.post<ApiResponse<TaskLinksItem>>(`/api/tasks/${id}/related-work-items`, { targetId })
+  return normalizeTaskLinks(data.data)
+}
+
+export const removeTaskRelatedWorkItem = async (id: number, relatedTaskId: number) => {
+  const { data } = await http.delete<ApiResponse<TaskLinksItem>>(`/api/tasks/${id}/related-work-items/${relatedTaskId}`)
+  return normalizeTaskLinks(data.data)
+}
+
+export const addTaskTestCase = async (id: number, targetId: number) => {
+  const { data } = await http.post<ApiResponse<TaskLinksItem>>(`/api/tasks/${id}/test-cases`, { targetId })
+  return normalizeTaskLinks(data.data)
+}
+
+export const removeTaskTestCase = async (id: number, testCaseId: number) => {
+  const { data } = await http.delete<ApiResponse<TaskLinksItem>>(`/api/tasks/${id}/test-cases/${testCaseId}`)
+  return normalizeTaskLinks(data.data)
+}
+
+export const uploadTaskAttachment = async (id: number, file: File) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const { data } = await http.post<ApiResponse<TaskAttachmentItem>>(`/api/tasks/${id}/attachments`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+  return data.data
+}
+
+export const deleteTaskAttachment = async (id: number, attachmentId: number) => {
+  const { data } = await http.delete<ApiResponse<TaskLinksItem>>(`/api/tasks/${id}/attachments/${attachmentId}`)
+  return normalizeTaskLinks(data.data)
+}
+
+export const downloadTaskAttachment = async (id: number, attachmentId: number) => {
+  const response = await http.get(`/api/tasks/${id}/attachments/${attachmentId}/download`, {
+    responseType: 'blob'
+  })
+  const disposition = String(response.headers['content-disposition'] || '')
+  const matched = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/)
+  return {
+    blob: response.data as Blob,
+    fileName: matched ? decodeURIComponent(matched[1]) : `task-attachment-${attachmentId}`
+  }
 }
 
 export const listTaskAgentRuns = async (id: number) => {
@@ -993,4 +1066,11 @@ export const pageProjectWorkItems = async (projectId: number, query: WorkItemPag
     params: cleanParams(query)
   })
   return normalizeTaskPage(data.data)
+}
+
+export const pageProjectTestCases = async (projectId: number, query: { page: number; size: number; keyword?: string }) => {
+  const { data } = await http.get<ApiResponse<PageResponse<LinkedTestCaseItem>>>(`/api/projects/${projectId}/test-cases`, {
+    params: cleanParams(query)
+  })
+  return data.data
 }

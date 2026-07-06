@@ -212,6 +212,109 @@ class TaskWorkItemMetadataIntegrationTests {
     }
 
     /**
+     * 任务类型是任务工作项的细分维度，需要随创建和编辑一起持久化并返回前端。
+     */
+    @Test
+    void shouldPersistTaskTypeForTaskWorkItems() {
+        UserEntity creator = createUser("creator-meta-d", "创建人丁");
+        UserEntity owner = createUser("owner-meta-d", "负责人丁");
+        ProjectEntity project = createProjectAs(creator, owner, "元数据项目D");
+
+        loginAs(creator);
+        TaskSummary task = platformStoreService.createTask(new TaskRequest(
+                "任务类型工作项D",
+                "任务",
+                "待开始",
+                "中",
+                "",
+                null,
+                List.of(),
+                "任务说明",
+                "",
+                "",
+                "",
+                false,
+                false,
+                new BigDecimal("2.0"),
+                "开发任务",
+                null,
+                null,
+                project.getId(),
+                null,
+                null,
+                null
+        ));
+
+        assertThat(task.taskType()).isEqualTo("开发任务");
+        assertThat(taskRepository.findById(task.id()).orElseThrow().getTaskType()).isEqualTo("开发任务");
+
+        TaskSummary updated = platformStoreService.updateTask(task.id(), new TaskRequest(
+                task.name(),
+                task.workItemType(),
+                task.status(),
+                task.priority(),
+                task.assignee(),
+                task.assigneeUserId(),
+                task.collaboratorUserIds(),
+                task.description(),
+                task.requirementMarkdown(),
+                task.prototypeUrl(),
+                task.moduleName(),
+                task.devPassed(),
+                task.testPassed(),
+                task.workHours(),
+                "测试任务",
+                task.planStartDate(),
+                task.planEndDate(),
+                task.projectId(),
+                task.agentId(),
+                task.iterationId(),
+                task.requirementTaskId()
+        ));
+
+        assertThat(updated.taskType()).isEqualTo("测试任务");
+        assertThat(taskRepository.findById(task.id()).orElseThrow().getTaskType()).isEqualTo("测试任务");
+    }
+
+    /**
+     * 非任务工作项不保留任务类型，避免需求和缺陷混入任务细分维度。
+     */
+    @Test
+    void shouldClearTaskTypeForNonTaskWorkItems() {
+        UserEntity creator = createUser("creator-meta-e", "创建人戊");
+        UserEntity owner = createUser("owner-meta-e", "负责人戊");
+        ProjectEntity project = createProjectAs(creator, owner, "元数据项目E");
+
+        loginAs(creator);
+        TaskSummary requirement = platformStoreService.createTask(new TaskRequest(
+                "需求类型工作项E",
+                "需求",
+                "草稿",
+                "中",
+                "",
+                null,
+                List.of(),
+                "需求描述",
+                "# 用户故事\n\n用户需要任务类型不污染需求。\n\n# 需求描述\n\n保存需求时清空任务类型。\n\n# 验收标准\n\n需求返回空任务类型。",
+                "",
+                "",
+                false,
+                false,
+                null,
+                "开发任务",
+                null,
+                null,
+                project.getId(),
+                null,
+                null,
+                null
+        ));
+
+        assertThat(requirement.taskType()).isNull();
+        assertThat(taskRepository.findById(requirement.id()).orElseThrow().getTaskType()).isNull();
+    }
+
+    /**
      * 创建带默认权限角色的测试用户。
      */
     private UserEntity createUser(String username, String nickname) {
@@ -288,6 +391,7 @@ class TaskWorkItemMetadataIntegrationTests {
                 "",
                 false,
                 false,
+                null,
                 null,
                 planStartDate,
                 planEndDate,

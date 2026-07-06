@@ -8,10 +8,12 @@ import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectBurndownSummary;
 import com.aiclub.platform.dto.ProjectWorkItemStatsSummary;
 import com.aiclub.platform.dto.ProjectRequirementModuleOptionSummary;
+import com.aiclub.platform.dto.TaskLinksSummary;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.request.IterationRequest;
 import com.aiclub.platform.service.PlatformStoreService;
 import com.aiclub.platform.service.RequirementModuleOptionService;
+import com.aiclub.platform.service.WorkItemLinkService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,11 +33,14 @@ public class IterationController {
 
     private final PlatformStoreService platformStoreService;
     private final RequirementModuleOptionService requirementModuleOptionService;
+    private final WorkItemLinkService workItemLinkService;
 
     public IterationController(PlatformStoreService platformStoreService,
-                               RequirementModuleOptionService requirementModuleOptionService) {
+                               RequirementModuleOptionService requirementModuleOptionService,
+                               WorkItemLinkService workItemLinkService) {
         this.platformStoreService = platformStoreService;
         this.requirementModuleOptionService = requirementModuleOptionService;
+        this.workItemLinkService = workItemLinkService;
     }
 
     @GetMapping("/iteration-board")
@@ -62,6 +67,17 @@ public class IterationController {
     @RequirePermission("task:view")
     public ApiResponse<List<ProjectRequirementModuleOptionSummary>> listRequirementModules(@PathVariable Long projectId) {
         return ApiResponse.success(requirementModuleOptionService.listProjectRequirementModules(projectId));
+    }
+
+    @GetMapping("/test-cases")
+    @RequirePermission("task:view")
+    public ApiResponse<PageResponse<TaskLinksSummary.LinkedTestCaseSummary>> pageProjectTestCases(
+            @PathVariable Long projectId,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        return ApiResponse.success(workItemLinkService.pageProjectTestCases(projectId, keyword, page, size));
     }
 
     @DeleteMapping("/requirement-modules/{optionId}")

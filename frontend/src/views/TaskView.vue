@@ -285,6 +285,159 @@
       </div>
     </section>
 
+  <el-drawer
+    v-model="detailDrawerVisible"
+    class="task-detail-drawer"
+    :size="isMobileViewport ? '100%' : 'min(50vw, calc(100vw - 48px))'"
+    destroy-on-close
+  >
+    <template #header>
+      <div class="task-detail-header" v-if="detailTask">
+        <button
+          v-if="detailNavigationStack.length"
+          class="task-detail-back-button"
+          type="button"
+          title="返回上一工作项"
+          @click="backToPreviousDetail"
+        >
+          <el-icon><ArrowLeft /></el-icon>
+          <span>返回</span>
+        </button>
+        <div class="task-detail-heading">
+          <div class="task-detail-title">{{ detailTask.name }}</div>
+          <div class="task-detail-subtitle">{{ detailTask.workItemCode || detailTask.projectName }}</div>
+        </div>
+        <span class="task-type-pill" :class="taskTypeTone(detailTask.workItemType)">{{ detailTask.workItemType }}</span>
+      </div>
+    </template>
+    <div v-loading="detailLoading" class="task-detail-body" v-if="detailTask">
+      <el-tabs v-model="detailActiveTab" class="task-detail-tabs">
+        <el-tab-pane name="detail">
+          <template #label>
+            <span class="task-detail-tab-label">详情</span>
+          </template>
+          <div class="task-detail-grid">
+            <div class="task-detail-field">
+              <span>状态</span>
+              <strong>{{ formatTaskStatusLabel(detailTask) }}</strong>
+            </div>
+            <div class="task-detail-field">
+              <span>优先级</span>
+              <strong>{{ detailTask.priority || '-' }}</strong>
+            </div>
+            <div class="task-detail-field">
+              <span>负责人</span>
+              <strong>{{ detailTask.assignee || '未分配' }}</strong>
+            </div>
+            <div class="task-detail-field">
+              <span>迭代</span>
+              <strong>{{ detailTask.iterationName || '未规划' }}</strong>
+            </div>
+            <div class="task-detail-field">
+              <span>项目</span>
+              <strong>{{ detailTask.projectName || '-' }}</strong>
+            </div>
+            <div class="task-detail-field">
+              <span>更新时间</span>
+              <strong>{{ formatDateTime(detailTask.updatedAt) }}</strong>
+            </div>
+          </div>
+          <section class="task-detail-section">
+            <div class="task-detail-section-title">说明</div>
+            <div v-if="detailDescriptionHtml" class="task-detail-markdown" v-html="detailDescriptionHtml"></div>
+            <el-empty v-else description="暂无说明" />
+          </section>
+        </el-tab-pane>
+        <el-tab-pane name="children">
+          <template #label>
+            <span class="task-detail-tab-label">子工作项<span v-if="detailLinks?.children.length" class="task-tab-count">{{ detailLinks.children.length }}</span></span>
+          </template>
+          <TaskLinkSelector
+            v-if="canManageTasks"
+            v-model="workItemLinkTargetId"
+            :options="filteredWorkItemOptions"
+            :loading="workItemOptionLoading"
+            placeholder="搜索并选择子工作项"
+            @search="loadWorkItemOptions"
+            @submit="handleAddChild"
+          />
+          <TaskLinkList :items="detailLinks?.children || []" empty-text="暂无子工作项" :can-remove="canManageTasks" @remove="handleRemoveChild" @open="openLinkedTaskDetail" />
+          <section v-if="detailLinks?.parentWorkItems.length" class="task-detail-section compact">
+            <div class="task-detail-section-title">父工作项</div>
+            <TaskLinkList :items="detailLinks.parentWorkItems" empty-text="暂无父工作项" :can-remove="false" @open="openLinkedTaskDetail" />
+          </section>
+        </el-tab-pane>
+        <el-tab-pane name="related">
+          <template #label>
+            <span class="task-detail-tab-label">关联项<span v-if="detailLinks?.relatedWorkItems.length" class="task-tab-count">{{ detailLinks.relatedWorkItems.length }}</span></span>
+          </template>
+          <TaskLinkSelector
+            v-if="canManageTasks"
+            v-model="workItemLinkTargetId"
+            :options="filteredWorkItemOptions"
+            :loading="workItemOptionLoading"
+            placeholder="搜索并选择关联工作项"
+            @search="loadWorkItemOptions"
+            @submit="handleAddRelatedWorkItem"
+          />
+          <TaskLinkList :items="detailLinks?.relatedWorkItems || []" empty-text="暂无关联工作项" :can-remove="canManageTasks" @remove="handleRemoveRelatedWorkItem" @open="openLinkedTaskDetail" />
+        </el-tab-pane>
+        <el-tab-pane name="testCases">
+          <template #label>
+            <span class="task-detail-tab-label">测试用例<span v-if="detailLinks?.testCases.length" class="task-tab-count">{{ detailLinks.testCases.length }}</span></span>
+          </template>
+          <TaskTestCaseSelector
+            v-if="canManageTasks"
+            v-model="testCaseLinkTargetId"
+            :options="testCaseOptions"
+            :loading="testCaseOptionLoading"
+            @search="loadTestCaseOptions"
+            @submit="handleAddTestCase"
+          />
+          <div v-if="detailLinks?.testCases.length" class="task-link-list">
+            <article v-for="item in detailLinks.testCases" :key="item.id" class="task-link-card">
+              <div class="task-link-card-main">
+                <strong>{{ item.title }}</strong>
+                <span>{{ item.testPlanName }} · {{ item.moduleName || '未分组' }} · {{ item.priority || '-' }}</span>
+              </div>
+              <button v-if="canManageTasks" class="task-link-remove" type="button" @click="handleRemoveTestCase(item.id)">
+                <el-icon><Delete /></el-icon>
+              </button>
+            </article>
+          </div>
+          <el-empty v-else description="暂无关联测试用例" />
+        </el-tab-pane>
+        <el-tab-pane name="attachments">
+          <template #label>
+            <span class="task-detail-tab-label">附件<span v-if="detailLinks?.attachments.length" class="task-tab-count">{{ detailLinks.attachments.length }}</span></span>
+          </template>
+          <div v-if="canManageTasks" class="task-attachment-upload">
+            <el-upload :auto-upload="false" :show-file-list="false" :on-change="handleUploadAttachment">
+              <el-button type="primary" :loading="attachmentUploading">上传附件</el-button>
+            </el-upload>
+          </div>
+          <div v-if="detailLinks?.attachments.length" class="task-link-list">
+            <article v-for="item in detailLinks.attachments" :key="item.id" class="task-link-card">
+              <div class="task-link-card-main">
+                <strong>{{ item.fileName }}</strong>
+                <span>{{ formatFileSize(item.fileSize) }} · {{ item.uploaderName || '未知用户' }} · {{ item.createdAt || '-' }}</span>
+              </div>
+              <div class="task-link-actions">
+                <button class="task-link-remove" type="button" @click="handleDownloadAttachment(item.id)">
+                  下载
+                </button>
+                <button v-if="canManageTasks" class="task-link-remove danger" type="button" @click="handleDeleteAttachment(item.id)">
+                  <el-icon><Delete /></el-icon>
+                </button>
+              </div>
+            </article>
+          </div>
+          <el-empty v-else description="暂无附件" />
+        </el-tab-pane>
+      </el-tabs>
+    </div>
+  </el-drawer>
+
   <el-dialog v-model="dialogVisible" :title="taskDialogTitle" width="980px" class="work-item-dialog platform-form-dialog" align-center>
     <template #header>
       <PlatformDialogHeader :title="taskDialogTitle" :subtitle="taskDialogSubtitle" :icon="Tickets" />
@@ -345,6 +498,11 @@
           </el-tooltip>
           <div v-if="taskFormWorkHoursLockedReason" class="form-tip">{{ taskFormWorkHoursLockedReason }}</div>
         </el-form-item>
+        <el-form-item v-if="form.workItemType === '任务'" label="任务类型" class="compact-form-item">
+          <el-select v-model="form.taskType" style="width: 100%">
+            <el-option v-for="item in TASK_TYPE_OPTIONS" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="状态" prop="status" class="compact-form-item">
           <el-select v-model="form.status" placeholder="请选择状态" style="width: 100%">
             <el-option v-for="item in taskFormStatusOptions" :key="item.value" :label="item.label" :value="item.value" />
@@ -374,6 +532,14 @@
             </el-button>
             <el-button v-if="currentRequirementTask.prdWikiSpaceId && currentRequirementTask.prdWikiPageId" type="primary" plain @click="openRequirementAiDialog(currentRequirementTask)">
               AI 完善 PRD
+            </el-button>
+          </div>
+        </div>
+        <div v-else-if="isEditing && currentRequirementTask && canOpenRequirementAiDialog(currentRequirementTask)" class="task-prd-actions">
+          <span class="task-prd-status">测试任务可使用 AI 生成测试用例</span>
+          <div class="task-prd-action-buttons">
+            <el-button type="primary" plain @click="openRequirementAiDialog(currentRequirementTask)">
+              AI 生成测试用例
             </el-button>
           </div>
         </div>
@@ -466,9 +632,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineComponent, h, onMounted, reactive, ref, resolveComponent, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { FormInstance, FormRules } from 'element-plus'
+import type { FormInstance, FormRules, UploadFile } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { ArrowLeft, ArrowRight, Delete, EditPen, Filter, Plus, RefreshRight, Search, Tickets, VideoPlay } from '@element-plus/icons-vue'
 import { listUserOptions } from '@/api/access'
@@ -479,16 +645,27 @@ import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import RequirementAiDialog from '@/components/RequirementAiDialog.vue'
 import {
+  addTaskChild,
+  addTaskRelatedWorkItem,
+  addTaskTestCase,
   createTask,
+  deleteTaskAttachment,
   deleteTask,
+  downloadTaskAttachment,
+  getTaskLinks,
   getTaskDetail,
   initializeTaskPrd,
   listAgentOptions,
   listProjectWorkItems,
   listProjectOptions,
   listTaskAgentRuns,
+  pageProjectTestCases,
   pageTasks,
+  removeTaskChild,
+  removeTaskRelatedWorkItem,
+  removeTaskTestCase,
   runTaskAgent,
+  uploadTaskAttachment,
   updateTask
 } from '@/api/platform'
 import {
@@ -498,6 +675,7 @@ import {
   validateRequirementTemplate
 } from '@/utils/requirementTemplate'
 import { resolveAssetUrl } from '@/utils/asset'
+import { renderMarkdownToHtml } from '@/utils/markdown'
 import { uploadMarkdownImage } from '@/utils/taskImageUpload'
 import {
   formatWorkItemStatusLabel,
@@ -508,12 +686,14 @@ import {
   isWorkItemStatusAllowed
 } from '@/utils/workItemStatus'
 import { useAuthStore } from '@/stores/auth'
-import type { AgentItem, ProjectItem, TaskAgentRunItem, TaskItem, UserOptionItem } from '@/types/platform'
+import type { AgentItem, LinkedTestCaseItem, ProjectItem, TaskAgentRunItem, TaskItem, TaskLinksItem, UserOptionItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface TaskForm {
   name: string
   workItemType: string
+  /** 任务细分类型，仅工作项类型为“任务”时提交。 */
+  taskType: string
   status: string
   priority: string
   workHours: number | null
@@ -554,6 +734,22 @@ const userOptions = ref<UserOptionItem[]>([])
 const runHistory = ref<TaskAgentRunItem[]>([])
 const currentRunTask = ref<TaskItem | null>(null)
 const currentRequirementTask = ref<TaskItem | null>(null)
+const detailDrawerVisible = ref(false)
+const detailLoading = ref(false)
+const detailTask = ref<TaskItem | null>(null)
+const detailLinks = ref<TaskLinksItem | null>(null)
+/**
+ * 详情抽屉内的关联跳转历史，只记录用户从关联列表进入的工作项，便于返回上一条。
+ */
+const detailNavigationStack = ref<TaskItem[]>([])
+const detailActiveTab = ref('detail')
+const workItemOptions = ref<TaskItem[]>([])
+const workItemOptionLoading = ref(false)
+const workItemLinkTargetId = ref<number | undefined>(undefined)
+const testCaseOptions = ref<LinkedTestCaseItem[]>([])
+const testCaseOptionLoading = ref(false)
+const testCaseLinkTargetId = ref<number | undefined>(undefined)
+const attachmentUploading = ref(false)
 const runInput = ref('')
 const formRef = ref<FormInstance>()
 const canManageTasks = computed(() => authStore.hasPermission('task:manage'))
@@ -583,6 +779,7 @@ const taskFilterStatusOptions = computed(() => getAllWorkItemStatusOptions())
 const form = reactive<TaskForm>({
   name: '',
   workItemType: '任务',
+  taskType: '开发任务',
   status: getDefaultWorkItemStatus('任务'),
   priority: '中',
   workHours: null,
@@ -601,6 +798,19 @@ const form = reactive<TaskForm>({
   requirementTaskId: null
 })
 const taskFormStatusOptions = computed(() => getWorkItemStatusOptions(form.workItemType))
+const TASK_TYPE_OPTIONS = ['需求设计', 'UI设计', '技术设计', '开发任务', '测试任务', '运维任务']
+
+const normalizeTaskType = (taskType?: string | null) => {
+  const value = String(taskType || '').trim()
+  if (TASK_TYPE_OPTIONS.includes(value)) return value
+  if (value === '开发') return '开发任务'
+  if (value === '测试') return '测试任务'
+  if (value === '部署' || value === '运维' || value === '部署任务') return '运维任务'
+  return '开发任务'
+}
+
+const canOpenRequirementAiDialog = (task?: TaskItem | null) =>
+  task?.workItemType === '需求' || (task?.workItemType === '任务' && normalizeTaskType(task.taskType) === '测试任务')
 
 const rules: FormRules<TaskForm> = {
   name: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],
@@ -645,6 +855,13 @@ const collaboratorSelectableUsers = computed(() =>
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
 const isRequirementForm = computed(() => form.workItemType === '需求')
 const taskFormWorkHoursLockedReason = computed(() => '')
+const detailDescriptionHtml = computed(() => {
+  const source = detailTask.value?.description || detailTask.value?.requirementMarkdown || ''
+  return source.trim() ? renderMarkdownToHtml(source) : ''
+})
+const filteredWorkItemOptions = computed(() =>
+  workItemOptions.value.filter((item) => item.id !== detailTask.value?.id)
+)
 
 const formatTaskStatusLabel = (task: TaskItem | null | undefined) => {
   if (!task) {
@@ -652,6 +869,131 @@ const formatTaskStatusLabel = (task: TaskItem | null | undefined) => {
   }
   return formatWorkItemStatusLabel(task.workItemType, task.status)
 }
+
+const formatDateTime = (value?: string | null) => value ? value.replace('T', ' ').slice(0, 16) : '-'
+
+const formatFileSize = (value?: number | null) => {
+  const size = Number(value || 0)
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+const downloadBlob = (blob: Blob, fileName: string) => {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
+const TaskLinkSelector = defineComponent({
+  name: 'TaskLinkSelector',
+  props: {
+    modelValue: { type: Number, default: null },
+    options: { type: Array as () => TaskItem[], default: () => [] },
+    loading: { type: Boolean, default: false },
+    placeholder: { type: String, default: '搜索并选择工作项' }
+  },
+  emits: ['update:modelValue', 'search', 'submit'],
+  setup(props, { emit }) {
+    return () => h('div', { class: 'task-link-selector' }, [
+      h(resolveComponent('el-select'), {
+        modelValue: props.modelValue,
+        'onUpdate:modelValue': (value: number | null) => emit('update:modelValue', value),
+        filterable: true,
+        remote: true,
+        clearable: true,
+        loading: props.loading,
+        placeholder: props.placeholder,
+        remoteMethod: (keyword: string) => emit('search', keyword),
+        teleported: false,
+        popperClass: 'task-detail-select-popper',
+        style: 'width: 100%'
+      }, () => props.options.map((item) => h(resolveComponent('el-option'), {
+        key: item.id,
+        label: `${item.workItemCode || item.id} ${item.name}`,
+        value: item.id
+      }, () => h('div', { class: 'task-detail-select-option' }, [
+        h('strong', item.name),
+        h('span', `${item.workItemCode || item.id} · ${item.workItemType} · ${formatWorkItemStatusLabel(item.workItemType, item.status)}`)
+      ])))),
+      h(resolveComponent('el-button'), {
+        type: 'primary',
+        disabled: !props.modelValue,
+        onClick: () => emit('submit')
+      }, () => '关联')
+    ])
+  }
+})
+
+const TaskTestCaseSelector = defineComponent({
+  name: 'TaskTestCaseSelector',
+  props: {
+    modelValue: { type: Number, default: null },
+    options: { type: Array as () => LinkedTestCaseItem[], default: () => [] },
+    loading: { type: Boolean, default: false }
+  },
+  emits: ['update:modelValue', 'search', 'submit'],
+  setup(props, { emit }) {
+    return () => h('div', { class: 'task-link-selector' }, [
+      h(resolveComponent('el-select'), {
+        modelValue: props.modelValue,
+        'onUpdate:modelValue': (value: number | null) => emit('update:modelValue', value),
+        filterable: true,
+        remote: true,
+        clearable: true,
+        loading: props.loading,
+        placeholder: '搜索并选择测试用例',
+        remoteMethod: (keyword: string) => emit('search', keyword),
+        teleported: false,
+        popperClass: 'task-detail-select-popper',
+        style: 'width: 100%'
+      }, () => props.options.map((item) => h(resolveComponent('el-option'), {
+        key: item.id,
+        label: `${item.title} · ${item.testPlanName}`,
+        value: item.id
+      }, () => h('div', { class: 'task-detail-select-option' }, [
+        h('strong', item.title),
+        h('span', `${item.testPlanName} · ${item.moduleName || '未分组'} · ${item.priority || '-'}`)
+      ])))),
+      h(resolveComponent('el-button'), {
+        type: 'primary',
+        disabled: !props.modelValue,
+        onClick: () => emit('submit')
+      }, () => '关联')
+    ])
+  }
+})
+
+const TaskLinkList = defineComponent({
+  name: 'TaskLinkList',
+  props: {
+    items: { type: Array as () => TaskItem[], default: () => [] },
+    emptyText: { type: String, default: '暂无数据' },
+    canRemove: { type: Boolean, default: false }
+  },
+  emits: ['remove', 'open'],
+  setup(props, { emit }) {
+    return () => props.items.length
+      ? h('div', { class: 'task-link-list' }, props.items.map((item) => h('article', { class: 'task-link-card', key: item.id }, [
+        h('button', { class: 'task-link-card-main as-button task-link-open-button', type: 'button', title: '打开工作项详情', onClick: () => emit('open', item) }, [
+          h('span', { class: 'task-link-title-row' }, [
+            h('strong', item.name),
+            h('span', { class: 'task-link-open-hint' }, '查看详情')
+          ]),
+          h('span', `${item.workItemCode || item.id} · ${item.workItemType} · ${formatWorkItemStatusLabel(item.workItemType, item.status)}`)
+        ]),
+        props.canRemove ? h('button', { class: 'task-link-remove danger', type: 'button', onClick: () => emit('remove', item.id) }, [
+          h(resolveComponent('el-icon'), null, () => h(Delete))
+        ]) : null
+      ])))
+      : h(resolveComponent('el-empty'), { description: props.emptyText })
+  }
+})
 
 const buildUserLabel = (item: UserOptionItem) => {
   return item.nickname?.trim() ? `${item.nickname} (${item.username})` : item.username
@@ -754,12 +1096,80 @@ const openRequirementTask = (row: TaskItem) => {
   })
 }
 
-const openTaskDetail = (row: TaskItem) => {
-  router.push({
-    name: 'project-iterations',
-    params: { projectId: row.projectId },
-    query: { openTaskId: String(row.id) }
-  })
+const loadTaskDetailLinks = async (taskId: number) => {
+  detailLinks.value = await getTaskLinks(taskId)
+}
+
+const loadWorkItemOptions = async (keyword = '') => {
+  if (!detailTask.value?.projectId) {
+    workItemOptions.value = []
+    return
+  }
+  workItemOptionLoading.value = true
+  try {
+    workItemOptions.value = await listProjectWorkItems(detailTask.value.projectId, {
+      keyword,
+      workItemType: '全部'
+    })
+  } finally {
+    workItemOptionLoading.value = false
+  }
+}
+
+const loadTestCaseOptions = async (keyword = '') => {
+  if (!detailTask.value?.projectId) {
+    testCaseOptions.value = []
+    return
+  }
+  testCaseOptionLoading.value = true
+  try {
+    const pageData = await pageProjectTestCases(detailTask.value.projectId, { page: 1, size: 20, keyword })
+    testCaseOptions.value = pageData.records
+  } finally {
+    testCaseOptionLoading.value = false
+  }
+}
+
+const openTaskDetailById = async (row: TaskItem, options: { pushHistory?: boolean } = {}) => {
+  if (options.pushHistory && detailTask.value && detailTask.value.id !== row.id) {
+    detailNavigationStack.value.push(detailTask.value)
+  }
+  detailDrawerVisible.value = true
+  detailActiveTab.value = 'detail'
+  detailTask.value = row
+  detailLinks.value = null
+  workItemLinkTargetId.value = undefined
+  testCaseLinkTargetId.value = undefined
+  detailLoading.value = true
+  try {
+    const [latest] = await Promise.all([
+      getTaskDetail(row.id),
+      loadWorkItemOptions(''),
+      loadTestCaseOptions('')
+    ])
+    detailTask.value = latest
+    await loadTaskDetailLinks(row.id)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载工作项详情失败')
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+const openTaskDetail = async (row: TaskItem) => {
+  detailNavigationStack.value = []
+  await openTaskDetailById(row)
+}
+
+const openLinkedTaskDetail = async (row: TaskItem) => {
+  await openTaskDetailById(row, { pushHistory: true })
+}
+
+const backToPreviousDetail = async () => {
+  const previous = detailNavigationStack.value.pop()
+  if (previous) {
+    await openTaskDetailById(previous)
+  }
 }
 
 const openTaskProject = (projectId: number) => {
@@ -767,6 +1177,78 @@ const openTaskProject = (projectId: number) => {
     name: 'project-iterations',
     params: { projectId }
   })
+}
+
+const updateDetailLinks = async (operation: () => Promise<TaskLinksItem>) => {
+  if (!detailTask.value) {
+    return
+  }
+  try {
+    detailLinks.value = await operation()
+    workItemLinkTargetId.value = undefined
+    testCaseLinkTargetId.value = undefined
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '更新关联失败')
+  }
+}
+
+const handleAddChild = () => {
+  if (!detailTask.value || !workItemLinkTargetId.value) return
+  updateDetailLinks(() => addTaskChild(detailTask.value!.id, workItemLinkTargetId.value!))
+}
+
+const handleRemoveChild = (targetId: number) => {
+  if (!detailTask.value) return
+  updateDetailLinks(() => removeTaskChild(detailTask.value!.id, targetId))
+}
+
+const handleAddRelatedWorkItem = () => {
+  if (!detailTask.value || !workItemLinkTargetId.value) return
+  updateDetailLinks(() => addTaskRelatedWorkItem(detailTask.value!.id, workItemLinkTargetId.value!))
+}
+
+const handleRemoveRelatedWorkItem = (targetId: number) => {
+  if (!detailTask.value) return
+  updateDetailLinks(() => removeTaskRelatedWorkItem(detailTask.value!.id, targetId))
+}
+
+const handleAddTestCase = () => {
+  if (!detailTask.value || !testCaseLinkTargetId.value) return
+  updateDetailLinks(() => addTaskTestCase(detailTask.value!.id, testCaseLinkTargetId.value!))
+}
+
+const handleRemoveTestCase = (targetId: number) => {
+  if (!detailTask.value) return
+  updateDetailLinks(() => removeTaskTestCase(detailTask.value!.id, targetId))
+}
+
+const handleUploadAttachment = async (uploadFile: UploadFile) => {
+  if (!detailTask.value || !(uploadFile.raw instanceof File)) return
+  attachmentUploading.value = true
+  try {
+    await uploadTaskAttachment(detailTask.value.id, uploadFile.raw)
+    await loadTaskDetailLinks(detailTask.value.id)
+    ElMessage.success('附件已上传')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '上传附件失败')
+  } finally {
+    attachmentUploading.value = false
+  }
+}
+
+const handleDownloadAttachment = async (attachmentId: number) => {
+  if (!detailTask.value) return
+  try {
+    const result = await downloadTaskAttachment(detailTask.value.id, attachmentId)
+    downloadBlob(result.blob, result.fileName)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '下载附件失败')
+  }
+}
+
+const handleDeleteAttachment = (attachmentId: number) => {
+  if (!detailTask.value) return
+  updateDetailLinks(() => deleteTaskAttachment(detailTask.value!.id, attachmentId))
 }
 
 const openTaskPrd = async (task: TaskItem) => {
@@ -778,6 +1260,9 @@ const openTaskPrd = async (task: TaskItem) => {
 }
 
 const openRequirementAiDialog = (task: TaskItem) => {
+  if (!canOpenRequirementAiDialog(task)) {
+    return
+  }
   currentRequirementTask.value = task
   requirementAiDialogVisible.value = true
 }
@@ -819,6 +1304,7 @@ const resetForm = () => {
   currentRequirementTask.value = null
   form.name = ''
   form.workItemType = defaultWorkItemType
+  form.taskType = '开发任务'
   form.status = getDefaultWorkItemStatus(defaultWorkItemType)
   form.priority = '中'
   form.workHours = null
@@ -947,9 +1433,10 @@ const openEditDialog = async (row: TaskItem) => {
   }
   isEditing.value = true
   currentId.value = row.id
-  currentRequirementTask.value = row.workItemType === '需求' ? row : null
+  currentRequirementTask.value = canOpenRequirementAiDialog(row) ? row : null
   form.name = row.name
   form.workItemType = row.workItemType
+  form.taskType = row.workItemType === '任务' ? normalizeTaskType(row.taskType) : ''
   form.status = row.status
   form.priority = row.priority
   form.workHours = row.workHours
@@ -985,7 +1472,7 @@ const refreshCurrentRequirementTask = async () => {
   }
   try {
     const latest = await getTaskDetail(currentId.value)
-    currentRequirementTask.value = latest.workItemType === '需求' ? latest : null
+    currentRequirementTask.value = canOpenRequirementAiDialog(latest) ? latest : null
   } catch (error) {
     // 当前编辑弹窗允许继续工作，刷新失败由列表重载兜底。
   }
@@ -1048,6 +1535,7 @@ const handleSubmit = async () => {
     const payload = {
       name: form.name,
       workItemType: form.workItemType,
+      taskType: form.workItemType === '任务' ? normalizeTaskType(form.taskType) : null,
       status: form.status,
       priority: form.priority,
       workHours: form.workItemType === '任务' ? form.workHours : null,
@@ -1129,6 +1617,7 @@ watch(
     if (workItemType === '需求') {
       form.requirementTaskId = null
       form.workHours = null
+      form.taskType = ''
       if (!form.requirementMarkdown.trim()) {
         form.requirementMarkdown = DEFAULT_REQUIREMENT_TEMPLATE
       }
@@ -1146,6 +1635,9 @@ watch(
 
     if (workItemType !== '任务') {
       form.workHours = null
+      form.taskType = ''
+    } else {
+      form.taskType = normalizeTaskType(form.taskType)
     }
   }
 )
@@ -1870,6 +2362,315 @@ onMounted(async () => {
   word-break: break-word;
 }
 
+.task-detail-drawer :deep(.el-drawer__body) {
+  padding: 0;
+}
+
+.task-detail-header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.task-detail-heading {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.task-detail-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-height: 30px;
+  white-space: nowrap;
+  border: 1px solid rgba(var(--app-primary-rgb), 0.24);
+  border-radius: 8px;
+  background: rgba(var(--app-primary-container-rgb), 0.18);
+  color: var(--app-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 0 10px;
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.task-detail-back-button:hover {
+  border-color: rgba(var(--app-primary-rgb), 0.38);
+  background: rgba(var(--app-primary-container-rgb), 0.28);
+  transform: translateX(-1px);
+}
+
+.task-detail-title {
+  overflow: hidden;
+  color: var(--app-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.task-detail-subtitle {
+  margin-top: 4px;
+  color: var(--app-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.task-detail-body {
+  min-height: 360px;
+  padding: 0 20px 20px;
+}
+
+.task-detail-tabs :deep(.el-tabs__header) {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 0;
+  background: #fff;
+}
+
+.task-detail-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-tab-count {
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--app-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.task-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding-top: 16px;
+}
+
+.task-detail-field {
+  min-width: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(243, 244, 245, 0.72);
+}
+
+.task-detail-field span,
+.task-detail-section-title {
+  display: block;
+  color: #758393;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.task-detail-field strong {
+  display: block;
+  margin-top: 6px;
+  overflow: hidden;
+  color: #191c1d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.task-detail-section {
+  margin-top: 16px;
+}
+
+.task-detail-section.compact {
+  padding-top: 12px;
+  border-top: 1px solid rgba(221, 193, 174, 0.14);
+}
+
+.task-detail-markdown {
+  margin-top: 8px;
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(243, 244, 245, 0.72);
+  color: #191c1d;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.task-link-selector {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 16px 0;
+}
+
+.task-link-selector :deep(.el-select__wrapper) {
+  min-height: 38px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(221, 193, 174, 0.18) !important;
+}
+
+.task-link-selector :deep(.task-detail-select-popper.el-popper) {
+  max-width: 100%;
+  border: 0 !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+  box-shadow: 0 14px 30px rgba(25, 28, 29, 0.14) !important;
+}
+
+.task-link-selector :deep(.task-detail-select-popper .el-select-dropdown) {
+  max-width: 100%;
+}
+
+.task-link-selector :deep(.task-detail-select-popper .el-select-dropdown__item) {
+  height: auto;
+  min-height: 48px;
+  padding: 8px 12px;
+  line-height: 1.3;
+}
+
+.task-detail-select-option {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.task-detail-select-option strong,
+.task-detail-select-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-detail-select-option strong {
+  color: #191c1d;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.task-detail-select-option span {
+  color: #758393;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.task-link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-link-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(243, 244, 245, 0.72);
+}
+
+.task-link-card-main {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+
+.task-link-card-main.as-button {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.task-link-open-button:hover strong,
+.task-link-open-button:focus-visible strong {
+  color: var(--app-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.task-link-title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-link-open-hint {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(var(--app-primary-container-rgb), 0.2);
+  color: var(--app-primary) !important;
+  font-size: 11px !important;
+  font-weight: 800;
+  padding: 2px 7px;
+  opacity: 0;
+  transform: translateX(-2px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.task-link-open-button:hover .task-link-open-hint,
+.task-link-open-button:focus-visible .task-link-open-hint {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.task-link-card-main strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #191c1d;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.task-link-card-main span {
+  overflow: hidden;
+  color: #758393;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.task-link-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-link-remove {
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--app-primary);
+  font-size: 12px;
+  font-weight: 800;
+  min-height: 28px;
+  padding: 0 10px;
+}
+
+.task-link-remove.danger {
+  color: #ba1a1a;
+}
+
+.task-attachment-upload {
+  padding: 16px 0;
+}
+
 @media (max-width: 1280px) {
   .task-toolbar {
     grid-template-columns: 1fr;
@@ -1930,6 +2731,24 @@ onMounted(async () => {
 
   .work-item-grid {
     grid-template-columns: 1fr;
+  }
+
+  .task-detail-body {
+    padding: 0 14px 16px;
+  }
+
+  .task-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .task-link-selector,
+  .task-link-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .task-link-actions {
+    justify-content: flex-end;
   }
 }
 </style>

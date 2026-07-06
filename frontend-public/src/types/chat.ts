@@ -122,6 +122,7 @@ export interface ChatMessageItem {
   actions?: HermesActionItem[]
   actionStatuses?: Record<string, string>
   selectionCards?: HermesSelectionCardItem[]
+  selectionStatuses?: Record<string, string>
   createdAt: string | null
   updatedAt: string | null
 }
@@ -184,6 +185,7 @@ export type ChatSocketEvent =
   | { type: 'AGENT_TASK_EVENT'; event: ChatRoomAgentTaskEvent }
   | { type: 'AGENT_ACTION_PENDING'; taskId: number | null; messageId: number | null; actions: HermesActionItem[] }
   | { type: 'AGENT_SELECTION_PENDING'; taskId: number | null; messageId: number | null; selectionCards: HermesSelectionCardItem[] }
+  | { type: 'AGENT_SELECTION_RESOLVED'; taskId: number | null; messageId: number | null; selectionKey: string; status: string }
   | { type: 'AGENT_ACTION_EXECUTED'; taskId: number | null; messageId: number | null; action: HermesActionItem | null; status: string; actionKey?: string }
   | { type: string; [key: string]: unknown }
 

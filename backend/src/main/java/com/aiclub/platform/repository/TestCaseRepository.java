@@ -3,11 +3,12 @@ package com.aiclub.platform.repository;
 import com.aiclub.platform.domain.model.TestCaseEntity;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
-public interface TestCaseRepository extends JpaRepository<TestCaseEntity, Long> {
+public interface TestCaseRepository extends JpaRepository<TestCaseEntity, Long>, JpaSpecificationExecutor<TestCaseEntity> {
 
     long countByTestPlan_Id(Long testPlanId);
 

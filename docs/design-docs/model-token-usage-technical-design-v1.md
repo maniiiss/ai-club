@@ -186,7 +186,7 @@ code-processing 至少补以下验证：
 - 服务端时区将直接影响“今日 / 本周”边界，需要与部署环境保持一致
 - PATROL 采用执行结束后统一上报，如果巡检进程在写结果前异常退出，则可能丢失本次 usage
 - 第一版展示总 token，无法直接从页面区分输入消耗和输出消耗
-- 这是一个跨 `backend` 与 `code-processing` 的共享链路改动，实施时必须同步更新 `docs/architecture.md`
+- 这是一个跨 `backend` 与 `code-processing` 的共享链路改动，实施时必须同步更新 `../architecture.md`
 
 ## 9. 实施约束
 
@@ -198,3 +198,4 @@ code-processing 至少补以下验证：
 - PATROL 执行入口与结果归档链路
 
 若 impact 返回 HIGH 或 CRITICAL，需要先重新评估 blast radius 再实施。
+

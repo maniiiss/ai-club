@@ -1,5 +1,6 @@
 package com.aiclub.platform.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +18,7 @@ public class WikiKnowledgeProperties {
     private final int qdrantTimeoutSeconds;
     private final String projectCollection;
     private final String spaceCollection;
+    private final String hermesFileLibraryCollection;
     private final Long embeddingModelId;
     private final String embeddingBaseUrl;
     private final String embeddingApiKey;
@@ -34,6 +36,7 @@ public class WikiKnowledgeProperties {
     private final int graphMaxEdgesPerNode;
     private final int graphScrollPageSize;
 
+    @Autowired
     public WikiKnowledgeProperties(
             @Value("${platform.wiki-knowledge.enabled:true}") boolean enabled,
             @Value("${platform.wiki-knowledge.qdrant.base-url:http://localhost:6333}") String qdrantBaseUrl,
@@ -41,6 +44,7 @@ public class WikiKnowledgeProperties {
             @Value("${platform.wiki-knowledge.qdrant.timeout-seconds:20}") int qdrantTimeoutSeconds,
             @Value("${platform.wiki-knowledge.qdrant.project-collection:wiki_project_chunks}") String projectCollection,
             @Value("${platform.wiki-knowledge.qdrant.space-collection:wiki_space_chunks}") String spaceCollection,
+            @Value("${platform.wiki-knowledge.qdrant.hermes-file-library-collection:hermes_file_library_chunks}") String hermesFileLibraryCollection,
             @Value("${platform.wiki-knowledge.embedding.model-id:0}") long embeddingModelId,
             @Value("${platform.wiki-knowledge.embedding.base-url:}") String embeddingBaseUrl,
             @Value("${platform.wiki-knowledge.embedding.api-key:}") String embeddingApiKey,
@@ -63,6 +67,7 @@ public class WikiKnowledgeProperties {
         this.qdrantTimeoutSeconds = Math.max(5, qdrantTimeoutSeconds);
         this.projectCollection = hasText(projectCollection) ? projectCollection.trim() : "wiki_project_chunks";
         this.spaceCollection = hasText(spaceCollection) ? spaceCollection.trim() : "wiki_space_chunks";
+        this.hermesFileLibraryCollection = hasText(hermesFileLibraryCollection) ? hermesFileLibraryCollection.trim() : "hermes_file_library_chunks";
         this.embeddingModelId = embeddingModelId > 0 ? embeddingModelId : null;
         this.embeddingBaseUrl = trimTrailingSlash(embeddingBaseUrl);
         this.embeddingApiKey = defaultString(embeddingApiKey);
@@ -79,6 +84,38 @@ public class WikiKnowledgeProperties {
         this.graphSimilarityThreshold = Math.max(0d, Math.min(graphSimilarityThreshold, 1d));
         this.graphMaxEdgesPerNode = Math.max(1, Math.min(graphMaxEdgesPerNode, 50));
         this.graphScrollPageSize = Math.max(16, Math.min(graphScrollPageSize, 1024));
+    }
+
+    /**
+     * 兼容旧测试构造方式：未显式传 Hermes 文件库 collection 时使用默认 collection。
+     */
+    public WikiKnowledgeProperties(boolean enabled,
+                                   String qdrantBaseUrl,
+                                   String qdrantApiKey,
+                                   int qdrantTimeoutSeconds,
+                                   String projectCollection,
+                                   String spaceCollection,
+                                   long embeddingModelId,
+                                   String embeddingBaseUrl,
+                                   String embeddingApiKey,
+                                   String embeddingModelName,
+                                   String embeddingProvider,
+                                   int vectorSearchLimit,
+                                   int candidateLimit,
+                                   String rerankBaseUrl,
+                                   String rerankApiKey,
+                                   String rerankModel,
+                                   String rerankProvider,
+                                   int rerankTimeoutSeconds,
+                                   int rerankTopK,
+                                   double graphSimilarityThreshold,
+                                   int graphMaxEdgesPerNode,
+                                   int graphScrollPageSize) {
+        this(enabled, qdrantBaseUrl, qdrantApiKey, qdrantTimeoutSeconds, projectCollection, spaceCollection,
+                "hermes_file_library_chunks", embeddingModelId, embeddingBaseUrl, embeddingApiKey, embeddingModelName,
+                embeddingProvider, vectorSearchLimit, candidateLimit, rerankBaseUrl, rerankApiKey, rerankModel,
+                rerankProvider, rerankTimeoutSeconds, rerankTopK, graphSimilarityThreshold, graphMaxEdgesPerNode,
+                graphScrollPageSize);
     }
 
     public boolean isEnabled() {
@@ -103,6 +140,10 @@ public class WikiKnowledgeProperties {
 
     public String getSpaceCollection() {
         return spaceCollection;
+    }
+
+    public String getHermesFileLibraryCollection() {
+        return hermesFileLibraryCollection;
     }
 
     public Long getEmbeddingModelId() {

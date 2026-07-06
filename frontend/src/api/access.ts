@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { ApiResponse, CreditAccountBackfillResult, CreditAccountItem, CreditFeatureConfigItem, CreditGlobalConfigItem, CreditTransactionItem, DashboardShortcutEntryItem, DataPermissionScopeValue, PageResponse, PermissionItem, PlatformEnvVarDetailItem, PlatformEnvVarItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
+import type { ApiResponse, CreditAccountBackfillResult, CreditAccountItem, CreditFeatureConfigItem, CreditGlobalConfigItem, CreditTransactionItem, DashboardShortcutEntryItem, DataChangeAuditItem, DataChangeDsl, DataChangePreviewResult, DataChangeRequestItem, DataPermissionScopeValue, DataWorkbenchEntityItem, DataWorkbenchEntityParseResult, PageResponse, PermissionItem, PlatformEnvVarDetailItem, PlatformEnvVarItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
 
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
@@ -84,6 +84,42 @@ export interface PlatformToolPayload {
   descriptionOverride?: string
   enabled: boolean
   allowAutoExecute: boolean
+}
+
+export interface DataWorkbenchEntityPayload {
+  entityCode: string
+  entityName: string
+  description: string
+  tableName: string
+  primaryKeyColumn: string
+  /** 归属的平台项目 ID，替代 v1 的动态 project_id 列。 */
+  platformProjectId: number | null
+  maxAffectedRows: number
+  requestScope: DataPermissionScopeValue
+  executeScope: DataPermissionScopeValue
+  rollbackScope: DataPermissionScopeValue
+  enabled: boolean
+  fields: Array<{
+    id?: number | null
+    fieldCode: string
+    fieldName: string
+    columnName: string
+    dataType: string
+    synonyms: string
+    updatable: boolean
+    locator: boolean
+    sensitive: boolean
+    enabled: boolean
+    sortOrder: number
+  }>
+}
+
+export interface DataChangeQuery {
+  page: number
+  size: number
+  projectId?: number
+  approvalStatus?: string
+  executionStatus?: string
 }
 
 export interface PlatformEnvVarPayload {
@@ -243,6 +279,90 @@ export const getPlatformToolDetail = async (toolCode: string) => {
 
 export const updatePlatformTool = async (toolCode: string, payload: PlatformToolPayload) => {
   const { data } = await http.put<ApiResponse<PlatformToolItem>>(`/api/platform-tools/${encodeURIComponent(toolCode)}`, payload)
+  return data.data
+}
+
+export const pageDataChangeRequests = async (query: DataChangeQuery) => {
+  const { data } = await http.get<ApiResponse<PageResponse<DataChangeRequestItem>>>('/api/data-workbench/data-change/requests', {
+    params: cleanParams(query)
+  })
+  return data.data
+}
+
+export const approveDataChangeRequest = async (id: number) => {
+  const { data } = await http.post<ApiResponse<DataChangeRequestItem>>(`/api/data-workbench/data-change/requests/${id}/approve`)
+  return data.data
+}
+
+export const rejectDataChangeRequest = async (id: number, reason: string) => {
+  const { data } = await http.post<ApiResponse<DataChangeRequestItem>>(`/api/data-workbench/data-change/requests/${id}/reject`, { reason })
+  return data.data
+}
+
+export const executeDataChangeRequest = async (id: number) => {
+  const { data } = await http.post<ApiResponse<DataChangeRequestItem>>(`/api/data-workbench/data-change/requests/${id}/execute`)
+  return data.data
+}
+
+export const rollbackDataChangeRequest = async (id: number) => {
+  const { data } = await http.post<ApiResponse<DataChangeRequestItem>>(`/api/data-workbench/data-change/requests/${id}/rollback`)
+  return data.data
+}
+
+export const listDataChangeAudits = async (id: number) => {
+  const { data } = await http.get<ApiResponse<DataChangeAuditItem[]>>(`/api/data-workbench/data-change/requests/${id}/audits`)
+  return data.data
+}
+
+export const parseDataChangeDsl = async (projectId: number, payload: { text: string; entityCode?: string; dsl?: Record<string, unknown> }) => {
+  const { data } = await http.post<ApiResponse<DataChangeDsl>>(`/api/data-workbench/projects/${projectId}/data-change/parse`, payload)
+  return data.data
+}
+
+export const previewDataChange = async (projectId: number, payload: { text: string; entityCode?: string; dsl?: Record<string, unknown> }) => {
+  const { data } = await http.post<ApiResponse<DataChangePreviewResult>>(`/api/data-workbench/projects/${projectId}/data-change/preview`, payload)
+  return data.data
+}
+
+export const submitDataChangeRequest = async (projectId: number, payload: { text: string; entityCode?: string; dsl?: Record<string, unknown> }) => {
+  const { data } = await http.post<ApiResponse<DataChangeRequestItem>>(`/api/data-workbench/projects/${projectId}/data-change/requests`, payload)
+  return data.data
+}
+
+export const pageProjectDataChangeRequests = async (projectId: number, page: number, size: number) => {
+  const { data } = await http.get<ApiResponse<PageResponse<DataChangeRequestItem>>>(`/api/data-workbench/projects/${projectId}/data-change/requests`, {
+    params: { page, size }
+  })
+  return data.data
+}
+
+export const listDataWorkbenchEntities = async (includeDisabled = true, platformProjectId?: number) => {
+  const { data } = await http.get<ApiResponse<DataWorkbenchEntityItem[]>>('/api/data-workbench/config/entities', {
+    params: cleanParams({ includeDisabled, platformProjectId })
+  })
+  return data.data
+}
+
+export const createDataWorkbenchEntity = async (payload: DataWorkbenchEntityPayload) => {
+  const { data } = await http.post<ApiResponse<DataWorkbenchEntityItem>>('/api/data-workbench/config/entities', payload)
+  return data.data
+}
+
+export const updateDataWorkbenchEntity = async (id: number, payload: DataWorkbenchEntityPayload) => {
+  const { data } = await http.put<ApiResponse<DataWorkbenchEntityItem>>(`/api/data-workbench/config/entities/${id}`, payload)
+  return data.data
+}
+
+export const deleteDataWorkbenchEntity = async (id: number) => {
+  await http.delete<ApiResponse<null>>(`/api/data-workbench/config/entities/${id}`)
+}
+
+/**
+ * 从 DDL / Java 实体类源码解析出实体草稿，用于在“新增实体”弹窗中一键回填表单。
+ * 只读操作，后端不落库；实际保存仍走 create/update。
+ */
+export const parseDataWorkbenchEntityDraft = async (payload: { sourceType: 'DDL' | 'JAVA'; content: string }) => {
+  const { data } = await http.post<ApiResponse<DataWorkbenchEntityParseResult>>('/api/data-workbench/config/entities/parse', payload)
   return data.data
 }
 

@@ -7,7 +7,9 @@ import type { ApiResponse, PageResponse } from '@/src/types/api'
 import type {
   AiClubPipelineItem,
   AiClubPipelineRunItem,
+  AiClubPipelineTriggerResult,
   JenkinsBuildItem,
+  JenkinsBuildTriggerResult,
   ObservabilityHealthTimelinePointItem,
   ObservabilityProjectHealthItem,
   ObservabilityProjectItem,
@@ -163,4 +165,26 @@ export const createOrRefreshProjectShare = async (
 /** 禁用项目分享。 */
 export const disableProjectShare = async (projectId: number): Promise<void> => {
   await http.delete<ApiResponse<null>>(`/api/gitlab/projects/${projectId}/auto-merge-share`)
+}
+
+/* ── 流水线触发 ── */
+
+/** 触发 AI Club 流水线。 */
+export const triggerAiClubPipeline = async (
+  pipelineId: number,
+): Promise<AiClubPipelineTriggerResult> => {
+  const res = await http.post<ApiResponse<AiClubPipelineTriggerResult>>(
+    `/api/cicd/pipelines/${pipelineId}/trigger`,
+  )
+  return unwrap(res)
+}
+
+/** 触发 Jenkins 流水线绑定构建。 */
+export const triggerPipelineBuild = async (
+  bindingId: number,
+): Promise<JenkinsBuildTriggerResult> => {
+  const res = await http.post<ApiResponse<JenkinsBuildTriggerResult>>(
+    `/api/cicd/pipeline-bindings/${bindingId}/trigger`,
+  )
+  return unwrap(res)
 }

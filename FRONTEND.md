@@ -355,7 +355,7 @@ vue-tsc --noEmit
 
 ## 移动端设计规范
 
-详细设计方案参见: `docs/mobile-console-technical-design-v1.md`
+详细设计方案参见: `docs/design-docs/mobile-console-technical-design-v1.md`
 
 ### 设计原则
 
@@ -425,3 +425,4 @@ function syncViewportMode() {
 ---
 
 *本文档基于项目现有代码规范整理，持续更新中。*
+

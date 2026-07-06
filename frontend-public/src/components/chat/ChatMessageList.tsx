@@ -8,7 +8,7 @@ import type { ChatMessageItem } from '@/src/types/chat'
 import type { HermesActionItem, HermesSelectionOptionItem, HermesSelectionPayload } from '@/src/types/hermes'
 import { Button } from '@/src/components/common/Button'
 import { Markdown } from '@/src/components/common/Markdown'
-import { formatChatFileSize } from '@/src/lib/chatUtils'
+import { formatChatFileSize, normalizeGeneratedMarkdown, resolveAgentActionStatus } from '@/src/lib/chatUtils'
 import { cn, getInitials } from '@/src/lib/utils'
 
 interface ChatMessageListProps {
@@ -112,7 +112,7 @@ export const ChatMessageList = ({
                       Hermes 回复失败，可重试生成。
                     </div>
                   )}
-                  <Markdown content={message.content || (message.status === 'streaming' ? 'Hermes 正在组织回复...' : '')} />
+                  <Markdown content={normalizeGeneratedMarkdown(message.content || (message.status === 'streaming' ? 'Hermes 正在组织回复...' : ''))} />
                   {message.status === 'streaming' && (
                     <span className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium text-amber-700">
                       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
@@ -133,7 +133,7 @@ export const ChatMessageList = ({
                           action={action}
                           index={index}
                           actionKey={computeActionKey(action, index)}
-                          status={message.actionStatuses?.[computeActionKey(action, index)] || message.agentTaskStatus}
+                          status={resolveAgentActionStatus(message, computeActionKey(action, index))}
                           busy={resolvingActionKey === computeActionKey(action, index)}
                           onConfirm={onConfirmAgentAction}
                           onCancel={onCancelAgentAction}
@@ -150,19 +150,28 @@ export const ChatMessageList = ({
                           <div className="mt-2 grid gap-1.5">
                             {card.options.map((option) => {
                               const selection = toSelection(card.resumeQuestion, option)
-                              const selectionKey = `${message.agentTaskId || ''}:${selection?.slot || ''}:${selection?.entityType || ''}:${selection?.entityId || ''}`
+                              const selectionStatusKey = `${selection?.slot || ''}:${selection?.entityType || ''}:${selection?.entityId || ''}`
+                              const resolvingKey = `${message.agentTaskId || ''}:${selectionStatusKey}`
+                              const selected = message.selectionStatuses?.[selectionStatusKey] === 'selected'
                               return (
                               <button
                                 key={`${option.entityType}-${option.entityId}-${option.title}`}
                                 type="button"
-                                disabled={!selection || resolvingSelectionKey === selectionKey}
+                                disabled={!selection || selected || resolvingSelectionKey === resolvingKey}
                                 onClick={() => selection && onSelectAgentCandidate(message, selection)}
-                                className="flex items-start gap-2 rounded-lg border border-[var(--color-border-light)] bg-white px-2.5 py-2 text-left transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] disabled:cursor-not-allowed disabled:opacity-60"
+                                className={cn(
+                                  'flex items-start gap-2 rounded-lg border bg-white px-2.5 py-2 text-left transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] disabled:cursor-not-allowed',
+                                  selected ? 'border-emerald-200 bg-emerald-50/80' : 'border-[var(--color-border-light)] disabled:opacity-60',
+                                )}
                               >
-                                <MousePointer2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" />
+                                {selected ? (
+                                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                                ) : (
+                                  <MousePointer2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-primary)]" />
+                                )}
                                 <span className="min-w-0">
                                   <span className="block truncate text-[12px] font-medium text-[var(--color-text-primary)]">{option.title}</span>
-                                  <span className="block text-[11px] text-[var(--color-text-tertiary)]">{option.subtitle || option.entityType}</span>
+                                  <span className="block text-[11px] text-[var(--color-text-tertiary)]">{selected ? '已确认' : (option.subtitle || option.entityType)}</span>
                                 </span>
                               </button>
                             )})}

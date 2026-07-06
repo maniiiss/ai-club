@@ -30,7 +30,13 @@ public record HermesChatRequest(
         /**
          * 调试模式仅用于前端展示内部规划轨迹，默认关闭。
          */
-        Boolean debug
+        Boolean debug,
+        /**
+         * 由前端 Slash 命令菜单提交的结构化业务 Skill 命令。
+         * 后端只信任该字段，不从自然语言问题里自动推断业务 Skill。
+         */
+        @Size(max = 40, message = "Slash 命令长度不能超过 40 个字符")
+        String slashCommand
 ) {
     /**
      * 兼容旧调用方：未提供 Wiki 绑定信息时自动置空。
@@ -44,6 +50,23 @@ public record HermesChatRequest(
                              String clientConversationId,
                              HermesSelectionRequest selection,
                              Boolean debug) {
-        this(question, routeName, projectId, taskId, iterationId, planId, null, null, clientConversationId, selection, debug);
+        this(question, routeName, projectId, taskId, iterationId, planId, null, null, clientConversationId, selection, debug, null);
+    }
+
+    /**
+     * 兼容旧调用方：未提供 Slash 命令时不启用业务 Skill。
+     */
+    public HermesChatRequest(String question,
+                             String routeName,
+                             Long projectId,
+                             Long taskId,
+                             Long iterationId,
+                             Long planId,
+                             Long wikiSpaceId,
+                             Long wikiPageId,
+                             String clientConversationId,
+                             HermesSelectionRequest selection,
+                             Boolean debug) {
+        this(question, routeName, projectId, taskId, iterationId, planId, wikiSpaceId, wikiPageId, clientConversationId, selection, debug, null);
     }
 }

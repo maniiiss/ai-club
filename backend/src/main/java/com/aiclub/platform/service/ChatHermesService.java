@@ -8,13 +8,18 @@ import com.aiclub.platform.domain.model.RoleEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.ChatMessageSummary;
 import com.aiclub.platform.dto.CurrentUserInfo;
+import com.aiclub.platform.dto.HermesActionSummary;
 import com.aiclub.platform.dto.HermesChatRoomAgentTaskResult;
 import com.aiclub.platform.dto.HermesConversationContextSnapshot;
 import com.aiclub.platform.dto.HermesConversationRequestSnapshot;
 import com.aiclub.platform.dto.HermesConversationState;
 import com.aiclub.platform.dto.HermesConversationTurn;
 import com.aiclub.platform.dto.HermesGroundingState;
+import com.aiclub.platform.dto.HermesGroundingTarget;
+import com.aiclub.platform.dto.HermesSelectionCard;
+import com.aiclub.platform.dto.HermesSelectionOption;
 import com.aiclub.platform.dto.HermesToolExecutionPolicy;
+import com.aiclub.platform.dto.request.HermesSelectionRequest;
 import com.aiclub.platform.repository.ChatMessageRepository;
 import com.aiclub.platform.repository.ChatRoomRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,12 +28,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 聊天室 @Hermes 回复服务。
@@ -38,6 +47,12 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ChatHermesService {
 
     private static final int MAX_SUMMARY_LENGTH = 4000;
+    private static final Pattern QUOTED_TITLE_PATTERN = Pattern.compile("(?:需求)?标题是[“\"]([^”\"]+)[”\"]");
+    private static final Pattern PLAIN_TITLE_PATTERN = Pattern.compile("(?:需求)?标题是[：:\\s]*([^，。；;\\n]+)");
+    private static final Pattern QUOTED_CONTENT_PATTERN = Pattern.compile("内容是[“\"]([^”\"]+)[”\"]");
+    private static final Pattern PLAIN_CONTENT_PATTERN = Pattern.compile("内容是[：:\\s]*([^，。；;\\n]+)");
+    private static final Pattern ITERATION_ID_IN_TEXT_PATTERN = Pattern.compile("迭代[^\\n。；;]{0,40}(?:\\(|（)\\s*ID[:：]?\\s*(\\d+)\\s*(?:\\)|）)");
+    private static final Pattern ITERATION_ID_FIELD_PATTERN = Pattern.compile("(?:iterationId|迭代ID)[：:\\s]*(\\d+)", Pattern.CASE_INSENSITIVE);
 
     private final ChatRoomRepository chatRoomRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -147,6 +162,16 @@ public class ChatHermesService {
                                                              String taskInstruction,
                                                              UserEntity authorizedByUser,
                                                              HermesToolExecutionPolicy toolExecutionPolicy) {
+        return startAgentTaskReply(roomId, assistantMessageId, taskInstruction, authorizedByUser, toolExecutionPolicy, HermesGroundingState.empty());
+    }
+
+    @Transactional
+    public HermesChatRoomAgentTaskResult startAgentTaskReply(Long roomId,
+                                                             Long assistantMessageId,
+                                                             String taskInstruction,
+                                                             UserEntity authorizedByUser,
+                                                             HermesToolExecutionPolicy toolExecutionPolicy,
+                                                             HermesGroundingState groundingState) {
         if (!runningRoomIds.add(roomId)) {
             markAssistantError(roomId, assistantMessageId, "Hermes 正在回复中，请稍后再试");
             return HermesChatRoomAgentTaskResult.empty("Hermes 正在回复中，请稍后再试");
@@ -157,7 +182,7 @@ public class ChatHermesService {
             ChatMessageEntity assistantMessage = chatMessageRepository.findById(assistantMessageId)
                     .orElseThrow(() -> new NoSuchElementException("Hermes 消息不存在"));
 
-            PreparedChatHermesSession preparedSession = prepareMcpSessionForAgentTask(room, authorizedByUser, assistantMessageId, taskInstruction, toolExecutionPolicy);
+            PreparedChatHermesSession preparedSession = prepareMcpSessionForAgentTask(room, authorizedByUser, assistantMessageId, taskInstruction, toolExecutionPolicy, groundingState);
             List<HermesConversationTurn> transcript = buildAgentTaskTranscript(room, taskInstruction);
             StringBuilder streamedContent = new StringBuilder();
             HermesGatewayService.HermesGatewayResult result = hermesGatewayService.streamChatCompletion(
@@ -299,6 +324,15 @@ public class ChatHermesService {
                                                                     Long assistantMessageId,
                                                                     String taskInstruction,
                                                                     HermesToolExecutionPolicy toolExecutionPolicy) {
+        return prepareMcpSessionForAgentTask(room, authorizedByUser, assistantMessageId, taskInstruction, toolExecutionPolicy, HermesGroundingState.empty());
+    }
+
+    PreparedChatHermesSession prepareMcpSessionForAgentTask(ChatRoomEntity room,
+                                                            UserEntity authorizedByUser,
+                                                            Long assistantMessageId,
+                                                            String taskInstruction,
+                                                            HermesToolExecutionPolicy toolExecutionPolicy,
+                                                            HermesGroundingState groundingState) {
         if (hermesConversationStateStore == null || hermesMcpSessionTokenService == null) {
             return new PreparedChatHermesSession("", "", "");
         }
@@ -340,13 +374,83 @@ public class ChatHermesService {
                 List.of(),
                 List.of(),
                 List.of(),
-                HermesGroundingState.empty(),
+                groundingState == null ? HermesGroundingState.empty() : groundingState,
                 List.of(),
                 "",
                 toolExecutionPolicy
         );
         hermesConversationStateStore.save(state);
         return new PreparedChatHermesSession(sessionToken, scopeKey, clientConversationId);
+    }
+
+    /**
+     * 聊天室候选选择不会经过标准 Hermes 会话接口，这里用原候选卡片把用户选择恢复成 grounding。
+     * 业务意图：后续任务必须知道“已确认的是迭代/项目/工作项”，写工具才能直接产出动作卡片。
+     */
+    HermesGroundingState buildGroundingStateFromSelection(List<HermesSelectionCard> selectionCards,
+                                                          HermesSelectionRequest selection) {
+        if (selection == null) {
+            return HermesGroundingState.empty();
+        }
+        HermesSelectionOption option = findSelectionOption(selectionCards, selection);
+        Long projectId = resolveProjectIdFromRoute(option == null ? "" : option.route());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (option != null) {
+            payload.put("matchScore", option.matchScore());
+            payload.put("matchReasons", option.matchReasons() == null ? List.of() : option.matchReasons());
+        }
+        if (projectId != null) {
+            payload.put("projectId", projectId);
+        }
+        String slot = defaultString(selection.slot());
+        HermesGroundingTarget target = new HermesGroundingTarget(
+                slot,
+                defaultString(selection.entityType()),
+                selection.entityId(),
+                option == null ? defaultString(selection.entityType()) + " #" + selection.entityId() : defaultString(option.title()),
+                option == null ? "" : defaultString(option.route()),
+                projectId,
+                "SELECTION",
+                Map.copyOf(payload)
+        );
+        return HermesGroundingState.empty()
+                .withBoundSlot(slot, target)
+                .withRecentResolvedSlot(slot, target)
+                .clearPendingSelection();
+    }
+
+    private HermesSelectionOption findSelectionOption(List<HermesSelectionCard> selectionCards,
+                                                      HermesSelectionRequest selection) {
+        if (selectionCards == null || selectionCards.isEmpty() || selection == null) {
+            return null;
+        }
+        for (HermesSelectionCard card : selectionCards) {
+            if (!defaultString(card.slot()).equals(defaultString(selection.slot()))) {
+                continue;
+            }
+            for (HermesSelectionOption option : card.options() == null ? List.<HermesSelectionOption>of() : card.options()) {
+                if (selection.entityId().equals(option.entityId())
+                        && defaultString(selection.entityType()).equalsIgnoreCase(defaultString(option.entityType()))) {
+                    return option;
+                }
+            }
+        }
+        return null;
+    }
+
+    private Long resolveProjectIdFromRoute(String route) {
+        if (!hasText(route)) {
+            return null;
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("/projects/(\\d+)").matcher(route);
+        if (!matcher.find()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(matcher.group(1));
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private HermesPromptBuilder.HermesPrompt buildPrompt(ChatRoomEntity room, String sessionToken) {
@@ -500,13 +604,149 @@ public class ChatHermesService {
             return HermesChatRoomAgentTaskResult.empty(content);
         }
         return hermesConversationStateStore.load(preparedSession.scopeKey(), preparedSession.clientConversationId())
-                .map(state -> new HermesChatRoomAgentTaskResult(
-                        content,
-                        state.actions(),
-                        state.selectionCards(),
-                        state.toolExecutions()
-                ))
+                .map(state -> {
+                    List<HermesActionSummary> actions = resolveAgentTaskActions(state, content);
+                    return new HermesChatRoomAgentTaskResult(
+                            content,
+                            actions,
+                            state.selectionCards(),
+                            state.toolExecutions()
+                    );
+                })
                 .orElseGet(() -> HermesChatRoomAgentTaskResult.empty(content));
+    }
+
+    /**
+     * 聊天室 Agent 的模型回复有时会先通过只读工具定位迭代，再用自然语言询问“是否创建”。
+     * 业务上这已经进入写入确认阶段，这里把已定位的项目和迭代补成标准动作卡片，前端才能展示确认执行入口。
+     */
+    private List<HermesActionSummary> resolveAgentTaskActions(HermesConversationState state, String content) {
+        if (state == null || !state.actions().isEmpty() || !isCreateRequirementConfirmation(state, content)) {
+            return state == null ? List.of() : state.actions();
+        }
+        HermesGroundingState groundingState = state.groundingState();
+        Long projectId = resolveGroundedProjectId(state, groundingState);
+        Long iterationId = firstNonNull(
+                resolveGroundedEntityId(groundingState, "iteration"),
+                extractIterationIdFromContent(content)
+        );
+        if (projectId == null || iterationId == null) {
+            return state.actions();
+        }
+
+        String sourceText = defaultString(content);
+        String requestQuestion = state.currentRequest() == null ? "" : defaultString(state.currentRequest().question());
+        String title = firstNonBlank(extractByPatterns(sourceText, QUOTED_TITLE_PATTERN, PLAIN_TITLE_PATTERN),
+                extractByPatterns(requestQuestion, QUOTED_TITLE_PATTERN, PLAIN_TITLE_PATTERN),
+                "Hermes 创建的需求草稿");
+        String draftContent = firstNonBlank(extractByPatterns(sourceText, QUOTED_CONTENT_PATTERN, PLAIN_CONTENT_PATTERN),
+                extractByPatterns(requestQuestion, QUOTED_CONTENT_PATTERN, PLAIN_CONTENT_PATTERN),
+                requestQuestion.isBlank() ? "" : "根据用户请求自动整理的需求草稿：\n" + requestQuestion);
+
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("projectId", projectId);
+        params.put("iterationId", iterationId);
+        params.put("workItemType", "需求");
+        params.put("name", title);
+        params.put("content", draftContent);
+        return List.of(new HermesActionSummary(
+                "CREATE_WORK_ITEM_DRAFT",
+                "创建需求草稿",
+                "确认后会在当前项目下创建一个“需求”草稿。",
+                true,
+                params
+        ));
+    }
+
+    private boolean isCreateRequirementConfirmation(HermesConversationState state, String content) {
+        String requestQuestion = state == null || state.currentRequest() == null ? "" : state.currentRequest().question();
+        String combined = defaultString(requestQuestion) + "\n" + defaultString(content);
+        return (combined.contains("创建需求草稿")
+                || combined.contains("创建需求")
+                || combined.contains("新增需求")
+                || combined.contains("加一个需求")
+                || combined.contains("需求标题")
+                || (combined.contains("创建") && combined.contains("需求") && combined.contains("确认")));
+    }
+
+    private Long resolveGroundedProjectId(HermesConversationState state, HermesGroundingState groundingState) {
+        Long projectId = resolveGroundedEntityId(groundingState, "project");
+        if (projectId != null) {
+            return projectId;
+        }
+        if (state != null && state.currentRequest() != null && state.currentRequest().projectId() != null) {
+            return state.currentRequest().projectId();
+        }
+        if (state != null && state.context() != null) {
+            return state.context().projectId();
+        }
+        HermesGroundingTarget iterationTarget = groundingState == null ? null : groundingState.boundSlot("iteration");
+        return iterationTarget == null ? null : iterationTarget.projectId();
+    }
+
+    private Long resolveGroundedEntityId(HermesGroundingState groundingState, String slot) {
+        HermesGroundingTarget target = groundingState == null ? null : groundingState.boundSlot(slot);
+        return target == null ? null : target.entityId();
+    }
+
+    private Long extractIterationIdFromContent(String content) {
+        String normalized = defaultString(content);
+        if (normalized.isBlank()) {
+            return null;
+        }
+        Long id = extractLongByPattern(normalized, ITERATION_ID_IN_TEXT_PATTERN);
+        return id == null ? extractLongByPattern(normalized, ITERATION_ID_FIELD_PATTERN) : id;
+    }
+
+    private Long extractLongByPattern(String text, Pattern pattern) {
+        Matcher matcher = pattern.matcher(text);
+        if (!matcher.find()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(matcher.group(1));
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private String extractByPatterns(String text, Pattern... patterns) {
+        String normalized = defaultString(text);
+        if (normalized.isBlank()) {
+            return "";
+        }
+        for (Pattern pattern : patterns) {
+            Matcher matcher = pattern.matcher(normalized);
+            if (matcher.find()) {
+                return defaultString(matcher.group(1));
+            }
+        }
+        return "";
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            String normalized = defaultString(value);
+            if (!normalized.isBlank()) {
+                return normalized;
+            }
+        }
+        return "";
+    }
+
+    private Long firstNonNull(Long... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Long value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private String resolveErrorMessage(Exception exception) {
@@ -539,6 +779,6 @@ public class ChatHermesService {
                 .toList();
     }
 
-    private record PreparedChatHermesSession(String sessionToken, String scopeKey, String clientConversationId) {
+    record PreparedChatHermesSession(String sessionToken, String scopeKey, String clientConversationId) {
     }
 }

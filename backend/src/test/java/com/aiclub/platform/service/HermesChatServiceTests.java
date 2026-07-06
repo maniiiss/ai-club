@@ -145,11 +145,7 @@ class HermesChatServiceTests {
         when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        var response = hermesChatService.chat(10L, new HermesSessionChatRequest(
-                "这个项目当前最大的阻塞是什么",
-                null,
-                null
-        ));
+        var response = hermesChatService.chat(10L, new HermesSessionChatRequest("这个项目当前最大的阻塞是什么", null, null, null));
 
         ArgumentCaptor<HermesConversationState> stateCaptor = ArgumentCaptor.forClass(HermesConversationState.class);
         ArgumentCaptor<List<HermesConversationTurn>> outboundTranscriptCaptor = ArgumentCaptor.forClass(List.class);
@@ -243,11 +239,7 @@ class HermesChatServiceTests {
         when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        hermesChatService.chat(10L, new HermesSessionChatRequest(
-                "继续处理当前需求",
-                new HermesSelectionRequest("workItem", "WORK_ITEM", 101L, "继续处理当前需求"),
-                null
-        ));
+        hermesChatService.chat(10L, new HermesSessionChatRequest("继续处理当前需求", new HermesSelectionRequest("workItem", "WORK_ITEM", 101L, "继续处理当前需求"), null, null));
 
         ArgumentCaptor<HermesConversationState> stateCaptor = ArgumentCaptor.forClass(HermesConversationState.class);
         verify(hermesConversationStateStore, atLeast(2)).save(stateCaptor.capture());
@@ -338,7 +330,7 @@ class HermesChatServiceTests {
         when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        hermesChatService.chat(10L, new HermesSessionChatRequest("换个问题，帮我总结当前项目风险", null, null));
+        hermesChatService.chat(10L, new HermesSessionChatRequest("换个问题，帮我总结当前项目风险", null, null, null));
 
         HermesConversationState finalState = redisState.get();
         assertThat(finalState.actions()).isEmpty();
@@ -410,7 +402,7 @@ class HermesChatServiceTests {
         when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        hermesChatService.chat(10L, new HermesSessionChatRequest("继续说一下新的风险", null, null));
+        hermesChatService.chat(10L, new HermesSessionChatRequest("继续说一下新的风险", null, null, null));
 
         HermesConversationState finalState = redisState.get();
         assertThat(finalState.toolExecutions()).isEmpty();
@@ -457,7 +449,7 @@ class HermesChatServiceTests {
         when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        hermesChatService.chat(10L, new HermesSessionChatRequest("帮我总结当前进展", null, null));
+        hermesChatService.chat(10L, new HermesSessionChatRequest("帮我总结当前进展", null, null, null));
 
         ArgumentCaptor<HermesChatRequest> requestCaptor = ArgumentCaptor.forClass(HermesChatRequest.class);
         verify(hermesContextAssembler).assemble(requestCaptor.capture(), eq(currentUser));
@@ -616,7 +608,7 @@ class HermesChatServiceTests {
         when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        hermesChatService.chat(10L, new HermesSessionChatRequest("继续解释这份文档", null, null));
+        hermesChatService.chat(10L, new HermesSessionChatRequest("继续解释这份文档", null, null, null));
 
         ArgumentCaptor<HermesConversationState> stateCaptor = ArgumentCaptor.forClass(HermesConversationState.class);
         verify(hermesConversationStateStore, atLeast(2)).save(stateCaptor.capture());
@@ -680,7 +672,7 @@ class HermesChatServiceTests {
         when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        hermesChatService.chat(10L, new HermesSessionChatRequest("帮我总结当前页", null, null));
+        hermesChatService.chat(10L, new HermesSessionChatRequest("帮我总结当前页", null, null, "/wiki"));
 
         ArgumentCaptor<HermesPromptBuilder.HermesPrompt> promptCaptor = ArgumentCaptor.forClass(HermesPromptBuilder.HermesPrompt.class);
         verify(hermesGatewayService).createChatCompletion(promptCaptor.capture(), any());
@@ -734,7 +726,7 @@ class HermesChatServiceTests {
         when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThatCode(() -> hermesChatService.streamChat(10L, new HermesSessionChatRequest("帮我总结当前项目", null, null))
+        assertThatCode(() -> hermesChatService.streamChat(10L, new HermesSessionChatRequest("帮我总结当前项目", null, null, null))
                 .writeTo(new DisconnectOnDeltaOutputStream()))
                 .doesNotThrowAnyException();
 
@@ -816,7 +808,7 @@ class HermesChatServiceTests {
         when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThatCode(() -> hermesChatService.streamChat(10L, new HermesSessionChatRequest("帮我发起执行任务", null, null))
+        assertThatCode(() -> hermesChatService.streamChat(10L, new HermesSessionChatRequest("帮我发起执行任务", null, null, null))
                 .writeTo(new DisconnectOnDeltaOutputStream()))
                 .doesNotThrowAnyException();
 
@@ -916,3 +908,4 @@ class HermesChatServiceTests {
         }
     }
 }
+
