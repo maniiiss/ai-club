@@ -210,17 +210,25 @@ def _resolve_last_reasoning_from_result(result: Any) -> str:
 
     content = replace_once(
         content,
-        """                tool_start_callback=_on_tool_start,
+        """                ephemeral_system_prompt=system_prompt,
+                session_id=session_id,
+                stream_delta_callback=_on_delta,
+                tool_start_callback=_on_tool_start,
                 tool_complete_callback=_on_tool_complete,
                 agent_ref=agent_ref,
                 gateway_session_key=gateway_session_key,
+                route=route,
             ))
 """,
-        """                tool_start_callback=_on_tool_start,
-                tool_complete_callback=_on_tool_complete,
+        """                ephemeral_system_prompt=system_prompt,
+                session_id=session_id,
+                stream_delta_callback=_on_delta,
                 tool_progress_callback=_on_tool_progress,
+                tool_start_callback=_on_tool_start,
+                tool_complete_callback=_on_tool_complete,
                 agent_ref=agent_ref,
                 gateway_session_key=gateway_session_key,
+                route=route,
             ))
 """,
         description="为 chat completions 流式调用接入 tool_progress_callback",
@@ -232,35 +240,37 @@ def _resolve_last_reasoning_from_result(result: Any) -> str:
                 result, agent_usage = await agent_task
                 usage = agent_usage or usage
             except Exception as exc:
-                logger.warning("Agent task %s failed, usage data lost: %s", completion_id, exc)
-
-            # Finish chunk
+                agent_error = exc
+                logger.error(
+                    "Agent task %s failed during SSE streaming: %s", completion_id, exc
+                )
 """,
         """            try:
                 result, agent_usage = await agent_task
                 usage = agent_usage or usage
                 if _reasoning_open:
-                    last_activity = await _emit("</think>")
+                    last_activity = await _emit("```")
                     _reasoning_open = False
                 elif not _reasoning_seen:
                     final_reasoning = _resolve_last_reasoning_from_result(result)
                     if final_reasoning:
-                        last_activity = await _emit(f"<think>{final_reasoning}</think>")
+                        last_activity = await _emit(f" reasoning{final_reasoning} ``` ")
             except Exception as exc:
-                logger.warning("Agent task %s failed, usage data lost: %s", completion_id, exc)
-
-            # Finish chunk
+                agent_error = exc
+                logger.error(
+                    "Agent task %s failed during SSE streaming: %s", completion_id, exc
+                )
 """,
         description="在流式收尾阶段补发最终 reasoning",
     )
 
     content = replace_once(
         content,
-        '        final_response = result.get("final_response") or ""\n',
-        """        final_response = result.get("final_response") or ""
+        '        final_response = _resolve_media_to_data_urls(result.get("final_response") or "")\n',
+        """        final_response = _resolve_media_to_data_urls(result.get("final_response") or "")
         final_reasoning = _resolve_last_reasoning_from_result(result)
         if final_reasoning:
-            final_response = f"<think>{final_reasoning}</think>\\n\\n{final_response}" if final_response else f"<think>{final_reasoning}</think>"
+            final_response = f" reasoning{final_reasoning} ``` \\n\\n{final_response}" if final_response else f" reasoning{final_reasoning} ``` "
 """,
         description="为非流式 chat completions 响应补上 think 块",
     )
