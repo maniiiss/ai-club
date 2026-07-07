@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('docs', 'backend', 'frontend', 'code-processing', 'all')]
+    [ValidateSet('docs', 'backend', 'frontend', 'frontend-public', 'code-processing', 'all')]
     [string]$Target = 'all'
 )
 

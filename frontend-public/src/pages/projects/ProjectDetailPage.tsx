@@ -13,11 +13,14 @@ import {
   Users,
   CheckSquare,
   GitBranch,
+  Settings2,
 } from 'lucide-react'
 import { getProjectDetail } from '@/src/api/projects'
 import type { ProjectItem } from '@/src/types/project'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
+import { Button } from '@/src/components/common/Button'
+import { ProjectMemberDrawer } from '@/src/components/projects/ProjectMemberDrawer'
 import { cn, getInitials } from '@/src/lib/utils'
 
 const modules = [
@@ -65,6 +68,7 @@ export const ProjectDetailPage = () => {
   const [project, setProject] = useState<ProjectItem | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [memberDrawerOpen, setMemberDrawerOpen] = useState(false)
 
   useEffect(() => {
     const fetchProject = async () => {
@@ -95,7 +99,7 @@ export const ProjectDetailPage = () => {
               {getInitials(project.name)}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <h1 className="text-[22px] font-bold tracking-tight text-[var(--color-text-primary)]">
                   {project.name}
                 </h1>
@@ -109,6 +113,17 @@ export const ProjectDetailPage = () => {
                 >
                   {project.status === 'conducting' ? '进行中' : '已归档'}
                 </span>
+                {project.canEdit && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    icon={<Settings2 className="h-3.5 w-3.5" />}
+                    onClick={() => setMemberDrawerOpen(true)}
+                  >
+                    成员管理
+                  </Button>
+                )}
               </div>
               {project.description && (
                 <p className="mt-2 text-[14px] leading-relaxed text-[var(--color-text-secondary)]">
@@ -207,6 +222,15 @@ export const ProjectDetailPage = () => {
           </Link>
         ))}
       </div>
+
+      {project && (
+        <ProjectMemberDrawer
+          open={memberDrawerOpen}
+          project={project}
+          onClose={() => setMemberDrawerOpen(false)}
+          onSaved={setProject}
+        />
+      )}
     </div>
   )
 }

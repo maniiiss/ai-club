@@ -7,6 +7,7 @@ import type {
   HermesMessageItem,
   HermesReferenceItem,
 } from '@/src/types/hermes'
+import { resolveHermesAssistantDisplayState } from '@/src/lib/hermesUtils'
 
 interface HermesMessageListProps {
   messages: HermesMessageItem[]
@@ -15,6 +16,7 @@ interface HermesMessageListProps {
   suggestions: string[]
   debug: HermesDebugInfoItem | null
   streamStatusText: string
+  streamingActive: boolean
   disabled: boolean
   onSuggestion: (question: string) => void
 }
@@ -70,6 +72,7 @@ export const HermesMessageList = ({
   suggestions,
   debug,
   streamStatusText,
+  streamingActive,
   disabled,
   onSuggestion,
 }: HermesMessageListProps) => (
@@ -84,7 +87,11 @@ export const HermesMessageList = ({
       </div>
     ) : (
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
-        {messages.map((message) => (
+        {messages.map((message) => {
+          const assistantDisplay = message.role === 'assistant'
+            ? resolveHermesAssistantDisplayState(message, streamingActive)
+            : null
+          return (
           <article key={message.id} className={cn('flex', message.role === 'user' ? 'justify-end' : 'justify-start')}>
             <div className={cn(
               'max-w-[88%] rounded-2xl px-4 py-3 shadow-[var(--shadow-xs)]',
@@ -102,15 +109,15 @@ export const HermesMessageList = ({
                 <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-6">{message.content || '暂无内容'}</pre>
               ) : (
                 <>
-                  {message.content ? (
-                    <Markdown content={message.content} className="text-[13px]" />
-                  ) : message.status === 'streaming' ? (
+                  {assistantDisplay?.content ? (
+                    <Markdown content={assistantDisplay.content} className="text-[13px]" />
+                  ) : assistantDisplay?.showThinking ? (
                     <div className="inline-flex items-center gap-2 text-[13px] text-[var(--color-text-secondary)]">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       {streamStatusText || 'Hermes 正在思考'}
                     </div>
                   ) : null}
-                  {message.status === 'streaming' && message.content && (
+                  {assistantDisplay?.showContinuation && (
                     <div className="mt-2 inline-flex items-center gap-1 text-[11px] text-[var(--color-text-tertiary)]">
                       <Loader2 className="h-3 w-3 animate-spin" />
                       {streamStatusText || '继续生成中'}
@@ -122,7 +129,7 @@ export const HermesMessageList = ({
               <AttachmentBar attachments={message.attachments} />
             </div>
           </article>
-        ))}
+        )})}
       </div>
     )}
 

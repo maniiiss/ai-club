@@ -79,6 +79,8 @@ def convert_document_to_markdown(
         markdown = _rewrite_markdown_data_uri_images(markdown, normalized_image_directory, warnings)
         if extension == "pdf":
             markdown = _insert_pdf_images_by_page(markdown, content, normalized_image_directory, warnings)
+    elif normalized_scene == "HERMES_FILE_LIBRARY":
+        markdown = _strip_markdown_data_uri_images(markdown, warnings)
 
     truncated = False
     if max_chars is not None and max_chars > 0 and len(markdown) > max_chars:
@@ -131,6 +133,21 @@ def _rewrite_markdown_data_uri_images(markdown: str, image_directory: str, warni
         return f"![{alt_text}]({image_url})"
 
     return IMAGE_DATA_URI_PATTERN.sub(replace, markdown)
+
+
+def _strip_markdown_data_uri_images(markdown: str, warnings: list[str]) -> str:
+    """个人文件库只索引 MarkItDown 文本内容，避免内嵌图片 data URI 污染向量切片。"""
+    removed_count = 0
+
+    def replace(match: re.Match[str]) -> str:
+        nonlocal removed_count
+        removed_count += 1
+        return ""
+
+    cleaned = IMAGE_DATA_URI_PATTERN.sub(replace, markdown)
+    if removed_count > 0:
+        warnings.append(f"HERMES_FILE_LIBRARY 场景有 {removed_count} 张内嵌图片已从索引 Markdown 中移除")
+    return cleaned
 
 
 def _insert_pdf_images_by_page(markdown: str, pdf_bytes: bytes, image_directory: str, warnings: list[str]) -> str:

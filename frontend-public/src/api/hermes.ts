@@ -149,7 +149,7 @@ export const updateHermesFileLibraryItem = async (
   id: number,
   payload: UpdateHermesFileLibraryItemPayload,
 ): Promise<HermesFileLibraryItem> => {
-  const res = await http.patch<ApiResponse<HermesFileLibraryItem>>(`/api/hermes/file-library/${id}`, payload)
+  const res = await http.put<ApiResponse<HermesFileLibraryItem>>(`/api/hermes/file-library/${id}`, payload)
   return unwrap(res)
 }
 
@@ -162,8 +162,40 @@ export const reindexHermesFileLibraryItem = async (id: number): Promise<HermesFi
   return unwrap(res)
 }
 
-export const getHermesFileLibraryDownloadUrl = (assetId: number, inline = false): string =>
-  `${resolvedApiBaseUrl}/api/common/files/${assetId}?inline=${inline ? 'true' : 'false'}`
+export const downloadHermesFileLibraryAsset = async (
+  assetId: number,
+  fileName?: string,
+  inline = false,
+): Promise<void> => {
+  const res = await http.get<Blob>(`/api/common/files/${assetId}`, {
+    params: { inline },
+    responseType: 'blob',
+  })
+  const blob = res.data instanceof Blob ? res.data : new Blob([res.data])
+  const disposition = String(res.headers['content-disposition'] || '')
+  const resolvedName = fileName || parseFileName(disposition) || `file-${assetId}`
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = resolvedName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+const parseFileName = (contentDisposition: string): string => {
+  const utf8Match = /filename\\*=UTF-8''([^;]+)/i.exec(contentDisposition)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    } catch {
+      return utf8Match[1]
+    }
+  }
+  const quotedMatch = /filename="([^"]+)"/i.exec(contentDisposition)
+  return quotedMatch?.[1] || ''
+}
 
 export const transcribeHermesSpeech = async (file: File): Promise<string> => {
   const formData = new FormData()

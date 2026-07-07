@@ -46,6 +46,7 @@ import type {
 import type { PageResponse } from '@/src/types/api'
 import { Card } from '@/src/components/common/Card'
 import { Button } from '@/src/components/common/Button'
+import { Select } from '@/src/components/common/Select'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
@@ -861,20 +862,21 @@ const LogsPanel = () => {
             className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white pl-9 pr-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
           />
         </div>
-        <select
+        <Select
           value={level}
-          onChange={(e) => {
-            setLevel(e.target.value)
+          onChange={(value) => {
+            setLevel(value)
             setPage(1)
           }}
-          className="h-9 rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-        >
-          <option value="">所有级别</option>
-          <option value="ERROR">ERROR</option>
-          <option value="WARN">WARN</option>
-          <option value="INFO">INFO</option>
-          <option value="DEBUG">DEBUG</option>
-        </select>
+          className="[&>div]:w-32"
+          options={[
+            { value: '', label: '所有级别' },
+            { value: 'ERROR', label: 'ERROR' },
+            { value: 'WARN', label: 'WARN' },
+            { value: 'INFO', label: 'INFO' },
+            { value: 'DEBUG', label: 'DEBUG' },
+          ]}
+        />
       </div>
 
       {loading ? (

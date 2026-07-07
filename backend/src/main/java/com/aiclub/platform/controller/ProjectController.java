@@ -6,6 +6,7 @@ import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectListStatsSummary;
 import com.aiclub.platform.dto.ProjectSummary;
 import com.aiclub.platform.dto.request.ProjectRequest;
+import com.aiclub.platform.dto.request.ReplaceProjectMembersRequest;
 import com.aiclub.platform.service.PlatformStoreService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -69,6 +70,12 @@ public class ProjectController {
     @RequirePermission("project:manage")
     public ApiResponse<ProjectSummary> update(@PathVariable Long id, @Valid @RequestBody ProjectRequest request) {
         return ApiResponse.success(platformStoreService.updateProject(id, request));
+    }
+
+    @PutMapping("/{id}/members")
+    public ApiResponse<ProjectSummary> replaceMembers(@PathVariable Long id,
+                                                      @RequestBody ReplaceProjectMembersRequest request) {
+        return ApiResponse.success(platformStoreService.replaceProjectMembers(id, request.memberUserIds()));
     }
 
     @DeleteMapping("/{id}")

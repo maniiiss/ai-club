@@ -2,16 +2,26 @@
  * 聊天室消息流。
  * 业务意图：用户消息、附件与 Hermes 流式回复在同一条时间线上呈现，确保协作上下文对房间成员一致。
  */
-import { useEffect, useRef } from 'react'
-import { AlertTriangle, Bot, CheckCircle2, FileText, MousePointer2, PlayCircle, RefreshCcw, UserRound, XCircle } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { AlertTriangle, ArrowDownToLine, Bot, CheckCircle2, FileText, MousePointer2, PlayCircle, RefreshCcw, UserRound, XCircle } from 'lucide-react'
 import type { ChatMessageItem } from '@/src/types/chat'
 import type { HermesActionItem, HermesSelectionOptionItem, HermesSelectionPayload } from '@/src/types/hermes'
 import { Button } from '@/src/components/common/Button'
 import { Markdown } from '@/src/components/common/Markdown'
-import { formatChatFileSize, normalizeGeneratedMarkdown, resolveAgentActionStatus } from '@/src/lib/chatUtils'
+import {
+  buildAgentSelectionStatusKey,
+  formatChatFileSize,
+  isAgentSelectionCardResolved,
+  normalizeGeneratedMarkdown,
+  resolveChatAssistantContent,
+  resolveAgentActionStatus,
+  resolveChatScrollBehavior,
+  shouldShowBackToLatest,
+} from '@/src/lib/chatUtils'
 import { cn, getInitials } from '@/src/lib/utils'
 
 interface ChatMessageListProps {
+  roomId: number
   messages: ChatMessageItem[]
   currentUserId?: number | null
   loading: boolean
@@ -32,6 +42,7 @@ const formatMessageTime = (value: string | null) => {
 }
 
 export const ChatMessageList = ({
+  roomId,
   messages,
   currentUserId,
   loading,
@@ -43,11 +54,48 @@ export const ChatMessageList = ({
   onCancelAgentAction,
   onSelectAgentCandidate,
 }: ChatMessageListProps) => {
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const shouldForceLatestRef = useRef(true)
+  const [showBackToLatest, setShowBackToLatest] = useState(false)
+
+  const scrollToLatest = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    bottomRef.current?.scrollIntoView({ behavior, block: 'end' })
+  }, [])
+
+  const updateBackToLatestVisibility = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    setShowBackToLatest(shouldShowBackToLatest({
+      scrollTop: container.scrollTop,
+      clientHeight: container.clientHeight,
+      scrollHeight: container.scrollHeight,
+    }))
+  }, [])
+
+  const handleScroll = useCallback(() => {
+    updateBackToLatestVisibility()
+  }, [updateBackToLatestVisibility])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages])
+    const shouldForceLatest = shouldForceLatestRef.current
+    const behavior = resolveChatScrollBehavior(shouldForceLatest, !showBackToLatest)
+    const rafId = window.requestAnimationFrame(() => {
+      if (behavior) {
+        scrollToLatest(behavior)
+      }
+      shouldForceLatestRef.current = false
+      updateBackToLatestVisibility()
+    })
+    return () => window.cancelAnimationFrame(rafId)
+  }, [messages, scrollToLatest, showBackToLatest, updateBackToLatestVisibility])
+
+  useEffect(() => {
+    shouldForceLatestRef.current = true
+    setShowBackToLatest(false)
+    scrollToLatest('auto')
+    updateBackToLatestVisibility()
+  }, [roomId, scrollToLatest, updateBackToLatestVisibility])
 
   if (loading) {
     return (
@@ -70,31 +118,36 @@ export const ChatMessageList = ({
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-      <div className="mx-auto max-w-4xl space-y-5">
-        {messages.map((message) => {
-          const isAssistant = message.role === 'assistant'
-          const isMine = !isAssistant && message.senderUserId === currentUserId
-          return (
-            <div
-              key={message.id}
-              className={cn('flex gap-3', isMine ? 'justify-end' : 'justify-start')}
-            >
-              {!isMine && <MessageAvatar message={message} />}
-              <div className={cn('min-w-0 max-w-[min(760px,88%)]', isMine && 'items-end')}>
-                <div className={cn('mb-1 flex items-center gap-2', isMine && 'justify-end')}>
-                  <span className="text-[12px] font-medium text-[var(--color-text-secondary)]">
-                    {isAssistant ? 'Hermes' : message.senderName || message.senderUsername || '用户'}
-                  </span>
-                  {message.mentionsHermes && !isAssistant && (
-                    <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-amber-700">
-                      @hermes
+    <div className="relative min-h-0 flex-1">
+      <div
+        ref={scrollContainerRef}
+        className="h-full overflow-y-auto px-4 py-5 sm:px-6"
+        onScroll={handleScroll}
+      >
+        <div className="mx-auto max-w-4xl space-y-5">
+          {messages.map((message) => {
+            const isAssistant = message.role === 'assistant'
+            const isMine = !isAssistant && message.senderUserId === currentUserId
+            return (
+              <div
+                key={message.id}
+                className={cn('flex gap-3', isMine ? 'justify-end' : 'justify-start')}
+              >
+                {!isMine && <MessageAvatar message={message} />}
+                <div className={cn('min-w-0 max-w-[min(760px,88%)]', isMine && 'items-end')}>
+                  <div className={cn('mb-1 flex items-center gap-2', isMine && 'justify-end')}>
+                    <span className="text-[12px] font-medium text-[var(--color-text-secondary)]">
+                      {isAssistant ? 'Hermes' : message.senderName || message.senderUsername || '用户'}
                     </span>
-                  )}
-                  <span className="text-[11px] text-[var(--color-text-tertiary)]">
-                    {formatMessageTime(message.createdAt)}
-                  </span>
-                </div>
+                    {message.mentionsHermes && !isAssistant && (
+                      <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-amber-700">
+                        @hermes
+                      </span>
+                    )}
+                    <span className="text-[11px] text-[var(--color-text-tertiary)]">
+                      {formatMessageTime(message.createdAt)}
+                    </span>
+                  </div>
 
                 <div
                   className={cn(
@@ -112,13 +165,7 @@ export const ChatMessageList = ({
                       Hermes 回复失败，可重试生成。
                     </div>
                   )}
-                  <Markdown content={normalizeGeneratedMarkdown(message.content || (message.status === 'streaming' ? 'Hermes 正在组织回复...' : ''))} />
-                  {message.status === 'streaming' && (
-                    <span className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-medium text-amber-700">
-                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-                      Hermes 正在回复
-                    </span>
-                  )}
+                  <Markdown content={normalizeGeneratedMarkdown(resolveChatAssistantContent(message))} />
                   {isAssistant && message.agentTaskId && (
                     <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/75 px-2 py-1 text-[11px] font-medium text-amber-800">
                       Agent task #{message.agentTaskId} · {formatAgentTaskStatus(message.agentTaskStatus)}
@@ -143,25 +190,28 @@ export const ChatMessageList = ({
                   )}
                   {isAssistant && Boolean(message.selectionCards?.length) && (
                     <div className="mt-3 grid gap-2">
-                      {message.selectionCards?.map((card) => (
+                      {message.selectionCards?.map((card) => {
+                        const cardResolved = isAgentSelectionCardResolved(message, card)
+                        return (
                         <article key={`${card.slot}-${card.title}`} className="rounded-lg border border-[var(--color-border-light)] bg-white/80 p-3">
                           <div className="text-[12.5px] font-semibold text-[var(--color-text-primary)]">{card.title || '候选对象待确认'}</div>
                           {card.description && <p className="mt-1 text-[11.5px] text-[var(--color-text-secondary)]">{card.description}</p>}
                           <div className="mt-2 grid gap-1.5">
                             {card.options.map((option) => {
                               const selection = toSelection(card.resumeQuestion, option)
-                              const selectionStatusKey = `${selection?.slot || ''}:${selection?.entityType || ''}:${selection?.entityId || ''}`
+                              const selectionStatusKey = buildAgentSelectionStatusKey(selection)
                               const resolvingKey = `${message.agentTaskId || ''}:${selectionStatusKey}`
                               const selected = message.selectionStatuses?.[selectionStatusKey] === 'selected'
                               return (
                               <button
                                 key={`${option.entityType}-${option.entityId}-${option.title}`}
                                 type="button"
-                                disabled={!selection || selected || resolvingSelectionKey === resolvingKey}
+                                disabled={!selection || cardResolved || resolvingSelectionKey === resolvingKey}
                                 onClick={() => selection && onSelectAgentCandidate(message, selection)}
                                 className={cn(
                                   'flex items-start gap-2 rounded-lg border bg-white px-2.5 py-2 text-left transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] disabled:cursor-not-allowed',
-                                  selected ? 'border-emerald-200 bg-emerald-50/80' : 'border-[var(--color-border-light)] disabled:opacity-60',
+                                  selected ? 'border-emerald-200 bg-emerald-50/80' : 'border-[var(--color-border-light)]',
+                                  cardResolved && !selected && 'opacity-55',
                                 )}
                               >
                                 {selected ? (
@@ -171,13 +221,13 @@ export const ChatMessageList = ({
                                 )}
                                 <span className="min-w-0">
                                   <span className="block truncate text-[12px] font-medium text-[var(--color-text-primary)]">{option.title}</span>
-                                  <span className="block text-[11px] text-[var(--color-text-tertiary)]">{selected ? '已确认' : (option.subtitle || option.entityType)}</span>
+                                  <span className="block text-[11px] text-[var(--color-text-tertiary)]">{selected ? '已确认' : cardResolved ? '已确认其他候选' : (option.subtitle || option.entityType)}</span>
                                 </span>
                               </button>
                             )})}
                           </div>
                         </article>
-                      ))}
+                      )})}
                     </div>
                   )}
                   {message.attachments.length > 0 && (
@@ -216,12 +266,28 @@ export const ChatMessageList = ({
                   )}
                 </div>
               </div>
-              {isMine && <MessageAvatar message={message} />}
-            </div>
-          )
-        })}
-        <div ref={bottomRef} />
+                {isMine && <MessageAvatar message={message} />}
+              </div>
+            )
+          })}
+          <div ref={bottomRef} />
+        </div>
       </div>
+      {showBackToLatest && (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          icon={<ArrowDownToLine className="h-3.5 w-3.5" />}
+          className="absolute bottom-4 right-4 z-10 rounded-full border-[var(--color-primary)]/30 bg-white/95 px-3 text-[var(--color-primary)] shadow-[var(--shadow-md)] backdrop-blur hover:bg-[var(--color-primary-light)] sm:right-6"
+          onClick={() => {
+            scrollToLatest('smooth')
+            setShowBackToLatest(false)
+          }}
+        >
+          返回最新
+        </Button>
+      )}
     </div>
   )
 }

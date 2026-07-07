@@ -1,6 +1,7 @@
 import { Mic, Paperclip, Send, Square, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { Button } from '@/src/components/common/Button'
+import { resolveSlashMenuActiveIndex } from '@/src/lib/hermesUtils'
 
 interface HermesComposerProps {
   disabled: boolean
@@ -15,6 +16,7 @@ interface HermesComposerProps {
 
 const acceptedFileTypes = '.pdf,.docx,.pptx,.xlsx'
 const slashCommands = [
+  { command: '/文件库', label: '个人文件库问答' },
   { command: '/wiki', label: 'Wiki 问答' },
   { command: '/需求', label: '创建或整理需求' },
   { command: '/仓库扫描', label: '发起仓库扫描' },
@@ -43,6 +45,7 @@ export const HermesComposer = ({
 }: HermesComposerProps) => {
   const [question, setQuestion] = useState('')
   const [selectedSlashCommand, setSelectedSlashCommand] = useState<string | null>(null)
+  const [activeSlashCommandIndex, setActiveSlashCommandIndex] = useState(0)
   const [recording, setRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -60,6 +63,15 @@ export const HermesComposer = ({
     onSubmit(parsed.question, parsed.slashCommand)
     setQuestion('')
     setSelectedSlashCommand(null)
+    setActiveSlashCommandIndex(0)
+  }
+
+  const slashMenuOpen = question.trimStart().startsWith('/') && !question.trim().includes(' ') && !selectedSlashCommand
+
+  const selectSlashCommand = (command: string) => {
+    setSelectedSlashCommand(command)
+    setQuestion('')
+    setActiveSlashCommandIndex(0)
   }
 
   const handleFileInput = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,17 +136,19 @@ export const HermesComposer = ({
         </div>
       )}
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-2 shadow-[var(--shadow-xs)]">
-        {question.trimStart().startsWith('/') && !question.trim().includes(' ') && !selectedSlashCommand && (
+        {slashMenuOpen && (
           <div className="mb-2 grid gap-1 rounded-lg border border-[var(--color-border-light)] bg-white p-1 shadow-[var(--shadow-xs)]">
-            {slashCommands.map((item) => (
+            {slashCommands.map((item, index) => (
               <button
                 key={item.command}
                 type="button"
-                className="flex items-center justify-between rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-[var(--color-bg-hover)]"
-                onClick={() => {
-                  setSelectedSlashCommand(item.command)
-                  setQuestion('')
-                }}
+                className={[
+                  'flex items-center justify-between rounded-md px-2 py-1.5 text-left text-[12px] hover:bg-[var(--color-bg-hover)]',
+                  activeSlashCommandIndex === index ? 'bg-[var(--color-bg-hover)]' : '',
+                ].filter(Boolean).join(' ')}
+                aria-selected={activeSlashCommandIndex === index}
+                onMouseEnter={() => setActiveSlashCommandIndex(index)}
+                onClick={() => selectSlashCommand(item.command)}
               >
                 <strong className="text-[var(--color-text-primary)]">{item.command}</strong>
                 <span className="text-[var(--color-text-tertiary)]">{item.label}</span>
@@ -165,6 +179,20 @@ export const HermesComposer = ({
           onChange={(event) => setQuestion(event.target.value)}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing) return
+            if (slashMenuOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+              event.preventDefault()
+              setActiveSlashCommandIndex((current) => resolveSlashMenuActiveIndex(
+                current,
+                event.key === 'ArrowDown' ? 1 : -1,
+                slashCommands.length,
+              ))
+              return
+            }
+            if (slashMenuOpen && event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault()
+              selectSlashCommand(slashCommands[activeSlashCommandIndex]?.command || slashCommands[0].command)
+              return
+            }
             if (event.key === 'Enter' && !event.shiftKey) {
               event.preventDefault()
               submit()
@@ -198,7 +226,7 @@ export const HermesComposer = ({
               停止
             </Button>
           ) : (
-            <Button type="button" size="sm" icon={<Send className="h-4 w-4" />} disabled={disabled || !question.trim()} onClick={submit}>
+            <Button type="button" size="sm" icon={<Send className="h-4 w-4" />} disabled={disabled || (!question.trim() && !selectedSlashCommand)} onClick={submit}>
               发送
             </Button>
           )}

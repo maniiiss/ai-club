@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 /**
  * Hermes 个人文件库服务。
@@ -180,8 +181,12 @@ public class HermesFileLibraryService {
         }
         List<HermesFileLibraryItemEntity> enabledItems = hermesFileLibraryItemRepository
                 .findAllByOwnerUser_IdAndEnabledTrueOrderByUpdatedAtDescIdDesc(currentUser.id());
-        boolean hasIndexedItem = enabledItems.stream().anyMatch(item -> INDEX_STATUS_INDEXED.equals(defaultString(item.getIndexStatus())));
-        if (!hasIndexedItem) {
+        Set<Long> indexedItemIds = enabledItems.stream()
+                .filter(item -> INDEX_STATUS_INDEXED.equals(defaultString(item.getIndexStatus())))
+                .map(HermesFileLibraryItemEntity::getId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        if (indexedItemIds.isEmpty()) {
             return "";
         }
         try {
@@ -191,7 +196,11 @@ public class HermesFileLibraryService {
                     Map.of("ownerUserId", currentUser.id(), "enabled", true),
                     RECALL_LIMIT
             );
-            return renderEvidence(hits);
+            String evidence = renderEvidence(hits, indexedItemIds);
+            if (hasText(evidence)) {
+                return evidence;
+            }
+            return renderLexicalFallbackEvidence(enabledItems, indexedItemIds, query);
         } catch (RuntimeException exception) {
             log.warn("Hermes 个人文件库证据召回失败，userId={}：{}", currentUser.id(), sanitizeWarning(exception));
             return "";
@@ -234,9 +243,12 @@ public class HermesFileLibraryService {
                 "个人文件库 / " + item.getTitle(),
                 item.getMarkdown()
         );
+        if (chunks.isEmpty()) {
+            throw new IllegalStateException("文件未生成可向量化切片，请重新向量化");
+        }
         List<List<Double>> vectors = generateEmbeddings(chunks.stream().map(WikiChunkingService.WikiChunk::content).toList());
-        if (vectors.isEmpty()) {
-            return;
+        if (vectors.isEmpty() || vectors.size() != chunks.size()) {
+            throw new IllegalStateException("文件切片向量化未完成，请重新向量化");
         }
         qdrantClientService.createCollection(wikiKnowledgeProperties.getHermesFileLibraryCollection(), vectors.get(0).size());
         List<QdrantClientService.QdrantPoint> points = new ArrayList<>();
@@ -310,13 +322,17 @@ public class HermesFileLibraryService {
         );
     }
 
-    private String renderEvidence(List<QdrantClientService.QdrantSearchHit> hits) {
+    private String renderEvidence(List<QdrantClientService.QdrantSearchHit> hits, Set<Long> indexedItemIds) {
         if (hits == null || hits.isEmpty()) {
             return "";
         }
         StringBuilder builder = new StringBuilder("#### 个人文件库证据\n");
+        boolean hasEvidence = false;
         for (QdrantClientService.QdrantSearchHit hit : hits) {
             Map<String, Object> payload = hit == null || hit.payload() == null ? Map.of() : hit.payload();
+            if (!isIndexedHit(payload, indexedItemIds)) {
+                continue;
+            }
             String snippet = defaultString(stringValue(payload.get("plainText")));
             if (snippet.isBlank()) {
                 continue;
@@ -326,8 +342,131 @@ public class HermesFileLibraryService {
                     .append("：")
                     .append(abbreviate(snippet, MAX_EVIDENCE_SNIPPET_LENGTH))
                     .append('\n');
+            hasEvidence = true;
         }
-        return builder.toString().trim();
+        return hasEvidence ? builder.toString().trim() : "";
+    }
+
+    /**
+     * 向量召回可能因为短人名、文件名式问题或 embedding 分词不稳定而 miss。
+     * 对显式文件库问答做标题 / 文件名 / 描述的轻量兜底，只返回已启用且已索引成功的文件，避免把失败索引内容伪装成可靠证据。
+     */
+    private String renderLexicalFallbackEvidence(List<HermesFileLibraryItemEntity> enabledItems,
+                                                 Set<Long> indexedItemIds,
+                                                 String query) {
+        if (enabledItems == null || enabledItems.isEmpty() || indexedItemIds == null || indexedItemIds.isEmpty() || !hasText(query)) {
+            return "";
+        }
+        List<String> queryTokens = extractQueryTokens(query);
+        if (queryTokens.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder("#### 个人文件库证据\n");
+        int count = 0;
+        for (HermesFileLibraryItemEntity item : enabledItems) {
+            if (item == null || item.getId() == null || !indexedItemIds.contains(item.getId())) {
+                continue;
+            }
+            String searchableText = String.join(" ",
+                    defaultString(item.getTitle()),
+                    item.getDocumentAsset() == null ? "" : defaultString(item.getDocumentAsset().getFileName()),
+                    defaultString(item.getDescription())
+            );
+            if (!matchesAnyToken(searchableText, queryTokens)) {
+                continue;
+            }
+            String snippet = firstNonBlank(item.getMarkdown(), item.getDescription(), item.getTitle());
+            if (!hasText(snippet)) {
+                continue;
+            }
+            builder.append("- ")
+                    .append(firstNonBlank(item.getTitle(), item.getDocumentAsset() == null ? "" : item.getDocumentAsset().getFileName(), "未命名文件"))
+                    .append("（文件标题命中）：")
+                    .append(abbreviate(stripMarkdown(snippet), MAX_EVIDENCE_SNIPPET_LENGTH))
+                    .append('\n');
+            count++;
+            if (count >= RECALL_LIMIT) {
+                break;
+            }
+        }
+        return count > 0 ? builder.toString().trim() : "";
+    }
+
+    private List<String> extractQueryTokens(String query) {
+        String normalized = defaultString(query)
+                .replaceAll("[\\p{Punct}\\s]+", " ")
+                .replaceAll("[，。！？、；：（）【】《》“”‘’]+", " ")
+                .trim();
+        if (!hasText(normalized)) {
+            return List.of();
+        }
+        List<String> tokens = new ArrayList<>();
+        for (String token : normalized.split("\\s+")) {
+            String compactToken = token.trim();
+            for (String candidate : expandQueryToken(compactToken)) {
+                if (candidate.length() >= 2 && !isGenericQueryToken(candidate) && !tokens.contains(candidate)) {
+                    tokens.add(candidate);
+                }
+            }
+        }
+        return tokens;
+    }
+
+    private List<String> expandQueryToken(String token) {
+        String compactToken = defaultString(token);
+        if (!hasText(compactToken)) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        result.add(compactToken);
+        for (String suffix : List.of("是谁", "是什么", "有哪些", "是什么人", "的内容", "相关资料", "相关文档")) {
+            if (compactToken.endsWith(suffix) && compactToken.length() > suffix.length()) {
+                result.add(compactToken.substring(0, compactToken.length() - suffix.length()));
+            }
+        }
+        return result;
+    }
+
+    private boolean matchesAnyToken(String text, List<String> queryTokens) {
+        String normalizedText = defaultString(text).toLowerCase(java.util.Locale.ROOT);
+        if (!hasText(normalizedText)) {
+            return false;
+        }
+        return queryTokens.stream()
+                .map(token -> token.toLowerCase(java.util.Locale.ROOT))
+                .anyMatch(normalizedText::contains);
+    }
+
+    private boolean isGenericQueryToken(String token) {
+        return List.of("是谁", "什么", "哪些", "文件", "文档", "资料", "简历", "介绍", "内容", "相关").contains(token);
+    }
+
+    private String stripMarkdown(String value) {
+        return defaultString(value)
+                .replaceAll("(?m)^#{1,6}\\s*", "")
+                .replaceAll("(?m)^[-*+]\\s+", "")
+                .replaceAll("\\*\\*([^*]+)\\*\\*", "$1")
+                .replaceAll("`([^`]+)`", "$1")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private boolean isIndexedHit(Map<String, Object> payload, Set<Long> indexedItemIds) {
+        if (payload == null || indexedItemIds == null || indexedItemIds.isEmpty()) {
+            return false;
+        }
+        Object itemId = payload.get("itemId");
+        if (itemId instanceof Number number) {
+            return indexedItemIds.contains(number.longValue());
+        }
+        if (itemId instanceof String text && hasText(text)) {
+            try {
+                return indexedItemIds.contains(Long.parseLong(text.trim()));
+            } catch (NumberFormatException exception) {
+                return false;
+            }
+        }
+        return false;
     }
 
     private HermesFileLibraryItemSummary toSummary(HermesFileLibraryItemEntity item) {
@@ -408,4 +547,5 @@ public class HermesFileLibraryService {
     private String defaultString(String value) {
         return value == null ? "" : value.trim();
     }
+
 }

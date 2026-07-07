@@ -223,6 +223,77 @@ class ProjectDataPermissionIntegrationTests {
     }
 
     /**
+     * 项目负责人可在公众端维护成员名单；创建人始终保留项目可见性，不能被成员管理误移除。
+     */
+    @Test
+    void projectOwnerShouldReplaceProjectMembersAndKeepCreatorVisible() {
+        UserEntity creator = createUser("creator-member-manage", "成员管理创建人");
+        UserEntity owner = createUser("owner-member-manage", "成员管理负责人");
+        UserEntity oldMember = createUser("old-member-manage", "旧成员");
+        UserEntity newMember = createUser("new-member-manage", "新成员");
+
+        ProjectEntity project = createProjectAs(creator, owner, List.of(oldMember), "成员管理项目");
+
+        loginAs(owner);
+        ProjectSummary updated = platformStoreService.replaceProjectMembers(project.getId(), List.of(newMember.getId()));
+
+        assertThat(updated.memberUserIds())
+                .contains(newMember.getId(), creator.getId())
+                .doesNotContain(oldMember.getId(), owner.getId());
+        assertThat(updated.canEdit()).isTrue();
+
+        loginAs(newMember);
+        assertThat(platformStoreService.getProject(project.getId()).id()).isEqualTo(project.getId());
+
+        loginAs(oldMember);
+        assertThatThrownBy(() -> platformStoreService.getProject(project.getId()))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    /**
+     * 平台管理员具备 project:manage 且数据权限覆盖全部项目时，可替项目负责人维护成员名单。
+     */
+    @Test
+    void projectManagerWithGlobalScopeShouldReplaceMembersEvenWhenNotOwnerOrCreator() {
+        RoleEntity managerRole = createRole(
+                "ROLE_PROJECT_MANAGER_MEMBER_MANAGE",
+                DataPermissionScopeType.ALL,
+                DataPermissionScopeType.ALL,
+                DataPermissionScopeType.NONE,
+                DataPermissionScopeType.NONE
+        );
+        UserEntity creator = createUser("creator-manager-member", "管理员维护创建人");
+        UserEntity owner = createUser("owner-manager-member", "管理员维护负责人");
+        UserEntity manager = createUser("manager-member", "项目管理员", List.of(managerRole));
+        UserEntity newMember = createUser("member-manager-added", "管理员添加成员");
+
+        ProjectEntity project = createProjectAs(creator, owner, List.of(), "管理员成员管理项目");
+
+        loginAs(manager, Set.of("project:manage"));
+        ProjectSummary updated = platformStoreService.replaceProjectMembers(project.getId(), List.of(newMember.getId()));
+
+        assertThat(updated.memberUserIds()).contains(newMember.getId(), creator.getId());
+        assertThat(updated.canEdit()).isTrue();
+    }
+
+    /**
+     * 普通项目成员只能查看项目，不能维护成员名单。
+     */
+    @Test
+    void regularProjectMemberShouldNotReplaceProjectMembers() {
+        UserEntity creator = createUser("creator-member-deny", "成员管理拒绝创建人");
+        UserEntity owner = createUser("owner-member-deny", "成员管理拒绝负责人");
+        UserEntity member = createUser("member-deny", "普通成员");
+        UserEntity newMember = createUser("new-member-deny", "待添加成员");
+
+        ProjectEntity project = createProjectAs(creator, owner, List.of(member), "成员管理拒绝项目");
+
+        loginAs(member);
+        assertThatThrownBy(() -> platformStoreService.replaceProjectMembers(project.getId(), List.of(newMember.getId())))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    /**
      * 迭代和工作项的创建人可以删除自己创建的数据。
      */
     @Test
@@ -653,12 +724,16 @@ class ProjectDataPermissionIntegrationTests {
     }
 
     private void loginAs(UserEntity user) {
+        loginAs(user, Set.of());
+    }
+
+    private void loginAs(UserEntity user, Set<String> permissionCodes) {
         AuthContextHolder.set(new AuthContext(
                 user.getId(),
                 user.getUsername(),
                 user.getNickname(),
                 user.getRoles().stream().map(RoleEntity::getCode).collect(Collectors.toSet()),
-                Set.of()
+                permissionCodes
         ));
     }
 

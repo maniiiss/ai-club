@@ -1,17 +1,218 @@
 /**
  * 规范 AI 生成内容里的常见 Markdown 边界问题。
- * 业务意图：流式模型偶尔会省略标题、列表和强调语法前后的换行/空格，统一在渲染入口修正，避免各业务页面重复兜底。
+ * 业务意图：流式模型偶尔会省略标题、列表、表格和强调语法前后的换行/空格，统一在渲染入口修正，避免各业务页面重复兜底。
  */
 export const normalizeGeneratedMarkdown = (content: string): string => {
-  const normalized = (content || '')
+  const normalized = normalizeGeneratedTables(normalizeGeneratedHeadingBoundaries(normalizeGeneratedInlineMarkdown(normalizeGeneratedTicketIdLines(normalizeGeneratedLooseTableRows((content || '')
     .replace(/\r\n?/g, '\n')
-    .replace(/\*\*([^*\n]{1,60}?)\s+\*\*/g, '**$1**')
-    .replace(/\*\*([^\s*][^*\n]{1,60}?)\*\*(?=[^\s\p{P}])/gu, '**$1** ')
-    .replace(/\*\*([^*\n]{1,24}[：:])\s+\*\*\s*/g, '**$1** ')
-    .replace(/([^\n#])\s*(#{1,6})(?=\s*\d)/g, '$1\n\n$2')
-    .replace(/([^\n#])\s*(#{1,6}\s+)/g, '$1\n\n$2')
-    .replace(/^(#{1,6})(?!#)([^\s#])/gm, '$1 $2')
-    .replace(/^(#{1,6}\s+.{1,80}?\S)([-*+]\s+)/gm, '$1\n\n$2')
+    .replace(/\*\*([^\n*]{1,80})\n([^\n*]{1,80})\s+\*(?=\n[-*+]|\n\d+[.)]\s|\n\n|$)/g, '\\*\\*$1\n$2 \\*')
+    .replace(/(\\\*\n)([-*+]\s+)/g, '$1\n$2')))))
+  )
 
   return normalized.replace(/\n{3,}/g, '\n\n')
+}
+
+/**
+ * 保护行首工单号，避免 `#LHR8GU` 被 Markdown 当成一级标题。
+ */
+const normalizeGeneratedTicketIdLines = (content: string): string =>
+  content
+    .replace(/^#\s+([A-Z0-9]{4,}\)?[^\n]*)$/gm, '\\# $1')
+    .replace(/^#([A-Z0-9]{4,}\)?[^\n]*)$/gm, '\\#$1')
+    .replace(/^\s*[-*+]\s*$/gm, '')
+    .replace(/[^\S\n+-]-\s*\*$/gm, (match) => match.slice(0, -3).trimEnd())
+    .replace(/^(\s*[-*+]\s+.+?)[^\S\n]+-$/gm, '$1')
+
+const normalizeGeneratedHeadingBoundaries = (content: string): string =>
+  content
+    .replace(/([^\n#\\])\s*(#{1,6})(?=\s*\d)/g, '$1\n\n$2')
+    .replace(/([^\n#\\])\s*(#{1,6})(?!#)([^\s#])/g, (match, prefix: string, hashes: string, next: string) =>
+      prefix === '|' ? match : `${prefix}\n\n${hashes} ${next}`)
+    .replace(/(^|[^\n#\\])\s*(#{1,6}\s+)/g, (match, prefix: string, hashes: string, offset: number, fullText: string) => {
+      const lineStart = fullText.lastIndexOf('\n', offset) + 1
+      const lineEndIndex = fullText.indexOf('\n', offset)
+      const lineEnd = lineEndIndex < 0 ? fullText.length : lineEndIndex
+      const currentLine = fullText.slice(lineStart, lineEnd)
+      return currentLine.includes('|') ? match : `${prefix}\n\n${hashes}`
+    })
+    .replace(/^(#{1,6})(?!#)([^\s#].*)$/gm, (match, hashes: string, text: string) =>
+      text.includes('|') ? match : `${hashes} ${text}`)
+    .replace(/^(#{1,6}\s+.{1,80}?\S)([-*+]\s+)/gm, '$1\n\n$2')
+
+const normalizeGeneratedInlineMarkdown = (content: string): string =>
+  cleanupGeneratedOrphanEmphasisMarkers(content
+    .replace(/^([A-Za-z0-9][A-Za-z0-9_-]{1,31})\*$/gm, '$1')
+    .replace(/^\s*--\s*-\s+([^：:\n]{1,24}[：:])\s*/gm, '- **$1** ')
+    .replace(/\*\*([^\s*][^*\n]{0,24}?)\*(?=[\s，。；：:、,.!?！？)\]】）]|$|\n(?:[-*+]\s|\d+[.)]\s|$))/g, '**$1**')
+    .replace(/([^\s])\*\*["“”']([^*"“”'\n]{1,40})["“”']\*\*/g, '$1 **$2**')
+    .replace(/\*\*[^\S\n]*([^*\n]{1,24}[：:])[^\S\n]*\*\*[^\S\n]*/g, '**$1** ')
+    .replace(/\*\*[^\S\n]+([^*\n]{1,60}?)\*\*/g, '**$1**')
+    .replace(/\*\*([^\s*：:|][^*\n]{0,59}?)[^\S\n]+\*\*/g, '**$1**')
+    .replace(/([A-Za-z0-9）)\]】])\*\*([^*\n]{1,24}[：:])\*\*/gu, '$1 **$2**')
+    .replace(/([^\s\n])-\s*\*\*\s*([^*\n]{1,60}?)\s*\*\*/g, '$1 - **$2**')
+    .replace(/-\s+\*\*\s+([^*\n]{1,60}?)\*\*/g, '- **$1**')
+    .replace(/\*\*([^*：:\s\n][^*：:\n]{0,59}?)\*\*(?=[^\s\p{P}])/gu, '**$1** ')
+    .replace(/([^\s])\*\*(需求(?:标题|内容)[：:])\*\*/g, '$1 **$2**')
+    .replace(/\*\*[^\S\n]+(需求(?:标题|内容)[：:])\*\*/g, ' **$1**')
+    .replace(/\*\*([^*\n]{1,24}[：:])\*\*([^\s\n])/g, '**$1** $2'))
+
+const cleanupGeneratedOrphanEmphasisMarkers = (content: string): string => {
+  const placeholders: string[] = []
+  const protect = (value: string) => {
+    const token = `@@BOLD_${placeholders.length}@@`
+    placeholders.push(value)
+    return token
+  }
+
+  let normalized = content
+    .replace(/\*\*[^*\n]+?\*\*/g, protect)
+    .replace(/\*\*/g, '')
+    .replace(/(?<=[\p{L}\p{N}_\u4e00-\u9fff])\*(?=[，。；：:、,.!?！？)\]】）]|$)/gu, '')
+
+  placeholders.forEach((placeholder, index) => {
+    normalized = normalized.replace(`@@BOLD_${index}@@`, placeholder)
+  })
+
+  return normalized
+}
+
+const tableAlignmentCellPattern = /^:?-{3,}:?$/
+
+const splitMarkdownTableRow = (line: string): string[] | null => {
+  const trimmed = line.trim()
+  if (!trimmed.includes('|')) return null
+  const cells = trimmed.split('|').map((cell) => cell.trim())
+  if (cells[0] === '') cells.shift()
+  if (cells[cells.length - 1] === '') cells.pop()
+  return cells.length > 0 ? cells : null
+}
+
+const formatMarkdownTableRow = (cells: string[]): string => `| ${cells.join(' | ')} |`
+
+const isMarkdownTableDelimiter = (line: string): boolean => {
+  const cells = splitMarkdownTableRow(line)
+  return Boolean(cells?.length && cells.every((cell) => tableAlignmentCellPattern.test(cell)))
+}
+
+/**
+ * 补齐模型在表格体中漏掉的首尾竖线。
+ * 业务意图：Hermes 偶发输出 `#AAC896 |标题 |状态 |负责人 |`，如果不先修复，后续标题归一化会把 `#AAC896` 当成一级标题。
+ */
+const normalizeGeneratedLooseTableRows = (content: string): string => {
+  const lines = content.split('\n')
+  const normalizedLines: string[] = []
+  let expectedColumns = 0
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    const previousLine = normalizedLines[normalizedLines.length - 1] || ''
+
+    if (isMarkdownTableDelimiter(line) && splitMarkdownTableRow(previousLine)?.length) {
+      expectedColumns = splitMarkdownTableRow(previousLine)?.length || 0
+      normalizedLines.push(line)
+      continue
+    }
+
+    const cells = splitMarkdownTableRow(line)
+    const splitTicketRows = collectSplitTicketTableRows(lines, index, expectedColumns)
+    if (splitTicketRows) {
+      normalizedLines.push(...splitTicketRows.rows)
+      index = splitTicketRows.nextIndex - 1
+      continue
+    }
+
+    if (expectedColumns > 0 && cells?.length === expectedColumns && line.includes('|')) {
+      normalizedLines.push(formatMarkdownTableRow(cells))
+      continue
+    }
+
+    if (!line.trim()) {
+      expectedColumns = 0
+    }
+    normalizedLines.push(line)
+  }
+
+  return normalizedLines.join('\n')
+}
+
+/**
+ * 合并模型把表格行断在工单号前的输出。
+ * 业务意图：聊天室周报类内容常出现 `3/12 | 标题（` 换行 `# ABC123) | 状态 | |3/13 ...`，
+ * 如果不先拼回表格行，`# ABC123)` 会被渲染成标题或普通段落，整段计划表也会散掉。
+ */
+const collectSplitTicketTableRows = (
+  lines: string[],
+  startIndex: number,
+  expectedColumns: number,
+): { rows: string[]; nextIndex: number } | null => {
+  if (expectedColumns < 3) return null
+  let rowStart = lines[startIndex]
+  let nextIndex = startIndex + 1
+  const rows: string[] = []
+
+  while (nextIndex < lines.length) {
+    const startCells = splitMarkdownTableRow(rowStart)
+    const continuationMatch = lines[nextIndex].trim().match(/^(#\s*[A-Z0-9]{4,}\)?[^|]*)\|\s*([^|]+?)\s*\|\s*(.*)$/)
+
+    if (!startCells || startCells.length !== expectedColumns - 1 || !continuationMatch) {
+      break
+    }
+
+    rows.push(formatMarkdownTableRow([
+      startCells[0],
+      `${startCells[1]}${continuationMatch[1].trim()}`,
+      continuationMatch[2].trim(),
+    ]))
+
+    const nextRowStart = continuationMatch[3].trim()
+    nextIndex += 1
+    if (!nextRowStart.startsWith('|')) {
+      break
+    }
+    rowStart = nextRowStart.slice(1).trim()
+  }
+
+  return rows.length ? { rows, nextIndex } : null
+}
+
+/**
+ * 修复模型常见的“标题 + 表头”粘连问题。
+ * 业务意图：Hermes 经常输出 `### 标题|列 A|列 B`，GFM 会把后续分隔行当普通文本；这里把标题拆开，并丢弃对应的占位分隔列。
+ */
+const normalizeGeneratedTables = (content: string): string => {
+  const lines = content.split('\n')
+  const normalizedLines: string[] = []
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    const nextLine = lines[index + 1]
+    const tableStartMatch = line.match(/^(\s*#{1,6}\s+[^|\n]+?)\s*\|(.+)$/)
+
+    if (tableStartMatch && nextLine && isMarkdownTableDelimiter(nextLine)) {
+      const headerCells = splitMarkdownTableRow(`|${tableStartMatch[2]}`)
+      const delimiterCells = splitMarkdownTableRow(nextLine)
+
+      if (headerCells?.length && delimiterCells?.length && delimiterCells.length === headerCells.length + 1) {
+        normalizedLines.push(tableStartMatch[1].trimEnd(), '', formatMarkdownTableRow(headerCells), `|${delimiterCells.slice(1).join('|')}|`)
+        index += 1
+        continue
+      }
+    }
+
+    const titledTableStartMatch = line.match(/^(\s*[^|\n]+?)\s*\|(.+)$/)
+    if (titledTableStartMatch && nextLine && isMarkdownTableDelimiter(nextLine)) {
+      const headerCells = splitMarkdownTableRow(`|${titledTableStartMatch[2]}`)
+      const delimiterCells = splitMarkdownTableRow(nextLine)
+
+      if (headerCells?.length && delimiterCells?.length && delimiterCells.length === headerCells.length) {
+        normalizedLines.push(titledTableStartMatch[1].trimEnd(), '', formatMarkdownTableRow(headerCells), nextLine.trim())
+        index += 1
+        continue
+      }
+    }
+
+    normalizedLines.push(line)
+  }
+
+  return normalizedLines.join('\n')
 }

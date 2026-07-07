@@ -30,6 +30,7 @@ import com.aiclub.platform.dto.request.IterationRequest;
 import com.aiclub.platform.dto.request.ProjectRequest;
 import com.aiclub.platform.dto.request.TaskCommentRequest;
 import com.aiclub.platform.dto.request.TaskRequest;
+import com.aiclub.platform.exception.ForbiddenException;
 import com.aiclub.platform.exception.UnauthorizedException;
 import com.aiclub.platform.repository.AiModelConfigRepository;
 import com.aiclub.platform.repository.AgentRepository;
@@ -504,6 +505,21 @@ public class PlatformStoreService {
         entity.setOwner(buildOwner(request.owner(), ownerUser));
         entity.setStatus(request.status());
         entity.setDescription(defaultString(request.description()));
+        ProjectSummary summary = toProjectSummary(projectRepository.save(entity));
+        knowledgeGraphService.rebuildProjectGraph(id);
+        return summary;
+    }
+
+    @Transactional
+    public ProjectSummary replaceProjectMembers(Long id, List<Long> memberUserIds) {
+        ProjectEntity entity = requireProject(id);
+        requireProjectMemberManageAllowed(entity);
+        Set<UserEntity> members = mergeProjectMembersWithCreator(
+                resolveAdditionalUsers(memberUserIds, entity.getOwnerUser() == null ? null : entity.getOwnerUser().getId()),
+                entity.getOwnerUser(),
+                entity.getCreatorUser()
+        );
+        entity.setMembers(members);
         ProjectSummary summary = toProjectSummary(projectRepository.save(entity));
         knowledgeGraphService.rebuildProjectGraph(id);
         return summary;
@@ -1698,6 +1714,24 @@ public class PlatformStoreService {
     private boolean canEditProject(ProjectEntity entity) {
         ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.currentScopeOrNull();
         return projectDataPermissionService.canEditProject(entity, scope);
+    }
+
+    /**
+     * 公众端成员管理允许项目负责人、创建人，或具备 project:manage 且数据权限覆盖该项目的管理员维护成员。
+     */
+    private void requireProjectMemberManageAllowed(ProjectEntity entity) {
+        Long currentUserId = AuthContextHolder.get()
+                .orElseThrow(() -> new UnauthorizedException("Not logged in"))
+                .userId();
+        boolean ownerOrCreator = Objects.equals(entity.getOwnerUser() == null ? null : entity.getOwnerUser().getId(), currentUserId)
+                || Objects.equals(entity.getCreatorUser() == null ? null : entity.getCreatorUser().getId(), currentUserId);
+        boolean projectManager = AuthContextHolder.get()
+                .map(authContext -> authContext.hasPermission("project:manage"))
+                .orElse(false)
+                && projectDataPermissionService.canEditProject(entity);
+        if (!ownerOrCreator && !projectManager) {
+            throw new ForbiddenException("当前用户无权维护项目成员");
+        }
     }
 
     private boolean canDeleteTask(TaskEntity entity) {

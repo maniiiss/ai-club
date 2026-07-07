@@ -27,6 +27,7 @@
 - 编码检查：`python scripts/check_encoding.py`
 - 后端测试：`cd backend && mvn -s maven-settings-central.xml test`
 - 管理端构建：`cd frontend && npm run build`
+- 公众端测试：`cd frontend-public && npm run test`
 - 公众端构建：`cd frontend-public && npm run build`
 - 代码处理服务安装：`cd code-processing && pip install -e .`
 - Windows 源码模式启动：`powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1`
@@ -40,7 +41,7 @@
 - 文档、脚本、配置变更至少运行编码检查。
 - 后端业务变更优先运行相关 JUnit 测试，再视影响范围运行 Maven 全量测试。
 - 管理端类型或页面变更优先运行 `cd frontend && npm run build`。
-- 公众端类型或页面变更优先运行 `cd frontend-public && npm run build`。
+- 公众端类型或页面变更优先运行 `cd frontend-public && npm run test`，再运行 `cd frontend-public && npm run build`。
 - 跨服务改动需要至少验证对应服务能启动，必要时使用源码模式脚本串起 `backend`、`frontend`、`frontend-public`、`code-processing`。
 - 涉及技术架构调整、大型技术设计或重要模块边界变化时，交付物必须包含文档更新，优先补充 `docs/architecture.md` 或新增 `docs/design-docs/*-architecture-vN.md` / `docs/design-docs/*-technical-design-vN.md`。
 - 详细规范见 `docs/harness-best-practices.md`。
@@ -59,7 +60,7 @@
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **git-ai-club** (16361 symbols, 56906 relationships, 300 execution flows).
+This project is indexed by GitNexus as **git-ai-club** (16663 symbols, 57904 relationships, 300 execution flows).
 
 GitNexus provides a knowledge graph over this codebase — call chains, blast radius, execution flows, and semantic search.
 

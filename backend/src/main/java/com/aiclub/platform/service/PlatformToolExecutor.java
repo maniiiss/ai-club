@@ -28,6 +28,7 @@ import com.aiclub.platform.repository.TaskRepository;
 import com.aiclub.platform.repository.TestPlanRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.security.AuthContextHolder;
+import com.aiclub.platform.util.TaskStatusUtils;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -261,13 +262,16 @@ public class PlatformToolExecutor {
     private PlatformToolResult searchWorkItems(PlatformToolRequest request) {
         String keyword = stringValue(request.payload(), "keyword");
         String workItemType = stringValue(request.payload(), "workItemType");
+        String status = stringValue(request.payload(), "status");
         Long projectId = nullableLongValue(request.payload(), "projectId");
         Long iterationId = nullableLongValue(request.payload(), "iterationId");
+        Set<String> statusCandidates = TaskStatusUtils.candidateStatusesForQuery(workItemType, status);
         List<PlatformToolCandidate> candidates = taskRepository.findAll(Sort.by(Sort.Direction.DESC, "updatedAt", "id")).stream()
                 .filter(task -> projectId == null || Objects.equals(task.getProject().getId(), projectId))
                 .filter(task -> iterationId == null || task.getIteration() != null && Objects.equals(task.getIteration().getId(), iterationId))
                 .filter(this::canSeeTask)
                 .filter(task -> isBlank(workItemType) || defaultString(task.getWorkItemType()).equals(workItemType))
+                .filter(task -> statusCandidates.isEmpty() || statusCandidates.contains(defaultString(task.getStatus())))
                 .filter(task -> isBlank(keyword)
                         || containsAny(task.getName(), keyword)
                         || containsAny(task.getDescription(), keyword)
@@ -276,7 +280,7 @@ public class PlatformToolExecutor {
                 .map(task -> workItemCandidate(task, true))
                 .toList();
         return result(request.toolCode(), "搜索工作项", "找到 " + candidates.size() + " 个相关工作项", candidates,
-                metadata("keyword", defaultString(keyword), "projectId", projectId, "iterationId", iterationId));
+                metadata("keyword", defaultString(keyword), "projectId", projectId, "iterationId", iterationId, "status", defaultString(status)));
     }
 
     private PlatformToolResult getWorkItemDetail(PlatformToolRequest request) {

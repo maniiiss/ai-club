@@ -48,6 +48,37 @@ export const uploadCommonDocumentAsset = async (file: File, directory?: string):
 }
 
 export const openCommonFileDownload = (fileId: number, inline = false) => {
-  const query = inline ? '?inline=true' : ''
+  const query = inline ? '?inline=true' : '?inline=false'
   window.open(`/api/common/files/${fileId}${query}`, '_blank')
+}
+
+export const downloadCommonFile = async (fileId: number, fileName?: string, inline = false) => {
+  const { data, headers } = await http.get<Blob>(`/api/common/files/${fileId}`, {
+    params: { inline },
+    responseType: 'blob'
+  })
+  const blob = data instanceof Blob ? data : new Blob([data])
+  const disposition = String(headers['content-disposition'] || '')
+  const resolvedName = fileName || parseFileName(disposition) || `file-${fileId}`
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = resolvedName
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+const parseFileName = (contentDisposition: string) => {
+  const utf8Match = /filename\\*=UTF-8''([^;]+)/i.exec(contentDisposition)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1])
+    } catch {
+      return utf8Match[1]
+    }
+  }
+  const quotedMatch = /filename="([^"]+)"/i.exec(contentDisposition)
+  return quotedMatch?.[1] || ''
 }

@@ -66,6 +66,20 @@ class DocumentServiceTests(unittest.TestCase):
         upload_public_image.assert_called_once()
 
     @patch("app.services.document_service.MarkItDown")
+    def test_should_strip_data_uri_images_for_hermes_file_library_before_indexing(self, markitdown_cls):
+        markitdown_cls.return_value.convert_stream.return_value = _FakeMarkItDownResult(
+            "# 述职报告\n\n![](data:image/png;base64,ZmFrZS1pbWFnZQ==)\n\n主导AI配价智能体从0到1开发。",
+            "述职报告",
+        )
+
+        result = convert_document_to_markdown("demo.pptx", b"fake", "HERMES_FILE_LIBRARY", 200000)
+
+        self.assertIn("主导AI配价智能体从0到1开发", result.markdown)
+        self.assertNotIn("data:image/png;base64", result.markdown)
+        self.assertNotIn("![](", result.markdown)
+        self.assertTrue(any("图片已从索引 Markdown 中移除" in item for item in result.warnings))
+
+    @patch("app.services.document_service.MarkItDown")
     @patch("app.services.document_service._upload_public_image")
     @patch("app.services.document_service._extract_pdf_images")
     @patch("app.services.document_service._extract_pdf_page_markdown_segments")

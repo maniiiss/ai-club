@@ -76,6 +76,13 @@ run_frontend_public_build() {
   )
 }
 
+run_frontend_public_tests() {
+  (
+    cd "${FRONTEND_PUBLIC_DIR}"
+    run_step '运行公众端前端单元与 UI Harness 测试' npm run test
+  )
+}
+
 run_code_processing_install_check() {
   (
     cd "${CODE_DIR}"
@@ -99,6 +106,7 @@ if [[ "${TARGET}" == 'frontend' || "${TARGET}" == 'all' ]]; then
 fi
 
 if [[ "${TARGET}" == 'frontend-public' || "${TARGET}" == 'all' ]]; then
+  run_frontend_public_tests
   run_frontend_public_build
 fi
 

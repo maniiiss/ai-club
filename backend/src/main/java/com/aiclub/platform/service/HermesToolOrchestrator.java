@@ -859,6 +859,9 @@ public class HermesToolOrchestrator {
         if (iterationId == null) {
             return false;
         }
+        if (isStatusCollectionQuestion(question) || hasWorkItemStatusFilter(validatedToolCall.arguments())) {
+            return true;
+        }
         if (!workItemType.isBlank()) {
             return true;
         }
@@ -866,6 +869,40 @@ public class HermesToolOrchestrator {
             return true;
         }
         return collectionIntent;
+    }
+
+    private boolean hasWorkItemStatusFilter(Map<String, Object> arguments) {
+        if (arguments == null || arguments.isEmpty()) {
+            return false;
+        }
+        return !defaultString(String.valueOf(arguments.getOrDefault("status", ""))).isBlank();
+    }
+
+    private boolean isStatusCollectionQuestion(String question) {
+        String normalized = defaultString(question).toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        boolean statusIntent = normalized.contains("进行中")
+                || normalized.contains("待开始")
+                || normalized.contains("待处理")
+                || normalized.contains("已完成")
+                || normalized.contains("已阻塞")
+                || normalized.contains("处理中")
+                || normalized.contains("开发中")
+                || normalized.contains("running")
+                || normalized.contains("active")
+                || normalized.contains("done");
+        boolean collectionOrExistenceIntent = normalized.contains("还有")
+                || normalized.contains("是否")
+                || normalized.contains("有没有")
+                || normalized.contains("有无")
+                || normalized.contains("几个")
+                || normalized.contains("多少")
+                || normalized.contains("哪些")
+                || normalized.contains("列表")
+                || normalized.contains("统计");
+        return statusIntent && collectionOrExistenceIntent;
     }
 
     private boolean isGenericWorkItemCollectionKeyword(String keyword) {

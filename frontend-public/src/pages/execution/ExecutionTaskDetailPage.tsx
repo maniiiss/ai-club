@@ -38,6 +38,7 @@ import type {
   ExecutionRunItem,
 } from '@/src/types/execution'
 import { Button } from '@/src/components/common/Button'
+import { Select } from '@/src/components/common/Select'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { cn } from '@/src/lib/utils'
@@ -358,15 +359,13 @@ export const ExecutionTaskDetailPage = () => {
           <section className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-card)]">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">运行进度</h3>
-            <select
-              value={selectedRunId ?? ''}
-              onChange={(e) => setSelectedRunId(Number(e.target.value))}
-              className="h-8 rounded-lg border border-[var(--color-border-strong)] bg-white px-2 text-[12px] focus:border-[var(--color-primary)] focus:outline-none"
-            >
-              {taskDetail.runs.map((run) => (
-                <option key={run.id} value={run.id}>第 {run.runNo} 次运行</option>
-              ))}
-            </select>
+            <Select
+              layout="inline"
+              value={selectedRunId ? String(selectedRunId) : ''}
+              onChange={(value) => setSelectedRunId(Number(value))}
+              className="[&>div]:w-32 [&_button]:h-8 [&_button]:text-[12px]"
+              options={taskDetail.runs.map((run) => ({ value: String(run.id), label: `第 ${run.runNo} 次运行` }))}
+            />
           </div>
 
           {runDetail ? (

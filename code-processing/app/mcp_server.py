@@ -146,18 +146,33 @@ async def user_list_project_members(system_session_token: SessionToken, projectI
 
 @mcp_server.tool(description=_build_tool_description(
     "按标题、编号或说明搜索需求、任务、缺陷。",
-    [("keyword", "工作项关键词，可为空"), ("projectId", "项目ID，可为空")],
+    [
+        ("keyword", "工作项关键词，可为空"),
+        ("projectId", "项目ID，可为空"),
+        ("iterationId", "迭代ID，可为空"),
+        ("workItemType", "工作项类型，可为空，例如：需求、任务、缺陷"),
+        ("status", "工作项状态，可为空，例如：进行中、待开始、已完成"),
+    ],
 ))
 async def work_item_search(
     system_session_token: SessionToken,
     keyword: str = "",
     projectId: int | None = None,
+    iterationId: int | None = None,
+    workItemType: str = "",
+    status: str = "",
     ctx: Context | None = None,
 ) -> str:
     """按标题、编号或说明搜索需求、任务、缺陷。"""
     arguments: dict[str, object] = {"keyword": keyword}
     if projectId is not None:
         arguments["projectId"] = projectId
+    if iterationId is not None:
+        arguments["iterationId"] = iterationId
+    if workItemType.strip():
+        arguments["workItemType"] = workItemType.strip()
+    if status.strip():
+        arguments["status"] = status.strip()
     return await _execute_platform_tool("work_item.search", system_session_token, arguments)
 
 

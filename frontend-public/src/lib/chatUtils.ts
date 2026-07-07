@@ -1,5 +1,6 @@
 import type { ChatMessageItem, ChatSocketEvent } from '@/src/types/chat'
-import type { HermesActionItem, HermesSelectionCardItem } from '@/src/types/hermes'
+import type { HermesActionItem, HermesSelectionCardItem, HermesSelectionOptionItem } from '@/src/types/hermes'
+import { resolveHermesAssistantDisplayState } from '@/src/lib/hermesUtils'
 export { normalizeGeneratedMarkdown } from '@/src/lib/markdownUtils'
 
 // 只允许 @hermes 独立成一个 token（后接空白或字符串结尾），避免把 @hermes-dev、@hermes队长 等用户名误判为助手提及
@@ -125,6 +126,23 @@ export const markAgentSelectionStatusInMessage = (
     }
   })
 
+export const buildAgentSelectionStatusKey = (
+  selection: Pick<HermesSelectionOptionItem, 'slot' | 'entityType' | 'entityId'> | null | undefined,
+): string => {
+  if (!selection || selection.entityId == null) return ''
+  return `${selection.slot || ''}:${selection.entityType || ''}:${selection.entityId}`
+}
+
+/**
+ * 业务意图：候选卡片是单选确认，同一 slot 一旦选中任意候选，就锁定整张卡片，避免继续确认产生二次任务分叉。
+ */
+export const isAgentSelectionCardResolved = (
+  message: Pick<ChatMessageItem, 'selectionStatuses'>,
+  card: HermesSelectionCardItem,
+): boolean => card.options.some((option) => (
+  message.selectionStatuses?.[buildAgentSelectionStatusKey(option)] === 'selected'
+))
+
 export const formatChatFileSize = (size: number) => {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
@@ -133,6 +151,38 @@ export const formatChatFileSize = (size: number) => {
 
 export const shouldCollapseChatSummary = (summary: string, threshold = 120): boolean =>
   (summary || '').trim().length > threshold
+
+export interface ChatScrollMetrics {
+  scrollTop: number
+  clientHeight: number
+  scrollHeight: number
+}
+
+/**
+ * 业务意图：只有用户明显离开消息底部时才露出返回最新入口，避免实时消息打断正在回看的上下文。
+ */
+export const shouldShowBackToLatest = (metrics: ChatScrollMetrics, threshold = 72): boolean => {
+  const distanceFromBottom = metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight
+  return distanceFromBottom > threshold
+}
+
+export const resolveChatScrollBehavior = (shouldForceLatest: boolean, wasAtLatest: boolean): ScrollBehavior | null => {
+  if (shouldForceLatest) return 'auto'
+  if (wasAtLatest) return 'smooth'
+  return null
+}
+
+export const isActiveChatAssistantStream = (message: Pick<ChatMessageItem, 'role' | 'status' | 'agentTaskStatus'>): boolean =>
+  message.role === 'assistant' && message.status === 'streaming' && message.agentTaskStatus !== 'canceled'
+
+/**
+ * 业务意图：聊天室 Hermes 占位消息刚创建时正文为空，但用户需要在正文区域看到明确的回复中状态。
+ */
+export const resolveChatAssistantContent = (message: Pick<ChatMessageItem, 'role' | 'content' | 'status' | 'agentTaskStatus'>): string => {
+  if (message.role !== 'assistant') return message.content || ''
+  const display = resolveHermesAssistantDisplayState(message, isActiveChatAssistantStream(message))
+  return display.content || (display.showThinking ? 'Hermes 正在回复' : '')
+}
 
 export interface ActiveMentionQuery {
   start: number

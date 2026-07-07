@@ -25,6 +25,7 @@ import com.aiclub.platform.repository.HermesChatAuditRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.service.hermes.prompt.ExecutionTaskQueryHermesPromptSkill;
 import com.aiclub.platform.service.hermes.prompt.HermesPromptResourceLoader;
+import com.aiclub.platform.service.hermes.prompt.PersonalFileLibraryHermesPromptSkill;
 import com.aiclub.platform.service.hermes.prompt.RepoScanHermesPromptSkill;
 import com.aiclub.platform.service.hermes.prompt.WikiQaHermesPromptSkill;
 import com.aiclub.platform.service.hermes.prompt.WorkItemCreateHermesPromptSkill;
@@ -39,6 +40,7 @@ import org.springframework.mock.web.MockMultipartFile;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -101,6 +103,9 @@ class HermesChatServiceTests {
 
     @Mock
     private WikiKnowledgeSearchService wikiKnowledgeSearchService;
+
+    @Mock
+    private HermesFileLibraryService hermesFileLibraryService;
 
     /**
      * 项目会话应生成带持久化 conversationId 的 scopeKey，并在回答后把 transcript 写回 Redis。
@@ -410,6 +415,183 @@ class HermesChatServiceTests {
     }
 
     /**
+     * 同一轮工具链中途产生了候选卡，但最终回答已经给出实质结论时，
+     * done 事件和 Redis 最终态不能继续携带这张候选卡，避免前端答完后仍提示确认迭代。
+     */
+    @Test
+    void shouldClearIntermediateSelectionCardsWhenFinalAnswerDoesNotAskForSelection() throws IOException {
+        HermesChatService hermesChatService = createService();
+
+        CurrentUserInfo currentUser = buildCurrentUser();
+        UserEntity userEntity = new UserEntity();
+        userEntity.setId(5L);
+        userEntity.setUsername("pm-user");
+        userEntity.setNickname("项目经理");
+        HermesConversationSessionEntity session = buildSessionEntity();
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "project",
+                12L,
+                null,
+                "项目经理",
+                List.of(new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations")),
+                List.of(),
+                "项目上下文"
+        );
+        String question = "这个项目最大的风险是什么";
+        HermesSelectionCard intermediateSelectionCard = new HermesSelectionCard(
+                "iteration",
+                "请确认你指的是哪个迭代",
+                "当前有多个候选命中，Hermes 需要你先选定一个对象再继续。",
+                question,
+                List.of(new HermesSelectionOption("iteration", "ITERATION", 31L, "一期迭代", "进行中", "/projects/12/iterations/31", 80D, List.of("名称相近")))
+        );
+        HermesConversationState inFlightState = new HermesConversationState(
+                "test:hermes:project:12:user:5:conversation:conversation-1",
+                "conversation-1",
+                currentUser,
+                HermesConversationContextSnapshot.fromContext(context),
+                new HermesConversationRequestSnapshot(question, "project-iterations", 12L, null, null, null),
+                "session-token",
+                List.of(),
+                context.references(),
+                context.suggestions(),
+                List.of(),
+                List.of(intermediateSelectionCard),
+                HermesGroundingState.empty().withPendingSelectionCards(List.of(intermediateSelectionCard), question),
+                List.of(Map.of("toolCode", "project.list_iterations", "status", "STOPPED", "message", "产生歧义候选，需要用户确认")),
+                ""
+        );
+        AtomicReference<HermesConversationState> redisState = new AtomicReference<>();
+        HermesPromptBuilder.HermesPrompt prompt = new HermesPromptBuilder.HermesPrompt("system", "user");
+
+        when(hermesConversationSessionService.requireOwnedSession(10L)).thenReturn(session);
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
+        when(hermesContextAssembler.assemble(any(), eq(currentUser))).thenReturn(context);
+        when(hermesConversationStateStore.load(any(), any())).thenAnswer(invocation -> Optional.ofNullable(redisState.get()));
+        doAnswer(invocation -> {
+            redisState.set(invocation.getArgument(0));
+            return null;
+        }).when(hermesConversationStateStore).save(any(HermesConversationState.class));
+        when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(HermesGroundingState.empty());
+        when(hermesMcpSessionTokenService.issueToken(eq(currentUser), eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
+                .thenReturn("session-token");
+        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
+                .thenReturn(prompt);
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any(), any())).thenReturn("");
+        when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
+        when(hermesGatewayService.streamChatCompletion(eq(prompt), any(), any()))
+                .thenAnswer(invocation -> {
+                    redisState.set(inFlightState);
+                    HermesGatewayService.HermesDeltaConsumer consumer = invocation.getArgument(2);
+                    consumer.onDelta("最大风险是核心接口联调时间不足，需要尽快冻结范围。");
+                    return new HermesGatewayService.HermesGatewayResult("stream-risk", "最大风险是核心接口联调时间不足，需要尽快冻结范围。");
+                });
+        when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        hermesChatService.streamChat(10L, new HermesSessionChatRequest(question, null, null, null))
+                .writeTo(outputStream);
+
+        HermesConversationState finalState = redisState.get();
+        String streamOutput = outputStream.toString(StandardCharsets.UTF_8);
+        assertThat(finalState.selectionCards()).isEmpty();
+        assertThat(finalState.groundingState().pendingSelectionCards()).isEmpty();
+        assertThat(streamOutput).contains("\"selectionCards\":[]");
+        assertThat(streamOutput).doesNotContain("请确认你指的是哪个迭代");
+        verify(hermesConversationSessionService).recordSuccess(eq(session), any(HermesChatRequest.class), eq(finalState), eq("最大风险是核心接口联调时间不足，需要尽快冻结范围。"), any(), eq(List.of()));
+    }
+
+    /**
+     * 如果最终回答仍明确要求用户在候选卡片中选择对象，候选卡必须保留，避免破坏正常澄清链路。
+     */
+    @Test
+    void shouldKeepSelectionCardsWhenFinalAnswerStillAsksForSelection() throws IOException {
+        HermesChatService hermesChatService = createService();
+
+        CurrentUserInfo currentUser = buildCurrentUser();
+        UserEntity userEntity = new UserEntity();
+        userEntity.setId(5L);
+        userEntity.setUsername("pm-user");
+        userEntity.setNickname("项目经理");
+        HermesConversationSessionEntity session = buildSessionEntity();
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "project",
+                12L,
+                null,
+                "项目经理",
+                List.of(new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations")),
+                List.of(),
+                "项目上下文"
+        );
+        String question = "看一下这个迭代的工作项";
+        HermesSelectionCard selectionCard = new HermesSelectionCard(
+                "iteration",
+                "请确认你指的是哪个迭代",
+                "当前有多个候选命中，Hermes 需要你先选定一个对象再继续。",
+                question,
+                List.of(new HermesSelectionOption("iteration", "ITERATION", 31L, "一期迭代", "进行中", "/projects/12/iterations/31", 80D, List.of("名称相近")))
+        );
+        HermesConversationState inFlightState = new HermesConversationState(
+                "test:hermes:project:12:user:5:conversation:conversation-1",
+                "conversation-1",
+                currentUser,
+                HermesConversationContextSnapshot.fromContext(context),
+                new HermesConversationRequestSnapshot(question, "project-iterations", 12L, null, null, null),
+                "session-token",
+                List.of(),
+                context.references(),
+                context.suggestions(),
+                List.of(),
+                List.of(selectionCard),
+                HermesGroundingState.empty().withPendingSelectionCards(List.of(selectionCard), question),
+                List.of(Map.of("toolCode", "project.list_iterations", "status", "STOPPED", "message", "产生歧义候选，需要用户确认")),
+                ""
+        );
+        AtomicReference<HermesConversationState> redisState = new AtomicReference<>();
+        HermesPromptBuilder.HermesPrompt prompt = new HermesPromptBuilder.HermesPrompt("system", "user");
+        String finalContent = "我已经查到多个候选迭代，请在候选卡片中选择一个后继续。";
+
+        when(hermesConversationSessionService.requireOwnedSession(10L)).thenReturn(session);
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
+        when(hermesContextAssembler.assemble(any(), eq(currentUser))).thenReturn(context);
+        when(hermesConversationStateStore.load(any(), any())).thenAnswer(invocation -> Optional.ofNullable(redisState.get()));
+        doAnswer(invocation -> {
+            redisState.set(invocation.getArgument(0));
+            return null;
+        }).when(hermesConversationStateStore).save(any(HermesConversationState.class));
+        when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(HermesGroundingState.empty());
+        when(hermesMcpSessionTokenService.issueToken(eq(currentUser), eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
+                .thenReturn("session-token");
+        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
+                .thenReturn(prompt);
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any(), any())).thenReturn("");
+        when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
+        when(hermesGatewayService.streamChatCompletion(eq(prompt), any(), any()))
+                .thenAnswer(invocation -> {
+                    redisState.set(inFlightState);
+                    HermesGatewayService.HermesDeltaConsumer consumer = invocation.getArgument(2);
+                    consumer.onDelta(finalContent);
+                    return new HermesGatewayService.HermesGatewayResult("stream-selection", finalContent);
+                });
+        when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        hermesChatService.streamChat(10L, new HermesSessionChatRequest(question, null, null, null))
+                .writeTo(outputStream);
+
+        HermesConversationState finalState = redisState.get();
+        String streamOutput = outputStream.toString(StandardCharsets.UTF_8);
+        assertThat(finalState.selectionCards()).containsExactly(selectionCard);
+        assertThat(finalState.groundingState().pendingSelectionCards()).containsExactly(selectionCard);
+        assertThat(streamOutput).contains("请确认你指的是哪个迭代");
+        verify(hermesConversationSessionService).recordSuccess(eq(session), any(HermesChatRequest.class), eq(finalState), eq(finalContent), any(), eq(List.of()));
+    }
+
+    /**
      * 聊天时应始终以会话绑定的上下文装配 Hermes 请求，而不是外部页面瞬时上下文。
      */
     @Test
@@ -621,6 +803,135 @@ class HermesChatServiceTests {
     }
 
     /**
+     * 显式选择文件库 Skill 时，个人文件库证据必须进入当前轮用户消息，
+     * 让模型即使在项目页面也会优先基于文件库正文回答。
+     */
+    @Test
+    void shouldInjectFileLibraryEvidenceIntoCurrentTurnWhenFileLibrarySkillSelected() {
+        HermesChatService hermesChatService = createService(hermesPromptBuilder, null, hermesFileLibraryService);
+
+        CurrentUserInfo currentUser = buildCurrentUser();
+        UserEntity userEntity = new UserEntity();
+        userEntity.setId(5L);
+        userEntity.setUsername("pm-user");
+        userEntity.setNickname("项目经理");
+        HermesConversationSessionEntity session = buildSessionEntity();
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "project",
+                12L,
+                null,
+                "项目经理",
+                List.of(new HermesReferenceSummary("PROJECT", 12L, "CRM 项目", "/projects/12/iterations")),
+                List.of(),
+                "项目上下文"
+        );
+        HermesPromptBuilder.HermesPrompt prompt = new HermesPromptBuilder.HermesPrompt("system", "user");
+
+        when(hermesConversationSessionService.requireOwnedSession(10L)).thenReturn(session);
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
+        when(hermesContextAssembler.assemble(any(), eq(currentUser))).thenReturn(context);
+        when(hermesConversationStateStore.load(any(), any())).thenReturn(Optional.empty());
+        when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(HermesGroundingState.empty());
+        when(hermesMcpSessionTokenService.issueToken(any(), any(), any())).thenReturn("session-token");
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any(), any())).thenReturn("");
+        when(wikiKnowledgeSearchService.buildWikiEvidenceMarkdown(any(), any(), any())).thenReturn("");
+        when(hermesFileLibraryService.buildEvidenceMarkdown(eq(currentUser), eq("我的年终述职报告有哪些内容")))
+                .thenReturn("- 年终述职报告：完成了项目治理、自动化测试和交付提效。");
+        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
+                .thenReturn(prompt);
+        when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
+        when(hermesGatewayService.createChatCompletion(eq(prompt), any()))
+                .thenReturn(new HermesGatewayService.HermesGatewayResult("resp-file", "文件库回答"));
+        when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        hermesChatService.chat(10L, new HermesSessionChatRequest("我的年终述职报告有哪些内容", null, null, "/文件库"));
+
+        ArgumentCaptor<HermesConversationState> stateCaptor = ArgumentCaptor.forClass(HermesConversationState.class);
+        ArgumentCaptor<String> currentTurnContentCaptor = ArgumentCaptor.forClass(String.class);
+        verify(hermesConversationStateStore, atLeast(2)).save(stateCaptor.capture());
+        verify(hermesPromptBuilder).buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), currentTurnContentCaptor.capture(), any());
+        HermesConversationState finalState = stateCaptor.getAllValues().get(stateCaptor.getAllValues().size() - 1);
+
+        assertThat(currentTurnContentCaptor.getValue())
+                .contains("用户已显式选择 Skill：/文件库")
+                .contains("以下是本轮必须优先使用的个人文件库证据")
+                .contains("年终述职报告")
+                .contains("交付提效");
+        assertThat(finalState.transcript().get(0).content())
+                .contains("以下是本轮必须优先使用的个人文件库证据")
+                .contains("年终述职报告");
+    }
+
+    /**
+     * 显式选择仓库扫描 Skill 时，即使用户没有补充动词，也要把本轮转成专项启动请求，
+     * 避免模型继续按普通聊天等待用户再次输入“发起扫描”。
+     */
+    @Test
+    void shouldInjectRepoScanSpecializedInstructionWhenRepoScanSkillSelected() {
+        HermesChatService hermesChatService = createService();
+
+        CurrentUserInfo currentUser = buildCurrentUser();
+        UserEntity userEntity = new UserEntity();
+        userEntity.setId(5L);
+        userEntity.setUsername("pm-user");
+        userEntity.setNickname("项目经理");
+        HermesConversationSessionEntity session = buildSessionEntity();
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "project",
+                12L,
+                null,
+                "项目经理",
+                List.of(new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations")),
+                List.of(),
+                "项目上下文"
+        );
+        HermesPromptBuilder.HermesPrompt prompt = new HermesPromptBuilder.HermesPrompt("system", "user");
+
+        when(hermesConversationSessionService.requireOwnedSession(10L)).thenReturn(session);
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
+        when(hermesContextAssembler.assemble(any(), eq(currentUser))).thenReturn(context);
+        when(hermesConversationStateStore.load(any(), any())).thenReturn(Optional.empty());
+        when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(HermesGroundingState.empty());
+        when(hermesMcpSessionTokenService.issueToken(any(), any(), any())).thenReturn("session-token");
+        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
+                .thenReturn(prompt);
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any(), any())).thenReturn("");
+        when(wikiKnowledgeSearchService.buildWikiEvidenceMarkdown(any(), any(), any())).thenReturn("");
+        when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
+        when(hermesGatewayService.createChatCompletion(eq(prompt), any()))
+                .thenReturn(new HermesGatewayService.HermesGatewayResult("resp-scan", "扫描专项回答"));
+        when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        hermesChatService.chat(10L, new HermesSessionChatRequest("发起仓库扫描", null, null, "/仓库扫描"));
+
+        ArgumentCaptor<String> currentTurnContentCaptor = ArgumentCaptor.forClass(String.class);
+        verify(hermesPromptBuilder).buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), currentTurnContentCaptor.capture(), any());
+
+        assertThat(currentTurnContentCaptor.getValue())
+                .contains("用户已显式选择 Skill：/仓库扫描")
+                .contains("本轮必须进入仓库扫描专项流程")
+                .contains("先确认 GitLab 仓库绑定")
+                .contains("再确认仓库扫描规则集")
+                .contains("不要只解释仓库扫描能力");
+    }
+
+    /**
+     * 其他显式 Slash Skill 也应被转成专项任务入口，避免和未选择 Skill 的普通问答没有差异。
+     */
+    @Test
+    void shouldInjectSpecializedInstructionForOtherSelectedBusinessSkills() {
+        HermesChatService hermesChatService = createService();
+
+        assertSelectedSkillInstruction(hermesChatService, "/wiki", "本轮必须进入 Wiki 问答专项流程");
+        assertSelectedSkillInstruction(hermesChatService, "/需求", "本轮必须进入需求/工作项专项流程");
+        assertSelectedSkillInstruction(hermesChatService, "/执行任务", "本轮必须进入执行任务专项流程");
+    }
+
+    /**
      * 使用真实 PromptBuilder 时，传给 Hermes 网关的 system prompt 应包含命中的 Skill 片段。
      */
     @Test
@@ -630,6 +941,7 @@ class HermesChatServiceTests {
                 resourceLoader,
                 List.of(
                         new WikiQaHermesPromptSkill(resourceLoader),
+                        new PersonalFileLibraryHermesPromptSkill(resourceLoader),
                         new WorkItemCreateHermesPromptSkill(resourceLoader),
                         new RepoScanHermesPromptSkill(resourceLoader),
                         new ExecutionTaskQueryHermesPromptSkill(resourceLoader)
@@ -826,6 +1138,12 @@ class HermesChatServiceTests {
     }
 
     private HermesChatService createService(HermesPromptBuilder promptBuilder, HermesAttachmentService attachmentService) {
+        return createService(promptBuilder, attachmentService, null);
+    }
+
+    private HermesChatService createService(HermesPromptBuilder promptBuilder,
+                                            HermesAttachmentService attachmentService,
+                                            HermesFileLibraryService fileLibraryService) {
         return new HermesChatService(
                 authService,
                 userRepository,
@@ -850,8 +1168,56 @@ class HermesChatServiceTests {
                 hermesConversationSessionService,
                 attachmentService,
                 wikiKnowledgeSearchService,
+                fileLibraryService,
                 new ObjectMapper()
         );
+    }
+
+    private void assertSelectedSkillInstruction(HermesChatService hermesChatService, String slashCommand, String expectedInstruction) {
+        CurrentUserInfo currentUser = buildCurrentUser();
+        UserEntity userEntity = new UserEntity();
+        userEntity.setId(5L);
+        userEntity.setUsername("pm-user");
+        userEntity.setNickname("项目经理");
+        HermesConversationSessionEntity session = buildSessionEntity();
+        session.setId(10L + Math.abs(slashCommand.hashCode() % 1000));
+        session.setClientConversationId("conversation-" + slashCommand.replace("/", ""));
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "project",
+                12L,
+                null,
+                "项目经理",
+                List.of(new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations")),
+                List.of(),
+                "项目上下文"
+        );
+        HermesPromptBuilder.HermesPrompt prompt = new HermesPromptBuilder.HermesPrompt("system-" + slashCommand, "user");
+
+        when(hermesConversationSessionService.requireOwnedSession(session.getId())).thenReturn(session);
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
+        when(hermesContextAssembler.assemble(any(), eq(currentUser))).thenReturn(context);
+        when(hermesConversationStateStore.load(any(), any())).thenReturn(Optional.empty());
+        when(hermesToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(HermesGroundingState.empty());
+        when(hermesMcpSessionTokenService.issueToken(any(), any(), any())).thenReturn("session-token");
+        when(hermesPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
+                .thenReturn(prompt);
+        when(hermesHindsightMemoryService.buildMemoryContextMarkdown(any(), any(), any())).thenReturn("");
+        when(wikiKnowledgeSearchService.buildWikiEvidenceMarkdown(any(), any(), any())).thenReturn("");
+        when(hermesActionFallbackService.shouldFallback(any(), any())).thenReturn(false);
+        when(hermesGatewayService.createChatCompletion(eq(prompt), any()))
+                .thenReturn(new HermesGatewayService.HermesGatewayResult("resp-" + slashCommand, "专项回答"));
+        when(hermesChatAuditRepository.save(any(HermesChatAuditEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        hermesChatService.chat(session.getId(), new HermesSessionChatRequest("继续", null, null, slashCommand));
+
+        ArgumentCaptor<String> currentTurnContentCaptor = ArgumentCaptor.forClass(String.class);
+        verify(hermesPromptBuilder, atLeast(1)).buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), currentTurnContentCaptor.capture(), any());
+        String latestCurrentTurnContent = currentTurnContentCaptor.getAllValues().get(currentTurnContentCaptor.getAllValues().size() - 1);
+        assertThat(latestCurrentTurnContent)
+                .contains("用户已显式选择 Skill：" + slashCommand)
+                .contains(expectedInstruction);
     }
 
     private HermesConversationSessionEntity buildSessionEntity() {
@@ -908,4 +1274,3 @@ class HermesChatServiceTests {
         }
     }
 }
-

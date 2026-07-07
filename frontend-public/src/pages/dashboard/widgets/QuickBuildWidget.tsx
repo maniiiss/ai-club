@@ -20,6 +20,7 @@ import {
 } from '@/src/api/release'
 import type { PipelineCenterEntryItem } from '@/src/types/release'
 import { cn, formatDateTime, getErrorMessage } from '@/src/lib/utils'
+import { pipelineRunStatusLabel } from '@/src/lib/pipelineStatusUtils'
 
 interface TriggerMessage {
   ok: boolean
@@ -151,7 +152,7 @@ export const QuickBuildWidget = () => {
                     buildStatusClass(entry.lastRunStatus),
                   )}
                 >
-                  {entry.lastRunStatus}
+                  {pipelineRunStatusLabel(entry.lastRunStatus)}
                 </span>
               )}
               <Button

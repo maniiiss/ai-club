@@ -350,9 +350,9 @@ bash ./scripts/harness-linux.sh <target>
 | `docs` | 校验 `AGENTS.md`、`README.md`、`docs/`、`scripts/` 的编码与乱码风险 |
 | `backend` | 校验 `backend/` 编码并执行 Maven 测试 |
 | `frontend` | 校验 `frontend/` 编码并执行管理端构建 |
-| `frontend-public` | 校验 `frontend-public/` 编码并执行公众端构建 |
+| `frontend-public` | 校验 `frontend-public/` 编码，执行公众端单元与 UI Harness 测试，再执行公众端构建 |
 | `code-processing` | 校验 `code-processing/` 编码并执行 Python 包安装检查 |
-| `all` | 对整个仓库执行完整 harness，包含后端测试、管理端构建、公众端构建和代码处理服务安装检查 |
+| `all` | 对整个仓库执行完整 harness，包含后端测试、管理端构建、公众端测试与构建和代码处理服务安装检查 |
 
 **架构与设计文档约定：**
 
@@ -397,4 +397,3 @@ bash ./scripts/harness-linux.sh <target>
 **AI Club** · 把研发工具的关键上下文，收口到一个项目视角下。
 
 </div>
-

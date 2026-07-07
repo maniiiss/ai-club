@@ -26,6 +26,7 @@ import {
 } from '@/src/api/execution'
 import type { TestPlanItem, TestCaseItem } from '@/src/types/execution'
 import { Button } from '@/src/components/common/Button'
+import { Select } from '@/src/components/common/Select'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { cn, formatDate } from '@/src/lib/utils'
@@ -599,44 +600,29 @@ const CaseEditDrawer = ({
                     className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none"
                   />
                 </div>
-                <div>
-                  <label className="mb-1 block text-[12px] font-medium text-[var(--color-text-secondary)]">用例类型</label>
-                  <select
-                    value={testCase.caseType}
-                    onChange={(e) => onUpdate({ caseType: e.target.value })}
-                    className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none"
-                  >
-                    {caseTypeOptions.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
+                <Select
+                  label="用例类型"
+                  value={testCase.caseType}
+                  onChange={(value) => onUpdate({ caseType: value })}
+                  className="[&_label]:mb-0 [&_label]:text-[12px] [&>div]:w-full [&_button]:h-9 [&_button]:text-[13px]"
+                  options={caseTypeOptions.map((opt) => ({ value: opt, label: opt }))}
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-[12px] font-medium text-[var(--color-text-secondary)]">优先级</label>
-                  <select
-                    value={testCase.priority}
-                    onChange={(e) => onUpdate({ priority: e.target.value })}
-                    className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none"
-                  >
-                    {priorityOptions.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-[12px] font-medium text-[var(--color-text-secondary)]">自动化类型</label>
-                  <select
-                    value={testCase.automationType}
-                    onChange={(e) => onUpdate({ automationType: e.target.value })}
-                    className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none"
-                  >
-                    {automationTypeOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                </div>
+                <Select
+                  label="优先级"
+                  value={testCase.priority}
+                  onChange={(value) => onUpdate({ priority: value })}
+                  className="[&_label]:mb-0 [&_label]:text-[12px] [&>div]:w-full [&_button]:h-9 [&_button]:text-[13px]"
+                  options={priorityOptions.map((opt) => ({ value: opt, label: opt }))}
+                />
+                <Select
+                  label="自动化类型"
+                  value={testCase.automationType}
+                  onChange={(value) => onUpdate({ automationType: value })}
+                  className="[&_label]:mb-0 [&_label]:text-[12px] [&>div]:w-full [&_button]:h-9 [&_button]:text-[13px]"
+                  options={automationTypeOptions}
+                />
               </div>
               <div>
                 <label className="mb-1 block text-[12px] font-medium text-[var(--color-text-secondary)]">前置条件</label>

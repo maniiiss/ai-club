@@ -363,6 +363,7 @@ export const ChatPage = () => {
         {selectedRoom ? (
           <>
             <ChatMessageList
+              roomId={selectedRoom.id}
               messages={messages}
               currentUserId={currentUser?.id}
               loading={loadingMessages}

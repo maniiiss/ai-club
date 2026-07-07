@@ -197,7 +197,7 @@ export const uploadHermesFileLibraryItem = async (file: File) => {
  * 更新个人文件库条目的标题、描述或启停状态。
  */
 export const updateHermesFileLibraryItem = async (id: number, payload: UpdateHermesFileLibraryItemPayload) => {
-  const { data } = await http.patch<ApiResponse<HermesFileLibraryItem>>(`/api/hermes/file-library/${id}`, payload)
+  const { data } = await http.put<ApiResponse<HermesFileLibraryItem>>(`/api/hermes/file-library/${id}`, payload)
   return data.data
 }
 

@@ -550,7 +550,46 @@ class ChatRoomAgentServiceTests {
         assertThat(followup.triggerType()).isEqualTo(ChatRoomAgentService.TRIGGER_SELECTION);
         assertThat(followup.payloadJson()).contains("WORK_ITEM", "sourceTaskId", "99");
         verify(chatRoomAgentQueuePublisher).publishAfterCommit(704L);
-        verify(chatWebSocketPushService).broadcastAgentActionExecuted(41L, 603L, 601L, null, "selected");
+        verify(chatWebSocketPushService).broadcastAgentSelectionResolved(41L, 603L, 601L, "workItem:WORK_ITEM:99", "selected");
+    }
+
+    @Test
+    void shouldKeepSourceSelectionCardsOutOfFollowupDisplayPayload() {
+        ChatRoomAgentService service = buildService();
+        UserEntity owner = user(1L);
+        ChatRoomEntity room = room(owner);
+        ChatMessageEntity originalAssistant = message(room, owner, 601L, "");
+        originalAssistant.setRole(ChatRoomService.ROLE_ASSISTANT);
+        ChatRoomAgentTaskEntity originalTask = new ChatRoomAgentTaskEntity();
+        originalTask.setId(603L);
+        originalTask.setRoom(room);
+        originalTask.setAssistantMessage(originalAssistant);
+        originalTask.setAuthorizedByUser(owner);
+        originalTask.setPayloadJson("{\"hermesSelectionCards\":[{\"slot\":\"project\",\"title\":\"请选择项目\",\"description\":\"\",\"resumeQuestion\":\"继续\",\"options\":[{\"slot\":\"project\",\"entityType\":\"PROJECT\",\"entityId\":11,\"title\":\"CRM项目\",\"subtitle\":\"\",\"route\":\"\",\"matchScore\":0.9,\"matchReasons\":[]}]}]}");
+
+        when(taskRepository.findById(603L)).thenReturn(Optional.of(originalTask));
+        when(chatMessageRepository.save(any(ChatMessageEntity.class))).thenAnswer(invocation -> {
+            ChatMessageEntity entity = invocation.getArgument(0);
+            entity.setId(entity.getId() == null ? 701L : entity.getId());
+            return entity;
+        });
+        when(taskRepository.save(any(ChatRoomAgentTaskEntity.class))).thenAnswer(invocation -> {
+            ChatRoomAgentTaskEntity task = invocation.getArgument(0);
+            if (task.getId() == null) {
+                task.setId(704L);
+            }
+            return task;
+        });
+        when(taskEventRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ChatRoomAgentTaskSummary followup = service.selectCandidate(
+                41L,
+                603L,
+                new HermesSelectionRequest("project", "PROJECT", 11L, "继续查询项目")
+        );
+
+        assertThat(followup.payloadJson()).doesNotContain("\"hermesSelectionCards\"");
+        assertThat(followup.payloadJson()).contains("\"sourceHermesSelectionCards\"");
     }
 
     private ChatRoomAgentService buildService() {

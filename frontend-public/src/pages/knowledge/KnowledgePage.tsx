@@ -31,6 +31,7 @@ import { KnowledgeGraphView } from '@/src/components/knowledge/KnowledgeGraphVie
 import { ApiStudioPanel } from './ApiStudioPanel'
 import { Button } from '@/src/components/common/Button'
 import { Input } from '@/src/components/common/Input'
+import { Select } from '@/src/components/common/Select'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
@@ -784,17 +785,15 @@ const CreatePageDialog = ({ directoryId, pages, onSubmit, onClose }: {
         <Input label="页面标题" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="输入页面标题" autoFocus />
         {pages.length > 0 && (
           <div className="mt-3">
-            <label className="block text-[13px] font-medium text-[var(--color-text-secondary)] mb-1.5">父页面（可选）</label>
-            <select
-              value={parentPageId ?? ''}
-              onChange={(e) => setParentPageId(e.target.value ? Number(e.target.value) : null)}
-              className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[13px] text-[var(--color-text-primary)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-            >
-              <option value="">无（顶层页面）</option>
-              {pages.map((p) => (
-                <option key={p.id} value={p.id}>{p.title}</option>
-              ))}
-            </select>
+            <Select
+              label="父页面（可选）"
+              value={parentPageId ? String(parentPageId) : ''}
+              onChange={(value) => setParentPageId(value ? Number(value) : null)}
+              options={[
+                { value: '', label: '无（顶层页面）' },
+                ...pages.map((p) => ({ value: String(p.id), label: p.title })),
+              ]}
+            />
           </div>
         )}
         <div className="mt-4 flex justify-end gap-2">

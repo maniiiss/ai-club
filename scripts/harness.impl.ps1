@@ -115,6 +115,18 @@ function Invoke-FrontendPublicBuild {
     }
 }
 
+function Invoke-FrontendPublicTests {
+    Invoke-HarnessStep -Name '运行公众端前端单元与 UI Harness 测试' -Action {
+        Push-Location $context.FrontendPublicDir
+        try {
+            npm run test
+            Assert-LastExitCode -CommandName 'npm run test'
+        } finally {
+            Pop-Location
+        }
+    }
+}
+
 function Invoke-CodeProcessingInstallCheck {
     Invoke-HarnessStep -Name '检查 code-processing Python 包可安装' -Action {
         Push-Location $context.CodeDir
@@ -140,6 +152,7 @@ if ($Target -in @('frontend', 'all')) {
 }
 
 if ($Target -in @('frontend-public', 'all')) {
+    Invoke-FrontendPublicTests
     Invoke-FrontendPublicBuild
 }
 

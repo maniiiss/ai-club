@@ -4,9 +4,14 @@ import { describe, it } from 'node:test'
 import {
   buildHermesSessionQuery,
   computeHermesActionKey,
+  markHermesStreamStopped,
+  resolveHermesAssistantDisplayState,
+  resolveSlashMenuActiveIndex,
+  shouldIgnoreHermesStreamEvent,
   parseHermesSseChunk,
   shouldRenderHermesWorkspaceHeader,
 } from '../src/lib/hermesUtils'
+import type { HermesMessageItem } from '../src/types/hermes'
 
 describe('Hermes public utilities', () => {
   it('builds project session queries without leaking unrelated context', () => {
@@ -46,4 +51,43 @@ describe('Hermes public utilities', () => {
     assert.equal(shouldRenderHermesWorkspaceHeader(true), false)
     assert.equal(shouldRenderHermesWorkspaceHeader(false), true)
   })
+
+  it('cycles Hermes slash menu selection with arrow keys', () => {
+    assert.equal(resolveSlashMenuActiveIndex(0, 1, 5), 1)
+    assert.equal(resolveSlashMenuActiveIndex(4, 1, 5), 0)
+    assert.equal(resolveSlashMenuActiveIndex(0, -1, 5), 4)
+    assert.equal(resolveSlashMenuActiveIndex(-1, 1, 5), 1)
+    assert.equal(resolveSlashMenuActiveIndex(2, 1, 0), -1)
+  })
+
+  it('marks the active streaming assistant message as done when users stop Hermes', () => {
+    const messages: HermesMessageItem[] = [
+      { id: 'user-1', role: 'user', content: '帮我分析项目', status: 'done', attachments: [] },
+      { id: 'assistant-1', role: 'assistant', content: '', status: 'streaming', attachments: [] },
+    ]
+
+    const stopped = markHermesStreamStopped(messages, 'assistant-1')
+
+    assert.equal(stopped[1].status, 'done')
+    assert.equal(stopped[1].content, '已停止生成')
+  })
+
+  it('ignores late stream events after the active Hermes request has been stopped', () => {
+    assert.equal(shouldIgnoreHermesStreamEvent('assistant-1', 'assistant-1', true), true)
+    assert.equal(shouldIgnoreHermesStreamEvent('assistant-1', null, false), true)
+    assert.equal(shouldIgnoreHermesStreamEvent('assistant-1', 'assistant-2', false), true)
+    assert.equal(shouldIgnoreHermesStreamEvent('assistant-1', 'assistant-1', false), false)
+  })
+
+  it('does not render thinking copy for stale streaming assistant messages', () => {
+    const display = resolveHermesAssistantDisplayState(
+      { content: '', status: 'streaming' },
+      false,
+    )
+
+    assert.equal(display.content, '已停止生成')
+    assert.equal(display.showThinking, false)
+    assert.equal(display.showContinuation, false)
+  })
+
 })

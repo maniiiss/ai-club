@@ -136,6 +136,34 @@ class AuthServiceTests {
                 .hasMessageContaining("非法的引导页面 key");
     }
 
+    /**
+     * 历史账号可能已经持久化旧版页面 key，当前用户快照应过滤掉它们，避免前端下次保存时再次被白名单拒绝。
+     */
+    @Test
+    void currentUserShouldFilterLegacyGuideKeysFromSnapshot() {
+        UserRepository userRepository = mock(UserRepository.class);
+        AuthService authService = new AuthService(
+                userRepository,
+                mock(RoleRepository.class),
+                mock(PasswordEncoder.class),
+                mock(TokenService.class),
+                mock(LoginSessionStore.class),
+                mock(AccessManagementService.class),
+                mock(CreditService.class)
+        );
+        UserEntity user = userWithProjectViewOnly();
+        user.setGuideCompleted("dashboard,ai-assistant,projects,dev-tools");
+        when(userRepository.findWithDetailsById(5L)).thenReturn(Optional.of(user));
+
+        try {
+            AuthContextHolder.set(new AuthContext(5L, "guide-user", "引导用户", Set.of(), Set.of()));
+
+            assertThat(authService.currentUser().guideCompleted()).containsExactly("dashboard", "projects");
+        } finally {
+            AuthContextHolder.clear();
+        }
+    }
+
     private UserEntity userWithProjectViewOnly() {
         PermissionEntity projectView = new PermissionEntity();
         projectView.setId(1L);

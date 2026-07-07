@@ -48,6 +48,52 @@ test('renders malformed Hermes release-summary markdown into headings and tables
   assert.doesNotMatch(html, /\|---\|---\|/)
 })
 
+test('normalizes quoted bold status text in Hermes prose', async () => {
+  const { renderHermesMarkdownToHtml } = await loadModule()
+
+  const html = renderHermesMarkdownToHtml('根据当前项目（CRM项目）的近期工作项列表，状态为**"进行中"**的工作项有：')
+
+  assert.match(html, /状态为 <strong>进行中<\/strong> 的工作项有：/)
+  assert.doesNotMatch(html, /\*\*"进行中"\*\*/)
+})
+
+test('repairs malformed inline bold markers in Hermes risk prose', async () => {
+  const { renderHermesMarkdownToHtml } = await loadModule()
+
+  const html = renderHermesMarkdownToHtml(`🔴 最高风险：存在**已阻塞*
+- 工作项当前项目中有一个工作项处于**"已阻塞"**状态：
+2. 人力与工作量不匹配：项目共121个任务，但团队成员仅** 4人**，人均任务量约30个`)
+
+  assert.match(html, /存在<strong>已阻塞<\/strong>/)
+  assert.match(html, /处于 <strong>已阻塞<\/strong> 状态/)
+  assert.match(html, /仅<strong>4人<\/strong>/)
+  assert.doesNotMatch(html, /\*\*已阻塞\*/)
+  assert.doesNotMatch(html, /\*\*"已阻塞"\*\*/)
+  assert.doesNotMatch(html, /\*\*\s+4人\*\*/)
+})
+
+test('renders malformed resume markdown with glued headings, bold labels and table headers', async () => {
+  const { renderHermesMarkdownToHtml } = await loadModule()
+
+  const html = renderHermesMarkdownToHtml(`📋 杜立宏简历总结###基本信息
+- 求职意向：Agent开发工程师 /技术经理-** 籍贯**：浙江金华-** 毕业院校**：宁波大学
+🔑 核心项目经验|项目 |时间 |技术栈亮点 |
+|------|------|----------|
+| AI代理工程管理平台 |2026.03 - 至今 | Spring Boot3、Vue3 |`)
+
+  assert.match(html, /<p>📋 杜立宏简历总结<\/p>/)
+  assert.match(html, /<h3>基本信息<\/h3>/)
+  assert.match(html, /<strong>籍贯<\/strong>/)
+  assert.match(html, /<strong>毕业院校<\/strong>/)
+  assert.match(html, /<p>🔑 核心项目经验<\/p>/)
+  assert.match(html, /<th>项目<\/th>/)
+  assert.match(html, /<th>时间<\/th>/)
+  assert.match(html, /<th>技术栈亮点<\/th>/)
+  assert.doesNotMatch(html, /###基本信息/)
+  assert.doesNotMatch(html, /\|------\|/)
+  assert.doesNotMatch(html, /\*\* 毕业院校\*\*/)
+})
+
 test('does not misread table rows with ticket ids as headings', async () => {
   const { renderHermesMarkdownToHtml } = await loadModule()
 

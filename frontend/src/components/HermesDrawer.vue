@@ -218,12 +218,12 @@
                 <div class="hermes-memory-question">{{ item.title || item.fileName || '未命名文件' }}</div>
                 <div v-if="item.description" class="hermes-memory-answer">{{ item.description }}</div>
                 <div v-if="item.warnings.length" class="hermes-memory-answer warning">转换警告：{{ item.warnings.join('；') }}</div>
-                <div v-if="item.lastError" class="hermes-memory-answer warning">索引错误：{{ item.lastError }}</div>
+                <div v-if="item.lastError" class="hermes-memory-answer warning">切片/向量化失败：{{ item.lastError }}</div>
                 <div v-if="item.updatedAt" class="hermes-memory-time">{{ formatMemoryTime(item.updatedAt) }}</div>
               </div>
               <div class="hermes-memory-actions">
                 <button class="hermes-memory-toggle" type="button" :disabled="fileLibraryUpdatingId === item.id" @click="handleToggleFileLibraryItem(item)">{{ item.enabled ? '停用' : '启用' }}</button>
-                <button class="hermes-memory-toggle" type="button" :disabled="fileLibraryUpdatingId === item.id" @click="handleReindexFileLibraryItem(item)">重索引</button>
+                <button class="hermes-memory-toggle" type="button" :disabled="fileLibraryUpdatingId === item.id" @click="handleReindexFileLibraryItem(item)">重新向量化</button>
                 <button class="hermes-memory-toggle" type="button" @click="handleDownloadFileLibraryItem(item)">下载</button>
                 <button class="hermes-memory-delete" type="button" :disabled="fileLibraryUpdatingId === item.id" @click="handleDeleteFileLibraryItem(item)">删除</button>
               </div>
@@ -430,7 +430,16 @@
             </div>
           </div>
           <div v-if="slashMenuVisible" class="hermes-slash-menu">
-            <button v-for="command in slashCommands" :key="command.command" class="hermes-slash-item" type="button" @click="selectSlashCommand(command.command)">
+            <button
+              v-for="(command, index) in slashCommands"
+              :key="command.command"
+              class="hermes-slash-item"
+              :class="{ active: activeSlashCommandIndex === index }"
+              type="button"
+              :aria-selected="activeSlashCommandIndex === index"
+              @mouseenter="activeSlashCommandIndex = index"
+              @click="selectSlashCommand(command.command)"
+            >
               <strong>{{ command.command }}</strong>
               <span>{{ command.label }}</span>
             </button>
@@ -441,7 +450,7 @@
             <span>{{ resolveSlashCommandLabel(selectedSlashCommand) }}</span>
             <button type="button" title="移除已选 Skill" @click="clearSelectedSlashCommand">×</button>
           </div>
-          <el-input ref="questionInputRef" v-model="draftQuestion" type="textarea" :rows="3" resize="none" :disabled="footerDisabled" :placeholder="footerPlaceholder" @keydown.enter.exact.prevent="handleSubmit()" />
+          <el-input ref="questionInputRef" v-model="draftQuestion" type="textarea" :rows="3" resize="none" :disabled="footerDisabled" :placeholder="footerPlaceholder" @keydown="handleQuestionInputKeydown" />
           <div class="hermes-footer-actions">
             <span>{{ footerTip }}</span>
             <button v-if="sending" class="hermes-ghost-button danger" type="button" :disabled="!activeStreamAbort" @click="handleStopStream">停止</button>
@@ -458,7 +467,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import { MoreFilled, QuestionFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { openCommonFileDownload } from '@/api/common'
+import { downloadCommonFile, openCommonFileDownload } from '@/api/common'
 import { archiveHermesConversationSession, clearHermesUserMemories, consolidateHermesUserMemories, createHermesConversationSession, deleteHermesConversationSession, deleteHermesFileLibraryItem, deleteHermesUserMemory, getHermesConversationDetail, getHermesMemoryConsolidationStatus, listHermesFileLibraryItems, listHermesUserMemories, markHermesActionExecuted, pageHermesConversationSessions, reindexHermesFileLibraryItem, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat, streamHermesSessionChatWithFiles, transcribeHermesSpeech, updateHermesFileLibraryItem, uploadHermesFileLibraryItem } from '@/api/hermes'
 import { createGitlabBindingScanTask } from '@/api/gitlab'
 import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
@@ -498,6 +507,7 @@ const isMobileViewport = ref(false)
 const desktopFullscreen = ref(false)
 const draftQuestion = ref('')
 const selectedSlashCommand = ref<string | null>(null)
+const activeSlashCommandIndex = ref(0)
 const pendingFiles = ref<File[]>([])
 const sending = ref(false)
 const recording = ref(false)
@@ -577,6 +587,7 @@ const fileLibraryQuery = ref('')
 const fileLibrarySearchTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
 const slashCommands = [
+  { command: '/文件库', label: '个人文件库问答' },
   { command: '/wiki', label: 'Wiki 问答' },
   { command: '/需求', label: '创建或整理需求' },
   { command: '/仓库扫描', label: '发起仓库扫描' },
@@ -656,6 +667,11 @@ const memoryConversationList = computed(() => memoryList.value)
 const slashMenuVisible = computed(() => {
   const normalized = draftQuestion.value.trimStart()
   return !footerDisabled.value && !selectedSlashCommand.value && normalized.startsWith('/') && !normalized.includes(' ')
+})
+watch(slashMenuVisible, (visible) => {
+  if (visible) {
+    activeSlashCommandIndex.value = 0
+  }
 })
 const canLoadMoreSessions = computed(() => sessionSummaries.value.length < sessionTotal.value)
 const mobileSessionToggleValue = computed(() => {
@@ -883,10 +899,10 @@ const handleReindexFileLibraryItem = async (item: HermesFileLibraryItem) => {
   fileLibraryUpdatingId.value = item.id
   try {
     await reindexHermesFileLibraryItem(item.id)
-    ElMessage.success('已提交重新索引')
+    ElMessage.success('已提交重新向量化')
     await loadFileLibraryItems(fileLibraryQuery.value)
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '重新索引失败')
+    ElMessage.error(error?.response?.data?.message || '重新向量化失败')
   } finally {
     fileLibraryUpdatingId.value = null
   }
@@ -908,16 +924,21 @@ const handleDeleteFileLibraryItem = async (item: HermesFileLibraryItem) => {
   }
 }
 
-const handleDownloadFileLibraryItem = (item: HermesFileLibraryItem) => {
-  openCommonFileDownload(item.assetId)
+const handleDownloadFileLibraryItem = async (item: HermesFileLibraryItem) => {
+  try {
+    await downloadCommonFile(item.assetId, item.fileName || item.title || `file-${item.assetId}`)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '文件下载失败')
+  }
 }
 
 const resolveFileLibraryStatusText = (item: HermesFileLibraryItem) => {
   const status = (item.indexStatus || '').toUpperCase()
-  if (!item.enabled) return '已停用'
-  if (status === 'INDEXED') return '已索引'
-  if (status === 'FAILED') return '索引失败'
-  return '索引中'
+  if (!item.enabled) return '已停用（不参与召回）'
+  if (status === 'INDEXED') return '切片向量化完成'
+  if (status === 'FAILED') return '切片向量化失败，请重新向量化'
+  if (status === 'PENDING') return '切片向量化中'
+  return '切片向量化状态未知，请重新向量化'
 }
 
 const formatFileSize = (size: number) => {
@@ -1359,6 +1380,7 @@ const updateMessage = (messageId: string, updater: (current: HermesMessageItem) 
  */
 const queueStreamDelta = (messageId: string, delta: string) => {
   if (!delta) return
+  if (stopRequested.value || messageId !== currentStreamingAssistantMessageId.value) return
   markStreamDeltaProgress()
   pendingStreamDeltaMap.set(messageId, `${pendingStreamDeltaMap.get(messageId) || ''}${delta}`)
   ensurePendingStreamDrainLoop()
@@ -1385,15 +1407,39 @@ const parseSlashQuestion = (rawQuestion: string) => {
 
 const resolveSlashCommandLabel = (command: string) => slashCommands.find((item) => item.command === command)?.label || '业务 Skill'
 
+const moveSlashCommandSelection = (direction: 1 | -1) => {
+  const commandCount = slashCommands.length
+  activeSlashCommandIndex.value = (activeSlashCommandIndex.value + direction + commandCount) % commandCount
+}
+
 const selectSlashCommand = (command: string) => {
   selectedSlashCommand.value = command
   draftQuestion.value = ''
+  activeSlashCommandIndex.value = 0
   nextTick(() => questionInputRef.value?.focus?.())
 }
 
 const clearSelectedSlashCommand = () => {
   selectedSlashCommand.value = null
   nextTick(() => questionInputRef.value?.focus?.())
+}
+
+const handleQuestionInputKeydown = (event: KeyboardEvent) => {
+  if (event.isComposing) return
+  if (slashMenuVisible.value && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+    event.preventDefault()
+    moveSlashCommandSelection(event.key === 'ArrowDown' ? 1 : -1)
+    return
+  }
+  if (slashMenuVisible.value && event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    selectSlashCommand(slashCommands[activeSlashCommandIndex.value]?.command || slashCommands[0].command)
+    return
+  }
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    void handleSubmit()
+  }
 }
 
 const buildPayload = (question: string, selection?: HermesSelectionPayload | null, slashCommand?: string | null): HermesSessionChatRequestPayload => ({
@@ -1701,7 +1747,11 @@ function handleStopStream() {
     return
   }
   stopRequested.value = true
-  flushPendingStreamDeltas(true)
+  pendingStreamDeltaMap.clear()
+  if (pendingStreamDrainTimer != null) {
+    clearTimeout(pendingStreamDrainTimer)
+    pendingStreamDrainTimer = null
+  }
   if (currentStreamingAssistantMessageId.value) {
     updateMessage(currentStreamingAssistantMessageId.value, (current) => ({
       ...current,
@@ -1818,6 +1868,10 @@ function flushPendingStreamDeltas(flushAll = false) {
   const pendingChunks = new Map<string, string>()
   let extraDelay = 0
   pendingStreamDeltaMap.forEach((content, messageId) => {
+    if (stopRequested.value || messageId !== currentStreamingAssistantMessageId.value) {
+      pendingStreamDeltaMap.delete(messageId)
+      return
+    }
     if (!content) return
     if (flushAll) {
       pendingChunks.set(messageId, content)
@@ -1839,6 +1893,7 @@ function flushPendingStreamDeltas(flushAll = false) {
   currentMessages.value = currentMessages.value.map((item) => {
     const pendingChunk = pendingChunks.get(item.id)
     if (!pendingChunk) return item
+    if (stopRequested.value || item.id !== currentStreamingAssistantMessageId.value) return item
     return { ...item, content: `${item.content}${pendingChunk}`, status: 'streaming', attachments: item.attachments || [] }
   })
   void restoreThinkBlocksAndScroll(shouldScroll)
@@ -4008,7 +4063,8 @@ function persistSelectedSessionId(sessionId: number | null) {
   text-align: left;
 }
 
-.hermes-slash-item:hover {
+.hermes-slash-item:hover,
+.hermes-slash-item.active {
   background: rgba(var(--app-primary-rgb), 0.08);
 }
 

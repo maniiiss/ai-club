@@ -224,6 +224,11 @@ export const Markdown = ({ content, className }: MarkdownProps) => {
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
+            table: ({ children, ...rest }) => (
+              <div className="markdown-table-wrap">
+                <table {...rest}>{children}</table>
+              </div>
+            ),
             img: ({ src, alt, ...rest }) =>
               src ? (
                 <img

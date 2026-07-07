@@ -137,7 +137,7 @@ public class PlatformToolRegistry {
                 schema("projectId", "项目ID"),
                 projectMemberOutputSchema());
         register(result, TOOL_WORK_ITEM_SEARCH, "搜索工作项", "WORK_ITEM", "按项目、迭代、标题、编号或说明搜索需求/任务/缺陷", true, "LOW", "task:view", false,
-                schema("keyword", "工作项关键词", "projectId", "项目ID，可选", "iterationId", "迭代ID，可选", "workItemType", "工作项类型，可选"),
+                schema("keyword", "工作项关键词", "projectId", "项目ID，可选", "iterationId", "迭代ID，可选", "workItemType", "工作项类型，可选", "status", "工作项状态，可选"),
                 workItemOutputSchema());
         register(result, TOOL_WORK_ITEM_GET_DETAIL, "工作项详情", "WORK_ITEM", "读取工作项详情和评论摘要", true, "LOW", "task:view", false,
                 schema("workItemId", "工作项ID"),

@@ -85,6 +85,7 @@ public class ChatRoomAgentService {
     private static final String PAYLOAD_HERMES_ACTIONS = "hermesActions";
     private static final String PAYLOAD_ACTION_STATUSES = "actionStatuses";
     private static final String PAYLOAD_HERMES_SELECTION_CARDS = "hermesSelectionCards";
+    private static final String PAYLOAD_SOURCE_HERMES_SELECTION_CARDS = "sourceHermesSelectionCards";
     private static final String PAYLOAD_SELECTION_STATUSES = "selectionStatuses";
     // @mention 段：任何 @ 后到下一个空白之前的连续非空白串都视为 mention。
     // 用于关键字匹配前剥除 @用户名，避免用户名字面串误命中关键字。
@@ -374,7 +375,7 @@ public class ChatRoomAgentService {
         nextPayload.put("selection", selectionPayload(request));
         List<HermesSelectionCard> sourceSelectionCards = readPayloadList(sourcePayload, PAYLOAD_HERMES_SELECTION_CARDS, new TypeReference<List<HermesSelectionCard>>() {});
         if (!sourceSelectionCards.isEmpty()) {
-            nextPayload.put(PAYLOAD_HERMES_SELECTION_CARDS, sourceSelectionCards);
+            nextPayload.put(PAYLOAD_SOURCE_HERMES_SELECTION_CARDS, sourceSelectionCards);
         }
         nextTask.setPayloadJson(writePayload(nextPayload));
         ChatRoomAgentTaskEntity savedTask = taskRepository.save(nextTask);
@@ -1135,7 +1136,11 @@ public class ChatRoomAgentService {
         }
         Map<String, Object> payload = readPayload(task.getPayloadJson());
         HermesSelectionRequest selection = readSelectionRequest(payload.get("selection"));
-        List<HermesSelectionCard> selectionCards = readPayloadList(payload, PAYLOAD_HERMES_SELECTION_CARDS, new TypeReference<List<HermesSelectionCard>>() {});
+        List<HermesSelectionCard> selectionCards = readPayloadList(payload, PAYLOAD_SOURCE_HERMES_SELECTION_CARDS, new TypeReference<List<HermesSelectionCard>>() {});
+        if (selectionCards.isEmpty()) {
+            // 兼容历史后续任务：旧 payload 会把上一轮卡片放在展示字段里，运行态仍需要用它恢复 grounding。
+            selectionCards = readPayloadList(payload, PAYLOAD_HERMES_SELECTION_CARDS, new TypeReference<List<HermesSelectionCard>>() {});
+        }
         return chatHermesService.buildGroundingStateFromSelection(selectionCards, selection);
     }
 

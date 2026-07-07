@@ -823,42 +823,30 @@ const ExecutionCenterPanel = () => {
       {filterVisible && (
         <div className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4 shadow-[var(--shadow-sm)]">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div>
-              <label className="mb-1.5 block text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">
-                执行场景
-              </label>
-              <select
-                value={filterScenario}
-                onChange={(e) => {
-                  setFilterScenario(e.target.value)
-                  setPage(1)
-                }}
-                className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none"
-              >
-                <option value="">全部场景</option>
-                {scenarioOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1.5 block text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">
-                执行状态
-              </label>
-              <select
-                value={filterStatus}
-                onChange={(e) => {
-                  setFilterStatus(e.target.value)
-                  setPage(1)
-                }}
-                className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none"
-              >
-                <option value="">全部状态</option>
-                {executionStatusOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
+            <Select
+              label="执行场景"
+              value={filterScenario}
+              onChange={(value) => {
+                setFilterScenario(value)
+                setPage(1)
+              }}
+              options={[
+                { value: '', label: '全部场景' },
+                ...scenarioOptions,
+              ]}
+            />
+            <Select
+              label="执行状态"
+              value={filterStatus}
+              onChange={(value) => {
+                setFilterStatus(value)
+                setPage(1)
+              }}
+              options={[
+                { value: '', label: '全部状态' },
+                ...executionStatusOptions,
+              ]}
+            />
             <div className="flex items-end">
               <Button variant="secondary" size="sm" onClick={handleResetFilters}>
                 重置筛选

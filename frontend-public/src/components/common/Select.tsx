@@ -161,7 +161,7 @@ export const Select = ({
               setOpen(false)
             }}
             className={cn(
-              'flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors',
+              'flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left transition-colors',
               isSelected
                 ? 'bg-[var(--color-primary-light)] text-[var(--color-primary)]'
                 : 'text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]',
@@ -217,7 +217,7 @@ export const Select = ({
           onClick={() => !disabled && setOpen(!open)}
           disabled={disabled}
           className={cn(
-            'flex h-10 w-full items-center justify-between rounded-lg border bg-white px-3.5 text-[14px]',
+            'flex h-10 w-full cursor-pointer items-center justify-between rounded-lg border bg-white px-3.5 text-[14px]',
             'transition-all duration-150',
             'focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20',
             disabled && 'opacity-50 cursor-not-allowed',

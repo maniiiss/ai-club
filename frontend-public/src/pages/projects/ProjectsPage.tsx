@@ -27,6 +27,7 @@ import type { ProjectItem, ProjectPayload, ProjectListStatsItem } from '@/src/ty
 import type { PageResponse } from '@/src/types/api'
 import { Button } from '@/src/components/common/Button'
 import { Input } from '@/src/components/common/Input'
+import { Select } from '@/src/components/common/Select'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
@@ -443,17 +444,15 @@ const ProjectDialog = ({
             onChange={(e) => setForm({ ...form, owner: e.target.value })}
             required
           />
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[13px] font-medium text-[var(--color-text-secondary)]">状态</label>
-            <select
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value })}
-              className="h-10 rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[14px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-            >
-              <option value="conducting">进行中</option>
-              <option value="archived">已归档</option>
-            </select>
-          </div>
+          <Select
+            label="状态"
+            value={form.status}
+            onChange={(value) => setForm({ ...form, status: value })}
+            options={[
+              { value: 'conducting', label: '进行中' },
+              { value: 'archived', label: '已归档' },
+            ]}
+          />
           <div className="flex flex-col gap-1.5">
             <label className="text-[13px] font-medium text-[var(--color-text-secondary)]">描述</label>
             <textarea

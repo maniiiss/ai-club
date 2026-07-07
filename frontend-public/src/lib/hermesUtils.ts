@@ -2,6 +2,7 @@ import type {
   HermesActionItem,
   HermesConversationMode,
   HermesConversationSessionQuery,
+  HermesMessageItem,
 } from '@/src/types/hermes'
 
 /**
@@ -58,6 +59,60 @@ export const computeHermesParamsHash = (params: Record<string, unknown> | null |
 export const computeHermesActionKey = (action: Pick<HermesActionItem, 'type' | 'title' | 'params'>, index: number): string =>
   `${action.type}:${index}:${action.title}|${computeHermesParamsHash(action.params)}`
 
+/**
+ * 业务意图：用户主动停止流式生成后，前端必须立刻把当前助手消息收束为终态，
+ * 否则消息列表会继续按 streaming 状态展示“正在思考”。
+ */
+export const markHermesStreamStopped = (
+  messages: HermesMessageItem[],
+  assistantMessageId: string | null | undefined,
+): HermesMessageItem[] =>
+  messages.map((message) => {
+    const matchesActiveMessage = assistantMessageId
+      ? message.id === assistantMessageId
+      : message.role === 'assistant'
+    if (!matchesActiveMessage || message.status !== 'streaming') return message
+    return {
+      ...message,
+      content: message.content?.trim() ? message.content : '已停止生成',
+      status: 'done',
+      attachments: message.attachments || [],
+    }
+  })
+
+export interface HermesAssistantDisplayState {
+  content: string
+  showThinking: boolean
+  showContinuation: boolean
+}
+
+/**
+ * 业务意图：本地发送态已经结束时，即使某条消息因迟到事件残留为 streaming，
+ * 也不能继续渲染“正在思考”的动效，避免用户误以为 Hermes 仍在运行。
+ */
+export const resolveHermesAssistantDisplayState = (
+  message: Pick<HermesMessageItem, 'content' | 'status'>,
+  streamingActive: boolean,
+): HermesAssistantDisplayState => {
+  const content = message.content || ''
+  const activeStreaming = message.status === 'streaming' && streamingActive
+  return {
+    content: content || (message.status === 'streaming' && !activeStreaming ? '已停止生成' : ''),
+    showThinking: activeStreaming && !content.trim(),
+    showContinuation: activeStreaming && Boolean(content.trim()),
+  }
+}
+
+/**
+ * 业务意图：AbortController 取消后，浏览器仍可能交付已经读到的 SSE 分片。
+ * 这些迟到事件不能再改写已停止的消息，也不能把新的回答内容追加回来。
+ */
+export const shouldIgnoreHermesStreamEvent = (
+  eventAssistantMessageId: string,
+  activeAssistantMessageId: string | null | undefined,
+  stopRequested: boolean,
+): boolean => stopRequested || !activeAssistantMessageId || eventAssistantMessageId !== activeAssistantMessageId
+
 export interface ParsedHermesSseChunk {
   eventName: string
   data: unknown
@@ -85,4 +140,17 @@ export const parseHermesSseChunk = (chunk: string): ParsedHermesSseChunk | null 
     eventName,
     data: JSON.parse(dataLines.join('\n')),
   }
+}
+
+/**
+ * 业务意图：Hermes Skill 菜单支持键盘循环选择，避免组件里散落上下键边界判断。
+ */
+export const resolveSlashMenuActiveIndex = (
+  currentIndex: number,
+  direction: 1 | -1,
+  commandCount: number,
+): number => {
+  if (commandCount <= 0) return -1
+  const normalizedCurrent = currentIndex >= 0 && currentIndex < commandCount ? currentIndex : 0
+  return (normalizedCurrent + direction + commandCount) % commandCount
 }

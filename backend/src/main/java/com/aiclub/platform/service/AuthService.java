@@ -296,6 +296,9 @@ public class AuthService {
         return java.util.Arrays.stream(raw.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
+                // 历史版本可能持久化过旧 page key，这里只向前端暴露当前白名单，避免前端回传时被新白名单拒绝。
+                .filter(VALID_GUIDE_KEYS::contains)
+                .distinct()
                 .toList();
     }
 

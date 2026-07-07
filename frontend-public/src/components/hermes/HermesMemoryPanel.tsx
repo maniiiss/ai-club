@@ -7,7 +7,7 @@ import {
   consolidateHermesUserMemories,
   deleteHermesFileLibraryItem,
   deleteHermesUserMemory,
-  getHermesFileLibraryDownloadUrl,
+  downloadHermesFileLibraryAsset,
   getHermesMemoryConsolidationStatus,
   listHermesFileLibraryItems,
   listHermesUserMemories,
@@ -146,6 +146,18 @@ export const HermesMemoryPanel = ({ onClose }: HermesMemoryPanelProps) => {
     }
   }
 
+  const downloadFile = async (item: HermesFileLibraryItem) => {
+    setFileWorkingId(item.id)
+    setError('')
+    try {
+      await downloadHermesFileLibraryAsset(item.assetId, item.fileName || item.title || `file-${item.assetId}`)
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setFileWorkingId(null)
+    }
+  }
+
   const confirmDeleteFile = async () => {
     if (!fileDeleteTarget) return
     setConfirmLoading(true)
@@ -239,21 +251,21 @@ export const HermesMemoryPanel = ({ onClose }: HermesMemoryPanelProps) => {
               {fileItems.map((item) => (
                 <article key={item.id} className="rounded-lg border border-[var(--color-border-light)] p-3">
                   <div className="text-[12px] text-[var(--color-text-tertiary)]">
-                    {item.sourceFormat || 'FILE'} · {item.enabled ? '已启用' : '已停用'} · {item.indexStatus}
+                    {item.sourceFormat || 'FILE'} · {resolveFileLibraryStatusText(item)}
                   </div>
                   <div className="mt-1 text-[13px] font-semibold text-[var(--color-text-primary)]">{item.title || item.fileName}</div>
                   {item.warnings.length > 0 && <p className="mt-2 text-[12px] leading-5 text-amber-700">转换警告：{item.warnings.join('；')}</p>}
-                  {item.lastError && <p className="mt-2 text-[12px] leading-5 text-red-700">索引错误：{item.lastError}</p>}
+                  {item.lastError && <p className="mt-2 text-[12px] leading-5 text-red-700">切片/向量化失败：{item.lastError}</p>}
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button type="button" className="text-[12px] text-[var(--color-primary)]" disabled={fileWorkingId === item.id} onClick={() => toggleFile(item)}>
                       {item.enabled ? '停用' : '启用'}
                     </button>
                     <button type="button" className="inline-flex items-center gap-1 text-[12px] text-[var(--color-primary)]" disabled={fileWorkingId === item.id} onClick={() => reindexFile(item)}>
-                      <RefreshCw className="h-3.5 w-3.5" /> 重索引
+                      <RefreshCw className="h-3.5 w-3.5" /> 重新向量化
                     </button>
-                    <a className="inline-flex items-center gap-1 text-[12px] text-[var(--color-text-secondary)]" href={getHermesFileLibraryDownloadUrl(item.assetId)} target="_blank" rel="noreferrer">
+                    <button type="button" className="inline-flex items-center gap-1 text-[12px] text-[var(--color-text-secondary)]" disabled={fileWorkingId === item.id} onClick={() => downloadFile(item)}>
                       <Download className="h-3.5 w-3.5" /> 下载
-                    </a>
+                    </button>
                     <button type="button" className="inline-flex items-center gap-1 text-[12px] text-[var(--color-danger)]" onClick={() => setFileDeleteTarget(item)}>
                       <Trash2 className="h-3.5 w-3.5" /> 删除
                     </button>
@@ -370,3 +382,12 @@ export const HermesMemoryPanel = ({ onClose }: HermesMemoryPanelProps) => {
 
 const tabClass = 'rounded-md px-2 py-1.5 text-[12px] font-medium text-[var(--color-text-secondary)]'
 const activeTabClass = 'rounded-md bg-white px-2 py-1.5 text-[12px] font-medium text-[var(--color-text-primary)] shadow-[var(--shadow-xs)]'
+
+const resolveFileLibraryStatusText = (item: HermesFileLibraryItem) => {
+  const status = (item.indexStatus || '').toUpperCase()
+  if (!item.enabled) return '已停用（不参与召回）'
+  if (status === 'INDEXED') return '切片向量化完成'
+  if (status === 'FAILED') return '切片向量化失败，请重新向量化'
+  if (status === 'PENDING') return '切片向量化中'
+  return '切片向量化状态未知，请重新向量化'
+}

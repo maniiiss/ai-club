@@ -18,6 +18,7 @@ import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
 import { cn, formatDate, getInitials } from '@/src/lib/utils'
+import { hasDashboardMyTaskStats } from '@/src/lib/dashboardUtils'
 import { useGuide } from '@/src/components/guide'
 import { useAuthStore } from '@/src/stores/auth'
 import { QuickMergeWidget } from './widgets/QuickMergeWidget'
@@ -64,6 +65,7 @@ export const DashboardPage = () => {
   const shortcutOverview = overview?.shortcutOverview ?? null
   const gitlabUsername = overview?.currentUserGitlabUsername ?? null
   const mergeAlerts = overview?.mergeAlerts || []
+  const hasMyTaskStats = hasDashboardMyTaskStats(stats)
 
   return (
     <div className="h-full overflow-y-auto animate-fadeIn">
@@ -115,7 +117,7 @@ export const DashboardPage = () => {
           </div>
 
           {/* 我的任务统计 */}
-          {stats && (stats.myTaskCount || stats.myInProgressTaskCount || stats.myPendingTaskCount) && (
+          {hasMyTaskStats && (
             <div className="mb-8 rounded-xl border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary-light)] to-white p-6 shadow-[var(--shadow-card)]" data-guide-id="dashboard-my-tasks">
               <h2 className="mb-4 text-[16px] font-semibold text-[var(--color-text-primary)]">
                 我的任务

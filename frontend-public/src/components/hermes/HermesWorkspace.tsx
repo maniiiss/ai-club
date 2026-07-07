@@ -16,7 +16,12 @@ import {
   transcribeHermesSpeech,
   type HermesStreamHandlers,
 } from '@/src/api/hermes'
-import { buildHermesSessionQuery, shouldRenderHermesWorkspaceHeader } from '@/src/lib/hermesUtils'
+import {
+  buildHermesSessionQuery,
+  markHermesStreamStopped,
+  shouldIgnoreHermesStreamEvent,
+  shouldRenderHermesWorkspaceHeader,
+} from '@/src/lib/hermesUtils'
 import { executeHermesAction } from '@/src/lib/hermesActionExecutor'
 import { getErrorMessage } from '@/src/lib/utils'
 import { HermesActionCards } from './HermesActionCards'
@@ -102,6 +107,8 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
   const [dialogLoading, setDialogLoading] = useState(false)
   const [error, setError] = useState('')
   const streamControllerRef = useRef<StreamController | null>(null)
+  const currentStreamingAssistantMessageIdRef = useRef<string | null>(null)
+  const stopRequestedRef = useRef(false)
 
   const canUseProjectMode = Boolean(projectId)
   const disabled = !canUseProjectMode || sending || detailLoading
@@ -223,10 +230,12 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
   const submitQuestion = async (question: string, selection?: HermesSelectionPayload | null, slashCommand?: string | null) => {
     if (!question.trim() || sending) return
     setSending(true)
+    stopRequestedRef.current = false
     setError('')
     setStreamStatusText('Hermes 正在理解上下文')
     const userMessageId = `user-${Date.now()}`
     const assistantMessageId = `assistant-${Date.now()}`
+    currentStreamingAssistantMessageIdRef.current = assistantMessageId
     const filesForRequest = pendingFiles
     setMessages((prev) => [
       ...prev,
@@ -237,10 +246,20 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
       const sessionId = await ensureSession()
       const payload = { question, selection: selection || null, debug: Boolean(debug), slashCommand: slashCommand || null }
       const handlers: HermesStreamHandlers = {
-        onStatus: (event) => setStreamStatusText(event.message || event.stage || 'Hermes 正在处理'),
-        onMeta: (event) => applyStreamDisplayState(event.roleName, event.references, event.suggestions, event.actions, event.selectionCards, event.debug),
-        onDelta: (event) => updateMessage(assistantMessageId, (current) => ({ ...current, content: `${current.content}${event.content || ''}` })),
+        onStatus: (event) => {
+          if (shouldIgnoreHermesStreamEvent(assistantMessageId, currentStreamingAssistantMessageIdRef.current, stopRequestedRef.current)) return
+          setStreamStatusText(event.message || event.stage || 'Hermes 正在处理')
+        },
+        onMeta: (event) => {
+          if (shouldIgnoreHermesStreamEvent(assistantMessageId, currentStreamingAssistantMessageIdRef.current, stopRequestedRef.current)) return
+          applyStreamDisplayState(event.roleName, event.references, event.suggestions, event.actions, event.selectionCards, event.debug)
+        },
+        onDelta: (event) => {
+          if (shouldIgnoreHermesStreamEvent(assistantMessageId, currentStreamingAssistantMessageIdRef.current, stopRequestedRef.current)) return
+          updateMessage(assistantMessageId, (current) => ({ ...current, content: `${current.content}${event.content || ''}` }))
+        },
         onDone: (event) => {
+          if (shouldIgnoreHermesStreamEvent(assistantMessageId, currentStreamingAssistantMessageIdRef.current, stopRequestedRef.current)) return
           applyStreamDisplayState(event.roleName, event.references, event.suggestions, event.actions, event.selectionCards, event.debug)
           updateMessage(assistantMessageId, (current) => ({
             ...current,
@@ -252,13 +271,18 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
           setPendingFiles([])
           setSending(false)
           setStreamStatusText('')
+          currentStreamingAssistantMessageIdRef.current = null
+          stopRequestedRef.current = false
           loadSessions(1, false, archivedView)
         },
         onError: (event) => {
+          if (shouldIgnoreHermesStreamEvent(assistantMessageId, currentStreamingAssistantMessageIdRef.current, stopRequestedRef.current)) return
           updateMessage(assistantMessageId, (current) => ({ ...current, content: event.message || current.content, status: 'error' }))
           setError(event.message || 'Hermes 流式连接已中断')
           setSending(false)
           setStreamStatusText('')
+          currentStreamingAssistantMessageIdRef.current = null
+          stopRequestedRef.current = false
         },
       }
       streamControllerRef.current = filesForRequest.length
@@ -269,12 +293,17 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
       setError(getErrorMessage(err))
       setSending(false)
       setStreamStatusText('')
+      currentStreamingAssistantMessageIdRef.current = null
+      stopRequestedRef.current = false
     }
   }
 
   const stopStream = () => {
+    stopRequestedRef.current = true
+    setMessages((current) => markHermesStreamStopped(current, currentStreamingAssistantMessageIdRef.current))
     streamControllerRef.current?.abort()
     streamControllerRef.current = null
+    currentStreamingAssistantMessageIdRef.current = null
     setSending(false)
     setStreamStatusText('')
   }
@@ -405,6 +434,7 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
             suggestions={suggestions}
             debug={debug}
             streamStatusText={streamStatusText}
+            streamingActive={sending}
             disabled={disabled}
             onSuggestion={submitQuestion}
           />

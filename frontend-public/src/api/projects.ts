@@ -46,6 +46,12 @@ export const updateProject = async (id: number, payload: ProjectPayload): Promis
   return unwrap(response)
 }
 
+/** 替换项目成员列表，不修改项目基础信息。 */
+export const replaceProjectMembers = async (id: number, memberUserIds: number[]): Promise<ProjectItem> => {
+  const response = await http.put<ApiResponse<ProjectItem>>(`/api/projects/${id}/members`, { memberUserIds })
+  return unwrap(response)
+}
+
 /** 删除项目。 */
 export const deleteProject = async (id: number): Promise<void> => {
   await http.delete<ApiResponse<null>>(`/api/projects/${id}`)

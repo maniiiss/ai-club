@@ -12,6 +12,7 @@ import com.aiclub.platform.dto.HermesConversationTurn;
 import com.aiclub.platform.dto.HermesDebugInfo;
 import com.aiclub.platform.dto.HermesGroundingState;
 import com.aiclub.platform.dto.HermesGroundingTarget;
+import com.aiclub.platform.dto.HermesSelectionCard;
 import com.aiclub.platform.dto.HermesStreamDelta;
 import com.aiclub.platform.dto.HermesStreamDone;
 import com.aiclub.platform.dto.HermesStreamError;
@@ -409,8 +410,10 @@ public class HermesChatService {
         );
         hermesConversationStateStore.save(preparedState);
 
-        HermesConversationTurn currentUserTurn = buildCurrentUserTurn(request, groundingState, attachmentContextMarkdown);
         String memoryContextMarkdown = resolveMemoryContextMarkdown(currentUser, context, request);
+        String fileLibraryEvidenceMarkdown = resolveFileLibraryEvidenceMarkdown(currentUser, request);
+        HermesConversationTurn currentUserTurn = buildCurrentUserTurn(request, groundingState, attachmentContextMarkdown, fileLibraryEvidenceMarkdown);
+        String combinedMemoryContextMarkdown = combineMemoryContext(memoryContextMarkdown, fileLibraryEvidenceMarkdown);
         HermesPromptBuilder.HermesPrompt prompt = hermesPromptBuilder.buildConversationPrompt(
                 currentUser,
                 context,
@@ -418,7 +421,7 @@ public class HermesChatService {
                 groundingState,
                 sessionToken,
                 currentUserTurn.content(),
-                memoryContextMarkdown
+                combinedMemoryContextMarkdown
         );
 
         return new PreparedConversation(
@@ -481,6 +484,10 @@ public class HermesChatService {
         transcript.add(currentUserTurn);
         transcript.add(HermesConversationTurn.assistant(resolvedContent));
         List<HermesConversationTurn> trimmedTranscript = trimTranscript(transcript);
+        List<HermesSelectionCard> finalSelectionCards = resolveFinalSelectionCards(workingState.selectionCards(), resolvedContent);
+        HermesGroundingState finalGroundingState = finalSelectionCards.isEmpty()
+                ? workingState.groundingState().clearPendingSelection()
+                : workingState.groundingState();
 
         HermesConversationState finalState = new HermesConversationState(
                 workingState.scopeKey(),
@@ -493,12 +500,53 @@ public class HermesChatService {
                 workingState.references() == null || workingState.references().isEmpty() ? context.references() : workingState.references(),
                 context.suggestions(),
                 workingState.actions(),
-                workingState.selectionCards(),
-                workingState.groundingState(),
+                finalSelectionCards,
+                finalGroundingState,
                 workingState.toolExecutions(),
                 workingState.lastErrorMessage()
         );
         return new FinalizedConversation(finalState, resolvedContent);
+    }
+
+    /**
+     * 工具执行中可能短暂生成候选卡，但模型最终已经给出完整回答时，不能再把中间候选态暴露给前端。
+     * 只有最终话术仍明确要求用户确认候选对象时，才保留卡片等待用户选择。
+     */
+    private List<HermesSelectionCard> resolveFinalSelectionCards(List<HermesSelectionCard> selectionCards,
+                                                                 String assistantContent) {
+        if (selectionCards == null || selectionCards.isEmpty()) {
+            return List.of();
+        }
+        return isSelectionAwaitingAnswer(assistantContent) ? selectionCards : List.of();
+    }
+
+    /**
+     * 判断最终回答是否仍停留在“请用户选择候选对象”的状态。
+     */
+    private boolean isSelectionAwaitingAnswer(String assistantContent) {
+        String normalizedContent = defaultString(assistantContent);
+        if (normalizedContent.isBlank()) {
+            return true;
+        }
+        if (normalizedContent.contains("指的是哪一个") || normalizedContent.contains("指的是哪个")) {
+            return normalizedContent.contains("确认") || normalizedContent.contains("选择") || normalizedContent.contains("选定");
+        }
+        if (normalizedContent.contains("选择一个")
+                || normalizedContent.contains("选一个")
+                || normalizedContent.contains("先选定")
+                || normalizedContent.contains("先选择")) {
+            return normalizedContent.contains("候选")
+                    || normalizedContent.contains("对象")
+                    || normalizedContent.contains("迭代")
+                    || normalizedContent.contains("项目")
+                    || normalizedContent.contains("工作项");
+        }
+        return (normalizedContent.contains("候选") || normalizedContent.contains("卡片"))
+                && (normalizedContent.contains("确认")
+                || normalizedContent.contains("选择")
+                || normalizedContent.contains("选定")
+                || normalizedContent.contains("不能确定")
+                || normalizedContent.contains("无法确定"));
     }
 
     /**
@@ -507,7 +555,8 @@ public class HermesChatService {
      */
     private HermesConversationTurn buildCurrentUserTurn(HermesChatRequest request,
                                                         HermesGroundingState groundingState,
-                                                        String attachmentContextMarkdown) {
+                                                        String attachmentContextMarkdown,
+                                                        String fileLibraryEvidenceMarkdown) {
         String content;
         if (request.selection() == null) {
             content = defaultString(request.question());
@@ -533,6 +582,7 @@ public class HermesChatService {
                 );
             }
         }
+        content = prependSlashSkillInstruction(content, request, groundingState, fileLibraryEvidenceMarkdown);
         if (hasText(attachmentContextMarkdown)) {
             content = """
                     %s
@@ -544,6 +594,72 @@ public class HermesChatService {
                     """.formatted(content, attachmentContextMarkdown).trim();
         }
         return HermesConversationTurn.user(content);
+    }
+
+    /**
+     * Slash Skill 是用户显式选择的专项入口，不能只停留在 system prompt 片段。
+     * 这里把选择结果固化到当前轮 user message，保证模型即使面对短输入也会进入对应业务流程。
+     */
+    private String prependSlashSkillInstruction(String content,
+                                                HermesChatRequest request,
+                                                HermesGroundingState groundingState,
+                                                String fileLibraryEvidenceMarkdown) {
+        if (request == null || !hasText(request.slashCommand())) {
+            return content;
+        }
+        String slashCommand = request.slashCommand().trim();
+        String instruction = switch (slashCommand) {
+            case "/文件库" -> buildPersonalFileLibraryInstruction(fileLibraryEvidenceMarkdown);
+            case "/仓库扫描" -> buildRepoScanInstruction(groundingState);
+            case "/wiki" -> """
+                    本轮必须进入 Wiki 问答专项流程：优先读取当前 Wiki 页面或空间证据；如果缺少页面正文，应调用 Wiki 相关平台工具补齐事实，不要按普通聊天泛泛回答。
+                    """;
+            case "/需求" -> """
+                    本轮必须进入需求/工作项专项流程：优先解析项目、迭代、负责人和需求内容；信息足够时生成待确认草稿，信息不足时只追问缺失字段。
+                    """;
+            case "/执行任务" -> """
+                    本轮必须进入执行任务专项流程：优先查询或汇总执行任务、仓库扫描任务和测试执行结果；不要只解释执行中心能力。
+                    """;
+            default -> "";
+        };
+        if (!hasText(instruction)) {
+            return content;
+        }
+        return """
+                用户已显式选择 Skill：%s
+                %s
+
+                原始用户输入：
+                %s
+                """.formatted(slashCommand, instruction.trim(), defaultString(content)).trim();
+    }
+
+    private String buildPersonalFileLibraryInstruction(String fileLibraryEvidenceMarkdown) {
+        if (!hasText(fileLibraryEvidenceMarkdown)) {
+            return """
+                    本轮必须进入个人文件库问答专项流程：先明确告诉用户当前没有从个人文件库召回到相关文档，再提示可上传、启用或重新向量化文件；不要转去项目工作项或 Wiki 替代回答。
+                    """;
+        }
+        return """
+                本轮必须进入个人文件库问答专项流程：优先且主要依据下面的个人文件库证据回答，不要转去项目工作项或 Wiki 替代回答。
+
+                以下是本轮必须优先使用的个人文件库证据：
+                %s
+                """.formatted(fileLibraryEvidenceMarkdown.trim());
+    }
+
+    private String buildRepoScanInstruction(HermesGroundingState groundingState) {
+        HermesGroundingTarget binding = groundingState == null ? null : groundingState.boundSlot("gitlabBinding");
+        String bindingHint = binding == null || binding.entityId() == null
+                ? "- 先确认 GitLab 仓库绑定：当前尚未确认目标仓库，先搜索或列出当前项目可用仓库绑定，并让用户确认。"
+                : "- 当前已确认 GitLab 仓库绑定：" + defaultString(binding.title()) + "（ID：" + binding.entityId() + "）。";
+        return """
+                本轮必须进入仓库扫描专项流程，不要只解释仓库扫描能力，也不要等待用户再次输入“发起扫描”。
+                处理顺序：
+                %s
+                - 再确认仓库扫描规则集；如果用户未给出规则集，先调用规则集列表工具或追问确认。
+                - 仓库绑定和规则集都明确后，发起仓库扫描待确认动作。
+                """.formatted(bindingHint);
     }
 
     /**
@@ -585,10 +701,23 @@ public class HermesChatService {
         } catch (RuntimeException exception) {
             log.warn("Hermes 组装 Wiki 知识证据失败：{}", resolveErrorMessage(exception));
         }
-        String fileLibraryEvidenceMarkdown = "";
+        StringBuilder builder = new StringBuilder();
+        if (hasText(memoryMarkdown)) {
+            builder.append("### Hindsight 记忆\n").append(memoryMarkdown.trim());
+        }
+        if (hasText(wikiEvidenceMarkdown)) {
+            if (!builder.isEmpty()) {
+                builder.append("\n\n");
+            }
+            builder.append("### Wiki 知识证据\n").append(wikiEvidenceMarkdown.trim());
+        }
+        return builder.toString().trim();
+    }
+
+    private String resolveFileLibraryEvidenceMarkdown(CurrentUserInfo currentUser, HermesChatRequest request) {
         try {
             if (hermesFileLibraryService != null) {
-                fileLibraryEvidenceMarkdown = defaultString(hermesFileLibraryService.buildEvidenceMarkdown(
+                return defaultString(hermesFileLibraryService.buildEvidenceMarkdown(
                         currentUser,
                         request == null ? "" : request.question()
                 ));
@@ -596,21 +725,19 @@ public class HermesChatService {
         } catch (RuntimeException exception) {
             log.warn("Hermes 组装个人文件库证据失败：{}", resolveErrorMessage(exception));
         }
+        return "";
+    }
+
+    private String combineMemoryContext(String memoryContextMarkdown, String fileLibraryEvidenceMarkdown) {
         StringBuilder builder = new StringBuilder();
-        if (hasText(memoryMarkdown)) {
-            builder.append("### Hindsight 记忆\n").append(memoryMarkdown.trim());
+        if (hasText(memoryContextMarkdown)) {
+            builder.append(memoryContextMarkdown.trim());
         }
         if (hasText(fileLibraryEvidenceMarkdown)) {
             if (!builder.isEmpty()) {
                 builder.append("\n\n");
             }
             builder.append("### 个人文件库证据\n").append(fileLibraryEvidenceMarkdown.trim());
-        }
-        if (hasText(wikiEvidenceMarkdown)) {
-            if (!builder.isEmpty()) {
-                builder.append("\n\n");
-            }
-            builder.append("### Wiki 知识证据\n").append(wikiEvidenceMarkdown.trim());
         }
         return builder.toString().trim();
     }

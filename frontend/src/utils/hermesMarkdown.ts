@@ -8,7 +8,7 @@ const escapeHtml = (value: string) =>
 
 const renderInline = (value: string) => {
   const placeholders: string[] = []
-  let text = escapeHtml(value)
+  let text = escapeHtml(normalizeInlineMarkdown(value))
   const pushPlaceholder = (html: string) => {
     const token = `@@INLINE_PLACEHOLDER_${placeholders.length}@@`
     placeholders.push(html)
@@ -28,8 +28,8 @@ const renderInline = (value: string) => {
     /(^|[\s(])((?:https?:\/\/|mailto:|tel:)[^\s<]+[^<.,:;"')\]\s])/g,
     (_, prefix: string, url: string) => `${prefix}${pushPlaceholder(`<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)}`
   )
-  text = text.replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, '<strong>$2</strong>')
-  text = text.replace(/(\*|_)(?=\S)([\s\S]*?\S)\1/g, '<em>$2</em>')
+  text = text.replace(/(\*{2}|__)(?=\S)([\s\S]*?\S)\1/g, '<strong>$2</strong>')
+  text = text.replace(/(?<!\*)\*(?!\*)(?=\S)([\s\S]*?\S)(?<!\*)\*(?!\*)|(?<!_)_(?!_)(?=\S)([\s\S]*?\S)(?<!_)_(?!_)/g, (_match, a: string, b: string) => `<em>${a ?? b}</em>`)
   text = text.replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<s>$1</s>')
 
   placeholders.forEach((placeholder, index) => {
@@ -38,6 +38,24 @@ const renderInline = (value: string) => {
 
   return text.replace(/\n/g, '<br />')
 }
+
+/**
+ * 修复 Hermes 句内强调语法的常见粘连。
+ * 业务意图：模型常输出 `状态为**"进行中"**的...`，这里去掉仅用于转述的引号并补齐中文句内空格，让最终阅读节奏稳定。
+ */
+const normalizeInlineMarkdown = (value: string) =>
+  value
+    .replace(/\*\*([^\s*][^*\n]{0,24}?)\*(?=[\s，。；：:、,.!?！？)\]】）]|$|\n(?:[-*+]\s|\d+[.)]\s|$))/g, '**$1**')
+    .replace(/([^\s])\*\*["“”']([^*"“”'\n]{1,40})["“”']\*\*/g, '$1 **$2**')
+    .replace(/\*\*\s+([^*\n]{1,60}?)\*\*/g, '**$1**')
+    .replace(/(^|[^-\s])\*\*([^*\n]{1,60}?)\s+\*\*/g, '$1**$2**')
+    .replace(/([^\s\n])-\s*(\*\*[^*\n]{1,60}\*\*)/g, '$1 - $2')
+    .replace(/\*\*\s+([^*\n]{1,60}?)\*\*/g, '**$1**')
+    .replace(/(^|[^-\s])\*\*([^*\n]{1,60}?)\s+\*\*/g, '$1**$2**')
+    .replace(/(^|[^\s*-])\*\*([^*：:\n]{1,40})\*\*(?=[^\s\p{P}])/gu, '$1**$2** ')
+    .replace(/(-)\*\*\s+/g, '$1 **')
+    .replace(/-\s+\*\*\s+([^*\n]{1,60}?)\*\*/g, '- **$1**')
+    .replace(/\*\*([^*：:\n]{1,40})\*\*(?=[^\s\p{P}])/gu, '**$1** ')
 
 /**
  * 去掉 HTML 标签并回收常见实体，供 Hermes 思考区兼容 HTML 回退渲染时复用。
@@ -120,7 +138,9 @@ const normalizeRichHtmlMarkup = (markdown: string) =>
  */
 const normalizeCollapsedMarkdownBlocks = (markdown: string) =>
   markdown
-    .replace(/([^\n#\s*（(])(#{1,6}\s*[^\s#])/g, '$1\n$2')
+    .replace(/^([^|\n#][^\n#]*?)\s*(#{1,6})(?!#)([^\s#])/gm, '$1\n\n$2 $3')
+    .replace(/^([^|\n#][^\n#]*?)\s*(#{1,6}\s+)/gm, '$1\n\n$2')
+    .replace(/^(\|\s*[^|\n]+)\n(#{1,6}[^\n]*\|)\s*$/gm, '$1\n$2')
     .replace(/^(#{1,6}\s*[^|\n]+?)(\|(?:[^|\n]*\|)+)\s*$/gm, '$1\n$2')
 
 /**

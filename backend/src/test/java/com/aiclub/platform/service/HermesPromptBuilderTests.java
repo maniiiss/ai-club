@@ -8,6 +8,7 @@ import com.aiclub.platform.dto.request.HermesChatRequest;
 import com.aiclub.platform.service.hermes.prompt.ExecutionTaskQueryHermesPromptSkill;
 import com.aiclub.platform.service.hermes.prompt.IterationReleaseSummaryHermesPromptSkill;
 import com.aiclub.platform.service.hermes.prompt.HermesPromptResourceLoader;
+import com.aiclub.platform.service.hermes.prompt.PersonalFileLibraryHermesPromptSkill;
 import com.aiclub.platform.service.hermes.prompt.RepoScanHermesPromptSkill;
 import com.aiclub.platform.service.hermes.prompt.WikiQaHermesPromptSkill;
 import com.aiclub.platform.service.hermes.prompt.WorkItemCreateHermesPromptSkill;
@@ -157,6 +158,54 @@ class HermesPromptBuilderTests {
     }
 
     /**
+     * 个人文件库类问题应命中文件库 Skill，引导 Hermes 优先读取已上传文档证据。
+     */
+    @Test
+    void shouldMatchPersonalFileLibrarySkillForSlashCommandAndPersonalDocumentQuestion() {
+        HermesPromptBuilder promptBuilder = createPromptBuilder();
+
+        HermesPromptBuilder.HermesPrompt slashPrompt = promptBuilder.buildConversationPrompt(
+                currentUser(),
+                new HermesContextAssembler.HermesConversationContext(
+                        "project",
+                        12L,
+                        null,
+                        "项目经理",
+                        List.of(new HermesReferenceSummary("PROJECT", 12L, "CRM 项目", "/projects/12/iterations")),
+                        List.of(),
+                        "项目上下文"
+                ),
+                new HermesChatRequest("我的年终述职报告有哪些内容", "project-iterations", 12L, null, null, null, null, null, "client-file-1", null, false, "/文件库"),
+                HermesGroundingState.empty(),
+                "hcs_test_token"
+        );
+
+        assertThat(slashPrompt.systemPrompt())
+                .contains("### Skill: personal-file-library")
+                .contains("优先依据“个人文件库证据”回答");
+
+        HermesPromptBuilder.HermesPrompt implicitPrompt = promptBuilder.buildConversationPrompt(
+                currentUser(),
+                new HermesContextAssembler.HermesConversationContext(
+                        "project",
+                        12L,
+                        null,
+                        "项目经理",
+                        List.of(new HermesReferenceSummary("PROJECT", 12L, "CRM 项目", "/projects/12/iterations")),
+                        List.of(),
+                        "项目上下文"
+                ),
+                new HermesChatRequest("我的简历里写了什么", "project-iterations", 12L, null, null, null, null, null, "client-file-2", null, false),
+                HermesGroundingState.empty(),
+                "hcs_test_token"
+        );
+
+        assertThat(implicitPrompt.systemPrompt())
+                .contains("### Skill: personal-file-library")
+                .contains("不要因为当前页面绑定了项目，就转去搜索项目工作项或 Wiki");
+    }
+
+    /**
      * 普通泛问答不应误命中业务 Skill，但基础规则与空 Skill 提示仍应保留。
      */
     @Test
@@ -285,6 +334,65 @@ class HermesPromptBuilderTests {
     }
 
     /**
+     * 基础 Prompt 应明确项目、迭代、工作项是逐级定位链，避免集合查询误弹工作项确认。
+     */
+    @Test
+    void shouldDescribeProjectIterationWorkItemConfirmationBoundary() {
+        HermesPromptBuilder promptBuilder = createPromptBuilder();
+
+        HermesPromptBuilder.HermesPrompt prompt = promptBuilder.buildConversationPrompt(
+                currentUser(),
+                new HermesContextAssembler.HermesConversationContext(
+                        "project-iterations",
+                        12L,
+                        null,
+                        "项目经理",
+                        List.of(new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations")),
+                        List.of(),
+                        "迭代上下文"
+                ),
+                new HermesChatRequest("现在还有几个任务在进行中", "project-iterations", 12L, null, 35L, null, null, null, "client-7b", null, false),
+                HermesGroundingState.empty(),
+                "hcs_test_token"
+        );
+
+        assertThat(prompt.systemPrompt())
+                .contains("项目 → 迭代 → 工作项")
+                .contains("只在当前缺失或存在歧义的那一级生成候选确认")
+                .contains("查询工作项数量、状态、列表或汇总时不要再要求用户确认单个工作项");
+    }
+
+    /**
+     * 基础 Prompt 应约束 Hermes 生成可被前端 Markdown 解析器稳定渲染的内容。
+     */
+    @Test
+    void shouldIncludeMarkdownOutputContractInBasePrompt() {
+        HermesPromptBuilder promptBuilder = createPromptBuilder();
+
+        HermesPromptBuilder.HermesPrompt prompt = promptBuilder.buildConversationPrompt(
+                currentUser(),
+                new HermesContextAssembler.HermesConversationContext(
+                        "project",
+                        12L,
+                        null,
+                        "项目经理",
+                        List.of(new HermesReferenceSummary("PROJECT", 12L, "CRM项目", "/projects/12/iterations")),
+                        List.of(),
+                        "项目上下文"
+                ),
+                new HermesChatRequest("帮我分析项目风险", "project", 12L, null, null, null, null, null, "client-markdown", null, false),
+                HermesGroundingState.empty(),
+                "hcs_test_token"
+        );
+
+        assertThat(prompt.systemPrompt())
+                .contains("Markdown 输出契约")
+                .contains("加粗标记 `**` 必须成对出现在同一行内")
+                .contains("不要输出孤立的 `*` 或 `**`")
+                .contains("表格单元格内优先使用纯文本");
+    }
+
+    /**
      * 当前迭代发版总结问题应命中迭代汇总 Skill，引导模型优先读取当前迭代集合事实而不是单工作项详情。
      */
     @Test
@@ -334,6 +442,7 @@ class HermesPromptBuilderTests {
                 resourceLoader,
                 List.of(
                         new WikiQaHermesPromptSkill(resourceLoader),
+                        new PersonalFileLibraryHermesPromptSkill(resourceLoader),
                         new IterationReleaseSummaryHermesPromptSkill(resourceLoader),
                         new WorkItemCreateHermesPromptSkill(resourceLoader),
                         new RepoScanHermesPromptSkill(resourceLoader),

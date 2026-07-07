@@ -154,6 +154,83 @@ class PlatformToolExecutorIterationSearchTests {
     }
 
     @Test
+    void shouldFilterWorkItemsByStatusForHermesStatusQuestions() {
+        UserEntity creator = createUser("tool-status-creator", "工具状态创建人");
+        UserEntity owner = createUser("tool-status-owner", "工具状态负责人");
+        ProjectEntity project = createProjectAs(creator, owner, "工具状态项目");
+
+        loginAs(creator);
+        IterationSummary iteration = platformStoreService.createIteration(project.getId(), new IterationRequest(
+                "状态过滤迭代",
+                "用于验证状态过滤",
+                "进行中",
+                "2026-05-01",
+                "2026-05-15",
+                "只返回指定状态工作项",
+                1
+        ));
+
+        platformStoreService.createTask(new TaskRequest(
+                "进行中的执行任务",
+                "任务",
+                "进行中",
+                "高",
+                "",
+                null,
+                List.of(),
+                "当前仍在处理中",
+                "",
+                "",
+                "",
+                false,
+                false,
+                null,
+                null,
+                null,
+                project.getId(),
+                null,
+                iteration.id(),
+                null
+        ));
+        platformStoreService.createTask(new TaskRequest(
+                "已经完成的执行任务",
+                "任务",
+                "已完成",
+                "中",
+                "",
+                null,
+                List.of(),
+                "已经完成，不应计入进行中",
+                "",
+                "",
+                "",
+                false,
+                false,
+                null,
+                null,
+                null,
+                project.getId(),
+                null,
+                iteration.id(),
+                null
+        ));
+
+        PlatformToolResult result = platformToolExecutor.execute(new PlatformToolRequest(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "TEST",
+                "scope-status-filter",
+                project.getId(),
+                null,
+                null,
+                Map.of("projectId", project.getId(), "iterationId", iteration.id(), "workItemType", "任务", "status", "进行中")
+        ));
+
+        assertThat(result.candidates()).hasSize(1);
+        assertThat(result.candidates().get(0).title()).contains("进行中的执行任务");
+        assertThat(result.metadata()).containsEntry("status", "进行中");
+    }
+
+    @Test
     void shouldReturnIterationDetailForCurrentIterationSummary() {
         UserEntity creator = createUser("tool-iteration-detail-creator", "迭代详情创建人");
         UserEntity owner = createUser("tool-iteration-detail-owner", "迭代详情负责人");

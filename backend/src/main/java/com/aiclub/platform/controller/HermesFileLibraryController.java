@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -60,6 +61,16 @@ public class HermesFileLibraryController {
     @RequirePermission("hermes:chat")
     public ApiResponse<HermesFileLibraryItemSummary> update(@PathVariable Long id,
                                                             @Valid @RequestBody UpdateHermesFileLibraryItemRequest request) {
+        return ApiResponse.success(hermesFileLibraryService.update(id, request));
+    }
+
+    /**
+     * 为兼容部分代理或环境不支持 PATCH 的情况，额外开放 PUT 更新入口。
+     */
+    @PutMapping("/{id}")
+    @RequirePermission("hermes:chat")
+    public ApiResponse<HermesFileLibraryItemSummary> updateByPut(@PathVariable Long id,
+                                                                 @Valid @RequestBody UpdateHermesFileLibraryItemRequest request) {
         return ApiResponse.success(hermesFileLibraryService.update(id, request));
     }
 

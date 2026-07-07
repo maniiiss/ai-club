@@ -126,7 +126,7 @@
 | 后端 DTO / Service / Controller | 相关 JUnit 测试 | `cd backend && mvn -s maven-settings-central.xml test` |
 | Flyway 迁移 | 后端测试，必要时重建本地库 | 源码模式启动后检查后端日志和页面 |
 | 前端页面 / 类型 | `cd frontend && npm run build` | 源码模式启动后人工走一遍页面 |
-| 公众端页面 / 类型 | `cd frontend-public && npm run build` | 源码模式启动后人工走一遍公众端主流程 |
+| 公众端页面 / 类型 | `cd frontend-public && npm run test` + `cd frontend-public && npm run build` | 源码模式启动后人工走一遍公众端主流程 |
 | code-processing | `cd code-processing && pip install -e .` | 启动 FastAPI 并访问 `/docs` |
 | 跨服务链路 | 相关单测 + 对应模块构建 | `scripts/start.ps1` 或 `scripts/start-linux.sh` 源码模式联调 |
 | 智能体工具 / MCP 工具 | 工具 schema 或服务测试 | 通过 Hermes 或 MCP 客户端跑真实调用样例 |
@@ -156,7 +156,7 @@ bash ./scripts/harness-linux.sh all
 - `docs`：对 `AGENTS.md`、`README.md`、`docs/`、`scripts/` 运行编码检查，适合文档和脚本小改。
 - `backend`：对 `backend/` 运行编码检查，再执行后端测试。
 - `frontend`：对 `frontend/` 运行编码检查，再执行前端构建。
-- `frontend-public`：对 `frontend-public/` 运行编码检查，再执行公众端构建。
+- `frontend-public`：对 `frontend-public/` 运行编码检查，再执行公众端单元与 UI Harness 测试，最后执行公众端构建。
 - `code-processing`：对 `code-processing/` 运行编码检查，再执行 Python 包安装检查。
 - `all`：对整个仓库运行编码检查、后端测试、管理端构建、公众端构建、code-processing 安装检查。
 
@@ -176,6 +176,7 @@ bash ./scripts/harness-linux.sh all
 3. 新增实体字段、DTO 字段、接口方法时写中文注释，方便后续智能体理解数据语义。
 4. 跨服务字段变更必须同步更新前端类型、后端 DTO、数据库迁移和文档。
 5. 不要把真实密钥、用户 Token、内网地址写进文档或测试夹具。
+6. 公众端新增可点击元素时必须保留可感知交互：全局 `button:not(:disabled)`、`a[href]`、`[role="button"]` 由 `frontend-public/tests/uiHarness.test.ts` 兜底检查手型光标；新增下拉框必须使用 `frontend-public/src/components/common/Select.tsx`，不要直接写原生 `<select>` / `<option>`，需要例外时先扩展 harness 规则并说明原因。
 
 ### 修改后
 
@@ -266,4 +267,3 @@ bash ./scripts/harness-linux.sh all
 - 清理策略和维护规则对应 harness 的长期健康，避免过期上下文污染后续任务。
 
 参考来源：[OpenAI《Harness engineering for context engineering》](https://openai.com/zh-Hans-CN/index/harness-engineering/)。
-

@@ -156,6 +156,7 @@ class HermesFileLibraryServiceTests {
                 "hit-1",
                 0.91d,
                 Map.of(
+                        "itemId", 77L,
                         "title", "需求说明",
                         "plainText", "登录流程需要支持短信验证码，并在失败时提示可重试。"
                 )
@@ -172,6 +173,138 @@ class HermesFileLibraryServiceTests {
                 Map.of("ownerUserId", 5L, "enabled", true),
                 5
         );
+    }
+
+    @Test
+    void shouldReportVectorSearchMissInsteadOfUsingMarkdownFallback() {
+        HermesFileLibraryService service = createService();
+        HermesFileLibraryItemEntity item = fileItem(77L, ownerUser(5L), true, "INDEXED");
+        item.setTitle("2025年述职报告");
+        item.setMarkdown("# 2025年述职报告\n\n年度重点包括 CRM 项目交付、Hermes 助手知识库建设和测试自动化推进。");
+        when(hermesFileLibraryItemRepository.findAllByOwnerUser_IdAndEnabledTrueOrderByUpdatedAtDescIdDesc(5L))
+                .thenReturn(List.of(item));
+        when(modelConfigService.generateEmbedding(9L, "我的简历里写了什么")).thenReturn(List.of(0.1d, 0.2d, 0.3d));
+        when(qdrantClientService.search(
+                "hermes_file_library_chunks",
+                List.of(0.1d, 0.2d, 0.3d),
+                Map.of("ownerUserId", 5L, "enabled", true),
+                5
+        )).thenReturn(List.of());
+
+        String markdown = service.buildEvidenceMarkdown(currentUser(), "我的简历里写了什么");
+
+        assertThat(markdown).isBlank();
+        assertThat(markdown).doesNotContain("CRM 项目交付");
+        assertThat(markdown).doesNotContain("Hermes 助手知识库建设");
+    }
+
+    @Test
+    void shouldFallbackToIndexedFileTitleWhenVectorSearchMissesShortNameQuery() {
+        HermesFileLibraryService service = createService();
+        HermesFileLibraryItemEntity item = fileItem(77L, ownerUser(5L), true, "INDEXED");
+        item.setTitle("杜立宏简历");
+        item.getDocumentAsset().setFileName("杜立宏简历.docx");
+        item.setMarkdown("# 杜立宏简历\n\n杜立宏曾负责 CRM 项目交付、智能助手建设和自动化测试推进。");
+        when(hermesFileLibraryItemRepository.findAllByOwnerUser_IdAndEnabledTrueOrderByUpdatedAtDescIdDesc(5L))
+                .thenReturn(List.of(item));
+        when(modelConfigService.generateEmbedding(9L, "杜立宏是谁")).thenReturn(List.of(0.1d, 0.2d, 0.3d));
+        when(qdrantClientService.search(
+                "hermes_file_library_chunks",
+                List.of(0.1d, 0.2d, 0.3d),
+                Map.of("ownerUserId", 5L, "enabled", true),
+                5
+        )).thenReturn(List.of());
+
+        String markdown = service.buildEvidenceMarkdown(currentUser(), "杜立宏是谁");
+
+        assertThat(markdown).contains("个人文件库证据");
+        assertThat(markdown).contains("杜立宏简历");
+        assertThat(markdown).contains("CRM 项目交付");
+        assertThat(markdown).contains("文件标题命中");
+    }
+
+    @Test
+    void shouldReportIndexFailureWhenPersonalDocumentVectorIndexIsNotReady() {
+        HermesFileLibraryService service = createService();
+        HermesFileLibraryItemEntity item = fileItem(77L, ownerUser(5L), true, "FAILED");
+        item.setTitle("2025年述职报告");
+        item.setMarkdown("# 2025年述职报告\n\n工作成果包括 CRM 项目交付、个人知识库文档上传和自动化测试建设。");
+        item.setLastError("Hermes 文件库向量索引未启用或未配置 Embedding 模型");
+        when(hermesFileLibraryItemRepository.findAllByOwnerUser_IdAndEnabledTrueOrderByUpdatedAtDescIdDesc(5L))
+                .thenReturn(List.of(item));
+
+        String markdown = service.buildEvidenceMarkdown(currentUser(), "我的简历");
+
+        assertThat(markdown).isBlank();
+        assertThat(markdown).doesNotContain("个人知识库文档上传");
+        verify(modelConfigService, never()).generateEmbedding(any(Long.class), any(String.class));
+        verify(qdrantClientService, never()).search(any(), any(), any(), anyInt());
+    }
+
+    @Test
+    void shouldIgnoreVectorHitsFromItemsThatAreNotIndexed() {
+        HermesFileLibraryService service = createService();
+        HermesFileLibraryItemEntity indexedItem = fileItem(77L, ownerUser(5L), true, "INDEXED");
+        HermesFileLibraryItemEntity failedItem = fileItem(88L, ownerUser(5L), true, "FAILED");
+        failedItem.setTitle("2025年述职报告");
+        failedItem.setMarkdown("# 2025年述职报告\n\n不应被召回的 Markdown 内容。");
+        when(hermesFileLibraryItemRepository.findAllByOwnerUser_IdAndEnabledTrueOrderByUpdatedAtDescIdDesc(5L))
+                .thenReturn(List.of(failedItem, indexedItem));
+        when(modelConfigService.generateEmbedding(9L, "我的年终述职报告有哪些内容")).thenReturn(List.of(0.1d, 0.2d, 0.3d));
+        when(qdrantClientService.search(
+                "hermes_file_library_chunks",
+                List.of(0.1d, 0.2d, 0.3d),
+                Map.of("ownerUserId", 5L, "enabled", true),
+                5
+        )).thenReturn(List.of(new QdrantClientService.QdrantSearchHit(
+                "stale-hit",
+                0.88d,
+                Map.of(
+                        "itemId", 88L,
+                        "title", "2025年述职报告",
+                        "plainText", "不应被召回的 Markdown 内容。"
+                )
+        )));
+
+        String markdown = service.buildEvidenceMarkdown(currentUser(), "我的年终述职报告有哪些内容");
+
+        assertThat(markdown).isBlank();
+        assertThat(markdown).doesNotContain("不应被召回");
+    }
+
+    @Test
+    void shouldMarkUploadFailedWhenVectorizationDoesNotComplete() {
+        HermesFileLibraryService service = createService();
+        CurrentUserInfo currentUser = currentUser();
+        UserEntity owner = ownerUser(5L);
+        DocumentAssetEntity asset = documentAsset(101L, owner, "空文档.pdf");
+        MockMultipartFile file = new MockMultipartFile("file", "空文档.pdf", "application/pdf", "hello".getBytes());
+
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(documentAssetService.uploadAsset(file, "hermes-file-library"))
+                .thenReturn(new DocumentAssetSummary(101L, "空文档.pdf", "application/pdf", 5L, "PDF", "TEMP", "/api/common/files/101"));
+        when(documentAssetService.requireAccessibleAsset(101L)).thenReturn(asset);
+        when(documentMarkdownService.convert(101L, DocumentMarkdownService.SCENE_HERMES_FILE_LIBRARY, null))
+                .thenReturn(new DocumentMarkdownResult(101L, "空文档.pdf", "空文档", "PDF", "# 空文档", false, List.of()));
+        when(documentAssetService.bindAsset(eq(asset), eq(DocumentAssetService.BIZ_TYPE_HERMES_FILE_LIBRARY), any()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(hermesFileLibraryItemRepository.save(any(HermesFileLibraryItemEntity.class)))
+                .thenAnswer(invocation -> {
+                    HermesFileLibraryItemEntity item = invocation.getArgument(0);
+                    if (item.getId() == null) {
+                        item.setId(77L);
+                    }
+                    item.setCreatedAt(LocalDateTime.of(2026, 7, 4, 10, 0));
+                    item.setUpdatedAt(LocalDateTime.of(2026, 7, 4, 10, 0));
+                    return item;
+                });
+        when(modelConfigService.generateEmbeddings(eq(9L), any())).thenReturn(List.of());
+
+        HermesFileLibraryItemSummary summary = service.upload(file);
+
+        assertThat(summary.indexStatus()).isEqualTo("FAILED");
+        assertThat(summary.lastError()).contains("切片向量化未完成");
+        verify(qdrantClientService, never()).upsertPoints(any(), any());
     }
 
     @Test

@@ -569,14 +569,18 @@ const EndpointDialog = ({ mode, endpoint, directoryId, onClose, onSubmit }: {
                   <div className="flex-1 grid grid-cols-4 gap-2">
                     <input value={param.name} onChange={(e) => updateParameter(idx, 'name', e.target.value)} placeholder="参数名"
                       className="col-span-2 h-8 rounded border border-[var(--color-border-strong)] bg-white px-2 text-[12px] focus:border-[var(--color-primary)] focus:outline-none" />
-                    <select value={param.location} onChange={(e) => updateParameter(idx, 'location', e.target.value)}
-                      className="h-8 rounded border border-[var(--color-border-strong)] bg-white px-2 text-[12px] focus:border-[var(--color-primary)] focus:outline-none">
-                      {PARAM_LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
-                    </select>
-                    <select value={param.dataType} onChange={(e) => updateParameter(idx, 'dataType', e.target.value)}
-                      className="h-8 rounded border border-[var(--color-border-strong)] bg-white px-2 text-[12px] focus:border-[var(--color-primary)] focus:outline-none">
-                      {DATA_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    <Select
+                      value={param.location}
+                      onChange={(value) => updateParameter(idx, 'location', value)}
+                      className="[&>div]:w-full [&_button]:h-8 [&_button]:rounded [&_button]:px-2 [&_button]:text-[12px]"
+                      options={PARAM_LOCATIONS.map((location) => ({ value: location, label: location }))}
+                    />
+                    <Select
+                      value={param.dataType}
+                      onChange={(value) => updateParameter(idx, 'dataType', value)}
+                      className="[&>div]:w-full [&_button]:h-8 [&_button]:rounded [&_button]:px-2 [&_button]:text-[12px]"
+                      options={DATA_TYPES.map((dataType) => ({ value: dataType, label: dataType }))}
+                    />
                     <input value={param.description || ''} onChange={(e) => updateParameter(idx, 'description', e.target.value)} placeholder="说明"
                       className="col-span-3 h-8 rounded border border-[var(--color-border-strong)] bg-white px-2 text-[12px] focus:border-[var(--color-primary)] focus:outline-none" />
                     <label className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-secondary)] cursor-pointer">

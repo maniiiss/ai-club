@@ -725,6 +725,198 @@ class HermesToolOrchestratorTests {
     }
 
     /**
+     * 用户询问“还有几个进行中的任务”时关注的是计数集合，不能把进行中的多个工作项转成单个工作项确认卡。
+     */
+    @Test
+    void shouldKeepActiveTaskCountQuestionAsWorkItemCollection() {
+        HermesToolOrchestrator orchestrator = new HermesToolOrchestrator(
+                platformToolExecutor,
+                platformToolRegistry,
+                hermesActionPlannerService,
+                new ObjectMapper()
+        );
+
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "project-iterations",
+                12L,
+                null,
+                "项目经理",
+                List.of(new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations")),
+                List.of(),
+                "迭代上下文"
+        );
+        HermesChatRequest request = new HermesChatRequest(
+                "现在还有几个任务在进行中",
+                "project-iterations",
+                12L,
+                null,
+                35L,
+                null,
+                "conversation-active-task-count",
+                null,
+                null
+        );
+        PlatformToolDefinition workItemSearch = new PlatformToolDefinition(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "搜索工作项",
+                "WORK_ITEM",
+                "按项目、迭代、标题、编号或说明搜索需求/任务/缺陷",
+                true,
+                "LOW",
+                "task:view",
+                false,
+                Map.of("keyword", "工作项关键词", "projectId", "项目ID", "iterationId", "迭代ID", "workItemType", "工作项类型", "status", "状态")
+        );
+        PlatformToolResult searchResult = new PlatformToolResult(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "搜索工作项",
+                "找到 2 个进行中的任务",
+                List.of(
+                        new PlatformToolCandidate(
+                                "WORK_ITEM",
+                                601L,
+                                "#TASK1 支付网关联调",
+                                "类型：任务 / 状态：进行中 / 项目：支付项目",
+                                "/projects/12/iterations?openTaskId=601",
+                                Map.of("projectId", 12L, "workItemId", 601L, "iterationId", 35L, "status", "进行中", "projectName", "支付项目"),
+                                List.of()
+                        ),
+                        new PlatformToolCandidate(
+                                "WORK_ITEM",
+                                602L,
+                                "#TASK2 对账脚本完善",
+                                "类型：任务 / 状态：进行中 / 项目：支付项目",
+                                "/projects/12/iterations?openTaskId=602",
+                                Map.of("projectId", 12L, "workItemId", 602L, "iterationId", 35L, "status", "进行中", "projectName", "支付项目"),
+                                List.of()
+                        )
+                ),
+                List.of(),
+                Map.of("iterationId", 35L, "status", "进行中")
+        );
+
+        when(platformToolRegistry.isEnabled(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.isAllowAutoExecute(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.requireDefinition(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(workItemSearch);
+        when(platformToolExecutor.execute(any())).thenReturn(searchResult);
+
+        HermesToolExecutionOutcome outcome = orchestrator.executeToolCall(
+                new HermesToolCallRequest(
+                        "call-active-task-count",
+                        PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                        "work_item__search",
+                        Map.of("workItemType", "任务", "status", "进行中")
+                ),
+                "scope-active-task-count",
+                context,
+                request,
+                HermesGroundingState.empty()
+        );
+
+        assertThat(outcome.stopLoop()).isFalse();
+        assertThat(outcome.selectionCards()).isEmpty();
+        assertThat(outcome.groundingState().boundSlot("workItem")).isNull();
+        assertThat(outcome.toolMessageContent()).contains("支付网关联调");
+        assertThat(outcome.toolMessageContent()).contains("对账脚本完善");
+    }
+
+    /**
+     * “还有某类任务在进行中吗”是状态集合判断，即使带了业务关键词也不应让用户再确认单个工作项。
+     */
+    @Test
+    void shouldKeepIterationStatusQuestionWithKeywordAsWorkItemCollection() {
+        HermesToolOrchestrator orchestrator = new HermesToolOrchestrator(
+                platformToolExecutor,
+                platformToolRegistry,
+                hermesActionPlannerService,
+                new ObjectMapper()
+        );
+
+        HermesContextAssembler.HermesConversationContext context = new HermesContextAssembler.HermesConversationContext(
+                "project-iterations",
+                12L,
+                null,
+                "项目经理",
+                List.of(new HermesReferenceSummary("PROJECT", 12L, "支付项目", "/projects/12/iterations")),
+                List.of(),
+                "迭代上下文"
+        );
+        HermesChatRequest request = new HermesChatRequest(
+                "这个迭代还有登录相关任务在进行中吗",
+                "project-iterations",
+                12L,
+                null,
+                35L,
+                null,
+                "conversation-active-task-status",
+                null,
+                null
+        );
+        PlatformToolDefinition workItemSearch = new PlatformToolDefinition(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "搜索工作项",
+                "WORK_ITEM",
+                "按项目、迭代、标题、编号或说明搜索需求/任务/缺陷",
+                true,
+                "LOW",
+                "task:view",
+                false,
+                Map.of("keyword", "工作项关键词", "projectId", "项目ID", "iterationId", "迭代ID", "workItemType", "工作项类型", "status", "状态")
+        );
+        PlatformToolResult searchResult = new PlatformToolResult(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "搜索工作项",
+                "找到 2 个进行中的任务",
+                List.of(
+                        new PlatformToolCandidate(
+                                "WORK_ITEM",
+                                611L,
+                                "#LOGIN1 登录页适配",
+                                "类型：任务 / 状态：进行中 / 项目：支付项目",
+                                "/projects/12/iterations?openTaskId=611",
+                                Map.of("projectId", 12L, "workItemId", 611L, "iterationId", 35L, "status", "进行中", "projectName", "支付项目"),
+                                List.of()
+                        ),
+                        new PlatformToolCandidate(
+                                "WORK_ITEM",
+                                612L,
+                                "#LOGIN2 登录审计补充",
+                                "类型：任务 / 状态：进行中 / 项目：支付项目",
+                                "/projects/12/iterations?openTaskId=612",
+                                Map.of("projectId", 12L, "workItemId", 612L, "iterationId", 35L, "status", "进行中", "projectName", "支付项目"),
+                                List.of()
+                        )
+                ),
+                List.of(),
+                Map.of("iterationId", 35L, "status", "进行中")
+        );
+
+        when(platformToolRegistry.isEnabled(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.isAllowAutoExecute(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(true);
+        when(platformToolRegistry.requireDefinition(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(workItemSearch);
+        when(platformToolExecutor.execute(any())).thenReturn(searchResult);
+
+        HermesToolExecutionOutcome outcome = orchestrator.executeToolCall(
+                new HermesToolCallRequest(
+                        "call-active-task-status",
+                        PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                        "work_item__search",
+                        Map.of("keyword", "登录", "status", "进行中")
+                ),
+                "scope-active-task-status",
+                context,
+                request,
+                HermesGroundingState.empty()
+        );
+
+        assertThat(outcome.stopLoop()).isFalse();
+        assertThat(outcome.selectionCards()).isEmpty();
+        assertThat(outcome.groundingState().boundSlot("workItem")).isNull();
+        assertThat(outcome.toolMessageContent()).contains("登录页适配");
+        assertThat(outcome.toolMessageContent()).contains("登录审计补充");
+    }
+
+    /**
      * “这个项目有哪些...”这类问题虽然包含集合意图，但第一步 project.search 是在解析“这个项目”。
      * 如果没有页面 projectId 且命中多个项目，必须交给前端候选卡片确认，而不是把项目列表当作最终事实返回。
      */
