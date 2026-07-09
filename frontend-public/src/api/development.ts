@@ -25,6 +25,11 @@ import type {
   GitlabTagCreateResultItem,
   GitlabTagPayload,
   GitlabUserOauthBindingItem,
+  OwnerRepoBindingItem,
+  OwnerRepoPushContextItem,
+  OwnerRepoPushLogItem,
+  OwnerRepoPushPayload,
+  OwnerRepoPushResultItem,
   ProjectGitlabBindingItem,
   RepositoryScanRulesetItem,
 } from '@/src/types/development'
@@ -357,5 +362,33 @@ export const createGitlabMergeRequest = async (
     `/api/gitlab/bindings/${bindingId}/merge-requests`,
     payload,
   )
+  return unwrap(res)
+}
+
+/* ── 业主代码仓库推送（公众端只做推送与查看历史，配置在管理端完成） ── */
+
+/** 查询指定项目下的全部业主仓库绑定。 */
+export const listOwnerRepoBindings = async (projectId: number): Promise<OwnerRepoBindingItem[]> => {
+  const res = await http.get<ApiResponse<OwnerRepoBindingItem[]>>(`/api/gitlab/owner-repos/bindings/by-project/${projectId}`)
+  return unwrap(res)
+}
+
+/** 获取业主仓库推送前置上下文。 */
+export const getOwnerRepoPushContext = async (bindingId: number): Promise<OwnerRepoPushContextItem> => {
+  const res = await http.get<ApiResponse<OwnerRepoPushContextItem>>(`/api/gitlab/owner-repos/bindings/${bindingId}/push-context`)
+  return unwrap(res)
+}
+
+/** 触发推送到业主仓库（长任务，单独设置 10 分钟超时）。 */
+export const pushToOwnerRepo = async (bindingId: number, payload: OwnerRepoPushPayload): Promise<OwnerRepoPushResultItem> => {
+  const res = await http.post<ApiResponse<OwnerRepoPushResultItem>>(`/api/gitlab/owner-repos/bindings/${bindingId}/push`, payload, { timeout: 600000 })
+  return unwrap(res)
+}
+
+/** 分页查询业主仓库推送历史日志。 */
+export const listOwnerRepoPushLogs = async (bindingId: number, page: number, size: number): Promise<PageResponse<OwnerRepoPushLogItem>> => {
+  const res = await http.get<ApiResponse<PageResponse<OwnerRepoPushLogItem>>>(`/api/gitlab/owner-repos/bindings/${bindingId}/push-logs`, {
+    params: cleanParams({ page, size }),
+  })
   return unwrap(res)
 }

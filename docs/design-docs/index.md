@@ -23,6 +23,7 @@
 - [API 管理设计](api-management-technical-design-v1.md) - API 工作台设计
 - [GitLab 集成设计](../exec-plans/completed/gitlab-module.md) - 代码仓库集成
 - [GitLab 代码结构](gitlab-code-structure-technical-design-v1.md) - 代码结构分析
+- [GitLab 业主仓库推送](gitlab-owner-repo-push-technical-design-v1.md) - 代码推送到业主 GitLab 仓库
 - [服务器管理设计](server-management-technical-design-v1.md) - 服务器管理模块
 - [DataWorkbench 设计](data-workbench-technical-design-v1.md) - 项目内数据变更工作台
 - [聊天室设计](chat-room-technical-design-v1.md) - 项目聊天室与房间级 Agent

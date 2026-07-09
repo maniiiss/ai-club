@@ -1008,6 +1008,69 @@ export interface ProjectGitlabBindingItem {
   codeStructureDegraded: boolean | null
 }
 
+/** 业主代码仓库绑定项。 */
+export interface OwnerRepoBindingItem {
+  id: number
+  projectId: number
+  projectName: string
+  name: string
+  apiBaseUrl: string
+  gitlabProjectRef: string
+  gitlabProjectId: string | null
+  gitlabProjectName: string | null
+  gitlabProjectPath: string | null
+  gitlabProjectWebUrl: string | null
+  gitlabHttpCloneUrl: string | null
+  gitlabSshCloneUrl: string | null
+  defaultTargetBranch: string | null
+  defaultPushMode: string
+  tokenConfigured: boolean
+  enabled: boolean
+  lastPushStatus: string | null
+  lastPushMessage: string | null
+  lastPushedAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+/** 业主仓库推送上下文。 */
+export interface OwnerRepoPushContextItem {
+  bindingId: number
+  canPush: boolean
+  disabledReason: string | null
+  lastPushStatus: string | null
+  lastPushMessage: string | null
+  lastPushedAt: string | null
+}
+
+/** 业主仓库推送结果。 */
+export interface OwnerRepoPushResultItem {
+  executionStatus: string
+  summaryMessage: string
+  sourceCommitSha: string | null
+  targetCommitSha: string | null
+  pushedBranch: string | null
+  mergeRequestIid: string | null
+  mergeRequestWebUrl: string | null
+}
+
+/** 业主仓库推送历史日志项。 */
+export interface OwnerRepoPushLogItem {
+  id: number
+  sourceBindingId: number | null
+  sourceBindingName: string | null
+  sourceBranch: string
+  targetBranch: string
+  pushMode: string
+  sourceCommitSha: string | null
+  targetCommitSha: string | null
+  mergeRequestIid: string | null
+  mergeRequestWebUrl: string | null
+  executionStatus: string
+  summaryMessage: string | null
+  executedAt: string | null
+}
+
 export interface GitlabCodeStructureOverviewCardItem {
   key: string
   label: string

@@ -302,6 +302,7 @@
                 <button class="gitlab-tab-button" :class="{ active: activeTab === 'productBranches' }" type="button" @click="activeTab = 'productBranches'">产品分支</button>
                 <button class="gitlab-tab-button" :class="{ active: activeTab === 'autoMerge' }" type="button" @click="activeTab = 'autoMerge'">自动合并中心</button>
                 <button class="gitlab-tab-button" :class="{ active: activeTab === 'logs' }" type="button" @click="activeTab = 'logs'">自动合并日志</button>
+                <button class="gitlab-tab-button" :class="{ active: activeTab === 'ownerRepos' }" type="button" @click="activeTab = 'ownerRepos'">业主仓库</button>
               </div>
               <span class="management-list-toolbar-divider" aria-hidden="true"></span>
               <el-select v-model="currentProductBindingId" placeholder="请选择 GitLab 绑定" style="width: 360px" @change="handleProductBindingChange">
@@ -516,6 +517,7 @@
                 <button class="gitlab-tab-button" :class="{ active: activeTab === 'productBranches' }" type="button" @click="activeTab = 'productBranches'">产品分支</button>
                 <button class="gitlab-tab-button" :class="{ active: activeTab === 'autoMerge' }" type="button" @click="activeTab = 'autoMerge'">自动合并中心</button>
                 <button class="gitlab-tab-button" :class="{ active: activeTab === 'logs' }" type="button" @click="activeTab = 'logs'">自动合并日志</button>
+                <button class="gitlab-tab-button" :class="{ active: activeTab === 'ownerRepos' }" type="button" @click="activeTab = 'ownerRepos'">业主仓库</button>
               </div>
               <span class="management-list-toolbar-divider" aria-hidden="true"></span>
               <div class="management-list-search-shell">
@@ -1005,6 +1007,110 @@
             </div>
             </section>
           </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="业主仓库" name="ownerRepos">
+        <div class="management-list-page">
+          <div class="management-list-toolbar">
+            <div class="management-list-toolbar-main">
+              <div class="gitlab-tab-group">
+                <button class="gitlab-tab-button" :class="{ active: activeTab === 'bindings' }" type="button" @click="activeTab = 'bindings'">项目绑定</button>
+                <button class="gitlab-tab-button" :class="{ active: activeTab === 'productBranches' }" type="button" @click="activeTab = 'productBranches'">产品分支</button>
+                <button class="gitlab-tab-button" :class="{ active: activeTab === 'autoMerge' }" type="button" @click="activeTab = 'autoMerge'">自动合并中心</button>
+                <button class="gitlab-tab-button" :class="{ active: activeTab === 'logs' }" type="button" @click="activeTab = 'logs'">自动合并日志</button>
+                <button class="gitlab-tab-button" :class="{ active: activeTab === 'ownerRepos' }" type="button" @click="activeTab = 'ownerRepos'">业主仓库</button>
+                <button class="gitlab-tab-button" :class="{ active: activeTab === 'ownerRepos' }" type="button" @click="activeTab = 'ownerRepos'">业主仓库</button>
+              </div>
+              <input v-model="ownerRepoFilters.keyword" class="management-list-search-input" placeholder="搜索业主仓库" @keyup.enter="handleOwnerRepoSearch" />
+              <el-popover :visible="ownerRepoFilterPopoverVisible" placement="bottom" :width="240" trigger="manual">
+                <template #reference>
+                  <button class="management-list-filter-button" type="button" @click="ownerRepoFilterPopoverVisible = !ownerRepoFilterPopoverVisible">
+                    <el-icon><Filter /></el-icon><span>筛选</span>
+                  </button>
+                </template>
+                <div class="management-list-filter-popover">
+                  <el-select v-model="ownerRepoFilters.projectId" placeholder="选择项目" clearable filterable teleported=false>
+                    <el-option v-for="item in projectOptions" :key="item.id" :label="item.name" :value="item.id" />
+                  </el-select>
+                  <div class="management-list-filter-actions">
+                    <el-button size="small" @click="ownerRepoFilterPopoverVisible = false">取消</el-button>
+                    <el-button size="small" type="primary" @click="handleOwnerRepoSearch">查询</el-button>
+                  </div>
+                </div>
+              </el-popover>
+            </div>
+            <div class="management-list-toolbar-side">
+              <button v-if="canManageOwnerRepo" class="management-list-create-button" type="button" @click="handleOwnerRepoCreate">
+                <el-icon><Plus /></el-icon><span>新增业主仓库</span>
+              </button>
+            </div>
+          </div>
+          <div class="management-list-shell">
+            <div class="management-list-table-scroll" v-loading="ownerRepoLoading">
+              <table v-if="!isMobileViewport" class="management-list-table">
+                <thead>
+                  <tr>
+                    <th>名称</th>
+                    <th>项目</th>
+                    <th>业主仓库</th>
+                    <th>默认分支</th>
+                    <th>推送方式</th>
+                    <th>最近推送</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in ownerRepoList" :key="item.id">
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.projectName }}</td>
+                    <td>
+                      <el-link v-if="item.gitlabProjectWebUrl" :href="item.gitlabProjectWebUrl" target="_blank" type="primary">{{ item.gitlabProjectPath || item.gitlabProjectRef }}</el-link>
+                      <span v-else>{{ item.gitlabProjectRef }}</span>
+                    </td>
+                    <td>{{ item.defaultTargetBranch || '—' }}</td>
+                    <td><el-tag size="small" :type="ownerRepoPushModeTagType(item.defaultPushMode)">{{ ownerRepoPushModeLabel(item.defaultPushMode) }}</el-tag></td>
+                    <td>
+                      <el-tag v-if="item.lastPushStatus" size="small" :type="ownerRepoStatusTagType(item.lastPushStatus)">{{ ownerRepoStatusTagType(item.lastPushStatus) === 'success' ? '成功' : '失败' }}</el-tag>
+                      <span v-else>—</span>
+                    </td>
+                    <td>
+                      <div class="management-list-row-actions">
+                        <el-tooltip content="推送" placement="top"><button class="management-list-row-button gitlab-action-button" type="button" @click="handleOwnerRepoPush(item)"><el-icon><Upload /></el-icon></button></el-tooltip>
+                        <el-tooltip content="测试连接" placement="top"><button v-if="canManageOwnerRepo" class="management-list-row-button gitlab-action-button" type="button" :loading="ownerRepoTestingId === item.id" @click="handleOwnerRepoTest(item.id)"><el-icon><Connection /></el-icon></button></el-tooltip>
+                        <el-tooltip content="推送历史" placement="top"><button class="management-list-row-button gitlab-action-button" type="button" @click="handleOwnerRepoViewLogs(item)"><el-icon><Tickets /></el-icon></button></el-tooltip>
+                        <el-tooltip content="编辑" placement="top"><button v-if="canManageOwnerRepo" class="management-list-row-button gitlab-action-button" type="button" @click="handleOwnerRepoEdit(item)"><el-icon><EditPen /></el-icon></button></el-tooltip>
+                        <el-tooltip content="删除" placement="top"><button v-if="canManageOwnerRepo" class="management-list-row-button gitlab-action-button danger" type="button" @click="handleOwnerRepoDelete(item.id)"><el-icon><Delete /></el-icon></button></el-tooltip>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="ownerRepoList.length === 0"><td colspan="7" class="management-list-empty">暂无业主仓库绑定</td></tr>
+                </tbody>
+              </table>
+              <div v-else class="mobile-entity-list-shell">
+                <div v-for="item in ownerRepoList" :key="item.id" class="mobile-entity-card">
+                  <div class="mobile-entity-card-header">
+                    <span class="mobile-entity-card-title">{{ item.name }}</span>
+                    <el-tag size="small" :type="ownerRepoPushModeTagType(item.defaultPushMode)">{{ ownerRepoPushModeLabel(item.defaultPushMode) }}</el-tag>
+                  </div>
+                  <div class="mobile-entity-card-body">
+                    <div>{{ item.projectName }} · {{ item.gitlabProjectPath || item.gitlabProjectRef }}</div>
+                    <div>默认分支：{{ item.defaultTargetBranch || '—' }}</div>
+                  </div>
+                  <div class="mobile-entity-card-actions">
+                    <el-button size="small" type="primary" @click="handleOwnerRepoPush(item)">推送</el-button>
+                    <el-button size="small" @click="handleOwnerRepoViewLogs(item)">历史</el-button>
+                  </div>
+                </div>
+                <div v-if="ownerRepoList.length === 0" class="management-list-empty">暂无业主仓库绑定</div>
+              </div>
+              <div class="management-list-pagination">
+                <button class="management-list-page-button" type="button" :disabled="ownerRepoPagination.page <= 1" @click="ownerRepoPagination.page--; loadOwnerRepoBindings()"><el-icon><ArrowLeft /></el-icon></button>
+                <span>{{ ownerRepoPagination.page }} / {{ ownerRepoTotalPages }}</span>
+                <button class="management-list-page-button" type="button" :disabled="ownerRepoPagination.page >= ownerRepoTotalPages" @click="ownerRepoPagination.page++; loadOwnerRepoBindings()"><el-icon><ArrowRight /></el-icon></button>
+              </div>
+            </div>
+          </div>
+        </div>
       </el-tab-pane>
     </el-tabs>
 </div>
@@ -2357,13 +2463,159 @@
       <el-table-column prop="message" label="结果说明" min-width="220" show-overflow-tooltip />
     </el-table>
   </el-dialog>
+
+  <!-- 业主仓库绑定表单 -->
+  <el-dialog v-if="!isMobileViewport" v-model="ownerRepoDialogVisible" :title="ownerRepoDialogTitle" width="680px" class="platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader :title="ownerRepoDialogTitle" subtitle="配置业主方 GitLab 仓库的访问信息" :icon="Connection" />
+    </template>
+    <el-form ref="ownerRepoFormRef" :model="ownerRepoForm" :rules="ownerRepoRules" label-position="top" class="platform-form-layout">
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">基本信息</div>
+        </div>
+        <el-form-item label="绑定名称" prop="name"><el-input v-model="ownerRepoForm.name" placeholder="如：XX业主交付仓" /></el-form-item>
+        <el-form-item label="项目" prop="projectId">
+          <el-select v-model="ownerRepoForm.projectId" placeholder="选择项目" filterable teleported=false>
+            <el-option v-for="item in projectOptions" :key="item.id" :label="item.name" :value="item.id" />
+          </el-select>
+        </el-form-item>
+      </section>
+      <section class="platform-form-section">
+        <div class="platform-form-section-head">
+          <div class="platform-form-section-title">业主仓库</div>
+        </div>
+        <el-form-item label="GitLab API 地址" prop="apiBaseUrl"><el-input v-model="ownerRepoForm.apiBaseUrl" placeholder="https://gitlab.example.com/api/v4" /></el-form-item>
+        <el-form-item label="项目标识" prop="gitlabProjectRef"><el-input v-model="ownerRepoForm.gitlabProjectRef" placeholder="namespace/name 或数字 ID" /></el-form-item>
+        <el-form-item label="默认目标分支" prop="defaultTargetBranch"><el-input v-model="ownerRepoForm.defaultTargetBranch" placeholder="如 main" /></el-form-item>
+        <el-form-item label="默认推送方式" prop="defaultPushMode">
+          <el-radio-group v-model="ownerRepoForm.defaultPushMode">
+            <el-radio value="NEW_BRANCH">推到新分支</el-radio>
+            <el-radio value="MERGE_REQUEST">创建 MR</el-radio>
+            <el-radio value="DIRECT">直接推送(覆盖)</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="ownerRepoIsEditing ? '访问 Token(留空保留原值)' : '访问 Token'" prop="apiToken">
+          <el-input v-model="ownerRepoForm.apiToken" type="password" show-password placeholder="业主仓库访问 Token" />
+        </el-form-item>
+        <el-form-item label="启用" prop="enabled"><el-switch v-model="ownerRepoForm.enabled" /></el-form-item>
+      </section>
+    </el-form>
+    <template #footer>
+      <div class="platform-dialog-footer">
+        <el-button @click="ownerRepoDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="ownerRepoSubmitting" @click="handleOwnerRepoSubmit">保存</el-button>
+      </div>
+    </template>
+  </el-dialog>
+  <MobileFormDrawer v-else-if="isMobileViewport && ownerRepoDialogVisible" v-model="ownerRepoDialogVisible" :title="ownerRepoDialogTitle" submit-text="保存" :submitting="ownerRepoSubmitting" :header-icon="Connection" @submit="handleOwnerRepoSubmit" @cancel="ownerRepoDialogVisible = false">
+    <el-form ref="ownerRepoFormRef" :model="ownerRepoForm" :rules="ownerRepoRules" label-position="top">
+      <el-form-item label="绑定名称" prop="name"><el-input v-model="ownerRepoForm.name" /></el-form-item>
+      <el-form-item label="项目" prop="projectId">
+        <el-select v-model="ownerRepoForm.projectId" placeholder="选择项目" filterable teleported=false>
+          <el-option v-for="item in projectOptions" :key="item.id" :label="item.name" :value="item.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="GitLab API 地址" prop="apiBaseUrl"><el-input v-model="ownerRepoForm.apiBaseUrl" /></el-form-item>
+      <el-form-item label="项目标识" prop="gitlabProjectRef"><el-input v-model="ownerRepoForm.gitlabProjectRef" /></el-form-item>
+      <el-form-item label="默认目标分支" prop="defaultTargetBranch"><el-input v-model="ownerRepoForm.defaultTargetBranch" /></el-form-item>
+      <el-form-item label="默认推送方式" prop="defaultPushMode">
+        <el-radio-group v-model="ownerRepoForm.defaultPushMode">
+          <el-radio value="NEW_BRANCH">推到新分支</el-radio>
+          <el-radio value="MERGE_REQUEST">创建 MR</el-radio>
+          <el-radio value="DIRECT">直接推送(覆盖)</el-radio>
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item :label="ownerRepoIsEditing ? '访问 Token(留空保留原值)' : '访问 Token'" prop="apiToken">
+        <el-input v-model="ownerRepoForm.apiToken" type="password" show-password />
+      </el-form-item>
+      <el-form-item label="启用" prop="enabled"><el-switch v-model="ownerRepoForm.enabled" /></el-form-item>
+    </el-form>
+  </MobileFormDrawer>
+
+  <!-- 业主仓库推送表单 -->
+  <el-dialog v-if="!isMobileViewport" v-model="ownerRepoPushDialogVisible" title="推送到业主仓库" width="640px" class="platform-form-dialog" align-center>
+    <template #header>
+      <PlatformDialogHeader title="推送到业主仓库" :subtitle="currentOwnerRepoBinding?.name || ''" :icon="Upload" />
+    </template>
+    <el-form ref="ownerRepoPushFormRef" :model="ownerRepoPushForm" :rules="ownerRepoPushRules" label-position="top" class="platform-form-layout">
+      <el-form-item label="源 GitLab 绑定" prop="sourceBindingId">
+        <el-select v-model="ownerRepoPushForm.sourceBindingId" placeholder="选择源仓库" filterable teleported=false @change="handleOwnerRepoSourceBindingChange">
+          <el-option v-for="item in bindingOptions" :key="item.id" :label="`${item.projectName} / ${item.gitlabProjectPath || item.gitlabProjectRef}`" :value="item.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="源分支" prop="sourceBranch">
+        <el-select v-model="ownerRepoPushForm.sourceBranch" placeholder="选择源分支" filterable teleported=false :loading="ownerRepoBranchLoading">
+          <el-option v-for="item in ownerRepoBranchOptions" :key="item.name" :label="item.name" :value="item.name" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="目标分支" prop="targetBranch"><el-input v-model="ownerRepoPushForm.targetBranch" placeholder="业主仓库目标分支" /></el-form-item>
+      <el-form-item label="推送方式" prop="pushMode">
+        <el-radio-group v-model="ownerRepoPushForm.pushMode">
+          <el-radio value="NEW_BRANCH">推到新分支</el-radio>
+          <el-radio value="MERGE_REQUEST">创建 MR</el-radio>
+          <el-radio value="DIRECT">直接推送(覆盖)</el-radio>
+        </el-radio-group>
+      </el-form-item>
+      <el-alert v-if="ownerRepoPushForm.pushMode === 'DIRECT'" title="直接推送将强制覆盖业主仓库目标分支的历史，不可恢复，请谨慎操作！" type="error" :closable="false" show-icon />
+    </el-form>
+    <template #footer>
+      <div class="platform-dialog-footer">
+        <el-button @click="ownerRepoPushDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="ownerRepoPushing" @click="handleOwnerRepoPushSubmit">推送</el-button>
+      </div>
+    </template>
+  </el-dialog>
+
+  <!-- 业主仓库推送结果 -->
+  <el-dialog v-model="ownerRepoPushResultVisible" title="推送结果" width="640px">
+    <el-descriptions v-if="ownerRepoPushResult" :column="1" border>
+      <el-descriptions-item label="执行状态">
+        <el-tag size="small" :type="ownerRepoStatusTagType(ownerRepoPushResult.executionStatus)">{{ ownerRepoPushResult.executionStatus === 'SUCCESS' ? '成功' : '失败' }}</el-tag>
+      </el-descriptions-item>
+      <el-descriptions-item label="说明">{{ ownerRepoPushResult.summaryMessage }}</el-descriptions-item>
+      <el-descriptions-item label="源 commit">{{ ownerRepoPushResult.sourceCommitSha || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="目标 commit">{{ ownerRepoPushResult.targetCommitSha || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="推送分支">{{ ownerRepoPushResult.pushedBranch || '-' }}</el-descriptions-item>
+      <el-descriptions-item v-if="ownerRepoPushResult.mergeRequestWebUrl" label="Merge Request">
+        <el-link :href="ownerRepoPushResult.mergeRequestWebUrl" target="_blank" type="primary">!{{ ownerRepoPushResult.mergeRequestIid }}</el-link>
+      </el-descriptions-item>
+    </el-descriptions>
+  </el-dialog>
+
+  <!-- 业主仓库推送历史 -->
+  <el-drawer v-model="ownerRepoLogsVisible" :title="`推送历史 - ${currentOwnerRepoBinding?.name || ''}`" size="60%">
+    <el-table :data="ownerRepoLogList" v-loading="ownerRepoLogLoading" style="width: 100%">
+      <el-table-column prop="executedAt" label="时间" width="160" />
+      <el-table-column prop="sourceBranch" label="源分支" width="120" />
+      <el-table-column prop="targetBranch" label="目标分支" width="120" />
+      <el-table-column label="方式" width="100">
+        <template #default="{ row }">{{ ownerRepoPushModeLabel(row.pushMode) }}</template>
+      </el-table-column>
+      <el-table-column label="状态" width="80">
+        <template #default="{ row }"><el-tag size="small" :type="ownerRepoStatusTagType(row.executionStatus)">{{ row.executionStatus === 'SUCCESS' ? '成功' : '失败' }}</el-tag></template>
+      </el-table-column>
+      <el-table-column label="MR" width="80">
+        <template #default="{ row }">
+          <el-link v-if="row.mergeRequestWebUrl" :href="row.mergeRequestWebUrl" target="_blank" type="primary">!{{ row.mergeRequestIid }}</el-link>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="summaryMessage" label="说明" min-width="200" show-overflow-tooltip />
+    </el-table>
+    <div class="management-list-pagination" style="margin-top: 16px">
+      <button class="management-list-page-button" type="button" :disabled="ownerRepoLogPagination.page <= 1" @click="ownerRepoLogPagination.page--; loadOwnerRepoLogs()"><el-icon><ArrowLeft /></el-icon></button>
+      <span>{{ ownerRepoLogPagination.page }} / {{ ownerRepoLogTotalPages }}</span>
+      <button class="management-list-page-button" type="button" :disabled="ownerRepoLogPagination.page >= ownerRepoLogTotalPages" @click="ownerRepoLogPagination.page++; loadOwnerRepoLogs()"><el-icon><ArrowRight /></el-icon></button>
+    </div>
+  </el-drawer>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Bell, Connection, Delete, DocumentCopy, EditPen, Filter, FolderOpened, Plus, QuestionFilled, RefreshRight, Search, Share, Tickets, VideoPlay } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Bell, Connection, Delete, DocumentCopy, EditPen, Filter, FolderOpened, Plus, QuestionFilled, RefreshRight, Search, Share, Tickets, Upload, VideoPlay } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
@@ -2400,7 +2652,16 @@ import {
   createAutoMergeWebhook,
   updateAutoMergeWebhook,
   deleteAutoMergeWebhook,
-  testAutoMergeWebhook
+  testAutoMergeWebhook,
+  pageOwnerRepoBindings,
+  listOwnerRepoBindingsByProject,
+  createOwnerRepoBinding,
+  updateOwnerRepoBinding,
+  deleteOwnerRepoBinding,
+  testOwnerRepoBinding,
+  getOwnerRepoPushContext,
+  pushToOwnerRepo,
+  pageOwnerRepoPushLogs
 } from '@/api/gitlab'
 import type { GitlabAutoMergePipelineTargetPayload } from '@/api/gitlab'
 import type {
@@ -2418,6 +2679,9 @@ import type {
   GitlabProductBranchSyncRunResult,
   GitlabTagCreateResultItem,
   GitlabAutoMergeWebhookItem,
+  OwnerRepoBindingItem,
+  OwnerRepoPushResultItem,
+  OwnerRepoPushLogItem,
   ProjectGitlabBindingItem,
   ProjectItem,
   RepositoryScanRulesetItem
@@ -2718,6 +2982,253 @@ const showFrontendTestProfile = computed(() => ['FRONTEND', 'MIXED'].includes(bi
 const showBackendTestProfile = computed(() => ['BACKEND', 'MIXED'].includes(bindingForm.repoKind))
 const canManageProductBranches = computed(() => !!currentProductBinding.value && !!currentProductBinding.value.productMainBranch)
 const enabledProductBranches = computed(() => productBranchList.value.filter((item) => item.enabled))
+
+// ===== 业主代码仓库推送 =====
+import { useAuthStore } from '@/stores/auth'
+const authStore = useAuthStore()
+const canManageOwnerRepo = computed(() => authStore.hasPermission('gitlab:owner-repo:manage'))
+
+interface OwnerRepoForm {
+  projectId: number | null
+  name: string
+  apiBaseUrl: string
+  gitlabProjectRef: string
+  defaultTargetBranch: string
+  defaultPushMode: string
+  apiToken: string
+  enabled: boolean
+}
+const ownerRepoLoading = ref(false)
+const ownerRepoList = ref<OwnerRepoBindingItem[]>([])
+const ownerRepoFilters = reactive<{ keyword: string; projectId: number | null }>({ keyword: '', projectId: null })
+const ownerRepoFilterPopoverVisible = ref(false)
+const ownerRepoPagination = reactive({ page: 1, total: 0, size: 10 })
+const ownerRepoTotalPages = computed(() => Math.max(1, Math.ceil(ownerRepoPagination.total / ownerRepoPagination.size)))
+const ownerRepoDialogVisible = ref(false)
+const ownerRepoDialogTitle = ref('新增业主仓库')
+const ownerRepoIsEditing = ref(false)
+const ownerRepoSubmitting = ref(false)
+const ownerRepoFormRef = ref<FormInstance>()
+const currentOwnerRepoBindingId = ref<number | null>(null)
+const ownerRepoForm = reactive<OwnerRepoForm>({ projectId: null, name: '', apiBaseUrl: '', gitlabProjectRef: '', defaultTargetBranch: '', defaultPushMode: 'NEW_BRANCH', apiToken: '', enabled: true })
+const ownerRepoRules: FormRules = {
+  name: [{ required: true, message: '请输入绑定名称', trigger: 'blur' }],
+  projectId: [{ required: true, message: '请选择项目', trigger: 'change' }],
+  apiBaseUrl: [{ required: true, message: '请输入 GitLab API 地址', trigger: 'blur' }],
+  gitlabProjectRef: [{ required: true, message: '请输入项目标识', trigger: 'blur' }],
+  defaultPushMode: [{ required: true, message: '请选择推送方式', trigger: 'change' }]
+}
+const ownerRepoTestingId = ref<number | null>(null)
+// 推送表单
+const currentOwnerRepoBinding = ref<OwnerRepoBindingItem | null>(null)
+const ownerRepoPushDialogVisible = ref(false)
+const ownerRepoPushing = ref(false)
+const ownerRepoPushFormRef = ref<FormInstance>()
+const ownerRepoPushForm = reactive<{ sourceBindingId: number | null; sourceBranch: string; targetBranch: string; pushMode: string }>({ sourceBindingId: null, sourceBranch: '', targetBranch: '', pushMode: 'NEW_BRANCH' })
+const ownerRepoPushRules: FormRules = {
+  sourceBindingId: [{ required: true, message: '请选择源 GitLab 绑定', trigger: 'change' }],
+  sourceBranch: [{ required: true, message: '请选择源分支', trigger: 'change' }],
+  targetBranch: [{ required: true, message: '请输入目标分支', trigger: 'blur' }],
+  pushMode: [{ required: true, message: '请选择推送方式', trigger: 'change' }]
+}
+const ownerRepoBranchLoading = ref(false)
+const ownerRepoBranchOptions = ref<GitlabBranchItem[]>([])
+const ownerRepoPushResultVisible = ref(false)
+const ownerRepoPushResult = ref<OwnerRepoPushResultItem | null>(null)
+// 推送历史
+const ownerRepoLogsVisible = ref(false)
+const ownerRepoLogLoading = ref(false)
+const ownerRepoLogList = ref<OwnerRepoPushLogItem[]>([])
+const ownerRepoLogPagination = reactive({ page: 1, total: 0, size: 10 })
+const ownerRepoLogTotalPages = computed(() => Math.max(1, Math.ceil(ownerRepoLogPagination.total / ownerRepoLogPagination.size)))
+
+const ownerRepoPushModeLabel = (mode: string): string => {
+  if (mode === 'DIRECT') return '直接推送'
+  if (mode === 'MERGE_REQUEST') return '创建 MR'
+  return '推到新分支'
+}
+const ownerRepoPushModeTagType = (mode: string): '' | 'warning' | 'success' => {
+  if (mode === 'DIRECT') return 'warning'
+  if (mode === 'MERGE_REQUEST') return 'success'
+  return ''
+}
+const ownerRepoStatusTagType = (status: string): 'success' | 'danger' => {
+  return status === 'SUCCESS' ? 'success' : 'danger'
+}
+
+const loadOwnerRepoBindings = async () => {
+  ownerRepoLoading.value = true
+  try {
+    const pageData = await pageOwnerRepoBindings({ page: ownerRepoPagination.page, size: ownerRepoPagination.size, keyword: ownerRepoFilters.keyword, projectId: ownerRepoFilters.projectId ?? undefined })
+    ownerRepoList.value = pageData.records
+    ownerRepoPagination.total = pageData.total
+  } finally {
+    ownerRepoLoading.value = false
+  }
+}
+const handleOwnerRepoSearch = async () => {
+  ownerRepoFilterPopoverVisible.value = false
+  ownerRepoPagination.page = 1
+  await loadOwnerRepoBindings()
+}
+const resetOwnerRepoForm = () => {
+  ownerRepoForm.projectId = projectOptions.value[0]?.id ?? null
+  ownerRepoForm.name = ''
+  ownerRepoForm.apiBaseUrl = ''
+  ownerRepoForm.gitlabProjectRef = ''
+  ownerRepoForm.defaultTargetBranch = ''
+  ownerRepoForm.defaultPushMode = 'NEW_BRANCH'
+  ownerRepoForm.apiToken = ''
+  ownerRepoForm.enabled = true
+}
+const handleOwnerRepoCreate = () => {
+  ownerRepoIsEditing.value = false
+  ownerRepoDialogTitle.value = '新增业主仓库'
+  currentOwnerRepoBindingId.value = null
+  resetOwnerRepoForm()
+  ownerRepoDialogVisible.value = true
+}
+const handleOwnerRepoEdit = (item: OwnerRepoBindingItem) => {
+  ownerRepoIsEditing.value = true
+  ownerRepoDialogTitle.value = '编辑业主仓库'
+  currentOwnerRepoBindingId.value = item.id
+  ownerRepoForm.projectId = item.projectId
+  ownerRepoForm.name = item.name
+  ownerRepoForm.apiBaseUrl = item.apiBaseUrl
+  ownerRepoForm.gitlabProjectRef = item.gitlabProjectRef
+  ownerRepoForm.defaultTargetBranch = item.defaultTargetBranch || ''
+  ownerRepoForm.defaultPushMode = item.defaultPushMode
+  ownerRepoForm.apiToken = ''
+  ownerRepoForm.enabled = item.enabled
+  ownerRepoDialogVisible.value = true
+}
+const handleOwnerRepoSubmit = async () => {
+  const valid = await ownerRepoFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+  if (!ownerRepoIsEditing.value && !ownerRepoForm.apiToken) {
+    ElMessage.warning('请输入访问 Token')
+    return
+  }
+  ownerRepoSubmitting.value = true
+  try {
+    const payload = {
+      projectId: ownerRepoForm.projectId!,
+      name: ownerRepoForm.name,
+      apiBaseUrl: ownerRepoForm.apiBaseUrl,
+      gitlabProjectRef: ownerRepoForm.gitlabProjectRef,
+      defaultTargetBranch: ownerRepoForm.defaultTargetBranch,
+      defaultPushMode: ownerRepoForm.defaultPushMode,
+      apiToken: ownerRepoForm.apiToken,
+      enabled: ownerRepoForm.enabled
+    }
+    if (ownerRepoIsEditing.value && currentOwnerRepoBindingId.value) {
+      await updateOwnerRepoBinding(currentOwnerRepoBindingId.value, payload)
+      ElMessage.success('业主仓库绑定已更新')
+    } else {
+      await createOwnerRepoBinding(payload)
+      ElMessage.success('业主仓库绑定已创建')
+    }
+    ownerRepoDialogVisible.value = false
+    await loadOwnerRepoBindings()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '保存失败')
+  } finally {
+    ownerRepoSubmitting.value = false
+  }
+}
+const handleOwnerRepoDelete = async (id: number) => {
+  try {
+    await ElMessageBox.confirm('删除业主仓库绑定后，推送历史也会被清除，是否继续？', '提示', { type: 'warning' })
+    await deleteOwnerRepoBinding(id)
+    ElMessage.success('业主仓库绑定已删除')
+    await loadOwnerRepoBindings()
+  } catch (error: any) {
+    if (error !== 'cancel') ElMessage.error(error?.response?.data?.message || '删除失败')
+  }
+}
+const handleOwnerRepoTest = async (id: number) => {
+  ownerRepoTestingId.value = id
+  try {
+    const result = await testOwnerRepoBinding(id)
+    ElMessage.success(`连接成功：${result.gitlabProjectPath || result.gitlabProjectRef}`)
+    await loadOwnerRepoBindings()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '连接测试失败')
+    await loadOwnerRepoBindings()
+  } finally {
+    ownerRepoTestingId.value = null
+  }
+}
+const handleOwnerRepoSourceBindingChange = async () => {
+  ownerRepoPushForm.sourceBranch = ''
+  ownerRepoBranchOptions.value = []
+  if (!ownerRepoPushForm.sourceBindingId) return
+  ownerRepoBranchLoading.value = true
+  try {
+    ownerRepoBranchOptions.value = await listGitlabBranches(ownerRepoPushForm.sourceBindingId)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '加载分支失败')
+  } finally {
+    ownerRepoBranchLoading.value = false
+  }
+}
+const handleOwnerRepoPush = (item: OwnerRepoBindingItem) => {
+  currentOwnerRepoBinding.value = item
+  ownerRepoPushForm.sourceBindingId = null
+  ownerRepoPushForm.sourceBranch = ''
+  ownerRepoPushForm.targetBranch = item.defaultTargetBranch || ''
+  ownerRepoPushForm.pushMode = item.defaultPushMode
+  ownerRepoBranchOptions.value = []
+  ownerRepoPushDialogVisible.value = true
+}
+const handleOwnerRepoPushSubmit = async () => {
+  const valid = await ownerRepoPushFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+  if (ownerRepoPushForm.pushMode === 'DIRECT') {
+    try {
+      await ElMessageBox.confirm(`直接推送将强制覆盖业主仓库 ${ownerRepoPushForm.targetBranch} 分支的历史，不可恢复，是否继续？`, '危险操作确认', { type: 'error' })
+    } catch (error) {
+      return
+    }
+  }
+  if (!currentOwnerRepoBinding.value) return
+  ownerRepoPushing.value = true
+  try {
+    const result = await pushToOwnerRepo(currentOwnerRepoBinding.value.id, {
+      sourceBindingId: ownerRepoPushForm.sourceBindingId!,
+      sourceBranch: ownerRepoPushForm.sourceBranch,
+      targetBranch: ownerRepoPushForm.targetBranch,
+      pushMode: ownerRepoPushForm.pushMode
+    })
+    ownerRepoPushResult.value = result
+    ownerRepoPushDialogVisible.value = false
+    ownerRepoPushResultVisible.value = true
+    if (result.executionStatus === 'FAILED') ElMessage.error('推送失败')
+    else ElMessage.success('推送完成')
+    await loadOwnerRepoBindings()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '推送失败')
+  } finally {
+    ownerRepoPushing.value = false
+  }
+}
+const handleOwnerRepoViewLogs = async (item: OwnerRepoBindingItem) => {
+  currentOwnerRepoBinding.value = item
+  ownerRepoLogsVisible.value = true
+  ownerRepoLogPagination.page = 1
+  await loadOwnerRepoLogs()
+}
+const loadOwnerRepoLogs = async () => {
+  if (!currentOwnerRepoBinding.value) return
+  ownerRepoLogLoading.value = true
+  try {
+    const pageData = await pageOwnerRepoPushLogs(currentOwnerRepoBinding.value.id, ownerRepoLogPagination.page, ownerRepoLogPagination.size)
+    ownerRepoLogList.value = pageData.records
+    ownerRepoLogPagination.total = pageData.total
+  } finally {
+    ownerRepoLogLoading.value = false
+  }
+}
 
 const resolveBindingRepoKind = (row: ProjectGitlabBindingItem): BindingRepoKind => {
   if (!row.testProfileJson) return ''
@@ -3050,7 +3561,7 @@ const loadProductBranchSyncLogs = async () => {
 }
 const loadAutoMergeConfigs = async () => { autoMergeLoading.value = true; try { const pageData = await pageGitlabAutoMergeConfigs({ page: autoMergeRequestPage.value, size: autoMergeRequestSize.value, keyword: autoMergeFilters.keyword, executionMode: autoMergeFilters.executionMode, enabled: autoMergeFilters.enabled }); autoMergeList.value = pageData.records; autoMergePagination.total = pageData.total } finally { autoMergeLoading.value = false } }
 const loadAutoMergeLogs = async () => { logLoading.value = true; try { const pageData = await pageGitlabAutoMergeLogs({ page: logRequestPage.value, size: logRequestSize.value, result: logFilters.result, triggerType: logFilters.triggerType }); logList.value = pageData.records; logPagination.total = pageData.total } finally { logLoading.value = false } }
-const refreshAll = async () => { await loadBaseOptions(); await Promise.all([loadBindings(), loadProductBranches(), loadAutoMergeConfigs(), loadAutoMergeLogs()]) }
+const refreshAll = async () => { await loadBaseOptions(); await Promise.all([loadBindings(), loadProductBranches(), loadAutoMergeConfigs(), loadAutoMergeLogs(), loadOwnerRepoBindings()]) }
 
 const handleBindingSearch = async () => { bindingFilterPopoverVisible.value = false; resetBindingMobilePagination(); await loadBindings() }
 const handleBindingReset = async () => { bindingFilters.keyword = ''; bindingFilters.projectId = undefined; resetBindingMobilePagination(); await loadBindings() }

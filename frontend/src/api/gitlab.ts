@@ -27,6 +27,10 @@ import type {
   GitlabTagCreateResultItem,
   GitlabUserItem,
   GitlabUserOauthBindingItem,
+  OwnerRepoBindingItem,
+  OwnerRepoPushContextItem,
+  OwnerRepoPushLogItem,
+  OwnerRepoPushResultItem,
   PageResponse,
   ProjectGitlabBindingItem,
   RepositoryScanRulesetItem
@@ -526,5 +530,89 @@ export const deleteAutoMergeWebhook = async (webhookId: number) => {
 /** 触发一次测试投递，返回最新一次投递状态。 */
 export const testAutoMergeWebhook = async (webhookId: number) => {
   const { data } = await http.post<ApiResponse<GitlabAutoMergeWebhookItem>>(`/api/gitlab/auto-merge-webhooks/${webhookId}/test`)
+  return data.data
+}
+
+// ===== 业主代码仓库推送 =====
+
+export interface OwnerRepoBindingPayload {
+  projectId: number
+  name: string
+  apiBaseUrl: string
+  gitlabProjectRef: string
+  defaultTargetBranch: string
+  defaultPushMode: string
+  apiToken: string
+  enabled: boolean
+}
+
+export interface OwnerRepoBindingQuery {
+  page: number
+  size: number
+  keyword?: string
+  projectId?: number
+}
+
+export interface OwnerRepoPushPayload {
+  sourceBindingId: number
+  sourceBranch: string
+  targetBranch: string
+  pushMode: string
+}
+
+/** 分页查询业主仓库绑定。 */
+export const pageOwnerRepoBindings = async (query: OwnerRepoBindingQuery) => {
+  const { data } = await http.get<ApiResponse<PageResponse<OwnerRepoBindingItem>>>('/api/gitlab/owner-repos/bindings', {
+    params: cleanParams(query)
+  })
+  return data.data
+}
+
+/** 查询指定项目下的全部业主仓库绑定。 */
+export const listOwnerRepoBindingsByProject = async (projectId: number) => {
+  const { data } = await http.get<ApiResponse<OwnerRepoBindingItem[]>>(`/api/gitlab/owner-repos/bindings/by-project/${projectId}`)
+  return data.data
+}
+
+/** 创建业主仓库绑定。 */
+export const createOwnerRepoBinding = async (payload: OwnerRepoBindingPayload) => {
+  const { data } = await http.post<ApiResponse<OwnerRepoBindingItem>>('/api/gitlab/owner-repos/bindings', payload)
+  return data.data
+}
+
+/** 更新业主仓库绑定。 */
+export const updateOwnerRepoBinding = async (id: number, payload: OwnerRepoBindingPayload) => {
+  const { data } = await http.put<ApiResponse<OwnerRepoBindingItem>>(`/api/gitlab/owner-repos/bindings/${id}`, payload)
+  return data.data
+}
+
+/** 删除业主仓库绑定。 */
+export const deleteOwnerRepoBinding = async (id: number) => {
+  await http.delete<ApiResponse<null>>(`/api/gitlab/owner-repos/bindings/${id}`)
+}
+
+/** 测试业主仓库连通性。 */
+export const testOwnerRepoBinding = async (id: number) => {
+  const { data } = await http.post<ApiResponse<OwnerRepoBindingItem>>(`/api/gitlab/owner-repos/bindings/${id}/test`, {}, { timeout: 120000 })
+  return data.data
+}
+
+/** 获取推送前置上下文。 */
+export const getOwnerRepoPushContext = async (bindingId: number) => {
+  const { data } = await http.get<ApiResponse<OwnerRepoPushContextItem>>(`/api/gitlab/owner-repos/bindings/${bindingId}/push-context`)
+  return data.data
+}
+
+/** 触发推送到业主仓库（长任务，单独设置超时）。 */
+export const pushToOwnerRepo = async (bindingId: number, payload: OwnerRepoPushPayload) => {
+  const { data } = await http.post<ApiResponse<OwnerRepoPushResultItem>>(`/api/gitlab/owner-repos/bindings/${bindingId}/push`, payload, { timeout: 600000 })
+  return data.data
+}
+
+/** 分页查询推送历史日志。 */
+export const pageOwnerRepoPushLogs = async (bindingId: number, page: number, size: number) => {
+  const { data } = await http.get<ApiResponse<PageResponse<OwnerRepoPushLogItem>>>(`/api/gitlab/owner-repos/bindings/${bindingId}/push-logs`, {
+    params: cleanParams({ page, size })
+  })
   return data.data
 }

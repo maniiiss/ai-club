@@ -23,6 +23,7 @@ import {
   ClipboardList,
   Tag,
   Database,
+  Upload,
 } from 'lucide-react'
 import {
   pageGitlabBindings,
@@ -69,8 +70,9 @@ import {
 } from '@/src/lib/productBranchUtils'
 import { buildGitlabTagPayload, resolveDefaultTagBranch } from '@/src/lib/gitlabTagUtils'
 import { DataWorkbenchPanel } from './DataWorkbenchPanel'
+import { OwnerRepoPushPanel } from './OwnerRepoPushPanel'
 
-type DetailTab = 'product-branches' | 'code-structure' | 'scan' | 'auto-merge-center' | 'auto-merge-logs' | 'data-workbench'
+type DetailTab = 'product-branches' | 'code-structure' | 'scan' | 'auto-merge-center' | 'auto-merge-logs' | 'data-workbench' | 'owner-push'
 
 const detailTabs: { key: DetailTab; label: string; icon: typeof GitBranch }[] = [
   { key: 'product-branches', label: '产品分支', icon: GitBranch },
@@ -78,6 +80,7 @@ const detailTabs: { key: DetailTab; label: string; icon: typeof GitBranch }[] = 
   { key: 'scan', label: '扫描', icon: Shield },
   { key: 'auto-merge-center', label: '自动合并中心', icon: Zap },
   { key: 'auto-merge-logs', label: '合并日志', icon: History },
+  { key: 'owner-push', label: '业主仓库', icon: Upload },
   { key: 'data-workbench', label: '数据工作台', icon: Database },
 ]
 
@@ -326,6 +329,7 @@ export const DevelopmentPage = () => {
                 {activeTab === 'scan' && <ScanPanel bindingId={selectedBinding.id} branch={selectedBinding.defaultTargetBranch || 'main'} />}
                 {activeTab === 'auto-merge-center' && <AutoMergeCenterPanel />}
                 {activeTab === 'auto-merge-logs' && <AutoMergeLogsPanel />}
+                {activeTab === 'owner-push' && <OwnerRepoPushPanel projectId={pid} />}
                 {activeTab === 'data-workbench' && <DataWorkbenchPanel projectId={pid} />}
               </div>
             </div>

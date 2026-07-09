@@ -35,6 +35,8 @@ from app.models import (
     GitlabCodeStructureQueryResponse,
     GitlabSpringApiExtractRequest,
     GitlabSpringApiExtractResponse,
+    OwnerRepoMirrorPushRequest,
+    OwnerRepoMirrorPushResponse,
     RepositoryStructuringRequest,
     RepositoryStructuringResponse,
 )
@@ -46,6 +48,7 @@ from app.services.gitlab_code_structure_service import (
     query_gitlab_code_structure,
 )
 from app.services.gitlab_spring_api_extract_service import extract_gitlab_spring_apis
+from app.services.owner_repo_push_service import mirror_push_to_owner_repo
 from app.services.repo_structuring_service import execute_repo_structuring, start_repo_structuring
 from app.services.repository_service import build_summary
 from app.services.document_service import convert_document_to_markdown
@@ -316,6 +319,19 @@ def gitlab_spring_api_extract(request_http: Request,
     _require_internal_service_auth(request_http)
     try:
         return extract_gitlab_spring_apis(payload)
+    except ValueError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+    except RuntimeError as exception:
+        raise HTTPException(status_code=400, detail=str(exception)) from exception
+
+
+@router.post("/owner-repo-push/mirror", response_model=OwnerRepoMirrorPushResponse)
+def owner_repo_mirror_push(request_http: Request,
+                           payload: OwnerRepoMirrorPushRequest) -> OwnerRepoMirrorPushResponse:
+    """供 backend 把平台 GitLab 仓库分支镜像推送到业主方 GitLab 仓库。"""
+    _require_internal_service_auth(request_http)
+    try:
+        return mirror_push_to_owner_repo(payload)
     except ValueError as exception:
         raise HTTPException(status_code=400, detail=str(exception)) from exception
     except RuntimeError as exception:
