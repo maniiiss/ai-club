@@ -107,6 +107,7 @@ export const createExecutionTask = async (payload: {
   title?: string
   triggerSource?: string
   planConfirmationRequired?: boolean
+  agentBindings?: { stepCode: string; agentId: number }[]
   inputPayload?: Record<string, unknown>
 }): Promise<ExecutionTaskItem> => {
   const res = await http.post<ApiResponse<ExecutionTaskItem>>('/api/execution-tasks', payload)

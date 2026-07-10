@@ -28,6 +28,15 @@ export const isRequirementAiEntryVisible = (workItem?: { workItemType?: string |
   return workItem.workItemType === '任务' && normalizeTaskType(workItem.taskType) === '测试任务'
 }
 
+/**
+ * 开发执行入口仅面向可进入代码实现链路的工作项：开发任务和缺陷。
+ */
+export const isDevelopmentExecutionEntryVisible = (workItem?: { workItemType?: string | null; taskType?: string | null } | null): boolean => {
+  if (!workItem) return false
+  if (workItem.workItemType === '缺陷') return true
+  return workItem.workItemType === '任务' && normalizeTaskType(workItem.taskType) === '开发任务'
+}
+
 export const getRequirementAiActions = (workItem?: { workItemType?: string | null; taskType?: string | null } | null): string[] => {
   if (!workItem) return []
   if (workItem.workItemType === '需求') return ['STANDARDIZE', 'BREAKDOWN']

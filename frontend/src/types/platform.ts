@@ -1008,7 +1008,7 @@ export interface ProjectGitlabBindingItem {
   codeStructureDegraded: boolean | null
 }
 
-/** 业主代码仓库绑定项。 */
+/** 仓库镜像绑定项。 */
 export interface OwnerRepoBindingItem {
   id: number
   projectId: number
@@ -1033,7 +1033,7 @@ export interface OwnerRepoBindingItem {
   updatedAt: string | null
 }
 
-/** 业主仓库推送上下文。 */
+/** 仓库镜像推送上下文。 */
 export interface OwnerRepoPushContextItem {
   bindingId: number
   canPush: boolean
@@ -1043,7 +1043,7 @@ export interface OwnerRepoPushContextItem {
   lastPushedAt: string | null
 }
 
-/** 业主仓库推送结果。 */
+/** 仓库镜像推送结果。 */
 export interface OwnerRepoPushResultItem {
   executionStatus: string
   summaryMessage: string
@@ -1054,7 +1054,7 @@ export interface OwnerRepoPushResultItem {
   mergeRequestWebUrl: string | null
 }
 
-/** 业主仓库推送历史日志项。 */
+/** 仓库镜像推送历史日志项。 */
 export interface OwnerRepoPushLogItem {
   id: number
   sourceBindingId: number | null

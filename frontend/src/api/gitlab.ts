@@ -533,7 +533,7 @@ export const testAutoMergeWebhook = async (webhookId: number) => {
   return data.data
 }
 
-// ===== 业主代码仓库推送 =====
+// ===== 仓库镜像推送 =====
 
 export interface OwnerRepoBindingPayload {
   projectId: number
@@ -560,7 +560,7 @@ export interface OwnerRepoPushPayload {
   pushMode: string
 }
 
-/** 分页查询业主仓库绑定。 */
+/** 分页查询仓库镜像绑定。 */
 export const pageOwnerRepoBindings = async (query: OwnerRepoBindingQuery) => {
   const { data } = await http.get<ApiResponse<PageResponse<OwnerRepoBindingItem>>>('/api/gitlab/owner-repos/bindings', {
     params: cleanParams(query)
@@ -568,30 +568,30 @@ export const pageOwnerRepoBindings = async (query: OwnerRepoBindingQuery) => {
   return data.data
 }
 
-/** 查询指定项目下的全部业主仓库绑定。 */
+/** 查询指定项目下的全部仓库镜像绑定。 */
 export const listOwnerRepoBindingsByProject = async (projectId: number) => {
   const { data } = await http.get<ApiResponse<OwnerRepoBindingItem[]>>(`/api/gitlab/owner-repos/bindings/by-project/${projectId}`)
   return data.data
 }
 
-/** 创建业主仓库绑定。 */
+/** 创建仓库镜像绑定。 */
 export const createOwnerRepoBinding = async (payload: OwnerRepoBindingPayload) => {
   const { data } = await http.post<ApiResponse<OwnerRepoBindingItem>>('/api/gitlab/owner-repos/bindings', payload)
   return data.data
 }
 
-/** 更新业主仓库绑定。 */
+/** 更新仓库镜像绑定。 */
 export const updateOwnerRepoBinding = async (id: number, payload: OwnerRepoBindingPayload) => {
   const { data } = await http.put<ApiResponse<OwnerRepoBindingItem>>(`/api/gitlab/owner-repos/bindings/${id}`, payload)
   return data.data
 }
 
-/** 删除业主仓库绑定。 */
+/** 删除仓库镜像绑定。 */
 export const deleteOwnerRepoBinding = async (id: number) => {
   await http.delete<ApiResponse<null>>(`/api/gitlab/owner-repos/bindings/${id}`)
 }
 
-/** 测试业主仓库连通性。 */
+/** 测试仓库镜像连通性。 */
 export const testOwnerRepoBinding = async (id: number) => {
   const { data } = await http.post<ApiResponse<OwnerRepoBindingItem>>(`/api/gitlab/owner-repos/bindings/${id}/test`, {}, { timeout: 120000 })
   return data.data
@@ -603,7 +603,7 @@ export const getOwnerRepoPushContext = async (bindingId: number) => {
   return data.data
 }
 
-/** 触发推送到业主仓库（长任务，单独设置超时）。 */
+/** 触发推送到仓库镜像（长任务，单独设置超时）。 */
 export const pushToOwnerRepo = async (bindingId: number, payload: OwnerRepoPushPayload) => {
   const { data } = await http.post<ApiResponse<OwnerRepoPushResultItem>>(`/api/gitlab/owner-repos/bindings/${bindingId}/push`, payload, { timeout: 600000 })
   return data.data

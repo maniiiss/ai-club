@@ -544,6 +544,7 @@
   </el-drawer>
 
   <HermesDrawer
+    v-if="hermesDrawerVisible"
     ref="hermesDrawerRef"
     v-model="hermesDrawerVisible"
     :route-name="hermesRouteName"
@@ -737,6 +738,7 @@ import {
   PLATFORM_MANAGEMENT_PERMISSION_CODES,
   SYSTEM_MANAGEMENT_PERMISSION_CODES
 } from '@/utils/permissionTaxonomy'
+import { isSameMenuLocation, resolveMenuPath, toMenuRouteLocation } from '@/utils/navigationMenu'
 
 interface MenuItem {
   /** 菜单路由路径。 */
@@ -935,7 +937,7 @@ function buildMenuItems(seeds: MenuSeed[]) {
     const configured = menuPermissionMap.value.get(seed.permission)
     const uniquePermissionSeed = seeds.filter((item) => item.permission === seed.permission).length === 1
     return {
-      path: uniquePermissionSeed ? (configured?.path || seed.fallbackPath) : seed.fallbackPath,
+      path: uniquePermissionSeed ? resolveMenuPath(configured?.path, seed.fallbackPath) : seed.fallbackPath,
       label: uniquePermissionSeed ? (configured?.name || seed.fallbackLabel) : seed.fallbackLabel,
       shortLabel: seed.shortLabel,
       permission: seed.permission,
@@ -1110,10 +1112,12 @@ function isMenuActive(item: MenuItem) {
 
 async function handleNavigate(path: string) {
   mobileMoreDrawerVisible.value = false
-  if (route.path === path) {
+  const targetLocation = toMenuRouteLocation(path)
+  const resolvedTarget = router.resolve(targetLocation).fullPath
+  if (isSameMenuLocation(route.fullPath, resolvedTarget)) {
     return
   }
-  await router.push(path)
+  await router.push(targetLocation)
 }
 
 async function goBackToApiGroups() {

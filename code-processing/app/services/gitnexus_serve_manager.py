@@ -43,9 +43,9 @@ def local_gitnexus_serve_base_url() -> str:
     """返回 code-processing 本机用于探活的 GitNexus serve 地址。"""
     host = (settings.gitnexus_serve_host or "").strip() or "127.0.0.1"
     if host == "0.0.0.0":
-        # GitNexus 1.6.7 在部分容器环境里对 localhost / ::1 可达，但对 127.0.0.1 不响应。
-        # 探活优先走 localhost，避免进程已启动却被误判为“端口未就绪”。
-        host = "localhost"
+        # 当前 GitNexus serve 会监听 IPv4 loopback；Windows 上 localhost 可能优先解析到 ::1 后超时。
+        # 探活固定走 127.0.0.1，避免进程已启动却被误判为“端口未就绪”。
+        host = "127.0.0.1"
     if not host.startswith("http://") and not host.startswith("https://"):
         host = f"http://{host}"
     return f"{host}:{settings.gitnexus_serve_port}"
@@ -75,8 +75,6 @@ def _start_gitnexus_serve(gitnexus_cli: Path) -> None:
         "serve",
         "--port",
         str(settings.gitnexus_serve_port),
-        "--host",
-        str((settings.gitnexus_serve_host or "").strip() or "0.0.0.0"),
     ]
     startupinfo = None
     creationflags = 0

@@ -2,7 +2,7 @@
  * 研发模块页面。
  * 左侧仓库绑定列表 + 右侧详情（产品分支/代码结构/扫描/自动合并中心/自动合并日志/数据工作台 六 Tab 切换）。
  */
-import { useEffect, useState, useCallback, useMemo, type FormEvent } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams } from 'react-router-dom'
 import {
@@ -24,11 +24,17 @@ import {
   Tag,
   Database,
   Upload,
+  RefreshCw,
+  Search,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   pageGitlabBindings,
   listGitlabBranches,
   getGitlabCodeStructure,
+  refreshGitlabCodeStructure,
+  queryGitlabCodeStructure,
+  launchGitlabBindingGitnexus,
   listRepositoryScanRulesets,
   createGitlabBindingScanTask,
   pageGitlabAutoMergeLogs,
@@ -43,6 +49,9 @@ import {
 import type {
   ProjectGitlabBindingItem,
   GitlabBranchItem,
+  GitlabCodeStructureCandidateSymbolItem,
+  GitlabCodeStructureProcessItem,
+  GitlabCodeStructureQueryResultItem,
   GitlabCodeStructureSnapshotItem,
   RepositoryScanRulesetItem,
   GitlabAutoMergeLogItem,
@@ -59,6 +68,7 @@ import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
 import { Select } from '@/src/components/common/Select'
+import { Markdown } from '@/src/components/common/Markdown'
 import { cn, formatDate, getErrorMessage } from '@/src/lib/utils'
 import { AutoMergeCenterPanel } from './AutoMergeCenterPanel'
 import { useGuide } from '@/src/components/guide'
@@ -80,7 +90,7 @@ const detailTabs: { key: DetailTab; label: string; icon: typeof GitBranch }[] = 
   { key: 'scan', label: '扫描', icon: Shield },
   { key: 'auto-merge-center', label: '自动合并中心', icon: Zap },
   { key: 'auto-merge-logs', label: '合并日志', icon: History },
-  { key: 'owner-push', label: '业主仓库', icon: Upload },
+  { key: 'owner-push', label: '仓库镜像', icon: Upload },
   { key: 'data-workbench', label: '数据工作台', icon: Database },
 ]
 
@@ -303,29 +313,31 @@ export const DevelopmentPage = () => {
                 </Card>
 
                 {/* Tab 切换 */}
-                <div className="mt-4 flex gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)] w-fit" data-guide-id="dev-detail-tabs">
-                  {detailTabs.map((tab) => (
-                    <button
-                      key={tab.key}
-                      onClick={() => setActiveTab(tab.key)}
-                      className={cn(
-                        'flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-all duration-150',
-                        activeTab === tab.key
-                          ? 'bg-[var(--color-primary)] text-white shadow-[var(--shadow-sm)]'
-                          : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]',
-                      )}
-                    >
-                      <tab.icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-                      {tab.label}
-                    </button>
-                  ))}
+                <div className="mt-4 max-w-full overflow-x-auto" data-guide-id="dev-detail-tabs">
+                  <div className="flex min-w-max gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)] w-fit">
+                    {detailTabs.map((tab) => (
+                      <button
+                        key={tab.key}
+                        onClick={() => setActiveTab(tab.key)}
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-all duration-150',
+                          activeTab === tab.key
+                            ? 'bg-[var(--color-primary)] text-white shadow-[var(--shadow-sm)]'
+                            : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]',
+                        )}
+                      >
+                        <tab.icon className="h-3.5 w-3.5" strokeWidth={1.75} />
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
               {/* Tab 内容 */}
               <div className="mt-4 flex-1 min-h-0">
                 {activeTab === 'product-branches' && <ProductBranchesPanel binding={selectedBinding} />}
-                {activeTab === 'code-structure' && <CodeStructurePanel bindingId={selectedBinding.id} />}
+                {activeTab === 'code-structure' && <CodeStructurePanel binding={selectedBinding} />}
                 {activeTab === 'scan' && <ScanPanel bindingId={selectedBinding.id} branch={selectedBinding.defaultTargetBranch || 'main'} />}
                 {activeTab === 'auto-merge-center' && <AutoMergeCenterPanel />}
                 {activeTab === 'auto-merge-logs' && <AutoMergeLogsPanel />}
@@ -1072,111 +1084,428 @@ const MetricCard = ({ title, value, tone }: { title: string; value: number; tone
    代码结构面板
    ════════════════════════════════════════════ */
 
-const CodeStructurePanel = ({ bindingId }: { bindingId: number }) => {
+const codeStructureStatusLabel: Record<string, string> = {
+  NOT_BUILT: '未生成',
+  PENDING: '等待刷新',
+  RUNNING: '刷新中',
+  SUCCESS: '已生成',
+  FAILED: '失败',
+}
+
+const codeStructureStatusTone = (status?: string | null) => {
+  if (status === 'SUCCESS') return 'bg-emerald-50 text-emerald-700'
+  if (status === 'FAILED') return 'bg-red-50 text-red-700'
+  if (status === 'RUNNING' || status === 'PENDING') return 'bg-amber-50 text-amber-700'
+  return 'bg-gray-100 text-gray-600'
+}
+
+const shortSha = (value?: string | null) => value ? value.slice(0, 12) : '-'
+
+const normalizeCodeStructureBranch = (value: string) => value.trim() || undefined
+
+const hasCodeStructureSnapshotContent = (snapshot: GitlabCodeStructureSnapshotItem | null) =>
+  Boolean(
+    snapshot
+    && (
+      snapshot.summaryMarkdown
+      || snapshot.overviewCards.length
+      || snapshot.candidateSymbols.length
+      || snapshot.candidateProcesses.length
+      || snapshot.harnessHints.length
+      || snapshot.graphNodes.length
+    ),
+  )
+
+const hasCodeStructureSnapshotStatus = (snapshot: GitlabCodeStructureSnapshotItem | null) =>
+  Boolean(
+    snapshot
+    && (
+      snapshot.status
+      || snapshot.generatedAt
+      || snapshot.refreshStartedAt
+      || snapshot.refreshFinishedAt
+      || snapshot.lastErrorMessage
+      || snapshot.degraded
+      || snapshot.truncated
+    ),
+  )
+
+const SymbolList = ({
+  items,
+  emptyText,
+}: {
+  items: GitlabCodeStructureCandidateSymbolItem[]
+  emptyText: string
+}) => {
+  if (!items.length) {
+    return <p className="text-[13px] text-[var(--color-text-tertiary)]">{emptyText}</p>
+  }
+  return (
+    <div className="space-y-2">
+      {items.slice(0, 12).map((item) => (
+        <div key={item.uid || `${item.filePath}-${item.name}`} className="rounded-lg border border-[var(--color-border-light)] px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[13px] font-semibold text-[var(--color-text-primary)]">{item.name || '-'}</span>
+            <span className="rounded-full bg-[var(--color-bg-hover)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-tertiary)]">
+              {item.symbolKind || 'SYMBOL'}
+            </span>
+          </div>
+          <p className="mt-1 truncate font-mono text-[11px] text-[var(--color-text-tertiary)]">
+            {item.filePath || '-'}
+            {item.startLine ? `:${item.startLine}` : ''}
+          </p>
+        </div>
+      ))}
+      {items.length > 12 && (
+        <p className="text-center text-[12px] text-[var(--color-text-tertiary)]">
+          仅展示前 12 项，共 {items.length} 项
+        </p>
+      )}
+    </div>
+  )
+}
+
+const ProcessList = ({
+  items,
+  emptyText,
+}: {
+  items: GitlabCodeStructureProcessItem[]
+  emptyText: string
+}) => {
+  if (!items.length) {
+    return <p className="text-[13px] text-[var(--color-text-tertiary)]">{emptyText}</p>
+  }
+  return (
+    <div className="space-y-2">
+      {items.slice(0, 10).map((item) => (
+        <div key={item.id || item.name} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border-light)] px-3 py-2">
+          <span className="min-w-0 truncate text-[13px] font-medium text-[var(--color-text-primary)]">
+            {item.name || '-'}
+          </span>
+          {item.stepIndex && item.stepCount && (
+            <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+              {item.stepIndex}/{item.stepCount}
+            </span>
+          )}
+        </div>
+      ))}
+      {items.length > 10 && (
+        <p className="text-center text-[12px] text-[var(--color-text-tertiary)]">
+          仅展示前 10 条流程，共 {items.length} 条
+        </p>
+      )}
+    </div>
+  )
+}
+
+const CodeStructurePanel = ({ binding }: { binding: ProjectGitlabBindingItem }) => {
   const [snapshot, setSnapshot] = useState<GitlabCodeStructureSnapshotItem | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [branch, setBranch] = useState(binding.defaultTargetBranch || '')
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null)
+  const [queryText, setQueryText] = useState('')
+  const [querying, setQuerying] = useState(false)
+  const [queryError, setQueryError] = useState<string | null>(null)
+  const [queryResult, setQueryResult] = useState<GitlabCodeStructureQueryResultItem | null>(null)
+  const [launching, setLaunching] = useState(false)
+  const [launchMessage, setLaunchMessage] = useState<string | null>(null)
+  const requestSeqRef = useRef(0)
 
-  const fetchCodeStructure = useCallback(async () => {
+  useEffect(() => {
+    setBranch(binding.defaultTargetBranch || '')
+    setSnapshot(null)
+    setRefreshMessage(null)
+    setQueryText('')
+    setQueryError(null)
+    setQueryResult(null)
+    setLaunchMessage(null)
+  }, [binding.id, binding.defaultTargetBranch])
+
+  const fetchCodeStructure = useCallback(async (requestedBranch?: string) => {
+    const activeRequest = requestSeqRef.current + 1
+    requestSeqRef.current = activeRequest
     setLoading(true)
     setError(null)
     try {
-      const data = await getGitlabCodeStructure(bindingId)
+      const data = await getGitlabCodeStructure(binding.id, requestedBranch)
+      if (activeRequest !== requestSeqRef.current) return
       setSnapshot(data)
+      if (!requestedBranch && data.branchName) {
+        setBranch(data.branchName)
+      }
     } catch (err) {
+      if (activeRequest !== requestSeqRef.current) return
       setError(err instanceof Error ? err.message : '加载代码结构失败')
     } finally {
+      if (activeRequest !== requestSeqRef.current) return
       setLoading(false)
     }
-  }, [bindingId])
+  }, [binding.id])
 
   useEffect(() => {
-    fetchCodeStructure()
-  }, [fetchCodeStructure])
+    fetchCodeStructure(normalizeCodeStructureBranch(binding.defaultTargetBranch || ''))
+  }, [binding.defaultTargetBranch, fetchCodeStructure])
 
-  if (loading) return <LoadingSpinner text="加载代码结构…" />
-  if (error) return <ErrorState description={error} onRetry={fetchCodeStructure} />
-  if (!snapshot || !snapshot.files || snapshot.totalFileCount === 0) {
-    return (
-      <EmptyState
-        title="暂无代码结构"
-        description="代码结构快照尚未生成。"
-        icon={<Code2 className="h-6 w-6" strokeWidth={1.5} />}
-      />
-    )
+  const activeBranch = normalizeCodeStructureBranch(branch) || snapshot?.branchName || binding.defaultTargetBranch || undefined
+  const snapshotHasContent = hasCodeStructureSnapshotContent(snapshot)
+  const snapshotHasStatus = hasCodeStructureSnapshotStatus(snapshot)
+  const statusLabel = snapshot?.status ? (codeStructureStatusLabel[snapshot.status] || snapshot.status) : '未生成'
+
+  const handleLoadBranch = () => {
+    setRefreshMessage(null)
+    setQueryResult(null)
+    setQueryError(null)
+    fetchCodeStructure(normalizeCodeStructureBranch(branch))
+  }
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    setRefreshMessage(null)
+    try {
+      const result = await refreshGitlabCodeStructure(binding.id, {
+        branch: normalizeCodeStructureBranch(branch),
+      })
+      setRefreshMessage(result.accepted ? '刷新任务已提交，稍后可再次点击加载快照查看结果。' : (result.lastErrorMessage || '刷新请求未被受理。'))
+      await fetchCodeStructure(result.branchName || normalizeCodeStructureBranch(branch))
+    } catch (err) {
+      setRefreshMessage(getErrorMessage(err))
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const handleQuery = async () => {
+    const normalizedQuery = queryText.trim()
+    const branchName = activeBranch?.trim()
+    if (!branchName) {
+      setQueryError('请先填写分支。')
+      return
+    }
+    if (normalizedQuery.length < 2) {
+      setQueryError('查询关键词至少 2 个字符。')
+      return
+    }
+    setQuerying(true)
+    setQueryError(null)
+    try {
+      setQueryResult(await queryGitlabCodeStructure(binding.id, {
+        branch: branchName,
+        query: normalizedQuery,
+      }))
+    } catch (err) {
+      setQueryError(getErrorMessage(err))
+    } finally {
+      setQuerying(false)
+    }
+  }
+
+  const handleLaunchGitnexus = async () => {
+    setLaunching(true)
+    setLaunchMessage(null)
+    try {
+      const result = await launchGitlabBindingGitnexus(binding.id, {
+        branch: activeBranch,
+      })
+      const opened = window.open(result.launchUrl, '_blank', 'noopener,noreferrer')
+      setLaunchMessage(opened ? 'GitNexus 全仓图已在新标签页打开。' : `浏览器拦截了新标签页，请手动打开：${result.launchUrl}`)
+    } catch (err) {
+      setLaunchMessage(getErrorMessage(err))
+    } finally {
+      setLaunching(false)
+    }
   }
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3">
-        <Card title="文件数">
-          <p className="text-[28px] font-bold text-[var(--color-primary)]">{snapshot.totalFileCount}</p>
-        </Card>
-        <Card title="符号数">
-          <p className="text-[28px] font-bold text-[var(--color-text-primary)]">{snapshot.totalSymbolCount}</p>
-        </Card>
-        <Card title="生成时间">
-          <p className="text-[14px] font-medium text-[var(--color-text-primary)]">
-            {snapshot.generatedAt ? formatDate(snapshot.generatedAt) : '-'}
-          </p>
-        </Card>
-      </div>
-
-      {snapshot.overviewMarkdown && (
-        <Card title="概览">
-          <div className="prose prose-sm max-w-none">
-            <pre className="whitespace-pre-wrap text-[13px] leading-relaxed font-sans text-[var(--color-text-secondary)]">
-              {snapshot.overviewMarkdown}
-            </pre>
+    <div className="h-full overflow-y-auto pr-1">
+      <div className="space-y-4 pb-4">
+        <Card>
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div className="grid min-w-0 flex-1 gap-3 md:grid-cols-[minmax(180px,260px)_minmax(220px,1fr)]">
+              <Input
+                label="分支"
+                value={branch}
+                onChange={(event) => setBranch(event.target.value)}
+                placeholder="默认分支"
+                hint="留空时由后端按绑定默认分支回退"
+                icon={<GitBranch className="h-4 w-4" strokeWidth={1.75} />}
+              />
+              <Input
+                label="局部查询"
+                value={queryText}
+                onChange={(event) => setQueryText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') handleQuery()
+                }}
+                placeholder="输入函数、类、流程或模块关键词"
+                hint="基于已缓存 GitNexus 索引查询关键符号和流程"
+                icon={<Search className="h-4 w-4" strokeWidth={1.75} />}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={handleLoadBranch} disabled={loading} icon={<Code2 className="h-4 w-4" />}>
+                加载快照
+              </Button>
+              <Button variant="secondary" onClick={handleRefresh} loading={refreshing} icon={<RefreshCw className="h-4 w-4" />}>
+                刷新结构
+              </Button>
+              <Button variant="secondary" onClick={handleQuery} loading={querying} icon={<Search className="h-4 w-4" />}>
+                局部查询
+              </Button>
+              <Button onClick={handleLaunchGitnexus} loading={launching} icon={<ExternalLink className="h-4 w-4" />}>
+                打开全仓图
+              </Button>
+            </div>
           </div>
-        </Card>
-      )}
-
-      <Card title="文件列表">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-[var(--color-border-light)]">
-                <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase">
-                  文件路径
-                </th>
-                <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase w-[100px]">
-                  语言
-                </th>
-                <th className="px-3 py-2 text-right text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase w-[80px]">
-                  符号数
-                </th>
-                <th className="px-3 py-2 text-right text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase w-[80px]">
-                  行数
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--color-border-light)]">
-              {snapshot.files.slice(0, 50).map((file) => (
-                <tr key={file.path} className="hover:bg-[var(--color-bg-hover)]/50 transition-colors">
-                  <td className="px-3 py-2.5 text-[12px] font-mono text-[var(--color-text-primary)] truncate max-w-[300px]">
-                    {file.path}
-                  </td>
-                  <td className="px-3 py-2.5 text-[12px] text-[var(--color-text-secondary)]">
-                    {file.language || '-'}
-                  </td>
-                  <td className="px-3 py-2.5 text-[13px] text-right text-[var(--color-text-secondary)]">
-                    {file.symbolCount}
-                  </td>
-                  <td className="px-3 py-2.5 text-[13px] text-right text-[var(--color-text-secondary)]">
-                    {file.lineCount}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {snapshot.files.length > 50 && (
-            <p className="mt-2 text-center text-[12px] text-[var(--color-text-tertiary)]">
-              显示前 50 个文件，共 {snapshot.totalFileCount} 个
-            </p>
+          {(refreshMessage || queryError || launchMessage) && (
+            <div className="mt-4 space-y-2">
+              {refreshMessage && (
+                <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[13px] text-blue-800">
+                  {refreshMessage}
+                </div>
+              )}
+              {queryError && (
+                <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[13px] text-red-700">
+                  {queryError}
+                </div>
+              )}
+              {launchMessage && (
+                <div className="break-all rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-800">
+                  {launchMessage}
+                </div>
+              )}
+            </div>
           )}
-        </div>
-      </Card>
+        </Card>
+
+        {loading ? (
+          <LoadingSpinner text="加载代码结构…" />
+        ) : error ? (
+          <ErrorState description={error} onRetry={() => fetchCodeStructure(normalizeCodeStructureBranch(branch))} />
+        ) : !snapshotHasContent && !snapshotHasStatus ? (
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]">
+            <EmptyState
+              title="暂无代码结构"
+              description="代码结构快照尚未生成，可先点击“刷新结构”提交后台任务。"
+              icon={<Code2 className="h-6 w-6" strokeWidth={1.5} />}
+            />
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <Card title="状态">
+                <div className="flex items-center gap-2">
+                  <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', codeStructureStatusTone(snapshot?.status))}>
+                    {statusLabel}
+                  </span>
+                  {snapshot?.degraded && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                      <AlertTriangle className="h-3 w-3" />
+                      降级
+                    </span>
+                  )}
+                </div>
+              </Card>
+              <Card title="分支">
+                <p className="truncate text-[15px] font-semibold text-[var(--color-text-primary)]">{snapshot?.branchName || '-'}</p>
+              </Card>
+              <Card title="提交">
+                <p className="font-mono text-[13px] font-medium text-[var(--color-text-primary)]">{shortSha(snapshot?.commitSha)}</p>
+              </Card>
+              <Card title="生成时间">
+                <p className="text-[13px] font-medium text-[var(--color-text-primary)]">
+                  {snapshot?.generatedAt ? formatDate(snapshot.generatedAt) : '-'}
+                </p>
+              </Card>
+            </div>
+
+            {snapshot?.lastErrorMessage && (
+              <div className="rounded-lg border border-amber-100 bg-amber-50 px-3.5 py-2.5 text-[13px] text-amber-800">
+                {snapshot.lastErrorMessage}
+              </div>
+            )}
+
+            {!!snapshot?.overviewCards.length && (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {snapshot.overviewCards.map((item) => (
+                  <Card key={item.key || item.label} title={item.label || item.key}>
+                    <p className="truncate text-[22px] font-bold text-[var(--color-primary)]">{item.value || '-'}</p>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {snapshot?.summaryMarkdown && (
+              <Card title="结构摘要">
+                <Markdown content={snapshot.summaryMarkdown} />
+              </Card>
+            )}
+
+            {snapshotHasContent ? (
+              <div className="grid gap-4 xl:grid-cols-2">
+                <Card title="关键符号">
+                  <SymbolList items={snapshot?.candidateSymbols || []} emptyText="当前快照没有返回关键符号。" />
+                </Card>
+                <Card title="执行流程">
+                  <ProcessList items={snapshot?.candidateProcesses || []} emptyText="当前快照没有返回执行流程。" />
+                </Card>
+              </div>
+            ) : (
+              <Card>
+                <div className="flex items-start gap-3">
+                  <Code2 className="mt-0.5 h-5 w-5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />
+                  <div>
+                    <p className="text-[14px] font-semibold text-[var(--color-text-primary)]">结构内容尚未就绪</p>
+                    <p className="mt-1 text-[13px] text-[var(--color-text-tertiary)]">
+                      当前快照已有状态记录，但还没有可展示的结构摘要。刷新完成后可重新加载快照。
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {!!snapshot?.harnessHints.length && (
+              <Card title="Harness 提示">
+                <div className="grid gap-2 md:grid-cols-2">
+                  {snapshot.harnessHints.map((hint) => (
+                    <div key={hint} className="rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] px-3 py-2 text-[13px] text-[var(--color-text-secondary)]">
+                      {hint}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </>
+        )}
+
+        {queryResult && (
+          <Card title="局部查询结果">
+            <div className="mb-4 flex flex-wrap gap-2 text-[12px] text-[var(--color-text-tertiary)]">
+              <span>分支：{queryResult.branchName || '-'}</span>
+              <span>提交：{shortSha(queryResult.commitSha)}</span>
+              <span>节点：{queryResult.graphNodes.length}</span>
+              <span>关系：{queryResult.graphEdges.length}</span>
+              {queryResult.truncated && <span className="text-amber-700">结果已截断</span>}
+            </div>
+            {queryResult.lastErrorMessage && (
+              <div className="mb-4 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+                {queryResult.lastErrorMessage}
+              </div>
+            )}
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div>
+                <h4 className="mb-2 text-[13px] font-semibold text-[var(--color-text-primary)]">命中符号</h4>
+                <SymbolList items={queryResult.hitSymbols} emptyText="没有命中符号。" />
+              </div>
+              <div>
+                <h4 className="mb-2 text-[13px] font-semibold text-[var(--color-text-primary)]">命中流程</h4>
+                <ProcessList items={queryResult.hitProcesses} emptyText="没有命中流程。" />
+              </div>
+            </div>
+          </Card>
+        )}
+      </div>
     </div>
   )
 }

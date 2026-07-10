@@ -150,25 +150,118 @@ export interface GitlabProductBranchSyncRunResult {
   items: GitlabProductBranchSyncRunItem[]
 }
 
-/** 代码结构快照。 */
-export interface GitlabCodeStructureSnapshotItem {
-  bindingId: number
-  branch: string | null
-  status: string
-  generatedAt: string | null
-  degraded: boolean | null
-  totalFileCount: number
-  totalSymbolCount: number
-  overviewMarkdown: string | null
-  files: GitlabCodeStructureFileItem[]
+/** 代码结构概览指标卡。 */
+export interface GitlabCodeStructureOverviewCardItem {
+  key: string
+  label: string
+  value: string
 }
 
-/** 代码结构文件条目。 */
-export interface GitlabCodeStructureFileItem {
-  path: string
-  language: string | null
-  symbolCount: number
-  lineCount: number
+/** GitNexus 候选关键符号摘要。 */
+export interface GitlabCodeStructureCandidateSymbolItem {
+  uid: string
+  name: string
+  filePath: string
+  startLine: number | null
+  endLine: number | null
+  symbolKind: string
+}
+
+/** GitNexus 执行流程摘要。 */
+export interface GitlabCodeStructureProcessItem {
+  id: string
+  name: string
+  stepIndex: number | null
+  stepCount: number | null
+}
+
+/** 仓库代码结构图谱节点。 */
+export interface GitlabCodeStructureGraphNodeItem {
+  id: string
+  nodeType: string
+  label: string
+  secondaryLabel: string
+  detailText: string
+  filePath: string
+  symbolUid: string
+  startLine: number | null
+  endLine: number | null
+  metadataJson: string
+}
+
+/** 仓库代码结构图谱边。 */
+export interface GitlabCodeStructureGraphEdgeItem {
+  id: string
+  sourceId: string
+  targetId: string
+  edgeType: string
+  detailText: string
+}
+
+/** 代码结构快照，字段对齐后端 GitlabCodeStructureSnapshotSummary。 */
+export interface GitlabCodeStructureSnapshotItem {
+  bindingId: number
+  projectId: number
+  projectName: string
+  repositoryName: string
+  repositoryPath: string
+  branchName: string
+  commitSha: string | null
+  status: string
+  degraded: boolean
+  truncated: boolean
+  generatedAt: string | null
+  refreshStartedAt: string | null
+  refreshFinishedAt: string | null
+  summaryMarkdown: string
+  lastErrorMessage: string | null
+  overviewCards: GitlabCodeStructureOverviewCardItem[]
+  candidateSymbols: GitlabCodeStructureCandidateSymbolItem[]
+  candidateProcesses: GitlabCodeStructureProcessItem[]
+  harnessHints: string[]
+  graphNodes: GitlabCodeStructureGraphNodeItem[]
+  graphEdges: GitlabCodeStructureGraphEdgeItem[]
+}
+
+/** 代码结构局部查询请求。 */
+export interface GitlabCodeStructureQueryPayload {
+  branch: string
+  query: string
+}
+
+/** 代码结构局部查询结果。 */
+export interface GitlabCodeStructureQueryResultItem {
+  branchName: string
+  commitSha: string | null
+  degraded: boolean
+  truncated: boolean
+  lastErrorMessage: string | null
+  hitSymbols: GitlabCodeStructureCandidateSymbolItem[]
+  hitProcesses: GitlabCodeStructureProcessItem[]
+  graphNodes: GitlabCodeStructureGraphNodeItem[]
+  graphEdges: GitlabCodeStructureGraphEdgeItem[]
+}
+
+/** 代码结构刷新受理结果。 */
+export interface GitlabCodeStructureRefreshAcceptedResultItem {
+  bindingId: number
+  branchName: string
+  status: string
+  accepted: boolean
+  refreshStartedAt: string | null
+  generatedAt: string | null
+  lastErrorMessage: string | null
+}
+
+/** GitNexus 全仓图启动结果。 */
+export interface GitlabGitnexusLaunchResultItem {
+  branchName: string
+  commitSha: string
+  repoAlias: string
+  gitnexusUiUrl: string
+  gitnexusServerUrl: string
+  launchUrl: string
+  serveReady: boolean
 }
 
 /** 质量扫描规则集。 */
@@ -340,6 +433,12 @@ export interface AgentOptionItem {
   accessType: string
   builtinCode: string | null
   description: string
+  runtimeType?: string | null
+  capability?: string | null
+  enabled?: boolean | null
+  status?: string | null
+  projectId?: number | null
+  projectName?: string | null
 }
 
 /** 当前登录用户在默认 GitLab 实例上的 OAuth 绑定状态（用于 MR 卡片判断发起身份）。 */
@@ -375,7 +474,7 @@ export interface GitlabCreateMergeRequestResultItem {
   actorUsername: string | null
 }
 
-/** 业主代码仓库绑定项（公众端只读，配置在管理端完成）。 */
+/** 仓库镜像绑定项（公众端只读，配置在管理端完成）。 */
 export interface OwnerRepoBindingItem {
   id: number
   projectId: number
@@ -400,7 +499,7 @@ export interface OwnerRepoBindingItem {
   updatedAt: string | null
 }
 
-/** 业主仓库推送上下文。 */
+/** 仓库镜像推送上下文。 */
 export interface OwnerRepoPushContextItem {
   bindingId: number
   canPush: boolean
@@ -410,7 +509,7 @@ export interface OwnerRepoPushContextItem {
   lastPushedAt: string | null
 }
 
-/** 业主仓库推送结果。 */
+/** 仓库镜像推送结果。 */
 export interface OwnerRepoPushResultItem {
   executionStatus: string
   summaryMessage: string
@@ -421,7 +520,7 @@ export interface OwnerRepoPushResultItem {
   mergeRequestWebUrl: string | null
 }
 
-/** 业主仓库推送历史日志项。 */
+/** 仓库镜像推送历史日志项。 */
 export interface OwnerRepoPushLogItem {
   id: number
   sourceBindingId: number | null
@@ -438,7 +537,7 @@ export interface OwnerRepoPushLogItem {
   executedAt: string | null
 }
 
-/** 业主仓库推送请求。 */
+/** 仓库镜像推送请求。 */
 export interface OwnerRepoPushPayload {
   sourceBindingId: number
   sourceBranch: string
