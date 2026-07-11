@@ -7,6 +7,15 @@
         <span>{{ workItem.name }}</span>
       </div>
 
+      <el-alert
+        v-if="!orchestrationReady"
+        title="编排尚未就绪"
+        description="当前项目没有可用的开发执行编排，请联系管理员在编排管理中发布平台默认或项目覆盖版本。"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="execution-create-form">
         <section class="execution-step-section">
           <div class="execution-step-head">
@@ -95,36 +104,13 @@
           </div>
         </el-form-item>
 
-        <section class="execution-step-section">
-          <div class="execution-step-head">
-            <div class="execution-step-title">步骤 Agent 绑定</div>
-            <div class="execution-step-subtitle">可留空使用系统推荐，也可手动指定每一步的执行 Agent。</div>
-          </div>
-
-          <div v-loading="loadingAgents" class="execution-step-list">
-            <div v-for="step in currentStepOptions" :key="step.stepCode" class="execution-step-item">
-              <div class="execution-step-item-copy">
-                <strong>{{ step.stepName }}</strong>
-                <span>{{ step.description }}</span>
-              </div>
-              <el-select v-model="form.stepAgentMap[step.stepCode]" clearable filterable placeholder="使用系统推荐" style="width: 280px">
-                <el-option
-                  v-for="agent in agentOptions"
-                  :key="agent.id"
-                  :label="buildAgentLabel(agent)"
-                  :value="agent.id"
-                />
-              </el-select>
-            </div>
-          </div>
-        </section>
       </el-form>
     </template>
 
     <template #footer>
       <div class="execution-create-footer">
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">创建并执行</el-button>
+        <el-button type="primary" :loading="submitting" :disabled="!orchestrationReady" @click="handleSubmit">创建并执行</el-button>
       </div>
     </template>
   </el-dialog>
@@ -135,6 +121,15 @@
       <span>{{ workItem.workItemCode || '-' }}</span>
       <span>{{ workItem.name }}</span>
     </div>
+
+    <el-alert
+      v-if="!orchestrationReady"
+      title="编排尚未就绪"
+      description="当前项目没有可用的开发执行编排，请联系管理员在编排管理中发布平台默认或项目覆盖版本。"
+      type="warning"
+      :closable="false"
+      show-icon
+    />
 
     <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="execution-create-form">
       <section class="execution-step-section">
@@ -224,33 +219,9 @@
         </div>
       </el-form-item>
 
-      <section class="execution-step-section">
-        <div class="execution-step-head">
-          <div class="execution-step-title">步骤 Agent 绑定</div>
-          <div class="execution-step-subtitle">可留空使用系统推荐，也可手动指定每一步的执行 Agent。</div>
-        </div>
-
-        <div v-loading="loadingAgents" class="execution-step-list">
-          <div v-for="step in currentStepOptions" :key="step.stepCode" class="execution-step-item">
-            <div class="execution-step-item-copy">
-              <strong>{{ step.stepName }}</strong>
-              <span>{{ step.description }}</span>
-            </div>
-            <el-select v-model="form.stepAgentMap[step.stepCode]" clearable filterable placeholder="使用系统推荐" style="width: 280px">
-              <el-option
-                v-for="agent in agentOptions"
-                :key="agent.id"
-                :label="buildAgentLabel(agent)"
-                :value="agent.id"
-              />
-            </el-select>
-          </div>
-        </div>
-      </section>
-
       <div class="execution-create-footer embedded">
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">创建并执行</el-button>
+        <el-button type="primary" :loading="submitting" :disabled="!orchestrationReady" @click="handleSubmit">创建并执行</el-button>
       </div>
     </el-form>
   </template>
@@ -260,26 +231,19 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { createExecutionTask, listAgentOptions } from '@/api/platform'
+import { createExecutionTask, listExecutionOrchestrationScenarios } from '@/api/platform'
 import { listGitlabBindingOptions } from '@/api/gitlab'
-import type { AgentItem, ExecutionTaskItem, ProjectGitlabBindingItem, TaskItem } from '@/types/platform'
+import type { ExecutionTaskItem, ProjectGitlabBindingItem, TaskItem } from '@/types/platform'
 
 interface ExecutionTaskCreateDialogProps {
   workItem: TaskItem | null
   embedded?: boolean
 }
 
-interface StepOption {
-  stepCode: string
-  stepName: string
-  description: string
-}
-
 interface ExecutionCreateForm {
   scenarioCode: string
   inputText: string
   planConfirmationRequired: boolean
-  stepAgentMap: Record<string, number | undefined>
   repositories: DevelopmentRepositoryFormItem[]
 }
 
@@ -294,24 +258,15 @@ const emit = defineEmits<{
 }>()
 const dialogVisible = defineModel<boolean>({ default: false })
 const formRef = ref<FormInstance>()
-const loadingAgents = ref(false)
 const loadingBindings = ref(false)
 const submitting = ref(false)
-const agentOptions = ref<AgentItem[]>([])
+const orchestrationReady = ref(false)
 const gitlabBindingOptions = ref<ProjectGitlabBindingItem[]>([])
-
-const developmentStepOptions: StepOption[] = [
-  { stepCode: 'PLAN', stepName: '执行规划', description: '由所选 CLI Runner 或规划智能体扫描所选仓库并生成执行规划。' },
-  { stepCode: 'IMPLEMENT', stepName: '开发实现', description: '由可真实执行的 Runtime / API Agent 完成代码开发。' },
-  { stepCode: 'TEST', stepName: '执行测试', description: '由可真实执行的 Runtime / API Agent 完成仓库级验证。' },
-  { stepCode: 'REPORT', stepName: '交付报告', description: '汇总多仓执行结果、失败位置与遗留风险。' }
-]
 
 const form = reactive<ExecutionCreateForm>({
   scenarioCode: 'DEVELOPMENT_IMPLEMENTATION',
   inputText: '',
   planConfirmationRequired: false,
-  stepAgentMap: {},
   repositories: []
 })
 
@@ -319,7 +274,6 @@ const rules: FormRules<ExecutionCreateForm> = {
   scenarioCode: [{ required: true, message: '执行场景不能为空', trigger: 'change' }]
 }
 
-const currentStepOptions = computed(() => developmentStepOptions)
 const availableGitlabBindings = computed(() =>
   gitlabBindingOptions.value.filter((binding) => binding.projectId === props.workItem?.projectId && binding.enabled)
 )
@@ -328,19 +282,6 @@ const selectedRepositoryIds = computed<number[]>({
   set: (bindingIds) => syncSelectedRepositories(bindingIds)
 })
 
-/**
- * 智能执行现阶段仅保留开发执行场景，默认步骤绑定统一按开发执行推荐规则生成。
- */
-const resetStepAgentMap = () => {
-  const nextMap: Record<string, number | undefined> = {}
-  for (const step of currentStepOptions.value) {
-    nextMap[step.stepCode] = recommendAgentId(step.stepCode)
-  }
-  form.stepAgentMap = nextMap
-}
-
-const buildAgentLabel = (agent: AgentItem) => `${agent.name} / ${agent.type} / ${agent.accessType}`
-const isExecutableAgent = (agent?: AgentItem | null) => agent ? ['HTTP_API', 'AGENT_RUNTIME'].includes(agent.accessType) : false
 const resolveBinding = (bindingId: number) => availableGitlabBindings.value.find((binding) => binding.id === bindingId)
 const buildBindingLabel = (binding?: ProjectGitlabBindingItem | null) =>
   binding?.gitlabProjectPath || binding?.gitlabProjectRef || `GitLab 绑定 #${binding?.id ?? '-'}`
@@ -352,78 +293,16 @@ const buildBindingHint = (binding?: ProjectGitlabBindingItem | null) => {
   return `${binding.projectName} · 默认分支：${defaultBranch}`
 }
 
-/**
- * 第一版默认推荐规则尽量复用现有 Agent 命名和 builtinCode，减少手动选择成本。
- */
-const findRecommendedAgent = (...predicates: Array<(agent: AgentItem, haystack: string) => boolean>) => {
-  for (const predicate of predicates) {
-    const matched = agentOptions.value.find((agent) => predicate(agent, `${agent.name} ${agent.type} ${agent.capability}`.toLowerCase()))
-    if (matched?.id) {
-      return matched.id
-    }
-  }
-  return undefined
-}
-
-const isRuntimeType = (agent: AgentItem, runtimeType: string) =>
-  agent.accessType === 'AGENT_RUNTIME' && agent.runtimeType === runtimeType
-
-const recommendAgentId = (stepCode: string) => {
-  const normalizedStepCode = stepCode.toUpperCase()
-  if (normalizedStepCode === 'PLAN') {
-    const planAgentId = findRecommendedAgent(
-      (agent, _haystack) => isRuntimeType(agent, 'CLAUDE_CODE_CLI'),
-      (agent, haystack) => agent.accessType === 'HTTP_API' && /claude/.test(haystack) && /plan|planning|规划/.test(haystack),
-      (agent, haystack) => agent.accessType === 'HTTP_API' && /执行规划|开发执行规划/.test(haystack),
-      (agent, haystack) => /claude/.test(haystack) && /plan|planning|规划/.test(haystack),
-      (_agent, haystack) => /plan|planning|规划/.test(haystack)
-    )
-    if (planAgentId) {
-      return planAgentId
-    }
-  }
-  const match = findRecommendedAgent(
-    (agent, haystack) => normalizedStepCode === 'IMPLEMENT'
-      ? (isRuntimeType(agent, 'CODEX_CLI') || isRuntimeType(agent, 'CLAUDE_CODE_CLI')
-        || (isExecutableAgent(agent) && /coder|code|开发|实现/.test(haystack) && agent.builtinCode !== 'CODE_REVIEW'))
-      : false,
-    (agent, haystack) => normalizedStepCode === 'TEST'
-      ? (isRuntimeType(agent, 'CODEX_CLI') || isRuntimeType(agent, 'CLAUDE_CODE_CLI')
-        || (isExecutableAgent(agent) && /test|qa|测试|quality/.test(haystack)))
-      : false,
-    (agent, haystack) => normalizedStepCode === 'TEST_DESIGN'
-      ? agent.builtinCode === 'TEST_SUGGESTION' || /test|测试|quality/.test(haystack)
-      : false,
-    (_agent, haystack) => normalizedStepCode === 'REPORT'
-      ? /report|review|评审|总结/.test(haystack)
-      : false,
-    (agent, haystack) => normalizedStepCode === 'REVIEW'
-      ? agent.builtinCode === 'CODE_REVIEW' || /review|评审|reviewer/.test(haystack)
-      : false
-  )
-  if (match) {
-    return match
-  }
-  if (normalizedStepCode === 'TEST') {
-    return recommendAgentId('IMPLEMENT')
-  }
-  if (normalizedStepCode === 'REPORT') {
-    return recommendAgentId('PLAN')
-  }
-  return undefined
-}
-
-const loadAgents = async () => {
-  if (!props.workItem?.projectId) {
-    agentOptions.value = []
-    return
-  }
-  loadingAgents.value = true
+const loadOrchestrationReadiness = async () => {
+  orchestrationReady.value = false
+  if (!props.workItem?.projectId) return
   try {
-    agentOptions.value = await listAgentOptions(props.workItem.projectId)
-    resetStepAgentMap()
-  } finally {
-    loadingAgents.value = false
+    const scenarios = await listExecutionOrchestrationScenarios(props.workItem.projectId)
+    orchestrationReady.value = Boolean(
+      scenarios.find((item) => item.scenarioCode === 'DEVELOPMENT_IMPLEMENTATION')?.effectiveReady
+    )
+  } catch {
+    orchestrationReady.value = false
   }
 }
 
@@ -475,7 +354,7 @@ const resetForm = () => {
   form.scenarioCode = 'DEVELOPMENT_IMPLEMENTATION'
   form.inputText = ''
   form.planConfirmationRequired = false
-  form.stepAgentMap = {}
+  orchestrationReady.value = false
   form.repositories = []
   formRef.value?.clearValidate()
 }
@@ -487,7 +366,7 @@ watch(
       return
     }
     resetForm()
-    await Promise.all([loadAgents(), loadGitlabBindings()])
+    await Promise.all([loadOrchestrationReadiness(), loadGitlabBindings()])
   }
 )
 
@@ -505,21 +384,6 @@ const validateDevelopmentRepositories = () => {
   return true
 }
 
-const validateDevelopmentAgents = () => {
-  for (const stepCode of ['IMPLEMENT', 'TEST']) {
-    const agentId = form.stepAgentMap[stepCode]
-    if (typeof agentId !== 'number') {
-      continue
-    }
-    const agent = agentOptions.value.find((item) => item.id === agentId)
-    if (!isExecutableAgent(agent)) {
-      ElMessage.warning(`${stepCode === 'IMPLEMENT' ? '开发实现' : '执行测试'} 必须绑定 HTTP_API 或 AGENT_RUNTIME 智能体`)
-      return false
-    }
-  }
-  return true
-}
-
 const handleSubmit = async () => {
   if (!props.workItem) {
     return
@@ -528,7 +392,11 @@ const handleSubmit = async () => {
   if (!valid) {
     return
   }
-  if (!validateDevelopmentRepositories() || !validateDevelopmentAgents()) {
+  if (!orchestrationReady.value) {
+    ElMessage.warning('编排尚未就绪，请联系管理员发布开发执行编排')
+    return
+  }
+  if (!validateDevelopmentRepositories()) {
     return
   }
 
@@ -548,12 +416,6 @@ const handleSubmit = async () => {
       workItemId: props.workItem.id,
       triggerSource: 'PAGE',
       planConfirmationRequired: form.planConfirmationRequired,
-      agentBindings: currentStepOptions.value
-        .map((step) => ({
-          stepCode: step.stepCode,
-          agentId: form.stepAgentMap[step.stepCode]
-        }))
-        .filter((item): item is { stepCode: string; agentId: number } => typeof item.agentId === 'number'),
       inputPayload
     })
     emit('created', executionTask)

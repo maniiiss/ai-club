@@ -85,6 +85,7 @@ const executionStatusOptions = [
 ]
 
 const scenarioOptions = [
+  { value: 'TECHNICAL_DESIGN_AUTHORING', label: '技术设计 AI' },
   { value: 'DEVELOPMENT_IMPLEMENTATION', label: '开发执行' },
   { value: 'TEST_AUTOMATION', label: '自动化测试' },
   { value: 'CODEBASE_COMPLIANCE_SCAN', label: '仓库规范扫描' },

@@ -747,7 +747,18 @@ class CliExecutionRequest(BaseModel):
     """统一 CLI Runner 执行请求。"""
 
     runnerType: Literal["CODEX_CLI", "CLAUDE_CODE_CLI", "PATROL_MODEL"]
-    mode: Literal["PLAN", "IMPLEMENT", "TEST", "AD_HOC", "PATROL"]
+    # 技术设计三步使用独立 mode，便于 Runner 在命令层强制只读，而不是只依赖 Prompt 自律。
+    mode: Literal[
+        "PLAN",
+        "IMPLEMENT",
+        "TEST",
+        "AD_HOC",
+        "PATROL",
+        "CODE_CONTEXT",
+        "DESIGN_DRAFT",
+        "DESIGN_REVIEW",
+        "TECHNICAL_DESIGN",
+    ]
     systemPrompt: str = ""
     input: str = ""
     repositories: list[CliExecutionRepository] = Field(default_factory=list)
@@ -838,3 +849,35 @@ class ClaudePlanningResponse(BaseModel):
     workspaceRoot: str = ""
     repoPaths: list[str] = Field(default_factory=list)
     logPreview: str = ""
+
+
+class OwnerRepoMirrorPushRequest(BaseModel):
+    """业主仓库镜像推送请求。
+
+    由 backend 解密凭据后调用，code-processing 负责完整 clone 源仓库分支并 push 到业主仓库。
+    pushMode 取值：DIRECT（强制覆盖目标分支）/ NEW_BRANCH（推到交付子分支）/ MERGE_REQUEST（推到子分支供后续建 MR）。
+    """
+
+    sourceRepoUrl: str
+    sourceAuthToken: str
+    sourceBranch: str
+    targetRepoUrl: str
+    targetAuthToken: str
+    targetBranch: str
+    pushMode: str
+
+    @field_validator("sourceRepoUrl", "sourceAuthToken", "sourceBranch", "targetRepoUrl", "targetAuthToken", "targetBranch", "pushMode", mode="before")
+    @classmethod
+    def normalize_required_text(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value).strip()
+
+
+class OwnerRepoMirrorPushResponse(BaseModel):
+    """业主仓库镜像推送结果。"""
+
+    sourceCommitSha: str
+    targetCommitSha: str
+    pushedBranch: str
+    strategy: str

@@ -5,6 +5,11 @@
 export const normalizeGeneratedMarkdown = (content: string): string => {
   const normalized = normalizeGeneratedTables(normalizeGeneratedHeadingBoundaries(normalizeGeneratedInlineMarkdown(normalizeGeneratedTicketIdLines(normalizeGeneratedLooseTableRows((content || '')
     .replace(/\r\n?/g, '\n')
+    // 归一化行首全角井号 ＃（U+FF03）为半角 #（U+0023），AI 在中文语境下偶尔输出全角井号导致 ATX 标题不被 react-markdown 识别
+    .replace(/^[ \t]*[＃#]{1,6}/gm, (match) => match.replace(/＃/g, '#'))
+    // 合并括号内被空行打断的极短内容，如「项目（项目\n\n4）」->「项目（项目4）」
+    // 业务意图：AI 流式输出偶尔在括号内的编号/短词间插入空行，react-markdown 会把括号拆成两段，破坏语义；只合并两侧内容均 ≤4 字的极短场景，避免误伤合法的多段括号内容
+    .replace(/([（(])((?:[^\n）)]){0,4})\n{2,}((?:[^\n）)]){0,4}[）)])/g, '$1$2$3')
     .replace(/\*\*([^\n*]{1,80})\n([^\n*]{1,80})\s+\*(?=\n[-*+]|\n\d+[.)]\s|\n\n|$)/g, '\\*\\*$1\n$2 \\*')
     .replace(/(\\\*\n)([-*+]\s+)/g, '$1\n$2')))))
   )
@@ -14,6 +19,8 @@ export const normalizeGeneratedMarkdown = (content: string): string => {
 
 /**
  * 保护行首工单号，避免 `#LHR8GU` 被 Markdown 当成一级标题。
+ * 表格单元格内的工单号（如 `| # UZ69HL |`）无需在此转义，
+ * 由 normalizeGeneratedHeadingBoundaries 跳过含 `|` 的行来保护。
  */
 const normalizeGeneratedTicketIdLines = (content: string): string =>
   content
@@ -25,9 +32,23 @@ const normalizeGeneratedTicketIdLines = (content: string): string =>
 
 const normalizeGeneratedHeadingBoundaries = (content: string): string =>
   content
-    .replace(/([^\n#\\])\s*(#{1,6})(?=\s*\d)/g, '$1\n\n$2')
-    .replace(/([^\n#\\])\s*(#{1,6})(?!#)([^\s#])/g, (match, prefix: string, hashes: string, next: string) =>
-      prefix === '|' ? match : `${prefix}\n\n${hashes} ${next}`)
+    // 在 `#` 前断行补空行，但跳过含 `|` 的表格行：表格单元格内的 `# 6I4IXF)` 等工单号不应被断成一级标题
+    .replace(/([^\n#\\])\s*(#{1,6})(?=\s*\d)/g, (match, prefix: string, hashes: string, offset: number, fullText: string) => {
+      const lineStart = fullText.lastIndexOf('\n', offset) + 1
+      const lineEndIndex = fullText.indexOf('\n', offset)
+      const lineEnd = lineEndIndex < 0 ? fullText.length : lineEndIndex
+      const currentLine = fullText.slice(lineStart, lineEnd)
+      return currentLine.includes('|') ? match : `${prefix}\n\n${hashes}`
+    })
+    .replace(/([^\n#\\])\s*(#{1,6})(?!#)([^\s#])/g, (match, prefix: string, hashes: string, next: string, offset: number, fullText: string) => {
+      if (prefix === '|') return match
+      // 跳过含 `|` 的表格行：表格单元格内的 `#ABC123` 等工单号不应被断成标题
+      const lineStart = fullText.lastIndexOf('\n', offset) + 1
+      const lineEndIndex = fullText.indexOf('\n', offset)
+      const lineEnd = lineEndIndex < 0 ? fullText.length : lineEndIndex
+      const currentLine = fullText.slice(lineStart, lineEnd)
+      return currentLine.includes('|') ? match : `${prefix}\n\n${hashes} ${next}`
+    })
     .replace(/(^|[^\n#\\])\s*(#{1,6}\s+)/g, (match, prefix: string, hashes: string, offset: number, fullText: string) => {
       const lineStart = fullText.lastIndexOf('\n', offset) + 1
       const lineEndIndex = fullText.indexOf('\n', offset)
@@ -66,8 +87,11 @@ const cleanupGeneratedOrphanEmphasisMarkers = (content: string): string => {
 
   let normalized = content
     .replace(/\*\*[^*\n]+?\*\*/g, protect)
+    // 保护合法的单星斜体（同行内 *文本*），避免后续孤立星号清理误伤
+    .replace(/(?<!\*)\*[^*\n]+?\*(?!\*)/g, protect)
     .replace(/\*\*/g, '')
-    .replace(/(?<=[\p{L}\p{N}_\u4e00-\u9fff])\*(?=[，。；：:、,.!?！？)\]】）]|$)/gu, '')
+    // 清理孤立单星号：前面是字母/数字/中文/全角标点，后面是标点、换行或行尾
+    .replace(/(?<=[\p{L}\p{N}_\u4e00-\u9fff：，。；！？、])\*(?=[，。；：:、,.!?！？)\]】）\n]|$)/gmu, '')
 
   placeholders.forEach((placeholder, index) => {
     normalized = normalized.replace(`@@BOLD_${index}@@`, placeholder)

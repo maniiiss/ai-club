@@ -506,7 +506,7 @@ export interface TaskRequirementAiSuggestionItem {
 }
 
 export interface TaskRequirementAiTestCaseStepSuggestionItem {
-  stepNo: number
+  stepNo: number | null
   action: string
   expectedResult: string
 }
@@ -596,6 +596,80 @@ export interface ExecutionArtifactItem {
   workItemWriteback: boolean
 }
 
+export interface ExecutionOrchestrationScenarioStepItem {
+  stepCode: string
+  stepName: string
+  agentRequired: boolean
+}
+
+export interface ExecutionOrchestrationScenarioItem {
+  scenarioCode: string
+  scenarioName: string
+  steps: ExecutionOrchestrationScenarioStepItem[]
+  effectiveReady: boolean
+  effectiveScope: 'PLATFORM' | 'PROJECT' | null
+  publishedVersionId: number | null
+  effectiveInvalidReason: string | null
+}
+
+export interface ExecutionOrchestrationStepBindingItem {
+  stepCode: string
+  agentId: number | null
+  timeoutSeconds: number
+  agentName: string
+  accessType: string
+  runtimeType: string | null
+  valid: boolean
+  invalidReason: string | null
+}
+
+export interface ExecutionOrchestrationVersionItem {
+  id: number
+  profileId: number
+  versionNo: number
+  status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | string
+  sourceVersionId: number | null
+  revision: number
+  createdAt: string
+  publishedAt: string | null
+  stepBindings: ExecutionOrchestrationStepBindingItem[]
+}
+
+export interface ExecutionOrchestrationProfileItem {
+  id: number
+  scopeType: 'PLATFORM' | 'PROJECT'
+  projectId: number | null
+  scenarioCode: string
+  draftVersionId: number | null
+  publishedVersionId: number | null
+  versions: ExecutionOrchestrationVersionItem[]
+}
+
+export interface UpdateExecutionOrchestrationVersionPayload {
+  revision: number
+  stepBindings: Array<{ stepCode: string; agentId: number; timeoutSeconds: number }>
+}
+
+export interface TechnicalDesignExecutionPayload {
+  scenarioCode: 'TECHNICAL_DESIGN_AUTHORING'
+  projectId: number
+  workItemId: number
+  triggerSource: 'PAGE'
+  inputPayload: {
+    repositories: Array<{ bindingId: number; targetBranch: string }>
+    preferGitNexus: boolean
+    source: 'TECHNICAL_DESIGN_AI'
+    inputText?: string
+  }
+}
+
+export type TechnicalDesignWritebackMode = 'DESCRIPTION' | 'COMMENT'
+
+export interface TechnicalDesignWritebackPayload {
+  artifactId: number
+  mode: TechnicalDesignWritebackMode
+}
+
 export interface ExecutionStepItem {
   id: number
   runId: number
@@ -661,6 +735,20 @@ export interface ExecutionStreamEvent {
   createdAt: string | null
 }
 
+export interface ExecutionResolvedBindingItem {
+  stepNo: number
+  stepCode: string
+  stepName: string
+  agentId: number | null
+  agentName: string | null
+  accessType: string | null
+  runtimeType: string | null
+  timeoutSeconds: number | null
+  repositoryBindingId: number | null
+  repositoryTargetBranch: string | null
+  repositoryDisplayName: string | null
+}
+
 export interface ExecutionTaskItem {
   id: number
   title: string
@@ -680,6 +768,8 @@ export interface ExecutionTaskItem {
   currentStepNo: number | null
   currentStepName: string | null
   latestSummary: string
+  orchestrationVersionId: number | null
+  resolvedBindings: ExecutionResolvedBindingItem[]
   planConfirmationRequired: boolean
   planConfirmationPending: boolean
   createdByUserId: number | null
@@ -743,6 +833,8 @@ export interface ExecutionTaskDetailItem {
   createdAt: string
   updatedAt: string
   currentRunId: number | null
+  orchestrationVersionId: number | null
+  resolvedBindings: ExecutionResolvedBindingItem[]
   inputPayload: string
   planConfirmationRequired: boolean
   planConfirmationPending: boolean
@@ -1006,6 +1098,69 @@ export interface ProjectGitlabBindingItem {
   codeStructureStatus: string | null
   codeStructureGeneratedAt: string | null
   codeStructureDegraded: boolean | null
+}
+
+/** 仓库镜像绑定项。 */
+export interface OwnerRepoBindingItem {
+  id: number
+  projectId: number
+  projectName: string
+  name: string
+  apiBaseUrl: string
+  gitlabProjectRef: string
+  gitlabProjectId: string | null
+  gitlabProjectName: string | null
+  gitlabProjectPath: string | null
+  gitlabProjectWebUrl: string | null
+  gitlabHttpCloneUrl: string | null
+  gitlabSshCloneUrl: string | null
+  defaultTargetBranch: string | null
+  defaultPushMode: string
+  tokenConfigured: boolean
+  enabled: boolean
+  lastPushStatus: string | null
+  lastPushMessage: string | null
+  lastPushedAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+}
+
+/** 仓库镜像推送上下文。 */
+export interface OwnerRepoPushContextItem {
+  bindingId: number
+  canPush: boolean
+  disabledReason: string | null
+  lastPushStatus: string | null
+  lastPushMessage: string | null
+  lastPushedAt: string | null
+}
+
+/** 仓库镜像推送结果。 */
+export interface OwnerRepoPushResultItem {
+  executionStatus: string
+  summaryMessage: string
+  sourceCommitSha: string | null
+  targetCommitSha: string | null
+  pushedBranch: string | null
+  mergeRequestIid: string | null
+  mergeRequestWebUrl: string | null
+}
+
+/** 仓库镜像推送历史日志项。 */
+export interface OwnerRepoPushLogItem {
+  id: number
+  sourceBindingId: number | null
+  sourceBindingName: string | null
+  sourceBranch: string
+  targetBranch: string
+  pushMode: string
+  sourceCommitSha: string | null
+  targetCommitSha: string | null
+  mergeRequestIid: string | null
+  mergeRequestWebUrl: string | null
+  executionStatus: string
+  summaryMessage: string | null
+  executedAt: string | null
 }
 
 export interface GitlabCodeStructureOverviewCardItem {

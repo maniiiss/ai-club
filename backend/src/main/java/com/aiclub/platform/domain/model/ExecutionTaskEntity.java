@@ -115,6 +115,11 @@ public class ExecutionTaskEntity {
     @Column(name = "agent_binding_payload", nullable = false, columnDefinition = "TEXT")
     private String agentBindingPayload = "[]";
 
+    /** 创建任务时采用的已发布编排版本；旧任务和非受管场景为空。 */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "orchestration_version_id")
+    private ExecutionOrchestrationVersionEntity orchestrationVersion;
+
     /**
      * 创建时间。
      */
@@ -257,6 +262,12 @@ public class ExecutionTaskEntity {
 
     public void setAgentBindingPayload(String agentBindingPayload) {
         this.agentBindingPayload = agentBindingPayload;
+    }
+
+    public ExecutionOrchestrationVersionEntity getOrchestrationVersion() { return orchestrationVersion; }
+
+    public void setOrchestrationVersion(ExecutionOrchestrationVersionEntity orchestrationVersion) {
+        this.orchestrationVersion = orchestrationVersion;
     }
 
     public LocalDateTime getCreatedAt() {

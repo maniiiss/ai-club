@@ -35,6 +35,20 @@
           </el-tab-pane>
 
           <el-tab-pane
+            v-if="showTechnicalDesignTab"
+            label="技术设计 AI"
+            name="technical-design"
+          >
+            <div class="work-item-smart-action-pane">
+              <TechnicalDesignAiDialog
+                v-model="dialogVisible"
+                :work-item="workItem"
+                @created="handleCreated"
+              />
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane
             v-if="showExecutionTab"
             label="智能执行"
             name="execution"
@@ -58,7 +72,9 @@
 import { computed, ref, watch } from 'vue'
 import RequirementAiDialog from '@/components/RequirementAiDialog.vue'
 import ExecutionTaskCreateDialog from '@/components/ExecutionTaskCreateDialog.vue'
+import TechnicalDesignAiDialog from '@/components/TechnicalDesignAiDialog.vue'
 import type { ExecutionTaskItem, TaskItem } from '@/types/platform'
+import { isTechnicalDesignWorkItem } from '@/utils/technicalDesignAi'
 
 const props = defineProps<{
   workItem: TaskItem | null
@@ -72,7 +88,7 @@ const emit = defineEmits<{
 }>()
 
 const dialogVisible = defineModel<boolean>({ default: false })
-const activeTab = ref<'requirement-ai' | 'execution'>('execution')
+const activeTab = ref<'requirement-ai' | 'technical-design' | 'execution'>('execution')
 
 const normalizeTaskType = (taskType?: string | null) => {
   const value = String(taskType || '').trim()
@@ -87,9 +103,14 @@ const showRequirementAiTab = computed(() =>
   || (props.workItem?.workItemType === '任务' && normalizeTaskType(props.workItem?.taskType) === '测试任务')
 )
 const showExecutionTab = computed(() => props.canExecute)
+const showTechnicalDesignTab = computed(() => props.canExecute && isTechnicalDesignWorkItem(props.workItem))
 
 const resetActiveTab = () => {
-  activeTab.value = showRequirementAiTab.value ? 'requirement-ai' : 'execution'
+  activeTab.value = showRequirementAiTab.value
+    ? 'requirement-ai'
+    : showTechnicalDesignTab.value
+      ? 'technical-design'
+      : 'execution'
 }
 
 const handleCreated = (executionTask: ExecutionTaskItem) => {
@@ -97,7 +118,7 @@ const handleCreated = (executionTask: ExecutionTaskItem) => {
 }
 
 watch(
-  [() => dialogVisible.value, () => props.workItem?.id, showRequirementAiTab, showExecutionTab],
+  [() => dialogVisible.value, () => props.workItem?.id, showRequirementAiTab, showTechnicalDesignTab, showExecutionTab],
   ([visible]) => {
     if (!visible) {
       return

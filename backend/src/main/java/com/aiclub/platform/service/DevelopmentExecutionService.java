@@ -646,10 +646,13 @@ public class DevelopmentExecutionService {
                                     ExecutionStepEntity step,
                                     String input,
                                     Map<String, String> variables) {
+        if (stepPlan.timeoutSeconds() != null) variables.put("orchestration_timeout_seconds", String.valueOf(stepPlan.timeoutSeconds()));
         if (!agentExecutionService.supportsAsyncExecution(stepPlan.agent(), stepPlan.stepCode())) {
             return agentExecutionService.runAgent(stepPlan.agent().getId(), input, variables);
         }
-        int maxRuntimeSeconds = executionAsyncSessionService.maxRuntimeSeconds(stepPlan.stepCode());
+        int maxRuntimeSeconds = stepPlan.timeoutSeconds() == null
+                ? executionAsyncSessionService.maxRuntimeSeconds(stepPlan.stepCode())
+                : stepPlan.timeoutSeconds();
         AgentExecutionService.AsyncExecutionStartResult startResult = agentExecutionService.startAsyncExecution(
                 stepPlan.agent(),
                 input,

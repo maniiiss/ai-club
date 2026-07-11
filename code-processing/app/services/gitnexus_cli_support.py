@@ -34,6 +34,7 @@ def run_gitnexus_command(
     repo_dir: Path,
     log: Callable[[str], None],
     fail_message: str | None = None,
+    timeout_seconds: int = 300,
 ) -> str:
     """执行 GitNexus CLI 并统一处理日志和非零退出码。"""
     command = [str(gitnexus_cli), *args]
@@ -48,7 +49,7 @@ def run_gitnexus_command(
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=300,
+            timeout=max(int(timeout_seconds), 1),
         )
         stdout = (completed.stdout or "").strip()
         stderr = (completed.stderr or "").strip()
@@ -75,9 +76,10 @@ def run_gitnexus_json_command(
     args: list[str],
     repo_dir: Path,
     log: Callable[[str], None],
+    timeout_seconds: int = 300,
 ) -> dict[str, object]:
     """执行并解析 GitNexus 返回的 JSON 对象。"""
-    output = run_gitnexus_command(gitnexus_cli, args, repo_dir, log)
+    output = run_gitnexus_command(gitnexus_cli, args, repo_dir, log, timeout_seconds=timeout_seconds)
     payload = extract_json_object(output)
     if not isinstance(payload, dict):
         raise RuntimeError("GitNexus 返回结果不是 JSON 对象")
@@ -88,26 +90,31 @@ def run_gitnexus_analyze_command(
     gitnexus_cli: Path,
     repo_dir: Path,
     log: Callable[[str], None],
+    timeout_seconds: int = 300,
 ) -> None:
     """执行 GitNexus analyze，并在 Windows/路径场景下提供更稳的回退。"""
     ensure_git_repository(repo_dir, log)
     try:
-        run_gitnexus_command(gitnexus_cli, ["analyze", str(repo_dir)], repo_dir, log)
+        run_gitnexus_command(gitnexus_cli, ["analyze", str(repo_dir)], repo_dir, log, timeout_seconds=timeout_seconds)
         return
     except RuntimeError as exception:
         if "Not a git repository" not in str(exception):
             raise
         log("GitNexus analyze 使用绝对路径失败，改为在仓库根目录使用相对路径重试。")
-    run_gitnexus_command(gitnexus_cli, ["analyze", "."], repo_dir, log)
+    run_gitnexus_command(gitnexus_cli, ["analyze", "."], repo_dir, log, timeout_seconds=timeout_seconds)
 
 
 def resolve_gitnexus_repo_alias(
     gitnexus_cli: Path,
     repo_dir: Path,
     log: Callable[[str], None],
+    timeout_seconds: int = 300,
 ) -> str:
     """从 `gitnexus list` 输出里解析当前仓库的 repo alias。"""
-    output = run_gitnexus_command(gitnexus_cli, ["list"], repo_dir, log, fail_message="GitNexus list 失败")
+    output = run_gitnexus_command(
+        gitnexus_cli, ["list"], repo_dir, log,
+        fail_message="GitNexus list 失败", timeout_seconds=timeout_seconds,
+    )
     target_path = str(repo_dir.resolve()).lower()
     current_name = ""
     for raw_line in output.splitlines():

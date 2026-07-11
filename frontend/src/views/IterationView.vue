@@ -1320,7 +1320,7 @@
     v-model="smartActionDialogVisible"
     :work-item="currentSmartActionWorkItem"
     :can-manage="canManageWorkItem"
-    :can-execute="canManageWorkItem"
+    :can-execute="canExecuteWorkItem"
     @changed="handleRequirementAiChanged"
     @created="handleExecutionTaskCreated"
   />
@@ -1487,6 +1487,7 @@ const projectId = Number(route.params.projectId)
 
 const canManageIteration = computed(() => authStore.hasPermission('project:manage'))
 const canManageWorkItem = computed(() => authStore.hasPermission('task:manage'))
+const canExecuteWorkItem = computed(() => authStore.hasPermission('task:execution:create'))
 const canManageGiteeBinding = computed(() => authStore.hasPermission('gitee:binding:manage'))
 const canSyncGiteeWorkItems = computed(() => authStore.hasPermission('gitee:work-item:sync'))
 const canUseHermes = computed(() => authStore.hasPermission('hermes:chat'))

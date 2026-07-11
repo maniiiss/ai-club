@@ -13,7 +13,11 @@ import type {
   GitlabAutoMergeWebhookItem,
   GitlabAutoMergeWebhookPayload,
   GitlabBranchItem,
+  GitlabCodeStructureQueryPayload,
+  GitlabCodeStructureQueryResultItem,
+  GitlabCodeStructureRefreshAcceptedResultItem,
   GitlabCodeStructureSnapshotItem,
+  GitlabGitnexusLaunchResultItem,
   GitlabCreateMergeRequestPayload,
   GitlabCreateMergeRequestResultItem,
   GitlabMergeRequestItem,
@@ -25,6 +29,11 @@ import type {
   GitlabTagCreateResultItem,
   GitlabTagPayload,
   GitlabUserOauthBindingItem,
+  OwnerRepoBindingItem,
+  OwnerRepoPushContextItem,
+  OwnerRepoPushLogItem,
+  OwnerRepoPushPayload,
+  OwnerRepoPushResultItem,
   ProjectGitlabBindingItem,
   RepositoryScanRulesetItem,
 } from '@/src/types/development'
@@ -160,7 +169,43 @@ export const getGitlabCodeStructure = async (
 ): Promise<GitlabCodeStructureSnapshotItem> => {
   const res = await http.get<ApiResponse<GitlabCodeStructureSnapshotItem>>(
     `/api/gitlab/bindings/${bindingId}/code-structure`,
-    { params: cleanParams({ branch }) },
+    { params: cleanParams({ branch, _ts: Date.now() }) },
+  )
+  return unwrap(res)
+}
+
+/** 后台刷新代码结构快照。 */
+export const refreshGitlabCodeStructure = async (
+  bindingId: number,
+  payload: { branch?: string } = {},
+): Promise<GitlabCodeStructureRefreshAcceptedResultItem> => {
+  const res = await http.post<ApiResponse<GitlabCodeStructureRefreshAcceptedResultItem>>(
+    `/api/gitlab/bindings/${bindingId}/code-structure/refresh`,
+    payload,
+  )
+  return unwrap(res)
+}
+
+/** 基于已缓存 GitNexus 索引执行局部查询。 */
+export const queryGitlabCodeStructure = async (
+  bindingId: number,
+  payload: GitlabCodeStructureQueryPayload,
+): Promise<GitlabCodeStructureQueryResultItem> => {
+  const res = await http.post<ApiResponse<GitlabCodeStructureQueryResultItem>>(
+    `/api/gitlab/bindings/${bindingId}/code-structure/query`,
+    payload,
+  )
+  return unwrap(res)
+}
+
+/** 准备并打开 GitNexus 全仓图。 */
+export const launchGitlabBindingGitnexus = async (
+  bindingId: number,
+  payload: { branch?: string } = {},
+): Promise<GitlabGitnexusLaunchResultItem> => {
+  const res = await http.post<ApiResponse<GitlabGitnexusLaunchResultItem>>(
+    `/api/gitlab/bindings/${bindingId}/gitnexus-launch`,
+    payload,
   )
   return unwrap(res)
 }
@@ -357,5 +402,33 @@ export const createGitlabMergeRequest = async (
     `/api/gitlab/bindings/${bindingId}/merge-requests`,
     payload,
   )
+  return unwrap(res)
+}
+
+/* ── 仓库镜像推送（公众端只做推送与查看历史，配置在管理端完成） ── */
+
+/** 查询指定项目下的全部仓库镜像绑定。 */
+export const listOwnerRepoBindings = async (projectId: number): Promise<OwnerRepoBindingItem[]> => {
+  const res = await http.get<ApiResponse<OwnerRepoBindingItem[]>>(`/api/gitlab/owner-repos/bindings/by-project/${projectId}`)
+  return unwrap(res)
+}
+
+/** 获取仓库镜像推送前置上下文。 */
+export const getOwnerRepoPushContext = async (bindingId: number): Promise<OwnerRepoPushContextItem> => {
+  const res = await http.get<ApiResponse<OwnerRepoPushContextItem>>(`/api/gitlab/owner-repos/bindings/${bindingId}/push-context`)
+  return unwrap(res)
+}
+
+/** 触发推送到仓库镜像（长任务，单独设置 10 分钟超时）。 */
+export const pushToOwnerRepo = async (bindingId: number, payload: OwnerRepoPushPayload): Promise<OwnerRepoPushResultItem> => {
+  const res = await http.post<ApiResponse<OwnerRepoPushResultItem>>(`/api/gitlab/owner-repos/bindings/${bindingId}/push`, payload, { timeout: 600000 })
+  return unwrap(res)
+}
+
+/** 分页查询仓库镜像推送历史日志。 */
+export const listOwnerRepoPushLogs = async (bindingId: number, page: number, size: number): Promise<PageResponse<OwnerRepoPushLogItem>> => {
+  const res = await http.get<ApiResponse<PageResponse<OwnerRepoPushLogItem>>>(`/api/gitlab/owner-repos/bindings/${bindingId}/push-logs`, {
+    params: cleanParams({ page, size }),
+  })
   return unwrap(res)
 }

@@ -18,6 +18,7 @@ import {
   AlertCircle,
   FileText,
   Save,
+  MessageSquare,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -29,6 +30,7 @@ import {
   confirmExecutionPlan,
   updateExecutionPlanMarkdown,
   downloadExecutionArtifact,
+  writebackTechnicalDesignArtifact,
 } from '@/src/api/execution'
 import type {
   ExecutionTaskDetailItem,
@@ -42,6 +44,11 @@ import { Select } from '@/src/components/common/Select'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { cn } from '@/src/lib/utils'
+import {
+  detectGitNexusDegradation,
+  isTechnicalDesignMarkdownArtifact,
+  shouldShowTechnicalDesignWriteback,
+} from '@/src/lib/technicalDesignAiUtils'
 
 const statusColorMap: Record<string, string> = {
   PENDING: 'bg-amber-50 text-amber-700',
@@ -78,10 +85,13 @@ const MARKDOWN_ARTIFACT_TYPES = [
   'AUTOMATION_SCRIPT_PREVIEW_MARKDOWN',
   'AUTOMATION_TEST_RESULT_MARKDOWN',
   'AUTOMATION_REPORT_MARKDOWN',
+  'CODE_CONTEXT_MARKDOWN',
+  'TECHNICAL_DESIGN_MARKDOWN',
+  'DESIGN_REVIEW_MARKDOWN',
 ]
 
 const isMarkdownArtifact = (artifact: ExecutionArtifactDetailItem) =>
-  MARKDOWN_ARTIFACT_TYPES.includes(artifact.artifactType)
+  MARKDOWN_ARTIFACT_TYPES.includes(artifact.artifactType) || isTechnicalDesignMarkdownArtifact(artifact.artifactType)
 
 const isLogArtifact = (artifact: ExecutionArtifactDetailItem) =>
   ['STEP_RAW_LOG', 'STEP_STDOUT_LOG', 'STEP_STDERR_LOG'].includes(artifact.artifactType) ||
@@ -107,6 +117,8 @@ export const ExecutionTaskDetailPage = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
+  const [writebackArtifactId, setWritebackArtifactId] = useState<number | null>(null)
+  const [writebackMessage, setWritebackMessage] = useState('')
 
   /* 规划确认 */
   const [planMarkdownDraft, setPlanMarkdownDraft] = useState('')
@@ -283,6 +295,24 @@ export const ExecutionTaskDetailPage = () => {
     }
   }
 
+  /** 技术设计只在人工确认后写回，写回成功后刷新产物标记。 */
+  const handleTechnicalDesignWriteback = async (
+    artifact: ExecutionArtifactDetailItem,
+    mode: 'DESCRIPTION' | 'COMMENT',
+  ) => {
+    setWritebackArtifactId(artifact.id)
+    setWritebackMessage('')
+    try {
+      await writebackTechnicalDesignArtifact(tid, { artifactId: artifact.id, mode })
+      setWritebackMessage(mode === 'DESCRIPTION' ? '技术设计已写入工作项描述' : '技术设计已追加到工作项评论')
+      await loadRunDetail()
+    } catch (reason) {
+      setWritebackMessage(reason instanceof Error ? reason.message : '技术设计写回失败')
+    } finally {
+      setWritebackArtifactId(null)
+    }
+  }
+
   if (loading) return <LoadingSpinner fullscreen text="加载执行任务详情…" />
   if (error) return <ErrorState description={error} onRetry={loadAll} />
   if (!taskDetail) return <ErrorState description="执行任务不存在" />
@@ -292,12 +322,21 @@ export const ExecutionTaskDetailPage = () => {
   const canEditPlan = showPlanConfirmation && taskDetail.canCurrentUserConfirmPlan
   const canCancel = ['PENDING', 'RUNNING', 'WAITING_CONFIRMATION'].includes(taskDetail.status)
   const canRetry = ['SUCCESS', 'FAILED', 'CANCELED'].includes(taskDetail.status)
+  const latestSuccessfulRunId = taskDetail.runs
+    .filter((run) => run.status === 'SUCCESS')
+    .sort((left, right) => right.runNo - left.runNo)[0]?.id ?? null
 
   /* 过滤展示产物 */
   const displayArtifacts = (runDetail?.artifacts || []).filter((a) => {
     if (a.artifactType === 'IMPLEMENT_DIFF_JSON') return false
     return true
   })
+  const gitNexusDegradation = taskDetail.scenarioCode === 'TECHNICAL_DESIGN_AUTHORING'
+    ? (runDetail?.artifacts || [])
+      .filter((artifact) => artifact.artifactType === 'CODE_CONTEXT_MARKDOWN')
+      .map((artifact) => detectGitNexusDegradation(artifact.contentText))
+      .find(Boolean) || null
+    : null
 
   return (
     <div className="h-full overflow-hidden flex flex-col animate-fadeIn">
@@ -352,7 +391,32 @@ export const ExecutionTaskDetailPage = () => {
             {taskDetail.latestSummary}
           </p>
         )}
+        {gitNexusDegradation && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span><strong>GitNexus 已降级：</strong>{gitNexusDegradation}</span>
+          </div>
+        )}
+        {writebackMessage && <p className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[12px] text-sky-700">{writebackMessage}</p>}
         </div>
+
+        {taskDetail.orchestrationVersionId && taskDetail.resolvedBindings.length > 0 && (
+          <section className="mb-4 rounded-xl border border-sky-200 bg-sky-50/70 p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-[14px] font-semibold text-sky-900">执行器快照</h3>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-sky-700">编排版本 #{taskDetail.orchestrationVersionId}</span>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {taskDetail.resolvedBindings.map((binding) => (
+                <div key={`${binding.stepNo}-${binding.stepCode}-${binding.repositoryBindingId ?? 0}`} className="rounded-lg border border-sky-100 bg-white px-3 py-2 text-[12px]">
+                  <div className="font-semibold text-slate-800">{binding.stepNo}. {binding.stepName}</div>
+                  <div className="mt-1 text-slate-500">{binding.agentName || `Agent #${binding.agentId ?? '-'}`} · {binding.runtimeType || binding.accessType || '-'} · {binding.timeoutSeconds ?? '-'} 秒</div>
+                  {binding.repositoryDisplayName && <div className="mt-1 truncate text-slate-500">{binding.repositoryDisplayName} @ {binding.repositoryTargetBranch || '-'}</div>}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* 运行进度 */}
         {taskDetail.runs.length > 0 && (
@@ -482,7 +546,11 @@ export const ExecutionTaskDetailPage = () => {
                     <ArtifactCard
                       key={artifact.id}
                       artifact={artifact}
+                      scenarioCode={taskDetail.scenarioCode}
+                      canWriteback={selectedRunId === latestSuccessfulRunId && runDetail.status === 'SUCCESS'}
                       onDownload={() => handleDownloadArtifact(artifact)}
+                      onWriteback={(mode) => handleTechnicalDesignWriteback(artifact, mode)}
+                      writebackLoading={writebackArtifactId === artifact.id}
                     />
                   ))}
                 </div>
@@ -615,15 +683,28 @@ const StepTimelineItem = ({ step }: { step: ExecutionStepItem }) => {
 
 const ArtifactCard = ({
   artifact,
+  scenarioCode,
+  canWriteback,
   onDownload,
+  onWriteback,
+  writebackLoading,
 }: {
   artifact: ExecutionArtifactDetailItem
+  scenarioCode: string
+  canWriteback: boolean
   onDownload: () => void
+  onWriteback: (mode: 'DESCRIPTION' | 'COMMENT') => void
+  writebackLoading: boolean
 }) => {
   const [expanded, setExpanded] = useState(false)
   const isMarkdown = isMarkdownArtifact(artifact)
   const isLog = isLogArtifact(artifact)
   const isImage = isImageArtifact(artifact)
+  const showWriteback = shouldShowTechnicalDesignWriteback({
+    scenarioCode,
+    artifactType: artifact.artifactType,
+    contentText: artifact.contentText,
+  }) && canWriteback && !artifact.workItemWriteback
 
   return (
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] overflow-hidden">
@@ -683,6 +764,15 @@ const ArtifactCard = ({
           {artifact.workItemWriteback && (
             <div className="border-t border-[var(--color-border-light)] px-4 py-2">
               <span className="text-[11px] text-[var(--color-text-tertiary)]">已回写工作项</span>
+            </div>
+          )}
+          {showWriteback && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border-light)] bg-sky-50/50 px-4 py-3">
+              <span className="text-[11px] text-sky-800">人工确认后写回，不会自动覆盖工作项内容。</span>
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" loading={writebackLoading} icon={<Save className="h-3.5 w-3.5" />} onClick={(event) => { event.stopPropagation(); onWriteback('DESCRIPTION') }}>写入描述</Button>
+                <Button size="sm" variant="secondary" loading={writebackLoading} icon={<MessageSquare className="h-3.5 w-3.5" />} onClick={(event) => { event.stopPropagation(); onWriteback('COMMENT') }}>追加评论</Button>
+              </div>
             </div>
           )}
         </div>

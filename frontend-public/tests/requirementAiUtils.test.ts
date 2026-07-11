@@ -4,6 +4,7 @@ import { describe, it } from 'node:test'
 import {
   buildCurrentRequirementAiMarkdown,
   getRequirementAiActions,
+  isDevelopmentExecutionEntryVisible,
   isRequirementAiEntryVisible,
   mergeTaskSuggestions,
   normalizeTaskSuggestion,
@@ -52,6 +53,15 @@ describe('Requirement AI public utilities', () => {
     assert.deepEqual(getRequirementAiActions({ workItemType: '任务', taskType: '测试任务' }), ['TEST_CASES'])
     assert.equal(isRequirementAiEntryVisible({ workItemType: '任务', taskType: '开发任务' }), false)
     assert.deepEqual(getRequirementAiActions({ workItemType: '任务', taskType: '开发任务' }), [])
+  })
+
+  it('exposes development execution only for development tasks and defects', () => {
+    assert.equal(isDevelopmentExecutionEntryVisible({ workItemType: '任务', taskType: '开发任务' }), true)
+    assert.equal(isDevelopmentExecutionEntryVisible({ workItemType: '任务', taskType: '开发' }), true)
+    assert.equal(isDevelopmentExecutionEntryVisible({ workItemType: '缺陷' }), true)
+    assert.equal(isDevelopmentExecutionEntryVisible({ workItemType: '需求' }), false)
+    assert.equal(isDevelopmentExecutionEntryVisible({ workItemType: '任务', taskType: '测试任务' }), false)
+    assert.equal(isDevelopmentExecutionEntryVisible({ workItemType: '任务', taskType: 'UI设计' }), false)
   })
 
   it('merges selected breakdown suggestions into one editable task', () => {

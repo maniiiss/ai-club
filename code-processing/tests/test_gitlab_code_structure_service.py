@@ -234,7 +234,7 @@ class GitlabCodeStructureServiceTests(unittest.TestCase):
 
             run_calls: list[list[str]] = []
 
-            def run_gitnexus_side_effect(_, args, __, ___, fail_message=None):
+            def run_gitnexus_side_effect(_, args, __, ___, fail_message=None, **_kwargs):
                 run_calls.append(args)
                 if args == ["analyze", str(repo_dir)]:
                     raise RuntimeError("GitNexus 执行失败：GitNexus Analyzer Not a git repository")

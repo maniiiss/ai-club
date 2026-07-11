@@ -28,6 +28,8 @@ public record ExecutionTaskDetail(
         boolean planConfirmationPending,
         boolean canCurrentUserConfirmPlan,
         List<ExecutionRunSummary> runs,
-        ExecutionWorkspaceCleanupSummary workspaceCleanup
+        ExecutionWorkspaceCleanupSummary workspaceCleanup,
+        Long orchestrationVersionId,
+        List<ExecutionResolvedBindingSummary> resolvedBindings
 ) {
 }

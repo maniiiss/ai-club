@@ -8,4 +8,6 @@ import java.util.List;
 public interface TaskCommentRepository extends JpaRepository<TaskCommentEntity, Long> {
 
     List<TaskCommentEntity> findAllByTask_IdOrderByCreatedAtAscIdAsc(Long taskId);
+
+    boolean existsByTask_IdAndContentContaining(Long taskId, String contentFragment);
 }

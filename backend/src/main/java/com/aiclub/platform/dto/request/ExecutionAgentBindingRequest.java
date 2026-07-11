@@ -12,6 +12,8 @@ public record ExecutionAgentBindingRequest(
         @Size(max = 50, message = "步骤编码长度不能超过 50")
         String stepCode,
         @NotNull(message = "步骤 Agent 不能为空")
-        Long agentId
+        Long agentId,
+        Integer timeoutSeconds
 ) {
+    public ExecutionAgentBindingRequest(String stepCode, Long agentId) { this(stepCode, agentId, null); }
 }

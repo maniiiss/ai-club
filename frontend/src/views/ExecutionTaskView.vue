@@ -43,6 +43,7 @@
                 <label>执行场景</label>
                   <el-select v-model="filters.scenarioCode" clearable placeholder="全部场景" style="width: 100%" :teleported="false">
                     <el-option label="开发执行" value="DEVELOPMENT_IMPLEMENTATION" />
+                    <el-option label="技术设计 AI" value="TECHNICAL_DESIGN_AUTHORING" />
                     <el-option label="自动化测试" value="TEST_AUTOMATION" />
                     <el-option label="仓库规范扫描" value="CODEBASE_COMPLIANCE_SCAN" />
                   </el-select>
@@ -460,6 +461,7 @@ const scenarioTone = (scenarioCode: string) => {
   const toneMap: Record<string, string> = {
     REQUIREMENT_BREAKDOWN: 'requirement',
     DEVELOPMENT_IMPLEMENTATION: 'development',
+    TECHNICAL_DESIGN_AUTHORING: 'technical-design',
     TEST_DESIGN_OR_REVIEW: 'test',
     TEST_AUTOMATION: 'automation'
   }
@@ -854,6 +856,11 @@ onBeforeUnmount(() => {
 .execution-scenario-pill.development {
   background: rgba(20, 184, 166, 0.14);
   color: #0f766e;
+}
+
+.execution-scenario-pill.technical-design {
+  background: rgba(6, 148, 162, 0.14);
+  color: #0e7490;
 }
 
 .execution-scenario-pill.test {

@@ -7,6 +7,7 @@ import com.aiclub.platform.domain.model.ExecutionStepEntity;
 import com.aiclub.platform.domain.model.ExecutionTaskEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.ProjectGitlabBindingEntity;
+import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.ExecutionTaskDetail;
 import com.aiclub.platform.dto.ExecutionWorkspaceCleanupSummary;
@@ -99,6 +100,15 @@ class ExecutionTaskServiceTests {
     @Mock
     private ExecutionTaskQueuePublisher executionTaskQueuePublisher;
 
+    @Mock
+    private TechnicalDesignCreditSettlementService technicalDesignCreditSettlementService;
+
+    @Mock
+    private ExecutionOrchestrationService executionOrchestrationService;
+
+    @Mock
+    private com.aiclub.platform.repository.ExecutionOrchestrationVersionRepository executionOrchestrationVersionRepository;
+
     private ExecutionTaskService executionTaskService;
 
     @BeforeEach
@@ -119,6 +129,9 @@ class ExecutionTaskServiceTests {
                 selfUpgradeExecutionWritebackService,
                 executionWorkspaceCleanupService,
                 executionTaskQueuePublisher,
+                technicalDesignCreditSettlementService,
+                executionOrchestrationService,
+                executionOrchestrationVersionRepository,
                 new ObjectMapper()
         );
         AuthContextHolder.set(new AuthContext(1001L, "alice", "Alice", Set.of(), Set.of()));
@@ -132,6 +145,17 @@ class ExecutionTaskServiceTests {
         lenient().when(userRepository.findById(1001L)).thenReturn(Optional.of(currentUser));
         lenient().when(executionWorkflowService.scenarioName(ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION))
                 .thenReturn("开发执行");
+    }
+
+    @Test
+    void shouldRejectCallerAgentBindingsForManagedScenario() {
+        when(executionOrchestrationService.isManagedScenario(ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION))
+                .thenReturn(true);
+        assertThatThrownBy(() -> executionTaskService.createExecutionTask(new CreateExecutionTaskRequest(
+                ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION, 11L, null, null, "PAGE", false,
+                List.of(new com.aiclub.platform.dto.request.ExecutionAgentBindingRequest("IMPLEMENT", 9L)),
+                Map.of("repositories", List.of(Map.of("bindingId", 1L, "targetBranch", "main")))
+        ))).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("不允许指定 Agent");
     }
 
     @AfterEach
@@ -286,6 +310,14 @@ class ExecutionTaskServiceTests {
     void shouldPersistPlanConfirmationRequiredForPageDevelopmentTask() {
         ProjectGitlabBindingEntity binding = buildBinding(1L, "group/frontend", "main", true);
         when(projectGitlabBindingRepository.findById(1L)).thenReturn(Optional.of(binding));
+        when(executionOrchestrationService.isManagedScenario(ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION)).thenReturn(true);
+        when(executionOrchestrationService.resolve(11L, ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION))
+                .thenReturn(new ExecutionOrchestrationService.ResolvedOrchestration(88L, List.of()));
+        com.aiclub.platform.domain.model.ExecutionOrchestrationVersionEntity orchestrationVersion =
+                new com.aiclub.platform.domain.model.ExecutionOrchestrationVersionEntity();
+        orchestrationVersion.setId(88L);
+        when(executionOrchestrationVersionRepository.getReferenceById(88L)).thenReturn(orchestrationVersion);
+        when(executionWorkflowService.serializeBindings(any())).thenReturn("[{\"stepNo\":3,\"stepCode\":\"IMPLEMENT\",\"stepName\":\"开发实现 · group/frontend\",\"agentId\":12,\"agentName\":\"创建时开发智能体\",\"accessType\":\"AGENT_RUNTIME\",\"runtimeType\":\"CODEX_CLI\",\"repositoryBindingId\":1,\"repositoryTargetBranch\":\"main\",\"repositoryDisplayName\":\"group/frontend\",\"timeoutSeconds\":900}]");
         when(executionWorkflowService.buildWorkflow(
                 eq(ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION),
                 eq(11L),
@@ -321,10 +353,129 @@ class ExecutionTaskServiceTests {
 
         assertThat(summary.planConfirmationRequired()).isTrue();
         assertThat(summary.planConfirmationPending()).isFalse();
+        assertThat(summary.orchestrationVersionId()).isEqualTo(88L);
+        assertThat(summary.resolvedBindings()).singleElement().satisfies(item -> {
+            assertThat(item.stepCode()).isEqualTo("IMPLEMENT");
+            assertThat(item.timeoutSeconds()).isEqualTo(900);
+            assertThat(item.repositoryTargetBranch()).isEqualTo("main");
+            assertThat(item.agentName()).isEqualTo("创建时开发智能体");
+            assertThat(item.accessType()).isEqualTo("AGENT_RUNTIME");
+            assertThat(item.runtimeType()).isEqualTo("CODEX_CLI");
+        });
         verify(executionTaskRepository).save(argThat(task ->
                 String.valueOf(task.getInputPayload()).contains("\"planConfirmationRequired\":true")
         ));
         verify(executionTaskQueuePublisher).publishAfterCommit(501L);
+    }
+
+    /**
+     * 技术设计执行只能从“任务 / 技术设计”工作项发起，避免需求或开发任务误入设计场景。
+     */
+    @Test
+    void shouldRejectTechnicalDesignExecutionForNonTechnicalDesignWorkItem() {
+        TaskEntity workItem = buildWorkItem(77L, "任务", "开发任务");
+        when(taskRepository.findById(77L)).thenReturn(Optional.of(workItem));
+
+        assertThatThrownBy(() -> executionTaskService.createTechnicalDesignExecution(77L, new CreateExecutionTaskRequest(
+                ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING,
+                11L,
+                77L,
+                null,
+                "PAGE",
+                false,
+                List.of(),
+                Map.of("repositories", List.of(Map.of("bindingId", 1L, "targetBranch", "main")))
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("技术设计生成仅支持任务类型为“技术设计”的工作项");
+    }
+
+    /**
+     * 技术设计任务必须选择明确仓库分支，且三个步骤只能绑定 Codex/Claude CLI Runtime。
+     */
+    @Test
+    void shouldCreateTechnicalDesignExecutionWithNormalizedRepositories() {
+        TaskEntity workItem = buildWorkItem(77L, "任务", "技术设计");
+        ProjectGitlabBindingEntity binding = buildBinding(1L, "group/backend", "main", true);
+        AgentEntity codex = buildAgent(21L, AgentExecutionService.ACCESS_AGENT_RUNTIME);
+        codex.setRuntimeType(AgentExecutionService.RUNTIME_CODEX_CLI);
+        when(taskRepository.findById(77L)).thenReturn(Optional.of(workItem));
+        when(projectGitlabBindingRepository.findById(1L)).thenReturn(Optional.of(binding));
+        when(executionWorkflowService.buildWorkflow(
+                eq(ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING),
+                eq(11L),
+                anyList(),
+                anyList()
+        )).thenReturn(new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING,
+                "技术设计生成",
+                List.of(
+                        new ExecutionWorkflowService.ExecutionStepPlan(1, ExecutionWorkflowService.STEP_CODE_CONTEXT, "代码理解", codex, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(2, ExecutionWorkflowService.STEP_DESIGN_DRAFT, "方案生成", codex, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(3, ExecutionWorkflowService.STEP_DESIGN_REVIEW, "设计自检", codex, null, null, null)
+                )
+        ));
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> {
+            ExecutionTaskEntity entity = invocation.getArgument(0);
+            entity.setId(601L);
+            return entity;
+        });
+
+        ExecutionTaskSummary summary = executionTaskService.createTechnicalDesignExecution(77L, new CreateExecutionTaskRequest(
+                ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING,
+                11L,
+                77L,
+                null,
+                "PAGE",
+                false,
+                List.of(),
+                Map.of(
+                        "repositories", List.of(Map.of("bindingId", 1L, "targetBranch", " main ")),
+                        "preferGitNexus", true,
+                        "source", "TECHNICAL_DESIGN_AI"
+                )
+        ));
+
+        assertThat(summary.scenarioCode()).isEqualTo(ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING);
+        verify(executionTaskRepository).save(argThat(task ->
+                task.getInputPayload().contains("\"targetBranch\":\"main\"")
+                        && task.getInputPayload().contains("\"preferGitNexus\":true")
+        ));
+        verify(executionTaskQueuePublisher).publishAfterCommit(601L);
+    }
+
+    @Test
+    void shouldRejectTechnicalDesignScenarioFromGenericExecutionEntry() {
+        assertThatThrownBy(() -> executionTaskService.createExecutionTask(new CreateExecutionTaskRequest(
+                ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING,
+                11L,
+                77L,
+                null,
+                "PAGE",
+                false,
+                List.of(),
+                Map.of()
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("技术设计生成必须使用专用创建接口");
+    }
+
+    @Test
+    void shouldRejectPublicOnlyUserFromManagementTechnicalDesignEntry() {
+        AuthContextHolder.set(new AuthContext(1001L, "alice", "Alice", Set.of("PUBLIC_DEFAULT"), Set.of("task:execution:create")));
+
+        assertThatThrownBy(() -> executionTaskService.createTechnicalDesignExecution(77L, new CreateExecutionTaskRequest(
+                ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING,
+                11L,
+                77L,
+                null,
+                "PAGE",
+                false,
+                List.of(),
+                Map.of()
+        )))
+                .isInstanceOf(com.aiclub.platform.exception.ForbiddenException.class)
+                .hasMessage("公众端用户必须通过积分结算入口创建技术设计任务");
     }
 
     /**
@@ -611,6 +762,16 @@ class ExecutionTaskServiceTests {
         agent.setAccessType(accessType);
         agent.setCapability("执行");
         return agent;
+    }
+
+    private TaskEntity buildWorkItem(Long id, String workItemType, String taskType) {
+        TaskEntity workItem = new TaskEntity();
+        workItem.setId(id);
+        workItem.setName("技术设计工作项");
+        workItem.setWorkItemType(workItemType);
+        workItem.setTaskType(taskType);
+        workItem.setProject(buildProject());
+        return workItem;
     }
 
     private ExecutionTaskEntity buildWaitingConfirmationTask(Long requesterUserId) {

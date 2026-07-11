@@ -6,7 +6,7 @@
 /** 测试用例步骤。 */
 export interface TestCaseStepItem {
   id: number | null
-  stepNo: number
+  stepNo: number | null
   action: string
   expectedResult: string
 }
@@ -81,6 +81,20 @@ export interface ExecutionRunItem {
 }
 
 /** 执行任务（列表项）。 */
+export interface ExecutionResolvedBindingItem {
+  stepNo: number
+  stepCode: string
+  stepName: string
+  agentId: number | null
+  agentName: string | null
+  accessType: string | null
+  runtimeType: string | null
+  timeoutSeconds: number | null
+  repositoryBindingId: number | null
+  repositoryTargetBranch: string | null
+  repositoryDisplayName: string | null
+}
+
 export interface ExecutionTaskItem {
   id: number
   title: string
@@ -100,6 +114,8 @@ export interface ExecutionTaskItem {
   currentStepNo: number | null
   currentStepName: string | null
   latestSummary: string
+  orchestrationVersionId: number | null
+  resolvedBindings: ExecutionResolvedBindingItem[]
   planConfirmationRequired: boolean
   planConfirmationPending: boolean
   createdByName: string | null
@@ -200,6 +216,8 @@ export interface ExecutionTaskDetailItem {
   createdAt: string
   updatedAt: string
   currentRunId: number | null
+  orchestrationVersionId: number | null
+  resolvedBindings: ExecutionResolvedBindingItem[]
   inputPayload: string
   planConfirmationRequired: boolean
   planConfirmationPending: boolean

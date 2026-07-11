@@ -19,10 +19,12 @@
 
 - [公众 SaaS 前端设计](public-saas-frontend-technical-design-v1.md) - 公众端产品信息架构与前端边界
 - [公众端积分扣费设计](public-credit-technical-design-v1.md) - 公众端积分账户、流水和 AI 消费扣减
+- [公众端技术设计 AI Runtime 设计](public-technical-design-ai-runtime-technical-design-v1.md) - 基于 GitNexus 与成熟 Agent Runtime 的技术设计生成链路
 - [原生 API 工作台设计](api-studio-native-technical-design-v1.md) - 平台原生 API 资产与调试工作台
 - [API 管理设计](api-management-technical-design-v1.md) - API 工作台设计
 - [GitLab 集成设计](../exec-plans/completed/gitlab-module.md) - 代码仓库集成
 - [GitLab 代码结构](gitlab-code-structure-technical-design-v1.md) - 代码结构分析
+- [GitLab 业主仓库推送](gitlab-owner-repo-push-technical-design-v1.md) - 代码推送到业主 GitLab 仓库
 - [服务器管理设计](server-management-technical-design-v1.md) - 服务器管理模块
 - [DataWorkbench 设计](data-workbench-technical-design-v1.md) - 项目内数据变更工作台
 - [聊天室设计](chat-room-technical-design-v1.md) - 项目聊天室与房间级 Agent

@@ -51,4 +51,25 @@ class ExecutionWritebackServiceTests {
 
         verifyNoInteractions(taskCommentRepository, taskRepository, executionArtifactRepository);
     }
+
+    /**
+     * 技术设计必须等待用户确认后走专用写回接口，终态收口不能自动追加摘要评论。
+     */
+    @Test
+    void shouldSkipAutomaticWritebackForTechnicalDesignScenario() {
+        ExecutionWritebackService executionWritebackService = new ExecutionWritebackService(
+                taskCommentRepository,
+                taskRepository,
+                executionArtifactRepository
+        );
+        TaskEntity workItem = new TaskEntity();
+        workItem.setId(101L);
+        ExecutionTaskEntity executionTask = new ExecutionTaskEntity();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING);
+        executionTask.setWorkItem(workItem);
+
+        executionWritebackService.writeBackToWorkItem(executionTask, new ExecutionRunEntity(), List.of());
+
+        verifyNoInteractions(taskCommentRepository, taskRepository, executionArtifactRepository);
+    }
 }

@@ -458,7 +458,7 @@ public class AgentExecutionService {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(endpointUrl))
-                    .timeout(Duration.ofSeconds(resolveTimeoutSeconds(agent)));
+                    .timeout(Duration.ofSeconds(resolveTimeoutSeconds(agent, variables)));
 
             applyHttpHeaders(builder, agent, httpMethod);
 
@@ -496,11 +496,11 @@ public class AgentExecutionService {
      */
     private String executeCliRuntime(AgentEntity agent, String input, Map<String, String> variables) {
         String endpointUrl = requireRuntimeGateway(agent);
-        String requestBody = buildCliRuntimeRequestBody(agent, input, variables, resolveTimeoutSeconds(agent));
+        String requestBody = buildCliRuntimeRequestBody(agent, input, variables, resolveTimeoutSeconds(agent, variables));
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(trimTrailingSlash(endpointUrl) + CODE_PROCESSING_CLI_PATH))
-                    .timeout(Duration.ofSeconds(resolveTimeoutSeconds(agent)));
+                    .timeout(Duration.ofSeconds(resolveTimeoutSeconds(agent, variables)));
             applyCliRuntimeHeaders(builder, agent);
             HttpResponse<String> response = httpClient.send(
                     builder.POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8)).build(),
@@ -780,6 +780,7 @@ public class AgentExecutionService {
             case "TEST" -> "TEST";
             case "AD_HOC_RUN" -> "AD_HOC";
             case "PATROL" -> "PATROL";
+            case "CODE_CONTEXT", "DESIGN_DRAFT", "DESIGN_REVIEW" -> "TECHNICAL_DESIGN";
             default -> null;
         };
     }
@@ -961,6 +962,16 @@ public class AgentExecutionService {
             return 60;
         }
         return Math.max(5, Math.min(timeoutSeconds, 300));
+    }
+
+    /** 编排发布的步骤超时优先于 Agent 默认值，并在任务快照恢复后继续生效。 */
+    private int resolveTimeoutSeconds(AgentEntity agent, Map<String, String> variables) {
+        String configured = variables == null ? null : variables.get("orchestration_timeout_seconds");
+        if (configured != null) {
+            try { return Math.max(10, Math.min(Integer.parseInt(configured), 7200)); }
+            catch (NumberFormatException ignored) { /* 非法快照回退 Agent 默认值。 */ }
+        }
+        return resolveTimeoutSeconds(agent);
     }
 
     private String normalizeAccessType(String value) {
