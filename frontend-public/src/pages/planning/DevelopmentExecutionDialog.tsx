@@ -270,16 +270,11 @@ export const DevelopmentExecutionDialog = ({
                 </div>
               </section>
 
-              <section className={cn(
-                'rounded-lg border px-4 py-3 text-[12px]',
-                orchestrationReady
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                  : 'border-amber-200 bg-amber-50 text-amber-800',
-              )}>
-                {orchestrationReady
-                  ? '开发执行编排已就绪，实际执行器由管理员发布的项目或平台编排统一确定。'
-                  : '当前项目的开发执行编排未就绪，请联系管理员配置并发布编排。'}
-              </section>
+              {!orchestrationReady && (
+                <section className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">
+                  当前项目的开发执行编排未就绪，请联系管理员配置并发布编排。
+                </section>
+              )}
 
               <section className="space-y-3">
                 <SectionHeader title="执行补充说明" description="可补充本次开发关注点、验收条件或限制。" />

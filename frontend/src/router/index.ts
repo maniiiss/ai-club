@@ -3,7 +3,7 @@ import { ElMessage } from 'element-plus'
 import AppLayout from '@/layout/AppLayout.vue'
 import DashboardView from '@/views/DashboardView.vue'
 import ProjectView from '@/views/ProjectView.vue'
-import AgentView from '@/views/AgentView.vue'
+import AgentManagementView from '@/views/AgentManagementView.vue'
 import ExecutionTaskView from '@/views/ExecutionTaskView.vue'
 import ExecutionTaskDetailView from '@/views/ExecutionTaskDetailView.vue'
 import SelfUpgradeCenterView from '@/views/SelfUpgradeCenterView.vue'
@@ -118,10 +118,11 @@ const router = createRouter({
         { path: 'wiki/spaces/:spaceId/pages/:pageId', name: 'wiki-space-page', component: WikiSpaceView, meta: { title: 'Wiki 页面', permission: 'wiki:view' } },
         { path: 'projects/:projectId/iterations', name: 'project-iterations', component: IterationView, meta: { title: '迭代管理', permission: 'project:view' } },
         { path: 'projects/:projectId/knowledge-graph', redirect: (to) => ({ name: 'project-iterations', params: { projectId: to.params.projectId } }), meta: { requiresAuth: true, permission: 'project:view' } },
-        { path: 'agents', name: 'agents', component: AgentView, meta: { title: '智能体管理', permission: 'agent:view' } },
+        { path: 'agents', name: 'agents', component: AgentManagementView, meta: { title: '智能体管理', permission: ['agent:view', 'execution:orchestration:manage', 'project:manage'] } },
         { path: 'tasks', name: 'tasks', component: ExecutionTaskView, meta: { title: '执行中心', permission: 'task:view' } },
         { path: 'tasks/:executionTaskId', name: 'execution-task-detail', component: ExecutionTaskDetailView, meta: { title: '执行详情', permission: 'task:view', activeMenu: '/tasks' } },
-        { path: 'execution-orchestrations', name: 'execution-orchestrations', component: () => import('@/views/ExecutionOrchestrationView.vue'), meta: { title: '编排管理', permission: ['execution:orchestration:manage', 'project:manage'] } },
+        // 编排管理已并入智能体管理页面（/agents）的「执行编排」标签，保留旧路径重定向以兼容存量书签。
+        { path: 'execution-orchestrations', name: 'execution-orchestrations', redirect: { path: '/agents', query: { tab: 'orchestration' } }, meta: { title: '编排管理', permission: ['execution:orchestration:manage', 'project:manage'] } },
         { path: 'self-upgrade', name: 'self-upgrade', component: SelfUpgradeCenterView, meta: { title: '自升级中心', permission: 'self-upgrade:view' } },
         { path: 'tests', name: 'tests', component: TestPlanView, meta: { title: '测试管理', permission: 'test:view' } },
         { path: 'tests/:planId', name: 'test-plan-detail', component: TestPlanDetailView, meta: { title: '测试计划详情', permission: 'test:view', activeMenu: '/tests' } },

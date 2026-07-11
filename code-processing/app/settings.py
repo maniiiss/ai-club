@@ -24,6 +24,8 @@ class Settings:
     codex_reasoning_effort: str
     claude_cli_path: str
     claude_model: str
+    opencode_cli_path: str
+    opencode_model: str
     # LightRAG 统一知识图谱底层配置。
     # embedding 沿用 PLATFORM_WIKI_KNOWLEDGE_EMBEDDING_*，不单独定义，保证向量维度一致。
     lightrag_enabled: bool
@@ -80,6 +82,9 @@ settings = Settings(
     codex_reasoning_effort=(os.getenv("PLATFORM_CODEX_REASONING_EFFORT", "low") or "").strip() or "low",
     claude_cli_path=(os.getenv("PLATFORM_CLAUDE_CLI_PATH", "") or "").strip(),
     claude_model=(os.getenv("PLATFORM_CLAUDE_MODEL", "") or "").strip(),
+    # opencode CLI Runner：二进制路径与 provider/model（如 anthropic/claude-opus-4-5）。
+    opencode_cli_path=(os.getenv("PLATFORM_OPENCODE_CLI_PATH", "") or "").strip(),
+    opencode_model=(os.getenv("PLATFORM_OPENCODE_MODEL", "") or "").strip(),
     lightrag_enabled=(os.getenv("PLATFORM_LIGHTRAG_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")),
     lightrag_neo4j_uri=(os.getenv("PLATFORM_LIGHTRAG_NEO4J_URI", "bolt://localhost:7687") or "").strip(),
     lightrag_neo4j_user=(os.getenv("PLATFORM_LIGHTRAG_NEO4J_USER", "neo4j") or "").strip(),

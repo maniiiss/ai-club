@@ -440,15 +440,18 @@ public class ExecutionWorkflowService {
         return switch (stepCode) {
             case STEP_PLAN -> findFirstByPredicate(candidates, agent ->
                     isCliRuntime(agent, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI)
+                            || isCliRuntime(agent, AgentExecutionService.RUNTIME_OPENCODE_CLI)
                             || "REQUIREMENT_AI_BREAKDOWN".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
                             || containsAny(agent, "planner", "规划", "需求"));
             case STEP_IMPLEMENT -> findFirstByPredicate(candidates, agent ->
                     isCliRuntime(agent, AgentExecutionService.RUNTIME_CODEX_CLI)
                             || isCliRuntime(agent, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI)
+                            || isCliRuntime(agent, AgentExecutionService.RUNTIME_OPENCODE_CLI)
                             || (isExecutableAgent(agent) && containsAny(agent, "coder", "code", "开发", "实现")));
             case STEP_TEST -> findFirstByPredicate(candidates, agent ->
                     isCliRuntime(agent, AgentExecutionService.RUNTIME_CODEX_CLI)
                             || isCliRuntime(agent, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI)
+                            || isCliRuntime(agent, AgentExecutionService.RUNTIME_OPENCODE_CLI)
                             || (isExecutableAgent(agent) && containsAny(agent, "test", "qa", "测试", "quality")))
                     .or(() -> findFirstByPredicate(candidates, agent ->
                             isExecutableAgent(agent)
@@ -471,6 +474,9 @@ public class ExecutionWorkflowService {
                     .findFirst()
                     .or(() -> candidates.stream()
                             .filter(agent -> isCliRuntime(agent, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI))
+                            .findFirst())
+                    .or(() -> candidates.stream()
+                            .filter(agent -> isCliRuntime(agent, AgentExecutionService.RUNTIME_OPENCODE_CLI))
                             .findFirst());
             default -> java.util.Optional.empty();
         };

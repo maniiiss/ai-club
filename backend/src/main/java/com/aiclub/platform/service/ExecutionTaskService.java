@@ -1064,8 +1064,9 @@ public class ExecutionTaskService {
             }
             String runtimeType = defaultString(step.agent().getRuntimeType()).trim().toUpperCase();
             if (!AgentExecutionService.RUNTIME_CODEX_CLI.equals(runtimeType)
-                    && !AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equals(runtimeType)) {
-                throw new IllegalArgumentException(step.stepName() + " 仅支持 CODEX_CLI 或 CLAUDE_CODE_CLI Runtime");
+                    && !AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equals(runtimeType)
+                    && !AgentExecutionService.RUNTIME_OPENCODE_CLI.equals(runtimeType)) {
+                throw new IllegalArgumentException(step.stepName() + " 仅支持 CODEX_CLI、CLAUDE_CODE_CLI 或 OPENCODE_CLI Runtime");
             }
         }
     }

@@ -1168,8 +1168,9 @@ public class PlatformStoreService {
         value = value.toUpperCase();
         if (!AgentExecutionService.RUNTIME_OPENCLAW.equals(value)
                 && !AgentExecutionService.RUNTIME_CODEX_CLI.equals(value)
-                && !AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equals(value)) {
-            throw new IllegalArgumentException("当前仅支持 OPENCLAW、CODEX_CLI、CLAUDE_CODE_CLI Runtime");
+                && !AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equals(value)
+                && !AgentExecutionService.RUNTIME_OPENCODE_CLI.equals(value)) {
+            throw new IllegalArgumentException("当前仅支持 OPENCLAW、CODEX_CLI、CLAUDE_CODE_CLI、OPENCODE_CLI Runtime");
         }
         return value;
     }

@@ -132,7 +132,8 @@ public class ExecutionOrchestrationService {
         if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equals(profile.getScenarioCode())
                 && (!AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(agent.getAccessType())
                 || !(AgentExecutionService.RUNTIME_CODEX_CLI.equalsIgnoreCase(agent.getRuntimeType())
-                || AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equalsIgnoreCase(agent.getRuntimeType())))) {
+                || AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equalsIgnoreCase(agent.getRuntimeType())
+                || AgentExecutionService.RUNTIME_OPENCODE_CLI.equalsIgnoreCase(agent.getRuntimeType())))) {
             throw new ExecutionOrchestrationNotReadyException(stepCode + " 的 Runtime 已不兼容");
         }
         String step = normalize(stepCode);
@@ -281,8 +282,9 @@ public class ExecutionOrchestrationService {
             if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equals(profile.getScenarioCode())) {
                 if (!AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(agent.getAccessType())
                         || !(AgentExecutionService.RUNTIME_CODEX_CLI.equalsIgnoreCase(agent.getRuntimeType())
-                        || AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equalsIgnoreCase(agent.getRuntimeType())))
-                    throw new IllegalArgumentException(step + " 仅支持 Codex/Claude CLI Runtime");
+                        || AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equalsIgnoreCase(agent.getRuntimeType())
+                        || AgentExecutionService.RUNTIME_OPENCODE_CLI.equalsIgnoreCase(agent.getRuntimeType())))
+                    throw new IllegalArgumentException(step + " 仅支持 Codex/Claude/OpenCode CLI Runtime");
             } else if ((ExecutionWorkflowService.STEP_IMPLEMENT.equals(step) || ExecutionWorkflowService.STEP_TEST.equals(step))
                     && !(AgentExecutionService.ACCESS_HTTP_API.equalsIgnoreCase(agent.getAccessType())
                     || AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(agent.getAccessType()))) {
@@ -347,7 +349,8 @@ public class ExecutionOrchestrationService {
         if(ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equals(profile.getScenarioCode())
                 &&(!AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(agent.getAccessType())
                 ||!(AgentExecutionService.RUNTIME_CODEX_CLI.equalsIgnoreCase(agent.getRuntimeType())
-                ||AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equalsIgnoreCase(agent.getRuntimeType()))))return step+" 仅支持 Codex/Claude CLI Runtime";
+                ||AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equalsIgnoreCase(agent.getRuntimeType())
+                ||AgentExecutionService.RUNTIME_OPENCODE_CLI.equalsIgnoreCase(agent.getRuntimeType()))))return step+" 仅支持 Codex/Claude/OpenCode CLI Runtime";
         if(ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equals(profile.getScenarioCode())
                 &&(ExecutionWorkflowService.STEP_IMPLEMENT.equals(step)||ExecutionWorkflowService.STEP_TEST.equals(step))
                 &&!(AgentExecutionService.ACCESS_HTTP_API.equalsIgnoreCase(agent.getAccessType())

@@ -158,36 +158,6 @@ export const ProjectDetailPage = () => {
               </div>
             </div>
           </div>
-
-          {/* 成员头像 */}
-          {project.memberItems && project.memberItems.length > 0 && (
-            <div className="mt-4 border-t border-[var(--color-border-light)] pt-4">
-              <p className="mb-2 text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">
-                项目成员
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {project.memberItems.map((member) => (
-                  <div
-                    key={member.id}
-                    className="flex items-center gap-2 rounded-full bg-[var(--color-bg-hover)] px-3 py-1.5"
-                  >
-                    {member.avatarUrl ? (
-                      <img
-                        src={member.avatarUrl}
-                        alt={member.name}
-                        className="h-6 w-6 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-primary-light)] text-[10px] font-semibold text-[var(--color-primary)]">
-                        {getInitials(member.name)}
-                      </div>
-                    )}
-                    <span className="text-[12px] text-[var(--color-text-secondary)]">{member.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 

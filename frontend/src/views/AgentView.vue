@@ -759,7 +759,7 @@ interface AgentForm {
   systemPrompt: string
   userPromptTemplate: string
   endpointUrl: string
-  runtimeType: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | null
+  runtimeType: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | 'OPENCODE_CLI' | null
   runtimeAgentRef: string
   runtimeSessionKeyTemplate: string
   httpMethod: 'POST' | 'PUT' | 'GET'
@@ -789,7 +789,8 @@ const builtinOptions = [
 const runtimeTypeOptions = [
   { label: 'OpenClaw', value: 'OPENCLAW' },
   { label: 'Codex CLI Runner', value: 'CODEX_CLI' },
-  { label: 'Claude Code CLI Runner', value: 'CLAUDE_CODE_CLI' }
+  { label: 'Claude Code CLI Runner', value: 'CLAUDE_CODE_CLI' },
+  { label: 'OpenCode CLI Runner', value: 'OPENCODE_CLI' }
 ] as const
 
 const loading = ref(false)

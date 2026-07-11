@@ -45,6 +45,7 @@ public class AgentExecutionService {
     public static final String RUNTIME_OPENCLAW = "OPENCLAW";
     public static final String RUNTIME_CODEX_CLI = "CODEX_CLI";
     public static final String RUNTIME_CLAUDE_CODE_CLI = "CLAUDE_CODE_CLI";
+    public static final String RUNTIME_OPENCODE_CLI = "OPENCODE_CLI";
     public static final String RUNNER_PATROL_MODEL = "PATROL_MODEL";
 
     public static final String BUILTIN_CODE_REVIEW = "CODE_REVIEW";
@@ -486,7 +487,7 @@ public class AgentExecutionService {
         String runtimeType = normalizeRuntimeType(agent.getRuntimeType());
         return switch (runtimeType) {
             case RUNTIME_OPENCLAW -> executeOpenclawRuntime(agent, input, variables);
-            case RUNTIME_CODEX_CLI, RUNTIME_CLAUDE_CODE_CLI -> executeCliRuntime(agent, input, variables);
+            case RUNTIME_CODEX_CLI, RUNTIME_CLAUDE_CODE_CLI, RUNTIME_OPENCODE_CLI -> executeCliRuntime(agent, input, variables);
             default -> throw new IllegalArgumentException("Unsupported agent runtime type: " + runtimeType);
         };
     }
@@ -794,7 +795,7 @@ public class AgentExecutionService {
             return false;
         }
         String normalized = runtimeType.toUpperCase();
-        return RUNTIME_CODEX_CLI.equals(normalized) || RUNTIME_CLAUDE_CODE_CLI.equals(normalized);
+        return RUNTIME_CODEX_CLI.equals(normalized) || RUNTIME_CLAUDE_CODE_CLI.equals(normalized) || RUNTIME_OPENCODE_CLI.equals(normalized);
     }
 
     private String requireRuntimeGateway(AgentEntity agent) {
@@ -994,7 +995,8 @@ public class AgentExecutionService {
         normalized = normalized.toUpperCase();
         if (!RUNTIME_OPENCLAW.equals(normalized)
                 && !RUNTIME_CODEX_CLI.equals(normalized)
-                && !RUNTIME_CLAUDE_CODE_CLI.equals(normalized)) {
+                && !RUNTIME_CLAUDE_CODE_CLI.equals(normalized)
+                && !RUNTIME_OPENCODE_CLI.equals(normalized)) {
             throw new IllegalArgumentException("Unsupported runtime type: " + normalized);
         }
         return normalized;

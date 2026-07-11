@@ -21,6 +21,10 @@ from app.services.cli_execution_service import (
     _build_claude_markdown_prompt,
     _build_codex_markdown_command,
     _build_codex_markdown_prompt,
+    _build_opencode_implementation_command,
+    _build_opencode_implementation_prompt,
+    _build_opencode_markdown_command,
+    _build_opencode_markdown_prompt,
     _collect_technical_design_context,
     _validate_technical_design_output,
     _to_claude_request,
@@ -424,6 +428,107 @@ class CliExecutionServiceTests(unittest.TestCase):
         self.assertEqual('{"status":"SUCCESS"}', response.output)
         execute_mock.assert_called_once()
         self.assertEqual(300, execute_mock.call_args.args[0].timeoutSeconds)
+
+    # -- opencode CLI Runner -------------------------------------------------
+
+    def test_should_build_readonly_opencode_markdown_command(self):
+        request = self._build_request("OPENCODE_CLI", "PLAN")
+
+        command = _build_opencode_markdown_command(request, Path("opencode"), [Path("C:/workspace/repo")])
+
+        # Markdown 步骤统一只读 plan agent，prompt 作为末尾位置参数传入。
+        self.assertEqual("plan", command[command.index("--agent") + 1])
+        self.assertEqual("default", command[command.index("--format") + 1])
+        self.assertEqual(str(Path("C:/workspace/repo")), command[command.index("--dir") + 1])
+        self.assertNotIn("--auto", command)
+        self.assertIn("opencode", command[-1])
+
+    def test_should_build_opencode_implementation_command_with_auto(self):
+        request = self._build_request("OPENCODE_CLI", "IMPLEMENT")
+
+        command = _build_opencode_implementation_command(Path("opencode"), Path("C:/workspace/repo"), request)
+
+        # IMPLEMENT 走 build agent 并自动批准写操作。
+        self.assertEqual("build", command[command.index("--agent") + 1])
+        self.assertIn("--auto", command)
+        self.assertEqual(str(Path("C:/workspace/repo")), command[command.index("--dir") + 1])
+
+    def test_should_route_opencode_plan_to_markdown_sync(self):
+        request = self._build_request("OPENCODE_CLI", "PLAN")
+
+        with patch("app.services.cli_execution_service._execute_opencode_markdown_sync", return_value=CliExecutionResponse(
+            output="# 总体结论\nopencode 规划",
+            workspaceRoot="C:/ws",
+            repoPaths=["C:/ws/repo"],
+            logPreview="ok",
+        )) as markdown_mock:
+            response = execute_cli_execution(request)
+
+        self.assertIn("opencode 规划", response.output)
+        markdown_mock.assert_called_once()
+
+    def test_should_route_opencode_implement_to_implementation_sync(self):
+        request = self._build_request("OPENCODE_CLI", "IMPLEMENT").model_copy(update={
+            "execution": self._build_request("OPENCODE_CLI", "IMPLEMENT").execution.model_copy(update={"stepCode": "IMPLEMENT"}),
+        })
+
+        with patch("app.services.cli_execution_service._execute_opencode_implementation_sync", return_value=CliExecutionResponse(
+            output='{"status":"SUCCESS"}',
+            workspaceRoot="C:/ws",
+            repoPath="C:/ws/repo",
+            repoPaths=["C:/ws/repo"],
+            logPreview="ok",
+        )) as impl_mock:
+            response = execute_cli_execution(request)
+
+        self.assertEqual('{"status":"SUCCESS"}', response.output)
+        impl_mock.assert_called_once()
+
+    def test_should_share_test_bridge_for_opencode_test_mode(self):
+        request = self._build_request("OPENCODE_CLI", "TEST").model_copy(update={
+            "execution": self._build_request("OPENCODE_CLI", "TEST").execution.model_copy(update={"stepCode": "TEST"}),
+        })
+
+        with patch("app.services.cli_execution_service.codex_service.execute_codex_execution", return_value=SimpleNamespace(
+            output='{"status":"SUCCESS","summary":"测试通过"}',
+            workspaceRoot="C:/workspace",
+            repoPath="C:/workspace/repo",
+            logPreview="test-ok",
+        )) as execute_mock:
+            response = execute_cli_execution(request)
+
+        self.assertIn("测试通过", response.output)
+        execute_mock.assert_called_once()
+
+    def test_should_start_opencode_adhoc_session_with_unified_runner(self):
+        request = self._build_request("OPENCODE_CLI", "AD_HOC").model_copy(update={
+            "repositories": [],
+            "execution": self._build_request("OPENCODE_CLI", "AD_HOC").execution.model_copy(update={"stepCode": "AD_HOC_RUN"}),
+        })
+
+        with patch("app.services.cli_execution_service._launch_background_job") as launch_mock:
+            response = start_cli_execution(request)
+
+        self.assertTrue(response.accepted)
+        self.assertIn("opencode_cli-ad_hoc", response.sessionId)
+        launch_mock.assert_called_once()
+
+    def test_should_build_opencode_markdown_prompt_mentions_runner(self):
+        request = self._build_request("OPENCODE_CLI", "PLAN")
+
+        prompt = _build_opencode_markdown_prompt(request, [Path("C:/workspace/repo")])
+
+        self.assertIn("opencode", prompt)
+        self.assertIn("# 总体结论", prompt)
+
+    def test_should_build_opencode_technical_design_prompt_with_fixed_sections(self):
+        request = self._build_request("OPENCODE_CLI", "PLAN").model_copy(update={"mode": "DESIGN_DRAFT"})
+
+        prompt = _build_opencode_markdown_prompt(request, [Path("C:/workspace/repo")])
+
+        for heading in ("# 背景与目标", "# 现状与约束", "# 方案概览", "# 影响范围", "# 接口与数据变更", "# 兼容性与迁移", "# 风险与回滚", "# Harness 与验证", "# 开发执行输入"):
+            self.assertIn(heading, prompt)
+        self.assertIn("opencode", prompt)
 
 
 if __name__ == "__main__":

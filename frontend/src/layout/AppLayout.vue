@@ -876,9 +876,8 @@ const primaryMenuSeeds: MenuSeed[] = [
   { permission: 'project:view', fallbackPath: '/projects', fallbackLabel: '项目管理', shortLabel: '项目', fallbackIcon: FolderOpened, matchNames: ['projects', 'project-iterations'] },
   { permission: 'api:view', fallbackPath: '/apis', fallbackLabel: 'API管理', shortLabel: 'API', fallbackIcon: Connection, matchNames: ['api-studio-home', 'api-studio-workbench', 'api-studio-endpoint', 'api-groups-legacy', 'api-project-detail-legacy'] },
   { permission: 'wiki:view', fallbackPath: '/wiki', fallbackLabel: 'Wiki 中心', shortLabel: 'Wiki', fallbackIcon: Document, matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page'] },
-  { permission: 'agent:view', fallbackPath: '/agents', fallbackLabel: '智能体管理', shortLabel: '智能体', fallbackIcon: Connection, matchNames: ['agents'] },
+  { permission: ['agent:view', 'execution:orchestration:manage', 'project:manage'], fallbackPath: '/agents', fallbackLabel: '智能体管理', shortLabel: '智能体', fallbackIcon: Connection, matchNames: ['agents'] },
   { permission: 'task:view', fallbackPath: '/tasks', fallbackLabel: '执行中心', shortLabel: '执行', fallbackIcon: Tickets, matchNames: ['tasks', 'execution-task-detail'] },
-  { permission: ['execution:orchestration:manage', 'project:manage'], fallbackPath: '/execution-orchestrations', fallbackLabel: '编排管理', shortLabel: '编排', fallbackIcon: Setting, matchNames: ['execution-orchestrations'] },
   { permission: 'self-upgrade:view', fallbackPath: '/self-upgrade', fallbackLabel: '自升级中心', shortLabel: '自升级', fallbackIcon: Connection, matchNames: ['self-upgrade'] },
   { permission: 'test:view', fallbackPath: '/tests', fallbackLabel: '测试管理', shortLabel: '测试', fallbackIcon: Finished, matchNames: ['tests', 'test-plan-detail'] },
   { permission: 'gitlab:view', fallbackPath: '/gitlab', fallbackLabel: '代码仓库', shortLabel: '仓库', fallbackIcon: DocumentCopy, matchNames: ['gitlab'] }

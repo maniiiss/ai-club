@@ -116,7 +116,7 @@ export interface AgentPayload {
   systemPrompt?: string
   userPromptTemplate?: string
   endpointUrl?: string
-  runtimeType?: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | null
+  runtimeType?: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | 'OPENCODE_CLI' | null
   runtimeAgentRef?: string
   runtimeSessionKeyTemplate?: string
   httpMethod?: string
