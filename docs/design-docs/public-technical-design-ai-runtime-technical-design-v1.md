@@ -1,8 +1,8 @@
-# 公众端技术设计 AI Runtime 技术设计 v1
+# 双端技术设计 AI Runtime 技术设计 v1
 
 ## 1. 背景
 
-公众端计划模块已经支持需求 AI 助手、测试用例生成和开发执行入口。现有需求 AI 助手由 `PublicRequirementAiController`、`TaskRequirementAiService`、`frontend-public/src/pages/planning/RequirementAiDialog.tsx` 承载，适合需求标准化、需求拆解和测试用例建议。开发执行入口由 `DevelopmentExecutionDialog` 发起执行中心任务，并支持 `PLAN` 执行规划、开发实现和质量评审。
+公众端计划模块已经支持需求 AI 助手、测试用例生成和开发执行入口，管理端迭代工作项也已有统一“智能操作”入口。现有需求 AI 助手由 `PublicRequirementAiController`、`TaskRequirementAiService`、`frontend-public/src/pages/planning/RequirementAiDialog.tsx` 承载，适合需求标准化、需求拆解和测试用例建议。开发执行入口由 `DevelopmentExecutionDialog` 发起执行中心任务，并支持 `PLAN` 执行规划、开发实现和质量评审。
 
 技术设计类型任务的目标不同：它不是把需求润色成 Markdown，也不是直接进入代码修改，而是在开发前结合真实仓库、GitNexus 代码图谱、调用链、影响范围和现有测试，产出可评审的技术设计。这个能力如果只做成普通 LLM Prompt，会缺少代码上下文、无法稳定追踪影响面，也难以复用 Codex / Claude Code 这类成熟 Agent Runtime 的代码理解能力。
 
@@ -32,6 +32,9 @@
   - 计划模块工作项详情的 Sparkles 智能入口分流。
   - 新增技术设计 AI 发起、执行进度查看和产物写回交互。
   - 复用执行中心任务详情、执行规划确认和产物展示组件。
+- `frontend/`
+  - 在迭代工作项详情的智能操作中新增技术设计 AI 独立入口。
+  - 复用管理端执行中心列表和详情，并统一使用 `task:execution:create` 控制执行创建权限。
 - `backend/`
   - `ExecutionWorkflowService` 新增技术设计 Runtime 场景。
   - `ExecutionTaskService` 允许从技术设计工作项创建新场景任务。
@@ -110,13 +113,13 @@
 
 1. 用户打开公众端计划模块中的技术设计任务详情。
 2. Sparkles 智能入口识别 `任务 / 技术设计`，展示“生成技术设计”。
-3. 用户选择仓库范围和 Runtime Agent，发起 `TECHNICAL_DESIGN_AUTHORING` 执行任务。
+3. 用户选择仓库和目标分支，发起 `TECHNICAL_DESIGN_AUTHORING` 执行任务；发起人不选择 Runtime Agent。
 4. 后端校验：
    - 当前用户有 `task:view` 与执行任务创建权限。
    - 工作项属于当前可见项目。
    - 工作项类型必须是 `任务 / 技术设计`。
-   - 至少存在一个可用 `AGENT_RUNTIME` Agent。
-5. 执行中心创建任务，固化步骤 Agent 绑定和输入上下文。
+   - 项目覆盖或平台默认编排已经发布，且其中三个步骤都绑定启用、兼容的 Runtime Agent。
+5. 执行中心按“项目已发布版本 -> 平台已发布版本”解析编排，固化编排版本、实际步骤 Agent 绑定和输入上下文。
 6. 调度器按步骤执行：
    - `CODE_CONTEXT` 调用 Runtime，要求优先使用 GitNexus；失败时降级并说明。
    - `DESIGN_DRAFT` 读取 `CODE_CONTEXT` 产物，生成技术设计 Markdown。
@@ -140,6 +143,7 @@
 - 优先使用 GitNexus 查询代码图谱、执行流和影响分析。
 - 读取关联源码和现有测试，不允许只凭文件名猜测职责。
 - 输出必须包含“GitNexus 使用情况”；如果降级，说明降级原因。
+- GitNexus 预采集必须占用步骤统一超时预算，刷新后重新校验索引；异步执行期间取消信号必须终止 CLI 子进程。
 - 不修改代码。
 
 `DESIGN_DRAFT` Prompt 必须明确：
@@ -156,6 +160,7 @@
   - 风险与回滚
   - Harness 与验证
   - 开发执行输入
+- Runtime 返回后必须校验一级标题完整、唯一且顺序固定，缺章输出按步骤失败处理，不能保存为正式设计产物。
 
 `DESIGN_REVIEW` Prompt 必须明确：
 
@@ -172,13 +177,14 @@
   - 新增步骤常量 `STEP_CODE_CONTEXT`、`STEP_DESIGN_DRAFT`、`STEP_DESIGN_REVIEW`。
   - `SUPPORTED_SCENARIOS` 增加新场景。
   - `buildTemplates` 增加三步模板。
-  - `autoResolveAgent` 对新步骤优先匹配 `CODEX_CLI` / `CLAUDE_CODE_CLI`，其次匹配名称或能力包含 `技术设计`、`design`、`architecture` 的 Runtime Agent。
+  - 三个逻辑步骤注册到执行编排场景目录，兼容规则固定为 `AGENT_RUNTIME + CODEX_CLI/CLAUDE_CODE_CLI`。
 
 #### 执行任务创建
 
 - `ExecutionTaskService`
   - 新增从技术设计工作项发起的业务入口，或复用现有创建执行任务接口并增加场景校验。
   - 校验 `任务 / 技术设计`，拒绝需求、缺陷、开发任务、测试任务。
+  - 创建请求不得携带非空 `agentBindings`；由执行编排服务解析项目或平台已发布版本，未就绪时返回 `ORCHESTRATION_NOT_READY`。
   - 输入 payload 增加：
     - `workItemId`
     - `repositoryBindingIds`
@@ -203,6 +209,8 @@
   - `buildTechnicalDesignExecutionPayload`
 - `frontend-public/src/pages/planning/TechnicalDesignAiDialog.tsx`
   - 发起 Runtime 任务。
+  - 不加载或展示 Agent；仅保留仓库、分支、补充约束、GitNexus 与费用信息。
+  - 编排未发布或失效时禁用提交，并提示联系管理员。
   - 展示执行任务摘要和跳转入口。
   - 在执行完成后展示设计产物并支持写回。
 - `PlanningPage.tsx`
@@ -216,12 +224,16 @@
 
 #### 积分
 
-技术设计 AI 是公众端 AI 能力，应接入积分系统。建议新增：
+技术设计 AI 在公众端接入积分系统，管理端入口不扣积分。新增：
 
 - `credit_feature_config.feature_code = TECHNICAL_DESIGN_AI`
-- 默认扣减 5 积分，可由管理员配置。
+- 默认启用并扣减 5 积分，可由管理员在积分管理中配置或停用。
 
-扣费粒度建议按一次完整技术设计 Runtime 任务扣费，而不是按每个步骤分别扣费。若执行任务创建成功但 Runtime 全部失败，按现有 `CreditConsumptionService` 语义退款；若部分步骤成功并产生有效设计草稿，不自动退款。
+扣费粒度按一次完整技术设计 Runtime 任务扣费，而不是按每个步骤分别扣费。创建失败立即退款；创建成功后的异步终态由 `execution_credit_settlement` 幂等结算。没有产生非空 `TECHNICAL_DESIGN_MARKDOWN` 时退款；已经产生有效设计草稿时，即使设计自检失败也不退款。
+
+#### 执行编排
+
+技术设计与开发执行共同接入版本化执行编排预设。平台管理员维护平台默认，项目管理员可以发布项目完整覆盖；公众端和普通管理端发起人均不能临时选择或覆盖 Agent。详细数据模型、发布状态机、权限和任务快照边界见 `docs/design-docs/execution-orchestration-management-technical-design-v1.md`。
 
 ## 6. 方案取舍
 
@@ -297,15 +309,15 @@
 - 调整 Sparkles 分流。
 - 展示执行进度、产物预览和写回操作。
 
-### 阶段 4：技术设计到开发执行衔接
+### 后续阶段：技术设计到开发执行衔接
 
 - 支持从技术设计产物创建开发任务建议。
 - 支持发起开发执行时带入技术设计 Markdown。
 - 若后端允许开发任务关联技术设计任务，同步把技术设计任务作为上游关联。
 
-## 10. 待确认问题
+## 10. 首版决策
 
-- 首版默认 Runtime 选型是否固定为 `CODEX_CLI`，还是允许用户在 `CODEX_CLI / CLAUDE_CODE_CLI` 间选择。
-- 技术设计任务创建开发任务时，`requirementTaskId` 是否扩展为可关联技术设计任务，还是仅保留普通 `RELATED` 关系。
-- 技术设计 Runtime 产物是否需要自动生成 `TASK_BREAKDOWN_JSON`，还是首版只输出 Markdown 建议。
-- GitNexus 索引过期时，是否允许 Runtime 自动执行 `npx gitnexus analyze`，还是只提示用户或管理员刷新索引。
+- 三个步骤默认优先推荐 `CODEX_CLI`，用户可分别调整为 `CODEX_CLI` 或 `CLAUDE_CODE_CLI`。
+- 首版只产出三份 Markdown，不生成 `TASK_BREAKDOWN_JSON`，不自动创建开发任务或进入开发执行。
+- GitNexus 索引缺失或过期时先自动执行 `npx gitnexus analyze`，失败后降级为仓库检索，并在代码理解产物中明确原因。
+- 写入任务描述采用受管 Markdown 章节，重复写回替换该章节，不覆盖原描述和其它结构化字段。

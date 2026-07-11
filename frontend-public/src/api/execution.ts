@@ -14,6 +14,16 @@ import type {
   TestPlanItem,
 } from '@/src/types/execution'
 
+export interface ExecutionOrchestrationScenarioItem {
+  scenarioCode: string
+  scenarioName: string
+  steps: { stepCode: string; stepName: string; agentRequired: boolean }[]
+  effectiveReady: boolean
+  effectiveScope: 'PLATFORM' | 'PROJECT' | null
+  publishedVersionId: number | null
+  effectiveInvalidReason: string | null
+}
+
 type TestPlanCasePayload = {
   id?: number | null
   title: string
@@ -111,6 +121,46 @@ export const createExecutionTask = async (payload: {
   inputPayload?: Record<string, unknown>
 }): Promise<ExecutionTaskItem> => {
   const res = await http.post<ApiResponse<ExecutionTaskItem>>('/api/execution-tasks', payload)
+  return unwrap(res)
+}
+
+/** 公众端创建技术设计执行，后端在该入口统一完成积分结算。 */
+export const createPublicTechnicalDesignExecution = async (
+  taskId: number,
+  payload: {
+    scenarioCode: string
+    projectId: number
+    triggerSource: string
+    inputPayload: Record<string, unknown>
+  },
+): Promise<ExecutionTaskItem> => {
+  const res = await http.post<ApiResponse<ExecutionTaskItem>>(
+    `/api/public/tasks/${taskId}/technical-design-executions`,
+    payload,
+  )
+  return unwrap(res)
+}
+
+/** 查询项目可生效的固定场景编排状态；公众端仅消费就绪状态，不展示 Agent 配置。 */
+export const listExecutionOrchestrationScenarios = async (
+  projectId: number,
+): Promise<ExecutionOrchestrationScenarioItem[]> => {
+  const res = await http.get<ApiResponse<ExecutionOrchestrationScenarioItem[]>>(
+    '/api/execution-orchestrations/scenarios',
+    { params: { projectId } },
+  )
+  return unwrap(res)
+}
+
+/** 将最新成功运行中的技术设计人工写回工作项描述或评论。 */
+export const writebackTechnicalDesignArtifact = async (
+  taskId: number,
+  payload: { artifactId: number; mode: 'DESCRIPTION' | 'COMMENT' },
+): Promise<ExecutionArtifactDetailItem> => {
+  const res = await http.post<ApiResponse<ExecutionArtifactDetailItem>>(
+    `/api/execution-tasks/${taskId}/technical-design-writeback`,
+    payload,
+  )
   return unwrap(res)
 }
 

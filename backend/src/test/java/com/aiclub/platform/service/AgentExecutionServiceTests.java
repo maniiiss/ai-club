@@ -458,6 +458,50 @@ class AgentExecutionServiceTests {
     }
 
     /**
+     * 技术设计三个步骤统一进入只读 TECHNICAL_DESIGN 模式，由 stepCode 决定具体 Prompt。
+     */
+    @Test
+    void shouldMapTechnicalDesignStepsToReadOnlyCliMode() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        StringBuilder capturedBody = new StringBuilder();
+        server.createContext("/api/code/cli-executions/start", exchange -> {
+            capturedBody.append(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] responseBytes = """
+                    {"sessionId":"design-session-1","accepted":true,"runnerType":"CLI","workspaceRoot":"C:/workspace","startedAt":"2026-07-11T12:00:00Z"}
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, responseBytes.length);
+            try (OutputStream outputStream = exchange.getResponseBody()) {
+                outputStream.write(responseBytes);
+            }
+        });
+        server.start();
+        try {
+            agentExecutionService = buildService("http://127.0.0.1:" + server.getAddress().getPort());
+            AgentEntity agent = buildCliRuntimeAgent(18L, AgentExecutionService.RUNTIME_CODEX_CLI, null);
+
+            assertThat(agentExecutionService.supportsAsyncExecution(agent, ExecutionWorkflowService.STEP_CODE_CONTEXT)).isTrue();
+            agentExecutionService.startAsyncExecution(
+                    agent,
+                    "请理解代码上下文",
+                    Map.of(
+                            "step_code", ExecutionWorkflowService.STEP_CODE_CONTEXT,
+                            "step_id", "17",
+                            "execution_task_id", "100",
+                            "execution_run_id", "1002"
+                    ),
+                    15,
+                    600
+            );
+
+            assertThat(capturedBody.toString()).contains("\"mode\":\"TECHNICAL_DESIGN\"");
+            assertThat(capturedBody.toString()).contains("\"stepCode\":\"CODE_CONTEXT\"");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    /**
      * 构造可执行的仓库扫描计划智能体样例。
      */
     private AgentEntity buildRepositoryScanPlanAgent() {

@@ -16,7 +16,13 @@ from app.models import (
     PatrolTarget,
 )
 from app.services.cli_execution_service import (
+    _build_claude_markdown_command,
     _build_claude_implementation_prompt,
+    _build_claude_markdown_prompt,
+    _build_codex_markdown_command,
+    _build_codex_markdown_prompt,
+    _collect_technical_design_context,
+    _validate_technical_design_output,
     _to_claude_request,
     _to_codex_request,
     execute_cli_execution,
@@ -206,6 +212,166 @@ class CliExecutionServiceTests(unittest.TestCase):
         self.assertIn("最终结果直接返回 Markdown", prompt)
         self.assertIn("不要返回 JSON", prompt)
         self.assertNotIn("返回严格 JSON", prompt)
+
+    def test_should_accept_all_technical_design_modes(self):
+        for mode in ("CODE_CONTEXT", "DESIGN_DRAFT", "DESIGN_REVIEW"):
+            request = self._build_request("CODEX_CLI", "PLAN").model_copy(update={"mode": mode})
+
+            self.assertEqual(mode, request.mode)
+
+    def test_should_route_generic_technical_design_mode_by_step_code(self):
+        payload = self._build_request("CODEX_CLI", "PLAN").model_dump()
+        payload["mode"] = "TECHNICAL_DESIGN"
+        payload["execution"]["stepCode"] = "CODE_CONTEXT"
+        request = CliExecutionRequest.model_validate(payload)
+
+        command = _build_codex_markdown_command(request, Path("codex"), Path("C:/workspace"), [])
+        prompt = command[-1]
+
+        self.assertIn("--sandbox", command)
+        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
+        self.assertIn("# GitNexus 使用情况", prompt)
+
+    def test_should_fail_closed_when_generic_technical_design_step_is_unknown(self):
+        payload = self._build_request("CODEX_CLI", "PLAN").model_dump()
+        payload["mode"] = "TECHNICAL_DESIGN"
+        payload["execution"]["stepCode"] = "UNKNOWN_STEP"
+        request = CliExecutionRequest.model_validate(payload)
+
+        with self.assertRaisesRegex(ValueError, "不支持的技术设计步骤"):
+            _build_codex_markdown_command(request, Path("codex"), Path("C:/workspace"), [])
+
+    def test_should_build_read_only_codex_command_for_technical_design(self):
+        request = self._build_request("CODEX_CLI", "PLAN").model_copy(update={"mode": "DESIGN_DRAFT"})
+
+        command = _build_codex_markdown_command(request, Path("codex"), Path("C:/workspace"), [])
+
+        self.assertIn("--sandbox", command)
+        self.assertIn("read-only", command)
+        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
+
+    def test_should_keep_existing_plan_codex_command_compatible(self):
+        request = self._build_request("CODEX_CLI", "PLAN")
+
+        command = _build_codex_markdown_command(request, Path("codex"), Path("C:/workspace"), [])
+
+        self.assertIn("--dangerously-bypass-approvals-and-sandbox", command)
+
+    def test_should_build_plan_only_claude_command_for_technical_design(self):
+        request = self._build_request("CLAUDE_CODE_CLI", "PLAN").model_copy(update={"mode": "DESIGN_REVIEW"})
+
+        command = _build_claude_markdown_command(request, Path("claude"), [])
+
+        self.assertEqual("plan", command[command.index("--permission-mode") + 1])
+        self.assertEqual("Read,Grep,Glob,LS", command[command.index("--allowedTools") + 1])
+        self.assertEqual("Read,Grep,Glob,LS", command[command.index("--tools") + 1])
+        self.assertFalse(any(tool in ",".join(command) for tool in ("Edit", "Write", "MultiEdit", "Bash")))
+
+    def test_should_build_code_context_prompt_with_fixed_sections(self):
+        request = self._build_request("CODEX_CLI", "PLAN").model_copy(update={"mode": "CODE_CONTEXT"})
+
+        prompt = _build_codex_markdown_prompt(request, [Path("C:/workspace/repo")], "GitNexus 上下文")
+
+        for heading in ("# 代码理解结论", "# GitNexus 使用情况", "# 关键入口与符号", "# 上游影响", "# 现有测试与最小 Harness", "# 不确定项"):
+            self.assertIn(heading, prompt)
+        self.assertIn("GitNexus 上下文", prompt)
+        self.assertIn("只读", prompt)
+
+    def test_should_build_design_draft_prompt_with_fixed_sections(self):
+        request = self._build_request("CLAUDE_CODE_CLI", "PLAN").model_copy(update={"mode": "DESIGN_DRAFT"})
+
+        prompt = _build_claude_markdown_prompt(request, [Path("C:/workspace/repo")])
+
+        for heading in ("# 背景与目标", "# 现状与约束", "# 方案概览", "# 影响范围", "# 接口与数据变更", "# 兼容性与迁移", "# 风险与回滚", "# Harness 与验证", "# 开发执行输入"):
+            self.assertIn(heading, prompt)
+
+    def test_should_build_design_review_prompt_without_claiming_commands_passed(self):
+        request = self._build_request("CODEX_CLI", "PLAN").model_copy(update={"mode": "DESIGN_REVIEW"})
+
+        prompt = _build_codex_markdown_prompt(request, [Path("C:/workspace/repo")])
+
+        for heading in ("# 自检结论", "# 源码证据检查", "# 影响面检查", "# 测试策略检查", "# 回滚方案检查", "# 人工确认项"):
+            self.assertIn(heading, prompt)
+        self.assertIn("不得声称", prompt)
+
+    def test_should_collect_gitnexus_query_context_and_impact_when_index_is_current(self):
+        request = self._build_request("CODEX_CLI", "PLAN").model_copy(update={"mode": "CODE_CONTEXT"})
+        workspace = SimpleNamespace(root=Path("C:/workspace"), log_file=Path("C:/workspace/execution.log"))
+        outputs = {
+            "status": "Status: up-to-date",
+            "list": "  demo\n    Path: C:\\workspace\\repo",
+        }
+
+        def command_side_effect(_cli, args, _repo_dir, _log, fail_message=None, **_kwargs):
+            if args[0] in outputs:
+                return outputs[args[0]]
+            return "{}"
+
+        with patch("app.services.cli_execution_service.discover_gitnexus_cli_path", return_value=Path("gitnexus")), \
+                patch("app.services.cli_execution_service.run_gitnexus_command", side_effect=command_side_effect) as command_mock, \
+                patch("app.services.cli_execution_service.resolve_gitnexus_repo_alias", return_value="demo"), \
+                patch("app.services.cli_execution_service.run_gitnexus_json_command", side_effect=[
+                    {"definitions": [{"id": "Function:src/app.py:main", "name": "main"}]},
+                    {"symbol": {"name": "main"}, "incoming": []},
+                    {"risk": "LOW", "impactedCount": 1},
+                ]) as json_mock:
+            context = _collect_technical_design_context(request, workspace, [Path("C:/workspace/repo")])
+
+        self.assertIn("GitNexus 使用成功", context)
+        self.assertIn('"risk": "LOW"', context)
+        self.assertIn("现有测试与 Harness 线索", context)
+        self.assertFalse(any(call.args[1][0] == "analyze" for call in command_mock.call_args_list))
+        self.assertEqual(["query", "context", "impact"], [call.args[1][0] for call in json_mock.call_args_list])
+
+    def test_should_refresh_stale_gitnexus_index_before_collecting_context(self):
+        request = self._build_request("CODEX_CLI", "PLAN").model_copy(update={"mode": "CODE_CONTEXT"})
+        workspace = SimpleNamespace(root=Path("C:/workspace"), log_file=Path("C:/workspace/execution.log"))
+
+        with patch("app.services.cli_execution_service.discover_gitnexus_cli_path", return_value=Path("gitnexus")), \
+                patch("app.services.cli_execution_service.run_gitnexus_command", side_effect=["Status: stale", "Status: up-to-date"]), \
+                patch("app.services.cli_execution_service.run_gitnexus_analyze_command") as analyze_mock, \
+                patch("app.services.cli_execution_service.resolve_gitnexus_repo_alias", return_value="demo"), \
+                patch("app.services.cli_execution_service.run_gitnexus_json_command", side_effect=[{}, {}, {}]):
+            _collect_technical_design_context(request, workspace, [Path("C:/workspace/repo")])
+
+        analyze_mock.assert_called_once()
+
+    def test_should_degrade_when_gitnexus_is_still_stale_after_refresh(self):
+        request = self._build_request("CODEX_CLI", "PLAN").model_copy(update={"mode": "CODE_CONTEXT"})
+        workspace = SimpleNamespace(root=Path("C:/workspace"), log_file=Path("C:/workspace/execution.log"))
+
+        with patch("app.services.cli_execution_service.discover_gitnexus_cli_path", return_value=Path("gitnexus")), \
+                patch("app.services.cli_execution_service.run_gitnexus_command", side_effect=["Status: stale", "Status: stale"]), \
+                patch("app.services.cli_execution_service.run_gitnexus_analyze_command"), \
+                patch("app.services.cli_execution_service._collect_source_fallback", return_value="rg 降级证据"):
+            context = _collect_technical_design_context(request, workspace, [Path("C:/workspace/repo")])
+
+        self.assertIn("GitNexus 已降级", context)
+        self.assertIn("索引仍未处于最新状态", context)
+
+    def test_should_reject_technical_design_output_when_fixed_section_is_missing(self):
+        request = self._build_request("CODEX_CLI", "PLAN").model_copy(update={"mode": "DESIGN_DRAFT"})
+
+        with self.assertRaisesRegex(RuntimeError, "Harness 与验证"):
+            _validate_technical_design_output(
+                request,
+                "\n".join((
+                    "# 背景与目标", "# 现状与约束", "# 方案概览", "# 影响范围", "# 接口与数据变更",
+                    "# 兼容性与迁移", "# 风险与回滚", "# 开发执行输入",
+                )),
+            )
+
+    def test_should_return_explicit_fallback_context_when_gitnexus_fails(self):
+        request = self._build_request("CODEX_CLI", "PLAN").model_copy(update={"mode": "CODE_CONTEXT"})
+        workspace = SimpleNamespace(root=Path("C:/workspace"), log_file=Path("C:/workspace/execution.log"))
+
+        with patch("app.services.cli_execution_service.discover_gitnexus_cli_path", return_value=None), \
+                patch("app.services.cli_execution_service._collect_source_fallback", return_value="rg 命中：app/main.py"):
+            context = _collect_technical_design_context(request, workspace, [Path("C:/workspace/repo")])
+
+        self.assertIn("GitNexus 已降级", context)
+        self.assertIn("未找到 GitNexus CLI", context)
+        self.assertIn("rg 命中：app/main.py", context)
 
     def test_should_start_claude_adhoc_session_with_unified_runner(self):
         request = self._build_request("CLAUDE_CODE_CLI", "AD_HOC").model_copy(update={

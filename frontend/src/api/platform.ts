@@ -18,6 +18,10 @@ import type {
   ExecutionTaskListStatsItem,
   ExecutionTaskDetailItem,
   ExecutionTaskItem,
+  ExecutionOrchestrationProfileItem,
+  ExecutionOrchestrationScenarioItem,
+  ExecutionOrchestrationVersionItem,
+  UpdateExecutionOrchestrationVersionPayload,
   IterationBoardItem,
   IterationItem,
   KnowledgeGraphItem,
@@ -36,6 +40,8 @@ import type {
   TaskPrdDetailItem,
   TaskRequirementAiResultItem,
   TaskItem,
+  TechnicalDesignExecutionPayload,
+  TechnicalDesignWritebackPayload,
   LinkedTestCaseItem,
   UploadedFileItem,
   DocumentAssetItem,
@@ -799,6 +805,76 @@ export const downloadExecutionArtifact = async (artifactId: number) => {
 
 export const createExecutionTask = async (payload: CreateExecutionTaskPayload) => {
   const { data } = await http.post<ApiResponse<ExecutionTaskItem>>('/api/execution-tasks', payload)
+  return data.data
+}
+
+/** 查询代码注册场景及指定项目当前有效编排就绪状态。 */
+export const listExecutionOrchestrationScenarios = async (projectId?: number) => {
+  const { data } = await http.get<ApiResponse<ExecutionOrchestrationScenarioItem[]>>('/api/execution-orchestrations/scenarios', {
+    params: cleanParams({ projectId })
+  })
+  return data.data
+}
+
+/** 查询平台默认或项目覆盖 profile，并返回草稿、发布版本和完整历史。 */
+export const listExecutionOrchestrationProfiles = async (scopeType: 'PLATFORM' | 'PROJECT', projectId?: number) => {
+  const { data } = await http.get<ApiResponse<ExecutionOrchestrationProfileItem[]>>('/api/execution-orchestrations/profiles', {
+    params: cleanParams({ scopeType, projectId })
+  })
+  return data.data
+}
+
+export const createExecutionOrchestrationDraft = async (profileId: number, sourceVersionId?: number) => {
+  const { data } = await http.post<ApiResponse<ExecutionOrchestrationVersionItem>>(
+    `/api/execution-orchestrations/profiles/${profileId}/drafts`,
+    null,
+    { params: cleanParams({ sourceVersionId }) }
+  )
+  return data.data
+}
+
+export const updateExecutionOrchestrationVersion = async (
+  versionId: number,
+  payload: UpdateExecutionOrchestrationVersionPayload
+) => {
+  const { data } = await http.put<ApiResponse<ExecutionOrchestrationVersionItem>>(
+    `/api/execution-orchestrations/versions/${versionId}`,
+    payload
+  )
+  return data.data
+}
+
+export const publishExecutionOrchestrationVersion = async (versionId: number) => {
+  const { data } = await http.post<ApiResponse<ExecutionOrchestrationVersionItem>>(
+    `/api/execution-orchestrations/versions/${versionId}/publish`
+  )
+  return data.data
+}
+
+export const deleteExecutionOrchestrationVersion = async (versionId: number) => {
+  await http.delete<ApiResponse<null>>(`/api/execution-orchestrations/versions/${versionId}`)
+}
+
+export const abandonExecutionOrchestrationProfile = async (profileId: number) => {
+  const { data } = await http.post<ApiResponse<ExecutionOrchestrationProfileItem>>(
+    `/api/execution-orchestrations/profiles/${profileId}/abandon`
+  )
+  return data.data
+}
+
+export const createTechnicalDesignExecution = async (taskId: number, payload: TechnicalDesignExecutionPayload) => {
+  const { data } = await http.post<ApiResponse<ExecutionTaskItem>>(`/api/tasks/${taskId}/technical-design-executions`, payload)
+  return data.data
+}
+
+export const writebackTechnicalDesign = async (
+  executionTaskId: number,
+  payload: TechnicalDesignWritebackPayload
+) => {
+  const { data } = await http.post<ApiResponse<ExecutionArtifactItem>>(
+    `/api/execution-tasks/${executionTaskId}/technical-design-writeback`,
+    payload
+  )
   return data.data
 }
 

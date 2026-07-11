@@ -13,6 +13,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.NoSuchElementException;
+import com.aiclub.platform.service.ExecutionOrchestrationNotReadyException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -38,6 +39,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleIllegalArgumentException(IllegalArgumentException ex) {
+        return ApiResponse.fail(ex.getMessage());
+    }
+
+    @ExceptionHandler(ExecutionOrchestrationNotReadyException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResponse<Void> handleExecutionOrchestrationNotReadyException(ExecutionOrchestrationNotReadyException ex) {
         return ApiResponse.fail(ex.getMessage());
     }
 

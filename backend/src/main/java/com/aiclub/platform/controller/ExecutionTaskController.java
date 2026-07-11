@@ -11,7 +11,9 @@ import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.request.ConfirmExecutionPlanRequest;
 import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
 import com.aiclub.platform.dto.request.UpdateExecutionPlanMarkdownRequest;
+import com.aiclub.platform.dto.request.TechnicalDesignWritebackRequest;
 import com.aiclub.platform.service.ExecutionTaskService;
+import com.aiclub.platform.service.TechnicalDesignWritebackService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,9 +35,12 @@ import java.util.List;
 public class ExecutionTaskController {
 
     private final ExecutionTaskService executionTaskService;
+    private final TechnicalDesignWritebackService technicalDesignWritebackService;
 
-    public ExecutionTaskController(ExecutionTaskService executionTaskService) {
+    public ExecutionTaskController(ExecutionTaskService executionTaskService,
+                                   TechnicalDesignWritebackService technicalDesignWritebackService) {
         this.executionTaskService = executionTaskService;
+        this.technicalDesignWritebackService = technicalDesignWritebackService;
     }
 
     @GetMapping
@@ -105,5 +110,28 @@ public class ExecutionTaskController {
     public ApiResponse<ExecutionTaskDetail> confirmPlan(@PathVariable Long id,
                                                         @Valid @RequestBody ConfirmExecutionPlanRequest request) {
         return ApiResponse.success(executionTaskService.confirmExecutionPlan(id, request));
+    }
+
+    /**
+     * 技术设计产物必须由用户显式确认后写回，执行结束不会自动修改工作项。
+     */
+    @PostMapping("/{id}/technical-design-writeback")
+    @RequirePermission("task:execution:create")
+    @OperationLog(actionCode = "TECHNICAL_DESIGN_WRITEBACK", actionName = "写回技术设计", bizIdParam = "id")
+    public ApiResponse<com.aiclub.platform.dto.ExecutionArtifactSummary> writeBackTechnicalDesign(
+            @PathVariable Long id,
+            @Valid @RequestBody TechnicalDesignWritebackRequest request) {
+        com.aiclub.platform.domain.model.ExecutionArtifactEntity artifact =
+                technicalDesignWritebackService.writeBack(id, request.artifactId(), request.mode());
+        return ApiResponse.success(new com.aiclub.platform.dto.ExecutionArtifactSummary(
+                artifact.getId(),
+                artifact.getRun().getId(),
+                artifact.getStep() == null ? null : artifact.getStep().getId(),
+                artifact.getArtifactType(),
+                artifact.getTitle(),
+                artifact.getContentRef(),
+                artifact.getContentText(),
+                artifact.isWorkItemWritebackFlag()
+        ));
     }
 }

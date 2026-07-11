@@ -7,19 +7,17 @@ import { createPortal } from 'react-dom'
 import {
   ArrowDown, ArrowUp, GitBranch, Plus, Sparkles, Trash2, X,
 } from 'lucide-react'
-import { createExecutionTask } from '@/src/api/execution'
-import { listAgentOptions, listGitlabBindingOptions } from '@/src/api/development'
+import { createExecutionTask, listExecutionOrchestrationScenarios } from '@/src/api/execution'
+import { listGitlabBindingOptions } from '@/src/api/development'
 import { Button } from '@/src/components/common/Button'
 import { Select } from '@/src/components/common/Select'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import {
-  DEVELOPMENT_EXECUTION_STEPS,
-  recommendDevelopmentExecutionAgentId,
   validateDevelopmentExecutionDraft,
   type DevelopmentExecutionRepositoryDraft,
 } from '@/src/lib/developmentExecutionUtils'
 import { cn, getErrorMessage } from '@/src/lib/utils'
-import type { AgentOptionItem, ProjectGitlabBindingItem } from '@/src/types/development'
+import type { ProjectGitlabBindingItem } from '@/src/types/development'
 import type { ExecutionTaskItem } from '@/src/types/execution'
 import type { WorkItem } from '@/src/types/planning'
 
@@ -36,13 +34,12 @@ export const DevelopmentExecutionDialog = ({
   onClose,
   onCreated,
 }: DevelopmentExecutionDialogProps) => {
-  const [agentOptions, setAgentOptions] = useState<AgentOptionItem[]>([])
   const [gitlabBindings, setGitlabBindings] = useState<ProjectGitlabBindingItem[]>([])
+  const [orchestrationReady, setOrchestrationReady] = useState(false)
   const [loadingOptions, setLoadingOptions] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [repositories, setRepositories] = useState<DevelopmentExecutionRepositoryDraft[]>([])
   const [selectedBindingId, setSelectedBindingId] = useState('')
-  const [stepAgentMap, setStepAgentMap] = useState<Record<string, number | undefined>>({})
   const [inputText, setInputText] = useState('')
   const [planConfirmationRequired, setPlanConfirmationRequired] = useState(false)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -67,18 +64,6 @@ export const DevelopmentExecutionDialog = ({
       })),
     [availableBindings, selectedBindingIds],
   )
-  const agentSelectOptions = useMemo(
-    () => [
-      { value: '', label: '不指定', description: '由后端按步骤默认策略处理' },
-      ...agentOptions.map((agent) => ({
-        value: String(agent.id),
-        label: buildAgentLabel(agent),
-        description: agent.capability || agent.description || undefined,
-      })),
-    ],
-    [agentOptions],
-  )
-
   const resolveBinding = useCallback(
     (bindingId: number) => availableBindings.find((binding) => binding.id === bindingId),
     [availableBindings],
@@ -89,7 +74,7 @@ export const DevelopmentExecutionDialog = ({
   )
 
   /**
-   * 每次打开弹窗都重新拉取可执行 Agent 和项目仓库绑定，避免使用过期配置创建执行任务。
+   * 每次打开弹窗都重新拉取项目仓库与编排就绪状态，避免使用过期配置创建执行任务。
    */
   useEffect(() => {
     if (!open) return
@@ -98,20 +83,17 @@ export const DevelopmentExecutionDialog = ({
     setSubmitting(false)
     setRepositories([])
     setSelectedBindingId('')
-    setStepAgentMap({})
+    setOrchestrationReady(false)
     setInputText('')
     setPlanConfirmationRequired(false)
     setToast(null)
-    Promise.all([listAgentOptions(workItem.projectId), listGitlabBindingOptions()])
-      .then(([agents, bindings]) => {
+    Promise.all([listGitlabBindingOptions(), listExecutionOrchestrationScenarios(workItem.projectId)])
+      .then(([bindings, scenarios]) => {
         if (cancelled) return
-        setAgentOptions(agents)
         setGitlabBindings(bindings)
-        const nextStepAgentMap: Record<string, number | undefined> = {}
-        for (const step of DEVELOPMENT_EXECUTION_STEPS) {
-          nextStepAgentMap[step.stepCode] = recommendDevelopmentExecutionAgentId(step.stepCode, agents)
-        }
-        setStepAgentMap(nextStepAgentMap)
+        setOrchestrationReady(Boolean(
+          scenarios.find((item) => item.scenarioCode === 'DEVELOPMENT_IMPLEMENTATION')?.effectiveReady,
+        ))
       })
       .catch((err) => {
         if (!cancelled) showToast('error', getErrorMessage(err) || '加载执行配置失败')
@@ -157,17 +139,19 @@ export const DevelopmentExecutionDialog = ({
   }
 
   /**
-   * 构建开发执行创建请求：仓库进入 inputPayload，步骤 Agent 绑定进入 agentBindings。
+   * 构建开发执行创建请求：发起人只提交仓库与约束，后端按已发布编排固化执行器。
    */
   const submit = async () => {
     const validation = validateDevelopmentExecutionDraft({
       repositories,
-      agentOptions,
-      stepAgentMap,
       resolveRepositoryName: resolveBindingName,
     })
     if (!validation.valid) {
       showToast('error', validation.message)
+      return
+    }
+    if (!orchestrationReady) {
+      showToast('error', '当前项目的开发执行编排未就绪，请联系管理员配置并发布编排')
       return
     }
 
@@ -186,9 +170,6 @@ export const DevelopmentExecutionDialog = ({
         workItemId: workItem.id,
         triggerSource: 'PAGE',
         planConfirmationRequired,
-        agentBindings: DEVELOPMENT_EXECUTION_STEPS
-          .map((step) => ({ stepCode: step.stepCode, agentId: stepAgentMap[step.stepCode] }))
-          .filter((item): item is { stepCode: string; agentId: number } => typeof item.agentId === 'number'),
         inputPayload,
       })
       showToast('success', '执行任务已创建')
@@ -289,28 +270,15 @@ export const DevelopmentExecutionDialog = ({
                 </div>
               </section>
 
-              <section className="space-y-3">
-                <SectionHeader title="执行步骤 Agent" description="开发实现与执行测试如需手动指定，必须选择可执行 Agent。" />
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {DEVELOPMENT_EXECUTION_STEPS.map((step) => (
-                    <div key={step.stepCode} className="rounded-lg border border-[var(--color-border-light)] bg-white p-3">
-                      <div className="mb-2">
-                        <div className="text-[13px] font-semibold text-[var(--color-text-primary)]">{step.stepName}</div>
-                        <div className="text-[11px] text-[var(--color-text-tertiary)]">{step.description}</div>
-                      </div>
-                      <Select
-                        value={String(stepAgentMap[step.stepCode] ?? '')}
-                        onChange={(value) => setStepAgentMap((prev) => ({
-                          ...prev,
-                          [step.stepCode]: value ? Number(value) : undefined,
-                        }))}
-                        options={agentSelectOptions}
-                        searchable
-                        placeholder="选择 Agent"
-                      />
-                    </div>
-                  ))}
-                </div>
+              <section className={cn(
+                'rounded-lg border px-4 py-3 text-[12px]',
+                orchestrationReady
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-amber-200 bg-amber-50 text-amber-800',
+              )}>
+                {orchestrationReady
+                  ? '开发执行编排已就绪，实际执行器由管理员发布的项目或平台编排统一确定。'
+                  : '当前项目的开发执行编排未就绪，请联系管理员配置并发布编排。'}
               </section>
 
               <section className="space-y-3">
@@ -340,7 +308,7 @@ export const DevelopmentExecutionDialog = ({
 
         <div className="flex shrink-0 items-center justify-end gap-2 border-t border-[var(--color-border)] bg-[var(--color-bg-page)] px-6 py-3">
           <Button type="button" variant="secondary" onClick={onClose}>取消</Button>
-          <Button type="button" onClick={submit} loading={submitting} disabled={loadingOptions}>
+          <Button type="button" onClick={submit} loading={submitting} disabled={loadingOptions || !orchestrationReady}>
             创建执行任务
           </Button>
         </div>
@@ -361,8 +329,6 @@ export const DevelopmentExecutionDialog = ({
 
   return createPortal(dialogContent, document.body)
 }
-
-const buildAgentLabel = (agent: AgentOptionItem) => `${agent.name} / ${agent.type} / ${agent.accessType}`
 
 const buildBindingLabel = (binding?: ProjectGitlabBindingItem | null) =>
   binding?.gitlabProjectPath || binding?.gitlabProjectRef || `GitLab 绑定 #${binding?.id ?? '-'}`

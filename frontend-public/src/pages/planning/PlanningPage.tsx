@@ -24,11 +24,13 @@ import type { UserOptionItem } from '@/src/api/users'
 import { MarkdownEditor } from '@/src/components/common/MarkdownEditor'
 import { RequirementAiDialog } from './RequirementAiDialog'
 import { DevelopmentExecutionDialog } from './DevelopmentExecutionDialog'
+import { TechnicalDesignAiDialog } from './TechnicalDesignAiDialog'
 import { useAuthStore } from '@/src/stores/auth'
 import { REQUIREMENT_TEMPLATE, TASK_TEMPLATE } from '@/src/lib/markdownTemplates'
 import { uploadMarkdownImage } from '@/src/lib/markdownImageUpload'
 import { buildWorkItemInlineEditPayload } from '@/src/lib/planningInlineEditUtils'
 import { TASK_TYPE_OPTIONS, isDevelopmentExecutionEntryVisible, isRequirementAiEntryVisible, normalizeTaskType } from '@/src/lib/requirementAiUtils'
+import { isTechnicalDesignEntryVisible } from '@/src/lib/technicalDesignAiUtils'
 import type { IterationBoardItem, IterationItem, WorkItem, WorkItemStats, WorkItemPayload, IterationPayload, BurndownItem, TaskComment, WorkItemLinks, LinkedTestCase } from '@/src/types/planning'
 import type { PageResponse } from '@/src/types/api'
 import { Button } from '@/src/components/common/Button'
@@ -164,6 +166,8 @@ export const PlanningPage = () => {
   const [aiAssistantItem, setAiAssistantItem] = useState<WorkItem | null>(null)
   /** 开发任务/缺陷发起开发执行的目标工作项。 */
   const [developmentExecutionItem, setDevelopmentExecutionItem] = useState<WorkItem | null>(null)
+  /** 技术设计任务发起三步只读设计工作流的目标工作项。 */
+  const [technicalDesignItem, setTechnicalDesignItem] = useState<WorkItem | null>(null)
   /** 打开 AI 助手后自动执行的动作（如 'STANDARDIZE'），执行后由 onClose 清理。 */
   const [autoRunAction, setAutoRunAction] = useState<string | null>(null)
   /** 全部可选企业用户。 */
@@ -269,11 +273,15 @@ export const PlanningPage = () => {
   }
 
   /**
-   * 详情头部统一使用 Sparkles 智能入口：需求/测试任务进入需求 AI，开发任务/缺陷进入开发执行。
+   * 详情头部统一使用 Sparkles 智能入口：按需求 AI、技术设计 AI、开发执行顺序分流。
    */
   const handleOpenSmartAction = (item: WorkItem) => {
     if (isRequirementAiEntryVisible(item)) {
       setAiAssistantItem(item)
+      return
+    }
+    if (canCreateExecution && isTechnicalDesignEntryVisible(item)) {
+      setTechnicalDesignItem(item)
       return
     }
     if (canCreateExecution && isDevelopmentExecutionEntryVisible(item)) {
@@ -521,6 +529,7 @@ export const PlanningPage = () => {
       {detailItem && <WorkItemDetailDrawer item={detailItem} loading={detailLoading} userOptions={userOptions} canGoBack={detailNavigationStack.length > 0} canCreateExecution={canCreateExecution} onBack={handleBackDetail} onClose={() => { setDetailItem(null); setDetailNavigationStack([]) }} onEdit={() => { setWiDialog({ open: true, editing: detailItem }); setDetailItem(null); setDetailNavigationStack([]) }} onDelete={(w) => { setDetailItem(null); setDetailNavigationStack([]); setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name }) }} onRefresh={(id) => handleOpenDetail(id, { preserveHistory: true })} onOpenLinkedWorkItem={(id) => handleOpenDetail(id, { pushHistory: true, previousItem: detailItem })} onOpenAi={() => handleOpenSmartAction(detailItem)} />}
       {deleteConfirm && <DeleteConfirmDialog name={deleteConfirm.name} onCancel={() => setDeleteConfirm(null)} onConfirm={handleDeleteConfirm} />}
       {aiAssistantItem && isRequirementAiEntryVisible(aiAssistantItem) && <RequirementAiDialog open={true} workItem={aiAssistantItem} userOptions={userOptions} projectMemberIds={projectMemberIds} onClose={() => { setAiAssistantItem(null); setAutoRunAction(null) }} onChanged={() => { if (detailItem?.id === aiAssistantItem.id) handleOpenDetail(aiAssistantItem.id); refreshAll() }} autoRunAction={autoRunAction} />}
+      {technicalDesignItem && <TechnicalDesignAiDialog open={true} workItem={technicalDesignItem} onClose={() => setTechnicalDesignItem(null)} onCreated={(executionTask) => { const sourceItem = technicalDesignItem; setTechnicalDesignItem(null); refreshAll(); navigate(`/projects/${executionTask.projectId || sourceItem.projectId}/execution/tasks/${executionTask.id}`) }} />}
       {developmentExecutionItem && <DevelopmentExecutionDialog open={true} workItem={developmentExecutionItem} onClose={() => setDevelopmentExecutionItem(null)} onCreated={(executionTask) => { const sourceItem = developmentExecutionItem; setDevelopmentExecutionItem(null); if (detailItem?.id === sourceItem.id) handleOpenDetail(sourceItem.id, { preserveHistory: true }); refreshAll(); navigate(`/projects/${executionTask.projectId || sourceItem.projectId}/execution/tasks/${executionTask.id}`) }} />}
     </div>
   )
@@ -1075,7 +1084,7 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
           返回
         </button>
       )}
-      {(isRequirementAiEntryVisible(item) || (canCreateExecution && isDevelopmentExecutionEntryVisible(item))) && onOpenAi && (
+      {(isRequirementAiEntryVisible(item) || (canCreateExecution && (isTechnicalDesignEntryVisible(item) || isDevelopmentExecutionEntryVisible(item)))) && onOpenAi && (
         <button onClick={onOpenAi} title="AI 助手" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors">
           <Sparkles className="h-4 w-4" />
         </button>

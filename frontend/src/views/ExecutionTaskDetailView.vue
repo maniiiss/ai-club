@@ -39,6 +39,23 @@
     </section>
 
     <template v-if="taskDetail">
+      <section v-if="taskDetail.orchestrationVersionId && taskDetail.resolvedBindings.length" class="execution-binding-snapshot">
+        <div class="execution-binding-snapshot-head">
+          <h2>执行器快照</h2>
+          <span>编排版本 #{{ taskDetail.orchestrationVersionId }}</span>
+        </div>
+        <div class="execution-binding-snapshot-grid">
+          <article
+            v-for="binding in taskDetail.resolvedBindings"
+            :key="`${binding.stepNo}-${binding.stepCode}-${binding.repositoryBindingId || 0}`"
+          >
+            <strong>{{ binding.stepNo }}. {{ binding.stepName }}</strong>
+            <span>{{ binding.agentName || `Agent #${binding.agentId || '-'}` }} · {{ binding.runtimeType || binding.accessType || '-' }} · {{ binding.timeoutSeconds || '-' }} 秒</span>
+            <small v-if="binding.repositoryDisplayName">{{ binding.repositoryDisplayName }} @ {{ binding.repositoryTargetBranch || '-' }}</small>
+          </article>
+        </div>
+      </section>
+
       <section class="execution-run-card">
         <div class="execution-run-head">
           <div>
@@ -67,6 +84,15 @@
           class="execution-run-alert"
           :type="taskWorkspaceCleanupAlert.type"
           :title="taskWorkspaceCleanupAlert.message"
+          :closable="false"
+          show-icon
+        />
+        <el-alert
+          v-if="gitNexusDegradationMessage"
+          class="execution-run-alert"
+          type="warning"
+          title="GitNexus 已降级"
+          :description="gitNexusDegradationMessage"
           :closable="false"
           show-icon
         />
@@ -425,6 +451,24 @@
                 <pre v-else>{{ previewLongText(displayArtifactText(artifact) || '-') }}</pre>
                 <div v-if="artifact.kind === 'artifact'" class="execution-artifact-foot">
                   <span v-if="displayArtifactWriteback(artifact)">已回写工作项</span>
+                  <div v-if="isTechnicalDesignWritebackArtifact(artifact)" class="execution-technical-design-writeback-actions">
+                    <el-button
+                      size="small"
+                      :loading="technicalDesignWritebackKey === `${artifact.artifact.id}-DESCRIPTION`"
+                      @click="handleTechnicalDesignWriteback(artifact.artifact, 'DESCRIPTION')"
+                    >
+                      写入描述
+                    </el-button>
+                    <el-button
+                      size="small"
+                      type="primary"
+                      plain
+                      :loading="technicalDesignWritebackKey === `${artifact.artifact.id}-COMMENT`"
+                      @click="handleTechnicalDesignWriteback(artifact.artifact, 'COMMENT')"
+                    >
+                      写入评论
+                    </el-button>
+                  </div>
                   <el-link v-if="displayArtifactContentRef(artifact)" type="primary" @click.prevent="handleDisplayArtifactDownload(artifact)">下载产物</el-link>
                 </div>
               </section>
@@ -673,7 +717,8 @@ import {
   getExecutionTaskDetail,
   retryExecutionTask,
   streamExecutionRunEvents,
-  updateExecutionPlanMarkdown
+  updateExecutionPlanMarkdown,
+  writebackTechnicalDesign
 } from '@/api/platform'
 import { useAuthStore } from '@/stores/auth'
 import type {
@@ -686,7 +731,8 @@ import type {
   GitlabBranchItem,
   GitlabCreateMergeRequestResultItem,
   GitlabUserOauthBindingItem,
-  ProjectGitlabBindingItem
+  ProjectGitlabBindingItem,
+  TechnicalDesignWritebackMode
 } from '@/types/platform'
 
 const route = useRoute()
@@ -712,6 +758,7 @@ const quickMergeSubmitting = ref(false)
 const planMarkdownDraft = ref('')
 const planMarkdownSaving = ref(false)
 const planMarkdownConfirming = ref(false)
+const technicalDesignWritebackKey = ref('')
 const quickMergeFormRef = ref<FormInstance>()
 const quickMergeOauthBinding = ref<GitlabUserOauthBindingItem>(fallbackQuickMergeOauthBinding())
 const quickMergeSourceBranchOptions = ref<GitlabBranchItem[]>([])
@@ -818,6 +865,7 @@ const quickMergeForm = reactive<QuickMergeForm>({
 const executionTaskId = computed(() => Number(route.params.executionTaskId))
 const canCancelExecution = computed(() => authStore.hasPermission('task:execution:cancel'))
 const canRetryExecution = computed(() => authStore.hasPermission('task:execution:retry'))
+const canWritebackTechnicalDesign = computed(() => authStore.hasPermission('task:execution:create'))
 const retiredScenarioCodes = new Set(['REQUIREMENT_BREAKDOWN', 'TEST_DESIGN_OR_REVIEW'])
 const canManageGitlab = computed(() => authStore.hasPermission('gitlab:manage'))
 const canRetryCurrentScenario = computed(() =>
@@ -832,6 +880,12 @@ const quickMergeRules: FormRules<QuickMergeForm> = {
 const selectedChangeReviewRepositoryKey = ref('')
 const selectedChangeReviewFileKey = ref('')
 const isDevelopmentExecution = computed(() => taskDetail.value?.scenarioCode === 'DEVELOPMENT_IMPLEMENTATION')
+const isTechnicalDesignExecution = computed(() => taskDetail.value?.scenarioCode === 'TECHNICAL_DESIGN_AUTHORING')
+const latestSuccessfulRunId = computed(() =>
+  (taskDetail.value?.runs || [])
+    .filter((run) => run.status === 'SUCCESS')
+    .sort((left, right) => right.runNo - left.runNo)[0]?.id || null
+)
 const runCardDescription = computed(() =>
   taskDetail.value?.planConfirmationPending
     ? '当前运行已完成执行规划，正在等待发起人进入执行详情查看、编辑并确认后再继续。'
@@ -876,6 +930,18 @@ const parsedInputPayload = computed<Record<string, any>>(() => {
   } catch (error) {
     return {}
   }
+})
+
+/** GitNexus 失败允许降级，详情页从代码上下文产物中提取明确提示，避免用户误以为仍使用了知识图谱。 */
+const gitNexusDegradationMessage = computed(() => {
+  if (!isTechnicalDesignExecution.value) return ''
+  const contextArtifact = runDetail.value?.artifacts.find((artifact) => artifact.artifactType === 'CODE_CONTEXT_MARKDOWN')
+  const content = String(contextArtifact?.contentText || '')
+  if (!/GitNexus/i.test(content) || !/(降级|失败|不可用|未使用|fallback)/i.test(content)) return ''
+  const matchedLine = content.split(/\r?\n/).find((line) => /GitNexus/i.test(line) && /(降级|失败|不可用|未使用|fallback)/i.test(line))
+  return String(matchedLine || 'GitNexus 不可用，本次代码理解已降级为源码搜索；具体原因请查看代码上下文产物。')
+    .replace(/^\s*#+\s*/, '')
+    .trim()
 })
 const bindingOptionMap = computed(() => {
   const map = new Map<number, ProjectGitlabBindingItem>()
@@ -1325,7 +1391,10 @@ const MARKDOWN_ARTIFACT_TYPES = [
   'AUTOMATION_PLAN_MARKDOWN',
   'AUTOMATION_SCRIPT_PREVIEW_MARKDOWN',
   'AUTOMATION_TEST_RESULT_MARKDOWN',
-  'AUTOMATION_REPORT_MARKDOWN'
+  'AUTOMATION_REPORT_MARKDOWN',
+  'CODE_CONTEXT_MARKDOWN',
+  'TECHNICAL_DESIGN_MARKDOWN',
+  'DESIGN_REVIEW_MARKDOWN'
 ]
 
 const STRUCTURED_EXECUTION_ARTIFACT_TYPES = [
@@ -1608,6 +1677,16 @@ const isDisplayArtifactMarkdown = (artifact: DisplayArtifactItem) =>
 
 const isDisplayArtifactImage = (artifact: DisplayArtifactItem) =>
   artifact.kind === 'artifact' && isImageArtifact(artifact.artifact)
+
+const isTechnicalDesignWritebackArtifact = (
+  artifact: DisplayArtifactItem
+): artifact is Extract<DisplayArtifactItem, { kind: 'artifact' }> =>
+  artifact.kind === 'artifact'
+  && isTechnicalDesignExecution.value
+  && canWritebackTechnicalDesign.value
+  && runDetail.value?.id === latestSuccessfulRunId.value
+  && artifact.artifact.artifactType === 'TECHNICAL_DESIGN_MARKDOWN'
+  && hasText(artifact.artifact.contentText)
 
 const isDisplayArtifactStructuredExecution = (artifact: DisplayArtifactItem) =>
   artifact.kind === 'artifact'
@@ -2088,6 +2167,28 @@ const handleDisplayArtifactDownload = async (artifact: DisplayArtifactItem) => {
     return
   }
   await handleArtifactDownload(artifact.artifact)
+}
+
+/** 技术设计默认不自动污染工作项，只有用户在详情页明确选择描述或评论时才执行写回。 */
+const handleTechnicalDesignWriteback = async (
+  artifact: ExecutionArtifactItem,
+  mode: TechnicalDesignWritebackMode
+) => {
+  if (!taskDetail.value) return
+  const actionLabel = mode === 'DESCRIPTION' ? '工作项描述' : '工作项评论'
+  try {
+    await ElMessageBox.confirm(`确认将当前技术设计写入${actionLabel}吗？`, '技术设计写回', { type: 'warning' })
+    technicalDesignWritebackKey.value = `${artifact.id}-${mode}`
+    await writebackTechnicalDesign(taskDetail.value.id, { artifactId: artifact.id, mode })
+    ElMessage.success(`技术设计已写入${actionLabel}`)
+    await refreshTaskAndRunSnapshot()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.response?.data?.message || '技术设计写回失败')
+    }
+  } finally {
+    technicalDesignWritebackKey.value = ''
+  }
 }
 
 function fallbackQuickMergeOauthBinding(): GitlabUserOauthBindingItem {
@@ -2735,6 +2836,7 @@ onBeforeUnmount(() => {
 }
 
 .execution-detail-hero,
+.execution-binding-snapshot,
 .execution-run-card,
 .execution-panel {
   border-radius: 8px;
@@ -2839,6 +2941,59 @@ onBeforeUnmount(() => {
 
 .execution-run-card {
   padding: 10px 14px 12px;
+}
+
+.execution-binding-snapshot {
+  padding: 10px 14px;
+  border: 1px solid rgba(14, 165, 233, 0.2);
+  background: rgba(240, 249, 255, 0.85);
+}
+
+.execution-binding-snapshot-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.execution-binding-snapshot-head h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.execution-binding-snapshot-head span {
+  color: #0369a1;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.execution-binding-snapshot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 7px;
+}
+
+.execution-binding-snapshot-grid article {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: #fff;
+  color: #475569;
+  font-size: 11px;
+}
+
+.execution-binding-snapshot-grid strong {
+  color: #0f172a;
+}
+
+.execution-binding-snapshot-grid small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .execution-plan-confirm-card {
@@ -3295,6 +3450,13 @@ onBeforeUnmount(() => {
 .execution-artifact-foot {
   color: #64748b;
   font-size: 12px;
+}
+
+.execution-technical-design-writeback-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .execution-step-live-meta {

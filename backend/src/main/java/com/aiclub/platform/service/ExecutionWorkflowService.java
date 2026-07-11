@@ -36,6 +36,7 @@ public class ExecutionWorkflowService {
     public static final String SCENARIO_CODEBASE_COMPLIANCE_SCAN = "CODEBASE_COMPLIANCE_SCAN";
     public static final String SCENARIO_SELF_UPGRADE_PATROL = "SELF_UPGRADE_PATROL";
     public static final String SCENARIO_TEST_AUTOMATION = "TEST_AUTOMATION";
+    public static final String SCENARIO_TECHNICAL_DESIGN_AUTHORING = "TECHNICAL_DESIGN_AUTHORING";
 
     public static final String STEP_PLAN = "PLAN";
     public static final String STEP_REPO_STRUCTURING = "REPO_STRUCTURING";
@@ -46,6 +47,9 @@ public class ExecutionWorkflowService {
     public static final String STEP_REVIEW = "REVIEW";
     public static final String STEP_AD_HOC_RUN = "AD_HOC_RUN";
     public static final String STEP_PATROL = "PATROL";
+    public static final String STEP_CODE_CONTEXT = "CODE_CONTEXT";
+    public static final String STEP_DESIGN_DRAFT = "DESIGN_DRAFT";
+    public static final String STEP_DESIGN_REVIEW = "DESIGN_REVIEW";
 
     private static final Set<String> SUPPORTED_SCENARIOS = Set.of(
             SCENARIO_REQUIREMENT_BREAKDOWN,
@@ -54,7 +58,8 @@ public class ExecutionWorkflowService {
             SCENARIO_AD_HOC_AGENT_RUN,
             SCENARIO_CODEBASE_COMPLIANCE_SCAN,
             SCENARIO_SELF_UPGRADE_PATROL,
-            SCENARIO_TEST_AUTOMATION
+            SCENARIO_TEST_AUTOMATION,
+            SCENARIO_TECHNICAL_DESIGN_AUTHORING
     );
 
     private final AgentRepository agentRepository;
@@ -104,7 +109,8 @@ public class ExecutionWorkflowService {
                     agent,
                     template.repositoryBindingId(),
                     template.repositoryTargetBranch(),
-                    template.repositoryDisplayName()
+                    template.repositoryDisplayName(),
+                    timeoutForStep(requestedBindings, template.stepCode())
             ));
         }
 
@@ -134,7 +140,8 @@ public class ExecutionWorkflowService {
                         agent,
                         binding.repositoryBindingId(),
                         trimToNull(binding.repositoryTargetBranch()),
-                        trimToNull(binding.repositoryDisplayName())
+                        trimToNull(binding.repositoryDisplayName()),
+                        binding.timeoutSeconds()
                 ));
             }
             return new WorkflowPlan(normalizedScenarioCode, scenarioName(normalizedScenarioCode), steps);
@@ -157,7 +164,8 @@ public class ExecutionWorkflowService {
                     agent,
                     template.repositoryBindingId(),
                     template.repositoryTargetBranch(),
-                    template.repositoryDisplayName()
+                    template.repositoryDisplayName(),
+                    null
             ));
         }
 
@@ -176,7 +184,11 @@ public class ExecutionWorkflowService {
                         step.agent() == null ? null : step.agent().getId(),
                         step.repositoryBindingId(),
                         step.repositoryTargetBranch(),
-                        step.repositoryDisplayName()
+                        step.repositoryDisplayName(),
+                        step.timeoutSeconds(),
+                        step.agent() == null ? null : step.agent().getName(),
+                        step.agent() == null ? null : step.agent().getAccessType(),
+                        step.agent() == null ? null : step.agent().getRuntimeType()
                 ))
                 .toList();
         try {
@@ -253,6 +265,7 @@ public class ExecutionWorkflowService {
             case SCENARIO_CODEBASE_COMPLIANCE_SCAN -> "仓库规范扫描";
             case SCENARIO_SELF_UPGRADE_PATROL -> "自升级巡检";
             case SCENARIO_TEST_AUTOMATION -> "自动化测试";
+            case SCENARIO_TECHNICAL_DESIGN_AUTHORING -> "技术设计生成";
             default -> throw new IllegalArgumentException("不支持的执行场景");
         };
     }
@@ -273,6 +286,9 @@ public class ExecutionWorkflowService {
             case STEP_REVIEW -> "请从质量、风险、边界情况和可交付性角度评审前序输出，结果使用 Markdown。";
             case STEP_AD_HOC_RUN -> "请直接根据补充说明处理当前任务，结果使用 Markdown。";
             case STEP_PATROL -> "请按照自升级巡检协议执行页面探索，并仅返回结构化 JSON 结果。";
+            case STEP_CODE_CONTEXT -> "请优先使用 GitNexus 和真实仓库源码完成代码理解、调用链、上游影响分析、现有测试与最小验证入口梳理；禁止修改代码，并明确 GitNexus 使用或降级情况。";
+            case STEP_DESIGN_DRAFT -> "请基于代码理解和工作项上下文生成技术设计 Markdown，固定覆盖背景与目标、现状与约束、方案概览、影响范围、接口与数据变更、兼容性与迁移、风险与回滚、Harness 与验证、开发执行输入；禁止修改代码。";
+            case STEP_DESIGN_REVIEW -> "请自检技术设计中的源码证据、影响范围、接口数据变化、测试策略、兼容迁移和回滚方案，标出需要人工确认的问题；不得声称建议命令已经执行通过。";
             default -> "请根据当前上下文完成该步骤。";
         };
     }
@@ -289,6 +305,12 @@ public class ExecutionWorkflowService {
             bindingMap.put(requestedBinding.stepCode().trim().toUpperCase(Locale.ROOT), requestedBinding.agentId());
         }
         return bindingMap;
+    }
+
+    private Integer timeoutForStep(List<ExecutionAgentBindingRequest> requestedBindings, String stepCode) {
+        if (requestedBindings == null) return null;
+        return requestedBindings.stream().filter(item -> item != null && stepCode.equalsIgnoreCase(defaultString(item.stepCode())))
+                .map(ExecutionAgentBindingRequest::timeoutSeconds).filter(Objects::nonNull).findFirst().orElse(null);
     }
 
     private List<StoredAgentBinding> readStoredBindings(String storedBindingPayload) {
@@ -340,6 +362,11 @@ public class ExecutionWorkflowService {
                     new StepTemplate(STEP_REPORT, "结果回写", null, null, null)
             );
             case SCENARIO_CODEBASE_COMPLIANCE_SCAN -> List.of();
+            case SCENARIO_TECHNICAL_DESIGN_AUTHORING -> List.of(
+                    new StepTemplate(STEP_CODE_CONTEXT, "代码理解", null, null, null),
+                    new StepTemplate(STEP_DESIGN_DRAFT, "方案生成", null, null, null),
+                    new StepTemplate(STEP_DESIGN_REVIEW, "设计自检", null, null, null)
+            );
             default -> throw new IllegalArgumentException("不支持的执行场景");
         };
     }
@@ -439,6 +466,12 @@ public class ExecutionWorkflowService {
                     "CODE_REVIEW".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
                             || containsAny(agent, "review", "评审", "reviewer"));
             case STEP_AD_HOC_RUN -> candidates.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(candidates.get(0));
+            case STEP_CODE_CONTEXT, STEP_DESIGN_DRAFT, STEP_DESIGN_REVIEW -> candidates.stream()
+                    .filter(agent -> isCliRuntime(agent, AgentExecutionService.RUNTIME_CODEX_CLI))
+                    .findFirst()
+                    .or(() -> candidates.stream()
+                            .filter(agent -> isCliRuntime(agent, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI))
+                            .findFirst());
             default -> java.util.Optional.empty();
         };
     }
@@ -552,7 +585,11 @@ public class ExecutionWorkflowService {
             Long agentId,
             Long repositoryBindingId,
             String repositoryTargetBranch,
-            String repositoryDisplayName
+            String repositoryDisplayName,
+            Integer timeoutSeconds,
+            String agentName,
+            String accessType,
+            String runtimeType
     ) {
     }
 
@@ -587,7 +624,12 @@ public class ExecutionWorkflowService {
             AgentEntity agent,
             Long repositoryBindingId,
             String repositoryTargetBranch,
-            String repositoryDisplayName
+            String repositoryDisplayName,
+            Integer timeoutSeconds
     ) {
+        public ExecutionStepPlan(Integer stepNo, String stepCode, String stepName, AgentEntity agent,
+                                 Long repositoryBindingId, String repositoryTargetBranch, String repositoryDisplayName) {
+            this(stepNo, stepCode, stepName, agent, repositoryBindingId, repositoryTargetBranch, repositoryDisplayName, null);
+        }
     }
 }

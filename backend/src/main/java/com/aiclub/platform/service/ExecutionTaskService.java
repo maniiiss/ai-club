@@ -12,6 +12,7 @@ import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.ExecutionArtifactSummary;
 import com.aiclub.platform.dto.ExecutionTaskListStatsSummary;
 import com.aiclub.platform.dto.ExecutionRunDetail;
+import com.aiclub.platform.dto.ExecutionResolvedBindingSummary;
 import com.aiclub.platform.dto.ExecutionRunSummary;
 import com.aiclub.platform.dto.ExecutionStepSummary;
 import com.aiclub.platform.dto.ExecutionTaskDetail;
@@ -29,6 +30,7 @@ import com.aiclub.platform.repository.ExecutionArtifactRepository;
 import com.aiclub.platform.repository.ExecutionRunRepository;
 import com.aiclub.platform.repository.ExecutionStepRepository;
 import com.aiclub.platform.repository.ExecutionTaskRepository;
+import com.aiclub.platform.repository.ExecutionOrchestrationVersionRepository;
 import com.aiclub.platform.repository.ProjectRepository;
 import com.aiclub.platform.repository.ProjectGitlabBindingRepository;
 import com.aiclub.platform.repository.TaskRepository;
@@ -94,6 +96,9 @@ public class ExecutionTaskService {
     private final SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
     private final ExecutionWorkspaceCleanupService executionWorkspaceCleanupService;
     private final ExecutionTaskQueuePublisher executionTaskQueuePublisher;
+    private final TechnicalDesignCreditSettlementService technicalDesignCreditSettlementService;
+    private final ExecutionOrchestrationService executionOrchestrationService;
+    private final ExecutionOrchestrationVersionRepository executionOrchestrationVersionRepository;
     private final ObjectMapper objectMapper;
 
     public ExecutionTaskService(ExecutionTaskRepository executionTaskRepository,
@@ -111,6 +116,9 @@ public class ExecutionTaskService {
                                 SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService,
                                 ExecutionWorkspaceCleanupService executionWorkspaceCleanupService,
                                 ExecutionTaskQueuePublisher executionTaskQueuePublisher,
+                                TechnicalDesignCreditSettlementService technicalDesignCreditSettlementService,
+                                ExecutionOrchestrationService executionOrchestrationService,
+                                ExecutionOrchestrationVersionRepository executionOrchestrationVersionRepository,
                                 ObjectMapper objectMapper) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
@@ -127,6 +135,9 @@ public class ExecutionTaskService {
         this.selfUpgradeExecutionWritebackService = selfUpgradeExecutionWritebackService;
         this.executionWorkspaceCleanupService = executionWorkspaceCleanupService;
         this.executionTaskQueuePublisher = executionTaskQueuePublisher;
+        this.technicalDesignCreditSettlementService = technicalDesignCreditSettlementService;
+        this.executionOrchestrationService = executionOrchestrationService;
+        this.executionOrchestrationVersionRepository = executionOrchestrationVersionRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -211,6 +222,13 @@ public class ExecutionTaskService {
      */
     @Transactional
     public ExecutionTaskSummary createExecutionTask(CreateExecutionTaskRequest request) {
+        if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(defaultString(request.scenarioCode()))) {
+            throw new IllegalArgumentException("技术设计生成必须使用专用创建接口");
+        }
+        return createPageExecutionTask(request);
+    }
+
+    private ExecutionTaskSummary createPageExecutionTask(CreateExecutionTaskRequest request) {
         ProjectEntity project = requireProject(request.projectId());
         TaskEntity workItem = request.workItemId() == null ? null : requireWorkItem(project.getId(), request.workItemId());
         UserEntity currentUser = requireCurrentUser();
@@ -231,6 +249,44 @@ public class ExecutionTaskService {
         ExecutionTaskEntity saved = executionTaskRepository.save(entity);
         scheduleDispatchAfterCommit(saved.getId());
         return toTaskSummary(saved);
+    }
+
+    /**
+     * 双端技术设计入口统一锁定场景和路径工作项，避免调用方伪造 workItemId 或借专用接口创建其他场景。
+     */
+    @Transactional
+    public ExecutionTaskSummary createTechnicalDesignExecution(Long workItemId, CreateExecutionTaskRequest request) {
+        boolean publicOnly = AuthContextHolder.get()
+                .map(context -> context.roleCodes() != null
+                        && context.roleCodes().size() == 1
+                        && context.roleCodes().contains("PUBLIC_DEFAULT"))
+                .orElse(false);
+        if (publicOnly) {
+            throw new ForbiddenException("公众端用户必须通过积分结算入口创建技术设计任务");
+        }
+        return createDedicatedTechnicalDesignExecution(workItemId, request);
+    }
+
+    /**
+     * 公众端专用入口由上层先完成积分预扣，随后才允许进入同一领域创建逻辑。
+     */
+    @Transactional
+    public ExecutionTaskSummary createPublicTechnicalDesignExecution(Long workItemId, CreateExecutionTaskRequest request) {
+        return createDedicatedTechnicalDesignExecution(workItemId, request);
+    }
+
+    private ExecutionTaskSummary createDedicatedTechnicalDesignExecution(Long workItemId, CreateExecutionTaskRequest request) {
+        CreateExecutionTaskRequest normalizedRequest = new CreateExecutionTaskRequest(
+                ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING,
+                request.projectId(),
+                workItemId,
+                request.title(),
+                request.triggerSource(),
+                false,
+                request.agentBindings(),
+                request.inputPayload()
+        );
+        return createPageExecutionTask(normalizedRequest);
     }
 
     /**
@@ -273,6 +329,9 @@ public class ExecutionTaskService {
             executionTask.setCancelRequested(false);
             executionTask.setLatestSummary("执行已取消");
             ExecutionTaskEntity saved = executionTaskRepository.save(executionTask);
+            if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(saved.getScenarioCode())) {
+                technicalDesignCreditSettlementService.settleTerminalTask(saved.getId());
+            }
             selfUpgradeExecutionWritebackService.handleExecutionFinished(saved, saved.getCurrentRun(), "CANCELED");
             return toTaskSummary(saved);
         }
@@ -492,7 +551,9 @@ public class ExecutionTaskService {
                 executionTask.getCreatedByUser() == null ? null : executionTask.getCreatedByUser().getId(),
                 displayName(executionTask.getCreatedByUser()),
                 formatTime(executionTask.getCreatedAt()),
-                formatTime(executionTask.getUpdatedAt())
+                formatTime(executionTask.getUpdatedAt()),
+                executionTask.getOrchestrationVersion() == null ? null : executionTask.getOrchestrationVersion().getId(),
+                readResolvedBindings(executionTask.getAgentBindingPayload())
         );
     }
 
@@ -532,8 +593,36 @@ public class ExecutionTaskService {
                 planConfirmationPending,
                 planConfirmationPending && canCurrentUserConfirmPlan(executionTask),
                 runs,
-                workspaceCleanup
+                workspaceCleanup,
+                executionTask.getOrchestrationVersion() == null ? null : executionTask.getOrchestrationVersion().getId(),
+                readResolvedBindings(executionTask.getAgentBindingPayload())
         );
+    }
+
+    /** 只读解析任务中已固化的绑定 JSON，兼容 timeoutSeconds 尚不存在的历史任务。 */
+    private List<ExecutionResolvedBindingSummary> readResolvedBindings(String payload) {
+        if (!hasText(payload)) return List.of();
+        try {
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(payload);
+            if (!root.isArray()) return List.of();
+            List<ExecutionResolvedBindingSummary> result = new ArrayList<>();
+            for (com.fasterxml.jackson.databind.JsonNode item : root) {
+                result.add(new ExecutionResolvedBindingSummary(
+                        item.path("stepNo").isNumber() ? item.path("stepNo").asInt() : null,
+                        item.path("stepCode").asText(""), item.path("stepName").asText(""),
+                        item.path("agentId").isNumber() ? item.path("agentId").asLong() : null,
+                        item.path("agentName").isTextual() ? item.path("agentName").asText() : null,
+                        item.path("accessType").isTextual() ? item.path("accessType").asText() : null,
+                        item.path("runtimeType").isTextual() ? item.path("runtimeType").asText() : null,
+                        item.path("timeoutSeconds").isNumber() ? item.path("timeoutSeconds").asInt() : null,
+                        item.path("repositoryBindingId").isNumber() ? item.path("repositoryBindingId").asLong() : null,
+                        item.path("repositoryTargetBranch").isTextual() ? item.path("repositoryTargetBranch").asText() : null,
+                        item.path("repositoryDisplayName").isTextual() ? item.path("repositoryDisplayName").asText() : null));
+            }
+            return List.copyOf(result);
+        } catch (Exception ignored) {
+            return List.of();
+        }
     }
 
     private ExecutionRunSummary toRunSummary(ExecutionRunEntity executionRun) {
@@ -834,6 +923,7 @@ public class ExecutionTaskService {
                                                          boolean skipPermissionChecks) {
         requireScenarioAvailableForExecutionEntry(scenarioCode, "创建");
         Map<String, Object> normalizedPayload = defaultPayload(rawInputPayload);
+        validateTechnicalDesignWorkItem(scenarioCode, workItem);
         String normalizedTriggerSource = normalizeTriggerSource(triggerSource);
         boolean planConfirmationRequired = normalizePlanConfirmationRequired(
                 scenarioCode,
@@ -841,15 +931,28 @@ public class ExecutionTaskService {
                 requestedPlanConfirmationRequired
         );
         normalizedPayload.put("planConfirmationRequired", planConfirmationRequired);
+        if (executionOrchestrationService.isManagedScenario(scenarioCode) && !skipPermissionChecks
+                && agentBindings != null && !agentBindings.isEmpty()) {
+            throw new IllegalArgumentException("受管执行场景不允许指定 Agent，请由管理员发布执行编排");
+        }
         List<ExecutionWorkflowService.DevelopmentRepositorySelection> developmentRepositories =
-                resolveDevelopmentRepositories(scenarioCode, project, normalizedPayload, skipPermissionChecks);
+                resolveExecutionRepositories(scenarioCode, project, normalizedPayload, skipPermissionChecks);
+        List<ExecutionAgentBindingRequest> effectiveBindings = agentBindings;
+        Long orchestrationVersionId = null;
+        if (executionOrchestrationService.isManagedScenario(scenarioCode) && !skipPermissionChecks) {
+            ExecutionOrchestrationService.ResolvedOrchestration resolved = executionOrchestrationService.resolve(
+                    project.getId(), scenarioCode);
+            effectiveBindings = resolved.agentBindings();
+            orchestrationVersionId = resolved.versionId();
+        }
         ExecutionWorkflowService.WorkflowPlan workflowPlan = executionWorkflowService.buildWorkflow(
                 scenarioCode,
                 project.getId(),
-                agentBindings,
+                effectiveBindings,
                 developmentRepositories
         );
         validateDevelopmentExecutionAgents(workflowPlan);
+        validateTechnicalDesignAgents(workflowPlan);
 
         ExecutionTaskEntity entity = new ExecutionTaskEntity();
         entity.setSourceType(trimToNull(sourceType) == null ? (workItem == null ? "MANUAL" : "WORK_ITEM") : sourceType.trim().toUpperCase());
@@ -865,6 +968,9 @@ public class ExecutionTaskService {
         entity.setLatestSummary("等待调度");
         entity.setInputPayload(serializePayload(normalizedPayload));
         entity.setAgentBindingPayload(executionWorkflowService.serializeBindings(workflowPlan));
+        if (orchestrationVersionId != null) {
+            entity.setOrchestrationVersion(executionOrchestrationVersionRepository.getReferenceById(orchestrationVersionId));
+        }
         return entity;
     }
 
@@ -875,13 +981,16 @@ public class ExecutionTaskService {
     /**
      * 多仓开发执行在创建阶段就完成仓库列表校验与标准化，避免调度时才暴露基础数据缺失问题。
      */
-    private List<ExecutionWorkflowService.DevelopmentRepositorySelection> resolveDevelopmentRepositories(String scenarioCode,
+    private List<ExecutionWorkflowService.DevelopmentRepositorySelection> resolveExecutionRepositories(String scenarioCode,
                                                                                                         ProjectEntity project,
                                                                                                         Map<String, Object> inputPayload,
                                                                                                         boolean skipPermissionChecks) {
-        if (!ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(defaultString(scenarioCode))) {
+        boolean developmentExecution = ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(defaultString(scenarioCode));
+        boolean technicalDesign = ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(defaultString(scenarioCode));
+        if (!developmentExecution && !technicalDesign) {
             return List.of();
         }
+        String sceneLabel = technicalDesign ? "技术设计生成" : "开发执行";
         String inputText = trimToNull(asText(inputPayload.get("inputText")));
         if (inputText == null) {
             inputPayload.remove("inputText");
@@ -891,7 +1000,7 @@ public class ExecutionTaskService {
 
         Object repositoriesValue = inputPayload.get("repositories");
         if (!(repositoriesValue instanceof List<?> repositories) || repositories.isEmpty()) {
-            throw new IllegalArgumentException("开发执行至少需要选择一个 GitLab 仓库");
+            throw new IllegalArgumentException(sceneLabel + "至少需要选择一个 GitLab 仓库");
         }
 
         List<Map<String, Object>> normalizedRepositories = new ArrayList<>();
@@ -899,18 +1008,18 @@ public class ExecutionTaskService {
         Set<Long> uniqueBindingIds = new LinkedHashSet<>();
         for (Object item : repositories) {
             if (!(item instanceof Map<?, ?> repositoryItem)) {
-                throw new IllegalArgumentException("开发执行仓库参数格式不正确");
+                throw new IllegalArgumentException(sceneLabel + "仓库参数格式不正确");
             }
             Long bindingId = parseBindingId(repositoryItem.get("bindingId"));
             if (bindingId == null) {
-                throw new IllegalArgumentException("开发执行仓库必须填写 bindingId");
+                throw new IllegalArgumentException(sceneLabel + "仓库必须填写 bindingId");
             }
             if (!uniqueBindingIds.add(bindingId)) {
-                throw new IllegalArgumentException("开发执行仓库不允许重复选择同一个 GitLab 绑定");
+                throw new IllegalArgumentException(sceneLabel + "仓库不允许重复选择同一个 GitLab 绑定");
             }
             String targetBranch = trimToNull(asText(repositoryItem.get("targetBranch")));
             if (targetBranch == null) {
-                throw new IllegalArgumentException("开发执行仓库必须填写目标分支");
+                throw new IllegalArgumentException(sceneLabel + "仓库必须填写目标分支");
             }
             ProjectGitlabBindingEntity binding = requireDevelopmentBinding(project.getId(), bindingId, skipPermissionChecks);
             normalizedRepositories.add(Map.of(
@@ -925,6 +1034,40 @@ public class ExecutionTaskService {
         }
         inputPayload.put("repositories", normalizedRepositories);
         return result;
+    }
+
+    /**
+     * 技术设计 Runtime 是技术设计任务的专用上游能力，不能被其他工作项类型绕过入口调用。
+     */
+    private void validateTechnicalDesignWorkItem(String scenarioCode, TaskEntity workItem) {
+        if (!ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(defaultString(scenarioCode))) {
+            return;
+        }
+        if (workItem == null
+                || !"任务".equals(defaultString(workItem.getWorkItemType()).trim())
+                || !"技术设计".equals(defaultString(workItem.getTaskType()).trim())) {
+            throw new IllegalArgumentException("技术设计生成仅支持任务类型为“技术设计”的工作项");
+        }
+    }
+
+    /**
+     * 技术设计三步只能使用具备真实仓库读取能力的 Codex/Claude CLI Runtime。
+     */
+    private void validateTechnicalDesignAgents(ExecutionWorkflowService.WorkflowPlan workflowPlan) {
+        if (!ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(workflowPlan.scenarioCode())) {
+            return;
+        }
+        for (ExecutionWorkflowService.ExecutionStepPlan step : workflowPlan.steps()) {
+            if (step.agent() == null
+                    || !AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(defaultString(step.agent().getAccessType()))) {
+                throw new IllegalArgumentException(step.stepName() + " 必须绑定 AGENT_RUNTIME 智能体");
+            }
+            String runtimeType = defaultString(step.agent().getRuntimeType()).trim().toUpperCase();
+            if (!AgentExecutionService.RUNTIME_CODEX_CLI.equals(runtimeType)
+                    && !AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equals(runtimeType)) {
+                throw new IllegalArgumentException(step.stepName() + " 仅支持 CODEX_CLI 或 CLAUDE_CODE_CLI Runtime");
+            }
+        }
     }
 
     private void validateDevelopmentExecutionAgents(ExecutionWorkflowService.WorkflowPlan workflowPlan) {

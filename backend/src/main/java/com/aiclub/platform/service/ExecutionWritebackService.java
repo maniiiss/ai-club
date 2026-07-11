@@ -38,7 +38,8 @@ public class ExecutionWritebackService {
      */
     @Transactional
     public void writeBackToWorkItem(ExecutionTaskEntity executionTask, ExecutionRunEntity executionRun, List<ExecutionArtifactEntity> artifacts) {
-        if (ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(executionTask.getScenarioCode())) {
+        if (ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(executionTask.getScenarioCode())
+                || ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(executionTask.getScenarioCode())) {
             return;
         }
         TaskEntity workItem = executionTask.getWorkItem();

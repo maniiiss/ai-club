@@ -33,7 +33,9 @@ class ExecutionWorkflowServiceTests {
                 buildAgent(1L, "规划智能体", AgentExecutionService.ACCESS_BUILT_IN),
                 buildAgent(2L, "开发智能体", AgentExecutionService.ACCESS_AGENT_RUNTIME),
                 buildAgent(3L, "测试智能体", AgentExecutionService.ACCESS_HTTP_API),
-                buildAgent(4L, "报告智能体", AgentExecutionService.ACCESS_BUILT_IN)
+                buildAgent(4L, "报告智能体", AgentExecutionService.ACCESS_BUILT_IN),
+                buildRuntimeAgent(5L, "Codex 技术设计", AgentExecutionService.RUNTIME_CODEX_CLI),
+                buildRuntimeAgent(6L, "Claude 技术设计", AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI)
         ));
         when(agentRepository.findAllByProject_IdAndEnabledTrueOrderByIdAsc(11L)).thenReturn(List.of());
     }
@@ -120,6 +122,23 @@ class ExecutionWorkflowServiceTests {
                 );
     }
 
+    @Test
+    void shouldSerializeImmutableAgentIdentitySnapshot() throws Exception {
+        ExecutionWorkflowService.WorkflowPlan plan = executionWorkflowService.buildWorkflow(
+                ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION, 11L,
+                List.of(new ExecutionAgentBindingRequest("PLAN", 1L), new ExecutionAgentBindingRequest("IMPLEMENT", 2L),
+                        new ExecutionAgentBindingRequest("TEST", 3L), new ExecutionAgentBindingRequest("REPORT", 4L)),
+                List.of(new ExecutionWorkflowService.DevelopmentRepositorySelection(101L, "main", "group/app")));
+        String payload = executionWorkflowService.serializeBindings(plan);
+        plan.steps().get(2).agent().setName("后续改名");
+        plan.steps().get(2).agent().setRuntimeType("CHANGED_RUNTIME");
+
+        var implement = new ObjectMapper().readTree(payload).get(2);
+        assertThat(implement.path("agentName").asText()).isEqualTo("开发智能体");
+        assertThat(implement.path("accessType").asText()).isEqualTo(AgentExecutionService.ACCESS_AGENT_RUNTIME);
+        assertThat(implement.path("runtimeType").asText()).isNotEqualTo("CHANGED_RUNTIME");
+    }
+
     /**
      * 历史开发任务仍需按旧三步语义恢复，避免重试时被误判为新版多仓流程。
      */
@@ -179,6 +198,60 @@ class ExecutionWorkflowServiceTests {
                 .containsOnlyNulls();
     }
 
+    /**
+     * 技术设计场景必须固化三个只读 Runtime 步骤，并优先推荐 Codex CLI。
+     */
+    @Test
+    void shouldBuildTechnicalDesignWorkflowWithCliRuntimeAgents() {
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = executionWorkflowService.buildWorkflow(
+                ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING,
+                11L,
+                List.of()
+        );
+
+        assertThat(workflowPlan.scenarioName()).isEqualTo("技术设计生成");
+        assertThat(workflowPlan.steps())
+                .extracting(
+                        ExecutionWorkflowService.ExecutionStepPlan::stepNo,
+                        ExecutionWorkflowService.ExecutionStepPlan::stepCode,
+                        ExecutionWorkflowService.ExecutionStepPlan::stepName
+                )
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(1, "CODE_CONTEXT", "代码理解"),
+                        org.assertj.core.groups.Tuple.tuple(2, "DESIGN_DRAFT", "方案生成"),
+                        org.assertj.core.groups.Tuple.tuple(3, "DESIGN_REVIEW", "设计自检")
+                );
+        assertThat(workflowPlan.steps())
+                .extracting(step -> step.agent().getId())
+                .containsExactly(5L, 5L, 5L);
+    }
+
+    /**
+     * 用户显式绑定 Claude Code 时，恢复执行必须保留每一步的独立选择。
+     */
+    @Test
+    void shouldRestoreTechnicalDesignWorkflowWithExplicitBindings() {
+        ExecutionWorkflowService.WorkflowPlan builtPlan = executionWorkflowService.buildWorkflow(
+                ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING,
+                11L,
+                List.of(
+                        new ExecutionAgentBindingRequest(ExecutionWorkflowService.STEP_CODE_CONTEXT, 6L),
+                        new ExecutionAgentBindingRequest(ExecutionWorkflowService.STEP_DESIGN_DRAFT, 5L),
+                        new ExecutionAgentBindingRequest(ExecutionWorkflowService.STEP_DESIGN_REVIEW, 6L)
+                )
+        );
+
+        ExecutionWorkflowService.WorkflowPlan restoredPlan = executionWorkflowService.restoreWorkflow(
+                ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING,
+                11L,
+                executionWorkflowService.serializeBindings(builtPlan)
+        );
+
+        assertThat(restoredPlan.steps())
+                .extracting(step -> step.agent().getId())
+                .containsExactly(6L, 5L, 6L);
+    }
+
     private AgentEntity buildAgent(Long id, String name, String accessType) {
         AgentEntity agent = new AgentEntity();
         agent.setId(id);
@@ -188,6 +261,12 @@ class ExecutionWorkflowServiceTests {
         agent.setEnabled(true);
         agent.setAccessType(accessType);
         agent.setCapability(name);
+        return agent;
+    }
+
+    private AgentEntity buildRuntimeAgent(Long id, String name, String runtimeType) {
+        AgentEntity agent = buildAgent(id, name, AgentExecutionService.ACCESS_AGENT_RUNTIME);
+        agent.setRuntimeType(runtimeType);
         return agent;
     }
 }

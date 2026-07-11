@@ -1,6 +1,8 @@
 import json
 import os
+import re
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Thread
@@ -29,9 +31,51 @@ from app.services.execution_streaming_support import (
     upload_log_artifacts,
     utc_timestamp,
 )
+from app.services.gitnexus_cli_support import (
+    discover_gitnexus_cli_path,
+    resolve_gitnexus_repo_alias,
+    run_gitnexus_analyze_command,
+    run_gitnexus_command,
+    run_gitnexus_json_command,
+    select_symbol_uids,
+)
 from app.settings import settings
 
 SYNC_TIMEOUT_LIMIT_SECONDS = 300
+TECHNICAL_DESIGN_MODES = {"CODE_CONTEXT", "DESIGN_DRAFT", "DESIGN_REVIEW"}
+TECHNICAL_DESIGN_REQUIRED_HEADINGS = {
+    "CODE_CONTEXT": (
+        "# 代码理解结论", "# GitNexus 使用情况", "# 关键入口与符号", "# 上游影响",
+        "# 现有测试与最小 Harness", "# 不确定项",
+    ),
+    "DESIGN_DRAFT": (
+        "# 背景与目标", "# 现状与约束", "# 方案概览", "# 影响范围", "# 接口与数据变更",
+        "# 兼容性与迁移", "# 风险与回滚", "# Harness 与验证", "# 开发执行输入",
+    ),
+    "DESIGN_REVIEW": (
+        "# 自检结论", "# 源码证据检查", "# 影响面检查", "# 测试策略检查", "# 回滚方案检查", "# 人工确认项",
+    ),
+}
+
+
+class TechnicalDesignSessionCanceled(RuntimeError):
+    """技术设计异步会话收到取消信号，调用方应以 CANCELED 收口。"""
+
+
+def _technical_design_step_code(request: CliExecutionRequest) -> str:
+    """兼容独立三步 mode 与统一 TECHNICAL_DESIGN mode，并由执行步骤编码选择 Prompt。"""
+    if request.mode in TECHNICAL_DESIGN_MODES:
+        return request.mode
+    step_code = (request.execution.stepCode or "").strip().upper()
+    if request.mode == "TECHNICAL_DESIGN":
+        if step_code in TECHNICAL_DESIGN_MODES:
+            return step_code
+        raise ValueError(f"不支持的技术设计步骤：{step_code or '空'}")
+    return ""
+
+
+def _is_technical_design_request(request: CliExecutionRequest) -> bool:
+    return bool(_technical_design_step_code(request))
 
 
 @dataclass(frozen=True)
@@ -163,7 +207,9 @@ def _execute_codex_markdown_sync(request: CliExecutionRequest) -> CliExecutionRe
     workspace = _markdown_workspace_for(request)
     _recreate_markdown_workspace(workspace)
     repo_paths = _prepare_markdown_repositories(request, workspace)
-    output = _run_codex_markdown_cli(request, workspace, repo_paths)
+    technical_context = _collect_technical_design_context(request, workspace, repo_paths)
+    output = _run_codex_markdown_cli(request, workspace, repo_paths, technical_context)
+    _validate_technical_design_output(request, output)
     return CliExecutionResponse(
         output=output.strip(),
         workspaceRoot=str(workspace.root),
@@ -176,7 +222,9 @@ def _execute_claude_markdown_sync(request: CliExecutionRequest) -> CliExecutionR
     workspace = _markdown_workspace_for(request)
     _recreate_markdown_workspace(workspace)
     repo_paths = _prepare_markdown_repositories(request, workspace)
-    output = _run_claude_markdown_cli(request, workspace, repo_paths)
+    technical_context = _collect_technical_design_context(request, workspace, repo_paths)
+    output = _run_claude_markdown_cli(request, workspace, repo_paths, technical_context)
+    _validate_technical_design_output(request, output)
     return CliExecutionResponse(
         output=output.strip(),
         workspaceRoot=str(workspace.root),
@@ -274,16 +322,34 @@ def _run_markdown_session(session_id: str, request: CliExecutionRequest, workspa
     batcher.flush()
     # 规划类步骤在 clone 仓库和等待 CLI 首次输出时可能长时间没有日志，必须用会话级心跳避免 backend watchdog 误判失联。
     batcher.start_heartbeat(summary=lambda: f"执行中：{step_title}")
+    cancel_watcher = codex_service.SessionCancelWatcher(session_id)
+    session_deadline = time.monotonic() + max(int(request.timeoutSeconds), 1)
 
     try:
         _recreate_markdown_workspace(workspace)
         repo_paths = _prepare_markdown_repositories(request, workspace)
+        if cancel_watcher.should_cancel():
+            raise TechnicalDesignSessionCanceled("技术设计执行已取消")
+        technical_context = _collect_technical_design_context(request, workspace, repo_paths)
+        if cancel_watcher.should_cancel():
+            raise TechnicalDesignSessionCanceled("技术设计执行已取消")
+        remaining_seconds = int(session_deadline - time.monotonic())
+        if remaining_seconds <= 0:
+            raise TimeoutError("技术设计步骤在调用 CLI 前已达到总时间预算")
+        runtime_request = request.model_copy(update={"timeoutSeconds": remaining_seconds})
         batcher.emit("progress_changed", progress_percent=20 if repo_paths else 10, summary="工作区准备完成，开始调用 CLI")
         batcher.flush()
         if request.runnerType == "CODEX_CLI":
-            output = _run_codex_markdown_cli_streaming(request, workspace, repo_paths, batcher)
+            output = _run_codex_markdown_cli_streaming(
+                runtime_request, workspace, repo_paths, batcher, technical_context,
+                should_cancel=cancel_watcher.should_cancel,
+            )
         else:
-            output = _run_claude_markdown_cli_streaming(request, workspace, repo_paths, batcher)
+            output = _run_claude_markdown_cli_streaming(
+                runtime_request, workspace, repo_paths, batcher, technical_context,
+                should_cancel=cancel_watcher.should_cancel,
+            )
+        _validate_technical_design_output(request, output)
         summary = _markdown_success_summary(request)
         batcher.emit("step_summary_updated", summary=summary)
         batcher.emit("progress_changed", progress_percent=100, summary=summary)
@@ -294,6 +360,19 @@ def _run_markdown_session(session_id: str, request: CliExecutionRequest, workspa
             status="SUCCESS",
             output_snapshot=output.strip(),
             output_summary=summary,
+            artifacts=_upload_markdown_log_artifacts(session_id, request, workspace),
+        )
+    except TechnicalDesignSessionCanceled as exception:
+        cancel_summary = str(exception).strip() or "技术设计执行已取消"
+        _append_markdown_log(workspace, cancel_summary)
+        batcher.emit("step_summary_updated", summary=cancel_summary)
+        batcher.emit("step_finished", summary=cancel_summary)
+        batcher.flush()
+        complete_session(
+            session_id,
+            status="CANCELED",
+            output_summary=cancel_summary,
+            error_message=cancel_summary,
             artifacts=_upload_markdown_log_artifacts(session_id, request, workspace),
         )
     except Exception as exception:
@@ -395,19 +474,14 @@ def _run_claude_implementation_session(
         batcher.close()
 
 
-def _run_codex_markdown_cli(request: CliExecutionRequest, workspace: CliMarkdownWorkspace, repo_paths: list[Path]) -> str:
+def _run_codex_markdown_cli(
+    request: CliExecutionRequest,
+    workspace: CliMarkdownWorkspace,
+    repo_paths: list[Path],
+    technical_context: str = "",
+) -> str:
     codex_cli = codex_service._discover_codex_cli_path()
-    command = [
-        str(codex_cli),
-        "exec",
-        *codex_service._build_codex_cli_config_args(),
-        "-C",
-        str(workspace.root),
-        "--skip-git-repo-check",
-        "--ephemeral",
-        "--dangerously-bypass-approvals-and-sandbox",
-        _build_codex_markdown_prompt(request, repo_paths),
-    ]
+    command = _build_codex_markdown_command(request, codex_cli, workspace.root, repo_paths, technical_context)
     display_command = codex_service._format_process_command_for_log(command, omit_trailing_prompt=True)
     _append_markdown_log(workspace, f"调用 Codex CLI：{display_command}")
     completed = subprocess.run(
@@ -436,21 +510,13 @@ def _run_codex_markdown_cli_streaming(
     workspace: CliMarkdownWorkspace,
     repo_paths: list[Path],
     batcher: BackendEventBatcher,
+    technical_context: str = "",
+    should_cancel=None,
 ) -> str:
     codex_cli = codex_service._discover_codex_cli_path()
     stdout_log = workspace.out_dir / "codex-stdout.log"
     stderr_log = workspace.out_dir / "codex-stderr.log"
-    command = [
-        str(codex_cli),
-        "exec",
-        *codex_service._build_codex_cli_config_args(),
-        "-C",
-        str(workspace.root),
-        "--skip-git-repo-check",
-        "--ephemeral",
-        "--dangerously-bypass-approvals-and-sandbox",
-        _build_codex_markdown_prompt(request, repo_paths),
-    ]
+    command = _build_codex_markdown_command(request, codex_cli, workspace.root, repo_paths, technical_context)
     display_command = codex_service._format_process_command_for_log(command, omit_trailing_prompt=True)
     _append_markdown_log(workspace, f"调用 Codex CLI：{display_command}")
     result = run_streaming_process(
@@ -464,16 +530,24 @@ def _run_codex_markdown_cli_streaming(
         stdout_file=stdout_log,
         stderr_file=stderr_log,
         env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
+        should_cancel=should_cancel,
     )
+    if result.exit_code == -2:
+        raise TechnicalDesignSessionCanceled("技术设计执行已取消，Codex CLI 进程已停止")
     if result.exit_code != 0:
         raise RuntimeError(result.stderr or result.stdout or "Codex CLI 执行失败")
     return result.stdout
 
 
-def _run_claude_markdown_cli(request: CliExecutionRequest, workspace: CliMarkdownWorkspace, repo_paths: list[Path]) -> str:
+def _run_claude_markdown_cli(
+    request: CliExecutionRequest,
+    workspace: CliMarkdownWorkspace,
+    repo_paths: list[Path],
+    technical_context: str = "",
+) -> str:
     claude_cli = claude_service._discover_claude_cli_path()
     command = _build_claude_markdown_command(request, claude_cli, repo_paths)
-    prompt = _build_claude_markdown_prompt(request, repo_paths)
+    prompt = _build_claude_markdown_prompt(request, repo_paths, technical_context)
     display_command = codex_service._format_process_command_for_log(command)
     _append_markdown_log(workspace, f"调用 Claude CLI：{display_command}")
     completed = subprocess.run(
@@ -503,12 +577,14 @@ def _run_claude_markdown_cli_streaming(
     workspace: CliMarkdownWorkspace,
     repo_paths: list[Path],
     batcher: BackendEventBatcher,
+    technical_context: str = "",
+    should_cancel=None,
 ) -> str:
     claude_cli = claude_service._discover_claude_cli_path()
     stdout_log = workspace.out_dir / "claude-stdout.log"
     stderr_log = workspace.out_dir / "claude-stderr.log"
     command = _build_claude_markdown_command(request, claude_cli, repo_paths)
-    prompt = _build_claude_markdown_prompt(request, repo_paths)
+    prompt = _build_claude_markdown_prompt(request, repo_paths, technical_context)
     display_command = codex_service._format_process_command_for_log(command)
     _append_markdown_log(workspace, f"调用 Claude CLI：{display_command}")
     result = run_streaming_process(
@@ -523,7 +599,10 @@ def _run_claude_markdown_cli_streaming(
         stdout_file=stdout_log,
         stderr_file=stderr_log,
         env={**os.environ, "PYTHONUTF8": "1", "GIT_TERMINAL_PROMPT": "0"},
+        should_cancel=should_cancel,
     )
+    if result.exit_code == -2:
+        raise TechnicalDesignSessionCanceled("技术设计执行已取消，Claude CLI 进程已停止")
     if result.exit_code != 0:
         raise RuntimeError(result.stderr or result.stdout or "Claude Code 执行失败")
     return result.stdout
@@ -595,7 +674,16 @@ def _build_claude_markdown_command(request: CliExecutionRequest, claude_cli: Pat
         "text",
         "--no-session-persistence",
     ]
-    if request.mode == "PLAN":
+    if _is_technical_design_request(request):
+        command.extend([
+            "--permission-mode",
+            "plan",
+            "--allowedTools",
+            "Read,Grep,Glob,LS",
+            "--tools",
+            "Read,Grep,Glob,LS",
+        ])
+    elif request.mode == "PLAN":
         command.extend(["--permission-mode", "plan", "--allowedTools", "Read,Grep,Glob,LS"])
     else:
         command.extend(["--permission-mode", "acceptEdits", "--allowedTools", "Read,Grep,Glob,LS,Bash,Edit,MultiEdit,Write"])
@@ -603,6 +691,32 @@ def _build_claude_markdown_command(request: CliExecutionRequest, claude_cli: Pat
         command.extend(["--model", settings.claude_model])
     for repo_path in repo_paths:
         command.extend(["--add-dir", str(repo_path)])
+    return command
+
+
+def _build_codex_markdown_command(
+    request: CliExecutionRequest,
+    codex_cli: Path,
+    workspace_root: Path,
+    repo_paths: list[Path],
+    technical_context: str = "",
+) -> list[str]:
+    """构造 Markdown 步骤命令；技术设计步骤必须在命令层使用只读沙箱。"""
+    command = [
+        str(codex_cli),
+        "exec",
+        *codex_service._build_codex_cli_config_args(),
+        "-C",
+        str(workspace_root),
+        "--skip-git-repo-check",
+        "--ephemeral",
+    ]
+    if _is_technical_design_request(request):
+        command.extend(["--sandbox", "read-only"])
+    else:
+        # 旧 PLAN/AD_HOC 行为保持不变，避免本次技术设计能力影响既有执行中心场景。
+        command.append("--dangerously-bypass-approvals-and-sandbox")
+    command.append(_build_codex_markdown_prompt(request, repo_paths, technical_context))
     return command
 
 
@@ -623,8 +737,14 @@ def _build_claude_implementation_command(claude_cli: Path) -> list[str]:
     return command
 
 
-def _build_codex_markdown_prompt(request: CliExecutionRequest, repo_paths: list[Path]) -> str:
+def _build_codex_markdown_prompt(
+    request: CliExecutionRequest,
+    repo_paths: list[Path],
+    technical_context: str = "",
+) -> str:
     repo_section = _build_repo_section(repo_paths)
+    if _is_technical_design_request(request):
+        return _build_technical_design_prompt(request, repo_section, technical_context, "Codex CLI")
     if request.mode == "PLAN":
         return f"""
 你是 AI Club 平台通过本机 Codex CLI 调起的执行规划智能体。
@@ -664,8 +784,14 @@ def _build_codex_markdown_prompt(request: CliExecutionRequest, repo_paths: list[
     """.strip()
 
 
-def _build_claude_markdown_prompt(request: CliExecutionRequest, repo_paths: list[Path]) -> str:
+def _build_claude_markdown_prompt(
+    request: CliExecutionRequest,
+    repo_paths: list[Path],
+    technical_context: str = "",
+) -> str:
     repo_section = _build_repo_section(repo_paths)
+    if _is_technical_design_request(request):
+        return _build_technical_design_prompt(request, repo_section, technical_context, "Claude Code")
     if request.mode == "PLAN":
         return f"""
 你是 AI Club 平台通过本机 Claude Code 调起的执行规划智能体。
@@ -703,6 +829,61 @@ def _build_claude_markdown_prompt(request: CliExecutionRequest, repo_paths: list
 补充上下文如下：
 {request.input}
     """.strip()
+
+
+def _build_technical_design_prompt(
+    request: CliExecutionRequest,
+    repo_section: str,
+    technical_context: str,
+    runner_name: str,
+) -> str:
+    """为技术设计三步生成稳定 Markdown 契约，确保后端可按语义产物直接展示。"""
+    headings = "、".join(TECHNICAL_DESIGN_REQUIRED_HEADINGS[_technical_design_step_code(request)])
+    step_instruction = {
+        "CODE_CONTEXT": "先读取仓库 AGENTS.md 等工作入口，再阅读关联源码和现有测试；引用文件、符号和测试证据，GitNexus 降级时明确记录原因与源码检索范围。",
+        "DESIGN_DRAFT": "基于输入中的代码理解产物形成可直接交给开发执行的技术设计，不要实施任何改动。",
+        "DESIGN_REVIEW": "自检技术设计与源码证据、影响面、测试和回滚是否一致；建议命令未真实执行时不得声称已经通过。",
+    }[_technical_design_step_code(request)]
+    context_section = technical_context.strip() or "本步骤无额外 GitNexus 预采集上下文，请使用补充上下文中的前序产物。"
+    return f"""
+你是 AI Club 平台通过本机 {runner_name} 调起的技术设计智能体。
+本步骤只能进行只读分析，禁止编辑、写入、提交或推送仓库内容。
+
+步骤要求：
+{step_instruction}
+
+额外系统约束：
+{request.systemPrompt or '无'}
+
+输出要求：
+1. 只返回 Markdown。
+2. 一级标题必须固定且完整，顺序为：{headings}
+3. 结论必须区分源码事实、合理推断和待人工确认事项。
+
+当前仓库目录：
+{repo_section}
+
+GitNexus 预采集上下文：
+{context_section}
+
+补充上下文（可能包含前序步骤产物）：
+{request.input}
+    """.strip()
+
+
+def _validate_technical_design_output(request: CliExecutionRequest, output: str) -> None:
+    """技术设计正式产物必须满足固定章节合同，缺章时让步骤失败而不是保存伪完整产物。"""
+    step_code = _technical_design_step_code(request)
+    if not step_code:
+        return
+    required = list(TECHNICAL_DESIGN_REQUIRED_HEADINGS[step_code])
+    actual = re.findall(r"(?m)^# [^\r\n]+\s*$", output or "")
+    actual = [heading.strip() for heading in actual]
+    if actual != required:
+        raise RuntimeError(
+            "技术设计输出一级标题不符合固定章节顺序；"
+            f"期望：{'、'.join(required)}；实际：{'、'.join(actual) or '无'}"
+        )
 
 
 def _build_claude_implementation_prompt(request: CliExecutionRequest) -> str:
@@ -762,6 +943,164 @@ def _prepare_markdown_repositories(request: CliExecutionRequest, workspace: CliM
         repo_dir = claude_service._clone_repository(_to_claude_repository(repository), workspace, index)
         repo_paths.append(repo_dir)
     return repo_paths
+
+
+def _collect_technical_design_context(
+    request: CliExecutionRequest,
+    workspace: CliMarkdownWorkspace,
+    repo_paths: list[Path],
+) -> str:
+    """为代码理解步骤预采集 GitNexus 证据，失败时提供明确的只读源码检索降级上下文。"""
+    if _technical_design_step_code(request) != "CODE_CONTEXT":
+        return ""
+    sections: list[str] = []
+    # 预采集与 CLI 共用步骤预算，最多使用整体时限的 40%，防止 GitNexus 把 Runtime 主体挤出超时窗口。
+    collection_deadline = time.monotonic() + max(15, min(int(request.timeoutSeconds * 0.4), 180))
+
+    def remaining_timeout() -> int:
+        remaining = int(collection_deadline - time.monotonic())
+        if remaining <= 0:
+            raise TimeoutError("GitNexus 预采集已达到步骤时间预算。")
+        return remaining
+
+    gitnexus_cli = discover_gitnexus_cli_path()
+    for repo_path in repo_paths:
+        degradation_reasons: list[str] = []
+        query_result: dict[str, object] = {}
+        symbol_contexts: list[dict[str, object]] = []
+        impacts: list[dict[str, object]] = []
+        if gitnexus_cli is None:
+            degradation_reasons.append("未找到 GitNexus CLI，无法执行 status/analyze/query/context/impact。")
+        else:
+            log = lambda message: _append_markdown_log(workspace, message)
+            try:
+                try:
+                    status = run_gitnexus_command(
+                        gitnexus_cli,
+                        ["status"],
+                        repo_path,
+                        log,
+                        fail_message="GitNexus status 失败",
+                        timeout_seconds=remaining_timeout(),
+                    )
+                except RuntimeError as exception:
+                    status = ""
+                    _append_markdown_log(workspace, f"GitNexus 索引状态不可用，将重新 analyze：{exception}")
+                if not _is_gitnexus_index_current(status):
+                    run_gitnexus_analyze_command(gitnexus_cli, repo_path, log, timeout_seconds=remaining_timeout())
+                    refreshed_status = run_gitnexus_command(
+                        gitnexus_cli,
+                        ["status"],
+                        repo_path,
+                        log,
+                        fail_message="GitNexus analyze 后 status 复验失败",
+                        timeout_seconds=remaining_timeout(),
+                    )
+                    if not _is_gitnexus_index_current(refreshed_status):
+                        raise RuntimeError("GitNexus analyze 后索引仍未处于最新状态。")
+                repo_alias = resolve_gitnexus_repo_alias(
+                    gitnexus_cli, repo_path, log, timeout_seconds=remaining_timeout()
+                )
+                if not repo_alias:
+                    raise RuntimeError("GitNexus analyze 已完成，但无法解析当前仓库的 repo alias。")
+                query_result = run_gitnexus_json_command(
+                    gitnexus_cli,
+                    [
+                        "query",
+                        _technical_design_query_text(request),
+                        "-r",
+                        repo_alias,
+                        "-g",
+                        "定位技术设计相关入口、调用链、测试与跨模块依赖",
+                        "-l",
+                        "5",
+                    ],
+                    repo_path,
+                    log,
+                    timeout_seconds=remaining_timeout(),
+                )
+                for symbol_uid in select_symbol_uids(query_result)[:3]:
+                    symbol_contexts.append(run_gitnexus_json_command(
+                        gitnexus_cli,
+                        ["context", "-r", repo_alias, "-u", symbol_uid],
+                        repo_path,
+                        log,
+                        timeout_seconds=remaining_timeout(),
+                    ))
+                    impacts.append(run_gitnexus_json_command(
+                        gitnexus_cli,
+                        ["impact", symbol_uid, "-r", repo_alias, "-d", "upstream", "--depth", "3", "--include-tests"],
+                        repo_path,
+                        log,
+                        timeout_seconds=remaining_timeout(),
+                    ))
+            except Exception as exception:
+                degradation_reasons.append(str(exception).strip() or "GitNexus 预采集失败")
+        if degradation_reasons:
+            fallback = _collect_source_fallback(repo_path, request.input)
+            sections.append(
+                f"## 仓库：{repo_path.name}\n"
+                f"GitNexus 已降级。原因：{'；'.join(degradation_reasons)}\n\n"
+                f"### rg/源码阅读降级上下文\n{fallback}"
+            )
+            continue
+        sections.append(
+            f"## 仓库：{repo_path.name}\n"
+            "GitNexus 使用成功，索引已确认可用。\n\n"
+            f"### query\n```json\n{json.dumps(query_result, ensure_ascii=False, indent=2)}\n```\n\n"
+            f"### context\n```json\n{json.dumps(symbol_contexts, ensure_ascii=False, indent=2)}\n```\n\n"
+            f"### upstream impact\n```json\n{json.dumps(impacts, ensure_ascii=False, indent=2)}\n```\n\n"
+            f"### 现有测试与 Harness 线索\n{_collect_source_fallback(repo_path, request.input)}"
+        )
+    if not sections:
+        return "GitNexus 已降级。原因：当前代码理解步骤没有可用仓库目录。"
+    return "\n\n".join(sections)
+
+
+def _is_gitnexus_index_current(status: str) -> bool:
+    normalized = (status or "").strip().lower()
+    return "up-to-date" in normalized or "up to date" in normalized or "✅" in normalized or "最新" in normalized
+
+
+def _technical_design_query_text(request: CliExecutionRequest) -> str:
+    terms = claude_service._extract_search_terms(request.input)
+    return " ".join(terms[:8]).strip() or "technical design architecture implementation tests"
+
+
+def _collect_source_fallback(repo_path: Path, input_text: str) -> str:
+    """GitNexus 不可用时仅用 rg 读取文件清单和关键词命中，不执行任何仓库写操作。"""
+    excerpts: list[str] = []
+    try:
+        files_result = subprocess.run(
+            ["rg", "--files"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+        files = [line for line in (files_result.stdout or "").splitlines() if line.strip()][:80]
+        if files:
+            excerpts.append("文件清单（截断）：\n" + "\n".join(f"- {line}" for line in files))
+        terms = claude_service._extract_search_terms(input_text)[:5]
+        if terms:
+            escaped_terms = [re.escape(term) for term in terms if term]
+            match_result = subprocess.run(
+                ["rg", "-n", "-i", "-m", "40", "|".join(escaped_terms), "."],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+            )
+            matches = (match_result.stdout or "").strip()
+            if matches:
+                excerpts.append("关键词命中（截断）：\n```text\n" + matches[:12000] + "\n```")
+    except Exception as exception:
+        excerpts.append(f"rg 降级检索失败：{exception}")
+    return "\n\n".join(excerpts) or "rg 未发现可用文件或关键词命中，请由 Runtime 继续只读浏览源码。"
 
 
 def _to_claude_repository(repository: CliExecutionRepository) -> ClaudePlanningRepository:

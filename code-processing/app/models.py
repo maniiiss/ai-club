@@ -747,7 +747,18 @@ class CliExecutionRequest(BaseModel):
     """统一 CLI Runner 执行请求。"""
 
     runnerType: Literal["CODEX_CLI", "CLAUDE_CODE_CLI", "PATROL_MODEL"]
-    mode: Literal["PLAN", "IMPLEMENT", "TEST", "AD_HOC", "PATROL"]
+    # 技术设计三步使用独立 mode，便于 Runner 在命令层强制只读，而不是只依赖 Prompt 自律。
+    mode: Literal[
+        "PLAN",
+        "IMPLEMENT",
+        "TEST",
+        "AD_HOC",
+        "PATROL",
+        "CODE_CONTEXT",
+        "DESIGN_DRAFT",
+        "DESIGN_REVIEW",
+        "TECHNICAL_DESIGN",
+    ]
     systemPrompt: str = ""
     input: str = ""
     repositories: list[CliExecutionRepository] = Field(default_factory=list)

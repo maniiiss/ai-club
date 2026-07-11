@@ -748,7 +748,7 @@ interface MenuItem {
   /** 收起态短标签。 */
   shortLabel: string
   /** 菜单权限码。 */
-  permission: string
+  permission: string | string[]
   /** 菜单图标组件。 */
   icon: unknown
   /** 需要一并高亮的路由名称。 */
@@ -764,7 +764,7 @@ type AccountCommand = 'profile' | 'feedback' | 'public-portal' | 'logout'
 
 interface MenuSeed {
   /** 菜单权限码。 */
-  permission: string
+  permission: string | string[]
   /** 默认路径，后端未配置菜单路由时兜底。 */
   fallbackPath: string
   /** 默认文案，后端未配置名称时兜底。 */
@@ -878,6 +878,7 @@ const primaryMenuSeeds: MenuSeed[] = [
   { permission: 'wiki:view', fallbackPath: '/wiki', fallbackLabel: 'Wiki 中心', shortLabel: 'Wiki', fallbackIcon: Document, matchNames: ['wiki-home', 'wiki-space', 'wiki-space-page'] },
   { permission: 'agent:view', fallbackPath: '/agents', fallbackLabel: '智能体管理', shortLabel: '智能体', fallbackIcon: Connection, matchNames: ['agents'] },
   { permission: 'task:view', fallbackPath: '/tasks', fallbackLabel: '执行中心', shortLabel: '执行', fallbackIcon: Tickets, matchNames: ['tasks', 'execution-task-detail'] },
+  { permission: ['execution:orchestration:manage', 'project:manage'], fallbackPath: '/execution-orchestrations', fallbackLabel: '编排管理', shortLabel: '编排', fallbackIcon: Setting, matchNames: ['execution-orchestrations'] },
   { permission: 'self-upgrade:view', fallbackPath: '/self-upgrade', fallbackLabel: '自升级中心', shortLabel: '自升级', fallbackIcon: Connection, matchNames: ['self-upgrade'] },
   { permission: 'test:view', fallbackPath: '/tests', fallbackLabel: '测试管理', shortLabel: '测试', fallbackIcon: Finished, matchNames: ['tests', 'test-plan-detail'] },
   { permission: 'gitlab:view', fallbackPath: '/gitlab', fallbackLabel: '代码仓库', shortLabel: '仓库', fallbackIcon: DocumentCopy, matchNames: ['gitlab'] }
@@ -934,8 +935,11 @@ function resolveMenuIcon(iconName: string | null | undefined, fallbackIcon: unkn
 
 function buildMenuItems(seeds: MenuSeed[]) {
   return seeds.map<MenuItem>((seed) => {
-    const configured = menuPermissionMap.value.get(seed.permission)
-    const uniquePermissionSeed = seeds.filter((item) => item.permission === seed.permission).length === 1
+    const permissionCodes = Array.isArray(seed.permission) ? seed.permission : [seed.permission]
+    const configured = permissionCodes.map((code) => menuPermissionMap.value.get(code)).find(Boolean)
+    const uniquePermissionSeed = permissionCodes.every((code) =>
+      seeds.filter((item) => (Array.isArray(item.permission) ? item.permission : [item.permission]).includes(code)).length === 1
+    )
     return {
       path: uniquePermissionSeed ? resolveMenuPath(configured?.path, seed.fallbackPath) : seed.fallbackPath,
       label: uniquePermissionSeed ? (configured?.name || seed.fallbackLabel) : seed.fallbackLabel,

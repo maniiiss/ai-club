@@ -65,6 +65,7 @@ public class ExecutionDispatchService {
     private final NotificationService notificationService;
     private final RepositoryScanExecutionService repositoryScanExecutionService;
     private final DevelopmentExecutionService developmentExecutionService;
+    private final TechnicalDesignExecutionService technicalDesignExecutionService;
     private final TestAutomationExecutionService testAutomationExecutionService;
     private final SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
     private final ExecutionEventService executionEventService;
@@ -73,6 +74,7 @@ public class ExecutionDispatchService {
     private final TestPlanAutomationPersistenceService testPlanAutomationPersistenceService;
     private final ChatRoomAgentService chatRoomAgentService;
     private final ExecutionTaskQueuePublisher executionTaskQueuePublisher;
+    private final TechnicalDesignCreditSettlementService technicalDesignCreditSettlementService;
     private final Executor executionTaskExecutor;
 
     public ExecutionDispatchService(ExecutionTaskRepository executionTaskRepository,
@@ -85,6 +87,7 @@ public class ExecutionDispatchService {
                                     NotificationService notificationService,
                                     RepositoryScanExecutionService repositoryScanExecutionService,
                                     DevelopmentExecutionService developmentExecutionService,
+                                    TechnicalDesignExecutionService technicalDesignExecutionService,
                                     TestAutomationExecutionService testAutomationExecutionService,
                                     SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService,
                                     ExecutionEventService executionEventService,
@@ -93,6 +96,7 @@ public class ExecutionDispatchService {
                                     TestPlanAutomationPersistenceService testPlanAutomationPersistenceService,
                                     ChatRoomAgentService chatRoomAgentService,
                                     ExecutionTaskQueuePublisher executionTaskQueuePublisher,
+                                    TechnicalDesignCreditSettlementService technicalDesignCreditSettlementService,
                                     @Qualifier("executionTaskExecutor") Executor executionTaskExecutor) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
@@ -104,6 +108,7 @@ public class ExecutionDispatchService {
         this.notificationService = notificationService;
         this.repositoryScanExecutionService = repositoryScanExecutionService;
         this.developmentExecutionService = developmentExecutionService;
+        this.technicalDesignExecutionService = technicalDesignExecutionService;
         this.testAutomationExecutionService = testAutomationExecutionService;
         this.selfUpgradeExecutionWritebackService = selfUpgradeExecutionWritebackService;
         this.executionEventService = executionEventService;
@@ -112,6 +117,7 @@ public class ExecutionDispatchService {
         this.testPlanAutomationPersistenceService = testPlanAutomationPersistenceService;
         this.chatRoomAgentService = chatRoomAgentService;
         this.executionTaskQueuePublisher = executionTaskQueuePublisher;
+        this.technicalDesignCreditSettlementService = technicalDesignCreditSettlementService;
         this.executionTaskExecutor = executionTaskExecutor;
     }
 
@@ -187,6 +193,7 @@ public class ExecutionDispatchService {
                 "执行调度失败"
         ), 400));
         executionTaskRepository.save(executionTask);
+        settleTechnicalDesignIfNeeded(executionTask);
     }
 
     /**
@@ -236,6 +243,7 @@ public class ExecutionDispatchService {
             executionTask.setStatus("CANCELED");
             executionTask.setLatestSummary("执行已取消");
             executionTaskRepository.save(executionTask);
+            settleTechnicalDesignIfNeeded(executionTask);
             // 业务意图：任务还没真正开跑就被取消时，仍要把测试计划的最近状态收敛到 CANCELED，
             // 否则会一直停留在 PENDING，让用户以为还在排队。
             writeBackTestPlanCanceledIfNeeded(executionTask, executionTask.getCurrentRun(), "执行已取消");
@@ -275,6 +283,9 @@ public class ExecutionDispatchService {
             }
             if (shouldUseDevelopmentExecution(runningTask, workflowPlan)) {
                 return dispatchDevelopmentTask(runningTask, executionRun, workflowPlan, writebackArtifacts);
+            }
+            if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(runningTask.getScenarioCode())) {
+                return dispatchTechnicalDesignTask(runningTask, executionRun, workflowPlan, writebackArtifacts);
             }
             for (ExecutionWorkflowService.ExecutionStepPlan stepPlan : workflowPlan.steps()) {
                 ExecutionTaskEntity latestTask = requireExecutionTask(executionTaskId);
@@ -341,10 +352,11 @@ public class ExecutionDispatchService {
                         }
                         output = defaultString(stepEntity.getOutputSnapshot());
                     } else if (agentExecutionService.supportsAsyncExecution(stepPlan.agent(), stepEntity.getStepCode())) {
-                        int maxRuntimeSeconds = executionAsyncSessionService.maxRuntimeSeconds(
+                        int maxRuntimeSeconds = stepPlan.timeoutSeconds() == null ? executionAsyncSessionService.maxRuntimeSeconds(
                                 stepEntity.getStepCode(),
                                 latestTask.getInputPayload()
-                        );
+                        ) : stepPlan.timeoutSeconds();
+                        if (stepPlan.timeoutSeconds() != null) runtimeVariables.put("orchestration_timeout_seconds", String.valueOf(stepPlan.timeoutSeconds()));
                         AgentExecutionService.AsyncExecutionStartResult startResult = agentExecutionService.startAsyncExecution(
                                 stepPlan.agent(),
                                 stepEntity.getInputSnapshot(),
@@ -404,6 +416,15 @@ public class ExecutionDispatchService {
         } catch (RuntimeException exception) {
             log.warn("执行任务处理失败: executionTaskId={}, message={}", executionTaskId, exception.getMessage(), exception);
             return finishInfrastructureFailure(requireExecutionTask(executionTaskId), executionRun, exception, writebackArtifacts);
+        }
+    }
+
+    /**
+     * 技术设计任务可能在创建运行前就进入失败或取消终态，此时也必须完成公众积分结算。
+     */
+    private void settleTechnicalDesignIfNeeded(ExecutionTaskEntity executionTask) {
+        if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(executionTask.getScenarioCode())) {
+            technicalDesignCreditSettlementService.settleTerminalTask(executionTask.getId());
         }
     }
 
@@ -487,6 +508,40 @@ public class ExecutionDispatchService {
                 executionRun.setOutputSummary(exception.outputSummary());
                 executionRun.setUpdatedAt(LocalDateTime.now());
                 executionRunRepository.save(executionRun);
+            }
+            return finishFailed(
+                    requireExecutionTask(executionTask.getId()),
+                    executionRun,
+                    exception.failedStep(),
+                    exception,
+                    writebackArtifacts
+            );
+        }
+    }
+
+    /**
+     * 技术设计场景必须使用专用只读编排器，避免落入通用步骤后丢失仓库上下文和语义产物类型。
+     */
+    private ExecutionRunEntity dispatchTechnicalDesignTask(ExecutionTaskEntity executionTask,
+                                                           ExecutionRunEntity executionRun,
+                                                           ExecutionWorkflowService.WorkflowPlan workflowPlan,
+                                                           List<ExecutionArtifactEntity> writebackArtifacts) {
+        try {
+            TechnicalDesignExecutionService.TechnicalDesignExecutionResult result =
+                    technicalDesignExecutionService.executeTechnicalDesignTask(executionTask, executionRun, workflowPlan);
+            if (result.artifacts() != null) {
+                writebackArtifacts.addAll(result.artifacts());
+            }
+            executionRun.setOutputSummary(result.summary());
+            executionRun.setUpdatedAt(LocalDateTime.now());
+            executionRunRepository.save(executionRun);
+            if (result.canceled()) {
+                return finishCanceled(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
+            }
+            return finishSuccess(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
+        } catch (TechnicalDesignExecutionService.TechnicalDesignExecutionException exception) {
+            if (exception.artifacts() != null) {
+                writebackArtifacts.addAll(exception.artifacts());
             }
             return finishFailed(
                     requireExecutionTask(executionTask.getId()),
@@ -938,6 +993,9 @@ public class ExecutionDispatchService {
                                                       ExecutionRunEntity executionRun,
                                                       String resultStatus,
                                                       boolean hasCleanupWorkspace) {
+        if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(executionTask.getScenarioCode())) {
+            technicalDesignCreditSettlementService.settleTerminalTask(executionTask.getId());
+        }
         if (executionTask.getCreatedByUser() == null) {
             return;
         }
@@ -1092,6 +1150,7 @@ public class ExecutionDispatchService {
             case ExecutionWorkflowService.SCENARIO_TEST_DESIGN_OR_REVIEW -> "测试设计/评审";
             case ExecutionWorkflowService.SCENARIO_AD_HOC_AGENT_RUN -> "兼容单次执行";
             case ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL -> "自升级巡检";
+            case ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING -> "技术设计生成";
             default -> "执行任务";
         };
     }

@@ -121,6 +121,7 @@ const router = createRouter({
         { path: 'agents', name: 'agents', component: AgentView, meta: { title: '智能体管理', permission: 'agent:view' } },
         { path: 'tasks', name: 'tasks', component: ExecutionTaskView, meta: { title: '执行中心', permission: 'task:view' } },
         { path: 'tasks/:executionTaskId', name: 'execution-task-detail', component: ExecutionTaskDetailView, meta: { title: '执行详情', permission: 'task:view', activeMenu: '/tasks' } },
+        { path: 'execution-orchestrations', name: 'execution-orchestrations', component: () => import('@/views/ExecutionOrchestrationView.vue'), meta: { title: '编排管理', permission: ['execution:orchestration:manage', 'project:manage'] } },
         { path: 'self-upgrade', name: 'self-upgrade', component: SelfUpgradeCenterView, meta: { title: '自升级中心', permission: 'self-upgrade:view' } },
         { path: 'tests', name: 'tests', component: TestPlanView, meta: { title: '测试管理', permission: 'test:view' } },
         { path: 'tests/:planId', name: 'test-plan-detail', component: TestPlanDetailView, meta: { title: '测试计划详情', permission: 'test:view', activeMenu: '/tests' } },

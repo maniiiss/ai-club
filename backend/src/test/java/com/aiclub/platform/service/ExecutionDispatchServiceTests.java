@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
@@ -70,6 +71,9 @@ class ExecutionDispatchServiceTests {
     private DevelopmentExecutionService developmentExecutionService;
 
     @Mock
+    private TechnicalDesignExecutionService technicalDesignExecutionService;
+
+    @Mock
     private TestAutomationExecutionService testAutomationExecutionService;
 
     @Mock
@@ -93,6 +97,9 @@ class ExecutionDispatchServiceTests {
     @Mock
     private ExecutionTaskQueuePublisher executionTaskQueuePublisher;
 
+    @Mock
+    private TechnicalDesignCreditSettlementService technicalDesignCreditSettlementService;
+
     private ExecutionDispatchService executionDispatchService;
 
     @BeforeEach
@@ -108,6 +115,7 @@ class ExecutionDispatchServiceTests {
                 notificationService,
                 repositoryScanExecutionService,
                 developmentExecutionService,
+                technicalDesignExecutionService,
                 testAutomationExecutionService,
                 selfUpgradeExecutionWritebackService,
                 executionEventService,
@@ -116,6 +124,7 @@ class ExecutionDispatchServiceTests {
                 testPlanAutomationPersistenceService,
                 chatRoomAgentService,
                 executionTaskQueuePublisher,
+                technicalDesignCreditSettlementService,
                 Runnable::run
         );
     }
@@ -772,6 +781,32 @@ class ExecutionDispatchServiceTests {
                 currentStep,
                 "执行任务已取消，当前步骤正在停止"
         );
+    }
+
+    @Test
+    void shouldSettleTechnicalDesignCreditsWhenQueueDeadLetterFails() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING);
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+
+        executionDispatchService.markTaskQueueFailed(99L, "队列消费失败");
+
+        verify(technicalDesignCreditSettlementService).settleTerminalTask(99L);
+    }
+
+    @Test
+    void shouldSettleTechnicalDesignCreditsWhenClaimedTaskWasCanceledBeforeRun() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING);
+        executionTask.setStatus("RUNNING");
+        executionTask.setCancelRequested(true);
+        when(executionTaskRepository.claimQueuedTask(any(), anyString(), anyString(), anyString(), anyString(), any()))
+                .thenReturn(1);
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+
+        executionDispatchService.consumeQueuedTask(99L, false);
+
+        verify(technicalDesignCreditSettlementService).settleTerminalTask(99L);
     }
 
     /**

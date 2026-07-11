@@ -12,6 +12,7 @@ import com.aiclub.platform.dto.TaskLinksSummary;
 import com.aiclub.platform.dto.TaskRequirementAiResult;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.request.ApplyTaskPrdSuggestionRequest;
+import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
 import com.aiclub.platform.dto.request.TaskAgentRunRequest;
 import com.aiclub.platform.dto.request.TaskCommentRequest;
 import com.aiclub.platform.dto.request.TaskLinkRequest;
@@ -19,6 +20,7 @@ import com.aiclub.platform.dto.request.TaskPrdAnalyzeRequest;
 import com.aiclub.platform.dto.request.TaskRequirementAiRequest;
 import com.aiclub.platform.dto.request.TaskRequest;
 import com.aiclub.platform.service.PlatformStoreService;
+import com.aiclub.platform.service.ExecutionTaskService;
 import com.aiclub.platform.service.TaskRequirementAiService;
 import com.aiclub.platform.service.TaskAgentRunService;
 import com.aiclub.platform.service.TaskPrdService;
@@ -47,17 +49,20 @@ public class TaskController {
     private final TaskRequirementAiService taskRequirementAiService;
     private final TaskPrdService taskPrdService;
     private final WorkItemLinkService workItemLinkService;
+    private final ExecutionTaskService executionTaskService;
 
     public TaskController(PlatformStoreService platformStoreService,
                           TaskAgentRunService taskAgentRunService,
                           TaskRequirementAiService taskRequirementAiService,
                           TaskPrdService taskPrdService,
-                          WorkItemLinkService workItemLinkService) {
+                          WorkItemLinkService workItemLinkService,
+                          ExecutionTaskService executionTaskService) {
         this.platformStoreService = platformStoreService;
         this.taskAgentRunService = taskAgentRunService;
         this.taskRequirementAiService = taskRequirementAiService;
         this.taskPrdService = taskPrdService;
         this.workItemLinkService = workItemLinkService;
+        this.executionTaskService = executionTaskService;
     }
 
     @GetMapping
@@ -193,6 +198,17 @@ public class TaskController {
     public ApiResponse<TaskRequirementAiResult> generateRequirementAi(@PathVariable Long id,
                                                                       @Valid @RequestBody TaskRequirementAiRequest request) {
         return ApiResponse.success(taskRequirementAiService.generate(id, request));
+    }
+
+    /**
+     * 管理端技术设计执行入口不扣公众积分，但复用同一领域校验和专用编排。
+     */
+    @PostMapping("/{id}/technical-design-executions")
+    @RequirePermission("task:execution:create")
+    public ApiResponse<ExecutionTaskSummary> createTechnicalDesignExecution(
+            @PathVariable Long id,
+            @Valid @RequestBody CreateExecutionTaskRequest request) {
+        return ApiResponse.success(executionTaskService.createTechnicalDesignExecution(id, request));
     }
 
     @PostMapping
