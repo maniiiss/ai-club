@@ -108,7 +108,7 @@ export const TechnicalDesignAiDialog = ({ open, workItem, onClose, onCreated }: 
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <button type="button" aria-label="关闭弹窗" className="absolute inset-0 cursor-default bg-slate-950/35 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative flex max-h-[90vh] w-full max-w-[920px] flex-col overflow-hidden rounded-2xl border border-white/60 bg-white shadow-[var(--shadow-xl)]">
+      <div className="relative flex h-[min(720px,90vh)] w-full max-w-[920px] flex-col overflow-hidden rounded-2xl border border-white/60 bg-white shadow-[var(--shadow-xl)]">
         <header className="flex items-center justify-between border-b border-[var(--color-border)] px-6 py-4">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-sky-50 text-sky-700"><Sparkles className="h-4.5 w-4.5" /></span>
@@ -117,8 +117,16 @@ export const TechnicalDesignAiDialog = ({ open, workItem, onClose, onCreated }: 
           <button type="button" aria-label="关闭" onClick={onClose} className="rounded-lg p-2 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)]"><X className="h-4 w-4" /></button>
         </header>
 
-        {loading ? <div className="min-h-[420px]"><LoadingSpinner text="加载编排与仓库…" /></div> : (
-          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
+        <div className="relative min-h-0 flex-1">
+          {loading ? (
+            <div className="absolute inset-0 z-10 grid place-items-center bg-white">
+              <LoadingSpinner text="加载编排与仓库…" />
+            </div>
+          ) : null}
+          <div className={cn(
+            'h-full space-y-6 overflow-y-auto px-6 py-5 transition-opacity duration-200',
+            loading ? 'pointer-events-none opacity-0' : 'opacity-100',
+          )}>
             <div className="grid gap-3 md:grid-cols-3">
               <InfoTile title="三步只读流程" text="代码理解 → 设计生成 → 设计自检" icon={<ShieldCheck className="h-4 w-4" />} />
               <InfoTile title="GitNexus 优先" text="索引不可用时明确降级到源码搜索" icon={<GitBranch className="h-4 w-4" />} />
@@ -142,21 +150,16 @@ export const TechnicalDesignAiDialog = ({ open, workItem, onClose, onCreated }: 
               </div>
             </section>
 
-            <section className={cn(
-              'rounded-xl border px-4 py-3 text-[12px]',
-              orchestrationReady
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                : 'border-amber-200 bg-amber-50 text-amber-800',
-            )}>
-              {orchestrationReady
-                ? '技术设计编排已就绪，三步只读 Runtime 由管理员发布的项目或平台编排统一确定。'
-                : '当前项目的技术设计编排未就绪，请联系管理员配置并发布编排。'}
-            </section>
+            {!orchestrationReady ? (
+              <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">
+                当前项目的技术设计编排未就绪，请联系管理员配置并发布编排。
+              </section>
+            ) : null}
 
             <section className="space-y-3"><SectionTitle title="补充约束" hint="可补充兼容性、边界、交付格式等要求。" /><textarea rows={4} value={inputText} onChange={(event) => setInputText(event.target.value)} className="w-full resize-y rounded-xl border border-[var(--color-border-strong)] px-3 py-2 text-[13px] outline-none focus:border-[var(--color-primary)]" placeholder="例如：保持现有 API 兼容，明确数据库迁移与回滚方案。" /></section>
             {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">{error}</p> : null}
           </div>
-        )}
+        </div>
         <footer className="flex items-center justify-between border-t border-[var(--color-border)] bg-[var(--color-bg-page)] px-6 py-3"><p className="text-[11px] text-[var(--color-text-tertiary)]">Runtime 命令层采用只读权限，不修改仓库代码。</p><div className="flex gap-2"><Button variant="secondary" onClick={onClose}>取消</Button><Button onClick={submit} loading={submitting} disabled={loading || !orchestrationReady}>创建技术设计</Button></div></footer>
       </div>
     </div>, document.body,

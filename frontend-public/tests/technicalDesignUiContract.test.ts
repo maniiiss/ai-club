@@ -26,9 +26,19 @@ describe('technical design AI public UI contract', () => {
     assert.match(dialog, /listExecutionOrchestrationScenarios/)
     assert.match(dialog, /orchestrationReady/)
     assert.match(dialog, /请联系管理员配置并发布编排/)
+    assert.doesNotMatch(dialog, /技术设计编排已就绪，三步只读 Runtime 由管理员发布的项目或平台编排统一确定。/)
     assert.doesNotMatch(dialog, /listAgentOptions/)
     assert.doesNotMatch(dialog, /stepAgentMap/)
     assert.doesNotMatch(dialog, /agentBindings/)
+  })
+
+  it('keeps the dialog frame stable while loading orchestration options', () => {
+    const dialog = read('src/pages/planning/TechnicalDesignAiDialog.tsx')
+    assert.match(dialog, /h-\[min\(720px,90vh\)\]/)
+    assert.match(dialog, /relative min-h-0 flex-1/)
+    assert.match(dialog, /absolute inset-0 z-10/)
+    assert.match(dialog, /transition-opacity duration-200/)
+    assert.doesNotMatch(dialog, /loading \? <div className="min-h-\[420px\]"/)
   })
 
   it('shows the technical-design scenario in execution filters and supports semantic artifact writeback', () => {
