@@ -182,11 +182,16 @@ export const ApiStudioPanel = () => {
           </div>
 
           <div className="px-3 pt-3 pb-1">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
-              <input type="text" placeholder="搜索 API…" value={keyword} onChange={(e) => setKeyword(e.target.value)}
-                className="h-8 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] pl-8 pr-3 text-[12px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20" />
-            </div>
+            <Input
+              size="sm"
+              adaptiveIcon
+              wrapperClassName="w-full"
+              icon={<Search className="h-3.5 w-3.5" />}
+              placeholder="搜索 API…"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              className="bg-[var(--color-bg-page)] text-[12px]"
+            />
           </div>
 
           <div className="flex-1 overflow-y-auto p-3">

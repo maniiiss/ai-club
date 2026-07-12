@@ -1,5 +1,5 @@
 /**
- * 创建/编辑 AI Club 流水线的表单抽屉。
+ * 创建/编辑 GitPilot 流水线的表单抽屉。
  * 字段校验对齐后端 AiClubPipelineRequest 的 @NotBlank/@Size 注解。
  */
 import { useEffect, useState, useCallback } from 'react'
@@ -121,7 +121,7 @@ export const PipelineFormDrawer = ({
       open={open}
       onClose={onClose}
       title={isEdit ? '编辑流水线' : '新建流水线'}
-      description={isEdit ? '修改 AI Club 流水线配置' : '创建新的 AI Club 流水线'}
+      description={isEdit ? '修改 GitPilot 流水线配置' : '创建新的 GitPilot 流水线'}
       maxWidth="640px"
       footer={
         <SlideDrawerFooter

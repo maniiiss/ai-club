@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
-import { normalizeGeneratedMarkdown } from '@/src/lib/markdownUtils'
+import { resolveMarkdownContent } from '@/src/lib/markdownUtils'
 import { cn } from '@/src/lib/utils'
 
 interface MarkdownProps {
@@ -17,6 +17,10 @@ interface MarkdownProps {
   content: string
   /** 额外 CSS class。 */
   className?: string
+  /** 渲染场景。助手回复使用更紧凑的阅读节奏，避免长报告挤占聊天时间线。 */
+  variant?: 'default' | 'assistant'
+  /** 是否归一化模型生成的 Markdown；已在上游处理或已验证的原文应关闭。 */
+  normalize?: boolean
 }
 
 /* ── 灯箱状态 ── */
@@ -210,9 +214,9 @@ const ImageLightbox = ({
 
 /* ── Markdown 组件 ── */
 
-export const Markdown = ({ content, className }: MarkdownProps) => {
+export const Markdown = ({ content, className, variant = 'default', normalize = true }: MarkdownProps) => {
   const [lightbox, setLightbox] = useState<LightboxState | null>(null)
-  const normalizedContent = normalizeGeneratedMarkdown(content)
+  const normalizedContent = resolveMarkdownContent(content, normalize)
 
   if (!normalizedContent) {
     return <p className="text-[var(--color-text-tertiary)] text-[14px]">（内容为空）</p>
@@ -220,7 +224,7 @@ export const Markdown = ({ content, className }: MarkdownProps) => {
 
   return (
     <>
-      <div className={cn('prose-markdown', className)}>
+      <div className={cn('prose-markdown', variant === 'assistant' && 'prose-markdown--assistant', className)}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{

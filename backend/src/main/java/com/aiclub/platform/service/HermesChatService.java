@@ -480,6 +480,7 @@ public class HermesChatService {
                 resolvedContent = fallbackResult.content();
             }
         }
+        resolvedContent = HermesMarkdownFormatter.formatForDisplay(resolvedContent);
         List<HermesConversationTurn> transcript = new ArrayList<>(latestState == null ? List.of() : latestState.transcript());
         transcript.add(currentUserTurn);
         transcript.add(HermesConversationTurn.assistant(resolvedContent));

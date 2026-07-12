@@ -223,7 +223,7 @@ def _require_single_repository(request: CliExecutionRequest) -> CliExecutionRepo
 
 def _execute_codex_markdown_sync(request: CliExecutionRequest) -> CliExecutionResponse:
     workspace = _markdown_workspace_for(request)
-    _recreate_markdown_workspace(workspace)
+    _prepare_markdown_workspace(request, workspace)
     repo_paths = _prepare_markdown_repositories(request, workspace)
     technical_context = _collect_technical_design_context(request, workspace, repo_paths)
     output = _run_codex_markdown_cli(request, workspace, repo_paths, technical_context)
@@ -238,7 +238,7 @@ def _execute_codex_markdown_sync(request: CliExecutionRequest) -> CliExecutionRe
 
 def _execute_claude_markdown_sync(request: CliExecutionRequest) -> CliExecutionResponse:
     workspace = _markdown_workspace_for(request)
-    _recreate_markdown_workspace(workspace)
+    _prepare_markdown_workspace(request, workspace)
     repo_paths = _prepare_markdown_repositories(request, workspace)
     technical_context = _collect_technical_design_context(request, workspace, repo_paths)
     output = _run_claude_markdown_cli(request, workspace, repo_paths, technical_context)
@@ -344,7 +344,7 @@ def _run_markdown_session(session_id: str, request: CliExecutionRequest, workspa
     session_deadline = time.monotonic() + max(int(request.timeoutSeconds), 1)
 
     try:
-        _recreate_markdown_workspace(workspace)
+        _prepare_markdown_workspace(request, workspace)
         repo_paths = _prepare_markdown_repositories(request, workspace)
         if cancel_watcher.should_cancel():
             raise TechnicalDesignSessionCanceled("技术设计执行已取消")
@@ -690,7 +690,7 @@ def _run_claude_implementation_cli_streaming(request: CliExecutionRequest, works
 def _execute_opencode_markdown_sync(request: CliExecutionRequest) -> CliExecutionResponse:
     """opencode Markdown 同步执行：PLAN / AD_HOC / 技术设计三步统一走只读 plan agent。"""
     workspace = _markdown_workspace_for(request)
-    _recreate_markdown_workspace(workspace)
+    _prepare_markdown_workspace(request, workspace)
     repo_paths = _prepare_markdown_repositories(request, workspace)
     technical_context = _collect_technical_design_context(request, workspace, repo_paths)
     output = _run_opencode_markdown_cli(request, workspace, repo_paths, technical_context)
@@ -711,11 +711,13 @@ def _run_opencode_markdown_cli(
 ) -> str:
     opencode_cli = discover_opencode_cli_path()
     command = _build_opencode_markdown_command(request, opencode_cli, repo_paths, technical_context)
-    display_command = codex_service._format_process_command_for_log(command, omit_trailing_prompt=True)
+    prompt = _build_opencode_markdown_prompt(request, repo_paths, technical_context)
+    display_command = codex_service._format_process_command_for_log(command)
     _append_markdown_log(workspace, f"调用 opencode CLI：{display_command}")
     completed = subprocess.run(
         command,
         cwd=workspace.root,
+        input=prompt,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -746,11 +748,13 @@ def _run_opencode_markdown_cli_streaming(
     stdout_log = workspace.out_dir / "opencode-stdout.log"
     stderr_log = workspace.out_dir / "opencode-stderr.log"
     command = _build_opencode_markdown_command(request, opencode_cli, repo_paths, technical_context)
-    display_command = codex_service._format_process_command_for_log(command, omit_trailing_prompt=True)
+    prompt = _build_opencode_markdown_prompt(request, repo_paths, technical_context)
+    display_command = codex_service._format_process_command_for_log(command)
     _append_markdown_log(workspace, f"调用 opencode CLI：{display_command}")
     result = run_streaming_process(
         command,
         cwd=workspace.root,
+        stdin_text=prompt,
         timeout_seconds=request.timeoutSeconds,
         batcher=batcher,
         command_label="opencode CLI",
@@ -806,11 +810,13 @@ def _execute_opencode_implementation_sync(request: CliExecutionRequest) -> CliEx
 def _run_opencode_implementation_cli(request: CliExecutionRequest, workspace) -> tuple[dict[str, object], str, str, int]:
     opencode_cli = discover_opencode_cli_path()
     command = _build_opencode_implementation_command(opencode_cli, workspace.repo_dir, request)
-    display_command = codex_service._format_process_command_for_log(command, omit_trailing_prompt=True)
+    prompt = _build_opencode_implementation_prompt(request)
+    display_command = codex_service._format_process_command_for_log(command)
     codex_service._append_log(workspace, f"调用 opencode CLI：{display_command}")
     completed = subprocess.run(
         command,
         cwd=workspace.repo_dir,
+        input=prompt,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -833,11 +839,13 @@ def _run_opencode_implementation_cli_streaming(request: CliExecutionRequest, wor
     stdout_log = workspace.out_dir / "opencode-stdout.log"
     stderr_log = workspace.out_dir / "opencode-stderr.log"
     command = _build_opencode_implementation_command(opencode_cli, workspace.repo_dir, request)
-    display_command = codex_service._format_process_command_for_log(command, omit_trailing_prompt=True)
+    prompt = _build_opencode_implementation_prompt(request)
+    display_command = codex_service._format_process_command_for_log(command)
     codex_service._append_log(workspace, f"调用 opencode CLI：{display_command}")
     result = run_streaming_process(
         command,
         cwd=workspace.repo_dir,
+        stdin_text=prompt,
         timeout_seconds=request.timeoutSeconds,
         batcher=batcher,
         command_label="opencode CLI",
@@ -956,7 +964,7 @@ def _build_opencode_markdown_command(
     repo_paths: list[Path],
     technical_context: str = "",
 ) -> list[str]:
-    """构造 opencode Markdown 步骤命令；统一只读 plan agent，prompt 作为位置参数传入。"""
+    """构造 opencode Markdown 步骤命令；统一只读 plan agent，prompt 通过 stdin 传入。"""
     command = [
         *build_opencode_command_prefix(opencode_cli),
         "--format", "default",
@@ -965,12 +973,11 @@ def _build_opencode_markdown_command(
     ]
     if settings.opencode_model:
         command.extend(["--model", settings.opencode_model])
-    command.append(_build_opencode_markdown_prompt(request, repo_paths, technical_context))
     return command
 
 
 def _build_opencode_implementation_command(opencode_cli: Path, repo_dir: Path, request: CliExecutionRequest) -> list[str]:
-    """构造 opencode 开发实现命令；build agent + auto 自动批准写操作，prompt 作为位置参数传入。"""
+    """构造 opencode 开发实现命令；build agent + auto 自动批准写操作，prompt 通过 stdin 传入。"""
     command = [
         *build_opencode_command_prefix(opencode_cli),
         "--format", "default",
@@ -980,7 +987,6 @@ def _build_opencode_implementation_command(opencode_cli: Path, repo_dir: Path, r
     ]
     if settings.opencode_model:
         command.extend(["--model", settings.opencode_model])
-    command.append(_build_opencode_implementation_prompt(request))
     return command
 
 
@@ -1330,12 +1336,66 @@ def _recreate_markdown_workspace(workspace: CliMarkdownWorkspace) -> None:
     workspace.out_dir.mkdir(parents=True, exist_ok=True)
 
 
+def _prepare_markdown_workspace(request: CliExecutionRequest, workspace: CliMarkdownWorkspace) -> None:
+    """准备 Markdown 步骤工作区；技术设计三步共享同一 run 的仓库 checkout。"""
+    if _is_technical_design_request(request):
+        # 技术设计步骤按顺序复用仓库，避免每一步重新 clone 并触发 Windows 目录残留冲突。
+        workspace.repos_dir.mkdir(parents=True, exist_ok=True)
+        workspace.out_dir.mkdir(parents=True, exist_ok=True)
+        return
+    _recreate_markdown_workspace(workspace)
+
+
+def _markdown_repository_dir(
+    repository: CliExecutionRepository,
+    workspace: CliMarkdownWorkspace,
+    index: int,
+) -> Path:
+    """按照 Claude clone helper 的规则计算稳定仓库目录，供跨步骤复用。"""
+    claude_repository = _to_claude_repository(repository)
+    repo_key = claude_service._safe_slug(
+        claude_repository.projectPath
+        or claude_repository.projectRef
+        or claude_repository.displayName
+        or claude_repository.bindingId
+        or f"repo-{index}"
+    )
+    return workspace.repos_dir / f"{index:02d}-{repo_key}"
+
+
+def _is_reusable_markdown_repository(
+    repository: CliExecutionRepository,
+    repo_dir: Path,
+) -> bool:
+    """仅复用能解析 HEAD 的完整 checkout，避免把半成品 .git 目录当成可用仓库。"""
+    if not repo_dir.is_dir() or not (repo_dir / ".git").exists():
+        return False
+    completed = subprocess.run(
+        ["git", "-C", str(repo_dir), "rev-parse", "--verify", "HEAD"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+    if completed.returncode != 0 or not (completed.stdout or "").strip():
+        return False
+    expected_commit = (getattr(repository, "commitSha", "") or "").strip()
+    return not expected_commit or (completed.stdout or "").strip() == expected_commit
+
+
 def _prepare_markdown_repositories(request: CliExecutionRequest, workspace: CliMarkdownWorkspace) -> list[Path]:
     repo_paths: list[Path] = []
     for index, repository in enumerate(request.repositories, start=1):
         if not repository.repoUrl:
             continue
-        repo_dir = claude_service._clone_repository(_to_claude_repository(repository), workspace, index)
+        repo_dir = _markdown_repository_dir(repository, workspace, index)
+        if _is_reusable_markdown_repository(repository, repo_dir):
+            _append_markdown_log(workspace, f"复用已准备仓库：{repository.displayName or repository.projectPath or repo_dir.name}")
+        else:
+            repo_dir = claude_service._clone_repository(_to_claude_repository(repository), workspace, index)
         repo_paths.append(repo_dir)
     return repo_paths
 

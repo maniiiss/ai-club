@@ -140,7 +140,7 @@ const WikiPanel = () => {
   }
 
   const handleSelectSpace = async (space: WikiSpaceItem) => {
-    setSelectedSpace(space); setSelectedPage(null); setTreeLoading(true)
+    setSelectedSpace(space); setSelectedPage(null); setSearchResults([]); setKeyword(''); setTreeLoading(true)
     try { setTree(await getWikiDirectoryTree(space.id)) } catch { setTree([]) } finally { setTreeLoading(false) }
   }
 
@@ -214,8 +214,8 @@ const WikiPanel = () => {
   }
 
   const handleSearch = async () => {
-    if (!keyword.trim()) { setSearchResults([]); return }
-    try { setSearchResults(await searchWikiPages({ keyword, projectId: pid })) } catch { setSearchResults([]) }
+    if (!selectedSpace || !keyword.trim()) { setSearchResults([]); return }
+    try { setSearchResults(await searchWikiPages({ keyword, spaceId: selectedSpace.id })) } catch { setSearchResults([]) }
   }
 
   // ── 版本历史 ──
@@ -303,26 +303,8 @@ const WikiPanel = () => {
   if (!selectedSpace) {
     return (
       <div>
-        <div className="mb-4 flex gap-2">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
-            <input type="text" placeholder="搜索 Wiki 页面…" value={keyword} onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white pl-9 pr-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20" />
-          </div>
-        </div>
-        {searchResults.length > 0 ? (
-          <div className="space-y-2">
-            <h3 className="text-[13px] font-semibold text-[var(--color-text-primary)]">搜索结果</h3>
-            {searchResults.map((r) => (
-              <div key={r.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3 hover:shadow-[var(--shadow-sm)] transition-shadow cursor-pointer"
-                onClick={() => { const space = spaces.find((s) => s.id === r.spaceId); if (space) { handleSelectSpace(space).then(() => handleSelectPage(r.spaceId, r.id)) } }}>
-                <p className="text-[13px] font-medium text-[var(--color-text-primary)]">{r.title}</p>
-                <p className="text-[11px] text-[var(--color-text-tertiary)] mt-0.5">{r.spaceName} / {r.directoryName}</p>
-              </div>
-            ))}
-          </div>
-        ) : spaces.length === 0 ? (
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]">
+        {spaces.length === 0 ? (
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)]">
             <div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-10 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-primary-light)]">
                 <BookOpen className="h-6 w-6 text-[var(--color-primary)]" strokeWidth={1.5} />
@@ -336,7 +318,7 @@ const WikiPanel = () => {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {spaces.map((space) => (
               <button key={space.id} onClick={() => handleSelectSpace(space)}
-                className="group text-left rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-card)] transition-all duration-200 hover:border-[var(--color-primary)]/20 hover:shadow-[var(--shadow-card-hover)] cursor-pointer">
+                className="group text-left rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 transition-colors duration-200 hover:border-[var(--color-primary)]/40 cursor-pointer">
                 <div className="flex items-start gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--color-primary-light)] transition-colors group-hover:bg-[var(--color-primary)]">
                     <BookOpen className="h-5 w-5 text-[var(--color-primary)] group-hover:text-white" strokeWidth={1.75} />
@@ -383,13 +365,47 @@ const WikiPanel = () => {
         mobileTreeOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0 lg:max-h-none lg:opacity-100',
       )}>
         <div className="pt-2 lg:pt-0">
-          <button onClick={() => { setSelectedSpace(null); setSearchResults([]); setSelectedPage(null); setMobileTreeOpen(false) }} className="mb-3 text-[12px] text-[var(--color-primary)] hover:underline cursor-pointer">← 返回空间列表</button>
+          <button onClick={() => { setSelectedSpace(null); setSearchResults([]); setKeyword(''); setSelectedPage(null); setMobileTreeOpen(false) }} className="mb-3 text-[12px] text-[var(--color-primary)] hover:underline cursor-pointer">← 返回空间列表</button>
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-[13px] font-semibold text-[var(--color-text-primary)] truncate">{selectedSpace.name}</h3>
             <div className="flex gap-0.5">
               <button onClick={() => setImportDialog({ open: true, directoryId: tree[0]?.id ?? 0 })} className="rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors cursor-pointer" title="导入文档"><Upload className="h-3.5 w-3.5" /></button>
               <button onClick={() => setNewDirDialog({ open: true })} className="rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors cursor-pointer" title="新建目录"><FolderTree className="h-3.5 w-3.5" /></button>
             </div>
+          </div>
+          <div className="relative mb-3">
+            <Input
+              size="sm"
+              adaptiveIcon
+              wrapperClassName="w-full"
+              icon={<Search className="h-4 w-4" />}
+              placeholder="搜索当前 Wiki 页面…"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            />
+            {/* 搜索结果不参与目录树排版，避免搜索时把原目录树顶下去。 */}
+            {searchResults.length > 0 && (
+              <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)]">
+                <div className="space-y-1.5 p-2">
+                  <p className="text-[11px] font-medium text-[var(--color-text-tertiary)]">搜索结果</p>
+                  {searchResults.map((result) => (
+                    <button
+                      key={result.id}
+                      type="button"
+                      onClick={() => {
+                        setSearchResults([])
+                        handleSelectPage(selectedSpace.id, result.id)
+                      }}
+                      className="block w-full rounded-lg border border-[var(--color-border-light)] px-2.5 py-2 text-left transition-colors hover:border-[var(--color-primary)]/30 hover:bg-[var(--color-bg-hover)]"
+                    >
+                      <p className="truncate text-[12px] font-medium text-[var(--color-text-primary)]">{result.title}</p>
+                      <p className="mt-0.5 truncate text-[10px] text-[var(--color-text-tertiary)]">{result.directoryName}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           {treeLoading ? <LoadingSpinner text="加载目录…" /> : tree.length === 0 ? <p className="text-[12px] text-[var(--color-text-tertiary)]">暂无目录</p> : (
             <DirectoryTree nodes={tree} spaceId={selectedSpace.id} onSelectPage={(sId, pId) => { handleSelectPage(sId, pId); setMobileTreeOpen(false) }}

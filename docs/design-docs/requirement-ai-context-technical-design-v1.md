@@ -94,6 +94,16 @@ scenarioCode: REQUIREMENT_AI_ANALYSIS
 
 该场景是执行中心的专用内置场景，步骤由代码固定，不接受请求传入 `agentBindings`，V1 不进入执行编排管理页面。
 
+执行场景保持统一，但执行任务标题必须体现本次具体动作，避免标准化需求和拆解子任务在执行中心中都显示为泛化的“需求 AI 分析”。任务创建时按 `action` 映射动作名称，并使用“工作项名称 · 动作名称”生成标题：
+
+| action | 动作名称 | 标题示例 |
+| --- | --- | --- |
+| `STANDARDIZE` | 标准化需求 | `用户注册需求 · 标准化需求` |
+| `BREAKDOWN` | 拆解子任务 | `用户注册需求 · 拆解子任务` |
+| `TEST_CASES` | 生成测试用例 | `用户注册需求 · 生成测试用例` |
+
+执行中心列表、详情和基于执行任务生成的通知统一使用该标题；`scenarioCode`、固定三步编排、历史查询条件和统计口径仍保持 `REQUIREMENT_AI_ANALYSIS`，不为三个动作拆分新的执行场景。历史任务标题不迁移。
+
 ```text
 [需求 AI 助手]
     |
@@ -141,7 +151,7 @@ POST /api/public/tasks/{taskId}/requirement-ai
 {
   "executionTaskId": 1024,
   "status": "PENDING",
-  "message": "需求 AI 分析已提交，可关闭窗口，完成后将通过消息中心通知您"
+  "message": "标准化需求已提交，可关闭窗口，完成后将通过消息中心通知您"
 }
 ```
 
@@ -334,10 +344,10 @@ GET /api/public/tasks/{taskId}/requirement-ai-executions
 
 ### 7.3 完成通知
 
-任务完成或失败时创建消息中心通知：
+任务完成或失败时创建消息中心通知，标题沿用执行任务中的具体动作名称：
 
-- 成功标题：“需求 AI 分析已完成”。
-- 失败标题：“需求 AI 分析失败”。
+- 成功标题示例：“用户注册需求 · 标准化需求已完成”。
+- 失败标题示例：“用户注册需求 · 拆解子任务失败”。
 - `actionUrl` 指向原需求，并携带 `executionTaskId`。
 
 ```text

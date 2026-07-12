@@ -1,9 +1,9 @@
 /**
  * 发布与观测模块类型定义。
- * 涵盖流水线中心、AI Club 流水线、Jenkins 构建和可观测性。
+ * 涵盖流水线中心、GitPilot 流水线、Jenkins 构建和可观测性。
  */
 
-/** 流水线中心条目（合并 AI Club 流水线和 Jenkins 绑定）。 */
+/** 流水线中心条目（合并 GitPilot 流水线和 Jenkins 绑定）。 */
 export interface PipelineCenterEntryItem {
   entryType: 'AI_CLUB' | 'JENKINS' | string
   entryId: number
@@ -27,7 +27,7 @@ export interface PipelineCenterEntryItem {
   callbackWebhookEnabled: boolean
 }
 
-/** AI Club 流水线。 */
+/** GitPilot 流水线。 */
 export interface AiClubPipelineItem {
   id: number
   projectId: number
@@ -45,7 +45,7 @@ export interface AiClubPipelineItem {
   lastTriggeredAt: string | null
 }
 
-/** AI Club 流水线运行记录。 */
+/** GitPilot 流水线运行记录。 */
 export interface AiClubPipelineRunItem {
   number: number
   status: string | null
@@ -123,7 +123,7 @@ export interface ObservabilityHealthTimelinePointItem {
   healthLevel: string | null
 }
 
-/** 触发 AI Club 流水线的结果。 */
+/** 触发 GitPilot 流水线的结果。 */
 export interface AiClubPipelineTriggerResult {
   pipelineId: number
   projectName: string
@@ -147,9 +147,9 @@ export interface JenkinsBuildTriggerResult {
   triggeredAt: string
 }
 
-/* ══ AI Club 流水线 Cron 定时任务 ══ */
+/* ══ GitPilot 流水线 Cron 定时任务 ══ */
 
-/** AI Club 流水线 Cron 定时任务摘要。 */
+/** GitPilot 流水线 Cron 定时任务摘要。 */
 export interface AiClubPipelineCronItem {
   id: number
   remoteCronId: number | null
@@ -169,7 +169,7 @@ export interface AiClubPipelineCronPayload {
   enabled: boolean
 }
 
-/* ══ AI Club 流水线 Webhook 配置 ══ */
+/* ══ GitPilot 流水线 Webhook 配置 ══ */
 
 /** 触发 Webhook 配置摘要。 */
 export interface AiClubPipelineTriggerWebhook {
@@ -324,7 +324,7 @@ export interface RuntimeInstancePayload {
 
 /* ══ 日志详情 ══ */
 
-/** AI Club 流水线运行日志详情。 */
+/** GitPilot 流水线运行日志详情。 */
 export interface AiClubPipelineRunLogDetail {
   projectName: string
   pipelineName: string
@@ -364,7 +364,7 @@ export interface ObservabilityProjectDetail {
 
 /* ══ 流水线配置状态 ══ */
 
-/** AI Club 流水线配置状态。 */
+/** GitPilot 流水线配置状态。 */
 export interface AiClubPipelineConfigStatus {
   status: string
   branch: string | null
@@ -373,9 +373,9 @@ export interface AiClubPipelineConfigStatus {
   checkedAt: string | null
 }
 
-/* ══ AI Club 流水线创建/更新请求载荷 ══ */
+/* ══ GitPilot 流水线创建/更新请求载荷 ══ */
 
-/** 创建/更新 AI Club 流水线的请求载荷。 */
+/** 创建/更新 GitPilot 流水线的请求载荷。 */
 export interface AiClubPipelinePayload {
   projectId: number
   gitlabBindingId: number

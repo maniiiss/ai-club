@@ -124,6 +124,28 @@ export const createExecutionTask = async (payload: {
   return unwrap(res)
 }
 
+/** 公众端执行创建预检返回的上下文可用性摘要。 */
+export interface ExecutionContextOptionsSummary {
+  requirementLinked: boolean
+  requirementTaskId: number | null
+  requirementTaskCode: string
+  requirementTaskName: string
+  technicalDesignAvailable: boolean
+  technicalDesignArtifactId: number | null
+  technicalDesignExecutionTaskId: number | null
+  technicalDesignWorkItemName: string
+  technicalDesignCreatedAt: string
+  requirementNotice: string
+  technicalDesignNotice: string
+}
+
+export const getExecutionContextOptions = async (projectId: number, workItemId: number): Promise<ExecutionContextOptionsSummary> => {
+  const res = await http.get<ApiResponse<ExecutionContextOptionsSummary>>('/api/execution-tasks/context-options', {
+    params: { projectId, workItemId },
+  })
+  return unwrap(res)
+}
+
 /** 公众端创建技术设计执行，后端在该入口统一完成积分结算。 */
 export const createPublicTechnicalDesignExecution = async (
   taskId: number,

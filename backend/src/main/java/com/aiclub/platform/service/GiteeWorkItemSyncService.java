@@ -18,6 +18,7 @@ import com.aiclub.platform.repository.TaskRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.security.AuthContextHolder;
 import com.aiclub.platform.util.RequirementDocumentUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -72,10 +73,12 @@ public class GiteeWorkItemSyncService {
     private final TokenCipherService tokenCipherService;
     private final KnowledgeGraphService knowledgeGraphService;
     private final PlatformEnvVarResolver platformEnvVarResolver;
+    private final TaskUpdateRecordService taskUpdateRecordService;
     private final SecureRandom workItemCodeRandom = new SecureRandom();
     @org.springframework.beans.factory.annotation.Value("${platform.gitee.default-api-url:}")
     private String defaultApiUrl = "";
 
+    @Autowired
     public GiteeWorkItemSyncService(IterationRepository iterationRepository,
                                     IterationGiteeBindingRepository iterationGiteeBindingRepository,
                                     ProjectGiteeBindingRepository projectGiteeBindingRepository,
@@ -87,7 +90,8 @@ public class GiteeWorkItemSyncService {
                                     GiteeApiService giteeApiService,
                                     TokenCipherService tokenCipherService,
                                     KnowledgeGraphService knowledgeGraphService,
-                                    PlatformEnvVarResolver platformEnvVarResolver) {
+                                    PlatformEnvVarResolver platformEnvVarResolver,
+                                    TaskUpdateRecordService taskUpdateRecordService) {
         this.iterationRepository = iterationRepository;
         this.iterationGiteeBindingRepository = iterationGiteeBindingRepository;
         this.projectGiteeBindingRepository = projectGiteeBindingRepository;
@@ -100,6 +104,25 @@ public class GiteeWorkItemSyncService {
         this.tokenCipherService = tokenCipherService;
         this.knowledgeGraphService = knowledgeGraphService;
         this.platformEnvVarResolver = platformEnvVarResolver;
+        this.taskUpdateRecordService = taskUpdateRecordService;
+    }
+
+    /** 兼容直接构造同步服务的历史单元测试。 */
+    public GiteeWorkItemSyncService(IterationRepository iterationRepository,
+                                    IterationGiteeBindingRepository iterationGiteeBindingRepository,
+                                    ProjectGiteeBindingRepository projectGiteeBindingRepository,
+                                    TaskRepository taskRepository,
+                                    TaskGiteeBindingRepository taskGiteeBindingRepository,
+                                    GiteeWorkItemSyncLogRepository giteeWorkItemSyncLogRepository,
+                                    UserRepository userRepository,
+                                    ProjectDataPermissionService projectDataPermissionService,
+                                    GiteeApiService giteeApiService,
+                                    TokenCipherService tokenCipherService,
+                                    KnowledgeGraphService knowledgeGraphService,
+                                    PlatformEnvVarResolver platformEnvVarResolver) {
+        this(iterationRepository, iterationGiteeBindingRepository, projectGiteeBindingRepository, taskRepository,
+                taskGiteeBindingRepository, giteeWorkItemSyncLogRepository, userRepository, projectDataPermissionService,
+                giteeApiService, tokenCipherService, knowledgeGraphService, platformEnvVarResolver, null);
     }
 
     @Transactional
@@ -187,8 +210,13 @@ public class GiteeWorkItemSyncService {
                 }
                 TaskEntity task = binding.getTask();
                 if (task.getIteration() != null && task.getIteration().getId().equals(iterationId)) {
+                    Map<String, TaskUpdateRecordService.FieldSnapshot> previousFields = taskUpdateRecordService == null ? null : taskUpdateRecordService.captureEditableFields(task);
                     task.setIteration(null);
-                    taskRepository.save(task);
+                    TaskEntity savedTask = taskRepository.save(task);
+                    if (taskUpdateRecordService != null) {
+                        taskUpdateRecordService.recordChanges(savedTask, previousFields,
+                                com.aiclub.platform.domain.model.TaskUpdateRecordSource.SYSTEM);
+                    }
                 }
                 binding.setLastSyncStatus("REMOVED_FROM_ITERATION");
                 binding.setLastSyncAt(now);
@@ -278,13 +306,18 @@ public class GiteeWorkItemSyncService {
         entity.setWorkHours(null);
         entity.setPlanStartDate(parseDate(remoteIssue.planStartDate()));
         entity.setPlanEndDate(parseDate(remoteIssue.planEndDate()));
-        return taskRepository.save(entity);
+        TaskEntity saved = taskRepository.save(entity);
+        if (taskUpdateRecordService != null) {
+            taskUpdateRecordService.recordCreate(saved, com.aiclub.platform.domain.model.TaskUpdateRecordSource.SYSTEM);
+        }
+        return saved;
     }
 
     private void updateTaskFromRemoteIssue(TaskEntity entity,
                                            IterationEntity iteration,
                                            GiteeApiService.GiteeIssue remoteIssue,
                                            GiteeUserBindingIndex userBindingIndex) {
+        Map<String, TaskUpdateRecordService.FieldSnapshot> previousFields = taskUpdateRecordService == null ? null : taskUpdateRecordService.captureEditableFields(entity);
         String previousDescription = defaultString(entity.getDescription());
         String previousRequirementMarkdown = defaultString(entity.getRequirementMarkdown());
         entity.setName(resolveTaskName(remoteIssue.title()));
@@ -297,7 +330,11 @@ public class GiteeWorkItemSyncService {
         applyRemoteContentForUpdate(entity, remoteIssue, previousDescription, previousRequirementMarkdown);
         entity.setPlanStartDate(parseDate(remoteIssue.planStartDate()));
         entity.setPlanEndDate(parseDate(remoteIssue.planEndDate()));
-        taskRepository.save(entity);
+        TaskEntity saved = taskRepository.save(entity);
+        if (taskUpdateRecordService != null) {
+            taskUpdateRecordService.recordChanges(saved, previousFields,
+                    com.aiclub.platform.domain.model.TaskUpdateRecordSource.SYSTEM);
+        }
     }
 
     private void applyRemoteContent(TaskEntity entity, GiteeApiService.GiteeIssue remoteIssue) {

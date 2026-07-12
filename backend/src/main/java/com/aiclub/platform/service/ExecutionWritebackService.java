@@ -5,9 +5,11 @@ import com.aiclub.platform.domain.model.ExecutionRunEntity;
 import com.aiclub.platform.domain.model.ExecutionTaskEntity;
 import com.aiclub.platform.domain.model.TaskCommentEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
+import com.aiclub.platform.domain.model.TaskUpdateRecordSource;
 import com.aiclub.platform.repository.ExecutionArtifactRepository;
 import com.aiclub.platform.repository.TaskCommentRepository;
 import com.aiclub.platform.repository.TaskRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,13 +26,24 @@ public class ExecutionWritebackService {
     private final TaskCommentRepository taskCommentRepository;
     private final TaskRepository taskRepository;
     private final ExecutionArtifactRepository executionArtifactRepository;
+    private final TaskUpdateRecordService taskUpdateRecordService;
 
+    @Autowired
     public ExecutionWritebackService(TaskCommentRepository taskCommentRepository,
                                      TaskRepository taskRepository,
-                                     ExecutionArtifactRepository executionArtifactRepository) {
+                                     ExecutionArtifactRepository executionArtifactRepository,
+                                     TaskUpdateRecordService taskUpdateRecordService) {
         this.taskCommentRepository = taskCommentRepository;
         this.taskRepository = taskRepository;
         this.executionArtifactRepository = executionArtifactRepository;
+        this.taskUpdateRecordService = taskUpdateRecordService;
+    }
+
+    /** 兼容不覆盖工作项的历史测试构造路径。 */
+    public ExecutionWritebackService(TaskCommentRepository taskCommentRepository,
+                                     TaskRepository taskRepository,
+                                     ExecutionArtifactRepository executionArtifactRepository) {
+        this(taskCommentRepository, taskRepository, executionArtifactRepository, null);
     }
 
     /**
@@ -53,6 +66,10 @@ public class ExecutionWritebackService {
         comment.setAuthorName("执行中心");
         comment.setContent(buildCommentContent(executionTask, executionRun, artifacts));
         taskCommentRepository.save(comment);
+        if (taskUpdateRecordService != null) {
+            taskUpdateRecordService.recordAction(workItem, TaskUpdateRecordSource.AI, "COMMENT", "执行中心回写评论",
+                    "comment", "评论", "", comment.getContent(), comment.getId(), "执行中心");
+        }
 
         workItem.setUpdatedAt(LocalDateTime.now());
         taskRepository.save(workItem);

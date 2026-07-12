@@ -2016,7 +2016,7 @@
           <template #label>
             <span class="auto-merge-label-with-help">
               合并后触发流水线
-              <el-tooltip content="仅关联业务项目模式可用；开启后必须显式选择要触发的 AI Club / Jenkins 流水线。" placement="top">
+              <el-tooltip content="仅关联业务项目模式可用；开启后必须显式选择要触发的 GitPilot / Jenkins 流水线。" placement="top">
                 <el-icon class="auto-merge-help-icon"><QuestionFilled /></el-icon>
               </el-tooltip>
             </span>
@@ -2034,7 +2034,7 @@
             :loading="autoMergePipelineTargetLoading"
             :disabled="autoMergeReadonlyMode"
           >
-            <el-option-group v-if="autoMergeAiClubTargetOptions.length" label="AI Club Pipeline">
+            <el-option-group v-if="autoMergeAiClubTargetOptions.length" label="GitPilot Pipeline">
               <el-option
                 v-for="item in autoMergeAiClubTargetOptions"
                 :key="buildPipelineTargetKey(item.entryType, item.entryId)"
@@ -2200,7 +2200,7 @@
           <template #label>
             <span class="auto-merge-label-with-help">
               合并后触发流水线
-              <el-tooltip content="仅关联业务项目模式可用；开启后必须显式选择要触发的 AI Club / Jenkins 流水线。" placement="top">
+              <el-tooltip content="仅关联业务项目模式可用；开启后必须显式选择要触发的 GitPilot / Jenkins 流水线。" placement="top">
                 <el-icon class="auto-merge-help-icon"><QuestionFilled /></el-icon>
               </el-tooltip>
             </span>
@@ -2218,7 +2218,7 @@
             :loading="autoMergePipelineTargetLoading"
             :disabled="autoMergeReadonlyMode"
           >
-            <el-option-group v-if="autoMergeAiClubTargetOptions.length" label="AI Club Pipeline">
+            <el-option-group v-if="autoMergeAiClubTargetOptions.length" label="GitPilot Pipeline">
               <el-option
                 v-for="item in autoMergeAiClubTargetOptions"
                 :key="buildPipelineTargetKey(item.entryType, item.entryId)"

@@ -1,6 +1,6 @@
 /**
  * 流水线中心面板。
- * 统一展示 AI Club 流水线和 Jenkins 绑定，支持触发、构建历史查看、日志详情、
+ * 统一展示 GitPilot 流水线和 Jenkins 绑定，支持触发、构建历史查看、日志详情、
  * Jenkins 服务管理和 Jenkins 绑定的编辑/删除。
  */
 import { useEffect, useState, useCallback } from 'react'
@@ -37,6 +37,7 @@ import { getStatusColor } from '../constants'
 import type { PipelineCenterEntryItem, JenkinsBuildItem, PipelineBindingItem, AiClubPipelineItem } from '@/src/types/release'
 import type { PageResponse } from '@/src/types/api'
 import { Button } from '@/src/components/common/Button'
+import { Input } from '@/src/components/common/Input'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { EmptyState } from '@/src/components/common/EmptyState'
@@ -48,6 +49,17 @@ import { PipelineBindingFormDrawer } from '../components/PipelineBindingFormDraw
 import { PipelineFormDrawer } from '../components/PipelineFormDrawer'
 import { PipelineDetailDrawer } from '../components/PipelineDetailDrawer'
 import { CreatePipelineTypeDialog } from '../components/CreatePipelineTypeDialog'
+
+type PipelineAction = 'trigger' | 'detail' | 'sync' | 'edit' | 'delete'
+
+/** 使用条目和动作共同标识异步操作，避免同一卡片内其他按钮被连带切换加载态。 */
+const actionKey = (
+  entryType: PipelineCenterEntryItem['entryType'],
+  entryId: number,
+  action: PipelineAction,
+) => `${entryType}:${entryId}:${action}`
+
+const pipelineActionButtonClass = 'inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] text-[var(--color-text-secondary)] transition-colors focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30 focus-visible:ring-offset-1'
 
 export const PipelinesPanel = () => {
   const { projectId } = useParams<{ projectId: string }>()
@@ -80,10 +92,10 @@ export const PipelinesPanel = () => {
   const [bindingFormOpen, setBindingFormOpen] = useState(false)
   const [editingBinding, setEditingBinding] = useState<PipelineBindingItem | null>(null)
   const [deletingBindingId, setDeletingBindingId] = useState<number | null>(null)
-  const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  /* AI Club 流水线 CRUD 状态 */
+  /* GitPilot 流水线 CRUD 状态 */
   const [pipelineFormOpen, setPipelineFormOpen] = useState(false)
   const [editingPipeline, setEditingPipeline] = useState<AiClubPipelineItem | null>(null)
   const [detailPipeline, setDetailPipeline] = useState<AiClubPipelineItem | null>(null)
@@ -114,9 +126,9 @@ export const PipelinesPanel = () => {
     fetchEntries()
   }, [fetchEntries])
 
-  /** 触发流水线（AI Club 或 Jenkins）。 */
+  /** 触发流水线（GitPilot 或 Jenkins）。 */
   const handleTrigger = async (entry: PipelineCenterEntryItem) => {
-    setActionLoading(entry.entryId)
+    setActionLoading(actionKey(entry.entryType, entry.entryId, 'trigger'))
     setActionError(null)
     try {
       if (entry.entryType === 'AI_CLUB') {
@@ -145,19 +157,22 @@ export const PipelinesPanel = () => {
 
   /** 编辑 Jenkins 绑定。 */
   const handleEditBinding = async (entry: PipelineCenterEntryItem) => {
+    setActionLoading(actionKey(entry.entryType, entry.entryId, 'edit'))
     try {
       const binding = await getPipelineBinding(entry.entryId)
       setEditingBinding(binding)
       setBindingFormOpen(true)
     } catch (err) {
       setActionError(getErrorMessage(err))
+    } finally {
+      setActionLoading(null)
     }
   }
 
   /** 确认删除 Jenkins 绑定。 */
   const handleDeleteBinding = async () => {
     if (deletingBindingId === null) return
-    setActionLoading(deletingBindingId)
+    setActionLoading(actionKey('JENKINS', deletingBindingId, 'delete'))
     setActionError(null)
     try {
       await deletePipelineBinding(deletingBindingId)
@@ -171,9 +186,9 @@ export const PipelinesPanel = () => {
     }
   }
 
-  /** 编辑 AI Club 流水线：先获取完整数据再打开表单。 */
+  /** 编辑 GitPilot 流水线：先获取完整数据再打开表单。 */
   const handleEditPipeline = async (entry: PipelineCenterEntryItem) => {
-    setActionLoading(entry.entryId)
+    setActionLoading(actionKey(entry.entryType, entry.entryId, 'edit'))
     setActionError(null)
     try {
       const pipeline = await getAiClubPipeline(entry.entryId)
@@ -188,7 +203,7 @@ export const PipelinesPanel = () => {
 
   /** 查看流水线详情：先获取完整数据再打开详情抽屉。 */
   const handleViewPipelineDetail = async (entry: PipelineCenterEntryItem) => {
-    setActionLoading(entry.entryId)
+    setActionLoading(actionKey(entry.entryType, entry.entryId, 'detail'))
     setActionError(null)
     try {
       const pipeline = await getAiClubPipeline(entry.entryId)
@@ -200,9 +215,9 @@ export const PipelinesPanel = () => {
     }
   }
 
-  /** 同步 AI Club 流水线仓库。 */
+  /** 同步 GitPilot 流水线仓库。 */
   const handleSyncPipeline = async (entry: PipelineCenterEntryItem) => {
-    setActionLoading(entry.entryId)
+    setActionLoading(actionKey(entry.entryType, entry.entryId, 'sync'))
     setActionError(null)
     try {
       await syncAiClubPipelineRepository(entry.entryId)
@@ -214,10 +229,10 @@ export const PipelinesPanel = () => {
     }
   }
 
-  /** 确认删除 AI Club 流水线。 */
+  /** 确认删除 GitPilot 流水线。 */
   const handleDeletePipeline = async () => {
     if (deletingPipelineId === null) return
-    setActionLoading(deletingPipelineId)
+    setActionLoading(actionKey('AI_CLUB', deletingPipelineId, 'delete'))
     setActionError(null)
     try {
       await deleteAiClubPipeline(deletingPipelineId)
@@ -235,16 +250,15 @@ export const PipelinesPanel = () => {
     <div>
       {/* 顶部操作栏 */}
       <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="relative max-w-xs flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
-          <input
-            type="text"
+        <Input
+          size="sm"
+          adaptiveIcon
+          wrapperClassName="min-w-0 max-w-xs flex-1"
+          icon={<Search className="h-4 w-4" />}
             placeholder="搜索流水线…"
             value={keyword}
             onChange={(e) => { setKeyword(e.target.value); setPage(1) }}
-            className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white pl-9 pr-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-          />
-        </div>
+        />
         <div className="flex items-center gap-2">
           <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setCreateTypeOpen(true)}>
             新建流水线
@@ -304,34 +318,34 @@ export const PipelinesPanel = () => {
 
                 {/* 操作按钮 */}
                 <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--color-border-light)] pt-3">
-                  <Button size="sm" variant="secondary" icon={<Play className="h-3 w-3" />} loading={actionLoading === entry.entryId} onClick={() => handleTrigger(entry)}>
+                  <Button size="sm" variant="secondary" icon={<Play className="h-3 w-3" />} loading={actionLoading === actionKey(entry.entryType, entry.entryId, 'trigger')} onClick={() => handleTrigger(entry)}>
                     触发
                   </Button>
                   {entry.entryType === 'AI_CLUB' && (
                     <>
-                      <button onClick={() => handleViewPipelineDetail(entry)} disabled={actionLoading === entry.entryId} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors disabled:opacity-40">
+                      <button type="button" onClick={() => handleViewPipelineDetail(entry)} disabled={actionLoading === actionKey(entry.entryType, entry.entryId, 'detail')} className={`${pipelineActionButtonClass} hover:bg-[var(--color-bg-hover)] disabled:opacity-40`}>
                         <Settings className="h-3 w-3" />详情
                       </button>
-                      <button onClick={() => handleSyncPipeline(entry)} disabled={actionLoading === entry.entryId} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors disabled:opacity-40">
+                      <button type="button" onClick={() => handleSyncPipeline(entry)} disabled={actionLoading === actionKey(entry.entryType, entry.entryId, 'sync')} className={`${pipelineActionButtonClass} hover:bg-[var(--color-bg-hover)] disabled:opacity-40`}>
                         <RefreshCw className="h-3 w-3" />同步
                       </button>
-                      <button onClick={() => handleEditPipeline(entry)} disabled={actionLoading === entry.entryId} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors disabled:opacity-40">
+                      <button type="button" onClick={() => handleEditPipeline(entry)} disabled={actionLoading === actionKey(entry.entryType, entry.entryId, 'edit')} className={`${pipelineActionButtonClass} hover:bg-[var(--color-bg-hover)] disabled:opacity-40`}>
                         <Pencil className="h-3 w-3" />编辑
                       </button>
-                      <button onClick={() => setDeletingPipelineId(entry.entryId)} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] text-[var(--color-text-secondary)] hover:bg-red-50 hover:text-[var(--color-danger)] transition-colors">
+                      <button type="button" onClick={() => setDeletingPipelineId(entry.entryId)} className={`${pipelineActionButtonClass} hover:bg-red-50 hover:text-[var(--color-danger)]`}>
                         <Trash2 className="h-3 w-3" />删除
                       </button>
                     </>
                   )}
                   {entry.entryType === 'JENKINS' && (
                     <>
-                      <button onClick={() => handleViewBuilds(entry)} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors">
+                      <button type="button" onClick={() => handleViewBuilds(entry)} className={`${pipelineActionButtonClass} hover:bg-[var(--color-bg-hover)]`}>
                         <FileText className="h-3 w-3" />构建历史
                       </button>
-                      <button onClick={() => handleEditBinding(entry)} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors">
+                      <button type="button" onClick={() => handleEditBinding(entry)} disabled={actionLoading === actionKey(entry.entryType, entry.entryId, 'edit')} className={`${pipelineActionButtonClass} hover:bg-[var(--color-bg-hover)] disabled:opacity-40`}>
                         <Pencil className="h-3 w-3" />编辑
                       </button>
-                      <button onClick={() => setDeletingBindingId(entry.entryId)} className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] text-[var(--color-text-secondary)] hover:bg-red-50 hover:text-[var(--color-danger)] transition-colors">
+                      <button type="button" onClick={() => setDeletingBindingId(entry.entryId)} className={`${pipelineActionButtonClass} hover:bg-red-50 hover:text-[var(--color-danger)]`}>
                         <Trash2 className="h-3 w-3" />删除
                       </button>
                     </>
@@ -403,12 +417,12 @@ export const PipelinesPanel = () => {
         description="确定要删除该流水线绑定吗？此操作不可撤销。"
         variant="danger"
         confirmText="删除"
-        loading={actionLoading === deletingBindingId}
+        loading={actionLoading === actionKey('JENKINS', deletingBindingId ?? 0, 'delete')}
         onCancel={() => setDeletingBindingId(null)}
         onConfirm={handleDeleteBinding}
       />
 
-      {/* AI Club 流水线创建/编辑表单 */}
+      {/* GitPilot 流水线创建/编辑表单 */}
       <PipelineFormDrawer
         open={pipelineFormOpen}
         onClose={() => setPipelineFormOpen(false)}
@@ -417,7 +431,7 @@ export const PipelinesPanel = () => {
         onSuccess={fetchEntries}
       />
 
-      {/* AI Club 流水线详情抽屉 */}
+      {/* GitPilot 流水线详情抽屉 */}
       <PipelineDetailDrawer
         open={!!detailPipeline}
         onClose={() => setDetailPipeline(null)}
@@ -431,7 +445,7 @@ export const PipelinesPanel = () => {
         description="确定要删除该流水线吗？关联的 Cron 任务和 Webhook 配置也将被清除。"
         variant="danger"
         confirmText="删除"
-        loading={actionLoading === deletingPipelineId}
+        loading={actionLoading === actionKey('AI_CLUB', deletingPipelineId ?? 0, 'delete')}
         onCancel={() => setDeletingPipelineId(null)}
         onConfirm={handleDeletePipeline}
       />

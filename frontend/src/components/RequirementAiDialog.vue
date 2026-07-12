@@ -46,6 +46,7 @@
             生成 PRD 建议
           </el-button>
           <el-button v-if="prdReady" plain @click="openPrdPage">打开 PRD</el-button>
+          <el-button v-if="currentExecutionId" plain @click="openExecutionDetail">查看执行详情</el-button>
         </el-space>
       </div>
 
@@ -84,6 +85,7 @@
             v-model="standardizeMarkdownDraft"
             class="requirement-ai-standardize-editor"
             :height="520"
+            :upload-image="uploadMarkdownImage"
             placeholder="可在写入需求前调整 AI 标准化结果"
           />
           <div v-else class="requirement-ai-markdown" v-html="renderMarkdownToHtml(currentResultMarkdown)"></div>
@@ -357,6 +359,7 @@
             v-model="standardizeMarkdownDraft"
             class="requirement-ai-standardize-editor"
             :height="520"
+            :upload-image="uploadMarkdownImage"
             placeholder="可在写入需求前调整 AI 标准化结果"
           />
           <div v-else class="requirement-ai-markdown" v-html="renderMarkdownToHtml(currentResultMarkdown)"></div>
@@ -598,6 +601,8 @@ import {
   createTaskComment,
   createTestPlan,
   generateTaskRequirementAi,
+  getExecutionRunDetail,
+  getExecutionTaskDetail,
   getTaskPrdDetail,
   getTestPlanDetail,
   pageTestPlans,
@@ -607,8 +612,11 @@ import {
 import { listModelConfigOptions } from '@/api/models'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import { renderMarkdownToHtml } from '@/utils/markdown'
+import { normalizeRequirementAiImageMarkdown } from '@/utils/requirementAiImageMarkdown'
+import { uploadMarkdownImage } from '@/utils/taskImageUpload'
 import type {
   AiModelConfigItem,
+  ExecutionTaskItem,
   TaskItem,
   TaskPrdAnalyzeResultItem,
   TaskPrdDetailItem,
@@ -654,6 +662,9 @@ interface RequirementAiDialogResult {
 
 const modelOptions = ref<AiModelConfigItem[]>([])
 const selectedModelConfigId = ref<number | undefined>()
+type RequirementAiExecutionState = 'IDLE' | 'SUBMITTING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
+const executionState = ref<RequirementAiExecutionState>('IDLE')
+const currentExecutionId = ref<number | null>(null)
 const runningAction = ref<string | null>(null)
 const creatingTasks = ref(false)
 const importingTestCases = ref(false)
@@ -758,7 +769,7 @@ const cloneTestCaseSuggestions = (suggestions: TaskRequirementAiTestCaseSuggesti
 const normalizeRequirementAiResult = (payload: TaskRequirementAiResultItem): RequirementAiDialogResult => ({
   action: payload.action,
   title: payload.title,
-  markdown: payload.markdown,
+  markdown: normalizeRequirementAiImageMarkdown(payload.markdown),
   modelConfigId: payload.modelConfigId,
   modelConfigName: payload.modelConfigName,
   taskSuggestions: cloneTaskSuggestions(payload.taskSuggestions),
@@ -768,6 +779,65 @@ const normalizeRequirementAiResult = (payload: TaskRequirementAiResultItem): Req
   questions: [],
   references: []
 })
+
+const executionStorageKey = () => props.task ? `requirement-ai-execution:${props.task.id}` : ''
+
+const rememberExecution = (execution: ExecutionTaskItem, action: string) => {
+  currentExecutionId.value = execution.id
+  const key = executionStorageKey()
+  if (key) localStorage.setItem(key, JSON.stringify({ executionId: execution.id, action }))
+}
+
+const loadExecutionResult = async (executionId: number, action: string) => {
+  executionState.value = 'RUNNING'
+  runningAction.value = action
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    const execution = await getExecutionTaskDetail(executionId)
+    if (execution.status === 'SUCCESS' && execution.currentRunId) {
+      const run = await getExecutionRunDetail(execution.currentRunId)
+      const artifact = run.artifacts.find(item => item.artifactType === 'REQUIREMENT_AI_RESULT')
+      if (!artifact?.contentText) throw new Error('需求 AI 结果产物不存在')
+      const response = JSON.parse(artifact.contentText) as TaskRequirementAiResultItem
+      result.value = normalizeRequirementAiResult(response)
+      standardizeMarkdownDraft.value = action === 'STANDARDIZE'
+        ? normalizeRequirementAiImageMarkdown(response.markdown)
+        : ''
+      standardizeEditMode.value = action === 'STANDARDIZE'
+      editableTaskSuggestions.value = cloneTaskSuggestions(response.taskSuggestions)
+      editableTestCaseSuggestions.value = cloneTestCaseSuggestions(response.testCaseSuggestions)
+      if (action === 'TEST_CASES') await loadTestPlanOptions()
+      executionState.value = 'COMPLETED'
+      runningAction.value = null
+      localStorage.removeItem(executionStorageKey())
+      return
+    }
+    if (execution.status === 'FAILED' || execution.status === 'CANCELED') {
+      executionState.value = 'FAILED'
+      runningAction.value = null
+      throw new Error(execution.latestSummary || '需求 AI 后台分析失败')
+    }
+    await new Promise(resolve => window.setTimeout(resolve, 1000))
+  }
+  throw new Error('需求 AI 后台分析仍在运行，请稍后重新打开查看')
+}
+
+const restoreRunningExecution = async () => {
+  const key = executionStorageKey()
+  if (!key) return
+  const saved = localStorage.getItem(key)
+  if (!saved) return
+  try {
+    const { executionId, action } = JSON.parse(saved) as { executionId: number; action: string }
+    currentExecutionId.value = executionId
+    await loadExecutionResult(executionId, action)
+  } catch (error: any) {
+    if (executionState.value === 'FAILED') ElMessage.error(error?.message || '恢复需求 AI 执行失败')
+  }
+}
+
+const openExecutionDetail = async () => {
+  if (currentExecutionId.value) await router.push({ name: 'execution-task-detail', params: { executionTaskId: currentExecutionId.value } })
+}
 
 const normalizePrdAnalyzeResult = (payload: TaskPrdAnalyzeResultItem): RequirementAiDialogResult => ({
   action: payload.action,
@@ -808,21 +878,18 @@ const runAction = async (action: string) => {
     return
   }
   runningAction.value = action
+  executionState.value = 'SUBMITTING'
   try {
-    const response = await generateTaskRequirementAi(props.task.id, {
+    const execution = await generateTaskRequirementAi(props.task.id, {
       action,
       modelConfigId: selectedModelConfigId.value
     })
-    result.value = normalizeRequirementAiResult(response)
-    standardizeMarkdownDraft.value = action === 'STANDARDIZE' ? response.markdown : ''
-    standardizeEditMode.value = action === 'STANDARDIZE'
-    editableTaskSuggestions.value = cloneTaskSuggestions(response.taskSuggestions)
-    editableTestCaseSuggestions.value = cloneTestCaseSuggestions(response.testCaseSuggestions)
-    if (action === 'TEST_CASES') {
-      await loadTestPlanOptions()
-    }
+    rememberExecution(execution, action)
+    ElMessage.success('已提交后台分析，可继续当前操作或关闭窗口')
+    await loadExecutionResult(execution.id, action)
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || 'AI 生成失败')
+    executionState.value = 'FAILED'
+    ElMessage.error(error?.response?.data?.message || error?.message || 'AI 生成失败')
   } finally {
     runningAction.value = null
   }
@@ -1146,12 +1213,13 @@ watch(
   }
 )
 
-onMounted(async () => {
-  await loadModelOptions()
+    onMounted(async () => {
+      await loadModelOptions()
   if (props.task?.workItemType === '需求') {
-    await loadPrdDetail()
-  }
-})
+        await loadPrdDetail()
+      }
+      await restoreRunningExecution()
+    })
 </script>
 
 <style scoped>

@@ -167,7 +167,7 @@
                   <div class="quick-build-kicker">CI/CD 工作台</div>
                   <div class="quick-build-hero-title">快速构建</div>
                   <p class="quick-build-hero-text">
-                    {{ canBuildCicd ? '选择已启用的流水线，一键触发 AI Club Pipeline 或 Jenkins 构建并快速跳转到流水线中心继续跟进。' : '查看首页推荐的流水线，快速进入流水线中心了解最新运行状态。' }}
+                    {{ canBuildCicd ? '选择已启用的流水线，一键触发 GitPilot Pipeline 或 Jenkins 构建并快速跳转到流水线中心继续跟进。' : '查看首页推荐的流水线，快速进入流水线中心了解最新运行状态。' }}
                   </p>
                   <div class="quick-build-meta-line">
                     <span>可用流水线：{{ quickBuildBindingCount }}</span>
@@ -1064,7 +1064,7 @@ async function loadDashboardCards() {
 }
 
 /**
- * 首页快速构建卡片复用流水线中心条目，兼容内置 AI Club Pipeline 与外部 Jenkins 绑定。
+ * 首页快速构建卡片复用流水线中心条目，兼容内置 GitPilot Pipeline 与外部 Jenkins 绑定。
  */
 async function loadQuickBuildBindings() {
   if (!canViewCicd.value) {
@@ -1239,7 +1239,7 @@ function quickBuildEntryKey(binding: PipelineCenterEntryItem) {
 
 function formatQuickBuildProvider(providerCode?: string | null) {
   if (providerCode === 'JENKINS') return 'Jenkins'
-  if (providerCode === 'WOODPECKER') return 'AI Club Pipeline'
+  if (providerCode === 'WOODPECKER') return 'GitPilot Pipeline'
   return providerCode || '流水线'
 }
 

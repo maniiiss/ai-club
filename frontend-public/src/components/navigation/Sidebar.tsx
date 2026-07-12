@@ -32,7 +32,7 @@ export const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
         <BrandMark className="h-8 w-8 rounded-lg shadow-[0_8px_18px_rgba(79,70,229,0.22)]" />
         <div className="flex flex-col">
           <span className="text-[15px] font-semibold text-[var(--color-text-primary)] leading-tight tracking-tight">
-            AI Club
+            GitPilot
           </span>
         </div>
       </div>
@@ -66,7 +66,7 @@ export const Sidebar = ({ mobileOpen, onMobileClose }: SidebarProps) => {
       {/* 底部 */}
       <div className="border-t border-[var(--color-border-light)] px-5 py-3">
         <p className="text-[11px] text-[var(--color-text-tertiary)] tracking-wide">
-          AI Club SaaS &middot; v1.0
+          GitPilot SaaS &middot; v1.0
         </p>
       </div>
     </nav>

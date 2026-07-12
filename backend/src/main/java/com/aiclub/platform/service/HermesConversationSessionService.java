@@ -417,10 +417,16 @@ public class HermesConversationSessionService {
      */
     private HermesConversationMessageItem toMessageItem(HermesConversationMessageEntity entity,
                                                         List<com.aiclub.platform.dto.HermesAttachmentSummary> attachments) {
+        String role = defaultString(entity.getRole());
+        String content = defaultString(entity.getContent());
+        // 历史消息不回写数据库，但需要与新消息保持相同的 Markdown 展示契约。
+        if ("assistant".equalsIgnoreCase(role)) {
+            content = HermesMarkdownFormatter.formatForDisplay(content);
+        }
         return new HermesConversationMessageItem(
                 entity.getId(),
-                defaultString(entity.getRole()),
-                defaultString(entity.getContent()),
+                role,
+                content,
                 normalizeMessageStatus(entity.getStatus()),
                 formatTime(entity.getCreatedAt()),
                 attachments

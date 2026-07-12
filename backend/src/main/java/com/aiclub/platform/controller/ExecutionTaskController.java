@@ -7,6 +7,7 @@ import com.aiclub.platform.dto.ExecutionTaskListStatsSummary;
 import com.aiclub.platform.dto.ExecutionRunSummary;
 import com.aiclub.platform.dto.ExecutionTaskDetail;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
+import com.aiclub.platform.dto.ExecutionContextOptionsSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.request.ConfirmExecutionPlanRequest;
 import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
@@ -61,6 +62,13 @@ public class ExecutionTaskController {
                                                             @RequestParam(required = false) String scenarioCode,
                                                             @RequestParam(required = false) Long projectId) {
         return ApiResponse.success(executionTaskService.getExecutionTaskListStats(keyword, status, scenarioCode, projectId));
+    }
+
+    @GetMapping("/context-options")
+    @RequirePermission("task:execution:create")
+    public ApiResponse<ExecutionContextOptionsSummary> contextOptions(@RequestParam Long projectId,
+                                                                       @RequestParam Long workItemId) {
+        return ApiResponse.success(executionTaskService.getExecutionContextOptions(projectId, workItemId));
     }
 
     @GetMapping("/{id}")

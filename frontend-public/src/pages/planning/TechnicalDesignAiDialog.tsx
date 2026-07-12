@@ -35,6 +35,7 @@ export const TechnicalDesignAiDialog = ({ open, workItem, onClose, onCreated }: 
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const hasRequirement = Boolean(workItem.requirementTaskId)
 
   const availableBindings = useMemo(
     () => bindings.filter((binding) => binding.projectId === workItem.projectId && binding.enabled),
@@ -90,6 +91,7 @@ export const TechnicalDesignAiDialog = ({ open, workItem, onClose, onCreated }: 
     })
     if (!validation.valid) return setError(validation.message)
     if (!orchestrationReady) return setError('当前项目的技术设计编排未就绪，请联系管理员配置并发布编排')
+    if (!hasRequirement) return setError('技术设计工作项必须先关联需求工作项')
     setSubmitting(true)
     setError('')
     try {
@@ -127,6 +129,7 @@ export const TechnicalDesignAiDialog = ({ open, workItem, onClose, onCreated }: 
             'h-full space-y-6 overflow-y-auto px-6 py-5 transition-opacity duration-200',
             loading ? 'pointer-events-none opacity-0' : 'opacity-100',
           )}>
+            {!hasRequirement && <section className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[12px] text-red-700">技术设计工作项必须先关联需求工作项。</section>}
             <div className="grid gap-3 md:grid-cols-3">
               <InfoTile title="三步只读流程" text="代码理解 → 设计生成 → 设计自检" icon={<ShieldCheck className="h-4 w-4" />} />
               <InfoTile title="GitNexus 优先" text="索引不可用时明确降级到源码搜索" icon={<GitBranch className="h-4 w-4" />} />
@@ -160,7 +163,7 @@ export const TechnicalDesignAiDialog = ({ open, workItem, onClose, onCreated }: 
             {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">{error}</p> : null}
           </div>
         </div>
-        <footer className="flex items-center justify-between border-t border-[var(--color-border)] bg-[var(--color-bg-page)] px-6 py-3"><p className="text-[11px] text-[var(--color-text-tertiary)]">Runtime 命令层采用只读权限，不修改仓库代码。</p><div className="flex gap-2"><Button variant="secondary" onClick={onClose}>取消</Button><Button onClick={submit} loading={submitting} disabled={loading || !orchestrationReady}>创建技术设计</Button></div></footer>
+        <footer className="flex items-center justify-between border-t border-[var(--color-border)] bg-[var(--color-bg-page)] px-6 py-3"><p className="text-[11px] text-[var(--color-text-tertiary)]">Runtime 命令层采用只读权限，不修改仓库代码。</p><div className="flex gap-2"><Button variant="secondary" onClick={onClose}>取消</Button><Button onClick={submit} loading={submitting} disabled={loading || !orchestrationReady || !hasRequirement}>创建技术设计</Button></div></footer>
       </div>
     </div>, document.body,
   )

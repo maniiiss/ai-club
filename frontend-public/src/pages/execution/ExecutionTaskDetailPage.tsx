@@ -2,7 +2,7 @@
  * 执行任务详情页。
  * 展示任务基础信息、运行进度、步骤日志、执行产物和规划确认。
  */
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -107,7 +107,7 @@ const previewLongText = (text: string | null | undefined, maxLen = 2000) => {
 }
 
 export const ExecutionTaskDetailPage = () => {
-  const { projectId, taskId } = useParams<{ projectId: string; taskId: string }>()
+  const { projectId, taskId } = useParams<{ projectId?: string; taskId: string }>()
   const navigate = useNavigate()
   const tid = Number(taskId)
 
@@ -119,6 +119,13 @@ export const ExecutionTaskDetailPage = () => {
   const [actionLoading, setActionLoading] = useState(false)
   const [writebackArtifactId, setWritebackArtifactId] = useState<number | null>(null)
   const [writebackMessage, setWritebackMessage] = useState('')
+  const parsedInputPayload = useMemo<Record<string, any>>(() => {
+    try {
+      return taskDetail?.inputPayload ? JSON.parse(taskDetail.inputPayload) : {}
+    } catch {
+      return {}
+    }
+  }, [taskDetail?.inputPayload])
 
   /* 规划确认 */
   const [planMarkdownDraft, setPlanMarkdownDraft] = useState('')
@@ -345,7 +352,7 @@ export const ExecutionTaskDetailPage = () => {
         {/* Hero */}
         <div className="mb-4">
         <button
-          onClick={() => navigate(`/projects/${projectId}/execution`)}
+          onClick={() => navigate(projectId ? `/projects/${projectId}/execution` : taskDetail.projectId ? `/projects/${taskDetail.projectId}/execution` : '/projects')}
           className="mb-3 inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
@@ -415,6 +422,17 @@ export const ExecutionTaskDetailPage = () => {
                 </div>
               ))}
             </div>
+          </section>
+        )}
+
+        {(parsedInputPayload.includeRequirementContext !== undefined || parsedInputPayload.includeTechnicalDesignContext !== undefined) && (
+          <section className="rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-semibold text-[var(--color-text-primary)]">上下文快照</h2><span className="text-[11px] text-[var(--color-text-tertiary)]">创建时固化</span></div>
+            <div className="grid gap-2 md:grid-cols-2">
+              <div className="rounded-lg bg-[var(--color-bg-page)] px-3 py-2 text-[12px]"><strong className="block text-[var(--color-text-primary)]">关联需求</strong><span>{parsedInputPayload.includeRequirementContext ? '已带入' : '未带入'}</span>{parsedInputPayload.requirementContext?.name && <small className="mt-1 block text-[var(--color-text-tertiary)]">{parsedInputPayload.requirementContext.name}</small>}</div>
+              <div className="rounded-lg bg-[var(--color-bg-page)] px-3 py-2 text-[12px]"><strong className="block text-[var(--color-text-primary)]">技术设计</strong><span>{parsedInputPayload.includeTechnicalDesignContext ? '已带入' : '未带入'}</span>{parsedInputPayload.technicalDesignContext?.workItemName && <small className="mt-1 block text-[var(--color-text-tertiary)]">{parsedInputPayload.technicalDesignContext.workItemName}</small>}</div>
+            </div>
+            {parsedInputPayload.contextWarnings?.length > 0 && <p className="mt-3 text-[11px] text-amber-700">{parsedInputPayload.contextWarnings.join('；')}</p>}
           </section>
         )}
 

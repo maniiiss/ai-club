@@ -1,6 +1,6 @@
 /**
  * 发布与观测模块页面。
- * 四个子 Tab：流水线中心（AI Club + Jenkins 统一管理）+ 可观测性 + 项目日志 + 项目分享。
+ * 四个子 Tab：流水线中心（GitPilot + Jenkins 统一管理）+ 可观测性 + 项目日志 + 项目分享。
  * 各面板拆分到 panels/ 目录，表单与详情抽屉拆分到 components/ 目录。
  */
 import { useState } from 'react'

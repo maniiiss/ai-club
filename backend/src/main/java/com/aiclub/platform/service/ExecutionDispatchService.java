@@ -66,6 +66,7 @@ public class ExecutionDispatchService {
     private final RepositoryScanExecutionService repositoryScanExecutionService;
     private final DevelopmentExecutionService developmentExecutionService;
     private final TechnicalDesignExecutionService technicalDesignExecutionService;
+    private final RequirementAiExecutionService requirementAiExecutionService;
     private final TestAutomationExecutionService testAutomationExecutionService;
     private final SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService;
     private final ExecutionEventService executionEventService;
@@ -88,6 +89,7 @@ public class ExecutionDispatchService {
                                     RepositoryScanExecutionService repositoryScanExecutionService,
                                     DevelopmentExecutionService developmentExecutionService,
                                     TechnicalDesignExecutionService technicalDesignExecutionService,
+                                    RequirementAiExecutionService requirementAiExecutionService,
                                     TestAutomationExecutionService testAutomationExecutionService,
                                     SelfUpgradeExecutionWritebackService selfUpgradeExecutionWritebackService,
                                     ExecutionEventService executionEventService,
@@ -109,6 +111,7 @@ public class ExecutionDispatchService {
         this.repositoryScanExecutionService = repositoryScanExecutionService;
         this.developmentExecutionService = developmentExecutionService;
         this.technicalDesignExecutionService = technicalDesignExecutionService;
+        this.requirementAiExecutionService = requirementAiExecutionService;
         this.testAutomationExecutionService = testAutomationExecutionService;
         this.selfUpgradeExecutionWritebackService = selfUpgradeExecutionWritebackService;
         this.executionEventService = executionEventService;
@@ -286,6 +289,9 @@ public class ExecutionDispatchService {
             }
             if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(runningTask.getScenarioCode())) {
                 return dispatchTechnicalDesignTask(runningTask, executionRun, workflowPlan, writebackArtifacts);
+            }
+            if (ExecutionWorkflowService.SCENARIO_REQUIREMENT_AI_ANALYSIS.equalsIgnoreCase(runningTask.getScenarioCode())) {
+                return dispatchRequirementAiTask(runningTask, executionRun, workflowPlan, writebackArtifacts);
             }
             for (ExecutionWorkflowService.ExecutionStepPlan stepPlan : workflowPlan.steps()) {
                 ExecutionTaskEntity latestTask = requireExecutionTask(executionTaskId);
@@ -540,6 +546,40 @@ public class ExecutionDispatchService {
             }
             return finishSuccess(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
         } catch (TechnicalDesignExecutionService.TechnicalDesignExecutionException exception) {
+            if (exception.artifacts() != null) {
+                writebackArtifacts.addAll(exception.artifacts());
+            }
+            return finishFailed(
+                    requireExecutionTask(executionTask.getId()),
+                    executionRun,
+                    exception.failedStep(),
+                    exception,
+                    writebackArtifacts
+            );
+        }
+    }
+
+    /**
+     * 需求 AI 使用平台内置三步执行器，结果以不可变产物保存，避免通用 Agent 分支改变现有编辑回写语义。
+     */
+    private ExecutionRunEntity dispatchRequirementAiTask(ExecutionTaskEntity executionTask,
+                                                         ExecutionRunEntity executionRun,
+                                                         ExecutionWorkflowService.WorkflowPlan workflowPlan,
+                                                         List<ExecutionArtifactEntity> writebackArtifacts) {
+        try {
+            RequirementAiExecutionService.RequirementAiExecutionResult result =
+                    requirementAiExecutionService.executeRequirementAiTask(executionTask, executionRun, workflowPlan);
+            if (result.artifacts() != null) {
+                writebackArtifacts.addAll(result.artifacts());
+            }
+            executionRun.setOutputSummary(result.summary());
+            executionRun.setUpdatedAt(LocalDateTime.now());
+            executionRunRepository.save(executionRun);
+            if (result.canceled()) {
+                return finishCanceled(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
+            }
+            return finishSuccess(requireExecutionTask(executionTask.getId()), executionRun, writebackArtifacts);
+        } catch (RequirementAiExecutionService.RequirementAiExecutionException exception) {
             if (exception.artifacts() != null) {
                 writebackArtifacts.addAll(exception.artifacts());
             }
@@ -1151,6 +1191,7 @@ public class ExecutionDispatchService {
             case ExecutionWorkflowService.SCENARIO_AD_HOC_AGENT_RUN -> "兼容单次执行";
             case ExecutionWorkflowService.SCENARIO_SELF_UPGRADE_PATROL -> "自升级巡检";
             case ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING -> "技术设计生成";
+            case ExecutionWorkflowService.SCENARIO_REQUIREMENT_AI_ANALYSIS -> "需求 AI 分析";
             default -> "执行任务";
         };
     }

@@ -1259,6 +1259,41 @@ public class DevelopmentExecutionService {
                     .append("负责人：").append(defaultString(workItem.getAssignee())).append('\n')
                     .append("说明：").append(defaultString(workItem.getDescription())).append("\n\n");
         }
+        appendExecutionContextSnapshot(builder, executionTask);
+    }
+
+    /**
+     * 读取创建阶段固化的上下文快照，避免开发执行重试时重新查询已变化的需求或设计产物。
+     */
+    private void appendExecutionContextSnapshot(StringBuilder builder, ExecutionTaskEntity executionTask) {
+        try {
+            JsonNode payload = objectMapper.readTree(defaultString(executionTask.getInputPayload()));
+            JsonNode requirement = payload.path("requirementContext");
+            if (!requirement.isMissingNode() && !requirement.isEmpty()
+                    && payload.path("includeRequirementContext").asBoolean(false)) {
+                builder.append("## 关联需求上下文\n")
+                        .append("需求编号：").append(requirement.path("workItemCode").asText("")).append('\n')
+                        .append("需求标题：").append(requirement.path("name").asText("")).append('\n')
+                        .append("需求状态：").append(requirement.path("status").asText("")).append('\n')
+                        .append("需求优先级：").append(requirement.path("priority").asText("")).append('\n')
+                        .append("需求描述：\n").append(requirement.path("description").asText("")).append('\n')
+                        .append("需求文档：\n").append(requirement.path("requirementMarkdown").asText("")).append('\n')
+                        .append("原型链接：").append(requirement.path("prototypeUrl").asText("")).append("\n\n");
+            }
+            JsonNode design = payload.path("technicalDesignContext");
+            if (!design.isMissingNode() && !design.isEmpty()
+                    && payload.path("includeTechnicalDesignContext").asBoolean(false)) {
+                builder.append("## 关联技术设计上下文\n")
+                        .append("来源工作项：").append(design.path("workItemCode").asText(""))
+                        .append(' ').append(design.path("workItemName").asText("")).append('\n')
+                        .append("来源执行任务：").append(design.path("executionTaskId").asText("")).append('\n')
+                        .append("设计产物：\n")
+                        .append(limitContent(design.path("contentMarkdown").asText(""), 12000))
+                        .append("\n\n");
+            }
+        } catch (Exception exception) {
+            throw new IllegalStateException("开发执行上下文快照解析失败", exception);
+        }
     }
 
     private DevelopmentTaskPayload readPayload(String inputPayload) {

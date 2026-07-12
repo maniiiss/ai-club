@@ -51,7 +51,7 @@ export const DASHBOARD_WIDGET_DEFINITIONS: DashboardWidgetDefinition[] = [
   {
     id: 'quick-pipeline-build',
     title: '快速构建',
-    description: '从首页直接触发 AI Club Pipeline。',
+    description: '从首页直接触发 GitPilot Pipeline。',
     defaultWidth: 'half',
     defaultHeight: 'double',
     defaultVisible: true,

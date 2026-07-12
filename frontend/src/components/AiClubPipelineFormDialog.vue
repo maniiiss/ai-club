@@ -9,7 +9,7 @@
         <div class="platform-form-section-title">流水线类型</div>
       </div>
       <el-radio-group v-model="providerType" class="pipeline-provider-group">
-        <el-radio-button label="AI_CLUB">AI Club Pipeline</el-radio-button>
+        <el-radio-button label="AI_CLUB">GitPilot Pipeline</el-radio-button>
         <el-radio-button label="JENKINS">外部 Jenkins</el-radio-button>
       </el-radio-group>
     </section>
@@ -24,7 +24,7 @@
     >
       <section class="platform-form-section">
         <div class="platform-form-section-head">
-          <div class="platform-form-section-title">AI Club Pipeline</div>
+          <div class="platform-form-section-title">GitPilot Pipeline</div>
           <div class="platform-form-section-subtitle">Provider：Woodpecker</div>
         </div>
         <el-form-item label="流水线名称" prop="name">
@@ -197,7 +197,7 @@
         <div class="platform-form-section-title">流水线类型</div>
       </div>
       <el-radio-group v-model="providerType" class="pipeline-provider-group">
-        <el-radio-button label="AI_CLUB">AI Club Pipeline</el-radio-button>
+        <el-radio-button label="AI_CLUB">GitPilot Pipeline</el-radio-button>
         <el-radio-button label="JENKINS">外部 Jenkins</el-radio-button>
       </el-radio-group>
     </section>
@@ -212,7 +212,7 @@
     >
       <section class="platform-form-section">
         <div class="platform-form-section-head">
-          <div class="platform-form-section-title">AI Club Pipeline</div>
+          <div class="platform-form-section-title">GitPilot Pipeline</div>
           <div class="platform-form-section-subtitle">Provider：Woodpecker</div>
         </div>
         <el-form-item label="流水线名称" prop="name">
@@ -492,7 +492,7 @@ const dialogSubtitle = computed(() => {
       : '调整 Jenkins Job、默认分支和构建参数。'
   }
   return providerType.value === 'AI_CLUB'
-    ? '创建由 Woodpecker 承载的 AI Club Pipeline。'
+    ? '创建由 Woodpecker 承载的 GitPilot Pipeline。'
     : '创建一个项目级外部 Jenkins 兼容绑定。'
 })
 

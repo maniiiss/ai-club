@@ -16,7 +16,7 @@ const renderInline = (value: string) => {
     return token
   })
 
-  text = text.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (_, alt: string, url: string) => {
+  text = text.replace(/!\[([^\]]*)\]\(((?:https?:\/\/|\/api\/common\/(?:public-)?files\/)[^\s)]+)\)/g, (_, alt: string, url: string) => {
     const token = `__IMG_${placeholders.length}__`
     placeholders.push(`<img src="${url}" alt="${escapeHtml(alt)}" />`)
     return token

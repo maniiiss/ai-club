@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Optional;
@@ -30,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 /**
  * 验证技术设计专用编排器的顺序执行、前序上下文传递和语义产物落库。
@@ -85,7 +87,7 @@ class TechnicalDesignExecutionServiceTests {
         executionTask.setProject(project);
         executionTask.setWorkItem(workItem);
         executionTask.setInputPayload("""
-                {"inputText":"保持接口兼容","preferGitNexus":true,"repositories":[{"bindingId":1,"targetBranch":"main"}]}
+                {"inputText":"保持接口兼容","preferGitNexus":true,"requirementContext":{"workItemCode":"REQ-1","name":"支付需求","requirementMarkdown":"需求正文"},"includeRequirementContext":true,"repositories":[{"bindingId":1,"targetBranch":"main"}]}
                 """);
 
         ExecutionRunEntity run = new ExecutionRunEntity();
@@ -146,6 +148,10 @@ class TechnicalDesignExecutionServiceTests {
                 .extracting(ExecutionArtifactEntity::getArtifactType)
                 .containsExactly("CODE_CONTEXT_MARKDOWN", "TECHNICAL_DESIGN_MARKDOWN", "DESIGN_REVIEW_MARKDOWN");
         assertThat(run.getOutputSummary()).contains("设计自检");
+        ArgumentCaptor<String> inputs = ArgumentCaptor.forClass(String.class);
+        verify(agentExecutionService, org.mockito.Mockito.times(3)).runAgent(any(), inputs.capture(), anyMap());
+        assertThat(inputs.getAllValues()).allMatch(input -> input.contains("## 关联需求上下文"));
+        assertThat(inputs.getAllValues()).allMatch(input -> input.contains("支付需求"));
     }
 
     @Test

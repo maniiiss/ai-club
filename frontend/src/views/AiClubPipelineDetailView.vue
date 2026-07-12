@@ -237,7 +237,7 @@
             <div class="pipeline-detail-panel-head">
               <div>
                 <h2>Woodpecker Cron</h2>
-                <p>在平台内维护仓库级 cron，并同步到当前 AI Club Pipeline 关联的 Woodpecker 仓库。</p>
+                <p>在平台内维护仓库级 cron，并同步到当前 GitPilot Pipeline 关联的 Woodpecker 仓库。</p>
               </div>
               <el-button v-if="canManage" type="primary" @click="openCreateCronDialog">新增 Cron</el-button>
             </div>

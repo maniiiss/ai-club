@@ -1,6 +1,6 @@
 /**
  * 发布与观测模块 API。
- * 流水线中心 + AI Club 流水线 + Jenkins + 可观测性。
+ * 流水线中心 + GitPilot 流水线 + Jenkins + 可观测性。
  */
 import { http, unwrap, cleanParams } from './http'
 import type { ApiResponse, PageResponse } from '@/src/types/api'
@@ -52,9 +52,9 @@ export const pagePipelineCenterEntries = async (query: {
   return unwrap(res)
 }
 
-/* ── AI Club 流水线 ── */
+/* ── GitPilot 流水线 ── */
 
-/** 分页查询 AI Club 流水线。 */
+/** 分页查询 GitPilot 流水线。 */
 export const pageAiClubPipelines = async (query: {
   page: number
   size: number
@@ -187,7 +187,7 @@ export const disableProjectShare = async (projectId: number): Promise<void> => {
 
 /* ── 流水线触发 ── */
 
-/** 触发 AI Club 流水线。 */
+/** 触发 GitPilot 流水线。 */
 export const triggerAiClubPipeline = async (
   pipelineId: number,
 ): Promise<AiClubPipelineTriggerResult> => {
@@ -207,15 +207,15 @@ export const triggerPipelineBuild = async (
   return unwrap(res)
 }
 
-/* ── AI Club 流水线增删改 ── */
+/* ── GitPilot 流水线增删改 ── */
 
-/** 获取单个 AI Club 流水线详情。 */
+/** 获取单个 GitPilot 流水线详情。 */
 export const getAiClubPipeline = async (pipelineId: number): Promise<AiClubPipelineItem> => {
   const res = await http.get<ApiResponse<AiClubPipelineItem>>(`/api/cicd/pipelines/${pipelineId}`)
   return unwrap(res)
 }
 
-/** 创建 AI Club 流水线。 */
+/** 创建 GitPilot 流水线。 */
 export const createAiClubPipeline = async (
   payload: AiClubPipelinePayload,
 ): Promise<AiClubPipelineItem> => {
@@ -223,7 +223,7 @@ export const createAiClubPipeline = async (
   return unwrap(res)
 }
 
-/** 更新 AI Club 流水线。 */
+/** 更新 GitPilot 流水线。 */
 export const updateAiClubPipeline = async (
   pipelineId: number,
   payload: AiClubPipelinePayload,
@@ -235,7 +235,7 @@ export const updateAiClubPipeline = async (
   return unwrap(res)
 }
 
-/** 删除 AI Club 流水线。 */
+/** 删除 GitPilot 流水线。 */
 export const deleteAiClubPipeline = async (pipelineId: number): Promise<void> => {
   await http.delete<ApiResponse<null>>(`/api/cicd/pipelines/${pipelineId}`)
 }

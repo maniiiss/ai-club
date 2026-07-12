@@ -5,7 +5,8 @@
  */
 import { http, unwrap } from './http'
 import type { ApiResponse } from '@/src/types/api'
-import type { RequirementAiRequest, RequirementAiResult } from '@/src/types/requirementAi'
+import type { RequirementAiRequest } from '@/src/types/requirementAi'
+import type { ExecutionTaskItem } from '@/src/types/execution'
 
 /**
  * 公众端 AI 生成（自动扣积分）。
@@ -14,8 +15,8 @@ import type { RequirementAiRequest, RequirementAiResult } from '@/src/types/requ
 export const generateRequirementAi = async (
   taskId: number,
   request: RequirementAiRequest,
-): Promise<RequirementAiResult> => {
-  const res = await http.post<ApiResponse<RequirementAiResult>>(
+): Promise<ExecutionTaskItem> => {
+  const res = await http.post<ApiResponse<ExecutionTaskItem>>(
     `/api/public/tasks/${taskId}/requirement-ai`,
     request,
   )

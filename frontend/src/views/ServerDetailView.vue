@@ -525,7 +525,7 @@ const ensureTerminal = async () => {
   terminal.loadAddon(fitAddon)
   terminal.open(terminalRef.value)
   fitAddon.fit()
-  terminal.writeln('AI Club SSH Terminal Ready')
+  terminal.writeln('GitPilot SSH Terminal Ready')
   terminal.onData((data) => {
     if (!socket || socket.readyState !== WebSocket.OPEN) return
     socket.send(JSON.stringify({ type: 'INPUT', data }))

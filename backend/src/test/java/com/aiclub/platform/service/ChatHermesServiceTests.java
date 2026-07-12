@@ -140,7 +140,9 @@ class ChatHermesServiceTests {
         inOrder.verify(hermesGatewayService).streamChatCompletion(any(), any(), any());
         assertThat(promptCaptor.getValue().systemPrompt())
                 .contains("当前轮唯一有效的 `system_session_token` 是：`hcs_chat_token_1234`")
-                .contains("每次调用平台 MCP 工具必须原样传入 `system_session_token`");
+                .contains("每次调用平台 MCP 工具必须原样传入 `system_session_token`")
+                .contains("数量必须使用 `metadata.totalCount`")
+                .contains("聊天室默认只绑定项目，不自动代表某个迭代");
         assertThat(stateCaptor.getValue().scopeKey()).isEqualTo("chat-room:41:user:5:message:101");
         assertThat(stateCaptor.getValue().clientConversationId()).isEqualTo("chat-room-41-message-101");
         assertThat(stateCaptor.getValue().mcpSessionToken()).isEqualTo("hcs_chat_token_1234");

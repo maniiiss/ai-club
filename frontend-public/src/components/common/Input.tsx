@@ -10,13 +10,19 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   error?: string
   hint?: string
   icon?: ReactNode
+  /** 输入框尺寸，sm 用于筛选栏等紧凑场景；默认 md 保持既有样式。 */
+  size?: 'sm' | 'md'
+  /** 是否按外层容器宽度对带图标输入框启用窄屏降级。 */
+  adaptiveIcon?: boolean
+  /** 输入框外层布局类名，便于在 flex 筛选栏中控制宽度。 */
+  wrapperClassName?: string
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, hint, icon, className, id, ...props }, ref) => {
+  ({ label, error, hint, icon, size = 'md', adaptiveIcon = false, wrapperClassName, className, id, ...props }, ref) => {
     const inputId = id || label?.toLowerCase().replace(/\s+/g, '-')
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className={cn('flex flex-col gap-1.5', adaptiveIcon && 'common-input-shell', wrapperClassName)}>
         {label && (
           <label
             htmlFor={inputId}
@@ -35,14 +41,17 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             id={inputId}
             className={cn(
-              'h-10 w-full rounded-lg border bg-white px-3.5 text-[14px]',
+              'w-full rounded-lg border bg-white px-3.5 text-[14px]',
               'text-[var(--color-text-primary)] placeholder:text-[var(--color-text-placeholder)]',
               'transition-all duration-150',
-              'focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 focus:border-[var(--color-primary)]',
+              'h-10 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 focus:border-[var(--color-primary)]',
+              size === 'sm' && 'h-9 px-3 text-[13px]',
               error
                 ? 'border-[var(--color-danger)] focus:ring-[var(--color-danger)]/20 focus:border-[var(--color-danger)]'
                 : 'border-[var(--color-border-strong)] hover:border-[var(--color-border-strong)]',
               icon ? 'pl-10' : '',
+              icon && size === 'sm' ? 'pl-9' : '',
+              adaptiveIcon && 'common-input-control--adaptive-icon focus-visible:outline-none',
               className,
             )}
             {...props}

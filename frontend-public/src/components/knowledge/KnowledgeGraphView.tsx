@@ -13,6 +13,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from 'react-dom'
 import ForceGraph2D from 'react-force-graph-2d'
 import { Search, X } from 'lucide-react'
+import { Input } from '@/src/components/common/Input'
 import { Markdown } from '@/src/components/common/Markdown'
 import { getWikiPage } from '@/src/api/knowledge'
 import type { WikiSpaceKnowledgeGraphItem } from '@/src/types/knowledge'
@@ -405,13 +406,16 @@ export const KnowledgeGraphView = ({
     >
       {/* 顶部工具栏：搜索框 + 图例。抽屉打开时收窄右边界避免被遮挡。 */}
       <div className={cn('absolute left-3 top-3 z-20 flex flex-wrap items-start gap-2', search ? 'right-[396px]' : 'right-3')}>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
-          <input
+        <div className="relative w-72">
+          <Input
+            size="sm"
+            adaptiveIcon
+            wrapperClassName="w-full"
+            icon={<Search className="h-3.5 w-3.5" />}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索需求 / 模块 / 功能点…"
-            className="h-9 w-72 rounded-lg border border-[var(--color-border)] bg-white/90 pl-8 pr-8 text-[13px] text-[var(--color-text-primary)] shadow-sm outline-none backdrop-blur placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-primary)]"
+            className="bg-white/90 pr-8 text-[var(--color-text-primary)] shadow-sm backdrop-blur placeholder:text-[var(--color-text-tertiary)]"
           />
           {query && (
             <button

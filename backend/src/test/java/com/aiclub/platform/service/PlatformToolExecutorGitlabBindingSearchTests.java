@@ -170,4 +170,62 @@ class PlatformToolExecutorGitlabBindingSearchTests {
         assertThat(result.candidates().get(0).payload()).containsEntry("bindingId", 1L);
         assertThat(result.summary()).contains("找到 1 个相关仓库");
     }
+
+    /**
+     * 仓库候选超过展示上限时，仍需返回完整命中总数和截断标记。
+     */
+    @Test
+    void shouldReturnExactGitlabBindingTotalWhenCandidatesAreTruncated() {
+        PlatformToolDefinition definition = new PlatformToolDefinition(
+                PlatformToolRegistry.TOOL_GITLAB_BINDING_SEARCH,
+                "搜索仓库绑定",
+                "GITLAB",
+                "按项目名或仓库路径搜索 GitLab 绑定仓库",
+                true,
+                "LOW",
+                "gitlab:view",
+                false,
+                Map.of("keyword", "仓库关键词", "projectId", "项目ID")
+        );
+        when(platformToolRegistry.requireDefinition(PlatformToolRegistry.TOOL_GITLAB_BINDING_SEARCH)).thenReturn(definition);
+        when(platformToolRegistry.isEnabled(PlatformToolRegistry.TOOL_GITLAB_BINDING_SEARCH)).thenReturn(true);
+        when(toolExecutionAuditService.createAudit(any(), any())).thenReturn(new PlatformToolAuditEntity());
+        doNothing().when(toolExecutionAuditService).finishSuccess(any(), any());
+
+        ProjectEntity project = new ProjectEntity("Agent Ops", "管理员", "进行中", "用于测试仓库总数");
+        project.setId(1L);
+        List<ProjectGitlabBindingEntity> bindings = java.util.stream.LongStream.rangeClosed(1, 9)
+                .mapToObj(id -> binding(project, id, "team/repo-" + id))
+                .toList();
+        when(projectGitlabBindingRepository.findAll(Sort.by(Sort.Direction.ASC, "id"))).thenReturn(bindings);
+        doNothing().when(projectDataPermissionService).requireProjectVisible(project);
+
+        PlatformToolResult result = platformToolExecutor.execute(new PlatformToolRequest(
+                PlatformToolRegistry.TOOL_GITLAB_BINDING_SEARCH,
+                "HERMES",
+                "scope-total",
+                project.getId(),
+                null,
+                null,
+                Map.of("keyword", "team/repo")
+        ));
+
+        assertThat(result.candidates()).hasSize(8);
+        assertThat(result.summary()).contains("找到 9 个相关仓库").contains("展示前 8 个");
+        assertThat(result.metadata())
+                .containsEntry("totalCount", 9)
+                .containsEntry("returnedCount", 8)
+                .containsEntry("truncated", true);
+    }
+
+    private ProjectGitlabBindingEntity binding(ProjectEntity project, long id, String path) {
+        ProjectGitlabBindingEntity binding = new ProjectGitlabBindingEntity();
+        binding.setId(id);
+        binding.setProject(project);
+        binding.setGitlabProjectRef(path);
+        binding.setGitlabProjectPath(path);
+        binding.setGitlabProjectName("repo-" + id);
+        binding.setDefaultTargetBranch("main");
+        return binding;
+    }
 }

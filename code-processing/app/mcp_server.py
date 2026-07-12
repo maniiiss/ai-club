@@ -66,7 +66,11 @@ async def _execute_platform_tool(
 def _build_tool_description(
     summary: str,
     inputs: list[tuple[str, str]] | None = None,
-    output_description: str = "返回平台整理后的文本摘要，包含本轮命中的候选对象、建议动作或失败原因。",
+    output_description: str = (
+        "返回平台整理后的 JSON 文本，包含 summary、candidates、metadata.totalCount、"
+        "metadata.returnedCount 和 metadata.truncated（集合查询）；查询数量必须使用 metadata.totalCount，"
+        "candidates 仅是展示候选，不代表完整总数，详情和动作工具以各自 schema 为准。"
+    ),
     note: str | None = None,
 ) -> str:
     """统一生成 MCP 工具描述，显式列出业务入参和文本出参。"""
@@ -275,11 +279,30 @@ async def repo_scan_search(
 
 @mcp_server.tool(description=_build_tool_description(
     "按项目、工作项、状态或场景搜索执行任务。",
-    [("keyword", "执行任务关键词，可为空")],
+    [
+        ("keyword", "执行任务关键词，可为空"),
+        ("projectId", "项目ID，可为空"),
+        ("status", "执行任务状态，可为空"),
+        ("scenarioCode", "执行场景编码，可为空"),
+    ],
 ))
-async def execution_task_search(system_session_token: SessionToken, keyword: str = "", ctx: Context | None = None) -> str:
+async def execution_task_search(
+    system_session_token: SessionToken,
+    keyword: str = "",
+    projectId: int | None = None,
+    status: str = "",
+    scenarioCode: str = "",
+    ctx: Context | None = None,
+) -> str:
     """按项目、工作项、状态或场景搜索执行任务。"""
-    return await _execute_platform_tool("execution_task.search", system_session_token, {"keyword": keyword})
+    arguments: dict[str, object] = {"keyword": keyword}
+    if projectId is not None:
+        arguments["projectId"] = projectId
+    if status.strip():
+        arguments["status"] = status.strip()
+    if scenarioCode.strip():
+        arguments["scenarioCode"] = scenarioCode.strip()
+    return await _execute_platform_tool("execution_task.search", system_session_token, arguments)
 
 
 @mcp_server.tool(description=_build_tool_description(
@@ -297,11 +320,30 @@ async def execution_task_get_detail(system_session_token: SessionToken, executio
 
 @mcp_server.tool(description=_build_tool_description(
     "按项目、迭代、状态或关键词查询测试计划。",
-    [("keyword", "测试计划关键词，可为空")],
+    [
+        ("keyword", "测试计划关键词，可为空"),
+        ("projectId", "项目ID，可为空"),
+        ("iterationId", "迭代ID，可为空"),
+        ("status", "测试计划状态，可为空"),
+    ],
 ))
-async def test_plan_search(system_session_token: SessionToken, keyword: str = "", ctx: Context | None = None) -> str:
+async def test_plan_search(
+    system_session_token: SessionToken,
+    keyword: str = "",
+    projectId: int | None = None,
+    iterationId: int | None = None,
+    status: str = "",
+    ctx: Context | None = None,
+) -> str:
     """按项目、迭代、状态或关键词查询测试计划。"""
-    return await _execute_platform_tool("test_plan.search", system_session_token, {"keyword": keyword})
+    arguments: dict[str, object] = {"keyword": keyword}
+    if projectId is not None:
+        arguments["projectId"] = projectId
+    if iterationId is not None:
+        arguments["iterationId"] = iterationId
+    if status.strip():
+        arguments["status"] = status.strip()
+    return await _execute_platform_tool("test_plan.search", system_session_token, arguments)
 
 
 @mcp_server.tool(description=_build_tool_description(

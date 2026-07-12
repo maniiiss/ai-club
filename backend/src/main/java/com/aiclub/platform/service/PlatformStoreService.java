@@ -8,6 +8,7 @@ import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.TaskCommentEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.domain.model.TaskPrdProjectionEntity;
+import com.aiclub.platform.domain.model.TaskUpdateRecordSource;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.AgentSummary;
 import com.aiclub.platform.dto.DashboardCardOverview;
@@ -49,6 +50,7 @@ import com.aiclub.platform.util.TaskStatusUtils;
 import jakarta.persistence.criteria.From;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -107,11 +109,13 @@ public class PlatformStoreService {
     private final ProjectDataPermissionService projectDataPermissionService;
     private final RequirementModuleOptionService requirementModuleOptionService;
     private final TaskPrdService taskPrdService;
+    private final TaskUpdateRecordService taskUpdateRecordService;
     private final DashboardShortcutEntryService dashboardShortcutEntryService;
     private final GitlabUserOauthService gitlabUserOauthService;
     private final GitlabManagementService gitlabManagementService;
     private final SecureRandom workItemCodeRandom = new SecureRandom();
 
+    @Autowired
     public PlatformStoreService(ProjectRepository projectRepository,
                                 ProjectGitlabBindingRepository projectGitlabBindingRepository,
                                 AgentRepository agentRepository,
@@ -128,6 +132,7 @@ public class PlatformStoreService {
                                 ProjectDataPermissionService projectDataPermissionService,
                                 RequirementModuleOptionService requirementModuleOptionService,
                                 TaskPrdService taskPrdService,
+                                TaskUpdateRecordService taskUpdateRecordService,
                                 DashboardShortcutEntryService dashboardShortcutEntryService,
                                 GitlabUserOauthService gitlabUserOauthService,
                                 GitlabManagementService gitlabManagementService) {
@@ -147,9 +152,40 @@ public class PlatformStoreService {
         this.projectDataPermissionService = projectDataPermissionService;
         this.requirementModuleOptionService = requirementModuleOptionService;
         this.taskPrdService = taskPrdService;
+        this.taskUpdateRecordService = taskUpdateRecordService;
         this.dashboardShortcutEntryService = dashboardShortcutEntryService;
         this.gitlabUserOauthService = gitlabUserOauthService;
         this.gitlabManagementService = gitlabManagementService;
+    }
+
+    /**
+     * 兼容仍直接构造 PlatformStoreService 的单元测试。
+     * 业务意图：历史上只覆盖 Agent 配置的测试无需被工作项更新记录依赖打断。
+     */
+    public PlatformStoreService(ProjectRepository projectRepository,
+                                ProjectGitlabBindingRepository projectGitlabBindingRepository,
+                                AgentRepository agentRepository,
+                                AiModelConfigRepository aiModelConfigRepository,
+                                IterationRepository iterationRepository,
+                                TaskRepository taskRepository,
+                                TaskGiteeBindingRepository taskGiteeBindingRepository,
+                                TaskCommentRepository taskCommentRepository,
+                                TaskPrdProjectionRepository taskPrdProjectionRepository,
+                                UserRepository userRepository,
+                                TokenCipherService tokenCipherService,
+                                TaskNotificationService taskNotificationService,
+                                KnowledgeGraphService knowledgeGraphService,
+                                ProjectDataPermissionService projectDataPermissionService,
+                                RequirementModuleOptionService requirementModuleOptionService,
+                                TaskPrdService taskPrdService,
+                                DashboardShortcutEntryService dashboardShortcutEntryService,
+                                GitlabUserOauthService gitlabUserOauthService,
+                                GitlabManagementService gitlabManagementService) {
+        this(projectRepository, projectGitlabBindingRepository, agentRepository, aiModelConfigRepository,
+                iterationRepository, taskRepository, taskGiteeBindingRepository, taskCommentRepository,
+                taskPrdProjectionRepository, userRepository, tokenCipherService, taskNotificationService,
+                knowledgeGraphService, projectDataPermissionService, requirementModuleOptionService, taskPrdService,
+                null, dashboardShortcutEntryService, gitlabUserOauthService, gitlabManagementService);
     }
 
     public DashboardOverview getDashboardOverview() {
@@ -668,6 +704,11 @@ public class PlatformStoreService {
         return toTaskSummary(requireTask(id));
     }
 
+    /** 分页读取工作项更新记录，详情权限沿用工作项本身。 */
+    public PageResponse<com.aiclub.platform.dto.TaskUpdateRecordSummary> pageTaskUpdateRecords(Long taskId, int page, int size) {
+        return taskUpdateRecordService.pageRecords(taskId, page, size);
+    }
+
     public List<TaskCommentSummary> listTaskComments(Long taskId) {
         requireTask(taskId);
         return taskCommentRepository.findAllByTask_IdOrderByCreatedAtAscIdAsc(taskId).stream()
@@ -777,6 +818,7 @@ public class PlatformStoreService {
         }
         taskNotificationService.notifyTaskCreated(saved, assigneeUser, collaborators);
         TaskSummary summary = toTaskSummary(saved);
+        // 创建动作只建立工作项主数据，不写入更新记录；后续实际编辑才进入历史时间线。
         knowledgeGraphService.rebuildProjectGraph(project.getId());
         return summary;
     }
@@ -800,12 +842,14 @@ public class PlatformStoreService {
         task.setUpdatedAt(LocalDateTime.now());
         taskRepository.save(task);
         taskNotificationService.notifyTaskCommentCreated(task, author, saved);
+        // 评论保留在评论表并发送通知，不作为工作项字段更新记录，避免两个 Tab 展示重复事件。
         return toTaskCommentSummary(saved);
     }
 
     @Transactional
     public TaskSummary updateTask(Long id, TaskRequest request) {
         TaskEntity entity = requireTask(id);
+        Map<String, TaskUpdateRecordService.FieldSnapshot> previousEditableFields = taskUpdateRecordService.captureEditableFields(entity);
         Long previousAssigneeUserId = entity.getAssigneeUser() == null ? null : entity.getAssigneeUser().getId();
         Long previousProjectId = entity.getProject() == null ? null : entity.getProject().getId();
         String previousWorkItemType = normalizeWorkItemType(entity.getWorkItemType());
@@ -858,6 +902,9 @@ public class PlatformStoreService {
         syncRequirementModuleOptionOnUpdate(project, previousProjectId, previousWorkItemType, previousModuleName, workItemType, moduleName);
         taskNotificationService.notifyTaskUpdated(saved, previousAssigneeUserId, previousStatus, previousCollaboratorUserIds);
         TaskSummary summary = toTaskSummary(saved);
+        if (taskUpdateRecordService != null) {
+            taskUpdateRecordService.recordChanges(saved, previousEditableFields, TaskUpdateRecordSource.MANUAL);
+        }
         knowledgeGraphService.rebuildProjectGraph(project.getId());
         return summary;
     }
@@ -1065,8 +1112,11 @@ public class PlatformStoreService {
 
         String accessType = normalizeConfiguredAgentAccessType(request.accessType());
         entity.setAccessType(accessType);
-        entity.setBuiltinCode(AgentExecutionService.ACCESS_BUILT_IN.equals(accessType) ? trimToNull(request.builtinCode()) : null);
-        entity.setAiModelConfig((AgentExecutionService.ACCESS_BUILT_IN.equals(accessType) || AgentExecutionService.ACCESS_LLM_PROMPT.equals(accessType))
+        entity.setBuiltinCode((AgentExecutionService.ACCESS_BUILT_IN.equals(accessType) || AgentExecutionService.ACCESS_LLM_VISION.equals(accessType))
+                ? trimToNull(request.builtinCode()) : null);
+        entity.setAiModelConfig((AgentExecutionService.ACCESS_BUILT_IN.equals(accessType)
+                || AgentExecutionService.ACCESS_LLM_PROMPT.equals(accessType)
+                || AgentExecutionService.ACCESS_LLM_VISION.equals(accessType))
                 && request.aiModelConfigId() != null ? requireChatModelConfig(request.aiModelConfigId()) : null);
         entity.setSystemPrompt(trimToNull(request.systemPrompt()));
         entity.setUserPromptTemplate((AgentExecutionService.ACCESS_LLM_PROMPT.equals(accessType) || AgentExecutionService.ACCESS_AGENT_RUNTIME.equals(accessType))
@@ -1121,7 +1171,9 @@ public class PlatformStoreService {
             entity.setTimeoutSeconds(60);
         }
 
-        if ((AgentExecutionService.ACCESS_BUILT_IN.equals(accessType) || AgentExecutionService.ACCESS_LLM_PROMPT.equals(accessType))
+        if ((AgentExecutionService.ACCESS_BUILT_IN.equals(accessType)
+                || AgentExecutionService.ACCESS_LLM_PROMPT.equals(accessType)
+                || AgentExecutionService.ACCESS_LLM_VISION.equals(accessType))
                 && entity.getAiModelConfig() == null) {
             throw new IllegalArgumentException("当前 Agent 需要绑定模型配置");
         }
@@ -1130,6 +1182,10 @@ public class PlatformStoreService {
         }
         if (AgentExecutionService.ACCESS_LLM_PROMPT.equals(accessType) && !hasText(entity.getUserPromptTemplate())) {
             throw new IllegalArgumentException("提示词 Agent 必须填写用户提示词模板");
+        }
+        if (AgentExecutionService.ACCESS_LLM_VISION.equals(accessType)
+                && !AgentExecutionService.BUILTIN_IMAGE_UNDERSTANDING.equals(entity.getBuiltinCode())) {
+            throw new IllegalArgumentException("图片理解 Agent 必须使用 IMAGE_UNDERSTANDING 内置编码");
         }
         if (AgentExecutionService.ACCESS_HTTP_API.equals(accessType) && !hasText(entity.getEndpointUrl())) {
             throw new IllegalArgumentException("HTTP API Agent 必须填写接口地址");
@@ -1153,9 +1209,10 @@ public class PlatformStoreService {
         String value = hasText(accessType) ? accessType.trim().toUpperCase() : AgentExecutionService.ACCESS_BUILT_IN;
         if (!AgentExecutionService.ACCESS_BUILT_IN.equals(value)
                 && !AgentExecutionService.ACCESS_LLM_PROMPT.equals(value)
+                && !AgentExecutionService.ACCESS_LLM_VISION.equals(value)
                 && !AgentExecutionService.ACCESS_HTTP_API.equals(value)
                 && !AgentExecutionService.ACCESS_AGENT_RUNTIME.equals(value)) {
-            throw new IllegalArgumentException("Agent 接入方式仅支持 BUILT_IN、LLM_PROMPT、HTTP_API、AGENT_RUNTIME");
+            throw new IllegalArgumentException("Agent 接入方式仅支持 BUILT_IN、LLM_PROMPT、LLM_VISION、HTTP_API、AGENT_RUNTIME");
         }
         return value;
     }
@@ -1799,9 +1856,10 @@ public class PlatformStoreService {
         String value = hasText(accessType) ? accessType.trim().toUpperCase() : AgentExecutionService.ACCESS_BUILT_IN;
         if (!AgentExecutionService.ACCESS_BUILT_IN.equals(value)
                 && !AgentExecutionService.ACCESS_LLM_PROMPT.equals(value)
+                && !AgentExecutionService.ACCESS_LLM_VISION.equals(value)
                 && !AgentExecutionService.ACCESS_HTTP_API.equals(value)
                 && !AgentExecutionService.ACCESS_AGENT_RUNTIME.equals(value)) {
-            throw new IllegalArgumentException("Agent 接入方式仅支持 BUILT_IN、LLM_PROMPT、HTTP_API、AGENT_RUNTIME");
+            throw new IllegalArgumentException("Agent 接入方式仅支持 BUILT_IN、LLM_PROMPT、LLM_VISION、HTTP_API、AGENT_RUNTIME");
         }
         return value;
     }

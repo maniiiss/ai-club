@@ -1658,6 +1658,19 @@ a {
   width: 100%;
 }
 
+/* 智能体管理页：交换两列，把"新建智能体"放左边，搜索筛选条放右边。 */
+.agent-page .atelier-toolbar {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.agent-page .atelier-toolbar-main {
+  justify-self: end;
+}
+
+.agent-page .atelier-toolbar-side {
+  justify-content: flex-start;
+}
+
 .atelier-toolbar-main {
   display: flex;
   align-items: center;
@@ -2555,6 +2568,11 @@ a {
     align-items: center;
   }
 
+  /* 智能体管理页中等宽度下也保持列交换：新建在左、搜索条在右。 */
+  .agent-page .atelier-toolbar {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
   .management-list-toolbar > .management-list-toolbar-main,
   .atelier-toolbar > .atelier-toolbar-main,
   .work-list-toolbar > .work-list-toolbar-main {
@@ -2566,10 +2584,18 @@ a {
     padding: 8px 12px;
   }
 
+  .agent-page .atelier-toolbar > .atelier-toolbar-main {
+    justify-self: end;
+  }
+
   .management-list-toolbar > .management-list-toolbar-side,
   .atelier-toolbar > .atelier-toolbar-side,
   .work-list-toolbar > .work-list-toolbar-side {
     align-self: center;
+  }
+
+  .agent-page .atelier-toolbar > .atelier-toolbar-side {
+    justify-content: flex-start;
   }
 
   .management-list-search-shell,

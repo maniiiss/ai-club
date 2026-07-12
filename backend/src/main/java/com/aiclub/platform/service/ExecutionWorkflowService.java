@@ -37,6 +37,8 @@ public class ExecutionWorkflowService {
     public static final String SCENARIO_SELF_UPGRADE_PATROL = "SELF_UPGRADE_PATROL";
     public static final String SCENARIO_TEST_AUTOMATION = "TEST_AUTOMATION";
     public static final String SCENARIO_TECHNICAL_DESIGN_AUTHORING = "TECHNICAL_DESIGN_AUTHORING";
+    /** 需求 AI 助手后台分析场景，固定由平台内置三步执行器完成。 */
+    public static final String SCENARIO_REQUIREMENT_AI_ANALYSIS = "REQUIREMENT_AI_ANALYSIS";
 
     public static final String STEP_PLAN = "PLAN";
     public static final String STEP_REPO_STRUCTURING = "REPO_STRUCTURING";
@@ -50,6 +52,12 @@ public class ExecutionWorkflowService {
     public static final String STEP_CODE_CONTEXT = "CODE_CONTEXT";
     public static final String STEP_DESIGN_DRAFT = "DESIGN_DRAFT";
     public static final String STEP_DESIGN_REVIEW = "DESIGN_REVIEW";
+    /** 准备需求文本、附件和关联工作项上下文。 */
+    public static final String STEP_CONTEXT_PREPARE = "CONTEXT_PREPARE";
+    /** 批量理解需求中的平台图片。 */
+    public static final String STEP_VISION_ANALYZE = "VISION_ANALYZE";
+    /** 根据增强上下文生成最终需求 AI 结果。 */
+    public static final String STEP_REQUIREMENT_GENERATE = "REQUIREMENT_GENERATE";
 
     private static final Set<String> SUPPORTED_SCENARIOS = Set.of(
             SCENARIO_REQUIREMENT_BREAKDOWN,
@@ -59,7 +67,8 @@ public class ExecutionWorkflowService {
             SCENARIO_CODEBASE_COMPLIANCE_SCAN,
             SCENARIO_SELF_UPGRADE_PATROL,
             SCENARIO_TEST_AUTOMATION,
-            SCENARIO_TECHNICAL_DESIGN_AUTHORING
+            SCENARIO_TECHNICAL_DESIGN_AUTHORING,
+            SCENARIO_REQUIREMENT_AI_ANALYSIS
     );
 
     private final AgentRepository agentRepository;
@@ -266,6 +275,7 @@ public class ExecutionWorkflowService {
             case SCENARIO_SELF_UPGRADE_PATROL -> "自升级巡检";
             case SCENARIO_TEST_AUTOMATION -> "自动化测试";
             case SCENARIO_TECHNICAL_DESIGN_AUTHORING -> "技术设计生成";
+            case SCENARIO_REQUIREMENT_AI_ANALYSIS -> "需求 AI 分析";
             default -> throw new IllegalArgumentException("不支持的执行场景");
         };
     }
@@ -366,6 +376,11 @@ public class ExecutionWorkflowService {
                     new StepTemplate(STEP_CODE_CONTEXT, "代码理解", null, null, null),
                     new StepTemplate(STEP_DESIGN_DRAFT, "方案生成", null, null, null),
                     new StepTemplate(STEP_DESIGN_REVIEW, "设计自检", null, null, null)
+            );
+            case SCENARIO_REQUIREMENT_AI_ANALYSIS -> List.of(
+                    new StepTemplate(STEP_CONTEXT_PREPARE, "上下文准备", null, null, null),
+                    new StepTemplate(STEP_VISION_ANALYZE, "图片理解", null, null, null),
+                    new StepTemplate(STEP_REQUIREMENT_GENERATE, "需求生成", null, null, null)
             );
             default -> throw new IllegalArgumentException("不支持的执行场景");
         };
@@ -572,7 +587,8 @@ public class ExecutionWorkflowService {
      * 自动化测试场景首版由平台内置编排器执行，不依赖用户配置 Agent。
      */
     private boolean usesInternalExecutionEngine(String scenarioCode) {
-        return SCENARIO_TEST_AUTOMATION.equalsIgnoreCase(defaultString(scenarioCode));
+        return SCENARIO_TEST_AUTOMATION.equalsIgnoreCase(defaultString(scenarioCode))
+                || SCENARIO_REQUIREMENT_AI_ANALYSIS.equalsIgnoreCase(defaultString(scenarioCode));
     }
 
     private record StepTemplate(

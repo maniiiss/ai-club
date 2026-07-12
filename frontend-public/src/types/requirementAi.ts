@@ -33,6 +33,17 @@ export interface TestCaseSuggestionItem {
   steps: TestCaseStepSuggestionItem[]
 }
 
+/** 标准化结果中的受控图片资产元数据。 */
+export interface RequirementAiResultImage {
+  assetId: number
+  mediaType: string
+  altText: string
+  sourceName: string
+  order: number
+  section: string
+  renderUrl: string
+}
+
 /** AI 生成结果（统一结构，对齐后端 TaskRequirementAiResult）。 */
 export interface RequirementAiResult {
   action: string
@@ -42,6 +53,7 @@ export interface RequirementAiResult {
   modelConfigName: string | null
   taskSuggestions: TaskSuggestionItem[]
   testCaseSuggestions: TestCaseSuggestionItem[]
+  images?: RequirementAiResultImage[]
 }
 
 /** AI 生成请求参数。 */

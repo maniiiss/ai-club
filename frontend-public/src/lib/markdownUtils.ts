@@ -14,8 +14,12 @@ export const normalizeGeneratedMarkdown = (content: string): string => {
     .replace(/(\\\*\n)([-*+]\s+)/g, '$1\n$2')))))
   )
 
-  return normalized.replace(/\n{3,}/g, '\n\n')
+  return normalizeGeneratedLabelSpacing(normalizeGeneratedPriorityLabelSpacing(normalizeGeneratedEmptyListItems(normalizeGeneratedPriorityRecommendationBoundaries(normalizeGeneratedStandalonePriorityMarkers(normalized))))).replace(/\n{3,}/g, '\n\n')
 }
+
+/** 根据调用方的内容契约决定是否执行生成内容归一化。 */
+export const resolveMarkdownContent = (content: string, normalize = true): string =>
+  normalize ? normalizeGeneratedMarkdown(content) : content || ''
 
 /**
  * 保护行首工单号，避免 `#LHR8GU` 被 Markdown 当成一级标题。
@@ -24,6 +28,12 @@ export const normalizeGeneratedMarkdown = (content: string): string => {
  */
 const normalizeGeneratedTicketIdLines = (content: string): string =>
   content
+    // 聊天室摘要会把「# 4（ID:4，进行中，负责人：管理员）」这类项目元数据误写成标题；其本质是明细正文。
+    .replace(/^#{1,6}\s*(\d+\s*[（(]\s*ID[：:]\s*\d+[^\n）)]*[）)]?)$/gimu, '$1')
+    // 风险建议偶发把「##994.* 🟡低优」当作标题开头；其中编号与优先级是正文，需在标题归一化前还原。
+    .replace(/^#{1,6}\s*(\d+[.、])\*\s*([🔴🟡🟢⚪])/gmu, '$1 $2')
+    // AI 偶尔把「##99的开发执行任务4.」这类编号句子误写成 ATX 标题；它不是章节标题，需移除任意层级的标题标记，避免在聊天卡片中被放大。
+    .replace(/^#{1,6}\s*(\d+的[^\n]*[。.]$)/gm, '$1')
     .replace(/^#\s+([A-Z0-9]{4,}\)?[^\n]*)$/gm, '\\# $1')
     .replace(/^#([A-Z0-9]{4,}\)?[^\n]*)$/gm, '\\#$1')
     .replace(/^\s*[-*+]\s*$/gm, '')
@@ -62,6 +72,9 @@ const normalizeGeneratedHeadingBoundaries = (content: string): string =>
 
 const normalizeGeneratedInlineMarkdown = (content: string): string =>
   cleanupGeneratedOrphanEmphasisMarkers(content
+    // 模型偶发把加粗起止标记写在「高优先级**—说明.**」的说明部分两端；将强调收敛到优先级标签本身。
+    .replace(/((?:高|中|低)优先级)\*\*([—–-])/g, '**$1** $2')
+    .replace(/([。！？!?])\*\*(?=\s|$)/g, '$1')
     .replace(/^([A-Za-z0-9][A-Za-z0-9_-]{1,31})\*$/gm, '$1')
     .replace(/^\s*--\s*-\s+([^：:\n]{1,24}[：:])\s*/gm, '- **$1** ')
     .replace(/\*\*([^\s*][^*\n]{0,24}?)\*(?=[\s，。；：:、,.!?！？)\]】）]|$|\n(?:[-*+]\s|\d+[.)]\s|$))/g, '**$1**')
@@ -99,6 +112,39 @@ const cleanupGeneratedOrphanEmphasisMarkers = (content: string): string => {
 
   return normalized
 }
+
+/**
+ * 在强调、标题等语法修复完成后再次移除空列表项。
+ * 业务意图：`- **` 会在强调标记清理后变成 `- `；若不做末端清理，react-markdown 仍会渲染一个没有文本的圆点。
+ */
+const normalizeGeneratedEmptyListItems = (content: string): string =>
+  content.replace(/^[\t ]*(?:[-*+•‣◦])[\t ]*$/gmu, '')
+
+/**
+ * 清理风险建议序号与优先级表情之间的孤立星号。
+ * 业务意图：模型将未闭合强调符输出为 `1. * 🔴` 时，星号既不是合法斜体也不是列表标记，直接显示会干扰阅读。
+ */
+const normalizeGeneratedStandalonePriorityMarkers = (content: string): string =>
+  content.replace(/(\d+[.、])\s*\*\s*(?=[🔴🟡🟢⚪])/gmu, '$1 ')
+
+/**
+ * 拆分被流式输出粘连的编号优先级建议。
+ * 业务意图：风险结论常连续输出 `建议优先级1. 🔴...2. 🟡...`，缺少段落边界会让多条行动项挤成一行；只匹配带优先级表情的 1-2 位编号，避免影响普通数字正文。
+ */
+const normalizeGeneratedPriorityRecommendationBoundaries = (content: string): string =>
+  content
+    .replace(/(建议优先级)\s*((?:[1-9]|[1-9]\d)[.、]\s*[🔴🟡🟢⚪])/gmu, '$1\n\n$2')
+    .replace(/([^\n\d])((?:[1-9]|[1-9]\d)[.、]\s*[🔴🟡🟢⚪])/gmu, '$1\n\n$2')
+
+/** 保持优先级加粗标签与后续说明之间的可读分隔，避免后续语法归一化吞掉空格。 */
+const normalizeGeneratedPriorityLabelSpacing = (content: string): string =>
+  content.replace(/(\*\*(?:高|中|低)优先级\*\*)\s*([—–-])\s*/g, '$1 $2 ')
+
+/** 将聊天室摘要中紧贴正文的“绑定项目”标签分开，并清除模型遗留的行尾空白。 */
+const normalizeGeneratedLabelSpacing = (content: string): string =>
+  content
+    .replace(/([^\s])(\*\*绑定项目：\*\*)/g, '$1 $2')
+    .replace(/[\t ]+$/gm, '')
 
 const tableAlignmentCellPattern = /^:?-{3,}:?$/
 

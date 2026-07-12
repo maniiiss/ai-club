@@ -165,6 +165,31 @@ export interface TaskComment {
   createdAt: string
 }
 
+/** 工作项更新记录明细。 */
+export interface TaskUpdateRecordDetail {
+  id: number
+  fieldCode: string
+  fieldName: string
+  detailType: string
+  oldValue: string | null
+  newValue: string | null
+  relatedObjectId: number | null
+  relatedObjectName: string | null
+}
+
+/** 工作项更新记录时间线节点。 */
+export interface TaskUpdateRecord {
+  id: number
+  taskId: number
+  operatorUserId: number | null
+  operatorName: string
+  source: 'MANUAL' | 'SYSTEM' | 'AI' | string
+  actionType: string
+  summary: string
+  createdAt: string | null
+  details: TaskUpdateRecordDetail[]
+}
+
 /** 燃尽图数据。 */
 export interface BurndownItem {
   startDate: string

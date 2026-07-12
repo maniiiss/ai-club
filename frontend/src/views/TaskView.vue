@@ -347,6 +347,33 @@
             <div v-if="detailDescriptionHtml" class="task-detail-markdown" v-html="detailDescriptionHtml"></div>
             <el-empty v-else description="暂无说明" />
           </section>
+          <section class="task-detail-activity-tabs">
+            <el-tabs v-model="detailActivityTab">
+              <el-tab-pane name="comments">
+                <template #label>
+                  <span class="task-detail-tab-label">评论<span class="task-tab-count">{{ detailCommentCount }}</span></span>
+                </template>
+                <TaskCommentTimeline
+                  v-if="detailTask"
+                  :task-id="detailTask.id"
+                  :refresh-key="detailRefreshKey"
+                  @count-change="detailCommentCount = $event"
+                  @comment-posted="detailRefreshKey += 1"
+                />
+              </el-tab-pane>
+              <el-tab-pane name="updateRecords">
+                <template #label>
+                  <span class="task-detail-tab-label">更新记录<span class="task-tab-count">{{ detailUpdateRecordCount }}</span></span>
+                </template>
+                <TaskUpdateTimeline
+                  v-if="detailTask"
+                  :task-id="detailTask.id"
+                  :refresh-key="detailRefreshKey"
+                  @count-change="detailUpdateRecordCount = $event"
+                />
+              </el-tab-pane>
+            </el-tabs>
+          </section>
         </el-tab-pane>
         <el-tab-pane name="children">
           <template #label>
@@ -643,6 +670,8 @@ import ListUserGroupDisplay from '@/components/ListUserGroupDisplay.vue'
 import type { ListUserDisplayItem } from '@/components/listUserDisplay'
 import MarkdownEditor from '@/components/MarkdownEditor.vue'
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
+import TaskCommentTimeline from '@/components/TaskCommentTimeline.vue'
+import TaskUpdateTimeline from '@/components/TaskUpdateTimeline.vue'
 import RequirementAiDialog from '@/components/RequirementAiDialog.vue'
 import {
   addTaskChild,
@@ -743,6 +772,10 @@ const detailLinks = ref<TaskLinksItem | null>(null)
  */
 const detailNavigationStack = ref<TaskItem[]>([])
 const detailActiveTab = ref('detail')
+const detailRefreshKey = ref(0)
+const detailActivityTab = ref('comments')
+const detailCommentCount = ref(0)
+const detailUpdateRecordCount = ref(0)
 const workItemOptions = ref<TaskItem[]>([])
 const workItemOptionLoading = ref(false)
 const workItemLinkTargetId = ref<number | undefined>(undefined)
@@ -1136,6 +1169,9 @@ const openTaskDetailById = async (row: TaskItem, options: { pushHistory?: boolea
   }
   detailDrawerVisible.value = true
   detailActiveTab.value = 'detail'
+  detailActivityTab.value = 'comments'
+  detailCommentCount.value = 0
+  detailUpdateRecordCount.value = 0
   detailTask.value = row
   detailLinks.value = null
   workItemLinkTargetId.value = undefined
@@ -1185,6 +1221,7 @@ const updateDetailLinks = async (operation: () => Promise<TaskLinksItem>) => {
   }
   try {
     detailLinks.value = await operation()
+    detailRefreshKey.value += 1
     workItemLinkTargetId.value = undefined
     testCaseLinkTargetId.value = undefined
   } catch (error: any) {
@@ -1555,6 +1592,9 @@ const handleSubmit = async () => {
     }
     if (isEditing.value && currentId.value !== null) {
       await updateTask(currentId.value, payload)
+      if (detailTask.value?.id === currentId.value) {
+        detailRefreshKey.value += 1
+      }
       ElMessage.success('任务更新成功')
     } else {
       await createTask(payload)
@@ -2431,6 +2471,17 @@ onMounted(async () => {
   z-index: 3;
   margin: 0;
   background: #fff;
+}
+
+.task-detail-activity-tabs {
+  margin-top: 24px;
+  min-height: 420px;
+  padding-top: 4px;
+  border-top: 1px solid var(--platform-border-light);
+}
+
+.task-detail-activity-tabs :deep(.el-tabs__header) {
+  margin-bottom: 0;
 }
 
 .task-detail-tab-label {

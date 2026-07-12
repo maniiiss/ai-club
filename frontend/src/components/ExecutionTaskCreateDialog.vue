@@ -94,6 +94,23 @@
           />
         </el-form-item>
 
+        <el-form-item label="上下文输入">
+          <div class="execution-plan-confirm-field">
+            <el-switch v-model="form.includeRequirementContext" :disabled="!contextOptions?.requirementLinked" />
+            <div class="execution-plan-confirm-copy">
+              <strong>带入关联需求</strong>
+              <span>{{ contextOptions?.requirementNotice || '将关联需求正文作为执行上下文。' }}</span>
+            </div>
+          </div>
+          <div class="execution-plan-confirm-field">
+            <el-switch v-model="form.includeTechnicalDesignContext" :disabled="!contextOptions?.technicalDesignAvailable" />
+            <div class="execution-plan-confirm-copy">
+              <strong>带入技术设计</strong>
+              <span>{{ contextOptions?.technicalDesignNotice || '将最新成功技术设计作为执行上下文。' }}</span>
+            </div>
+          </div>
+        </el-form-item>
+
         <el-form-item label="规划确认">
           <div class="execution-plan-confirm-field">
             <el-switch v-model="form.planConfirmationRequired" />
@@ -199,7 +216,7 @@
         </div>
       </section>
 
-      <el-form-item label="执行说明">
+          <el-form-item label="执行说明">
         <el-input
           v-model="form.inputText"
           type="textarea"
@@ -207,7 +224,18 @@
           resize="none"
           placeholder="可补充当前要智能体重点关注的背景、目标、限制或交付要求"
         />
-      </el-form-item>
+          </el-form-item>
+
+          <el-form-item label="上下文输入">
+            <div class="execution-plan-confirm-field">
+              <el-switch v-model="form.includeRequirementContext" :disabled="!contextOptions?.requirementLinked" />
+              <div class="execution-plan-confirm-copy"><strong>带入关联需求</strong><span>{{ contextOptions?.requirementNotice || '将关联需求正文作为执行上下文。' }}</span></div>
+            </div>
+            <div class="execution-plan-confirm-field">
+              <el-switch v-model="form.includeTechnicalDesignContext" :disabled="!contextOptions?.technicalDesignAvailable" />
+              <div class="execution-plan-confirm-copy"><strong>带入技术设计</strong><span>{{ contextOptions?.technicalDesignNotice || '将最新成功技术设计作为执行上下文。' }}</span></div>
+            </div>
+          </el-form-item>
 
       <el-form-item label="规划确认">
         <div class="execution-plan-confirm-field">
@@ -233,7 +261,8 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { createExecutionTask, listExecutionOrchestrationScenarios } from '@/api/platform'
 import { listGitlabBindingOptions } from '@/api/gitlab'
-import type { ExecutionTaskItem, ProjectGitlabBindingItem, TaskItem } from '@/types/platform'
+import { getExecutionContextOptions } from '@/api/platform'
+import type { ExecutionContextOptionsSummary, ExecutionTaskItem, ProjectGitlabBindingItem, TaskItem } from '@/types/platform'
 
 interface ExecutionTaskCreateDialogProps {
   workItem: TaskItem | null
@@ -244,6 +273,8 @@ interface ExecutionCreateForm {
   scenarioCode: string
   inputText: string
   planConfirmationRequired: boolean
+  includeRequirementContext: boolean
+  includeTechnicalDesignContext: boolean
   repositories: DevelopmentRepositoryFormItem[]
 }
 
@@ -262,11 +293,14 @@ const loadingBindings = ref(false)
 const submitting = ref(false)
 const orchestrationReady = ref(false)
 const gitlabBindingOptions = ref<ProjectGitlabBindingItem[]>([])
+const contextOptions = ref<ExecutionContextOptionsSummary | null>(null)
 
 const form = reactive<ExecutionCreateForm>({
   scenarioCode: 'DEVELOPMENT_IMPLEMENTATION',
   inputText: '',
   planConfirmationRequired: false,
+  includeRequirementContext: true,
+  includeTechnicalDesignContext: true,
   repositories: []
 })
 
@@ -303,6 +337,20 @@ const loadOrchestrationReadiness = async () => {
     )
   } catch {
     orchestrationReady.value = false
+  }
+}
+
+const loadContextOptions = async () => {
+  contextOptions.value = null
+  if (!props.workItem?.projectId || !props.workItem?.id) return
+  try {
+    contextOptions.value = await getExecutionContextOptions(props.workItem.projectId, props.workItem.id)
+    form.includeRequirementContext = contextOptions.value.requirementLinked
+    form.includeTechnicalDesignContext = contextOptions.value.technicalDesignAvailable
+  } catch {
+    contextOptions.value = null
+    form.includeRequirementContext = false
+    form.includeTechnicalDesignContext = false
   }
 }
 
@@ -354,6 +402,9 @@ const resetForm = () => {
   form.scenarioCode = 'DEVELOPMENT_IMPLEMENTATION'
   form.inputText = ''
   form.planConfirmationRequired = false
+  form.includeRequirementContext = true
+  form.includeTechnicalDesignContext = true
+  contextOptions.value = null
   orchestrationReady.value = false
   form.repositories = []
   formRef.value?.clearValidate()
@@ -366,7 +417,7 @@ watch(
       return
     }
     resetForm()
-    await Promise.all([loadOrchestrationReadiness(), loadGitlabBindings()])
+    await Promise.all([loadOrchestrationReadiness(), loadGitlabBindings(), loadContextOptions()])
   }
 )
 
@@ -406,6 +457,8 @@ const handleSubmit = async () => {
     if (form.inputText.trim()) {
       inputPayload.inputText = form.inputText.trim()
     }
+    inputPayload.includeRequirementContext = form.includeRequirementContext
+    inputPayload.includeTechnicalDesignContext = form.includeTechnicalDesignContext
     inputPayload.repositories = form.repositories.map((repository) => ({
       bindingId: repository.bindingId,
       targetBranch: repository.targetBranch.trim()

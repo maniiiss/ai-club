@@ -5,6 +5,8 @@ import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.dto.TaskRequirementAiResult;
+import com.aiclub.platform.dto.RequirementAiPreparedContext;
+import com.aiclub.platform.dto.RequirementAiTaskSnapshot;
 import com.aiclub.platform.dto.request.TaskRequirementAiRequest;
 import com.aiclub.platform.repository.AgentRepository;
 import com.aiclub.platform.repository.AiModelConfigRepository;
@@ -29,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -52,6 +55,9 @@ class TaskRequirementAiServiceTests {
     @Mock
     private AgentInvocationRecorder agentInvocationRecorder;
 
+    @Mock
+    private RequirementAiContextService requirementAiContextService;
+
     private TaskRequirementAiService taskRequirementAiService;
 
     @BeforeEach
@@ -64,6 +70,27 @@ class TaskRequirementAiServiceTests {
                     java.util.function.Function<com.aiclub.platform.agentusage.UsageSink, Object> fn = invocation.getArgument(1);
                     return fn.apply(new com.aiclub.platform.agentusage.UsageSink());
                 });
+        lenient().when(requirementAiContextService.snapshot(any(TaskEntity.class), anyString()))
+                .thenAnswer(invocation -> {
+                    TaskEntity task = invocation.getArgument(0);
+                    return new RequirementAiTaskSnapshot(
+                            task.getId(),
+                            invocation.getArgument(1),
+                            task.getName(),
+                            task.getWorkItemType(),
+                            task.getTaskType(),
+                            task.getProject().getName(),
+                            "未规划",
+                            task.getStatus(),
+                            task.getPriority(),
+                            task.getPrototypeUrl(),
+                            task.getDescription(),
+                            task.getRequirementTask() == null ? null : task.getRequirementTask().getName(),
+                            task.getRequirementTask() == null ? null : task.getRequirementTask().getDescription()
+                    );
+                });
+        lenient().when(requirementAiContextService.prepare(any(RequirementAiTaskSnapshot.class)))
+                .thenReturn(new RequirementAiPreparedContext("已准备上下文", List.of(), java.util.Map.of(), List.of()));
         taskRequirementAiService = new TaskRequirementAiService(
                 taskRepository,
                 aiModelConfigRepository,
@@ -71,7 +98,8 @@ class TaskRequirementAiServiceTests {
                 modelConfigService,
                 new ObjectMapper(),
                 projectDataPermissionService,
-                agentInvocationRecorder
+                agentInvocationRecorder,
+                requirementAiContextService
         );
     }
 
@@ -285,6 +313,36 @@ class TaskRequirementAiServiceTests {
 
         assertThat(result.testCaseSuggestions()).hasSize(1);
         assertThat(result.testCaseSuggestions().get(0).title()).isEqualTo("验证需求主流程");
+    }
+
+    /**
+     * 测试用例主提示词解析失败后，兜底调用必须复用第一次准备的上下文，避免重复读取附件和关联项。
+     */
+    @Test
+    void shouldReusePreparedContextForTestCaseFallback() {
+        TaskEntity task = buildRequirementTask();
+        AiModelConfigEntity chatModel = buildModelConfig(7L, "测试兜底模型", ModelConfigService.MODEL_TYPE_CHAT);
+        when(taskRepository.findById(1L)).thenReturn(Optional.of(task));
+        when(projectDataPermissionService.currentScopeOrNull()).thenReturn(null);
+        when(aiModelConfigRepository.findById(7L)).thenReturn(Optional.of(chatModel));
+        when(modelConfigService.resolveModelConfig(7L)).thenReturn(new ModelConfigService.ResolvedModelConfig(
+                7L,
+                "测试兜底模型",
+                ModelConfigService.MODEL_TYPE_CHAT,
+                ModelConfigService.PROVIDER_OPENAI,
+                "https://api.openai.com/v1",
+                "gpt-5.4",
+                ModelConfigService.OPENAI_API_MODE_AUTO,
+                "chat-key"
+        ));
+        when(modelConfigService.invokePromptWithUsage(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt(), anyBoolean()))
+                .thenReturn(new ModelConfigService.ModelInvocation("", null, null, null))
+                .thenReturn(new ModelConfigService.ModelInvocation("## 功能测试\n1. 验证登录", null, null, null));
+
+        TaskRequirementAiResult result = taskRequirementAiService.generate(1L, new TaskRequirementAiRequest("TEST_CASES", 7L));
+
+        assertThat(result.testCaseSuggestions()).hasSize(1);
+        verify(requirementAiContextService, times(1)).prepare(any(RequirementAiTaskSnapshot.class));
     }
 
     private TaskEntity buildRequirementTask() {

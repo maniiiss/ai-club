@@ -4,6 +4,7 @@ import com.aiclub.platform.domain.model.DocumentAssetEntity;
 import com.aiclub.platform.domain.model.TaskAttachmentEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.domain.model.TaskTestCaseRelationEntity;
+import com.aiclub.platform.domain.model.TaskUpdateRecordSource;
 import com.aiclub.platform.domain.model.TaskWorkItemRelationEntity;
 import com.aiclub.platform.domain.model.TestCaseEntity;
 import com.aiclub.platform.domain.model.UserEntity;
@@ -65,6 +66,7 @@ public class WorkItemLinkService {
     private final PlatformStoreService platformStoreService;
     private final AuthService authService;
     private final UserRepository userRepository;
+    private final TaskUpdateRecordService taskUpdateRecordService;
 
     public WorkItemLinkService(TaskRepository taskRepository,
                                TaskWorkItemRelationRepository taskWorkItemRelationRepository,
@@ -77,7 +79,8 @@ public class WorkItemLinkService {
                                ProjectDataPermissionService projectDataPermissionService,
                                PlatformStoreService platformStoreService,
                                AuthService authService,
-                               UserRepository userRepository) {
+                               UserRepository userRepository,
+                               TaskUpdateRecordService taskUpdateRecordService) {
         this.taskRepository = taskRepository;
         this.taskWorkItemRelationRepository = taskWorkItemRelationRepository;
         this.taskTestCaseRelationRepository = taskTestCaseRelationRepository;
@@ -90,6 +93,7 @@ public class WorkItemLinkService {
         this.platformStoreService = platformStoreService;
         this.authService = authService;
         this.userRepository = userRepository;
+        this.taskUpdateRecordService = taskUpdateRecordService;
     }
 
     public TaskLinksSummary getLinks(Long taskId) {
@@ -132,15 +136,21 @@ public class WorkItemLinkService {
             throw new IllegalArgumentException("子工作项不能形成循环");
         }
         saveWorkItemRelation(parent, child, RELATION_CHILD);
+        taskUpdateRecordService.recordAction(parent, TaskUpdateRecordSource.MANUAL, "RELATION", "新增子工作项",
+                "child", "子工作项", "", child.getName(), child.getId(), child.getName());
         return getLinks(taskId);
     }
 
     @Transactional
     public TaskLinksSummary removeChild(Long taskId, Long childTaskId) {
         TaskEntity task = requireTask(taskId);
-        requireTask(childTaskId);
+        TaskEntity child = requireTask(childTaskId);
         taskWorkItemRelationRepository.findBySourceTask_IdAndTargetTask_IdAndRelationType(task.getId(), childTaskId, RELATION_CHILD)
-                .ifPresent(taskWorkItemRelationRepository::delete);
+                .ifPresent(relation -> {
+                    taskWorkItemRelationRepository.delete(relation);
+                    taskUpdateRecordService.recordAction(task, TaskUpdateRecordSource.MANUAL, "RELATION", "移除子工作项",
+                            "child", "子工作项", child.getName(), "", child.getId(), child.getName());
+                });
         return getLinks(taskId);
     }
 
@@ -154,17 +164,23 @@ public class WorkItemLinkService {
         Long secondId = Math.max(source.getId(), target.getId());
         validateNewRelation(firstId, secondId, RELATION_RELATED);
         saveWorkItemRelation(taskRepository.findById(firstId).orElseThrow(), taskRepository.findById(secondId).orElseThrow(), RELATION_RELATED);
+        taskUpdateRecordService.recordAction(source, TaskUpdateRecordSource.MANUAL, "RELATION", "新增关联工作项",
+                "relatedWorkItem", "关联工作项", "", target.getName(), target.getId(), target.getName());
         return getLinks(taskId);
     }
 
     @Transactional
     public TaskLinksSummary removeRelatedWorkItem(Long taskId, Long relatedTaskId) {
         TaskEntity task = requireTask(taskId);
-        requireTask(relatedTaskId);
+        TaskEntity related = requireTask(relatedTaskId);
         Long firstId = Math.min(task.getId(), relatedTaskId);
         Long secondId = Math.max(task.getId(), relatedTaskId);
         taskWorkItemRelationRepository.findBySourceTask_IdAndTargetTask_IdAndRelationType(firstId, secondId, RELATION_RELATED)
-                .ifPresent(taskWorkItemRelationRepository::delete);
+                .ifPresent(relation -> {
+                    taskWorkItemRelationRepository.delete(relation);
+                    taskUpdateRecordService.recordAction(task, TaskUpdateRecordSource.MANUAL, "RELATION", "移除关联工作项",
+                            "relatedWorkItem", "关联工作项", related.getName(), "", related.getId(), related.getName());
+                });
         return getLinks(taskId);
     }
 
@@ -182,6 +198,8 @@ public class WorkItemLinkService {
         relation.setTask(task);
         relation.setTestCase(testCase);
         taskTestCaseRelationRepository.save(relation);
+        taskUpdateRecordService.recordAction(task, TaskUpdateRecordSource.MANUAL, "RELATION", "新增测试用例关联",
+                "testCase", "测试用例", "", testCase.getTitle(), testCase.getId(), testCase.getTitle());
         return getLinks(taskId);
     }
 
@@ -189,7 +207,12 @@ public class WorkItemLinkService {
     public TaskLinksSummary removeTestCase(Long taskId, Long testCaseId) {
         TaskEntity task = requireTask(taskId);
         taskTestCaseRelationRepository.findByTask_IdAndTestCase_Id(task.getId(), testCaseId)
-                .ifPresent(taskTestCaseRelationRepository::delete);
+                .ifPresent(relation -> {
+                    String title = relation.getTestCase().getTitle();
+                    taskTestCaseRelationRepository.delete(relation);
+                    taskUpdateRecordService.recordAction(task, TaskUpdateRecordSource.MANUAL, "RELATION", "移除测试用例关联",
+                            "testCase", "测试用例", title, "", testCaseId, title);
+                });
         return getLinks(taskId);
     }
 
@@ -203,11 +226,13 @@ public class WorkItemLinkService {
         attachment.setUploaderUser(requireCurrentUser());
         TaskAttachmentEntity saved = taskAttachmentRepository.save(attachment);
         documentAssetService.bindAsset(asset, DocumentAssetService.BIZ_TYPE_TASK_ATTACHMENT, saved.getId());
+        taskUpdateRecordService.recordAction(task, TaskUpdateRecordSource.MANUAL, "ATTACHMENT", "新增附件",
+                "attachment", "附件", "", asset.getFileName(), saved.getId(), asset.getFileName());
         return toAttachmentSummary(saved);
     }
 
     public ResponseEntity<byte[]> downloadAttachment(Long taskId, Long attachmentId) {
-        requireTask(taskId);
+        TaskEntity task = requireTask(taskId);
         TaskAttachmentEntity attachment = taskAttachmentRepository.findByIdAndTask_Id(attachmentId, taskId)
                 .orElseThrow(() -> new NoSuchElementException("工作项附件不存在"));
         DocumentAssetEntity asset = attachment.getDocumentAsset();
@@ -229,9 +254,14 @@ public class WorkItemLinkService {
 
     @Transactional
     public TaskLinksSummary removeAttachment(Long taskId, Long attachmentId) {
-        requireTask(taskId);
+        TaskEntity task = requireTask(taskId);
         taskAttachmentRepository.findByIdAndTask_Id(attachmentId, taskId)
-                .ifPresent(taskAttachmentRepository::delete);
+                .ifPresent(attachment -> {
+                    String fileName = attachment.getDocumentAsset().getFileName();
+                    taskAttachmentRepository.delete(attachment);
+                    taskUpdateRecordService.recordAction(task, TaskUpdateRecordSource.MANUAL, "ATTACHMENT", "移除附件",
+                            "attachment", "附件", fileName, "", attachmentId, fileName);
+                });
         return getLinks(taskId);
     }
 

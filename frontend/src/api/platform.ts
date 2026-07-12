@@ -35,6 +35,7 @@ import type {
   TaskAgentRunItem,
   TaskAttachmentItem,
   TaskCommentItem,
+  TaskUpdateRecordItem,
   TaskLinksItem,
   TaskPrdAnalyzeResultItem,
   TaskPrdDetailItem,
@@ -108,8 +109,8 @@ export interface AgentPayload {
   type: string
   status: string
   enabled: boolean
-  accessType: 'BUILT_IN' | 'LLM_PROMPT' | 'HTTP_API' | 'AGENT_RUNTIME'
-  builtinCode?: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | 'REPOSITORY_SCAN_PLAN' | 'REQUIREMENT_AI_STANDARDIZE' | 'REQUIREMENT_AI_BREAKDOWN' | 'REQUIREMENT_AI_TEST_CASES' | null
+  accessType: 'BUILT_IN' | 'LLM_PROMPT' | 'LLM_VISION' | 'HTTP_API' | 'AGENT_RUNTIME'
+  builtinCode?: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | 'REPOSITORY_SCAN_PLAN' | 'REQUIREMENT_AI_STANDARDIZE' | 'REQUIREMENT_AI_BREAKDOWN' | 'REQUIREMENT_AI_TEST_CASES' | 'IMAGE_UNDERSTANDING' | null
   capability: string
   description: string
   aiModelConfigId?: number | null
@@ -276,7 +277,7 @@ export interface AgentQuery {
   keyword?: string
   status?: string
   type?: string
-  accessType?: 'BUILT_IN' | 'LLM_PROMPT' | 'HTTP_API' | 'AGENT_RUNTIME'
+  accessType?: 'BUILT_IN' | 'LLM_PROMPT' | 'LLM_VISION' | 'HTTP_API' | 'AGENT_RUNTIME'
   projectId?: number
 }
 
@@ -320,6 +321,21 @@ export interface CreateExecutionTaskPayload {
   planConfirmationRequired?: boolean
   agentBindings?: ExecutionAgentBindingPayload[]
   inputPayload?: Record<string, unknown>
+}
+
+/** 执行创建预检接口返回的上下文可用性摘要。 */
+export interface ExecutionContextOptionsSummary {
+  requirementLinked: boolean
+  requirementTaskId: number | null
+  requirementTaskCode: string
+  requirementTaskName: string
+  technicalDesignAvailable: boolean
+  technicalDesignArtifactId: number | null
+  technicalDesignExecutionTaskId: number | null
+  technicalDesignWorkItemName: string
+  technicalDesignCreatedAt: string
+  requirementNotice: string
+  technicalDesignNotice: string
 }
 
 export interface UpdateExecutionPlanMarkdownPayload {
@@ -627,6 +643,13 @@ export const createTaskComment = async (id: number, content: string) => {
   return data.data
 }
 
+export const pageTaskUpdateRecords = async (id: number, page = 1, size = 10) => {
+  const { data } = await http.get<ApiResponse<PageResponse<TaskUpdateRecordItem>>>(`/api/tasks/${id}/update-records`, {
+    params: { page, size },
+  })
+  return data.data
+}
+
 export const getTaskPrdDetail = async (id: number) => {
   const { data } = await http.get<ApiResponse<TaskPrdDetailItem>>(`/api/tasks/${id}/prd`)
   return data.data
@@ -651,7 +674,7 @@ export const generateTaskRequirementAi = async (
   id: number,
   payload: { action: string; modelConfigId?: number | null }
 ) => {
-  const { data } = await http.post<ApiResponse<TaskRequirementAiResultItem>>(`/api/tasks/${id}/requirement-ai`, payload)
+  const { data } = await http.post<ApiResponse<ExecutionTaskItem>>(`/api/tasks/${id}/requirement-ai`, payload)
   return data.data
 }
 
@@ -805,6 +828,13 @@ export const downloadExecutionArtifact = async (artifactId: number) => {
 
 export const createExecutionTask = async (payload: CreateExecutionTaskPayload) => {
   const { data } = await http.post<ApiResponse<ExecutionTaskItem>>('/api/execution-tasks', payload)
+  return data.data
+}
+
+export const getExecutionContextOptions = async (projectId: number, workItemId: number) => {
+  const { data } = await http.get<ApiResponse<ExecutionContextOptionsSummary>>('/api/execution-tasks/context-options', {
+    params: { projectId, workItemId }
+  })
   return data.data
 }
 

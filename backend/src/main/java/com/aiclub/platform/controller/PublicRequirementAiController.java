@@ -2,12 +2,12 @@ package com.aiclub.platform.controller;
 
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
-import com.aiclub.platform.dto.TaskRequirementAiResult;
+import com.aiclub.platform.dto.ExecutionTaskSummary;
 import com.aiclub.platform.dto.request.TaskRequirementAiRequest;
 import com.aiclub.platform.exception.UnauthorizedException;
 import com.aiclub.platform.security.AuthContextHolder;
 import com.aiclub.platform.service.CreditConsumptionService;
-import com.aiclub.platform.service.TaskRequirementAiService;
+import com.aiclub.platform.service.RequirementAiExecutionQueryService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,8 +19,8 @@ import java.util.Map;
 
 /**
  * 公众端需求 AI 助手接口。
- * 与内部管理端共用相同的 Service 层，但通过 CreditConsumptionService 在调用前扣减积分，
- * 执行失败时自动退款，重复业务键不会重复扣费。
+ * 与内部管理端共用执行中心创建链路，并通过 CreditConsumptionService 在创建任务前扣减积分。
+ * 当前业务键保证每次主动提交独立计费，任务创建失败由扣费服务回滚。
  * <p>
  * 积分功能编码约定：
  * <ul>
@@ -45,21 +45,21 @@ public class PublicRequirementAiController {
             "TEST_CASES", "生成测试用例"
     );
 
-    private final TaskRequirementAiService taskRequirementAiService;
+    private final RequirementAiExecutionQueryService requirementAiExecutionQueryService;
     private final CreditConsumptionService creditConsumptionService;
 
-    public PublicRequirementAiController(TaskRequirementAiService taskRequirementAiService,
+    public PublicRequirementAiController(RequirementAiExecutionQueryService requirementAiExecutionQueryService,
                                          CreditConsumptionService creditConsumptionService) {
-        this.taskRequirementAiService = taskRequirementAiService;
+        this.requirementAiExecutionQueryService = requirementAiExecutionQueryService;
         this.creditConsumptionService = creditConsumptionService;
     }
 
     /**
-     * 公众端 AI 生成接口，根据 action 匹配对应的积分功能编码并扣费后执行。
+     * 公众端 AI 生成接口，根据 action 匹配对应的积分功能编码并扣费后创建后台执行任务。
      */
     @PostMapping("/{id}/requirement-ai")
     @RequirePermission("task:view")
-    public ApiResponse<TaskRequirementAiResult> generateRequirementAi(
+    public ApiResponse<ExecutionTaskSummary> generateRequirementAi(
             @PathVariable Long id,
             @Valid @RequestBody TaskRequirementAiRequest request) {
 
@@ -69,9 +69,9 @@ public class PublicRequirementAiController {
         String businessKey = buildBusinessKey(userId, id, action);
         String reason = "需求AI助手：" + ACTION_LABELS.getOrDefault(action, action);
 
-        TaskRequirementAiResult result = creditConsumptionService.consumeForFeature(
+        ExecutionTaskSummary result = creditConsumptionService.consumeForFeature(
                 userId, featureCode, businessKey, reason,
-                () -> taskRequirementAiService.generate(id, request)
+                () -> requirementAiExecutionQueryService.create(id, request, true)
         );
         return ApiResponse.success(result);
     }

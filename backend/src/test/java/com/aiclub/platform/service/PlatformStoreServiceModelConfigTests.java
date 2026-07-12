@@ -213,4 +213,55 @@ class PlatformStoreServiceModelConfigTests {
         assertThat(summary.httpAuthTokenConfigured()).isFalse();
         verify(agentRepository).save(any(AgentEntity.class));
     }
+
+    /**
+     * 图片理解 Agent 需要保留稳定内置编码并绑定对话模型，供异步需求分析按编码解析。
+     */
+    @Test
+    void shouldCreateVisionAgentWithBuiltinCodeAndChatModel() {
+        AiModelConfigEntity chatModel = new AiModelConfigEntity();
+        chatModel.setId(12L);
+        chatModel.setName("视觉模型");
+        chatModel.setModelType(ModelConfigService.MODEL_TYPE_CHAT);
+        chatModel.setProvider(ModelConfigService.PROVIDER_OPENAI);
+        chatModel.setEnabled(true);
+        when(aiModelConfigRepository.findById(12L)).thenReturn(Optional.of(chatModel));
+        when(agentRepository.save(any(AgentEntity.class))).thenAnswer(invocation -> {
+            AgentEntity entity = invocation.getArgument(0);
+            entity.setId(22L);
+            return entity;
+        });
+
+        AgentRequest request = new AgentRequest(
+                "图片理解智能体",
+                "规划",
+                "在线",
+                true,
+                AgentExecutionService.ACCESS_LLM_VISION,
+                AgentExecutionService.BUILTIN_IMAGE_UNDERSTANDING,
+                "理解需求附件中的图片",
+                "需求 AI 异步分析使用",
+                12L,
+                "只描述与需求相关的界面和流程。",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                120,
+                null
+        );
+
+        AgentSummary summary = platformStoreService.createAgent(request);
+
+        assertThat(summary.accessType()).isEqualTo(AgentExecutionService.ACCESS_LLM_VISION);
+        assertThat(summary.builtinCode()).isEqualTo(AgentExecutionService.BUILTIN_IMAGE_UNDERSTANDING);
+        assertThat(summary.aiModelConfigId()).isEqualTo(12L);
+    }
 }

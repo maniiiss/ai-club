@@ -44,7 +44,7 @@ export const LoginPage = () => {
         欢迎回来
       </h2>
       <p className="mt-1.5 text-center text-[14px] text-[var(--color-text-tertiary)]">
-        登录你的 AI Club 账号
+        登录你的 GitPilot 账号
       </p>
 
       {error && (

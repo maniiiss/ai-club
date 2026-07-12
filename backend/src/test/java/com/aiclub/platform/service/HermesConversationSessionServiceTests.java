@@ -151,6 +151,34 @@ class HermesConversationSessionServiceTests {
         verify(hermesConversationSessionRepository).delete(session);
     }
 
+    @Test
+    void shouldFormatStoredAssistantMarkdownWhenLoadingConversationDetail() {
+        HermesConversationSessionService service = new HermesConversationSessionService(
+                authService,
+                userRepository,
+                hermesConversationSessionRepository,
+                hermesConversationMessageRepository,
+                new ObjectMapper()
+        );
+        HermesConversationSessionEntity session = buildSessionEntity();
+        HermesConversationMessageEntity assistantMessage = new HermesConversationMessageEntity();
+        assistantMessage.setId(44L);
+        assistantMessage.setRole("assistant");
+        assistantMessage.setStatus("DONE");
+        assistantMessage.setContent("- **目标迭代：**20260429（ID:1）\n\n1.进入缺陷详情页2.在迭代字段中选择 20260429");
+
+        when(authService.currentUser()).thenReturn(buildCurrentUser());
+        when(hermesConversationSessionRepository.findByIdAndUser_Id(10L, 5L)).thenReturn(Optional.of(session));
+        when(hermesConversationMessageRepository.findBySession_IdOrderByCreatedAtAscIdAsc(10L))
+                .thenReturn(List.of(assistantMessage));
+
+        var detail = service.getSessionDetail(10L);
+
+        assertThat(detail.messages().get(0).content())
+                .contains("**目标迭代：** 20260429")
+                .contains("1. 进入缺陷详情页\n2. 在迭代字段中选择 20260429");
+    }
+
     /**
      * 公众端纯聊天页只应读取没有任何项目/任务/Wiki 绑定的全局会话，避免把项目助手会话混进纯聊天历史。
      */

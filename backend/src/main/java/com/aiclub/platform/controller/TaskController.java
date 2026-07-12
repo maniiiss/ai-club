@@ -9,8 +9,8 @@ import com.aiclub.platform.dto.TaskPrdDetail;
 import com.aiclub.platform.dto.TaskAgentRunSummary;
 import com.aiclub.platform.dto.TaskCommentSummary;
 import com.aiclub.platform.dto.TaskLinksSummary;
-import com.aiclub.platform.dto.TaskRequirementAiResult;
 import com.aiclub.platform.dto.TaskSummary;
+import com.aiclub.platform.dto.TaskUpdateRecordSummary;
 import com.aiclub.platform.dto.request.ApplyTaskPrdSuggestionRequest;
 import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
 import com.aiclub.platform.dto.request.TaskAgentRunRequest;
@@ -21,7 +21,7 @@ import com.aiclub.platform.dto.request.TaskRequirementAiRequest;
 import com.aiclub.platform.dto.request.TaskRequest;
 import com.aiclub.platform.service.PlatformStoreService;
 import com.aiclub.platform.service.ExecutionTaskService;
-import com.aiclub.platform.service.TaskRequirementAiService;
+import com.aiclub.platform.service.RequirementAiExecutionQueryService;
 import com.aiclub.platform.service.TaskAgentRunService;
 import com.aiclub.platform.service.TaskPrdService;
 import com.aiclub.platform.service.WorkItemLinkService;
@@ -46,20 +46,20 @@ public class TaskController {
 
     private final PlatformStoreService platformStoreService;
     private final TaskAgentRunService taskAgentRunService;
-    private final TaskRequirementAiService taskRequirementAiService;
+    private final RequirementAiExecutionQueryService requirementAiExecutionQueryService;
     private final TaskPrdService taskPrdService;
     private final WorkItemLinkService workItemLinkService;
     private final ExecutionTaskService executionTaskService;
 
     public TaskController(PlatformStoreService platformStoreService,
                           TaskAgentRunService taskAgentRunService,
-                          TaskRequirementAiService taskRequirementAiService,
+                          RequirementAiExecutionQueryService requirementAiExecutionQueryService,
                           TaskPrdService taskPrdService,
                           WorkItemLinkService workItemLinkService,
                           ExecutionTaskService executionTaskService) {
         this.platformStoreService = platformStoreService;
         this.taskAgentRunService = taskAgentRunService;
-        this.taskRequirementAiService = taskRequirementAiService;
+        this.requirementAiExecutionQueryService = requirementAiExecutionQueryService;
         this.taskPrdService = taskPrdService;
         this.workItemLinkService = workItemLinkService;
         this.executionTaskService = executionTaskService;
@@ -83,6 +83,15 @@ public class TaskController {
     @RequirePermission("task:view")
     public ApiResponse<TaskSummary> detail(@PathVariable Long id) {
         return ApiResponse.success(platformStoreService.getTask(id));
+    }
+
+    @GetMapping("/{id}/update-records")
+    @RequirePermission("task:view")
+    public ApiResponse<PageResponse<TaskUpdateRecordSummary>> updateRecords(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return ApiResponse.success(platformStoreService.pageTaskUpdateRecords(id, page, size));
     }
 
     @GetMapping("/{id}/links")
@@ -195,9 +204,9 @@ public class TaskController {
 
     @PostMapping("/{id}/requirement-ai")
     @RequirePermission("task:view")
-    public ApiResponse<TaskRequirementAiResult> generateRequirementAi(@PathVariable Long id,
-                                                                      @Valid @RequestBody TaskRequirementAiRequest request) {
-        return ApiResponse.success(taskRequirementAiService.generate(id, request));
+    public ApiResponse<ExecutionTaskSummary> generateRequirementAi(@PathVariable Long id,
+                                                                   @Valid @RequestBody TaskRequirementAiRequest request) {
+        return ApiResponse.success(requirementAiExecutionQueryService.create(id, request, false));
     }
 
     /**

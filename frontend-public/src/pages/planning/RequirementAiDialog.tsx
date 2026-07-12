@@ -12,7 +12,7 @@ import {
 import { generateRequirementAi } from '@/src/api/requirementAi'
 import { getMyFeatureCosts } from '@/src/api/credits'
 import { createTaskComment, updateWorkItem, createWorkItem } from '@/src/api/planning'
-import { pageTestPlans, getTestPlanDetail, createTestPlan, updateTestPlan } from '@/src/api/execution'
+import { pageTestPlans, getTestPlanDetail, createTestPlan, updateTestPlan, getExecutionTaskDetail, getExecutionRunDetail } from '@/src/api/execution'
 import { Markdown } from '@/src/components/common/Markdown'
 import { MarkdownEditor } from '@/src/components/common/MarkdownEditor'
 import { Button } from '@/src/components/common/Button'
@@ -22,6 +22,7 @@ import { WorkItemMemberPicker } from '@/src/components/common/AssigneePicker'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { cn, getErrorMessage } from '@/src/lib/utils'
 import { uploadMarkdownImage } from '@/src/lib/markdownImageUpload'
+import { normalizeRequirementAiImageMarkdown } from '@/src/lib/requirementAiImageMarkdown'
 import {
   TASK_TYPE_OPTIONS,
   buildCurrentRequirementAiMarkdown,
@@ -71,6 +72,9 @@ export const RequirementAiDialog = ({ open, workItem, userOptions, projectMember
 
   /* ── AI 生成状态 ── */
   const [result, setResult] = useState<RequirementAiResult | null>(null)
+  type RequirementAiExecutionState = 'IDLE' | 'SUBMITTING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
+  const [executionState, setExecutionState] = useState<RequirementAiExecutionState>('IDLE')
+  const [currentExecutionId, setCurrentExecutionId] = useState<number | null>(null)
   const [runningAction, setRunningAction] = useState<string | null>(null)
   const [generationStatus, setGenerationStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [standardizeMarkdownDraft, setStandardizeMarkdownDraft] = useState('')
@@ -109,6 +113,20 @@ export const RequirementAiDialog = ({ open, workItem, userOptions, projectMember
       .then(setFeatureCosts)
       .catch(() => {})
   }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const saved = localStorage.getItem(`requirement-ai-execution:${workItem.id}`)
+    if (!saved) return
+    try {
+      const { executionId, action } = JSON.parse(saved) as { executionId: number; action: string }
+      setCurrentExecutionId(executionId)
+      void loadExecutionResult(executionId, action)
+    } catch {
+      localStorage.removeItem(`requirement-ai-execution:${workItem.id}`)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, workItem.id])
 
   /* ── 关闭时重置状态 ── */
   useEffect(() => {
@@ -162,12 +180,41 @@ export const RequirementAiDialog = ({ open, workItem, userOptions, projectMember
       return
     }
     setRunningAction(action)
+    setExecutionState('SUBMITTING')
     setGenerationStatus('idle')
     try {
-      const data = await generateRequirementAi(workItem.id, { action })
-      setResult(data)
+      const execution = await generateRequirementAi(workItem.id, { action })
+      setCurrentExecutionId(execution.id)
+      localStorage.setItem(`requirement-ai-execution:${workItem.id}`, JSON.stringify({ executionId: execution.id, action }))
+      showToast('success', '已提交后台分析，可关闭窗口后继续其他操作')
+      await loadExecutionResult(execution.id, action)
+    } catch (err) {
+      setExecutionState('FAILED')
+      setGenerationStatus('error')
+      showToast('error', getErrorMessage(err) || 'AI 生成失败')
+    } finally {
+      setRunningAction(null)
+    }
+  }
+
+  const loadExecutionResult = async (executionId: number, action: string) => {
+    setExecutionState('RUNNING')
+    setRunningAction(action)
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      const execution = await getExecutionTaskDetail(executionId)
+      if (execution.status === 'SUCCESS' && execution.currentRunId) {
+        const run = await getExecutionRunDetail(execution.currentRunId)
+        const artifact = run.artifacts.find((item) => item.artifactType === 'REQUIREMENT_AI_RESULT')
+        if (!artifact?.contentText) throw new Error('需求 AI 结果产物不存在')
+        const data = JSON.parse(artifact.contentText) as RequirementAiResult
+      const normalizedData: RequirementAiResult = {
+        ...data,
+        markdown: normalizeRequirementAiImageMarkdown(data.markdown),
+      }
+      setResult(normalizedData)
+      setExecutionState('COMPLETED')
       setGenerationStatus('success')
-      setStandardizeMarkdownDraft(action === 'STANDARDIZE' ? data.markdown : '')
+      setStandardizeMarkdownDraft(action === 'STANDARDIZE' ? normalizedData.markdown : '')
       setStandardizeEditMode(false)
       // 克隆建议数据到编辑态
       setTaskSuggestions(data.taskSuggestions.map((suggestion) => ({
@@ -187,12 +234,17 @@ export const RequirementAiDialog = ({ open, workItem, userOptions, projectMember
         loadTestPlanOptions()
       }
       showToast('success', `${actionLabel(action)} 完成`)
-    } catch (err) {
-      setGenerationStatus('error')
-      showToast('error', getErrorMessage(err) || 'AI 生成失败')
-    } finally {
+        localStorage.removeItem(`requirement-ai-execution:${workItem.id}`)
       setRunningAction(null)
+        return
+      }
+      if (execution.status === 'FAILED' || execution.status === 'CANCELED') {
+        setExecutionState('FAILED')
+        throw new Error(execution.latestSummary || '需求 AI 后台分析失败')
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 1000))
     }
+    throw new Error('需求 AI 后台分析仍在运行，请稍后重新打开查看')
   }
 
   const loadTestPlanOptions = async () => {

@@ -230,6 +230,176 @@ class PlatformToolExecutorIterationSearchTests {
         assertThat(result.metadata()).containsEntry("status", "进行中");
     }
 
+    /**
+     * 中文搜索需要兼容常见字形差异，避免用户输入“台帐”时漏掉标题中的“台账”。
+     */
+    @Test
+    void shouldMatchTraditionalAccountCharacterVariantInWorkItemKeyword() {
+        UserEntity creator = createUser("tool-keyword-variant-creator", "工具关键词创建人");
+        UserEntity owner = createUser("tool-keyword-variant-owner", "工具关键词负责人");
+        ProjectEntity project = createProjectAs(creator, owner, "工具关键词项目");
+
+        loginAs(creator);
+        platformStoreService.createTask(new TaskRequest(
+                "【PC端】审批台账中列表个别字段没有回显",
+                "缺陷",
+                "草稿",
+                "中",
+                "",
+                null,
+                List.of(),
+                "验证台账字形归一化",
+                "",
+                "",
+                "",
+                false,
+                false,
+                null,
+                null,
+                null,
+                project.getId(),
+                null,
+                null,
+                null
+        ));
+
+        PlatformToolResult result = platformToolExecutor.execute(new PlatformToolRequest(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "TEST",
+                "scope-keyword-variant",
+                project.getId(),
+                null,
+                null,
+                Map.of("projectId", project.getId(), "workItemType", "缺陷", "keyword", "审批台帐")
+        ));
+
+        assertThat(result.candidates()).hasSize(1);
+        assertThat(result.candidates().get(0).title()).contains("审批台账");
+    }
+
+    /**
+     * Hermes 可能把自然语言拆成多个关键词传入，搜索应按 AND 语义匹配这些词，而不是要求整句连续出现。
+     */
+    @Test
+    void shouldMatchAllSeparatedChineseKeywordTokensInWorkItemSearch() {
+        UserEntity creator = createUser("tool-keyword-token-creator", "工具分词创建人");
+        UserEntity owner = createUser("tool-keyword-token-owner", "工具分词负责人");
+        ProjectEntity project = createProjectAs(creator, owner, "工具分词项目");
+
+        loginAs(creator);
+        platformStoreService.createTask(new TaskRequest(
+                "【PC端】审批台账中列表个别字段没有回显",
+                "缺陷",
+                "草稿",
+                "中",
+                "",
+                null,
+                List.of(),
+                "验证多个中文关键词按词命中",
+                "",
+                "",
+                "",
+                false,
+                false,
+                null,
+                null,
+                null,
+                project.getId(),
+                null,
+                null,
+                null
+        ));
+
+        PlatformToolResult result = platformToolExecutor.execute(new PlatformToolRequest(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "TEST",
+                "scope-keyword-tokens",
+                project.getId(),
+                null,
+                null,
+                Map.of(
+                        "projectId", project.getId(),
+                        "workItemType", "缺陷",
+                        "keyword", "审批台帐 列表 字段 回显"
+                )
+        ));
+
+        assertThat(result.candidates()).hasSize(1);
+        assertThat(result.candidates().get(0).title()).contains("列表个别字段没有回显");
+    }
+
+    /**
+     * 搜索候选可以截断展示，但总数和状态分布必须基于完整筛选结果计算，避免 Hermes 把前五条误报成总量。
+     */
+    @Test
+    void shouldReturnExactWorkItemTotalAndStatusCountsWhenCandidatesAreTruncated() {
+        UserEntity creator = createUser("tool-total-creator", "工具总数创建人");
+        UserEntity owner = createUser("tool-total-owner", "工具总数负责人");
+        ProjectEntity project = createProjectAs(creator, owner, "工具总数项目");
+
+        loginAs(creator);
+        IterationSummary iteration = platformStoreService.createIteration(project.getId(), new IterationRequest(
+                "总数统计迭代",
+                "用于验证完整统计",
+                "进行中",
+                "2026-06-01",
+                "2026-06-15",
+                "候选截断不影响统计",
+                1
+        ));
+
+        for (int index = 1; index <= 7; index++) {
+            String status = index <= 4 ? "已完成" : "处理中";
+            platformStoreService.createTask(new TaskRequest(
+                    "统计缺陷 " + index,
+                    "缺陷",
+                    status,
+                    "中",
+                    "",
+                    null,
+                    List.of(),
+                    "验证完整统计",
+                    "",
+                    "",
+                    "",
+                    false,
+                    false,
+                    null,
+                    null,
+                    null,
+                    project.getId(),
+                    null,
+                    iteration.id(),
+                    null
+            ));
+        }
+
+        PlatformToolResult result = platformToolExecutor.execute(new PlatformToolRequest(
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                "TEST",
+                "scope-work-item-total",
+                project.getId(),
+                null,
+                null,
+                Map.of(
+                        "projectId", project.getId(),
+                        "iterationId", iteration.id(),
+                        "workItemType", "缺陷"
+                )
+        ));
+
+        assertThat(result.candidates()).hasSize(5);
+        assertThat(result.summary()).contains("找到 7 个相关工作项").contains("展示前 5 个");
+        assertThat(result.metadata())
+                .containsEntry("totalCount", 7)
+                .containsEntry("returnedCount", 5)
+                .containsEntry("truncated", true)
+                .containsEntry("scopeType", "ITERATION")
+                .containsEntry("scopeDescription", "迭代范围");
+        assertThat(result.metadata().get("statusCounts"))
+                .isEqualTo(Map.of("已完成", 4L, "进行中", 3L));
+    }
+
     @Test
     void shouldReturnIterationDetailForCurrentIterationSummary() {
         UserEntity creator = createUser("tool-iteration-detail-creator", "迭代详情创建人");

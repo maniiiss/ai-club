@@ -12,6 +12,7 @@ import type {
   LinkedTestCase,
   TaskAttachment,
   TaskComment,
+  TaskUpdateRecord,
   WorkItem,
   WorkItemLinks,
   WorkItemPayload,
@@ -168,6 +169,16 @@ export const listTaskComments = async (taskId: number): Promise<TaskComment[]> =
 
 export const createTaskComment = async (taskId: number, content: string): Promise<TaskComment> => {
   const res = await http.post<ApiResponse<TaskComment>>(`/api/tasks/${taskId}/comments`, { content })
+  return unwrap(res)
+}
+
+export const pageTaskUpdateRecords = async (
+  taskId: number,
+  query: { page: number; size: number },
+): Promise<PageResponse<TaskUpdateRecord>> => {
+  const res = await http.get<ApiResponse<PageResponse<TaskUpdateRecord>>>(`/api/tasks/${taskId}/update-records`, {
+    params: cleanParams(query),
+  })
   return unwrap(res)
 }
 

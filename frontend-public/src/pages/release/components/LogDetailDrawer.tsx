@@ -1,6 +1,6 @@
 /**
  * 日志详情抽屉。
- * 统一展示 AI Club 流水线运行日志和 Jenkins 构建日志。
+ * 统一展示 GitPilot 流水线运行日志和 Jenkins 构建日志。
  * 通过 mode 区分两种日志来源，调用不同的 API。
  */
 import { useEffect, useState, useCallback } from 'react'
@@ -18,11 +18,11 @@ import { getStatusColor } from '../constants'
 import { ExternalLink, FileText, Copy, Check, ChevronDown, ChevronUp } from 'lucide-react'
 
 export interface LogDetailDrawerProps {
-  /** 日志来源模式：AI Club 运行日志 或 Jenkins 构建日志。 */
+  /** 日志来源模式：GitPilot 运行日志 或 Jenkins 构建日志。 */
   mode: 'ai-club-run' | 'jenkins-build'
-  /** AI Club 模式下传流水线 ID，Jenkins 模式下传绑定 ID。 */
+  /** GitPilot 模式下传流水线 ID，Jenkins 模式下传绑定 ID。 */
   refId: number
-  /** AI Club 模式下传运行编号，Jenkins 模式下传构建编号。 */
+  /** GitPilot 模式下传运行编号，Jenkins 模式下传构建编号。 */
   seqNumber: number
   open: boolean
   onClose: () => void

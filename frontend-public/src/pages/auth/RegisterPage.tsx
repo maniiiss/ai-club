@@ -106,7 +106,7 @@ export const RegisterPage = () => {
         创建账号
       </h2>
       <p className="mt-1.5 text-center text-[14px] text-[var(--color-text-tertiary)]">
-        加入 AI Club 智能研发协作平台
+        加入 GitPilot AI 智能研发协作平台
       </p>
 
       {submitError && (

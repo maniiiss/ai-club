@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { normalizeGeneratedMarkdown } from '../src/lib/markdownUtils'
+import { normalizeGeneratedMarkdown, resolveMarkdownContent } from '../src/lib/markdownUtils'
+
+describe('resolveMarkdownContent - 助手原文保护', () => {
+  it('禁用归一化时不应破坏 Hermes 返回的合法项目编号和成对强调标记', () => {
+    // 复现 Hermes 新会话 id=436：原文合法，旧归一化器却将「项目 #4」拆成标题并破坏加粗闭合标记。
+    const raw = '我在 CRM项目（项目 #4）中尝试了多个关键词搜索，均未找到标题为 **【PC端】审批台帐中列表个别字段没有回显**的工作项。'
+
+    assert.equal(resolveMarkdownContent(raw, false), raw)
+  })
+})
 
 describe('normalizeGeneratedMarkdown - 工单号保护', () => {
   it('不应把表格行内的数字开头工单号（# 6I4IXF)）误判为一级标题', () => {
@@ -64,6 +73,27 @@ describe('normalizeGeneratedMarkdown - 标题回归保护', () => {
     // 多井号不应被误转义
     assert.doesNotMatch(result, /\\###/, '多井号不应被转义')
   })
+
+  it('应把任意级别标题标记后的编号句子保留为正文，而不是放大成标题', () => {
+    // 复现聊天室回复中 `##99的开发执行任务4.` 被标题归一化后放大的问题。
+    const result = normalizeGeneratedMarkdown('##99的开发执行任务4.')
+
+    assert.equal(result, '99的开发执行任务4.')
+  })
+
+  it('应把数字加优先级标记的伪标题保留为正文', () => {
+    // 复现 `##994.* 🟡低优` 被补空格后渲染为大标题的问题。
+    const result = normalizeGeneratedMarkdown('##994.* 🟡低优')
+
+    assert.equal(result, '994. 🟡低优')
+  })
+
+  it('应把编号加 ID 元数据的伪标题保留为正文', () => {
+    // 复现 `# 4（ID:4，进行中，负责人：管理员）` 被渲染成大标题的问题。
+    const result = normalizeGeneratedMarkdown('# 4（ID:4，进行中，负责人：管理员）')
+
+    assert.equal(result, '4（ID:4，进行中，负责人：管理员）')
+  })
 })
 
 describe('normalizeGeneratedMarkdown - 孤立强调标记清理', () => {
@@ -100,6 +130,44 @@ describe('normalizeGeneratedMarkdown - 孤立强调标记清理', () => {
     // 列表标记 * 后跟空格和内容，不应被清理
     const result = normalizeGeneratedMarkdown('列表：* 项目A')
     assert.match(result, /\* 项目A/)
+  })
+
+  it('应移除 AI 回复中的空列表项，保留有内容的行动建议', () => {
+    const result = normalizeGeneratedMarkdown('🚀 建议行动\n\n-\n\n- 高优先级：配置计划智能体')
+
+    assert.doesNotMatch(result, /^\s*[-*+]\s*$/m)
+    assert.match(result, /- 高优先级：配置计划智能体/)
+  })
+
+  it('应在强调标记清理后再次移除变为空白的列表项', () => {
+    const result = normalizeGeneratedMarkdown('建议行动\n\n- **\n\n- 保留的行动项')
+
+    assert.doesNotMatch(result, /^\s*[-*+]\s*$/m)
+    assert.match(result, /- 保留的行动项/)
+  })
+
+  it('应修复优先级标签后的错位加粗标记', () => {
+    const result = normalizeGeneratedMarkdown('🔴 高优先级**—配置计划智能体，自动化处理规范问题3.**')
+
+    assert.equal(result, '🔴 **高优先级** — 配置计划智能体，自动化处理规范问题3.')
+  })
+
+  it('应清理数字编号与优先级标记之间的孤立星号', () => {
+    const result = normalizeGeneratedMarkdown('🚀 建议优先级1. * 🔴立即升级 Token Plan')
+
+    assert.equal(result, '🚀 建议优先级\n\n1. 🔴立即升级 Token Plan')
+  })
+
+  it('应修复绑定项目标签前后错位的强调标记', () => {
+    const result = normalizeGeneratedMarkdown('📋 智能体讨论组 —聊天室总结**绑定项目： *')
+
+    assert.equal(result, '📋 智能体讨论组 —聊天室总结 **绑定项目：**')
+  })
+
+  it('应将粘连的编号优先级建议拆分为独立段落', () => {
+    const result = normalizeGeneratedMarkdown('🚀 建议优先级1. * 🔴立即升级 Token Plan2. 🔴高优—配置智能体问题3. 🟡中优—确认需求入库')
+
+    assert.equal(result, '🚀 建议优先级\n\n1. 🔴立即升级 Token Plan\n\n2. 🔴高优—配置智能体问题\n\n3. 🟡中优—确认需求入库')
   })
 })
 

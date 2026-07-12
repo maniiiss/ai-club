@@ -3,41 +3,17 @@
     <el-aside v-if="!isIterationWorkspaceRoute && !isMobileViewport" :width="asideWidth" class="layout-aside">
       <div class="aside-head" :class="{ compact: effectiveSidebarCollapsed }">
         <div class="brand-mark" aria-hidden="true">
-          <svg class="brand-logo-svg" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <linearGradient id="brandLogoGradient" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
-                <stop style="stop-color: var(--app-primary-container)" />
-                <stop offset="1" style="stop-color: var(--app-primary)" />
-              </linearGradient>
-            </defs>
-            <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#brandLogoGradient)" />
-            <path
-              d="M18.8 20.7L26.8 26.9M16.2 35.6L26.4 34.3M27.8 13.8L31.5 26.8M28.5 49.3L30.4 38.6"
-              stroke="white"
-              stroke-width="2.5"
-              stroke-linecap="round"
-            />
-            <circle cx="31.5" cy="33.5" r="5" fill="#fff" fill-opacity="0.24" stroke="white" stroke-width="2.5" />
-            <circle cx="13" cy="36" r="3.4" fill="url(#brandLogoGradient)" stroke="white" stroke-width="2.5" />
-            <circle cx="16.5" cy="20" r="3.4" fill="url(#brandLogoGradient)" stroke="white" stroke-width="2.5" />
-            <circle cx="27" cy="10.5" r="3.4" fill="url(#brandLogoGradient)" stroke="white" stroke-width="2.5" />
-            <circle cx="28" cy="53" r="3.4" fill="url(#brandLogoGradient)" stroke="white" stroke-width="2.5" />
-            <path
-              d="M35.2 18.3C34.5 16.4 35.9 14.4 38 14.4H38.5C39.8 14.4 41 15.2 41.5 16.4L48.6 48.2C49.1 50.4 46.2 51.8 44.8 50L39 42.7H25.5L21.4 49.8C20.2 51.8 17 50.8 17.2 48.4C17.3 47.4 17.8 46.5 18.6 45.9L25.7 40.4L26.9 36.2L35.2 18.3ZM33.7 29.7L31.1 36.9H36.7L33.7 29.7Z"
-              fill="white"
-            />
-            <rect x="50.2" y="14.2" width="6.6" height="36.2" rx="3.3" fill="white" />
-          </svg>
+          <img class="brand-logo-svg" src="/favicon.svg" alt="GitPilot" />
         </div>
 
         <div v-if="!effectiveSidebarCollapsed" class="brand-copy">
-          <div class="brand-title">智能协作工作台</div>
-          <div class="brand-subtitle">研发管理中枢</div>
+          <div class="brand-title">GitPilot</div>
+          <div class="brand-subtitle">AI 智能研发中枢</div>
         </div>
 
         <div v-else class="brand-copy compact-copy">
-          <div class="brand-title-mini">智能</div>
-          <div class="brand-subtitle-mini">工作台</div>
+          <div class="brand-title-mini">Git</div>
+          <div class="brand-subtitle-mini">Pilot</div>
         </div>
       </div>
 
@@ -1272,7 +1248,7 @@ const NOTIFICATION_BIZ_TYPE_LABELS: Record<string, string> = {
   TASK_COLLABORATOR_ADDED: '协作通知',
   TASK_OVERDUE: '逾期提醒',
   CHANGE_REQUEST: '变更申请',
-  AI_CLUB_PIPELINE: 'AI Club Pipeline',
+  AI_CLUB_PIPELINE: 'GitPilot Pipeline',
   PIPELINE_BINDING: '外部 Jenkins 绑定',
   GITLAB_MERGED: '自动合并成功',
   GITLAB_AI_REJECTED: 'AI 审核拒绝',

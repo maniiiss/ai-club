@@ -239,6 +239,26 @@ button:disabled,
   border-radius: 2px;
 }
 
+/* 通用输入框按实际容器宽度降级，默认样式保持不变，只有显式开启时才应用。 */
+.common-input-shell {
+  container: common-input / inline-size;
+}
+
+.common-input-control--adaptive-icon:focus-visible {
+  outline: none;
+  outline-offset: 0;
+}
+
+@container common-input (max-width: 280px) {
+  .common-input-control--adaptive-icon {
+    padding-left: 2.5rem;
+  }
+
+  .common-input-control--adaptive-icon:focus {
+    box-shadow: none;
+  }
+}
+
 /* ── 链接 ── */
 a {
   color: var(--color-text-link);
@@ -268,6 +288,195 @@ a:hover {
     radial-gradient(at 20% 80%, color-mix(in srgb, var(--color-primary) 15%, transparent) 0, transparent 50%),
     radial-gradient(at 80% 20%, color-mix(in srgb, var(--color-primary-500) 12%, transparent) 0, transparent 50%),
     radial-gradient(at 50% 50%, color-mix(in srgb, var(--color-primary) 8%, transparent) 0, transparent 60%);
+}
+
+.auth-theme-gitpilot {
+  --color-primary: #2f6bff;
+  --color-primary-hover: #2158df;
+  --color-primary-light: #e8efff;
+  --color-primary-lighter: #f2f6ff;
+  --color-border-focus: #2f6bff;
+  --color-text-link: #2f6bff;
+}
+
+/* ── GitPilot 认证页动态背景 ── */
+.auth-background {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    linear-gradient(118deg, #071722 0%, #0d2433 48%, #102837 100%);
+}
+
+.auth-background-seam {
+  position: absolute;
+  left: min(45%, 560px);
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 2px;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(47, 107, 255, 0.54) 34%, rgba(85, 214, 194, 0.36) 68%, transparent);
+  box-shadow: 0 0 28px rgba(47, 107, 255, 0.18);
+}
+
+.auth-background-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.26;
+  background-image:
+    linear-gradient(rgba(148, 210, 201, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 210, 201, 0.045) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: linear-gradient(90deg, #000 0%, rgba(0, 0, 0, 0.7) 66%, transparent 100%);
+}
+
+.auth-background-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+}
+
+.git-branch-route {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 8 18;
+  animation: auth-branch-flow 18s linear infinite;
+}
+
+.git-branch-route--secondary {
+  stroke-width: 2.4;
+  stroke-dasharray: 3 24;
+  animation-duration: 24s;
+  animation-direction: reverse;
+}
+
+.git-branch-route--spur {
+  stroke-width: 2;
+  stroke-dasharray: 2 19;
+  animation-duration: 15s;
+}
+
+.auth-background-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: auth-node-breathe 4.8s ease-in-out infinite;
+}
+
+.auth-background-spark {
+  stroke-width: 1.4;
+  opacity: 0.52;
+  animation: auth-spark-flash 5.6s ease-in-out infinite;
+}
+
+.auth-background-particle {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #c9e5ff;
+  box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.12), 0 0 20px rgba(47, 107, 255, 0.92);
+  opacity: 0;
+  animation: auth-background-particle-drift 12s ease-in-out infinite;
+}
+
+.auth-background-particle--one {
+  left: 19%;
+  top: 76%;
+  animation-delay: -2s;
+}
+
+.auth-background-particle--two {
+  left: 48%;
+  top: 47%;
+  background: #ffd1bd;
+  box-shadow: 0 0 0 3px rgba(255, 135, 95, 0.12), 0 0 20px rgba(255, 135, 95, 0.88);
+  animation-delay: -7s;
+  animation-duration: 15s;
+}
+
+.auth-background-particle--three {
+  left: 72%;
+  top: 22%;
+  animation-delay: -10s;
+  animation-duration: 17s;
+}
+
+.auth-background-particle--four {
+  left: 66%;
+  top: 67%;
+  background: #ffd1bd;
+  box-shadow: 0 0 0 3px rgba(255, 135, 95, 0.12), 0 0 20px rgba(255, 135, 95, 0.88);
+  animation-delay: -5s;
+  animation-duration: 14s;
+}
+
+@keyframes auth-branch-flow {
+  to { stroke-dashoffset: -260; }
+}
+
+@keyframes auth-node-breathe {
+  0%, 100% { opacity: 0.5; transform: scale(0.88); }
+  50% { opacity: 1; transform: scale(1.16); }
+}
+
+@keyframes auth-spark-flash {
+  0%, 100% { opacity: 0.25; transform: translateY(4px); }
+  48% { opacity: 0.85; transform: translateY(0); }
+}
+
+@keyframes auth-background-particle-drift {
+  0% { opacity: 0; transform: translate3d(-10px, 12px, 0) scale(0.6); }
+  18% { opacity: 0.8; }
+  68% { opacity: 0.65; }
+  100% { opacity: 0; transform: translate3d(150px, -90px, 0) scale(1); }
+}
+
+@media (max-width: 1023px) {
+  .auth-background-seam {
+    left: 0;
+    right: 0;
+    top: 31%;
+    bottom: auto;
+    width: auto;
+    height: 2px;
+  }
+
+  .auth-background-grid {
+    opacity: 0.16;
+    mask-image: linear-gradient(180deg, #000, transparent 88%);
+  }
+
+  .auth-background-art {
+    width: 150%;
+    left: -25%;
+    opacity: 0.56;
+  }
+
+  .auth-background-particle {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .git-branch-route,
+  .auth-background-node,
+  .auth-background-spark,
+  .auth-background-particle {
+    animation: none !important;
+  }
+
+  .auth-background-particle {
+    opacity: 0.28;
+  }
 }
 
 /* ── Markdown 渲染样式 ── */
@@ -494,6 +703,53 @@ a:hover {
 /* 删除线 (GFM) */
 .prose-markdown del {
   color: var(--color-text-tertiary);
+}
+
+/* Hermes 与聊天室的回复通常是较长的分析报告：保持信息层级，但不让 Markdown 标题压过对话本身。 */
+.prose-markdown--assistant {
+  line-height: 1.75;
+}
+
+.prose-markdown--assistant h1 {
+  margin: 20px 0 10px;
+  padding-bottom: 6px;
+  font-size: 20px;
+}
+
+.prose-markdown--assistant h2 {
+  margin: 18px 0 8px;
+  padding-bottom: 4px;
+  font-size: 17px;
+}
+
+.prose-markdown--assistant h3 {
+  margin: 16px 0 6px;
+  font-size: 15px;
+}
+
+.prose-markdown--assistant p {
+  margin: 7px 0;
+}
+
+.prose-markdown--assistant ul,
+.prose-markdown--assistant ol {
+  margin: 7px 0;
+}
+
+.prose-markdown--assistant .markdown-table-wrap {
+  margin: 10px 0;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+}
+
+.prose-markdown--assistant table {
+  border: 0;
+  border-radius: 0;
+}
+
+.prose-markdown--assistant th,
+.prose-markdown--assistant td {
+  padding: 7px 10px;
 }
 
 /* ── react-day-picker 主题覆盖 ── */

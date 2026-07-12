@@ -30,6 +30,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 
 @Service
 @Transactional(readOnly = true)
@@ -39,6 +40,8 @@ public class AgentExecutionService {
 
     public static final String ACCESS_BUILT_IN = "BUILT_IN";
     public static final String ACCESS_LLM_PROMPT = "LLM_PROMPT";
+    /** 由平台模型配置执行多模态图片理解。 */
+    public static final String ACCESS_LLM_VISION = "LLM_VISION";
     public static final String ACCESS_HTTP_API = "HTTP_API";
     public static final String ACCESS_AGENT_RUNTIME = "AGENT_RUNTIME";
 
@@ -49,6 +52,8 @@ public class AgentExecutionService {
     public static final String RUNNER_PATROL_MODEL = "PATROL_MODEL";
 
     public static final String BUILTIN_CODE_REVIEW = "CODE_REVIEW";
+    /** 全局图片理解 Agent 的稳定业务标识。 */
+    public static final String BUILTIN_IMAGE_UNDERSTANDING = "IMAGE_UNDERSTANDING";
     public static final String BUILTIN_REPOSITORY_SCAN_PLAN = "REPOSITORY_SCAN_PLAN";
     public static final String BUILTIN_REQUIREMENT_AI_STANDARDIZE = "REQUIREMENT_AI_STANDARDIZE";
     public static final String BUILTIN_REQUIREMENT_AI_BREAKDOWN = "REQUIREMENT_AI_BREAKDOWN";
@@ -140,6 +145,49 @@ public class AgentExecutionService {
      */
     public AgentEntity loadAgent(Long agentId) {
         return requireAgent(agentId);
+    }
+
+    /**
+     * 解析平台启用的图片理解 Agent。使用 builtinCode 保证多条视觉 Agent 存在时仍能稳定定位。
+     */
+    public Optional<AgentEntity> resolveImageUnderstandingAgent() {
+        return agentRepository.findFirstByBuiltinCodeAndEnabledTrueOrderByIdAsc(BUILTIN_IMAGE_UNDERSTANDING)
+                .filter(agent -> ACCESS_LLM_VISION.equals(normalizeAccessType(agent.getAccessType())))
+                .filter(agent -> agent.getProject() == null)
+                .filter(agent -> agent.getAiModelConfig() != null);
+    }
+
+    /**
+     * 执行图片理解并记录模型 usage。图片内容只在当前调用内存中存在，不进入普通 Agent 文本模板。
+     */
+    public String runVisionAgent(AgentEntity agent,
+                                 List<ModelConfigService.VisionImage> images,
+                                 String question) {
+        validateEnabled(agent);
+        if (!ACCESS_LLM_VISION.equals(normalizeAccessType(agent.getAccessType()))
+                || !BUILTIN_IMAGE_UNDERSTANDING.equals(normalizeBuiltinCode(agent.getBuiltinCode()))) {
+            throw new IllegalArgumentException("当前 Agent 不是可用的图片理解 Agent");
+        }
+        Long modelConfigId = requireAiModelConfigId(agent);
+        ModelConfigService.ResolvedModelConfig resolved = modelConfigService.resolveModelConfig(modelConfigId);
+        String systemPrompt = hasText(agent.getSystemPrompt())
+                ? agent.getSystemPrompt().trim()
+                : "你是图片理解助手，请按图片序号用中文描述界面、流程、字段和关键状态。";
+        String textPrompt = hasText(question) ? question.trim() : "请描述图片内容。";
+        AgentInvocationContext context = AgentInvocationContext.builder(AgentType.IMAGE_UNDERSTANDING)
+                .action(BUILTIN_IMAGE_UNDERSTANDING)
+                .agentId(agent.getId())
+                .agentCode(BUILTIN_IMAGE_UNDERSTANDING)
+                .modelConfig(agent.getAiModelConfig())
+                .inputChars(systemPrompt.length() + textPrompt.length())
+                .build();
+        return agentInvocationRecorder.trackWithUsage(context, sink -> {
+            ModelConfigService.ModelInvocation invocation = modelConfigService.invokeVisionPromptWithUsage(
+                    resolved, systemPrompt, textPrompt, images, 1500);
+            sink.setUsage(invocation.promptTokens(), invocation.completionTokens(), invocation.totalTokens());
+            sink.setOutputChars(invocation.text() == null ? 0 : invocation.text().length());
+            return invocation.text();
+        });
     }
 
     public boolean supportsAsyncExecution(AgentEntity agent, String stepCode) {
@@ -980,9 +1028,10 @@ public class AgentExecutionService {
         normalized = normalized == null ? ACCESS_BUILT_IN : normalized.toUpperCase();
         if (!ACCESS_BUILT_IN.equals(normalized)
                 && !ACCESS_LLM_PROMPT.equals(normalized)
+                && !ACCESS_LLM_VISION.equals(normalized)
                 && !ACCESS_HTTP_API.equals(normalized)
                 && !ACCESS_AGENT_RUNTIME.equals(normalized)) {
-            throw new IllegalArgumentException("Agent access type must be BUILT_IN, LLM_PROMPT, HTTP_API, or AGENT_RUNTIME");
+            throw new IllegalArgumentException("Agent access type must be BUILT_IN, LLM_PROMPT, LLM_VISION, HTTP_API, or AGENT_RUNTIME");
         }
         return normalized;
     }
@@ -1012,7 +1061,8 @@ public class AgentExecutionService {
                 && !BUILTIN_REPOSITORY_SCAN_PLAN.equals(normalized)
                 && !BUILTIN_REQUIREMENT_AI_STANDARDIZE.equals(normalized)
                 && !BUILTIN_REQUIREMENT_AI_BREAKDOWN.equals(normalized)
-                && !BUILTIN_REQUIREMENT_AI_TEST_CASES.equals(normalized)) {
+                && !BUILTIN_REQUIREMENT_AI_TEST_CASES.equals(normalized)
+                && !BUILTIN_IMAGE_UNDERSTANDING.equals(normalized)) {
             throw new IllegalArgumentException("?????? Agent ??");
         }
         return normalized;

@@ -109,6 +109,9 @@ class ExecutionTaskServiceTests {
     @Mock
     private com.aiclub.platform.repository.ExecutionOrchestrationVersionRepository executionOrchestrationVersionRepository;
 
+    @Mock
+    private ExecutionContextSnapshotService executionContextSnapshotService;
+
     private ExecutionTaskService executionTaskService;
 
     @BeforeEach
@@ -132,6 +135,7 @@ class ExecutionTaskServiceTests {
                 technicalDesignCreditSettlementService,
                 executionOrchestrationService,
                 executionOrchestrationVersionRepository,
+                executionContextSnapshotService,
                 new ObjectMapper()
         );
         AuthContextHolder.set(new AuthContext(1001L, "alice", "Alice", Set.of(), Set.of()));

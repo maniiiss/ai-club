@@ -1,22 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AI Club">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="GitPilot">
   <defs>
-    <linearGradient id="mark-bg" x1="10" y1="8" x2="55" y2="58" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#312e81"/>
-      <stop offset="0.56" stop-color="#4f46e5"/>
-      <stop offset="1" stop-color="#0f766e"/>
+    <linearGradient id="mark-bg" x1="8" y1="8" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#17212b"/>
+      <stop offset="1" stop-color="#263847"/>
     </linearGradient>
-    <linearGradient id="mark-line" x1="15" y1="48" x2="50" y2="15" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#67e8f9"/>
-      <stop offset="1" stop-color="#a7f3d0"/>
+    <linearGradient id="mark-route" x1="14" y1="49" x2="49" y2="14" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff8552"/>
+      <stop offset="1" stop-color="#62d9c1"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="14" fill="url(#mark-bg)"/>
-  <path d="M18 45.5L27.5 22h7L44 45.5h-6.4l-1.7-4.8H25.7L24 45.5h-6zm9.3-10h6.9L30.8 26h-.2l-3.3 9.5z" fill="#fff"/>
-  <path d="M46 22v23.5h-6V22h6z" fill="#fff" opacity=".94"/>
-  <path d="M16.5 47.5c11.4-1.8 19.4-8.4 23.6-21.8" fill="none" stroke="url(#mark-line)" stroke-width="3" stroke-linecap="round"/>
-  <circle cx="17" cy="47" r="3.7" fill="#67e8f9"/>
-  <circle cx="31" cy="37" r="3.1" fill="#a7f3d0"/>
-  <circle cx="41" cy="24" r="3.7" fill="#67e8f9"/>
-  <path d="M14 13.5h36" stroke="#fff" stroke-opacity=".16" stroke-width="2" stroke-linecap="round"/>
-  <path d="M14 52h36" stroke="#020617" stroke-opacity=".12" stroke-width="2" stroke-linecap="round"/>
+  <rect width="64" height="64" rx="16" fill="url(#mark-bg)"/>
+  <path id="git-branch" d="M17 47V24c0-5.5 4.5-10 10-10h3c5.5 0 10 4.5 10 10v3" fill="none" stroke="url(#mark-route)" stroke-width="4" stroke-linecap="round"/>
+  <path d="M17 37h13c5.5 0 10 4.5 10 10" fill="none" stroke="url(#mark-route)" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="17" cy="47" r="5" fill="#ff8552" stroke="#fff" stroke-width="2"/>
+  <circle cx="17" cy="24" r="5" fill="#62d9c1" stroke="#fff" stroke-width="2"/>
+  <circle cx="40" cy="47" r="5" fill="#62d9c1" stroke="#fff" stroke-width="2"/>
+  <path id="ai-spark" d="M46 14l1.7 5.3L53 21l-5.3 1.7L46 28l-1.7-5.3L39 21l5.3-1.7L46 14z" fill="#fff"/>
+  <path d="M50 31l.9 2.7 2.6.9-2.6.9L50 38l-.9-2.5-2.6-.9 2.6-.9L50 31z" fill="#ffb08c"/>
 </svg>

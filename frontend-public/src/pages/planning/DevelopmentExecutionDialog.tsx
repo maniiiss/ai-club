@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom'
 import {
   ArrowDown, ArrowUp, GitBranch, Plus, Sparkles, Trash2, X,
 } from 'lucide-react'
-import { createExecutionTask, listExecutionOrchestrationScenarios } from '@/src/api/execution'
+import { createExecutionTask, getExecutionContextOptions, listExecutionOrchestrationScenarios, type ExecutionContextOptionsSummary } from '@/src/api/execution'
 import { listGitlabBindingOptions } from '@/src/api/development'
 import { Button } from '@/src/components/common/Button'
 import { Select } from '@/src/components/common/Select'
@@ -42,6 +42,9 @@ export const DevelopmentExecutionDialog = ({
   const [selectedBindingId, setSelectedBindingId] = useState('')
   const [inputText, setInputText] = useState('')
   const [planConfirmationRequired, setPlanConfirmationRequired] = useState(false)
+  const [includeRequirementContext, setIncludeRequirementContext] = useState(true)
+  const [includeTechnicalDesignContext, setIncludeTechnicalDesignContext] = useState(true)
+  const [contextOptions, setContextOptions] = useState<ExecutionContextOptionsSummary | null>(null)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
 
   const showToast = useCallback((type: 'success' | 'error', message: string) => {
@@ -86,14 +89,24 @@ export const DevelopmentExecutionDialog = ({
     setOrchestrationReady(false)
     setInputText('')
     setPlanConfirmationRequired(false)
+    setIncludeRequirementContext(true)
+    setIncludeTechnicalDesignContext(true)
+    setContextOptions(null)
     setToast(null)
-    Promise.all([listGitlabBindingOptions(), listExecutionOrchestrationScenarios(workItem.projectId)])
-      .then(([bindings, scenarios]) => {
+    Promise.all([
+      listGitlabBindingOptions(),
+      listExecutionOrchestrationScenarios(workItem.projectId),
+      getExecutionContextOptions(workItem.projectId, workItem.id),
+    ])
+      .then(([bindings, scenarios, options]) => {
         if (cancelled) return
         setGitlabBindings(bindings)
         setOrchestrationReady(Boolean(
           scenarios.find((item) => item.scenarioCode === 'DEVELOPMENT_IMPLEMENTATION')?.effectiveReady,
         ))
+        setContextOptions(options)
+        setIncludeRequirementContext(options.requirementLinked)
+        setIncludeTechnicalDesignContext(options.technicalDesignAvailable)
       })
       .catch((err) => {
         if (!cancelled) showToast('error', getErrorMessage(err) || '加载执行配置失败')
@@ -164,6 +177,8 @@ export const DevelopmentExecutionDialog = ({
         })),
       }
       if (inputText.trim()) inputPayload.inputText = inputText.trim()
+      inputPayload.includeRequirementContext = includeRequirementContext
+      inputPayload.includeTechnicalDesignContext = includeTechnicalDesignContext
       const executionTask = await createExecutionTask({
         scenarioCode: 'DEVELOPMENT_IMPLEMENTATION',
         projectId: workItem.projectId,
@@ -285,6 +300,16 @@ export const DevelopmentExecutionDialog = ({
                   rows={4}
                   className="w-full resize-y rounded-lg border border-[var(--color-border-strong)] bg-white px-3 py-2 text-[13px] leading-relaxed text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-placeholder)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
                 />
+                <div className="space-y-2">
+                  <label className="flex items-start gap-2 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] px-3 py-2.5">
+                    <input type="checkbox" checked={includeRequirementContext} disabled={!contextOptions?.requirementLinked} onChange={(event) => setIncludeRequirementContext(event.target.checked)} className="mt-0.5 h-4 w-4" />
+                    <span className="text-[13px] text-[var(--color-text-secondary)]">带入关联需求 <span className="block text-[11px] text-[var(--color-text-tertiary)]">{contextOptions?.requirementNotice || '将关联需求正文作为执行上下文。'}</span></span>
+                  </label>
+                  <label className="flex items-start gap-2 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] px-3 py-2.5">
+                    <input type="checkbox" checked={includeTechnicalDesignContext} disabled={!contextOptions?.technicalDesignAvailable} onChange={(event) => setIncludeTechnicalDesignContext(event.target.checked)} className="mt-0.5 h-4 w-4" />
+                    <span className="text-[13px] text-[var(--color-text-secondary)]">带入技术设计 <span className="block text-[11px] text-[var(--color-text-tertiary)]">{contextOptions?.technicalDesignNotice || '将最新成功技术设计作为执行上下文。'}</span></span>
+                  </label>
+                </div>
                 <label className="flex items-start gap-2 rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] px-3 py-2.5">
                   <input
                     type="checkbox"

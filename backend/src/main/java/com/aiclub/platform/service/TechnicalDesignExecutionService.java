@@ -254,6 +254,11 @@ public class TechnicalDesignExecutionService {
                     .append("类型：").append(defaultString(workItem.getWorkItemType())).append(" / ").append(defaultString(workItem.getTaskType())).append('\n')
                     .append("说明：").append(defaultString(workItem.getDescription())).append("\n\n");
         }
+        if (hasText(payload.requirementContextMarkdown())) {
+            builder.append("## 关联需求上下文\n")
+                    .append(payload.requirementContextMarkdown().trim())
+                    .append("\n\n");
+        }
         builder.append("## 仓库范围\n");
         repositories.forEach(repository -> builder.append("- ")
                 .append(repository.displayName()).append(" @ ").append(repository.targetBranch()).append('\n'));
@@ -327,11 +332,26 @@ public class TechnicalDesignExecutionService {
             return new TechnicalDesignPayload(
                     root.path("inputText").asText(""),
                     root.path("preferGitNexus").asBoolean(true),
-                    repositories
+                    repositories,
+                    buildRequirementContextMarkdown(root.path("requirementContext"))
             );
         } catch (Exception exception) {
             throw new IllegalStateException("技术设计输入载荷解析失败", exception);
         }
+    }
+
+    /** 将创建阶段固化的需求快照转换为每一步都可读的 Markdown 上下文。 */
+    private String buildRequirementContextMarkdown(JsonNode context) {
+        if (context == null || context.isMissingNode() || context.isEmpty()) {
+            return "";
+        }
+        return "需求编号：" + context.path("workItemCode").asText("") + '\n'
+                + "需求标题：" + context.path("name").asText("") + '\n'
+                + "需求状态：" + context.path("status").asText("") + '\n'
+                + "需求优先级：" + context.path("priority").asText("") + '\n'
+                + "需求描述：\n" + context.path("description").asText("") + '\n'
+                + "需求文档：\n" + context.path("requirementMarkdown").asText("") + '\n'
+                + "原型链接：" + context.path("prototypeUrl").asText("");
     }
 
     private List<ResolvedRepository> resolveRepositories(Long projectId, List<RepositoryRequest> requests) {
@@ -431,7 +451,10 @@ public class TechnicalDesignExecutionService {
         }
     }
 
-    private record TechnicalDesignPayload(String inputText, boolean preferGitNexus, List<RepositoryRequest> repositories) {
+    private record TechnicalDesignPayload(String inputText,
+                                          boolean preferGitNexus,
+                                          List<RepositoryRequest> repositories,
+                                          String requirementContextMarkdown) {
     }
 
     private record RepositoryRequest(Long bindingId, String targetBranch) {

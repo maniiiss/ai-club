@@ -252,6 +252,34 @@ class ExecutionWorkflowServiceTests {
                 .containsExactly(6L, 5L, 6L);
     }
 
+    /**
+     * 需求 AI 上下文增强必须使用执行中心的固定三步内置工作流，不能依赖用户选择 Agent。
+     */
+    @Test
+    void shouldBuildInternalRequirementAiAnalysisWorkflow() {
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = executionWorkflowService.buildWorkflow(
+                ExecutionWorkflowService.SCENARIO_REQUIREMENT_AI_ANALYSIS,
+                11L,
+                List.of()
+        );
+
+        assertThat(workflowPlan.scenarioName()).isEqualTo("需求 AI 分析");
+        assertThat(workflowPlan.steps())
+                .extracting(
+                        ExecutionWorkflowService.ExecutionStepPlan::stepNo,
+                        ExecutionWorkflowService.ExecutionStepPlan::stepCode,
+                        ExecutionWorkflowService.ExecutionStepPlan::stepName
+                )
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(1, "CONTEXT_PREPARE", "上下文准备"),
+                        org.assertj.core.groups.Tuple.tuple(2, "VISION_ANALYZE", "图片理解"),
+                        org.assertj.core.groups.Tuple.tuple(3, "REQUIREMENT_GENERATE", "需求生成")
+                );
+        assertThat(workflowPlan.steps())
+                .extracting(ExecutionWorkflowService.ExecutionStepPlan::agent)
+                .containsOnlyNulls();
+    }
+
     private AgentEntity buildAgent(Long id, String name, String accessType) {
         AgentEntity agent = new AgentEntity();
         agent.setId(id);

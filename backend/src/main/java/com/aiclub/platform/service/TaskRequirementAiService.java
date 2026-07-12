@@ -8,6 +8,9 @@ import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.dto.TaskRequirementAiResult;
+import com.aiclub.platform.dto.RequirementAiPreparedContext;
+import com.aiclub.platform.dto.RequirementAiImageRef;
+import com.aiclub.platform.dto.RequirementAiResultImage;
 import com.aiclub.platform.dto.TaskRequirementAiSuggestion;
 import com.aiclub.platform.dto.TaskRequirementAiTestCaseStepSuggestion;
 import com.aiclub.platform.dto.TaskRequirementAiTestCaseSuggestion;
@@ -63,6 +66,7 @@ public class TaskRequirementAiService {
     private final ObjectMapper objectMapper;
     private final ProjectDataPermissionService projectDataPermissionService;
     private final AgentInvocationRecorder agentInvocationRecorder;
+    private final RequirementAiContextService requirementAiContextService;
 
     public TaskRequirementAiService(TaskRepository taskRepository,
                                     AiModelConfigRepository aiModelConfigRepository,
@@ -70,7 +74,8 @@ public class TaskRequirementAiService {
                                     ModelConfigService modelConfigService,
                                     ObjectMapper objectMapper,
                                     ProjectDataPermissionService projectDataPermissionService,
-                                    AgentInvocationRecorder agentInvocationRecorder) {
+                                    AgentInvocationRecorder agentInvocationRecorder,
+                                    RequirementAiContextService requirementAiContextService) {
         this.taskRepository = taskRepository;
         this.aiModelConfigRepository = aiModelConfigRepository;
         this.agentRepository = agentRepository;
@@ -78,27 +83,89 @@ public class TaskRequirementAiService {
         this.objectMapper = objectMapper;
         this.projectDataPermissionService = projectDataPermissionService;
         this.agentInvocationRecorder = agentInvocationRecorder;
+        this.requirementAiContextService = requirementAiContextService;
     }
 
     public TaskRequirementAiResult generate(Long taskId, TaskRequirementAiRequest request) {
         String action = normalizeAction(request.action());
         TaskEntity task = requireSupportedAiWorkItem(taskId, action);
-        AiModelConfigEntity modelConfig = resolveModelConfig(request.modelConfigId(), action);
+        // 上下文可能触发附件转换和关联项查询，主提示词与兜底提示词必须复用同一份结果。
+        RequirementAiPreparedContext preparedContext = requirementAiContextService.prepare(
+                requirementAiContextService.snapshot(task, action));
+        return generatePrepared(task, action, request.modelConfigId(), preparedContext);
+    }
 
-        return switch (action) {
+    /**
+     * 创建异步任务前完成工作项类型、权限和模型校验，并固化主模型与工作项文本快照。
+     */
+    public RequirementAiExecutionSubmission prepareExecutionSubmission(Long taskId, TaskRequirementAiRequest request) {
+        String action = normalizeAction(request.action());
+        TaskEntity task = requireSupportedAiWorkItem(taskId, action);
+        AiModelConfigEntity modelConfig = resolveModelConfig(request.modelConfigId(), action);
+        return new RequirementAiExecutionSubmission(
+                task,
+                requirementAiContextService.snapshot(task, action),
+                modelConfig.getId()
+        );
+    }
+
+    /**
+     * 使用执行中心已经准备并持久化的上下文生成结果，避免后台三步流程再次读取附件和关联工作项。
+     */
+    public TaskRequirementAiResult generatePrepared(TaskEntity task,
+                                                     String requestedAction,
+                                                     Long modelConfigId,
+                                                     RequirementAiPreparedContext preparedContext) {
+        String action = normalizeAction(requestedAction);
+        AiModelConfigEntity modelConfig = resolveModelConfig(modelConfigId, action);
+        if (preparedContext == null) {
+            throw new IllegalArgumentException("需求 AI 已准备上下文不能为空");
+        }
+
+        TaskRequirementAiResult generated = switch (action) {
             case ACTION_STANDARDIZE -> buildMarkdownResult(
                     ACTION_STANDARDIZE,
                     "标准化需求",
                     task,
                     modelConfig,
                     standardizePrompt(),
-                    buildTaskContext(task, action),
+                    preparedContext.markdown(),
                     2200
             );
-            case ACTION_BREAKDOWN -> buildBreakdownResult(task, modelConfig);
-            case ACTION_TEST_CASES -> buildTestCasesResult(task, modelConfig);
+            case ACTION_BREAKDOWN -> buildBreakdownResult(task, modelConfig, preparedContext);
+            case ACTION_TEST_CASES -> buildTestCasesResult(task, modelConfig, preparedContext);
             default -> throw new IllegalArgumentException("不支持的 AI 动作");
         };
+        return attachPreparedImages(generated, preparedContext);
+    }
+
+    /**
+     * 将上下文中的受控图片元数据带入不可变结果，并在标准化结果缺少图片段落时补齐展示入口。
+     * 业务意图：模型可以理解图片但不一定原样复制链接，结果层必须保留可回显的图片语义。
+     */
+    private TaskRequirementAiResult attachPreparedImages(TaskRequirementAiResult result,
+                                                          RequirementAiPreparedContext preparedContext) {
+        if (preparedContext == null || preparedContext.images().isEmpty()) {
+            return result;
+        }
+        List<RequirementAiResultImage> images = new ArrayList<>();
+        String markdown = result.markdown() == null ? "" : result.markdown();
+        int order = 1;
+        for (RequirementAiImageRef image : preparedContext.images()) {
+            String sourceName = defaultString(image.sourceName());
+            String altText = sourceName.isBlank() ? "需求原型图 " + order : sourceName;
+            String renderUrl = "/api/common/public-files/" + image.assetId() + "?inline=true";
+            images.add(new RequirementAiResultImage(
+                    image.assetId(), image.mediaType(), altText, sourceName, order++, "原型参考", renderUrl));
+            if ("STANDARDIZE".equals(result.action())
+                    && !markdown.contains("/api/common/public-files/" + image.assetId())
+                    && !markdown.contains("/api/common/files/" + image.assetId())) {
+                markdown += "\n\n## 原型参考\n\n![" + altText + "](" + renderUrl + ")";
+            }
+        }
+        return new TaskRequirementAiResult(
+                result.action(), result.title(), markdown, result.modelConfigId(), result.modelConfigName(),
+                result.taskSuggestions(), result.testCaseSuggestions(), images);
     }
 
     private TaskRequirementAiResult buildMarkdownResult(String action,
@@ -120,8 +187,10 @@ public class TaskRequirementAiService {
         );
     }
 
-    private TaskRequirementAiResult buildBreakdownResult(TaskEntity task, AiModelConfigEntity modelConfig) {
-        String raw = invokePrompt(ACTION_BREAKDOWN, task, modelConfig, breakdownPrompt(), buildTaskContext(task, ACTION_BREAKDOWN), 2600, false);
+    private TaskRequirementAiResult buildBreakdownResult(TaskEntity task,
+                                                         AiModelConfigEntity modelConfig,
+                                                         RequirementAiPreparedContext preparedContext) {
+        String raw = invokePrompt(ACTION_BREAKDOWN, task, modelConfig, breakdownPrompt(), preparedContext.markdown(), 2600, false);
         String markdown = cleanMarkdownOutput(raw);
         List<TaskRequirementAiSuggestion> taskSuggestions = List.of();
 
@@ -159,13 +228,15 @@ public class TaskRequirementAiService {
         );
     }
 
-    private TaskRequirementAiResult buildTestCasesResult(TaskEntity task, AiModelConfigEntity modelConfig) {
+    private TaskRequirementAiResult buildTestCasesResult(TaskEntity task,
+                                                         AiModelConfigEntity modelConfig,
+                                                         RequirementAiPreparedContext preparedContext) {
         String markdown = "";
         List<TaskRequirementAiTestCaseSuggestion> testCaseSuggestions = List.of();
         RuntimeException primaryFailure = null;
 
         try {
-            String raw = invokePrompt(ACTION_TEST_CASES, task, modelConfig, testCasesPrompt(), buildTaskContext(task, ACTION_TEST_CASES), 1800, true);
+            String raw = invokePrompt(ACTION_TEST_CASES, task, modelConfig, testCasesPrompt(), preparedContext.markdown(), 1800, true);
             TestCaseParseResult parsed = parseTestCaseResult(raw);
             markdown = parsed.markdown();
             testCaseSuggestions = parsed.suggestions();
@@ -178,7 +249,7 @@ public class TaskRequirementAiService {
         }
 
         if (!hasText(markdown) && testCaseSuggestions.isEmpty()) {
-            String fallbackRaw = invokePrompt(ACTION_TEST_CASES, task, modelConfig, testCasesFallbackPrompt(), buildTaskContext(task, ACTION_TEST_CASES), 1200, false);
+            String fallbackRaw = invokePrompt(ACTION_TEST_CASES, task, modelConfig, testCasesFallbackPrompt(), preparedContext.markdown(), 1200, false);
             TestCaseParseResult fallbackParsed = parseTestCaseResult(fallbackRaw);
             markdown = fallbackParsed.markdown();
             testCaseSuggestions = fallbackParsed.suggestions();
@@ -826,6 +897,14 @@ public class TaskRequirementAiService {
     private record TestCaseParseResult(
             String markdown,
             List<TaskRequirementAiTestCaseSuggestion> suggestions
+    ) {
+    }
+
+    /** 创建异步需求 AI 执行所需的已校验领域快照。 */
+    public record RequirementAiExecutionSubmission(
+            TaskEntity task,
+            com.aiclub.platform.dto.RequirementAiTaskSnapshot taskSnapshot,
+            Long modelConfigId
     ) {
     }
 }

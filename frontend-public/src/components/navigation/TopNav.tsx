@@ -4,11 +4,14 @@
  * 参考 Vercel / GitHub 的顶部导航风格。
  */
 import { useState, useRef, useEffect } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
-import { Menu, X, LogOut, User, ChevronDown, Coins, PlayCircle } from 'lucide-react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Menu, X, LogOut, User, ChevronDown, Coins, PlayCircle, Bell } from 'lucide-react'
 import { useAuthStore } from '@/src/stores/auth'
+import { useNotificationStore } from '@/src/stores/notifications'
+import { NotificationDrawer } from '@/src/components/notifications/NotificationDrawer'
 import { getMyCreditAccount } from '@/src/api/credits'
 import { cn, getInitials } from '@/src/lib/utils'
+import { formatUnreadCount } from '@/src/lib/notificationUtils'
 import { useGuide } from '@/src/components/guide'
 import { BrandMark } from '@/src/components/common/BrandMark'
 
@@ -27,11 +30,14 @@ const navItems: NavItem[] = [
 
 export const TopNav = () => {
   const navigate = useNavigate()
+  const location = useLocation()
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const hasPermission = useAuthStore((s) => s.hasPermission)
+  const unreadCount = useNotificationStore((s) => s.unreadCount)
   const [menuOpen, setMenuOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false)
   const [creditBalance, setCreditBalance] = useState<number | null>(null)
   const { resetAllGuides } = useGuide('dashboard')
   const menuRef = useRef<HTMLDivElement>(null)
@@ -80,7 +86,7 @@ export const TopNav = () => {
         <NavLink to="/dashboard" className="flex items-center gap-2 shrink-0">
           <BrandMark className="h-7 w-7 rounded-lg shadow-[0_8px_18px_rgba(79,70,229,0.22)]" />
           <span className="text-[15px] font-semibold text-[var(--color-text-primary)] tracking-tight hidden sm:inline">
-            AI Club
+            GitPilot
           </span>
         </NavLink>
 
@@ -109,6 +115,26 @@ export const TopNav = () => {
 
         {/* 右侧空间 */}
         <div className="flex-1" />
+
+        <button
+          type="button"
+          onClick={() => setNotificationDrawerOpen(true)}
+          className={cn(
+            'relative flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
+            location.pathname === '/notifications'
+              ? 'bg-[var(--color-bg-hover)] text-[var(--color-text-primary)]'
+              : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]',
+          )}
+          aria-label={unreadCount > 0 ? `消息中心，有 ${unreadCount} 条未读消息` : '消息中心'}
+          title="消息中心"
+        >
+          <Bell className="h-[17px] w-[17px]" strokeWidth={1.8} />
+          {unreadCount > 0 && (
+            <span className="absolute -right-1 -top-1 min-w-[16px] rounded-full bg-[var(--color-danger)] px-1 text-center text-[9px] font-bold leading-4 text-white shadow-sm">
+              {formatUnreadCount(unreadCount)}
+            </span>
+          )}
+        </button>
 
         {creditBalance !== null && (
           <NavLink
@@ -230,6 +256,26 @@ export const TopNav = () => {
                 {item.label}
               </NavLink>
             ))}
+            <NavLink
+              to="/notifications"
+              onClick={() => setMobileOpen(false)}
+              className={({ isActive }) => cn(
+                'flex items-center justify-between rounded-lg px-3 py-2.5 text-[14px] font-medium transition-colors',
+                isActive
+                  ? 'bg-[var(--color-bg-hover)] text-[var(--color-text-primary)]'
+                  : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]',
+              )}
+            >
+              <span className="flex items-center gap-2.5">
+                <Bell className="h-4 w-4" strokeWidth={1.8} />
+                消息中心
+              </span>
+              {unreadCount > 0 && (
+                <span className="rounded-full bg-[var(--color-danger-light)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-danger)]">
+                  {formatUnreadCount(unreadCount)} 条未读
+                </span>
+              )}
+            </NavLink>
             <div className="mx-3 my-2 border-t border-[var(--color-border-light)]" />
             {creditBalance !== null && (
               <div className="mx-3 flex items-center justify-between rounded-lg bg-[var(--color-bg-hover)] px-3 py-2 text-[13px]">
@@ -275,6 +321,7 @@ export const TopNav = () => {
           </nav>
         </div>
       )}
+      <NotificationDrawer open={notificationDrawerOpen} onClose={() => setNotificationDrawerOpen(false)} />
     </header>
   )
 }

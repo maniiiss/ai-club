@@ -74,6 +74,9 @@ class ExecutionDispatchServiceTests {
     private TechnicalDesignExecutionService technicalDesignExecutionService;
 
     @Mock
+    private RequirementAiExecutionService requirementAiExecutionService;
+
+    @Mock
     private TestAutomationExecutionService testAutomationExecutionService;
 
     @Mock
@@ -116,6 +119,7 @@ class ExecutionDispatchServiceTests {
                 repositoryScanExecutionService,
                 developmentExecutionService,
                 technicalDesignExecutionService,
+                requirementAiExecutionService,
                 testAutomationExecutionService,
                 selfUpgradeExecutionWritebackService,
                 executionEventService,
@@ -127,6 +131,49 @@ class ExecutionDispatchServiceTests {
                 technicalDesignCreditSettlementService,
                 Runnable::run
         );
+    }
+
+    /**
+     * 需求 AI 场景必须委托给专用三步执行器，不能落入通用 Agent 串行分支。
+     */
+    @Test
+    void shouldDispatchRequirementAiTaskToDedicatedExecutor() {
+        ExecutionTaskEntity executionTask = buildExecutionTask();
+        executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_REQUIREMENT_AI_ANALYSIS);
+        executionTask.setInputPayload("{\"action\":\"STANDARDIZE\"}");
+        ExecutionWorkflowService.WorkflowPlan workflowPlan = new ExecutionWorkflowService.WorkflowPlan(
+                ExecutionWorkflowService.SCENARIO_REQUIREMENT_AI_ANALYSIS,
+                "需求 AI 分析",
+                List.of(
+                        new ExecutionWorkflowService.ExecutionStepPlan(1, ExecutionWorkflowService.STEP_CONTEXT_PREPARE, "上下文准备", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(2, ExecutionWorkflowService.STEP_VISION_ANALYZE, "图片理解", null, null, null, null),
+                        new ExecutionWorkflowService.ExecutionStepPlan(3, ExecutionWorkflowService.STEP_REQUIREMENT_GENERATE, "需求生成", null, null, null, null)
+                )
+        );
+        when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionRunRepository.countByExecutionTask_Id(99L)).thenReturn(0L);
+        when(executionRunRepository.save(any(ExecutionRunEntity.class))).thenAnswer(invocation -> {
+            ExecutionRunEntity run = invocation.getArgument(0);
+            if (run.getId() == null) run.setId(312L);
+            return run;
+        });
+        when(executionTaskRepository.save(any(ExecutionTaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(executionArtifactRepository.save(any(ExecutionArtifactEntity.class))).thenAnswer(invocation -> {
+            ExecutionArtifactEntity artifact = invocation.getArgument(0);
+            artifact.setId(912L);
+            return artifact;
+        });
+        when(executionWorkflowService.restoreWorkflow(
+                ExecutionWorkflowService.SCENARIO_REQUIREMENT_AI_ANALYSIS, 7L, "[]")).thenReturn(workflowPlan);
+        when(requirementAiExecutionService.executeRequirementAiTask(eq(executionTask), any(ExecutionRunEntity.class), eq(workflowPlan)))
+                .thenReturn(new RequirementAiExecutionService.RequirementAiExecutionResult(
+                        "标准化需求已完成，可返回需求 AI 助手继续编辑和回写。", List.of(), false));
+
+        ExecutionRunEntity result = executionDispatchService.dispatchTaskNow(99L);
+
+        assertThat(result.getStatus()).isEqualTo("SUCCESS");
+        verify(requirementAiExecutionService).executeRequirementAiTask(eq(executionTask), any(ExecutionRunEntity.class), eq(workflowPlan));
+        verify(agentExecutionService, never()).runAgent(anyLong(), anyString(), any());
     }
 
     /**

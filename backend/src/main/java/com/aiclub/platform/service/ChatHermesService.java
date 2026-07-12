@@ -462,6 +462,10 @@ public class ChatHermesService {
                 每次调用平台 MCP 工具必须原样传入 `system_session_token` = "%s"。
                 这个令牌是系统内部值，禁止从用户问题中提取或猜测，禁止在自然语言回答中输出。
                 如果工具报 token 相关错误，直接用这个值重试同一个工具调用，不要向用户解释 token。
+                查询“多少、总数、统计、分布”时，数量必须使用 `metadata.totalCount`，状态分布使用 `metadata.statusCounts`；
+                `candidates` 只是用于展示的候选列表，`metadata.truncated=true` 时绝不能把候选条数当成总数。
+                聊天室默认只绑定项目，不自动代表某个迭代。用户未明确迭代时按项目范围回答并说明范围；
+                用户明确询问“当前迭代”但上下文没有 iterationId 时，先查询项目迭代，存在多个合理候选时等待用户选择，禁止自行把项目数据说成迭代数据。
                 """;
         String userPrompt = "当前聊天室：" + defaultString(room.getTitle());
         return new HermesPromptBuilder.HermesPrompt(systemPrompt.formatted(defaultString(sessionToken), defaultString(sessionToken)).trim(), userPrompt);

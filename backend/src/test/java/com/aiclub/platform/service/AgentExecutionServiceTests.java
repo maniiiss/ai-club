@@ -501,6 +501,42 @@ class AgentExecutionServiceTests {
         }
     }
 
+    /** 图片理解能力通过稳定 builtinCode 定位，并统一记录 vision 模型 usage。 */
+    @Test
+    void shouldResolveAndRunImageUnderstandingAgent() {
+        AgentEntity agent = new AgentEntity();
+        agent.setId(30L);
+        agent.setName("图片理解助手");
+        agent.setType("视觉");
+        agent.setStatus("在线");
+        agent.setEnabled(true);
+        agent.setAccessType(AgentExecutionService.ACCESS_LLM_VISION);
+        agent.setBuiltinCode(AgentExecutionService.BUILTIN_IMAGE_UNDERSTANDING);
+        agent.setSystemPrompt("按序号描述图片");
+        AiModelConfigEntity modelConfig = new AiModelConfigEntity();
+        modelConfig.setId(8L);
+        modelConfig.setName("视觉模型");
+        modelConfig.setModelType(ModelConfigService.MODEL_TYPE_CHAT);
+        agent.setAiModelConfig(modelConfig);
+        ModelConfigService.ResolvedModelConfig resolved = new ModelConfigService.ResolvedModelConfig(
+                8L, "视觉模型", ModelConfigService.MODEL_TYPE_CHAT, ModelConfigService.PROVIDER_OPENAI,
+                "https://api.example.com", "vision-model", ModelConfigService.OPENAI_API_MODE_AUTO, "key");
+        List<ModelConfigService.VisionImage> images = List.of(
+                new ModelConfigService.VisionImage(1, "image/png", "YWJj", "screen.png"));
+
+        when(agentRepository.findFirstByBuiltinCodeAndEnabledTrueOrderByIdAsc(AgentExecutionService.BUILTIN_IMAGE_UNDERSTANDING))
+                .thenReturn(Optional.of(agent));
+        when(modelConfigService.resolveModelConfig(8L)).thenReturn(resolved);
+        when(modelConfigService.invokeVisionPromptWithUsage(eq(resolved), eq("按序号描述图片"), eq("描述界面"), eq(images), eq(1500)))
+                .thenReturn(new ModelConfigService.ModelInvocation("{\"images\":[]}", 10, 5, 15));
+
+        AgentEntity resolvedAgent = agentExecutionService.resolveImageUnderstandingAgent().orElseThrow();
+        String output = agentExecutionService.runVisionAgent(resolvedAgent, images, "描述界面");
+
+        assertThat(output).isEqualTo("{\"images\":[]}");
+        verify(modelConfigService).invokeVisionPromptWithUsage(resolved, "按序号描述图片", "描述界面", images, 1500);
+    }
+
     /**
      * 构造可执行的仓库扫描计划智能体样例。
      */

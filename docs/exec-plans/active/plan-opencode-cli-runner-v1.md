@@ -19,7 +19,7 @@ opencode mode 映射：PLAN/AD_HOC/技术设计 -> `--agent plan`（只读）；
 - 源码 UTF-8 无 BOM，中文直接写入，不写 `\uXXXX`。
 - 新增类/方法/复杂流程补中文注释。
 - 不回滚/格式化无关改动。
-- opencode 命令面：`opencode run "<prompt>" --dir <path> --format default --agent <plan|build> [--auto] [--model provider/model]`。
+- opencode 命令面：`opencode run --dir <path> --format default --agent <plan|build> [--auto] [--model provider/model]`，完整 prompt 统一通过 stdin 传入。
 - 环境变量：`PLATFORM_OPENCODE_CLI_PATH`、`PLATFORM_OPENCODE_MODEL`。
 
 ---

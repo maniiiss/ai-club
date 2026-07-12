@@ -7,6 +7,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,5 +56,52 @@ class PlatformToolRegistryTests {
         assertThat(wikiDetail.outputSchema())
                 .containsEntry("candidates[].payload.content", "页面正文内容摘要")
                 .containsEntry("metadata.pageId", "读取的页面ID");
+    }
+
+    /**
+     * 所有会截断候选的查询工具都必须显式声明真实总数，模型不能再把展示条数当成业务总量。
+     */
+    @Test
+    void shouldExposeExactCollectionMetadataForCappedSearchTools() {
+        when(platformToolConfigRepository.findByToolCode(anyString())).thenReturn(Optional.empty());
+        PlatformToolRegistry registry = new PlatformToolRegistry(platformToolConfigRepository);
+
+        List<String> cappedTools = List.of(
+                PlatformToolRegistry.TOOL_PROJECT_SEARCH,
+                PlatformToolRegistry.TOOL_USER_RESOLVE_PROJECT_MEMBER,
+                PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
+                PlatformToolRegistry.TOOL_AGENT_LIST_AVAILABLE,
+                PlatformToolRegistry.TOOL_GITLAB_BINDING_SEARCH,
+                PlatformToolRegistry.TOOL_REPO_SCAN_SEARCH,
+                PlatformToolRegistry.TOOL_EXECUTION_TASK_SEARCH,
+                PlatformToolRegistry.TOOL_TEST_PLAN_SEARCH,
+                PlatformToolRegistry.TOOL_WIKI_SPACE_SEARCH
+        );
+
+        for (String toolCode : cappedTools) {
+            assertThat(registry.requireDefinition(toolCode).outputSchema())
+                    .as(toolCode)
+                    .containsEntry("metadata.totalCount", "完整筛选或召回结果总数")
+                    .containsEntry("metadata.returnedCount", "当前返回候选数")
+                    .containsEntry("metadata.truncated", "候选列表是否已截断");
+        }
+        assertThat(registry.requireDefinition(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH).outputSchema())
+                .containsEntry("metadata.statusCounts", "完整筛选结果的状态分布");
+    }
+
+    /**
+     * MCP 输入契约要覆盖执行器已经支持的范围过滤条件，否则模型无法得到精确的项目或迭代统计。
+     */
+    @Test
+    void shouldExposeSupportedSearchFilters() {
+        when(platformToolConfigRepository.findByToolCode(anyString())).thenReturn(Optional.empty());
+        PlatformToolRegistry registry = new PlatformToolRegistry(platformToolConfigRepository);
+
+        assertThat(registry.requireDefinition(PlatformToolRegistry.TOOL_GITLAB_BINDING_SEARCH).inputSchema())
+                .containsKey("projectId");
+        assertThat(registry.requireDefinition(PlatformToolRegistry.TOOL_EXECUTION_TASK_SEARCH).inputSchema())
+                .containsKeys("keyword", "projectId", "status", "scenarioCode");
+        assertThat(registry.requireDefinition(PlatformToolRegistry.TOOL_TEST_PLAN_SEARCH).inputSchema())
+                .containsKeys("keyword", "projectId", "iterationId", "status");
     }
 }

@@ -54,6 +54,7 @@ import java.util.regex.Pattern;
 public class PlatformToolExecutor {
 
     private static final Pattern GITLAB_PATH_PATTERN = Pattern.compile("([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){1,4})");
+    private static final Pattern SEARCH_TOKEN_SEPARATOR_PATTERN = Pattern.compile("[\\s,，。；;、|/:：!?！？（）()\\[\\]【】“”\"'‘’]+");
 
     private final PlatformToolRegistry platformToolRegistry;
     private final ToolExecutionAuditService toolExecutionAuditService;
@@ -148,13 +149,16 @@ public class PlatformToolExecutor {
 
     private PlatformToolResult searchProjects(PlatformToolRequest request) {
         String keyword = stringValue(request.payload(), "keyword");
-        List<PlatformToolCandidate> candidates = projectRepository.findAll(Sort.by(Sort.Direction.DESC, "id")).stream()
+        List<PlatformToolCandidate> matches = projectRepository.findAll(Sort.by(Sort.Direction.DESC, "id")).stream()
                 .filter(this::canSeeProject)
-                .filter(project -> isBlank(keyword) || containsAny(project.getName(), keyword) || containsAny(project.getDescription(), keyword))
-                .limit(5)
+                .filter(project -> isBlank(keyword)
+                        || containsAny(project.getName(), keyword)
+                        || containsAny(project.getDescription(), keyword)
+                        || containsAny(project.getStatus(), keyword))
                 .map(this::projectCandidate)
                 .toList();
-        return result(request.toolCode(), "搜索项目", "找到 " + candidates.size() + " 个相关项目", candidates, Map.of("keyword", defaultString(keyword)));
+        return collectionResult(request.toolCode(), "搜索项目", "个相关项目", matches, 5,
+                metadata("keyword", defaultString(keyword)));
     }
 
     private PlatformToolResult getProjectDetail(PlatformToolRequest request) {
@@ -243,12 +247,12 @@ public class PlatformToolExecutor {
     private PlatformToolResult resolveProjectMember(PlatformToolRequest request) {
         ProjectEntity project = requireVisibleProject(longValue(request.payload(), "projectId"));
         String keyword = stringValue(request.payload(), "keyword");
-        List<PlatformToolCandidate> candidates = projectParticipants(project).stream()
+        List<PlatformToolCandidate> matches = projectParticipants(project).stream()
                 .filter(user -> isBlank(keyword) || containsAny(user.getUsername(), keyword) || containsAny(user.getNickname(), keyword))
-                .limit(5)
                 .map(user -> userCandidate(project.getId(), user))
                 .toList();
-        return result(request.toolCode(), "解析项目成员", "找到 " + candidates.size() + " 个成员候选", candidates, Map.of("projectId", project.getId(), "keyword", defaultString(keyword)));
+        return collectionResult(request.toolCode(), "解析项目成员", "个成员候选", matches, 5,
+                metadata("projectId", project.getId(), "keyword", defaultString(keyword)));
     }
 
     private PlatformToolResult listProjectMembers(PlatformToolRequest request) {
@@ -266,7 +270,7 @@ public class PlatformToolExecutor {
         Long projectId = nullableLongValue(request.payload(), "projectId");
         Long iterationId = nullableLongValue(request.payload(), "iterationId");
         Set<String> statusCandidates = TaskStatusUtils.candidateStatusesForQuery(workItemType, status);
-        List<PlatformToolCandidate> candidates = taskRepository.findAll(Sort.by(Sort.Direction.DESC, "updatedAt", "id")).stream()
+        List<TaskEntity> matches = taskRepository.findAll(Sort.by(Sort.Direction.DESC, "updatedAt", "id")).stream()
                 .filter(task -> projectId == null || Objects.equals(task.getProject().getId(), projectId))
                 .filter(task -> iterationId == null || task.getIteration() != null && Objects.equals(task.getIteration().getId(), iterationId))
                 .filter(this::canSeeTask)
@@ -276,11 +280,22 @@ public class PlatformToolExecutor {
                         || containsAny(task.getName(), keyword)
                         || containsAny(task.getDescription(), keyword)
                         || containsAny(task.getWorkItemCode(), keyword))
-                .limit(5)
+                .toList();
+        Map<String, Object> resultMetadata = mutableMetadata(
+                "keyword", defaultString(keyword),
+                "projectId", projectId,
+                "iterationId", iterationId,
+                "workItemType", defaultString(workItemType),
+                "status", defaultString(status),
+                "scopeType", iterationId != null ? "ITERATION" : projectId != null ? "PROJECT" : "GLOBAL",
+                "scopeDescription", iterationId != null ? "迭代范围" : projectId != null ? "项目范围" : "全局可见范围"
+        );
+        resultMetadata.put("statusCounts", statusCounts(matches));
+        List<PlatformToolCandidate> candidates = matches.stream()
                 .map(task -> workItemCandidate(task, true))
                 .toList();
-        return result(request.toolCode(), "搜索工作项", "找到 " + candidates.size() + " 个相关工作项", candidates,
-                metadata("keyword", defaultString(keyword), "projectId", projectId, "iterationId", iterationId, "status", defaultString(status)));
+        String scopeLabel = iterationId != null ? "迭代范围" : projectId != null ? "项目范围" : "全局可见范围";
+        return collectionResult(request.toolCode(), "搜索工作项", "个相关工作项（" + scopeLabel + "）", candidates, 5, resultMetadata);
     }
 
     private PlatformToolResult getWorkItemDetail(PlatformToolRequest request) {
@@ -293,11 +308,10 @@ public class PlatformToolExecutor {
         if (projectId != null) {
             requireVisibleProject(projectId);
         }
-        List<PlatformToolCandidate> candidates = availableAgents(projectId).stream()
-                .limit(10)
+        List<PlatformToolCandidate> matches = availableAgents(projectId).stream()
                 .map(this::agentCandidate)
                 .toList();
-        return result(request.toolCode(), "可用 Agent 列表", "找到 " + candidates.size() + " 个可用 Agent", candidates,
+        return collectionResult(request.toolCode(), "可用 Agent 列表", "个可用 Agent", matches, 10,
                 metadata("projectId", projectId));
     }
 
@@ -315,7 +329,7 @@ public class PlatformToolExecutor {
         String keyword = stringValue(request.payload(), "keyword");
         Long projectId = nullableLongValue(request.payload(), "projectId");
         List<String> searchableKeywords = resolveGitlabBindingKeywords(keyword);
-        List<PlatformToolCandidate> candidates = projectGitlabBindingRepository.findAll(Sort.by(Sort.Direction.ASC, "id")).stream()
+        List<PlatformToolCandidate> matches = projectGitlabBindingRepository.findAll(Sort.by(Sort.Direction.ASC, "id")).stream()
                 .filter(binding -> projectId == null || Objects.equals(binding.getProject().getId(), projectId))
                 .filter(binding -> canSeeProject(binding.getProject()))
                 .filter(binding -> searchableKeywords.isEmpty()
@@ -324,10 +338,9 @@ public class PlatformToolExecutor {
                                 || containsAny(binding.getGitlabProjectPath(), candidateKeyword)
                                 || containsAny(binding.getGitlabProjectRef(), candidateKeyword)
                                 || containsAny(binding.getGitlabProjectName(), candidateKeyword)))
-                .limit(8)
                 .map(this::gitlabBindingCandidate)
                 .toList();
-        return result(request.toolCode(), "搜索仓库绑定", "找到 " + candidates.size() + " 个相关仓库", candidates,
+        return collectionResult(request.toolCode(), "搜索仓库绑定", "个相关仓库", matches, 8,
                 metadata("keyword", defaultString(keyword), "projectId", projectId));
     }
 
@@ -392,35 +405,36 @@ public class PlatformToolExecutor {
     private PlatformToolResult searchRepositoryScans(PlatformToolRequest request) {
         Long bindingId = nullableLongValue(request.payload(), "bindingId");
         String status = stringValue(request.payload(), "status");
-        List<PlatformToolCandidate> candidates = executionTaskRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt", "id")).stream()
+        List<PlatformToolCandidate> matches = executionTaskRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt", "id")).stream()
                 .filter(executionTask -> ExecutionWorkflowService.SCENARIO_CODEBASE_COMPLIANCE_SCAN.equalsIgnoreCase(executionTask.getScenarioCode()))
                 .filter(executionTask -> canSeeProject(executionTask.getProject()))
                 .filter(executionTask -> isBlank(status) || defaultString(executionTask.getStatus()).equalsIgnoreCase(status))
                 .filter(executionTask -> bindingId == null || containsAny(executionTask.getInputPayload(), "\"bindingId\":" + bindingId))
-                .limit(8)
                 .map(this::executionTaskCandidate)
                 .toList();
-        return result(request.toolCode(), "搜索仓库扫描", "找到 " + candidates.size() + " 条扫描任务", candidates,
+        return collectionResult(request.toolCode(), "搜索仓库扫描", "条扫描任务", matches, 8,
                 metadata("bindingId", bindingId, "status", defaultString(status)));
     }
 
     private PlatformToolResult searchExecutionTasks(PlatformToolRequest request) {
         String keyword = stringValue(request.payload(), "keyword");
         String status = stringValue(request.payload(), "status");
+        String scenarioCode = stringValue(request.payload(), "scenarioCode");
         Long projectId = nullableLongValue(request.payload(), "projectId");
-        List<PlatformToolCandidate> candidates = executionTaskRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt", "id")).stream()
+        List<PlatformToolCandidate> matches = executionTaskRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt", "id")).stream()
                 .filter(executionTask -> projectId == null || Objects.equals(executionTask.getProject().getId(), projectId))
                 .filter(executionTask -> canSeeProject(executionTask.getProject()))
                 .filter(executionTask -> isBlank(status) || defaultString(executionTask.getStatus()).equalsIgnoreCase(status))
+                .filter(executionTask -> isBlank(scenarioCode) || defaultString(executionTask.getScenarioCode()).equalsIgnoreCase(scenarioCode))
                 .filter(executionTask -> isBlank(keyword)
                         || containsAny(executionTask.getTitle(), keyword)
                         || containsAny(executionTask.getLatestSummary(), keyword)
+                        || containsAny(executionTask.getScenarioCode(), keyword)
                         || (executionTask.getWorkItem() != null && containsAny(executionTask.getWorkItem().getName(), keyword)))
-                .limit(5)
                 .map(this::executionTaskCandidate)
                 .toList();
-        return result(request.toolCode(), "搜索执行任务", "找到 " + candidates.size() + " 个执行任务", candidates,
-                metadata("keyword", defaultString(keyword), "status", defaultString(status), "projectId", projectId));
+        return collectionResult(request.toolCode(), "搜索执行任务", "个执行任务", matches, 5,
+                metadata("keyword", defaultString(keyword), "status", defaultString(status), "scenarioCode", defaultString(scenarioCode), "projectId", projectId));
     }
 
     private PlatformToolResult getExecutionTaskDetail(PlatformToolRequest request) {
@@ -437,17 +451,16 @@ public class PlatformToolExecutor {
         String status = stringValue(request.payload(), "status");
         Long projectId = nullableLongValue(request.payload(), "projectId");
         Long iterationId = nullableLongValue(request.payload(), "iterationId");
-        List<PlatformToolCandidate> candidates = testPlanRepository.findAll(Sort.by(Sort.Direction.DESC, "updatedAt", "id")).stream()
+        List<PlatformToolCandidate> matches = testPlanRepository.findAll(Sort.by(Sort.Direction.DESC, "updatedAt", "id")).stream()
                 .filter(testPlan -> canSeeProject(testPlan.getProject()))
                 .filter(testPlan -> projectId == null || Objects.equals(testPlan.getProject().getId(), projectId))
                 .filter(testPlan -> iterationId == null || testPlan.getIteration() != null && Objects.equals(testPlan.getIteration().getId(), iterationId))
                 .filter(testPlan -> isBlank(status) || defaultString(testPlan.getStatus()).equalsIgnoreCase(status))
                 .filter(testPlan -> isBlank(keyword) || containsAny(testPlan.getName(), keyword) || containsAny(testPlan.getDescription(), keyword))
-                .limit(5)
                 .map(this::testPlanCandidate)
                 .toList();
-        return result(request.toolCode(), "搜索测试计划", "找到 " + candidates.size() + " 个测试计划", candidates,
-                metadata("keyword", defaultString(keyword), "projectId", projectId, "iterationId", iterationId));
+        return collectionResult(request.toolCode(), "搜索测试计划", "个测试计划", matches, 5,
+                metadata("keyword", defaultString(keyword), "projectId", projectId, "iterationId", iterationId, "status", defaultString(status)));
     }
 
     private PlatformToolResult getTestPlanDetail(PlatformToolRequest request) {
@@ -498,19 +511,24 @@ public class PlatformToolExecutor {
         Long spaceId = nullableLongValue(request.payload(), "spaceId");
         String query = stringValue(request.payload(), "query");
         List<WikiSpaceSearchResult> semanticResults = wikiSpaceService.semanticSearchPages(query, spaceId, projectId);
-        List<PlatformToolCandidate> candidates = semanticResults.stream()
+        boolean semanticSearchUsed = !semanticResults.isEmpty();
+        List<PlatformToolCandidate> matches = semanticResults.stream()
                 .map(WikiSpaceSearchResult::page)
-                .limit(8)
                 .map(this::wikiPageCandidate)
                 .toList();
-        if (candidates.isEmpty()) {
-            candidates = wikiSpaceService.searchPages(query, spaceId, projectId).stream()
-                    .limit(8)
+        if (matches.isEmpty()) {
+            matches = wikiSpaceService.searchPages(query, spaceId, projectId).stream()
                     .map(this::wikiPageCandidate)
                     .toList();
         }
-        return result(request.toolCode(), "搜索 Wiki", "找到 " + candidates.size() + " 个相关 Wiki 页面", candidates,
-                metadata("spaceId", spaceId, "projectId", projectId, "query", defaultString(query)));
+        return collectionResult(request.toolCode(), "搜索 Wiki", "个相关 Wiki 页面", matches, 8,
+                metadata(
+                        "spaceId", spaceId,
+                        "projectId", projectId,
+                        "query", defaultString(query),
+                        "searchMode", semanticSearchUsed ? "SEMANTIC_RETRIEVAL" : "KEYWORD_SEARCH",
+                        "countScope", semanticSearchUsed ? "本次语义召回结果，不代表全库精确总数" : "关键词完整匹配结果"
+                ));
     }
 
     private PlatformToolResult getWikiPageDetail(PlatformToolRequest request) {
@@ -755,7 +773,58 @@ public class PlatformToolExecutor {
                                       String summary,
                                       List<PlatformToolCandidate> candidates,
                                       Map<String, Object> metadata) {
-        return new PlatformToolResult(toolCode, toolName, summary, candidates, List.of(), metadata);
+        List<PlatformToolCandidate> safeCandidates = candidates == null ? List.of() : candidates;
+        LinkedHashMap<String, Object> normalizedMetadata = new LinkedHashMap<>();
+        if (metadata != null) {
+            normalizedMetadata.putAll(metadata);
+        }
+        // 非截断列表和详情同样补齐集合元数据，使共享输出 schema 与真实响应保持一致。
+        normalizedMetadata.putIfAbsent("totalCount", safeCandidates.size());
+        normalizedMetadata.putIfAbsent("returnedCount", safeCandidates.size());
+        normalizedMetadata.putIfAbsent("truncated", false);
+        return new PlatformToolResult(toolCode, toolName, summary, safeCandidates, List.of(), Map.copyOf(normalizedMetadata));
+    }
+
+    /**
+     * 搜索工具只截断展示候选，统计信息始终基于完整可见结果，避免 Hermes 把候选上限误认为业务总数。
+     */
+    private PlatformToolResult collectionResult(String toolCode,
+                                                String toolName,
+                                                String resultUnit,
+                                                List<PlatformToolCandidate> matches,
+                                                int displayLimit,
+                                                Map<String, Object> baseMetadata) {
+        List<PlatformToolCandidate> safeMatches = matches == null ? List.of() : matches;
+        int safeLimit = Math.max(displayLimit, 0);
+        List<PlatformToolCandidate> displayed = safeMatches.stream().limit(safeLimit).toList();
+        int totalCount = safeMatches.size();
+        int returnedCount = displayed.size();
+        boolean truncated = returnedCount < totalCount;
+
+        Map<String, Object> resultMetadata = new LinkedHashMap<>();
+        if (baseMetadata != null) {
+            resultMetadata.putAll(baseMetadata);
+        }
+        resultMetadata.put("totalCount", totalCount);
+        resultMetadata.put("returnedCount", returnedCount);
+        resultMetadata.put("truncated", truncated);
+
+        String summary = "找到 " + totalCount + " " + defaultString(resultUnit);
+        if (truncated) {
+            summary += "，当前展示前 " + returnedCount + " " + displayUnit(resultUnit);
+        }
+        return result(toolCode, toolName, summary, displayed, Map.copyOf(resultMetadata));
+    }
+
+    private String displayUnit(String resultUnit) {
+        String normalized = defaultString(resultUnit);
+        if (normalized.startsWith("个")) {
+            return "个";
+        }
+        if (normalized.startsWith("条")) {
+            return "条";
+        }
+        return "项";
     }
 
     private void requireToolPermission(PlatformToolDefinition definition) {
@@ -873,7 +942,41 @@ public class PlatformToolExecutor {
         if (value == null || keyword == null || keyword.isBlank()) {
             return false;
         }
-        return value.toLowerCase(Locale.ROOT).contains(keyword.toLowerCase(Locale.ROOT));
+        String normalizedValue = normalizeSearchText(value);
+        String normalizedKeyword = normalizeSearchText(keyword);
+        if (normalizedValue.isBlank() || normalizedKeyword.isBlank()) {
+            return false;
+        }
+        if (normalizedValue.contains(normalizedKeyword)) {
+            return true;
+        }
+
+        String[] rawTokens = SEARCH_TOKEN_SEPARATOR_PATTERN.split(normalizedKeyword);
+        LinkedHashSet<String> tokens = new LinkedHashSet<>();
+        for (String rawToken : rawTokens) {
+            if (rawToken != null && !rawToken.isBlank()) {
+                tokens.add(rawToken);
+            }
+        }
+        if (tokens.size() <= 1) {
+            return normalizedValue.contains(normalizedKeyword);
+        }
+        return tokens.stream().allMatch(normalizedValue::contains);
+    }
+
+    /**
+     * 统一平台工具的中文查询文本，兼容用户常用的繁简字形和历史字段写法。
+     */
+    private String normalizeSearchText(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim()
+                .toLowerCase(Locale.ROOT)
+                .replace("台帳", "台账")
+                .replace("台帐", "台账")
+                .replace("帳", "账")
+                .replace("帐", "账");
     }
 
     /**
@@ -916,9 +1019,17 @@ public class PlatformToolExecutor {
      * 构造允许空值被自动跳过的 metadata，避免可选查询参数在 `Map.of` 中触发空指针。
      */
     private Map<String, Object> metadata(Object... keyValues) {
+        Map<String, Object> metadata = mutableMetadata(keyValues);
+        return metadata.isEmpty() ? Map.of() : Map.copyOf(metadata);
+    }
+
+    /**
+     * 构造后续仍可追加聚合字段的查询元数据。
+     */
+    private Map<String, Object> mutableMetadata(Object... keyValues) {
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         if (keyValues == null) {
-            return Map.of();
+            return metadata;
         }
         for (int index = 0; index + 1 < keyValues.length; index += 2) {
             Object key = keyValues[index];
@@ -928,7 +1039,23 @@ public class PlatformToolExecutor {
             }
             metadata.put(keyName, value);
         }
-        return metadata.isEmpty() ? Map.of() : Map.copyOf(metadata);
+        return metadata;
+    }
+
+    /**
+     * 工作项状态分布基于完整筛选结果计算，候选展示截断不能影响聚合事实。
+     */
+    private Map<String, Long> statusCounts(List<TaskEntity> tasks) {
+        LinkedHashMap<String, Long> counts = new LinkedHashMap<>();
+        if (tasks == null) {
+            return Map.of();
+        }
+        for (TaskEntity task : tasks) {
+            String status = task == null ? "" : defaultString(task.getStatus());
+            String key = status.isBlank() ? "未设置" : status;
+            counts.merge(key, 1L, Long::sum);
+        }
+        return counts.isEmpty() ? Map.of() : Map.copyOf(counts);
     }
 
     private boolean isBlank(String value) {

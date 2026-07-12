@@ -359,7 +359,9 @@ class HermesPromptBuilderTests {
         assertThat(prompt.systemPrompt())
                 .contains("项目 → 迭代 → 工作项")
                 .contains("只在当前缺失或存在歧义的那一级生成候选确认")
-                .contains("查询工作项数量、状态、列表或汇总时不要再要求用户确认单个工作项");
+                .contains("查询工作项数量、状态、列表或汇总时不要再要求用户确认单个工作项")
+                .contains("数量必须读取工具结果中的 `metadata.totalCount`")
+                .contains("不能使用 `candidates` 的长度代替总数");
     }
 
     /**
@@ -389,7 +391,9 @@ class HermesPromptBuilderTests {
                 .contains("Markdown 输出契约")
                 .contains("加粗标记 `**` 必须成对出现在同一行内")
                 .contains("不要输出孤立的 `*` 或 `**`")
-                .contains("表格单元格内优先使用纯文本");
+                .contains("表格单元格内优先使用纯文本")
+                .contains("`**标签：** 值`")
+                .contains("`1. 内容`");
     }
 
     /**

@@ -445,7 +445,7 @@ const runsWarning = ref<string>('')
 const runTotalPages = computed(() => Math.max(1, Math.ceil(runTotal.value / runSize.value) || 1))
 
 /**
- * 流水线列表按 kind 分组渲染：Woodpecker（AI Club 内置）置顶，Jenkins 在下，
+ * 流水线列表按 kind 分组渲染：Woodpecker（GitPilot 内置）置顶，Jenkins 在下，
  * 让访问者一眼看出该项目"对外承诺的发布通道"由哪些来源构成。
  */
 const groupedPipelines = computed(() => {

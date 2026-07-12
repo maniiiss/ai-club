@@ -3,7 +3,7 @@
  * 功能：迭代 CRUD、工作项 CRUD、工作项详情抽屉、列表/看板切换。
  */
 import { useEffect, useState, useCallback, useRef, type FormEvent } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Plus, CheckSquare, AlertCircle, FileText, Search,
   X, Edit3, Trash2, LayoutList, LayoutGrid, GripVertical, TrendingDown,
@@ -14,7 +14,7 @@ import {
   getIterationBoard, pageProjectWorkItems, listProjectWorkItems, getWorkItemStats,
   createIteration, updateIteration, deleteIteration,
   createWorkItem, updateWorkItem, deleteWorkItem, getWorkItemDetail,
-  getProjectBurndown, listTaskComments, createTaskComment,
+  getProjectBurndown, listTaskComments, createTaskComment, pageTaskUpdateRecords,
   getWorkItemLinks, addWorkItemChild, removeWorkItemChild,
   addRelatedWorkItem, removeRelatedWorkItem, addWorkItemTestCase, removeWorkItemTestCase,
   pageProjectTestCases, uploadWorkItemAttachment, deleteWorkItemAttachment, downloadWorkItemAttachment,
@@ -25,6 +25,7 @@ import { MarkdownEditor } from '@/src/components/common/MarkdownEditor'
 import { RequirementAiDialog } from './RequirementAiDialog'
 import { DevelopmentExecutionDialog } from './DevelopmentExecutionDialog'
 import { TechnicalDesignAiDialog } from './TechnicalDesignAiDialog'
+import { WorkItemUpdateTimeline } from '@/src/components/planning/WorkItemUpdateTimeline'
 import { useAuthStore } from '@/src/stores/auth'
 import { REQUIREMENT_TEMPLATE, TASK_TEMPLATE } from '@/src/lib/markdownTemplates'
 import { uploadMarkdownImage } from '@/src/lib/markdownImageUpload'
@@ -51,6 +52,7 @@ import { cn, formatDate, formatDateTime, getErrorMessage } from '@/src/lib/utils
 type WorkItemTypeFilter = '全部' | '需求' | '任务' | '缺陷'
 type ViewMode = 'list' | 'kanban'
 type DetailTab = 'detail' | 'children' | 'related' | 'testCases' | 'attachments'
+type ActivityTab = 'comments' | 'updateRecords'
 
 const typeTabs: WorkItemTypeFilter[] = ['全部', '需求', '任务', '缺陷']
 
@@ -123,6 +125,7 @@ const getDetailTabCount = (tab: DetailTab, links: WorkItemLinks | null) => {
 
 export const PlanningPage = () => {
   const { projectId } = useParams<{ projectId: string }>()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const canCreateExecution = useAuthStore((state) => state.hasPermission('task:execution:create'))
   const pid = Number(projectId)
@@ -154,6 +157,10 @@ export const PlanningPage = () => {
   const [wiDialog, setWiDialog] = useState<{ open: boolean; editing?: WorkItem }>({ open: false })
   const [detailItem, setDetailItem] = useState<WorkItem | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const openedTaskIdRef = useRef<number | null>(null)
+  /** 请求序号用于丢弃 React StrictMode 或快速切换产生的过期响应，避免旧结果覆盖当前列表。 */
+  const boardRequestIdRef = useRef(0)
+  const workItemRequestIdRef = useRef(0)
   /**
    * 详情抽屉内关联跳转历史。列表/看板首次打开详情会清空，关联项跳转会入栈，便于原路返回。
    */
@@ -174,20 +181,28 @@ export const PlanningPage = () => {
   const [userOptions, setUserOptions] = useState<UserOptionItem[]>([])
   /** 项目成员 ID 列表，用于负责人选人分组。 */
   const projectMemberIds = board?.project?.memberUserIds ?? []
+  // 首次请求尚未返回时不能把 null 误判成空列表，否则进入页面会先闪出空状态。
+  const showWorkItemLoading = !workItems && !wiError
 
   const fetchBoard = async () => {
+    const requestId = ++boardRequestIdRef.current
     setBoardLoading(true); setBoardError(null)
     try {
       const [data, users] = await Promise.all([getIterationBoard(pid), listUserOptions()])
+      if (requestId !== boardRequestIdRef.current) return
       setBoard(data)
       setUserOptions(users)
       const active = data.iterations.find((i) => i.status === '进行中')
       if (active && !selectedIteration) setSelectedIteration(active)
-    } catch (err) { setBoardError(getErrorMessage(err)) }
-    finally { setBoardLoading(false) }
+    } catch (err) {
+      if (requestId === boardRequestIdRef.current) setBoardError(getErrorMessage(err))
+    } finally {
+      if (requestId === boardRequestIdRef.current) setBoardLoading(false)
+    }
   }
 
   const fetchWorkItems = useCallback(async () => {
+    const requestId = ++workItemRequestIdRef.current
     setWiLoading(true); setWiError(null)
     try {
       const query: Parameters<typeof pageProjectWorkItems>[1] = {
@@ -198,9 +213,13 @@ export const PlanningPage = () => {
       }
       if (selectedIteration === 'unplanned') query.unplanned = true
       else if (selectedIteration) query.iterationId = selectedIteration.id
-      setWorkItems(await pageProjectWorkItems(pid, query))
-    } catch (err) { setWiError(getErrorMessage(err)) }
-    finally { setWiLoading(false) }
+      const data = await pageProjectWorkItems(pid, query)
+      if (requestId === workItemRequestIdRef.current) setWorkItems(data)
+    } catch (err) {
+      if (requestId === workItemRequestIdRef.current) setWiError(getErrorMessage(err))
+    } finally {
+      if (requestId === workItemRequestIdRef.current) setWiLoading(false)
+    }
   }, [pid, page, keyword, typeFilter, statusFilter, priorityFilter, selectedIteration])
 
   const fetchStats = async () => {
@@ -226,7 +245,7 @@ export const PlanningPage = () => {
     if (!boardLoading) fetchWorkItems()
   }, [fetchWorkItems, boardLoading])
 
-  const refreshAll = () => { fetchBoard(); fetchWorkItems(); fetchStats() }
+  const refreshAll = () => { fetchBoard(); fetchStats() }
 
   const handleOpenDetail = async (id: number, options: { pushHistory?: boolean; preserveHistory?: boolean; previousItem?: WorkItem | null } = {}) => {
     if (options.pushHistory && options.previousItem && options.previousItem.id !== id) {
@@ -239,6 +258,14 @@ export const PlanningPage = () => {
     catch { setDetailItem(null) }
     finally { setDetailLoading(false) }
   }
+
+  // 处理管理端通知跳转过来的 openTaskId，让用户从消息直接看到对应工作项详情。
+  useEffect(() => {
+    const openTaskId = Number(searchParams.get('openTaskId'))
+    if (boardLoading || !Number.isInteger(openTaskId) || openTaskId <= 0 || openedTaskIdRef.current === openTaskId) return
+    openedTaskIdRef.current = openTaskId
+    void handleOpenDetail(openTaskId)
+  }, [boardLoading, searchParams])
 
   const handleBackDetail = async () => {
     const previous = detailNavigationStack[detailNavigationStack.length - 1]
@@ -509,12 +536,13 @@ export const PlanningPage = () => {
             </div>
           </div>
 
-          {/* 内容 */}
-          <div className="flex-1 min-h-0">
-          {wiLoading ? <LoadingSpinner text="加载工作项…" />
-            : wiError ? <ErrorState description={wiError} onRetry={fetchWorkItems} />
+           {/* 内容 */}
+           <div className="min-h-[240px]">
+           {boardError ? <ErrorState description={boardError} onRetry={fetchBoard} />
+             : showWorkItemLoading || (wiLoading && !workItems) ? <div className="flex min-h-[240px] items-start"><LoadingSpinner text="加载工作项…" /></div>
+             : wiError ? <ErrorState description={wiError} onRetry={fetchWorkItems} />
             : !workItems || workItems.records.length === 0
-              ? <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]"><EmptyState title="暂无工作项" description="点击右上角「新建工作项」开始。" icon={<CheckSquare className="h-6 w-6" strokeWidth={1.5} />} /></div>
+              ? <div className="min-h-[240px] rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]"><EmptyState title="暂无工作项" description="点击右上角「新建工作项」开始。" icon={<CheckSquare className="h-6 w-6" strokeWidth={1.5} />} /></div>
               : viewMode === 'list'
                 ? <WorkItemTable items={workItems} onOpenDetail={handleOpenDetail} onEdit={(w) => setWiDialog({ open: true, editing: w })} onDelete={(w) => setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name })} onInlineChange={handleInlineWorkItemChange} error={inlineEditError} page={page} totalPages={workItems.totalPages} total={workItems.total} onPageChange={setPage} />
                 : <KanbanBoard items={workItems.records} onOpenDetail={handleOpenDetail} />
@@ -936,7 +964,10 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
   const [commentsLoading, setCommentsLoading] = useState(false)
   const [commentText, setCommentText] = useState('')
   const [commentSubmitting, setCommentSubmitting] = useState(false)
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
+  const [updateRecordCount, setUpdateRecordCount] = useState(0)
   const [activeTab, setActiveTab] = useState<DetailTab>('detail')
+  const [activityTab, setActivityTab] = useState<ActivityTab>('comments')
   const [links, setLinks] = useState<WorkItemLinks | null>(null)
   const [linksLoading, setLinksLoading] = useState(false)
   const [workItemOptions, setWorkItemOptions] = useState<WorkItem[]>([])
@@ -974,6 +1005,9 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
   // 加载评论
   useEffect(() => {
     let cancelled = false
+    setActiveTab('detail')
+    setActivityTab('comments')
+    setUpdateRecordCount(0)
     setCommentsLoading(true)
     listTaskComments(item.id)
       .then((data) => { if (!cancelled) setComments(data) })
@@ -981,6 +1015,14 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
       .finally(() => { if (!cancelled) setCommentsLoading(false) })
     return () => { cancelled = true }
   }, [item.id])
+
+  useEffect(() => {
+    let cancelled = false
+    pageTaskUpdateRecords(item.id, { page: 1, size: 1 })
+      .then((data) => { if (!cancelled) setUpdateRecordCount(data.total) })
+      .catch(() => { if (!cancelled) setUpdateRecordCount(0) })
+    return () => { cancelled = true }
+  }, [item.id, historyRefreshKey])
 
   useEffect(() => {
     let cancelled = false
@@ -1013,6 +1055,7 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
     try {
       const newComment = await createTaskComment(item.id, commentText)
       setComments((prev) => [...prev, newComment])
+      setHistoryRefreshKey((value) => value + 1)
       setCommentText('')
     } catch { /* 静默 */ }
     finally { setCommentSubmitting(false) }
@@ -1038,6 +1081,7 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
         requirementTaskId: item.requirementTaskId,
       })
       onRefresh(item.id)
+      setHistoryRefreshKey((value) => value + 1)
     } catch { /* 静默 */ }
     finally { setStatusUpdating(false) }
   }
@@ -1047,6 +1091,7 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
     setLinkSubmitting(true)
     try {
       setLinks(await operation())
+      setHistoryRefreshKey((value) => value + 1)
       setSelectedWorkItemId('')
       setSelectedTestCaseId('')
     } catch { /* 静默，由后续统一错误提示补充 */ }
@@ -1059,6 +1104,7 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
     try {
       await uploadWorkItemAttachment(item.id, file)
       setLinks(await getWorkItemLinks(item.id))
+      setHistoryRefreshKey((value) => value + 1)
     } catch { /* 静默 */ }
     finally { setAttachmentUploading(false) }
   }
@@ -1199,55 +1245,84 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
             </div>
           </div>
 
-          {/* ── 评论区 ── */}
-          <div id="comments-section">
-            <h4 className="text-[12px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider mb-2">
-              评论{comments.length > 0 && <span className="ml-1 text-[var(--color-primary)]">({comments.length})</span>}
-            </h4>
-
-            {commentsLoading ? (
-              <div className="py-4 text-center text-[13px] text-[var(--color-text-tertiary)]">加载评论中…</div>
-            ) : comments.length === 0 ? (
-              <div className="py-4 text-center text-[13px] text-[var(--color-text-tertiary)]">暂无评论</div>
-            ) : (
-              <div className="space-y-3 mb-4">
-                {comments.map((c) => (
-                  <div key={c.id} className="rounded-lg border border-[var(--color-border-light)] bg-white p-3">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[13px] font-medium text-[var(--color-text-primary)]">{c.authorName || '未知用户'}</span>
-                      <span className="text-[11px] text-[var(--color-text-tertiary)]">{formatDate(c.createdAt)}</span>
-                    </div>
-                    <div className="text-[13px]">
-                      <Markdown content={c.content} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* 评论输入 */}
-            <div className="space-y-2">
-              <MarkdownEditor
-                value={commentText}
-                onChange={setCommentText}
-                placeholder="输入评论内容…"
-                height={200}
-                uploadImage={uploadMarkdownImage}
-                startInEditMode
-              />
-              <div className="flex justify-end">
-                <Button
-                  onClick={handleSubmitComment}
-                  loading={commentSubmitting}
-                  disabled={!commentText.trim()}
-                  icon={<Send className="h-3.5 w-3.5" />}
-                  size="sm"
-                >
-                  发送
-                </Button>
-              </div>
+          <section className="detail-activity-tabs mt-7 min-h-[420px] border-t border-[var(--color-border-light)] pt-5" aria-label="工作项协作记录">
+            <div className="mb-4 flex gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] p-1">
+              <button
+                type="button"
+                onClick={() => setActivityTab('comments')}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-colors',
+                  activityTab === 'comments' ? 'bg-white text-[var(--color-primary)] shadow-[var(--shadow-xs)]' : 'text-[var(--color-text-secondary)] hover:bg-white/70',
+                )}
+              >
+                评论
+                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-primary)] px-1 text-[11px] font-bold leading-none text-white">{comments.length}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActivityTab('updateRecords')}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-colors',
+                  activityTab === 'updateRecords' ? 'bg-white text-[var(--color-primary)] shadow-[var(--shadow-xs)]' : 'text-[var(--color-text-secondary)] hover:bg-white/70',
+                )}
+              >
+                更新记录
+                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-primary)] px-1 text-[11px] font-bold leading-none text-white">{updateRecordCount}</span>
+              </button>
             </div>
-          </div>
+
+            {activityTab === 'comments' ? (
+              <div id="comments-section" className="space-y-4">
+                <div>
+                  <h4 className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">评论</h4>
+                  {commentsLoading ? (
+                    <div className="py-4 text-center text-[13px] text-[var(--color-text-tertiary)]">加载评论中…</div>
+                  ) : comments.length === 0 ? (
+                    <div className="py-4 text-center text-[13px] text-[var(--color-text-tertiary)]">暂无评论</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {comments.map((c) => (
+                        <div key={c.id} className="rounded-lg border border-[var(--color-border-light)] bg-white p-3">
+                          <div className="mb-1.5 flex items-center justify-between">
+                            <span className="text-[13px] font-medium text-[var(--color-text-primary)]">{c.authorName || '未知用户'}</span>
+                            <span className="text-[11px] text-[var(--color-text-tertiary)]">{formatDate(c.createdAt)}</span>
+                          </div>
+                          <div className="text-[13px]"><Markdown content={c.content} /></div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <MarkdownEditor
+                    value={commentText}
+                    onChange={setCommentText}
+                    placeholder="输入评论内容…"
+                    height={200}
+                    uploadImage={uploadMarkdownImage}
+                    startInEditMode
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handleSubmitComment}
+                      loading={commentSubmitting}
+                      disabled={!commentText.trim()}
+                      icon={<Send className="h-3.5 w-3.5" />}
+                      size="sm"
+                    >
+                      发送
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <WorkItemUpdateTimeline
+                taskId={item.id}
+                refreshKey={historyRefreshKey}
+                onCountChange={setUpdateRecordCount}
+              />
+            )}
+          </section>
 
           <p className="text-[11px] text-[var(--color-text-tertiary)]">最后更新：{formatDate(item.updatedAt)}</p>
           </div>

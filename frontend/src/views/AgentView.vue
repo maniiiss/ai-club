@@ -361,6 +361,25 @@
             </div>
           </template>
 
+          <template v-else-if="form.accessType === 'LLM_VISION'">
+            <div class="form-grid two-columns">
+            <el-form-item label="模型配置" prop="aiModelConfigId">
+              <el-select v-model="form.aiModelConfigId" placeholder="请选择支持图片输入的模型配置" clearable style="width: 100%">
+                <el-option
+                  v-for="model in modelOptions"
+                  :key="model.id"
+                  :label="`${model.name} / ${model.provider} / ${model.modelName}`"
+                  :value="model.id"
+                />
+              </el-select>
+            </el-form-item>
+            <div />
+            <el-form-item label="系统提示词" class="span-2">
+              <el-input v-model="form.systemPrompt" type="textarea" :rows="8" placeholder="请输入图片理解的范围、输出格式和禁止推测规则" />
+            </el-form-item>
+            </div>
+          </template>
+
           <template v-else-if="form.accessType === 'AGENT_RUNTIME'">
             <div class="form-grid two-columns">
             <el-form-item label="运行时类型" prop="runtimeType">
@@ -575,6 +594,25 @@
             </div>
           </template>
 
+          <template v-else-if="form.accessType === 'LLM_VISION'">
+            <div class="form-grid two-columns">
+            <el-form-item label="模型配置" prop="aiModelConfigId">
+              <el-select v-model="form.aiModelConfigId" placeholder="请选择支持图片输入的模型配置" clearable style="width: 100%">
+                <el-option
+                  v-for="model in modelOptions"
+                  :key="model.id"
+                  :label="`${model.name} / ${model.provider} / ${model.modelName}`"
+                  :value="model.id"
+                />
+              </el-select>
+            </el-form-item>
+            <div />
+            <el-form-item label="系统提示词" class="span-2">
+              <el-input v-model="form.systemPrompt" type="textarea" :rows="8" placeholder="请输入图片理解的范围、输出格式和禁止推测规则" />
+            </el-form-item>
+            </div>
+          </template>
+
           <template v-else-if="form.accessType === 'AGENT_RUNTIME'">
             <div class="form-grid two-columns">
             <el-form-item label="运行时类型" prop="runtimeType">
@@ -750,8 +788,8 @@ interface AgentForm {
   type: string
   status: string
   enabled: boolean
-  accessType: 'BUILT_IN' | 'LLM_PROMPT' | 'HTTP_API' | 'AGENT_RUNTIME'
-  builtinCode: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | 'REPOSITORY_SCAN_PLAN' | 'REQUIREMENT_AI_STANDARDIZE' | 'REQUIREMENT_AI_BREAKDOWN' | 'REQUIREMENT_AI_TEST_CASES' | null
+  accessType: 'BUILT_IN' | 'LLM_PROMPT' | 'LLM_VISION' | 'HTTP_API' | 'AGENT_RUNTIME'
+  builtinCode: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | 'REPOSITORY_SCAN_PLAN' | 'REQUIREMENT_AI_STANDARDIZE' | 'REQUIREMENT_AI_BREAKDOWN' | 'REQUIREMENT_AI_TEST_CASES' | 'IMAGE_UNDERSTANDING' | null
   capability: string
   description: string
   aiModelConfigId: number | null
@@ -776,6 +814,7 @@ const statusOptions = ['在线', '空闲', '离线']
 const accessTypeOptions = [
   { label: '内置智能体', value: 'BUILT_IN' },
   { label: '提示词智能体', value: 'LLM_PROMPT' },
+  { label: '图片理解', value: 'LLM_VISION' },
   { label: 'HTTP API 接入', value: 'HTTP_API' },
   { label: '运行时接入', value: 'AGENT_RUNTIME' }
 ] as const
@@ -867,7 +906,7 @@ const rules: FormRules<AgentForm> = {
 const accessTypeLabel = (value?: string | null) => accessTypeOptions.find(item => item.value === value)?.label || value || '-'
 const runtimeTypeLabel = (value?: string | null) => runtimeTypeOptions.find(item => item.value === value)?.label || value || '-'
 const agentAccessIcon = (accessType?: string | null) =>
-  accessType === 'AGENT_RUNTIME' ? Connection : accessType === 'HTTP_API' ? Link : accessType === 'LLM_PROMPT' ? Cpu : Promotion
+  accessType === 'AGENT_RUNTIME' ? Connection : accessType === 'HTTP_API' ? Link : accessType === 'LLM_PROMPT' || accessType === 'LLM_VISION' ? Cpu : Promotion
 const isOpenclawRuntime = computed(() =>
   form.accessType === 'AGENT_RUNTIME' && form.runtimeType === 'OPENCLAW'
 )
@@ -1031,10 +1070,13 @@ const buildPayload = () => ({
   status: form.status,
   enabled: form.enabled,
   accessType: form.accessType,
-  builtinCode: form.accessType === 'BUILT_IN' ? form.builtinCode : null,
+  builtinCode: form.accessType === 'BUILT_IN'
+    ? form.builtinCode
+    : form.accessType === 'LLM_VISION' ? 'IMAGE_UNDERSTANDING' : null,
   capability: form.capability,
   description: form.description,
-  aiModelConfigId: form.accessType === 'BUILT_IN' || form.accessType === 'LLM_PROMPT' ? form.aiModelConfigId : null,
+  aiModelConfigId: form.accessType === 'BUILT_IN' || form.accessType === 'LLM_PROMPT' || form.accessType === 'LLM_VISION'
+    ? form.aiModelConfigId : null,
   projectId: form.projectId,
   systemPrompt: form.systemPrompt,
   userPromptTemplate: form.accessType === 'LLM_PROMPT' || form.accessType === 'AGENT_RUNTIME' ? form.userPromptTemplate : '',
@@ -1071,6 +1113,10 @@ const validateBusinessRules = () => {
       ElMessage.warning('请输入用户提示词模板')
       return false
     }
+  }
+  if (form.accessType === 'LLM_VISION' && !form.aiModelConfigId) {
+    ElMessage.warning('图片理解智能体需要绑定模型配置')
+    return false
   }
   if (form.accessType === 'HTTP_API' && !form.endpointUrl.trim()) {
     ElMessage.warning('请输入 HTTP API 地址')

@@ -42,6 +42,18 @@ public class DocumentMarkdownService {
      */
     public DocumentMarkdownResult convert(Long assetId, String scene, Integer maxChars, String imageDirectory) {
         DocumentAssetEntity asset = documentAssetService.requireAccessibleAsset(assetId);
+        return convertAsset(asset, scene, maxChars, imageDirectory);
+    }
+
+    /**
+     * 转换已经由上层业务权限确认过的资产。
+     * 工作项附件等场景必须按工作项关系授权，不能再次按上传者归属校验。
+     */
+    public DocumentMarkdownResult convertAsset(DocumentAssetEntity asset, String scene, Integer maxChars) {
+        return convertAsset(asset, scene, maxChars, null);
+    }
+
+    private DocumentMarkdownResult convertAsset(DocumentAssetEntity asset, String scene, Integer maxChars, String imageDirectory) {
         DocumentAssetStorageService.StoredDocumentContent content = documentAssetService.loadContent(asset);
         DocumentMarkdownClientService.ConvertDocumentResponse converted = documentMarkdownClientService.convert(
                 content.bytes(),

@@ -232,6 +232,30 @@
 
 承载阶段性活动、精选主题、合作计划或运营位，不作为首页长期唯一视觉主角，但需要具备拉升品牌气氛的能力。
 
+### 7.7 输入框与窄容器降级规范
+
+公众端带前置图标的搜索输入框统一使用 `frontend-public/src/components/common/Input.tsx`，不要在页面中重复实现绝对定位图标、左内边距和 focus 样式。
+
+通用 `Input` 的默认样式必须保持兼容；只有筛选栏、搜索栏等明确需要适配窄容器的场景才开启 `adaptiveIcon`，并按需要使用 `size="sm"` 和 `wrapperClassName` 控制布局：
+
+```tsx
+<Input
+  size="sm"
+  adaptiveIcon
+  wrapperClassName="min-w-0 max-w-xs flex-1"
+  icon={<Search className="h-4 w-4" />}
+  placeholder="搜索…"
+  value={keyword}
+  onChange={(event) => setKeyword(event.target.value)}
+/>
+```
+
+自适应规则由通用组件内部的容器查询负责：容器宽度足够时保留常规 focus ring；容器小于 280px 时增加图标与文字的左间距，并关闭外层 ring，避免搜索文字被图标或焦点轮廓遮挡。需要额外操作按钮（例如清空）的场景，应在外层保留 `relative` 容器，按钮与 `Input` 并列放置。
+
+带搜索建议或搜索结果的输入框，结果面板必须放在同一个 `relative` 容器内，并使用 `absolute left-0 right-0 top-full` 定位，配合 `z-30`、边框、背景色和最大高度滚动。结果面板不参与正常文档流，避免把目录树或列表顶下去；除非产品明确要求，否则不使用阴影。
+
+该规范已应用于发布与观测、测试与执行、文档 Wiki、API 搜索和知识图谱搜索。普通表单输入默认不启用自适应能力，以避免无关页面发生视觉变化。
+
 ## 8. 商业化适配原则
 
 既然未来收费模式偏向团队 / 企业订阅，则公众平台与商业化之间应遵循以下原则：

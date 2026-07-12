@@ -165,7 +165,7 @@ export const ChatMessageList = ({
                       Hermes 回复失败，可重试生成。
                     </div>
                   )}
-                  <Markdown content={normalizeGeneratedMarkdown(resolveChatAssistantContent(message))} />
+                  <Markdown content={normalizeGeneratedMarkdown(resolveChatAssistantContent(message))} normalize={false} variant="assistant" />
                   {isAssistant && message.agentTaskId && (
                     <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/75 px-2 py-1 text-[11px] font-medium text-amber-800">
                       Agent task #{message.agentTaskId} · {formatAgentTaskStatus(message.agentTaskStatus)}

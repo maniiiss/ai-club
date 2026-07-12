@@ -1146,6 +1146,33 @@
                 </el-form-item>
               </div>
           </section>
+
+        <div v-if="workItemEditing && currentDialogWorkItem" class="work-item-activity-tabs">
+          <el-tabs v-model="workItemActivityTab">
+            <el-tab-pane name="comments">
+              <template #label>
+                <span class="work-item-activity-tab-label">评论<span class="task-tab-count">{{ workItemCommentCount }}</span></span>
+              </template>
+              <TaskCommentTimeline
+                :task-id="currentDialogWorkItem.id"
+                :refresh-key="workItemHistoryRefreshKey"
+                @count-change="workItemCommentCount = $event"
+                @comment-posted="workItemHistoryRefreshKey += 1"
+              />
+            </el-tab-pane>
+            <el-tab-pane name="updateRecords">
+              <template #label>
+                <span class="work-item-activity-tab-label">更新记录<span class="task-tab-count">{{ workItemUpdateRecordCount }}</span></span>
+              </template>
+              <TaskUpdateTimeline
+                :task-id="currentDialogWorkItem.id"
+                :refresh-key="workItemHistoryRefreshKey"
+                @count-change="workItemUpdateRecordCount = $event"
+              />
+            </el-tab-pane>
+          </el-tabs>
+        </div>
+
         </div>
 
         <div v-if="canManageWorkItem" class="work-item-dialog-footer">
@@ -1358,6 +1385,8 @@ import ProjectBurndownChart from '@/components/ProjectBurndownChart.vue'
 import RequirementAiDialog from '@/components/RequirementAiDialog.vue'
 import WorkItemSmartActionDialog from '@/components/WorkItemSmartActionDialog.vue'
 import WorkItemMemberField from '@/components/WorkItemMemberField.vue'
+import TaskCommentTimeline from '@/components/TaskCommentTimeline.vue'
+import TaskUpdateTimeline from '@/components/TaskUpdateTimeline.vue'
 import { HERMES_OPEN_EVENT_NAME } from '@/constants/hermes'
 import {
   createTaskComment,
@@ -1719,6 +1748,10 @@ const currentRequirementAiTask = ref<TaskItem | null>(null)
 const smartActionDialogVisible = ref(false)
 const currentSmartActionWorkItem = ref<TaskItem | null>(null)
 const currentDialogWorkItem = ref<TaskItem | null>(null)
+const workItemHistoryRefreshKey = ref(0)
+const workItemActivityTab = ref('comments')
+const workItemCommentCount = ref(0)
+const workItemUpdateRecordCount = ref(0)
 const legacyRequirementNeedsUpgrade = ref(false)
 const legacyRequirementPreview = ref('')
 const workItemDescriptionEditing = ref(true)
@@ -2964,12 +2997,18 @@ const handleDeleteIteration = async (item: IterationItem) => {
 
 const openCreateWorkItemDialog = () => {
   workItemEditing.value = false
+  workItemActivityTab.value = 'comments'
+  workItemCommentCount.value = 0
+  workItemUpdateRecordCount.value = 0
   resetWorkItemForm()
   workItemDialogVisible.value = true
 }
 
 const openEditWorkItemDialog = (item: TaskItem) => {
   workItemEditing.value = true
+  workItemActivityTab.value = 'comments'
+  workItemCommentCount.value = 0
+  workItemUpdateRecordCount.value = 0
   workItemDescriptionEditing.value = false
   currentDialogWorkItem.value = item
   currentWorkItemId.value = item.id
@@ -3043,6 +3082,9 @@ const handleSubmitComment = async () => {
     await createTaskComment(currentCommentTask.value.id, content)
     resetCommentForm()
     await Promise.all([loadTaskCommentList(), loadWorkItems()])
+    if (currentDialogWorkItem.value?.id === currentCommentTask.value.id) {
+      workItemHistoryRefreshKey.value += 1
+    }
     ElMessage.success('评论已发布')
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.message || '评论发布失败')
@@ -5508,6 +5550,31 @@ a.workspace-title-source-icon:hover {
 .legacy-requirement-preview-body :deep(ul + p),
 .legacy-requirement-preview-body :deep(ol + p) {
   margin-top: 8px;
+}
+
+.work-item-activity-tabs {
+  margin-top: 14px;
+  padding: 0 12px;
+}
+
+.work-item-activity-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.work-item-activity-tabs .task-tab-count {
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--app-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .work-item-dialog-footer {

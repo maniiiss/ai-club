@@ -80,7 +80,7 @@ public ModelInvocation invokeVisionPromptWithUsage(
 - Modify: `backend/src/main/java/com/aiclub/platform/agentusage/AgentType.java`
 - Modify: `frontend/src/api/platform.ts`
 - Modify: `frontend/src/views/AgentView.vue`
-- Create: `backend/src/main/resources/db/migration/V100__requirement_ai_vision_agent.sql`
+- Create: `backend/src/main/resources/db/migration/V118__requirement_ai_vision_agent.sql`
 - Test: `backend/src/test/java/com/aiclub/platform/service/AgentExecutionServiceTests.java`
 
 - [ ] Add failing tests for resolving `builtinCode=IMAGE_UNDERSTANDING`, rejecting disabled/wrong-access agents, batching normalized images, and recording `IMAGE_UNDERSTANDING` usage.
@@ -158,7 +158,7 @@ public RequirementAiPreparedContext prepare(RequirementAiTaskSnapshot snapshot) 
 ### Task 8: Add idempotent edit/writeback auditing
 
 **Files:**
-- Create: `backend/src/main/resources/db/migration/V101__requirement_ai_result_application.sql`
+- Create: `backend/src/main/resources/db/migration/V119__requirement_ai_result_application.sql`
 - Create: `backend/src/main/java/com/aiclub/platform/domain/model/RequirementAiResultApplicationEntity.java`
 - Create: `backend/src/main/java/com/aiclub/platform/repository/RequirementAiResultApplicationRepository.java`
 - Create: `backend/src/main/java/com/aiclub/platform/dto/request/RequirementAiResultApplyRequest.java`

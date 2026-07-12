@@ -155,7 +155,7 @@ public class PlatformToolRegistry {
                 schema("agentId", "Agent ID"),
                 agentOutputSchema());
         register(result, TOOL_GITLAB_BINDING_SEARCH, "搜索仓库绑定", "GITLAB", "按项目名或仓库路径搜索 GitLab 绑定仓库", true, "LOW", "gitlab:view", false,
-                schema("keyword", "仓库关键词"),
+                schema("keyword", "仓库关键词", "projectId", "项目ID，可选"),
                 gitlabBindingOutputSchema());
         register(result, TOOL_REPO_SCAN_LIST_RULESETS, "扫描规则集列表", "GITLAB", "列出可用于仓库规范扫描的规则集", true, "LOW", "gitlab:view", false,
                 Map.of(),
@@ -167,7 +167,7 @@ public class PlatformToolRegistry {
                 schema("bindingId", "绑定ID", "status", "任务状态"),
                 executionTaskOutputSchema());
         register(result, TOOL_EXECUTION_TASK_SEARCH, "搜索执行任务", "EXECUTION", "按项目、工作项、状态或场景搜索执行任务", true, "LOW", "task:view", false,
-                schema("keyword", "执行任务关键词"),
+                schema("keyword", "执行任务关键词", "projectId", "项目ID，可选", "status", "执行任务状态，可选", "scenarioCode", "执行场景编码，可选"),
                 executionTaskOutputSchema());
         register(result, TOOL_EXECUTION_TASK_GET_DETAIL, "执行任务详情", "EXECUTION", "读取执行任务、运行、步骤和产物", true, "LOW", "task:view", false,
                 schema("executionTaskId", "执行任务ID"),
@@ -182,7 +182,7 @@ public class PlatformToolRegistry {
                 schema("executionTaskId", "执行任务ID"),
                 pendingActionOutputSchema("CANCEL_EXECUTION_TASK", "确认后取消执行任务", "取消动作所需的执行任务标识"));
         register(result, TOOL_TEST_PLAN_SEARCH, "搜索测试计划", "TEST", "按项目、迭代、状态或关键词查询测试计划", true, "LOW", "test:view", false,
-                schema("keyword", "测试计划关键词"),
+                schema("keyword", "测试计划关键词", "projectId", "项目ID，可选", "iterationId", "迭代ID，可选", "status", "测试计划状态，可选"),
                 testPlanOutputSchema());
         register(result, TOOL_TEST_PLAN_GET_DETAIL, "测试计划详情", "TEST", "读取测试计划和测试用例", true, "LOW", "test:view", false,
                 schema("testPlanId", "测试计划ID"),
@@ -238,8 +238,27 @@ public class PlatformToolRegistry {
         return result.isEmpty() ? Map.of() : Collections.unmodifiableMap(result);
     }
 
+    /**
+     * 为可能截断候选的查询工具声明统一统计契约，模型回答数量时必须使用 totalCount 而不是 candidates 长度。
+     */
+    private Map<String, String> collectionOutputSchema(Map<String, String> baseSchema, boolean includeStatusCounts) {
+        LinkedHashMap<String, String> result = new LinkedHashMap<>();
+        if (baseSchema != null) {
+            result.putAll(baseSchema);
+        }
+        result.put("metadata.totalCount", "完整筛选或召回结果总数");
+        result.put("metadata.returnedCount", "当前返回候选数");
+        result.put("metadata.truncated", "候选列表是否已截断");
+        if (includeStatusCounts) {
+            result.put("metadata.statusCounts", "完整筛选结果的状态分布");
+            result.put("metadata.scopeType", "统计范围类型：GLOBAL、PROJECT 或 ITERATION");
+            result.put("metadata.scopeDescription", "统计范围说明");
+        }
+        return Collections.unmodifiableMap(result);
+    }
+
     private Map<String, String> projectOutputSchema() {
-        return schema(
+        return collectionOutputSchema(schema(
                 "summary", "本次项目检索/读取结果摘要",
                 "candidates[]", "项目候选列表",
                 "candidates[].id", "项目ID",
@@ -251,7 +270,7 @@ public class PlatformToolRegistry {
                 "candidates[].payload.status", "项目状态",
                 "candidates[].payload.owner", "项目负责人",
                 "metadata", "回显本次查询上下文"
-        );
+        ), false);
     }
 
     private Map<String, String> iterationOutputSchema() {
@@ -296,7 +315,7 @@ public class PlatformToolRegistry {
     }
 
     private Map<String, String> projectMemberOutputSchema() {
-        return schema(
+        return collectionOutputSchema(schema(
                 "summary", "本次项目成员查询摘要",
                 "candidates[]", "成员候选列表",
                 "candidates[].id", "用户ID",
@@ -307,11 +326,11 @@ public class PlatformToolRegistry {
                 "candidates[].payload.username", "用户名",
                 "candidates[].payload.nickname", "昵称",
                 "metadata", "回显项目ID与搜索关键词"
-        );
+        ), false);
     }
 
     private Map<String, String> workItemOutputSchema() {
-        return schema(
+        return collectionOutputSchema(schema(
                 "summary", "本次工作项查询摘要",
                 "candidates[]", "工作项候选列表",
                 "candidates[].id", "工作项ID",
@@ -326,11 +345,11 @@ public class PlatformToolRegistry {
                 "candidates[].payload.status", "工作项状态",
                 "candidates[].actions[]", "可基于该工作项继续发起的建议动作",
                 "metadata", "回显查询条件"
-        );
+        ), true);
     }
 
     private Map<String, String> agentOutputSchema() {
-        return schema(
+        return collectionOutputSchema(schema(
                 "summary", "本次 Agent 查询摘要",
                 "candidates[]", "Agent 候选列表",
                 "candidates[].id", "Agent ID",
@@ -341,11 +360,11 @@ public class PlatformToolRegistry {
                 "candidates[].payload.projectId", "所属项目ID，空表示全局 Agent",
                 "candidates[].payload.enabled", "是否启用",
                 "metadata.projectId", "查询使用的项目ID"
-        );
+        ), false);
     }
 
     private Map<String, String> gitlabBindingOutputSchema() {
-        return schema(
+        return collectionOutputSchema(schema(
                 "summary", "本次仓库绑定查询摘要",
                 "candidates[]", "绑定仓库候选列表",
                 "candidates[].id", "绑定ID",
@@ -358,7 +377,7 @@ public class PlatformToolRegistry {
                 "candidates[].payload.gitlabProjectPath", "GitLab 仓库路径",
                 "candidates[].payload.defaultTargetBranch", "默认目标分支",
                 "metadata", "回显查询条件"
-        );
+        ), false);
     }
 
     private Map<String, String> repoScanRulesetOutputSchema() {
@@ -375,7 +394,7 @@ public class PlatformToolRegistry {
     }
 
     private Map<String, String> executionTaskOutputSchema() {
-        return schema(
+        return collectionOutputSchema(schema(
                 "summary", "本次执行任务查询摘要",
                 "candidates[]", "执行任务候选列表",
                 "candidates[].id", "执行任务ID",
@@ -387,11 +406,11 @@ public class PlatformToolRegistry {
                 "candidates[].payload.title", "执行任务标题",
                 "candidates[].payload.status", "执行任务状态",
                 "metadata", "回显查询条件"
-        );
+        ), false);
     }
 
     private Map<String, String> testPlanOutputSchema() {
-        return schema(
+        return collectionOutputSchema(schema(
                 "summary", "本次测试计划查询摘要",
                 "candidates[]", "测试计划候选列表",
                 "candidates[].id", "测试计划ID",
@@ -404,7 +423,7 @@ public class PlatformToolRegistry {
                 "candidates[].payload.status", "测试计划状态",
                 "candidates[].payload.iterationId", "所属迭代ID",
                 "metadata", "回显查询条件"
-        );
+        ), false);
     }
 
     private Map<String, String> documentMarkdownOutputSchema() {
@@ -426,7 +445,7 @@ public class PlatformToolRegistry {
     }
 
     private Map<String, String> wikiPageSearchOutputSchema() {
-        return schema(
+        return collectionOutputSchema(schema(
                 "summary", "本次 Wiki 搜索摘要",
                 "candidates[]", "Wiki 页面候选列表",
                 "candidates[].id", "Wiki 页面ID",
@@ -440,7 +459,7 @@ public class PlatformToolRegistry {
                 "candidates[].payload.directoryId", "所属目录ID",
                 "candidates[].payload.boundProjectId", "绑定项目ID",
                 "metadata", "回显查询语句与过滤范围"
-        );
+        ), false);
     }
 
     private Map<String, String> wikiPageDetailOutputSchema() {

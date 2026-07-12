@@ -26,6 +26,7 @@ import {
 } from '@/src/api/execution'
 import type { TestPlanItem, TestCaseItem } from '@/src/types/execution'
 import { Button } from '@/src/components/common/Button'
+import { Input } from '@/src/components/common/Input'
 import { Select } from '@/src/components/common/Select'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
@@ -352,19 +353,18 @@ export const TestPlanDetailPage = () => {
 
       {/* 用例列表 */}
       <div className="mb-4 flex items-center gap-3">
-        <div className="relative max-w-xs flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
-          <input
-            type="text"
+        <Input
+          size="sm"
+          adaptiveIcon
+          wrapperClassName="min-w-0 max-w-xs flex-1"
+          icon={<Search className="h-4 w-4" />}
             placeholder="搜索用例…"
             value={caseKeyword}
             onChange={(e) => {
               setCaseKeyword(e.target.value)
               setCasePage(1)
             }}
-            className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white pl-9 pr-3 text-[13px] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
-          />
-        </div>
+        />
         <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={addCase}>
           新增用例
         </Button>

@@ -1,6 +1,6 @@
 /**
  * 新建流水线类型选择弹窗。
- * 统一入口，用户先选择流水线工具类型（AI Club 或 Jenkins），再进入对应表单。
+ * 统一入口，用户先选择流水线工具类型（GitPilot 或 Jenkins），再进入对应表单。
  */
 import { type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
@@ -34,7 +34,7 @@ export const CreatePipelineTypeDialog = ({
   const options: TypeOption[] = [
     {
       key: 'ai-club',
-      title: 'AI Club 流水线',
+      title: 'GitPilot 流水线',
       description: '基于 Woodpecker CI 的流水线，支持配置文件、Cron 定时和 Webhook 触发',
       icon: <Cpu className="h-6 w-6" strokeWidth={1.75} />,
       iconBg: 'bg-[var(--color-primary-light)] text-[var(--color-primary)]',

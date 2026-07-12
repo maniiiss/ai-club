@@ -19,6 +19,8 @@ public enum AgentType {
     PRD_ANALYZE("PRD 分析"),
     /** API 接口测试用例生成。 */
     API_TEST_CASE_AI("API 接口测试用例"),
+    /** 平台统一图片理解能力。 */
+    IMAGE_UNDERSTANDING("图片理解"),
     /** Hermes 流式对话。 */
     HERMES_CHAT("Hermes 对话"),
     /** Hermes 语音转写。 */

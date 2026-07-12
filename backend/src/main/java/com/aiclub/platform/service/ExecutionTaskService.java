@@ -17,6 +17,7 @@ import com.aiclub.platform.dto.ExecutionRunSummary;
 import com.aiclub.platform.dto.ExecutionStepSummary;
 import com.aiclub.platform.dto.ExecutionTaskDetail;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
+import com.aiclub.platform.dto.ExecutionContextOptionsSummary;
 import com.aiclub.platform.dto.ExecutionWorkspaceCleanupSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.TaskAgentRunSummary;
@@ -99,6 +100,7 @@ public class ExecutionTaskService {
     private final TechnicalDesignCreditSettlementService technicalDesignCreditSettlementService;
     private final ExecutionOrchestrationService executionOrchestrationService;
     private final ExecutionOrchestrationVersionRepository executionOrchestrationVersionRepository;
+    private final ExecutionContextSnapshotService executionContextSnapshotService;
     private final ObjectMapper objectMapper;
 
     public ExecutionTaskService(ExecutionTaskRepository executionTaskRepository,
@@ -119,6 +121,7 @@ public class ExecutionTaskService {
                                 TechnicalDesignCreditSettlementService technicalDesignCreditSettlementService,
                                 ExecutionOrchestrationService executionOrchestrationService,
                                 ExecutionOrchestrationVersionRepository executionOrchestrationVersionRepository,
+                                ExecutionContextSnapshotService executionContextSnapshotService,
                                 ObjectMapper objectMapper) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
@@ -138,6 +141,7 @@ public class ExecutionTaskService {
         this.technicalDesignCreditSettlementService = technicalDesignCreditSettlementService;
         this.executionOrchestrationService = executionOrchestrationService;
         this.executionOrchestrationVersionRepository = executionOrchestrationVersionRepository;
+        this.executionContextSnapshotService = executionContextSnapshotService;
         this.objectMapper = objectMapper;
     }
 
@@ -158,6 +162,51 @@ public class ExecutionTaskService {
                 )
                 .map(this::toTaskSummary);
         return PageResponse.from(pageData);
+    }
+
+    /**
+     * 查询执行创建弹窗需要的上下文可用性，正文仍由创建事务在服务端固化。
+     */
+    public ExecutionContextOptionsSummary getExecutionContextOptions(Long projectId, Long workItemId) {
+        ProjectEntity project = requireProject(projectId);
+        TaskEntity workItem = requireWorkItem(project.getId(), workItemId);
+        TaskEntity requirement = workItem.getRequirementTask();
+        if (requirement == null) {
+            return new ExecutionContextOptionsSummary(
+                    false, null, "", "", false, null, null, "", "",
+                    "当前工作项未关联需求，本次不会带入需求上下文",
+                    "当前工作项未关联需求，本次不会带入技术设计"
+            );
+        }
+        var page = executionArtifactRepository.findLatestSuccessfulTechnicalDesignArtifact(
+                requirement.getId(), org.springframework.data.domain.PageRequest.of(0, 1));
+        if (!page.hasContent()) {
+            return new ExecutionContextOptionsSummary(
+                    true,
+                    requirement.getId(),
+                    defaultString(requirement.getWorkItemCode()),
+                    defaultString(requirement.getName()),
+                    false, null, null, "", "",
+                    "",
+                    "关联需求暂无可用技术设计"
+            );
+        }
+        ExecutionArtifactEntity artifact = page.getContent().get(0);
+        ExecutionTaskEntity designExecutionTask = artifact.getRun().getExecutionTask();
+        TaskEntity designWorkItem = designExecutionTask.getWorkItem();
+        return new ExecutionContextOptionsSummary(
+                true,
+                requirement.getId(),
+                defaultString(requirement.getWorkItemCode()),
+                defaultString(requirement.getName()),
+                true,
+                artifact.getId(),
+                designExecutionTask.getId(),
+                designWorkItem == null ? "" : defaultString(designWorkItem.getName()),
+                artifact.getCreatedAt() == null ? "" : artifact.getCreatedAt().toString(),
+                "",
+                ""
+        );
     }
 
     /**
@@ -924,6 +973,7 @@ public class ExecutionTaskService {
         requireScenarioAvailableForExecutionEntry(scenarioCode, "创建");
         Map<String, Object> normalizedPayload = defaultPayload(rawInputPayload);
         validateTechnicalDesignWorkItem(scenarioCode, workItem);
+        executionContextSnapshotService.normalizePayload(workItem, scenarioCode, normalizedPayload);
         String normalizedTriggerSource = normalizeTriggerSource(triggerSource);
         boolean planConfirmationRequired = normalizePlanConfirmationRequired(
                 scenarioCode,

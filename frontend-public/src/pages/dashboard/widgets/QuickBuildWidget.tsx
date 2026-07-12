@@ -141,7 +141,7 @@ export const QuickBuildWidget = () => {
                   {entry.displayName}
                 </p>
                 <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">
-                  {entry.projectName} · {entry.entryType === 'AI_CLUB' ? 'AI Club Pipeline' : 'Jenkins'}
+                  {entry.projectName} · {entry.entryType === 'AI_CLUB' ? 'GitPilot Pipeline' : 'Jenkins'}
                   {entry.lastTriggeredAt && ` · 最近 ${formatDateTime(entry.lastTriggeredAt)}`}
                 </p>
               </div>

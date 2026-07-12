@@ -195,6 +195,44 @@ public class ModelConfigService {
     }
 
     /**
+     * 调用支持图片输入的对话模型，并返回文本与 token usage。
+     *
+     * <p>业务层只传标准化后的 Base64 图片；不同 Provider 的 content 协议由本服务分别构造，
+     * 避免把 Responses API 与 Chat Completions 的元素类型混用。</p>
+     */
+    public ModelInvocation invokeVisionPromptWithUsage(ResolvedModelConfig config,
+                                                        String systemPrompt,
+                                                        String textPrompt,
+                                                        List<VisionImage> images,
+                                                        Integer maxTokens) {
+        String modelType = normalizeModelType(config.modelType());
+        if (!MODEL_TYPE_CHAT.equals(modelType)) {
+            throw new IllegalArgumentException("Embedding 模型不支持图片理解调用，请选择对话模型");
+        }
+        List<VisionImage> normalizedImages = images == null ? List.of() : images.stream()
+                .filter(image -> image != null && hasText(image.mediaType()) && hasText(image.base64Data()))
+                .toList();
+        if (normalizedImages.isEmpty()) {
+            throw new IllegalArgumentException("图片理解调用至少需要一张有效图片");
+        }
+        int safeMaxTokens = maxTokens == null ? 1500 : Math.max(64, Math.min(maxTokens, 8192));
+        try {
+            String provider = normalizeProvider(config.provider());
+            if (PROVIDER_OPENAI.equals(provider)) {
+                return invokeOpenAiVisionWithUsage(config, systemPrompt, textPrompt, normalizedImages, safeMaxTokens);
+            }
+            if (PROVIDER_ANTHROPIC.equals(provider)) {
+                return invokeAnthropicVisionWithUsage(config, systemPrompt, textPrompt, normalizedImages, safeMaxTokens);
+            }
+            throw new IllegalArgumentException("仅支持 OPENAI 和 ANTHROPIC");
+        } catch (RuntimeException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IllegalStateException("图片理解模型调用失败：" + limitMessage(exception.getMessage()), exception);
+        }
+    }
+
+    /**
      * 调用模型生成文本并返回 token usage 信息。
      *
      * <p>若当前线程没有显式埋点上下文（{@link AgentInvocationContextHolder}），自动以
@@ -617,6 +655,129 @@ public class ModelConfigService {
         throw new IllegalStateException("OpenAI 接口调用失败：" + extractHttpError(response));
     }
 
+    /**
+     * OpenAI 视觉调用。Responses 与 Chat Completions 使用不同 content 元素协议。
+     */
+    private ModelInvocation invokeOpenAiVisionWithUsage(ResolvedModelConfig config,
+                                                         String systemPrompt,
+                                                         String textPrompt,
+                                                         List<VisionImage> images,
+                                                         int maxTokens) throws IOException, InterruptedException {
+        String baseUrl = trimSlash(config.apiBaseUrl());
+        if (OPENAI_API_MODE_CHAT_COMPLETIONS.equals(config.openaiApiMode())
+                || OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN.equals(config.openaiApiMode())) {
+            return invokeOpenAiChatCompletionsVisionWithUsage(baseUrl, config, systemPrompt, textPrompt, images, maxTokens);
+        }
+
+        var content = objectMapper.createArrayNode();
+        content.add(objectMapper.createObjectNode()
+                .put("type", "input_text")
+                .put("text", defaultString(textPrompt)));
+        images.forEach(image -> content.add(objectMapper.createObjectNode()
+                .put("type", "input_image")
+                .put("image_url", image.dataUri())));
+        ObjectNode payload = objectMapper.createObjectNode()
+                .put("model", config.modelName())
+                .put("instructions", defaultString(systemPrompt))
+                .put("max_output_tokens", maxTokens)
+                .set("input", objectMapper.createArrayNode().add(
+                        objectMapper.createObjectNode()
+                                .put("role", "user")
+                                .set("content", content)
+                ));
+
+        HttpResponse<String> response = sendJsonPost(baseUrl + "/responses", config.apiKey(), payload);
+        if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            JsonNode tree = objectMapper.readTree(response.body());
+            ModelInvocationUsage usage = extractOpenAiUsage(tree);
+            return new ModelInvocation(
+                    extractOpenAiText(tree),
+                    usage == null ? null : usage.input(),
+                    usage == null ? null : usage.output(),
+                    usage == null ? null : usage.total()
+            );
+        }
+        if (response.statusCode() == 404) {
+            return invokeOpenAiChatCompletionsVisionWithUsage(baseUrl, config, systemPrompt, textPrompt, images, maxTokens);
+        }
+        throw new IllegalStateException("OpenAI 图片理解调用失败：" + extractHttpError(response));
+    }
+
+    private ModelInvocation invokeOpenAiChatCompletionsVisionWithUsage(String baseUrl,
+                                                                        ResolvedModelConfig config,
+                                                                        String systemPrompt,
+                                                                        String textPrompt,
+                                                                        List<VisionImage> images,
+                                                                        int maxTokens) throws IOException, InterruptedException {
+        var content = objectMapper.createArrayNode();
+        content.add(objectMapper.createObjectNode().put("type", "text").put("text", defaultString(textPrompt)));
+        images.forEach(image -> content.add(objectMapper.createObjectNode()
+                .put("type", "image_url")
+                .set("image_url", objectMapper.createObjectNode().put("url", image.dataUri()))));
+        ObjectNode payload = objectMapper.createObjectNode()
+                .put("model", config.modelName())
+                .put("temperature", 0)
+                .put("max_tokens", maxTokens)
+                .set("messages", objectMapper.createArrayNode()
+                        .add(objectMapper.createObjectNode().put("role", "system").put("content", defaultString(systemPrompt)))
+                        .add(objectMapper.createObjectNode().put("role", "user").set("content", content)));
+        HttpResponse<String> response = sendJsonPost(baseUrl + "/chat/completions", config.apiKey(), payload);
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("OpenAI Chat Completions 图片理解调用失败：" + extractHttpError(response));
+        }
+        JsonNode tree = objectMapper.readTree(response.body());
+        ModelInvocationUsage usage = extractOpenAiChatUsage(tree);
+        return new ModelInvocation(
+                extractOpenAiChatText(tree),
+                usage == null ? null : usage.input(),
+                usage == null ? null : usage.output(),
+                usage == null ? null : usage.total()
+        );
+    }
+
+    private ModelInvocation invokeAnthropicVisionWithUsage(ResolvedModelConfig config,
+                                                             String systemPrompt,
+                                                             String textPrompt,
+                                                             List<VisionImage> images,
+                                                             int maxTokens) throws IOException, InterruptedException {
+        var content = objectMapper.createArrayNode();
+        content.add(objectMapper.createObjectNode().put("type", "text").put("text", defaultString(textPrompt)));
+        images.forEach(image -> content.add(objectMapper.createObjectNode()
+                .put("type", "image")
+                .set("source", objectMapper.createObjectNode()
+                        .put("type", "base64")
+                        .put("media_type", image.mediaType())
+                        .put("data", image.base64Data()))));
+        ObjectNode payload = objectMapper.createObjectNode()
+                .put("model", config.modelName())
+                .put("system", defaultString(systemPrompt))
+                .put("max_tokens", maxTokens)
+                .put("temperature", 0)
+                .set("messages", objectMapper.createArrayNode().add(
+                        objectMapper.createObjectNode().put("role", "user").set("content", content)
+                ));
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(trimSlash(config.apiBaseUrl()) + "/messages"))
+                .timeout(MODEL_REQUEST_TIMEOUT)
+                .header("x-api-key", config.apiKey())
+                .header("anthropic-version", "2023-06-01")
+                .header("content-type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload), StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("Anthropic 图片理解调用失败：" + extractHttpError(response));
+        }
+        JsonNode tree = objectMapper.readTree(response.body());
+        ModelInvocationUsage usage = extractAnthropicUsage(tree);
+        return new ModelInvocation(
+                extractAnthropicText(tree),
+                usage == null ? null : usage.input(),
+                usage == null ? null : usage.output(),
+                usage == null ? null : usage.total()
+        );
+    }
+
     private ModelInvocation invokeOpenAiChatCompletionsPromptWithUsage(String baseUrl,
                                                                        ResolvedModelConfig config,
                                                                        String systemPrompt,
@@ -957,6 +1118,15 @@ public class ModelConfigService {
      * 模型调用返回结果，含文本和 usage 信息。
      */
     public record ModelInvocation(String text, Integer promptTokens, Integer completionTokens, Integer totalTokens) {
+    }
+
+    /**
+     * 图片理解的标准化输入。只在调用模型时临时保留 Base64，不写入日志或数据库。
+     */
+    public record VisionImage(int index, String mediaType, String base64Data, String sourceName) {
+        public String dataUri() {
+            return "data:" + mediaType + ";base64," + base64Data;
+        }
     }
 
     // ---------- 内部用法解析 ----------

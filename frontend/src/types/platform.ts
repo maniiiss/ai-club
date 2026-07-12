@@ -348,8 +348,8 @@ export interface AgentItem {
   type: string
   status: string
   enabled: boolean
-  accessType: 'BUILT_IN' | 'LLM_PROMPT' | 'HTTP_API' | 'AGENT_RUNTIME'
-  builtinCode: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | 'REPOSITORY_SCAN_PLAN' | 'REQUIREMENT_AI_STANDARDIZE' | 'REQUIREMENT_AI_BREAKDOWN' | 'REQUIREMENT_AI_TEST_CASES' | null
+  accessType: 'BUILT_IN' | 'LLM_PROMPT' | 'LLM_VISION' | 'HTTP_API' | 'AGENT_RUNTIME'
+  builtinCode: 'CODE_REVIEW' | 'TEST_SUGGESTION' | 'REQUIREMENT_BREAKDOWN' | 'REPOSITORY_SCAN_PLAN' | 'REQUIREMENT_AI_STANDARDIZE' | 'REQUIREMENT_AI_BREAKDOWN' | 'REQUIREMENT_AI_TEST_CASES' | 'IMAGE_UNDERSTANDING' | null
   capability: string
   description: string
   aiModelConfigId: number | null
@@ -491,6 +491,31 @@ export interface TaskCommentItem {
   createdAt: string
 }
 
+/** 工作项更新记录明细。 */
+export interface TaskUpdateRecordDetailItem {
+  id: number
+  fieldCode: string
+  fieldName: string
+  detailType: string
+  oldValue: string | null
+  newValue: string | null
+  relatedObjectId: number | null
+  relatedObjectName: string | null
+}
+
+/** 工作项更新记录时间线节点。 */
+export interface TaskUpdateRecordItem {
+  id: number
+  taskId: number
+  operatorUserId: number | null
+  operatorName: string
+  source: 'MANUAL' | 'SYSTEM' | 'AI' | string
+  actionType: string
+  summary: string
+  createdAt: string | null
+  details: TaskUpdateRecordDetailItem[]
+}
+
 export interface UploadedFileItem {
   url: string
   fileName: string
@@ -529,6 +554,17 @@ export interface TaskRequirementAiResultItem {
   modelConfigName: string | null
   taskSuggestions: TaskRequirementAiSuggestionItem[]
   testCaseSuggestions: TaskRequirementAiTestCaseSuggestionItem[]
+  images?: RequirementAiResultImageItem[]
+}
+
+export interface RequirementAiResultImageItem {
+  assetId: number
+  mediaType: string
+  altText: string
+  sourceName: string
+  order: number
+  section: string
+  renderUrl: string
 }
 
 export interface TaskPrdDetailItem {
@@ -2673,4 +2709,18 @@ export interface SftpDownloadTicket {
   ticket: string
   /** 票据过期时间 */
   expiresAt: string
+}
+/** 执行创建弹窗使用的需求与技术设计上下文可用性摘要。 */
+export interface ExecutionContextOptionsSummary {
+  requirementLinked: boolean
+  requirementTaskId: number | null
+  requirementTaskCode: string
+  requirementTaskName: string
+  technicalDesignAvailable: boolean
+  technicalDesignArtifactId: number | null
+  technicalDesignExecutionTaskId: number | null
+  technicalDesignWorkItemName: string
+  technicalDesignCreatedAt: string
+  requirementNotice: string
+  technicalDesignNotice: string
 }

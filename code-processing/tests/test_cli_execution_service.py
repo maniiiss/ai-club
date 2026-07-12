@@ -16,6 +16,7 @@ from app.models import (
     PatrolTarget,
 )
 from app.services.cli_execution_service import (
+    CliMarkdownWorkspace,
     _build_claude_markdown_command,
     _build_claude_implementation_prompt,
     _build_claude_markdown_prompt,
@@ -26,6 +27,10 @@ from app.services.cli_execution_service import (
     _build_opencode_markdown_command,
     _build_opencode_markdown_prompt,
     _collect_technical_design_context,
+    _prepare_markdown_repositories,
+    _prepare_markdown_workspace,
+    _run_opencode_markdown_cli,
+    _run_opencode_markdown_cli_streaming,
     _validate_technical_design_output,
     _to_claude_request,
     _to_codex_request,
@@ -436,12 +441,13 @@ class CliExecutionServiceTests(unittest.TestCase):
 
         command = _build_opencode_markdown_command(request, Path("opencode"), [Path("C:/workspace/repo")])
 
-        # Markdown 步骤统一只读 plan agent，prompt 作为末尾位置参数传入。
+        # Markdown 步骤统一只读 plan agent；完整 prompt 通过 stdin 传入，避免 Windows 命令行长度限制。
         self.assertEqual("plan", command[command.index("--agent") + 1])
         self.assertEqual("default", command[command.index("--format") + 1])
         self.assertEqual(str(Path("C:/workspace/repo")), command[command.index("--dir") + 1])
         self.assertNotIn("--auto", command)
-        self.assertIn("opencode", command[-1])
+        self.assertEqual("run", command[1])
+        self.assertTrue(all("请完成当前任务" not in argument for argument in command))
 
     def test_should_build_opencode_implementation_command_with_auto(self):
         request = self._build_request("OPENCODE_CLI", "IMPLEMENT")
@@ -452,6 +458,7 @@ class CliExecutionServiceTests(unittest.TestCase):
         self.assertEqual("build", command[command.index("--agent") + 1])
         self.assertIn("--auto", command)
         self.assertEqual(str(Path("C:/workspace/repo")), command[command.index("--dir") + 1])
+        self.assertTrue(all("请完成当前任务" not in argument for argument in command))
 
     def test_should_route_opencode_plan_to_markdown_sync(self):
         request = self._build_request("OPENCODE_CLI", "PLAN")
@@ -530,6 +537,86 @@ class CliExecutionServiceTests(unittest.TestCase):
             self.assertIn(heading, prompt)
         self.assertIn("opencode", prompt)
 
+    def test_should_send_opencode_markdown_prompt_via_stdin_for_sync_and_streaming(self):
+        request = self._build_request("OPENCODE_CLI", "PLAN")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = CliMarkdownWorkspace(
+                root=root,
+                repos_dir=root / "repos",
+                out_dir=root / "out",
+                log_file=root / "execution.log",
+            )
+            expected_prompt = _build_opencode_markdown_prompt(request, [Path("C:/workspace/repo")])
+
+            with patch("app.services.cli_execution_service.discover_opencode_cli_path", return_value=Path("opencode")), \
+                    patch("app.services.cli_execution_service.subprocess.run", return_value=SimpleNamespace(
+                        stdout="# 总体结论\n完成", stderr="", returncode=0,
+                    )) as run_mock:
+                _run_opencode_markdown_cli(request, workspace, [Path("C:/workspace/repo")])
+
+            run_command = run_mock.call_args.args[0]
+            self.assertEqual(expected_prompt, run_mock.call_args.kwargs["input"])
+            self.assertTrue(all(expected_prompt not in argument for argument in run_command))
+
+            with patch("app.services.cli_execution_service.discover_opencode_cli_path", return_value=Path("opencode")), \
+                    patch("app.services.cli_execution_service.run_streaming_process", return_value=SimpleNamespace(
+                        stdout="# 总体结论\n完成", stderr="", exit_code=0,
+                    )) as streaming_mock:
+                _run_opencode_markdown_cli_streaming(
+                    request, workspace, [Path("C:/workspace/repo")], SimpleNamespace()
+                )
+
+            self.assertEqual(expected_prompt, streaming_mock.call_args.kwargs["stdin_text"])
+
+    def test_should_reuse_markdown_repository_checkout_across_technical_design_steps(self):
+        request = self._build_request("OPENCODE_CLI", "CODE_CONTEXT")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = CliMarkdownWorkspace(
+                root=root,
+                repos_dir=root / "repos",
+                out_dir=root / "out",
+                log_file=root / "execution.log",
+            )
+            repository = request.repositories[0]
+            clone_calls = []
+
+            def clone_side_effect(repository_arg, workspace_arg, index):
+                clone_calls.append((repository_arg, workspace_arg, index))
+                repo_dir = workspace_arg.repos_dir / f"{index:02d}-group-demo"
+                (repo_dir / ".git").mkdir(parents=True, exist_ok=True)
+                return repo_dir
+
+            with patch("app.services.cli_execution_service.claude_service._clone_repository", side_effect=clone_side_effect), \
+                    patch("app.services.cli_execution_service.subprocess.run", return_value=SimpleNamespace(
+                        stdout="HEAD", stderr="", returncode=0,
+                    )):
+                first_paths = _prepare_markdown_repositories(request, workspace)
+                second_paths = _prepare_markdown_repositories(request, workspace)
+
+            self.assertEqual(1, len(clone_calls))
+            self.assertEqual(first_paths, second_paths)
+            self.assertEqual(repository.projectPath, clone_calls[0][0].projectPath)
+
+    def test_should_keep_technical_design_workspace_between_steps(self):
+        request = self._build_request("OPENCODE_CLI", "CODE_CONTEXT")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            workspace = CliMarkdownWorkspace(
+                root=root,
+                repos_dir=root / "repos",
+                out_dir=root / "out",
+                log_file=root / "execution.log",
+            )
+            workspace.root.mkdir(parents=True, exist_ok=True)
+            marker = workspace.root / "repos" / "keep-me.txt"
+            marker.parent.mkdir(parents=True)
+            marker.write_text("checkout", encoding="utf-8")
+
+            _prepare_markdown_workspace(request, workspace)
+
+            self.assertTrue(marker.exists())
 
 if __name__ == "__main__":
     unittest.main()

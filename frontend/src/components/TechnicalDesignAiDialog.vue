@@ -25,6 +25,15 @@
       show-icon
     />
 
+    <el-alert
+      v-if="!workItem.requirementTaskId"
+      title="无法生成技术设计"
+      description="技术设计工作项必须先关联需求工作项。"
+      type="error"
+      :closable="false"
+      show-icon
+    />
+
     <el-form label-position="top" class="technical-design-form">
       <section class="technical-design-section">
         <div class="technical-design-section-head">
@@ -100,7 +109,7 @@
       <span>管理端发起不扣积分</span>
       <div>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" :disabled="!orchestrationReady" @click="handleSubmit">生成技术设计</el-button>
+        <el-button type="primary" :loading="submitting" :disabled="!orchestrationReady || !workItem.requirementTaskId" @click="handleSubmit">生成技术设计</el-button>
       </div>
     </div>
   </div>
@@ -198,6 +207,10 @@ const validate = () => {
   }
   if (!orchestrationReady.value) {
     ElMessage.warning('编排尚未就绪，请联系管理员发布技术设计编排')
+    return false
+  }
+  if (!props.workItem?.requirementTaskId) {
+    ElMessage.warning('技术设计工作项必须先关联需求工作项')
     return false
   }
   return true

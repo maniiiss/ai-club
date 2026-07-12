@@ -56,6 +56,28 @@
         </div>
       </section>
 
+      <section v-if="parsedInputPayload.includeRequirementContext !== undefined || parsedInputPayload.includeTechnicalDesignContext !== undefined" class="execution-binding-snapshot">
+        <div class="execution-binding-snapshot-head">
+          <h2>上下文快照</h2>
+          <span>创建时固化</span>
+        </div>
+        <div class="execution-binding-snapshot-grid">
+          <article>
+            <strong>关联需求</strong>
+            <span>{{ parsedInputPayload.includeRequirementContext ? '已带入' : '未带入' }}</span>
+            <small v-if="parsedInputPayload.requirementContext?.name">{{ parsedInputPayload.requirementContext.name }}</small>
+          </article>
+          <article>
+            <strong>技术设计</strong>
+            <span>{{ parsedInputPayload.includeTechnicalDesignContext ? '已带入' : '未带入' }}</span>
+            <small v-if="parsedInputPayload.technicalDesignContext?.workItemName">{{ parsedInputPayload.technicalDesignContext.workItemName }}</small>
+          </article>
+        </div>
+        <div v-if="parsedInputPayload.contextWarnings?.length" class="execution-detail-notice">
+          {{ parsedInputPayload.contextWarnings.join('；') }}
+        </div>
+      </section>
+
       <section class="execution-run-card">
         <div class="execution-run-head">
           <div>
