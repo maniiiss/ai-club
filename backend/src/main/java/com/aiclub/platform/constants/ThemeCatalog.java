@@ -12,7 +12,9 @@ public final class ThemeCatalog {
     public static final Set<String> SUPPORTED_THEME_IDS = Set.of(
             "deep-sea",
             "ocean-mist",
-            "signal-teal"
+            "signal-teal",
+            "paper-white",
+            "carbon-black"
     );
 
     private ThemeCatalog() {

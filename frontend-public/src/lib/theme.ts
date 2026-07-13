@@ -20,6 +20,8 @@ export const THEME_PRESETS: ThemePreset[] = [
   { key: 'deep-sea', label: '深海蓝', description: '深海藏蓝、雾银灰与电光蓝的 GitPilot 默认风格。', swatch: '#2f6bff', light: '#dce5ec', accent: '#55d6c2' },
   { key: 'ocean-mist', label: '海雾蓝', description: '更明亮的海雾蓝，适合长时间浏览和协作。', swatch: '#1677c8', light: '#edf5fb', accent: '#53b7ff' },
   { key: 'signal-teal', label: '信号青', description: '青绿色智能信号与蓝色工程控制感。', swatch: '#0a8f86', light: '#eef9f7', accent: '#2f6bff' },
+  { key: 'paper-white', label: '纯白', description: '纯白工作台与冷灰边界，适合简洁高效的日常协作。', swatch: '#2f6bff', light: '#ffffff', accent: '#55d6c2' },
+  { key: 'carbon-black', label: '曜石黑', description: '深色工作台与电光蓝信号，适合专注开发和夜间使用。', swatch: '#5f8aff', light: '#111821', accent: '#55d6c2' },
 ]
 
 export const THEME_STORAGE_KEY = 'gitpilot-theme'

@@ -312,6 +312,25 @@ a:hover {
   box-shadow: 0 24px 80px color-mix(in srgb, var(--auth-dark-base) 18%, transparent);
 }
 
+/* 黑色主题需要把历史组件中的白色工具类一起映射到深色表面，避免弹窗、输入框和卡片出现大块白底。 */
+[data-theme="carbon-black"] [class~="bg-white"] {
+  background-color: var(--color-bg-card) !important;
+}
+
+[data-theme="carbon-black"] [class~="bg-white/60"],
+[data-theme="carbon-black"] [class~="bg-white/70"],
+[data-theme="carbon-black"] [class~="bg-white/75"],
+[data-theme="carbon-black"] [class~="bg-white/80"],
+[data-theme="carbon-black"] [class~="bg-white/85"],
+[data-theme="carbon-black"] [class~="bg-white/90"],
+[data-theme="carbon-black"] [class~="bg-white/95"] {
+  background-color: color-mix(in srgb, var(--color-bg-card) 92%, transparent) !important;
+}
+
+[data-theme="carbon-black"] [class~="bg-gray-100"] {
+  background-color: var(--color-bg-hover) !important;
+}
+
 /* ── GitPilot 认证页动态背景 ── */
 .auth-background {
   position: absolute;

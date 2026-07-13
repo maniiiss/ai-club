@@ -217,6 +217,36 @@ a {
   color: var(--app-text);
 }
 
+[data-theme="carbon-black"] {
+  color-scheme: dark;
+}
+
+[data-theme="carbon-black"] .page-card,
+[data-theme="carbon-black"] .el-card,
+[data-theme="carbon-black"] .profile-identity-panel,
+[data-theme="carbon-black"] .profile-gitlab-binding-card,
+[data-theme="carbon-black"] .profile-theme-card {
+  background: var(--app-surface-card);
+  color: var(--app-text);
+}
+
+[data-theme="carbon-black"] .profile-theme-summary,
+[data-theme="carbon-black"] .profile-theme-window,
+[data-theme="carbon-black"] .profile-gitlab-binding-item {
+  background: var(--app-surface-muted);
+}
+
+[data-theme="carbon-black"] .el-input__wrapper,
+[data-theme="carbon-black"] .el-textarea__inner,
+[data-theme="carbon-black"] .el-select__wrapper,
+[data-theme="carbon-black"] .el-dialog,
+[data-theme="carbon-black"] .el-popover,
+[data-theme="carbon-black"] .el-dropdown-menu {
+  background-color: var(--app-surface-card);
+  color: var(--app-text);
+  border-color: rgba(var(--app-outline-rgb), 0.26);
+}
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

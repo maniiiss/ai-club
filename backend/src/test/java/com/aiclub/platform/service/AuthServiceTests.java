@@ -206,6 +206,46 @@ class AuthServiceTests {
         }
     }
 
+    /** 新增的纯白和曜石黑主题也必须走同一套账号与会话同步链路。 */
+    @Test
+    void updateThemeShouldAcceptPaperWhiteAndCarbonBlack() {
+        for (String themeId : List.of("paper-white", "carbon-black")) {
+            UserRepository userRepository = mock(UserRepository.class);
+            RoleRepository roleRepository = mock(RoleRepository.class);
+            PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+            TokenService tokenService = mock(TokenService.class);
+            LoginSessionStore loginSessionStore = mock(LoginSessionStore.class);
+            AccessManagementService accessManagementService = mock(AccessManagementService.class);
+            CreditService creditService = mock(CreditService.class);
+            AuthService authService = new AuthService(
+                    userRepository,
+                    roleRepository,
+                    passwordEncoder,
+                    tokenService,
+                    loginSessionStore,
+                    accessManagementService,
+                    creditService
+            );
+            UserEntity user = userWithProjectViewOnly();
+            Instant expiresAt = Instant.now().plusSeconds(3600);
+            when(userRepository.findWithDetailsById(5L)).thenReturn(Optional.of(user));
+            when(userRepository.save(user)).thenReturn(user);
+            when(tokenService.parseToken("theme-token")).thenReturn(new TokenService.TokenClaims(5L, expiresAt));
+
+            try {
+                AuthContextHolder.set(new AuthContext(5L, "test1", "测试用户1", Set.of(), Set.of(), "theme-token"));
+
+                var result = authService.updateTheme(new UpdateThemeRequest(themeId));
+
+                assertThat(result.themeId()).isEqualTo(themeId);
+                assertThat(user.getThemeId()).isEqualTo(themeId);
+                verify(loginSessionStore).save(eq("theme-token"), any(), eq(expiresAt));
+            } finally {
+                AuthContextHolder.clear();
+            }
+        }
+    }
+
     /** 主题 ID 不在平台预设中时必须拒绝，避免前端写入无法解析的主题。 */
     @Test
     void updateThemeShouldRejectUnknownThemeId() {
