@@ -5,17 +5,17 @@
  */
 
 :root {
-  /* ── 品牌色（默认 Indigo，由主题系统覆盖） ── */
-  --color-primary: #4f46e5;
-  --color-primary-hover: #4338ca;
-  --color-primary-light: #eef2ff;
-  --color-primary-lighter: #f5f7ff;
-  --color-primary-50: #eef2ff;
-  --color-primary-100: #e0e7ff;
-  --color-primary-500: #6366f1;
-  --color-primary-600: #4f46e5;
-  --color-primary-700: #4338ca;
-  --color-primary-900: #312e81;
+  /* ── GitPilot 品牌色（默认深海蓝，由主题系统覆盖） ── */
+  --color-primary: #2f6bff;
+  --color-primary-hover: #2158df;
+  --color-primary-light: #e8efff;
+  --color-primary-lighter: #f2f6ff;
+  --color-primary-50: #f2f6ff;
+  --color-primary-100: #dce7ff;
+  --color-primary-500: #5f8aff;
+  --color-primary-600: #2f6bff;
+  --color-primary-700: #2158df;
+  --color-primary-900: #0b2d88;
 
   /* ── 状态色 ── */
   --color-success: #059669;
@@ -33,21 +33,32 @@
   --color-text-tertiary: #9ca3af;
   --color-text-placeholder: #c0c5ce;
   --color-text-inverse: #ffffff;
-  --color-text-link: #4f46e5;
+  --color-text-link: #2f6bff;
 
   /* ── 背景色 ── */
-  --color-bg-page: #f8f9fb;
-  --color-bg-card: #ffffff;
-  --color-bg-sidebar: #fafbfc;
-  --color-bg-hover: #f3f4f6;
-  --color-bg-active: #eef2ff;
-  --color-bg-elevated: #ffffff;
+  --color-bg-page: #dce5ec;
+  --color-bg-card: #f7fafc;
+  --color-bg-sidebar: #eef4f7;
+  --color-bg-hover: #edf3f7;
+  --color-bg-active: #e8efff;
+  --color-bg-elevated: #fbfdff;
 
   /* ── 边框色 ── */
-  --color-border: #e5e7eb;
-  --color-border-light: #f0f1f3;
-  --color-border-focus: #4f46e5;
-  --color-border-strong: #d1d5db;
+  --color-border: #cbd8e0;
+  --color-border-light: #e2ebf0;
+  --color-border-focus: #2f6bff;
+  --color-border-strong: #b5c7d2;
+
+  /* ── 登录页与品牌背景变量 ── */
+  --auth-dark-base: #071722;
+  --auth-dark-surface: #0d2433;
+  --auth-page-background: #dce5ec;
+  --auth-route-blue: #2f6bff;
+  --auth-route-teal: #55d6c2;
+  --auth-route-orange: #ff875f;
+  --auth-route-soft: #eaf3ff;
+  --auth-grid: rgba(148, 210, 201, 0.045);
+  --auth-seam: #2f6bff;
 
   /* ── 间距系统（4px 基准） ── */
   --space-1: 4px;
@@ -109,141 +120,32 @@
 }
 
 /* ══════════════════════════════════════════════
-   主题色预设 — 通过 html[data-theme] 切换
+   GitPilot 主题预设 — 公众端与管理端共用主题 ID
    ══════════════════════════════════════════════ */
 
-/* Indigo（默认） */
-[data-theme="indigo"] {
-  --color-primary: #4f46e5;
-  --color-primary-hover: #4338ca;
-  --color-primary-light: #eef2ff;
-  --color-primary-lighter: #f5f7ff;
-  --color-primary-50: #eef2ff;
-  --color-primary-100: #e0e7ff;
-  --color-primary-500: #6366f1;
-  --color-primary-600: #4f46e5;
-  --color-primary-700: #4338ca;
-  --color-primary-900: #312e81;
-  --color-text-link: #4f46e5;
-  --color-border-focus: #4f46e5;
-  --color-bg-active: #eef2ff;
+[data-theme="deep-sea"] {
+  --color-primary: #2f6bff; --color-primary-hover: #2158df; --color-primary-light: #e8efff; --color-primary-lighter: #f2f6ff;
+  --color-primary-50: #f2f6ff; --color-primary-100: #dce7ff; --color-primary-500: #5f8aff; --color-primary-600: #2f6bff; --color-primary-700: #2158df; --color-primary-900: #0b2d88;
+  --color-text-link: #2f6bff; --color-border-focus: #2f6bff; --color-bg-active: #e8efff;
+  --color-bg-page: #dce5ec; --color-bg-card: #f7fafc; --color-bg-sidebar: #eef4f7; --color-bg-hover: #edf3f7; --color-bg-elevated: #fbfdff;
+  --color-border: #cbd8e0; --color-border-light: #e2ebf0; --color-border-strong: #b5c7d2;
+  --auth-dark-base: #071722; --auth-dark-surface: #0d2433; --auth-page-background: #dce5ec; --auth-route-blue: #2f6bff; --auth-route-teal: #55d6c2; --auth-route-orange: #ff875f; --auth-route-soft: #eaf3ff; --auth-grid: rgba(148, 210, 201, 0.045); --auth-seam: #2f6bff;
 }
 
-/* Blue */
-[data-theme="blue"] {
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
-  --color-primary-light: #eff6ff;
-  --color-primary-lighter: #f0f7ff;
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-900: #1e3a5f;
-  --color-text-link: #2563eb;
-  --color-border-focus: #2563eb;
-  --color-bg-active: #eff6ff;
+[data-theme="ocean-mist"] {
+  --color-primary: #1677c8; --color-primary-hover: #0f5d91; --color-primary-light: #eaf4fb; --color-primary-lighter: #f3f9fd;
+  --color-primary-50: #f3f9fd; --color-primary-100: #d9edf9; --color-primary-500: #53b7ff; --color-primary-600: #1677c8; --color-primary-700: #0f5d91; --color-primary-900: #0b3856;
+  --color-text-link: #1677c8; --color-border-focus: #1677c8; --color-bg-active: #eaf4fb;
+  --color-bg-page: #edf5fb; --color-bg-card: #fbfdff; --color-bg-sidebar: #f4f9fc; --color-bg-hover: #e8f1f7; --color-bg-elevated: #ffffff;
+  --color-border: #c9dce8; --color-border-light: #e3eef5; --color-border-strong: #abc7d8;
+  --auth-dark-base: #0b2233; --auth-dark-surface: #12354a; --auth-page-background: #edf5fb; --auth-route-blue: #1677c8; --auth-route-teal: #53b7ff; --auth-route-orange: #ff9a70; --auth-route-soft: #f0f8ff; --auth-grid: rgba(83, 183, 255, 0.06); --auth-seam: #53b7ff;
 }
 
-/* Teal */
-[data-theme="teal"] {
-  --color-primary: #0d9488;
-  --color-primary-hover: #0f766e;
-  --color-primary-light: #f0fdfa;
-  --color-primary-lighter: #f0fdf8;
-  --color-primary-50: #f0fdfa;
-  --color-primary-100: #ccfbf1;
-  --color-primary-500: #14b8a6;
-  --color-primary-600: #0d9488;
-  --color-primary-700: #0f766e;
-  --color-primary-900: #134e4a;
-  --color-text-link: #0d9488;
-  --color-border-focus: #0d9488;
-  --color-bg-active: #f0fdfa;
-}
-
-/* Emerald */
-[data-theme="emerald"] {
-  --color-primary: #059669;
-  --color-primary-hover: #047857;
-  --color-primary-light: #ecfdf5;
-  --color-primary-lighter: #f0fdf4;
-  --color-primary-50: #ecfdf5;
-  --color-primary-100: #d1fae5;
-  --color-primary-500: #10b981;
-  --color-primary-600: #059669;
-  --color-primary-700: #047857;
-  --color-primary-900: #064e3b;
-  --color-text-link: #059669;
-  --color-border-focus: #059669;
-  --color-bg-active: #ecfdf5;
-}
-
-/* Orange */
-[data-theme="orange"] {
-  --color-primary: #ea580c;
-  --color-primary-hover: #c2410c;
-  --color-primary-light: #fff7ed;
-  --color-primary-lighter: #fffaf5;
-  --color-primary-50: #fff7ed;
-  --color-primary-100: #ffedd5;
-  --color-primary-500: #f97316;
-  --color-primary-600: #ea580c;
-  --color-primary-700: #c2410c;
-  --color-primary-900: #7c2d12;
-  --color-text-link: #ea580c;
-  --color-border-focus: #ea580c;
-  --color-bg-active: #fff7ed;
-}
-
-/* Rose */
-[data-theme="rose"] {
-  --color-primary: #e11d48;
-  --color-primary-hover: #be123c;
-  --color-primary-light: #fff1f2;
-  --color-primary-lighter: #fff5f5;
-  --color-primary-50: #fff1f2;
-  --color-primary-100: #ffe4e6;
-  --color-primary-500: #f43f5e;
-  --color-primary-600: #e11d48;
-  --color-primary-700: #be123c;
-  --color-primary-900: #881337;
-  --color-text-link: #e11d48;
-  --color-border-focus: #e11d48;
-  --color-bg-active: #fff1f2;
-}
-
-/* Violet */
-[data-theme="violet"] {
-  --color-primary: #7c3aed;
-  --color-primary-hover: #6d28d9;
-  --color-primary-light: #f5f3ff;
-  --color-primary-lighter: #f8f5ff;
-  --color-primary-50: #f5f3ff;
-  --color-primary-100: #ede9fe;
-  --color-primary-500: #8b5cf6;
-  --color-primary-600: #7c3aed;
-  --color-primary-700: #6d28d9;
-  --color-primary-900: #4c1d95;
-  --color-text-link: #7c3aed;
-  --color-border-focus: #7c3aed;
-  --color-bg-active: #f5f3ff;
-}
-
-/* Slate（中性灰） */
-[data-theme="slate"] {
-  --color-primary: #475569;
-  --color-primary-hover: #334155;
-  --color-primary-light: #f8fafc;
-  --color-primary-lighter: #f9fafb;
-  --color-primary-50: #f8fafc;
-  --color-primary-100: #f1f5f9;
-  --color-primary-500: #64748b;
-  --color-primary-600: #475569;
-  --color-primary-700: #334155;
-  --color-primary-900: #0f172a;
-  --color-text-link: #475569;
-  --color-border-focus: #475569;
-  --color-bg-active: #f1f5f9;
+[data-theme="signal-teal"] {
+  --color-primary: #0a8f86; --color-primary-hover: #06766f; --color-primary-light: #e5f8f6; --color-primary-lighter: #f0fbfa;
+  --color-primary-50: #f0fbfa; --color-primary-100: #c9efeb; --color-primary-500: #35b9ad; --color-primary-600: #0a8f86; --color-primary-700: #06766f; --color-primary-900: #064e49;
+  --color-text-link: #0a8f86; --color-border-focus: #0a8f86; --color-bg-active: #e5f8f6;
+  --color-bg-page: #eef9f7; --color-bg-card: #fbfffe; --color-bg-sidebar: #f3fbfa; --color-bg-hover: #e7f5f3; --color-bg-elevated: #ffffff;
+  --color-border: #c8e1de; --color-border-light: #e1efed; --color-border-strong: #abd1cc;
+  --auth-dark-base: #08252a; --auth-dark-surface: #10383b; --auth-page-background: #eef9f7; --auth-route-blue: #2f6bff; --auth-route-teal: #0a8f86; --auth-route-orange: #ff9b72; --auth-route-soft: #eaf7ff; --auth-grid: rgba(85, 214, 194, 0.06); --auth-seam: #0a8f86;
 }

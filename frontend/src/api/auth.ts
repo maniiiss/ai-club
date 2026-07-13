@@ -24,6 +24,11 @@ export interface UpdateProfilePayload {
   avatarUrl?: string
 }
 
+/** 账号主题切换请求载荷。 */
+export interface UpdateThemePayload {
+  themeId: string
+}
+
 export interface ChangePasswordPayload {
   currentPassword: string
   newPassword: string
@@ -45,6 +50,12 @@ export const getCurrentUser = async () => {
 
 export const updateProfileApi = async (payload: UpdateProfilePayload) => {
   const { data } = await http.put<ApiResponse<CurrentUserInfo>>('/api/auth/profile', payload)
+  return data.data
+}
+
+/** 更新当前账号主题，并返回刷新后的用户快照。 */
+export const updateThemeApi = async (payload: UpdateThemePayload) => {
+  const { data } = await http.put<ApiResponse<CurrentUserInfo>>('/api/auth/theme', payload)
   return data.data
 }
 

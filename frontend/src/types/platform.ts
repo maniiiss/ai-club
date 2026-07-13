@@ -2242,6 +2242,8 @@ export interface CurrentUserInfo {
   roleCodes: string[]
   roleNames: string[]
   permissionCodes: string[]
+  /** 账号级主题 ID，公众端与管理端共用。 */
+  themeId: string
 }
 
 export interface LoginResult {

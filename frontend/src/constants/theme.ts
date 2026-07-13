@@ -1,7 +1,7 @@
 export interface ThemePreset {
-  /** 风格唯一标识，用于浏览器缓存和切换。 */
+  /** 风格唯一标识，必须与公众端和后端账号主题契约保持一致。 */
   id: string
-  /** 风格名称，显示在个人中心的风格卡片上。 */
+  /** 风格名称，显示在个人中心的主题卡片上。 */
   name: string
   /** 风格说明，帮助用户理解当前主题的视觉方向。 */
   description: string
@@ -17,110 +17,134 @@ export interface ThemePreset {
   variables: Record<string, string>
 }
 
-export const THEME_STORAGE_KEY = 'git-ai-club:theme'
-export const DEFAULT_THEME_ID = 'sunset-orange'
+export const THEME_STORAGE_KEY = 'gitpilot-theme'
+export const DEFAULT_THEME_ID = 'deep-sea'
 
 export const THEME_PRESETS: ThemePreset[] = [
   {
-    id: 'sunset-orange',
-    name: '暖阳橙',
-    description: '延续当前的橙色工作台，适合强调节奏和执行感。',
-    primary: '#904d00',
-    accent: '#00658f',
-    surface: '#f3f4f5',
-    previewBackground: 'linear-gradient(135deg, rgba(255, 140, 0, 0.14) 0%, rgba(255, 255, 255, 0.92) 52%, rgba(0, 101, 143, 0.12) 100%)',
-    variables: {
-      '--app-page-accent-a': 'rgba(255, 140, 0, 0.08)',
-      '--app-page-accent-b': 'rgba(0, 101, 143, 0.06)',
-      '--app-page-gradient-start': '#f8f9fa',
-      '--app-page-gradient-end': '#eef0f1',
-      '--app-primary-rgb': '144, 77, 0',
-      '--app-primary-container-rgb': '255, 140, 0',
-      '--app-secondary-rgb': '134, 82, 36',
-      '--app-tertiary-rgb': '0, 101, 143',
-      '--app-outline-rgb': '137, 115, 98',
-      '--app-primary': '#904d00',
-      '--app-primary-container': '#ff8c00',
-      '--app-primary-fixed': '#ffdcc3',
-      '--app-primary-fixed-dim': '#ffb77d',
-      '--app-primary-light-3': '#af7531',
-      '--app-primary-light-5': '#c69157',
-      '--app-primary-light-7': '#deb986',
-      '--app-primary-light-8': '#e9cfad',
-      '--app-primary-light-9': '#f4e5d3',
-      '--app-primary-dark-2': '#6e3900',
-      '--app-primary-hover-start': '#ff9d21',
-      '--app-primary-hover-end': '#a35a06',
-      '--app-secondary': '#865224',
-      '--app-tertiary': '#00658f'
-    }
-  },
-  {
-    id: 'ocean-blue',
+    id: 'deep-sea',
     name: '深海蓝',
-    description: '更冷静的蓝色界面，适合信息密集和长时间浏览。',
-    primary: '#0f5d91',
-    accent: '#1a7f72',
-    surface: '#eef5fb',
-    previewBackground: 'linear-gradient(135deg, rgba(46, 167, 255, 0.16) 0%, rgba(255, 255, 255, 0.94) 48%, rgba(26, 127, 114, 0.12) 100%)',
+    description: '深海藏蓝、雾银灰与电光蓝的 GitPilot 默认风格。',
+    primary: '#2F6BFF',
+    accent: '#55D6C2',
+    surface: '#DCE5EC',
+    previewBackground: 'linear-gradient(135deg, rgba(47, 107, 255, 0.18) 0%, rgba(220, 229, 236, 0.94) 52%, rgba(85, 214, 194, 0.16) 100%)',
     variables: {
-      '--app-page-accent-a': 'rgba(46, 167, 255, 0.1)',
-      '--app-page-accent-b': 'rgba(26, 127, 114, 0.08)',
-      '--app-page-gradient-start': '#f5fbff',
-      '--app-page-gradient-end': '#edf5fb',
-      '--app-primary-rgb': '15, 93, 145',
-      '--app-primary-container-rgb': '46, 167, 255',
-      '--app-secondary-rgb': '42, 105, 135',
-      '--app-tertiary-rgb': '26, 127, 114',
-      '--app-outline-rgb': '95, 118, 134',
-      '--app-primary': '#0f5d91',
-      '--app-primary-container': '#2ea7ff',
-      '--app-primary-fixed': '#cdeaff',
-      '--app-primary-fixed-dim': '#82caff',
-      '--app-primary-light-3': '#4a86b5',
-      '--app-primary-light-5': '#74a4c8',
-      '--app-primary-light-7': '#a1c4de',
-      '--app-primary-light-8': '#bfd8eb',
-      '--app-primary-light-9': '#dcecf6',
-      '--app-primary-dark-2': '#0b456c',
-      '--app-primary-hover-start': '#4bb6ff',
-      '--app-primary-hover-end': '#156ea8',
-      '--app-secondary': '#2a6987',
-      '--app-tertiary': '#1a7f72'
+      '--app-page-accent-a': 'rgba(47, 107, 255, 0.08)',
+      '--app-page-accent-b': 'rgba(85, 214, 194, 0.07)',
+      '--app-page-gradient-start': '#F7FAFC',
+      '--app-page-gradient-end': '#DCE5EC',
+      '--app-surface-base': '#F7FAFC',
+      '--app-surface-low': '#EEF4F7',
+      '--app-surface-high': '#E4EDF2',
+      '--app-surface-card': '#FFFFFF',
+      '--app-surface-muted': '#DCE5EC',
+      '--app-text': '#122333',
+      '--app-text-soft': '#506579',
+      '--app-text-muted': '#7A8D9D',
+      '--app-primary-rgb': '47, 107, 255',
+      '--app-primary-container-rgb': '85, 214, 194',
+      '--app-secondary-rgb': '23, 50, 76',
+      '--app-tertiary-rgb': '255, 135, 95',
+      '--app-outline-rgb': '109, 132, 148',
+      '--app-primary': '#2F6BFF',
+      '--app-primary-container': '#55D6C2',
+      '--app-primary-fixed': '#DCE7FF',
+      '--app-primary-fixed-dim': '#9FB7FF',
+      '--app-primary-light-3': '#5F8AFF',
+      '--app-primary-light-5': '#86A6FF',
+      '--app-primary-light-7': '#B5C7FF',
+      '--app-primary-light-8': '#D2DDFF',
+      '--app-primary-light-9': '#E8EFFF',
+      '--app-primary-dark-2': '#2158DF',
+      '--app-primary-hover-start': '#5F8AFF',
+      '--app-primary-hover-end': '#2158DF',
+      '--app-secondary': '#17324C',
+      '--app-tertiary': '#FF875F'
     }
   },
   {
-    id: 'forest-green',
-    name: '青松绿',
-    description: '更柔和的绿色界面，观感轻松，适合稳定协作氛围。',
-    primary: '#2f6f38',
-    accent: '#8f5c12',
-    surface: '#eef5ee',
-    previewBackground: 'linear-gradient(135deg, rgba(84, 178, 106, 0.16) 0%, rgba(255, 255, 255, 0.94) 52%, rgba(143, 92, 18, 0.1) 100%)',
+    id: 'ocean-mist',
+    name: '海雾蓝',
+    description: '更明亮的海雾蓝，适合长时间浏览和协作。',
+    primary: '#1677C8',
+    accent: '#53B7FF',
+    surface: '#EDF5FB',
+    previewBackground: 'linear-gradient(135deg, rgba(22, 119, 200, 0.18) 0%, rgba(237, 245, 251, 0.96) 52%, rgba(83, 183, 255, 0.18) 100%)',
     variables: {
-      '--app-page-accent-a': 'rgba(84, 178, 106, 0.1)',
-      '--app-page-accent-b': 'rgba(143, 92, 18, 0.08)',
-      '--app-page-gradient-start': '#f6fbf6',
-      '--app-page-gradient-end': '#edf4ed',
-      '--app-primary-rgb': '47, 111, 56',
-      '--app-primary-container-rgb': '84, 178, 106',
-      '--app-secondary-rgb': '84, 124, 66',
-      '--app-tertiary-rgb': '143, 92, 18',
-      '--app-outline-rgb': '109, 123, 96',
-      '--app-primary': '#2f6f38',
-      '--app-primary-container': '#54b26a',
-      '--app-primary-fixed': '#d8f0d4',
-      '--app-primary-fixed-dim': '#a8d9b2',
-      '--app-primary-light-3': '#5e9365',
-      '--app-primary-light-5': '#83b089',
-      '--app-primary-light-7': '#afcdb2',
-      '--app-primary-light-8': '#c8ddca',
-      '--app-primary-light-9': '#e0eee2',
-      '--app-primary-dark-2': '#23532a',
-      '--app-primary-hover-start': '#67c57d',
-      '--app-primary-hover-end': '#376b3c',
-      '--app-secondary': '#547c42',
-      '--app-tertiary': '#8f5c12'
+      '--app-page-accent-a': 'rgba(22, 119, 200, 0.09)',
+      '--app-page-accent-b': 'rgba(83, 183, 255, 0.08)',
+      '--app-page-gradient-start': '#FBFDFF',
+      '--app-page-gradient-end': '#EDF5FB',
+      '--app-surface-base': '#FBFDFF',
+      '--app-surface-low': '#F4F9FC',
+      '--app-surface-high': '#E5F0F7',
+      '--app-surface-card': '#FFFFFF',
+      '--app-surface-muted': '#EDF5FB',
+      '--app-text': '#10283A',
+      '--app-text-soft': '#557084',
+      '--app-text-muted': '#7C9AAF',
+      '--app-primary-rgb': '22, 119, 200',
+      '--app-primary-container-rgb': '83, 183, 255',
+      '--app-secondary-rgb': '11, 56, 86',
+      '--app-tertiary-rgb': '255, 154, 112',
+      '--app-outline-rgb': '98, 137, 160',
+      '--app-primary': '#1677C8',
+      '--app-primary-container': '#53B7FF',
+      '--app-primary-fixed': '#D9EDF9',
+      '--app-primary-fixed-dim': '#9BD7FF',
+      '--app-primary-light-3': '#4B99D7',
+      '--app-primary-light-5': '#75B3E2',
+      '--app-primary-light-7': '#A6CDEB',
+      '--app-primary-light-8': '#C5DFEF',
+      '--app-primary-light-9': '#E4F1F9',
+      '--app-primary-dark-2': '#0F5D91',
+      '--app-primary-hover-start': '#53B7FF',
+      '--app-primary-hover-end': '#0F5D91',
+      '--app-secondary': '#0B3856',
+      '--app-tertiary': '#FF9A70'
+    }
+  },
+  {
+    id: 'signal-teal',
+    name: '信号青',
+    description: '青绿色智能信号与蓝色工程控制感。',
+    primary: '#0A8F86',
+    accent: '#2F6BFF',
+    surface: '#EEF9F7',
+    previewBackground: 'linear-gradient(135deg, rgba(10, 143, 134, 0.18) 0%, rgba(238, 249, 247, 0.96) 52%, rgba(47, 107, 255, 0.14) 100%)',
+    variables: {
+      '--app-page-accent-a': 'rgba(10, 143, 134, 0.09)',
+      '--app-page-accent-b': 'rgba(47, 107, 255, 0.07)',
+      '--app-page-gradient-start': '#FBFFFE',
+      '--app-page-gradient-end': '#EEF9F7',
+      '--app-surface-base': '#FBFFFE',
+      '--app-surface-low': '#F3FBFA',
+      '--app-surface-high': '#E4F2F0',
+      '--app-surface-card': '#FFFFFF',
+      '--app-surface-muted': '#EEF9F7',
+      '--app-text': '#102D31',
+      '--app-text-soft': '#557579',
+      '--app-text-muted': '#789394',
+      '--app-primary-rgb': '10, 143, 134',
+      '--app-primary-container-rgb': '47, 107, 255',
+      '--app-secondary-rgb': '6, 78, 73',
+      '--app-tertiary-rgb': '255, 155, 114',
+      '--app-outline-rgb': '89, 135, 130',
+      '--app-primary': '#0A8F86',
+      '--app-primary-container': '#2F6BFF',
+      '--app-primary-fixed': '#C9EFEB',
+      '--app-primary-fixed-dim': '#8DD8D0',
+      '--app-primary-light-3': '#35B9AD',
+      '--app-primary-light-5': '#62C8BF',
+      '--app-primary-light-7': '#9ADDD7',
+      '--app-primary-light-8': '#BCEAE5',
+      '--app-primary-light-9': '#E2F6F3',
+      '--app-primary-dark-2': '#06766F',
+      '--app-primary-hover-start': '#35B9AD',
+      '--app-primary-hover-end': '#06766F',
+      '--app-secondary': '#064E49',
+      '--app-tertiary': '#FF9B72'
     }
   }
 ]
@@ -141,14 +165,12 @@ export function applyThemePreset(themeId?: string | null) {
     return resolveThemePreset(themeId)
   }
 
-  // 将主题变量逐项写入根节点，保证所有页面都能立即响应风格切换。
+  // 将主题变量逐项写入根节点，保证管理端所有页面即时响应账号主题。
   const preset = resolveThemePreset(themeId)
   const root = document.documentElement
-
   root.dataset.theme = preset.id
   Object.entries(preset.variables).forEach(([name, value]) => {
     root.style.setProperty(name, value)
   })
-
   return preset
 }

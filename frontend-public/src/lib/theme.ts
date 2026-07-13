@@ -1,52 +1,61 @@
 /**
  * 主题色管理。
- * 提供预设主题色定义、切换、持久化。
+ * 提供 GitPilot 统一主题定义、切换和本地启动缓存。
  */
+import type { CurrentUserInfo } from '@/src/types/auth'
 
 export interface ThemePreset {
   key: string
   label: string
-  /** 主题色 hex 值，用于色块预览。 */
+  description: string
+  /** 主题主色，用于色块预览和交互强调。 */
   swatch: string
-  /** 浅色背景值。 */
+  /** 主题浅色背景值。 */
   light: string
+  accent: string
 }
 
 /** 预置主题色列表。 */
 export const THEME_PRESETS: ThemePreset[] = [
-  { key: 'indigo', label: '靛蓝', swatch: '#4f46e5', light: '#eef2ff' },
-  { key: 'blue', label: '蓝色', swatch: '#2563eb', light: '#eff6ff' },
-  { key: 'teal', label: '青色', swatch: '#0d9488', light: '#f0fdfa' },
-  { key: 'emerald', label: '翠绿', swatch: '#059669', light: '#ecfdf5' },
-  { key: 'orange', label: '橙色', swatch: '#ea580c', light: '#fff7ed' },
-  { key: 'rose', label: '玫红', swatch: '#e11d48', light: '#fff1f2' },
-  { key: 'violet', label: '紫罗兰', swatch: '#7c3aed', light: '#f5f3ff' },
-  { key: 'slate', label: '石墨', swatch: '#475569', light: '#f8fafc' },
+  { key: 'deep-sea', label: '深海蓝', description: '深海藏蓝、雾银灰与电光蓝的 GitPilot 默认风格。', swatch: '#2f6bff', light: '#dce5ec', accent: '#55d6c2' },
+  { key: 'ocean-mist', label: '海雾蓝', description: '更明亮的海雾蓝，适合长时间浏览和协作。', swatch: '#1677c8', light: '#edf5fb', accent: '#53b7ff' },
+  { key: 'signal-teal', label: '信号青', description: '青绿色智能信号与蓝色工程控制感。', swatch: '#0a8f86', light: '#eef9f7', accent: '#2f6bff' },
 ]
 
-const THEME_STORAGE_KEY = 'ai-club-theme'
-const DEFAULT_THEME = 'indigo'
+export const THEME_STORAGE_KEY = 'gitpilot-theme'
+export const DEFAULT_THEME = 'deep-sea'
+
+export const isThemeKey = (themeKey: string): boolean => THEME_PRESETS.some((theme) => theme.key === themeKey)
+
+export const resolveThemeKey = (themeKey?: string | null): string => (
+  themeKey && isThemeKey(themeKey) ? themeKey : DEFAULT_THEME
+)
 
 /** 获取当前主题 key。 */
 export const getCurrentTheme = (): string => {
   try {
-    return localStorage.getItem(THEME_STORAGE_KEY) || DEFAULT_THEME
+    return resolveThemeKey(localStorage.getItem(THEME_STORAGE_KEY))
   } catch {
     return DEFAULT_THEME
   }
 }
 
 /** 应用主题到 document root。 */
-export const applyTheme = (themeKey: string) => {
-  document.documentElement.setAttribute('data-theme', themeKey)
+export const applyTheme = (themeKey?: string | null): string => {
+  const resolvedTheme = resolveThemeKey(themeKey)
+  document.documentElement.setAttribute('data-theme', resolvedTheme)
   try {
-    localStorage.setItem(THEME_STORAGE_KEY, themeKey)
+    localStorage.setItem(THEME_STORAGE_KEY, resolvedTheme)
   } catch {
     // localStorage 不可用时忽略
   }
+  return resolvedTheme
 }
 
 /** 初始化主题（应用启动时调用）。 */
 export const initTheme = () => {
   applyTheme(getCurrentTheme())
 }
+
+/** 将服务端用户快照中的主题应用到当前浏览器。 */
+export const applyUserTheme = (user: Pick<CurrentUserInfo, 'themeId'>): string => applyTheme(user.themeId)

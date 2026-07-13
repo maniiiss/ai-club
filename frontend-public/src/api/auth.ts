@@ -11,6 +11,7 @@ import type {
   LoginResult,
   RegisterPayload,
   UpdateProfilePayload,
+  UpdateThemePayload,
 } from '@/src/types/auth'
 
 /** 登录。 */
@@ -33,6 +34,12 @@ export const getCurrentUser = async (): Promise<CurrentUserInfo> => {
 /** 更新个人资料。 */
 export const updateProfileApi = async (payload: UpdateProfilePayload): Promise<CurrentUserInfo> => {
   const response = await http.put<ApiResponse<CurrentUserInfo>>('/api/auth/profile', payload)
+  return unwrap(response)
+}
+
+/** 更新当前账号主题，并返回刷新后的用户快照。 */
+export const updateThemeApi = async (payload: UpdateThemePayload): Promise<CurrentUserInfo> => {
+  const response = await http.put<ApiResponse<CurrentUserInfo>>('/api/auth/theme', payload)
   return unwrap(response)
 }
 

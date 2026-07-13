@@ -11,7 +11,7 @@ import { Card } from '@/src/components/common/Card'
 import { Button } from '@/src/components/common/Button'
 import { Input } from '@/src/components/common/Input'
 import { getErrorMessage, getInitials } from '@/src/lib/utils'
-import { THEME_PRESETS, getCurrentTheme, applyTheme } from '@/src/lib/theme'
+import { THEME_PRESETS, getCurrentTheme } from '@/src/lib/theme'
 import { Check, Coins } from 'lucide-react'
 import { cn } from '@/src/lib/utils'
 import type { CreditAccount, CreditTransaction } from '@/src/types/credits'
@@ -19,7 +19,10 @@ import type { CreditAccount, CreditTransaction } from '@/src/types/credits'
 export const ProfilePage = () => {
   const user = useAuthStore((s) => s.user)
   const updateProfile = useAuthStore((s) => s.updateProfile)
+  const updateTheme = useAuthStore((s) => s.updateTheme)
   const [currentTheme, setCurrentTheme] = useState(getCurrentTheme)
+  const [themeSaving, setThemeSaving] = useState<string | null>(null)
+  const [themeError, setThemeError] = useState<string | null>(null)
   const [creditAccount, setCreditAccount] = useState<CreditAccount | null>(null)
   const [creditTransactions, setCreditTransactions] = useState<CreditTransaction[]>([])
   const [creditLoading, setCreditLoading] = useState(false)
@@ -113,6 +116,20 @@ export const ProfilePage = () => {
       setPasswordError(getErrorMessage(err))
     } finally {
       setPasswordSaving(false)
+    }
+  }
+
+  const handleThemeChange = async (themeKey: string) => {
+    if (themeKey === currentTheme || themeSaving) return
+    setThemeSaving(themeKey)
+    setThemeError(null)
+    try {
+      await updateTheme(themeKey)
+      setCurrentTheme(themeKey)
+    } catch (err) {
+      setThemeError(getErrorMessage(err))
+    } finally {
+      setThemeSaving(null)
     }
   }
 
@@ -327,23 +344,30 @@ export const ProfilePage = () => {
       {/* 主题色 */}
       <Card title="外观">
         <p className="text-[13px] text-[var(--color-text-secondary)] mb-4">
-          选择你喜欢的主题色，界面将自动适配。
+          主题会绑定到当前账号，并在公众端与管理端之间同步。
         </p>
+        {themeError && (
+          <div className="mb-4 rounded-[var(--radius-md)] bg-[var(--color-danger-light)] px-3 py-2 text-[var(--text-sm)] text-[var(--color-danger)]">
+            {themeError}
+          </div>
+        )}
         <div className="grid grid-cols-4 gap-3 sm:grid-cols-8">
           {THEME_PRESETS.map((preset) => {
             const isSelected = preset.key === currentTheme
             return (
               <button
                 key={preset.key}
+                type="button"
+                disabled={Boolean(themeSaving)}
                 onClick={() => {
-                  applyTheme(preset.key)
-                  setCurrentTheme(preset.key)
+                  void handleThemeChange(preset.key)
                 }}
                 className={cn(
                   'group flex flex-col items-center gap-2 rounded-xl p-3 transition-all duration-150',
                   isSelected
                     ? 'bg-[var(--color-bg-hover)] ring-2 ring-offset-2 ring-[var(--color-primary)]'
                     : 'hover:bg-[var(--color-bg-hover)]',
+                  themeSaving && 'cursor-wait opacity-70',
                 )}
               >
                 <div
@@ -362,6 +386,7 @@ export const ProfilePage = () => {
                     </div>
                   )}
                 </div>
+                {themeSaving === preset.key && <span className="text-[10px] text-[var(--color-text-tertiary)]">保存中…</span>}
                 <span className={cn(
                   'text-[12px] leading-none',
                   isSelected ? 'text-[var(--color-text-primary)] font-semibold' : 'text-[var(--color-text-tertiary)]',

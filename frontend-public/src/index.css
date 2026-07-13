@@ -291,12 +291,25 @@ a:hover {
 }
 
 .auth-theme-gitpilot {
-  --color-primary: #2f6bff;
-  --color-primary-hover: #2158df;
-  --color-primary-light: #e8efff;
-  --color-primary-lighter: #f2f6ff;
-  --color-border-focus: #2f6bff;
-  --color-text-link: #2f6bff;
+  /* 仅作为认证页结构标记，具体颜色由 data-theme 主题 token 提供。 */
+}
+
+.auth-layout-root {
+  background: var(--auth-page-background);
+}
+
+.auth-left-panel {
+  background: color-mix(in srgb, var(--auth-dark-base) 78%, transparent);
+}
+
+.auth-right-panel {
+  background: color-mix(in srgb, var(--auth-page-background) 80%, transparent);
+}
+
+.auth-form-card {
+  border-color: color-mix(in srgb, var(--auth-route-soft) 78%, white);
+  background: color-mix(in srgb, var(--color-bg-card) 94%, transparent);
+  box-shadow: 0 24px 80px color-mix(in srgb, var(--auth-dark-base) 18%, transparent);
 }
 
 /* ── GitPilot 认证页动态背景 ── */
@@ -307,7 +320,7 @@ a:hover {
   overflow: hidden;
   pointer-events: none;
   background:
-    linear-gradient(118deg, #071722 0%, #0d2433 48%, #102837 100%);
+    linear-gradient(118deg, var(--auth-dark-base) 0%, var(--auth-dark-surface) 48%, color-mix(in srgb, var(--auth-dark-surface) 82%, var(--auth-route-blue)) 100%);
 }
 
 .auth-background-seam {
@@ -318,8 +331,8 @@ a:hover {
   z-index: 1;
   width: 2px;
   pointer-events: none;
-  background: linear-gradient(180deg, transparent, rgba(47, 107, 255, 0.54) 34%, rgba(85, 214, 194, 0.36) 68%, transparent);
-  box-shadow: 0 0 28px rgba(47, 107, 255, 0.18);
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--auth-seam) 54%, transparent) 34%, color-mix(in srgb, var(--auth-route-teal) 36%, transparent) 68%, transparent);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--auth-seam) 18%, transparent);
 }
 
 .auth-background-grid {
@@ -327,8 +340,8 @@ a:hover {
   inset: 0;
   opacity: 0.26;
   background-image:
-    linear-gradient(rgba(148, 210, 201, 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 210, 201, 0.045) 1px, transparent 1px);
+    linear-gradient(var(--auth-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--auth-grid) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: linear-gradient(90deg, #000 0%, rgba(0, 0, 0, 0.7) 66%, transparent 100%);
 }
@@ -381,8 +394,8 @@ a:hover {
   width: 5px;
   height: 5px;
   border-radius: 999px;
-  background: #c9e5ff;
-  box-shadow: 0 0 0 3px rgba(47, 107, 255, 0.12), 0 0 20px rgba(47, 107, 255, 0.92);
+  background: var(--auth-route-soft);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--auth-route-blue) 12%, transparent), 0 0 20px color-mix(in srgb, var(--auth-route-blue) 92%, transparent);
   opacity: 0;
   animation: auth-background-particle-drift 12s ease-in-out infinite;
 }
@@ -396,8 +409,8 @@ a:hover {
 .auth-background-particle--two {
   left: 48%;
   top: 47%;
-  background: #ffd1bd;
-  box-shadow: 0 0 0 3px rgba(255, 135, 95, 0.12), 0 0 20px rgba(255, 135, 95, 0.88);
+  background: var(--auth-route-orange);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--auth-route-orange) 12%, transparent), 0 0 20px color-mix(in srgb, var(--auth-route-orange) 88%, transparent);
   animation-delay: -7s;
   animation-duration: 15s;
 }
@@ -412,8 +425,8 @@ a:hover {
 .auth-background-particle--four {
   left: 66%;
   top: 67%;
-  background: #ffd1bd;
-  box-shadow: 0 0 0 3px rgba(255, 135, 95, 0.12), 0 0 20px rgba(255, 135, 95, 0.88);
+  background: var(--auth-route-orange);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--auth-route-orange) 12%, transparent), 0 0 20px color-mix(in srgb, var(--auth-route-orange) 88%, transparent);
   animation-delay: -5s;
   animation-duration: 14s;
 }

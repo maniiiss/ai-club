@@ -4,13 +4,16 @@
  */
 import { useState, useRef, useEffect } from 'react'
 import { Palette, Check } from 'lucide-react'
-import { THEME_PRESETS, getCurrentTheme, applyTheme } from '@/src/lib/theme'
-import { cn } from '@/src/lib/utils'
+import { THEME_PRESETS, getCurrentTheme } from '@/src/lib/theme'
+import { cn, getErrorMessage } from '@/src/lib/utils'
+import { useAuthStore } from '@/src/stores/auth'
 
 export const ThemeSwitcher = () => {
   const [open, setOpen] = useState(false)
   const [current, setCurrent] = useState(getCurrentTheme)
+  const [error, setError] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const updateTheme = useAuthStore((s) => s.updateTheme)
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -22,10 +25,19 @@ export const ThemeSwitcher = () => {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  const handleSelect = (key: string) => {
-    applyTheme(key)
-    setCurrent(key)
-    setOpen(false)
+  const handleSelect = async (key: string) => {
+    if (key === current) {
+      setOpen(false)
+      return
+    }
+    setError(null)
+    try {
+      await updateTheme(key)
+      setCurrent(key)
+      setOpen(false)
+    } catch (err) {
+      setError(getErrorMessage(err))
+    }
   }
 
   const currentPreset = THEME_PRESETS.find((t) => t.key === current)
@@ -44,7 +56,7 @@ export const ThemeSwitcher = () => {
       >
         <div
           className="h-4 w-4 rounded-full ring-2 ring-white shadow-sm"
-          style={{ backgroundColor: currentPreset?.swatch || '#4f46e5' }}
+          style={{ backgroundColor: currentPreset?.swatch || '#2f6bff' }}
         />
         <span className="hidden sm:inline text-[var(--color-text-secondary)] text-[12px]">
           {currentPreset?.label || '主题'}
@@ -57,13 +69,14 @@ export const ThemeSwitcher = () => {
             <Palette className="h-4 w-4 text-[var(--color-text-tertiary)]" />
             <span className="text-[13px] font-semibold text-[var(--color-text-primary)]">主题色</span>
           </div>
+          {error && <p className="mb-3 text-[11px] text-[var(--color-danger)]">{error}</p>}
           <div className="grid grid-cols-4 gap-2">
             {THEME_PRESETS.map((preset) => {
               const isSelected = preset.key === current
               return (
                 <button
                   key={preset.key}
-                  onClick={() => handleSelect(preset.key)}
+                  onClick={() => void handleSelect(preset.key)}
                   className={cn(
                     'group flex flex-col items-center gap-1.5 rounded-lg p-2 transition-all duration-150',
                     isSelected

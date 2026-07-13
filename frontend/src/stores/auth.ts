@@ -1,8 +1,10 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { AUTH_TOKEN_KEY, AUTH_USER_KEY } from '@/constants/auth'
-import { changePasswordApi, getCurrentUser, loginApi, logoutApi, registerApi, updateProfileApi, uploadProfileAvatarApi } from '@/api/auth'
+import { changePasswordApi, getCurrentUser, loginApi, logoutApi, registerApi, updateProfileApi, updateThemeApi, uploadProfileAvatarApi } from '@/api/auth'
 import type { CurrentUserInfo } from '@/types/platform'
+import { DEFAULT_THEME_ID } from '@/constants/theme'
+import { useAppStore } from '@/stores/app'
 
 const readCachedUser = (): CurrentUserInfo | null => {
   const raw = localStorage.getItem(AUTH_USER_KEY)
@@ -25,12 +27,18 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => Boolean(token.value))
   const permissionCodes = computed(() => user.value?.permissionCodes || [])
 
+  const applyAccountTheme = (themeId?: string | null) => {
+    // 认证状态变化时同时更新 Pinia 主题状态，保证布局和 Element Plus 变量保持一致。
+    useAppStore().setTheme(themeId || DEFAULT_THEME_ID)
+  }
+
   const setSession = (nextToken: string, nextUser: CurrentUserInfo) => {
     token.value = nextToken
     user.value = nextUser
     profileLoaded.value = true
     localStorage.setItem(AUTH_TOKEN_KEY, nextToken)
     localStorage.setItem(AUTH_USER_KEY, JSON.stringify(nextUser))
+    applyAccountTheme(nextUser.themeId)
   }
 
   const clearSession = () => {
@@ -39,6 +47,7 @@ export const useAuthStore = defineStore('auth', () => {
     profileLoaded.value = false
     localStorage.removeItem(AUTH_TOKEN_KEY)
     localStorage.removeItem(AUTH_USER_KEY)
+    applyAccountTheme(DEFAULT_THEME_ID)
   }
 
   const login = async (username: string, password: string) => {
@@ -56,6 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = profile
     profileLoaded.value = true
     localStorage.setItem(AUTH_USER_KEY, JSON.stringify(profile))
+    applyAccountTheme(profile.themeId)
     return profile
   }
 
@@ -107,6 +117,16 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = profile
     profileLoaded.value = true
     localStorage.setItem(AUTH_USER_KEY, JSON.stringify(profile))
+    applyAccountTheme(profile.themeId)
+    return profile
+  }
+
+  const updateTheme = async (themeId: string) => {
+    const profile = await updateThemeApi({ themeId })
+    user.value = profile
+    profileLoaded.value = true
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(profile))
+    applyAccountTheme(profile.themeId)
     return profile
   }
 
@@ -150,6 +170,7 @@ export const useAuthStore = defineStore('auth', () => {
     register,
     logout,
     updateProfile,
+    updateTheme,
     uploadAvatar,
     changePassword,
     restoreSession,

@@ -33,12 +33,12 @@ export const AuthLayout = () => {
   }
 
   return (
-    <div className="auth-theme-gitpilot relative flex min-h-screen overflow-hidden bg-[#dce5ec]">
+    <div className="auth-theme-gitpilot auth-layout-root relative flex min-h-screen overflow-hidden">
       <AuthBackground />
       <div className="auth-background-seam" />
 
       {/* 左侧品牌面板（桌面端可见） */}
-      <div className="relative z-10 hidden lg:flex lg:w-[45%] lg:max-w-[560px] flex-col justify-between border-r border-white/10 bg-[rgba(7,23,34,0.78)] px-12 py-10 backdrop-blur-[2px]">
+      <div className="auth-left-panel relative z-10 hidden lg:flex lg:w-[45%] lg:max-w-[560px] flex-col justify-between border-r border-white/10 px-12 py-10 backdrop-blur-[2px]">
         {/* 装饰网格背景 */}
         <div className="absolute inset-0 opacity-10">
           <div
@@ -88,7 +88,7 @@ export const AuthLayout = () => {
       </div>
 
       {/* 右侧表单面板 */}
-      <div className="relative z-10 flex flex-1 flex-col items-center justify-center bg-[rgba(220,229,236,0.80)] px-6 py-10 backdrop-blur-[2px] lg:px-12">
+      <div className="auth-right-panel relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-10 backdrop-blur-[2px] lg:px-12">
         {/* 移动端品牌标识 */}
         <div className="mb-8 flex items-center gap-2.5 lg:hidden">
           <BrandMark className="h-9 w-9 rounded-lg shadow-[0_10px_24px_rgba(79,70,229,0.2)]" />
@@ -98,7 +98,7 @@ export const AuthLayout = () => {
         </div>
 
         <div className="w-full max-w-[400px] animate-fadeIn">
-          <div className="rounded-2xl border border-white/80 bg-[rgba(247,250,252,0.94)] px-8 py-8 shadow-[0_24px_80px_rgba(15,23,42,0.18)] backdrop-blur-xl">
+          <div className="auth-form-card rounded-2xl border px-8 py-8 backdrop-blur-xl">
             <Outlet />
           </div>
         </div>

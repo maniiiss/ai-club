@@ -28,6 +28,11 @@ export interface UpdateProfilePayload {
   avatarUrl?: string
 }
 
+/** 账号主题切换请求载荷。 */
+export interface UpdateThemePayload {
+  themeId: string
+}
+
 /** 修改密码请求载荷。 */
 export interface ChangePasswordPayload {
   currentPassword: string
@@ -57,4 +62,6 @@ export interface CurrentUserInfo {
   permissionCodes: string[]
   /** 用户已完成新手引导的页面 key 列表。 */
   guideCompleted: string[]
+  /** 账号级主题 ID，公众端与管理端共用。 */
+  themeId: string
 }

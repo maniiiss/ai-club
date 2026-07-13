@@ -3,6 +3,7 @@ package com.aiclub.platform.service;
 import com.aiclub.platform.domain.model.PermissionEntity;
 import com.aiclub.platform.domain.model.RoleEntity;
 import com.aiclub.platform.domain.model.UserEntity;
+import com.aiclub.platform.dto.request.UpdateThemeRequest;
 import com.aiclub.platform.repository.RoleRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.security.AuthContext;
@@ -21,6 +22,8 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -162,6 +165,63 @@ class AuthServiceTests {
         } finally {
             AuthContextHolder.clear();
         }
+    }
+
+    /** 主题切换应写入账号、刷新当前会话，并把最新主题返回给两个前端。 */
+    @Test
+    void updateThemeShouldPersistAndRefreshCurrentSession() {
+        UserRepository userRepository = mock(UserRepository.class);
+        RoleRepository roleRepository = mock(RoleRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        TokenService tokenService = mock(TokenService.class);
+        LoginSessionStore loginSessionStore = mock(LoginSessionStore.class);
+        AccessManagementService accessManagementService = mock(AccessManagementService.class);
+        CreditService creditService = mock(CreditService.class);
+        AuthService authService = new AuthService(
+                userRepository,
+                roleRepository,
+                passwordEncoder,
+                tokenService,
+                loginSessionStore,
+                accessManagementService,
+                creditService
+        );
+        UserEntity user = userWithProjectViewOnly();
+        Instant expiresAt = Instant.now().plusSeconds(3600);
+        when(userRepository.findWithDetailsById(5L)).thenReturn(Optional.of(user));
+        when(userRepository.save(user)).thenReturn(user);
+        when(tokenService.parseToken("theme-token")).thenReturn(new TokenService.TokenClaims(5L, expiresAt));
+
+        try {
+            AuthContextHolder.set(new AuthContext(5L, "test1", "测试用户1", Set.of(), Set.of(), "theme-token"));
+
+            var result = authService.updateTheme(new UpdateThemeRequest("ocean-mist"));
+
+            assertThat(user.getThemeId()).isEqualTo("ocean-mist");
+            assertThat(result.themeId()).isEqualTo("ocean-mist");
+            verify(userRepository).save(user);
+            verify(loginSessionStore).save(eq("theme-token"), any(), eq(expiresAt));
+        } finally {
+            AuthContextHolder.clear();
+        }
+    }
+
+    /** 主题 ID 不在平台预设中时必须拒绝，避免前端写入无法解析的主题。 */
+    @Test
+    void updateThemeShouldRejectUnknownThemeId() {
+        AuthService authService = new AuthService(
+                mock(UserRepository.class),
+                mock(RoleRepository.class),
+                mock(PasswordEncoder.class),
+                mock(TokenService.class),
+                mock(LoginSessionStore.class),
+                mock(AccessManagementService.class),
+                mock(CreditService.class)
+        );
+
+        assertThatThrownBy(() -> authService.updateTheme(new UpdateThemeRequest("violet")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("主题");
     }
 
     private UserEntity userWithProjectViewOnly() {

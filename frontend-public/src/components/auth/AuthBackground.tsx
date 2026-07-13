@@ -19,14 +19,14 @@ export const AuthBackground = () => {
       >
         <defs>
           <linearGradient id="auth-route-main" x1="0" y1="1" x2="1" y2="0">
-            <stop offset="0" stopColor="#ff875f" stopOpacity="0.16" />
-            <stop offset="0.42" stopColor="#ff875f" stopOpacity="0.98" />
-            <stop offset="1" stopColor="#2f6bff" stopOpacity="0.94" />
+            <stop offset="0" stopColor="var(--auth-route-orange)" stopOpacity="0.16" />
+            <stop offset="0.42" stopColor="var(--auth-route-orange)" stopOpacity="0.98" />
+            <stop offset="1" stopColor="var(--auth-route-blue)" stopOpacity="0.94" />
           </linearGradient>
           <linearGradient id="auth-route-secondary" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#55d6c2" stopOpacity="0.14" />
-            <stop offset="0.55" stopColor="#55d6c2" stopOpacity="0.86" />
-            <stop offset="1" stopColor="#2f6bff" stopOpacity="0.78" />
+            <stop offset="0" stopColor="var(--auth-route-teal)" stopOpacity="0.14" />
+            <stop offset="0.55" stopColor="var(--auth-route-teal)" stopOpacity="0.86" />
+            <stop offset="1" stopColor="var(--auth-route-blue)" stopOpacity="0.78" />
           </linearGradient>
           <filter id="auth-node-glow" x="-100%" y="-100%" width="300%" height="300%">
             <feGaussianBlur stdDeviation="9" result="blur" />
@@ -53,17 +53,17 @@ export const AuthBackground = () => {
           id="git-branch-route-spur"
           className="git-branch-route git-branch-route--spur"
           d="M410 682C560 730 590 830 760 850C930 870 980 780 1020 620"
-          stroke="#ffb293"
+          stroke="var(--auth-route-soft)"
         />
 
         <g className="auth-background-node" filter="url(#auth-node-glow)">
-          <circle cx="420" cy="680" r="8" fill="#ff875f" />
-          <circle cx="850" cy="450" r="7" fill="#55d6c2" />
-          <circle cx="1020" cy="620" r="8" fill="#2f6bff" />
-          <circle cx="760" cy="850" r="6" fill="#55d6c2" />
+          <circle cx="420" cy="680" r="8" fill="var(--auth-route-orange)" />
+          <circle cx="850" cy="450" r="7" fill="var(--auth-route-teal)" />
+          <circle cx="1020" cy="620" r="8" fill="var(--auth-route-blue)" />
+          <circle cx="760" cy="850" r="6" fill="var(--auth-route-teal)" />
         </g>
 
-        <g className="auth-background-spark" fill="none" stroke="#eaf3ff" strokeLinecap="round">
+        <g className="auth-background-spark" fill="none" stroke="var(--auth-route-soft)" strokeLinecap="round">
           <path d="M1160 170l5 15 15 5-15 5-5 15-5-15-15-5 15-5 5-15z" />
           <path d="M1320 520l3 9 9 3-9 3-3 9-3-9-9-3 9-3 3-9z" />
         </g>

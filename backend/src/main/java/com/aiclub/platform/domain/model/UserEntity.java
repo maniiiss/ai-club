@@ -79,6 +79,10 @@ public class UserEntity {
     @Column(name = "guide_completed", nullable = false, length = 500)
     private String guideCompleted = "";
 
+    /** 用户账号级主题 ID，用于公众端与管理端跨设备恢复同一套界面风格。 */
+    @Column(name = "theme_id", nullable = false, length = 40)
+    private String themeId = "deep-sea";
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "user_role_rel",
@@ -224,6 +228,14 @@ public class UserEntity {
 
     public void setGuideCompleted(String guideCompleted) {
         this.guideCompleted = guideCompleted;
+    }
+
+    public String getThemeId() {
+        return themeId;
+    }
+
+    public void setThemeId(String themeId) {
+        this.themeId = themeId;
     }
 
     public Set<RoleEntity> getRoles() {

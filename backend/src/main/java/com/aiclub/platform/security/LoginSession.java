@@ -18,8 +18,27 @@ public record LoginSession(
         List<String> roleCodes,
         List<String> roleNames,
         List<String> permissionCodes,
-        List<String> guideCompleted
+        List<String> guideCompleted,
+        /** 当前会话缓存的账号主题 ID。 */
+        String themeId
 ) {
+
+    /** 兼容历史 Redis 会话反序列化和旧测试构造。 */
+    public LoginSession(Long userId,
+                        String username,
+                        String nickname,
+                        String email,
+                        String phone,
+                        String gitlabUsername,
+                        String avatarUrl,
+                        boolean enabled,
+                        List<String> roleCodes,
+                        List<String> roleNames,
+                        List<String> permissionCodes,
+                        List<String> guideCompleted) {
+        this(userId, username, nickname, email, phone, gitlabUsername, avatarUrl, enabled,
+                roleCodes, roleNames, permissionCodes, guideCompleted, null);
+    }
 
     public static LoginSession fromCurrentUserInfo(CurrentUserInfo currentUserInfo) {
         return new LoginSession(
@@ -34,7 +53,8 @@ public record LoginSession(
                 List.copyOf(currentUserInfo.roleCodes()),
                 List.copyOf(currentUserInfo.roleNames()),
                 List.copyOf(currentUserInfo.permissionCodes()),
-                List.copyOf(currentUserInfo.guideCompleted())
+                List.copyOf(currentUserInfo.guideCompleted()),
+                currentUserInfo.themeId()
         );
     }
 
@@ -51,7 +71,8 @@ public record LoginSession(
                 List.copyOf(roleCodes),
                 List.copyOf(roleNames),
                 List.copyOf(permissionCodes),
-                List.copyOf(guideCompleted)
+                List.copyOf(guideCompleted),
+                themeId
         );
     }
 

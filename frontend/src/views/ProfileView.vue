@@ -129,7 +129,7 @@
         <section class="platform-form-section profile-theme-section">
           <div class="platform-form-section-head">
             <div class="platform-form-section-title">界面风格</div>
-            <div class="platform-form-section-subtitle">切换当前浏览器中的界面主题，设置会保存在本地缓存中。</div>
+            <div class="platform-form-section-subtitle">主题绑定当前账号，并在公众端与管理端之间同步。</div>
           </div>
 
           <div class="profile-theme-summary">
@@ -137,7 +137,7 @@
               <div class="profile-theme-current-label">当前风格</div>
               <div class="profile-theme-current-name">{{ activeTheme.name }}</div>
             </div>
-            <div class="profile-theme-cache-note">主题选择仅保存在当前浏览器，本机刷新后仍会保留。</div>
+            <div class="profile-theme-cache-note">主题会写入账号资料；本地缓存仅用于启动时减少页面闪烁。</div>
           </div>
 
           <div class="profile-theme-grid">
@@ -148,6 +148,7 @@
               :class="{ active: theme.id === appStore.currentThemeId }"
               type="button"
               :aria-pressed="theme.id === appStore.currentThemeId"
+              :disabled="themeSaving !== null"
               @click="handleThemeChange(theme.id)"
             >
               <div class="profile-theme-preview" :style="{ background: theme.previewBackground }">
@@ -166,7 +167,7 @@
                   <div class="profile-theme-name">{{ theme.name }}</div>
                   <div class="profile-theme-description">{{ theme.description }}</div>
                 </div>
-                <span class="profile-theme-badge">{{ theme.id === appStore.currentThemeId ? '当前使用' : '点击切换' }}</span>
+                <span class="profile-theme-badge">{{ themeSaving === theme.id ? '保存中' : (theme.id === appStore.currentThemeId ? '当前使用' : '点击切换') }}</span>
               </div>
 
               <div class="profile-theme-swatches">
@@ -203,6 +204,7 @@ const avatarUploading = ref(false)
 const gitlabOauthBindingLoading = ref(false)
 const gitlabOauthAuthorizing = ref(false)
 const gitlabOauthUnbinding = ref(false)
+const themeSaving = ref<string | null>(null)
 const ALLOWED_AVATAR_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/gif'])
 const MAX_AVATAR_SIZE = 5 * 1024 * 1024
 
@@ -354,11 +356,20 @@ const handleAvatarSelected = async (event: Event) => {
   }
 }
 
-const handleThemeChange = (themeId: string) => {
-  // 主题切换只在前端本地完成，用户选择后立即生效并写入浏览器缓存。
-  appStore.setTheme(themeId)
-  const nextTheme = appStore.themePresets.find((item) => item.id === themeId)
-  ElMessage.success(`已切换为${nextTheme?.name || '新风格'}`)
+const handleThemeChange = async (themeId: string) => {
+  if (themeSaving.value || themeId === appStore.currentThemeId) {
+    return
+  }
+  themeSaving.value = themeId
+  try {
+    await authStore.updateTheme(themeId)
+    const nextTheme = appStore.themePresets.find((item) => item.id === themeId)
+    ElMessage.success(`已切换为${nextTheme?.name || '新风格'}`)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '主题同步失败，已保留原主题')
+  } finally {
+    themeSaving.value = null
+  }
 }
 
 const handleSaveProfile = async () => {

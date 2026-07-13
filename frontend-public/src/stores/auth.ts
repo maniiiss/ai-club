@@ -10,8 +10,10 @@ import {
   getCurrentUser,
   logoutApi,
   updateProfileApi,
+  updateThemeApi,
 } from '@/src/api/auth'
 import type { CurrentUserInfo, RegisterPayload, UpdateProfilePayload } from '@/src/types/auth'
+import { DEFAULT_THEME, applyTheme, applyUserTheme } from '@/src/lib/theme'
 
 /** 从 localStorage 读取缓存的用户信息，解析失败时返回 null。 */
 const readCachedUser = (): CurrentUserInfo | null => {
@@ -55,6 +57,8 @@ interface AuthActions {
   logout: () => Promise<void>
   /** 更新个人资料。 */
   updateProfile: (payload: UpdateProfilePayload) => Promise<void>
+  /** 更新账号主题并同步服务端。 */
+  updateTheme: (themeId: string) => Promise<void>
   /** 检查用户是否拥有指定权限码。传入空值时返回 true。 */
   hasPermission: (permission?: string | string[]) => boolean
   /** 清除错误状态。 */
@@ -89,6 +93,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
         loading: false,
         error: null,
       })
+      applyUserTheme(result.user)
     } catch (err) {
       const message = err instanceof Error ? err.message : '登录失败'
       set({ loading: false, error: message })
@@ -113,12 +118,14 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       const user = await getCurrentUser()
       localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user))
       set({ user, profileLoaded: true })
+      applyUserTheme(user)
       return user
     } catch {
       // 拉取失败时清除登录态。
       localStorage.removeItem(AUTH_TOKEN_KEY)
       localStorage.removeItem(AUTH_USER_KEY)
       set({ token: '', user: null, profileLoaded: false })
+      applyTheme(DEFAULT_THEME)
       return null
     }
   },
@@ -137,6 +144,7 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       localStorage.removeItem(AUTH_TOKEN_KEY)
       localStorage.removeItem(AUTH_USER_KEY)
       set({ token: '', user: null, profileLoaded: false })
+      applyTheme(DEFAULT_THEME)
     }
   },
 
@@ -144,6 +152,14 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     const user = await updateProfileApi(payload)
     localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user))
     set({ user })
+    applyUserTheme(user)
+  },
+
+  updateTheme: async (themeId: string) => {
+    const user = await updateThemeApi({ themeId })
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user))
+    set({ user })
+    applyUserTheme(user)
   },
 
   hasPermission: (permission?: string | string[]) => {

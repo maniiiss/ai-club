@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { applyThemePreset, readStoredThemeId, resolveThemePreset, THEME_PRESETS, THEME_STORAGE_KEY } from '@/constants/theme'
 import { getRuntimeCapabilities } from '@/api/runtime'
+import { updateThemeApi } from '@/api/auth'
 
 const SIDEBAR_COLLAPSED_STORAGE_KEY = 'git-ai-club:sidebar-collapsed'
 
@@ -65,6 +66,24 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  const updateTheme = async (themeId: string) => {
+    // 先保留旧主题，服务端失败时确保当前工作台视觉不发生半切换。
+    const previousThemeId = currentThemeId.value
+    try {
+      const user = await updateThemeApi({ themeId })
+      const preset = applyThemePreset(user.themeId)
+      currentThemeId.value = preset.id
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(THEME_STORAGE_KEY, preset.id)
+      }
+      return user
+    } catch (error) {
+      applyThemePreset(previousThemeId)
+      currentThemeId.value = previousThemeId
+      throw error
+    }
+  }
+
   const refreshRuntimeCapabilities = async () => {
     const capabilities = await getRuntimeCapabilities()
     serverManagementEnabled.value = capabilities.serverManagementEnabled
@@ -96,6 +115,7 @@ export const useAppStore = defineStore('app', () => {
     toggleSidebarCollapsed,
     initializeAppearance,
     setTheme,
+    updateTheme,
     refreshRuntimeCapabilities,
     ensureRuntimeCapabilities
   }

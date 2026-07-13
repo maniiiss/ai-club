@@ -3,12 +3,14 @@ package com.aiclub.platform.service;
 import com.aiclub.platform.domain.model.PermissionEntity;
 import com.aiclub.platform.domain.model.RoleEntity;
 import com.aiclub.platform.domain.model.UserEntity;
+import com.aiclub.platform.constants.ThemeCatalog;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.LoginResult;
 import com.aiclub.platform.dto.request.ChangePasswordRequest;
 import com.aiclub.platform.dto.request.LoginRequest;
 import com.aiclub.platform.dto.request.RegisterRequest;
 import com.aiclub.platform.dto.request.UpdateProfileRequest;
+import com.aiclub.platform.dto.request.UpdateThemeRequest;
 import com.aiclub.platform.exception.UnauthorizedException;
 import com.aiclub.platform.repository.RoleRepository;
 import com.aiclub.platform.repository.UserRepository;
@@ -139,6 +141,25 @@ public class AuthService {
         if (request.avatarUrl() != null) {
             user.setAvatarUrl(defaultString(request.avatarUrl()));
         }
+
+        CurrentUserInfo currentUserInfo = toCurrentUserInfo(userRepository.save(user));
+        refreshCurrentSession(authContext, currentUserInfo);
+        return currentUserInfo;
+    }
+
+    /** 更新当前账号主题，并刷新会话快照，让公众端和管理端立即共享选择。 */
+    @Transactional
+    public CurrentUserInfo updateTheme(UpdateThemeRequest request) {
+        String themeId = defaultString(request.themeId());
+        if (!ThemeCatalog.isSupported(themeId)) {
+            throw new IllegalArgumentException("不支持的主题: " + themeId);
+        }
+
+        AuthContext authContext = AuthContextHolder.get()
+                .orElseThrow(() -> new UnauthorizedException("Not logged in"));
+        UserEntity user = userRepository.findWithDetailsById(authContext.userId())
+                .orElseThrow(() -> new UnauthorizedException("User not found"));
+        user.setThemeId(themeId);
 
         CurrentUserInfo currentUserInfo = toCurrentUserInfo(userRepository.save(user));
         refreshCurrentSession(authContext, currentUserInfo);
@@ -280,7 +301,8 @@ public class AuthService {
                 roles.stream().map(RoleEntity::getCode).toList(),
                 roles.stream().map(RoleEntity::getName).toList(),
                 permissionCodes,
-                guideCompleted
+                guideCompleted,
+                user.getThemeId()
         );
     }
 

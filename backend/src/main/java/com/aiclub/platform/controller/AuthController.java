@@ -8,6 +8,7 @@ import com.aiclub.platform.dto.request.ChangePasswordRequest;
 import com.aiclub.platform.dto.request.LoginRequest;
 import com.aiclub.platform.dto.request.RegisterRequest;
 import com.aiclub.platform.dto.request.UpdateProfileRequest;
+import com.aiclub.platform.dto.request.UpdateThemeRequest;
 import com.aiclub.platform.dto.request.UpdateGuideStatusRequest;
 import com.aiclub.platform.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -55,6 +56,12 @@ public class AuthController {
     @OperationLog(actionCode = "AUTH_UPDATE_PROFILE", actionName = "修改个人资料")
     public ApiResponse<CurrentUserInfo> updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
         return ApiResponse.success(authService.updateProfile(request));
+    }
+
+    @PutMapping("/theme")
+    @OperationLog(actionCode = "AUTH_UPDATE_THEME", actionName = "切换界面主题")
+    public ApiResponse<CurrentUserInfo> updateTheme(@Valid @RequestBody UpdateThemeRequest request) {
+        return ApiResponse.success(authService.updateTheme(request));
     }
 
     @PutMapping("/guide-status")
