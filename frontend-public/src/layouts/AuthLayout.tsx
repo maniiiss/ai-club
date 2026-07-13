@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { BrandMark } from '@/src/components/common/BrandMark'
 import { AuthBackground } from '@/src/components/auth/AuthBackground'
+import { AuthThemeSwitcher } from '@/src/components/auth/AuthThemeSwitcher'
 
 const features = [
   { icon: FolderKanban, text: '项目空间协作' },
@@ -36,6 +37,7 @@ export const AuthLayout = () => {
     <div className="auth-theme-gitpilot auth-layout-root relative flex min-h-screen overflow-hidden">
       <AuthBackground />
       <div className="auth-background-seam" />
+      <AuthThemeSwitcher />
 
       {/* 左侧品牌面板（桌面端可见） */}
       <div className="auth-left-panel relative z-10 hidden lg:flex lg:w-[45%] lg:max-w-[560px] flex-col justify-between border-r border-white/10 px-12 py-10 backdrop-blur-[2px]">

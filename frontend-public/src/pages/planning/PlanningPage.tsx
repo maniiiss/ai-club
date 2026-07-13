@@ -837,7 +837,7 @@ const WorkItemDialog = ({ projectId, editing, iterationId, userOptions, projectM
       open={!isClosing}
       onClose={handleClose}
       title={editing ? '编辑工作项' : '新建工作项'}
-      width="clamp(720px, 50vw, 960px)"
+      width="clamp(800px, 52vw, 1040px)"
       maxWidth="calc(100vw - 48px)"
       footer={
         <SlideDrawerFooter
@@ -1155,7 +1155,7 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
       onClose={handleClose}
       title={item.name}
       description={item.workItemCode || undefined}
-      width="clamp(720px, 50vw, 960px)"
+      width="clamp(800px, 52vw, 1040px)"
       maxWidth="calc(100vw - 48px)"
       headerActions={headerActions}
     >

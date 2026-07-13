@@ -1,10 +1,8 @@
 /**
- * 测试与执行模块页面。
- * 两个子 Tab：测试计划 + 执行中心。
- * 测试计划支持新建、编辑、删除、内联状态切换，点击卡片跳转详情页。
- * 执行中心支持场景/状态/项目筛选、自动轮询、状态中文标签，点击跳转详情页。
+ * 测试和执行中心页面实现。
+ * 测试计划与执行任务共用数据访问和卡片实现，但通过项目路由分别呈现。
  */
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   FlaskConical,
@@ -48,13 +46,6 @@ import { EmptyState } from '@/src/components/common/EmptyState'
 import { cn, formatDate } from '@/src/lib/utils'
 import { DateRangePicker } from '@/src/components/common/DateRangePicker'
 import { Select } from '@/src/components/common/Select'
-
-type ExecutionTab = 'test-plans' | 'execution-center'
-
-const tabs: { key: ExecutionTab; label: string; icon: typeof FlaskConical }[] = [
-  { key: 'test-plans', label: '测试计划', icon: FlaskConical },
-  { key: 'execution-center', label: '执行中心', icon: Play },
-]
 
 const statusColorMap: Record<string, string> = {
   '草稿': 'bg-gray-100 text-gray-600',
@@ -115,42 +106,42 @@ const priorityColorMap: Record<string, string> = {
   P3: 'text-gray-500',
 }
 
-export const ExecutionPage = () => {
-  const [activeTab, setActiveTab] = useState<ExecutionTab>('test-plans')
+const ExecutionModulePage = ({
+  title,
+  description,
+  children,
+}: {
+  title: string
+  description: string
+  children: ReactNode
+}) => (
+  <div className="h-full overflow-y-auto animate-fadeIn">
+    <h2 className="mb-2 text-[22px] font-bold tracking-tight text-[var(--color-text-primary)]">
+      {title}
+    </h2>
+    <p className="mb-6 text-[14px] text-[var(--color-text-tertiary)]">
+      {description}
+    </p>
+    {children}
+  </div>
+)
 
-  return (
-    <div className="h-full overflow-y-auto animate-fadeIn">
-      <h2 className="mb-2 text-[22px] font-bold tracking-tight text-[var(--color-text-primary)]">
-        测试与执行
-      </h2>
-      <p className="mb-6 text-[14px] text-[var(--color-text-tertiary)]">
-        管理测试计划、跟踪自动化执行结果
-      </p>
+/** 测试入口：仅展示测试计划和测试用例管理。 */
+export const TestPlansPage = () => (
+  <ExecutionModulePage title="测试" description="管理测试计划、测试用例与自动化测试准备">
+    <TestPlansPanel />
+  </ExecutionModulePage>
+)
 
-      {/* Tab 切换 */}
-      <div className="mb-6 flex gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)] w-fit">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={cn(
-              'flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-all duration-150',
-              activeTab === tab.key
-                ? 'bg-[var(--color-primary)] text-white shadow-[var(--shadow-sm)]'
-                : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]',
-            )}
-          >
-            <tab.icon className="h-3.5 w-3.5" strokeWidth={1.75} />
-            {tab.label}
-          </button>
-        ))}
-      </div>
+/** 执行中心入口：仅展示平台执行任务及其运行状态。 */
+export const ExecutionCenterPage = () => (
+  <ExecutionModulePage title="执行中心" description="跟踪技术设计、开发、测试与交付执行任务">
+    <ExecutionCenterPanel />
+  </ExecutionModulePage>
+)
 
-      {activeTab === 'test-plans' && <TestPlansPanel />}
-      {activeTab === 'execution-center' && <ExecutionCenterPanel />}
-    </div>
-  )
-}
+/** 兼容旧引用，新的项目路由使用 TestPlansPage 和 ExecutionCenterPage。 */
+export const ExecutionPage = ExecutionCenterPage
 
 /* ════════════════════════════════════════════
    测试计划面板
@@ -198,7 +189,7 @@ const TestPlansPanel = () => {
   }, [fetchPlans])
 
   const handleOpenDetail = (planId: number) => {
-    navigate(`/projects/${projectId}/execution/test-plans/${planId}`)
+    navigate(`/projects/${projectId}/testing/test-plans/${planId}`)
   }
 
   const handleStatusChange = async (plan: TestPlanItem, newStatus: string) => {

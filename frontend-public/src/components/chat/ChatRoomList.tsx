@@ -46,7 +46,7 @@ export const ChatRoomList = ({
   onCreateRoom,
 }: ChatRoomListProps) => {
   return (
-    <aside className="flex h-full min-h-0 flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]">
+    <aside className="chat-room-list flex h-full min-h-0 flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]">
       <div className="border-b border-[var(--color-border-light)] p-3">
         <div className="mb-3 flex items-center justify-between gap-2">
           <div>
@@ -68,7 +68,7 @@ export const ChatRoomList = ({
             value={keyword}
             onChange={(event) => onKeywordChange(event.target.value)}
             placeholder="搜索房间"
-            className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-white pl-9 pr-3 text-[13px] text-[var(--color-text-primary)] outline-none transition-all focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+            className="h-9 w-full rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] pl-9 pr-3 text-[13px] text-[var(--color-text-primary)] outline-none transition-all focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
           />
         </div>
 
@@ -80,7 +80,7 @@ export const ChatRoomList = ({
               className={cn(
                 'h-7 rounded-md text-[12px] font-medium transition-colors',
                 filter === tab.value
-                  ? 'bg-white text-[var(--color-text-primary)] shadow-[var(--shadow-xs)]'
+                  ? 'bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] shadow-[var(--shadow-xs)]'
                   : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]',
               )}
             >

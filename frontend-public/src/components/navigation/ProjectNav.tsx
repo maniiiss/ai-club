@@ -9,6 +9,7 @@ import {
   BookOpen,
   Code2,
   FlaskConical,
+  Play,
   Rocket,
 } from 'lucide-react'
 import { cn } from '@/src/lib/utils'
@@ -18,7 +19,8 @@ const projectTabs = [
   { path: 'planning', label: '计划', icon: CalendarRange, exact: false },
   { path: 'knowledge', label: '文档', icon: BookOpen, exact: false },
   { path: 'development', label: '研发', icon: Code2, exact: false },
-  { path: 'execution', label: '测试与执行', icon: FlaskConical, exact: false },
+  { path: 'testing', label: '测试', icon: FlaskConical, exact: false },
+  { path: 'execution', label: '执行中心', icon: Play, exact: false },
   { path: 'release', label: '发布与观测', icon: Rocket, exact: false },
 ]
 

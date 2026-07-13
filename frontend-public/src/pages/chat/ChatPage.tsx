@@ -339,7 +339,7 @@ export const ChatPage = () => {
   }
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-4 animate-fadeIn lg:grid-cols-[320px_minmax(0,1fr)_280px]">
+    <div className="chat-page grid h-full min-h-0 grid-cols-1 gap-4 animate-fadeIn lg:grid-cols-[320px_minmax(0,1fr)_280px]">
       <ChatRoomList
         rooms={filteredRooms}
         selectedRoomId={selectedRoomId}
@@ -543,7 +543,7 @@ const ChatContextPanel = ({
   const summaryCollapsible = room ? shouldCollapseChatSummary(summary) : false
 
   return (
-    <aside className="hidden min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] lg:flex">
+    <aside className="chat-context-panel hidden min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] lg:flex">
       <div className="border-b border-[var(--color-border-light)] px-4 py-3">
         <h3 className="text-[14px] font-bold text-[var(--color-text-primary)]">上下文</h3>
       </div>
@@ -556,11 +556,11 @@ const ChatContextPanel = ({
             </p>
           </div>
           {canManageAgent && (
-            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+            <div className="chat-agent-panel mb-4 rounded-lg border p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-[12px] font-semibold text-amber-900">房间助手</p>
-                  <p className="mt-0.5 truncate text-[12px] text-amber-700">
+                  <p className="text-[12px] font-semibold text-[var(--color-text-primary)]">房间助手</p>
+                  <p className="mt-0.5 truncate text-[12px] text-[var(--color-text-secondary)]">
                     {agentConfig?.enabled ? `${agentConfig.displayName || 'Hermes'} 已启用` : 'Hermes 已关闭'}
                   </p>
                 </div>
@@ -582,15 +582,18 @@ const ChatContextPanel = ({
               </div>
               <div className="mt-3 space-y-1.5">
                 {agentTasks.slice(0, 3).map((task) => (
-                  <div key={task.id} className="flex items-center justify-between gap-2 rounded-md bg-white/70 px-2 py-1.5 text-[11.5px]">
+                  <div key={task.id} className="chat-agent-task-item flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11.5px]">
                     <span className="truncate text-[var(--color-text-secondary)]">{task.source || task.triggerType}</span>
-                    <span className={cn('shrink-0 font-semibold', task.status === 'ERROR' ? 'text-red-600' : task.status === 'DONE' ? 'text-emerald-600' : 'text-amber-700')}>
+                    <span className={cn(
+                      'chat-agent-task-status shrink-0 font-semibold',
+                      task.status === 'ERROR' ? 'is-error' : task.status === 'DONE' ? 'is-done' : 'is-pending',
+                    )}>
                       {formatAgentTaskStatus(task.status)}
                     </span>
                   </div>
                 ))}
                 {agentTasks.length === 0 && (
-                  <p className="text-[11.5px] text-amber-700">暂无助手任务。</p>
+                  <p className="text-[11.5px] text-[var(--color-text-secondary)]">暂无助手任务。</p>
                 )}
               </div>
             </div>
@@ -635,7 +638,7 @@ const ChatContextPanel = ({
                     <div className="flex min-w-0 items-center gap-1.5">
                       <p className="truncate text-[12.5px] font-medium text-[var(--color-text-primary)]">{displayName}</p>
                       {isCreator && (
-                        <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[10.5px] font-semibold text-amber-700">
+                        <span className="chat-owner-badge shrink-0 rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold">
                           群主
                         </span>
                       )}
@@ -661,7 +664,7 @@ const ChatContextPanel = ({
             </div>
             <p
               className={cn(
-                'rounded-lg border border-[var(--color-border-light)] bg-white p-2.5 text-[12px] leading-5 text-[var(--color-text-tertiary)]',
+                'rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-elevated)] p-2.5 text-[12px] leading-5 text-[var(--color-text-tertiary)]',
                 summaryCollapsible && !summaryExpanded && 'max-h-20 overflow-hidden',
                 summaryExpanded && 'max-h-64 overflow-y-auto',
               )}
@@ -682,8 +685,8 @@ const ChatContextPanel = ({
 
 const AgentFlag = ({ active, label }: { active: boolean; label: string }) => (
   <span className={cn(
-    'rounded-md px-2 py-1 text-[11px] font-semibold',
-    active ? 'bg-amber-200 text-amber-900' : 'bg-white/70 text-amber-600',
+    'chat-agent-flag rounded-md px-2 py-1 text-[11px] font-semibold',
+    active ? 'is-active' : 'is-inactive',
   )}>
     {label}
   </span>
@@ -751,7 +754,7 @@ const ChatMemberEditor = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/25 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative z-10 flex max-h-[84vh] w-full max-w-md flex-col rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-xl)]">
+      <div className="relative z-10 flex max-h-[84vh] w-full max-w-md flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-xl)]">
         <div className="border-b border-[var(--color-border-light)] px-5 py-4">
           <h3 className="text-[17px] font-bold text-[var(--color-text-primary)]">邀请成员</h3>
         </div>
@@ -773,7 +776,7 @@ const ChatMemberEditor = ({
                     locked && 'cursor-default',
                   )}
                 >
-                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-[12px] font-semibold">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--color-bg-elevated)] text-[12px] font-semibold">
                     {getInitials(displayName)}
                   </span>
                   <span className="min-w-0 flex-1">
@@ -782,7 +785,7 @@ const ChatMemberEditor = ({
                       {user.username}
                     </span>
                   </span>
-                  <span className={cn('h-4 w-4 rounded border', selected ? 'border-[var(--color-primary)] bg-[var(--color-primary)]' : 'border-[var(--color-border-strong)] bg-white')} />
+                  <span className={cn('h-4 w-4 rounded border', selected ? 'border-[var(--color-primary)] bg-[var(--color-primary)]' : 'border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)]')} />
                 </button>
               )
             })}
@@ -888,7 +891,7 @@ const ChatAgentSettingsDialog = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/25 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative z-10 flex max-h-[88vh] w-full max-w-2xl flex-col rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-xl)]">
+      <div className="relative z-10 flex max-h-[88vh] w-full max-w-2xl flex-col rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-xl)]">
         <div className="border-b border-[var(--color-border-light)] px-5 py-4">
           <h3 className="text-[17px] font-bold text-[var(--color-text-primary)]">房间助手设置</h3>
           {!isOwner && <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">只有房主可以修改授权。</p>}
@@ -936,7 +939,7 @@ const ChatAgentSettingsDialog = ({
                 value={proactiveSummaryMessageThreshold}
                 disabled={!isOwner || !proactiveSummaryEnabled}
                 onChange={(event) => setProactiveSummaryMessageThreshold(event.target.value)}
-                className="h-9 rounded-lg border border-[var(--color-border-strong)] px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary)] disabled:bg-white/60"
+                className="h-9 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary)] disabled:bg-[var(--color-bg-hover)]"
               />
             </label>
             <label className="flex flex-col gap-1.5 text-[12.5px] font-medium text-[var(--color-text-secondary)]">
@@ -948,7 +951,7 @@ const ChatAgentSettingsDialog = ({
                 value={proactiveSummaryMinIntervalMinutes}
                 disabled={!isOwner || !proactiveSummaryEnabled}
                 onChange={(event) => setProactiveSummaryMinIntervalMinutes(event.target.value)}
-                className="h-9 rounded-lg border border-[var(--color-border-strong)] px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary)] disabled:bg-white/60"
+                className="h-9 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary)] disabled:bg-[var(--color-bg-hover)]"
               />
             </label>
             <label className="flex flex-col gap-1.5 text-[12.5px] font-medium text-[var(--color-text-secondary)] md:col-span-2">
@@ -958,7 +961,7 @@ const ChatAgentSettingsDialog = ({
                 disabled={!isOwner || !keywordWatchEnabled}
                 onChange={(event) => setKeywordWatchTermsText(event.target.value)}
                 rows={3}
-                className="resize-y rounded-lg border border-[var(--color-border-strong)] px-3 py-2 text-[13px] leading-5 text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary)] disabled:bg-white/60"
+              className="resize-y rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 py-2 text-[13px] leading-5 text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary)] disabled:bg-[var(--color-bg-hover)]"
                 placeholder="每行一个关键词，例如：阻塞、失败、紧急"
               />
             </label>
@@ -971,12 +974,12 @@ const ChatAgentSettingsDialog = ({
                 value={keywordWatchCooldownMinutes}
                 disabled={!isOwner || !keywordWatchEnabled}
                 onChange={(event) => setKeywordWatchCooldownMinutes(event.target.value)}
-                className="h-9 rounded-lg border border-[var(--color-border-strong)] px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary)] disabled:bg-white/60"
+                className="h-9 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-3 text-[13px] text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary)] disabled:bg-[var(--color-bg-hover)]"
               />
             </label>
             <div className="flex flex-col gap-1.5 text-[12.5px] font-medium text-[var(--color-text-secondary)]">
               回写状态
-              <div className="flex min-h-9 flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border-strong)] bg-white px-2 py-1.5">
+              <div className="flex min-h-9 flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] px-2 py-1.5">
                 {TASK_STATUS_OPTIONS.map((status) => (
                   <label key={status} className={cn('inline-flex items-center gap-1.5 text-[11.5px]', (!isOwner || !taskStatusCallbackEnabled) && 'opacity-50')}>
                     <input

@@ -25,6 +25,9 @@
   --app-surface-high: #e4edf2;
   --app-surface-card: #ffffff;
   --app-surface-muted: #dce5ec;
+  /* 兼容旧视图使用的短变量，跟随当前主题的公共表面和次级文字。 */
+  --app-surface: var(--app-surface-card);
+  --app-muted: var(--app-text-muted);
   --app-text: #122333;
   --app-text-soft: #506579;
   --app-text-muted: #7a8d9d;
@@ -93,6 +96,615 @@
   --el-bg-color: rgba(255, 255, 255, 0.9);
   --el-bg-color-overlay: rgba(255, 255, 255, 0.96);
   --el-box-shadow-light: 0 12px 32px rgba(25, 28, 29, 0.06);
+}
+
+/*
+  曜石黑第二层业务组件覆盖。
+  业务意图：老页面的局部 SFC 样式仍保留了白色工作台语义；这里按业务组件命名空间统一迁移表面、文字和边框，确保切换主题后页面层级仍然成立。
+*/
+[data-theme="carbon-black"] .platform-form-section,
+[data-theme="carbon-black"] .platform-section-card,
+[data-theme="carbon-black"] .form-default-template,
+[data-theme="carbon-black"] .project-kpi-card,
+[data-theme="carbon-black"] .project-mobile-card,
+[data-theme="carbon-black"] .project-dialog-shell,
+[data-theme="carbon-black"] .project-share-dialog,
+[data-theme="carbon-black"] .wiki-space-card,
+[data-theme="carbon-black"] .profile-gitlab-binding-card,
+[data-theme="carbon-black"] .execution-kpi-card,
+[data-theme="carbon-black"] .execution-table-shell,
+[data-theme="carbon-black"] .execution-mobile-card,
+[data-theme="carbon-black"] .execution-step-section,
+[data-theme="carbon-black"] .execution-repo-item,
+[data-theme="carbon-black"] .execution-plan-confirm-field,
+[data-theme="carbon-black"] .orchestration-toolbar,
+[data-theme="carbon-black"] .orchestration-editor-card,
+[data-theme="carbon-black"] .orchestration-history-card,
+[data-theme="carbon-black"] .history-item,
+[data-theme="carbon-black"] .api-studio-tree-shell,
+[data-theme="carbon-black"] .api-studio-editor-shell,
+[data-theme="carbon-black"] .api-studio-form-card,
+[data-theme="carbon-black"] .api-studio-env-item,
+[data-theme="carbon-black"] .benchmark-card,
+[data-theme="carbon-black"] .benchmark-metric-card,
+[data-theme="carbon-black"] .benchmark-metric-table,
+[data-theme="carbon-black"] .kpi-card,
+[data-theme="carbon-black"] .trend-section,
+[data-theme="carbon-black"] .tabs-section,
+[data-theme="carbon-black"] .mobile-entity-card {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+  color: var(--app-text) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-theme="carbon-black"] .platform-form-section,
+[data-theme="carbon-black"] .orchestration-status-strip div,
+[data-theme="carbon-black"] .orchestration-empty-draft,
+[data-theme="carbon-black"] .orchestration-step-row,
+[data-theme="carbon-black"] .api-studio-editor-header,
+[data-theme="carbon-black"] .api-studio-response-block,
+[data-theme="carbon-black"] .api-studio-debug-result,
+[data-theme="carbon-black"] .api-studio-kv-empty,
+[data-theme="carbon-black"] .benchmark-detail-config,
+[data-theme="carbon-black"] .benchmark-detail-prompt,
+[data-theme="carbon-black"] .mobile-entity-field,
+[data-theme="carbon-black"] .project-mobile-field,
+[data-theme="carbon-black"] .execution-mobile-field,
+[data-theme="carbon-black"] .profile-theme-summary,
+[data-theme="carbon-black"] .profile-theme-window,
+[data-theme="carbon-black"] .profile-gitlab-binding-item {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.18) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .project-kpi-label,
+[data-theme="carbon-black"] .project-kpi-icon,
+[data-theme="carbon-black"] .execution-kpi-label,
+[data-theme="carbon-black"] .execution-kpi-icon,
+[data-theme="carbon-black"] .kpi-label,
+[data-theme="carbon-black"] .kpi-extra,
+[data-theme="carbon-black"] .trend-axis,
+[data-theme="carbon-black"] .trend-meta,
+[data-theme="carbon-black"] .wiki-space-card p,
+[data-theme="carbon-black"] .wiki-space-meta-line,
+[data-theme="carbon-black"] .wiki-space-form-hint,
+[data-theme="carbon-black"] .profile-subtitle,
+[data-theme="carbon-black"] .profile-avatar-tip,
+[data-theme="carbon-black"] .profile-theme-cache-note,
+[data-theme="carbon-black"] .profile-theme-description,
+[data-theme="carbon-black"] .profile-gitlab-binding-url,
+[data-theme="carbon-black"] .profile-gitlab-binding-note,
+[data-theme="carbon-black"] .execution-mobile-label,
+[data-theme="carbon-black"] .execution-progress-meta,
+[data-theme="carbon-black"] .api-studio-section-subtitle,
+[data-theme="carbon-black"] .api-studio-debug-meta,
+[data-theme="carbon-black"] .api-studio-env-meta,
+[data-theme="carbon-black"] .benchmark-detail-summary-text,
+[data-theme="carbon-black"] .benchmark-runs-toolbar-text,
+[data-theme="carbon-black"] .benchmark-metric-sub,
+[data-theme="carbon-black"] .benchmark-metric-card-grid span,
+[data-theme="carbon-black"] .row-sub {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .project-kpi-value,
+[data-theme="carbon-black"] .project-mobile-title,
+[data-theme="carbon-black"] .project-mobile-description,
+[data-theme="carbon-black"] .wiki-space-card h2,
+[data-theme="carbon-black"] .profile-title,
+[data-theme="carbon-black"] .profile-identity-title,
+[data-theme="carbon-black"] .profile-theme-current-name,
+[data-theme="carbon-black"] .profile-theme-name,
+[data-theme="carbon-black"] .profile-gitlab-binding-title,
+[data-theme="carbon-black"] .profile-gitlab-binding-value,
+[data-theme="carbon-black"] .execution-kpi-value,
+[data-theme="carbon-black"] .execution-col-main,
+[data-theme="carbon-black"] .execution-col-project,
+[data-theme="carbon-black"] .execution-col-initiator,
+[data-theme="carbon-black"] .execution-col-updated,
+[data-theme="carbon-black"] .execution-mobile-content,
+[data-theme="carbon-black"] .orchestration-page,
+[data-theme="carbon-black"] .orchestration-hero h1,
+[data-theme="carbon-black"] .orchestration-card-head h2,
+[data-theme="carbon-black"] .orchestration-history-card h3,
+[data-theme="carbon-black"] .api-studio-dir-name,
+[data-theme="carbon-black"] .api-studio-endpoint-name,
+[data-theme="carbon-black"] .api-studio-editor-title-copy h2,
+[data-theme="carbon-black"] .benchmark-card-title,
+[data-theme="carbon-black"] .benchmark-detail-summary-label,
+[data-theme="carbon-black"] .benchmark-metric-card-title,
+[data-theme="carbon-black"] .metric-model-name,
+[data-theme="carbon-black"] .metric-num,
+[data-theme="carbon-black"] .kpi-value {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .project-mobile-action-button,
+[data-theme="carbon-black"] .execution-action-button,
+[data-theme="carbon-black"] .execution-mobile-action-button,
+[data-theme="carbon-black"] .mobile-entity-action-button,
+[data-theme="carbon-black"] .project-action-button:hover,
+[data-theme="carbon-black"] .api-studio-icon-button,
+[data-theme="carbon-black"] .api-studio-back-button,
+[data-theme="carbon-black"] .gitlab-tab-switcher,
+[data-theme="carbon-black"] .gitlab-tab-button.active,
+[data-theme="carbon-black"] .benchmark-tab-badge {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .project-mobile-repo-button,
+[data-theme="carbon-black"] .mobile-entity-link-button,
+[data-theme="carbon-black"] .project-status-pill.running,
+[data-theme="carbon-black"] .execution-scenario-pill,
+[data-theme="carbon-black"] .execution-status-pill,
+[data-theme="carbon-black"] .profile-theme-badge {
+  background: color-mix(in srgb, var(--app-primary) 16%, var(--app-surface-card)) !important;
+  color: var(--app-primary-light-7) !important;
+  border-color: rgba(var(--app-primary-rgb), 0.28) !important;
+}
+
+[data-theme="carbon-black"] .project-mobile-card-header,
+[data-theme="carbon-black"] .execution-mobile-card-header,
+[data-theme="carbon-black"] .project-mobile-fields,
+[data-theme="carbon-black"] .execution-mobile-fields,
+[data-theme="carbon-black"] .execution-mobile-actions,
+[data-theme="carbon-black"] .project-mobile-actions {
+  color: var(--app-text);
+}
+
+[data-theme="carbon-black"] .project-owner-avatar,
+[data-theme="carbon-black"] .project-member-avatar,
+[data-theme="carbon-black"] .project-popover-avatar,
+[data-theme="carbon-black"] .project-member-avatar.extra,
+[data-theme="carbon-black"] .project-progress-track {
+  border-color: var(--app-surface-card) !important;
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .project-person-item:hover,
+[data-theme="carbon-black"] .scenario-chip:hover,
+[data-theme="carbon-black"] .benchmark-runs-row:hover {
+  background: color-mix(in srgb, var(--app-primary) 10%, var(--app-surface-card)) !important;
+}
+
+[data-theme="carbon-black"] .scenario-chip,
+[data-theme="carbon-black"] .benchmark-tabs-nav,
+[data-theme="carbon-black"] .benchmark-runs-row + .benchmark-runs-row,
+[data-theme="carbon-black"] .api-studio-editor-tabs .el-tabs__header,
+[data-theme="carbon-black"] .api-studio-editor-header,
+[data-theme="carbon-black"] .wiki-space-card-actions-shell {
+  border-color: rgba(var(--app-outline-rgb), 0.18) !important;
+}
+
+[data-theme="carbon-black"] .scenario-chip,
+[data-theme="carbon-black"] .gitlab-tab-button,
+[data-theme="carbon-black"] .benchmark-tab-button {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text-soft) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .orchestration-hero {
+  background:
+    radial-gradient(circle at 88% 16%, rgba(var(--app-primary-container-rgb), 0.2), transparent 30%),
+    linear-gradient(135deg, color-mix(in srgb, var(--app-primary-container) 14%, var(--app-surface-card)), var(--app-surface-card)) !important;
+  border-color: rgba(var(--app-primary-container-rgb), 0.28) !important;
+}
+
+[data-theme="carbon-black"] .orchestration-hero p,
+[data-theme="carbon-black"] .orchestration-empty-draft span,
+[data-theme="carbon-black"] .orchestration-status-strip span,
+[data-theme="carbon-black"] .history-item p,
+[data-theme="carbon-black"] .history-item li span,
+[data-theme="carbon-black"] .step-copy span,
+[data-theme="carbon-black"] .internal-step,
+[data-theme="carbon-black"] .timeout-unit {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .orchestration-hero-badge {
+  background: var(--app-primary-container) !important;
+  color: #071722 !important;
+}
+
+[data-theme="carbon-black"] .api-studio-dir-row,
+[data-theme="carbon-black"] .api-studio-endpoint-row,
+[data-theme="carbon-black"] .api-studio-env-item,
+[data-theme="carbon-black"] .api-studio-inline-table .el-table__header,
+[data-theme="carbon-black"] .api-studio-response-block,
+[data-theme="carbon-black"] .api-studio-debug-result {
+  background-color: var(--app-surface-muted) !important;
+}
+
+[data-theme="carbon-black"] .api-studio-dir-row:hover,
+[data-theme="carbon-black"] .api-studio-endpoint-row:hover,
+[data-theme="carbon-black"] .api-studio-endpoint-row.active {
+  background: color-mix(in srgb, var(--app-primary) 12%, var(--app-surface-card)) !important;
+}
+
+[data-theme="carbon-black"] .api-studio-endpoint-path,
+[data-theme="carbon-black"] .api-studio-editor-path,
+[data-theme="carbon-black"] .api-studio-kv-empty {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .api-studio-form-card,
+[data-theme="carbon-black"] .api-studio-inline-table,
+[data-theme="carbon-black"] .api-studio-response-block,
+[data-theme="carbon-black"] .api-studio-debug-result,
+[data-theme="carbon-black"] .api-studio-env-item {
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .benchmark-detail-config b,
+[data-theme="carbon-black"] .benchmark-metric-card-grid b,
+[data-theme="carbon-black"] .metric-model-name,
+[data-theme="carbon-black"] .benchmark-detail-prompt summary,
+[data-theme="carbon-black"] .benchmark-runs-row {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .benchmark-metric-table .el-table,
+[data-theme="carbon-black"] .benchmark-metric-table .el-table__fixed,
+[data-theme="carbon-black"] .benchmark-metric-table .el-table__fixed-right,
+[data-theme="carbon-black"] .benchmark-metric-table .el-table__cell.el-table-fixed-column--left,
+[data-theme="carbon-black"] .benchmark-metric-table .el-table__cell.is-first-column {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .benchmark-metric-table .el-table__header-wrapper th,
+[data-theme="carbon-black"] .benchmark-metric-table .el-table__header-wrapper th.el-table-fixed-column--left,
+[data-theme="carbon-black"] .benchmark-metric-table .el-table__header-wrapper th.is-first-column {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .benchmark-metric-table .el-table__body tr:hover > td,
+[data-theme="carbon-black"] .benchmark-metric-table .el-table__body tr:hover > td.el-table-fixed-column--left,
+[data-theme="carbon-black"] .benchmark-metric-table .el-table__body tr:hover > td.is-first-column {
+  background: color-mix(in srgb, var(--app-primary) 10%, var(--app-surface-card)) !important;
+}
+
+[data-theme="carbon-black"] .benchmark-metric-icon,
+[data-theme="carbon-black"] .metric-model-icon {
+  background: color-mix(in srgb, var(--app-primary) 18%, var(--app-surface-card)) !important;
+  color: var(--app-primary-light-7) !important;
+}
+
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .platform-form-section,
+[data-theme="carbon-black"] .mobile-form-drawer,
+[data-theme="carbon-black"] .mobile-form-drawer .el-drawer,
+[data-theme="carbon-black"] .mobile-form-drawer .el-drawer__footer,
+[data-theme="carbon-black"] .hermes-footer,
+[data-theme="carbon-black"] .hermes-slash-menu,
+[data-theme="carbon-black"] .hermes-session-sidebar,
+[data-theme="carbon-black"] .hermes-option-card,
+[data-theme="carbon-black"] .hermes-action-card,
+[data-theme="carbon-black"] .hermes-message-bubble,
+[data-theme="carbon-black"] .hermes-markdown-content .hermes-table-wrap,
+[data-theme="carbon-black"] .hermes-markdown-content .hermes-think-block {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .hermes-markdown-content h1,
+[data-theme="carbon-black"] .hermes-markdown-content h2,
+[data-theme="carbon-black"] .hermes-markdown-content h3,
+[data-theme="carbon-black"] .hermes-markdown-content h4,
+[data-theme="carbon-black"] .hermes-slash-item strong,
+[data-theme="carbon-black"] .hermes-selected-skill strong,
+[data-theme="carbon-black"] .hermes-markdown-content code {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .hermes-markdown-content p,
+[data-theme="carbon-black"] .hermes-markdown-content li,
+[data-theme="carbon-black"] .hermes-markdown-content blockquote,
+[data-theme="carbon-black"] .hermes-markdown-content .hermes-table-wrap td,
+[data-theme="carbon-black"] .hermes-slash-item,
+[data-theme="carbon-black"] .hermes-selected-skill,
+[data-theme="carbon-black"] .hermes-thinking-text,
+[data-theme="carbon-black"] .hermes-process-description,
+[data-theme="carbon-black"] .hermes-process-summary-meta {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .hermes-markdown-content .hermes-table-wrap th,
+[data-theme="carbon-black"] .hermes-markdown-content .hermes-table-wrap tbody tr:nth-child(even),
+[data-theme="carbon-black"] .hermes-markdown-content .hermes-think-content,
+[data-theme="carbon-black"] .hermes-markdown-content .hermes-react-process-block .hermes-think-content p,
+[data-theme="carbon-black"] .hermes-slash-item:hover,
+[data-theme="carbon-black"] .hermes-slash-item.active {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .mobile-form-drawer .el-drawer__footer,
+[data-theme="carbon-black"] .hermes-footer {
+  border-top-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .mobile-entity-card,
+[data-theme="carbon-black"] .mobile-entity-field,
+[data-theme="carbon-black"] .mobile-entity-action-button,
+[data-theme="carbon-black"] .mobile-entity-icon {
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+  background: var(--app-surface-muted) !important;
+}
+
+[data-theme="carbon-black"] .mobile-entity-title,
+[data-theme="carbon-black"] .mobile-entity-description,
+[data-theme="carbon-black"] .mobile-entity-field-content,
+[data-theme="carbon-black"] .mobile-entity-empty-text {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .mobile-entity-field-label,
+[data-theme="carbon-black"] .mobile-entity-description {
+  color: var(--app-text-muted) !important;
+}
+
+/* ══════════════════════════════════════════════
+   曜石黑管理端公共页面覆盖
+   业务意图：管理端大量旧页面复用固定浅色表面；统一在公共样式层映射，避免逐页出现黑底白卡和低对比文字。
+   ══════════════════════════════════════════════ */
+[data-theme="carbon-black"] .layout-shell,
+[data-theme="carbon-black"] .layout-main-shell,
+[data-theme="carbon-black"] .layout-main {
+  background: transparent !important;
+  color: var(--app-text);
+}
+
+[data-theme="carbon-black"] .layout-aside {
+  background: var(--app-surface-base) !important;
+  color: var(--app-text);
+  border-right: 1px solid rgba(var(--app-outline-rgb), 0.14);
+}
+
+[data-theme="carbon-black"] .layout-header {
+  background: color-mix(in srgb, var(--app-surface-card) 92%, transparent) !important;
+  border-bottom: 1px solid rgba(var(--app-outline-rgb), 0.14);
+}
+
+[data-theme="carbon-black"] .brand-title,
+[data-theme="carbon-black"] .brand-title-mini,
+[data-theme="carbon-black"] .header-page-title,
+[data-theme="carbon-black"] .user-trigger,
+[data-theme="carbon-black"] .sidebar-menu-button.active,
+[data-theme="carbon-black"] .system-submenu-button.active,
+[data-theme="carbon-black"] .system-popover-button.active {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .brand-subtitle,
+[data-theme="carbon-black"] .brand-subtitle-mini,
+[data-theme="carbon-black"] .sidebar-menu-button,
+[data-theme="carbon-black"] .system-submenu-button,
+[data-theme="carbon-black"] .system-popover-button,
+[data-theme="carbon-black"] .header-hermes-button,
+[data-theme="carbon-black"] .header-notification-button {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .sidebar-menu-button:hover,
+[data-theme="carbon-black"] .system-submenu-button:hover,
+[data-theme="carbon-black"] .system-popover-button:hover,
+[data-theme="carbon-black"] .header-hermes-button:hover,
+[data-theme="carbon-black"] .header-notification-button:hover {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .sidebar-menu-button.active {
+  background: color-mix(in srgb, var(--app-primary) 16%, var(--app-surface-card)) !important;
+}
+
+[data-theme="carbon-black"] .header-search-shell,
+[data-theme="carbon-black"] .header-back-link,
+[data-theme="carbon-black"] .mobile-more-close {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .header-search-button {
+  background: var(--app-primary) !important;
+}
+
+[data-theme="carbon-black"] .header-notification-dot {
+  box-shadow: 0 0 0 2px var(--app-surface-card) !important;
+}
+
+[data-theme="carbon-black"] .page-card,
+[data-theme="carbon-black"] .el-card,
+[data-theme="carbon-black"] .detail-surface,
+[data-theme="carbon-black"] .kinetic-stat-card,
+[data-theme="carbon-black"] .dashboard-widget-card,
+[data-theme="carbon-black"] .dashboard-widget-library,
+[data-theme="carbon-black"] .management-list-toolbar-main,
+[data-theme="carbon-black"] .atelier-toolbar-main,
+[data-theme="carbon-black"] .work-list-toolbar-main,
+[data-theme="carbon-black"] .management-list-shell,
+[data-theme="carbon-black"] .atelier-table-shell,
+[data-theme="carbon-black"] .work-list-shell,
+[data-theme="carbon-black"] .task-table-shell {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+}
+
+[data-theme="carbon-black"] .page-card--tonal,
+[data-theme="carbon-black"] .management-list-toolbar-button,
+[data-theme="carbon-black"] .atelier-toolbar-button,
+[data-theme="carbon-black"] .work-list-toolbar-button,
+[data-theme="carbon-black"] .dashboard-widget-size-group,
+[data-theme="carbon-black"] .dashboard-widget-icon,
+[data-theme="carbon-black"] .dashboard-widget-size-button,
+[data-theme="carbon-black"] .quick-build-item,
+[data-theme="carbon-black"] .quick-merge-auth-card {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .management-list-search-input,
+[data-theme="carbon-black"] .atelier-search-input,
+[data-theme="carbon-black"] .work-list-search-input,
+[data-theme="carbon-black"] .task-search-input {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .management-list-search-input::placeholder,
+[data-theme="carbon-black"] .atelier-search-input::placeholder,
+[data-theme="carbon-black"] .work-list-search-input::placeholder,
+[data-theme="carbon-black"] .task-search-input::placeholder {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .management-list-table thead,
+[data-theme="carbon-black"] .atelier-table thead,
+[data-theme="carbon-black"] .atelier-data-head,
+[data-theme="carbon-black"] .work-list-table thead,
+[data-theme="carbon-black"] .task-table thead,
+[data-theme="carbon-black"] .management-list-footer,
+[data-theme="carbon-black"] .atelier-table-footer,
+[data-theme="carbon-black"] .work-list-footer,
+[data-theme="carbon-black"] .task-table-footer {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.18) !important;
+}
+
+[data-theme="carbon-black"] .management-list-table td,
+[data-theme="carbon-black"] .atelier-table td,
+[data-theme="carbon-black"] .atelier-data-row,
+[data-theme="carbon-black"] .work-list-table td,
+[data-theme="carbon-black"] .task-row {
+  color: var(--app-text) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.14) !important;
+}
+
+[data-theme="carbon-black"] .management-list-row:hover,
+[data-theme="carbon-black"] .atelier-data-row:hover,
+[data-theme="carbon-black"] .work-list-row:hover,
+[data-theme="carbon-black"] .task-row:hover {
+  background: color-mix(in srgb, var(--app-primary) 10%, var(--app-surface-card)) !important;
+}
+
+[data-theme="carbon-black"] .task-primary-title,
+[data-theme="carbon-black"] .task-owner-name,
+[data-theme="carbon-black"] .task-project-cell,
+[data-theme="carbon-black"] .task-updated-cell,
+[data-theme="carbon-black"] .task-primary-meta,
+[data-theme="carbon-black"] .task-owner-meta,
+[data-theme="carbon-black"] .task-empty-text,
+[data-theme="carbon-black"] .task-link-button {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .task-primary-meta,
+[data-theme="carbon-black"] .task-owner-meta,
+[data-theme="carbon-black"] .task-empty-text {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .management-list-compact-input .el-select__wrapper,
+[data-theme="carbon-black"] .management-list-compact-input .el-input__wrapper,
+[data-theme="carbon-black"] .atelier-compact-input .el-select__wrapper,
+[data-theme="carbon-black"] .atelier-compact-input .el-input__wrapper,
+[data-theme="carbon-black"] .work-list-compact-input .el-select__wrapper,
+[data-theme="carbon-black"] .work-list-compact-input .el-input__wrapper,
+[data-theme="carbon-black"] .task-filter-panel .el-select__wrapper,
+[data-theme="carbon-black"] .task-filter-panel .el-input__wrapper {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .el-table {
+  --el-table-bg-color: var(--app-surface-card);
+  --el-table-tr-bg-color: var(--app-surface-card);
+  --el-table-row-hover-bg-color: var(--app-surface-muted);
+  --el-table-header-bg-color: var(--app-surface-muted);
+  --el-table-text-color: var(--app-text);
+  --el-table-header-text-color: var(--app-text-muted);
+  --el-table-border-color: rgba(var(--app-outline-rgb), 0.16);
+}
+
+[data-theme="carbon-black"] .el-button--default,
+[data-theme="carbon-black"] .el-button.is-plain,
+[data-theme="carbon-black"] .el-pagination .btn-prev,
+[data-theme="carbon-black"] .el-pagination .btn-next,
+[data-theme="carbon-black"] .el-pagination .el-pager li,
+[data-theme="carbon-black"] .el-tabs__nav,
+[data-theme="carbon-black"] .el-radio-button__inner,
+[data-theme="carbon-black"] .el-checkbox-button__inner {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .el-tabs__item.is-active,
+[data-theme="carbon-black"] .el-radio-button.is-active .el-radio-button__inner,
+[data-theme="carbon-black"] .el-checkbox-button.is-checked .el-checkbox-button__inner {
+  background: color-mix(in srgb, var(--app-primary) 20%, var(--app-surface-card)) !important;
+  color: var(--app-primary-light-7) !important;
+}
+
+[data-theme="carbon-black"] .el-dropdown-menu,
+[data-theme="carbon-black"] .el-popper,
+[data-theme="carbon-black"] .management-list-popper,
+[data-theme="carbon-black"] .atelier-filter-popper,
+[data-theme="carbon-black"] .work-list-filter-popper,
+[data-theme="carbon-black"] .task-filter-popper {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .el-dropdown-menu__item:hover,
+[data-theme="carbon-black"] .el-popper .el-select-dropdown__item:hover,
+[data-theme="carbon-black"] .el-popper .el-select-dropdown__item.hover {
+  background: var(--app-surface-muted) !important;
+}
+
+[data-theme="carbon-black"] .el-dialog,
+[data-theme="carbon-black"] .el-drawer,
+[data-theme="carbon-black"] .mobile-form-drawer,
+[data-theme="carbon-black"] .platform-form-dialog {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .mobile-bottom-nav {
+  background: color-mix(in srgb, var(--app-surface-card) 94%, transparent) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.18) !important;
+}
+
+[data-theme="carbon-black"] .mobile-nav-button.active {
+  background: color-mix(in srgb, var(--app-primary) 18%, var(--app-surface-card)) !important;
+}
+
+[data-theme="carbon-black"] .dashboard-widget-title,
+[data-theme="carbon-black"] .dashboard-widget-description,
+[data-theme="carbon-black"] .dashboard-toolbar-copy h2,
+[data-theme="carbon-black"] .dashboard-toolbar-copy p,
+[data-theme="carbon-black"] .stat-widget-value,
+[data-theme="carbon-black"] .stat-widget-caption,
+[data-theme="carbon-black"] .info-list-item,
+[data-theme="carbon-black"] .task-list-item {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .dashboard-widget-description,
+[data-theme="carbon-black"] .dashboard-toolbar-copy p,
+[data-theme="carbon-black"] .stat-widget-caption,
+[data-theme="carbon-black"] .quick-build-subtitle,
+[data-theme="carbon-black"] .quick-build-message {
+  color: var(--app-text-muted) !important;
 }
 
 * {

@@ -5,7 +5,7 @@
 import { forwardRef, type InputHTMLAttributes, type ReactNode } from 'react'
 import { cn } from '@/src/lib/utils'
 
-interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
   label?: string
   error?: string
   hint?: string
@@ -41,7 +41,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             id={inputId}
             className={cn(
-              'w-full rounded-lg border bg-white px-3.5 text-[14px]',
+              'w-full rounded-lg border bg-[var(--color-bg-elevated)] px-3.5 text-[14px]',
               'text-[var(--color-text-primary)] placeholder:text-[var(--color-text-placeholder)]',
               'transition-all duration-150',
               'h-10 focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 focus:border-[var(--color-primary)]',

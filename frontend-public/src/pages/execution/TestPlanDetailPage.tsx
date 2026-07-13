@@ -288,11 +288,11 @@ export const TestPlanDetailPage = () => {
       {/* Hero */}
       <div className="mb-6">
         <button
-          onClick={() => navigate(`/projects/${projectId}/execution`)}
+          onClick={() => navigate(`/projects/${projectId}/testing`)}
           className="mb-3 inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          返回测试计划
+          返回测试
         </button>
 
         <div className="flex items-start justify-between gap-3">

@@ -118,7 +118,7 @@ export const ChatMessageList = ({
   }
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="chat-message-list relative min-h-0 flex-1">
       <div
         ref={scrollContainerRef}
         className="h-full overflow-y-auto px-4 py-5 sm:px-6"
@@ -140,7 +140,7 @@ export const ChatMessageList = ({
                       {isAssistant ? 'Hermes' : message.senderName || message.senderUsername || '用户'}
                     </span>
                     {message.mentionsHermes && !isAssistant && (
-                      <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-amber-700">
+                      <span className="chat-mention-badge rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold">
                         @hermes
                       </span>
                     )}
@@ -153,21 +153,21 @@ export const ChatMessageList = ({
                   className={cn(
                     'rounded-xl border px-4 py-3 shadow-[var(--shadow-xs)]',
                     isAssistant
-                      ? 'border-amber-200 bg-amber-50/70'
+                      ? 'chat-assistant-message'
                       : isMine
                         ? 'border-[var(--color-primary)]/20 bg-[var(--color-primary-light)]'
-                        : 'border-[var(--color-border)] bg-white',
+                        : 'border-[var(--color-border)] bg-[var(--color-bg-elevated)]',
                   )}
                 >
                   {message.status === 'error' && (
-                    <div className="mb-2 flex items-center gap-2 rounded-lg bg-red-50 px-2.5 py-2 text-[12px] text-red-700">
+                    <div className="chat-message-error mb-2 flex items-center gap-2 rounded-lg px-2.5 py-2 text-[12px]">
                       <AlertTriangle className="h-4 w-4 shrink-0" />
                       Hermes 回复失败，可重试生成。
                     </div>
                   )}
                   <Markdown content={normalizeGeneratedMarkdown(resolveChatAssistantContent(message))} normalize={false} variant="assistant" />
                   {isAssistant && message.agentTaskId && (
-                    <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/75 px-2 py-1 text-[11px] font-medium text-amber-800">
+                    <span className="chat-agent-task-chip mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium">
                       Agent task #{message.agentTaskId} · {formatAgentTaskStatus(message.agentTaskStatus)}
                     </span>
                   )}
@@ -193,7 +193,7 @@ export const ChatMessageList = ({
                       {message.selectionCards?.map((card) => {
                         const cardResolved = isAgentSelectionCardResolved(message, card)
                         return (
-                        <article key={`${card.slot}-${card.title}`} className="rounded-lg border border-[var(--color-border-light)] bg-white/80 p-3">
+                        <article key={`${card.slot}-${card.title}`} className="chat-selection-card rounded-lg border border-[var(--color-border-light)] p-3">
                           <div className="text-[12.5px] font-semibold text-[var(--color-text-primary)]">{card.title || '候选对象待确认'}</div>
                           {card.description && <p className="mt-1 text-[11.5px] text-[var(--color-text-secondary)]">{card.description}</p>}
                           <div className="mt-2 grid gap-1.5">
@@ -209,8 +209,8 @@ export const ChatMessageList = ({
                                 disabled={!selection || cardResolved || resolvingSelectionKey === resolvingKey}
                                 onClick={() => selection && onSelectAgentCandidate(message, selection)}
                                 className={cn(
-                                  'flex items-start gap-2 rounded-lg border bg-white px-2.5 py-2 text-left transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] disabled:cursor-not-allowed',
-                                  selected ? 'border-emerald-200 bg-emerald-50/80' : 'border-[var(--color-border-light)]',
+                                  'chat-selection-option flex items-start gap-2 rounded-lg border px-2.5 py-2 text-left transition hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-light)] disabled:cursor-not-allowed',
+                                  selected ? 'is-selected border-emerald-200' : 'border-[var(--color-border-light)]',
                                   cardResolved && !selected && 'opacity-55',
                                 )}
                               >
@@ -235,7 +235,7 @@ export const ChatMessageList = ({
                       {message.attachments.map((attachment) => (
                         <div
                           key={`${message.id}-${attachment.id || attachment.assetId}`}
-                          className="flex items-center gap-2 rounded-lg border border-[var(--color-border-light)] bg-white/70 px-2.5 py-2"
+                          className="chat-attachment-card flex items-center gap-2 rounded-lg border border-[var(--color-border-light)] px-2.5 py-2"
                         >
                           <FileText className="h-4 w-4 shrink-0 text-[var(--color-primary)]" />
                           <div className="min-w-0 flex-1">
@@ -279,7 +279,7 @@ export const ChatMessageList = ({
           size="sm"
           variant="secondary"
           icon={<ArrowDownToLine className="h-3.5 w-3.5" />}
-          className="absolute bottom-4 right-4 z-10 rounded-full border-[var(--color-primary)]/30 bg-white/95 px-3 text-[var(--color-primary)] shadow-[var(--shadow-md)] backdrop-blur hover:bg-[var(--color-primary-light)] sm:right-6"
+                  className="absolute bottom-4 right-4 z-10 rounded-full border-[var(--color-primary)]/30 bg-[var(--color-bg-elevated)] px-3 text-[var(--color-primary)] shadow-[var(--shadow-md)] backdrop-blur hover:bg-[var(--color-primary-light)] sm:right-6"
           onClick={() => {
             scrollToLatest('smooth')
             setShowBackToLatest(false)
@@ -316,7 +316,7 @@ const AgentActionPreview = ({
   const canceled = normalizedStatus === 'canceled'
   const resolved = executed || canceled
   return (
-    <article className="rounded-lg border border-amber-200 bg-white/85 p-3">
+    <article className="chat-agent-action-card rounded-lg border p-3">
       <div className="flex items-start gap-2">
         {executed ? (
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
@@ -328,7 +328,10 @@ const AgentActionPreview = ({
         <div className="min-w-0 flex-1">
           <div className="truncate text-[12.5px] font-semibold text-[var(--color-text-primary)]">{action.title || action.type}</div>
           {action.description && <p className="mt-1 text-[11.5px] leading-5 text-[var(--color-text-secondary)]">{action.description}</p>}
-          <span className="mt-2 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-700">
+                  <span className={cn(
+                    'chat-action-status mt-2 inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-semibold',
+                    executed ? 'is-done' : canceled ? 'is-canceled' : 'is-pending',
+                  )}>
             {executed ? '已执行' : canceled ? '已取消' : '待确认'}
           </span>
           {!resolved && (
@@ -387,7 +390,7 @@ const MessageAvatar = ({ message }: { message: ChatMessageItem }) => {
   const isAssistant = message.role === 'assistant'
   if (isAssistant) {
     return (
-      <div className="mt-5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+      <div className="chat-assistant-avatar mt-5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
         <Bot className="h-4.5 w-4.5" />
       </div>
     )

@@ -312,6 +312,143 @@ a:hover {
   box-shadow: 0 24px 80px color-mix(in srgb, var(--auth-dark-base) 18%, transparent);
 }
 
+.auth-theme-picker {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  z-index: 30;
+}
+
+.auth-theme-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-bg-card) 76%, transparent);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--auth-dark-base) 10%, transparent);
+  backdrop-filter: blur(14px);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.auth-theme-picker-trigger:hover,
+.auth-theme-picker-trigger[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--color-primary) 50%, var(--color-border));
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-bg-card) 92%, transparent);
+  transform: translateY(-1px);
+}
+
+.auth-theme-picker-trigger:focus-visible,
+.auth-theme-picker-option:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 3px;
+}
+
+.auth-theme-picker-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 246px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-bg-card) 96%, transparent);
+  box-shadow: 0 20px 48px color-mix(in srgb, var(--auth-dark-base) 22%, transparent);
+  backdrop-filter: blur(18px);
+  animation: auth-theme-picker-in 160ms ease-out;
+}
+
+.auth-theme-picker-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.auth-theme-picker-hint {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.auth-theme-picker-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.auth-theme-picker-option {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  line-height: 1;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.auth-theme-picker-option:hover,
+.auth-theme-picker-option.is-selected {
+  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+  transform: translateY(-1px);
+}
+
+.auth-theme-picker-swatch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-border-strong) 72%, transparent);
+  border-radius: 999px;
+  color: #ffffff;
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--auth-dark-base) 20%, transparent);
+}
+
+@keyframes auth-theme-picker-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 639px) {
+  .auth-theme-picker {
+    top: 16px;
+    right: 16px;
+  }
+
+  .auth-theme-picker-menu {
+    right: -4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-theme-picker-trigger,
+  .auth-theme-picker-option,
+  .auth-theme-picker-menu {
+    transition: none;
+    animation: none;
+  }
+}
+
 /* 黑色主题需要把历史组件中的白色工具类一起映射到深色表面，避免弹窗、输入框和卡片出现大块白底。 */
 [data-theme="carbon-black"] [class~="bg-white"] {
   background-color: var(--color-bg-card) !important;
@@ -329,6 +466,167 @@ a:hover {
 
 [data-theme="carbon-black"] [class~="bg-gray-100"] {
   background-color: var(--color-bg-hover) !important;
+}
+
+/* ── 聊天模块主题适配 ──
+   聊天消息包含助手报告、任务卡片和上下文面板，不能继续复用固定的浅色 amber/white 表面。 */
+.chat-assistant-message {
+  border-color: color-mix(in srgb, var(--color-warning) 38%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--color-bg-card));
+  color: var(--color-text-primary);
+}
+
+.chat-assistant-message .prose-markdown {
+  color: var(--color-text-primary);
+}
+
+.chat-assistant-message .prose-markdown blockquote {
+  background: color-mix(in srgb, var(--color-warning) 12%, var(--color-bg-card));
+  color: var(--color-text-secondary);
+}
+
+.chat-assistant-message .prose-markdown th {
+  color: var(--color-text-secondary);
+}
+
+.chat-mention-badge,
+.chat-agent-task-chip,
+.chat-action-status.is-pending,
+.chat-agent-task-status.is-pending,
+.chat-owner-badge {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 14%, var(--color-bg-card));
+}
+
+.chat-agent-task-chip {
+  border: 1px solid color-mix(in srgb, var(--color-warning) 22%, var(--color-border));
+}
+
+.chat-agent-action-card,
+.chat-selection-card,
+.chat-attachment-card {
+  border-color: color-mix(in srgb, var(--color-border) 86%, var(--color-primary));
+  background: color-mix(in srgb, var(--color-bg-card) 88%, var(--color-bg-elevated));
+}
+
+.chat-selection-option {
+  background: var(--color-bg-elevated);
+}
+
+.chat-selection-option.is-selected {
+  border-color: color-mix(in srgb, var(--color-success) 50%, var(--color-border));
+  background: color-mix(in srgb, var(--color-success) 13%, var(--color-bg-card));
+}
+
+.chat-message-error {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 13%, var(--color-bg-card));
+}
+
+.chat-assistant-avatar {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 18%, var(--color-bg-card));
+}
+
+.chat-agent-panel {
+  border-color: color-mix(in srgb, var(--color-warning) 38%, var(--color-border));
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--color-bg-card));
+}
+
+.chat-agent-task-item {
+  background: color-mix(in srgb, var(--color-bg-hover) 82%, var(--color-bg-card));
+}
+
+.chat-agent-task-status.is-error {
+  color: var(--color-danger);
+}
+
+.chat-agent-task-status.is-done,
+.chat-action-status.is-done {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 14%, var(--color-bg-card));
+}
+
+.chat-action-status.is-canceled {
+  color: var(--color-info);
+  background: color-mix(in srgb, var(--color-info) 14%, var(--color-bg-card));
+}
+
+.chat-agent-flag.is-active {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 24%, var(--color-bg-card));
+}
+
+.chat-agent-flag.is-inactive {
+  color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-bg-hover) 84%, var(--color-bg-card));
+}
+
+.chat-composer-surface.is-hermes {
+  border-color: color-mix(in srgb, var(--color-warning) 58%, var(--color-border-strong));
+}
+
+.chat-hermes-button.is-active {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 18%, var(--color-bg-card));
+}
+
+.chat-hermes-button.is-inactive {
+  color: var(--color-text-secondary);
+}
+
+.chat-hermes-button.is-inactive:hover {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 10%, var(--color-bg-card));
+}
+
+.chat-hermes-hint {
+  color: var(--color-warning);
+}
+
+[data-theme="carbon-black"] .chat-assistant-message,
+[data-theme="carbon-black"] .chat-agent-panel {
+  border-color: #6d542b;
+  background: #1e1a15;
+  color: #f2eadb;
+}
+
+[data-theme="carbon-black"] .chat-assistant-message .prose-markdown,
+[data-theme="carbon-black"] .chat-assistant-message .prose-markdown td {
+  color: #f2eadb;
+}
+
+[data-theme="carbon-black"] .chat-assistant-message .prose-markdown th {
+  color: #d5c6aa;
+}
+
+[data-theme="carbon-black"] .chat-assistant-message .prose-markdown thead,
+[data-theme="carbon-black"] .chat-assistant-message .prose-markdown code {
+  background: #11161d;
+}
+
+[data-theme="carbon-black"] .chat-agent-action-card,
+[data-theme="carbon-black"] .chat-selection-card,
+[data-theme="carbon-black"] .chat-attachment-card {
+  border-color: #344354;
+  background: #151e28;
+}
+
+[data-theme="carbon-black"] .chat-selection-option {
+  background: #111821;
+}
+
+[data-theme="carbon-black"] .chat-selection-option.is-selected {
+  border-color: #2b897c;
+  background: #17332f;
+}
+
+[data-theme="carbon-black"] .chat-agent-task-item {
+  background: #151e28;
+}
+
+[data-theme="carbon-black"] .chat-message-error {
+  background: #3a2025;
 }
 
 /* ── GitPilot 认证页动态背景 ── */

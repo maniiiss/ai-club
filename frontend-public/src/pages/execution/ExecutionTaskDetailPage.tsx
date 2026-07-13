@@ -2,7 +2,7 @@
  * 执行任务详情页。
  * 展示任务基础信息、运行进度、步骤日志、执行产物和规划确认。
  */
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -20,8 +20,6 @@ import {
   Save,
   MessageSquare,
 } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import {
   getExecutionTaskDetail,
   getExecutionRunDetail,
@@ -44,8 +42,9 @@ import { Select } from '@/src/components/common/Select'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { cn } from '@/src/lib/utils'
+import { Markdown } from '@/src/components/common/Markdown'
+import { groupExecutionArtifactsByStep } from '@/src/lib/executionArtifactUtils'
 import {
-  detectGitNexusDegradation,
   isTechnicalDesignMarkdownArtifact,
   shouldShowTechnicalDesignWriteback,
 } from '@/src/lib/technicalDesignAiUtils'
@@ -119,14 +118,6 @@ export const ExecutionTaskDetailPage = () => {
   const [actionLoading, setActionLoading] = useState(false)
   const [writebackArtifactId, setWritebackArtifactId] = useState<number | null>(null)
   const [writebackMessage, setWritebackMessage] = useState('')
-  const parsedInputPayload = useMemo<Record<string, any>>(() => {
-    try {
-      return taskDetail?.inputPayload ? JSON.parse(taskDetail.inputPayload) : {}
-    } catch {
-      return {}
-    }
-  }, [taskDetail?.inputPayload])
-
   /* 规划确认 */
   const [planMarkdownDraft, setPlanMarkdownDraft] = useState('')
   const [planSaving, setPlanSaving] = useState(false)
@@ -338,13 +329,7 @@ export const ExecutionTaskDetailPage = () => {
     if (a.artifactType === 'IMPLEMENT_DIFF_JSON') return false
     return true
   })
-  const gitNexusDegradation = taskDetail.scenarioCode === 'TECHNICAL_DESIGN_AUTHORING'
-    ? (runDetail?.artifacts || [])
-      .filter((artifact) => artifact.artifactType === 'CODE_CONTEXT_MARKDOWN')
-      .map((artifact) => detectGitNexusDegradation(artifact.contentText))
-      .find(Boolean) || null
-    : null
-
+  const artifactGroups = groupExecutionArtifactsByStep(displayArtifacts, runDetail?.steps || [])
   return (
     <div className="h-full overflow-hidden flex flex-col animate-fadeIn">
       {/* ── 顶部固定区域 ── */}
@@ -393,48 +378,8 @@ export const ExecutionTaskDetailPage = () => {
           </div>
         </div>
 
-        {taskDetail.latestSummary && (
-          <p className="mt-3 text-[13px] text-[var(--color-text-secondary)]">
-            {taskDetail.latestSummary}
-          </p>
-        )}
-        {gitNexusDegradation && (
-          <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
-            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span><strong>GitNexus 已降级：</strong>{gitNexusDegradation}</span>
-          </div>
-        )}
         {writebackMessage && <p className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[12px] text-sky-700">{writebackMessage}</p>}
         </div>
-
-        {taskDetail.orchestrationVersionId && taskDetail.resolvedBindings.length > 0 && (
-          <section className="mb-4 rounded-xl border border-sky-200 bg-sky-50/70 p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-[14px] font-semibold text-sky-900">执行器快照</h3>
-              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-sky-700">编排版本 #{taskDetail.orchestrationVersionId}</span>
-            </div>
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-              {taskDetail.resolvedBindings.map((binding) => (
-                <div key={`${binding.stepNo}-${binding.stepCode}-${binding.repositoryBindingId ?? 0}`} className="rounded-lg border border-sky-100 bg-white px-3 py-2 text-[12px]">
-                  <div className="font-semibold text-slate-800">{binding.stepNo}. {binding.stepName}</div>
-                  <div className="mt-1 text-slate-500">{binding.agentName || `Agent #${binding.agentId ?? '-'}`} · {binding.runtimeType || binding.accessType || '-'} · {binding.timeoutSeconds ?? '-'} 秒</div>
-                  {binding.repositoryDisplayName && <div className="mt-1 truncate text-slate-500">{binding.repositoryDisplayName} @ {binding.repositoryTargetBranch || '-'}</div>}
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {(parsedInputPayload.includeRequirementContext !== undefined || parsedInputPayload.includeTechnicalDesignContext !== undefined) && (
-          <section className="rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-semibold text-[var(--color-text-primary)]">上下文快照</h2><span className="text-[11px] text-[var(--color-text-tertiary)]">创建时固化</span></div>
-            <div className="grid gap-2 md:grid-cols-2">
-              <div className="rounded-lg bg-[var(--color-bg-page)] px-3 py-2 text-[12px]"><strong className="block text-[var(--color-text-primary)]">关联需求</strong><span>{parsedInputPayload.includeRequirementContext ? '已带入' : '未带入'}</span>{parsedInputPayload.requirementContext?.name && <small className="mt-1 block text-[var(--color-text-tertiary)]">{parsedInputPayload.requirementContext.name}</small>}</div>
-              <div className="rounded-lg bg-[var(--color-bg-page)] px-3 py-2 text-[12px]"><strong className="block text-[var(--color-text-primary)]">技术设计</strong><span>{parsedInputPayload.includeTechnicalDesignContext ? '已带入' : '未带入'}</span>{parsedInputPayload.technicalDesignContext?.workItemName && <small className="mt-1 block text-[var(--color-text-tertiary)]">{parsedInputPayload.technicalDesignContext.workItemName}</small>}</div>
-            </div>
-            {parsedInputPayload.contextWarnings?.length > 0 && <p className="mt-3 text-[11px] text-amber-700">{parsedInputPayload.contextWarnings.join('；')}</p>}
-          </section>
-        )}
 
         {/* 运行进度 */}
         {taskDetail.runs.length > 0 && (
@@ -517,10 +462,8 @@ export const ExecutionTaskDetailPage = () => {
               </div>
             </>
           ) : (
-            <div className="rounded-lg bg-white p-4 prose prose-sm max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {planMarkdownDraft || '-'}
-              </ReactMarkdown>
+            <div className="rounded-lg bg-white p-4">
+              <Markdown content={planMarkdownDraft || '-'} />
             </div>
           )}
         </section>
@@ -559,17 +502,33 @@ export const ExecutionTaskDetailPage = () => {
               {displayArtifacts.length === 0 ? (
                 <p className="text-[13px] text-[var(--color-text-tertiary)]">暂无产物</p>
               ) : (
-                <div className="space-y-3">
-                  {displayArtifacts.map((artifact) => (
-                    <ArtifactCard
-                      key={artifact.id}
-                      artifact={artifact}
-                      scenarioCode={taskDetail.scenarioCode}
-                      canWriteback={selectedRunId === latestSuccessfulRunId && runDetail.status === 'SUCCESS'}
-                      onDownload={() => handleDownloadArtifact(artifact)}
-                      onWriteback={(mode) => handleTechnicalDesignWriteback(artifact, mode)}
-                      writebackLoading={writebackArtifactId === artifact.id}
-                    />
+                <div className="space-y-5">
+                  {artifactGroups.map((group) => (
+                    <section key={group.key} className="space-y-2">
+                      <div className="flex items-center gap-2 border-b border-[var(--color-border-light)] pb-2">
+                        <span className="rounded bg-[var(--color-primary-light)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary)]">
+                          {group.step ? `第 ${group.step.stepNo} 步` : '任务级产物'}
+                        </span>
+                        <h4 className="text-[12px] font-semibold text-[var(--color-text-primary)]">
+                          {group.step ? (group.step.stepName || group.step.stepCode) : '未关联执行步骤'}
+                        </h4>
+                        <span className="text-[11px] text-[var(--color-text-tertiary)]">{group.artifacts.length} 项</span>
+                      </div>
+                      <div className="space-y-3">
+                        {group.artifacts.map((artifact) => (
+                          <ArtifactCard
+                            key={artifact.id}
+                            artifact={artifact}
+                            sourceStep={group.step}
+                            scenarioCode={taskDetail.scenarioCode}
+                            canWriteback={selectedRunId === latestSuccessfulRunId && runDetail.status === 'SUCCESS'}
+                            onDownload={() => handleDownloadArtifact(artifact)}
+                            onWriteback={(mode) => handleTechnicalDesignWriteback(artifact, mode)}
+                            writebackLoading={writebackArtifactId === artifact.id}
+                          />
+                        ))}
+                      </div>
+                    </section>
                   ))}
                 </div>
               )}
@@ -701,6 +660,7 @@ const StepTimelineItem = ({ step }: { step: ExecutionStepItem }) => {
 
 const ArtifactCard = ({
   artifact,
+  sourceStep,
   scenarioCode,
   canWriteback,
   onDownload,
@@ -708,6 +668,8 @@ const ArtifactCard = ({
   writebackLoading,
 }: {
   artifact: ExecutionArtifactDetailItem
+  /** 由产物 stepId 关联出的来源步骤；没有步骤关联时表示任务级产物。 */
+  sourceStep: ExecutionStepItem | null
   scenarioCode: string
   canWriteback: boolean
   onDownload: () => void
@@ -739,6 +701,9 @@ const ArtifactCard = ({
             <p className="text-[11px] text-[var(--color-text-tertiary)]">
               {artifact.artifactType}
             </p>
+            <p className="text-[11px] text-[var(--color-text-tertiary)]">
+              来源步骤：{sourceStep ? `#${sourceStep.stepNo} ${sourceStep.stepName || sourceStep.stepCode}` : '任务级产物'}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -761,10 +726,8 @@ const ArtifactCard = ({
       {expanded && (
         <div className="border-t border-[var(--color-border-light)]">
           {isMarkdown && artifact.contentText ? (
-            <div className="prose prose-sm max-w-none p-4">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {artifact.contentText}
-              </ReactMarkdown>
+            <div className="p-4">
+              <Markdown content={artifact.contentText} />
             </div>
           ) : isImage ? (
             <div className="p-4">

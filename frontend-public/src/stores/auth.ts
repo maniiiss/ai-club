@@ -13,7 +13,13 @@ import {
   updateThemeApi,
 } from '@/src/api/auth'
 import type { CurrentUserInfo, RegisterPayload, UpdateProfilePayload } from '@/src/types/auth'
-import { DEFAULT_THEME, applyTheme, applyUserTheme } from '@/src/lib/theme'
+import { applyLoginTheme, applyTheme, applyUserTheme, getLoginThemePreference, getStoredLoginTheme } from '@/src/lib/theme'
+
+/** 应用账号主题，并同步为下次回到登录页时使用的主题偏好。 */
+const applyAccountTheme = (user: CurrentUserInfo) => {
+  applyUserTheme(user)
+  applyLoginTheme(user.themeId)
+}
 
 /** 从 localStorage 读取缓存的用户信息，解析失败时返回 null。 */
 const readCachedUser = (): CurrentUserInfo | null => {
@@ -83,17 +89,35 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     set({ loading: true, error: null })
     try {
       const result = await loginApi({ username, password })
+      let user = result.user
+      let accountThemeSynced = true
+      const loginTheme = getLoginThemePreference()
+
+      // 登录页已明确选择主题时，登录成功后将该选择写回账号，保证平台内外立即一致。
+      if (loginTheme && loginTheme !== result.user.themeId) {
+        try {
+          user = await updateThemeApi({ themeId: loginTheme })
+        } catch {
+          // 主题同步失败不阻断登录，但保留登录页视觉偏好，等待用户下次进入设置时重试。
+          accountThemeSynced = false
+        }
+      }
+
       // 持久化 token 和 user 到 localStorage。
       localStorage.setItem(AUTH_TOKEN_KEY, result.token)
-      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(result.user))
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user))
       set({
         token: result.token,
-        user: result.user,
+        user,
         profileLoaded: true,
         loading: false,
         error: null,
       })
-      applyUserTheme(result.user)
+      if (accountThemeSynced) {
+        applyAccountTheme(user)
+      } else {
+        applyTheme(loginTheme || user.themeId)
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : '登录失败'
       set({ loading: false, error: message })
@@ -118,14 +142,15 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       const user = await getCurrentUser()
       localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user))
       set({ user, profileLoaded: true })
-      applyUserTheme(user)
+      applyAccountTheme(user)
       return user
     } catch {
       // 拉取失败时清除登录态。
       localStorage.removeItem(AUTH_TOKEN_KEY)
       localStorage.removeItem(AUTH_USER_KEY)
       set({ token: '', user: null, profileLoaded: false })
-      applyTheme(DEFAULT_THEME)
+      // 会话失效后回到登录页，保留用户在登录页选择的未登录主题偏好。
+      applyLoginTheme(getStoredLoginTheme())
       return null
     }
   },
@@ -144,7 +169,8 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
       localStorage.removeItem(AUTH_TOKEN_KEY)
       localStorage.removeItem(AUTH_USER_KEY)
       set({ token: '', user: null, profileLoaded: false })
-      applyTheme(DEFAULT_THEME)
+      // 退出登录不清除登录页主题偏好，避免返回登录页时恢复成初始化主题。
+      applyLoginTheme(getStoredLoginTheme())
     }
   },
 
@@ -152,14 +178,14 @@ export const useAuthStore = create<AuthState & AuthActions>((set, get) => ({
     const user = await updateProfileApi(payload)
     localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user))
     set({ user })
-    applyUserTheme(user)
+    applyAccountTheme(user)
   },
 
   updateTheme: async (themeId: string) => {
     const user = await updateThemeApi({ themeId })
     localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user))
     set({ user })
-    applyUserTheme(user)
+    applyAccountTheme(user)
   },
 
   hasPermission: (permission?: string | string[]) => {

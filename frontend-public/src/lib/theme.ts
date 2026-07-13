@@ -25,6 +25,8 @@ export const THEME_PRESETS: ThemePreset[] = [
 ]
 
 export const THEME_STORAGE_KEY = 'gitpilot-theme'
+/** 未登录状态下由登录页选择的主题偏好，不会被账号主题同步覆盖。 */
+export const LOGIN_THEME_STORAGE_KEY = 'gitpilot-login-theme'
 export const DEFAULT_THEME = 'deep-sea'
 
 export const isThemeKey = (themeKey: string): boolean => THEME_PRESETS.some((theme) => theme.key === themeKey)
@@ -42,6 +44,25 @@ export const getCurrentTheme = (): string => {
   }
 }
 
+/** 获取登录页主题偏好；旧版本没有该缓存时回退到当前主题缓存。 */
+export const getStoredLoginTheme = (): string => {
+  try {
+    return resolveThemeKey(localStorage.getItem(LOGIN_THEME_STORAGE_KEY) || localStorage.getItem(THEME_STORAGE_KEY))
+  } catch {
+    return DEFAULT_THEME
+  }
+}
+
+/** 读取用户是否明确在登录页选择过主题，用于登录时决定是否同步到账号。 */
+export const getLoginThemePreference = (): string | null => {
+  try {
+    const stored = localStorage.getItem(LOGIN_THEME_STORAGE_KEY)
+    return stored && isThemeKey(stored) ? stored : null
+  } catch {
+    return null
+  }
+}
+
 /** 应用主题到 document root。 */
 export const applyTheme = (themeKey?: string | null): string => {
   const resolvedTheme = resolveThemeKey(themeKey)
@@ -54,9 +75,21 @@ export const applyTheme = (themeKey?: string | null): string => {
   return resolvedTheme
 }
 
+/** 应用并持久化未登录用户在登录页选择的主题。 */
+export const applyLoginTheme = (themeKey?: string | null): string => {
+  const resolvedTheme = applyTheme(themeKey)
+  try {
+    localStorage.setItem(LOGIN_THEME_STORAGE_KEY, resolvedTheme)
+  } catch {
+    // localStorage 不可用时忽略
+  }
+  return resolvedTheme
+}
+
 /** 初始化主题（应用启动时调用）。 */
 export const initTheme = () => {
-  applyTheme(getCurrentTheme())
+  const hasToken = typeof localStorage !== 'undefined' && localStorage.getItem('ai-club-auth-token')
+  applyTheme(hasToken ? getCurrentTheme() : getStoredLoginTheme())
 }
 
 /** 将服务端用户快照中的主题应用到当前浏览器。 */

@@ -19,7 +19,7 @@ import { NotFoundPage } from '@/src/pages/NotFoundPage'
 import { PlanningPage } from '@/src/pages/planning/PlanningPage'
 import { KnowledgePage } from '@/src/pages/knowledge/KnowledgePage'
 import { DevelopmentPage } from '@/src/pages/development/DevelopmentPage'
-import { ExecutionPage } from '@/src/pages/execution/ExecutionPage'
+import { TestPlansPage, ExecutionCenterPage } from '@/src/pages/execution/ExecutionPage'
 import { TestPlanDetailPage } from '@/src/pages/execution/TestPlanDetailPage'
 import { ExecutionTaskDetailPage } from '@/src/pages/execution/ExecutionTaskDetailPage'
 import { ReleasePage } from '@/src/pages/release/ReleasePage'
@@ -50,7 +50,8 @@ export const router = createBrowserRouter([
       { path: '/notifications', element: <NotificationsPage /> },
       // 兼容后端历史通知中的执行任务链接，详情页会在缺少 projectId 时使用任务自身的项目归属返回。
       { path: '/tasks/:taskId', element: <ExecutionTaskDetailPage /> },
-      // 测试与执行详情页（独立页面，不嵌套在项目布局内）
+      // 测试计划和执行任务详情页（独立页面，不嵌套在项目布局内）
+      { path: '/projects/:projectId/testing/test-plans/:planId', element: <TestPlanDetailPage /> },
       { path: '/projects/:projectId/execution/test-plans/:planId', element: <TestPlanDetailPage /> },
       { path: '/projects/:projectId/execution/tasks/:taskId', element: <ExecutionTaskDetailPage /> },
     ],
@@ -69,7 +70,8 @@ export const router = createBrowserRouter([
           { path: 'planning', element: <PlanningPage /> },
           { path: 'knowledge', element: <KnowledgePage /> },
           { path: 'development', element: <DevelopmentPage /> },
-          { path: 'execution', element: <ExecutionPage /> },
+          { path: 'testing', element: <TestPlansPage /> },
+          { path: 'execution', element: <ExecutionCenterPage /> },
           { path: 'release', element: <ReleasePage /> },
         ],
       },

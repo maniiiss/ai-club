@@ -1555,7 +1555,7 @@ const ScanPanel = ({ bindingId, branch }: { bindingId: number; branch: string })
     <div className="animate-fadeIn">
       <Card title="质量扫描">
         <p className="text-[13px] text-[var(--color-text-secondary)] mb-4">
-          对仓库代码执行质量扫描，生成扫描报告。扫描结果将作为执行任务在「测试与执行」模块中展示。
+          对仓库代码执行质量扫描，生成扫描报告。扫描结果将作为执行任务在「执行中心」中展示。
         </p>
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end">

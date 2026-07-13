@@ -50,18 +50,18 @@ export const ProjectLayout = () => {
   }
 
   return (
-    <div className="-mx-4 -my-6 h-full flex flex-col lg:-mx-6 lg:-my-8">
+    <div className="-mx-4 -my-6 h-full flex flex-col lg:-mx-8 lg:-my-8">
       {/* 面包屑 — 固定 */}
-      <div className="flex-shrink-0 flex items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-bg-card)] px-4 py-2 lg:px-6">
+      <div className="flex h-11 flex-shrink-0 items-center gap-2.5 border-b border-[var(--color-border)] bg-[var(--color-bg-card)] px-4 lg:px-6">
         <button
           onClick={() => navigate('/projects')}
-          className="flex items-center gap-1 text-[12px] text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] transition-colors"
+          className="inline-flex h-full items-center gap-1 text-[12px] leading-5 text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-primary)]"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           项目
         </button>
-        <span className="text-[var(--color-text-tertiary)] text-[12px]">/</span>
-        <h2 className="truncate text-[14px] font-semibold text-[var(--color-text-primary)]">
+        <span className="inline-flex h-full items-center text-[12px] leading-5 text-[var(--color-text-tertiary)]">/</span>
+        <h2 className="inline-flex h-full min-w-0 items-center truncate text-[14px] font-semibold leading-5 text-[var(--color-text-primary)]">
           {project?.name || '项目'}
         </h2>
         {project?.status && (

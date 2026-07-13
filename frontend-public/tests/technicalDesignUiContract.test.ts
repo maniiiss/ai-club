@@ -48,9 +48,42 @@ describe('technical design AI public UI contract', () => {
     assert.match(detailPage, /CODE_CONTEXT_MARKDOWN/)
     assert.match(detailPage, /TECHNICAL_DESIGN_MARKDOWN/)
     assert.match(detailPage, /DESIGN_REVIEW_MARKDOWN/)
-    assert.match(detailPage, /GitNexus/)
     assert.match(detailPage, /DESCRIPTION/)
     assert.match(detailPage, /COMMENT/)
     assert.match(detailPage, /writebackTechnicalDesignArtifact/)
+  })
+
+  it('keeps public execution details focused on user-facing results', () => {
+    const detailPage = read('src/pages/execution/ExecutionTaskDetailPage.tsx')
+
+    assert.doesNotMatch(detailPage, /执行器快照/)
+    assert.doesNotMatch(detailPage, /GitNexus 已降级/)
+    assert.doesNotMatch(detailPage, /上下文快照/)
+    assert.doesNotMatch(detailPage, /taskDetail\.latestSummary/)
+  })
+
+  it('renders execution Markdown artifacts through the shared Markdown renderer', () => {
+    const detailPage = read('src/pages/execution/ExecutionTaskDetailPage.tsx')
+
+    assert.match(detailPage, /import \{ Markdown \} from '@\/src\/components\/common\/Markdown'/)
+    assert.match(detailPage, /<Markdown content=\{artifact\.contentText\}/)
+    assert.doesNotMatch(detailPage, /import ReactMarkdown from 'react-markdown'/)
+    assert.doesNotMatch(detailPage, /import remarkGfm from 'remark-gfm'/)
+  })
+
+  it('shows the originating execution step on each artifact card', () => {
+    const detailPage = read('src/pages/execution/ExecutionTaskDetailPage.tsx')
+
+    assert.match(detailPage, /sourceStep/)
+    assert.match(detailPage, /来源步骤/)
+    assert.match(detailPage, /任务级产物/)
+  })
+
+  it('renders artifact groups in execution-step order', () => {
+    const detailPage = read('src/pages/execution/ExecutionTaskDetailPage.tsx')
+
+    assert.match(detailPage, /groupExecutionArtifactsByStep/)
+    assert.match(detailPage, /第 \$\{group\.step\.stepNo\} 步/)
+    assert.match(detailPage, /group\.artifacts\.map/)
   })
 })

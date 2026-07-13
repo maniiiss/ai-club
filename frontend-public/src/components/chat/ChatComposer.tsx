@@ -211,7 +211,7 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
   return (
     <form
       onSubmit={handleSubmit}
-      className="border-t border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-4 py-3 sm:px-6"
+      className="chat-composer border-t border-[var(--color-border-light)] bg-[var(--color-bg-card)] px-4 py-3 sm:px-6"
     >
       <div className="mx-auto max-w-4xl">
         {files.length > 0 && (
@@ -219,7 +219,7 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
             {files.map((file, index) => (
               <span
                 key={`${file.name}-${file.lastModified}-${index}`}
-                className="inline-flex max-w-full items-center gap-2 rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[var(--color-text-secondary)]"
+                className="inline-flex max-w-full items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-2.5 py-1.5 text-[12px] text-[var(--color-text-secondary)]"
               >
                 <Paperclip className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{file.name}</span>
@@ -239,12 +239,12 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
 
         <div
           className={cn(
-            'relative rounded-xl border bg-white shadow-[var(--shadow-xs)] transition-colors',
-            hasHermesMention ? 'border-amber-300' : 'border-[var(--color-border-strong)] focus-within:border-[var(--color-primary)]',
+            'chat-composer-surface relative rounded-xl border bg-[var(--color-bg-elevated)] shadow-[var(--shadow-xs)] transition-colors',
+            hasHermesMention ? 'is-hermes' : 'border-[var(--color-border-strong)] focus-within:border-[var(--color-primary)]',
           )}
         >
           {mentionOpen && (
-            <div className="absolute bottom-full left-2 right-2 z-20 mb-2 overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-lg)]">
+            <div className="absolute bottom-full left-2 right-2 z-20 mb-2 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-lg)]">
               {mentionOptions.map((option, index) => (
                 <button
                   key={option.key}
@@ -261,7 +261,7 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
                   <span className={cn(
                     'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
                     option.type === 'assistant'
-                      ? 'bg-amber-100 text-amber-700'
+                      ? 'chat-assistant-avatar'
                       : 'bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)]',
                   )}>
                     {option.type === 'assistant' ? <Bot className="h-4 w-4" /> : <UserRound className="h-4 w-4" />}
@@ -280,7 +280,7 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
           {emojiOpen && !disabled && !sending && (
             <div
               ref={emojiPanelRef}
-              className="absolute bottom-12 left-2 z-20 w-[min(320px,calc(100%-16px))] overflow-hidden rounded-xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-lg)]"
+              className="absolute bottom-12 left-2 z-20 w-[min(320px,calc(100%-16px))] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-lg)]"
             >
               <div className="border-b border-[var(--color-border-light)] px-3 py-2 text-[12px] font-semibold text-[var(--color-text-secondary)]">
                 表情
@@ -369,15 +369,15 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
                 className={cn(
                   'inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium transition-colors disabled:opacity-50',
                   hasHermesMention
-                    ? 'bg-amber-100 text-amber-700'
-                    : 'text-[var(--color-text-secondary)] hover:bg-amber-50 hover:text-amber-700',
+                    ? 'chat-hermes-button is-active'
+                    : 'chat-hermes-button is-inactive',
                 )}
               >
                 <AtSign className="h-4 w-4" />
                 Hermes
               </button>
               {hasHermesMention && (
-                <span className="hidden text-[12px] text-amber-700 sm:inline">将触发房间助手回复</span>
+                <span className="chat-hermes-hint hidden text-[12px] sm:inline">将触发房间助手回复</span>
               )}
             </div>
             <div className="ml-auto flex items-center gap-3">

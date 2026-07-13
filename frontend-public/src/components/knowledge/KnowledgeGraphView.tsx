@@ -19,8 +19,89 @@ import { getWikiPage } from '@/src/api/knowledge'
 import type { WikiSpaceKnowledgeGraphItem } from '@/src/types/knowledge'
 import { cn } from '@/src/lib/utils'
 
-// 实体类型 -> 颜色，按首次出现顺序从调色板分配，普通用户一眼区分不同类别。
-const PALETTE = ['#4f46e5', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#ca8a04']
+interface GraphTheme {
+  canvasBackground: string
+  nodePalette: string[]
+  link: string
+  highlightedLink: string
+  dimmedLink: string
+  label: string
+  searchStroke: string
+  selectedStroke: string
+}
+
+// Canvas 不会自动解析 CSS var，因此这里把当前主题的图谱语义色转换成 Canvas 可直接绘制的颜色。
+const GRAPH_THEMES: Record<string, GraphTheme> = {
+  'deep-sea': {
+    canvasBackground: '#f7fafc',
+    nodePalette: ['#4f46e5', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#db2777', '#ca8a04'],
+    link: 'rgba(100, 116, 139, 0.42)',
+    highlightedLink: 'rgba(47, 107, 255, 0.66)',
+    dimmedLink: 'rgba(148, 163, 184, 0.1)',
+    label: '#334155',
+    searchStroke: '#2f6bff',
+    selectedStroke: '#172333',
+  },
+  'ocean-mist': {
+    canvasBackground: '#f4f9fc',
+    nodePalette: ['#1677c8', '#0a8f86', '#d97706', '#dc2626', '#7655d6', '#168fb5', '#d12b70', '#b77a08'],
+    link: 'rgba(83, 131, 160, 0.42)',
+    highlightedLink: 'rgba(22, 119, 200, 0.68)',
+    dimmedLink: 'rgba(148, 177, 195, 0.1)',
+    label: '#29485d',
+    searchStroke: '#1677c8',
+    selectedStroke: '#10283a',
+  },
+  'signal-teal': {
+    canvasBackground: '#f3fbfa',
+    nodePalette: ['#0a8f86', '#2f6bff', '#d97706', '#dc2626', '#7655d6', '#138da8', '#d12b70', '#b77a08'],
+    link: 'rgba(76, 132, 132, 0.42)',
+    highlightedLink: 'rgba(10, 143, 134, 0.7)',
+    dimmedLink: 'rgba(139, 181, 178, 0.1)',
+    label: '#28494a',
+    searchStroke: '#0a8f86',
+    selectedStroke: '#102d31',
+  },
+  'paper-white': {
+    canvasBackground: '#ffffff',
+    nodePalette: ['#2f6bff', '#0a8f86', '#d97706', '#dc2626', '#7655d6', '#168fb5', '#d12b70', '#b77a08'],
+    link: 'rgba(100, 116, 139, 0.38)',
+    highlightedLink: 'rgba(47, 107, 255, 0.64)',
+    dimmedLink: 'rgba(148, 163, 184, 0.1)',
+    label: '#344354',
+    searchStroke: '#2f6bff',
+    selectedStroke: '#172333',
+  },
+  'carbon-black': {
+    canvasBackground: '#0d131b',
+    nodePalette: ['#7ea2ff', '#55d6c2', '#ffb35c', '#ff7f7f', '#b38cff', '#53b7ff', '#ff7daa', '#d4b15f'],
+    link: 'rgba(123, 144, 161, 0.42)',
+    highlightedLink: 'rgba(126, 162, 255, 0.78)',
+    dimmedLink: 'rgba(123, 144, 161, 0.12)',
+    label: '#dce5ec',
+    searchStroke: '#86a6ff',
+    selectedStroke: '#f2f6fa',
+  },
+}
+
+const DEFAULT_GRAPH_THEME = GRAPH_THEMES['deep-sea']
+
+const useGraphTheme = (): GraphTheme => {
+  const [themeId, setThemeId] = useState(() => (
+    typeof document === 'undefined' ? 'deep-sea' : document.documentElement.dataset.theme || 'deep-sea'
+  ))
+
+  useEffect(() => {
+    const root = document.documentElement
+    const syncTheme = () => setThemeId(root.dataset.theme || 'deep-sea')
+    const observer = new MutationObserver(syncTheme)
+    observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] })
+    syncTheme()
+    return () => observer.disconnect()
+  }, [])
+
+  return GRAPH_THEMES[themeId] || DEFAULT_GRAPH_THEME
+}
 
 // 需求领域实体类型 -> 中文标签。LightRAG 抽取出的类型是小写英文，这里统一转中文展示。
 const TYPE_LABELS: Record<string, string> = {
@@ -148,6 +229,7 @@ export const KnowledgeGraphView = ({
   const [selected, setSelected] = useState<number | null>(null)
   const [query, setQuery] = useState('')
   const [previewPage, setPreviewPage] = useState<{ pageId: number; title: string } | null>(null)
+  const graphTheme = useGraphTheme()
   // 是否已自动缩放过：只在首次布局完成 / 数据刷新后 fit 一次，
   // 避免用户拖动节点触发引擎重启 → onEngineStop 再次 zoomToFit 把手动缩放重置掉。
   const fitted = useRef(false)
@@ -196,7 +278,7 @@ export const KnowledgeGraphView = ({
     })
     const colorMap = new Map<string, string>()
     const colorFor = (t: string) => {
-      if (!colorMap.has(t)) colorMap.set(t, PALETTE[colorMap.size % PALETTE.length])
+      if (!colorMap.has(t)) colorMap.set(t, graphTheme.nodePalette[colorMap.size % graphTheme.nodePalette.length])
       return colorMap.get(t)!
     }
     const nodeIds = new Set(graph.nodes.map((n) => n.id))
@@ -251,7 +333,7 @@ export const KnowledgeGraphView = ({
       .filter((e) => nodeIds.has(e.fromNodeId) && nodeIds.has(e.toNodeId))
       .map((e) => ({ source: e.fromNodeId, target: e.toNodeId }))
     return { data: { nodes, links }, typeColors: colorMap, nodeById: byId }
-  }, [graph])
+  }, [graph, graphTheme])
 
   // 相邻表：点击节点时高亮其直接关联。
   const adjacency = useMemo(() => {
@@ -362,12 +444,12 @@ export const KnowledgeGraphView = ({
       ctx.fill()
       // 搜索命中实体加一圈品牌色光环，单击选中加黑色描边。
       if (isMatched) {
-        ctx.strokeStyle = '#4f46e5'
+        ctx.strokeStyle = graphTheme.searchStroke
         ctx.lineWidth = 2.5 / globalScale
         ctx.stroke()
       }
       if (isSel) {
-        ctx.strokeStyle = '#111827'
+        ctx.strokeStyle = graphTheme.selectedStroke
         ctx.lineWidth = 2 / globalScale
         ctx.stroke()
       }
@@ -377,14 +459,14 @@ export const KnowledgeGraphView = ({
       if (showLabel && globalScale > 0.5 && !dimmed) {
         const label = node.name.length > 12 ? node.name.slice(0, 12) + '…' : node.name
         ctx.font = `${isMatched ? 600 : 400} 4px sans-serif`
-        ctx.fillStyle = '#334155'
+        ctx.fillStyle = graphTheme.label
         ctx.textAlign = 'left'
         ctx.textBaseline = 'middle'
         ctx.fillText(label, node.x! + r + 1.5, node.y!)
       }
       ctx.globalAlpha = 1
     },
-    [selected, search, highlightIds],
+    [selected, search, highlightIds, graphTheme],
   )
 
   const legend = useMemo(() => Array.from(typeColors.entries()), [typeColors])
@@ -415,7 +497,7 @@ export const KnowledgeGraphView = ({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索需求 / 模块 / 功能点…"
-            className="bg-white/90 pr-8 text-[var(--color-text-primary)] shadow-sm backdrop-blur placeholder:text-[var(--color-text-tertiary)]"
+            className="bg-[var(--color-bg-elevated)] pr-8 text-[var(--color-text-primary)] shadow-sm backdrop-blur placeholder:text-[var(--color-text-tertiary)]"
           />
           {query && (
             <button
@@ -431,7 +513,7 @@ export const KnowledgeGraphView = ({
           {legend.map(([type, color]) => (
             <span
               key={type}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white/85 px-2.5 py-1 text-[11px] text-[var(--color-text-secondary)] backdrop-blur"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-elevated)] px-2.5 py-1 text-[11px] text-[var(--color-text-secondary)] backdrop-blur"
             >
               <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />
               {typeLabel(type)}
@@ -442,7 +524,7 @@ export const KnowledgeGraphView = ({
 
       {/* 操作提示：仅在未搜索时显示。 */}
       {!search && (
-        <div className="absolute bottom-3 right-3 z-10 rounded-lg bg-white/85 px-2.5 py-1 text-[11px] text-[var(--color-text-tertiary)] backdrop-blur">
+        <div className="absolute bottom-3 right-3 z-10 rounded-lg bg-[var(--color-bg-elevated)] px-2.5 py-1 text-[11px] text-[var(--color-text-tertiary)] backdrop-blur">
           拖拽节点 · 滚轮缩放 · 点击查看关联
         </div>
       )}
@@ -456,7 +538,7 @@ export const KnowledgeGraphView = ({
           graphData={data}
           width={width}
           height={height}
-          backgroundColor="#fafbff"
+          backgroundColor={graphTheme.canvasBackground}
           nodeRelSize={4}
           nodeCanvasObject={nodeCanvasObject}
           nodePointerAreaPaint={(node: GraphNode, color: string, ctx: CanvasRenderingContext2D) => {
@@ -470,9 +552,9 @@ export const KnowledgeGraphView = ({
             const s = typeof link.source === 'object' ? link.source.id : link.source
             const t = typeof link.target === 'object' ? link.target.id : link.target
             if (highlightIds != null) {
-              return highlightIds.has(s) && highlightIds.has(t) ? 'rgba(79,70,229,0.5)' : 'rgba(203,213,225,0.1)'
+              return highlightIds.has(s) && highlightIds.has(t) ? graphTheme.highlightedLink : graphTheme.dimmedLink
             }
-            return 'rgba(148,163,184,0.35)'
+            return graphTheme.link
           }}
           linkWidth={(link: any) => {
             const s = typeof link.source === 'object' ? link.source.id : link.source
@@ -596,7 +678,7 @@ const PagePreviewDialog = ({
     // 在浏览器变矮时能整体收缩，而不是固定 80vh 把 header 挤出视口。
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="flex max-h-[calc(100vh-2rem)] min-h-0 w-[720px] max-w-full flex-col overflow-hidden rounded-lg bg-white shadow-2xl"
+        className="flex max-h-[calc(100vh-2rem)] min-h-0 w-[720px] max-w-full flex-col overflow-hidden rounded-lg bg-[var(--color-bg-card)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 标题栏 shrink-0：在浏览器变矮、容器整体收缩时不会被 flex 压缩成 0 而看不见。 */}
@@ -645,7 +727,7 @@ const SearchDrawer = ({
 }) => {
   const empty = result.entities.length === 0
   return (
-    <div className="absolute right-0 top-0 z-30 flex h-full w-[384px] flex-col border-l border-[var(--color-border)] bg-white/95 shadow-[var(--shadow-lg)] backdrop-blur">
+    <div className="absolute right-0 top-0 z-30 flex h-full w-[384px] flex-col border-l border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-lg)] backdrop-blur">
       {/* 头部 */}
       <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-4 py-3">
         <div className="min-w-0">
@@ -770,7 +852,7 @@ const SelectedBar = ({
   neighborCount: number
   onClose: () => void
 }) => (
-  <div className="absolute bottom-3 left-3 right-3 z-10 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-white/95 px-4 py-2.5 shadow-[var(--shadow-md)] backdrop-blur">
+  <div className="absolute bottom-3 left-3 right-3 z-10 flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-4 py-2.5 shadow-[var(--shadow-md)] backdrop-blur">
     <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: node.color }} />
     <div className="min-w-0 flex-1">
       <p className="truncate text-[13px] font-semibold text-[var(--color-text-primary)]">{node.name}</p>
