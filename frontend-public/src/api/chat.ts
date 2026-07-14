@@ -8,6 +8,7 @@ import type {
   ChatMessageItem,
   ChatRoomAgentActionResolutionPayload,
   ChatRoomAgentConfig,
+  ChatRoomAgentRuntimeOption,
   ChatRoomAgentSelectionPayload,
   ChatRoomAgentTask,
   ChatRoomAgentToolPolicy,
@@ -69,6 +70,11 @@ export const updateChatRoomMembers = async (
 
 export const getChatRoomAgentConfig = async (roomId: number): Promise<ChatRoomAgentConfig> => {
   const response = await http.get<ApiResponse<ChatRoomAgentConfig>>(`/api/chat/rooms/${roomId}/agent`)
+  return unwrap(response)
+}
+
+export const listChatRoomAgentRuntimeOptions = async (roomId: number): Promise<ChatRoomAgentRuntimeOption[]> => {
+  const response = await http.get<ApiResponse<ChatRoomAgentRuntimeOption[]>>(`/api/chat/rooms/${roomId}/agent/runtime-options`)
   return unwrap(response)
 }
 

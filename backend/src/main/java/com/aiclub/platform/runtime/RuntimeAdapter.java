@@ -35,4 +35,12 @@ public interface RuntimeAdapter {
     default String invoke(RuntimeInvocationContext context) {
         throw new UnsupportedOperationException("Runtime does not support synchronous invoke: " + descriptor().runtimeCode());
     }
+
+    /**
+     * 同步聊天入口，供 GitPilot 会话和聊天室复用统一 Runtime 路由。
+     * 旧 Hermes Legacy 由兼容服务直接调用，不经过该方法。
+     */
+    default RuntimeChatResult chat(RuntimeInvocationContext context) {
+        throw new UnsupportedOperationException("Runtime does not support synchronous chat: " + descriptor().runtimeCode());
+    }
 }

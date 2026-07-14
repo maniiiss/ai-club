@@ -466,7 +466,7 @@ public class ChatRoomService {
         message.setSenderUser(null);
         message.setRole(ROLE_ASSISTANT);
         message.setSenderUsernameSnapshot("hermes");
-        message.setSenderNameSnapshot("Hermes");
+        message.setSenderNameSnapshot("GitPilot");
         message.setSenderAvatarSnapshot("");
         message.setContent("");
         message.setStatus(STATUS_STREAMING);

@@ -19,3 +19,5 @@ npm start
 - `PI_RUNTIME_MODEL_PROVIDER`、`PI_RUNTIME_MODEL_ID`：Pi Agent Core 使用的模型。
 
 本服务默认监听 `9010`，健康检查为 `/healthz`。
+
+backend 通过受控内部接口调用 Runtime：`POST /internal/runtime/runs` 用于异步执行，`POST /internal/runtime/chat` 用于 GitPilot 会话和聊天室的同步聊天；两者都复用平台工具鉴权、事件上报和 Pi 会话存储。

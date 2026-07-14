@@ -117,8 +117,8 @@ export const ProjectLayout = () => {
           <button
             type="button"
             className="fixed bottom-5 right-5 z-40 inline-flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-primary)] text-white shadow-[var(--shadow-xl)] transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]"
-            title="打开 Hermes 项目助手"
-            aria-label="打开 Hermes 项目助手"
+            title="打开 GitPilot 项目助手"
+            aria-label="打开 GitPilot 项目助手"
             onClick={() => setHermesOpen(true)}
           >
             <Sparkles className="h-5 w-5" />
@@ -126,7 +126,7 @@ export const ProjectLayout = () => {
           <SlideDrawer
             open={hermesOpen}
             onClose={() => setHermesOpen(false)}
-            title="Hermes 项目助手"
+            title="GitPilot 项目助手"
             description={project?.name || '当前项目'}
             maxWidth="min(1080px, 100vw)"
           >

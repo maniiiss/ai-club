@@ -8,6 +8,7 @@ import com.aiclub.platform.dto.ChatRoomAgentTaskSummary;
 import com.aiclub.platform.dto.ChatRoomAgentToolPolicySummary;
 import com.aiclub.platform.dto.ChatRoomDetail;
 import com.aiclub.platform.dto.ChatRoomSummary;
+import com.aiclub.platform.dto.RuntimeChatOptionSummary;
 import com.aiclub.platform.dto.request.CreateChatRoomRequest;
 import com.aiclub.platform.dto.request.HermesActionExecutedRequest;
 import com.aiclub.platform.dto.request.HermesSelectionRequest;
@@ -96,6 +97,12 @@ public class ChatController {
     @RequirePermission("chat:view")
     public ApiResponse<ChatRoomAgentConfigSummary> getAgentConfig(@PathVariable Long roomId) {
         return ApiResponse.success(chatRoomAgentService.getConfig(roomId));
+    }
+
+    @GetMapping("/rooms/{roomId}/agent/runtime-options")
+    @RequirePermission("chat:view")
+    public ApiResponse<List<RuntimeChatOptionSummary>> listAgentRuntimeOptions(@PathVariable Long roomId) {
+        return ApiResponse.success(chatRoomAgentService.listRuntimeOptions(roomId));
     }
 
     @PutMapping("/rooms/{roomId}/agent")

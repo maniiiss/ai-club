@@ -363,6 +363,8 @@ public class HermesConversationSessionService {
                 defaultString(entity.getTitle()),
                 entity.isTitleCustomized(),
                 defaultString(entity.getRouteName()),
+                defaultString(entity.getRuntimeRegistryCode()).isBlank() ? "HERMES_LEGACY" : entity.getRuntimeRegistryCode(),
+                entity.getRuntimeProfileVersion() == null ? 1L : entity.getRuntimeProfileVersion(),
                 entity.getProjectId(),
                 entity.getTaskId(),
                 entity.getIterationId(),
@@ -386,6 +388,8 @@ public class HermesConversationSessionService {
                 defaultString(entity.getTitle()),
                 entity.isTitleCustomized(),
                 defaultString(entity.getRouteName()),
+                defaultString(entity.getRuntimeRegistryCode()).isBlank() ? "HERMES_LEGACY" : entity.getRuntimeRegistryCode(),
+                entity.getRuntimeProfileVersion() == null ? 1L : entity.getRuntimeProfileVersion(),
                 entity.getProjectId(),
                 entity.getTaskId(),
                 entity.getIterationId(),
@@ -507,7 +511,7 @@ public class HermesConversationSessionService {
         try {
             return objectMapper.writeValueAsString(executedActionKeys == null ? List.of() : executedActionKeys);
         } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("Hermes 已执行动作列表序列化失败", exception);
+            throw new IllegalStateException("GitPilot 已执行动作列表序列化失败", exception);
         }
     }
 

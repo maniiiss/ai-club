@@ -19,6 +19,7 @@ import com.aiclub.platform.dto.HermesGroundingState;
 import com.aiclub.platform.dto.HermesSelectionCard;
 import com.aiclub.platform.dto.HermesToolExecutionPolicy;
 import com.aiclub.platform.dto.PlatformToolDefinition;
+import com.aiclub.platform.dto.RuntimeChatOptionSummary;
 import com.aiclub.platform.dto.request.HermesActionExecutedRequest;
 import com.aiclub.platform.dto.request.HermesSelectionRequest;
 import com.aiclub.platform.dto.request.UpdateChatRoomAgentConfigRequest;
@@ -106,9 +107,9 @@ public class ChatRoomAgentService {
     private final ChatMessageRepository chatMessageRepository;
     private final ChatHermesService chatHermesService;
     private final ChatRoomAgentQueuePublisher queuePublisher;
+    private RuntimeChatService runtimeChatService;
     private final ObjectMapper objectMapper;
 
-    @Autowired
     public ChatRoomAgentService(AuthService authService,
                                 @Lazy ChatRoomService chatRoomService,
                                 ChatRoomRepository chatRoomRepository,
@@ -122,6 +123,7 @@ public class ChatRoomAgentService {
                                 ChatMessageRepository chatMessageRepository,
                                 @Lazy ChatHermesService chatHermesService,
                                 ChatRoomAgentQueuePublisher queuePublisher,
+                                RuntimeChatService runtimeChatService,
                                 ObjectMapper objectMapper) {
         this.authService = authService;
         this.chatRoomService = chatRoomService;
@@ -136,6 +138,7 @@ public class ChatRoomAgentService {
         this.chatMessageRepository = chatMessageRepository;
         this.chatHermesService = chatHermesService;
         this.queuePublisher = queuePublisher;
+        this.runtimeChatService = runtimeChatService;
         this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
     }
 
@@ -154,13 +157,49 @@ public class ChatRoomAgentService {
                                 ChatWebSocketPushService chatWebSocketPushService) {
         this(authService, chatRoomService, chatRoomRepository, userRepository, configRepository, toolPolicyRepository,
                 taskRepository, taskEventRepository, platformToolRegistry, chatWebSocketPushService,
-                null, null, null, new ObjectMapper());
+                null, null, null, null, new ObjectMapper());
+    }
+
+    /** 兼容旧测试构造方式，Runtime 路由依赖为空时默认使用 Hermes Legacy。 */
+    @Autowired
+    public ChatRoomAgentService(AuthService authService,
+                                @Lazy ChatRoomService chatRoomService,
+                                ChatRoomRepository chatRoomRepository,
+                                UserRepository userRepository,
+                                ChatRoomAgentConfigRepository configRepository,
+                                ChatRoomAgentToolPolicyRepository toolPolicyRepository,
+                                ChatRoomAgentTaskRepository taskRepository,
+                                ChatRoomAgentTaskEventRepository taskEventRepository,
+                                PlatformToolRegistry platformToolRegistry,
+                                ChatWebSocketPushService chatWebSocketPushService,
+                                ChatMessageRepository chatMessageRepository,
+                                @Lazy ChatHermesService chatHermesService,
+                                ChatRoomAgentQueuePublisher queuePublisher,
+                                ObjectMapper objectMapper) {
+        this(authService, chatRoomService, chatRoomRepository, userRepository, configRepository, toolPolicyRepository,
+                taskRepository, taskEventRepository, platformToolRegistry, chatWebSocketPushService, chatMessageRepository,
+                chatHermesService, queuePublisher, null, objectMapper);
+    }
+
+    /**
+     * 通过属性注入兼容旧版测试/构造器契约；生产环境仍会注入统一 Runtime 路由服务。
+     * 业务意图：保留历史构造器 ABI，避免聊天室 Legacy 测试和旧扩展在新增 Runtime 后失效。
+     */
+    @Autowired(required = false)
+    public void setRuntimeChatService(RuntimeChatService runtimeChatService) {
+        this.runtimeChatService = runtimeChatService;
     }
 
     public ChatRoomAgentConfigSummary getConfig(Long roomId) {
         chatRoomService.requireAccessibleRoom(roomId);
         ChatRoomEntity room = requireRoom(roomId);
         return toConfigSummary(resolveConfig(room));
+    }
+
+    /** 读取当前房间可见的聊天 Runtime 选项，普通聊天室成员只获得选择信息，不获得注册管理权限。 */
+    public List<RuntimeChatOptionSummary> listRuntimeOptions(Long roomId) {
+        chatRoomService.requireAccessibleRoom(roomId);
+        return runtimeChatService == null ? List.of() : runtimeChatService.listChatOptions();
     }
 
     @Transactional
@@ -171,8 +210,15 @@ public class ChatRoomAgentService {
         UserEntity user = userRepository.findById(currentUser.id())
                 .orElseThrow(() -> new NoSuchElementException("当前用户不存在"));
         ChatRoomAgentConfigEntity config = resolveConfig(room);
+        String runtimeRegistryCode = defaultString(request.runtimeRegistryCode()).isBlank()
+                ? RuntimeChatService.HERMES_LEGACY
+                : request.runtimeRegistryCode();
+        if (runtimeChatService != null) {
+            runtimeChatService.validateChatRuntime(runtimeRegistryCode);
+        }
+        config.setRuntimeRegistryCode(runtimeRegistryCode.trim().toUpperCase(Locale.ROOT));
         config.setEnabled(!Boolean.FALSE.equals(request.enabled()));
-        config.setDisplayName(trimToMax(defaultString(request.displayName()).isBlank() ? "Hermes" : request.displayName(), 100));
+        config.setDisplayName(trimToMax(defaultString(request.displayName()).isBlank() ? "GitPilot" : request.displayName(), 100));
         config.setSystemInstruction(trimToMax(defaultString(request.systemInstruction()), 4000));
         config.setProactiveSummaryEnabled(Boolean.TRUE.equals(request.proactiveSummaryEnabled()));
         config.setKeywordWatchEnabled(Boolean.TRUE.equals(request.keywordWatchEnabled()));
@@ -229,7 +275,10 @@ public class ChatRoomAgentService {
         task.setStatus(config.isEnabled() ? TASK_PENDING : TASK_ERROR);
         task.setSource("@hermes");
         task.setSourceRef("mention:message:" + triggerMessageId);
-        task.setPayloadJson(writePayload(Map.of("triggerMessageId", triggerMessageId == null ? "" : triggerMessageId)));
+        task.setPayloadJson(writePayload(Map.of(
+                "triggerMessageId", triggerMessageId == null ? "" : triggerMessageId,
+                "runtimeRegistryCode", resolveRuntimeRegistryCode(config)
+        )));
         task.setErrorMessage(config.isEnabled() ? "" : "聊天室 Agent 已关闭");
         ChatRoomAgentTaskEntity saved = taskRepository.save(task);
         if (saved.getAssistantMessage() != null) {
@@ -436,35 +485,50 @@ public class ChatRoomAgentService {
             throw new IllegalStateException("聊天室 Agent 运行时尚未就绪");
         }
         HermesToolExecutionPolicy toolExecutionPolicy = buildToolExecutionPolicy(task);
+        String runtimeRegistryCode = resolveTaskRuntimeCode(task);
         HermesChatRoomAgentTaskResult hermesResult;
         if (TRIGGER_MENTION.equals(task.getTriggerType())) {
             if (task.getTriggerMessage() == null) {
                 throw new IllegalStateException("聊天室 Agent 触发消息缺失");
             }
-            hermesResult = chatHermesService.startHermesReply(
+            hermesResult = RuntimeChatService.HERMES_LEGACY.equals(runtimeRegistryCode)
+                    ? chatHermesService.startHermesReply(
                     task.getRoom().getId(),
                     task.getAssistantMessage().getId(),
                     task.getTriggerMessage().getId(),
-                    toolExecutionPolicy
-            );
+                    toolExecutionPolicy)
+                    : chatHermesService.startHermesReply(
+                    task.getRoom().getId(),
+                    task.getAssistantMessage().getId(),
+                    task.getTriggerMessage().getId(),
+                    toolExecutionPolicy,
+                    runtimeRegistryCode);
         } else {
             HermesGroundingState groundingState = TRIGGER_SELECTION.equals(task.getTriggerType())
                     ? buildSelectionGroundingState(task)
                     : HermesGroundingState.empty();
-            hermesResult = chatHermesService.startAgentTaskReply(
+            hermesResult = RuntimeChatService.HERMES_LEGACY.equals(runtimeRegistryCode)
+                    ? chatHermesService.startAgentTaskReply(
                     task.getRoom().getId(),
                     task.getAssistantMessage().getId(),
                     buildTaskInstruction(task),
                     task.getAuthorizedByUser(),
                     toolExecutionPolicy,
-                    groundingState
-            );
+                    groundingState)
+                    : chatHermesService.startAgentTaskReply(
+                    task.getRoom().getId(),
+                    task.getAssistantMessage().getId(),
+                    buildTaskInstruction(task),
+                    task.getAuthorizedByUser(),
+                    toolExecutionPolicy,
+                    groundingState,
+                    runtimeRegistryCode);
         }
         task.setStatus(TASK_DONE);
         task.setFinishedAt(LocalDateTime.now());
         taskRepository.save(task);
         appendHermesRuntimeEvents(task, hermesResult);
-        appendEvent(task, "TASK_DONE", "Hermes 已完成房间回复", Map.of());
+        appendEvent(task, "TASK_DONE", "GitPilot 已完成房间回复", Map.of());
         chatWebSocketPushService.broadcastAgentTaskUpdated(task.getRoom().getId(), toTaskSummary(task));
     }
 
@@ -571,7 +635,7 @@ public class ChatRoomAgentService {
                 continue;
             }
             HermesActionSummary executedAction = toExecutedAction(execution);
-            appendEvent(task, "ACTION_EXECUTED", "Hermes 已自动执行授权工具", execution);
+        appendEvent(task, "ACTION_EXECUTED", "GitPilot 已自动执行授权工具", execution);
             chatWebSocketPushService.broadcastAgentActionExecuted(
                     task.getRoom().getId(),
                     task.getId(),
@@ -823,6 +887,7 @@ public class ChatRoomAgentService {
                 config.getRoom() == null ? null : config.getRoom().getId(),
                 config.isEnabled(),
                 defaultString(config.getDisplayName()),
+                resolveRuntimeRegistryCode(config),
                 defaultString(config.getSystemInstruction()),
                 config.isProactiveSummaryEnabled(),
                 config.isKeywordWatchEnabled(),
@@ -1063,13 +1128,15 @@ public class ChatRoomAgentService {
         task.setStatus(TASK_PENDING);
         task.setSource(source);
         task.setSourceRef(sourceRef);
-        task.setPayloadJson(writePayload(payload));
+        Map<String, Object> taskPayload = new LinkedHashMap<>(payload == null ? Map.of() : payload);
+        taskPayload.put("runtimeRegistryCode", resolveRuntimeRegistryCode(config));
+        task.setPayloadJson(writePayload(taskPayload));
         ChatRoomAgentTaskEntity saved = taskRepository.save(task);
         savedAssistant.setAgentTask(saved);
         if (chatMessageRepository != null) {
             chatMessageRepository.save(savedAssistant);
         }
-        appendEvent(saved, "TASK_CREATED", "Hermes 主动任务已进入队列", payload == null ? Map.of() : payload);
+        appendEvent(saved, "TASK_CREATED", "GitPilot 主动任务已进入队列", taskPayload);
         if (chatRoomService != null) {
             chatWebSocketPushService.broadcastMessageCreated(room.getId(), chatRoomService.toMessageSummary(savedAssistant));
         }
@@ -1084,12 +1151,25 @@ public class ChatRoomAgentService {
         message.setSenderUser(null);
         message.setRole(ChatRoomService.ROLE_ASSISTANT);
         message.setSenderUsernameSnapshot("hermes");
-        message.setSenderNameSnapshot("Hermes");
+        message.setSenderNameSnapshot("GitPilot");
         message.setSenderAvatarSnapshot("");
         message.setContent("");
         message.setStatus(ChatRoomService.STATUS_STREAMING);
         message.setMentionsHermes(false);
         return message;
+    }
+
+    /** 从任务快照读取 Runtime，保证排队后修改房间配置不会改变本次任务。 */
+    private String resolveTaskRuntimeCode(ChatRoomAgentTaskEntity task) {
+        Map<String, Object> payload = readPayload(task == null ? "" : task.getPayloadJson());
+        return defaultString(String.valueOf(payload.getOrDefault("runtimeRegistryCode", RuntimeChatService.HERMES_LEGACY)))
+                .toUpperCase(Locale.ROOT);
+    }
+
+    /** 从房间配置读取当前 Runtime，并为历史配置补齐 Legacy 默认值。 */
+    private String resolveRuntimeRegistryCode(ChatRoomAgentConfigEntity config) {
+        String code = config == null ? "" : config.getRuntimeRegistryCode();
+        return defaultString(code).isBlank() ? RuntimeChatService.HERMES_LEGACY : code.trim().toUpperCase(Locale.ROOT);
     }
 
     private void publishTaskIfPending(ChatRoomAgentTaskEntity task) {

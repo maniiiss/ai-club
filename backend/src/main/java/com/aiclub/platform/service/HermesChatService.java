@@ -23,6 +23,8 @@ import com.aiclub.platform.dto.request.HermesMultipartChatCommand;
 import com.aiclub.platform.dto.request.HermesSessionChatRequest;
 import com.aiclub.platform.repository.HermesChatAuditRepository;
 import com.aiclub.platform.repository.UserRepository;
+import com.aiclub.platform.runtime.RuntimeChatResult;
+import com.aiclub.platform.runtime.RuntimeInvocationContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +39,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * Hermes 会话代理服务。
@@ -64,6 +67,7 @@ public class HermesChatService {
     private final HermesAttachmentService hermesAttachmentService;
     private final WikiKnowledgeSearchService wikiKnowledgeSearchService;
     private final HermesFileLibraryService hermesFileLibraryService;
+    private final RuntimeChatService runtimeChatService;
     private final ObjectMapper objectMapper;
 
     @Autowired
@@ -83,6 +87,7 @@ public class HermesChatService {
                              HermesAttachmentService hermesAttachmentService,
                              WikiKnowledgeSearchService wikiKnowledgeSearchService,
                              HermesFileLibraryService hermesFileLibraryService,
+                             RuntimeChatService runtimeChatService,
                              ObjectMapper objectMapper) {
         this.authService = authService;
         this.userRepository = userRepository;
@@ -100,6 +105,7 @@ public class HermesChatService {
         this.hermesAttachmentService = hermesAttachmentService;
         this.wikiKnowledgeSearchService = wikiKnowledgeSearchService;
         this.hermesFileLibraryService = hermesFileLibraryService;
+        this.runtimeChatService = runtimeChatService;
         this.objectMapper = objectMapper;
     }
 
@@ -124,7 +130,31 @@ public class HermesChatService {
                              ObjectMapper objectMapper) {
         this(authService, userRepository, hermesProperties, hermesContextAssembler, hermesPromptBuilder, hermesGatewayService,
                 hermesHindsightMemoryService, hermesToolOrchestrator, hermesActionFallbackService, hermesConversationStateStore, hermesMcpSessionTokenService,
-                hermesChatAuditRepository, hermesConversationSessionService, hermesAttachmentService, wikiKnowledgeSearchService, null, objectMapper);
+                hermesChatAuditRepository, hermesConversationSessionService, hermesAttachmentService, wikiKnowledgeSearchService, null, null, objectMapper);
+    }
+
+    /** 兼容尚未接入 Runtime 路由的旧测试构造方式，默认所有会话走 Hermes Legacy。 */
+    public HermesChatService(AuthService authService,
+                             UserRepository userRepository,
+                             HermesProperties hermesProperties,
+                             HermesContextAssembler hermesContextAssembler,
+                             HermesPromptBuilder hermesPromptBuilder,
+                             HermesGatewayService hermesGatewayService,
+                             HermesHindsightMemoryService hermesHindsightMemoryService,
+                             HermesToolOrchestrator hermesToolOrchestrator,
+                             HermesActionFallbackService hermesActionFallbackService,
+                             HermesConversationStateStore hermesConversationStateStore,
+                             HermesMcpSessionTokenService hermesMcpSessionTokenService,
+                             HermesChatAuditRepository hermesChatAuditRepository,
+                             HermesConversationSessionService hermesConversationSessionService,
+                             HermesAttachmentService hermesAttachmentService,
+                             WikiKnowledgeSearchService wikiKnowledgeSearchService,
+                             HermesFileLibraryService hermesFileLibraryService,
+                             ObjectMapper objectMapper) {
+        this(authService, userRepository, hermesProperties, hermesContextAssembler, hermesPromptBuilder, hermesGatewayService,
+                hermesHindsightMemoryService, hermesToolOrchestrator, hermesActionFallbackService, hermesConversationStateStore,
+                hermesMcpSessionTokenService, hermesChatAuditRepository, hermesConversationSessionService, hermesAttachmentService,
+                wikiKnowledgeSearchService, hermesFileLibraryService, null, objectMapper);
     }
 
     /**
@@ -146,7 +176,7 @@ public class HermesChatService {
                              ObjectMapper objectMapper) {
         this(authService, userRepository, hermesProperties, hermesContextAssembler, hermesPromptBuilder, hermesGatewayService,
                 hermesHindsightMemoryService, hermesToolOrchestrator, hermesActionFallbackService, hermesConversationStateStore, hermesMcpSessionTokenService,
-                hermesChatAuditRepository, hermesConversationSessionService, null, null, null, objectMapper);
+                hermesChatAuditRepository, hermesConversationSessionService, null, null, null, null, objectMapper);
     }
 
     /**
@@ -187,14 +217,14 @@ public class HermesChatService {
                 writeEvent(outputStream, "meta", buildMetaEvent(preparedConversation.state()));
                 emitStatus(outputStream, "thinking", "Hermes 正在思考");
 
-                HermesGatewayService.HermesGatewayResult gatewayResult = hermesGatewayService.streamChatCompletion(
-                        preparedConversation.prompt(),
-                        preparedConversation.outboundTranscript(),
+                ChatExecutionResult gatewayResult = executeChat(
+                        session,
+                        preparedConversation,
                         delta -> {
                             try {
                                 writeEvent(outputStream, "delta", new HermesStreamDelta(delta));
                             } catch (IOException exception) {
-                                throw new HermesClientStreamDisconnectedException("Hermes 客户端流式连接已断开", exception);
+                                throw new HermesClientStreamDisconnectedException("GitPilot 客户端流式连接已断开", exception);
                             }
                         }
                 );
@@ -286,10 +316,7 @@ public class HermesChatService {
         PreparedConversation preparedConversation = prepareConversation(currentUser, context, effectiveRequest, scopeKey, attachmentContextMarkdown);
 
         try {
-            HermesGatewayService.HermesGatewayResult gatewayResult = hermesGatewayService.createChatCompletion(
-                    preparedConversation.prompt(),
-                    preparedConversation.outboundTranscript()
-            );
+            ChatExecutionResult gatewayResult = executeChat(session, preparedConversation, null);
             HermesConversationState latestState = loadLatestState(preparedConversation.state());
             FinalizedConversation finalizedConversation = finalizeConversation(
                     latestState,
@@ -351,6 +378,49 @@ public class HermesChatService {
             hermesChatAuditRepository.save(audit);
             throw exception;
         }
+    }
+
+    /**
+     * 按会话创建时固化的 Runtime 执行当前轮次。
+     * Legacy 继续保留原生工具调用链；其他 Runtime 通过统一同步聊天协议执行，避免平台入口仍偷偷固定到 Hermes。
+     */
+    private ChatExecutionResult executeChat(HermesConversationSessionEntity session,
+                                             PreparedConversation preparedConversation,
+                                             Consumer<String> deltaConsumer) {
+        String runtimeCode = defaultString(session.getRuntimeRegistryCode()).isBlank()
+                ? RuntimeChatService.HERMES_LEGACY
+                : session.getRuntimeRegistryCode().trim().toUpperCase(java.util.Locale.ROOT);
+        if (runtimeChatService == null || runtimeChatService.isLegacy(runtimeCode)) {
+            HermesGatewayService.HermesGatewayResult result = deltaConsumer == null
+                    ? hermesGatewayService.createChatCompletion(
+                    preparedConversation.prompt(), preparedConversation.outboundTranscript())
+                    : hermesGatewayService.streamChatCompletion(
+                    preparedConversation.prompt(), preparedConversation.outboundTranscript(), delta -> deltaConsumer.accept(delta));
+            return new ChatExecutionResult(result.content(), result.responseId());
+        }
+
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        requestBody.put("runId", "gitpilot-session-" + session.getId() + "-" + System.nanoTime());
+        requestBody.put("sessionId", preparedConversation.state().clientConversationId());
+        requestBody.put("systemPrompt", preparedConversation.prompt().systemPrompt());
+        requestBody.put("input", preparedConversation.currentUserTurn().content());
+        requestBody.put("history", preparedConversation.outboundTranscript());
+        requestBody.put("sessionToken", preparedConversation.state().mcpSessionToken());
+        requestBody.put("toolPolicy", preparedConversation.state().toolExecutionPolicy());
+        RuntimeInvocationContext context = new RuntimeInvocationContext(
+                String.valueOf(requestBody.get("runId")),
+                preparedConversation.state().clientConversationId(),
+                preparedConversation.currentUserTurn().content(),
+                preparedConversation.prompt().systemPrompt(),
+                Map.of("requestBody", requestBody),
+                Map.of("runtimeRegistryCode", runtimeCode,
+                        "runtimeProfileVersion", session.getRuntimeProfileVersion() == null ? 1L : session.getRuntimeProfileVersion())
+        );
+        RuntimeChatResult result = runtimeChatService.chat(runtimeCode, context);
+        if (deltaConsumer != null && hasText(result.content())) {
+            deltaConsumer.accept(result.content());
+        }
+        return new ChatExecutionResult(result.content(), result.runId());
     }
 
     /**
@@ -834,7 +904,7 @@ public class HermesChatService {
      */
     private void finishSuccess(OutputStream outputStream,
                                HermesChatAuditEntity audit,
-                               HermesGatewayService.HermesGatewayResult gatewayResult,
+                               ChatExecutionResult gatewayResult,
                                FinalizedConversation finalizedConversation,
                                HermesDebugInfo debugInfo,
                                List<HermesAttachmentService.PreparedAttachment> attachments) {
@@ -1013,7 +1083,7 @@ public class HermesChatService {
      */
     private String resolveErrorMessage(Exception exception) {
         if (exception == null || exception.getMessage() == null || exception.getMessage().isBlank()) {
-            return "Hermes 助手暂时不可用";
+            return "GitPilot 助手暂时不可用";
         }
         return exception.getMessage().trim();
     }
@@ -1088,6 +1158,10 @@ public class HermesChatService {
             List<HermesConversationTurn> outboundTranscript,
             HermesPromptBuilder.HermesPrompt prompt
     ) {
+    }
+
+    /** Runtime 统一聊天结果，responseId 在非 Legacy Runtime 中由 runId 兼容承载。 */
+    private record ChatExecutionResult(String content, String responseId) {
     }
 
     /**

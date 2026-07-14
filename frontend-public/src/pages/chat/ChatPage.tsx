@@ -7,6 +7,7 @@ import { Bot, ChevronDown, Circle, RefreshCcw, Settings2, UserPlus, Users, Zap }
 import {
   getChatRoomDetail,
   getChatRoomAgentConfig,
+  listChatRoomAgentRuntimeOptions,
   listChatRoomAgentTasks,
   listChatRoomAgentTools,
   listChatRooms,
@@ -26,9 +27,10 @@ import { ChatRoomDialog } from '@/src/components/chat/ChatRoomDialog'
 import { ChatRoomList } from '@/src/components/chat/ChatRoomList'
 import { Button } from '@/src/components/common/Button'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
+import { Select } from '@/src/components/common/Select'
 import { useAuthStore } from '@/src/stores/auth'
 import { useGuide } from '@/src/components/guide'
-import type { ChatMessageItem, ChatRoomAgentConfig, ChatRoomAgentTask, ChatRoomAgentToolPolicy, ChatRoomItem, ChatSocketEvent } from '@/src/types/chat'
+import type { ChatMessageItem, ChatRoomAgentConfig, ChatRoomAgentRuntimeOption, ChatRoomAgentTask, ChatRoomAgentToolPolicy, ChatRoomItem, ChatSocketEvent } from '@/src/types/chat'
 import type { HermesActionItem, HermesSelectionCardItem, HermesSelectionPayload } from '@/src/types/hermes'
 import {
   appendChatStreamDelta,
@@ -83,6 +85,7 @@ export const ChatPage = () => {
   const [memberEditorOpen, setMemberEditorOpen] = useState(false)
   const [agentDialogOpen, setAgentDialogOpen] = useState(false)
   const [agentConfig, setAgentConfig] = useState<ChatRoomAgentConfig | null>(null)
+  const [agentRuntimeOptions, setAgentRuntimeOptions] = useState<ChatRoomAgentRuntimeOption[]>([])
   const [agentTools, setAgentTools] = useState<ChatRoomAgentToolPolicy[]>([])
   const [agentTasks, setAgentTasks] = useState<ChatRoomAgentTask[]>([])
   const [resolvingActionKey, setResolvingActionKey] = useState('')
@@ -167,6 +170,7 @@ export const ChatPage = () => {
   useEffect(() => {
     if (!selectedRoomId || !canManageAgent) {
       setAgentConfig(null)
+      setAgentRuntimeOptions([])
       setAgentTools([])
       setAgentTasks([])
       return
@@ -174,12 +178,14 @@ export const ChatPage = () => {
     let alive = true
     Promise.all([
       getChatRoomAgentConfig(selectedRoomId),
+      listChatRoomAgentRuntimeOptions(selectedRoomId),
       listChatRoomAgentTools(selectedRoomId),
       listChatRoomAgentTasks(selectedRoomId),
     ])
-      .then(([config, tools, tasks]) => {
+      .then(([config, runtimeOptions, tools, tasks]) => {
         if (!alive) return
         setAgentConfig(config)
+        setAgentRuntimeOptions(runtimeOptions)
         setAgentTools(tools)
         setAgentTasks(tasks)
       })
@@ -427,6 +433,7 @@ export const ChatPage = () => {
         <ChatAgentSettingsDialog
           room={selectedRoom}
           config={agentConfig}
+          runtimeOptions={agentRuntimeOptions}
           tools={agentTools}
           currentUserId={currentUser?.id ?? null}
           onClose={() => setAgentDialogOpen(false)}
@@ -539,7 +546,7 @@ const ChatContextPanel = ({
     setSummaryExpanded(false)
   }, [room?.id])
 
-  const summary = room?.historySummary?.trim() || 'Hermes 回复完成后会逐步沉淀房间摘要。'
+  const summary = room?.historySummary?.trim() || 'GitPilot 回复完成后会逐步沉淀房间摘要。'
   const summaryCollapsible = room ? shouldCollapseChatSummary(summary) : false
 
   return (
@@ -561,7 +568,7 @@ const ChatContextPanel = ({
                 <div className="min-w-0">
                   <p className="text-[12px] font-semibold text-[var(--color-text-primary)]">房间助手</p>
                   <p className="mt-0.5 truncate text-[12px] text-[var(--color-text-secondary)]">
-                    {agentConfig?.enabled ? `${agentConfig.displayName || 'Hermes'} 已启用` : 'Hermes 已关闭'}
+                    {agentConfig?.enabled ? `${agentConfig.displayName || 'GitPilot'} 已启用` : 'GitPilot 已关闭'}
                   </p>
                 </div>
                 <Button
@@ -807,6 +814,7 @@ const ChatMemberEditor = ({
 const ChatAgentSettingsDialog = ({
   room,
   config,
+  runtimeOptions,
   tools,
   currentUserId,
   onClose,
@@ -814,6 +822,7 @@ const ChatAgentSettingsDialog = ({
 }: {
   room: ChatRoomItem
   config: ChatRoomAgentConfig
+  runtimeOptions: ChatRoomAgentRuntimeOption[]
   tools: ChatRoomAgentToolPolicy[]
   currentUserId: number | null
   onClose: () => void
@@ -821,7 +830,8 @@ const ChatAgentSettingsDialog = ({
 }) => {
   const isOwner = currentUserId !== null && room.creatorUserId === currentUserId
   const [enabled, setEnabled] = useState(config.enabled)
-  const [displayName, setDisplayName] = useState(config.displayName || 'Hermes')
+  const [displayName, setDisplayName] = useState(config.displayName || 'GitPilot')
+  const [runtimeRegistryCode, setRuntimeRegistryCode] = useState(config.runtimeRegistryCode || 'HERMES_LEGACY')
   const [systemInstruction, setSystemInstruction] = useState(config.systemInstruction || '')
   const [proactiveSummaryEnabled, setProactiveSummaryEnabled] = useState(config.proactiveSummaryEnabled)
   const [keywordWatchEnabled, setKeywordWatchEnabled] = useState(config.keywordWatchEnabled)
@@ -846,6 +856,7 @@ const ChatAgentSettingsDialog = ({
         updateChatRoomAgentConfig(room.id, {
           enabled,
           displayName,
+          runtimeRegistryCode,
           systemInstruction,
           proactiveSummaryEnabled,
           keywordWatchEnabled,
@@ -900,7 +911,7 @@ const ChatAgentSettingsDialog = ({
           {error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p>}
           <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
             <label className="flex items-center justify-between rounded-lg border border-[var(--color-border-light)] bg-[var(--color-bg-page)] px-3 py-2.5 text-[13px] font-semibold text-[var(--color-text-primary)]">
-              启用 Hermes 助手
+              启用 GitPilot 助手
               <input type="checkbox" checked={enabled} disabled={!isOwner} onChange={(event) => setEnabled(event.target.checked)} />
             </label>
             <label className="flex flex-col gap-1.5 text-[13px] font-medium text-[var(--color-text-secondary)]">
@@ -913,6 +924,24 @@ const ChatAgentSettingsDialog = ({
               />
             </label>
           </div>
+          <Select
+            label="聊天 Runtime"
+            value={runtimeRegistryCode}
+            disabled={!isOwner}
+            onChange={setRuntimeRegistryCode}
+            options={[
+              ...(!runtimeOptions.some((item) => item.runtimeCode === runtimeRegistryCode)
+                ? [{ value: runtimeRegistryCode, label: `${runtimeRegistryCode}（当前绑定）` }]
+                : []),
+              ...runtimeOptions.map((item) => ({
+                value: item.runtimeCode,
+                label: `${item.runtimeCode} · ${item.version}`,
+                description: `${item.healthStatus}${item.healthMessage ? ` · ${item.healthMessage}` : ''}`,
+              })),
+            ]}
+            hint="Runtime 由平台注册中心维护；未完成健康检查的 Runtime 保存后，执行时会被平台拒绝。"
+            className="mt-4"
+          />
           <label className="mt-4 flex flex-col gap-1.5 text-[13px] font-medium text-[var(--color-text-secondary)]">
             房间系统指令
             <textarea

@@ -20,6 +20,8 @@ import com.aiclub.platform.dto.HermesSelectionCard;
 import com.aiclub.platform.dto.HermesSelectionOption;
 import com.aiclub.platform.dto.HermesToolExecutionPolicy;
 import com.aiclub.platform.dto.request.HermesSelectionRequest;
+import com.aiclub.platform.runtime.RuntimeChatResult;
+import com.aiclub.platform.runtime.RuntimeInvocationContext;
 import com.aiclub.platform.repository.ChatMessageRepository;
 import com.aiclub.platform.repository.ChatRoomRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,10 +34,12 @@ import java.util.LinkedHashMap;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -61,6 +65,7 @@ public class ChatHermesService {
     private final ChatAttachmentService chatAttachmentService;
     private final HermesConversationStateStore hermesConversationStateStore;
     private final HermesMcpSessionTokenService hermesMcpSessionTokenService;
+    private final RuntimeChatService runtimeChatService;
     private final Set<Long> runningRoomIds = ConcurrentHashMap.newKeySet();
 
     @Autowired
@@ -70,7 +75,8 @@ public class ChatHermesService {
                              ChatWebSocketPushService chatWebSocketPushService,
                              ChatAttachmentService chatAttachmentService,
                              HermesConversationStateStore hermesConversationStateStore,
-                             HermesMcpSessionTokenService hermesMcpSessionTokenService) {
+                             HermesMcpSessionTokenService hermesMcpSessionTokenService,
+                             RuntimeChatService runtimeChatService) {
         this.chatRoomRepository = chatRoomRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.hermesGatewayService = hermesGatewayService;
@@ -78,6 +84,19 @@ public class ChatHermesService {
         this.chatAttachmentService = chatAttachmentService;
         this.hermesConversationStateStore = hermesConversationStateStore;
         this.hermesMcpSessionTokenService = hermesMcpSessionTokenService;
+        this.runtimeChatService = runtimeChatService;
+    }
+
+    /** 兼容旧测试构造方式，默认所有聊天室任务走 Hermes Legacy。 */
+    public ChatHermesService(ChatRoomRepository chatRoomRepository,
+                             ChatMessageRepository chatMessageRepository,
+                             HermesGatewayService hermesGatewayService,
+                             ChatWebSocketPushService chatWebSocketPushService,
+                             ChatAttachmentService chatAttachmentService,
+                             HermesConversationStateStore hermesConversationStateStore,
+                             HermesMcpSessionTokenService hermesMcpSessionTokenService) {
+        this(chatRoomRepository, chatMessageRepository, hermesGatewayService, chatWebSocketPushService,
+                chatAttachmentService, hermesConversationStateStore, hermesMcpSessionTokenService, null);
     }
 
     /**
@@ -87,12 +106,12 @@ public class ChatHermesService {
                              ChatMessageRepository chatMessageRepository,
                              HermesGatewayService hermesGatewayService,
                              ChatWebSocketPushService chatWebSocketPushService) {
-        this(chatRoomRepository, chatMessageRepository, hermesGatewayService, chatWebSocketPushService, null, null, null);
+        this(chatRoomRepository, chatMessageRepository, hermesGatewayService, chatWebSocketPushService, null, null, null, null);
     }
 
     @Transactional
     public void startHermesReply(Long roomId, Long assistantMessageId, Long triggerMessageId) {
-        startHermesReply(roomId, assistantMessageId, triggerMessageId, HermesToolExecutionPolicy.empty());
+        startHermesReply(roomId, assistantMessageId, triggerMessageId, HermesToolExecutionPolicy.empty(), RuntimeChatService.HERMES_LEGACY);
     }
 
     /**
@@ -103,6 +122,16 @@ public class ChatHermesService {
                                                           Long assistantMessageId,
                                                           Long triggerMessageId,
                                                           HermesToolExecutionPolicy toolExecutionPolicy) {
+        return startHermesReply(roomId, assistantMessageId, triggerMessageId, toolExecutionPolicy, RuntimeChatService.HERMES_LEGACY);
+    }
+
+    /** 执行指定 Runtime 的聊天室 @mention 回复，Legacy 之外走 Runtime Registry 适配器。 */
+    @Transactional
+    public HermesChatRoomAgentTaskResult startHermesReply(Long roomId,
+                                                          Long assistantMessageId,
+                                                          Long triggerMessageId,
+                                                          HermesToolExecutionPolicy toolExecutionPolicy,
+                                                          String runtimeRegistryCode) {
         if (!runningRoomIds.add(roomId)) {
             markAssistantError(roomId, assistantMessageId, "Hermes 正在回复中，请稍后再试");
             return HermesChatRoomAgentTaskResult.empty("Hermes 正在回复中，请稍后再试");
@@ -118,8 +147,10 @@ public class ChatHermesService {
             PreparedChatHermesSession preparedSession = prepareMcpSession(room, triggerMessage, toolExecutionPolicy);
             List<HermesConversationTurn> transcript = buildTranscript(room, triggerMessage);
             StringBuilder streamedContent = new StringBuilder();
-            HermesGatewayService.HermesGatewayResult result = hermesGatewayService.streamChatCompletion(
-                    buildPrompt(room, preparedSession.sessionToken()),
+            ChatExecutionResult result = executeChat(
+                    runtimeRegistryCode,
+                    room,
+                    preparedSession,
                     transcript,
                     delta -> {
                         streamedContent.append(delta == null ? "" : delta);
@@ -150,7 +181,8 @@ public class ChatHermesService {
      */
     @Transactional
     public void startAgentTaskReply(Long roomId, Long assistantMessageId, String taskInstruction, UserEntity authorizedByUser) {
-        startAgentTaskReply(roomId, assistantMessageId, taskInstruction, authorizedByUser, HermesToolExecutionPolicy.empty());
+        startAgentTaskReply(roomId, assistantMessageId, taskInstruction, authorizedByUser,
+                HermesToolExecutionPolicy.empty(), HermesGroundingState.empty(), RuntimeChatService.HERMES_LEGACY);
     }
 
     /**
@@ -162,7 +194,7 @@ public class ChatHermesService {
                                                              String taskInstruction,
                                                              UserEntity authorizedByUser,
                                                              HermesToolExecutionPolicy toolExecutionPolicy) {
-        return startAgentTaskReply(roomId, assistantMessageId, taskInstruction, authorizedByUser, toolExecutionPolicy, HermesGroundingState.empty());
+        return startAgentTaskReply(roomId, assistantMessageId, taskInstruction, authorizedByUser, toolExecutionPolicy, HermesGroundingState.empty(), RuntimeChatService.HERMES_LEGACY);
     }
 
     @Transactional
@@ -172,6 +204,18 @@ public class ChatHermesService {
                                                              UserEntity authorizedByUser,
                                                              HermesToolExecutionPolicy toolExecutionPolicy,
                                                              HermesGroundingState groundingState) {
+        return startAgentTaskReply(roomId, assistantMessageId, taskInstruction, authorizedByUser, toolExecutionPolicy, groundingState, RuntimeChatService.HERMES_LEGACY);
+    }
+
+    /** 执行指定 Runtime 的聊天室主动任务。 */
+    @Transactional
+    public HermesChatRoomAgentTaskResult startAgentTaskReply(Long roomId,
+                                                             Long assistantMessageId,
+                                                             String taskInstruction,
+                                                             UserEntity authorizedByUser,
+                                                             HermesToolExecutionPolicy toolExecutionPolicy,
+                                                             HermesGroundingState groundingState,
+                                                             String runtimeRegistryCode) {
         if (!runningRoomIds.add(roomId)) {
             markAssistantError(roomId, assistantMessageId, "Hermes 正在回复中，请稍后再试");
             return HermesChatRoomAgentTaskResult.empty("Hermes 正在回复中，请稍后再试");
@@ -185,8 +229,10 @@ public class ChatHermesService {
             PreparedChatHermesSession preparedSession = prepareMcpSessionForAgentTask(room, authorizedByUser, assistantMessageId, taskInstruction, toolExecutionPolicy, groundingState);
             List<HermesConversationTurn> transcript = buildAgentTaskTranscript(room, taskInstruction);
             StringBuilder streamedContent = new StringBuilder();
-            HermesGatewayService.HermesGatewayResult result = hermesGatewayService.streamChatCompletion(
-                    buildPrompt(room, preparedSession.sessionToken()),
+            ChatExecutionResult result = executeChat(
+                    runtimeRegistryCode,
+                    room,
+                    preparedSession,
                     transcript,
                     delta -> {
                         streamedContent.append(delta == null ? "" : delta);
@@ -455,7 +501,7 @@ public class ChatHermesService {
 
     private HermesPromptBuilder.HermesPrompt buildPrompt(ChatRoomEntity room, String sessionToken) {
         String systemPrompt = """
-                你是 AI Club 聊天室中的 Hermes 助手。
+                你是 AI Club 聊天室中的 GitPilot 助手。
                 你需要像团队成员一样基于房间历史、项目上下文和附件摘录进行回复。
                 输出必须简洁、可执行；如果是在总结或汇总，请保留关键结论、风险和下一步。
                 当前轮唯一有效的 `system_session_token` 是：`%s`
@@ -469,6 +515,50 @@ public class ChatHermesService {
                 """;
         String userPrompt = "当前聊天室：" + defaultString(room.getTitle());
         return new HermesPromptBuilder.HermesPrompt(systemPrompt.formatted(defaultString(sessionToken), defaultString(sessionToken)).trim(), userPrompt);
+    }
+
+    /**
+     * 统一聊天室 Runtime 调用。
+     * 新 Runtime 当前采用一次性同步响应，平台收到完整文本后仍按原 WebSocket 事件协议广播，前端无需感知 Runtime 差异。
+     */
+    private ChatExecutionResult executeChat(String runtimeRegistryCode,
+                                             ChatRoomEntity room,
+                                             PreparedChatHermesSession preparedSession,
+                                             List<HermesConversationTurn> transcript,
+                                             Consumer<String> deltaConsumer) {
+        String normalizedRuntime = defaultString(runtimeRegistryCode).isBlank()
+                ? RuntimeChatService.HERMES_LEGACY
+                : runtimeRegistryCode.trim().toUpperCase(Locale.ROOT);
+        HermesPromptBuilder.HermesPrompt prompt = buildPrompt(room, preparedSession.sessionToken());
+        if (runtimeChatService == null || runtimeChatService.isLegacy(normalizedRuntime)) {
+            HermesGatewayService.HermesGatewayResult result = hermesGatewayService.streamChatCompletion(
+                    prompt,
+                    transcript,
+                    delta -> deltaConsumer.accept(delta)
+            );
+            return new ChatExecutionResult(result.content());
+        }
+
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        requestBody.put("runId", "gitpilot-chat-room-" + room.getId() + "-" + System.nanoTime());
+        requestBody.put("sessionId", preparedSession.clientConversationId());
+        requestBody.put("systemPrompt", prompt.systemPrompt());
+        requestBody.put("input", transcript.isEmpty() ? prompt.userPrompt() : transcript.get(transcript.size() - 1).content());
+        requestBody.put("history", transcript);
+        requestBody.put("sessionToken", preparedSession.sessionToken());
+        RuntimeInvocationContext context = new RuntimeInvocationContext(
+                String.valueOf(requestBody.get("runId")),
+                preparedSession.clientConversationId(),
+                String.valueOf(requestBody.get("input")),
+                prompt.systemPrompt(),
+                Map.of("requestBody", requestBody),
+                Map.of("runtimeRegistryCode", normalizedRuntime, "roomId", room.getId())
+        );
+        RuntimeChatResult result = runtimeChatService.chat(normalizedRuntime, context);
+        if (deltaConsumer != null && hasText(result.content())) {
+            deltaConsumer.accept(result.content());
+        }
+        return new ChatExecutionResult(result.content());
     }
 
     private String buildRoomContext(ChatRoomEntity room) {
@@ -520,7 +610,7 @@ public class ChatHermesService {
                 ChatRoomService.ROLE_ASSISTANT,
                 null,
                 "hermes",
-                "Hermes",
+                "GitPilot",
                 "",
                 defaultString(message.getContent()),
                 defaultString(message.getStatus()).toLowerCase(),
@@ -533,7 +623,7 @@ public class ChatHermesService {
 
     private String resolveSpeaker(ChatMessageEntity message) {
         if (ChatRoomService.ROLE_ASSISTANT.equalsIgnoreCase(message.getRole())) {
-            return "Hermes";
+            return "GitPilot";
         }
         if (hasText(message.getSenderNameSnapshot())) {
             return message.getSenderNameSnapshot();
@@ -755,7 +845,7 @@ public class ChatHermesService {
 
     private String resolveErrorMessage(Exception exception) {
         if (exception == null || exception.getMessage() == null || exception.getMessage().isBlank()) {
-            return "Hermes 助手暂时不可用";
+            return "GitPilot 助手暂时不可用";
         }
         return exception.getMessage().trim();
     }
@@ -784,5 +874,9 @@ public class ChatHermesService {
     }
 
     record PreparedChatHermesSession(String sessionToken, String scopeKey, String clientConversationId) {
+    }
+
+    /** 聊天室 Runtime 的统一文本结果。 */
+    private record ChatExecutionResult(String content) {
     }
 }

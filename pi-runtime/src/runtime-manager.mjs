@@ -29,6 +29,39 @@ export class RuntimeManager {
     return { runId, sessionId, status: 'ACCEPTED' }
   }
 
+  /**
+   * 同步聊天入口，供 GitPilot 会话和聊天室在需要即时文本结果时调用。
+   * 仍复用同一套 Agent、平台工具和事件归一化逻辑，只把最终助手文本随 HTTP 响应返回。
+   */
+  async chat(request) {
+    const sessionId = request.sessionId || `pi-session-${crypto.randomUUID()}`
+    const runId = request.runId || `pi-run-${crypto.randomUUID()}`
+    const agent = this.#createAgent(request, sessionId, runId)
+    this.sessions.set(sessionId, { agent, request: structuredClone(request), snapshot: request.profileSnapshot || {} })
+    await this.sessionStore.save(sessionId, { request: structuredClone(request), messages: [] })
+    try {
+      await this.#emit({
+        runId,
+        sessionId,
+        eventType: 'RUN_STARTED',
+        payload: { runtimeCode: 'PI_RUNTIME', execution: request.context || request.execution || {} },
+      })
+      await agent.prompt(this.#chatInput(request))
+      const content = this.#lastAssistantText(agent.state.messages)
+      await this.#emit({ runId, sessionId, eventType: 'RUN_COMPLETED', payload: { status: 'SUCCESS' } })
+      return { runId, sessionId, content, status: 'COMPLETED' }
+    } catch (error) {
+      await this.#emit({ runId, sessionId, eventType: 'RUN_FAILED', payload: { message: error.message } })
+      throw error
+    } finally {
+      await this.sessionStore.save(sessionId, {
+        request: structuredClone({ ...request, input: '' }),
+        messages: agent.state.messages,
+      })
+      this.sessions.delete(sessionId)
+    }
+  }
+
   async resume(sessionId, request) {
     let session = this.sessions.get(sessionId)
     if (!session) {
@@ -151,5 +184,28 @@ export class RuntimeManager {
     } catch {
       return []
     }
+  }
+
+  /** 将 backend 发送的房间历史压缩进本轮输入，避免同步入口丢失上下文。 */
+  #chatInput(request) {
+    const history = Array.isArray(request.history)
+      ? request.history
+        .map((item) => `${item.role || 'user'}：${item.content || ''}`)
+        .filter((item) => item.trim().length > 0)
+        .join('\n')
+      : ''
+    return history ? `${history}\n\n当前问题：\n${request.input || ''}` : (request.input || '')
+  }
+
+  /** 从 Pi Agent 最后一条 assistant 消息中提取可持久化的纯文本。 */
+  #lastAssistantText(messages) {
+    const message = [...(messages || [])].reverse().find((item) => item.role === 'assistant')
+    if (!message) return ''
+    if (typeof message.content === 'string') return message.content
+    if (!Array.isArray(message.content)) return ''
+    return message.content
+      .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+      .map((block) => block.text)
+      .join('')
   }
 }

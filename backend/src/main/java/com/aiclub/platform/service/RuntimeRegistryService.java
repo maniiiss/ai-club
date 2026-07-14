@@ -75,6 +75,8 @@ public class RuntimeRegistryService {
     public RuntimeRegistrySummary save(@Valid RuntimeRegistryRequest request) {
         String runtimeCode = normalizeCode(request.runtimeCode());
         RuntimeRegistryEntity entity = repository.findById(runtimeCode).orElseGet(RuntimeRegistryEntity::new);
+        boolean wasEnabled = entity.isEnabled();
+        RuntimeHealthStatus previousHealthStatus = entity.getHealthStatus();
         entity.setRuntimeCode(runtimeCode);
         entity.setAdapterType(request.adapterType());
         entity.setEndpointRef(trimToNull(request.endpointRef()));
@@ -83,7 +85,21 @@ public class RuntimeRegistryService {
         entity.setSandboxPolicyJson(hasText(request.sandboxPolicyJson()) ? request.sandboxPolicyJson().trim() : "{}");
         entity.setFallbackRuntimeCodesJson(writeList(normalizeCodes(request.fallbackRuntimeCodes())));
         if (request.enabled() != null) entity.setEnabled(request.enabled());
-        if (!entity.isEnabled()) entity.setHealthStatus(RuntimeHealthStatus.DISABLED);
+        if (!entity.isEnabled()) {
+            entity.setHealthStatus(RuntimeHealthStatus.DISABLED);
+            entity.setHealthMessage("已由平台管理员禁用");
+        } else if (!wasEnabled || previousHealthStatus == RuntimeHealthStatus.DISABLED) {
+            // 从禁用状态恢复时必须重新探测，避免沿用失效的健康结论。
+            entity.setHealthStatus(RuntimeHealthStatus.UNKNOWN);
+            entity.setHealthMessage("等待健康检查");
+            entity.setHealthCheckedAt(null);
+        } else if (previousHealthStatus == RuntimeHealthStatus.HEALTHY
+                || previousHealthStatus == RuntimeHealthStatus.DEGRADED) {
+            // 编辑 endpoint、能力或沙箱后，旧健康结论不再足以证明新配置可用。
+            entity.setHealthStatus(RuntimeHealthStatus.UNKNOWN);
+            entity.setHealthMessage("配置已更新，请重新执行健康检查");
+            entity.setHealthCheckedAt(null);
+        }
         return toSummary(repository.save(entity));
     }
 

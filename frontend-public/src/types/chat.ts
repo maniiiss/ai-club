@@ -48,6 +48,7 @@ export interface ChatRoomAgentConfig {
   roomId: number
   enabled: boolean
   displayName: string
+  runtimeRegistryCode: string
   systemInstruction: string
   proactiveSummaryEnabled: boolean
   keywordWatchEnabled: boolean
@@ -61,6 +62,16 @@ export interface ChatRoomAgentConfig {
   authorizedByName: string
   authorizedAt: string | null
   updatedAt: string | null
+}
+
+/** 聊天室 Agent 可选择的 Runtime 注册项。 */
+export interface ChatRoomAgentRuntimeOption {
+  runtimeCode: string
+  version: string
+  capabilities: string[]
+  healthStatus: string
+  healthMessage: string
+  enabled: boolean
 }
 
 export interface ChatRoomAgentToolPolicy {
@@ -150,6 +161,7 @@ export interface UpdateChatRoomMembersPayload {
 export interface UpdateChatRoomAgentConfigPayload {
   enabled: boolean
   displayName: string
+  runtimeRegistryCode: string
   systemInstruction: string
   proactiveSummaryEnabled: boolean
   keywordWatchEnabled: boolean

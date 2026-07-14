@@ -14,6 +14,8 @@ $script:AiClubScriptContext = @{
     FrontendPublicDir        = Join-Path $repoRoot 'frontend-public'
     BackendDir               = Join-Path $repoRoot 'backend'
     CodeDir                  = Join-Path $repoRoot 'code-processing'
+    # Pi Runtime 独立 Node 服务的源码目录，供源码模式安装依赖并托管进程。
+    PiRuntimeDir             = Join-Path $repoRoot 'pi-runtime'
     CodeVenvDir              = Join-Path $repoRoot 'code-processing\.venv'
     CodeVenvPython           = Join-Path $repoRoot 'code-processing\.venv\Scripts\python.exe'
     DefaultEnvFile           = Join-Path $repoRoot '.env'
@@ -239,6 +241,7 @@ function Get-PortConfiguration {
         Frontend       = [int](Get-EnvOrDefault -Name 'FRONTEND_PORT' -DefaultValue '5173')
         FrontendPublic = [int](Get-EnvOrDefault -Name 'FRONTEND_PUBLIC_PORT' -DefaultValue '5175')
         CodeProcessing = [int](Get-EnvOrDefault -Name 'CODE_PROCESSING_PORT' -DefaultValue '9000')
+        PiRuntime      = [int](Get-EnvOrDefault -Name 'PI_RUNTIME_PORT' -DefaultValue '9010')
         Postgres       = [int](Get-EnvOrDefault -Name 'POSTGRES_PORT' -DefaultValue '5432')
         Redis          = [int](Get-EnvOrDefault -Name 'REDIS_PORT' -DefaultValue '6379')
         RabbitMq       = [int](Get-EnvOrDefault -Name 'RABBITMQ_PORT' -DefaultValue '5672')
@@ -379,7 +382,7 @@ function Stop-ServiceByPidFile([string]$Name) {
     Write-Success "$Name 已停止"
 }
 
-function Stop-LocalServices([string[]]$Names = @('frontend-public', 'frontend', 'backend', 'code-processing')) {
+function Stop-LocalServices([string[]]$Names = @('frontend-public', 'frontend', 'pi-runtime', 'backend', 'code-processing')) {
     foreach ($name in $Names) {
         Stop-ServiceByPidFile -Name $name
     }
@@ -720,12 +723,36 @@ function Start-LocalApplicationServices(
         }
     }
 
+    $piRuntimeNodeModulesDir = Join-Path $context.PiRuntimeDir 'node_modules'
+    if (-not (Test-Path $piRuntimeNodeModulesDir)) {
+        Write-Step '安装 Pi Runtime 依赖'
+        Push-Location $context.PiRuntimeDir
+        try {
+            $npmCmd = Get-NpmCommandPath
+            & $npmCmd 'install' '--omit=dev'
+            if ($LASTEXITCODE -ne 0) {
+                throw '安装 Pi Runtime 依赖失败'
+            }
+        } finally {
+            Pop-Location
+        }
+    }
+
     Ensure-CodeVenv -Launcher $launcher -InstallDependencies:$InstallCodeDependencies.IsPresent
 
     # 源码模式下由脚本统一注入端口，确保前端、后端和 code-processing 的地址保持一致。
     Set-Item -Path 'Env:SERVER_PORT' -Value "$($PortConfiguration.Backend)"
     Set-Item -Path 'Env:PLATFORM_BACKEND_INTERNAL_BASE_URL' -Value "http://localhost:$($PortConfiguration.Backend)"
     Set-Item -Path 'Env:PLATFORM_CODE_PROCESSING_BASE_URL' -Value "http://localhost:$($PortConfiguration.CodeProcessing)"
+    # 后端和 Pi Runtime 共用脚本端口配置，避免自定义端口时仍回落到 9010。
+    Set-Item -Path 'Env:PLATFORM_PI_RUNTIME_BASE_URL' -Value "http://localhost:$($PortConfiguration.PiRuntime)"
+    Set-Item -Path 'Env:PI_RUNTIME_PORT' -Value "$($PortConfiguration.PiRuntime)"
+    Set-Item -Path 'Env:PI_RUNTIME_BACKEND_BASE_URL' -Value "http://localhost:$($PortConfiguration.Backend)"
+    Set-Item -Path 'Env:PI_RUNTIME_SERVICE_TOKEN' -Value (Get-EnvOrDefault -Name 'PLATFORM_INTERNAL_SERVICE_TOKEN' -DefaultValue 'git-ai-club-internal-service-token')
+    Set-Item -Path 'Env:PI_RUNTIME_REDIS_URL' -Value (Get-EnvOrDefault -Name 'PI_RUNTIME_REDIS_URL' -DefaultValue "redis://:redis@2026@localhost:$($PortConfiguration.Redis)/0")
+    Set-Item -Path 'Env:PI_RUNTIME_MODEL_PROVIDER' -Value (Get-EnvOrDefault -Name 'PLATFORM_PI_RUNTIME_MODEL_PROVIDER' -DefaultValue '')
+    Set-Item -Path 'Env:PI_RUNTIME_MODEL_ID' -Value (Get-EnvOrDefault -Name 'PLATFORM_PI_RUNTIME_MODEL_ID' -DefaultValue '')
+    Set-Item -Path 'Env:PI_RUNTIME_API_KEY' -Value (Get-EnvOrDefault -Name 'PLATFORM_PI_RUNTIME_API_KEY' -DefaultValue '')
     Set-Item -Path 'Env:VITE_API_PORT' -Value "$($PortConfiguration.Backend)"
     Set-Item -Path 'Env:VITE_PUBLIC_FRONTEND_PORT' -Value "$($PortConfiguration.FrontendPublic)"
 
@@ -745,6 +772,13 @@ function Start-LocalApplicationServices(
         -Arguments @('-s', 'maven-settings-central.xml', 'spring-boot:run') `
         -ExistingProcessPatterns @('AiAgentPlatformApplication') `
         -Port $PortConfiguration.Backend
+
+    Start-BackgroundService -Name 'pi-runtime' `
+        -WorkingDirectory $context.PiRuntimeDir `
+        -FilePath $npmCmd `
+        -Arguments @('run', 'start') `
+        -ExistingProcessPatterns @('node', 'src/server.mjs') `
+        -Port $PortConfiguration.PiRuntime
 
     Start-BackgroundService -Name 'frontend' `
         -WorkingDirectory $context.FrontendDir `
@@ -766,6 +800,7 @@ function Start-LocalApplicationServices(
     Write-Host "Frontend public: http://localhost:$($PortConfiguration.FrontendPublic)"
     Write-Host "Backend: http://localhost:$($PortConfiguration.Backend)"
     Write-Host "Code processing: http://localhost:$($PortConfiguration.CodeProcessing)"
+    Write-Host "Pi Runtime: http://localhost:$($PortConfiguration.PiRuntime)"
     Write-Host "Logs: $($context.LogDir)"
 }
 
@@ -878,6 +913,7 @@ function Get-ComposeImages([string]$ComposeFile, [string]$EnvFile) {
         (Get-DotEnvValue -Path $EnvFile -Name 'BACKEND_IMAGE' -DefaultValue 'git-ai-club-backend:latest'),
         (Get-DotEnvValue -Path $EnvFile -Name 'FRONTEND_IMAGE' -DefaultValue 'git-ai-club-frontend:latest'),
         (Get-DotEnvValue -Path $EnvFile -Name 'CODE_PROCESSING_IMAGE' -DefaultValue 'git-ai-club-code-processing:latest'),
+        (Get-DotEnvValue -Path $EnvFile -Name 'PI_RUNTIME_IMAGE' -DefaultValue 'git-ai-club-pi-runtime:latest'),
         (Get-DotEnvValue -Path $EnvFile -Name 'POSTGRES_IMAGE' -DefaultValue 'postgres:16'),
         (Get-DotEnvValue -Path $EnvFile -Name 'REDIS_IMAGE' -DefaultValue 'redis:7-alpine'),
         (Get-DotEnvValue -Path $EnvFile -Name 'RABBITMQ_IMAGE' -DefaultValue 'rabbitmq:3.13-management'),

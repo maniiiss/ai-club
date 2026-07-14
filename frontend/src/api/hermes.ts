@@ -53,7 +53,7 @@ const notifyInterruptedHermesStream = (handlers: StreamHandlers, signal: AbortSi
     return
   }
   handlers.onError?.({
-    message: 'Hermes 连接已中断，可直接重试；如果页面里已经出现确认卡片，也可以继续使用当前结果'
+    message: 'GitPilot 连接已中断，可直接重试；如果页面里已经出现确认卡片，也可以继续使用当前结果'
   })
 }
 
@@ -252,7 +252,7 @@ export const streamHermesSessionChat = async (sessionId: number, payload: Hermes
   })
 
   if (!response.ok) {
-    let message = 'Hermes 助手暂时不可用'
+    let message = 'GitPilot 助手暂时不可用'
     try {
       const errorBody = await response.json()
       message = errorBody?.message || message
@@ -385,7 +385,7 @@ export const streamHermesSessionChatWithFiles = async (
   })
 
   if (!response.ok) {
-    let message = 'Hermes 助手暂时不可用'
+    let message = 'GitPilot 助手暂时不可用'
     try {
       const errorBody = await response.json()
       message = errorBody?.message || message

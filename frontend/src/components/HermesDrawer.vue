@@ -11,9 +11,9 @@
         <div class="hermes-head-left">
           <button v-if="memoryViewVisible" class="hermes-back-button" type="button" @click="memoryViewVisible = false">返回</button>
           <div class="hermes-title-wrap">
-            <div class="hermes-title">{{ memoryViewVisible ? '知识' : 'Hermes 助手' }}</div>
+            <div class="hermes-title">{{ memoryViewVisible ? '知识' : 'GitPilot 助手' }}</div>
             <el-tooltip v-if="!memoryViewVisible" placement="bottom-start" effect="light">
-              <button class="hermes-help-button" type="button" aria-label="查看 Hermes 能力边界说明">
+              <button class="hermes-help-button" type="button" aria-label="查看 GitPilot 能力边界说明">
                 <el-icon><QuestionFilled /></el-icon>
               </button>
               <template #content>
@@ -153,7 +153,7 @@
                   <div v-if="memory.scene" class="hermes-memory-scene">{{ memory.scene }}</div>
                   <div class="hermes-memory-question">{{ memory.question || memory.title || '未命名记忆' }}</div>
                   <template v-if="expandedMemoryIds[memory.documentId]">
-                    <div v-if="memory.answer" class="hermes-memory-answer-label">Hermes 回答</div>
+                    <div v-if="memory.answer" class="hermes-memory-answer-label">GitPilot 回答</div>
                     <div v-if="memory.answer" class="hermes-memory-answer">{{ memory.answer }}</div>
                   </template>
                   <div v-if="memory.createdAt" class="hermes-memory-time">{{ formatMemoryTime(memory.createdAt) }}</div>
@@ -176,7 +176,7 @@
             <div v-else class="hermes-empty-state compact">
               <div class="hermes-empty-kicker">原始会话记忆</div>
               <div class="hermes-empty-title">暂无会话记忆</div>
-              <p>Hermes 会自动记住你和它的对话要点，下次聊天时会参考这些记忆来回答。</p>
+              <p>GitPilot 会自动记住你和它的对话要点，下次聊天时会参考这些记忆来回答。</p>
             </div>
           </template>
 
@@ -199,7 +199,7 @@
             <div v-else class="hermes-empty-state compact">
               <div class="hermes-empty-kicker">整理后摘要</div>
               <div class="hermes-empty-title">暂无结构化摘要</div>
-              <p>先多聊几轮积累记忆，再点击下方"整理记忆"按钮，Hermes 会用 AI 将碎片记忆整合为结构化知识。</p>
+              <p>先多聊几轮积累记忆，再点击下方"整理记忆"按钮，GitPilot 会用 AI 将碎片记忆整合为结构化知识。</p>
             </div>
           </template>
         </div>
@@ -232,7 +232,7 @@
           <div v-if="!fileLibraryLoading && !fileLibraryItems.length" class="hermes-empty-state compact">
             <div class="hermes-empty-kicker">文件库</div>
             <div class="hermes-empty-title">暂无个人知识文件</div>
-            <p>上传 PDF、Word、PPT 或 Excel 后，Hermes 会在普通问答中按需召回这些个人资料。</p>
+            <p>上传 PDF、Word、PPT 或 Excel 后，GitPilot 会在普通问答中按需召回这些个人资料。</p>
           </div>
         </div>
         <div v-if="knowledgeTab === 'fileLibrary'" class="hermes-memory-footer">
@@ -276,7 +276,7 @@
           <section v-if="currentMessages.length" class="hermes-message-section">
             <div v-for="message in currentMessages" :key="message.id" class="hermes-message-row" :class="message.role">
               <div class="hermes-message-label">
-                {{ message.role === 'user' ? '我' : 'Hermes' }}
+                {{ message.role === 'user' ? '我' : 'GitPilot' }}
                 <span v-if="message.role === 'assistant'" class="hermes-role-tag">协作助手</span>
               </div>
               <div class="hermes-message-bubble" :class="[message.status, { 'stream-loading': shouldShowInlineStreamStatus(message) && !message.content?.trim() }]">
@@ -320,14 +320,14 @@
 
           <section v-if="currentSessionDetail && !currentMessages.length && !detailLoading" class="hermes-empty-state compact">
             <div class="hermes-empty-kicker">新会话</div>
-            <div class="hermes-empty-title">把当前上下文交给 Hermes</div>
+            <div class="hermes-empty-title">把当前上下文交给 GitPilot</div>
             <p>发送第一条问题后，会话记录会保存在云端，后续可以从左侧列表继续打开。</p>
           </section>
 
           <section v-if="hasPendingUserConfirmation" class="hermes-confirmation-hint">
             <div>
               <strong>需要你确认后继续</strong>
-              <span>{{ currentSelectionCards.length ? hermesAssistantTooltipCopy.confirmation : 'Hermes 已准备好动作，确认后才会真正执行。' }}</span>
+              <span>{{ currentSelectionCards.length ? hermesAssistantTooltipCopy.confirmation : 'GitPilot 已准备好动作，确认后才会真正执行。' }}</span>
             </div>
           </section>
 
@@ -786,7 +786,7 @@ const loadSessionList = async (reset = false) => {
     sessionTotal.value = pageData.total
     sessionSummaries.value = reset ? pageData.records : mergeSessionSummaries(sessionSummaries.value, pageData.records)
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '加载 Hermes 会话失败')
+    ElMessage.error(error?.response?.data?.message || '加载 GitPilot 会话失败')
   } finally {
     sessionLoading.value = false
     loadingMoreSessions.value = false
@@ -1095,7 +1095,7 @@ const loadSessionDetail = async (sessionId: number) => {
     }
   } catch (error: any) {
     clearSelectedSession()
-    ElMessage.error(error?.response?.data?.message || '加载 Hermes 会话详情失败')
+    ElMessage.error(error?.response?.data?.message || '加载 GitPilot 会话详情失败')
   } finally {
     detailLoading.value = false
   }
@@ -1133,7 +1133,7 @@ const createAndSelectSession = async () => {
     void loadSessionList(true)
     return createdSession
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || '创建 Hermes 会话失败')
+    ElMessage.error(error?.response?.data?.message || '创建 GitPilot 会话失败')
     return null
   }
 }

@@ -79,10 +79,10 @@ export const HermesMessageList = ({
   <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4 sm:px-5">
     {messages.length === 0 ? (
       <div className="m-auto max-w-lg text-center">
-        <div className="text-[12px] font-semibold uppercase text-[var(--color-primary)]">Hermes</div>
+        <div className="text-[12px] font-semibold uppercase text-[var(--color-primary)]">GitPilot</div>
         <h1 className="mt-2 text-[22px] font-semibold text-[var(--color-text-primary)]">从一个问题开始</h1>
         <p className="mt-2 text-[13px] leading-6 text-[var(--color-text-secondary)]">
-          Hermes 会结合当前权限、页面上下文和平台内数据回答；涉及写入的动作会先请求确认。
+          GitPilot 会结合当前权限、页面上下文和平台内数据回答；涉及写入的动作会先请求确认。
         </p>
       </div>
     ) : (

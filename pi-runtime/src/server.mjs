@@ -63,6 +63,10 @@ const server = http.createServer(async (request, response) => {
       const accepted = await manager.start(body)
       return json(response, 202, accepted)
     }
+    if (request.url === '/internal/runtime/chat' && request.method === 'POST') {
+      const body = await readBody(request)
+      return json(response, 200, await manager.chat(body))
+    }
     if (request.url?.startsWith('/internal/runtime/sessions/') && request.url.endsWith('/resume') && request.method === 'POST') {
       const sessionId = request.url.split('/')[4]
       const accepted = await manager.resume(sessionId, await readBody(request))

@@ -24,8 +24,8 @@
                 v-if="canUseHermes"
                 class="header-notification-button"
                 type="button"
-                aria-label="打开 Hermes 助手"
-                title="Hermes 助手"
+                aria-label="打开 GitPilot 助手"
+                title="GitPilot 助手"
                 @click.stop="handleOpenHermesDrawer"
               >
                 <el-icon><ChatDotRound /></el-icon>
@@ -160,7 +160,7 @@
             @click="handleOpenHermesDrawer"
           >
             <el-icon><ChatDotRound /></el-icon>
-            <span>Hermes 助手</span>
+            <span>GitPilot 助手</span>
           </button>
           <el-dropdown @command="handleHeaderCommand">
             <div class="header-profile-group">

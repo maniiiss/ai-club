@@ -199,7 +199,7 @@ export const HermesMemoryPanel = ({ onClose }: HermesMemoryPanelProps) => {
         <div className="flex items-center justify-between gap-2">
           <div>
             <div className="text-[15px] font-semibold text-[var(--color-text-primary)]">知识</div>
-            <div className="text-[12px] text-[var(--color-text-tertiary)]">管理 Hermes 会话记忆和个人文件库。</div>
+            <div className="text-[12px] text-[var(--color-text-tertiary)]">管理 GitPilot 会话记忆和个人文件库。</div>
           </div>
           <Button type="button" variant="secondary" size="sm" onClick={onClose}>
             返回
@@ -359,7 +359,7 @@ export const HermesMemoryPanel = ({ onClose }: HermesMemoryPanelProps) => {
       <ConfirmDialog
         open={clearConfirmOpen}
         title="清空会话记忆"
-        description="确认清空全部 Hermes 会话记忆吗？整理后的摘要不会在这里单独删除。"
+        description="确认清空全部 GitPilot 会话记忆吗？整理后的摘要不会在这里单独删除。"
         variant="danger"
         confirmText="清空"
         loading={confirmLoading}

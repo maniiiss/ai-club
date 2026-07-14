@@ -492,7 +492,7 @@ public final class OperationLogSupport {
         mapping.put("CICD", "持续集成");
         mapping.put("MODEL", "模型管理");
         mapping.put("NOTIFICATION", "通知中心");
-        mapping.put("HERMES", "Hermes 助手");
+        mapping.put("HERMES", "GitPilot 助手");
         mapping.put("OPERATION_LOG", "操作日志");
         mapping.put("SHORTCUT", "快捷入口管理");
         mapping.put("ENV_VAR", "环境变量管理");

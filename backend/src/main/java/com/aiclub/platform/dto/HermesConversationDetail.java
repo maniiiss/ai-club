@@ -10,6 +10,8 @@ public record HermesConversationDetail(
         String title,
         boolean titleCustomized,
         String routeName,
+        String runtimeRegistryCode,
+        Long runtimeProfileVersion,
         Long projectId,
         Long taskId,
         Long iterationId,

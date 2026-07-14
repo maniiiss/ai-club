@@ -363,7 +363,7 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
     }
   }
 
-  const currentTitle = 'Hermes 项目助手'
+  const currentTitle = 'GitPilot 项目助手'
   const renderWorkspaceHeader = shouldRenderHermesWorkspaceHeader(compact)
 
   const headerActions = (

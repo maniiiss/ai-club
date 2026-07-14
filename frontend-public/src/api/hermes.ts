@@ -260,7 +260,7 @@ const readHermesStream = async (
 
 const assertStreamResponseOk = async (response: Response) => {
   if (response.ok) return
-  let message = 'Hermes 助手暂时不可用'
+  let message = 'GitPilot 助手暂时不可用'
   try {
     const errorBody = await response.json()
     message = errorBody?.message || message

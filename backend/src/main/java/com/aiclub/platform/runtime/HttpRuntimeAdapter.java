@@ -22,6 +22,7 @@ import java.util.Map;
 public final class HttpRuntimeAdapter implements RuntimeAdapter {
 
     private static final String PI_RUN_PATH = "/internal/runtime/runs";
+    private static final String PI_CHAT_PATH = "/internal/runtime/chat";
     private static final String CLI_RUN_PATH = "/api/code/cli-executions/start";
 
     private final RuntimeRegistryService registryService;
@@ -103,6 +104,20 @@ public final class HttpRuntimeAdapter implements RuntimeAdapter {
         JsonNode body = requestBody(context);
         String path = "PI_RUNTIME".equals(runtimeCode) ? PI_RUN_PATH : "/api/code/cli-executions";
         return send("POST", baseUrl() + path, body.toString(), true).toPrettyString();
+    }
+
+    @Override
+    public RuntimeChatResult chat(RuntimeInvocationContext context) {
+        if (!"PI_RUNTIME".equals(runtimeCode)) {
+            throw new UnsupportedOperationException("Runtime does not support synchronous chat: " + runtimeCode);
+        }
+        JsonNode response = send("POST", baseUrl() + PI_CHAT_PATH, requestBody(context).toString(), true);
+        return new RuntimeChatResult(
+                text(response, "runId", context.runId()),
+                text(response, "sessionId", context.sessionId()),
+                text(response, "content", ""),
+                RuntimeHealthStatus.HEALTHY
+        );
     }
 
     private JsonNode requestBody(RuntimeInvocationContext context) {

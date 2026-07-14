@@ -52,6 +52,8 @@ export interface HermesConversationSessionSummaryItem {
   title: string
   titleCustomized: boolean
   routeName: string
+  runtimeRegistryCode: string
+  runtimeProfileVersion: number
   projectId: number | null
   taskId: number | null
   iterationId: number | null

@@ -8,6 +8,8 @@ FRONTEND_DIR="${REPO_ROOT}/frontend"
 FRONTEND_PUBLIC_DIR="${REPO_ROOT}/frontend-public"
 BACKEND_DIR="${REPO_ROOT}/backend"
 CODE_DIR="${REPO_ROOT}/code-processing"
+# Pi Runtime 独立 Node 服务的源码目录，供源码模式安装依赖并托管进程。
+PI_RUNTIME_DIR="${REPO_ROOT}/pi-runtime"
 CODE_VENV_DIR="${CODE_DIR}/.venv"
 CODE_VENV_PY="${CODE_VENV_DIR}/bin/python"
 DEFAULT_ENV_FILE="${REPO_ROOT}/.env"
@@ -238,6 +240,8 @@ load_ports() {
   FRONTEND_PORT="$(get_env_or_default 'FRONTEND_PORT' '5173')"
   FRONTEND_PUBLIC_PORT="$(get_env_or_default 'FRONTEND_PUBLIC_PORT' '5175')"
   CODE_PROCESSING_PORT="$(get_env_or_default 'CODE_PROCESSING_PORT' '9000')"
+  # Pi Runtime 对外端口由所有启动入口统一读取，保持 Docker 与源码模式一致。
+  PI_RUNTIME_PORT="$(get_env_or_default 'PI_RUNTIME_PORT' '9010')"
   POSTGRES_PORT="$(get_env_or_default 'POSTGRES_PORT' '5432')"
   REDIS_PORT="$(get_env_or_default 'REDIS_PORT' '6379')"
   RABBITMQ_PORT="$(get_env_or_default 'RABBITMQ_PORT' '5672')"
@@ -442,6 +446,7 @@ stop_service_by_pid_file() {
 stop_local_services() {
   stop_service_by_pid_file 'frontend-public'
   stop_service_by_pid_file 'frontend'
+  stop_service_by_pid_file 'pi-runtime'
   stop_service_by_pid_file 'backend'
   stop_service_by_pid_file 'code-processing'
 }
@@ -609,12 +614,30 @@ start_local_application_services() {
     )
   fi
 
+  if [[ ! -d "${PI_RUNTIME_DIR}/node_modules" ]]; then
+    # Pi Runtime 是独立 Node 服务，源码模式首次启动时自动准备生产依赖。
+    log '安装 Pi Runtime 依赖'
+    (
+      cd "${PI_RUNTIME_DIR}"
+      npm install --omit=dev
+    )
+  fi
+
   # 目前无论是否显式要求重装，都执行一次 editable 安装，确保源码依赖和入口脚本保持最新。
   ensure_code_venv
 
   export SERVER_PORT="${BACKEND_PORT}"
   export PLATFORM_BACKEND_INTERNAL_BASE_URL="http://localhost:${BACKEND_PORT}"
   export PLATFORM_CODE_PROCESSING_BASE_URL="http://localhost:${CODE_PROCESSING_PORT}"
+  # 后端和 Pi Runtime 共用脚本端口配置，避免自定义端口时仍回落到 9010。
+  export PLATFORM_PI_RUNTIME_BASE_URL="http://localhost:${PI_RUNTIME_PORT}"
+  export PI_RUNTIME_PORT
+  export PI_RUNTIME_BACKEND_BASE_URL="http://localhost:${BACKEND_PORT}"
+  export PI_RUNTIME_SERVICE_TOKEN="$(get_env_or_default 'PLATFORM_INTERNAL_SERVICE_TOKEN' 'git-ai-club-internal-service-token')"
+  export PI_RUNTIME_REDIS_URL="$(get_env_or_default 'PI_RUNTIME_REDIS_URL' "redis://:redis@2026@localhost:${REDIS_PORT}/0")"
+  export PI_RUNTIME_MODEL_PROVIDER="$(get_env_or_default 'PLATFORM_PI_RUNTIME_MODEL_PROVIDER' '')"
+  export PI_RUNTIME_MODEL_ID="$(get_env_or_default 'PLATFORM_PI_RUNTIME_MODEL_ID' '')"
+  export PI_RUNTIME_API_KEY="$(get_env_or_default 'PLATFORM_PI_RUNTIME_API_KEY' '')"
   export VITE_API_PORT="${BACKEND_PORT}"
   export VITE_PUBLIC_FRONTEND_PORT="${FRONTEND_PUBLIC_PORT}"
 
@@ -627,6 +650,11 @@ start_local_application_services() {
     'backend' "${BACKEND_PORT}" "${BACKEND_DIR}" \
     'AiAgentPlatformApplication' \
     mvn -s maven-settings-central.xml spring-boot:run
+
+  start_service_if_needed \
+    'pi-runtime' "${PI_RUNTIME_PORT}" "${PI_RUNTIME_DIR}" \
+    'node|src/server.mjs' \
+    npm run start
 
   start_service_if_needed \
     'frontend' "${FRONTEND_PORT}" "${FRONTEND_DIR}" \
@@ -644,6 +672,7 @@ start_local_application_services() {
   printf 'Frontend public: http://localhost:%s\n' "${FRONTEND_PUBLIC_PORT}"
   printf 'Backend: http://localhost:%s\n' "${BACKEND_PORT}"
   printf 'Code processing: http://localhost:%s\n' "${CODE_PROCESSING_PORT}"
+  printf 'Pi Runtime: http://localhost:%s\n' "${PI_RUNTIME_PORT}"
   printf 'Logs: %s\n' "${LOG_DIR}"
 }
 
@@ -707,7 +736,7 @@ stop_source_stack() {
   fi
 
   invoke_compose "${HYBRID_COMPOSE_FILE}" "${env_file}" '停止源码模式依赖容器' \
-    --profile woodpecker stop postgres redis rabbitmq minio qdrant neo4j hindsight gitnexus-web hermes woodpecker-server woodpecker-agent
+    --profile woodpecker stop postgres redis rabbitmq minio qdrant neo4j hindsight gitnexus-web hermes pi-runtime woodpecker-server woodpecker-agent
 
   printf '\n'
   ok '源码模式项目已停止'
@@ -753,6 +782,7 @@ start_full_docker_stack() {
   wait_port "${NEO4J_PORT}" 180 'Neo4j'
   wait_port "${HINDSIGHT_PORT}" 180 'Hindsight'
   wait_port "${HERMES_PORT}" 180 'Hermes'
+  wait_port "${PI_RUNTIME_PORT}" 180 'Pi Runtime'
   wait_port "${GITNEXUS_UI_PORT}" 180 'GitNexus Web UI'
   if woodpecker_enabled; then
     wait_port "${WOODPECKER_PORT}" 180 'Woodpecker'
@@ -768,6 +798,7 @@ start_full_docker_stack() {
   printf 'Backend: http://localhost:%s\n' "${BACKEND_PORT}"
   printf 'Code processing: http://localhost:%s\n' "${CODE_PROCESSING_PORT}"
   printf 'Hermes: http://localhost:%s\n' "${HERMES_PORT}"
+  printf 'Pi Runtime: http://localhost:%s\n' "${PI_RUNTIME_PORT}"
   printf 'RabbitMQ: amqp://localhost:%s\n' "${RABBITMQ_PORT}"
   printf 'Qdrant: http://localhost:%s\n' "${QDRANT_PORT}"
   printf 'Neo4j: http://localhost:%s\n' "${NEO4J_PORT}"
@@ -843,6 +874,7 @@ package_full_docker_stack() {
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'BACKEND_IMAGE' 'git-ai-club-backend:latest')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'FRONTEND_IMAGE' 'git-ai-club-frontend:latest')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'CODE_PROCESSING_IMAGE' 'git-ai-club-code-processing:latest')"
+      "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'PI_RUNTIME_IMAGE' 'git-ai-club-pi-runtime:latest')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'POSTGRES_IMAGE' 'postgres:16')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'REDIS_IMAGE' 'redis:7-alpine')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'RABBITMQ_IMAGE' 'rabbitmq:3.13-management')"
@@ -884,6 +916,7 @@ AI Club Docker 打包说明
 - Backend: http://localhost:${BACKEND_PORT}
 - Code processing: http://localhost:${CODE_PROCESSING_PORT}
 - Hermes: http://localhost:${HERMES_PORT}
+- Pi Runtime: http://localhost:${PI_RUNTIME_PORT}
 - Hindsight: http://localhost:${HINDSIGHT_PORT}
 - GitNexus Web UI: http://localhost:${GITNEXUS_UI_PORT}
 $(if woodpecker_enabled; then printf -- '- Woodpecker: http://localhost:%s\n' "${WOODPECKER_PORT}"; fi)

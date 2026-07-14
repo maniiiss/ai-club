@@ -151,6 +151,18 @@ export interface RuntimeRegistryItem {
   enabled: boolean
 }
 
+/** 管理端保存 Runtime 注册项时使用的请求体。 */
+export interface RuntimeRegistryPayload {
+  runtimeCode: string
+  adapterType: RuntimeRegistryItem['adapterType']
+  endpointRef?: string | null
+  version?: string | null
+  capabilities: string[]
+  sandboxPolicyJson?: string | null
+  fallbackRuntimeCodes: string[]
+  enabled: boolean
+}
+
 
 export interface TaskPayload {
   name: string
@@ -870,6 +882,33 @@ export const listExecutionOrchestrationScenarios = async (projectId?: number) =>
 /** 查询已注册 Runtime；Agent 表单只展示平台注册项，避免直接填写任意 Gateway。 */
 export const listRuntimeRegistry = async (): Promise<RuntimeRegistryItem[]> => {
   const { data } = await http.get<ApiResponse<RuntimeRegistryItem[]>>('/api/runtime-registry/options')
+  return data.data
+}
+
+/** 查询管理端 Runtime 注册中心的完整列表，包含禁用和待探测项。 */
+export const listRuntimeRegistries = async (): Promise<RuntimeRegistryItem[]> => {
+  const { data } = await http.get<ApiResponse<RuntimeRegistryItem[]>>('/api/runtime-registry')
+  return data.data
+}
+
+/** 新增 Runtime 注册项；实际运行地址仍由后端受控部署配置解析。 */
+export const createRuntimeRegistry = async (payload: RuntimeRegistryPayload): Promise<RuntimeRegistryItem> => {
+  const { data } = await http.post<ApiResponse<RuntimeRegistryItem>>('/api/runtime-registry', payload)
+  return data.data
+}
+
+/** 更新 Runtime 注册项的能力、沙箱、降级和启停配置。 */
+export const updateRuntimeRegistry = async (runtimeCode: string, payload: RuntimeRegistryPayload): Promise<RuntimeRegistryItem> => {
+  const { data } = await http.put<ApiResponse<RuntimeRegistryItem>>(`/api/runtime-registry/${encodeURIComponent(runtimeCode)}`, payload)
+  return data.data
+}
+
+/** 切换 Runtime 是否允许用于新 Agent 和新任务。 */
+export const setRuntimeRegistryEnabled = async (runtimeCode: string, enabled: boolean): Promise<RuntimeRegistryItem> => {
+  const action = enabled ? 'enable' : 'disable'
+  const { data } = await http.post<ApiResponse<RuntimeRegistryItem>>(
+    `/api/runtime-registry/${encodeURIComponent(runtimeCode)}/${action}`
+  )
   return data.data
 }
 
