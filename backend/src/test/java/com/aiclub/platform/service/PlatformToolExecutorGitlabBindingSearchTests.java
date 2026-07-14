@@ -34,7 +34,7 @@ import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.when;
 
 /**
- * 验证仓库绑定搜索能从自然语言关键词中抽出 GitLab 路径，避免 Hermes 传整句时误判“未绑定”。
+ * 验证仓库绑定搜索能从自然语言关键词中抽出 GitLab 路径，避免 Assistant 传整句时误判“未绑定”。
  */
 @ExtendWith(MockitoExtension.class)
 class PlatformToolExecutorGitlabBindingSearchTests {
@@ -149,9 +149,9 @@ class PlatformToolExecutorGitlabBindingSearchTests {
         ProjectGitlabBindingEntity binding = new ProjectGitlabBindingEntity();
         binding.setId(1L);
         binding.setProject(project);
-        binding.setGitlabProjectRef("kjez/gjcrm/crm-srv");
-        binding.setGitlabProjectPath("kjez/gjcrm/crm-srv");
-        binding.setGitlabProjectName("crm-srv");
+        binding.setGitlabProjectRef("sample-org/sample-service");
+        binding.setGitlabProjectPath("sample-org/sample-service");
+        binding.setGitlabProjectName("sample-service");
         binding.setDefaultTargetBranch("deploy");
         when(projectGitlabBindingRepository.findAll(Sort.by(Sort.Direction.ASC, "id"))).thenReturn(List.of(binding));
         doNothing().when(projectDataPermissionService).requireProjectVisible(project);
@@ -163,7 +163,7 @@ class PlatformToolExecutorGitlabBindingSearchTests {
                 null,
                 null,
                 null,
-                Map.of("keyword", "Agent Ops 的 kjez/gjcrm/crm-srv 的代码扫描")
+                Map.of("keyword", "Agent Ops 的 sample-org/sample-service 的代码扫描")
         ));
 
         assertThat(result.candidates()).hasSize(1);

@@ -98,14 +98,14 @@ const stepDefinitions = {
     {
       element: '[data-guide-id="chat-message-area"]',
       title: '消息区域',
-      description: '这里是实时消息流，您可以 @Hermes 调用 AI 助手进行代码分析和问答。',
+      description: '这里是实时消息流，您可以 @GitPilot 调用 AI 助手进行代码分析和问答。',
       side: 'left',
       align: 'start',
     },
     {
       element: '[data-guide-id="chat-input"]',
       title: '发送消息',
-      description: '在这里输入消息或 @Hermes 指令，按 Enter 发送。',
+      description: '在这里输入消息或 @GitPilot 指令，按 Enter 发送。',
       side: 'top',
       align: 'center',
     },

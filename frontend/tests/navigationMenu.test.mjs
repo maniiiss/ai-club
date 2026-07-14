@@ -78,9 +78,19 @@ test('layout menu navigation resolves router locations before pushing', async ()
   assert.ok(source.includes('await router.push(targetLocation)'))
 })
 
-test('layout does not keep closed route-bound Hermes drawer mounted during menu navigation', async () => {
+test('layout keeps the Assistant drawer mounted so the header entry can open it immediately', async () => {
   const source = await readFile(new URL('../src/layout/AppLayout.vue', import.meta.url), 'utf8')
 
-  assert.ok(source.includes('<HermesDrawer\n    v-if="hermesDrawerVisible"'))
-  assert.ok(source.includes('hermesDrawerVisible.value = true'))
+  assert.ok(source.includes('<AssistantDrawer\n    ref="assistantDrawerRef"'))
+  assert.equal(source.includes('v-if="assistantDrawerVisible"'), false)
+  assert.ok(source.includes('assistantDrawerVisible.value = true'))
+})
+
+test('layout closes the Assistant drawer before switching menu routes', async () => {
+  const source = await readFile(new URL('../src/layout/AppLayout.vue', import.meta.url), 'utf8')
+
+  const navigateStart = source.indexOf('async function handleNavigate(path: string)')
+  const navigateEnd = source.indexOf('\n}\n\nasync function goBackToApiGroups', navigateStart)
+  const navigateBody = source.slice(navigateStart, navigateEnd)
+  assert.ok(navigateBody.includes('assistantDrawerVisible.value = false'))
 })

@@ -6,8 +6,8 @@ import com.aiclub.platform.dto.ChatRoomAgentTaskEventSummary;
 import com.aiclub.platform.dto.ChatRoomAgentTaskSummary;
 import com.aiclub.platform.dto.ChatRoomAgentToolPolicySummary;
 import com.aiclub.platform.dto.ChatRoomSummary;
-import com.aiclub.platform.dto.HermesActionSummary;
-import com.aiclub.platform.dto.HermesSelectionCard;
+import com.aiclub.platform.dto.AssistantActionSummary;
+import com.aiclub.platform.dto.AssistantSelectionCard;
 import com.aiclub.platform.security.AuthContext;
 import com.aiclub.platform.security.AuthContextHolder;
 import com.aiclub.platform.websocket.ChatAuthHandshakeInterceptor;
@@ -79,15 +79,15 @@ public class ChatWebSocketPushService {
         broadcast(roomId, Map.of("type", "ROOM_MESSAGE_CREATED", "message", message));
     }
 
-    public void broadcastHermesDelta(Long roomId, Long messageId, String delta) {
+    public void broadcastAssistantDelta(Long roomId, Long messageId, String delta) {
         broadcast(roomId, Map.of("type", "HERMES_STREAM_DELTA", "messageId", messageId, "delta", delta == null ? "" : delta));
     }
 
-    public void broadcastHermesMessageDone(Long roomId, ChatMessageSummary message) {
+    public void broadcastAssistantMessageDone(Long roomId, ChatMessageSummary message) {
         broadcast(roomId, Map.of("type", "HERMES_MESSAGE_DONE", "message", message));
     }
 
-    public void broadcastHermesMessageError(Long roomId, ChatMessageSummary message) {
+    public void broadcastAssistantMessageError(Long roomId, ChatMessageSummary message) {
         broadcast(roomId, Map.of("type", "HERMES_MESSAGE_ERROR", "message", message));
     }
 
@@ -115,7 +115,7 @@ public class ChatWebSocketPushService {
         broadcast(roomId, Map.of("type", "AGENT_TASK_EVENT", "event", event));
     }
 
-    public void broadcastAgentActionPending(Long roomId, Long taskId, Long messageId, List<HermesActionSummary> actions) {
+    public void broadcastAgentActionPending(Long roomId, Long taskId, Long messageId, List<AssistantActionSummary> actions) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", "AGENT_ACTION_PENDING");
         payload.put("taskId", taskId);
@@ -124,11 +124,11 @@ public class ChatWebSocketPushService {
         broadcast(roomId, payload);
     }
 
-    public void broadcastAgentActionExecuted(Long roomId, Long taskId, Long messageId, HermesActionSummary action, String status) {
+    public void broadcastAgentActionExecuted(Long roomId, Long taskId, Long messageId, AssistantActionSummary action, String status) {
         broadcastAgentActionExecuted(roomId, taskId, messageId, action, status, "");
     }
 
-    public void broadcastAgentActionExecuted(Long roomId, Long taskId, Long messageId, HermesActionSummary action, String status, String actionKey) {
+    public void broadcastAgentActionExecuted(Long roomId, Long taskId, Long messageId, AssistantActionSummary action, String status, String actionKey) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", "AGENT_ACTION_EXECUTED");
         payload.put("taskId", taskId);
@@ -139,7 +139,7 @@ public class ChatWebSocketPushService {
         broadcast(roomId, payload);
     }
 
-    public void broadcastAgentSelectionPending(Long roomId, Long taskId, Long messageId, List<HermesSelectionCard> selectionCards) {
+    public void broadcastAgentSelectionPending(Long roomId, Long taskId, Long messageId, List<AssistantSelectionCard> selectionCards) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", "AGENT_SELECTION_PENDING");
         payload.put("taskId", taskId);

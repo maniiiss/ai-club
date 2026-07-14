@@ -263,9 +263,9 @@ public class HindsightProperties {
     }
 
     /**
-     * Hermes 用户会话记忆按用户独立分 bank，避免不同用户的私人记忆互相污染。
+     * Assistant 用户会话记忆按用户独立分 bank，避免不同用户的私人记忆互相污染。
      */
-    public String hermesUserMemoryBankId(Long userId) {
+    public String assistantUserMemoryBankId(Long userId) {
         return getBankPrefix() + ":hermes:user:" + userId;
     }
 

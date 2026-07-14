@@ -180,7 +180,7 @@ class PlatformEnvVarManagementServiceTests {
     }
 
     @Test
-    void shouldHideHermesAndHindsightConnectionSettingsFromEnvVarManagement() {
+    void shouldHideAssistantAndHindsightConnectionSettingsFromEnvVarManagement() {
         when(platformEnvVarConfigRepository.findAll()).thenReturn(java.util.List.of());
 
         assertThat(platformEnvVarManagementService.listEnvVars())

@@ -114,7 +114,7 @@ public class AgentInvocationLogEntity {
     private String requestUri;
 
     /**
-     * 路由名称（前端页面来源，用于 Hermes 等场景）。
+     * 路由名称（前端页面来源，用于 Assistant 等场景）。
      */
     @Column(name = "route_name", length = 80)
     private String routeName;
@@ -180,7 +180,7 @@ public class AgentInvocationLogEntity {
     private Integer costCredits;
 
     /**
-     * 关联 ID（如 Hermes responseId / MR fingerprint 等）。
+     * 关联 ID（如 Assistant responseId / MR fingerprint 等）。
      */
     @Column(name = "correlation_id", length = 120)
     private String correlationId;

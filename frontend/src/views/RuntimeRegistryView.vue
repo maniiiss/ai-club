@@ -37,6 +37,33 @@
         <span class="management-list-pill info">平台管理员维护</span>
       </div>
 
+      <section class="runtime-defaults-panel">
+        <div class="runtime-defaults-head">
+          <div>
+            <div class="runtime-defaults-title">业务场景默认 Runtime</div>
+            <div class="runtime-defaults-copy">修改后只影响新建会话和新建任务，已运行或已入队任务继续使用自身快照。</div>
+          </div>
+          <span class="management-list-pill info">按能力过滤</span>
+        </div>
+        <div class="runtime-defaults-grid" v-loading="defaultsLoading">
+          <article v-for="item in scenarioDefaults" :key="item.scenarioCode" class="runtime-default-card">
+            <div class="runtime-default-card-title">{{ item.scenarioName }}</div>
+            <div class="runtime-default-card-code">{{ item.scenarioCode }}</div>
+            <select
+              class="runtime-default-select"
+              :value="item.runtimeRegistryCode"
+              :disabled="defaultSavingCode === item.scenarioCode"
+              @change="handleScenarioDefaultChange(item.scenarioCode, ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="runtime in compatibleRuntimes(item)" :key="runtime.runtimeCode" :value="runtime.runtimeCode">
+                {{ runtime.runtimeCode }}{{ runtime.enabled ? '' : '（已禁用）' }}
+              </option>
+            </select>
+            <div class="runtime-default-capabilities">要求：{{ item.requiredCapabilities.map(capabilityLabel).join('、') }}</div>
+          </article>
+        </div>
+      </section>
+
       <div class="management-list-table-scroll mobile-card-scroll" v-loading="loading">
         <template v-if="!isMobileViewport">
           <table class="management-list-table runtime-registry-table mobile-card-table">
@@ -225,11 +252,14 @@ import {
   checkRuntimeHealth,
   createRuntimeRegistry,
   listRuntimeRegistries,
+  listRuntimeScenarioDefaults,
   setRuntimeRegistryEnabled,
   updateRuntimeRegistry,
+  updateRuntimeScenarioDefault,
   type RuntimeRegistryItem,
   type RuntimeRegistryPayload
 } from '@/api/platform'
+import type { RuntimeScenarioDefaultItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 
 interface RuntimeRegistryForm {
@@ -268,8 +298,11 @@ const submitting = ref(false)
 const dialogVisible = ref(false)
 const isEditing = ref(false)
 const healthCheckingCode = ref('')
+const defaultsLoading = ref(false)
+const defaultSavingCode = ref('')
 const keyword = ref('')
 const items = ref<RuntimeRegistryItem[]>([])
+const scenarioDefaults = ref<RuntimeScenarioDefaultItem[]>([])
 const formRef = ref<FormInstance>()
 
 const form = reactive<RuntimeRegistryForm>({
@@ -387,12 +420,37 @@ const openEditDialog = (row: RuntimeRegistryItem) => openDetailDialog(row)
 
 const loadRegistries = async () => {
   loading.value = true
+  defaultsLoading.value = true
   try {
-    items.value = await listRuntimeRegistries()
+    const [registries, defaults] = await Promise.all([listRuntimeRegistries(), listRuntimeScenarioDefaults()])
+    items.value = registries
+    scenarioDefaults.value = defaults
   } catch (error: any) {
-    ElMessage.error(error?.response?.data?.message || 'Runtime 注册项加载失败')
+    ElMessage.error(error?.response?.data?.message || 'Runtime 注册项或场景默认配置加载失败')
   } finally {
     loading.value = false
+    defaultsLoading.value = false
+  }
+}
+
+const compatibleRuntimes = (scenario: RuntimeScenarioDefaultItem) => {
+  const required = new Set(scenario.requiredCapabilities)
+  const compatible = items.value.filter((item) => item.enabled && item.capabilities.every((capability) => capability) && [...required].every((capability) => item.capabilities.includes(capability)))
+  const current = items.value.find((item) => item.runtimeCode === scenario.runtimeRegistryCode)
+  return current && !compatible.some((item) => item.runtimeCode === current.runtimeCode) ? [current, ...compatible] : compatible
+}
+
+const handleScenarioDefaultChange = async (scenarioCode: string, runtimeRegistryCode: string) => {
+  defaultSavingCode.value = scenarioCode
+  try {
+    const updated = await updateRuntimeScenarioDefault(scenarioCode, runtimeRegistryCode)
+    const index = scenarioDefaults.value.findIndex((item) => item.scenarioCode === scenarioCode)
+    if (index >= 0) scenarioDefaults.value[index] = updated
+    ElMessage.success(`${updated.scenarioName} 默认 Runtime 已更新，新任务将使用 ${updated.runtimeRegistryCode}`)
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '场景默认 Runtime 更新失败')
+  } finally {
+    defaultSavingCode.value = ''
   }
 }
 
@@ -494,6 +552,66 @@ onMounted(loadRegistries)
   vertical-align: middle;
 }
 
+.runtime-defaults-panel {
+  padding: 18px 22px 20px;
+  border-bottom: 1px solid var(--app-border);
+  background: color-mix(in srgb, var(--app-bg-muted) 60%, transparent);
+}
+
+.runtime-defaults-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.runtime-defaults-title,
+.runtime-default-card-title {
+  color: var(--app-text-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.runtime-defaults-copy,
+.runtime-default-card-code,
+.runtime-default-capabilities {
+  color: var(--app-text-secondary);
+  font-size: 12px;
+}
+
+.runtime-defaults-copy { margin-top: 4px; }
+.runtime-default-card-code { margin-top: 3px; font-family: monospace; }
+
+.runtime-defaults-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.runtime-default-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 13px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-bg-card);
+}
+
+.runtime-default-select {
+  width: 100%;
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  color: var(--app-text-primary);
+  background: var(--app-bg-card);
+}
+
+.runtime-default-capabilities { line-height: 1.5; }
+
 .runtime-col-main { width: 18%; }
 .runtime-col-adapter { width: 13%; }
 .runtime-col-endpoint { width: 18%; }
@@ -532,8 +650,11 @@ onMounted(loadRegistries)
   }
 
   .runtime-form-grid,
-  .runtime-capability-checkboxes {
+  .runtime-capability-checkboxes,
+  .runtime-defaults-grid {
     grid-template-columns: 1fr;
   }
+
+  .runtime-defaults-panel { padding: 16px; }
 }
 </style>

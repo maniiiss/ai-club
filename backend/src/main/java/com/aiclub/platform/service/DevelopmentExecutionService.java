@@ -647,7 +647,10 @@ public class DevelopmentExecutionService {
                                     String input,
                                     Map<String, String> variables) {
         if (stepPlan.timeoutSeconds() != null) variables.put("orchestration_timeout_seconds", String.valueOf(stepPlan.timeoutSeconds()));
-        if (!agentExecutionService.supportsAsyncExecution(stepPlan.agent(), stepPlan.stepCode())) {
+        boolean supportsAsync = hasText(variables.get("runtime_registry_code"))
+                ? agentExecutionService.supportsAsyncExecution(stepPlan.agent(), stepPlan.stepCode(), variables)
+                : agentExecutionService.supportsAsyncExecution(stepPlan.agent(), stepPlan.stepCode());
+        if (!supportsAsync) {
             return agentExecutionService.runAgent(stepPlan.agent().getId(), input, variables);
         }
         int maxRuntimeSeconds = stepPlan.timeoutSeconds() == null
@@ -720,6 +723,7 @@ public class DevelopmentExecutionService {
         variables.put("step_code", defaultString(executionStep.getStepCode()));
         variables.put("step_name", defaultString(executionStep.getStepName()));
         variables.put("scenario_code", defaultString(executionTask.getScenarioCode()));
+        variables.put("runtime_registry_code", defaultString(executionTask.getRuntimeRegistryCodeSnapshot()));
         variables.put("project_id", String.valueOf(executionTask.getProject().getId()));
         variables.put("project_name", defaultString(executionTask.getProject().getName()));
         variables.put("session_key", "execution:" + executionTask.getId() + ":run:" + executionRun.getId() + ":step:" + executionStep.getId());

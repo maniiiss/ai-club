@@ -48,6 +48,6 @@ public interface WikiPageRepository extends JpaRepository<WikiPageEntity, Long>,
             """)
     int findMaxSortOrder(@Param("projectId") Long projectId, @Param("parentPageId") Long parentPageId);
 
-    /** 读取项目内最近更新页面，供 Hermes 上下文兜底使用。 */
+    /** 读取项目内最近更新页面，供 Assistant 上下文兜底使用。 */
     List<WikiPageEntity> findAllByProject_IdOrderByUpdatedAtDescIdDesc(Long projectId, Pageable pageable);
 }

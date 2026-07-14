@@ -3,8 +3,11 @@ package com.aiclub.platform.controller;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.RuntimeRegistrySummary;
+import com.aiclub.platform.dto.RuntimeScenarioDefaultSummary;
 import com.aiclub.platform.dto.request.RuntimeRegistryRequest;
+import com.aiclub.platform.dto.request.RuntimeScenarioDefaultRequest;
 import com.aiclub.platform.service.RuntimeRegistryService;
+import com.aiclub.platform.service.RuntimeScenarioDefaultService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,12 +26,15 @@ import java.util.List;
 public class RuntimeRegistryController {
 
     private final RuntimeRegistryService service;
+    private final RuntimeScenarioDefaultService scenarioDefaultService;
     private final com.aiclub.platform.service.RuntimeHealthCheckService healthCheckService;
 
     public RuntimeRegistryController(RuntimeRegistryService service,
-                                     com.aiclub.platform.service.RuntimeHealthCheckService healthCheckService) {
+                                     com.aiclub.platform.service.RuntimeHealthCheckService healthCheckService,
+                                     RuntimeScenarioDefaultService scenarioDefaultService) {
         this.service = service;
         this.healthCheckService = healthCheckService;
+        this.scenarioDefaultService = scenarioDefaultService;
     }
 
     @GetMapping
@@ -42,6 +48,22 @@ public class RuntimeRegistryController {
     @RequirePermission("agent:view")
     public ApiResponse<List<RuntimeRegistrySummary>> options() {
         return ApiResponse.success(service.list());
+    }
+
+    /** 查询四类业务场景当前绑定的默认 Runtime。 */
+    @GetMapping("/scenario-defaults")
+    @RequirePermission("runtime:manage")
+    public ApiResponse<List<RuntimeScenarioDefaultSummary>> scenarioDefaults() {
+        return ApiResponse.success(scenarioDefaultService.list());
+    }
+
+    /** 修改单个业务场景的默认 Runtime；后续新会话/新任务读取，历史快照不变。 */
+    @PutMapping("/scenario-defaults/{scenarioCode}")
+    @RequirePermission("runtime:manage")
+    public ApiResponse<RuntimeScenarioDefaultSummary> updateScenarioDefault(
+            @PathVariable String scenarioCode,
+            @Valid @RequestBody RuntimeScenarioDefaultRequest request) {
+        return ApiResponse.success(scenarioDefaultService.update(scenarioCode, request));
     }
 
     @PostMapping

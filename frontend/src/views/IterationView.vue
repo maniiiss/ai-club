@@ -21,12 +21,12 @@
           <div class="workspace-sidebar-brand-profile">
             <div class="header-profile-group">
               <button
-                v-if="canUseHermes"
+                v-if="canUseAssistant"
                 class="header-notification-button"
                 type="button"
                 aria-label="打开 GitPilot 助手"
                 title="GitPilot 助手"
-                @click.stop="handleOpenHermesDrawer"
+                @click.stop="handleOpenAssistantDrawer"
               >
                 <el-icon><ChatDotRound /></el-icon>
               </button>
@@ -154,10 +154,10 @@
         </div>
         <div v-if="!isMobileViewport" class="workspace-topbar-actions">
           <button
-            v-if="canUseHermes"
+            v-if="canUseAssistant"
             class="workspace-hermes-button"
             type="button"
-            @click="handleOpenHermesDrawer"
+            @click="handleOpenAssistantDrawer"
           >
             <el-icon><ChatDotRound /></el-icon>
             <span>GitPilot 助手</span>
@@ -1387,7 +1387,7 @@ import WorkItemSmartActionDialog from '@/components/WorkItemSmartActionDialog.vu
 import WorkItemMemberField from '@/components/WorkItemMemberField.vue'
 import TaskCommentTimeline from '@/components/TaskCommentTimeline.vue'
 import TaskUpdateTimeline from '@/components/TaskUpdateTimeline.vue'
-import { HERMES_OPEN_EVENT_NAME } from '@/constants/hermes'
+import { ASSISTANT_OPEN_EVENT_NAME } from '@/constants/assistant'
 import {
   createTaskComment,
   createIteration,
@@ -1519,7 +1519,7 @@ const canManageWorkItem = computed(() => authStore.hasPermission('task:manage'))
 const canExecuteWorkItem = computed(() => authStore.hasPermission('task:execution:create'))
 const canManageGiteeBinding = computed(() => authStore.hasPermission('gitee:binding:manage'))
 const canSyncGiteeWorkItems = computed(() => authStore.hasPermission('gitee:work-item:sync'))
-const canUseHermes = computed(() => authStore.hasPermission('hermes:chat'))
+const canUseAssistant = computed(() => authStore.hasPermission('hermes:chat'))
 const userInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
 const userAvatarUrl = computed(() => resolveAssetUrl(authStore.user?.avatarUrl))
 
@@ -2147,13 +2147,13 @@ const handleOpenNotificationsProxy = async () => {
 }
 
 /**
- * 迭代工作台直接唤起布局层全局 Hermes 抽屉，避免当前页面重复挂载一份助手实例。
+ * 迭代工作台直接唤起布局层全局 Assistant 抽屉，避免当前页面重复挂载一份助手实例。
  */
-const handleOpenHermesDrawer = () => {
-  if (!canUseHermes.value || typeof window === 'undefined') {
+const handleOpenAssistantDrawer = () => {
+  if (!canUseAssistant.value || typeof window === 'undefined') {
     return
   }
-  window.dispatchEvent(new CustomEvent(HERMES_OPEN_EVENT_NAME))
+  window.dispatchEvent(new CustomEvent(ASSISTANT_OPEN_EVENT_NAME))
 }
 
 const handleHeaderCommand = async (command: string) => {

@@ -582,7 +582,7 @@ const formRef = ref<InstanceType<typeof ProjectEditorFormBody>>()
 const router = useRouter()
 const authStore = useAuthStore()
 const activePreset = ref<'all' | 'planning' | 'draft'>('all')
-// 统一使用全局 composable 推断移动端视口，断点 900 与 AppLayout / HermesDrawer 保持一致。
+// 统一使用全局 composable 推断移动端视口，断点 900 与 AppLayout / AssistantDrawer 保持一致。
 const { isMobileViewport } = useMobileViewport()
 const dialogEntryMode = ref<'create' | 'edit' | 'gitee'>('create')
 const canManageProjects = computed(() => authStore.hasPermission('project:manage'))

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import { AtSign, Bot, Laugh, Paperclip, Send, UserRound, X } from 'lucide-react'
 import { Button } from '@/src/components/common/Button'
 import {
-  containsHermesMention,
+  containsAssistantMention,
   formatChatFileSize,
   insertTextAtCaret,
   replaceMentionAtCaret,
@@ -53,7 +53,7 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
   const emojiButtonRef = useRef<HTMLButtonElement>(null)
   const emojiPanelRef = useRef<HTMLDivElement>(null)
 
-  const hasHermesMention = containsHermesMention(content)
+  const hasAssistantMention = containsAssistantMention(content)
   const activeMention = useMemo(() => resolveMentionQuery(content, caret), [content, caret])
   const mentionOptions = useMemo<MentionOption[]>(() => {
     const query = (activeMention?.query || '').toLowerCase()
@@ -134,8 +134,8 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
     })
   }
 
-  const insertHermesMention = () => {
-    if (containsHermesMention(content)) {
+  const insertAssistantMention = () => {
+    if (containsAssistantMention(content)) {
       textareaRef.current?.focus()
       return
     }
@@ -240,7 +240,7 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
         <div
           className={cn(
             'chat-composer-surface relative rounded-xl border bg-[var(--color-bg-elevated)] shadow-[var(--shadow-xs)] transition-colors',
-            hasHermesMention ? 'is-hermes' : 'border-[var(--color-border-strong)] focus-within:border-[var(--color-primary)]',
+            hasAssistantMention ? 'is-hermes' : 'border-[var(--color-border-strong)] focus-within:border-[var(--color-primary)]',
           )}
         >
           {mentionOpen && (
@@ -364,11 +364,11 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
               </button>
               <button
                 type="button"
-                onClick={insertHermesMention}
+                onClick={insertAssistantMention}
                 disabled={disabled || sending}
                 className={cn(
                   'inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium transition-colors disabled:opacity-50',
-                  hasHermesMention
+                  hasAssistantMention
                     ? 'chat-hermes-button is-active'
                     : 'chat-hermes-button is-inactive',
                 )}
@@ -376,7 +376,7 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
                 <AtSign className="h-4 w-4" />
                 GitPilot
               </button>
-              {hasHermesMention && (
+              {hasAssistantMention && (
                 <span className="chat-hermes-hint hidden text-[12px] sm:inline">将触发 GitPilot 回复</span>
               )}
             </div>

@@ -150,7 +150,10 @@ public class TechnicalDesignExecutionService {
                                 String input) {
         Map<String, String> variables = buildRuntimeVariables(task, run, step, repositories);
         if (plan.timeoutSeconds() != null) variables.put("orchestration_timeout_seconds", String.valueOf(plan.timeoutSeconds()));
-        if (!agentExecutionService.supportsAsyncExecution(plan.agent(), step.getStepCode())) {
+        boolean supportsAsync = hasText(variables.get("runtime_registry_code"))
+                ? agentExecutionService.supportsAsyncExecution(plan.agent(), step.getStepCode(), variables)
+                : agentExecutionService.supportsAsyncExecution(plan.agent(), step.getStepCode());
+        if (!supportsAsync) {
             return agentExecutionService.runAgent(plan.agent().getId(), input, variables);
         }
         int maxRuntimeSeconds = plan.timeoutSeconds() == null
@@ -299,6 +302,7 @@ public class TechnicalDesignExecutionService {
         variables.put("step_code", defaultString(step.getStepCode()));
         variables.put("step_name", defaultString(step.getStepName()));
         variables.put("scenario_code", defaultString(task.getScenarioCode()));
+        variables.put("runtime_registry_code", defaultString(task.getRuntimeRegistryCodeSnapshot()));
         variables.put("project_id", String.valueOf(task.getProject().getId()));
         variables.put("project_name", defaultString(task.getProject().getName()));
         variables.put("session_key", "execution:" + task.getId() + ":run:" + run.getId() + ":step:" + step.getId());

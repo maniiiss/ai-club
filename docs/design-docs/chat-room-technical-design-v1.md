@@ -68,7 +68,7 @@ Agent 化 v1 将这条链路改为持久化任务：`@hermes` 先写入 `chat_ro
 
 房间级 Agent 配置保存在 `chat_room_agent_config`，包括启用状态、展示名、房间系统指令、主动总结、关键字监听、任务状态回写开关以及授权人快照。主动总结支持消息阈值与最小间隔；关键字监听支持关键词列表和冷却时间；任务状态回写支持房主选择 `SUCCESS / FAILED / CANCELED` 等执行任务状态集合。工具授权保存在 `chat_room_agent_tool_policy`，默认读工具可启用；写工具只有 `execution_task.create`、`repo_scan.start`、`work_item.create_draft`、`test_plan.create_draft` 允许被标记为自动执行，其余写工具仍应降级为确认动作。
 
-聊天室 Agent 任务运行时会把房间工具策略固化为 `HermesToolExecutionPolicy`，随 `HermesConversationState` 一起写入 Redis。Hermes 模型调用 MCP 工具时，`code-processing` 仍通过 `/internal/hermes/mcp/execute` 回调后端，由 `HermesInternalToolExecutionService` 恢复授权人 `AuthContext`、读取策略快照，再进入 `HermesToolOrchestrator`。读工具继续按平台工具自动执行规则执行；写工具默认生成动作卡片，只有同时满足“房间启用该工具、房主允许自动执行、工具在后端白名单内、授权人仍具备功能权限和项目数据权限”的调用才会进入 `PlatformToolExecutor` 自动执行。工具执行产生的 `actions`、`selectionCards` 与 `toolExecutions` 会回写同一 Hermes 状态，任务完成时再同步为 `ACTION_PENDING`、`SELECTION_PENDING` 或 `ACTION_EXECUTED` 任务事件和 WebSocket 事件。
+聊天室 Agent 任务运行时会把房间工具策略固化为 `HermesToolExecutionPolicy`，随 `HermesConversationState` 一起写入 Redis。Assistant 模型调用 MCP 工具时，`code-processing` 通过 `/internal/assistant/mcp/execute` 回调后端，由 `HermesInternalToolExecutionService` 恢复授权人 `AuthContext`、读取策略快照，再进入 `HermesToolOrchestrator`。读工具继续按平台工具自动执行规则执行；写工具默认生成动作卡片，只有同时满足“房间启用该工具、房主允许自动执行、工具在后端白名单内、授权人仍具备功能权限和项目数据权限”的调用才会进入 `PlatformToolExecutor` 自动执行。工具执行产生的 `actions`、`selectionCards` 与 `toolExecutions` 会回写同一 Assistant 状态，任务完成时再同步为 `ACTION_PENDING`、`SELECTION_PENDING` 或 `ACTION_EXECUTED` 任务事件和 WebSocket 事件。
 
 ## Agent RabbitMQ 队列
 

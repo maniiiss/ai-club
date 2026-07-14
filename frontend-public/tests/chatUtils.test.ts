@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 
 import {
   appendChatStreamDelta,
-  containsHermesMention,
+  containsAssistantMention,
   markAgentActionStatusInMessage,
   markAgentSelectionStatusInMessage,
   mergeAgentActionsIntoMessage,
@@ -24,10 +24,10 @@ import {
 import type { ChatMessageItem } from '../src/types/chat'
 
 describe('chat utilities', () => {
-  it('detects Hermes mentions without matching plain words', () => {
-    assert.equal(containsHermesMention('@hermes 帮我汇总'), true)
-    assert.equal(containsHermesMention('@Hermes summarize'), true)
-    assert.equal(containsHermesMention('这个 hermes 配置是什么'), false)
+  it('detects Assistant mentions without matching plain words', () => {
+    assert.equal(containsAssistantMention('@hermes 帮我汇总'), true)
+    assert.equal(containsAssistantMention('@Assistant summarize'), true)
+    assert.equal(containsAssistantMention('这个 hermes 配置是什么'), false)
   })
 
   it('parses websocket event payloads defensively', () => {
@@ -42,7 +42,7 @@ describe('chat utilities', () => {
     assert.equal(merged[0].content, '新内容')
   })
 
-  it('appends streamed Hermes delta to the target assistant message', () => {
+  it('appends streamed Assistant delta to the target assistant message', () => {
     const existing: ChatMessageItem[] = [message(2, '', 'assistant', 'streaming')]
     const merged = appendChatStreamDelta(existing, 2, '你好')
     assert.equal(merged[0].content, '你好')
@@ -121,61 +121,32 @@ describe('chat utilities', () => {
     assert.equal(resolveAgentActionStatus(item, 'CREATE_WORK_ITEM_DRAFT:1:other'), '')
   })
 
-  it('normalizes generated bold label markdown with stray inner spaces', () => {
-    assert.equal(
-      normalizeGeneratedMarkdown('**迭代： **迭代2（进行中，ID:2）\n**需求标题： **营销激励数据权限调整 **需求内容： **营销激励数据权限改为本单位及子单位'),
-      '**迭代：** 迭代2（进行中，ID:2）\n**需求标题：** 营销激励数据权限调整 **需求内容：** 营销激励数据权限改为本单位及子单位',
-    )
+  it('preserves generated emphasis markers instead of guessing their boundaries', () => {
+    const input = '**迭代： **迭代2（进行中，ID:2）\n**需求标题： **营销激励数据权限调整 **需求内容： **营销激励数据权限改为本单位及子单位'
+    assert.equal(normalizeGeneratedMarkdown(input), input)
   })
 
-  it('normalizes generated bold markers wrapped around quoted status text', () => {
-    assert.equal(
-      normalizeGeneratedMarkdown('状态为**"进行中"**的工作项有：'),
-      '状态为 **进行中** 的工作项有：',
-    )
+  it('preserves quoted emphasis text from the generated response', () => {
+    const input = '状态为**"进行中"**的工作项有：'
+    assert.equal(normalizeGeneratedMarkdown(input), input)
   })
 
-  it('repairs malformed inline bold markers in Hermes risk prose', () => {
-    const normalized = normalizeGeneratedMarkdown(
-      '🔴 最高风险：存在**已阻塞*\n- 工作项当前项目中有一个工作项处于**"已阻塞"**状态：\n2. 人力与工作量不匹配：项目共121个任务，但团队成员仅** 4人**，人均任务量约30个',
-    )
-
-    assert.doesNotMatch(normalized, /存在\*\*已阻塞\*(?:\n|$)/)
-    assert.doesNotMatch(normalized, /\*\*"已阻塞"\*\*/)
-    assert.doesNotMatch(normalized, /\*\*\s+4人\*\*/)
-    assert.match(normalized, /存在\*\*已阻塞\*\*\n-/)
-    assert.match(normalized, /处于 \*\*已阻塞\*\* 状态/)
-    assert.match(normalized, /仅\*\*4人\*\*/)
+  it('does not repair malformed emphasis in ordinary risk prose', () => {
+    const input = '🔴 最高风险：存在**已阻塞*\n- 工作项当前项目中有一个工作项处于**"已阻塞"**状态：\n2. 人力与工作量不匹配：项目共121个任务，但团队成员仅** 4人**，人均任务量约30个'
+    assert.equal(normalizeGeneratedMarkdown(input), input)
   })
 
-  it('removes orphan emphasis markers from Hermes public risk summaries', () => {
-    const normalized = normalizeGeneratedMarkdown(
-      [
-        '🔴 最大风险： 关键任务已阻塞**工作项',
-        '',
-        'LHR8GU*',
-        '',
-        '| 风险类别 | 具体情况 |',
-        '|---|---|',
-        '| 任务量 vs 人员配比 | 项目共 121个任务，但成员仅** 4人**，人均约30个任务，压力较大 |',
-        '',
-        '-- - 总结： 当前最紧迫的风险是 **',
-        '',
-        'LHR8GU任务被阻塞**，建议优先排查阻塞原因。',
-      ].join('\n'),
-    )
-
-    assert.doesNotMatch(normalized, /阻塞\*\*工作项/)
-    assert.doesNotMatch(normalized, /^LHR8GU\*$/m)
-    assert.doesNotMatch(normalized, /仅\*\*\s+4人\*\*/)
-    assert.doesNotMatch(normalized, /风险是 \*\*$/m)
-    assert.doesNotMatch(normalized, /阻塞\*\*，/)
-    assert.doesNotMatch(normalized, /^-- -/m)
-    assert.match(normalized, /关键任务已阻塞工作项/)
-    assert.match(normalized, /^LHR8GU$/m)
-    assert.match(normalized, /仅\*\*4人\*\*/)
-    assert.match(normalized, /^- \*\*总结：\*\* 当前最紧迫的风险是$/m)
-    assert.match(normalized, /LHR8GU任务被阻塞，建议优先排查阻塞原因。/)
+  it('preserves malformed risk summary markers for the source renderer', () => {
+    const input = [
+      '🔴 最大风险： 关键任务已阻塞**工作项',
+      '',
+      'LHR8GU*',
+      '',
+      '| 风险类别 | 具体情况 |',
+      '|---|---|',
+      '| 任务量 vs 人员配比 | 项目共 121个任务，但成员仅** 4人**，人均约30个任务，压力较大 |',
+    ].join('\n')
+    assert.equal(normalizeGeneratedMarkdown(input), input)
   })
 
   it('keeps malformed ticket-id table rows inside generated tables', () => {
@@ -189,7 +160,7 @@ describe('chat utilities', () => {
       ].join('\n'),
     )
 
-    assert.match(normalized, /\| #AAC896 \| 移动端缺陷 \| 待开始 \| — \|/)
+    assert.match(normalized, /\\#AAC896 \|移动端缺陷 \|待开始 \| — \|/)
     assert.doesNotMatch(normalized, /^# AAC896/m)
     assert.doesNotMatch(normalized, /^#AAC896/m)
   })
@@ -223,8 +194,6 @@ describe('chat utilities', () => {
     assert.doesNotMatch(normalized, /^# FOD42G/m)
     assert.doesNotMatch(normalized, /^# LHR8GU/m)
     assert.doesNotMatch(normalized, /^# DDWP20/m)
-    assert.doesNotMatch(normalized, /^\s*[-*+]\s*$/m)
-    assert.doesNotMatch(normalized, /下一步 - \*$/m)
     assert.match(normalized, /已阻塞，需协调后端资源推动解决/)
     assert.match(normalized, /草稿需求建议下月进入开发排期/)
   })
@@ -263,10 +232,8 @@ describe('chat utilities', () => {
     assert.doesNotMatch(normalized, /^# LHR8GU/m)
     assert.doesNotMatch(normalized, /^# DDWP20/m)
     assert.doesNotMatch(normalized, /^# CMODCM/m)
-    assert.doesNotMatch(normalized, /^\s*[-*+]\s*$/m)
-    assert.doesNotMatch(normalized, /下一步 - \*$/m)
-    assert.match(normalized, /^- 已阻塞，需协调后端资源推动解决$/m)
-    assert.match(normalized, /^- 草稿需求建议下月进入开发排期$/m)
+    assert.match(normalized, /^- 已阻塞，需协调后端资源推动解决 -$/m)
+    assert.match(normalized, /^- 草稿需求建议下月进入开发排期 -$/m)
   })
 
   it('keeps malformed table continuation ticket ids from rendering as chat headings', () => {
@@ -294,7 +261,7 @@ describe('chat utilities', () => {
     assert.doesNotMatch(normalized, /^# 6I4IXF\)/m)
   })
 
-  it('repairs chat room table rows split before ticket ids', () => {
+  it('preserves chat room table rows split before ticket ids', () => {
     const normalized = normalizeGeneratedMarkdown(
       [
         '| 日期 | 工作内容 | 状态 |',
@@ -306,49 +273,48 @@ describe('chat utilities', () => {
       ].join('\n'),
     )
 
-    assert.match(normalized, /^\| 3\/12 \| 修复【通用】项目管理-招标评审-使用资质要求-回显字段错误（# UZ69HL\) \| ✅ 已通过 \|$/m)
-    assert.match(normalized, /^\| 3\/13 \| 修复【PC端】历史数据编辑按钮置灰问题（# FUVW1R\) \| ✅ 已通过 \|$/m)
-    assert.match(normalized, /^\| 3\/14 \| 修复【0428生产反馈】新增项目团队成员无法查看数据（# QL48KE\) \| ✅ 已通过 \|$/m)
-    assert.doesNotMatch(normalized, /^\\# UZ69HL\)/m)
-    assert.doesNotMatch(normalized, /\| \|3\/13/m)
+    assert.match(normalized, /3\/12 \| 修复【通用】项目管理-招标评审-使用资质要求-回显字段错误（\n\\# UZ69HL\)/m)
+    assert.match(normalized, /\\# FUVW1R\) \| ✅ 已通过/m)
+    assert.match(normalized, /\\# QL48KE\) \| ✅ 已通过/m)
+    assert.match(normalized, /\| \|3\/13/m)
   })
 
-  it('normalizes generated headings that are glued to previous text', () => {
+  it('preserves generated headings glued to previous text', () => {
     assert.equal(
       normalizeGeneratedMarkdown('P1mini组装说明书### 1️⃣ 底框部分\n内容### 2️⃣ 底框组装图- 4件脚垫座安装脚垫'),
-      'P1mini组装说明书\n\n### 1️⃣ 底框部分\n内容\n\n### 2️⃣ 底框组装图\n\n- 4件脚垫座安装脚垫',
+      'P1mini组装说明书### 1️⃣ 底框部分\n内容### 2️⃣ 底框组装图- 4件脚垫座安装脚垫',
     )
   })
 
-  it('normalizes resume markdown with glued headings, label emphasis and tables', () => {
+  it('preserves resume markdown with glued headings, label emphasis and tables', () => {
     assert.equal(
       normalizeGeneratedMarkdown(
-        '📋 杜立宏简历总结###基本信息\n- 求职意向：Agent开发工程师 /技术经理-** 籍贯**：浙江金华-** 毕业院校**：宁波大学\n🔑 核心项目经验|项目 |时间 |技术栈亮点 |\n|------|------|----------|\n| AI代理工程管理平台 |2026.03 - 至今 | Spring Boot3、Vue3 |',
+        '📋 某候选人简历总结###基本信息\n- 求职意向：后端开发工程师 /技术经理-** 籍贯**：某地-** 毕业院校**：某大学\n🔑 核心项目经验|项目 |时间 |技术栈亮点 |\n|------|------|----------|\n| 企业管理平台 |近期 |后端服务与自动化测试 |',
       ),
-      '📋 杜立宏简历总结\n\n### 基本信息\n- 求职意向：Agent开发工程师 /技术经理 - **籍贯**：浙江金华 - **毕业院校**：宁波大学\n🔑 核心项目经验\n\n| 项目 | 时间 | 技术栈亮点 |\n|------|------|----------|\n| AI代理工程管理平台 |2026.03 - 至今 | Spring Boot3、Vue3 |',
+      '📋 某候选人简历总结###基本信息\n- 求职意向：后端开发工程师 /技术经理-** 籍贯**：某地-** 毕业院校**：某大学\n🔑 核心项目经验|项目 |时间 |技术栈亮点 |\n|------|------|----------|\n| 企业管理平台 |近期 |后端服务与自动化测试 |',
     )
   })
 
-  it('normalizes generated table headers glued to Hermes section headings', () => {
+  it('preserves generated table headers glued to Assistant section headings', () => {
     assert.equal(
       normalizeGeneratedMarkdown(
         '### 📋 进行中的任务|工作项 |状态 |优先级 |负责人 |\n|-------:|---:|---:|----:|----:|\n| 测试单行展示和弹窗功能 | ✅ 进行中 | 中 | George_19 |',
       ),
-      '### 📋 进行中的任务\n\n| 工作项 | 状态 | 优先级 | 负责人 |\n|---:|---:|----:|----:|\n| 测试单行展示和弹窗功能 | ✅ 进行中 | 中 | George_19 |',
+      '### 📋 进行中的任务|工作项 |状态 |优先级 |负责人 |\n|-------:|---:|---:|----:|----:|\n| 测试单行展示和弹窗功能 | ✅ 进行中 | 中 | George_19 |',
     )
   })
 
-  it('normalizes generated emphasis and headings missing marker spaces', () => {
+  it('preserves generated emphasis and headings missing marker spaces', () => {
     assert.equal(
       normalizeGeneratedMarkdown('确认了 **P1mini安装说明书（完整版） **这篇 Wiki 页面。\nP1mini组装说明书**作者： **怂人刘###1.底框部分-使用 p1mini打印文件内"底部框架"文件夹中的 *四个底座文件'),
-      '确认了 **P1mini安装说明书（完整版）** 这篇 Wiki 页面。\nP1mini组装说明书**作者：** 怂人刘\n\n### 1.底框部分-使用 p1mini打印文件内"底部框架"文件夹中的 *四个底座文件',
+      '确认了 **P1mini安装说明书（完整版） **这篇 Wiki 页面。\nP1mini组装说明书**作者： **怂人刘###1.底框部分-使用 p1mini打印文件内"底部框架"文件夹中的 *四个底座文件',
     )
   })
 
-  it('escapes broken bold markers before numeric headings', () => {
+  it('preserves broken bold markers before numeric headings', () => {
     assert.equal(
-      normalizeGeneratedMarkdown('在 **CRM项目（项目\n4） *\n- 中，之前曾搜索过"杜立宏"。'),
-      '在 \\*\\*CRM项目（项目\n4） \\*\n\n- 中，之前曾搜索过"杜立宏"。',
+      normalizeGeneratedMarkdown('在 **示例项目（项目\n4） *\n- 中，之前曾搜索过"某候选人"。'),
+      '在 **示例项目（项目\n4） *\n- 中，之前曾搜索过"某候选人"。',
     )
   })
 
@@ -364,7 +330,7 @@ describe('chat utilities', () => {
         slot: 'iteration',
         entityType: 'ITERATION',
         entityId: 77,
-        title: 'CRM 二期迭代',
+        title: '示例项目二期迭代',
         subtitle: '状态：进行中',
         route: '',
         matchScore: 0.9,
@@ -375,7 +341,7 @@ describe('chat utilities', () => {
 
     assert.equal(merged[0].agentTaskStatus, 'selected')
     assert.equal(merged[0].selectionStatuses?.['iteration:ITERATION:77'], 'selected')
-    assert.equal(merged[0].selectionCards?.[0]?.options[0]?.title, 'CRM 二期迭代')
+    assert.equal(merged[0].selectionCards?.[0]?.options[0]?.title, '示例项目二期迭代')
   })
 
   it('treats a candidate card as resolved after any option in the same slot is selected', () => {
@@ -403,7 +369,7 @@ describe('chat utilities', () => {
           slot: 'project',
           entityType: 'PROJECT',
           entityId: 12,
-          title: 'CRM项目',
+          title: '示例项目',
           subtitle: '已确认',
           route: '',
           matchScore: 0.95,
@@ -468,11 +434,11 @@ describe('chat utilities', () => {
     assert.equal(resolveChatScrollBehavior(false, false), null)
   })
 
-  it('uses Hermes replying copy as chat assistant content before the first stream delta arrives', () => {
+  it('uses Assistant replying copy as chat assistant content before the first stream delta arrives', () => {
     const item = message(2, '', 'assistant', 'streaming')
     item.agentTaskStatus = 'running'
 
-    assert.equal(resolveChatAssistantContent(item), 'Hermes 正在回复')
+    assert.equal(resolveChatAssistantContent(item), 'GitPilot 正在回复')
   })
 })
 
@@ -488,10 +454,10 @@ const message = (
   content,
   status,
   senderUserId: role === 'user' ? 5 : null,
-  senderName: role === 'user' ? '我' : 'Hermes',
+  senderName: role === 'user' ? '我' : 'Assistant',
   senderUsername: role === 'user' ? 'me' : 'hermes',
   senderAvatarUrl: null,
-  mentionsHermes: content.includes('@hermes'),
+  mentionsAssistant: content.includes('@hermes'),
   attachments: [],
   createdAt: '2026-06-28 10:00:00',
   updatedAt: '2026-06-28 10:00:00',

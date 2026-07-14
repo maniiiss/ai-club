@@ -637,7 +637,9 @@ start_local_application_services() {
   export PI_RUNTIME_REDIS_URL="$(get_env_or_default 'PI_RUNTIME_REDIS_URL' "redis://:redis@2026@localhost:${REDIS_PORT}/0")"
   export PI_RUNTIME_MODEL_PROVIDER="$(get_env_or_default 'PLATFORM_PI_RUNTIME_MODEL_PROVIDER' '')"
   export PI_RUNTIME_MODEL_ID="$(get_env_or_default 'PLATFORM_PI_RUNTIME_MODEL_ID' '')"
+  export PI_RUNTIME_MODEL_BASE_URL="$(get_env_or_default 'PLATFORM_PI_RUNTIME_MODEL_BASE_URL' '')"
   export PI_RUNTIME_API_KEY="$(get_env_or_default 'PLATFORM_PI_RUNTIME_API_KEY' '')"
+  export PI_RUNTIME_THINKING_LEVEL="$(get_env_or_default 'PLATFORM_PI_RUNTIME_THINKING_LEVEL' 'medium')"
   export VITE_API_PORT="${BACKEND_PORT}"
   export VITE_PUBLIC_FRONTEND_PORT="${FRONTEND_PUBLIC_PORT}"
 

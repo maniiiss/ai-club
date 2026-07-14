@@ -55,7 +55,7 @@ class HermesInternalClient:
             for base_url in self._build_backend_base_url_candidates():
                 try:
                     response = await client.post(
-                        f"{base_url}/internal/hermes/mcp/execute",
+                        f"{base_url}/internal/assistant/mcp/execute",
                         json=payload.model_dump(),
                         headers=headers,
                     )

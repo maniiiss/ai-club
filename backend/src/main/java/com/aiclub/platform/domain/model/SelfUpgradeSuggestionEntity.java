@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 
 /**
  * 自升级中心独立建议卡片。
- * 建议完全独立于 Hermes，会持续聚合同一指纹下的多次命中与重开历史。
+ * 建议完全独立于 Assistant，会持续聚合同一指纹下的多次命中与重开历史。
  */
 @Entity
 @Table(name = "self_upgrade_suggestion")

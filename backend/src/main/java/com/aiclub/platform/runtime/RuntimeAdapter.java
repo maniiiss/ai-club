@@ -1,6 +1,7 @@
 package com.aiclub.platform.runtime;
 
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * Runtime 统一适配器契约。
@@ -38,9 +39,23 @@ public interface RuntimeAdapter {
 
     /**
      * 同步聊天入口，供 GitPilot 会话和聊天室复用统一 Runtime 路由。
-     * 旧 Hermes Legacy 由兼容服务直接调用，不经过该方法。
+     * 旧 Assistant Legacy 由兼容服务直接调用，不经过该方法。
      */
     default RuntimeChatResult chat(RuntimeInvocationContext context) {
         throw new UnsupportedOperationException("Runtime does not support synchronous chat: " + descriptor().runtimeCode());
+    }
+
+    /**
+     * 流式聊天入口，所有支持 STREAM_EVENTS 的 AgentRuntime 都遵守同一事件协议。
+     * 业务意图：未实现实时协议的旧 Runtime 自动降级为单个完整文本事件，保证迁移期间功能可用。
+     */
+    default RuntimeChatResult streamChat(RuntimeInvocationContext context,
+                                          Consumer<RuntimeStreamEvent> eventConsumer) {
+        RuntimeChatResult result = chat(context);
+        if (eventConsumer != null && result != null && !result.content().isBlank()) {
+            eventConsumer.accept(new RuntimeStreamEvent(
+                    result.runId(), result.sessionId(), 1, "TEXT_DELTA", Map.of("delta", result.content())));
+        }
+        return result;
     }
 }

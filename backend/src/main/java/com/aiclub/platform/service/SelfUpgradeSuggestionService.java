@@ -456,7 +456,7 @@ public class SelfUpgradeSuggestionService {
                 要求：
                 1. 优先给出可落地的代码改动
                 2. 说明风险与验证方式
-                3. 不要把建议回写到 Hermes
+                3. 不要把建议回写到 Assistant
                 """.formatted(
                 suggestion.getTitle(),
                 suggestion.getCategory(),

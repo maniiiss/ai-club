@@ -335,27 +335,27 @@
         </div>
 
         <div class="header-actions">
-          <div v-if="!isMobileViewport && canUseHermes" class="header-search-shell" @click="handleOpenHermesDrawer">
+          <div v-if="!isMobileViewport && canUseAssistant" class="header-search-shell" @click="handleOpenAssistantDrawer">
             <el-icon><Search /></el-icon>
             <input
-              v-model="headerHermesQuestion"
+              v-model="headerAssistantQuestion"
               class="header-search-input"
               type="text"
               placeholder="问你想问"
               @click.stop
-              @keyup.enter="handleAskHermes"
+              @keyup.enter="handleAskAssistant"
             />
-            <button class="header-search-button" type="button" @click.stop="handleAskHermes">
+            <button class="header-search-button" type="button" @click.stop="handleAskAssistant">
               提问
             </button>
           </div>
           <div class="header-profile-group">
             <button
-              v-if="isMobileViewport && canUseHermes"
+              v-if="isMobileViewport && canUseAssistant"
               class="header-hermes-button"
               type="button"
               aria-label="打开 GitPilot 助手"
-              @click.stop="handleOpenHermesDrawer"
+              @click.stop="handleOpenAssistantDrawer"
             >
               <el-icon><Search /></el-icon>
             </button>
@@ -519,18 +519,17 @@
     </div>
   </el-drawer>
 
-  <HermesDrawer
-    v-if="hermesDrawerVisible"
-    ref="hermesDrawerRef"
-    v-model="hermesDrawerVisible"
-    :route-name="hermesRouteName"
-    :project-id="hermesProjectId"
-    :task-id="hermesTaskId"
-    :iteration-id="hermesIterationId"
-    :plan-id="hermesPlanId"
-    :wiki-space-id="hermesWikiSpaceId"
-    :wiki-page-id="hermesWikiPageId"
-    :fallback-prompts="hermesQuickPrompts"
+  <AssistantDrawer
+    ref="assistantDrawerRef"
+    v-model="assistantDrawerVisible"
+    :route-name="assistantRouteName"
+    :project-id="assistantProjectId"
+    :task-id="assistantTaskId"
+    :iteration-id="assistantIterationId"
+    :plan-id="assistantPlanId"
+    :wiki-space-id="assistantWikiSpaceId"
+    :wiki-page-id="assistantWikiPageId"
+    :fallback-prompts="assistantQuickPrompts"
   />
 
   <el-dialog
@@ -703,8 +702,8 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { listPermissionOptions } from '@/api/access'
 import { createFeedbackApi } from '@/api/feedback'
-import HermesDrawer from '@/components/HermesDrawer.vue'
-import { HERMES_OPEN_EVENT_NAME, type HermesOpenEventDetail } from '@/constants/hermes'
+import AssistantDrawer from '@/components/AssistantDrawer.vue'
+import { ASSISTANT_OPEN_EVENT_NAME, type AssistantOpenEventDetail } from '@/constants/assistant'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
@@ -731,7 +730,7 @@ interface MenuItem {
   matchNames?: string[]
 }
 
-interface HermesDrawerExpose {
+interface AssistantDrawerExpose {
   openDrawer: () => void
   openWithQuestion: (question: string) => Promise<void>
 }
@@ -764,11 +763,11 @@ const integrationMenuExpanded = ref(false)
 const projectWorkspaceExpanded = ref(false)
 const isMobileViewport = ref(false)
 const mobileMoreDrawerVisible = ref(false)
-const hermesDrawerVisible = ref(false)
+const assistantDrawerVisible = ref(false)
 const feedbackDialogVisible = ref(false)
 const feedbackSubmitting = ref(false)
-const headerHermesQuestion = ref('')
-const hermesDrawerRef = ref<HermesDrawerExpose | null>(null)
+const headerAssistantQuestion = ref('')
+const assistantDrawerRef = ref<AssistantDrawerExpose | null>(null)
 const feedbackFormRef = ref<FormInstance>()
 const permissionOptions = ref<PermissionItem[]>([])
 
@@ -960,29 +959,29 @@ const effectiveSidebarCollapsed = computed(() => isMobileViewport.value || appSt
 const asideWidth = computed(() => (effectiveSidebarCollapsed.value ? '80px' : '256px'))
 const userInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
 const userAvatarUrl = computed(() => resolveAssetUrl(authStore.user?.avatarUrl))
-const canUseHermes = computed(() => authStore.hasPermission('hermes:chat'))
-const hermesRouteName = computed(() => String(route.name || ''))
-const hermesProjectId = computed(() => {
+const canUseAssistant = computed(() => authStore.hasPermission('hermes:chat'))
+const assistantRouteName = computed(() => String(route.name || ''))
+const assistantProjectId = computed(() => {
   const projectId = Number(route.params.projectId)
   return Number.isNaN(projectId) || projectId <= 0 ? null : projectId
 })
-const hermesTaskId = computed(() => {
+const assistantTaskId = computed(() => {
   const taskId = Number(route.query.openTaskId)
   return Number.isNaN(taskId) || taskId <= 0 ? null : taskId
 })
-const hermesIterationId = computed(() => {
+const assistantIterationId = computed(() => {
   const iterationId = Number(route.query.iterationId)
   return Number.isNaN(iterationId) || iterationId <= 0 ? null : iterationId
 })
-const hermesPlanId = computed(() => {
+const assistantPlanId = computed(() => {
   const planId = Number(route.params.planId)
   return Number.isNaN(planId) || planId <= 0 ? null : planId
 })
-const hermesWikiPageId = computed(() => {
+const assistantWikiPageId = computed(() => {
   const wikiPageId = Number(route.params.pageId || route.query.wikiPageId)
   return Number.isNaN(wikiPageId) || wikiPageId <= 0 ? null : wikiPageId
 })
-const hermesWikiSpaceId = computed(() => {
+const assistantWikiSpaceId = computed(() => {
   const wikiSpaceId = Number(route.params.spaceId)
   return Number.isNaN(wikiSpaceId) || wikiSpaceId <= 0 ? null : wikiSpaceId
 })
@@ -1022,11 +1021,11 @@ const projectWorkspaceMenus = computed<MenuItem[]>(() => {
   ]
 })
 const visibleProjectWorkspaceMenus = computed(() => projectWorkspaceMenus.value.filter((item) => authStore.hasPermission(item.permission)))
-const hermesQuickPrompts = computed(() => {
+const assistantQuickPrompts = computed(() => {
   const quickPromptMap: Record<string, string[]> = {
     dashboard: ['我今天最该推进什么', '哪些项目本周有延期风险', '最近有哪些需要我关注的异常'],
     projects: ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个项目本周最值得关注的风险是什么'],
-    'project-iterations': hermesIterationId.value
+    'project-iterations': assistantIterationId.value
       ? ['帮我总结当前迭代发版内容', '当前迭代修复了多少缺陷', '当前迭代开发了哪些需求']
       : ['这个项目当前最大的阻塞是什么', '最近这个项目有哪些关键变化', '这个任务为什么延期了'],
     'api-studio-home': ['哪些项目还没初始化 API 工作台', '帮我找某个项目的 API GROUP', '最近哪个项目接口最需要同步'],
@@ -1039,9 +1038,9 @@ const hermesQuickPrompts = computed(() => {
     'self-upgrade': ['最近有哪些新建议值得优先处理', '夜间巡检都发现了什么问题', '哪些整改工作项最值得先做'],
     'execution-task-detail': ['这次执行失败的原因是什么', '帮我总结当前执行结果', '这次执行下一步该做什么']
   }
-  return quickPromptMap[hermesRouteName.value] || ['我今天最该推进什么', '帮我总结当前最值得关注的事项', '最近有哪些需要我关注的异常']
+  return quickPromptMap[assistantRouteName.value] || ['我今天最该推进什么', '帮我总结当前最值得关注的事项', '最近有哪些需要我关注的异常']
 })
-// 消息中心在桌面端保持右侧抽屉，在手机端切换成与 Hermes 一致的底部全屏抽屉，保证交互预期统一。
+// 消息中心在桌面端保持右侧抽屉，在手机端切换成与 Assistant 一致的底部全屏抽屉，保证交互预期统一。
 const notificationDrawerDirection = computed(() => (isMobileViewport.value ? 'btt' : 'rtl'))
 const notificationDrawerSize = computed(() => (isMobileViewport.value ? '100%' : '420px'))
 const canLoadMoreNotifications = computed(() => notificationStore.items.length < notificationStore.total)
@@ -1092,6 +1091,8 @@ function isMenuActive(item: MenuItem) {
 
 async function handleNavigate(path: string) {
   mobileMoreDrawerVisible.value = false
+  // 菜单切换前先关闭全局助手，避免抽屉遮罩拦截导航，也避免助手继续使用旧页面上下文。
+  assistantDrawerVisible.value = false
   const targetLocation = toMenuRouteLocation(path)
   const resolvedTarget = router.resolve(targetLocation).fullPath
   if (isSameMenuLocation(route.fullPath, resolvedTarget)) {
@@ -1112,46 +1113,47 @@ async function handleMobileNavigate(path: string) {
 }
 
 /**
- * 顶部 Hermes 入口统一走抽屉承载，桌面端输入框和手机端图标复用同一套打开逻辑。
+ * 顶部 Assistant 入口统一走抽屉承载，桌面端输入框和手机端图标复用同一套打开逻辑。
  */
-const handleOpenHermesDrawer = () => {
-  if (!canUseHermes.value) {
+const handleOpenAssistantDrawer = async () => {
+  if (!canUseAssistant.value) {
     return
   }
-  hermesDrawerVisible.value = true
-  hermesDrawerRef.value?.openDrawer()
-}
-
-/**
- * 头部输入框按回车或点击按钮时，直接打开抽屉并把当前问题送入 Hermes。
- */
-const handleAskHermes = async () => {
-  if (!canUseHermes.value) {
-    return
-  }
-  const question = headerHermesQuestion.value.trim()
-  hermesDrawerVisible.value = true
+  assistantDrawerVisible.value = true
   await nextTick()
-  await hermesDrawerRef.value?.openWithQuestion(question)
-  headerHermesQuestion.value = ''
+  assistantDrawerRef.value?.openDrawer()
 }
 
 /**
- * 业务工作台通过全局事件复用布局层唯一的 Hermes 抽屉，避免页面各自重复挂载一份助手实例。
+ * 头部输入框按回车或点击按钮时，直接打开抽屉并把当前问题送入 Assistant。
  */
-const handleExternalHermesOpen = async (event: Event) => {
-  if (!canUseHermes.value) {
+const handleAskAssistant = async () => {
+  if (!canUseAssistant.value) {
     return
   }
-  const customEvent = event as CustomEvent<HermesOpenEventDetail | undefined>
+  const question = headerAssistantQuestion.value.trim()
+  assistantDrawerVisible.value = true
+  await nextTick()
+  await assistantDrawerRef.value?.openWithQuestion(question)
+  headerAssistantQuestion.value = ''
+}
+
+/**
+ * 业务工作台通过全局事件复用布局层唯一的 Assistant 抽屉，避免页面各自重复挂载一份助手实例。
+ */
+const handleExternalAssistantOpen = async (event: Event) => {
+  if (!canUseAssistant.value) {
+    return
+  }
+  const customEvent = event as CustomEvent<AssistantOpenEventDetail | undefined>
   const question = customEvent.detail?.question?.trim() || ''
   if (question) {
-    hermesDrawerVisible.value = true
+    assistantDrawerVisible.value = true
     await nextTick()
-    await hermesDrawerRef.value?.openWithQuestion(question)
+    await assistantDrawerRef.value?.openWithQuestion(question)
     return
   }
-  handleOpenHermesDrawer()
+  await handleOpenAssistantDrawer()
 }
 
 const handleCommand = async (command: string) => {
@@ -1452,7 +1454,7 @@ onMounted(() => {
   syncViewportMode()
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', syncViewportMode)
-    window.addEventListener(HERMES_OPEN_EVENT_NAME, handleExternalHermesOpen as EventListener)
+    window.addEventListener(ASSISTANT_OPEN_EVENT_NAME, handleExternalAssistantOpen as EventListener)
     runtimeCapabilityTimer = window.setInterval(() => {
       refreshRuntimeCapabilities().catch(() => undefined)
     }, 15000)
@@ -1462,7 +1464,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', syncViewportMode)
-    window.removeEventListener(HERMES_OPEN_EVENT_NAME, handleExternalHermesOpen as EventListener)
+    window.removeEventListener(ASSISTANT_OPEN_EVENT_NAME, handleExternalAssistantOpen as EventListener)
     if (runtimeCapabilityTimer !== null) {
       window.clearInterval(runtimeCapabilityTimer)
       runtimeCapabilityTimer = null

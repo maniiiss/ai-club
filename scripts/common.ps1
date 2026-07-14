@@ -752,7 +752,9 @@ function Start-LocalApplicationServices(
     Set-Item -Path 'Env:PI_RUNTIME_REDIS_URL' -Value (Get-EnvOrDefault -Name 'PI_RUNTIME_REDIS_URL' -DefaultValue "redis://:redis@2026@localhost:$($PortConfiguration.Redis)/0")
     Set-Item -Path 'Env:PI_RUNTIME_MODEL_PROVIDER' -Value (Get-EnvOrDefault -Name 'PLATFORM_PI_RUNTIME_MODEL_PROVIDER' -DefaultValue '')
     Set-Item -Path 'Env:PI_RUNTIME_MODEL_ID' -Value (Get-EnvOrDefault -Name 'PLATFORM_PI_RUNTIME_MODEL_ID' -DefaultValue '')
+    Set-Item -Path 'Env:PI_RUNTIME_MODEL_BASE_URL' -Value (Get-EnvOrDefault -Name 'PLATFORM_PI_RUNTIME_MODEL_BASE_URL' -DefaultValue '')
     Set-Item -Path 'Env:PI_RUNTIME_API_KEY' -Value (Get-EnvOrDefault -Name 'PLATFORM_PI_RUNTIME_API_KEY' -DefaultValue '')
+    Set-Item -Path 'Env:PI_RUNTIME_THINKING_LEVEL' -Value (Get-EnvOrDefault -Name 'PLATFORM_PI_RUNTIME_THINKING_LEVEL' -DefaultValue 'medium')
     Set-Item -Path 'Env:VITE_API_PORT' -Value "$($PortConfiguration.Backend)"
     Set-Item -Path 'Env:VITE_PUBLIC_FRONTEND_PORT' -Value "$($PortConfiguration.FrontendPublic)"
 

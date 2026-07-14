@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Runtime Adapter 注册门面。
- * 适配器实例按 Runtime 编码缓存，调用方只依赖统一接口；现有 CLI/Hermes 调用实现仍在兼容迁移期内复用。
+ * 适配器实例按 Runtime 编码缓存，调用方只依赖统一接口；现有 CLI/Assistant 调用实现仍在兼容迁移期内复用。
  */
 @Service
 public class RuntimeAdapterRegistry {

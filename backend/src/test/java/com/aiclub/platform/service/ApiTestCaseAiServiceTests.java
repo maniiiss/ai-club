@@ -124,7 +124,7 @@ class ApiTestCaseAiServiceTests {
     }
 
     private ApiTestGenerationContext context() {
-        ProjectEntity project = new ProjectEntity("CRM项目", "张三", "进行中", "API AI 测试");
+        ProjectEntity project = new ProjectEntity("示例项目", "测试用户", "进行中", "API AI 测试");
         project.setId(10L);
         ObjectNode data = objectMapper.createObjectNode()
                 .put("name", "创建用户")
@@ -139,7 +139,7 @@ class ApiTestCaseAiServiceTests {
         data.set("params", objectMapper.createArrayNode());
         data.set("formDataBody", objectMapper.createArrayNode());
         data.set("auth", objectMapper.createObjectNode());
-        return new ApiTestGenerationContext(project, 101L, "CRM项目 / 用户管理", data);
+        return new ApiTestGenerationContext(project, 101L, "示例项目 / 用户管理", data);
     }
 
     private AiModelConfigEntity model(Long id, String name, String modelType) {

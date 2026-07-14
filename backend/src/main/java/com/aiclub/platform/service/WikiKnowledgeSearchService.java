@@ -4,7 +4,7 @@ import com.aiclub.platform.domain.model.WikiPageEntity;
 import com.aiclub.platform.domain.model.WikiPageV2Entity;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.WikiSpaceKnowledgeGraph;
-import com.aiclub.platform.dto.request.HermesChatRequest;
+import com.aiclub.platform.dto.request.AssistantChatRequest;
 import com.aiclub.platform.repository.WikiPageRepository;
 import com.aiclub.platform.repository.WikiPageV2Repository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -33,14 +33,14 @@ import java.util.TreeMap;
 
 /**
  * Wiki 知识检索服务。
- * 业务意图：统一承接 Wiki 的向量写入、向量召回、rerank 与 Hermes Wiki 证据拼装，
+ * 业务意图：统一承接 Wiki 的向量写入、向量召回、rerank 与 Assistant Wiki 证据拼装，
  * 让 Wiki 知识库与 Hindsight 用户记忆彻底拆边界。
  */
 @Service
 public class WikiKnowledgeSearchService {
 
     private static final Logger log = LoggerFactory.getLogger(WikiKnowledgeSearchService.class);
-    private static final int HERMES_EVIDENCE_LIMIT = 3;
+    private static final int ASSISTANT_EVIDENCE_LIMIT = 3;
     /** 目录节点 id 偏移量：目录与页面共用一张数值 id 表，用大偏移把两类节点错开避免冲突。 */
     private static final long DIRECTORY_NODE_ID_OFFSET = 1_000_000_000L;
 
@@ -329,8 +329,8 @@ public class WikiKnowledgeSearchService {
     }
 
     public String buildWikiEvidenceMarkdown(CurrentUserInfo currentUser,
-                                            HermesContextAssembler.HermesConversationContext context,
-                                            HermesChatRequest request) {
+                                            AssistantContextAssembler.AssistantConversationContext context,
+                                            AssistantChatRequest request) {
         String query = defaultString(request == null ? null : request.question());
         if (query.isBlank()) {
             return "";
@@ -341,8 +341,8 @@ public class WikiKnowledgeSearchService {
         Long wikiPageId = context != null && context.wikiPageId() != null
                 ? context.wikiPageId()
                 : request == null ? null : request.wikiPageId();
-        // 阶段三切流开关：开启时走 LightRAG query，对 Hermes 透明（签名不变）。
-        if (lightRagProperties != null && lightRagProperties.isHermesEvidenceEnabled() && lightRagClientService != null
+        // 阶段三切流开关：开启时走 LightRAG query，对 Assistant 透明（签名不变）。
+        if (lightRagProperties != null && lightRagProperties.isAssistantEvidenceEnabled() && lightRagClientService != null
                 && wikiSpaceId != null) {
             try {
                 LightRagClientService.LightRagQueryResponse response = lightRagClientService.query(
@@ -357,13 +357,13 @@ public class WikiKnowledgeSearchService {
                     wikiSpaceId,
                     request == null ? null : request.projectId(),
                     query,
-                    HERMES_EVIDENCE_LIMIT
+                    ASSISTANT_EVIDENCE_LIMIT
             );
             return renderEvidenceMarkdown(
                     rerank(
                             query,
                             hits.stream().map(hit -> new WikiRerankCandidate(hit.pageId(), hit.title() + "\n" + hit.snippet(), hit.snippet(), hit.score())).toList(),
-                            HERMES_EVIDENCE_LIMIT
+                            ASSISTANT_EVIDENCE_LIMIT
                     ),
                     wikiPageId
             );
@@ -372,12 +372,12 @@ public class WikiKnowledgeSearchService {
                 ? context.projectId()
                 : request == null ? null : request.projectId();
         if (projectId != null) {
-            List<WikiSearchHit> hits = searchProjectWiki(projectId, query, HERMES_EVIDENCE_LIMIT);
+            List<WikiSearchHit> hits = searchProjectWiki(projectId, query, ASSISTANT_EVIDENCE_LIMIT);
             return renderEvidenceMarkdown(
                     rerank(
                             query,
                             hits.stream().map(hit -> new WikiRerankCandidate(hit.pageId(), hit.title() + "\n" + hit.snippet(), hit.snippet(), hit.score())).toList(),
-                            HERMES_EVIDENCE_LIMIT
+                            ASSISTANT_EVIDENCE_LIMIT
                     ),
                     wikiPageId
             );

@@ -393,6 +393,15 @@ export interface RuntimeRegistryItem {
   enabled: boolean
 }
 
+/** Runtime 管理页中的业务场景默认绑定。 */
+export interface RuntimeScenarioDefaultItem {
+  scenarioCode: 'ASSISTANT' | 'CHAT_ROOM' | 'DEVELOPMENT_IMPLEMENTATION' | 'TECHNICAL_DESIGN_AUTHORING' | string
+  scenarioName: string
+  runtimeRegistryCode: string
+  requiredCapabilities: string[]
+  updatedAt: string | null
+}
+
 export interface AgentTestResult {
   agentId: number
   agentName: string

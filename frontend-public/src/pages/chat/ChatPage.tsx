@@ -1,6 +1,6 @@
 /**
  * 多人聊天室页面。
- * 业务意图：把房间管理、实时消息和 @Hermes 协作聚合到公众端的一个工作台入口。
+ * 业务意图：把房间管理、实时消息和 @Assistant 协作聚合到公众端的一个工作台入口。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Bot, ChevronDown, Circle, RefreshCcw, Settings2, UserPlus, Users, Zap } from 'lucide-react'
@@ -31,7 +31,7 @@ import { Select } from '@/src/components/common/Select'
 import { useAuthStore } from '@/src/stores/auth'
 import { useGuide } from '@/src/components/guide'
 import type { ChatMessageItem, ChatRoomAgentConfig, ChatRoomAgentRuntimeOption, ChatRoomAgentTask, ChatRoomAgentToolPolicy, ChatRoomItem, ChatSocketEvent } from '@/src/types/chat'
-import type { HermesActionItem, HermesSelectionCardItem, HermesSelectionPayload } from '@/src/types/hermes'
+import type { AssistantActionItem, AssistantSelectionCardItem, AssistantSelectionPayload } from '@/src/types/assistant'
 import {
   appendChatStreamDelta,
   markAgentActionStatusInMessage,
@@ -42,8 +42,8 @@ import {
   parseChatSocketEvent,
   shouldCollapseChatSummary,
 } from '@/src/lib/chatUtils'
-import { executeHermesAction, getHermesActionErrorMessage } from '@/src/lib/hermesActionExecutor'
-import { computeHermesActionKey } from '@/src/lib/hermesUtils'
+import { executeAssistantAction, getAssistantActionErrorMessage } from '@/src/lib/assistantActionExecutor'
+import { computeAssistantActionKey } from '@/src/lib/assistantUtils'
 import { cn, getErrorMessage, getInitials } from '@/src/lib/utils'
 
 type RoomFilter = 'all' | 'project' | 'global'
@@ -215,10 +215,10 @@ export const ChatPage = () => {
       setAgentTasks((current) => mergeAgentTask(current, task))
       setMessages((current) => mergeAgentTaskIntoMessages(current, task))
     } else if (event.type === 'AGENT_ACTION_PENDING') {
-      const actions = Array.isArray(event.actions) ? event.actions as HermesActionItem[] : []
+      const actions = Array.isArray(event.actions) ? event.actions as AssistantActionItem[] : []
       setMessages((current) => mergeAgentActionsIntoMessage(current, toNullableNumber(event.messageId), toNullableNumber(event.taskId), actions))
     } else if (event.type === 'AGENT_SELECTION_PENDING') {
-      const selectionCards = Array.isArray(event.selectionCards) ? event.selectionCards as HermesSelectionCardItem[] : []
+      const selectionCards = Array.isArray(event.selectionCards) ? event.selectionCards as AssistantSelectionCardItem[] : []
       setMessages((current) => mergeAgentSelectionCardsIntoMessage(current, toNullableNumber(event.messageId), toNullableNumber(event.taskId), selectionCards))
     } else if (event.type === 'AGENT_SELECTION_RESOLVED') {
       setMessages((current) => markAgentSelectionStatusInMessage(
@@ -293,16 +293,16 @@ export const ChatPage = () => {
     }
   }
 
-  const handleConfirmAgentAction = async (message: ChatMessageItem, action: HermesActionItem, index: number, actionKey: string) => {
+  const handleConfirmAgentAction = async (message: ChatMessageItem, action: AssistantActionItem, index: number, actionKey: string) => {
     if (!selectedRoomId || !message.agentTaskId) return
     setResolvingActionKey(actionKey)
     setError(null)
     try {
-      await executeHermesAction(action)
+      await executeAssistantAction(action)
       await markChatRoomAgentActionExecuted(selectedRoomId, message.agentTaskId, { actionKey })
       setMessages((current) => markAgentActionStatusInMessage(current, message.id, message.agentTaskId, actionKey, 'executed'))
     } catch (err) {
-      setError(getHermesActionErrorMessage(err))
+      setError(getAssistantActionErrorMessage(err))
     } finally {
       setResolvingActionKey('')
     }
@@ -322,7 +322,7 @@ export const ChatPage = () => {
     }
   }
 
-  const handleSelectAgentCandidate = async (message: ChatMessageItem, selection: HermesSelectionPayload) => {
+  const handleSelectAgentCandidate = async (message: ChatMessageItem, selection: AssistantSelectionPayload) => {
     if (!selectedRoomId || !message.agentTaskId) return
     const selectionKey = `${message.agentTaskId}:${selection.slot}:${selection.entityType}:${selection.entityId}`
     setResolvingSelectionKey(selectionKey)
@@ -373,10 +373,10 @@ export const ChatPage = () => {
               messages={messages}
               currentUserId={currentUser?.id}
               loading={loadingMessages}
-              onRetryHermes={() => handleSend('@gitpilot 请重试上一条问题，并基于当前房间上下文重新回复。', [])}
+              onRetryAssistant={() => handleSend('@gitpilot 请重试上一条问题，并基于当前房间上下文重新回复。', [])}
               resolvingActionKey={resolvingActionKey}
               resolvingSelectionKey={resolvingSelectionKey}
-              computeActionKey={computeHermesActionKey}
+              computeActionKey={computeAssistantActionKey}
               onConfirmAgentAction={handleConfirmAgentAction}
               onCancelAgentAction={handleCancelAgentAction}
               onSelectAgentCandidate={handleSelectAgentCandidate}

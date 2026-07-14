@@ -16,7 +16,7 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * 聊天室房间级 Hermes Agent 配置。
+ * 聊天室房间级 Assistant Agent 配置。
  * 业务意图：让每个房间拥有独立的 AI 同事身份、主动能力开关和授权快照。
  */
 @Entity

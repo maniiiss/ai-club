@@ -221,6 +221,11 @@ public class AgentExecutionService {
     }
 
     public boolean supportsAsyncExecution(AgentEntity agent, String stepCode) {
+        return supportsAsyncExecution(agent, stepCode, Map.of());
+    }
+
+    /** 受管执行场景可使用任务快照中的默认 Runtime 判断异步能力。 */
+    public boolean supportsAsyncExecution(AgentEntity agent, String stepCode, Map<String, String> variables) {
         if (agent == null) {
             return false;
         }
@@ -236,7 +241,8 @@ public class AgentExecutionService {
         if (!ACCESS_AGENT_RUNTIME.equals(accessType)) {
             return false;
         }
-        return (isCliRuntime(agent) || RUNTIME_PI.equals(resolveRuntimeCode(agent))) && resolveCliMode(stepCode) != null;
+        String runtimeCode = resolveRuntimeCode(agent, variables);
+        return (isCliRuntime(runtimeCode) || RUNTIME_PI.equals(runtimeCode)) && resolveCliMode(stepCode) != null;
     }
 
     /**
@@ -248,7 +254,8 @@ public class AgentExecutionService {
                                                          int submitTimeoutSeconds,
                                                          int maxRuntimeSeconds) {
         validateEnabled(agent);
-        if (!supportsAsyncExecution(agent, variables == null ? null : variables.get("step_code"))) {
+        String runtimeCode = resolveRuntimeCode(agent, variables);
+        if (!supportsAsyncExecution(agent, variables == null ? null : variables.get("step_code"), variables)) {
             throw new IllegalArgumentException("当前 Agent 不支持异步流式执行");
         }
         String accessType = normalizeAccessType(agent.getAccessType());
@@ -260,18 +267,18 @@ public class AgentExecutionService {
             asyncStartUrl = trimTrailingSlash(endpointUrl) + "/start";
             httpMethod = normalizeHttpMethod(agent.getHttpMethod());
             requestBody = buildAsyncHttpRequestBody(agent, input, variables, maxRuntimeSeconds);
-        } else if (RUNTIME_PI.equals(resolveRuntimeCode(agent))) {
-            asyncStartUrl = trimTrailingSlash(requireRuntimeGateway(agent)) + PI_RUNTIME_RUN_PATH;
+        } else if (RUNTIME_PI.equals(runtimeCode)) {
+            asyncStartUrl = trimTrailingSlash(requireRuntimeGateway(agent, runtimeCode)) + PI_RUNTIME_RUN_PATH;
             httpMethod = "POST";
-            requestBody = buildPiRuntimeRequestBody(agent, input, variables, maxRuntimeSeconds);
+            requestBody = buildPiRuntimeRequestBody(agent, input, variables, maxRuntimeSeconds, runtimeCode);
         } else {
-            asyncStartUrl = trimTrailingSlash(requireRuntimeGateway(agent)) + CODE_PROCESSING_CLI_PATH + "/start";
+            asyncStartUrl = trimTrailingSlash(requireRuntimeGateway(agent, runtimeCode)) + CODE_PROCESSING_CLI_PATH + "/start";
             httpMethod = "POST";
-            requestBody = buildCliRuntimeRequestBody(agent, input, variables, maxRuntimeSeconds);
+            requestBody = buildCliRuntimeRequestBody(agent, input, variables, maxRuntimeSeconds, runtimeCode);
         }
         // 新版 Profile 通过 Registry Adapter 启动，运行中不会再次解析当前 Agent 配置；
         // 旧 Agent 仍保留下面的直连兼容分支，确保历史配置可以平滑迁移。
-        String registryCode = trimToNull(agent.getRuntimeRegistryCode());
+        String registryCode = trimToNull(runtimeCode);
         if (runtimeAdapterRegistry != null && registryCode != null) {
             try {
                 Map<String, Object> adapterVariables = new LinkedHashMap<>();
@@ -609,19 +616,23 @@ public class AgentExecutionService {
     }
 
     private String executeRuntimeAgent(AgentEntity agent, String input, Map<String, String> variables) {
-        String runtimeType = normalizeRuntimeType(resolveRuntimeCode(agent));
+        String runtimeType = normalizeRuntimeType(resolveRuntimeCode(agent, variables));
         return switch (runtimeType) {
             case RUNTIME_OPENCLAW -> executeOpenclawRuntime(agent, input, variables);
-            case RUNTIME_CODEX_CLI, RUNTIME_CLAUDE_CODE_CLI, RUNTIME_OPENCODE_CLI -> executeCliRuntime(agent, input, variables);
-            case RUNTIME_PI -> executePiRuntime(agent, input, variables);
+            case RUNTIME_CODEX_CLI, RUNTIME_CLAUDE_CODE_CLI, RUNTIME_OPENCODE_CLI -> executeCliRuntime(agent, input, variables, runtimeType);
+            case RUNTIME_PI -> executePiRuntime(agent, input, variables, runtimeType);
             default -> throw new IllegalArgumentException("Unsupported agent runtime type: " + runtimeType);
         };
     }
 
     /** 启动 Pi Runtime 的同步兼容入口，执行中心正式链路使用 startAsyncExecution。 */
     private String executePiRuntime(AgentEntity agent, String input, Map<String, String> variables) {
-        String endpointUrl = trimTrailingSlash(requireRuntimeGateway(agent)) + PI_RUNTIME_RUN_PATH;
-        String requestBody = buildPiRuntimeRequestBody(agent, input, variables, resolveTimeoutSeconds(agent, variables));
+        return executePiRuntime(agent, input, variables, resolveRuntimeCode(agent, variables));
+    }
+
+    private String executePiRuntime(AgentEntity agent, String input, Map<String, String> variables, String runtimeCode) {
+        String endpointUrl = trimTrailingSlash(requireRuntimeGateway(agent, runtimeCode)) + PI_RUNTIME_RUN_PATH;
+        String requestBody = buildPiRuntimeRequestBody(agent, input, variables, resolveTimeoutSeconds(agent, variables), runtimeCode);
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder().uri(URI.create(endpointUrl))
                     .timeout(Duration.ofSeconds(resolveTimeoutSeconds(agent, variables)));
@@ -646,8 +657,12 @@ public class AgentExecutionService {
      * CLI Runner 统一走 code-processing 的统一入口，执行中心仍只消费既有 Markdown / JSON 结果协议。
      */
     private String executeCliRuntime(AgentEntity agent, String input, Map<String, String> variables) {
-        String endpointUrl = requireRuntimeGateway(agent);
-        String requestBody = buildCliRuntimeRequestBody(agent, input, variables, resolveTimeoutSeconds(agent, variables));
+        return executeCliRuntime(agent, input, variables, resolveRuntimeCode(agent, variables));
+    }
+
+    private String executeCliRuntime(AgentEntity agent, String input, Map<String, String> variables, String runtimeCode) {
+        String endpointUrl = requireRuntimeGateway(agent, runtimeCode);
+        String requestBody = buildCliRuntimeRequestBody(agent, input, variables, resolveTimeoutSeconds(agent, variables), runtimeCode);
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(trimTrailingSlash(endpointUrl) + CODE_PROCESSING_CLI_PATH))
@@ -808,8 +823,16 @@ public class AgentExecutionService {
                                               String input,
                                               Map<String, String> variables,
                                               int timeoutSeconds) {
+        return buildCliRuntimeRequestBody(agent, input, variables, timeoutSeconds, resolveRuntimeCode(agent, variables));
+    }
+
+    private String buildCliRuntimeRequestBody(AgentEntity agent,
+                                              String input,
+                                              Map<String, String> variables,
+                                              int timeoutSeconds,
+                                              String runtimeCode) {
         // 新 Profile 的 Registry 编码优先，旧 runtime_type 仅作为兼容回退。
-        String runtimeType = normalizeRuntimeType(resolveRuntimeCode(agent));
+        String runtimeType = normalizeRuntimeType(runtimeCode);
         String cliMode = resolveCliMode(variables == null ? null : variables.get("step_code"));
         if (cliMode == null) {
             throw new IllegalArgumentException("当前步骤不支持 CLI Runtime 执行");
@@ -874,6 +897,14 @@ public class AgentExecutionService {
                                              String input,
                                              Map<String, String> variables,
                                              int timeoutSeconds) {
+        return buildPiRuntimeRequestBody(agent, input, variables, timeoutSeconds, resolveRuntimeCode(agent, variables));
+    }
+
+    private String buildPiRuntimeRequestBody(AgentEntity agent,
+                                             String input,
+                                             Map<String, String> variables,
+                                             int timeoutSeconds,
+                                             String runtimeCode) {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("runId", variables == null ? "" : defaultString(variables.get("execution_run_id")));
         payload.put("sessionId", variables == null ? "" : defaultString(variables.get("session_key")));
@@ -882,10 +913,11 @@ public class AgentExecutionService {
         payload.put("timeoutSeconds", Math.max(timeoutSeconds, 30));
         payload.put("modelProvider", defaultString(variables == null ? null : variables.get("model_provider")));
         payload.put("modelId", defaultString(variables == null ? null : variables.get("model_id")));
+        payload.put("modelBaseUrl", defaultString(variables == null ? null : variables.get("model_base_url")));
         payload.put("sessionToken", defaultString(variables == null ? null : variables.get("runtime_session_token")));
         ObjectNode snapshot = payload.putObject("profileSnapshot");
         snapshot.put("profileVersion", agent.getProfileVersion() == null ? 1L : agent.getProfileVersion());
-        snapshot.put("runtimeRegistryCode", defaultString(agent.getRuntimeRegistryCode()));
+        snapshot.put("runtimeRegistryCode", defaultString(runtimeCode));
         snapshot.put("toolPolicyJson", defaultString(agent.getToolPolicyJson()));
         snapshot.put("sandboxPolicyJson", defaultString(agent.getSandboxPolicyJson()));
         snapshot.put("sessionPolicyJson", defaultString(agent.getSessionPolicyJson()));
@@ -984,6 +1016,10 @@ public class AgentExecutionService {
             return false;
         }
         String runtimeType = trimToNull(resolveRuntimeCode(agent));
+        return isCliRuntime(runtimeType);
+    }
+
+    private boolean isCliRuntime(String runtimeType) {
         if (runtimeType == null) {
             return false;
         }
@@ -992,7 +1028,11 @@ public class AgentExecutionService {
     }
 
     private String requireRuntimeGateway(AgentEntity agent) {
-        if (RUNTIME_PI.equals(resolveRuntimeCode(agent)) && piRuntimeBaseUrl != null) {
+        return requireRuntimeGateway(agent, resolveRuntimeCode(agent));
+    }
+
+    private String requireRuntimeGateway(AgentEntity agent, String runtimeCode) {
+        if (RUNTIME_PI.equals(runtimeCode) && piRuntimeBaseUrl != null) {
             return piRuntimeBaseUrl;
         }
         if (codeProcessingBaseUrl != null) {
@@ -1006,7 +1046,7 @@ public class AgentExecutionService {
     }
 
     private String buildRuntimeSessionKey(AgentEntity agent, Map<String, String> variables) {
-        if (isCliRuntime(agent)) {
+        if (isCliRuntime(resolveRuntimeCode(agent, variables))) {
             return trimToNull(variables.get("session_key"));
         }
         String template = trimToNull(agent.getRuntimeSessionKeyTemplate());
@@ -1205,6 +1245,12 @@ public class AgentExecutionService {
         if (agent == null) return null;
         String registryCode = trimToNull(agent.getRuntimeRegistryCode());
         return registryCode == null ? trimToNull(agent.getRuntimeType()) : registryCode;
+    }
+
+    /** 受管执行任务优先使用创建时固化的场景默认 Runtime，普通 Agent 测试仍使用自身 Profile 配置。 */
+    private String resolveRuntimeCode(AgentEntity agent, Map<String, String> variables) {
+        String snapshotCode = variables == null ? null : trimToNull(variables.get("runtime_registry_code"));
+        return snapshotCode == null ? resolveRuntimeCode(agent) : snapshotCode.toUpperCase();
     }
 
     private String normalizeBuiltinCode(String value) {

@@ -416,23 +416,23 @@ public class WikiPageService {
     }
 
     /**
-     * 读取指定页面摘要，供 Hermes 上下文装配复用。
+     * 读取指定页面摘要，供 Assistant 上下文装配复用。
      */
-    public WikiPageSummary getPageSummaryForHermes(Long projectId, Long pageId) {
+    public WikiPageSummary getPageSummaryForAssistant(Long projectId, Long pageId) {
         WikiPageEntity page = requirePage(projectId, pageId);
         requirePageViewable(page);
         return toSummary(page, projectDataPermissionService.requireCurrentScope());
     }
 
     /**
-     * 读取指定页面详情，供 Hermes 工具执行复用。
+     * 读取指定页面详情，供 Assistant 工具执行复用。
      */
-    public WikiPageDetail getPageDetailForHermes(Long projectId, Long pageId) {
+    public WikiPageDetail getPageDetailForAssistant(Long projectId, Long pageId) {
         return getPageDetail(projectId, pageId);
     }
 
     /**
-     * 读取当前用户可见 Wiki 页面所属的项目名称，供 Hermes 文本上下文使用。
+     * 读取当前用户可见 Wiki 页面所属的项目名称，供 Assistant 文本上下文使用。
      */
     public String getProjectNameForVisiblePage(Long projectId, Long pageId) {
         WikiPageEntity page = requirePage(projectId, pageId);

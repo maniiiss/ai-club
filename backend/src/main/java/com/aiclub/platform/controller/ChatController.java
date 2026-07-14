@@ -10,8 +10,8 @@ import com.aiclub.platform.dto.ChatRoomDetail;
 import com.aiclub.platform.dto.ChatRoomSummary;
 import com.aiclub.platform.dto.RuntimeChatOptionSummary;
 import com.aiclub.platform.dto.request.CreateChatRoomRequest;
-import com.aiclub.platform.dto.request.HermesActionExecutedRequest;
-import com.aiclub.platform.dto.request.HermesSelectionRequest;
+import com.aiclub.platform.dto.request.AssistantActionExecutedRequest;
+import com.aiclub.platform.dto.request.AssistantSelectionRequest;
 import com.aiclub.platform.dto.request.SendChatMessageRequest;
 import com.aiclub.platform.dto.request.UpdateChatRoomAgentConfigRequest;
 import com.aiclub.platform.dto.request.UpdateChatRoomAgentToolPoliciesRequest;
@@ -147,7 +147,7 @@ public class ChatController {
     @RequirePermission("chat:view")
     public ApiResponse<ChatRoomAgentTaskSummary> markAgentActionExecuted(@PathVariable Long roomId,
                                                                          @PathVariable Long taskId,
-                                                                         @Valid @RequestBody HermesActionExecutedRequest request) {
+                                                                         @Valid @RequestBody AssistantActionExecutedRequest request) {
         return ApiResponse.success(chatRoomAgentService.markActionExecuted(roomId, taskId, request));
     }
 
@@ -155,7 +155,7 @@ public class ChatController {
     @RequirePermission("chat:view")
     public ApiResponse<ChatRoomAgentTaskSummary> cancelAgentAction(@PathVariable Long roomId,
                                                                    @PathVariable Long taskId,
-                                                                   @Valid @RequestBody HermesActionExecutedRequest request) {
+                                                                   @Valid @RequestBody AssistantActionExecutedRequest request) {
         return ApiResponse.success(chatRoomAgentService.cancelAction(roomId, taskId, request));
     }
 
@@ -163,7 +163,7 @@ public class ChatController {
     @RequirePermission("chat:view")
     public ApiResponse<ChatRoomAgentTaskSummary> selectAgentCandidate(@PathVariable Long roomId,
                                                                       @PathVariable Long taskId,
-                                                                      @Valid @RequestBody HermesSelectionRequest request) {
+                                                                      @Valid @RequestBody AssistantSelectionRequest request) {
         return ApiResponse.success(chatRoomAgentService.selectCandidate(roomId, taskId, request));
     }
 }

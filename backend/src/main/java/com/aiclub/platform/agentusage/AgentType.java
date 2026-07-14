@@ -21,10 +21,10 @@ public enum AgentType {
     API_TEST_CASE_AI("API 接口测试用例"),
     /** 平台统一图片理解能力。 */
     IMAGE_UNDERSTANDING("图片理解"),
-    /** Hermes 流式对话。 */
-    HERMES_CHAT("Hermes 对话"),
-    /** Hermes 语音转写。 */
-    HERMES_SPEECH_TRANSCRIBE("Hermes 语音转写"),
+    /** Assistant 流式对话。 */
+    HERMES_CHAT("GitPilot 对话"),
+    /** Assistant 语音转写。 */
+    HERMES_SPEECH_TRANSCRIBE("GitPilot 语音转写"),
     /** 代码审核（MR 自动合并审查）。 */
     CODE_REVIEW("代码审核"),
     /** 仓库扫描。 */

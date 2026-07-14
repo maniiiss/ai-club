@@ -41,6 +41,7 @@ import type {
   TaskPrdDetailItem,
   TaskRequirementAiResultItem,
   TaskItem,
+  RuntimeScenarioDefaultItem,
   TechnicalDesignExecutionPayload,
   TechnicalDesignWritebackPayload,
   LinkedTestCaseItem,
@@ -914,6 +915,24 @@ export const setRuntimeRegistryEnabled = async (runtimeCode: string, enabled: bo
 
 export const checkRuntimeHealth = async (runtimeCode: string): Promise<RuntimeRegistryItem> => {
   const { data } = await http.post<ApiResponse<RuntimeRegistryItem>>(`/api/runtime-registry/${runtimeCode}/health-check`)
+  return data.data
+}
+
+/** 查询四个业务场景当前使用的默认 Runtime。 */
+export const listRuntimeScenarioDefaults = async (): Promise<RuntimeScenarioDefaultItem[]> => {
+  const { data } = await http.get<ApiResponse<RuntimeScenarioDefaultItem[]>>('/api/runtime-registry/scenario-defaults')
+  return data.data
+}
+
+/** 更新一个业务场景的默认 Runtime；后端负责校验能力和启用状态。 */
+export const updateRuntimeScenarioDefault = async (
+  scenarioCode: string,
+  runtimeRegistryCode: string
+): Promise<RuntimeScenarioDefaultItem> => {
+  const { data } = await http.put<ApiResponse<RuntimeScenarioDefaultItem>>(
+    `/api/runtime-registry/scenario-defaults/${encodeURIComponent(scenarioCode)}`,
+    { runtimeRegistryCode }
+  )
   return data.data
 }
 

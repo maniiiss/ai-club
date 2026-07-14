@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 
 /**
  * 执行中心任务实体。
- * 该实体用于承接“页面入口 / Hermes / 兼容旧接口”统一发起的智能体执行任务定义。
+ * 该实体用于承接“页面入口 / Assistant / 兼容旧接口”统一发起的智能体执行任务定义。
  */
 @Entity
 @Table(name = "execution_task")
@@ -114,6 +114,10 @@ public class ExecutionTaskEntity {
      */
     @Column(name = "agent_binding_payload", nullable = false, columnDefinition = "TEXT")
     private String agentBindingPayload = "[]";
+
+    /** 创建任务时按业务场景固化的默认 Runtime；重试和异步调度不得重新读取当前默认值。 */
+    @Column(name = "runtime_registry_code_snapshot", length = 40)
+    private String runtimeRegistryCodeSnapshot;
 
     /** 创建任务时采用的已发布编排版本；旧任务和非受管场景为空。 */
     @ManyToOne(fetch = FetchType.LAZY)
@@ -262,6 +266,14 @@ public class ExecutionTaskEntity {
 
     public void setAgentBindingPayload(String agentBindingPayload) {
         this.agentBindingPayload = agentBindingPayload;
+    }
+
+    public String getRuntimeRegistryCodeSnapshot() {
+        return runtimeRegistryCodeSnapshot;
+    }
+
+    public void setRuntimeRegistryCodeSnapshot(String runtimeRegistryCodeSnapshot) {
+        this.runtimeRegistryCodeSnapshot = runtimeRegistryCodeSnapshot;
     }
 
     public ExecutionOrchestrationVersionEntity getOrchestrationVersion() { return orchestrationVersion; }

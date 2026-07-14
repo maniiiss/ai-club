@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 
 /**
  * 聊天室消息。
- * 业务意图：普通用户消息与 Hermes 助手消息统一保存在房间历史中，便于所有成员回放和继续汇总。
+ * 业务意图：普通用户消息与 Assistant 助手消息统一保存在房间历史中，便于所有成员回放和继续汇总。
  */
 @Entity
 @Table(name = "chat_message")
@@ -31,7 +31,7 @@ public class ChatMessageEntity {
     @JoinColumn(name = "room_id", nullable = false)
     private ChatRoomEntity room;
 
-    /** 发送用户；Hermes 助手消息为空。 */
+    /** 发送用户；Assistant 助手消息为空。 */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "sender_user_id")
     private UserEntity senderUser;
@@ -60,11 +60,11 @@ public class ChatMessageEntity {
     @Column(nullable = false, length = 20)
     private String status = "DONE";
 
-    /** 是否在原文中提及 Hermes。 */
+    /** 是否在原文中提及 Assistant。 */
     @Column(name = "mentions_hermes", nullable = false)
-    private boolean mentionsHermes = false;
+    private boolean mentionsAssistant = false;
 
-    /** 关联的 Agent 任务；普通成员消息为空，Hermes 占位/回复消息可回指后台任务。 */
+    /** 关联的 Agent 任务；普通成员消息为空，Assistant 占位/回复消息可回指后台任务。 */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "agent_task_id")
     private ChatRoomAgentTaskEntity agentTask;
@@ -163,12 +163,12 @@ public class ChatMessageEntity {
         this.status = status;
     }
 
-    public boolean isMentionsHermes() {
-        return mentionsHermes;
+    public boolean isMentionsAssistant() {
+        return mentionsAssistant;
     }
 
-    public void setMentionsHermes(boolean mentionsHermes) {
-        this.mentionsHermes = mentionsHermes;
+    public void setMentionsAssistant(boolean mentionsAssistant) {
+        this.mentionsAssistant = mentionsAssistant;
     }
 
     public ChatRoomAgentTaskEntity getAgentTask() {

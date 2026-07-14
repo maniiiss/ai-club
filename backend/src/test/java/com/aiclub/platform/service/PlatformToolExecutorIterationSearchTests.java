@@ -154,7 +154,7 @@ class PlatformToolExecutorIterationSearchTests {
     }
 
     @Test
-    void shouldFilterWorkItemsByStatusForHermesStatusQuestions() {
+    void shouldFilterWorkItemsByStatusForAssistantStatusQuestions() {
         UserEntity creator = createUser("tool-status-creator", "工具状态创建人");
         UserEntity owner = createUser("tool-status-owner", "工具状态负责人");
         ProjectEntity project = createProjectAs(creator, owner, "工具状态项目");
@@ -278,7 +278,7 @@ class PlatformToolExecutorIterationSearchTests {
     }
 
     /**
-     * Hermes 可能把自然语言拆成多个关键词传入，搜索应按 AND 语义匹配这些词，而不是要求整句连续出现。
+     * Assistant 可能把自然语言拆成多个关键词传入，搜索应按 AND 语义匹配这些词，而不是要求整句连续出现。
      */
     @Test
     void shouldMatchAllSeparatedChineseKeywordTokensInWorkItemSearch() {
@@ -329,7 +329,7 @@ class PlatformToolExecutorIterationSearchTests {
     }
 
     /**
-     * 搜索候选可以截断展示，但总数和状态分布必须基于完整筛选结果计算，避免 Hermes 把前五条误报成总量。
+     * 搜索候选可以截断展示，但总数和状态分布必须基于完整筛选结果计算，避免 Assistant 把前五条误报成总量。
      */
     @Test
     void shouldReturnExactWorkItemTotalAndStatusCountsWhenCandidatesAreTruncated() {

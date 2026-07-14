@@ -57,7 +57,7 @@
 
 **改进方向**
 
-- 后端新增 `/api/hermes/memories` 列表/删除 API
+- 后端新增 `/api/assistant/memories` 列表/删除 API
 - 前端 Hermes 抽屉侧边栏新增"记忆"Tab
 - 对话中支持"忘掉刚才那个"之类的显式遗忘指令
 

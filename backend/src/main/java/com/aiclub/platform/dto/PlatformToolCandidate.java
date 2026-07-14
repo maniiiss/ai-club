@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 工具查询返回的候选对象，用于 Hermes 抽屉展示和后续动作确认。
+ * 工具查询返回的候选对象，用于 Assistant 抽屉展示和后续动作确认。
  */
 public record PlatformToolCandidate(
         String type,
