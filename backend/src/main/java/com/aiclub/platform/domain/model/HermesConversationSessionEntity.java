@@ -48,6 +48,14 @@ public class HermesConversationSessionEntity {
     @Column(name = "route_name", nullable = false, length = 80)
     private String routeName = "";
 
+    /** GitPilot 会话创建时固定的 Runtime，后续对话不因平台默认切换而改变。 */
+    @Column(name = "runtime_registry_code", length = 40)
+    private String runtimeRegistryCode = "HERMES_LEGACY";
+
+    /** 创建会话时绑定的 Agent Profile 版本，用于历史会话回放。 */
+    @Column(name = "runtime_profile_version")
+    private Long runtimeProfileVersion = 1L;
+
     /** 会话绑定的项目ID。 */
     @Column(name = "project_id")
     private Long projectId;
@@ -213,6 +221,11 @@ public class HermesConversationSessionEntity {
     public void setRouteName(String routeName) {
         this.routeName = routeName;
     }
+
+    public String getRuntimeRegistryCode() { return runtimeRegistryCode; }
+    public void setRuntimeRegistryCode(String runtimeRegistryCode) { this.runtimeRegistryCode = runtimeRegistryCode; }
+    public Long getRuntimeProfileVersion() { return runtimeProfileVersion; }
+    public void setRuntimeProfileVersion(Long runtimeProfileVersion) { this.runtimeProfileVersion = runtimeProfileVersion; }
 
     /**
      * 获取绑定的项目ID。

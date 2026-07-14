@@ -67,12 +67,21 @@ public class AuthInterceptor implements HandlerInterceptor {
         AuthContextHolder.set(authContext);
         if (handler instanceof HandlerMethod handlerMethod) {
             RequirePermission permission = findPermission(handlerMethod);
-            if (permission != null && !authContext.hasPermission(permission.value())) {
+            if (permission != null && !hasRequiredPermission(authContext, permission)) {
                 writeJson(response, HttpStatus.FORBIDDEN, "You do not have permission to access this resource");
                 return false;
             }
         }
         return true;
+    }
+
+    /** GitPilot 新旧权限并行发布期间按 OR 语义校验，避免自定义角色被旧编码卡住。 */
+    private boolean hasRequiredPermission(AuthContext authContext, RequirePermission permission) {
+        if (authContext.hasPermission(permission.value())) return true;
+        for (String fallback : permission.anyOf()) {
+            if (authContext.hasPermission(fallback)) return true;
+        }
+        return false;
     }
 
     @Override

@@ -7,6 +7,7 @@ import com.aiclub.platform.domain.model.ExecutionTaskEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.dto.request.ExecutionAgentBindingRequest;
 import com.aiclub.platform.repository.AgentRepository;
+import com.aiclub.platform.runtime.RuntimeCapability;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -73,11 +74,21 @@ public class ExecutionWorkflowService {
 
     private final AgentRepository agentRepository;
     private final ObjectMapper objectMapper;
+    private final RuntimeRegistryService runtimeRegistryService;
 
     public ExecutionWorkflowService(AgentRepository agentRepository,
                                     ObjectMapper objectMapper) {
+        this(agentRepository, objectMapper, null);
+    }
+
+    /** 运行时能力注册服务可选注入，旧单元测试仍可使用两参数构造器。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    public ExecutionWorkflowService(AgentRepository agentRepository,
+                                    ObjectMapper objectMapper,
+                                    RuntimeRegistryService runtimeRegistryService) {
         this.agentRepository = agentRepository;
         this.objectMapper = objectMapper;
+        this.runtimeRegistryService = runtimeRegistryService;
     }
 
     /**
@@ -197,7 +208,16 @@ public class ExecutionWorkflowService {
                         step.timeoutSeconds(),
                         step.agent() == null ? null : step.agent().getName(),
                         step.agent() == null ? null : step.agent().getAccessType(),
-                        step.agent() == null ? null : step.agent().getRuntimeType()
+                        step.agent() == null ? null : step.agent().getRuntimeType(),
+                        step.agent() == null ? null : step.agent().getRuntimeRegistryCode(),
+                        step.agent() == null ? null : step.agent().getProfileVersion(),
+                        step.agent() == null ? null : step.agent().getAiModelConfig() == null ? null : step.agent().getAiModelConfig().getId(),
+                        step.agent() == null ? null : step.agent().getSystemPrompt(),
+                        step.agent() == null ? null : step.agent().getUserPromptTemplate(),
+                        step.agent() == null ? "{}" : step.agent().getToolPolicyJson(),
+                        step.agent() == null ? "{}" : step.agent().getSandboxPolicyJson(),
+                        step.agent() == null ? null : step.agent().getBudgetTokens(),
+                        step.agent() == null ? "{}" : step.agent().getSessionPolicyJson()
                 ))
                 .toList();
         try {
@@ -454,19 +474,14 @@ public class ExecutionWorkflowService {
 
         return switch (stepCode) {
             case STEP_PLAN -> findFirstByPredicate(candidates, agent ->
-                    isCliRuntime(agent, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI)
-                            || isCliRuntime(agent, AgentExecutionService.RUNTIME_OPENCODE_CLI)
+                    supportsStepCapabilities(agent, STEP_PLAN)
                             || "REQUIREMENT_AI_BREAKDOWN".equalsIgnoreCase(defaultString(agent.getBuiltinCode()))
                             || containsAny(agent, "planner", "规划", "需求"));
             case STEP_IMPLEMENT -> findFirstByPredicate(candidates, agent ->
-                    isCliRuntime(agent, AgentExecutionService.RUNTIME_CODEX_CLI)
-                            || isCliRuntime(agent, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI)
-                            || isCliRuntime(agent, AgentExecutionService.RUNTIME_OPENCODE_CLI)
+                    supportsStepCapabilities(agent, STEP_IMPLEMENT)
                             || (isExecutableAgent(agent) && containsAny(agent, "coder", "code", "开发", "实现")));
             case STEP_TEST -> findFirstByPredicate(candidates, agent ->
-                    isCliRuntime(agent, AgentExecutionService.RUNTIME_CODEX_CLI)
-                            || isCliRuntime(agent, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI)
-                            || isCliRuntime(agent, AgentExecutionService.RUNTIME_OPENCODE_CLI)
+                    supportsStepCapabilities(agent, STEP_TEST)
                             || (isExecutableAgent(agent) && containsAny(agent, "test", "qa", "测试", "quality")))
                     .or(() -> findFirstByPredicate(candidates, agent ->
                             isExecutableAgent(agent)
@@ -485,14 +500,8 @@ public class ExecutionWorkflowService {
                             || containsAny(agent, "review", "评审", "reviewer"));
             case STEP_AD_HOC_RUN -> candidates.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(candidates.get(0));
             case STEP_CODE_CONTEXT, STEP_DESIGN_DRAFT, STEP_DESIGN_REVIEW -> candidates.stream()
-                    .filter(agent -> isCliRuntime(agent, AgentExecutionService.RUNTIME_CODEX_CLI))
-                    .findFirst()
-                    .or(() -> candidates.stream()
-                            .filter(agent -> isCliRuntime(agent, AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI))
-                            .findFirst())
-                    .or(() -> candidates.stream()
-                            .filter(agent -> isCliRuntime(agent, AgentExecutionService.RUNTIME_OPENCODE_CLI))
-                            .findFirst());
+                    .filter(agent -> supportsStepCapabilities(agent, STEP_CODE_CONTEXT))
+                    .findFirst();
             default -> java.util.Optional.empty();
         };
     }
@@ -514,6 +523,45 @@ public class ExecutionWorkflowService {
         return agent != null
                 && AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(defaultString(agent.getAccessType()))
                 && runtimeType.equalsIgnoreCase(defaultString(agent.getRuntimeType()));
+    }
+
+    /** 按步骤能力筛选 Agent，Runtime 名称只在旧数据兼容映射中出现。 */
+    private boolean supportsStepCapabilities(AgentEntity agent, String stepCode) {
+        if (agent == null || !AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(defaultString(agent.getAccessType()))) {
+            return false;
+        }
+        Set<RuntimeCapability> required = switch (stepCode) {
+            case STEP_PLAN -> Set.of(RuntimeCapability.PLAN, RuntimeCapability.REPOSITORY_READ);
+            case STEP_IMPLEMENT -> Set.of(RuntimeCapability.IMPLEMENT, RuntimeCapability.REPOSITORY_READ,
+                    RuntimeCapability.REPOSITORY_WRITE);
+            case STEP_TEST -> Set.of(RuntimeCapability.TEST, RuntimeCapability.REPOSITORY_READ);
+            case STEP_CODE_CONTEXT, STEP_DESIGN_DRAFT, STEP_DESIGN_REVIEW -> Set.of(RuntimeCapability.STREAM_EVENTS,
+                    RuntimeCapability.REPOSITORY_READ, RuntimeCapability.TECHNICAL_DESIGN);
+            default -> Set.of();
+        };
+        if (required.isEmpty()) return true;
+        Set<RuntimeCapability> capabilities = legacyCapabilities(agent.getRuntimeType());
+        if (runtimeRegistryService != null && agent.getRuntimeRegistryCode() != null
+                && !agent.getRuntimeRegistryCode().isBlank()) {
+            try {
+                capabilities = runtimeRegistryService.descriptor(agent.getRuntimeRegistryCode()).capabilities();
+            } catch (RuntimeException exception) {
+                return false;
+            }
+        }
+        return capabilities.containsAll(required);
+    }
+
+    private Set<RuntimeCapability> legacyCapabilities(String runtimeType) {
+        String runtime = defaultString(runtimeType).trim().toUpperCase(Locale.ROOT);
+        if (AgentExecutionService.RUNTIME_CODEX_CLI.equals(runtime)
+                || AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equals(runtime)
+                || AgentExecutionService.RUNTIME_OPENCODE_CLI.equals(runtime)) {
+            return Set.of(RuntimeCapability.STREAM_EVENTS, RuntimeCapability.REPOSITORY_READ,
+                    RuntimeCapability.REPOSITORY_WRITE, RuntimeCapability.PLAN, RuntimeCapability.TECHNICAL_DESIGN,
+                    RuntimeCapability.IMPLEMENT, RuntimeCapability.TEST, RuntimeCapability.CHAT);
+        }
+        return Set.of();
     }
 
     private boolean containsAny(AgentEntity agent, String... keywords) {
@@ -611,7 +659,16 @@ public class ExecutionWorkflowService {
             Integer timeoutSeconds,
             String agentName,
             String accessType,
-            String runtimeType
+            String runtimeType,
+            String runtimeRegistryCode,
+            Long profileVersion,
+            Long modelConfigId,
+            String systemPrompt,
+            String userPromptTemplate,
+            String toolPolicyJson,
+            String sandboxPolicyJson,
+            Integer budgetTokens,
+            String sessionPolicyJson
     ) {
     }
 

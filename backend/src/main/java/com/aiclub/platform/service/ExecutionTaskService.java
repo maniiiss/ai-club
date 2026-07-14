@@ -663,6 +663,8 @@ public class ExecutionTaskService {
                         item.path("agentName").isTextual() ? item.path("agentName").asText() : null,
                         item.path("accessType").isTextual() ? item.path("accessType").asText() : null,
                         item.path("runtimeType").isTextual() ? item.path("runtimeType").asText() : null,
+                        item.path("runtimeRegistryCode").isTextual() ? item.path("runtimeRegistryCode").asText() : null,
+                        item.path("profileVersion").isNumber() ? item.path("profileVersion").asLong() : null,
                         item.path("timeoutSeconds").isNumber() ? item.path("timeoutSeconds").asInt() : null,
                         item.path("repositoryBindingId").isNumber() ? item.path("repositoryBindingId").asLong() : null,
                         item.path("repositoryTargetBranch").isTextual() ? item.path("repositoryTargetBranch").asText() : null,

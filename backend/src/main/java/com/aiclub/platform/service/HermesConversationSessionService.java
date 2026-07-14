@@ -26,6 +26,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -40,6 +41,10 @@ import java.util.UUID;
 @Service
 @Transactional(readOnly = true)
 public class HermesConversationSessionService {
+
+    /** GitPilot 新会话默认 Runtime；现有 Hermes 会话仍按历史快照执行。 */
+    @Value("${platform.assistant.default-runtime-code:HERMES_LEGACY}")
+    private String defaultRuntimeCode;
 
     /** 新建会话的默认标题。 */
     private static final String DEFAULT_SESSION_TITLE = "新会话";
@@ -131,6 +136,9 @@ public class HermesConversationSessionService {
         entity.setTitleCustomized(false);
         entity.setClientConversationId(generateClientConversationId());
         entity.setRouteName(defaultString(request.routeName()));
+        entity.setRuntimeRegistryCode(defaultRuntimeCode == null || defaultRuntimeCode.isBlank()
+                ? "HERMES_LEGACY" : defaultRuntimeCode.trim().toUpperCase(java.util.Locale.ROOT));
+        entity.setRuntimeProfileVersion(1L);
         entity.setProjectId(request.projectId());
         entity.setTaskId(request.taskId());
         entity.setIterationId(request.iterationId());

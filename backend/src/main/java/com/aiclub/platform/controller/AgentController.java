@@ -9,6 +9,7 @@ import com.aiclub.platform.dto.request.AgentRequest;
 import com.aiclub.platform.dto.request.AgentTestRequest;
 import com.aiclub.platform.service.AgentExecutionService;
 import com.aiclub.platform.service.PlatformStoreService;
+import com.aiclub.platform.service.RuntimeRegistryService;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,11 +33,14 @@ public class AgentController {
 
     private final PlatformStoreService platformStoreService;
     private final AgentExecutionService agentExecutionService;
+    private final RuntimeRegistryService runtimeRegistryService;
 
     public AgentController(PlatformStoreService platformStoreService,
-                           AgentExecutionService agentExecutionService) {
+                           AgentExecutionService agentExecutionService,
+                           RuntimeRegistryService runtimeRegistryService) {
         this.platformStoreService = platformStoreService;
         this.agentExecutionService = agentExecutionService;
+        this.runtimeRegistryService = runtimeRegistryService;
     }
 
     @GetMapping
@@ -70,12 +74,14 @@ public class AgentController {
     @PostMapping
     @RequirePermission("agent:manage")
     public ApiResponse<AgentSummary> create(@Valid @RequestBody AgentRequest request) {
+        validateRuntimeRegistry(request);
         return ApiResponse.success(platformStoreService.createAgent(request));
     }
 
     @PutMapping("/{id}")
     @RequirePermission("agent:manage")
     public ApiResponse<AgentSummary> update(@PathVariable Long id, @Valid @RequestBody AgentRequest request) {
+        validateRuntimeRegistry(request);
         return ApiResponse.success(platformStoreService.updateAgent(id, request));
     }
 
@@ -95,5 +101,13 @@ public class AgentController {
         AgentTestResult result = agentExecutionService.testAgent(id, request.input());
         log.info("Agent test request completed: agentId={}, success={}, message={}", id, result.success(), result.message());
         return ApiResponse.success(result);
+    }
+
+    /** Agent 保存时只校验 Registry 引用存在；健康状态留给发布/执行前置校验，便于管理员先配置后探测。 */
+    private void validateRuntimeRegistry(AgentRequest request) {
+        if (!AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(request.accessType())) return;
+        String code = request.runtimeRegistryCode() == null || request.runtimeRegistryCode().isBlank()
+                ? request.runtimeType() : request.runtimeRegistryCode();
+        runtimeRegistryService.require(code);
     }
 }

@@ -362,6 +362,34 @@ services:
     volumes:
       - ${PLATFORM_SCAN_HOST_PATH:-/data/git-ai-club/scans}:${PLATFORM_SCAN_WORKSPACE_ROOT:-/scan-workspace}
 
+  pi-runtime:
+    build:
+      context: ./pi-runtime
+      dockerfile: Dockerfile
+    image: ${PI_RUNTIME_IMAGE:-git-ai-club-pi-runtime:latest}
+    container_name: git-ai-club-server-pi-runtime
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:9010/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    environment:
+      TZ: ${APP_TZ:-Asia/Shanghai}
+      PI_RUNTIME_PORT: 9010
+      PI_RUNTIME_SERVICE_TOKEN: ${PLATFORM_INTERNAL_SERVICE_TOKEN:-git-ai-club-internal-service-token}
+      PI_RUNTIME_BACKEND_BASE_URL: http://backend:8080
+      PI_RUNTIME_MODEL_PROVIDER: ${PLATFORM_PI_RUNTIME_MODEL_PROVIDER:-}
+      PI_RUNTIME_MODEL_ID: ${PLATFORM_PI_RUNTIME_MODEL_ID:-}
+      PI_RUNTIME_API_KEY: ${PLATFORM_PI_RUNTIME_API_KEY:-}
+      PI_RUNTIME_REDIS_URL: ${PI_RUNTIME_REDIS_URL:-redis://:redis@2026@redis:6379/0}
+      PI_RUNTIME_SESSION_TTL_MS: ${PI_RUNTIME_SESSION_TTL_MS:-86400000}
+    ports:
+      - "${PI_RUNTIME_PORT:-9010}:9010"
+
   gitnexus-web:
     build:
       context: ./docker/gitnexus-web
@@ -458,6 +486,8 @@ services:
         condition: service_started
       code-processing:
         condition: service_started
+      pi-runtime:
+        condition: service_started
       qdrant:
         condition: service_started
       neo4j:
@@ -485,6 +515,8 @@ services:
       PLATFORM_EXECUTION_WORKSPACE_CLEANUP_CLEANUP_FIXED_DELAY_MS: ${PLATFORM_EXECUTION_WORKSPACE_CLEANUP_CLEANUP_FIXED_DELAY_MS:-300000}
       # backend 调用 code-processing 走容器内服务名，避免被 MCP Host 校验或宿主机防火墙拦截。
       PLATFORM_CODE_PROCESSING_BASE_URL: http://code-processing:9000
+      PLATFORM_PI_RUNTIME_BASE_URL: http://pi-runtime:9010
+      PLATFORM_PI_RUNTIME_SERVICE_TOKEN: ${PLATFORM_INTERNAL_SERVICE_TOKEN:-git-ai-club-internal-service-token}
       PLATFORM_HERMES_BASE_URL: http://hermes:18080/v1
       PLATFORM_HERMES_API_KEY: ${PLATFORM_HERMES_API_KEY:-}
       PLATFORM_HERMES_MODEL: ${PLATFORM_HERMES_MODEL:-hermes-agent}

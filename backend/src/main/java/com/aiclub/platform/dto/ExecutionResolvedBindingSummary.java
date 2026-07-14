@@ -9,6 +9,8 @@ public record ExecutionResolvedBindingSummary(
         String agentName,
         String accessType,
         String runtimeType,
+        String runtimeRegistryCode,
+        Long profileVersion,
         Integer timeoutSeconds,
         Long repositoryBindingId,
         String repositoryTargetBranch,

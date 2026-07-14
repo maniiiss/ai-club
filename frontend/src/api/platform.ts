@@ -117,7 +117,13 @@ export interface AgentPayload {
   systemPrompt?: string
   userPromptTemplate?: string
   endpointUrl?: string
-  runtimeType?: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | 'OPENCODE_CLI' | null
+  runtimeType?: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | 'OPENCODE_CLI' | 'PI_RUNTIME' | 'HERMES_LEGACY' | null
+  runtimeRegistryCode?: string | null
+  runtimeFallbackCodesJson?: string
+  toolPolicyJson?: string
+  sandboxPolicyJson?: string
+  budgetTokens?: number | null
+  sessionPolicyJson?: string
   runtimeAgentRef?: string
   runtimeSessionKeyTemplate?: string
   httpMethod?: string
@@ -128,6 +134,21 @@ export interface AgentPayload {
   httpResponsePath?: string
   timeoutSeconds?: number | null
   projectId?: number | null
+}
+
+/** GitPilot Runtime 注册项摘要。 */
+export interface RuntimeRegistryItem {
+  runtimeCode: string
+  adapterType: 'CHAT_GATEWAY' | 'CLI_RUNNER' | 'STATEFUL_AGENT'
+  endpointRef: string | null
+  version: string
+  capabilities: string[]
+  sandboxPolicyJson: string
+  fallbackRuntimeCodes: string[]
+  healthStatus: 'UNKNOWN' | 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY' | 'DISABLED'
+  healthMessage: string
+  healthCheckedAt: string | null
+  enabled: boolean
 }
 
 
@@ -843,6 +864,17 @@ export const listExecutionOrchestrationScenarios = async (projectId?: number) =>
   const { data } = await http.get<ApiResponse<ExecutionOrchestrationScenarioItem[]>>('/api/execution-orchestrations/scenarios', {
     params: cleanParams({ projectId })
   })
+  return data.data
+}
+
+/** 查询已注册 Runtime；Agent 表单只展示平台注册项，避免直接填写任意 Gateway。 */
+export const listRuntimeRegistry = async (): Promise<RuntimeRegistryItem[]> => {
+  const { data } = await http.get<ApiResponse<RuntimeRegistryItem[]>>('/api/runtime-registry/options')
+  return data.data
+}
+
+export const checkRuntimeHealth = async (runtimeCode: string): Promise<RuntimeRegistryItem> => {
+  const { data } = await http.post<ApiResponse<RuntimeRegistryItem>>(`/api/runtime-registry/${runtimeCode}/health-check`)
   return data.data
 }
 

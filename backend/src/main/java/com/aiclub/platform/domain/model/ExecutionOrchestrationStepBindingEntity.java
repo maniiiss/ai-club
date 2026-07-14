@@ -14,6 +14,12 @@ public class ExecutionOrchestrationStepBindingEntity {
     @Column(name = "agent_name_snapshot", nullable = false, length = 100) private String agentNameSnapshot = "";
     @Column(name = "access_type_snapshot", nullable = false, length = 20) private String accessTypeSnapshot = "";
     @Column(name = "runtime_type_snapshot", length = 30) private String runtimeTypeSnapshot;
+    /** Registry 编码和 Profile 版本快照，发布后不随 Agent 当前配置变化。 */
+    @Column(name = "runtime_registry_code_snapshot", length = 40) private String runtimeRegistryCodeSnapshot;
+    @Column(name = "profile_version_snapshot") private Long profileVersionSnapshot;
+    @Column(name = "capabilities_snapshot_json", nullable = false, columnDefinition = "TEXT") private String capabilitiesSnapshotJson = "[]";
+    @Column(name = "tool_policy_snapshot_json", nullable = false, columnDefinition = "TEXT") private String toolPolicySnapshotJson = "{}";
+    @Column(name = "sandbox_policy_snapshot_json", nullable = false, columnDefinition = "TEXT") private String sandboxPolicySnapshotJson = "{}";
     public Long getId(){return id;} public void setId(Long id){this.id=id;}
     public ExecutionOrchestrationVersionEntity getVersion(){return version;} public void setVersion(ExecutionOrchestrationVersionEntity v){version=v;}
     public String getStepCode(){return stepCode;} public void setStepCode(String v){stepCode=v;}
@@ -22,4 +28,9 @@ public class ExecutionOrchestrationStepBindingEntity {
     public String getAgentNameSnapshot(){return agentNameSnapshot;} public void setAgentNameSnapshot(String v){agentNameSnapshot=v;}
     public String getAccessTypeSnapshot(){return accessTypeSnapshot;} public void setAccessTypeSnapshot(String v){accessTypeSnapshot=v;}
     public String getRuntimeTypeSnapshot(){return runtimeTypeSnapshot;} public void setRuntimeTypeSnapshot(String v){runtimeTypeSnapshot=v;}
+    public String getRuntimeRegistryCodeSnapshot(){return runtimeRegistryCodeSnapshot;} public void setRuntimeRegistryCodeSnapshot(String v){runtimeRegistryCodeSnapshot=v;}
+    public Long getProfileVersionSnapshot(){return profileVersionSnapshot;} public void setProfileVersionSnapshot(Long v){profileVersionSnapshot=v;}
+    public String getCapabilitiesSnapshotJson(){return capabilitiesSnapshotJson;} public void setCapabilitiesSnapshotJson(String v){capabilitiesSnapshotJson=v;}
+    public String getToolPolicySnapshotJson(){return toolPolicySnapshotJson;} public void setToolPolicySnapshotJson(String v){toolPolicySnapshotJson=v;}
+    public String getSandboxPolicySnapshotJson(){return sandboxPolicySnapshotJson;} public void setSandboxPolicySnapshotJson(String v){sandboxPolicySnapshotJson=v;}
 }

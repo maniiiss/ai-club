@@ -42,6 +42,10 @@ export const http = axios.create({
 
 /** 请求拦截器：自动注入 Bearer token。 */
 http.interceptors.request.use((config) => {
+  // GitPilot 主入口已经切换到中性 Assistant API；保留旧调用方源码即可平滑兼容 Hermes 版本客户端。
+  if (typeof config.url === 'string' && config.url.startsWith('/api/hermes')) {
+    config.url = `/api/assistant${config.url.slice('/api/hermes'.length)}`
+  }
   const token = localStorage.getItem(AUTH_TOKEN_KEY)
   if (token) {
     config.headers.Authorization = `Bearer ${token}`

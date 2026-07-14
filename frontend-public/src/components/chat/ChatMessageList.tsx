@@ -111,7 +111,7 @@ export const ChatMessageList = ({
         <Bot className="mb-3 h-10 w-10 text-[var(--color-text-tertiary)]" strokeWidth={1.5} />
         <p className="text-[16px] font-semibold text-[var(--color-text-primary)]">开始一次房间协作</p>
         <p className="mt-1 max-w-md text-[13px] leading-relaxed text-[var(--color-text-tertiary)]">
-          发送 Markdown 消息，附上文档，或直接输入 @hermes 让 Hermes 基于房间上下文汇总。
+          发送 Markdown 消息，附上文档，或直接输入 @gitpilot 让 GitPilot 基于房间上下文汇总。
         </p>
       </div>
     )
@@ -137,11 +137,11 @@ export const ChatMessageList = ({
                 <div className={cn('min-w-0 max-w-[min(760px,88%)]', isMine && 'items-end')}>
                   <div className={cn('mb-1 flex items-center gap-2', isMine && 'justify-end')}>
                     <span className="text-[12px] font-medium text-[var(--color-text-secondary)]">
-                      {isAssistant ? 'Hermes' : message.senderName || message.senderUsername || '用户'}
+                      {isAssistant ? 'GitPilot' : message.senderName || message.senderUsername || '用户'}
                     </span>
                     {message.mentionsHermes && !isAssistant && (
                       <span className="chat-mention-badge rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold">
-                        @hermes
+                        @gitpilot
                       </span>
                     )}
                     <span className="text-[11px] text-[var(--color-text-tertiary)]">
@@ -162,7 +162,7 @@ export const ChatMessageList = ({
                   {message.status === 'error' && (
                     <div className="chat-message-error mb-2 flex items-center gap-2 rounded-lg px-2.5 py-2 text-[12px]">
                       <AlertTriangle className="h-4 w-4 shrink-0" />
-                      Hermes 回复失败，可重试生成。
+                      GitPilot 回复失败，可重试生成。
                     </div>
                   )}
                   <HermesAssistantMessageContent content={normalizeGeneratedMarkdown(resolveChatAssistantContent(message))} />
@@ -260,7 +260,7 @@ export const ChatMessageList = ({
                         icon={<RefreshCcw className="h-3.5 w-3.5" />}
                         onClick={onRetryHermes}
                       >
-                        重试 Hermes
+                        重试 GitPilot
                       </Button>
                     </div>
                   )}

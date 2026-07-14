@@ -3,8 +3,8 @@ import type { HermesActionItem, HermesSelectionCardItem, HermesSelectionOptionIt
 import { resolveHermesAssistantDisplayState } from '@/src/lib/hermesUtils'
 export { normalizeGeneratedMarkdown } from '@/src/lib/markdownUtils'
 
-// 只允许 @hermes 独立成一个 token（后接空白或字符串结尾），避免把 @hermes-dev、@hermes队长 等用户名误判为助手提及
-const hermesMentionPattern = /(^|\s)@hermes(?=\s|$)/i
+// GitPilot 使用中性 mention，同时保留 @hermes 作为旧客户端兼容别名。
+const hermesMentionPattern = /(^|\s)@(hermes|gitpilot)(?=\s|$)/i
 
 export const containsHermesMention = (content: string): boolean => hermesMentionPattern.test(content || '')
 

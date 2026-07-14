@@ -64,8 +64,8 @@ public class ChatRoomService {
     public static final String STATUS_ERROR = "ERROR";
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    // 只允许 @hermes 独立成一个 token（后接空白/字符串结尾），避免把 @hermes-dev、@hermes队长 这类用户名误判为助手提及
-    private static final Pattern HERMES_MENTION_PATTERN = Pattern.compile("(^|\\s)@hermes(?=\\s|$)", Pattern.CASE_INSENSITIVE);
+    // GitPilot 使用中性 mention；保留 @hermes 作为兼容别名，避免历史消息和客户端失效。
+    private static final Pattern HERMES_MENTION_PATTERN = Pattern.compile("(^|\\s)@(hermes|gitpilot)(?=\\s|$)", Pattern.CASE_INSENSITIVE);
     private static final int MAX_PREVIEW_LENGTH = 500;
     private static final String PAYLOAD_HERMES_ACTIONS = "hermesActions";
     private static final String PAYLOAD_ACTION_STATUSES = "actionStatuses";

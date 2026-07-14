@@ -15,7 +15,7 @@ import {
   streamHermesSessionChatWithFiles,
   transcribeHermesSpeech,
   type HermesStreamHandlers,
-} from '@/src/api/hermes'
+} from '@/src/api/assistant'
 import {
   buildHermesSessionQuery,
   markHermesStreamStopped,

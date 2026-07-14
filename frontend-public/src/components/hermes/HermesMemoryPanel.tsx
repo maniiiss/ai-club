@@ -14,7 +14,7 @@ import {
   reindexHermesFileLibraryItem,
   updateHermesFileLibraryItem,
   uploadHermesFileLibraryItem,
-} from '@/src/api/hermes'
+} from '@/src/api/assistant'
 import { getErrorMessage } from '@/src/lib/utils'
 import type { HermesFileLibraryItem, HermesMemoryFactItem, HermesUserMemoryItem } from '@/src/types/hermes'
 

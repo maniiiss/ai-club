@@ -277,7 +277,7 @@ export const streamHermesSessionChat = async (
 ) => {
   const token = localStorage.getItem(AUTH_TOKEN_KEY)
   const controller = new AbortController()
-  const response = await fetch(`${resolvedApiBaseUrl}/api/hermes/sessions/${sessionId}/chat/stream`, {
+  const response = await fetch(`${resolvedApiBaseUrl}/api/assistant/sessions/${sessionId}/chat/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -309,7 +309,7 @@ export const streamHermesSessionChatWithFiles = async (
   if (payload.slashCommand) formData.append('slashCommand', payload.slashCommand)
   files.forEach((file) => formData.append('files', file))
 
-  const response = await fetch(`${resolvedApiBaseUrl}/api/hermes/sessions/${sessionId}/chat/stream`, {
+  const response = await fetch(`${resolvedApiBaseUrl}/api/assistant/sessions/${sessionId}/chat/stream`, {
     method: 'POST',
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),

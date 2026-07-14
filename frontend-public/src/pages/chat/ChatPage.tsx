@@ -367,7 +367,7 @@ export const ChatPage = () => {
               messages={messages}
               currentUserId={currentUser?.id}
               loading={loadingMessages}
-              onRetryHermes={() => handleSend('@hermes 请重试上一条问题，并基于当前房间上下文重新回复。', [])}
+              onRetryHermes={() => handleSend('@gitpilot 请重试上一条问题，并基于当前房间上下文重新回复。', [])}
               resolvingActionKey={resolvingActionKey}
               resolvingSelectionKey={resolvingSelectionKey}
               computeActionKey={computeHermesActionKey}
