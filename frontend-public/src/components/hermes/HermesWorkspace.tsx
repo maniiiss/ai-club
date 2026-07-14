@@ -52,6 +52,9 @@ interface StreamController {
   abort: () => void
 }
 
+// 助手展示名称与当前登录用户角色无关，避免流式响应中的用户角色覆盖助手标签。
+const HERMES_ASSISTANT_DISPLAY_NAME = '协作助手'
+
 const buildSessionPayload = (projectId?: number) => ({
   routeName: 'projects',
   projectId: projectId ?? null,
@@ -89,7 +92,6 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
   const [loadingMore, setLoadingMore] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [messages, setMessages] = useState<HermesMessageItem[]>([])
-  const [roleName, setRoleName] = useState('协作助手')
   const [references, setReferences] = useState<HermesReferenceItem[]>([])
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [actions, setActions] = useState<HermesActionItem[]>([])
@@ -212,14 +214,12 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
   }
 
   const applyStreamDisplayState = (
-    nextRoleName: string,
     nextReferences: HermesReferenceItem[],
     nextSuggestions: string[],
     nextActions: HermesActionItem[],
     nextSelectionCards: HermesSelectionCardItem[],
     nextDebug: HermesDebugInfoItem | null,
   ) => {
-    setRoleName(nextRoleName || '协作助手')
     setReferences(nextReferences || [])
     setSuggestions(nextSuggestions || [])
     setActions(nextActions || [])
@@ -252,7 +252,7 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
         },
         onMeta: (event) => {
           if (shouldIgnoreHermesStreamEvent(assistantMessageId, currentStreamingAssistantMessageIdRef.current, stopRequestedRef.current)) return
-          applyStreamDisplayState(event.roleName, event.references, event.suggestions, event.actions, event.selectionCards, event.debug)
+          applyStreamDisplayState(event.references, event.suggestions, event.actions, event.selectionCards, event.debug)
         },
         onDelta: (event) => {
           if (shouldIgnoreHermesStreamEvent(assistantMessageId, currentStreamingAssistantMessageIdRef.current, stopRequestedRef.current)) return
@@ -260,7 +260,7 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
         },
         onDone: (event) => {
           if (shouldIgnoreHermesStreamEvent(assistantMessageId, currentStreamingAssistantMessageIdRef.current, stopRequestedRef.current)) return
-          applyStreamDisplayState(event.roleName, event.references, event.suggestions, event.actions, event.selectionCards, event.debug)
+          applyStreamDisplayState(event.references, event.suggestions, event.actions, event.selectionCards, event.debug)
           updateMessage(assistantMessageId, (current) => ({
             ...current,
             content: event.content || current.content,
@@ -429,7 +429,7 @@ export const HermesWorkspace = ({ mode, projectId, compact = false }: HermesWork
         <main className="flex min-w-0 flex-1 flex-col">
           <HermesMessageList
             messages={messages}
-            roleName={roleName}
+            roleName={HERMES_ASSISTANT_DISPLAY_NAME}
             references={references}
             suggestions={suggestions}
             debug={debug}

@@ -1,5 +1,5 @@
 import { ExternalLink, Loader2 } from 'lucide-react'
-import { Markdown } from '@/src/components/common/Markdown'
+import { HermesAssistantMessageContent } from '@/src/components/hermes/HermesAssistantMessageContent'
 import { cn } from '@/src/lib/utils'
 import type {
   HermesAttachmentItem,
@@ -110,7 +110,7 @@ export const HermesMessageList = ({
               ) : (
                 <>
                   {assistantDisplay?.content ? (
-                    <Markdown content={assistantDisplay.content} normalize={false} variant="assistant" className="text-[13px]" />
+                    <HermesAssistantMessageContent content={assistantDisplay.content} />
                   ) : assistantDisplay?.showThinking ? (
                     <div className="inline-flex items-center gap-2 text-[13px] text-[var(--color-text-secondary)]">
                       <Loader2 className="h-4 w-4 animate-spin" />

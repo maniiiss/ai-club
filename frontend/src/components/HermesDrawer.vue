@@ -277,7 +277,7 @@
             <div v-for="message in currentMessages" :key="message.id" class="hermes-message-row" :class="message.role">
               <div class="hermes-message-label">
                 {{ message.role === 'user' ? '我' : 'Hermes' }}
-                <span v-if="message.role === 'assistant'" class="hermes-role-tag">{{ currentRoleName }}</span>
+                <span v-if="message.role === 'assistant'" class="hermes-role-tag">协作助手</span>
               </div>
               <div class="hermes-message-bubble" :class="[message.status, { 'stream-loading': shouldShowInlineStreamStatus(message) && !message.content?.trim() }]">
                 <pre v-if="message.role === 'user'">{{ message.content || '暂无内容' }}</pre>
@@ -471,7 +471,6 @@ import { downloadCommonFile, openCommonFileDownload } from '@/api/common'
 import { archiveHermesConversationSession, clearHermesUserMemories, consolidateHermesUserMemories, createHermesConversationSession, deleteHermesConversationSession, deleteHermesFileLibraryItem, deleteHermesUserMemory, getHermesConversationDetail, getHermesMemoryConsolidationStatus, listHermesFileLibraryItems, listHermesUserMemories, markHermesActionExecuted, pageHermesConversationSessions, reindexHermesFileLibraryItem, renameHermesConversationSession, restoreHermesConversationSession, streamHermesSessionChat, streamHermesSessionChatWithFiles, transcribeHermesSpeech, updateHermesFileLibraryItem, uploadHermesFileLibraryItem } from '@/api/hermes'
 import { createGitlabBindingScanTask } from '@/api/gitlab'
 import { createExecutionTask, createTask, createTestPlan } from '@/api/platform'
-import { useAuthStore } from '@/stores/auth'
 import { renderHermesMarkdownToHtml } from '@/utils/hermesMarkdown'
 import { resolveHermesDrawerPresentation } from '@/utils/hermesDrawerLayout'
 import { buildHermesToolTraceSummary, normalizeHermesToolExecutions } from '@/utils/hermesProcessTrace'
@@ -497,7 +496,6 @@ interface HermesQuestionInputExpose {
 const props = defineProps<HermesDrawerProps>()
 const drawerVisible = defineModel<boolean>({ default: false })
 const router = useRouter()
-const authStore = useAuthStore()
 const messageScrollRef = ref<HTMLDivElement>()
 const questionInputRef = ref<HermesQuestionInputExpose | null>(null)
 const fileInputRef = ref<HTMLInputElement>()
@@ -532,7 +530,6 @@ const sessionTotal = ref(0)
 const mobileSessionPanelVisible = ref(false)
 const selectedSessionId = ref<number | null>(readSelectedSessionId())
 const currentSessionDetail = ref<HermesConversationDetailItem | null>(null)
-const currentRoleName = ref(resolveCurrentRoleName())
 const currentMessages = ref<HermesMessageItem[]>([])
 const currentReferences = ref<HermesReferenceItem[]>([])
 const currentSuggestions = ref<string[]>([])
@@ -737,10 +734,6 @@ watch(isMobileViewport, (mobile) => {
     return
   }
   mobileSessionPanelVisible.value = false
-})
-
-watch(() => authStore.user?.roleNames, () => {
-  currentRoleName.value = resolveCurrentRoleName()
 })
 
 onMounted(() => {
@@ -1620,7 +1613,7 @@ const submitConversation = async (question: string, userContent: string, selecti
     const streamController = pendingFiles.value.length
       ? await streamHermesSessionChatWithFiles(writableSessionId, payload, pendingFiles.value, {
           onStatus: (streamPayload: HermesStreamStatusEvent) => { applyStreamStatus(streamPayload) },
-          onMeta: (streamPayload: HermesStreamMetaEvent) => { applyStreamDisplayState(streamPayload.roleName, streamPayload.references, streamPayload.suggestions, streamPayload.actions, streamPayload.selectionCards, streamPayload.debug) },
+          onMeta: (streamPayload: HermesStreamMetaEvent) => { applyStreamDisplayState(streamPayload.references, streamPayload.suggestions, streamPayload.actions, streamPayload.selectionCards, streamPayload.debug) },
           onDelta: (streamPayload: HermesStreamDeltaEvent) => queueStreamDelta(assistantMessageId, streamPayload.content || ''),
           onDone: (streamPayload: HermesStreamDoneEvent) => {
             if (stopRequested.value) {
@@ -1628,7 +1621,7 @@ const submitConversation = async (question: string, userContent: string, selecti
               return
             }
             flushPendingStreamDeltas(true)
-            applyStreamDisplayState(streamPayload.roleName, streamPayload.references, streamPayload.suggestions, streamPayload.actions, streamPayload.selectionCards, streamPayload.debug)
+            applyStreamDisplayState(streamPayload.references, streamPayload.suggestions, streamPayload.actions, streamPayload.selectionCards, streamPayload.debug)
             const shouldPreferTerminalContent = Boolean(streamPayload.actions?.length || streamPayload.selectionCards?.length)
         updateMessage(assistantMessageId, (current) => ({ ...current, content: shouldPreferTerminalContent ? (streamPayload.content || current.content) : resolveAssistantFinalContent(current.content, streamPayload.content), status: 'done', attachments: current.attachments || [], toolExecutions: resolveDebugToolExecutions(streamPayload.debug) }))
             pendingFiles.value = []
@@ -1650,7 +1643,7 @@ const submitConversation = async (question: string, userContent: string, selecti
         })
       : await streamHermesSessionChat(writableSessionId, payload, {
       onStatus: (payload: HermesStreamStatusEvent) => { applyStreamStatus(payload) },
-      onMeta: (payload: HermesStreamMetaEvent) => { applyStreamDisplayState(payload.roleName, payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug) },
+      onMeta: (payload: HermesStreamMetaEvent) => { applyStreamDisplayState(payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug) },
       onDelta: (payload: HermesStreamDeltaEvent) => queueStreamDelta(assistantMessageId, payload.content || ''),
       onDone: (payload: HermesStreamDoneEvent) => {
         if (stopRequested.value) {
@@ -1658,7 +1651,7 @@ const submitConversation = async (question: string, userContent: string, selecti
           return
         }
         flushPendingStreamDeltas(true)
-        applyStreamDisplayState(payload.roleName, payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug)
+        applyStreamDisplayState(payload.references, payload.suggestions, payload.actions, payload.selectionCards, payload.debug)
         const shouldPreferTerminalContent = Boolean(payload.actions?.length || payload.selectionCards?.length)
         updateMessage(assistantMessageId, (current) => ({ ...current, content: shouldPreferTerminalContent ? (payload.content || current.content) : resolveAssistantFinalContent(current.content, payload.content), status: 'done', attachments: current.attachments || [], toolExecutions: resolveDebugToolExecutions(payload.debug) }))
         pendingFiles.value = []
@@ -1764,8 +1757,7 @@ function handleStopStream() {
   finishStream({ preserveStopRequested: true })
 }
 
-function applyStreamDisplayState(roleName: string, references: HermesReferenceItem[], suggestions: string[], actions: HermesActionItem[], selectionCards: HermesSelectionCardItem[], debug: HermesDebugInfoItem | null) {
-  currentRoleName.value = roleName || resolveCurrentRoleName()
+function applyStreamDisplayState(references: HermesReferenceItem[], suggestions: string[], actions: HermesActionItem[], selectionCards: HermesSelectionCardItem[], debug: HermesDebugInfoItem | null) {
   currentReferences.value = references || []
   currentSuggestions.value = suggestions || []
   currentActions.value = actions || []
@@ -1934,7 +1926,6 @@ function applySessionDetail(detail: HermesConversationDetailItem) {
   currentDebug.value = latestDisplayState.debug || null
   // 从后端持久化的已执行 key 列表恢复，避免刷新或换设备后按钮回到"确认执行"。
   executedActionKeys.value = new Set(detail.executedActionKeys || [])
-  currentRoleName.value = resolveCurrentRoleName()
   const shouldScrollToBottom = pendingSessionBottomScroll.value
   pendingSessionBottomScroll.value = false
   void restoreThinkBlocksAndScroll(shouldScrollToBottom)
@@ -2403,10 +2394,6 @@ function toggleMobileSessionPanel() {
 
 function closeMobileSessionPanel() {
   mobileSessionPanelVisible.value = false
-}
-
-function resolveCurrentRoleName() {
-  return authStore.user?.roleNames?.[0] || '协作成员'
 }
 
 function readSelectedSessionId() {

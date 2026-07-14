@@ -7,7 +7,7 @@ import { AlertTriangle, ArrowDownToLine, Bot, CheckCircle2, FileText, MousePoint
 import type { ChatMessageItem } from '@/src/types/chat'
 import type { HermesActionItem, HermesSelectionOptionItem, HermesSelectionPayload } from '@/src/types/hermes'
 import { Button } from '@/src/components/common/Button'
-import { Markdown } from '@/src/components/common/Markdown'
+import { HermesAssistantMessageContent } from '@/src/components/hermes/HermesAssistantMessageContent'
 import {
   buildAgentSelectionStatusKey,
   formatChatFileSize,
@@ -165,7 +165,7 @@ export const ChatMessageList = ({
                       Hermes 回复失败，可重试生成。
                     </div>
                   )}
-                  <Markdown content={normalizeGeneratedMarkdown(resolveChatAssistantContent(message))} normalize={false} variant="assistant" />
+                  <HermesAssistantMessageContent content={normalizeGeneratedMarkdown(resolveChatAssistantContent(message))} />
                   {isAssistant && message.agentTaskId && (
                     <span className="chat-agent-task-chip mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px] font-medium">
                       Agent task #{message.agentTaskId} · {formatAgentTaskStatus(message.agentTaskStatus)}

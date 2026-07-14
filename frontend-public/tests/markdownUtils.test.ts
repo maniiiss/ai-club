@@ -158,6 +158,12 @@ describe('normalizeGeneratedMarkdown - 孤立强调标记清理', () => {
     assert.equal(result, '🚀 建议优先级\n\n1. 🔴立即升级 Token Plan')
   })
 
+  it('应清理统计标签与数值之间没有成对闭合的单星号', () => {
+    const result = normalizeGeneratedMarkdown('总数：* 53 个工作项')
+
+    assert.equal(result, '总数： 53 个工作项')
+  })
+
   it('应修复绑定项目标签前后错位的强调标记', () => {
     const result = normalizeGeneratedMarkdown('📋 智能体讨论组 —聊天室总结**绑定项目： *')
 
