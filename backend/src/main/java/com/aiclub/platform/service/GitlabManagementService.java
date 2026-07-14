@@ -379,7 +379,7 @@ public class GitlabManagementService {
     }
 
     /**
-     * 返回仓库规范扫描规则集列表，供仓库页和 Hermes 工具统一复用。
+     * 返回仓库规范扫描规则集列表，供仓库页和 Assistant 工具统一复用。
      */
     public List<RepositoryScanRulesetSummary> listScanRulesets() {
         return repositoryScanRulesetService.listEnabledRulesets();

@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 
 /**
  * 聊天室消息附件。
- * 业务意图：附件原文件复用 document_asset，额外保存本次转换 Markdown，供 @Hermes 汇总时引用。
+ * 业务意图：附件原文件复用 document_asset，额外保存本次转换 Markdown，供 @Assistant 汇总时引用。
  */
 @Entity
 @Table(name = "chat_message_attachment")

@@ -1,0 +1,236 @@
+package com.aiclub.platform.service;
+
+import com.aiclub.platform.dto.CurrentUserInfo;
+import com.aiclub.platform.dto.AssistantCallableTool;
+import com.aiclub.platform.dto.PlatformToolDefinition;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.springframework.stereotype.Service;
+
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * 将平台工具定义适配为 Assistant 可见的函数工具 schema。
+ */
+@Service
+public class AssistantToolSchemaService {
+
+    private static final String SUPER_ADMIN_ROLE = "SUPER_ADMIN";
+    private static final Set<String> SUPPORTED_WRITE_TOOL_CODES = Set.of(
+            PlatformToolRegistry.TOOL_REPO_SCAN_START,
+            PlatformToolRegistry.TOOL_WORK_ITEM_CREATE_DRAFT,
+            PlatformToolRegistry.TOOL_EXECUTION_TASK_CREATE,
+            PlatformToolRegistry.TOOL_TEST_PLAN_CREATE_DRAFT
+    );
+
+    private final PlatformToolRegistry platformToolRegistry;
+    private final ObjectMapper objectMapper;
+
+    public AssistantToolSchemaService(PlatformToolRegistry platformToolRegistry,
+                                   ObjectMapper objectMapper) {
+        this.platformToolRegistry = platformToolRegistry;
+        this.objectMapper = objectMapper;
+    }
+
+    /**
+     * 列出当前用户对 Assistant 可见的工具。
+     * 只读工具全部开放；写工具仅开放当前前端已支持确认卡片的几种。
+     */
+    public List<AssistantCallableTool> listCallableTools(CurrentUserInfo currentUser) {
+        return platformToolRegistry.listDefinitions().stream()
+                .filter(PlatformToolDefinition::readOnly)
+                .filter(definition -> hasPermission(currentUser, definition.permissionCode()))
+                .map(this::toCallableTool)
+                .toList();
+    }
+
+    /**
+     * 列出当前用户对 Assistant 可见的写工具。
+     * 这些工具不会被平台直接执行，只会转成确认卡片，
+     * 因此这里默认向 Assistant 暴露支持的写工具，由平台在确认执行阶段再做最终权限校验。
+     */
+    public List<AssistantCallableTool> listCallableWriteTools(CurrentUserInfo currentUser) {
+        return platformToolRegistry.listDefinitions().stream()
+                .filter(definition -> !definition.readOnly())
+                .filter(definition -> SUPPORTED_WRITE_TOOL_CODES.contains(definition.code()))
+                .map(this::toCallableTool)
+                .toList();
+    }
+
+    /**
+     * 将工具函数名映射回平台内部工具编码。
+     */
+    public String resolveToolCode(String functionName) {
+        if (functionName == null || functionName.isBlank()) {
+            return "";
+        }
+        return functionName.trim().replace("__", ".");
+    }
+
+    /**
+     * 判断工具是否属于当前可支持的写操作确认范围。
+     */
+    public boolean isCallableWriteTool(String toolCode) {
+        return SUPPORTED_WRITE_TOOL_CODES.contains(toolCode);
+    }
+
+    /**
+     * 将平台工具定义转换为 Assistant 可消费的 JSON Schema。
+     */
+    private AssistantCallableTool toCallableTool(PlatformToolDefinition definition) {
+        ObjectNode parameters = JsonNodeFactory.instance.objectNode();
+        parameters.put("type", "object");
+        ObjectNode properties = parameters.putObject("properties");
+        if (definition.inputSchema() != null) {
+            for (Map.Entry<String, String> entry : definition.inputSchema().entrySet()) {
+                ObjectNode property = properties.putObject(entry.getKey());
+                property.put("type", inferJsonType(entry.getKey()));
+                property.put("description", entry.getValue());
+            }
+        }
+        appendRequiredFields(parameters.putArray("required"), definition);
+        parameters.put("additionalProperties", false);
+        return new AssistantCallableTool(
+                definition.code(),
+                functionName(definition.code()),
+                definition.name(),
+                buildToolDescription(definition),
+                definition.readOnly(),
+                definition.requiresConfirm(),
+                objectMapper.valueToTree(parameters)
+        );
+    }
+
+    /**
+     * 统一把基础说明、入参、出参和写工具确认语义收敛到同一段描述中，方便模型一次看全。
+     */
+    private String buildToolDescription(PlatformToolDefinition definition) {
+        if (definition == null) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder(defaultString(definition.description()));
+        Set<String> requiredFields = requiredFields(definition);
+        appendInputSection(builder, definition.inputSchema(), requiredFields);
+        appendFieldSection(builder, "出参", definition.outputSchema(), false, Set.of());
+        if (!definition.readOnly()) {
+            builder.append("\n\n说明：调用写工具后，平台返回待确认动作卡片，不会直接执行真实写操作。");
+        }
+        return builder.toString().trim();
+    }
+
+    private void appendInputSection(StringBuilder builder,
+                                    Map<String, String> schema,
+                                    Set<String> requiredFields) {
+        if (schema == null || schema.isEmpty()) {
+            builder.append("\n\n入参：\n- 无业务入参。");
+            return;
+        }
+        appendFieldSection(builder, "入参", schema, true, requiredFields);
+    }
+
+    private void appendFieldSection(StringBuilder builder,
+                                    String title,
+                                    Map<String, String> schema,
+                                    boolean withType,
+                                    Set<String> requiredFields) {
+        if (schema == null || schema.isEmpty()) {
+            return;
+        }
+        builder.append("\n\n").append(title).append("：");
+        for (Map.Entry<String, String> entry : schema.entrySet()) {
+            builder.append("\n- ").append(entry.getKey());
+            if (withType) {
+                builder.append(" (").append(inferJsonType(entry.getKey())).append(")");
+            }
+            if (requiredFields.contains(entry.getKey())) {
+                builder.append(" [必填]");
+            }
+            builder.append("：").append(defaultString(entry.getValue()));
+        }
+    }
+
+    /**
+     * 将平台工具编码转换为 OpenAI 兼容函数名。
+     */
+    private String functionName(String toolCode) {
+        return toolCode == null ? "" : toolCode.replace(".", "__");
+    }
+
+    /**
+     * Assistant 工具暴露遵循平台权限，但超级管理员角色可以直接看到全部工具。
+     */
+    private boolean hasPermission(CurrentUserInfo currentUser, String permissionCode) {
+        if (isSuperAdmin(currentUser)) {
+            return true;
+        }
+        if (permissionCode == null || permissionCode.isBlank()) {
+            return true;
+        }
+        List<String> permissionCodes = currentUser == null || currentUser.permissionCodes() == null
+                ? List.of()
+                : currentUser.permissionCodes();
+        return permissionCodes.contains(permissionCode);
+    }
+
+    private boolean isSuperAdmin(CurrentUserInfo currentUser) {
+        List<String> roleCodes = currentUser == null || currentUser.roleCodes() == null
+                ? List.of()
+                : currentUser.roleCodes();
+        return roleCodes.stream().anyMatch(code -> SUPER_ADMIN_ROLE.equalsIgnoreCase(code));
+    }
+
+    /**
+     * 现有工具入参大多是 ID 或关键词，第一版按命名约定推断基础 JSON 类型。
+     */
+    private String inferJsonType(String fieldName) {
+        if (fieldName == null) {
+            return "string";
+        }
+        String normalized = fieldName.toLowerCase();
+        if ("cases".equals(normalized) || normalized.endsWith("ids")) {
+            return "array";
+        }
+        if (normalized.endsWith("id")) {
+            return "integer";
+        }
+        if (normalized.contains("enabled") || normalized.startsWith("is")) {
+            return "boolean";
+        }
+        return "string";
+    }
+
+    /**
+     * 目前仅对仓库扫描写工具显式声明规则集必填，避免模型在未确认规则集时直接发起扫描。
+     */
+    private void appendRequiredFields(com.fasterxml.jackson.databind.node.ArrayNode required,
+                                      PlatformToolDefinition definition) {
+        if (required == null || definition == null) {
+            return;
+        }
+        for (String field : requiredFields(definition)) {
+            required.add(field);
+        }
+    }
+
+    private Set<String> requiredFields(PlatformToolDefinition definition) {
+        LinkedHashSet<String> required = new LinkedHashSet<>();
+        if (definition == null) {
+            return required;
+        }
+        if (PlatformToolRegistry.TOOL_REPO_SCAN_START.equals(definition.code())) {
+            required.add("rulesetCode");
+        }
+        if (PlatformToolRegistry.TOOL_DOCUMENT_CONVERT_MARKDOWN.equals(definition.code())) {
+            required.add("assetId");
+        }
+        return required;
+    }
+
+    private String defaultString(String value) {
+        return value == null ? "" : value.trim();
+    }
+}

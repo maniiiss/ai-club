@@ -32,6 +32,7 @@ import EnvironmentVariableManagementView from '@/views/EnvironmentVariableManage
 import ShortcutEntryManagementView from '@/views/ShortcutEntryManagementView.vue'
 import RepositoryScanRulesetView from '@/views/RepositoryScanRulesetView.vue'
 import OperationLogView from '@/views/OperationLogView.vue'
+import RuntimeRegistryView from '@/views/RuntimeRegistryView.vue'
 import IterationView from '@/views/IterationView.vue'
 import ProfileView from '@/views/ProfileView.vue'
 import GitlabOauthCallbackView from '@/views/GitlabOauthCallbackView.vue'
@@ -144,6 +145,7 @@ const router = createRouter({
         { path: 'permissions', name: 'permissions', component: PermissionView, meta: { title: '功能管理', permission: 'system:permission:view' } },
         { path: 'credits', name: 'credits', component: CreditManagementView, meta: { title: '积分管理', permission: 'system:credit:view' } },
         { path: 'tools', name: 'tools', component: ToolConfigView, meta: { title: '工具配置', permission: 'system:tool:view' } },
+        { path: 'runtime-registry', name: 'runtime-registry', component: RuntimeRegistryView, meta: { title: 'Runtime 注册中心', permission: 'runtime:manage' } },
         { path: 'data-workbench', name: 'data-workbench', component: DataWorkbenchView, meta: { title: '数据工作台', permission: 'data-workbench:view' } },
         { path: 'env-vars', name: 'env-vars', component: EnvironmentVariableManagementView, meta: { title: '环境变量管理', permission: 'system:env:view' } },
         { path: 'shortcuts', name: 'shortcuts', component: ShortcutEntryManagementView, meta: { title: '快捷入口管理', permission: 'system:shortcut:view' } },

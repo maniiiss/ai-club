@@ -6,7 +6,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Wiki 知识索引配置。
- * 业务意图：把 Wiki 的向量存储、Embedding 与 rerank 配置独立于 Hermes/Hindsight 记忆链路维护，
+ * 业务意图：把 Wiki 的向量存储、Embedding 与 rerank 配置独立于 Assistant/Hindsight 记忆链路维护，
  * 避免知识检索和会话记忆继续耦合在同一套抽象上。
  */
 @Component
@@ -18,7 +18,7 @@ public class WikiKnowledgeProperties {
     private final int qdrantTimeoutSeconds;
     private final String projectCollection;
     private final String spaceCollection;
-    private final String hermesFileLibraryCollection;
+    private final String assistantFileLibraryCollection;
     private final Long embeddingModelId;
     private final String embeddingBaseUrl;
     private final String embeddingApiKey;
@@ -44,7 +44,7 @@ public class WikiKnowledgeProperties {
             @Value("${platform.wiki-knowledge.qdrant.timeout-seconds:20}") int qdrantTimeoutSeconds,
             @Value("${platform.wiki-knowledge.qdrant.project-collection:wiki_project_chunks}") String projectCollection,
             @Value("${platform.wiki-knowledge.qdrant.space-collection:wiki_space_chunks}") String spaceCollection,
-            @Value("${platform.wiki-knowledge.qdrant.hermes-file-library-collection:hermes_file_library_chunks}") String hermesFileLibraryCollection,
+            @Value("${platform.wiki-knowledge.qdrant.hermes-file-library-collection:hermes_file_library_chunks}") String assistantFileLibraryCollection,
             @Value("${platform.wiki-knowledge.embedding.model-id:0}") long embeddingModelId,
             @Value("${platform.wiki-knowledge.embedding.base-url:}") String embeddingBaseUrl,
             @Value("${platform.wiki-knowledge.embedding.api-key:}") String embeddingApiKey,
@@ -67,7 +67,7 @@ public class WikiKnowledgeProperties {
         this.qdrantTimeoutSeconds = Math.max(5, qdrantTimeoutSeconds);
         this.projectCollection = hasText(projectCollection) ? projectCollection.trim() : "wiki_project_chunks";
         this.spaceCollection = hasText(spaceCollection) ? spaceCollection.trim() : "wiki_space_chunks";
-        this.hermesFileLibraryCollection = hasText(hermesFileLibraryCollection) ? hermesFileLibraryCollection.trim() : "hermes_file_library_chunks";
+        this.assistantFileLibraryCollection = hasText(assistantFileLibraryCollection) ? assistantFileLibraryCollection.trim() : "hermes_file_library_chunks";
         this.embeddingModelId = embeddingModelId > 0 ? embeddingModelId : null;
         this.embeddingBaseUrl = trimTrailingSlash(embeddingBaseUrl);
         this.embeddingApiKey = defaultString(embeddingApiKey);
@@ -87,7 +87,7 @@ public class WikiKnowledgeProperties {
     }
 
     /**
-     * 兼容旧测试构造方式：未显式传 Hermes 文件库 collection 时使用默认 collection。
+     * 兼容旧测试构造方式：未显式传 Assistant 文件库 collection 时使用默认 collection。
      */
     public WikiKnowledgeProperties(boolean enabled,
                                    String qdrantBaseUrl,
@@ -142,8 +142,8 @@ public class WikiKnowledgeProperties {
         return spaceCollection;
     }
 
-    public String getHermesFileLibraryCollection() {
-        return hermesFileLibraryCollection;
+    public String getAssistantFileLibraryCollection() {
+        return assistantFileLibraryCollection;
     }
 
     public Long getEmbeddingModelId() {

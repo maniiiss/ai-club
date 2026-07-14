@@ -10,4 +10,7 @@ import java.lang.annotation.Target;
 public @interface RequirePermission {
 
     String value();
+
+    /** 兼容权限迁移期间允许的备用权限编码，任意一个拥有即可通过。 */
+    String[] anyOf() default {};
 }

@@ -49,7 +49,7 @@ public class ChatRoomEntity {
     @Column(name = "latest_preview", nullable = false, length = 500)
     private String latestPreview = "";
 
-    /** 房间滚动摘要，供 @Hermes 理解整房间历史。 */
+    /** 房间滚动摘要，供 @Assistant 理解整房间历史。 */
     @Column(name = "history_summary", nullable = false, columnDefinition = "TEXT")
     private String historySummary = "";
 

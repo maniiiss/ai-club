@@ -30,13 +30,13 @@ public class DocumentAssetService {
     /** 业务类型：Wiki 页面来源文件。 */
     public static final String BIZ_TYPE_WIKI_PAGE = "WIKI_PAGE";
 
-    /** 业务类型：Hermes 会话附件。 */
+    /** 业务类型：Assistant 会话附件。 */
     public static final String BIZ_TYPE_HERMES_ATTACHMENT = "HERMES_ATTACHMENT";
 
     /** 业务类型：工作项附件。 */
     public static final String BIZ_TYPE_TASK_ATTACHMENT = "TASK_ATTACHMENT";
 
-    /** 业务类型：Hermes 个人文件库。 */
+    /** 业务类型：Assistant 个人文件库。 */
     public static final String BIZ_TYPE_HERMES_FILE_LIBRARY = "HERMES_FILE_LIBRARY";
 
     private final AuthService authService;

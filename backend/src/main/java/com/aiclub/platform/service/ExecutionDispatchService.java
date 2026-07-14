@@ -357,7 +357,9 @@ public class ExecutionDispatchService {
                                     : stepEntity.getErrorMessage());
                         }
                         output = defaultString(stepEntity.getOutputSnapshot());
-                    } else if (agentExecutionService.supportsAsyncExecution(stepPlan.agent(), stepEntity.getStepCode())) {
+                    } else if (hasText(runtimeVariables.get("runtime_registry_code"))
+                            ? agentExecutionService.supportsAsyncExecution(stepPlan.agent(), stepEntity.getStepCode(), runtimeVariables)
+                            : agentExecutionService.supportsAsyncExecution(stepPlan.agent(), stepEntity.getStepCode())) {
                         int maxRuntimeSeconds = stepPlan.timeoutSeconds() == null ? executionAsyncSessionService.maxRuntimeSeconds(
                                 stepEntity.getStepCode(),
                                 latestTask.getInputPayload()
@@ -917,6 +919,7 @@ public class ExecutionDispatchService {
         variables.put("step_code", defaultString(executionStep.getStepCode()));
         variables.put("step_name", defaultString(executionStep.getStepName()));
         variables.put("scenario_code", defaultString(executionTask.getScenarioCode()));
+        variables.put("runtime_registry_code", defaultString(executionTask.getRuntimeRegistryCodeSnapshot()));
         variables.put("project_id", String.valueOf(executionTask.getProject().getId()));
         variables.put("project_name", defaultString(executionTask.getProject().getName()));
         // 即便创建人为空，也补齐空串，避免 HTTP_API 模板里的 {{user_id_json}} / {{user_name_json}} 残留后把请求体拼坏。
@@ -1251,5 +1254,9 @@ public class ExecutionDispatchService {
 
     private String defaultString(String value) {
         return value == null ? "" : value;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

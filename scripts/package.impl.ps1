@@ -70,6 +70,7 @@ AI Club Docker 打包说明
 - Backend: http://localhost:$($ports.Backend)
 - Code processing: http://localhost:$($ports.CodeProcessing)
 - Hermes: http://localhost:$($ports.Hermes)
+- Pi Runtime: http://localhost:$($ports.PiRuntime)
 - Qdrant: http://localhost:$($ports.Qdrant)
 - Hindsight: http://localhost:$($ports.Hindsight)
 - GitNexus Web UI: http://localhost:$($ports.GitNexusUi)

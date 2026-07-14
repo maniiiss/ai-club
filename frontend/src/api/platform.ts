@@ -41,6 +41,7 @@ import type {
   TaskPrdDetailItem,
   TaskRequirementAiResultItem,
   TaskItem,
+  RuntimeScenarioDefaultItem,
   TechnicalDesignExecutionPayload,
   TechnicalDesignWritebackPayload,
   LinkedTestCaseItem,
@@ -117,7 +118,13 @@ export interface AgentPayload {
   systemPrompt?: string
   userPromptTemplate?: string
   endpointUrl?: string
-  runtimeType?: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | 'OPENCODE_CLI' | null
+  runtimeType?: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | 'OPENCODE_CLI' | 'PI_RUNTIME' | 'HERMES_LEGACY' | null
+  runtimeRegistryCode?: string | null
+  runtimeFallbackCodesJson?: string
+  toolPolicyJson?: string
+  sandboxPolicyJson?: string
+  budgetTokens?: number | null
+  sessionPolicyJson?: string
   runtimeAgentRef?: string
   runtimeSessionKeyTemplate?: string
   httpMethod?: string
@@ -128,6 +135,33 @@ export interface AgentPayload {
   httpResponsePath?: string
   timeoutSeconds?: number | null
   projectId?: number | null
+}
+
+/** GitPilot Runtime 注册项摘要。 */
+export interface RuntimeRegistryItem {
+  runtimeCode: string
+  adapterType: 'CHAT_GATEWAY' | 'CLI_RUNNER' | 'STATEFUL_AGENT'
+  endpointRef: string | null
+  version: string
+  capabilities: string[]
+  sandboxPolicyJson: string
+  fallbackRuntimeCodes: string[]
+  healthStatus: 'UNKNOWN' | 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY' | 'DISABLED'
+  healthMessage: string
+  healthCheckedAt: string | null
+  enabled: boolean
+}
+
+/** 管理端保存 Runtime 注册项时使用的请求体。 */
+export interface RuntimeRegistryPayload {
+  runtimeCode: string
+  adapterType: RuntimeRegistryItem['adapterType']
+  endpointRef?: string | null
+  version?: string | null
+  capabilities: string[]
+  sandboxPolicyJson?: string | null
+  fallbackRuntimeCodes: string[]
+  enabled: boolean
 }
 
 
@@ -843,6 +877,62 @@ export const listExecutionOrchestrationScenarios = async (projectId?: number) =>
   const { data } = await http.get<ApiResponse<ExecutionOrchestrationScenarioItem[]>>('/api/execution-orchestrations/scenarios', {
     params: cleanParams({ projectId })
   })
+  return data.data
+}
+
+/** 查询已注册 Runtime；Agent 表单只展示平台注册项，避免直接填写任意 Gateway。 */
+export const listRuntimeRegistry = async (): Promise<RuntimeRegistryItem[]> => {
+  const { data } = await http.get<ApiResponse<RuntimeRegistryItem[]>>('/api/runtime-registry/options')
+  return data.data
+}
+
+/** 查询管理端 Runtime 注册中心的完整列表，包含禁用和待探测项。 */
+export const listRuntimeRegistries = async (): Promise<RuntimeRegistryItem[]> => {
+  const { data } = await http.get<ApiResponse<RuntimeRegistryItem[]>>('/api/runtime-registry')
+  return data.data
+}
+
+/** 新增 Runtime 注册项；实际运行地址仍由后端受控部署配置解析。 */
+export const createRuntimeRegistry = async (payload: RuntimeRegistryPayload): Promise<RuntimeRegistryItem> => {
+  const { data } = await http.post<ApiResponse<RuntimeRegistryItem>>('/api/runtime-registry', payload)
+  return data.data
+}
+
+/** 更新 Runtime 注册项的能力、沙箱、降级和启停配置。 */
+export const updateRuntimeRegistry = async (runtimeCode: string, payload: RuntimeRegistryPayload): Promise<RuntimeRegistryItem> => {
+  const { data } = await http.put<ApiResponse<RuntimeRegistryItem>>(`/api/runtime-registry/${encodeURIComponent(runtimeCode)}`, payload)
+  return data.data
+}
+
+/** 切换 Runtime 是否允许用于新 Agent 和新任务。 */
+export const setRuntimeRegistryEnabled = async (runtimeCode: string, enabled: boolean): Promise<RuntimeRegistryItem> => {
+  const action = enabled ? 'enable' : 'disable'
+  const { data } = await http.post<ApiResponse<RuntimeRegistryItem>>(
+    `/api/runtime-registry/${encodeURIComponent(runtimeCode)}/${action}`
+  )
+  return data.data
+}
+
+export const checkRuntimeHealth = async (runtimeCode: string): Promise<RuntimeRegistryItem> => {
+  const { data } = await http.post<ApiResponse<RuntimeRegistryItem>>(`/api/runtime-registry/${runtimeCode}/health-check`)
+  return data.data
+}
+
+/** 查询四个业务场景当前使用的默认 Runtime。 */
+export const listRuntimeScenarioDefaults = async (): Promise<RuntimeScenarioDefaultItem[]> => {
+  const { data } = await http.get<ApiResponse<RuntimeScenarioDefaultItem[]>>('/api/runtime-registry/scenario-defaults')
+  return data.data
+}
+
+/** 更新一个业务场景的默认 Runtime；后端负责校验能力和启用状态。 */
+export const updateRuntimeScenarioDefault = async (
+  scenarioCode: string,
+  runtimeRegistryCode: string
+): Promise<RuntimeScenarioDefaultItem> => {
+  const { data } = await http.put<ApiResponse<RuntimeScenarioDefaultItem>>(
+    `/api/runtime-registry/scenario-defaults/${encodeURIComponent(scenarioCode)}`,
+    { runtimeRegistryCode }
+  )
   return data.data
 }
 

@@ -130,7 +130,7 @@ scenarioCode: REQUIREMENT_AI_ANALYSIS
 Hermes 继续通过 MCP 工具 `image.understand` 调用同一个图片理解 Agent：
 
 ```text
-Hermes -> code-processing MCP -> /internal/hermes/mcp/execute
+Assistant -> code-processing MCP -> /internal/assistant/mcp/execute
        -> PlatformToolExecutor -> AgentExecutionService.runVisionAgent
 ```
 

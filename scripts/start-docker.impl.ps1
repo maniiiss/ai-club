@@ -30,6 +30,7 @@ Wait-Port -Port $ports.Qdrant -TimeoutSeconds 180 -ServiceName 'Qdrant'
 Wait-Port -Port $ports.Neo4j -TimeoutSeconds 180 -ServiceName 'Neo4j'
 Wait-Port -Port $ports.Hindsight -TimeoutSeconds 180 -ServiceName 'Hindsight'
 Wait-Port -Port $ports.Hermes -TimeoutSeconds 180 -ServiceName 'Hermes'
+Wait-Port -Port $ports.PiRuntime -TimeoutSeconds 180 -ServiceName 'Pi Runtime'
 Wait-Port -Port $ports.GitNexusUi -TimeoutSeconds 180 -ServiceName 'GitNexus Web UI'
 if (Test-WoodpeckerEnabled) {
     Wait-Port -Port $ports.Woodpecker -TimeoutSeconds 180 -ServiceName 'Woodpecker'
@@ -43,6 +44,7 @@ Write-Host "Frontend: http://localhost:$($ports.Frontend)"
 Write-Host "Backend: http://localhost:$($ports.Backend)"
 Write-Host "Code processing: http://localhost:$($ports.CodeProcessing)"
 Write-Host "Hermes: http://localhost:$($ports.Hermes)"
+Write-Host "Pi Runtime: http://localhost:$($ports.PiRuntime)"
 Write-Host "RabbitMQ: amqp://localhost:$($ports.RabbitMq)"
 Write-Host "Qdrant: http://localhost:$($ports.Qdrant)"
 Write-Host "Neo4j: http://localhost:$($ports.Neo4j)"

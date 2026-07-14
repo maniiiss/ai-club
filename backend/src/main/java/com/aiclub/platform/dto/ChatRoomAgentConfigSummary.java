@@ -9,6 +9,7 @@ public record ChatRoomAgentConfigSummary(
         Long roomId,
         boolean enabled,
         String displayName,
+        String runtimeRegistryCode,
         String systemInstruction,
         boolean proactiveSummaryEnabled,
         boolean keywordWatchEnabled,

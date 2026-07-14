@@ -15,7 +15,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 /**
- * 验证平台工具注册中心会把 Wiki 能力稳定暴露给 Hermes。
+ * 验证平台工具注册中心会把 Wiki 能力稳定暴露给 Assistant。
  */
 @ExtendWith(MockitoExtension.class)
 class PlatformToolRegistryTests {
@@ -24,10 +24,10 @@ class PlatformToolRegistryTests {
     private PlatformToolConfigRepository platformToolConfigRepository;
 
     /**
-     * Wiki 搜索和页面详情工具都应被正式注册，否则 Hermes 即使有执行器实现也无法看到能力目录。
+     * Wiki 搜索和页面详情工具都应被正式注册，否则 Assistant 即使有执行器实现也无法看到能力目录。
      */
     @Test
-    void shouldRegisterWikiToolsForHermes() {
+    void shouldRegisterWikiToolsForAssistant() {
         when(platformToolConfigRepository.findByToolCode(anyString())).thenReturn(Optional.empty());
 
         PlatformToolRegistry registry = new PlatformToolRegistry(platformToolConfigRepository);

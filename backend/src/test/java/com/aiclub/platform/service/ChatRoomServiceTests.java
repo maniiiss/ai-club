@@ -66,7 +66,7 @@ class ChatRoomServiceTests {
     private ChatWebSocketPushService chatWebSocketPushService;
 
     @Mock
-    private ChatHermesService chatHermesService;
+    private ChatAssistantService chatAssistantService;
 
     @Mock
     private ChatRoomAgentService chatRoomAgentService;
@@ -244,7 +244,7 @@ class ChatRoomServiceTests {
         ChatMessageSummary message = service.sendMessage(41L, new SendChatMessageRequest("@hermes 汇总一下", List.of()));
 
         assertThat(message.id()).isEqualTo(101L);
-        assertThat(message.mentionsHermes()).isTrue();
+        assertThat(message.mentionsAssistant()).isTrue();
         verify(chatWebSocketPushService, times(2)).broadcastMessageCreated(eq(41L), any(ChatMessageSummary.class));
         verify(chatRoomAgentService).createMentionTask(eq(41L), eq(102L), eq(101L), eq(5L));
     }
@@ -259,7 +259,7 @@ class ChatRoomServiceTests {
                 chatMessageRepository,
                 projectDataPermissionService,
                 chatWebSocketPushService,
-                chatHermesService,
+                chatAssistantService,
                 chatRoomAgentService
         );
     }
@@ -308,19 +308,19 @@ class ChatRoomServiceTests {
 
     // ---- @hermes 提及识别边界 ----
     // 业务意图：只有当 @hermes 独立成一个 token（尾部是空白或字符串结尾）时才算助手提及，
-    // 避免 @hermes-dev、@hermes队长 之类的用户名被误判触发 Hermes 回复。
+    // 避免 @hermes-dev、@hermes队长 之类的用户名被误判触发 Assistant 回复。
     @Test
-    void containsHermesMention_matchesStandaloneToken() {
-        assertThat(ChatRoomService.containsHermesMention("@hermes 帮我看下")).isTrue();
-        assertThat(ChatRoomService.containsHermesMention("请 @hermes")).isTrue();
-        assertThat(ChatRoomService.containsHermesMention("请 @Hermes 看看")).isTrue();
+    void containsAssistantMention_matchesStandaloneToken() {
+        assertThat(ChatRoomService.containsAssistantMention("@hermes 帮我看下")).isTrue();
+        assertThat(ChatRoomService.containsAssistantMention("请 @hermes")).isTrue();
+        assertThat(ChatRoomService.containsAssistantMention("请 @Assistant 看看")).isTrue();
     }
 
     @Test
-    void containsHermesMention_ignoresUsernamesThatStartWithHermes() {
-        assertThat(ChatRoomService.containsHermesMention("@hermes-dev 请看")).isFalse();
-        assertThat(ChatRoomService.containsHermesMention("@hermes队长 你好")).isFalse();
-        assertThat(ChatRoomService.containsHermesMention("@hermes.log 上传")).isFalse();
-        assertThat(ChatRoomService.containsHermesMention("邮箱 foo@hermes.io")).isFalse();
+    void containsAssistantMention_ignoresUsernamesThatStartWithAssistant() {
+        assertThat(ChatRoomService.containsAssistantMention("@hermes-dev 请看")).isFalse();
+        assertThat(ChatRoomService.containsAssistantMention("@hermes队长 你好")).isFalse();
+        assertThat(ChatRoomService.containsAssistantMention("@hermes.log 上传")).isFalse();
+        assertThat(ChatRoomService.containsAssistantMention("邮箱 foo@hermes.io")).isFalse();
     }
 }

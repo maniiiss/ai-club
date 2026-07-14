@@ -12,7 +12,7 @@ $envFile = if (Test-Path $context.DefaultEnvFile) { $context.DefaultEnvFile } el
 
 Invoke-Compose -ComposeFile $context.HybridComposeFile `
     -EnvFile $envFile `
-    -Arguments @('--profile', 'woodpecker', 'stop', 'postgres', 'redis', 'rabbitmq', 'minio', 'qdrant', 'neo4j', 'hindsight', 'gitnexus-web', 'hermes', 'woodpecker-server', 'woodpecker-agent') `
+    -Arguments @('--profile', 'woodpecker', 'stop', 'postgres', 'redis', 'rabbitmq', 'minio', 'qdrant', 'neo4j', 'hindsight', 'gitnexus-web', 'hermes', 'pi-runtime', 'woodpecker-server', 'woodpecker-agent') `
     -Description '停止源码模式依赖容器'
 
 Write-Host ''

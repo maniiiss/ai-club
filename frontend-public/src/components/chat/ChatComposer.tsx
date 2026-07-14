@@ -1,12 +1,12 @@
 /**
  * 聊天室输入区。
- * 业务意图：统一处理 Markdown 文本、附件和 @hermes mention，让发送动作始终走 REST 落库。
+ * 业务意图：统一处理 Markdown 文本、附件和 @gitpilot mention，让发送动作始终走 REST 落库。
  */
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { AtSign, Bot, Laugh, Paperclip, Send, UserRound, X } from 'lucide-react'
 import { Button } from '@/src/components/common/Button'
 import {
-  containsHermesMention,
+  containsAssistantMention,
   formatChatFileSize,
   insertTextAtCaret,
   replaceMentionAtCaret,
@@ -53,16 +53,16 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
   const emojiButtonRef = useRef<HTMLButtonElement>(null)
   const emojiPanelRef = useRef<HTMLDivElement>(null)
 
-  const hasHermesMention = containsHermesMention(content)
+  const hasAssistantMention = containsAssistantMention(content)
   const activeMention = useMemo(() => resolveMentionQuery(content, caret), [content, caret])
   const mentionOptions = useMemo<MentionOption[]>(() => {
     const query = (activeMention?.query || '').toLowerCase()
     const baseOptions: MentionOption[] = [
       {
-        key: 'assistant-hermes',
-        label: 'Hermes 助手',
+        key: 'assistant-gitpilot',
+        label: 'GitPilot 助手',
         description: '基于整房间上下文回复、总结或汇总',
-        token: '@hermes ',
+        token: '@gitpilot ',
         type: 'assistant',
       },
       ...members.map((member) => {
@@ -134,8 +134,8 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
     })
   }
 
-  const insertHermesMention = () => {
-    if (containsHermesMention(content)) {
+  const insertAssistantMention = () => {
+    if (containsAssistantMention(content)) {
       textareaRef.current?.focus()
       return
     }
@@ -143,10 +143,10 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
     const currentCaret = textarea?.selectionStart ?? content.length
     const active = resolveMentionQuery(content, currentCaret)
     const next = active
-      ? replaceMentionAtCaret(content, currentCaret, '@hermes ')
+      ? replaceMentionAtCaret(content, currentCaret, '@gitpilot ')
       : {
-        text: content.trim() ? `${content.trimEnd()} @hermes ` : '@hermes ',
-        caret: (content.trim() ? `${content.trimEnd()} @hermes ` : '@hermes ').length,
+        text: content.trim() ? `${content.trimEnd()} @gitpilot ` : '@gitpilot ',
+        caret: (content.trim() ? `${content.trimEnd()} @gitpilot ` : '@gitpilot ').length,
       }
     setContent(next.text)
     setCaret(next.caret)
@@ -240,7 +240,7 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
         <div
           className={cn(
             'chat-composer-surface relative rounded-xl border bg-[var(--color-bg-elevated)] shadow-[var(--shadow-xs)] transition-colors',
-            hasHermesMention ? 'is-hermes' : 'border-[var(--color-border-strong)] focus-within:border-[var(--color-primary)]',
+            hasAssistantMention ? 'is-hermes' : 'border-[var(--color-border-strong)] focus-within:border-[var(--color-primary)]',
           )}
         >
           {mentionOpen && (
@@ -326,7 +326,7 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
             onKeyDown={handleTextareaKeyDown}
             rows={3}
             disabled={disabled || sending}
-            placeholder="写一条消息，输入 @ 提及成员或 Hermes 助手..."
+            placeholder="写一条消息，输入 @ 提及成员或 GitPilot 助手..."
             className="max-h-44 min-h-24 w-full resize-y rounded-t-xl border-0 bg-transparent px-3.5 py-3 text-[14px] leading-relaxed text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-placeholder)] focus:outline-none focus-visible:outline-none disabled:opacity-60"
           />
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border-light)] px-3 py-2">
@@ -364,20 +364,20 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
               </button>
               <button
                 type="button"
-                onClick={insertHermesMention}
+                onClick={insertAssistantMention}
                 disabled={disabled || sending}
                 className={cn(
                   'inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium transition-colors disabled:opacity-50',
-                  hasHermesMention
+                  hasAssistantMention
                     ? 'chat-hermes-button is-active'
                     : 'chat-hermes-button is-inactive',
                 )}
               >
                 <AtSign className="h-4 w-4" />
-                Hermes
+                GitPilot
               </button>
-              {hasHermesMention && (
-                <span className="chat-hermes-hint hidden text-[12px] sm:inline">将触发房间助手回复</span>
+              {hasAssistantMention && (
+                <span className="chat-hermes-hint hidden text-[12px] sm:inline">将触发 GitPilot 回复</span>
               )}
             </div>
             <div className="ml-auto flex items-center gap-3">

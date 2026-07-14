@@ -44,7 +44,7 @@
 | 文件 | 职责 |
 |------|------|
 | `frontend/src/components/HermesDrawer.vue` | 标题右侧帮助提示、确认区最小文案、流式错误兜底文案 |
-| `frontend/src/api/hermes.ts` | 流式中断兜底错误提示 |
+| `frontend/src/api/assistant.ts` | 流式中断兜底错误提示 |
 | `frontend/tests/hermesUxCopy.test.mjs` | 关键能力边界与确认机制文案断言 |
 | `docs/exec-plans/active/hermes-ux-boundary-and-confirmation-v1.md` | 本执行方案与验证记录 |
 

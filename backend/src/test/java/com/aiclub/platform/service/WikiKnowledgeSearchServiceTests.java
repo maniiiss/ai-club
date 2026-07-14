@@ -27,7 +27,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 覆盖 Wiki 知识检索服务的混合排序与 Hermes 证据拼装，避免检索只剩纯向量替换。
+ * 覆盖 Wiki 知识检索服务的混合排序与 Assistant 证据拼装，避免检索只剩纯向量替换。
  */
 @ExtendWith(MockitoExtension.class)
 class WikiKnowledgeSearchServiceTests {
@@ -182,7 +182,7 @@ class WikiKnowledgeSearchServiceTests {
     }
 
     @Test
-    void shouldBuildHermesWikiEvidenceFromKnowledgeStore() {
+    void shouldBuildAssistantWikiEvidenceFromKnowledgeStore() {
         WikiKnowledgeSearchService service = new WikiKnowledgeSearchService(
                 new WikiKnowledgeProperties(
                         true,
@@ -225,8 +225,8 @@ class WikiKnowledgeSearchServiceTests {
 
         String markdown = service.buildWikiEvidenceMarkdown(
                 null,
-                new HermesContextAssembler.HermesConversationContext("wiki-space-page", null, null, 8L, 15L, "知识管理员", List.of(), List.of(), "Wiki 页面上下文"),
-                new com.aiclub.platform.dto.request.HermesChatRequest("帮我总结当前页", "wiki-space-page", null, null, null, null, 8L, 15L, "client-1", null, false)
+                new AssistantContextAssembler.AssistantConversationContext("wiki-space-page", null, null, 8L, 15L, "知识管理员", List.of(), List.of(), "Wiki 页面上下文"),
+                new com.aiclub.platform.dto.request.AssistantChatRequest("帮我总结当前页", "wiki-space-page", null, null, null, null, 8L, 15L, "client-1", null, false)
         );
 
         assertThat(markdown).contains("相关页里提到了登录限制");

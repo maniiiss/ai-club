@@ -32,6 +32,17 @@ public record AgentRequest(
         String endpointUrl,
         @Size(max = 30, message = "Runtime type must be at most 30 characters")
         String runtimeType,
+        @Size(max = 40, message = "Runtime registry code must be at most 40 characters")
+        String runtimeRegistryCode,
+        @Size(max = 2000, message = "Runtime fallback codes must be at most 2000 characters")
+        String runtimeFallbackCodesJson,
+        @Size(max = 10000, message = "Tool policy must be at most 10000 characters")
+        String toolPolicyJson,
+        @Size(max = 10000, message = "Sandbox policy must be at most 10000 characters")
+        String sandboxPolicyJson,
+        Integer budgetTokens,
+        @Size(max = 5000, message = "Session policy must be at most 5000 characters")
+        String sessionPolicyJson,
         @Size(max = 100, message = "Runtime agent reference must be at most 100 characters")
         String runtimeAgentRef,
         @Size(max = 500, message = "Runtime session key template must be at most 500 characters")
@@ -51,4 +62,17 @@ public record AgentRequest(
         Integer timeoutSeconds,
         Long projectId
 ) {
+
+    /** 兼容历史单元测试和旧调用方，新增 Profile 字段采用默认值。 */
+    public AgentRequest(String name, String type, String status, Boolean enabled, String accessType,
+                        String builtinCode, String capability, String description, Long aiModelConfigId,
+                        String systemPrompt, String userPromptTemplate, String endpointUrl, String runtimeType,
+                        String runtimeAgentRef, String runtimeSessionKeyTemplate, String httpMethod,
+                        String httpHeaders, String httpAuthType, String httpAuthToken, String httpRequestTemplate,
+                        String httpResponsePath, Integer timeoutSeconds, Long projectId) {
+        this(name, type, status, enabled, accessType, builtinCode, capability, description, aiModelConfigId,
+                systemPrompt, userPromptTemplate, endpointUrl, runtimeType, null, null, null, null, null, null,
+                runtimeAgentRef, runtimeSessionKeyTemplate, httpMethod, httpHeaders, httpAuthType, httpAuthToken,
+                httpRequestTemplate, httpResponsePath, timeoutSeconds, projectId);
+    }
 }

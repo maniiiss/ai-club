@@ -58,6 +58,34 @@ public class AgentEntity {
     @Column(name = "runtime_type", length = 30)
     private String runtimeType;
 
+    /** 新版 Runtime Registry 编码；为空时继续按 runtimeType 做兼容解析。 */
+    @Column(name = "runtime_registry_code", length = 40)
+    private String runtimeRegistryCode;
+
+    /** Agent Profile 版本，用于任务创建时生成可回放的配置快照。 */
+    @Column(name = "profile_version", nullable = false)
+    private Long profileVersion = 1L;
+
+    /** 管理员配置的候选降级 Runtime 顺序，只有无副作用阶段才允许使用。 */
+    @Column(name = "runtime_fallback_codes_json", nullable = false, columnDefinition = "TEXT")
+    private String runtimeFallbackCodesJson = "[]";
+
+    /** Profile 工具策略快照，写工具仍必须经过 backend 确认链路。 */
+    @Column(name = "tool_policy_json", nullable = false, columnDefinition = "TEXT")
+    private String toolPolicyJson = "{}";
+
+    /** Profile 沙箱策略快照，运行时只能在平台允许的范围内执行。 */
+    @Column(name = "sandbox_policy_json", nullable = false, columnDefinition = "TEXT")
+    private String sandboxPolicyJson = "{}";
+
+    /** Profile 预算上限，空值表示沿用平台默认预算。 */
+    @Column(name = "budget_tokens")
+    private Integer budgetTokens;
+
+    /** 会话策略快照，例如是否允许恢复和最大上下文轮数。 */
+    @Column(name = "session_policy_json", nullable = false, columnDefinition = "TEXT")
+    private String sessionPolicyJson = "{}";
+
     @Column(name = "runtime_agent_ref", length = 100)
     private String runtimeAgentRef;
 
@@ -211,6 +239,21 @@ public class AgentEntity {
     public void setRuntimeType(String runtimeType) {
         this.runtimeType = runtimeType;
     }
+
+    public String getRuntimeRegistryCode() { return runtimeRegistryCode; }
+    public void setRuntimeRegistryCode(String runtimeRegistryCode) { this.runtimeRegistryCode = runtimeRegistryCode; }
+    public Long getProfileVersion() { return profileVersion; }
+    public void setProfileVersion(Long profileVersion) { this.profileVersion = profileVersion; }
+    public String getRuntimeFallbackCodesJson() { return runtimeFallbackCodesJson; }
+    public void setRuntimeFallbackCodesJson(String runtimeFallbackCodesJson) { this.runtimeFallbackCodesJson = runtimeFallbackCodesJson; }
+    public String getToolPolicyJson() { return toolPolicyJson; }
+    public void setToolPolicyJson(String toolPolicyJson) { this.toolPolicyJson = toolPolicyJson; }
+    public String getSandboxPolicyJson() { return sandboxPolicyJson; }
+    public void setSandboxPolicyJson(String sandboxPolicyJson) { this.sandboxPolicyJson = sandboxPolicyJson; }
+    public Integer getBudgetTokens() { return budgetTokens; }
+    public void setBudgetTokens(Integer budgetTokens) { this.budgetTokens = budgetTokens; }
+    public String getSessionPolicyJson() { return sessionPolicyJson; }
+    public void setSessionPolicyJson(String sessionPolicyJson) { this.sessionPolicyJson = sessionPolicyJson; }
 
     public String getRuntimeAgentRef() {
         return runtimeAgentRef;

@@ -167,63 +167,63 @@ public class PlatformEnvVarRegistry {
                 true
         ));
 
-        // Hermes / Hindsight 的基础连接地址与鉴权密钥继续固定走部署配置，
+        // Assistant / Hindsight 的基础连接地址与鉴权密钥继续固定走部署配置，
         // 避免后台覆盖值与容器真实接入参数漂移；模型、预算、超时这类调优项仍允许后台维护。
         registerUrl(new PlatformEnvVarDefinition(
                 KEY_HERMES_BASE_URL,
                 "platform.hermes.base-url",
-                "Hermes API 地址",
-                "平台内置助手调用 Hermes Gateway 的 OpenAI 兼容接口基础地址。",
+                "GitPilot API 地址",
+                "平台内置助手调用 GitPilot Gateway 的 OpenAI 兼容接口基础地址。",
                 false,
                 false
         ));
         registerText(new PlatformEnvVarDefinition(
                 KEY_HERMES_API_KEY,
                 "platform.hermes.api-key",
-                "Hermes API Key",
-                "平台内置助手调用 Hermes Gateway 时携带的鉴权密钥。",
+                "GitPilot API Key",
+                "平台内置助手调用 GitPilot Gateway 时携带的鉴权密钥。",
                 true,
                 false
         ));
         registerText(new PlatformEnvVarDefinition(
                 KEY_HERMES_MODEL,
                 "platform.hermes.model",
-                "Hermes 模型名",
-                "平台内置助手请求 Hermes Gateway 时使用的模型名称。",
+                "GitPilot 模型名",
+                "平台内置助手请求 GitPilot Gateway 时使用的模型名称。",
                 false
         ));
         registerIntegerRange(new PlatformEnvVarDefinition(
                 KEY_HERMES_TIMEOUT_SECONDS,
                 "platform.hermes.timeout-seconds",
-                "Hermes 请求超时秒数",
-                "平台内置助手等待 Hermes Gateway 响应的最长秒数。",
+                "GitPilot 请求超时秒数",
+                "平台内置助手等待 GitPilot Gateway 响应的最长秒数。",
                 false
         ), 30, 600);
         registerUrl(new PlatformEnvVarDefinition(
                 KEY_HERMES_SPEECH_BASE_URL,
                 "platform.hermes.speech.base-url",
-                "Hermes 语音转写 API 地址",
+                "GitPilot 语音转写 API 地址",
                 "语音转写功能调用 OpenAI 兼容 audio/transcriptions 接口的基础地址。",
                 false
         ));
         registerText(new PlatformEnvVarDefinition(
                 KEY_HERMES_SPEECH_API_KEY,
                 "platform.hermes.speech.api-key",
-                "Hermes 语音转写 API Key",
+                "GitPilot 语音转写 API Key",
                 "语音转写功能调用外部模型服务时携带的鉴权密钥。",
                 true
         ));
         registerText(new PlatformEnvVarDefinition(
                 KEY_HERMES_SPEECH_MODEL,
                 "platform.hermes.speech.model",
-                "Hermes 语音转写模型",
+                "GitPilot 语音转写模型",
                 "语音转写功能请求外部模型服务时使用的模型名称。",
                 false
         ));
         registerIntegerRange(new PlatformEnvVarDefinition(
                 KEY_HERMES_SPEECH_TIMEOUT_SECONDS,
                 "platform.hermes.speech.timeout-seconds",
-                "Hermes 语音转写超时秒数",
+                "GitPilot 语音转写超时秒数",
                 "语音转写请求等待外部模型服务响应的最长秒数。",
                 false
         ), 10, 300);

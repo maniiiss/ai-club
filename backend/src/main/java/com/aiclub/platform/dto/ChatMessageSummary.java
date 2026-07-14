@@ -16,13 +16,13 @@ public record ChatMessageSummary(
         String senderAvatarUrl,
         String content,
         String status,
-        boolean mentionsHermes,
+        boolean mentionsAssistant,
         List<ChatAttachmentSummary> attachments,
         Long agentTaskId,
         String agentTaskStatus,
-        List<HermesActionSummary> actions,
+        List<AssistantActionSummary> actions,
         Map<String, String> actionStatuses,
-        List<HermesSelectionCard> selectionCards,
+        List<AssistantSelectionCard> selectionCards,
         Map<String, String> selectionStatuses,
         String createdAt,
         String updatedAt
@@ -36,11 +36,11 @@ public record ChatMessageSummary(
                               String senderAvatarUrl,
                               String content,
                               String status,
-                              boolean mentionsHermes,
+                              boolean mentionsAssistant,
                               List<ChatAttachmentSummary> attachments,
                               String createdAt,
                               String updatedAt) {
-        this(id, roomId, role, senderUserId, senderUsername, senderName, senderAvatarUrl, content, status, mentionsHermes,
+        this(id, roomId, role, senderUserId, senderUsername, senderName, senderAvatarUrl, content, status, mentionsAssistant,
                 attachments, null, "", List.of(), Map.of(), List.of(), Map.of(), createdAt, updatedAt);
     }
 

@@ -20,6 +20,7 @@ import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.security.AuthContext;
 import com.aiclub.platform.security.AuthContextHolder;
 import com.aiclub.platform.exception.ForbiddenException;
+import com.aiclub.platform.runtime.RuntimeCapability;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +49,7 @@ public class ExecutionOrchestrationService {
     private final ProjectDataPermissionService projectDataPermissionService;
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final RuntimeRegistryService runtimeRegistryService;
 
     public ExecutionOrchestrationService(ExecutionOrchestrationProfileRepository profileRepository,
                                          ExecutionOrchestrationVersionRepository versionRepository,
@@ -55,10 +57,9 @@ public class ExecutionOrchestrationService {
                                          AgentRepository agentRepository,
                                          ProjectDataPermissionService projectDataPermissionService) {
         this(profileRepository, versionRepository, stepBindingRepository, agentRepository,
-                projectDataPermissionService, null, null);
+                projectDataPermissionService, null, null, null);
     }
 
-    @Autowired
     public ExecutionOrchestrationService(ExecutionOrchestrationProfileRepository profileRepository,
                                          ExecutionOrchestrationVersionRepository versionRepository,
                                          ExecutionOrchestrationStepBindingRepository stepBindingRepository,
@@ -66,6 +67,20 @@ public class ExecutionOrchestrationService {
                                          ProjectDataPermissionService projectDataPermissionService,
                                          ProjectRepository projectRepository,
                                          UserRepository userRepository) {
+        this(profileRepository, versionRepository, stepBindingRepository, agentRepository,
+                projectDataPermissionService, projectRepository, userRepository, null);
+    }
+
+    /** Spring 主构造器注入 Runtime Registry；旧测试构造器保留以维持兼容。 */
+    @Autowired
+    public ExecutionOrchestrationService(ExecutionOrchestrationProfileRepository profileRepository,
+                                         ExecutionOrchestrationVersionRepository versionRepository,
+                                         ExecutionOrchestrationStepBindingRepository stepBindingRepository,
+                                         AgentRepository agentRepository,
+                                         ProjectDataPermissionService projectDataPermissionService,
+                                         ProjectRepository projectRepository,
+                                         UserRepository userRepository,
+                                         RuntimeRegistryService runtimeRegistryService) {
         this.profileRepository = profileRepository;
         this.versionRepository = versionRepository;
         this.stepBindingRepository = stepBindingRepository;
@@ -73,6 +88,7 @@ public class ExecutionOrchestrationService {
         this.projectDataPermissionService = projectDataPermissionService;
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
+        this.runtimeRegistryService = runtimeRegistryService;
     }
 
     public boolean isManagedScenario(String scenarioCode) {
@@ -129,19 +145,10 @@ public class ExecutionOrchestrationService {
                 && !agentProjectId.equals(profile.getProject().getId())) {
             throw new ExecutionOrchestrationNotReadyException("项目编排绑定了其他项目的 Agent");
         }
-        if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equals(profile.getScenarioCode())
-                && (!AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(agent.getAccessType())
-                || !(AgentExecutionService.RUNTIME_CODEX_CLI.equalsIgnoreCase(agent.getRuntimeType())
-                || AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equalsIgnoreCase(agent.getRuntimeType())
-                || AgentExecutionService.RUNTIME_OPENCODE_CLI.equalsIgnoreCase(agent.getRuntimeType())))) {
-            throw new ExecutionOrchestrationNotReadyException(stepCode + " 的 Runtime 已不兼容");
-        }
         String step = normalize(stepCode);
-        if (ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equals(profile.getScenarioCode())
-                && (ExecutionWorkflowService.STEP_IMPLEMENT.equals(step) || ExecutionWorkflowService.STEP_TEST.equals(step))
-                && !(AgentExecutionService.ACCESS_HTTP_API.equalsIgnoreCase(agent.getAccessType())
-                || AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(agent.getAccessType()))) {
-            throw new ExecutionOrchestrationNotReadyException(stepCode + " 的 Agent 已不具备执行能力");
+        String capabilityError = runtimeCapabilityError(profile.getScenarioCode(), step, agent);
+        if (capabilityError != null) {
+            throw new ExecutionOrchestrationNotReadyException(capabilityError);
         }
     }
 
@@ -279,17 +286,8 @@ public class ExecutionOrchestrationService {
             validateAgentScope(profile, agent);
             if (!Boolean.TRUE.equals(agent.getEnabled())) throw new IllegalArgumentException("Agent 已停用: " + agent.getId());
             String step = normalize(binding.getStepCode());
-            if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equals(profile.getScenarioCode())) {
-                if (!AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(agent.getAccessType())
-                        || !(AgentExecutionService.RUNTIME_CODEX_CLI.equalsIgnoreCase(agent.getRuntimeType())
-                        || AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equalsIgnoreCase(agent.getRuntimeType())
-                        || AgentExecutionService.RUNTIME_OPENCODE_CLI.equalsIgnoreCase(agent.getRuntimeType())))
-                    throw new IllegalArgumentException(step + " 仅支持 Codex/Claude/OpenCode CLI Runtime");
-            } else if ((ExecutionWorkflowService.STEP_IMPLEMENT.equals(step) || ExecutionWorkflowService.STEP_TEST.equals(step))
-                    && !(AgentExecutionService.ACCESS_HTTP_API.equalsIgnoreCase(agent.getAccessType())
-                    || AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(agent.getAccessType()))) {
-                throw new IllegalArgumentException(step + " 必须绑定可真实执行的 Agent");
-            }
+            String capabilityError = runtimeCapabilityError(profile.getScenarioCode(), step, agent);
+            if (capabilityError != null) throw new IllegalArgumentException(capabilityError);
             snapshot(binding, agent); stepBindingRepository.save(binding);
         }
     }
@@ -334,8 +332,8 @@ public class ExecutionOrchestrationService {
             throw new IllegalArgumentException("项目草稿只能复制平台同场景当前发布版本");
         throw new IllegalArgumentException("来源版本只能选择当前配置历史或同场景平台版本");
     }
-    private void cloneBindings(Long sourceId,ExecutionOrchestrationVersionEntity target){for(var old:stepBindingRepository.findAllByVersion_IdOrderByIdAsc(sourceId)){var n=new ExecutionOrchestrationStepBindingEntity();n.setVersion(target);n.setStepCode(old.getStepCode());n.setAgent(old.getAgent());n.setTimeoutSeconds(old.getTimeoutSeconds());n.setAgentNameSnapshot(old.getAgentNameSnapshot());n.setAccessTypeSnapshot(old.getAccessTypeSnapshot());n.setRuntimeTypeSnapshot(old.getRuntimeTypeSnapshot());stepBindingRepository.save(n);}}
-    private void snapshot(ExecutionOrchestrationStepBindingEntity b,AgentEntity a){b.setAgentNameSnapshot(a.getName()==null?"":a.getName());b.setAccessTypeSnapshot(a.getAccessType()==null?"":a.getAccessType());b.setRuntimeTypeSnapshot(a.getRuntimeType());}
+    private void cloneBindings(Long sourceId,ExecutionOrchestrationVersionEntity target){for(var old:stepBindingRepository.findAllByVersion_IdOrderByIdAsc(sourceId)){var n=new ExecutionOrchestrationStepBindingEntity();n.setVersion(target);n.setStepCode(old.getStepCode());n.setAgent(old.getAgent());n.setTimeoutSeconds(old.getTimeoutSeconds());n.setAgentNameSnapshot(old.getAgentNameSnapshot());n.setAccessTypeSnapshot(old.getAccessTypeSnapshot());n.setRuntimeTypeSnapshot(old.getRuntimeTypeSnapshot());n.setRuntimeRegistryCodeSnapshot(old.getRuntimeRegistryCodeSnapshot());n.setProfileVersionSnapshot(old.getProfileVersionSnapshot());n.setCapabilitiesSnapshotJson(old.getCapabilitiesSnapshotJson());n.setToolPolicySnapshotJson(old.getToolPolicySnapshotJson());n.setSandboxPolicySnapshotJson(old.getSandboxPolicySnapshotJson());stepBindingRepository.save(n);}}
+    private void snapshot(ExecutionOrchestrationStepBindingEntity b,AgentEntity a){b.setAgentNameSnapshot(a.getName()==null?"":a.getName());b.setAccessTypeSnapshot(a.getAccessType()==null?"":a.getAccessType());b.setRuntimeTypeSnapshot(a.getRuntimeType());b.setRuntimeRegistryCodeSnapshot(a.getRuntimeRegistryCode());b.setProfileVersionSnapshot(a.getProfileVersion());b.setCapabilitiesSnapshotJson("[]");b.setToolPolicySnapshotJson(a.getToolPolicyJson()==null?"{}":a.getToolPolicyJson());b.setSandboxPolicySnapshotJson(a.getSandboxPolicyJson()==null?"{}":a.getSandboxPolicyJson());}
     private ExecutionOrchestrationProfileSummary toProfileSummary(ExecutionOrchestrationProfileEntity p){return new ExecutionOrchestrationProfileSummary(p.getId(),p.getScopeType(),projectId(p),p.getScenarioCode(),p.getDraftVersion()==null?null:p.getDraftVersion().getId(),p.getPublishedVersion()==null?null:p.getPublishedVersion().getId(),versionRepository.findAllByProfile_IdOrderByVersionNoDesc(p.getId()).stream().map(this::toVersionSummary).toList());}
     private ExecutionOrchestrationVersionSummary toVersionSummary(ExecutionOrchestrationVersionEntity v){return new ExecutionOrchestrationVersionSummary(v.getId(),v.getProfile().getId(),v.getVersionNo(),v.getStatus(),v.getSourceVersion()==null?null:v.getSourceVersion().getId(),v.getRevision(),v.getCreatedAt(),v.getPublishedAt(),stepBindingRepository.findAllByVersion_IdOrderByIdAsc(v.getId()).stream().map(b->{String reason=bindingInvalidReason(v.getProfile(),b);return new ExecutionOrchestrationVersionSummary.StepBinding(b.getStepCode(),b.getAgent()==null?null:b.getAgent().getId(),b.getTimeoutSeconds(),b.getAgentNameSnapshot(),b.getAccessTypeSnapshot(),b.getRuntimeTypeSnapshot(),reason==null,reason);}).toList());}
     private String bindingInvalidReason(ExecutionOrchestrationProfileEntity profile,ExecutionOrchestrationStepBindingEntity binding){
@@ -345,17 +343,71 @@ public class ExecutionOrchestrationService {
         Long agentProject=agent.getProject()==null?null:agent.getProject().getId();
         if(SCOPE_PLATFORM.equals(profile.getScopeType())&&agentProject!=null)return "平台编排只能绑定平台级 Agent";
         if(SCOPE_PROJECT.equals(profile.getScopeType())&&agentProject!=null&&!agentProject.equals(profile.getProject().getId()))return "项目编排只能绑定平台 Agent 或同项目 Agent";
-        String step=normalize(binding.getStepCode());
-        if(ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equals(profile.getScenarioCode())
-                &&(!AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(agent.getAccessType())
-                ||!(AgentExecutionService.RUNTIME_CODEX_CLI.equalsIgnoreCase(agent.getRuntimeType())
-                ||AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equalsIgnoreCase(agent.getRuntimeType())
-                ||AgentExecutionService.RUNTIME_OPENCODE_CLI.equalsIgnoreCase(agent.getRuntimeType()))))return step+" 仅支持 Codex/Claude/OpenCode CLI Runtime";
-        if(ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equals(profile.getScenarioCode())
-                &&(ExecutionWorkflowService.STEP_IMPLEMENT.equals(step)||ExecutionWorkflowService.STEP_TEST.equals(step))
-                &&!(AgentExecutionService.ACCESS_HTTP_API.equalsIgnoreCase(agent.getAccessType())
-                ||AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(agent.getAccessType())))return step+" 必须绑定可真实执行的 Agent";
+        String capabilityError = runtimeCapabilityError(profile.getScenarioCode(), normalize(binding.getStepCode()), agent);
+        if (capabilityError != null) return capabilityError;
         return null;
+    }
+
+    /**
+     * 统一校验步骤所需 Runtime 能力。
+     * 未迁移的旧 Agent 走兼容能力映射，避免已有编排因新增 Registry 字段立即失效。
+     */
+    private String runtimeCapabilityError(String scenarioCode, String stepCode, AgentEntity agent) {
+        Set<RuntimeCapability> required = requiredCapabilities(scenarioCode, stepCode);
+        if (required.isEmpty()) return null;
+        if (!AgentExecutionService.ACCESS_AGENT_RUNTIME.equalsIgnoreCase(agent.getAccessType())) {
+            return stepCode + " 必须绑定 Agent Runtime 能力适配器";
+        }
+        Set<RuntimeCapability> actual = legacyCapabilities(agent.getRuntimeType());
+        if (runtimeRegistryService != null && agent.getRuntimeRegistryCode() != null
+                && !agent.getRuntimeRegistryCode().isBlank()) {
+            try {
+                actual = runtimeRegistryService.descriptor(agent.getRuntimeRegistryCode()).capabilities();
+            } catch (RuntimeException exception) {
+                return stepCode + " 的 Runtime 未注册: " + agent.getRuntimeRegistryCode();
+            }
+        }
+        Set<RuntimeCapability> actualCapabilities = actual;
+        if (!actualCapabilities.containsAll(required)) {
+            return stepCode + " 缺少 Runtime 能力: " + required.stream()
+                    .filter(item -> !actualCapabilities.contains(item)).map(Enum::name).toList();
+        }
+        return null;
+    }
+
+    private Set<RuntimeCapability> requiredCapabilities(String scenarioCode, String stepCode) {
+        String scenario = normalize(scenarioCode);
+        String step = normalize(stepCode);
+        if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equals(scenario)) {
+            return Set.of(RuntimeCapability.STREAM_EVENTS, RuntimeCapability.REPOSITORY_READ,
+                    RuntimeCapability.TECHNICAL_DESIGN);
+        }
+        if (!ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equals(scenario)) return Set.of();
+        return switch (step) {
+            case ExecutionWorkflowService.STEP_PLAN -> Set.of(RuntimeCapability.PLAN, RuntimeCapability.REPOSITORY_READ);
+            case ExecutionWorkflowService.STEP_IMPLEMENT -> Set.of(RuntimeCapability.IMPLEMENT,
+                    RuntimeCapability.REPOSITORY_READ, RuntimeCapability.REPOSITORY_WRITE);
+            case ExecutionWorkflowService.STEP_TEST -> Set.of(RuntimeCapability.TEST, RuntimeCapability.REPOSITORY_READ);
+            case ExecutionWorkflowService.STEP_REPORT -> Set.of(RuntimeCapability.CHAT);
+            default -> Set.of();
+        };
+    }
+
+    private Set<RuntimeCapability> legacyCapabilities(String runtimeType) {
+        String runtime = normalize(runtimeType);
+        if (AgentExecutionService.RUNTIME_CODEX_CLI.equals(runtime)
+                || AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equals(runtime)
+                || AgentExecutionService.RUNTIME_OPENCODE_CLI.equals(runtime)) {
+            return Set.of(RuntimeCapability.STREAM_EVENTS, RuntimeCapability.REPOSITORY_READ,
+                    RuntimeCapability.REPOSITORY_WRITE, RuntimeCapability.PLAN, RuntimeCapability.TECHNICAL_DESIGN,
+                    RuntimeCapability.IMPLEMENT, RuntimeCapability.TEST, RuntimeCapability.CHAT);
+        }
+        if (AgentExecutionService.RUNTIME_OPENCLAW.equals(runtime) || "HERMES_LEGACY".equals(runtime)) {
+            return Set.of(RuntimeCapability.CHAT, RuntimeCapability.STREAM_EVENTS,
+                    RuntimeCapability.SESSION_RESUME, RuntimeCapability.PLATFORM_TOOLS,
+                    RuntimeCapability.REPOSITORY_READ);
+        }
+        return Set.of();
     }
     private ExecutionOrchestrationProfileEntity requireProfile(Long id){return profileRepository.findById(id).orElseThrow(()->new NoSuchElementException("编排配置不存在: "+id));}
     private ExecutionOrchestrationVersionEntity requireVersion(Long id){return versionRepository.findById(id).orElseThrow(()->new NoSuchElementException("编排版本不存在: "+id));}

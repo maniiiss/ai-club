@@ -18,7 +18,7 @@ class ChatRoomAgentQueueConsumerTests {
         ChatRoomAgentQueuePublisher queuePublisher = mock(ChatRoomAgentQueuePublisher.class);
         ChatRoomAgentRabbitProperties properties = new ChatRoomAgentRabbitProperties();
         properties.setMaxAttempts(3);
-        org.mockito.Mockito.doThrow(new IllegalStateException("Hermes 暂不可用"))
+        org.mockito.Mockito.doThrow(new IllegalStateException("Assistant 暂不可用"))
                 .when(chatRoomAgentService)
                 .runTask(701L, false);
         ChatRoomAgentQueueConsumer consumer = new ChatRoomAgentQueueConsumer(chatRoomAgentService, queuePublisher, properties,
@@ -26,8 +26,8 @@ class ChatRoomAgentQueueConsumerTests {
 
         consumer.consume(jsonMessage("{\"taskId\":701}"));
 
-        verify(chatRoomAgentService).markTaskRetrying(701L, "Hermes 暂不可用");
-        verify(queuePublisher).publishRetry(701L, 1, "Hermes 暂不可用");
+        verify(chatRoomAgentService).markTaskRetrying(701L, "Assistant 暂不可用");
+        verify(queuePublisher).publishRetry(701L, 1, "Assistant 暂不可用");
     }
 
     @Test

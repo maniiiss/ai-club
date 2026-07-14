@@ -16,5 +16,7 @@ describe('GitPilot chat theme contract', () => {
     assert.match(styles, /\.chat-assistant-message \.prose-markdown/)
     assert.match(styles, /\.chat-agent-panel/)
     assert.match(styles, /data-theme="carbon-black"[\s\S]*\.chat-assistant-message/)
+    assert.match(styles, /\.assistant-thinking-block/)
+    assert.match(styles, /data-theme="carbon-black"[\s\S]*\.assistant-thinking-block/)
   })
 })

@@ -18,7 +18,7 @@ show_usage() {
   1. `restart` 只重启指定业务容器。
   2. `rebuild` 会重新 build 并重建指定业务容器。
   3. 兼容旧写法：如果省略动作，默认按 `restart` 处理。
-  4. 可选服务：frontend / frontend-public / backend / code-processing / all。
+  4. 可选服务：frontend / frontend-public / backend / code-processing / pi-runtime / all。
   2. 不会停止 PostgreSQL、Redis、MinIO 等基础设施容器。
 EOF
 }
@@ -48,7 +48,7 @@ fi
 declare -A selected_services=()
 for raw_target in "$@"; do
   case "${raw_target}" in
-    frontend|frontend-public|backend|code-processing)
+    frontend|frontend-public|backend|code-processing|pi-runtime)
       selected_services["${raw_target}"]=1
       ;;
     all)
@@ -56,6 +56,7 @@ for raw_target in "$@"; do
       selected_services["frontend"]=1
       selected_services["frontend-public"]=1
       selected_services["code-processing"]=1
+      selected_services["pi-runtime"]=1
       ;;
     -h|--help)
       show_usage
@@ -81,6 +82,9 @@ if [[ -n "${selected_services[frontend-public]:-}" ]]; then
 fi
 if [[ -n "${selected_services[code-processing]:-}" ]]; then
   services+=(code-processing)
+fi
+if [[ -n "${selected_services[pi-runtime]:-}" ]]; then
+  services+=(pi-runtime)
 fi
 
 ensure_log_dir
@@ -116,6 +120,9 @@ for service_name in "${services[@]}"; do
       ;;
     code-processing)
       wait_port "${CODE_PROCESSING_PORT}" 180 'Code processing'
+      ;;
+    pi-runtime)
+      wait_port "${PI_RUNTIME_PORT}" 180 'Pi Runtime'
       ;;
   esac
 done

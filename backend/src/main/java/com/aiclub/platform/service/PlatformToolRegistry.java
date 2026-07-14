@@ -76,7 +76,7 @@ public class PlatformToolRegistry {
     }
 
     /**
-     * 判断指定工具是否允许被 Hermes 自动执行。
+     * 判断指定工具是否允许被 Assistant 自动执行。
      * 对于没有显式配置覆盖的只读工具，默认视为允许自动执行，保持与首版设计一致。
      */
     public boolean isAllowAutoExecute(String toolCode) {
@@ -90,7 +90,7 @@ public class PlatformToolRegistry {
     }
 
     /**
-     * 列出当前对 Hermes 可见的只读工具目录。
+     * 列出当前对 Assistant 可见的只读工具目录。
      */
     public List<PlatformToolDefinition> listAutoExecutableReadTools() {
         return definitions.keySet().stream()
@@ -193,13 +193,13 @@ public class PlatformToolRegistry {
         register(result, TOOL_TEST_CASE_APPEND, "追加测试用例", "TEST", "向测试计划追加测试用例", false, "MEDIUM", "test:manage", true,
                 schema("testPlanId", "测试计划ID", "cases", "测试用例"),
                 pendingActionOutputSchema("APPEND_TEST_CASES", "确认后向测试计划追加测试用例", "追加测试用例所需的测试计划标识与用例列表"));
-        register(result, TOOL_DOCUMENT_CONVERT_MARKDOWN, "文档转 Markdown", "DOCUMENT", "读取指定文档资产并转换为 Markdown，供 Wiki 导入、Hermes 附件理解和智能体工具调用复用", true, "LOW", "", false,
+        register(result, TOOL_DOCUMENT_CONVERT_MARKDOWN, "文档转 Markdown", "DOCUMENT", "读取指定文档资产并转换为 Markdown，供 Wiki 导入、Assistant 附件理解和智能体工具调用复用", true, "LOW", "", false,
                 schema("assetId", "文档资产ID", "scene", "转换场景，例如 WIKI_IMPORT 或 HERMES_ATTACHMENT", "maxChars", "最大保留字符数"),
                 documentMarkdownOutputSchema());
         register(result, TOOL_WIKI_SPACE_SEARCH, "搜索 Wiki 页面", "WIKI", "按关键词、空间或项目搜索当前用户可见的 Wiki 页面，必要时会结合语义召回返回相关页面", true, "LOW", "wiki:view", false,
                 schema("query", "Wiki 查询语句", "spaceId", "Wiki 空间ID，可选", "projectId", "绑定项目ID，可选"),
                 wikiPageSearchOutputSchema());
-        register(result, TOOL_WIKI_PAGE_GET_DETAIL, "Wiki 页面详情", "WIKI", "读取指定 Wiki 页面正文、标题、slug 和所属空间信息，供 Hermes 总结、问答和引用", true, "LOW", "wiki:view", false,
+        register(result, TOOL_WIKI_PAGE_GET_DETAIL, "Wiki 页面详情", "WIKI", "读取指定 Wiki 页面正文、标题、slug 和所属空间信息，供 Assistant 总结、问答和引用", true, "LOW", "wiki:view", false,
                 schema("spaceId", "Wiki 空间ID", "pageId", "Wiki 页面ID"),
                 wikiPageDetailOutputSchema());
         return result;

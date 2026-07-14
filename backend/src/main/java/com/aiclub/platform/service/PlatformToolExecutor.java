@@ -47,7 +47,7 @@ import java.util.regex.Pattern;
 
 /**
  * 平台工具执行器。
- * 第一版只自动执行只读工具，写工具由 Hermes 动作卡片确认后走既有业务 API。
+ * 第一版只自动执行只读工具，写工具由 Assistant 动作卡片确认后走既有业务 API。
  */
 @Service
 @Transactional(readOnly = true)
@@ -184,7 +184,7 @@ public class PlatformToolExecutor {
     }
 
     /**
-     * 返回当前迭代的结构化详情，供 Hermes 自主生成发版总结、风险概览或工作项分类说明。
+     * 返回当前迭代的结构化详情，供 Assistant 自主生成发版总结、风险概览或工作项分类说明。
      */
     private PlatformToolResult getIterationDetail(PlatformToolRequest request) {
         Long projectId = longValue(request.payload(), "projectId");
@@ -345,7 +345,7 @@ public class PlatformToolExecutor {
     }
 
     /**
-     * 返回仓库扫描可用规则集，供 Hermes 在发起扫描前先完成规则集确认。
+     * 返回仓库扫描可用规则集，供 Assistant 在发起扫描前先完成规则集确认。
      */
     private PlatformToolResult listRepositoryScanRulesets(PlatformToolRequest request) {
         List<PlatformToolCandidate> candidates = gitlabManagementService.listScanRulesets().stream()
@@ -786,7 +786,7 @@ public class PlatformToolExecutor {
     }
 
     /**
-     * 搜索工具只截断展示候选，统计信息始终基于完整可见结果，避免 Hermes 把候选上限误认为业务总数。
+     * 搜索工具只截断展示候选，统计信息始终基于完整可见结果，避免 Assistant 把候选上限误认为业务总数。
      */
     private PlatformToolResult collectionResult(String toolCode,
                                                 String toolName,

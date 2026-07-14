@@ -13,8 +13,8 @@ import com.aiclub.platform.dto.ChatMessageSummary;
 import com.aiclub.platform.dto.ChatRoomDetail;
 import com.aiclub.platform.dto.ChatRoomSummary;
 import com.aiclub.platform.dto.CurrentUserInfo;
-import com.aiclub.platform.dto.HermesActionSummary;
-import com.aiclub.platform.dto.HermesSelectionCard;
+import com.aiclub.platform.dto.AssistantActionSummary;
+import com.aiclub.platform.dto.AssistantSelectionCard;
 import com.aiclub.platform.dto.request.CreateChatRoomRequest;
 import com.aiclub.platform.dto.request.SendChatMessageRequest;
 import com.aiclub.platform.dto.request.UpdateChatRoomMembersRequest;
@@ -49,7 +49,7 @@ import java.util.stream.Collectors;
 
 /**
  * 聊天室核心服务。
- * 业务意图：统一处理房间权限、成员邀请、消息落库和 @Hermes 触发，避免 REST 与 WebSocket 各自复制规则。
+ * 业务意图：统一处理房间权限、成员邀请、消息落库和 @Assistant 触发，避免 REST 与 WebSocket 各自复制规则。
  */
 @Service
 @Transactional(readOnly = true)
@@ -64,12 +64,12 @@ public class ChatRoomService {
     public static final String STATUS_ERROR = "ERROR";
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    // 只允许 @hermes 独立成一个 token（后接空白/字符串结尾），避免把 @hermes-dev、@hermes队长 这类用户名误判为助手提及
-    private static final Pattern HERMES_MENTION_PATTERN = Pattern.compile("(^|\\s)@hermes(?=\\s|$)", Pattern.CASE_INSENSITIVE);
+    // GitPilot 使用中性 mention；保留 @hermes 作为兼容别名，避免历史消息和客户端失效。
+    private static final Pattern ASSISTANT_MENTION_PATTERN = Pattern.compile("(^|\\s)@(hermes|gitpilot|assistant)(?=\\s|$)", Pattern.CASE_INSENSITIVE);
     private static final int MAX_PREVIEW_LENGTH = 500;
-    private static final String PAYLOAD_HERMES_ACTIONS = "hermesActions";
+    private static final String PAYLOAD_ASSISTANT_ACTIONS = "assistantActions";
     private static final String PAYLOAD_ACTION_STATUSES = "actionStatuses";
-    private static final String PAYLOAD_HERMES_SELECTION_CARDS = "hermesSelectionCards";
+    private static final String PAYLOAD_ASSISTANT_SELECTION_CARDS = "assistantSelectionCards";
     private static final String PAYLOAD_SELECTION_STATUSES = "selectionStatuses";
 
     private final AuthService authService;
@@ -80,10 +80,10 @@ public class ChatRoomService {
     private final ChatMessageRepository chatMessageRepository;
     private final ProjectDataPermissionService projectDataPermissionService;
     private final ChatWebSocketPushService chatWebSocketPushService;
-    private final ChatHermesService chatHermesService;
+    private final ChatAssistantService chatAssistantService;
     private final ChatAttachmentService chatAttachmentService;
     private final ChatRoomAgentService chatRoomAgentService;
-    private final Executor hermesReplyExecutor;
+    private final Executor assistantReplyExecutor;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
@@ -95,10 +95,10 @@ public class ChatRoomService {
                            ChatMessageRepository chatMessageRepository,
                            ProjectDataPermissionService projectDataPermissionService,
                            ChatWebSocketPushService chatWebSocketPushService,
-                           ChatHermesService chatHermesService,
+                           ChatAssistantService chatAssistantService,
                            ChatAttachmentService chatAttachmentService,
                            ChatRoomAgentService chatRoomAgentService,
-                           @Qualifier("executionTaskExecutor") Executor hermesReplyExecutor) {
+                           @Qualifier("executionTaskExecutor") Executor assistantReplyExecutor) {
         this.authService = authService;
         this.userRepository = userRepository;
         this.projectRepository = projectRepository;
@@ -107,10 +107,10 @@ public class ChatRoomService {
         this.chatMessageRepository = chatMessageRepository;
         this.projectDataPermissionService = projectDataPermissionService;
         this.chatWebSocketPushService = chatWebSocketPushService;
-        this.chatHermesService = chatHermesService;
+        this.chatAssistantService = chatAssistantService;
         this.chatAttachmentService = chatAttachmentService;
         this.chatRoomAgentService = chatRoomAgentService;
-        this.hermesReplyExecutor = hermesReplyExecutor;
+        this.assistantReplyExecutor = assistantReplyExecutor;
     }
 
     /**
@@ -124,9 +124,9 @@ public class ChatRoomService {
                            ChatMessageRepository chatMessageRepository,
                            ProjectDataPermissionService projectDataPermissionService,
                            ChatWebSocketPushService chatWebSocketPushService,
-                           ChatHermesService chatHermesService) {
+                           ChatAssistantService chatAssistantService) {
         this(authService, userRepository, projectRepository, chatRoomRepository, chatRoomMemberRepository, chatMessageRepository,
-                projectDataPermissionService, chatWebSocketPushService, chatHermesService, null, null, null);
+                projectDataPermissionService, chatWebSocketPushService, chatAssistantService, null, null, null);
     }
 
     public ChatRoomService(AuthService authService,
@@ -137,10 +137,10 @@ public class ChatRoomService {
                            ChatMessageRepository chatMessageRepository,
                            ProjectDataPermissionService projectDataPermissionService,
                            ChatWebSocketPushService chatWebSocketPushService,
-                           ChatHermesService chatHermesService,
+                           ChatAssistantService chatAssistantService,
                            ChatRoomAgentService chatRoomAgentService) {
         this(authService, userRepository, projectRepository, chatRoomRepository, chatRoomMemberRepository, chatMessageRepository,
-                projectDataPermissionService, chatWebSocketPushService, chatHermesService, null, chatRoomAgentService, null);
+                projectDataPermissionService, chatWebSocketPushService, chatAssistantService, null, chatRoomAgentService, null);
     }
 
     public List<ChatRoomSummary> listRooms() {
@@ -209,8 +209,8 @@ public class ChatRoomService {
         if (content.isBlank() && (files == null || files.isEmpty()) && request.attachmentAssetIds().isEmpty()) {
             throw new IllegalArgumentException("消息内容或附件不能为空");
         }
-        boolean mentionsHermes = containsHermesMention(content);
-        ChatMessageEntity message = buildUserMessage(room, sender, content, mentionsHermes);
+        boolean mentionsAssistant = containsAssistantMention(content);
+        ChatMessageEntity message = buildUserMessage(room, sender, content, mentionsAssistant);
         ChatMessageEntity saved = chatMessageRepository.save(message);
         if (chatAttachmentService != null) {
             chatAttachmentService.bindUploads(saved, files);
@@ -224,33 +224,33 @@ public class ChatRoomService {
             chatRoomAgentService.handleUserMessageCreated(roomId, saved.getId());
         }
 
-        if (mentionsHermes) {
+        if (mentionsAssistant) {
             ChatMessageEntity assistantMessage = buildAssistantPlaceholder(room);
             assistantMessage = chatMessageRepository.save(assistantMessage);
             ChatMessageSummary assistantSummary = toMessageSummary(assistantMessage);
             chatWebSocketPushService.broadcastMessageCreated(roomId, assistantSummary);
-            startHermesReplyAfterCommit(roomId, assistantMessage.getId(), saved.getId(), currentUser.id());
+            startAssistantReplyAfterCommit(roomId, assistantMessage.getId(), saved.getId(), currentUser.id());
         }
         return summary;
     }
 
     /**
-     * Hermes 回复在事务提交后异步执行。
+     * Assistant 回复在事务提交后异步执行。
      * 业务意图：REST 发送消息只负责落库和广播占位消息，模型流式输出由后台任务继续推送，避免请求线程被长回复占满。
      */
-    private void startHermesReplyAfterCommit(Long roomId, Long assistantMessageId, Long triggerMessageId, Long triggerUserId) {
+    private void startAssistantReplyAfterCommit(Long roomId, Long assistantMessageId, Long triggerMessageId, Long triggerUserId) {
         Runnable task = () -> {
             if (chatRoomAgentService != null) {
                 chatRoomAgentService.createMentionTask(roomId, assistantMessageId, triggerMessageId, triggerUserId);
             } else {
-                chatHermesService.startHermesReply(roomId, assistantMessageId, triggerMessageId);
+                chatAssistantService.startAssistantReply(roomId, assistantMessageId, triggerMessageId);
             }
         };
-        if (hermesReplyExecutor == null) {
+        if (assistantReplyExecutor == null) {
             task.run();
             return;
         }
-        Runnable dispatch = () -> hermesReplyExecutor.execute(task);
+        Runnable dispatch = () -> assistantReplyExecutor.execute(task);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
@@ -319,13 +319,13 @@ public class ChatRoomService {
                 defaultString(message.getSenderAvatarSnapshot()),
                 defaultString(message.getContent()),
                 normalizeMessageStatus(message.getStatus()).toLowerCase(),
-                message.isMentionsHermes(),
+                message.isMentionsAssistant(),
                 attachments,
                 message.getAgentTask() == null ? null : message.getAgentTask().getId(),
                 message.getAgentTask() == null ? "" : defaultString(message.getAgentTask().getStatus()).toLowerCase(),
-                readPayloadList(agentPayload, PAYLOAD_HERMES_ACTIONS, new TypeReference<List<HermesActionSummary>>() {}),
+                readPayloadList(agentPayload, PAYLOAD_ASSISTANT_ACTIONS, new TypeReference<List<AssistantActionSummary>>() {}),
                 readActionStatuses(agentPayload),
-                readPayloadList(agentPayload, PAYLOAD_HERMES_SELECTION_CARDS, new TypeReference<List<HermesSelectionCard>>() {}),
+                readPayloadList(agentPayload, PAYLOAD_ASSISTANT_SELECTION_CARDS, new TypeReference<List<AssistantSelectionCard>>() {}),
                 readSelectionStatuses(agentPayload),
                 formatTime(message.getCreatedAt()),
                 formatTime(message.getUpdatedAt())
@@ -399,8 +399,8 @@ public class ChatRoomService {
         );
     }
 
-    public static boolean containsHermesMention(String content) {
-        return content != null && HERMES_MENTION_PATTERN.matcher(content).find();
+    public static boolean containsAssistantMention(String content) {
+        return content != null && ASSISTANT_MENTION_PATTERN.matcher(content).find();
     }
 
     private boolean canAccessRoom(ChatRoomEntity room, Long userId) {
@@ -446,7 +446,7 @@ public class ChatRoomService {
         chatRoomMemberRepository.saveAll(members);
     }
 
-    private ChatMessageEntity buildUserMessage(ChatRoomEntity room, UserEntity sender, String content, boolean mentionsHermes) {
+    private ChatMessageEntity buildUserMessage(ChatRoomEntity room, UserEntity sender, String content, boolean mentionsAssistant) {
         ChatMessageEntity message = new ChatMessageEntity();
         message.setRoom(room);
         message.setSenderUser(sender);
@@ -456,7 +456,7 @@ public class ChatRoomService {
         message.setSenderAvatarSnapshot(defaultString(sender.getAvatarUrl()));
         message.setContent(content);
         message.setStatus(STATUS_DONE);
-        message.setMentionsHermes(mentionsHermes);
+        message.setMentionsAssistant(mentionsAssistant);
         return message;
     }
 
@@ -466,11 +466,11 @@ public class ChatRoomService {
         message.setSenderUser(null);
         message.setRole(ROLE_ASSISTANT);
         message.setSenderUsernameSnapshot("hermes");
-        message.setSenderNameSnapshot("Hermes");
+        message.setSenderNameSnapshot("GitPilot");
         message.setSenderAvatarSnapshot("");
         message.setContent("");
         message.setStatus(STATUS_STREAMING);
-        message.setMentionsHermes(false);
+        message.setMentionsAssistant(false);
         return message;
     }
 

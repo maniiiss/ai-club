@@ -6,7 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 文档转 Markdown 统一服务，供平台工具、Wiki 导入和 Hermes 附件复用。
+ * 文档转 Markdown 统一服务，供平台工具、Wiki 导入和 Assistant 附件复用。
  */
 @Service
 @Transactional(readOnly = true)
@@ -15,10 +15,10 @@ public class DocumentMarkdownService {
     /** 转换场景：Wiki 导入。 */
     public static final String SCENE_WIKI_IMPORT = "WIKI_IMPORT";
 
-    /** 转换场景：Hermes 附件。 */
+    /** 转换场景：Assistant 附件。 */
     public static final String SCENE_HERMES_ATTACHMENT = "HERMES_ATTACHMENT";
 
-    /** 转换场景：Hermes 个人文件库。 */
+    /** 转换场景：Assistant 个人文件库。 */
     public static final String SCENE_HERMES_FILE_LIBRARY = "HERMES_FILE_LIBRARY";
 
     private final DocumentAssetService documentAssetService;

@@ -132,6 +132,11 @@ platform:
       api-key: ${PLATFORM_HERMES_SPEECH_API_KEY:}
       model: ${PLATFORM_HERMES_SPEECH_MODEL:}
       timeout-seconds: ${PLATFORM_HERMES_SPEECH_TIMEOUT_SECONDS:}
+  pi-runtime:
+    base-url: ${PLATFORM_PI_RUNTIME_BASE_URL:http://localhost:9010}
+    service-token: ${PLATFORM_PI_RUNTIME_SERVICE_TOKEN:${PLATFORM_INTERNAL_SERVICE_TOKEN:git-ai-club-internal-service-token}}
+  assistant:
+    default-runtime-code: ${PLATFORM_GITPILOT_DEFAULT_RUNTIME_CODE:HERMES_LEGACY}
   hindsight:
     base-url: ${HINDSIGHT_API_URL:}
     api-key: ${HINDSIGHT_API_KEY:}

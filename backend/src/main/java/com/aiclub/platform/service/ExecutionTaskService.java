@@ -102,6 +102,9 @@ public class ExecutionTaskService {
     private final ExecutionOrchestrationVersionRepository executionOrchestrationVersionRepository;
     private final ExecutionContextSnapshotService executionContextSnapshotService;
     private final ObjectMapper objectMapper;
+    /** 受管执行场景的默认 Runtime 解析器；任务创建时读取一次并写入快照。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private RuntimeScenarioDefaultService runtimeScenarioDefaultService;
 
     public ExecutionTaskService(ExecutionTaskRepository executionTaskRepository,
                                 ExecutionRunRepository executionRunRepository,
@@ -663,6 +666,8 @@ public class ExecutionTaskService {
                         item.path("agentName").isTextual() ? item.path("agentName").asText() : null,
                         item.path("accessType").isTextual() ? item.path("accessType").asText() : null,
                         item.path("runtimeType").isTextual() ? item.path("runtimeType").asText() : null,
+                        item.path("runtimeRegistryCode").isTextual() ? item.path("runtimeRegistryCode").asText() : null,
+                        item.path("profileVersion").isNumber() ? item.path("profileVersion").asLong() : null,
                         item.path("timeoutSeconds").isNumber() ? item.path("timeoutSeconds").asInt() : null,
                         item.path("repositoryBindingId").isNumber() ? item.path("repositoryBindingId").asLong() : null,
                         item.path("repositoryTargetBranch").isTextual() ? item.path("repositoryTargetBranch").asText() : null,
@@ -1018,10 +1023,29 @@ public class ExecutionTaskService {
         entity.setLatestSummary("等待调度");
         entity.setInputPayload(serializePayload(normalizedPayload));
         entity.setAgentBindingPayload(executionWorkflowService.serializeBindings(workflowPlan));
+        entity.setRuntimeRegistryCodeSnapshot(resolveScenarioRuntimeCode(workflowPlan.scenarioCode()));
         if (orchestrationVersionId != null) {
             entity.setOrchestrationVersion(executionOrchestrationVersionRepository.getReferenceById(orchestrationVersionId));
         }
         return entity;
+    }
+
+    /** 受管场景创建时固化默认 Runtime，后续重试和异步执行只消费这份快照。 */
+    private String resolveScenarioRuntimeCode(String scenarioCode) {
+        if (runtimeScenarioDefaultService == null) {
+            if (ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(defaultString(scenarioCode))
+                    || ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(defaultString(scenarioCode))) {
+                return AgentExecutionService.RUNTIME_CODEX_CLI;
+            }
+            return null;
+        }
+        if (ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION.equalsIgnoreCase(defaultString(scenarioCode))) {
+            return runtimeScenarioDefaultService.resolve(RuntimeScenarioDefaultService.SCENARIO_DEVELOPMENT_IMPLEMENTATION);
+        }
+        if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(defaultString(scenarioCode))) {
+            return runtimeScenarioDefaultService.resolve(RuntimeScenarioDefaultService.SCENARIO_TECHNICAL_DESIGN_AUTHORING);
+        }
+        return null;
     }
 
     private Map<String, Object> defaultPayload(Map<String, Object> inputPayload) {

@@ -23,7 +23,7 @@ const features = [
   { icon: Code2, text: '代码仓库与质量治理' },
   { icon: FlaskConical, text: '测试与自动化执行' },
   { icon: Rocket, text: '发布流水线与可观测性' },
-  { icon: Sparkles, text: 'Hermes AI 智能辅助' },
+  { icon: Sparkles, text: 'GitPilot AI 智能辅助' },
 ]
 
 export const AuthLayout = () => {

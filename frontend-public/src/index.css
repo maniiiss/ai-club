@@ -629,6 +629,40 @@ a:hover {
   background: #3a2025;
 }
 
+/* Assistant 思考块同时出现在助手工作区和聊天室；覆盖组件里的 sky 浅色工具类，避免黑色主题出现浅灰底配浅色字。 */
+[data-theme="carbon-black"] .assistant-thinking-block {
+  border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-border)) !important;
+  background: color-mix(in srgb, var(--color-bg-elevated) 82%, var(--color-primary) 18%) !important;
+  color: var(--color-text-primary) !important;
+}
+
+[data-theme="carbon-black"] .assistant-thinking-block > summary {
+  color: var(--color-text-primary) !important;
+  background: transparent !important;
+}
+
+[data-theme="carbon-black"] .assistant-thinking-block > summary:hover {
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-bg-hover)) !important;
+}
+
+[data-theme="carbon-black"] .assistant-thinking-block > summary .ml-auto {
+  color: var(--color-text-secondary) !important;
+}
+
+[data-theme="carbon-black"] .assistant-thinking-block > div {
+  border-color: color-mix(in srgb, var(--color-primary) 26%, var(--color-border)) !important;
+}
+
+[data-theme="carbon-black"] .assistant-thinking-block .prose-markdown {
+  color: var(--color-text-primary) !important;
+  opacity: 1;
+}
+
+[data-theme="carbon-black"] .assistant-thinking-block .prose-markdown code {
+  background: var(--color-bg-page) !important;
+  color: var(--color-primary-500) !important;
+}
+
 /* ── GitPilot 认证页动态背景 ── */
 .auth-background {
   position: absolute;
@@ -1035,7 +1069,7 @@ a:hover {
   color: var(--color-text-tertiary);
 }
 
-/* Hermes 与聊天室的回复通常是较长的分析报告：保持信息层级，但不让 Markdown 标题压过对话本身。 */
+/* 助手与聊天室的回复通常是较长的分析报告：保持信息层级，但不让 Markdown 标题压过对话本身。 */
 .prose-markdown--assistant {
   line-height: 1.75;
 }

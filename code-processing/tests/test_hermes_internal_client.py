@@ -55,8 +55,8 @@ class HermesInternalClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("工具执行成功", result.message)
         self.assertEqual(
             [
-                "http://localhost:8080/internal/hermes/mcp/execute",
-                "http://backend:8080/internal/hermes/mcp/execute",
+                "http://localhost:8080/internal/assistant/mcp/execute",
+                "http://backend:8080/internal/assistant/mcp/execute",
             ],
             _FakeAsyncClient.calls,
         )
@@ -76,9 +76,9 @@ class HermesInternalClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [
-                "http://localhost:8080/internal/hermes/mcp/execute",
-                "http://backend:8080/internal/hermes/mcp/execute",
-                "http://git-ai-club-server-backend:8080/internal/hermes/mcp/execute",
+                "http://localhost:8080/internal/assistant/mcp/execute",
+                "http://backend:8080/internal/assistant/mcp/execute",
+                "http://git-ai-club-server-backend:8080/internal/assistant/mcp/execute",
             ],
             _FakeAsyncClient.calls,
         )
@@ -97,9 +97,9 @@ class HermesInternalClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("工具执行成功", result.message)
         self.assertEqual(
             [
-                "http://backend:8899/internal/hermes/mcp/execute",
-                "http://git-ai-club-server-backend:8899/internal/hermes/mcp/execute",
-                "http://backend:8080/internal/hermes/mcp/execute",
+                "http://backend:8899/internal/assistant/mcp/execute",
+                "http://git-ai-club-server-backend:8899/internal/assistant/mcp/execute",
+                "http://backend:8080/internal/assistant/mcp/execute",
             ],
             _FakeAsyncClient.calls,
         )

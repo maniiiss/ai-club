@@ -154,9 +154,9 @@ public class HindsightClientService {
     }
 
     /**
-     * 将 Hermes 用户会话记忆写入用户独立的 Hindsight bank。
+     * 将 Assistant 用户会话记忆写入用户独立的 Hindsight bank。
      */
-    public void retainHermesConversationMemory(Long userId,
+    public void retainAssistantConversationMemory(Long userId,
                                                String documentId,
                                                String title,
                                                String content,
@@ -164,7 +164,7 @@ public class HindsightClientService {
                                                Map<String, Object> metadata) {
         sendJsonRequest(
                 "POST",
-                bankMemoriesUrl(properties.hermesUserMemoryBankId(userId)),
+                bankMemoriesUrl(properties.assistantUserMemoryBankId(userId)),
                 buildRetainPayload(documentId, title, content, tags, metadata, "hermes", "hermes")
         );
     }
@@ -188,7 +188,7 @@ public class HindsightClientService {
 
     /**
      * 从任意 Hindsight bank 中召回通用记忆片段。
-     * 这条链路更适合 Hermes 的用户会话记忆，因为会话文本不一定会稳定抽成 world facts。
+     * 这条链路更适合 Assistant 的用户会话记忆，因为会话文本不一定会稳定抽成 world facts。
      */
     public List<MemoryRecallHit> recallMemories(String bankId, String query, List<String> tags, int limit) {
         try {
@@ -1050,7 +1050,7 @@ public class HindsightClientService {
     }
 
     /**
-     * 通用记忆召回命中，适合 Hermes 用户会话记忆这类 chunk/document 级文本回忆。
+     * 通用记忆召回命中，适合 Assistant 用户会话记忆这类 chunk/document 级文本回忆。
      */
     public record MemoryRecallHit(
             String documentId,

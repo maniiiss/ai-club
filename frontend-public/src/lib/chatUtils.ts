@@ -1,12 +1,12 @@
 import type { ChatMessageItem, ChatSocketEvent } from '@/src/types/chat'
-import type { HermesActionItem, HermesSelectionCardItem, HermesSelectionOptionItem } from '@/src/types/hermes'
-import { resolveHermesAssistantDisplayState } from '@/src/lib/hermesUtils'
+import type { AssistantActionItem, AssistantSelectionCardItem, AssistantSelectionOptionItem } from '@/src/types/assistant'
+import { resolveAssistantDisplayState } from '@/src/lib/assistantUtils'
 export { normalizeGeneratedMarkdown } from '@/src/lib/markdownUtils'
 
-// 只允许 @hermes 独立成一个 token（后接空白或字符串结尾），避免把 @hermes-dev、@hermes队长 等用户名误判为助手提及
-const hermesMentionPattern = /(^|\s)@hermes(?=\s|$)/i
+// GitPilot 使用中性 mention，同时保留 @hermes 作为旧客户端兼容别名。
+const assistantMentionPattern = /(^|\s)@(hermes|gitpilot|assistant)(?=\s|$)/i
 
-export const containsHermesMention = (content: string): boolean => hermesMentionPattern.test(content || '')
+export const containsAssistantMention = (content: string): boolean => assistantMentionPattern.test(content || '')
 
 export const parseChatSocketEvent = (raw: string): ChatSocketEvent | null => {
   try {
@@ -41,7 +41,7 @@ export const mergeAgentActionsIntoMessage = (
   messages: ChatMessageItem[],
   messageId: number | null | undefined,
   taskId: number | null | undefined,
-  actions: HermesActionItem[],
+  actions: AssistantActionItem[],
 ): ChatMessageItem[] =>
   messages.map((message) => {
     const matchesMessage = messageId != null && message.id === messageId
@@ -59,7 +59,7 @@ export const mergeAgentSelectionCardsIntoMessage = (
   messages: ChatMessageItem[],
   messageId: number | null | undefined,
   taskId: number | null | undefined,
-  selectionCards: HermesSelectionCardItem[],
+  selectionCards: AssistantSelectionCardItem[],
 ): ChatMessageItem[] =>
   messages.map((message) => {
     const matchesMessage = messageId != null && message.id === messageId
@@ -127,7 +127,7 @@ export const markAgentSelectionStatusInMessage = (
   })
 
 export const buildAgentSelectionStatusKey = (
-  selection: Pick<HermesSelectionOptionItem, 'slot' | 'entityType' | 'entityId'> | null | undefined,
+  selection: Pick<AssistantSelectionOptionItem, 'slot' | 'entityType' | 'entityId'> | null | undefined,
 ): string => {
   if (!selection || selection.entityId == null) return ''
   return `${selection.slot || ''}:${selection.entityType || ''}:${selection.entityId}`
@@ -138,7 +138,7 @@ export const buildAgentSelectionStatusKey = (
  */
 export const isAgentSelectionCardResolved = (
   message: Pick<ChatMessageItem, 'selectionStatuses'>,
-  card: HermesSelectionCardItem,
+  card: AssistantSelectionCardItem,
 ): boolean => card.options.some((option) => (
   message.selectionStatuses?.[buildAgentSelectionStatusKey(option)] === 'selected'
 ))
@@ -176,12 +176,12 @@ export const isActiveChatAssistantStream = (message: Pick<ChatMessageItem, 'role
   message.role === 'assistant' && message.status === 'streaming' && message.agentTaskStatus !== 'canceled'
 
 /**
- * 业务意图：聊天室 Hermes 占位消息刚创建时正文为空，但用户需要在正文区域看到明确的回复中状态。
+ * 业务意图：聊天室 Assistant 占位消息刚创建时正文为空，但用户需要在正文区域看到明确的回复中状态。
  */
 export const resolveChatAssistantContent = (message: Pick<ChatMessageItem, 'role' | 'content' | 'status' | 'agentTaskStatus'>): string => {
   if (message.role !== 'assistant') return message.content || ''
-  const display = resolveHermesAssistantDisplayState(message, isActiveChatAssistantStream(message))
-  return display.content || (display.showThinking ? 'Hermes 正在回复' : '')
+  const display = resolveAssistantDisplayState(message, isActiveChatAssistantStream(message))
+  return display.content || (display.showThinking ? 'GitPilot 正在回复' : '')
 }
 
 export interface ActiveMentionQuery {

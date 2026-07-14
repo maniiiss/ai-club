@@ -1125,6 +1125,13 @@ public class PlatformStoreService {
         if (AgentExecutionService.ACCESS_AGENT_RUNTIME.equals(accessType)) {
             String runtimeType = normalizeConfiguredRuntimeType(request.runtimeType());
             entity.setRuntimeType(runtimeType);
+            entity.setRuntimeRegistryCode(trimToNull(request.runtimeRegistryCode()));
+            entity.setProfileVersion(entity.getProfileVersion() == null ? 1L : entity.getProfileVersion() + (createMode ? 0 : 1));
+            entity.setRuntimeFallbackCodesJson(defaultJsonArray(request.runtimeFallbackCodesJson()));
+            entity.setToolPolicyJson(defaultJsonObject(request.toolPolicyJson()));
+            entity.setSandboxPolicyJson(defaultJsonObject(request.sandboxPolicyJson()));
+            entity.setBudgetTokens(request.budgetTokens() == null ? null : Math.max(1, Math.min(request.budgetTokens(), 10_000_000)));
+            entity.setSessionPolicyJson(defaultJsonObject(request.sessionPolicyJson()));
             entity.setHttpMethod("POST");
             entity.setHttpHeaders(null);
             entity.setHttpRequestTemplate(null);
@@ -1159,6 +1166,12 @@ public class PlatformStoreService {
             entity.setTimeoutSeconds(resolveConfiguredTimeoutSeconds(request.timeoutSeconds()));
         } else {
             entity.setRuntimeType(null);
+            entity.setRuntimeRegistryCode(null);
+            entity.setRuntimeFallbackCodesJson("[]");
+            entity.setToolPolicyJson("{}");
+            entity.setSandboxPolicyJson("{}");
+            entity.setBudgetTokens(null);
+            entity.setSessionPolicyJson("{}");
             entity.setRuntimeAgentRef(null);
             entity.setRuntimeSessionKeyTemplate(null);
             entity.setEndpointUrl(null);
@@ -1226,10 +1239,31 @@ public class PlatformStoreService {
         if (!AgentExecutionService.RUNTIME_OPENCLAW.equals(value)
                 && !AgentExecutionService.RUNTIME_CODEX_CLI.equals(value)
                 && !AgentExecutionService.RUNTIME_CLAUDE_CODE_CLI.equals(value)
-                && !AgentExecutionService.RUNTIME_OPENCODE_CLI.equals(value)) {
-            throw new IllegalArgumentException("当前仅支持 OPENCLAW、CODEX_CLI、CLAUDE_CODE_CLI、OPENCODE_CLI Runtime");
+                && !AgentExecutionService.RUNTIME_OPENCODE_CLI.equals(value)
+                && !AgentExecutionService.RUNTIME_PI.equals(value)) {
+            throw new IllegalArgumentException("当前仅支持 OPENCLAW、PI_RUNTIME、CODEX_CLI、CLAUDE_CODE_CLI、OPENCODE_CLI Runtime");
         }
         return value;
+    }
+
+    /** Profile JSON 对象字段统一做最小结构校验，避免运行时才暴露配置错误。 */
+    private String defaultJsonObject(String value) {
+        String normalized = trimToNull(value);
+        if (normalized == null) return "{}";
+        if (!normalized.startsWith("{") || !normalized.endsWith("}")) {
+            throw new IllegalArgumentException("Profile JSON 对象配置不合法");
+        }
+        return normalized;
+    }
+
+    /** Profile 降级列表必须是 JSON 数组，具体 Runtime 能力由注册中心执行前校验。 */
+    private String defaultJsonArray(String value) {
+        String normalized = trimToNull(value);
+        if (normalized == null) return "[]";
+        if (!normalized.startsWith("[") || !normalized.endsWith("]")) {
+            throw new IllegalArgumentException("Runtime fallback JSON 数组配置不合法");
+        }
+        return normalized;
     }
 
     private int resolveConfiguredTimeoutSeconds(Integer timeoutSeconds) {
@@ -1666,6 +1700,13 @@ public class PlatformStoreService {
                 entity.getUserPromptTemplate(),
                 entity.getEndpointUrl(),
                 entity.getRuntimeType(),
+                entity.getRuntimeRegistryCode(),
+                entity.getProfileVersion(),
+                entity.getRuntimeFallbackCodesJson(),
+                entity.getToolPolicyJson(),
+                entity.getSandboxPolicyJson(),
+                entity.getBudgetTokens(),
+                entity.getSessionPolicyJson(),
                 entity.getRuntimeAgentRef(),
                 entity.getRuntimeSessionKeyTemplate(),
                 entity.getHttpMethod(),

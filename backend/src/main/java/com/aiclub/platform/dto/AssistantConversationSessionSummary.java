@@ -1,0 +1,25 @@
+package com.aiclub.platform.dto;
+
+/**
+ * Assistant 会话列表中的轻量摘要项。
+ */
+public record AssistantConversationSessionSummary(
+        Long id,
+        String title,
+        boolean titleCustomized,
+        String routeName,
+        String runtimeRegistryCode,
+        Long runtimeProfileVersion,
+        Long projectId,
+        Long taskId,
+        Long iterationId,
+        Long planId,
+        Long wikiSpaceId,
+        Long wikiPageId,
+        String latestPreview,
+        boolean archived,
+        String createdAt,
+        String updatedAt,
+        String lastMessageAt
+) {
+}

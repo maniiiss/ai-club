@@ -25,7 +25,7 @@ public class RepositoryScanRulesetEntity {
 
     /**
      * 规则集唯一编码。
-     * 创建后不允许修改，供执行任务和 Hermes 工具链稳定引用。
+     * 创建后不允许修改，供执行任务和 Assistant 工具链稳定引用。
      */
     @Column(nullable = false, unique = true, length = 100)
     private String code;

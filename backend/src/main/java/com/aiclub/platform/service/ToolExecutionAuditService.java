@@ -33,7 +33,7 @@ public class ToolExecutionAuditService {
 
     /**
      * 工具审计需要脱离外层只读事务单独提交。
-     * 这样 Hermes 的只读查询工具既不会被只读事务拦住，也能在工具执行失败时保留审计记录。
+     * 这样 Assistant 的只读查询工具既不会被只读事务拦住，也能在工具执行失败时保留审计记录。
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public PlatformToolAuditEntity createAudit(PlatformToolDefinition definition, PlatformToolRequest request) {

@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 
 /**
  * 聊天室 Agent 后台任务。
- * 业务意图：把 @Hermes、主动总结和状态回写都持久化，支持重启恢复、进度展示和审计追踪。
+ * 业务意图：把 @Assistant、主动总结和状态回写都持久化，支持重启恢复、进度展示和审计追踪。
  */
 @Entity
 @Table(name = "chat_room_agent_task")

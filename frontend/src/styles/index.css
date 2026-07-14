@@ -99,6 +99,1471 @@
 }
 
 /*
+  曜石黑页面专属收口。
+  业务意图：GitLab、自升级中心和 Element Plus 日期浮层分别由 SFC 与 Teleport 渲染，
+  最终规则集中放在文件末尾，确保覆盖局部浅色样式，同时保持其它主题原样不变。
+*/
+[data-theme="carbon-black"] .gitlab-page,
+[data-theme="carbon-black"] .self-upgrade-page {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .gitlab-page-header,
+[data-theme="carbon-black"] .gitlab-page .gitlab-page-title,
+[data-theme="carbon-black"] .gitlab-page .gitlab-overview-label,
+[data-theme="carbon-black"] .gitlab-page .gitlab-overview-value,
+[data-theme="carbon-black"] .gitlab-page .gitlab-tabs .el-tabs__item,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-card-head h2,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-editor-card-head h3,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-target-editor-head strong,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-artifact-head strong {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .gitlab-page-breadcrumb,
+[data-theme="carbon-black"] .gitlab-page .gitlab-page-subtitle,
+[data-theme="carbon-black"] .gitlab-page .gitlab-overview-caption,
+[data-theme="carbon-black"] .gitlab-page .gitlab-meta-note,
+[data-theme="carbon-black"] .gitlab-page .form-tip,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-toolbar-hint,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-card-head p,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-meta-line,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-section-label,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-meta-item span,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-artifact-head span {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .gitlab-tabs .el-tabs__header,
+[data-theme="carbon-black"] .gitlab-page .gitlab-tabs .el-tabs__nav-wrap::after,
+[data-theme="carbon-black"] .gitlab-page .gitlab-list-page .management-list-toolbar,
+[data-theme="carbon-black"] .gitlab-page .gitlab-list-page .management-list-toolbar-main,
+[data-theme="carbon-black"] .gitlab-page .gitlab-list-page .management-list-toolbar-side,
+[data-theme="carbon-black"] .gitlab-page .gitlab-page-stack > .el-card,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-toolbar,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-pagination-bar {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .gitlab-tabs .el-tabs__item {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .gitlab-tabs .el-tabs__item:hover,
+[data-theme="carbon-black"] .gitlab-page .gitlab-tabs .el-tabs__item.is-active {
+  color: var(--app-primary-light-7) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .gitlab-tabs .el-tabs__active-bar {
+  background: var(--app-primary) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .gitlab-main-card,
+[data-theme="carbon-black"] .gitlab-page .gitlab-overview-card,
+[data-theme="carbon-black"] .gitlab-page .gitlab-side-summary,
+[data-theme="carbon-black"] .gitlab-page .gitlab-log-detail-shell,
+[data-theme="carbon-black"] .gitlab-page .gitlab-log-detail-section,
+[data-theme="carbon-black"] .gitlab-page .gitlab-share-field,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-card,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-editor-card,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-suggestion-card,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-target-editor,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-collapse-item,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-artifact-card {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+  color: var(--app-text) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .gitlab-side-summary-item,
+[data-theme="carbon-black"] .gitlab-page .gitlab-share-field,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-meta-item,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-evidence-preview,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-markdown-shell,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-empty-mini,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-chip {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .gitlab-side-summary-item strong,
+[data-theme="carbon-black"] .gitlab-page .gitlab-share-field strong,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-meta-item strong,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-collapse-title,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-card .el-button,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-editor-card .el-button {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .gitlab-side-log,
+[data-theme="carbon-black"] .gitlab-page .gitlab-side-log-item,
+[data-theme="carbon-black"] .gitlab-page .gitlab-log-detail-summary,
+[data-theme="carbon-black"] .gitlab-page .gitlab-log-detail-content {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.18) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page :is(.management-list-table, .gitlab-binding-table, .gitlab-owner-repo-table, .gitlab-product-branch-table, .gitlab-auto-merge-table, .gitlab-log-table) th {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page :is(.management-list-table, .gitlab-binding-table, .gitlab-owner-repo-table, .gitlab-product-branch-table, .gitlab-auto-merge-table, .gitlab-log-table) td {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.16) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page :is(.management-list-table, .gitlab-binding-table, .gitlab-owner-repo-table, .gitlab-product-branch-table, .gitlab-auto-merge-table, .gitlab-log-table) tbody tr:hover > td {
+  background: color-mix(in srgb, var(--app-primary) 12%, var(--app-surface-card)) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .log-detail-markdown,
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-markdown-shell {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .log-detail-markdown :is(h1, h2, h3, h4, strong),
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-markdown-shell :is(h1, h2, h3, h4, strong) {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .log-detail-markdown :is(p, li, td, th),
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-markdown-shell :is(p, li, blockquote) {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .log-detail-markdown :is(pre, code),
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-markdown-shell :is(pre, code),
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-code-preview {
+  background: #080c12 !important;
+  color: #dce5ec !important;
+  border-color: rgba(var(--app-outline-rgb), 0.24) !important;
+}
+
+[data-theme="carbon-black"] .self-upgrade-page .el-collapse,
+[data-theme="carbon-black"] .self-upgrade-page .el-collapse-item__header,
+[data-theme="carbon-black"] .self-upgrade-page .el-collapse-item__wrap,
+[data-theme="carbon-black"] .self-upgrade-page .el-collapse-item__content {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .self-upgrade-page .el-collapse-item__header,
+[data-theme="carbon-black"] .self-upgrade-page .el-collapse-item__content,
+[data-theme="carbon-black"] .self-upgrade-page .el-timeline-item__content,
+[data-theme="carbon-black"] .self-upgrade-page .el-form-item__label {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .self-upgrade-page .el-collapse-item__arrow {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .self-upgrade-page .self-upgrade-card-actions {
+  border-top-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+/* 日期/时间选择器使用 .el-date-table-cell，而旧规则只覆盖了旧版本的 div 结构。 */
+[data-theme="carbon-black"] .el-picker__popper.el-popper,
+[data-theme="carbon-black"] .el-picker__popper .el-picker-panel,
+[data-theme="carbon-black"] .el-picker-panel,
+[data-theme="carbon-black"] .el-time-panel {
+  --el-datepicker-bg-color: var(--app-surface-card);
+  --el-datepicker-text-color: var(--app-text-soft);
+  --el-datepicker-off-text-color: var(--app-text-muted);
+  --el-datepicker-header-text-color: var(--app-text-soft);
+  --el-datepicker-icon-color: var(--app-text-soft);
+  --el-datepicker-border-color: rgba(var(--app-outline-rgb), 0.26);
+  --el-datepicker-inner-border-color: rgba(var(--app-outline-rgb), 0.2);
+  --el-datepicker-inrange-bg-color: color-mix(in srgb, var(--app-primary) 18%, var(--app-surface-card));
+  --el-datepicker-inrange-hover-bg-color: color-mix(in srgb, var(--app-primary) 28%, var(--app-surface-card));
+  --el-datepicker-active-color: var(--app-primary);
+  --el-datepicker-hover-text-color: var(--app-primary-light-7);
+  background: var(--app-surface-card) !important;
+  color: var(--app-text-soft) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.26) !important;
+}
+
+[data-theme="carbon-black"] .el-picker__popper .el-popper__arrow::before {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.26) !important;
+}
+
+[data-theme="carbon-black"] .el-date-table td,
+[data-theme="carbon-black"] .el-date-table td .el-date-table-cell,
+[data-theme="carbon-black"] .el-month-table td .cell,
+[data-theme="carbon-black"] .el-year-table td .cell {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .el-date-table td.in-range .el-date-table-cell,
+[data-theme="carbon-black"] .el-date-table td.hover-in-range .el-date-table-cell,
+[data-theme="carbon-black"] .el-month-table td.in-range .cell,
+[data-theme="carbon-black"] .el-year-table td.in-range .cell {
+  background: var(--el-datepicker-inrange-bg-color) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .el-date-table td.available:hover .el-date-table-cell,
+[data-theme="carbon-black"] .el-date-table td.hover-in-range .el-date-table-cell:hover,
+[data-theme="carbon-black"] .el-date-table td:hover .el-date-table-cell {
+  background: var(--el-datepicker-inrange-hover-bg-color) !important;
+}
+
+[data-theme="carbon-black"] .el-date-table td.current:not(.disabled) .el-date-table-cell__text,
+[data-theme="carbon-black"] .el-date-table td.start-date .el-date-table-cell__text,
+[data-theme="carbon-black"] .el-date-table td.end-date .el-date-table-cell__text,
+[data-theme="carbon-black"] .el-month-table td.current .cell,
+[data-theme="carbon-black"] .el-year-table td.current .cell {
+  background: var(--app-primary) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="carbon-black"] .el-date-table td.disabled .el-date-table-cell,
+[data-theme="carbon-black"] .el-date-table td.prev-month .el-date-table-cell,
+[data-theme="carbon-black"] .el-date-table td.next-month .el-date-table-cell {
+  background: transparent !important;
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .el-date-table th,
+[data-theme="carbon-black"] .el-month-table th,
+[data-theme="carbon-black"] .el-year-table th {
+  color: var(--app-text-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .el-time-spinner__item {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .el-time-spinner__item.active:not(.disabled) {
+  color: var(--app-primary-light-7) !important;
+  font-weight: 800;
+}
+
+[data-theme="carbon-black"] .el-time-spinner__item:hover,
+[data-theme="carbon-black"] .el-time-spinner__item.active {
+  background: color-mix(in srgb, var(--app-primary) 16%, var(--app-surface-card)) !important;
+}
+
+[data-theme="carbon-black"] .el-picker-panel__footer,
+[data-theme="carbon-black"] .el-time-panel__footer,
+[data-theme="carbon-black"] .el-date-range-picker__time-header {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .el-picker-panel__footer .el-button,
+[data-theme="carbon-black"] .el-time-panel__footer .el-button {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text-soft) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.24) !important;
+}
+
+[data-theme="carbon-black"] .el-picker-panel__footer .el-button--primary,
+[data-theme="carbon-black"] .el-time-panel__footer .el-button--primary {
+  background: var(--app-primary) !important;
+  border-color: var(--app-primary) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="carbon-black"] .el-date-picker__header,
+[data-theme="carbon-black"] .el-date-range-picker__header,
+[data-theme="carbon-black"] .el-date-picker__time-header,
+[data-theme="carbon-black"] .el-picker-panel__icon-btn,
+[data-theme="carbon-black"] .el-date-picker__header-label,
+[data-theme="carbon-black"] .el-date-range-picker__header-label {
+  color: var(--app-text-soft) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .el-tag.el-tag--info,
+[data-theme="carbon-black"] .el-tag:not(.el-tag--success):not(.el-tag--warning):not(.el-tag--danger):not(.el-tag--info) {
+  background: color-mix(in srgb, var(--app-primary) 14%, var(--app-surface-card)) !important;
+  color: var(--app-primary-light-7) !important;
+  border-color: rgba(var(--app-primary-rgb), 0.24) !important;
+}
+
+[data-theme="carbon-black"] .el-alert--warning.is-light,
+[data-theme="carbon-black"] .el-alert--info.is-light,
+[data-theme="carbon-black"] .el-alert--success.is-light,
+[data-theme="carbon-black"] .el-alert--error.is-light {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+/*
+  曜石黑内容型页面覆盖。
+  业务意图：统计看板、服务器卡片、模型 Tab 和 Markdown 预览拥有各自的颜色系统；把这些内容层级接入主题变量，避免白色大卡、灰色 Tab 和浅色代码标签再次漏出。
+*/
+
+/*
+  曜石黑 GitLab / 自升级 / 日期选择器覆盖。
+  业务意图：这三类页面使用独立 SFC 样式或 Teleport 浮层，不能只依赖通用列表卡片；统一补齐页面表面、文字层级、Markdown 和日期范围交互态。
+*/
+[data-theme="carbon-black"] .gitlab-tab-switcher,
+[data-theme="carbon-black"] .self-upgrade-tab-switcher,
+[data-theme="carbon-black"] .gitlab-overview-card,
+[data-theme="carbon-black"] .gitlab-side-summary,
+[data-theme="carbon-black"] .gitlab-main-card,
+[data-theme="carbon-black"] .self-upgrade-card,
+[data-theme="carbon-black"] .self-upgrade-editor-card,
+[data-theme="carbon-black"] .self-upgrade-target-editor,
+[data-theme="carbon-black"] .self-upgrade-collapse-item,
+[data-theme="carbon-black"] .self-upgrade-artifact-card,
+[data-theme="carbon-black"] .self-upgrade-meta-item,
+[data-theme="carbon-black"] .self-upgrade-evidence-preview,
+[data-theme="carbon-black"] .self-upgrade-markdown-shell,
+[data-theme="carbon-black"] .self-upgrade-empty-mini,
+[data-theme="carbon-black"] .log-detail-markdown,
+[data-theme="carbon-black"] .gitlab-share-field {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+  color: var(--app-text) !important;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-tab-switcher,
+[data-theme="carbon-black"] .self-upgrade-tab-switcher {
+  padding: 4px !important;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.22) !important;
+  background: var(--app-surface-muted) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-tab-button,
+[data-theme="carbon-black"] .self-upgrade-tab-switcher .gitlab-tab-button {
+  background: transparent !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-tab-button:hover,
+[data-theme="carbon-black"] .gitlab-tab-button.active,
+[data-theme="carbon-black"] .self-upgrade-tab-switcher .gitlab-tab-button:hover,
+[data-theme="carbon-black"] .self-upgrade-tab-switcher .gitlab-tab-button.active {
+  background: var(--app-surface-card) !important;
+  color: var(--app-primary-light-7) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.24) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-overview-card,
+[data-theme="carbon-black"] .gitlab-side-summary,
+[data-theme="carbon-black"] .self-upgrade-card,
+[data-theme="carbon-black"] .self-upgrade-editor-card {
+  background:
+    radial-gradient(circle at 96% 0%, rgba(var(--app-primary-container-rgb), 0.12), transparent 32%),
+    var(--app-surface-card) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-title-link,
+[data-theme="carbon-black"] .gitlab-side-summary-title,
+[data-theme="carbon-black"] .gitlab-side-summary-item strong,
+[data-theme="carbon-black"] .self-upgrade-card-head h2,
+[data-theme="carbon-black"] .self-upgrade-editor-card-head h3,
+[data-theme="carbon-black"] .self-upgrade-meta-item strong,
+[data-theme="carbon-black"] .self-upgrade-target-editor-head strong,
+[data-theme="carbon-black"] .self-upgrade-artifact-head strong,
+[data-theme="carbon-black"] .self-upgrade-collapse-title,
+[data-theme="carbon-black"] .gitlab-share-field strong {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-meta-stack,
+[data-theme="carbon-black"] .gitlab-meta-note,
+[data-theme="carbon-black"] .gitlab-side-summary-item,
+[data-theme="carbon-black"] .gitlab-page-subtitle,
+[data-theme="carbon-black"] .self-upgrade-toolbar-hint,
+[data-theme="carbon-black"] .self-upgrade-card-head p,
+[data-theme="carbon-black"] .self-upgrade-editor-card-head > span,
+[data-theme="carbon-black"] .self-upgrade-editor-card-head > div > span,
+[data-theme="carbon-black"] .self-upgrade-meta-line,
+[data-theme="carbon-black"] .self-upgrade-meta-item span,
+[data-theme="carbon-black"] .self-upgrade-section-label,
+[data-theme="carbon-black"] .self-upgrade-target-editor-head > div > span,
+[data-theme="carbon-black"] .self-upgrade-artifact-head span,
+[data-theme="carbon-black"] .gitlab-share-field > span,
+[data-theme="carbon-black"] .gitlab-empty-row {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .self-upgrade-meta-item,
+[data-theme="carbon-black"] .self-upgrade-evidence-preview,
+[data-theme="carbon-black"] .self-upgrade-target-editor,
+[data-theme="carbon-black"] .self-upgrade-collapse-item,
+[data-theme="carbon-black"] .self-upgrade-markdown-shell,
+[data-theme="carbon-black"] .self-upgrade-empty-mini,
+[data-theme="carbon-black"] .gitlab-share-field {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .self-upgrade-card-actions,
+[data-theme="carbon-black"] .gitlab-side-summary-item,
+[data-theme="carbon-black"] .gitlab-share-field,
+[data-theme="carbon-black"] .gitlab-section-stack {
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .self-upgrade-code-preview,
+[data-theme="carbon-black"] .self-upgrade-markdown-shell pre,
+[data-theme="carbon-black"] .log-detail-markdown pre {
+  background: #080c12 !important;
+  color: #dce5ec !important;
+  border-color: rgba(var(--app-outline-rgb), 0.24) !important;
+}
+
+[data-theme="carbon-black"] .self-upgrade-markdown-shell h1,
+[data-theme="carbon-black"] .self-upgrade-markdown-shell h2,
+[data-theme="carbon-black"] .self-upgrade-markdown-shell h3,
+[data-theme="carbon-black"] .self-upgrade-markdown-shell h4,
+[data-theme="carbon-black"] .self-upgrade-markdown-shell p,
+[data-theme="carbon-black"] .self-upgrade-markdown-shell li,
+[data-theme="carbon-black"] .self-upgrade-markdown-shell blockquote,
+[data-theme="carbon-black"] .log-detail-markdown h1,
+[data-theme="carbon-black"] .log-detail-markdown h2,
+[data-theme="carbon-black"] .log-detail-markdown h3,
+[data-theme="carbon-black"] .log-detail-markdown p,
+[data-theme="carbon-black"] .log-detail-markdown li {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .self-upgrade-markdown-shell code:not(pre code),
+[data-theme="carbon-black"] .log-detail-markdown code:not(pre code) {
+  background: var(--app-surface-high) !important;
+  color: var(--app-primary-light-7) !important;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.24) !important;
+}
+
+[data-theme="carbon-black"] .self-upgrade-markdown-shell blockquote,
+[data-theme="carbon-black"] .log-detail-markdown blockquote {
+  background: var(--app-surface-high) !important;
+  border-color: rgba(var(--app-primary-rgb), 0.32) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .log-detail-markdown table,
+[data-theme="carbon-black"] .log-detail-markdown th,
+[data-theme="carbon-black"] .log-detail-markdown td {
+  border-color: rgba(var(--app-outline-rgb), 0.28) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .log-detail-markdown th {
+  background: var(--app-surface-high) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page :is(.management-list-table, .gitlab-binding-table, .gitlab-owner-repo-table, .gitlab-product-branch-table, .gitlab-auto-merge-table, .gitlab-log-table) th,
+[data-theme="carbon-black"] .gitlab-page :is(.management-list-table, .gitlab-binding-table, .gitlab-owner-repo-table, .gitlab-product-branch-table, .gitlab-auto-merge-table, .gitlab-log-table) td {
+  border-color: rgba(var(--app-outline-rgb), 0.18) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page :is(.management-list-table, .gitlab-binding-table, .gitlab-owner-repo-table, .gitlab-product-branch-table, .gitlab-auto-merge-table, .gitlab-log-table) th {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page :is(.management-list-table, .gitlab-binding-table, .gitlab-owner-repo-table, .gitlab-product-branch-table, .gitlab-auto-merge-table, .gitlab-log-table) td {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page :is(.management-list-table, .gitlab-binding-table, .gitlab-owner-repo-table, .gitlab-product-branch-table, .gitlab-auto-merge-table, .gitlab-log-table) tbody tr:hover > td {
+  background: color-mix(in srgb, var(--app-primary) 10%, var(--app-surface-card)) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-side-summary {
+  border: 1px solid rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-share-field {
+  background: linear-gradient(180deg, var(--app-surface-muted), var(--app-surface-card)) !important;
+}
+
+[data-theme="carbon-black"] .auto-merge-strictness-group .el-radio-button__inner {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .auto-merge-strictness-group .el-radio-button.is-active .el-radio-button__inner {
+  background: var(--app-primary) !important;
+  color: #ffffff !important;
+}
+
+/* Element Plus 日期/时间选择器会 Teleport 到 body，单独覆盖面板、输入、范围高亮和时间滚轮。 */
+[data-theme="carbon-black"] .el-date-editor,
+[data-theme="carbon-black"] .el-date-editor.el-input__wrapper,
+[data-theme="carbon-black"] .el-range-editor.el-input__wrapper {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.24) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--app-outline-rgb), 0.18) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .el-date-editor .el-range-input,
+[data-theme="carbon-black"] .el-date-editor .el-input__inner,
+[data-theme="carbon-black"] .el-date-editor .el-range-separator,
+[data-theme="carbon-black"] .el-date-editor .el-range__icon,
+[data-theme="carbon-black"] .el-date-editor .el-range__close-icon {
+  background: transparent !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .el-date-editor .el-range-input::placeholder,
+[data-theme="carbon-black"] .el-date-editor .el-input__inner::placeholder {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .el-picker-panel,
+[data-theme="carbon-black"] .el-date-range-picker,
+[data-theme="carbon-black"] .el-date-picker,
+[data-theme="carbon-black"] .el-time-panel,
+[data-theme="carbon-black"] .el-time-panel__content,
+[data-theme="carbon-black"] .el-time-panel__footer,
+[data-theme="carbon-black"] .el-picker-panel__body,
+[data-theme="carbon-black"] .el-picker-panel__content,
+[data-theme="carbon-black"] .el-date-range-picker__content {
+  --el-datepicker-bg-color: var(--app-surface-card);
+  --el-datepicker-text-color: var(--app-text);
+  --el-datepicker-off-text-color: var(--app-text-muted);
+  --el-datepicker-header-text-color: var(--app-text);
+  --el-datepicker-icon-color: var(--app-text-soft);
+  --el-datepicker-inrange-bg-color: color-mix(in srgb, var(--app-primary) 18%, var(--app-surface-card));
+  --el-datepicker-inrange-hover-bg-color: color-mix(in srgb, var(--app-primary) 26%, var(--app-surface-card));
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.24) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .el-picker-panel__body,
+[data-theme="carbon-black"] .el-date-range-picker__content {
+  background: var(--app-surface-card) !important;
+}
+
+[data-theme="carbon-black"] .el-date-range-picker__content.is-left {
+  border-right-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .el-date-range-picker__header,
+[data-theme="carbon-black"] .el-date-picker__header,
+[data-theme="carbon-black"] .el-date-picker__time-header {
+  color: var(--app-text) !important;
+  border-bottom-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .el-date-range-picker__header-label,
+[data-theme="carbon-black"] .el-date-picker__header-label,
+[data-theme="carbon-black"] .el-picker-panel__icon-btn,
+[data-theme="carbon-black"] .el-time-panel__btn,
+[data-theme="carbon-black"] .el-time-spinner__item {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .el-picker-panel__icon-btn:hover,
+[data-theme="carbon-black"] .el-date-range-picker__header-label:hover,
+[data-theme="carbon-black"] .el-date-picker__header-label:hover,
+[data-theme="carbon-black"] .el-time-spinner__item:hover {
+  color: var(--app-primary-light-7) !important;
+}
+
+[data-theme="carbon-black"] .el-date-table th {
+  color: var(--app-text-muted) !important;
+  border-bottom-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .el-date-table td {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .el-date-table td span {
+  color: inherit !important;
+}
+
+[data-theme="carbon-black"] .el-date-table td.prev-month span,
+[data-theme="carbon-black"] .el-date-table td.next-month span,
+[data-theme="carbon-black"] .el-date-table td.disabled span {
+  color: var(--app-text-muted) !important;
+  opacity: 0.72;
+}
+
+[data-theme="carbon-black"] .el-date-table td.today span {
+  color: var(--app-primary-light-7) !important;
+  font-weight: 800;
+}
+
+[data-theme="carbon-black"] .el-date-table td.current:not(.disabled) span,
+[data-theme="carbon-black"] .el-date-table td.start-date span,
+[data-theme="carbon-black"] .el-date-table td.end-date span {
+  background: var(--app-primary) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="carbon-black"] .el-date-table td.in-range div,
+[data-theme="carbon-black"] .el-date-table td.in-range span {
+  background: color-mix(in srgb, var(--app-primary) 18%, var(--app-surface-card)) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .el-date-table td.start-date div,
+[data-theme="carbon-black"] .el-date-table td.end-date div {
+  background: transparent !important;
+}
+
+[data-theme="carbon-black"] .el-date-table td.hover-in-range div,
+[data-theme="carbon-black"] .el-date-table td:hover div {
+  background: color-mix(in srgb, var(--app-primary) 26%, var(--app-surface-card)) !important;
+}
+
+[data-theme="carbon-black"] .el-time-spinner__wrapper::after,
+[data-theme="carbon-black"] .el-time-spinner__wrapper::before {
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .el-time-spinner__item.active:not(.disabled) {
+  color: var(--app-primary-light-7) !important;
+  font-weight: 800;
+}
+
+[data-theme="carbon-black"] .el-picker-panel__footer,
+[data-theme="carbon-black"] .el-date-range-picker__time-header {
+  background: var(--app-surface-muted) !important;
+  border-top-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .el-picker-panel__footer .el-button,
+[data-theme="carbon-black"] .el-time-panel__footer .el-button {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.24) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .el-picker-panel__footer .el-button--primary,
+[data-theme="carbon-black"] .el-time-panel__footer .el-button--primary {
+  background: var(--app-primary) !important;
+  border-color: var(--app-primary) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="carbon-black"] .server-card,
+[data-theme="carbon-black"] .server-card-grid,
+[data-theme="carbon-black"] .server-card-heading,
+[data-theme="carbon-black"] .agent-usage-page .hero,
+[data-theme="carbon-black"] .agent-usage-page .kpi-card,
+[data-theme="carbon-black"] .agent-usage-page .trend-section,
+[data-theme="carbon-black"] .agent-usage-page .tabs-section,
+[data-theme="carbon-black"] .model-tab-switcher {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .server-card {
+  background:
+    radial-gradient(circle at 94% 2%, rgba(var(--app-primary-container-rgb), 0.16), transparent 34%),
+    linear-gradient(135deg, var(--app-surface-card), var(--app-surface-muted)) !important;
+}
+
+[data-theme="carbon-black"] .server-card-heading h2,
+[data-theme="carbon-black"] .server-card-info-value strong,
+[data-theme="carbon-black"] .agent-usage-page .hero h1,
+[data-theme="carbon-black"] .agent-usage-page .trend-section h3,
+[data-theme="carbon-black"] .agent-usage-page .tabs-section strong {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .server-card-subtitle,
+[data-theme="carbon-black"] .server-card-meta-line,
+[data-theme="carbon-black"] .server-card-info-label,
+[data-theme="carbon-black"] .agent-usage-page .hero-tip,
+[data-theme="carbon-black"] .agent-usage-page .toolbar-item,
+[data-theme="carbon-black"] .agent-usage-page .row-sub {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .server-card-actions-shell {
+  border-top-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .server-card-actions .el-button,
+[data-theme="carbon-black"] .server-card-info-value .management-list-empty {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .server-card-actions .el-button:not(.el-button--primary):not(.el-button--danger) {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .model-tab-switcher {
+  padding: 4px !important;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.22) !important;
+  background: var(--app-surface-muted) !important;
+}
+
+[data-theme="carbon-black"] .model-tab-button {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .model-tab-button:hover,
+[data-theme="carbon-black"] .model-tab-button.active {
+  background: var(--app-surface-card) !important;
+  color: var(--app-primary-light-7) !important;
+}
+
+[data-theme="carbon-black"] .model-api-link {
+  color: var(--app-primary-light-7) !important;
+}
+
+[data-theme="carbon-black"] .agent-usage-page .hero {
+  background:
+    radial-gradient(circle at 88% 0%, rgba(var(--app-primary-container-rgb), 0.2), transparent 34%),
+    linear-gradient(135deg, color-mix(in srgb, var(--app-primary) 14%, var(--app-surface-card)), var(--app-surface-card)) !important;
+}
+
+[data-theme="carbon-black"] .agent-usage-page .hero-kicker {
+  background: var(--app-primary) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="carbon-black"] .agent-usage-page .unknown-banner {
+  background: color-mix(in srgb, var(--app-warning) 14%, var(--app-surface-card)) !important;
+  border-color: rgba(255, 179, 92, 0.42) !important;
+}
+
+[data-theme="carbon-black"] .agent-usage-page .unknown-banner strong,
+[data-theme="carbon-black"] .agent-usage-page .unknown-banner p,
+[data-theme="carbon-black"] .agent-usage-page .unknown-source,
+[data-theme="carbon-black"] .agent-usage-page .unknown-count {
+  color: #ffd28a !important;
+}
+
+[data-theme="carbon-black"] .agent-usage-page .unknown-banner-list li {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(255, 179, 92, 0.36) !important;
+}
+
+[data-theme="carbon-black"] .agent-usage-page .kpi-card,
+[data-theme="carbon-black"] .agent-usage-page .trend-section,
+[data-theme="carbon-black"] .agent-usage-page .tabs-section {
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-theme="carbon-black"] .agent-usage-page .kpi-label,
+[data-theme="carbon-black"] .agent-usage-page .kpi-extra,
+[data-theme="carbon-black"] .agent-usage-page .trend-axis,
+[data-theme="carbon-black"] .agent-usage-page .trend-meta,
+[data-theme="carbon-black"] .agent-usage-page .row-sub {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .agent-usage-page .kpi-value {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .agent-usage-page .kpi-card.success,
+[data-theme="carbon-black"] .agent-usage-page .kpi-card.warning,
+[data-theme="carbon-black"] .agent-usage-page .kpi-card.danger {
+  background: var(--app-surface-card) !important;
+}
+
+[data-theme="carbon-black"] .agent-usage-page .el-date-editor,
+[data-theme="carbon-black"] .agent-usage-page .el-select__wrapper,
+[data-theme="carbon-black"] .agent-usage-page .el-input__wrapper,
+[data-theme="carbon-black"] .agent-usage-page .el-radio-button__inner {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .agent-usage-page .el-table,
+[data-theme="carbon-black"] .agent-usage-page .el-table__inner-wrapper,
+[data-theme="carbon-black"] .agent-usage-page .el-table th,
+[data-theme="carbon-black"] .agent-usage-page .el-table td,
+[data-theme="carbon-black"] .agent-usage-page .el-table tr {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.18) !important;
+}
+
+[data-theme="carbon-black"] .agent-usage-page .el-table th {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .agent-usage-page .el-table__body tr:hover > td {
+  background: color-mix(in srgb, var(--app-primary) 10%, var(--app-surface-card)) !important;
+}
+
+/* 执行产物 Markdown：行内 code、代码块和表格分别处理，避免浅色标签上的浅色文字。 */
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview p,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview li,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview blockquote,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview td,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview th {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview h1,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview h2,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview h3,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview h4,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview strong {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview code:not(pre code) {
+  background: var(--app-surface-high) !important;
+  color: var(--app-primary-light-7) !important;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.24) !important;
+}
+
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview pre,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview pre code {
+  background: #080c12 !important;
+  color: #dce5ec !important;
+  border-color: rgba(var(--app-outline-rgb), 0.24) !important;
+}
+
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview blockquote,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview th {
+  background: var(--app-surface-high) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.28) !important;
+}
+
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview table,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview td {
+  border-color: rgba(var(--app-outline-rgb), 0.28) !important;
+}
+
+[data-theme="carbon-black"] .el-loading-mask {
+  background-color: rgba(8, 12, 18, 0.72) !important;
+}
+
+[data-theme="carbon-black"] .el-loading-text,
+[data-theme="carbon-black"] .el-loading-spinner .path {
+  color: var(--app-primary-light-7) !important;
+  stroke: var(--app-primary-light-7) !important;
+}
+
+/*
+  曜石黑列表系统覆盖。
+  业务意图：管理端各业务页共用 management-list / atelier / work-list 结构，但标题、表头、分页和操作按钮仍由旧的浅色基础样式控制；统一提升这些文字层级，避免黑色背景上的“黑字黑底”。
+*/
+[data-theme="carbon-black"] .agent-tab-switcher,
+[data-theme="carbon-black"] .agent-filter-shell,
+[data-theme="carbon-black"] .atelier-filter-panel,
+[data-theme="carbon-black"] .management-list-filter-panel,
+[data-theme="carbon-black"] .work-list-filter-panel,
+[data-theme="carbon-black"] .agent-card,
+[data-theme="carbon-black"] .agent-form-section {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .agent-tab-switcher {
+  padding: 4px !important;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.2) !important;
+  background: var(--app-surface-muted) !important;
+}
+
+[data-theme="carbon-black"] .agent-tab-button {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .agent-tab-button:hover,
+[data-theme="carbon-black"] .agent-tab-button.active {
+  background: var(--app-surface-card) !important;
+  color: var(--app-primary-light-7) !important;
+}
+
+[data-theme="carbon-black"] .atelier-toolbar-main,
+[data-theme="carbon-black"] .management-list-toolbar-main,
+[data-theme="carbon-black"] .work-list-toolbar-main,
+[data-theme="carbon-black"] .atelier-table-shell,
+[data-theme="carbon-black"] .management-list-shell,
+[data-theme="carbon-black"] .work-list-shell {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .atelier-search-input,
+[data-theme="carbon-black"] .management-list-search-input,
+[data-theme="carbon-black"] .work-list-search-input,
+[data-theme="carbon-black"] .atelier-search-input::placeholder,
+[data-theme="carbon-black"] .management-list-search-input::placeholder,
+[data-theme="carbon-black"] .work-list-search-input::placeholder {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .atelier-search-icon,
+[data-theme="carbon-black"] .management-list-search-icon,
+[data-theme="carbon-black"] .atelier-toolbar-divider,
+[data-theme="carbon-black"] .management-list-toolbar-divider,
+[data-theme="carbon-black"] .work-list-toolbar-divider {
+  color: var(--app-text-muted) !important;
+  background-color: rgba(var(--app-outline-rgb), 0.24) !important;
+}
+
+[data-theme="carbon-black"] .atelier-toolbar-button,
+[data-theme="carbon-black"] .atelier-create-button,
+[data-theme="carbon-black"] .management-list-toolbar-button,
+[data-theme="carbon-black"] .management-list-create-button,
+[data-theme="carbon-black"] .work-list-toolbar-button,
+[data-theme="carbon-black"] .work-list-create-button {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .atelier-toolbar-button:hover,
+[data-theme="carbon-black"] .management-list-toolbar-button:hover,
+[data-theme="carbon-black"] .work-list-toolbar-button:hover {
+  background: color-mix(in srgb, var(--app-primary) 12%, var(--app-surface-card)) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .atelier-data-head,
+[data-theme="carbon-black"] .management-list-table thead,
+[data-theme="carbon-black"] .work-list-table thead,
+[data-theme="carbon-black"] .task-table thead,
+[data-theme="carbon-black"] .atelier-table thead {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .atelier-data-head-item,
+[data-theme="carbon-black"] .management-list-table th,
+[data-theme="carbon-black"] .work-list-table th,
+[data-theme="carbon-black"] .task-table th,
+[data-theme="carbon-black"] .atelier-table th {
+  color: var(--app-text-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .atelier-data-row,
+[data-theme="carbon-black"] .management-list-row,
+[data-theme="carbon-black"] .work-list-row,
+[data-theme="carbon-black"] .task-row,
+[data-theme="carbon-black"] .management-list-table td,
+[data-theme="carbon-black"] .work-list-table td,
+[data-theme="carbon-black"] .task-table td,
+[data-theme="carbon-black"] .atelier-table td {
+  border-color: rgba(var(--app-outline-rgb), 0.16) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .atelier-data-row:hover,
+[data-theme="carbon-black"] .management-list-row:hover,
+[data-theme="carbon-black"] .work-list-row:hover,
+[data-theme="carbon-black"] .task-row:hover {
+  background: color-mix(in srgb, var(--app-primary) 9%, var(--app-surface-card)) !important;
+}
+
+[data-theme="carbon-black"] .management-list-title,
+[data-theme="carbon-black"] .management-list-name,
+[data-theme="carbon-black"] .management-list-text,
+[data-theme="carbon-black"] .management-list-link,
+[data-theme="carbon-black"] .agent-list-row .management-list-title,
+[data-theme="carbon-black"] .agent-list-row .management-list-link,
+[data-theme="carbon-black"] .agent-list-row .management-list-text {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .management-list-subtitle,
+[data-theme="carbon-black"] .management-list-empty,
+[data-theme="carbon-black"] .management-list-updated,
+[data-theme="carbon-black"] .management-list-note,
+[data-theme="carbon-black"] .agent-list-row .management-list-empty,
+[data-theme="carbon-black"] .agent-list-row .management-list-subtitle {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .management-list-title-icon,
+[data-theme="carbon-black"] .management-list-avatar,
+[data-theme="carbon-black"] .agent-card-icon.primary,
+[data-theme="carbon-black"] .agent-card-icon.success,
+[data-theme="carbon-black"] .agent-card-icon.warning,
+[data-theme="carbon-black"] .agent-card-icon.danger {
+  background: color-mix(in srgb, var(--app-primary) 16%, var(--app-surface-card)) !important;
+  color: var(--app-primary-light-7) !important;
+}
+
+[data-theme="carbon-black"] .management-list-row-button,
+[data-theme="carbon-black"] .management-list-page-button,
+[data-theme="carbon-black"] .atelier-page-button,
+[data-theme="carbon-black"] .work-list-page-button {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .management-list-row-button:hover,
+[data-theme="carbon-black"] .management-list-page-button:hover:not(:disabled),
+[data-theme="carbon-black"] .atelier-page-button:hover:not(:disabled),
+[data-theme="carbon-black"] .work-list-page-button:hover:not(:disabled) {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-primary-light-7) !important;
+}
+
+[data-theme="carbon-black"] .management-list-pill.info,
+[data-theme="carbon-black"] .management-list-pill.success,
+[data-theme="carbon-black"] .management-list-pill.warning,
+[data-theme="carbon-black"] .management-list-pill.danger,
+[data-theme="carbon-black"] .management-list-pill.neutral,
+[data-theme="carbon-black"] .management-list-chip,
+[data-theme="carbon-black"] .management-list-chip.muted {
+  background: color-mix(in srgb, var(--app-primary) 14%, var(--app-surface-card)) !important;
+  border-color: rgba(var(--app-primary-rgb), 0.24) !important;
+  color: var(--app-primary-light-7) !important;
+}
+
+[data-theme="carbon-black"] .management-list-pill.success,
+[data-theme="carbon-black"] .agent-card-status.is-online {
+  background: color-mix(in srgb, var(--app-success) 18%, var(--app-surface-card)) !important;
+  color: #a6e3b0 !important;
+}
+
+[data-theme="carbon-black"] .management-list-pill.danger,
+[data-theme="carbon-black"] .agent-card-status.is-offline {
+  background: color-mix(in srgb, var(--app-danger) 18%, var(--app-surface-card)) !important;
+  color: #ffb4ab !important;
+}
+
+[data-theme="carbon-black"] .management-list-footer,
+[data-theme="carbon-black"] .atelier-table-footer,
+[data-theme="carbon-black"] .work-list-footer,
+[data-theme="carbon-black"] .task-table-footer {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .management-list-footer-total,
+[data-theme="carbon-black"] .management-list-footer-total span,
+[data-theme="carbon-black"] .management-list-page-size span,
+[data-theme="carbon-black"] .management-list-page-text,
+[data-theme="carbon-black"] .atelier-footer-total,
+[data-theme="carbon-black"] .atelier-footer-total span,
+[data-theme="carbon-black"] .atelier-page-size span,
+[data-theme="carbon-black"] .atelier-page-text,
+[data-theme="carbon-black"] .work-list-footer-total,
+[data-theme="carbon-black"] .work-list-footer-total span,
+[data-theme="carbon-black"] .work-list-page-size span,
+[data-theme="carbon-black"] .work-list-page-text {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .agent-card-copy h3,
+[data-theme="carbon-black"] .agent-card-meta-item strong,
+[data-theme="carbon-black"] .agent-card-capability,
+[data-theme="carbon-black"] .agent-card-sync {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .agent-card-meta-item span,
+[data-theme="carbon-black"] .agent-card-copy p {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .atelier-filter-field label,
+[data-theme="carbon-black"] .management-list-filter-field label,
+[data-theme="carbon-black"] .work-list-filter-field label {
+  color: var(--app-text-muted) !important;
+}
+
+/* 所有普通弹窗也统一头部/正文/底栏颜色，避免未使用 platform-form-dialog 的页面出现白色标题区。 */
+[data-theme="carbon-black"] .el-dialog:not(.platform-form-dialog),
+[data-theme="carbon-black"] .el-dialog:not(.platform-form-dialog) .el-dialog__header,
+[data-theme="carbon-black"] .el-dialog:not(.platform-form-dialog) .el-dialog__body,
+[data-theme="carbon-black"] .el-dialog:not(.platform-form-dialog) .el-dialog__footer,
+[data-theme="carbon-black"] .el-drawer,
+[data-theme="carbon-black"] .el-drawer__header,
+[data-theme="carbon-black"] .el-drawer__body,
+[data-theme="carbon-black"] .el-drawer__footer {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .el-dialog:not(.platform-form-dialog) .el-dialog__title,
+[data-theme="carbon-black"] .el-drawer__title,
+[data-theme="carbon-black"] .el-dialog:not(.platform-form-dialog) .el-form-item__label,
+[data-theme="carbon-black"] .el-drawer .el-form-item__label {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .el-dialog__headerbtn .el-dialog__close,
+[data-theme="carbon-black"] .el-drawer__close-btn,
+[data-theme="carbon-black"] .el-dialog .el-form-item__content,
+[data-theme="carbon-black"] .el-drawer .el-form-item__content {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .el-tabs__item {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .el-tabs__item.is-active {
+  color: var(--app-primary-light-7) !important;
+}
+
+[data-theme="carbon-black"] .el-tabs__nav-wrap::after {
+  background-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+/*
+  曜石黑第三层页面覆盖。
+  业务意图：消息中心、API 首页、Wiki 阅读器和执行详情包含独立的 SFC 样式与 Teleport 弹层，公共卡片规则无法覆盖这些内部白色表面，因此在主题边界统一收口。
+*/
+[data-theme="carbon-black"] .message-center-drawer,
+[data-theme="carbon-black"] .message-center-drawer .el-drawer,
+[data-theme="carbon-black"] .notification-drawer,
+[data-theme="carbon-black"] .drawer-head,
+[data-theme="carbon-black"] .notification-nav,
+[data-theme="carbon-black"] .notification-item,
+[data-theme="carbon-black"] .api-studio-home-card,
+[data-theme="carbon-black"] .wiki-sidebar,
+[data-theme="carbon-black"] .wiki-workbench,
+[data-theme="carbon-black"] .wiki-space-card,
+[data-theme="carbon-black"] .execution-detail-hero,
+[data-theme="carbon-black"] .execution-binding-snapshot,
+[data-theme="carbon-black"] .execution-run-card,
+[data-theme="carbon-black"] .execution-panel,
+[data-theme="carbon-black"] .execution-plan-confirm-card,
+[data-theme="carbon-black"] .execution-change-review-card,
+[data-theme="carbon-black"] .execution-change-review-files,
+[data-theme="carbon-black"] .execution-change-review-diff,
+[data-theme="carbon-black"] .execution-artifact-card,
+[data-theme="carbon-black"] .execution-quick-merge-auth-card {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+  color: var(--app-text) !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22) !important;
+}
+
+[data-theme="carbon-black"] .drawer-head,
+[data-theme="carbon-black"] .notification-nav,
+[data-theme="carbon-black"] .notification-nav-button.active,
+[data-theme="carbon-black"] .api-studio-home-card:hover,
+[data-theme="carbon-black"] .wiki-side-icon-button,
+[data-theme="carbon-black"] .wiki-side-text-button,
+[data-theme="carbon-black"] .wiki-header-action,
+[data-theme="carbon-black"] .wiki-search-tab,
+[data-theme="carbon-black"] .wiki-search-input,
+[data-theme="carbon-black"] .wiki-search-action.ghost,
+[data-theme="carbon-black"] .wiki-search-result-card,
+[data-theme="carbon-black"] .wiki-tree-row,
+[data-theme="carbon-black"] .wiki-version-item,
+[data-theme="carbon-black"] .execution-binding-snapshot-grid article,
+[data-theme="carbon-black"] .execution-detail-meta span,
+[data-theme="carbon-black"] .execution-detail-meta button,
+[data-theme="carbon-black"] .execution-run-status span,
+[data-theme="carbon-black"] .execution-detail-repo-chip,
+[data-theme="carbon-black"] .execution-plan-confirm-tip.muted,
+[data-theme="carbon-black"] .execution-change-review-summary span,
+[data-theme="carbon-black"] .execution-change-review-file,
+[data-theme="carbon-black"] .execution-artifact-log-toggle,
+[data-theme="carbon-black"] .execution-artifact-log-entry,
+[data-theme="carbon-black"] .execution-artifact-markdown,
+[data-theme="carbon-black"] .execution-artifact-image-shell {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.18) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .drawer-title,
+[data-theme="carbon-black"] .notification-item-source-text,
+[data-theme="carbon-black"] .notification-item-title,
+[data-theme="carbon-black"] .api-studio-home-card-head h2,
+[data-theme="carbon-black"] .wiki-space-card h1,
+[data-theme="carbon-black"] .wiki-tree-title,
+[data-theme="carbon-black"] .wiki-tree-row,
+[data-theme="carbon-black"] .wiki-search-result-card,
+[data-theme="carbon-black"] .wiki-article-head h2,
+[data-theme="carbon-black"] .execution-detail-heading h1,
+[data-theme="carbon-black"] .execution-binding-snapshot-grid strong,
+[data-theme="carbon-black"] .execution-run-head h2,
+[data-theme="carbon-black"] .execution-panel-head h2,
+[data-theme="carbon-black"] .execution-change-review-files-head strong,
+[data-theme="carbon-black"] .execution-change-review-diff-head strong,
+[data-theme="carbon-black"] .execution-change-review-file-path,
+[data-theme="carbon-black"] .execution-artifact-title-block strong,
+[data-theme="carbon-black"] .execution-quick-merge-auth-title,
+[data-theme="carbon-black"] .project-name-text,
+[data-theme="carbon-black"] .project-mobile-title {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .drawer-subtitle,
+[data-theme="carbon-black"] .notification-item-time,
+[data-theme="carbon-black"] .notification-item-content,
+[data-theme="carbon-black"] .notification-load-more,
+[data-theme="carbon-black"] .api-studio-home-meta-line,
+[data-theme="carbon-black"] .api-studio-home-desc,
+[data-theme="carbon-black"] .wiki-space-card p,
+[data-theme="carbon-black"] .wiki-space-card-meta,
+[data-theme="carbon-black"] .wiki-muted,
+[data-theme="carbon-black"] .wiki-search-status,
+[data-theme="carbon-black"] .wiki-search-panel-meta,
+[data-theme="carbon-black"] .wiki-search-loading,
+[data-theme="carbon-black"] .wiki-search-placeholder,
+[data-theme="carbon-black"] .wiki-search-result-meta,
+[data-theme="carbon-black"] .wiki-search-result-snippet,
+[data-theme="carbon-black"] .wiki-page-meta,
+[data-theme="carbon-black"] .wiki-version-item span,
+[data-theme="carbon-black"] .wiki-version-item small,
+[data-theme="carbon-black"] .execution-detail-meta span,
+[data-theme="carbon-black"] .execution-run-status span,
+[data-theme="carbon-black"] .execution-binding-snapshot-grid article,
+[data-theme="carbon-black"] .execution-run-head p,
+[data-theme="carbon-black"] .execution-panel-head p,
+[data-theme="carbon-black"] .execution-step-log-agent,
+[data-theme="carbon-black"] .execution-artifact-foot,
+[data-theme="carbon-black"] .execution-step-live-meta span,
+[data-theme="carbon-black"] .execution-step-tail-head span,
+[data-theme="carbon-black"] .execution-artifact-log-hint,
+[data-theme="carbon-black"] .execution-change-review-files-head p,
+[data-theme="carbon-black"] .execution-change-review-diff-head p,
+[data-theme="carbon-black"] .execution-change-review-file-stats,
+[data-theme="carbon-black"] .execution-change-review-file-hint,
+[data-theme="carbon-black"] .execution-artifact-image-placeholder,
+[data-theme="carbon-black"] .execution-quick-merge-auth-text {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .drawer-mark-all-button,
+[data-theme="carbon-black"] .drawer-close-button,
+[data-theme="carbon-black"] .notification-nav-button,
+[data-theme="carbon-black"] .wiki-back-link,
+[data-theme="carbon-black"] .wiki-side-icon-button,
+[data-theme="carbon-black"] .wiki-side-text-button,
+[data-theme="carbon-black"] .wiki-header-action,
+[data-theme="carbon-black"] .wiki-search-tab,
+[data-theme="carbon-black"] .wiki-search-action.ghost {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .drawer-mark-all-button:hover,
+[data-theme="carbon-black"] .drawer-close-button:hover,
+[data-theme="carbon-black"] .notification-nav-button:hover:not(:disabled),
+[data-theme="carbon-black"] .wiki-side-icon-button:hover,
+[data-theme="carbon-black"] .wiki-side-text-button:hover,
+[data-theme="carbon-black"] .wiki-header-action:hover,
+[data-theme="carbon-black"] .wiki-search-tab:hover,
+[data-theme="carbon-black"] .wiki-search-result-card:hover,
+[data-theme="carbon-black"] .wiki-tree-row:not(.active):hover,
+[data-theme="carbon-black"] .execution-change-review-file:hover {
+  background: color-mix(in srgb, var(--app-primary) 12%, var(--app-surface-card)) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .notification-nav-button.active {
+  border-bottom-color: var(--app-primary) !important;
+}
+
+[data-theme="carbon-black"] .notification-item:hover,
+[data-theme="carbon-black"] .wiki-article-head,
+[data-theme="carbon-black"] .wiki-search-tabs,
+[data-theme="carbon-black"] .wiki-article-head,
+[data-theme="carbon-black"] .wiki-content-shell,
+[data-theme="carbon-black"] .wiki-space-card-actions-shell {
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .notification-item-separator,
+[data-theme="carbon-black"] .notification-item-dot,
+[data-theme="carbon-black"] .wiki-tree-toggle,
+[data-theme="carbon-black"] .wiki-space-card-meta,
+[data-theme="carbon-black"] .execution-change-review-summary span {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .api-studio-home-card {
+  background:
+    radial-gradient(circle at 88% 0%, rgba(var(--app-primary-container-rgb), 0.18), transparent 34%),
+    linear-gradient(135deg, var(--app-surface-card), var(--app-surface-muted)) !important;
+}
+
+[data-theme="carbon-black"] .api-studio-home-kicker,
+[data-theme="carbon-black"] .api-studio-home-chip-list .management-list-chip,
+[data-theme="carbon-black"] .management-list-chip {
+  background: color-mix(in srgb, var(--app-primary) 14%, var(--app-surface-card)) !important;
+  color: var(--app-primary-light-7) !important;
+  border-color: rgba(var(--app-primary-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .api-studio-home-card .management-list-pill {
+  background: color-mix(in srgb, var(--app-primary-container) 18%, var(--app-surface-card)) !important;
+  color: var(--app-primary-container) !important;
+  border-color: rgba(var(--app-primary-container-rgb), 0.28) !important;
+}
+
+/* Teleport 到 body 的 Element Plus 对话框不能依赖局部 scoped 样式，必须在主题根节点下统一改写头部、正文和底栏。 */
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-dialog__header,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-dialog__body,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-dialog__footer,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .project-dialog-shell,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .project-share-dialog {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-dialog__header,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-dialog__footer {
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-dialog__title,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-form-item__label,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-form-item__top label,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-divider__text,
+[data-theme="carbon-black"] .project-dialog-header-title,
+[data-theme="carbon-black"] .project-share-label {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-form-item__content,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-form-item__error,
+[data-theme="carbon-black"] .project-dialog-header-subtitle,
+[data-theme="carbon-black"] .project-share-hint,
+[data-theme="carbon-black"] .project-share-value {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-input__wrapper,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-select__wrapper,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-textarea__inner,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-input-number,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .md-editor,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .platform-form-section,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .platform-section-card {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.24) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-input__inner,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-textarea__inner,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-select__selected-item,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-select__placeholder,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog input,
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog textarea {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .el-dialog.platform-form-dialog .el-dialog__headerbtn .el-dialog__close {
+  color: var(--app-text-muted) !important;
+}
+
+/* Wiki 阅读器同时使用 MarkdownEditor 与 md-editor-v3，覆盖编辑器外壳和预览内容，保留代码块的语义深色。 */
+[data-theme="carbon-black"] .wiki-workbench .markdown-editor-wrapper,
+[data-theme="carbon-black"] .wiki-workbench .markdown-preview-shell,
+[data-theme="carbon-black"] .wiki-workbench .markdown-editor-shell,
+[data-theme="carbon-black"] .wiki-workbench .md-editor,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-previewOnly,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview-wrapper,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-input-wrapper,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview {
+  background: transparent !important;
+  color: var(--app-text) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview p,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview li,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview blockquote,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview table,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview td,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview th {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview h1,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview h2,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview h3,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview h4,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview strong {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview table,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview th,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview td {
+  border-color: rgba(var(--app-outline-rgb), 0.28) !important;
+}
+
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview th,
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview blockquote {
+  background: var(--app-surface-muted) !important;
+}
+
+[data-theme="carbon-black"] .wiki-workbench .md-editor-preview code:not(pre code) {
+  background: color-mix(in srgb, var(--app-primary) 14%, var(--app-surface-card)) !important;
+  color: var(--app-primary-light-7) !important;
+}
+
+/* 执行详情的快照、步骤日志和产物卡片统一使用冷灰表面；diff/pre 代码区继续保持独立的代码配色。 */
+[data-theme="carbon-black"] .execution-binding-snapshot {
+  background: color-mix(in srgb, var(--app-primary) 10%, var(--app-surface-card)) !important;
+  border-color: rgba(var(--app-primary-rgb), 0.3) !important;
+}
+
+[data-theme="carbon-black"] .execution-binding-snapshot-head span,
+[data-theme="carbon-black"] .execution-detail-meta button,
+[data-theme="carbon-black"] .execution-detail-repo-chip {
+  color: var(--app-primary-container) !important;
+}
+
+[data-theme="carbon-black"] .execution-change-review-repository {
+  background: color-mix(in srgb, var(--app-primary) 12%, var(--app-surface-card)) !important;
+  border-color: rgba(var(--app-primary-rgb), 0.28) !important;
+  color: var(--app-primary-light-7) !important;
+}
+
+[data-theme="carbon-black"] .execution-change-review-repository strong,
+[data-theme="carbon-black"] .execution-change-review-repository span {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .execution-change-review-file.active {
+  background: color-mix(in srgb, var(--app-primary) 18%, var(--app-surface-card)) !important;
+  border-color: var(--app-primary) !important;
+}
+
+[data-theme="carbon-black"] .execution-artifact-card-install,
+[data-theme="carbon-black"] .execution-quick-merge-auth-card.connected {
+  background: color-mix(in srgb, var(--app-primary-container) 12%, var(--app-surface-card)) !important;
+  border-color: rgba(var(--app-primary-container-rgb), 0.3) !important;
+}
+
+[data-theme="carbon-black"] .execution-artifact-markdown,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview h1,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview h2,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview h3,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview p,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview li,
+[data-theme="carbon-black"] .execution-artifact-markdown .md-editor-preview strong {
+  color: var(--app-text) !important;
+}
+
+/*
   曜石黑第二层业务组件覆盖。
   业务意图：老页面的局部 SFC 样式仍保留了白色工作台语义；这里按业务组件命名空间统一迁移表面、文字和边框，确保切换主题后页面层级仍然成立。
 */
@@ -387,39 +1852,39 @@
 [data-theme="carbon-black"] .hermes-option-card,
 [data-theme="carbon-black"] .hermes-action-card,
 [data-theme="carbon-black"] .hermes-message-bubble,
-[data-theme="carbon-black"] .hermes-markdown-content .hermes-table-wrap,
-[data-theme="carbon-black"] .hermes-markdown-content .hermes-think-block {
+[data-theme="carbon-black"] .assistant-markdown-content .assistant-table-wrap,
+[data-theme="carbon-black"] .assistant-markdown-content .assistant-think-block {
   background: var(--app-surface-card) !important;
   color: var(--app-text) !important;
   border-color: rgba(var(--app-outline-rgb), 0.2) !important;
 }
 
-[data-theme="carbon-black"] .hermes-markdown-content h1,
-[data-theme="carbon-black"] .hermes-markdown-content h2,
-[data-theme="carbon-black"] .hermes-markdown-content h3,
-[data-theme="carbon-black"] .hermes-markdown-content h4,
+[data-theme="carbon-black"] .assistant-markdown-content h1,
+[data-theme="carbon-black"] .assistant-markdown-content h2,
+[data-theme="carbon-black"] .assistant-markdown-content h3,
+[data-theme="carbon-black"] .assistant-markdown-content h4,
 [data-theme="carbon-black"] .hermes-slash-item strong,
 [data-theme="carbon-black"] .hermes-selected-skill strong,
-[data-theme="carbon-black"] .hermes-markdown-content code {
+[data-theme="carbon-black"] .assistant-markdown-content code {
   color: var(--app-text) !important;
 }
 
-[data-theme="carbon-black"] .hermes-markdown-content p,
-[data-theme="carbon-black"] .hermes-markdown-content li,
-[data-theme="carbon-black"] .hermes-markdown-content blockquote,
-[data-theme="carbon-black"] .hermes-markdown-content .hermes-table-wrap td,
+[data-theme="carbon-black"] .assistant-markdown-content p,
+[data-theme="carbon-black"] .assistant-markdown-content li,
+[data-theme="carbon-black"] .assistant-markdown-content blockquote,
+[data-theme="carbon-black"] .assistant-markdown-content .assistant-table-wrap td,
 [data-theme="carbon-black"] .hermes-slash-item,
 [data-theme="carbon-black"] .hermes-selected-skill,
-[data-theme="carbon-black"] .hermes-thinking-text,
+[data-theme="carbon-black"] .assistant-thinking-text,
 [data-theme="carbon-black"] .hermes-process-description,
 [data-theme="carbon-black"] .hermes-process-summary-meta {
   color: var(--app-text-soft) !important;
 }
 
-[data-theme="carbon-black"] .hermes-markdown-content .hermes-table-wrap th,
-[data-theme="carbon-black"] .hermes-markdown-content .hermes-table-wrap tbody tr:nth-child(even),
-[data-theme="carbon-black"] .hermes-markdown-content .hermes-think-content,
-[data-theme="carbon-black"] .hermes-markdown-content .hermes-react-process-block .hermes-think-content p,
+[data-theme="carbon-black"] .assistant-markdown-content .assistant-table-wrap th,
+[data-theme="carbon-black"] .assistant-markdown-content .assistant-table-wrap tbody tr:nth-child(even),
+[data-theme="carbon-black"] .assistant-markdown-content .assistant-think-content,
+[data-theme="carbon-black"] .assistant-markdown-content .assistant-process-block .assistant-think-content p,
 [data-theme="carbon-black"] .hermes-slash-item:hover,
 [data-theme="carbon-black"] .hermes-slash-item.active {
   background: var(--app-surface-muted) !important;

@@ -1,14 +1,14 @@
 package com.aiclub.platform.operationlog;
 
-import com.aiclub.platform.controller.HermesController;
+import com.aiclub.platform.controller.AssistantController;
 import com.aiclub.platform.controller.UserController;
 import com.aiclub.platform.service.AccessManagementService;
 import com.aiclub.platform.service.AuthService;
 import com.aiclub.platform.service.DocumentAssetService;
-import com.aiclub.platform.service.HermesAttachmentService;
-import com.aiclub.platform.service.HermesChatService;
-import com.aiclub.platform.service.HermesConversationSessionService;
-import com.aiclub.platform.service.HermesHindsightMemoryService;
+import com.aiclub.platform.service.AssistantAttachmentService;
+import com.aiclub.platform.service.AssistantChatService;
+import com.aiclub.platform.service.AssistantConversationSessionService;
+import com.aiclub.platform.service.AssistantHindsightMemoryService;
 import com.aiclub.platform.service.UserOperationLogService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -29,26 +29,26 @@ import static org.mockito.Mockito.mock;
 class OperationLogInterceptorTests {
 
     /**
-     * Hermes 专用审计已单独存在，通用操作日志应直接跳过，避免重复记账。
+     * Assistant 专用审计已单独存在，通用操作日志应直接跳过，避免重复记账。
      */
     @Test
-    void shouldSkipHermesControllerWhenClassAnnotationMarksSkip() throws Exception {
+    void shouldSkipAssistantControllerWhenClassAnnotationMarksSkip() throws Exception {
         OperationLogInterceptor interceptor = new OperationLogInterceptor(mock(UserOperationLogService.class));
-        HermesController hermesController = new HermesController(
-                mock(HermesChatService.class),
-                mock(HermesConversationSessionService.class),
-                mock(HermesAttachmentService.class),
-                mock(HermesHindsightMemoryService.class),
+        AssistantController assistantController = new AssistantController(
+                mock(AssistantChatService.class),
+                mock(AssistantConversationSessionService.class),
+                mock(AssistantAttachmentService.class),
+                mock(AssistantHindsightMemoryService.class),
                 mock(AuthService.class),
                 mock(DocumentAssetService.class),
                 new ObjectMapper()
         );
         HandlerMethod handlerMethod = new HandlerMethod(
-                hermesController,
-                HermesController.class.getMethod("chat", Long.class, com.aiclub.platform.dto.request.HermesSessionChatRequest.class)
+                assistantController,
+                AssistantController.class.getMethod("chat", Long.class, com.aiclub.platform.dto.request.AssistantSessionChatRequest.class)
         );
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/hermes/sessions/1/chat");
-        request.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/hermes/sessions/{sessionId}/chat");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/assistant/sessions/1/chat");
+        request.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/assistant/sessions/{sessionId}/chat");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         boolean proceed = interceptor.preHandle(request, response, handlerMethod);

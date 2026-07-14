@@ -777,8 +777,8 @@ import { ArrowLeft, ArrowRight, Connection, Cpu, Delete, EditPen, Filter, Link, 
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { listModelConfigOptions } from '@/api/models'
-import { createAgent, deleteAgent, listProjectOptions, pageAgents, testAgent, updateAgent } from '@/api/platform'
-import type { AgentItem, AgentTestResult, AiModelConfigItem, ProjectItem } from '@/types/platform'
+import { createAgent, deleteAgent, listProjectOptions, listRuntimeRegistry, pageAgents, testAgent, updateAgent } from '@/api/platform'
+import type { AgentItem, AgentTestResult, AiModelConfigItem, ProjectItem, RuntimeRegistryItem } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
@@ -797,7 +797,8 @@ interface AgentForm {
   systemPrompt: string
   userPromptTemplate: string
   endpointUrl: string
-  runtimeType: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | 'OPENCODE_CLI' | null
+  runtimeType: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | 'OPENCODE_CLI' | 'PI_RUNTIME' | 'HERMES_LEGACY' | null
+  runtimeRegistryCode: string
   runtimeAgentRef: string
   runtimeSessionKeyTemplate: string
   httpMethod: 'POST' | 'PUT' | 'GET'
@@ -825,12 +826,10 @@ const builtinOptions = [
   { label: '拆解子任务智能体', value: 'REQUIREMENT_AI_BREAKDOWN' },
   { label: '测试用例生成智能体', value: 'REQUIREMENT_AI_TEST_CASES' }
 ] as const
-const runtimeTypeOptions = [
-  { label: 'OpenClaw', value: 'OPENCLAW' },
-  { label: 'Codex CLI Runner', value: 'CODEX_CLI' },
-  { label: 'Claude Code CLI Runner', value: 'CLAUDE_CODE_CLI' },
-  { label: 'OpenCode CLI Runner', value: 'OPENCODE_CLI' }
-] as const
+const runtimeTypeOptions = computed(() => runtimeRegistry.value
+  // 新 Agent 只能选择已启用且探测通过的 Runtime；历史 Agent 仍通过旧字段回显，不受此列表过滤影响。
+  .filter(item => item.enabled && (item.healthStatus === 'HEALTHY' || item.healthStatus === 'DEGRADED'))
+  .map(item => ({ label: `${item.runtimeCode}（${item.healthStatus}）`, value: item.runtimeCode })))
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -845,6 +844,7 @@ const agentList = ref<AgentItem[]>([])
 const modelOptions = ref<AiModelConfigItem[]>([])
 const projectOptions = ref<ProjectItem[]>([])
 const currentTestAgent = ref<AgentItem | null>(null)
+const runtimeRegistry = ref<RuntimeRegistryItem[]>([])
 const testResult = ref<AgentTestResult | null>(null)
 const testInput = ref('')
 const formRef = ref<FormInstance>()
@@ -883,6 +883,7 @@ const defaultForm = (): AgentForm => ({
   userPromptTemplate: '',
   endpointUrl: '',
   runtimeType: 'OPENCLAW',
+  runtimeRegistryCode: 'OPENCLAW',
   runtimeAgentRef: '',
   runtimeSessionKeyTemplate: '',
   httpMethod: 'POST',
@@ -904,7 +905,7 @@ const rules: FormRules<AgentForm> = {
 }
 
 const accessTypeLabel = (value?: string | null) => accessTypeOptions.find(item => item.value === value)?.label || value || '-'
-const runtimeTypeLabel = (value?: string | null) => runtimeTypeOptions.find(item => item.value === value)?.label || value || '-'
+const runtimeTypeLabel = (value?: string | null) => runtimeTypeOptions.value.find(item => item.value === value)?.label || value || '-'
 const agentAccessIcon = (accessType?: string | null) =>
   accessType === 'AGENT_RUNTIME' ? Connection : accessType === 'HTTP_API' ? Link : accessType === 'LLM_PROMPT' || accessType === 'LLM_VISION' ? Cpu : Promotion
 const isOpenclawRuntime = computed(() =>
@@ -954,9 +955,10 @@ const resetForm = () => {
 }
 
 const loadOptions = async () => {
-  const [models, projects] = await Promise.all([listModelConfigOptions(), listProjectOptions()])
+  const [models, projects, runtimes] = await Promise.all([listModelConfigOptions(), listProjectOptions(), listRuntimeRegistry()])
   modelOptions.value = models
   projectOptions.value = projects
+  runtimeRegistry.value = runtimes
 }
 
 const loadAgents = async () => {
@@ -1036,6 +1038,7 @@ const fillForm = (row: AgentItem) => {
     userPromptTemplate: row.userPromptTemplate || '',
     endpointUrl: row.endpointUrl || '',
     runtimeType: (row.runtimeType as AgentForm['runtimeType']) || 'OPENCLAW',
+    runtimeRegistryCode: row.runtimeRegistryCode || row.runtimeType || 'OPENCLAW',
     runtimeAgentRef: row.runtimeAgentRef || '',
     runtimeSessionKeyTemplate: row.runtimeSessionKeyTemplate || '',
     httpMethod: (row.httpMethod as AgentForm['httpMethod'] | null) || 'POST',
@@ -1082,6 +1085,7 @@ const buildPayload = () => ({
   userPromptTemplate: form.accessType === 'LLM_PROMPT' || form.accessType === 'AGENT_RUNTIME' ? form.userPromptTemplate : '',
   endpointUrl: form.accessType === 'HTTP_API' ? form.endpointUrl : isOpenclawRuntime.value ? form.endpointUrl : '',
   runtimeType: form.accessType === 'AGENT_RUNTIME' ? form.runtimeType : null,
+  runtimeRegistryCode: form.accessType === 'AGENT_RUNTIME' ? form.runtimeRegistryCode || form.runtimeType : null,
   runtimeAgentRef: isOpenclawRuntime.value ? form.runtimeAgentRef : '',
   runtimeSessionKeyTemplate: isOpenclawRuntime.value ? form.runtimeSessionKeyTemplate : '',
   httpMethod: form.accessType === 'HTTP_API' ? form.httpMethod : '',

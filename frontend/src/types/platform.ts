@@ -358,6 +358,13 @@ export interface AgentItem {
   userPromptTemplate: string | null
   endpointUrl: string | null
   runtimeType: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | string | null
+  runtimeRegistryCode: string | null
+  profileVersion: number | null
+  runtimeFallbackCodesJson: string
+  toolPolicyJson: string
+  sandboxPolicyJson: string
+  budgetTokens: number | null
+  sessionPolicyJson: string
   runtimeAgentRef: string | null
   runtimeSessionKeyTemplate: string | null
   httpMethod: string | null
@@ -369,6 +376,30 @@ export interface AgentItem {
   timeoutSeconds: number | null
   projectId: number | null
   projectName: string | null
+}
+
+/** GitPilot Runtime Registry 摘要。 */
+export interface RuntimeRegistryItem {
+  runtimeCode: string
+  adapterType: 'CHAT_GATEWAY' | 'CLI_RUNNER' | 'STATEFUL_AGENT'
+  endpointRef: string | null
+  version: string
+  capabilities: string[]
+  sandboxPolicyJson: string
+  fallbackRuntimeCodes: string[]
+  healthStatus: 'UNKNOWN' | 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY' | 'DISABLED'
+  healthMessage: string
+  healthCheckedAt: string | null
+  enabled: boolean
+}
+
+/** Runtime 管理页中的业务场景默认绑定。 */
+export interface RuntimeScenarioDefaultItem {
+  scenarioCode: 'ASSISTANT' | 'CHAT_ROOM' | 'DEVELOPMENT_IMPLEMENTATION' | 'TECHNICAL_DESIGN_AUTHORING' | string
+  scenarioName: string
+  runtimeRegistryCode: string
+  requiredCapabilities: string[]
+  updatedAt: string | null
 }
 
 export interface AgentTestResult {

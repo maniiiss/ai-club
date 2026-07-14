@@ -1,5 +1,5 @@
-import type { HermesActionItem, HermesSelectionCardItem } from './hermes'
-import type { HermesSelectionPayload } from './hermes'
+import type { AssistantActionItem, AssistantSelectionCardItem } from './hermes'
+import type { AssistantSelectionPayload } from './hermes'
 
 /**
  * 多人聊天室类型定义。
@@ -48,6 +48,7 @@ export interface ChatRoomAgentConfig {
   roomId: number
   enabled: boolean
   displayName: string
+  runtimeRegistryCode: string
   systemInstruction: string
   proactiveSummaryEnabled: boolean
   keywordWatchEnabled: boolean
@@ -61,6 +62,16 @@ export interface ChatRoomAgentConfig {
   authorizedByName: string
   authorizedAt: string | null
   updatedAt: string | null
+}
+
+/** 聊天室 Agent 可选择的 Runtime 注册项。 */
+export interface ChatRoomAgentRuntimeOption {
+  runtimeCode: string
+  version: string
+  capabilities: string[]
+  healthStatus: string
+  healthMessage: string
+  enabled: boolean
 }
 
 export interface ChatRoomAgentToolPolicy {
@@ -115,13 +126,13 @@ export interface ChatMessageItem {
   senderAvatarUrl: string | null
   content: string
   status: 'done' | 'streaming' | 'error'
-  mentionsHermes: boolean
+  mentionsAssistant: boolean
   attachments: ChatAttachmentItem[]
   agentTaskId?: number | null
   agentTaskStatus?: string
-  actions?: HermesActionItem[]
+  actions?: AssistantActionItem[]
   actionStatuses?: Record<string, string>
-  selectionCards?: HermesSelectionCardItem[]
+  selectionCards?: AssistantSelectionCardItem[]
   selectionStatuses?: Record<string, string>
   createdAt: string | null
   updatedAt: string | null
@@ -150,6 +161,7 @@ export interface UpdateChatRoomMembersPayload {
 export interface UpdateChatRoomAgentConfigPayload {
   enabled: boolean
   displayName: string
+  runtimeRegistryCode: string
   systemInstruction: string
   proactiveSummaryEnabled: boolean
   keywordWatchEnabled: boolean
@@ -183,14 +195,14 @@ export type ChatSocketEvent =
   | { type: 'AGENT_TASK_CREATED'; task: ChatRoomAgentTask }
   | { type: 'AGENT_TASK_UPDATED'; task: ChatRoomAgentTask }
   | { type: 'AGENT_TASK_EVENT'; event: ChatRoomAgentTaskEvent }
-  | { type: 'AGENT_ACTION_PENDING'; taskId: number | null; messageId: number | null; actions: HermesActionItem[] }
-  | { type: 'AGENT_SELECTION_PENDING'; taskId: number | null; messageId: number | null; selectionCards: HermesSelectionCardItem[] }
+  | { type: 'AGENT_ACTION_PENDING'; taskId: number | null; messageId: number | null; actions: AssistantActionItem[] }
+  | { type: 'AGENT_SELECTION_PENDING'; taskId: number | null; messageId: number | null; selectionCards: AssistantSelectionCardItem[] }
   | { type: 'AGENT_SELECTION_RESOLVED'; taskId: number | null; messageId: number | null; selectionKey: string; status: string }
-  | { type: 'AGENT_ACTION_EXECUTED'; taskId: number | null; messageId: number | null; action: HermesActionItem | null; status: string; actionKey?: string }
+  | { type: 'AGENT_ACTION_EXECUTED'; taskId: number | null; messageId: number | null; action: AssistantActionItem | null; status: string; actionKey?: string }
   | { type: string; [key: string]: unknown }
 
 export interface ChatRoomAgentActionResolutionPayload {
   actionKey: string
 }
 
-export type ChatRoomAgentSelectionPayload = HermesSelectionPayload
+export type ChatRoomAgentSelectionPayload = AssistantSelectionPayload
