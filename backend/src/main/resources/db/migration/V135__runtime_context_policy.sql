@@ -1,0 +1,44 @@
+-- GitPilot Runtime 上下文预算与压缩策略配置。
+-- 业务意图：管理端配置是新会话/新执行的上下文预算权威来源，旧数据使用安全默认值兼容。
+
+ALTER TABLE runtime_registry
+    ADD COLUMN IF NOT EXISTS context_window_tokens INTEGER NOT NULL DEFAULT 128000;
+
+ALTER TABLE runtime_registry
+    ADD COLUMN IF NOT EXISTS max_output_tokens INTEGER NOT NULL DEFAULT 8192;
+
+ALTER TABLE runtime_registry
+    ADD COLUMN IF NOT EXISTS compaction_threshold_percent INTEGER NOT NULL DEFAULT 80;
+
+ALTER TABLE runtime_registry
+    ADD COLUMN IF NOT EXISTS compaction_strategy VARCHAR(30) NOT NULL DEFAULT 'NATIVE_FIRST';
+
+UPDATE runtime_registry
+SET context_window_tokens = 128000
+WHERE context_window_tokens IS NULL OR context_window_tokens <= 0;
+
+UPDATE runtime_registry
+SET max_output_tokens = 8192
+WHERE max_output_tokens IS NULL OR max_output_tokens <= 0;
+
+UPDATE runtime_registry
+SET compaction_threshold_percent = 80
+WHERE compaction_threshold_percent IS NULL
+   OR compaction_threshold_percent < 50
+   OR compaction_threshold_percent > 95;
+
+UPDATE runtime_registry
+SET compaction_strategy = 'NATIVE_FIRST'
+WHERE compaction_strategy IS NULL OR TRIM(compaction_strategy) = '';
+
+UPDATE runtime_registry
+SET capabilities_json = CASE runtime_code
+    WHEN 'HERMES_LEGACY' THEN '["CHAT","STREAM_EVENTS","SESSION_RESUME","CONTEXT_WINDOW","TOKEN_ESTIMATION","PLATFORM_TOOLS","REPOSITORY_READ"]'
+    WHEN 'PI_RUNTIME' THEN '["CHAT","STREAM_EVENTS","SESSION_RESUME","CONTEXT_WINDOW","TOKEN_ESTIMATION","NATIVE_COMPACTION","PLATFORM_TOOLS","REPOSITORY_READ","PLAN","TECHNICAL_DESIGN"]'
+    WHEN 'CODEX_CLI' THEN '["STREAM_EVENTS","REPOSITORY_READ","REPOSITORY_WRITE","PLAN","TECHNICAL_DESIGN","IMPLEMENT","TEST","CONTEXT_WINDOW","TOKEN_ESTIMATION","NATIVE_COMPACTION"]'
+    WHEN 'CLAUDE_CODE_CLI' THEN '["STREAM_EVENTS","REPOSITORY_READ","REPOSITORY_WRITE","PLAN","TECHNICAL_DESIGN","IMPLEMENT","TEST","CONTEXT_WINDOW","TOKEN_ESTIMATION","NATIVE_COMPACTION"]'
+    WHEN 'OPENCODE_CLI' THEN '["STREAM_EVENTS","REPOSITORY_READ","REPOSITORY_WRITE","PLAN","TECHNICAL_DESIGN","IMPLEMENT","TEST","CONTEXT_WINDOW","TOKEN_ESTIMATION","NATIVE_COMPACTION"]'
+    WHEN 'OPENCLAW' THEN '["CHAT","STREAM_EVENTS","SESSION_RESUME","CONTEXT_WINDOW","TOKEN_ESTIMATION","PLATFORM_TOOLS","REPOSITORY_READ"]'
+    ELSE capabilities_json
+END
+WHERE runtime_code IN ('HERMES_LEGACY', 'PI_RUNTIME', 'CODEX_CLI', 'CLAUDE_CODE_CLI', 'OPENCODE_CLI', 'OPENCLAW');

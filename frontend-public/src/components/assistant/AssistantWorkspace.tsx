@@ -1,4 +1,4 @@
-import { Brain } from 'lucide-react'
+import { Archive, Brain, FileText, MoreHorizontal } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/src/components/common/Button'
 import { ConfirmDialog } from '@/src/components/common/ConfirmDialog'
@@ -9,6 +9,7 @@ import {
   getAssistantConversationDetail,
   markAssistantActionExecuted,
   pageAssistantConversationSessions,
+  searchAssistantConversationSessions,
   renameAssistantConversationSession,
   restoreAssistantConversationSession,
   streamAssistantSessionChat,
@@ -28,6 +29,7 @@ import { executeAssistantAction } from '@/src/lib/assistantActionExecutor'
 import { getErrorMessage } from '@/src/lib/utils'
 import { AssistantActionCards } from './AssistantActionCards'
 import { AssistantComposer } from './AssistantComposer'
+import { AssistantFileLibraryPanel } from './AssistantFileLibraryPanel'
 import { AssistantMemoryPanel } from './AssistantMemoryPanel'
 import { AssistantMessageList } from './AssistantMessageList'
 import { AssistantSelectionCards } from './AssistantSelectionCards'
@@ -38,7 +40,7 @@ import type {
   AssistantConversationDetailItem,
   AssistantConversationMode,
   AssistantConversationSessionSummaryItem,
-  AssistantDebugInfoItem,
+  AssistantConversationSearchResult,
   AssistantMessageItem,
   AssistantMessageFeedbackSummary,
   AssistantReferenceItem,
@@ -111,13 +113,16 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [actions, setActions] = useState<AssistantActionItem[]>([])
   const [selectionCards, setSelectionCards] = useState<AssistantSelectionCardItem[]>([])
-  const [debug, setDebug] = useState<AssistantDebugInfoItem | null>(null)
   const [executedActionKeys, setExecutedActionKeys] = useState<Set<string>>(new Set())
   const [executingActionKey, setExecutingActionKey] = useState('')
   const [sending, setSending] = useState(false)
   const [streamStatusText, setStreamStatusText] = useState('')
   const [pendingFiles, setPendingFiles] = useState<File[]>([])
-  const [memoryVisible, setMemoryVisible] = useState(false)
+  const [workspacePanel, setWorkspacePanel] = useState<'memory' | 'fileLibrary' | null>(null)
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
+  const [sessionSearchQuery, setSessionSearchQuery] = useState('')
+  const [sessionSearchResults, setSessionSearchResults] = useState<AssistantConversationSearchResult[]>([])
+  const [sessionSearchLoading, setSessionSearchLoading] = useState(false)
   const [renameDialog, setRenameDialog] = useState<{ session: AssistantConversationSessionSummaryItem; title: string } | null>(null)
   const [deleteDialog, setDeleteDialog] = useState<AssistantConversationSessionSummaryItem | null>(null)
   const [actionDialog, setActionDialog] = useState<{ action: AssistantActionItem; actionKey: string } | null>(null)
@@ -128,9 +133,11 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
   const streamControllerRef = useRef<StreamController | null>(null)
   const currentStreamingAssistantMessageIdRef = useRef<string | null>(null)
   const stopRequestedRef = useRef(false)
+  const searchRequestIdRef = useRef(0)
+  const pendingSearchSessionIdRef = useRef<number | null>(null)
 
   const canUseProjectMode = Boolean(projectId)
-  const disabled = !canUseProjectMode || sending || detailLoading
+  const disabled = !canUseProjectMode || sending || detailLoading || archivedView
 
   const resetDisplayState = useCallback(() => {
     setMessages([])
@@ -138,7 +145,6 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
     setSuggestions([])
     setActions([])
     setSelectionCards([])
-    setDebug(null)
     setExecutedActionKeys(new Set())
   }, [])
 
@@ -174,7 +180,6 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
     setSuggestions(detail.latestDisplayState.suggestions || [])
     setActions(detail.latestDisplayState.actions || [])
     setSelectionCards(detail.latestDisplayState.selectionCards || [])
-    setDebug(detail.latestDisplayState.debug || null)
     setExecutedActionKeys(new Set(detail.executedActionKeys || []))
   }
 
@@ -203,9 +208,35 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
   }, [archivedView, mode, projectId, loadSessions])
 
   useEffect(() => {
-    setSelectedSessionId(null)
+    setSelectedSessionId(pendingSearchSessionIdRef.current)
+    pendingSearchSessionIdRef.current = null
     resetDisplayState()
   }, [mode, projectId, archivedView, resetDisplayState])
+
+  const searchSessions = useCallback(async (query: string) => {
+    const normalizedQuery = query.trim()
+    const requestId = searchRequestIdRef.current + 1
+    searchRequestIdRef.current = requestId
+    if (!normalizedQuery || !projectId) {
+      setSessionSearchResults([])
+      setSessionSearchLoading(false)
+      return
+    }
+    setSessionSearchLoading(true)
+    try {
+      const data = await searchAssistantConversationSessions(normalizedQuery, projectId)
+      if (requestId === searchRequestIdRef.current) setSessionSearchResults(data.records)
+    } catch (err) {
+      if (requestId === searchRequestIdRef.current) setError(getErrorMessage(err))
+    } finally {
+      if (requestId === searchRequestIdRef.current) setSessionSearchLoading(false)
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void searchSessions(sessionSearchQuery), 250)
+    return () => window.clearTimeout(timer)
+  }, [searchSessions, sessionSearchQuery])
 
   useEffect(() => {
     if (selectedSessionId) {
@@ -242,13 +273,11 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
     nextSuggestions: string[],
     nextActions: AssistantActionItem[],
     nextSelectionCards: AssistantSelectionCardItem[],
-    nextDebug: AssistantDebugInfoItem | null,
   ) => {
     setReferences(nextReferences || [])
     setSuggestions(nextSuggestions || [])
     setActions(nextActions || [])
     setSelectionCards(nextSelectionCards || [])
-    setDebug(nextDebug || null)
   }
 
   const submitQuestion = async (question: string, selection?: AssistantSelectionPayload | null, slashCommand?: string | null) => {
@@ -268,7 +297,7 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
     ])
     try {
       const sessionId = await ensureSession()
-      const payload = { question, selection: selection || null, debug: Boolean(debug), slashCommand: slashCommand || null }
+      const payload = { question, selection: selection || null, slashCommand: slashCommand || null }
       const handlers: AssistantStreamHandlers = {
         onStatus: (event) => {
           if (shouldIgnoreAssistantStreamEvent(assistantMessageId, currentStreamingAssistantMessageIdRef.current, stopRequestedRef.current)) return
@@ -276,7 +305,7 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
         },
         onMeta: (event) => {
           if (shouldIgnoreAssistantStreamEvent(assistantMessageId, currentStreamingAssistantMessageIdRef.current, stopRequestedRef.current)) return
-          applyStreamDisplayState(event.references, event.suggestions, event.actions, event.selectionCards, event.debug)
+          applyStreamDisplayState(event.references, event.suggestions, event.actions, event.selectionCards)
         },
         onDelta: (event) => {
           if (shouldIgnoreAssistantStreamEvent(assistantMessageId, currentStreamingAssistantMessageIdRef.current, stopRequestedRef.current)) return
@@ -284,14 +313,13 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
         },
         onDone: (event) => {
           if (shouldIgnoreAssistantStreamEvent(assistantMessageId, currentStreamingAssistantMessageIdRef.current, stopRequestedRef.current)) return
-          applyStreamDisplayState(event.references, event.suggestions, event.actions, event.selectionCards, event.debug)
+          applyStreamDisplayState(event.references, event.suggestions, event.actions, event.selectionCards)
           updateMessage(assistantMessageId, (current) => ({
             ...current,
             id: event.assistantMessageId ? String(event.assistantMessageId) : current.id,
             content: event.content || current.content,
             status: 'done',
             attachments: event.attachments || [],
-            toolExecutions: event.debug?.toolExecutions || [],
           }))
           setPendingFiles([])
           setSending(false)
@@ -433,19 +461,76 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
     }
   }
 
+  const selectSearchResult = (result: AssistantConversationSearchResult) => {
+    setSessionSearchQuery('')
+    if (result.archived !== archivedView) {
+      pendingSearchSessionIdRef.current = result.sessionId
+      setArchivedView(result.archived)
+      return
+    }
+    setSelectedSessionId(result.sessionId)
+  }
+
   const currentTitle = 'GitPilot 项目助手'
   const renderWorkspaceHeader = shouldRenderAssistantWorkspaceHeader(compact)
 
   const headerActions = (
     <div className="flex items-center gap-2">
-      <Button type="button" variant="secondary" size="sm" onClick={() => setMemoryVisible(true)}>
-        知识
-      </Button>
+      <button
+        type="button"
+        title="文件库"
+        aria-label="打开文件库"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--color-border-strong)] bg-white text-[var(--color-text-secondary)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+        onClick={() => setWorkspacePanel('fileLibrary')}
+      >
+        <FileText className="h-4 w-4" />
+      </button>
+      <div className="relative">
+        <button
+          type="button"
+          title="更多助手选项"
+          aria-label="更多助手选项"
+          aria-expanded={moreMenuOpen}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--color-border-strong)] bg-white text-[var(--color-text-secondary)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+          onClick={() => setMoreMenuOpen((current) => !current)}
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+        {moreMenuOpen && (
+          <div className="absolute right-0 top-11 z-20 w-36 rounded-xl border border-[var(--color-border-light)] bg-white p-1.5 shadow-[var(--shadow-lg)]">
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+              onClick={() => {
+                setWorkspacePanel('memory')
+                setMoreMenuOpen(false)
+              }}
+            >
+              <Brain className="h-3.5 w-3.5" />记忆
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+              onClick={() => {
+                setArchivedView((current) => !current)
+                setSelectedSessionId(null)
+                setMoreMenuOpen(false)
+              }}
+            >
+              <Archive className="h-3.5 w-3.5" />{archivedView ? '当前会话' : '已归档'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 
-  if (memoryVisible) {
-    return <AssistantMemoryPanel onClose={() => setMemoryVisible(false)} />
+  if (workspacePanel === 'memory') {
+    return <AssistantMemoryPanel onClose={() => setWorkspacePanel(null)} />
+  }
+
+  if (workspacePanel === 'fileLibrary') {
+    return <AssistantFileLibraryPanel onClose={() => setWorkspacePanel(null)} />
   }
 
   return (
@@ -478,12 +563,16 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
           loadingMore={loadingMore}
           canLoadMore={canLoadMore}
           disabled={sending}
+          searchQuery={sessionSearchQuery}
+          searchResults={sessionSearchResults}
+          searchLoading={sessionSearchLoading}
+          onSearchChange={setSessionSearchQuery}
           onCreate={createSession}
-          onSelect={setSelectedSessionId}
-          onToggleArchivedView={(next) => {
-            setArchivedView(next)
-            setSelectedSessionId(null)
+          onSelect={(sessionId) => {
+            setSessionSearchQuery('')
+            setSelectedSessionId(sessionId)
           }}
+          onSelectSearchResult={selectSearchResult}
           onLoadMore={() => loadSessions(page + 1, true, archivedView)}
           onRename={(session) => setRenameDialog({ session, title: session.title || '新会话' })}
           onArchive={async (session) => {
@@ -502,7 +591,6 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
             roleName={ASSISTANT_DISPLAY_NAME}
             references={references}
             suggestions={suggestions}
-            debug={debug}
             streamStatusText={streamStatusText}
             streamingActive={sending}
             disabled={disabled}
@@ -562,8 +650,9 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
                   key={value}
                   type="button"
                   onClick={() => toggleFeedbackReason(value)}
+                  aria-pressed={feedbackDialog.reasonCodes.includes(value)}
                   className={value && feedbackDialog.reasonCodes.includes(value)
-                    ? 'rounded-full bg-rose-100 px-3 py-1.5 text-[12px] text-rose-700'
+                    ? 'rounded-full border border-rose-100 bg-rose-100 px-3 py-1.5 text-[12px] text-rose-700'
                     : 'rounded-full border border-[var(--color-border)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)]'}
                 >
                   {label}

@@ -108,7 +108,8 @@ public class AssistantInternalToolExecutionService {
                 "failed".equalsIgnoreCase(defaultString(outcome.stopReason()))
                         ? resolveToolMessage(outcome)
                         : "",
-                state.toolExecutionPolicy()
+                state.toolExecutionPolicy(),
+                state.contextState()
         );
         assistantConversationStateStore.save(nextState);
         return new AssistantInternalToolExecuteResponse(resolveToolMessage(outcome));

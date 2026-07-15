@@ -1,10 +1,12 @@
 package com.aiclub.platform.dto;
 
 import java.util.List;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
  * Assistant 会话详情页需要回显的最新展示态快照。
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record AssistantLatestDisplayState(
         List<AssistantReferenceSummary> references,
         List<String> suggestions,

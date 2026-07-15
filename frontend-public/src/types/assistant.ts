@@ -39,7 +39,6 @@ export interface RenameAssistantConversationSessionPayload {
 export interface AssistantSessionChatRequestPayload {
   question: string
   selection?: AssistantSelectionPayload | null
-  debug?: boolean
   slashCommand?: string | null
 }
 
@@ -65,6 +64,16 @@ export interface AssistantConversationSessionSummaryItem {
   createdAt: string | null
   updatedAt: string | null
   lastMessageAt: string | null
+}
+
+/** 当前项目聊天全文搜索结果。 */
+export interface AssistantConversationSearchResult {
+  sessionId: number
+  title: string
+  archived: boolean
+  matchedRole: string
+  matchedContent: string
+  matchedAt: string | null
 }
 
 export interface AssistantAttachmentItem {
@@ -176,23 +185,11 @@ export interface AssistantSelectionCardItem {
   options: AssistantSelectionOptionItem[]
 }
 
-export interface AssistantDebugInfoItem {
-  model: string
-  loopStatus: string
-  loopRounds: number
-  assistantTurns: Array<Record<string, unknown>>
-  groundingBefore: Record<string, unknown>
-  groundingAfter: Record<string, unknown>
-  toolExecutions: Array<Record<string, unknown>>
-  failureMessage: string
-}
-
 export interface AssistantLatestDisplayState {
   references: AssistantReferenceItem[]
   suggestions: string[]
   actions: AssistantActionItem[]
   selectionCards: AssistantSelectionCardItem[]
-  debug: AssistantDebugInfoItem | null
 }
 
 export interface AssistantConversationDetailItem extends AssistantConversationSessionSummaryItem {
@@ -212,7 +209,6 @@ export interface AssistantSessionChatResponsePayload {
   suggestions: string[]
   actions: AssistantActionItem[]
   selectionCards: AssistantSelectionCardItem[]
-  debug: AssistantDebugInfoItem | null
   attachments: AssistantAttachmentItem[]
 }
 
@@ -223,7 +219,6 @@ export interface AssistantMessageItem {
   status: 'done' | 'streaming' | 'error'
   attachments: AssistantAttachmentItem[]
   actions?: AssistantActionItem[]
-  toolExecutions?: Array<Record<string, unknown>>
   feedback?: AssistantMessageFeedbackSummary | null
 }
 
@@ -234,7 +229,6 @@ export interface AssistantStreamMetaEvent {
   suggestions: string[]
   actions: AssistantActionItem[]
   selectionCards: AssistantSelectionCardItem[]
-  debug: AssistantDebugInfoItem | null
   attachments: AssistantAttachmentItem[]
 }
 
@@ -258,7 +252,6 @@ export interface AssistantStreamDoneEvent {
   suggestions: string[]
   actions: AssistantActionItem[]
   selectionCards: AssistantSelectionCardItem[]
-  debug: AssistantDebugInfoItem | null
   attachments: AssistantAttachmentItem[]
 }
 

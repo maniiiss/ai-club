@@ -11,9 +11,12 @@ import com.aiclub.platform.dto.AssistantConversationContextSnapshot;
 import com.aiclub.platform.dto.AssistantConversationRequestSnapshot;
 import com.aiclub.platform.dto.AssistantConversationState;
 import com.aiclub.platform.dto.AssistantConversationTurn;
+import com.aiclub.platform.dto.AssistantConversationContextState;
+import com.aiclub.platform.dto.AssistantToolExecutionPolicy;
 import com.aiclub.platform.dto.AssistantDebugInfo;
 import com.aiclub.platform.dto.AssistantGroundingState;
 import com.aiclub.platform.dto.AssistantGroundingTarget;
+import com.aiclub.platform.dto.AssistantResponseMetadata;
 import com.aiclub.platform.dto.AssistantSelectionCard;
 import com.aiclub.platform.dto.AssistantStreamDelta;
 import com.aiclub.platform.dto.AssistantStreamDone;
@@ -27,6 +30,8 @@ import com.aiclub.platform.repository.AssistantChatAuditRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.runtime.RuntimeChatResult;
 import com.aiclub.platform.runtime.RuntimeInvocationContext;
+import com.aiclub.platform.runtime.RuntimeContextProfile;
+import com.aiclub.platform.runtime.RuntimeCapability;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,6 +76,7 @@ public class AssistantChatService {
     private final AssistantFileLibraryService assistantFileLibraryService;
     private final RuntimeChatService runtimeChatService;
     private final ObjectMapper objectMapper;
+    private final AssistantConversationContextService assistantConversationContextService = new AssistantConversationContextService();
 
     @Autowired
     public AssistantChatService(AuthService authService,
@@ -211,25 +217,39 @@ public class AssistantChatService {
         String scopeKey = resolveScopeKey(currentUser.id(), context.projectId(), effectiveRequest.clientConversationId());
         AssistantChatAuditEntity audit = createAudit(currentUser, effectiveRequest, context, scopeKey);
         String attachmentContextMarkdown = resolveAttachmentContextMarkdown(session, attachments);
-        PreparedConversation preparedConversation = prepareConversation(currentUser, context, effectiveRequest, scopeKey, attachmentContextMarkdown);
+        RuntimeContextProfile contextProfile = assistantConversationSessionService.resolveRuntimeContextProfile(session);
+        boolean nativeCompactionAvailable = supportsNativeCompaction(session);
+        PreparedConversation preparedConversation = prepareConversation(currentUser, context, effectiveRequest, scopeKey, attachmentContextMarkdown,
+                contextProfile, assistantConversationSessionService.readContextState(session),
+                assistantConversationSessionService.readTranscript(session), nativeCompactionAvailable);
 
         return outputStream -> {
             try {
                 emitStatus(outputStream, "connecting", "GitPilot 正在连接服务");
                 writeEvent(outputStream, "meta", buildMetaEvent(preparedConversation.state()));
                 emitStatus(outputStream, "thinking", "GitPilot 正在思考");
+                AssistantResponseStreamFilter responseStreamFilter = new AssistantResponseStreamFilter(AssistantResponseMetadata.markerPrefix());
 
                 ChatExecutionResult gatewayResult = executeChat(
                         session,
                         preparedConversation,
                         delta -> {
-                            try {
-                                writeEvent(outputStream, "delta", new AssistantStreamDelta(delta));
-                            } catch (IOException exception) {
-                                throw new AssistantClientStreamDisconnectedException("GitPilot 客户端流式连接已断开", exception);
-                            }
+                            responseStreamFilter.accept(delta, visibleDelta -> {
+                                try {
+                                    writeEvent(outputStream, "delta", new AssistantStreamDelta(visibleDelta));
+                                } catch (IOException exception) {
+                                    throw new AssistantClientStreamDisconnectedException("GitPilot 客户端流式连接已断开", exception);
+                                }
+                            });
                         }
                 );
+                responseStreamFilter.finish(visibleDelta -> {
+                    try {
+                        writeEvent(outputStream, "delta", new AssistantStreamDelta(visibleDelta));
+                    } catch (IOException exception) {
+                        throw new AssistantClientStreamDisconnectedException("GitPilot 客户端流式连接已断开", exception);
+                    }
+                });
 
                 AssistantConversationState latestState = loadLatestState(preparedConversation.state());
                 FinalizedConversation finalizedConversation = finalizeConversation(
@@ -239,6 +259,7 @@ public class AssistantChatService {
                         effectiveRequest,
                         context
                 );
+                applyGeneratedTitle(session, finalizedConversation.autoTitle());
                 assistantConversationStateStore.save(finalizedConversation.state());
                 AssistantDebugInfo debugInfo = buildDebugInfo(finalizedConversation.state(), gatewayResult.responseId());
                 AssistantConversationDetail persistedDetail = assistantConversationSessionService.recordSuccess(
@@ -315,7 +336,11 @@ public class AssistantChatService {
         String scopeKey = resolveScopeKey(currentUser.id(), context.projectId(), effectiveRequest.clientConversationId());
         AssistantChatAuditEntity audit = createAudit(currentUser, effectiveRequest, context, scopeKey);
         String attachmentContextMarkdown = resolveAttachmentContextMarkdown(session, attachments);
-        PreparedConversation preparedConversation = prepareConversation(currentUser, context, effectiveRequest, scopeKey, attachmentContextMarkdown);
+        RuntimeContextProfile contextProfile = assistantConversationSessionService.resolveRuntimeContextProfile(session);
+        boolean nativeCompactionAvailable = supportsNativeCompaction(session);
+        PreparedConversation preparedConversation = prepareConversation(currentUser, context, effectiveRequest, scopeKey, attachmentContextMarkdown,
+                contextProfile, assistantConversationSessionService.readContextState(session),
+                assistantConversationSessionService.readTranscript(session), nativeCompactionAvailable);
 
         try {
             ChatExecutionResult gatewayResult = executeChat(session, preparedConversation, null);
@@ -327,6 +352,7 @@ public class AssistantChatService {
                     effectiveRequest,
                     context
             );
+            applyGeneratedTitle(session, finalizedConversation.autoTitle());
             assistantConversationStateStore.save(finalizedConversation.state());
             AssistantDebugInfo debugInfo = buildDebugInfo(finalizedConversation.state(), gatewayResult.responseId());
             AssistantConversationDetail persistedDetail = assistantConversationSessionService.recordSuccess(
@@ -363,7 +389,7 @@ public class AssistantChatService {
                     finalizedConversation.state().suggestions(),
                     finalizedConversation.state().actions(),
                     finalizedConversation.state().selectionCards(),
-                    debugInfo,
+                    null,
                     toAttachmentSummaries(attachments)
             );
         } catch (Exception exception) {
@@ -411,6 +437,7 @@ public class AssistantChatService {
         requestBody.put("input", preparedConversation.currentUserTurn().content());
         requestBody.put("history", preparedConversation.outboundTranscript());
         requestBody.put("sessionToken", preparedConversation.state().mcpSessionToken());
+        requestBody.put("contextProfile", assistantConversationSessionService.resolveRuntimeContextProfile(session));
         RuntimeInvocationContext context = new RuntimeInvocationContext(
                 String.valueOf(requestBody.get("runId")),
                 preparedConversation.state().clientConversationId(),
@@ -418,7 +445,9 @@ public class AssistantChatService {
                 preparedConversation.prompt().systemPrompt(),
                 Map.of("requestBody", requestBody),
                 Map.of("runtimeRegistryCode", runtimeCode,
-                        "runtimeProfileVersion", session.getRuntimeProfileVersion() == null ? 1L : session.getRuntimeProfileVersion())
+                        "runtimeProfileVersion", session.getRuntimeProfileVersion() == null ? 1L : session.getRuntimeProfileVersion()),
+                com.aiclub.platform.runtime.RuntimeToolContext.empty(),
+                assistantConversationSessionService.resolveRuntimeContextProfile(session)
         );
         context = runtimeChatService.withToolContract(
                 context,
@@ -456,7 +485,7 @@ public class AssistantChatService {
                 session.getWikiPageId(),
                 session.getClientConversationId(),
                 request.selection(),
-                request.debug(),
+                null,
                 request.slashCommand()
         );
     }
@@ -466,12 +495,20 @@ public class AssistantChatService {
      * 复杂之处在于：要先把新的页面上下文和 selection 合并进 Redis，会话工具调用期间 backend 才能拿到最新状态。
      */
     private PreparedConversation prepareConversation(CurrentUserInfo currentUser,
-                                                     AssistantContextAssembler.AssistantConversationContext context,
-                                                     AssistantChatRequest request,
-                                                     String scopeKey,
-                                                     String attachmentContextMarkdown) {
+                                                      AssistantContextAssembler.AssistantConversationContext context,
+                                                      AssistantChatRequest request,
+                                                      String scopeKey,
+                                                      String attachmentContextMarkdown,
+                                                      RuntimeContextProfile contextProfile,
+                                                      AssistantConversationContextState persistedContextState,
+                                                      List<AssistantConversationTurn> databaseTranscript,
+                                                      boolean nativeCompactionAvailable) {
         AssistantConversationState existingState = assistantConversationStateStore.load(scopeKey, request.clientConversationId())
                 .orElse(null);
+        // Redis 只承担热状态；首次恢复时把数据库原始消息交给 Context Service，避免换设备后只剩摘要而丢失最近完整消息。
+        List<AssistantConversationTurn> restoredTranscript = existingState == null
+                ? (databaseTranscript == null ? List.of() : databaseTranscript)
+                : existingState.transcript();
         AssistantGroundingState groundingState = assistantToolOrchestrator.seedGroundingState(
                 context,
                 request,
@@ -486,20 +523,27 @@ public class AssistantChatService {
                 AssistantConversationContextSnapshot.fromContext(context),
                 AssistantConversationRequestSnapshot.fromRequest(request),
                 sessionToken,
-                existingState == null ? List.of() : existingState.transcript(),
+                restoredTranscript,
                 context.references(),
                 context.suggestions(),
                 resolvePreparedActions(existingState, request),
                 resolvePreparedSelectionCards(existingState, request),
                 groundingState,
                 List.of(),
-                existingState == null ? "" : existingState.lastErrorMessage()
+                existingState == null ? "" : existingState.lastErrorMessage(),
+                existingState == null ? AssistantToolExecutionPolicy.empty() : existingState.toolExecutionPolicy(),
+                existingState == null ? persistedContextState : existingState.contextState()
         );
-        assistantConversationStateStore.save(preparedState);
+        AssistantConversationContextService.ContextPreparation contextPreparation = assistantConversationContextService.prepare(
+                preparedState.transcript(), preparedState.contextState(), contextProfile,
+                AssistantConversationContextService.ContextBudget.empty(), nativeCompactionAvailable);
+        preparedState = preparedState.withContextState(contextPreparation.state());
 
         String memoryContextMarkdown = resolveMemoryContextMarkdown(currentUser, context, request);
         String fileLibraryEvidenceMarkdown = resolveFileLibraryEvidenceMarkdown(currentUser, request);
-        AssistantConversationTurn currentUserTurn = buildCurrentUserTurn(request, groundingState, attachmentContextMarkdown, fileLibraryEvidenceMarkdown);
+        AssistantConversationTurn currentUserTurn = buildCurrentUserTurn(
+                request, groundingState, attachmentContextMarkdown, fileLibraryEvidenceMarkdown,
+                assistantConversationContextService.renderSummary(contextPreparation.state()));
         String combinedMemoryContextMarkdown = combineMemoryContext(memoryContextMarkdown, fileLibraryEvidenceMarkdown);
         AssistantPromptBuilder.AssistantPrompt prompt = assistantPromptBuilder.buildConversationPrompt(
                 currentUser,
@@ -511,12 +555,50 @@ public class AssistantChatService {
                 combinedMemoryContextMarkdown
         );
 
+        // 第二次预算计算把真实 system prompt、页面上下文、工具契约预留和本轮输入计入，避免只按历史消息长度判断是否超窗。
+        AssistantConversationContextService.ContextPreparation budgetedPreparation = assistantConversationContextService.prepare(
+                contextPreparation.outboundTranscript(), preparedState.contextState(), contextProfile,
+                new AssistantConversationContextService.ContextBudget(
+                        prompt.systemPrompt(),
+                        2048,
+                        context == null ? "" : context.contextMarkdown(),
+                        currentUserTurn.content()
+                ), nativeCompactionAvailable);
+        boolean contextChanged = !budgetedPreparation.state().summary().equals(preparedState.contextState().summary())
+                || !budgetedPreparation.state().facts().equals(preparedState.contextState().facts())
+                || !budgetedPreparation.state().pendingClarification().equals(preparedState.contextState().pendingClarification())
+                || !budgetedPreparation.outboundTranscript().equals(contextPreparation.outboundTranscript());
+        preparedState = preparedState.withContextState(budgetedPreparation.state());
+        if (contextChanged) {
+            currentUserTurn = buildCurrentUserTurn(
+                    request, groundingState, attachmentContextMarkdown, fileLibraryEvidenceMarkdown,
+                    assistantConversationContextService.renderSummary(budgetedPreparation.state()));
+            prompt = assistantPromptBuilder.buildConversationPrompt(
+                    currentUser, context, request, groundingState, sessionToken,
+                    currentUserTurn.content(), combinedMemoryContextMarkdown
+            );
+            contextPreparation = budgetedPreparation;
+        }
+        if (!contextChanged) {
+            // 即使没有触发压缩，也要保存包含完整预算组成的估算值。
+            contextPreparation = budgetedPreparation;
+        }
+        assistantConversationStateStore.save(preparedState);
+
         return new PreparedConversation(
                 preparedState,
                 currentUserTurn,
-                trimTranscript(preparedState.transcript()),
+                contextPreparation.outboundTranscript(),
                 prompt
         );
+    }
+
+    /** 根据会话创建时绑定的 Runtime 判断是否可把压缩交给 Runtime 原生实现。 */
+    private boolean supportsNativeCompaction(AssistantConversationSessionEntity session) {
+        if (session == null || runtimeChatService == null) {
+            return false;
+        }
+        return runtimeChatService.supportsCapability(session.getRuntimeRegistryCode(), RuntimeCapability.NATIVE_COMPACTION);
     }
 
     /**
@@ -567,7 +649,8 @@ public class AssistantChatService {
                 resolvedContent = fallbackResult.content();
             }
         }
-        resolvedContent = AssistantMarkdownFormatter.formatForDisplay(resolvedContent);
+        AssistantResponseMetadata responseMetadata = AssistantResponseMetadata.parse(resolvedContent, objectMapper);
+        resolvedContent = AssistantMarkdownFormatter.formatForDisplay(responseMetadata.content());
         List<AssistantConversationTurn> transcript = new ArrayList<>(latestState == null ? List.of() : latestState.transcript());
         transcript.add(currentUserTurn);
         transcript.add(AssistantConversationTurn.assistant(resolvedContent));
@@ -576,6 +659,13 @@ public class AssistantChatService {
         AssistantGroundingState finalGroundingState = finalSelectionCards.isEmpty()
                 ? workingState.groundingState().clearPendingSelection()
                 : workingState.groundingState();
+        AssistantConversationContextState nextContextState = assistantConversationContextService.updateAfterTurn(
+                workingState.contextState(),
+                currentUserTurn.content(),
+                resolvedContent,
+                context.projectId(),
+                resolveProjectTitle(context)
+        );
 
         AssistantConversationState finalState = new AssistantConversationState(
                 workingState.scopeKey(),
@@ -586,14 +676,16 @@ public class AssistantChatService {
                 workingState.mcpSessionToken(),
                 trimmedTranscript,
                 workingState.references() == null || workingState.references().isEmpty() ? context.references() : workingState.references(),
-                context.suggestions(),
+                responseMetadata.suggestions(),
                 workingState.actions(),
                 finalSelectionCards,
                 finalGroundingState,
                 workingState.toolExecutions(),
-                workingState.lastErrorMessage()
+                workingState.lastErrorMessage(),
+                workingState.toolExecutionPolicy(),
+                nextContextState
         );
-        return new FinalizedConversation(finalState, resolvedContent);
+        return new FinalizedConversation(finalState, resolvedContent, responseMetadata.title());
     }
 
     /**
@@ -642,9 +734,10 @@ public class AssistantChatService {
      * 当本轮来自候选卡片选择时，使用结构化恢复消息替代原始问题，帮助模型理解“你选的是哪个对象”。
      */
     private AssistantConversationTurn buildCurrentUserTurn(AssistantChatRequest request,
-                                                        AssistantGroundingState groundingState,
-                                                        String attachmentContextMarkdown,
-                                                        String fileLibraryEvidenceMarkdown) {
+                                                         AssistantGroundingState groundingState,
+                                                         String attachmentContextMarkdown,
+                                                         String fileLibraryEvidenceMarkdown,
+                                                         String conversationContextSummary) {
         String content;
         if (request.selection() == null) {
             content = defaultString(request.question());
@@ -671,6 +764,9 @@ public class AssistantChatService {
             }
         }
         content = prependSlashSkillInstruction(content, request, groundingState, fileLibraryEvidenceMarkdown);
+        if (conversationContextSummary != null && !conversationContextSummary.isBlank()) {
+            content = conversationContextSummary + "\n\n### 本轮用户输入\n" + content;
+        }
         if (hasText(attachmentContextMarkdown)) {
             content = """
                     %s
@@ -870,10 +966,10 @@ public class AssistantChatService {
                 state.scopeKey(),
                 state.context() == null ? "" : defaultString(state.context().roleName()),
                 state.references(),
-                state.suggestions(),
+                List.of(),
                 state.actions(),
                 state.selectionCards(),
-                buildDebugInfo(state, ""),
+                null,
                 List.of()
         );
     }
@@ -945,7 +1041,7 @@ public class AssistantChatService {
                     finalizedConversation.state().suggestions(),
                     finalizedConversation.state().actions(),
                     finalizedConversation.state().selectionCards(),
-                    debugInfo,
+                    null,
                     toAttachmentSummaries(attachments)
             ));
         } catch (AssistantClientStreamDisconnectedException exception) {
@@ -1078,7 +1174,7 @@ public class AssistantChatService {
                 request.wikiPageId(),
                 sanitizedConversationId,
                 request.selection(),
-                request.debug(),
+                null,
                 request.slashCommand()
         );
     }
@@ -1141,6 +1237,28 @@ public class AssistantChatService {
         return value != null && !value.trim().isEmpty();
     }
 
+    private String resolveProjectTitle(AssistantContextAssembler.AssistantConversationContext context) {
+        if (context == null || context.references() == null) return "";
+        return context.references().stream()
+                .filter(reference -> reference != null && "PROJECT".equalsIgnoreCase(defaultString(reference.type())))
+                .map(reference -> defaultString(reference.title()))
+                .filter(value -> !value.isBlank())
+                .findFirst()
+                .orElse("");
+    }
+
+    /**
+     * 首轮回答完成后写入模型生成的会话标题；手动重命名的标题始终优先。
+     */
+    private void applyGeneratedTitle(AssistantConversationSessionEntity session, String generatedTitle) {
+        if (session == null || session.isTitleCustomized() || !"新会话".equals(defaultString(session.getTitle()))) {
+            return;
+        }
+        if (hasText(generatedTitle)) {
+            session.setTitle(generatedTitle.trim());
+        }
+    }
+
     /**
      * 客户端断开时只在已有工具结果或确认卡片的情况下落库展示态，避免普通生成中断污染会话列表。
      */
@@ -1201,7 +1319,8 @@ public class AssistantChatService {
      */
     private record FinalizedConversation(
             AssistantConversationState state,
-            String content
+            String content,
+            String autoTitle
     ) {
     }
 }

@@ -2,6 +2,7 @@ package com.aiclub.platform.dto;
 
 import com.aiclub.platform.runtime.RuntimeAdapterType;
 import com.aiclub.platform.runtime.RuntimeHealthStatus;
+import com.aiclub.platform.runtime.CompactionStrategy;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -15,6 +16,10 @@ public record RuntimeRegistrySummary(
         List<String> capabilities,
         String sandboxPolicyJson,
         List<String> fallbackRuntimeCodes,
+        int contextWindowTokens,
+        int maxOutputTokens,
+        int compactionThresholdPercent,
+        CompactionStrategy compactionStrategy,
         RuntimeHealthStatus healthStatus,
         String healthMessage,
         LocalDateTime healthCheckedAt,

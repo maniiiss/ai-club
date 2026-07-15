@@ -10,6 +10,7 @@ import type {
   AssistantConversationDetailItem,
   AssistantConversationSessionQuery,
   AssistantConversationSessionSummaryItem,
+  AssistantConversationSearchResult,
   AssistantFeedbackDetail,
   AssistantFeedbackQuery,
   AssistantMessageFeedbackPayload,
@@ -63,6 +64,19 @@ export const pageAssistantConversationSessions = async (
 ): Promise<PageResponse<AssistantConversationSessionSummaryItem>> => {
   const res = await http.get<ApiResponse<PageResponse<AssistantConversationSessionSummaryItem>>>('/api/assistant/sessions', {
     params: cleanParams(query),
+  })
+  return unwrap(res)
+}
+
+/** 搜索当前项目活跃和已归档会话中的聊天内容。 */
+export const searchAssistantConversationSessions = async (
+  query: string,
+  projectId: number,
+  page = 1,
+  size = 20,
+): Promise<PageResponse<AssistantConversationSearchResult>> => {
+  const res = await http.get<ApiResponse<PageResponse<AssistantConversationSearchResult>>>('/api/assistant/sessions/search', {
+    params: cleanParams({ query, projectId, scope: 'PROJECT', includeArchived: true, page, size }),
   })
   return unwrap(res)
 }
@@ -338,7 +352,6 @@ export const streamAssistantSessionChatWithFiles = async (
   const formData = new FormData()
   formData.append('question', payload.question)
   if (payload.selection) formData.append('selectionJson', JSON.stringify(payload.selection))
-  if (payload.debug != null) formData.append('debug', String(payload.debug))
   if (payload.slashCommand) formData.append('slashCommand', payload.slashCommand)
   files.forEach((file) => formData.append('files', file))
 

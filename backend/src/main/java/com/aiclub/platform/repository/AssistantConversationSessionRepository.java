@@ -29,6 +29,42 @@ public interface AssistantConversationSessionRepository extends JpaRepository<As
                                                                                Pageable pageable);
 
     /**
+     * 在当前项目的会话标题、最近预览和历史消息中进行全文搜索。
+     * 业务意图：搜索结果仍按会话归并，避免同一会话命中多条消息后重复出现在左侧。
+     */
+    @Query(value = """
+            select distinct session
+            from AssistantConversationSessionEntity session
+            left join AssistantConversationMessageEntity message on message.session.id = session.id
+            where session.user.id = :userId
+              and session.projectId = :projectId
+              and (:includeArchived = true or session.archived = false)
+              and (
+                    lower(coalesce(session.title, '')) like lower(concat('%', :query, '%'))
+                    or lower(coalesce(session.latestPreview, '')) like lower(concat('%', :query, '%'))
+                    or lower(coalesce(message.content, '')) like lower(concat('%', :query, '%'))
+              )
+            """,
+            countQuery = """
+            select count(distinct session.id)
+            from AssistantConversationSessionEntity session
+            left join AssistantConversationMessageEntity message on message.session.id = session.id
+            where session.user.id = :userId
+              and session.projectId = :projectId
+              and (:includeArchived = true or session.archived = false)
+              and (
+                    lower(coalesce(session.title, '')) like lower(concat('%', :query, '%'))
+                    or lower(coalesce(session.latestPreview, '')) like lower(concat('%', :query, '%'))
+                    or lower(coalesce(message.content, '')) like lower(concat('%', :query, '%'))
+              )
+            """)
+    Page<AssistantConversationSessionEntity> searchProjectSessions(@Param("userId") Long userId,
+                                                                  @Param("projectId") Long projectId,
+                                                                  @Param("query") String query,
+                                                                  @Param("includeArchived") boolean includeArchived,
+                                                                  Pageable pageable);
+
+    /**
      * 读取没有绑定项目、任务、迭代、测试计划或 Wiki 的纯聊天会话。
      */
     @Query("""

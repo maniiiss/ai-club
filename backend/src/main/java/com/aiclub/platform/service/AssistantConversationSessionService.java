@@ -7,14 +7,19 @@ import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.AssistantConversationDetail;
 import com.aiclub.platform.dto.AssistantConversationMessageItem;
 import com.aiclub.platform.dto.AssistantConversationSessionSummary;
+import com.aiclub.platform.dto.AssistantConversationSearchResult;
 import com.aiclub.platform.dto.AssistantDebugInfo;
 import com.aiclub.platform.dto.AssistantLatestDisplayState;
 import com.aiclub.platform.dto.AssistantConversationState;
+import com.aiclub.platform.dto.AssistantConversationContextState;
+import com.aiclub.platform.dto.AssistantConversationTurn;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.request.CreateAssistantConversationSessionRequest;
 import com.aiclub.platform.dto.request.AssistantChatRequest;
 import com.aiclub.platform.service.AssistantAttachmentService.PreparedAttachment;
 import com.aiclub.platform.dto.request.RenameAssistantConversationSessionRequest;
+import com.aiclub.platform.runtime.CompactionStrategy;
+import com.aiclub.platform.runtime.RuntimeContextProfile;
 import com.aiclub.platform.repository.AssistantConversationMessageRepository;
 import com.aiclub.platform.repository.AssistantConversationSessionRepository;
 import com.aiclub.platform.repository.UserRepository;
@@ -32,6 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
@@ -49,6 +55,10 @@ public class AssistantConversationSessionService {
     /** Runtime 管理页的助手场景默认值；为空时保留环境变量兼容回退。 */
     @Autowired(required = false)
     private RuntimeScenarioDefaultService runtimeScenarioDefaultService;
+
+    /** Runtime Registry 是新会话上下文预算的权威配置源。 */
+    @Autowired(required = false)
+    private RuntimeRegistryService runtimeRegistryService;
 
     /** 新建会话的默认标题。 */
     private static final String DEFAULT_SESSION_TITLE = "新会话";
@@ -142,6 +152,8 @@ public class AssistantConversationSessionService {
         entity.setRouteName(defaultString(request.routeName()));
         entity.setRuntimeRegistryCode(resolveAssistantRuntimeCode());
         entity.setRuntimeProfileVersion(1L);
+        entity.setRuntimeContextProfileSnapshotJson(writeRuntimeContextProfile(
+                resolveRuntimeContextProfile(entity.getRuntimeRegistryCode())));
         entity.setProjectId(request.projectId());
         entity.setTaskId(request.taskId());
         entity.setIterationId(request.iterationId());
@@ -161,6 +173,38 @@ public class AssistantConversationSessionService {
         }
         return defaultRuntimeCode == null || defaultRuntimeCode.isBlank()
                 ? "HERMES_LEGACY" : defaultRuntimeCode.trim().toUpperCase(java.util.Locale.ROOT);
+    }
+
+    /** 读取会话创建时的上下文预算快照；旧会话没有快照时回退到当前 Registry 配置。 */
+    public RuntimeContextProfile resolveRuntimeContextProfile(AssistantConversationSessionEntity session) {
+        if (session != null && defaultString(session.getRuntimeContextProfileSnapshotJson()).length() > 2) {
+            try {
+                return objectMapper.readValue(session.getRuntimeContextProfileSnapshotJson(), RuntimeContextProfile.class);
+            } catch (Exception ignored) {
+                // 历史会话快照损坏时继续走当前 Runtime 默认配置，避免阻断续聊。
+            }
+        }
+        String runtimeCode = session == null ? resolveAssistantRuntimeCode() : session.getRuntimeRegistryCode();
+        return resolveRuntimeContextProfile(runtimeCode);
+    }
+
+    private RuntimeContextProfile resolveRuntimeContextProfile(String runtimeCode) {
+        if (runtimeRegistryService == null) {
+            return RuntimeContextProfile.defaults();
+        }
+        try {
+            return runtimeRegistryService.contextProfile(runtimeCode);
+        } catch (Exception ignored) {
+            return RuntimeContextProfile.defaults();
+        }
+    }
+
+    private String writeRuntimeContextProfile(RuntimeContextProfile profile) {
+        try {
+            return objectMapper.writeValueAsString(profile == null ? RuntimeContextProfile.defaults() : profile);
+        } catch (JsonProcessingException exception) {
+            return "{}";
+        }
     }
 
     /**
@@ -204,6 +248,35 @@ public class AssistantConversationSessionService {
         }
         Page<AssistantConversationSessionSummary> pageData = entityPage.map(this::toSummary);
         return PageResponse.from(pageData);
+    }
+
+    /**
+     * 搜索当前项目下当前用户的活跃和已归档会话消息。
+     */
+    @Transactional(readOnly = true)
+    public PageResponse<AssistantConversationSearchResult> searchProjectSessions(int page,
+                                                                                   int size,
+                                                                                   Long projectId,
+                                                                                   String query,
+                                                                                   boolean includeArchived) {
+        if (projectId == null) {
+            throw new IllegalArgumentException("搜索项目会话需要提供 projectId");
+        }
+        String normalizedQuery = defaultString(query);
+        if (normalizedQuery.isBlank()) {
+            return new PageResponse<>(List.of(), 0, 1, Math.max(1, Math.min(size, 50)), 0);
+        }
+        CurrentUserInfo currentUser = authService.currentUser();
+        Pageable pageable = PageRequest.of(
+                Math.max(page, 1) - 1,
+                Math.max(1, Math.min(size, 50)),
+                Sort.by(Sort.Direction.DESC, "lastMessageAt").and(Sort.by(Sort.Direction.DESC, "id"))
+        );
+        Page<AssistantConversationSessionEntity> entityPage = assistantConversationSessionRepository.searchProjectSessions(
+                currentUser.id(), projectId, normalizedQuery, includeArchived, pageable
+        );
+        Page<AssistantConversationSearchResult> resultPage = entityPage.map(session -> toSearchResult(session, normalizedQuery));
+        return PageResponse.from(resultPage);
     }
 
     /**
@@ -292,7 +365,8 @@ public class AssistantConversationSessionService {
         }
 
         session.setLatestPreview(resolveLatestPreview(assistantContent, request.question()));
-        session.setLatestDisplayStateJson(writeLatestDisplayState(buildLatestDisplayState(finalState, debugInfo)));
+        session.setLatestDisplayStateJson(writeLatestDisplayState(buildLatestDisplayState(finalState)));
+        persistContextState(session, finalState == null ? AssistantConversationContextState.empty() : finalState.contextState());
         session.setLastMessageAt(LocalDateTime.now());
         AssistantConversationSessionEntity saved = assistantConversationSessionRepository.save(session);
         return buildDetail(saved);
@@ -308,6 +382,60 @@ public class AssistantConversationSessionService {
                                                   String assistantContent,
                                                   AssistantDebugInfo debugInfo) {
         return recordSuccess(session, request, finalState, assistantContent, debugInfo, List.of());
+    }
+
+    /** 从数据库恢复 Redis 过期后的摘要、事实和待确认状态。 */
+    public AssistantConversationContextState readContextState(AssistantConversationSessionEntity session) {
+        if (session == null) return AssistantConversationContextState.empty();
+        Map<String, Object> facts = Map.of();
+        try {
+            if (hasText(session.getContextFactsJson())) {
+                facts = objectMapper.readValue(session.getContextFactsJson(), Map.class);
+            }
+        } catch (Exception ignored) {
+            // 损坏的辅助上下文不应阻断原始消息续聊。
+        }
+        return new AssistantConversationContextState(
+                defaultString(session.getContextSummary()), facts,
+                defaultString(session.getPendingClarificationJson()),
+                session.getEstimatedContextTokens() == null ? 0 : session.getEstimatedContextTokens(),
+                session.getSummaryThroughMessageId() == null ? 0 : session.getSummaryThroughMessageId(),
+                session.getContextVersion() == null ? 0 : session.getContextVersion()
+        );
+    }
+
+    /**
+     * Redis 热状态过期或换设备后，从数据库恢复完整原始消息。
+     * 业务意图：数据库消息是长对话的最终事实来源，恢复后再由 Context Service 按会话快照裁剪，不能只恢复摘要。
+     */
+    public List<AssistantConversationTurn> readTranscript(AssistantConversationSessionEntity session) {
+        if (session == null || session.getId() == null) {
+            return List.of();
+        }
+        return assistantConversationMessageRepository.findBySession_IdOrderByCreatedAtAscIdAsc(session.getId()).stream()
+                .filter(message -> "user".equalsIgnoreCase(defaultString(message.getRole())
+                        ) || "assistant".equalsIgnoreCase(defaultString(message.getRole()))
+                        || "toolResult".equalsIgnoreCase(defaultString(message.getRole())))
+                .map(message -> new AssistantConversationTurn(
+                        defaultString(message.getRole()).toLowerCase(java.util.Locale.ROOT),
+                        defaultString(message.getContent())))
+                .toList();
+    }
+
+    private void persistContextState(AssistantConversationSessionEntity session,
+                                     AssistantConversationContextState state) {
+        AssistantConversationContextState resolved = state == null
+                ? AssistantConversationContextState.empty() : state;
+        session.setContextSummary(resolved.summary());
+        try {
+            session.setContextFactsJson(objectMapper.writeValueAsString(resolved.facts()));
+        } catch (JsonProcessingException exception) {
+            session.setContextFactsJson("{}");
+        }
+        session.setPendingClarificationJson(resolved.pendingClarification());
+        session.setSummaryThroughMessageId(resolved.summaryThroughMessageIndex());
+        session.setContextVersion(resolved.version());
+        session.setEstimatedContextTokens(resolved.estimatedTokens());
     }
 
     /**
@@ -330,8 +458,8 @@ public class AssistantConversationSessionService {
         }
         persistMessage(session, "assistant", defaultString(errorMessage), "ERROR");
         session.setLatestPreview(resolveLatestPreview(errorMessage, request.question()));
-        if (latestState != null || debugInfo != null) {
-            session.setLatestDisplayStateJson(writeLatestDisplayState(buildLatestDisplayState(latestState, debugInfo)));
+        if (latestState != null) {
+            session.setLatestDisplayStateJson(writeLatestDisplayState(buildLatestDisplayState(latestState)));
         }
         session.setLastMessageAt(LocalDateTime.now());
         AssistantConversationSessionEntity saved = assistantConversationSessionRepository.save(session);
@@ -361,7 +489,7 @@ public class AssistantConversationSessionService {
         if (session.isArchived()) {
             throw new IllegalArgumentException("已归档会话不能继续更新展示态，请先恢复会话");
         }
-        session.setLatestDisplayStateJson(writeLatestDisplayState(buildLatestDisplayState(latestState, debugInfo)));
+        session.setLatestDisplayStateJson(writeLatestDisplayState(buildLatestDisplayState(latestState)));
         AssistantConversationSessionEntity saved = assistantConversationSessionRepository.save(session);
         return buildDetail(saved);
     }
@@ -388,6 +516,31 @@ public class AssistantConversationSessionService {
                 formatTime(entity.getCreatedAt()),
                 formatTime(entity.getUpdatedAt()),
                 formatTime(entity.getLastMessageAt())
+        );
+    }
+
+    private AssistantConversationSearchResult toSearchResult(AssistantConversationSessionEntity session, String query) {
+        List<AssistantConversationMessageEntity> matches = assistantConversationMessageRepository.findMatchingMessages(
+                session.getId(), query, PageRequest.of(0, 1)
+        );
+        if (!matches.isEmpty()) {
+            AssistantConversationMessageEntity message = matches.get(0);
+            return new AssistantConversationSearchResult(
+                    session.getId(),
+                    defaultString(session.getTitle()),
+                    session.isArchived(),
+                    defaultString(message.getRole()),
+                    trimToMaxLength(defaultString(message.getContent()), 220),
+                    formatTime(message.getCreatedAt())
+            );
+        }
+        return new AssistantConversationSearchResult(
+                session.getId(),
+                defaultString(session.getTitle()),
+                session.isArchived(),
+                "session",
+                trimToMaxLength(defaultString(session.getLatestPreview()), 220),
+                formatTime(session.getLastMessageAt())
         );
     }
 
@@ -460,8 +613,8 @@ public class AssistantConversationSessionService {
     /**
      * 组装最新展示态快照，只保留前端回显必需字段。
      */
-    private AssistantLatestDisplayState buildLatestDisplayState(AssistantConversationState state, AssistantDebugInfo debugInfo) {
-        if (state == null && debugInfo == null) {
+    private AssistantLatestDisplayState buildLatestDisplayState(AssistantConversationState state) {
+        if (state == null) {
             return AssistantLatestDisplayState.empty();
         }
         return new AssistantLatestDisplayState(
@@ -469,7 +622,7 @@ public class AssistantConversationSessionService {
                 state == null ? List.of() : state.suggestions(),
                 state == null ? List.of() : state.actions(),
                 state == null ? List.of() : state.selectionCards(),
-                debugInfo
+                null
         );
     }
 
@@ -492,7 +645,14 @@ public class AssistantConversationSessionService {
             return AssistantLatestDisplayState.empty();
         }
         try {
-            return objectMapper.readValue(latestDisplayStateJson, AssistantLatestDisplayState.class);
+            AssistantLatestDisplayState stored = objectMapper.readValue(latestDisplayStateJson, AssistantLatestDisplayState.class);
+            return new AssistantLatestDisplayState(
+                    stored.references(),
+                    stored.suggestions(),
+                    stored.actions(),
+                    stored.selectionCards(),
+                    null
+            );
         } catch (JsonProcessingException exception) {
             return AssistantLatestDisplayState.empty();
         }

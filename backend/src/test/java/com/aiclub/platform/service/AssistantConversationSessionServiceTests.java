@@ -254,6 +254,47 @@ class AssistantConversationSessionServiceTests {
     }
 
     /**
+     * 项目聊天搜索应返回消息命中摘要，并把归档会话纳入同一用户项目范围。
+     */
+    @Test
+    void shouldSearchProjectSessionsByMessageContent() {
+        AssistantConversationSessionService service = new AssistantConversationSessionService(
+                authService,
+                userRepository,
+                assistantConversationSessionRepository,
+                assistantConversationMessageRepository,
+                new ObjectMapper()
+        );
+
+        AssistantConversationSessionEntity session = buildSessionEntity();
+        session.setProjectId(12L);
+        session.setArchived(true);
+        AssistantConversationMessageEntity message = new AssistantConversationMessageEntity();
+        message.setId(44L);
+        message.setSession(session);
+        message.setRole("assistant");
+        message.setContent("当前项目的发布阻塞点是接口联调");
+        message.setCreatedAt(LocalDateTime.of(2026, 4, 14, 11, 0));
+
+        when(authService.currentUser()).thenReturn(buildCurrentUser());
+        when(assistantConversationSessionRepository.searchProjectSessions(
+                eq(5L), eq(12L), eq("联调"), eq(true), any(PageRequest.class)
+        )).thenReturn(new PageImpl<>(List.of(session), PageRequest.of(0, 20), 1));
+        when(assistantConversationMessageRepository.findMatchingMessages(eq(10L), eq("联调"), any(PageRequest.class)))
+                .thenReturn(List.of(message));
+
+        PageResponse<com.aiclub.platform.dto.AssistantConversationSearchResult> result = service.searchProjectSessions(
+                1, 20, 12L, "联调", true
+        );
+
+        assertThat(result.records()).hasSize(1);
+        assertThat(result.records().get(0).sessionId()).isEqualTo(10L);
+        assertThat(result.records().get(0).archived()).isTrue();
+        assertThat(result.records().get(0).matchedRole()).isEqualTo("assistant");
+        assertThat(result.records().get(0).matchedContent()).contains("发布阻塞点");
+    }
+
+    /**
      * 空会话复用必须按完整上下文隔离，避免纯聊天页新建的空会话被项目页浮标抢走。
      */
     @Test
@@ -411,6 +452,7 @@ class AssistantConversationSessionServiceTests {
         assertThat(session.getLatestPreview()).isEqualTo("Assistant 助手暂时不可用");
         assertThat(session.getLatestDisplayStateJson()).doesNotContain("完整回答内容");
         assertThat(session.getLatestDisplayStateJson()).contains("references");
+        assertThat(session.getLatestDisplayStateJson()).doesNotContain("debug");
     }
 
     private AssistantConversationSessionEntity buildSessionEntity() {

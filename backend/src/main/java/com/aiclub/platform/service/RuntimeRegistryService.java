@@ -5,6 +5,8 @@ import com.aiclub.platform.dto.RuntimeRegistrySummary;
 import com.aiclub.platform.dto.request.RuntimeRegistryRequest;
 import com.aiclub.platform.repository.RuntimeRegistryRepository;
 import com.aiclub.platform.runtime.RuntimeCapability;
+import com.aiclub.platform.runtime.CompactionStrategy;
+import com.aiclub.platform.runtime.RuntimeContextProfile;
 import com.aiclub.platform.runtime.RuntimeDescriptor;
 import com.aiclub.platform.runtime.RuntimeHealth;
 import com.aiclub.platform.runtime.RuntimeHealthStatus;
@@ -56,8 +58,14 @@ public class RuntimeRegistryService {
                 entity.getEndpointRef(),
                 entity.getVersion(),
                 parseCapabilities(entity.getCapabilitiesJson()),
-                entity.getSandboxPolicyJson()
+                entity.getSandboxPolicyJson(),
+                contextProfile(entity)
         );
+    }
+
+    /** 返回当前 Runtime 的上下文配置，供新会话/新执行固化快照。 */
+    public RuntimeContextProfile contextProfile(String runtimeCode) {
+        return contextProfile(require(runtimeCode));
     }
 
     public boolean isAvailable(String runtimeCode, Set<RuntimeCapability> required) {
@@ -84,6 +92,15 @@ public class RuntimeRegistryService {
         entity.setCapabilitiesJson(writeList(normalizeCapabilities(request.capabilities())));
         entity.setSandboxPolicyJson(hasText(request.sandboxPolicyJson()) ? request.sandboxPolicyJson().trim() : "{}");
         entity.setFallbackRuntimeCodesJson(writeList(normalizeCodes(request.fallbackRuntimeCodes())));
+        entity.setContextWindowTokens(request.contextWindowTokens() == null
+                ? RuntimeContextProfile.DEFAULT_CONTEXT_WINDOW_TOKENS : request.contextWindowTokens());
+        entity.setMaxOutputTokens(request.maxOutputTokens() == null
+                ? RuntimeContextProfile.DEFAULT_MAX_OUTPUT_TOKENS : request.maxOutputTokens());
+        entity.setCompactionThresholdPercent(request.compactionThresholdPercent() == null
+                ? RuntimeContextProfile.DEFAULT_COMPACTION_THRESHOLD_PERCENT : request.compactionThresholdPercent());
+        entity.setCompactionStrategy((request.compactionStrategy() == null
+                ? CompactionStrategy.NATIVE_FIRST : request.compactionStrategy()).name());
+        validateContextProfile(entity);
         if (request.enabled() != null) entity.setEnabled(request.enabled());
         if (!entity.isEnabled()) {
             entity.setHealthStatus(RuntimeHealthStatus.DISABLED);
@@ -127,8 +144,41 @@ public class RuntimeRegistryService {
                 entity.getRuntimeCode(), entity.getAdapterType(), entity.getEndpointRef(), entity.getVersion(),
                 parseCapabilities(entity.getCapabilitiesJson()).stream().map(Enum::name).toList(),
                 entity.getSandboxPolicyJson(), parseStringList(entity.getFallbackRuntimeCodesJson()),
+                contextProfile(entity).contextWindowTokens(),
+                contextProfile(entity).maxOutputTokens(),
+                contextProfile(entity).compactionThresholdPercent(),
+                contextProfile(entity).compactionStrategy(),
                 entity.getHealthStatus(), entity.getHealthMessage(), entity.getHealthCheckedAt(), entity.isEnabled()
         );
+    }
+
+    private RuntimeContextProfile contextProfile(RuntimeRegistryEntity entity) {
+        CompactionStrategy strategy;
+        try {
+            strategy = CompactionStrategy.valueOf(defaultString(entity.getCompactionStrategy()).toUpperCase(Locale.ROOT));
+        } catch (Exception exception) {
+            strategy = CompactionStrategy.NATIVE_FIRST;
+        }
+        return new RuntimeContextProfile(
+                entity.getContextWindowTokens() == null ? 0 : entity.getContextWindowTokens(),
+                entity.getMaxOutputTokens() == null ? 0 : entity.getMaxOutputTokens(),
+                entity.getCompactionThresholdPercent() == null ? 0 : entity.getCompactionThresholdPercent(),
+                strategy
+        );
+    }
+
+    private void validateContextProfile(RuntimeRegistryEntity entity) {
+        if (entity.getContextWindowTokens() == null || entity.getContextWindowTokens() <= 0) {
+            throw new IllegalArgumentException("Runtime 上下文窗口必须大于 0");
+        }
+        if (entity.getMaxOutputTokens() == null || entity.getMaxOutputTokens() <= 0) {
+            throw new IllegalArgumentException("Runtime 最大输出 token 必须大于 0");
+        }
+        if (entity.getCompactionThresholdPercent() == null
+                || entity.getCompactionThresholdPercent() < 50
+                || entity.getCompactionThresholdPercent() > 95) {
+            throw new IllegalArgumentException("Runtime 压缩阈值必须在 50 到 95 之间");
+        }
     }
 
     private Set<RuntimeCapability> parseCapabilities(String json) {
@@ -167,4 +217,5 @@ public class RuntimeRegistryService {
 
     private String trimToNull(String value) { return hasText(value) ? value.trim() : null; }
     private boolean hasText(String value) { return value != null && !value.isBlank(); }
+    private String defaultString(String value) { return value == null ? "" : value.trim(); }
 }

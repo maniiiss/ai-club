@@ -496,6 +496,7 @@ GitPilot 的产品入口与具体 Runtime 解耦，Runtime 注册项统一维护
 
 - Runtime 管理页通过 `/api/runtime-registry/scenario-defaults` 维护四类平台默认：`ASSISTANT`（GitPilot 助手）、`CHAT_ROOM`（聊天室 Agent）、`DEVELOPMENT_IMPLEMENTATION`（开发实现）和 `TECHNICAL_DESIGN_AUTHORING`（技术设计）。每个场景保存一个 Runtime Registry 编码，并按场景所需能力校验；旧环境变量 `PLATFORM_GITPILOT_DEFAULT_RUNTIME_CODE` 仅作为数据库迁移或测试环境不可用时的助手兼容回退。
 - GitPilot 助手创建会话时读取 `ASSISTANT` 默认 Runtime，写入 `hermes_conversation_session.runtime_registry_code`；后续续聊始终使用该会话快照。`HERMES_LEGACY` 走原有 `HermesGatewayService`，其他具备 `CHAT` 能力且健康可用的 Runtime 走 `RuntimeChatService -> RuntimeAdapterRegistry`。
+- GitPilot Runtime Registry 另外维护上下文窗口、最大输出 token、压缩阈值和压缩策略。新会话/新执行固化 `runtime_context_profile_snapshot_json`，公共 Conversation Context 层按快照计算预算并优先调用 Runtime 原生压缩；Runtime 不支持或压缩失败时由 backend 摘要兜底。完整消息、滚动摘要、结构化项目/分支事实和待确认问题同时落库并写入 Redis 热状态，详见 `docs/design-docs/gitpilot-conversation-context-technical-design-v1.md`。
 - 聊天室 Agent 的历史 `HERMES_LEGACY` 配置视为未单独覆盖，实时跟随 `CHAT_ROOM` 默认值；显式绑定其它 Runtime 的房间继续使用自己的配置。任务入队时把最终 Runtime 复制到任务 payload，执行时按任务快照路由。
 - `DEVELOPMENT_IMPLEMENTATION` 和 `TECHNICAL_DESIGN_AUTHORING` 在执行任务创建时把场景默认 Runtime 写入 `execution_task.runtime_registry_code_snapshot`，执行步骤通过该快照覆盖 Agent Profile 的默认 Runtime 路由，同时保留 Agent 的提示词、工具策略和沙箱快照。
 - Pi Runtime 的模型部署配置由 `PLATFORM_PI_RUNTIME_MODEL_PROVIDER`、`PLATFORM_PI_RUNTIME_MODEL_ID`、`PLATFORM_PI_RUNTIME_MODEL_BASE_URL` 和 `PLATFORM_PI_RUNTIME_API_KEY` 提供；其中 Base URL 可覆盖 Pi 内置模型地址，用于 OpenAI-compatible 或自建模型网关，不属于 Runtime Registry 的 endpointRef。

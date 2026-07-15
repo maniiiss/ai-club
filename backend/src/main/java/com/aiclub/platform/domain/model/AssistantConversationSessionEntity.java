@@ -56,6 +56,31 @@ public class AssistantConversationSessionEntity {
     @Column(name = "runtime_profile_version")
     private Long runtimeProfileVersion = 1L;
 
+    /** 创建会话时固定的 Runtime 上下文预算配置，避免管理员改配置影响历史会话。 */
+    @Column(name = "runtime_context_profile_snapshot_json", nullable = false, columnDefinition = "TEXT")
+    private String runtimeContextProfileSnapshotJson = "{}";
+
+    /** 压缩后的滚动对话摘要，原始消息仍完整保留在消息表。 */
+    @Column(name = "context_summary", nullable = false, columnDefinition = "TEXT")
+    private String contextSummary = "";
+
+    /** 结构化对话事实 JSON，例如项目、分支和候选对象。 */
+    @Column(name = "context_facts_json", nullable = false, columnDefinition = "TEXT")
+    private String contextFactsJson = "{}";
+
+    /** 当前等待用户确认的问题。 */
+    @Column(name = "pending_clarification_json", nullable = false, columnDefinition = "TEXT")
+    private String pendingClarificationJson = "";
+
+    @Column(name = "summary_through_message_id")
+    private Long summaryThroughMessageId;
+
+    @Column(name = "context_version", nullable = false)
+    private Long contextVersion = 0L;
+
+    @Column(name = "estimated_context_tokens", nullable = false)
+    private Integer estimatedContextTokens = 0;
+
     /** 会话绑定的项目ID。 */
     @Column(name = "project_id")
     private Long projectId;
@@ -226,6 +251,20 @@ public class AssistantConversationSessionEntity {
     public void setRuntimeRegistryCode(String runtimeRegistryCode) { this.runtimeRegistryCode = runtimeRegistryCode; }
     public Long getRuntimeProfileVersion() { return runtimeProfileVersion; }
     public void setRuntimeProfileVersion(Long runtimeProfileVersion) { this.runtimeProfileVersion = runtimeProfileVersion; }
+    public String getRuntimeContextProfileSnapshotJson() { return runtimeContextProfileSnapshotJson; }
+    public void setRuntimeContextProfileSnapshotJson(String runtimeContextProfileSnapshotJson) { this.runtimeContextProfileSnapshotJson = runtimeContextProfileSnapshotJson; }
+    public String getContextSummary() { return contextSummary; }
+    public void setContextSummary(String contextSummary) { this.contextSummary = contextSummary; }
+    public String getContextFactsJson() { return contextFactsJson; }
+    public void setContextFactsJson(String contextFactsJson) { this.contextFactsJson = contextFactsJson; }
+    public String getPendingClarificationJson() { return pendingClarificationJson; }
+    public void setPendingClarificationJson(String pendingClarificationJson) { this.pendingClarificationJson = pendingClarificationJson; }
+    public Long getSummaryThroughMessageId() { return summaryThroughMessageId; }
+    public void setSummaryThroughMessageId(Long summaryThroughMessageId) { this.summaryThroughMessageId = summaryThroughMessageId; }
+    public Long getContextVersion() { return contextVersion; }
+    public void setContextVersion(Long contextVersion) { this.contextVersion = contextVersion; }
+    public Integer getEstimatedContextTokens() { return estimatedContextTokens; }
+    public void setEstimatedContextTokens(Integer estimatedContextTokens) { this.estimatedContextTokens = estimatedContextTokens; }
 
     /**
      * 获取绑定的项目ID。

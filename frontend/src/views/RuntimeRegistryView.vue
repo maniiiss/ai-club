@@ -26,44 +26,34 @@
       </div>
     </section>
 
-    <section class="management-list-shell">
-      <div class="runtime-registry-intro">
+    <section class="management-list-card runtime-defaults-panel">
+      <div class="runtime-defaults-head">
         <div>
-          <div class="runtime-registry-intro-title">GitPilot Runtime 注册中心</div>
-          <div class="runtime-registry-intro-copy">
-            统一维护运行时能力、健康状态和受控部署引用。Agent 只能选择已注册且健康的 Runtime。
-          </div>
+          <div class="runtime-defaults-title">业务场景默认 Runtime</div>
+          <div class="runtime-defaults-copy">修改后只影响新建会话和新建任务，已运行或已入队任务继续使用自身快照。</div>
         </div>
-        <span class="management-list-pill info">平台管理员维护</span>
+        <span class="management-list-pill info">按能力过滤</span>
       </div>
+      <div class="runtime-defaults-grid" v-loading="defaultsLoading">
+        <article v-for="item in scenarioDefaults" :key="item.scenarioCode" class="runtime-default-card">
+          <div class="runtime-default-card-title">{{ item.scenarioName }}</div>
+          <div class="runtime-default-card-code">{{ item.scenarioCode }}</div>
+          <select
+            class="runtime-default-select"
+            :value="item.runtimeRegistryCode"
+            :disabled="defaultSavingCode === item.scenarioCode"
+            @change="handleScenarioDefaultChange(item.scenarioCode, ($event.target as HTMLSelectElement).value)"
+          >
+            <option v-for="runtime in compatibleRuntimes(item)" :key="runtime.runtimeCode" :value="runtime.runtimeCode">
+              {{ runtime.runtimeCode }}{{ runtime.enabled ? '' : '（已禁用）' }}
+            </option>
+          </select>
+          <div class="runtime-default-capabilities">要求：{{ item.requiredCapabilities.map(capabilityLabel).join('、') }}</div>
+        </article>
+      </div>
+    </section>
 
-      <section class="runtime-defaults-panel">
-        <div class="runtime-defaults-head">
-          <div>
-            <div class="runtime-defaults-title">业务场景默认 Runtime</div>
-            <div class="runtime-defaults-copy">修改后只影响新建会话和新建任务，已运行或已入队任务继续使用自身快照。</div>
-          </div>
-          <span class="management-list-pill info">按能力过滤</span>
-        </div>
-        <div class="runtime-defaults-grid" v-loading="defaultsLoading">
-          <article v-for="item in scenarioDefaults" :key="item.scenarioCode" class="runtime-default-card">
-            <div class="runtime-default-card-title">{{ item.scenarioName }}</div>
-            <div class="runtime-default-card-code">{{ item.scenarioCode }}</div>
-            <select
-              class="runtime-default-select"
-              :value="item.runtimeRegistryCode"
-              :disabled="defaultSavingCode === item.scenarioCode"
-              @change="handleScenarioDefaultChange(item.scenarioCode, ($event.target as HTMLSelectElement).value)"
-            >
-              <option v-for="runtime in compatibleRuntimes(item)" :key="runtime.runtimeCode" :value="runtime.runtimeCode">
-                {{ runtime.runtimeCode }}{{ runtime.enabled ? '' : '（已禁用）' }}
-              </option>
-            </select>
-            <div class="runtime-default-capabilities">要求：{{ item.requiredCapabilities.map(capabilityLabel).join('、') }}</div>
-          </article>
-        </div>
-      </section>
-
+    <section class="management-list-shell">
       <div class="management-list-table-scroll mobile-card-scroll" v-loading="loading">
         <template v-if="!isMobileViewport">
           <table class="management-list-table runtime-registry-table mobile-card-table">
@@ -86,7 +76,7 @@
                       <span class="management-list-title-icon"><el-icon><Connection /></el-icon></span>
                       <div class="management-list-title-copy">
                         <div class="management-list-title">{{ row.runtimeCode }}</div>
-                        <div class="management-list-subtitle">版本 {{ row.version || 'unknown' }}</div>
+                        <div class="management-list-subtitle">版本 {{ row.version || 'unknown' }} · 上下文 {{ Number(row.contextWindowTokens || 128000).toLocaleString() }} · 输出 {{ Number(row.maxOutputTokens || 8192).toLocaleString() }}</div>
                       </div>
                     </div>
                   </button>
@@ -141,7 +131,7 @@
                     <span class="mobile-entity-icon"><el-icon><Connection /></el-icon></span>
                     <span class="mobile-entity-copy">
                       <span class="mobile-entity-title">{{ row.runtimeCode }}</span>
-                      <span class="mobile-entity-description">{{ adapterTypeLabel(row.adapterType) }} · {{ row.version || 'unknown' }}</span>
+                       <span class="mobile-entity-description">{{ adapterTypeLabel(row.adapterType) }} · 上下文 {{ Number(row.contextWindowTokens || 128000).toLocaleString() }}</span>
                     </span>
                   </button>
                 </header>
@@ -223,6 +213,31 @@
               <el-option v-for="item in runtimeCodeOptions" :key="item" :label="item" :value="item" />
             </el-select>
           </el-form-item>
+          <div class="platform-form-section-head runtime-context-section-head">
+            <div class="platform-form-section-title">上下文预算</div>
+            <div class="platform-form-section-subtitle">上下文长度由 Runtime 管理端配置控制，修改后只影响新建会话和新建执行。</div>
+          </div>
+          <div class="runtime-form-grid">
+            <el-form-item label="上下文窗口（tokens）" prop="contextWindowTokens">
+              <el-input-number v-model="form.contextWindowTokens" :min="1" :step="1024" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="最大输出（tokens）" prop="maxOutputTokens">
+              <el-input-number v-model="form.maxOutputTokens" :min="1" :step="256" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="压缩触发比例（%）" prop="compactionThresholdPercent">
+              <el-input-number v-model="form.compactionThresholdPercent" :min="50" :max="95" :step="5" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="压缩策略" prop="compactionStrategy">
+              <el-select v-model="form.compactionStrategy" style="width: 100%">
+                <el-option label="Runtime 原生优先" value="NATIVE_FIRST" />
+                <el-option label="Backend 兜底" value="BACKEND_FALLBACK" />
+                <el-option label="禁用压缩" value="DISABLED" />
+              </el-select>
+            </el-form-item>
+          </div>
+          <div v-if="form.compactionStrategy === 'NATIVE_FIRST' && !form.capabilities.includes('NATIVE_COMPACTION')" class="form-tip">
+            当前 Runtime 未声明原生压缩能力，达到阈值后将自动降级到 backend 压缩。
+          </div>
           <el-form-item label="沙箱策略 JSON" prop="sandboxPolicyJson">
             <el-input v-model="form.sandboxPolicyJson" type="textarea" :rows="5" placeholder='例如：{"network":"deny-by-default","writeConfirmation":true}' />
           </el-form-item>
@@ -270,6 +285,10 @@ interface RuntimeRegistryForm {
   capabilities: string[]
   sandboxPolicyJson: string
   fallbackRuntimeCodes: string[]
+  contextWindowTokens: number
+  maxOutputTokens: number
+  compactionThresholdPercent: number
+  compactionStrategy: RuntimeRegistryItem['compactionStrategy']
   enabled: boolean
 }
 
@@ -283,6 +302,9 @@ const capabilityOptions = [
   { label: '对话', value: 'CHAT' },
   { label: '流式事件', value: 'STREAM_EVENTS' },
   { label: '会话恢复', value: 'SESSION_RESUME' },
+  { label: '上下文窗口', value: 'CONTEXT_WINDOW' },
+  { label: 'Token 估算', value: 'TOKEN_ESTIMATION' },
+  { label: '原生压缩', value: 'NATIVE_COMPACTION' },
   { label: '平台工具', value: 'PLATFORM_TOOLS' },
   { label: '仓库读取', value: 'REPOSITORY_READ' },
   { label: '仓库写入', value: 'REPOSITORY_WRITE' },
@@ -313,6 +335,10 @@ const form = reactive<RuntimeRegistryForm>({
   capabilities: ['CHAT', 'STREAM_EVENTS'],
   sandboxPolicyJson: '{}',
   fallbackRuntimeCodes: [],
+  contextWindowTokens: 128000,
+  maxOutputTokens: 8192,
+  compactionThresholdPercent: 80,
+  compactionStrategy: 'NATIVE_FIRST',
   enabled: true
 })
 
@@ -335,7 +361,28 @@ const rules: FormRules<RuntimeRegistryForm> = {
   endpointRef: [{ max: 200, message: '部署引用不能超过 200 个字符', trigger: 'blur' }],
   version: [{ max: 100, message: '版本不能超过 100 个字符', trigger: 'blur' }],
   capabilities: [{ type: 'array', min: 1, message: '至少声明一项 Runtime 能力', trigger: 'change' }],
+  contextWindowTokens: [{ validator: validatePositiveTokenValue('上下文窗口'), trigger: 'change' }],
+  maxOutputTokens: [{ validator: validatePositiveTokenValue('最大输出 token'), trigger: 'change' }],
+  compactionThresholdPercent: [{ validator: validateCompactionThreshold, trigger: 'change' }],
   sandboxPolicyJson: [{ validator: validateSandboxPolicy, trigger: 'blur' }]
+}
+
+function validatePositiveTokenValue(label: string) {
+  return (_rule: unknown, value: number, callback: (error?: Error) => void) => {
+    if (!Number.isInteger(value) || value <= 0) {
+      callback(new Error(`${label}必须是大于 0 的整数`))
+      return
+    }
+    callback()
+  }
+}
+
+function validateCompactionThreshold(_rule: unknown, value: number, callback: (error?: Error) => void) {
+  if (!Number.isInteger(value) || value < 50 || value > 95) {
+    callback(new Error('压缩阈值必须是 50～95 的整数'))
+    return
+  }
+  callback()
 }
 
 function validateSandboxPolicy(_rule: unknown, value: string, callback: (error?: Error) => void) {
@@ -385,6 +432,10 @@ const resetForm = () => {
     capabilities: ['CHAT', 'STREAM_EVENTS'],
     sandboxPolicyJson: '{}',
     fallbackRuntimeCodes: [],
+    contextWindowTokens: 128000,
+    maxOutputTokens: 8192,
+    compactionThresholdPercent: 80,
+    compactionStrategy: 'NATIVE_FIRST',
     enabled: true
   })
   formRef.value?.clearValidate()
@@ -399,6 +450,10 @@ const fillForm = (row: RuntimeRegistryItem) => {
     capabilities: [...row.capabilities],
     sandboxPolicyJson: row.sandboxPolicyJson || '{}',
     fallbackRuntimeCodes: [...row.fallbackRuntimeCodes],
+    contextWindowTokens: row.contextWindowTokens || 128000,
+    maxOutputTokens: row.maxOutputTokens || 8192,
+    compactionThresholdPercent: row.compactionThresholdPercent || 80,
+    compactionStrategy: row.compactionStrategy || 'NATIVE_FIRST',
     enabled: row.enabled
   })
   formRef.value?.clearValidate()
@@ -470,6 +525,10 @@ const buildPayload = (): RuntimeRegistryPayload => ({
   capabilities: Array.from(new Set(form.capabilities.map((item) => item.trim().toUpperCase()).filter(Boolean))),
   sandboxPolicyJson: (form.sandboxPolicyJson.trim() || '{}'),
   fallbackRuntimeCodes: Array.from(new Set(form.fallbackRuntimeCodes.map((item) => item.trim().toUpperCase()).filter(Boolean))),
+  contextWindowTokens: form.contextWindowTokens,
+  maxOutputTokens: form.maxOutputTokens,
+  compactionThresholdPercent: form.compactionThresholdPercent,
+  compactionStrategy: form.compactionStrategy,
   enabled: form.enabled
 })
 
@@ -526,37 +585,12 @@ onMounted(loadRegistries)
 </script>
 
 <style scoped>
-.runtime-registry-intro {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 22px;
-  border-bottom: 1px solid var(--app-border);
-}
-
-.runtime-registry-intro-title {
-  color: var(--app-text-primary);
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.runtime-registry-intro-copy {
-  margin-top: 5px;
-  color: var(--app-text-secondary);
-  font-size: 13px;
-}
-
 .runtime-registry-table th,
 .runtime-registry-table td {
   vertical-align: middle;
 }
 
-.runtime-defaults-panel {
-  padding: 18px 22px 20px;
-  border-bottom: 1px solid var(--app-border);
-  background: color-mix(in srgb, var(--app-bg-muted) 60%, transparent);
-}
+/* 场景默认 Runtime 作为独立内容卡片，内边距、背景与圆角由 management-list-card 统一提供。 */
 
 .runtime-defaults-head {
   display: flex;
@@ -643,18 +677,10 @@ onMounted(loadRegistries)
 }
 
 @media (max-width: 760px) {
-  .runtime-registry-intro {
-    align-items: flex-start;
-    flex-direction: column;
-    padding: 16px;
-  }
-
   .runtime-form-grid,
   .runtime-capability-checkboxes,
   .runtime-defaults-grid {
     grid-template-columns: 1fr;
   }
-
-  .runtime-defaults-panel { padding: 16px; }
 }
 </style>

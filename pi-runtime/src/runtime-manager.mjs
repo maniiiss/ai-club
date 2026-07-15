@@ -40,7 +40,7 @@ export class RuntimeManager {
   async chat(request) {
     const sessionId = request.sessionId || `pi-session-${crypto.randomUUID()}`
     const runId = request.runId || `pi-run-${crypto.randomUUID()}`
-    const agent = this.#createAgent(request, sessionId, runId)
+    const agent = this.#createAgent(request, sessionId, runId, this.#historyMessages(request))
     this.sessions.set(sessionId, { agent, request: structuredClone(request), snapshot: request.profileSnapshot || {} })
     await this.sessionStore.save(sessionId, { request: structuredClone(request), messages: [] })
     try {
@@ -50,7 +50,7 @@ export class RuntimeManager {
         eventType: 'RUN_STARTED',
         payload: { runtimeCode: 'PI_RUNTIME', execution: request.context || request.execution || {} },
       })
-      await agent.prompt(this.#chatInput(request))
+      await agent.prompt(request.input || '')
       const content = this.#lastAssistantText(agent.state.messages)
       await this.#emit({ runId, sessionId, eventType: 'RUN_COMPLETED', payload: { status: 'SUCCESS' } })
       return { runId, sessionId, content, status: 'COMPLETED' }
@@ -73,7 +73,7 @@ export class RuntimeManager {
   async stream(request, eventSink) {
     const sessionId = request.sessionId || `pi-session-${crypto.randomUUID()}`
     const runId = request.runId || `pi-run-${crypto.randomUUID()}`
-    const agent = this.#createAgent(request, sessionId, runId, [], eventSink)
+    const agent = this.#createAgent(request, sessionId, runId, this.#historyMessages(request), eventSink)
     this.sessions.set(sessionId, { agent, request: structuredClone(request), snapshot: request.profileSnapshot || {} })
     await this.sessionStore.save(sessionId, { request: structuredClone(request), messages: [] })
     await this.#run({ agent, sessionId, runId, request, eventSink, disposeSession: true })
@@ -110,6 +110,7 @@ export class RuntimeManager {
     if (!provider || !modelId) throw new Error('Pi Runtime model provider and model id are required')
 
     const model = resolvePiModel(provider, modelId, request.modelBaseUrl || this.modelBaseUrl)
+    const maxOutputTokens = Number(request.contextProfile?.maxOutputTokens || 8192)
     const systemPrompt = request.systemPrompt || request.profileSnapshot?.systemPrompt || ''
     const toolContract = this.#toolContract(request)
     const allowedTools = toolContract.policy.allowedToolCodes
@@ -117,7 +118,12 @@ export class RuntimeManager {
     const agent = new Agent({
       sessionId,
       toolExecution: 'sequential',
-      streamFn: streamSimple,
+      // pi-agent-core 不把 maxTokens 放在 AgentState 中，必须在底层 stream 调用处注入平台快照预算。
+      streamFn: (streamModel, streamContext, streamOptions) => streamSimple(
+        streamModel,
+        streamContext,
+        { ...streamOptions, maxTokens: maxOutputTokens },
+      ),
       getApiKey: async (name) => process.env[`PI_RUNTIME_${String(name).toUpperCase()}_API_KEY`] || process.env.PI_RUNTIME_API_KEY,
       initialState: {
         model,
@@ -125,7 +131,8 @@ export class RuntimeManager {
         systemPrompt,
         messages,
         tools: createPlatformTools({ executeTool: this.executeTool, sessionToken, tools: toolContract.tools, allowedTools }),
-      },
+        },
+      transformContext: async (nextMessages) => this.#transformContext(nextMessages, request),
       beforeToolCall: async (context) => {
         // Pi 的预检只用于提前拒绝明显不允许的调用，backend 仍会再次鉴权。
         const matched = toolContract.tools.find((item) => item.name === context.toolCall.name)
@@ -239,15 +246,46 @@ export class RuntimeManager {
     }
   }
 
-  /** 将 backend 发送的房间历史压缩进本轮输入，避免同步入口丢失上下文。 */
-  #chatInput(request) {
-    const history = Array.isArray(request.history)
-      ? request.history
-        .map((item) => `${item.role || 'user'}：${item.content || ''}`)
-        .filter((item) => item.trim().length > 0)
-        .join('\n')
-      : ''
-    return history ? `${history}\n\n当前问题：\n${request.input || ''}` : (request.input || '')
+  /** 将 backend 的结构化历史转换为 Pi Agent 原生消息，避免把多轮对话压成一段普通文本。 */
+  #historyMessages(request) {
+    if (!Array.isArray(request.history)) return []
+    return request.history
+      .filter((item) => item && (item.role === 'user' || item.role === 'assistant' || item.role === 'toolResult'))
+      .map((item) => ({ role: item.role, content: item.content || '', timestamp: Date.now() }))
+  }
+
+  /**
+   * 使用 pi-agent-core 的 transformContext 钩子完成 Runtime 原生裁剪。
+   * backend 已把历史摘要和结构化事实放入当前输入，因此这里只保留最近完整消息，避免超窗。
+   */
+  async #transformContext(messages, request) {
+    const profile = request.contextProfile || {}
+    const contextWindow = Number(profile.contextWindowTokens || 128000)
+    const maxOutput = Number(profile.maxOutputTokens || 8192)
+    const threshold = Number(profile.compactionThresholdPercent || 80) / 100
+    const strategy = String(profile.compactionStrategy || 'NATIVE_FIRST').toUpperCase()
+    const budget = Math.max(512, Math.floor((contextWindow - maxOutput) * threshold))
+    const estimate = (items) => items.reduce((total, item) => total + Math.max(1, Math.ceil(JSON.stringify(item || {}).length / 4)), 0)
+    const estimatedTokens = estimate(messages)
+    if (strategy === 'DISABLED' || estimatedTokens <= budget || messages.length <= 8) return messages
+    const recent = messages.slice(-8)
+    // 事件只报告实际发生的原生裁剪，backend 可据此记录压缩次数和上下文使用率。
+    await this.#emit({
+      runId: request.runId || '',
+      sessionId: request.sessionId || '',
+      eventType: 'CONTEXT_COMPACTED',
+      payload: {
+        strategy: 'NATIVE_PI',
+        estimatedContextTokens: estimatedTokens,
+        retainedMessageCount: recent.length,
+        contextWindowTokens: contextWindow,
+      },
+    })
+    return [{
+      role: 'assistant',
+      content: [{ type: 'text', text: '更早的对话已由 GitPilot backend 保存并摘要；请以当前输入中的历史摘要和结构化事实为准。' }],
+      timestamp: Date.now(),
+    }, ...recent]
   }
 
   /** 从 Pi Agent 最后一条 assistant 消息中提取可持久化的纯文本。 */

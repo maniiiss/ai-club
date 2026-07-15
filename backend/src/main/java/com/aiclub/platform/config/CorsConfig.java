@@ -31,7 +31,8 @@ public class CorsConfig {
                 .collect(Collectors.toList());
         config.setAllowedOriginPatterns(originPatterns);
         config.setAllowedHeaders(List.of("*"));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        // 允许 PATCH 方法，否则分诊、结论等跨域 PATCH 请求会被浏览器预检拦截。
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         // 暴露 Content-Disposition 头，供前端 SFTP 下载时获取文件名
         config.setExposedHeaders(List.of("Content-Disposition"));
 

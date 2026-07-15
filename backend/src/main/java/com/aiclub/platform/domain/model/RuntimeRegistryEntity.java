@@ -44,6 +44,22 @@ public class RuntimeRegistryEntity {
     @Column(name = "fallback_runtime_codes_json", nullable = false, columnDefinition = "TEXT")
     private String fallbackRuntimeCodesJson = "[]";
 
+    /** 管理端配置的 Runtime 上下文窗口大小，单位为 token。 */
+    @Column(name = "context_window_tokens", nullable = false)
+    private Integer contextWindowTokens = 128_000;
+
+    /** 管理端为模型输出预留的 token 数。 */
+    @Column(name = "max_output_tokens", nullable = false)
+    private Integer maxOutputTokens = 8_192;
+
+    /** 达到该上下文使用比例后触发压缩。 */
+    @Column(name = "compaction_threshold_percent", nullable = false)
+    private Integer compactionThresholdPercent = 80;
+
+    /** Runtime 原生压缩与 backend 兜底的组合策略。 */
+    @Column(name = "compaction_strategy", nullable = false, length = 30)
+    private String compactionStrategy = "NATIVE_FIRST";
+
     @Enumerated(EnumType.STRING)
     @Column(name = "health_status", nullable = false, length = 20)
     private RuntimeHealthStatus healthStatus = RuntimeHealthStatus.UNKNOWN;
@@ -89,6 +105,14 @@ public class RuntimeRegistryEntity {
     public void setSandboxPolicyJson(String sandboxPolicyJson) { this.sandboxPolicyJson = sandboxPolicyJson; }
     public String getFallbackRuntimeCodesJson() { return fallbackRuntimeCodesJson; }
     public void setFallbackRuntimeCodesJson(String fallbackRuntimeCodesJson) { this.fallbackRuntimeCodesJson = fallbackRuntimeCodesJson; }
+    public Integer getContextWindowTokens() { return contextWindowTokens; }
+    public void setContextWindowTokens(Integer contextWindowTokens) { this.contextWindowTokens = contextWindowTokens; }
+    public Integer getMaxOutputTokens() { return maxOutputTokens; }
+    public void setMaxOutputTokens(Integer maxOutputTokens) { this.maxOutputTokens = maxOutputTokens; }
+    public Integer getCompactionThresholdPercent() { return compactionThresholdPercent; }
+    public void setCompactionThresholdPercent(Integer compactionThresholdPercent) { this.compactionThresholdPercent = compactionThresholdPercent; }
+    public String getCompactionStrategy() { return compactionStrategy; }
+    public void setCompactionStrategy(String compactionStrategy) { this.compactionStrategy = compactionStrategy; }
     public RuntimeHealthStatus getHealthStatus() { return healthStatus; }
     public void setHealthStatus(RuntimeHealthStatus healthStatus) { this.healthStatus = healthStatus; }
     public String getHealthMessage() { return healthMessage; }

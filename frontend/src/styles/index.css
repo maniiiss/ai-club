@@ -992,6 +992,7 @@
 [data-theme="carbon-black"] .work-list-toolbar-main,
 [data-theme="carbon-black"] .atelier-table-shell,
 [data-theme="carbon-black"] .management-list-shell,
+[data-theme="carbon-black"] .management-list-card,
 [data-theme="carbon-black"] .work-list-shell {
   background: var(--app-surface-card) !important;
   border-color: rgba(var(--app-outline-rgb), 0.2) !important;
@@ -1049,6 +1050,8 @@
 [data-theme="carbon-black"] .task-table th,
 [data-theme="carbon-black"] .atelier-table th {
   color: var(--app-text-muted) !important;
+  /* 基础样式里把 th 背景写成了浅灰半透明，单纯覆写 thead 颜色会导致暗色下仍出现亮灰头块；这里连背景一起重置。 */
+  background: var(--app-surface-muted) !important;
   border-color: rgba(var(--app-outline-rgb), 0.22) !important;
 }
 
@@ -1996,6 +1999,7 @@
 [data-theme="carbon-black"] .atelier-toolbar-main,
 [data-theme="carbon-black"] .work-list-toolbar-main,
 [data-theme="carbon-black"] .management-list-shell,
+[data-theme="carbon-black"] .management-list-card,
 [data-theme="carbon-black"] .atelier-table-shell,
 [data-theme="carbon-black"] .work-list-shell,
 [data-theme="carbon-black"] .task-table-shell {
@@ -3351,6 +3355,14 @@ a {
   overflow: hidden;
   background: rgba(255, 255, 255, 0.98);
   box-shadow: 0 12px 32px rgba(25, 28, 29, 0.04);
+}
+
+/* 内容型卡片：供发布表单、统计概览等非表格区块复用，保持与列表外壳一致的卡片观感。 */
+.management-list-card {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 12px 32px rgba(25, 28, 29, 0.04);
+  padding: 20px;
 }
 
 .management-list-table-scroll {
@@ -5223,4 +5235,669 @@ a {
   .kinetic-stat-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/*
+  曜石黑主题下系统管理 / 平台管理列表专项补齐。
+  业务意图：可观测性中心、流水线中心、Jenkins 服务管理、用户管理与 GitPilot 反馈
+  四个 SFC 在样式里直接写死浅色（白色卡片背景、亮灰 KPI / 反馈统计块），仅靠
+  前面的通用暗色规则无法覆盖；这里集中把卡片、统计、详情与表头背景补齐。
+*/
+[data-theme="carbon-black"] .observability-page .observability-card,
+[data-theme="carbon-black"] .pipeline-card,
+[data-theme="carbon-black"] .assistant-feedback-stat {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.24) !important;
+  color: var(--app-text-soft) !important;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32) !important;
+}
+
+[data-theme="carbon-black"] .observability-page .observability-card {
+  background:
+    radial-gradient(circle at 96% 0%, rgba(var(--app-primary-container-rgb), 0.16), transparent 32%),
+    var(--app-surface-card) !important;
+}
+
+[data-theme="carbon-black"] .pipeline-card {
+  background:
+    radial-gradient(circle at 94% 2%, rgba(var(--app-primary-container-rgb), 0.16), transparent 34%),
+    var(--app-surface-card) !important;
+}
+
+[data-theme="carbon-black"] .observability-page .observability-kpi {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .observability-page .observability-card-copy h2,
+[data-theme="carbon-black"] .observability-page .observability-kpi strong,
+[data-theme="carbon-black"] .pipeline-card-heading h2,
+[data-theme="carbon-black"] .assistant-feedback-stat strong {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .observability-page .observability-card-copy p,
+[data-theme="carbon-black"] .observability-page .observability-kpi span,
+[data-theme="carbon-black"] .pipeline-card-subtitle,
+[data-theme="carbon-black"] .pipeline-card-meta-line,
+[data-theme="carbon-black"] .pipeline-card-info-label,
+[data-theme="carbon-black"] .assistant-feedback-stat span {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .observability-page .observability-card-meta,
+[data-theme="carbon-black"] .observability-page .observability-card-message {
+  color: var(--app-text-soft) !important;
+}
+
+/* 反馈统计中的"负面反馈"数字保留 danger 调，避免被覆写成普通文字色。 */
+[data-theme="carbon-black"] .assistant-feedback-stat-danger strong {
+  color: var(--app-danger) !important;
+}
+
+[data-theme="carbon-black"] .pipeline-card-actions-shell {
+  border-top-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+/* 流水线中心的空状态在 SFC 里被覆写为白色卡片，这里跟随主色走暗色。 */
+[data-theme="carbon-black"] .work-list-page .work-list-empty-state {
+  background: var(--app-surface-card) !important;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32) !important;
+}
+
+/* GitPilot 反馈详情：标题、问答块、负责人信息条保持暗色对比。 */
+[data-theme="carbon-black"] .assistant-feedback-view .assistant-feedback-detail-section h3,
+[data-theme="carbon-black"] .assistant-feedback-view .assistant-feedback-detail-meta {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .assistant-feedback-view .assistant-feedback-detail-section pre {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.2);
+}
+
+[data-theme="carbon-black"] .assistant-feedback-view .assistant-feedback-detail-meta {
+  color: var(--app-text-soft) !important;
+}
+
+/*
+  曜石黑主题下 GitPilot 助手抽屉专项补齐。
+  业务意图：助手抽屉里的会话标签、会话项、引用来源、移动端切换条等组件在 SFC
+  里直接写死浅色（SFC 行 2724 起的 #eef2f7、2987 的 #fff、3070 的白渐变），
+  通用规则没有覆盖到，这里集中把卡片、标签、引用块和确认提示统一到暗色表面。
+*/
+[data-theme="carbon-black"] .hermes-ghost-button,
+[data-theme="carbon-black"] .hermes-tab,
+[data-theme="carbon-black"] .hermes-chip-button,
+[data-theme="carbon-black"] .hermes-load-more-button,
+[data-theme="carbon-black"] .hermes-reference-item,
+[data-theme="carbon-black"] .hermes-pending-file-chip {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+  box-shadow: none !important;
+}
+
+[data-theme="carbon-black"] .hermes-tab.active,
+[data-theme="carbon-black"] .hermes-tab:hover {
+  /* 当前态用主色 + 暗色卡片叠加，避免在暗色下与未选中标签对比度不足。 */
+  background: color-mix(in srgb, var(--app-primary) 22%, var(--app-surface-card)) !important;
+  color: var(--app-primary-light-7) !important;
+}
+
+[data-theme="carbon-black"] .hermes-session-item,
+[data-theme="carbon-black"] .hermes-mobile-session-toggle,
+[data-theme="carbon-black"] .hermes-empty-state.compact {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28) !important;
+  border: 1px solid rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .hermes-session-main strong,
+[data-theme="carbon-black"] .hermes-mobile-session-toggle-value,
+[data-theme="carbon-black"] .hermes-reference-title {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .hermes-session-more-button,
+[data-theme="carbon-black"] .hermes-session-more-icon {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .hermes-session-item.active {
+  /* active 会话项用主色描边 + 表面色填充，确保在暗色卡片上能看清。 */
+  background: color-mix(in srgb, var(--app-primary) 16%, var(--app-surface-card)) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.45) !important;
+}
+
+[data-theme="carbon-black"] .hermes-muted-card {
+  color: var(--app-text-muted) !important;
+  background: var(--app-surface-muted) !important;
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+
+[data-theme="carbon-black"] .hermes-subtitle,
+[data-theme="carbon-black"] .hermes-section-title,
+[data-theme="carbon-black"] .hermes-mobile-session-toggle-label,
+[data-theme="carbon-black"] .hermes-mobile-session-title {
+  color: var(--app-text-muted) !important;
+}
+
+/* 确认提示在 SFC 中用浅薄荷色背景，暗色下换成透明 + 主色描边，沿用主题色。 */
+[data-theme="carbon-black"] .hermes-confirmation-hint {
+  background: color-mix(in srgb, var(--app-primary-container) 18%, var(--app-surface-card)) !important;
+  border-color: rgba(var(--app-primary-container-rgb), 0.36) !important;
+}
+
+[data-theme="carbon-black"] .hermes-confirmation-hint strong {
+  color: var(--app-primary-container) !important;
+}
+
+[data-theme="carbon-black"] .hermes-confirmation-hint div,
+[data-theme="carbon-black"] .hermes-confirmation-hint span {
+  color: var(--app-text-soft) !important;
+}
+
+/* 助手页底部输入条 "添加附件 / 语音输入" 按钮在 SFC 里硬编码为青绿底色；
+   暗色下保留主品牌色但调亮一档，避免在暗背景上被吞掉。 */
+[data-theme="carbon-black"] .hermes-ghost-button.primary,
+[data-theme="carbon-black"] .hermes-inline-button {
+  background: var(--app-primary-container) !important;
+  color: var(--app-text) !important;
+}
+
+/*
+  曜石黑主题下测试计划详情 / 测试用例抽屉专项补齐。
+  业务意图：TestPlanDetailView SFC 在 scoped 样式里直接写死 #fff / #f1f5f9 / #f8fafc 等浅色（行 1216 起
+  的 .detail-hero、1388 起的 .detail-hero-meta、1301 起的 .automation-card-meta、1484 起的
+  .form-section、1537 起的 .step-row），el-drawer 通用规则只覆盖壳子不会下穿到这些内部卡片，
+  这里集中把详情头部、测试步骤卡、自动化提示 meta 块和步骤分隔线全部收口到暗色。
+*/
+[data-theme="carbon-black"] .case-detail-drawer,
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero,
+[data-theme="carbon-black"] .case-detail-drawer .form-section,
+[data-theme="carbon-black"] .automation-card,
+[data-theme="carbon-black"] .automation-card-meta span,
+[data-theme="carbon-black"] .automation-card-meta a,
+[data-theme="carbon-black"] .automation-card-meta button,
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero-meta span,
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero-meta button {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text-soft) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28) !important;
+}
+
+[data-theme="carbon-black"] .case-detail-drawer .form-section,
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero {
+  background:
+    radial-gradient(circle at 96% 0%, rgba(var(--app-primary-container-rgb), 0.14), transparent 32%),
+    var(--app-surface-card) !important;
+}
+
+[data-theme="carbon-black"] .case-detail-drawer .form-section-title,
+[data-theme="carbon-black"] .case-detail-drawer .step-section-title,
+[data-theme="carbon-black"] .automation-card-label,
+[data-theme="carbon-black"] .detail-hero-meta-description {
+  color: var(--app-text) !important;
+}
+
+/* 测试计划详情头部 h1 在 SFC 中硬编码 #0f172a，暗色下黑字黑底看不见；这里直接覆盖。 */
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero-heading h1,
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero-heading div {
+  color: var(--app-text) !important;
+}
+
+/* 测试计划详情头部说明 / 推送结果 / 不可推送原因 等长字段在 #111821 背景上需要强对比；
+   这里用 4 个具体选择器把 .test-plan-detail-page 容器下的 .detail-hero-meta-description
+   全部钉到 var(--app-text)，不管 scoped data-v 怎么加都能赢。 */
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero .detail-hero-meta .detail-hero-meta-description,
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero .detail-hero-meta > .detail-hero-meta-description,
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero .detail-hero-meta-description,
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero-meta-description {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .case-detail-drawer .form-section-subtitle,
+[data-theme="carbon-black"] .automation-card-label,
+[data-theme="carbon-black"] .automation-card-meta span,
+[data-theme="carbon-black"] .automation-card-meta a,
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero-meta > span,
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero-meta > button {
+  color: var(--app-text-muted) !important;
+}
+
+/* "不可推送原因" 沿用主题 warning 调，避免在暗色下糊掉。 */
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero-meta-description.warning,
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero .detail-hero-meta .detail-hero-meta-description.warning {
+  color: var(--app-warning) !important;
+}
+
+/* 详情头部次要操作按钮在 SFC 用 rgba(15, 23, 42, 0.08) 模拟灰底，暗色下会糊掉。 */
+[data-theme="carbon-black"] .detail-hero-action-button.secondary {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+}
+
+/* 步骤分隔虚线原本是浅棕半透明，暗色下用主题描边色替代。 */
+[data-theme="carbon-black"] .case-detail-drawer .step-row {
+  border-bottom-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+/* 紧凑下拉触发器走 surface-muted，避免在暗色下变成纯白小药丸。 */
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero-meta-select :deep(.compact-select-trigger.variant-inline-pill) {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+}
+
+/* 自动化 meta 上的"复制"类按钮原本是 #0f766e 暗色下偏深，沿用主题色保持对比。 */
+[data-theme="carbon-black"] .automation-card-meta button,
+[data-theme="carbon-black"] .test-plan-detail-page .detail-hero-meta button {
+  color: var(--app-primary-container) !important;
+}
+
+/*
+  曜石黑主题下 GitPilot 助手面板、消息泡、过程轨迹专项补齐。
+  业务意图：AssistantDrawer SFC 行 2761 把 .hermes-panel 写死 #f3f4f5、行 3402 / 3424 把
+  .hermes-message-bubble 写死 #fff、loading 态用 linear-gradient(#fff, #fff)；行 3466 起
+  .hermes-process-trace 4 种 tone 全部用 rgba(255, 255, 255, ...) 拼渐变；行 3122 把
+  .hermes-current-session-card / .hermes-empty-state / .hermes-card 写死 rgba(255,255,255,0.96)；
+  通用助手规则只覆盖了几个核心类，没下穿到这些 SFC 内部白块，这里统一收口。
+*/
+[data-theme="carbon-black"] .hermes-panel,
+[data-theme="carbon-black"] .hermes-current-session-card,
+[data-theme="carbon-black"] .hermes-empty-state,
+[data-theme="carbon-black"] .hermes-card,
+[data-theme="carbon-black"] .hermes-action-card,
+[data-theme="carbon-black"] .hermes-message-bubble,
+[data-theme="carbon-black"] .hermes-message-bubble.streaming,
+[data-theme="carbon-black"] .hermes-option-card,
+[data-theme="carbon-black"] .hermes-process-trace {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28) !important;
+}
+
+[data-theme="carbon-black"] .hermes-message-bubble.stream-loading {
+  /* 加载态原本用 linear-gradient(#fff, #fff) padding-box 当内容背景，暗色下换成 surface-card
+     并保留外层 conic 渐变动画，让流式响应时仍能看清流光边框。 */
+  background:
+    linear-gradient(var(--app-surface-card), var(--app-surface-card)) padding-box,
+    conic-gradient(from 0deg, transparent 0deg, rgba(var(--app-primary-rgb), 0.45) 60deg, var(--app-primary) 100deg, rgba(var(--app-primary-container-rgb), 0.98) 140deg, transparent 200deg, rgba(var(--app-primary-rgb), 0.4) 360deg) border-box !important;
+}
+
+[data-theme="carbon-black"] .hermes-message-bubble.error {
+  background: color-mix(in srgb, var(--app-danger) 18%, var(--app-surface-card)) !important;
+  color: var(--app-danger) !important;
+  border: 1px solid rgba(var(--app-danger-rgb), 0.4) !important;
+}
+
+[data-theme="carbon-black"] .hermes-message-bubble pre {
+  color: var(--app-text-soft) !important;
+}
+
+/* 过程轨迹 4 种 tone 沿用主题色（蓝 / 青 / 橙 / 红）但用 surface-card 取代内层白色渐变。 */
+[data-theme="carbon-black"] .hermes-process-trace.is-running,
+[data-theme="carbon-black"] .hermes-process-trace.is-success,
+[data-theme="carbon-black"] .hermes-process-trace.is-warning,
+[data-theme="carbon-black"] .hermes-process-trace.is-danger {
+  background:
+    color-mix(in srgb, var(--app-surface-muted) 70%, var(--app-surface-card)),
+    repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 8px) !important;
+}
+
+[data-theme="carbon-black"] .hermes-process-trace summary,
+[data-theme="carbon-black"] .hermes-process-trace summary::after {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .hermes-process-summary-meta {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .hermes-process-trace-body {
+  border-top-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+[data-theme="carbon-black"] .hermes-process-description {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .hermes-process-description.muted {
+  color: var(--app-text-muted) !important;
+}
+
+/* 消息标签与角色 tag 在 SFC 中硬编码 #64748b / 暖橙色，暗色下跟随主题。 */
+[data-theme="carbon-black"] .hermes-message-label {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .hermes-role-tag {
+  background: color-mix(in srgb, var(--app-primary-container) 20%, var(--app-surface-card)) !important;
+  color: var(--app-primary-container) !important;
+}
+
+[data-theme="carbon-black"] .hermes-empty-kicker {
+  color: var(--app-primary-container) !important;
+}
+
+[data-theme="carbon-black"] .hermes-empty-state p,
+[data-theme="carbon-black"] .hermes-card span,
+[data-theme="carbon-black"] .hermes-action-card span,
+[data-theme="carbon-black"] .hermes-option-card span {
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .hermes-current-session-copy strong,
+[data-theme="carbon-black"] .hermes-empty-title,
+[data-theme="carbon-black"] .hermes-action-copy strong {
+  color: var(--app-text) !important;
+}
+
+/* 删除类按钮原本用浅红 + 暗红文字，暗色下把底色换成暗红混合。 */
+[data-theme="carbon-black"] .hermes-ghost-button.danger {
+  background: color-mix(in srgb, var(--app-danger) 18%, var(--app-surface-card)) !important;
+  color: var(--app-danger) !important;
+}
+
+/*
+  曜石黑主题下代码仓库管理 / API 工作台漏覆的卡片。
+  业务意图：GitlabView 的 .management-list-shell 与 ApiStudioWorkbenchView 的
+  .api-studio-tree-shell / .api-studio-tree-header 都写死浅色（行 3346 / 1425 / 1443），
+  前面的通用列表规则只覆盖到 atelier / work-list / task 系列，没下穿到这里；统一收口。
+*/
+[data-theme="carbon-black"] .gitlab-page .management-list-shell,
+[data-theme="carbon-black"] .api-studio-tree-shell,
+[data-theme="carbon-black"] .api-studio-home-page,
+[data-theme="carbon-black"] .api-studio-home-card {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28) !important;
+}
+
+[data-theme="carbon-black"] .api-studio-tree-header,
+[data-theme="carbon-black"] .api-studio-tree-search,
+[data-theme="carbon-black"] .api-studio-home-toolbar {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+  color: var(--app-text-soft) !important;
+}
+
+/* GitLab 3 个 tab 下的表头：.management-list-table 与 5 个 .gitlab-*-table 都有 scoped
+   background: rgba(243, 244, 245, 0.52)；这里逐个选择器把 thead / th 全部钉到主题色，
+   不用 :is() 避免长链被 HMR 截断。 */
+[data-theme="carbon-black"] .gitlab-page .management-list-table thead,
+[data-theme="carbon-black"] .gitlab-page .management-list-table th,
+[data-theme="carbon-black"] .gitlab-page .gitlab-binding-table thead,
+[data-theme="carbon-black"] .gitlab-page .gitlab-binding-table th,
+[data-theme="carbon-black"] .gitlab-page .gitlab-product-branch-table thead,
+[data-theme="carbon-black"] .gitlab-page .gitlab-product-branch-table th,
+[data-theme="carbon-black"] .gitlab-page .gitlab-owner-repo-table thead,
+[data-theme="carbon-black"] .gitlab-page .gitlab-owner-repo-table th,
+[data-theme="carbon-black"] .gitlab-page .gitlab-auto-merge-table thead,
+[data-theme="carbon-black"] .gitlab-page .gitlab-auto-merge-table th,
+[data-theme="carbon-black"] .gitlab-page .gitlab-log-table thead,
+[data-theme="carbon-black"] .gitlab-page .gitlab-log-table th {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .management-list-table td,
+[data-theme="carbon-black"] .gitlab-page .gitlab-binding-table td,
+[data-theme="carbon-black"] .gitlab-page .gitlab-product-branch-table td,
+[data-theme="carbon-black"] .gitlab-page .gitlab-owner-repo-table td,
+[data-theme="carbon-black"] .gitlab-page .gitlab-auto-merge-table td,
+[data-theme="carbon-black"] .gitlab-page .gitlab-log-table td {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.16) !important;
+}
+
+/* GitLab 表头 3 个 tab 切换条 (gitlab-tab-switcher / gitlab-tab-button) 容器、按钮
+   也补一份，避免亮色干扰。 */
+[data-theme="carbon-black"] .gitlab-page .gitlab-tab-switcher {
+  background: var(--app-surface-muted) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .gitlab-tab-button {
+  background: transparent !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .gitlab-page .gitlab-tab-button.active,
+[data-theme="carbon-black"] .gitlab-page .gitlab-tab-button:hover {
+  background: var(--app-surface-card) !important;
+  color: var(--app-primary-light-7) !important;
+}
+
+/* API 工作台树形工具栏内的"新建 API"按钮走主品牌色，避免暗背景下黑按钮。 */
+[data-theme="carbon-black"] .api-studio-tree-header-actions .management-list-create-button,
+[data-theme="carbon-black"] .api-studio-tree-header-actions .management-list-toolbar-button {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+/*
+  曜石黑主题下系统抽屉字段详情卡专项收口。
+  业务意图：管理端各业务详情抽屉的"label + value"小卡（操作日志 / 运维 / 任务 / 迭代 / 自升级 /
+  模型基准 / API 调试 / 工作台等）在 SFC 里都直接写死 background: #fff 或 rgba(248,249,250,...)，
+  通用 el-drawer 规则只覆盖外壳；这里把字段卡、消息卡、调试结果卡统一拉到暗色表面。
+*/
+[data-theme="carbon-black"] .operation-log-detail-item,
+[data-theme="carbon-black"] .operation-log-detail-message,
+[data-theme="carbon-black"] .api-studio-debug-result,
+[data-theme="carbon-black"] .benchmark-card,
+[data-theme="carbon-black"] .workspace-card,
+[data-theme="carbon-black"] .self-upgrade-target-editor,
+[data-theme="carbon-black"] .self-upgrade-collapse-item,
+[data-theme="carbon-black"] .self-upgrade-markdown-shell,
+[data-theme="carbon-black"] .task-row,
+[data-theme="carbon-black"] .task-priority-pill,
+[data-theme="carbon-black"] .server-card,
+[data-theme="carbon-black"] .data-workbench-card {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28) !important;
+}
+
+[data-theme="carbon-black"] .operation-log-detail-value {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .operation-log-detail-label,
+[data-theme="carbon-black"] .operation-log-detail-section-title {
+  color: var(--app-text-muted) !important;
+}
+
+/* "结果" / "请求摘要" / "权限码" 等代码 / 标签行沿用 muted 区分层次 */
+[data-theme="carbon-black"] .operation-log-detail-message {
+  color: var(--app-text-soft) !important;
+}
+
+/* 调试结果块和请求摘要等代码片段在 SFC 里硬编码 #0f172a 已是深色，沿用并加暗描边 */
+[data-theme="carbon-black"] .operation-log-detail-pre,
+[data-theme="carbon-black"] .api-studio-debug-result pre {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.24) !important;
+}
+
+/* 列表内"新建 / 创建"主按钮在 SFC 写死 #191c1d 黑底白字，跟主题不一致；跟随主题品牌色 */
+[data-theme="carbon-black"] .management-list-create-button {
+  background: var(--app-primary-container) !important;
+  color: var(--app-text) !important;
+}
+
+/*
+  曜石黑主题下 3 个内容详情页 hero / 面板 / 字段卡专项收口。
+  业务意图：ObservabilityProjectDetailView 行 538 / 603、ServerDetailView 行 707 / 828 / 849、
+  PrReviewStatsView 行 358 / 406 / 454 在 SFC scoped 样式里直接写死
+  rgba(255, 255, 255, ...)、rgba(248, 250, 252, ...)、linear-gradient(..., #fff, ...)，通用规则
+  没下穿到这些内部白卡；这里统一拉暗。
+*/
+[data-theme="carbon-black"] .observability-page .observability-hero,
+[data-theme="carbon-black"] .observability-page .observability-panel,
+[data-theme="carbon-black"] .server-detail-hero,
+[data-theme="carbon-black"] .server-panel,
+[data-theme="carbon-black"] .pr-review-panel,
+[data-theme="carbon-black"] .pr-review-summary-markdown {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+  color: var(--app-text) !important;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32) !important;
+}
+
+[data-theme="carbon-black"] .observability-hero,
+[data-theme="carbon-black"] .observability-panel {
+  background:
+    radial-gradient(circle at 96% 0%, rgba(var(--app-primary-container-rgb), 0.16), transparent 32%),
+    var(--app-surface-card) !important;
+}
+
+[data-theme="carbon-black"] .observability-hero-kpi,
+[data-theme="carbon-black"] .observability-health-stat,
+[data-theme="carbon-black"] .observability-timeline-card,
+[data-theme="carbon-black"] .observability-instance-card,
+[data-theme="carbon-black"] .observability-log-card,
+[data-theme="carbon-black"] .server-detail-list div,
+[data-theme="carbon-black"] .resource-chip,
+[data-theme="carbon-black"] .alert-config-chip {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.2) !important;
+}
+
+/* 字段卡里的主数值（项目健康分 / 主机 / 用户 / 密码 / CPU / 内存 等）用主文字色 */
+[data-theme="carbon-black"] .observability-hero-kpi strong,
+[data-theme="carbon-black"] .observability-health-stat strong,
+[data-theme="carbon-black"] .observability-timeline-card strong,
+[data-theme="carbon-black"] .server-detail-list dd,
+[data-theme="carbon-black"] .resource-chip strong,
+[data-theme="carbon-black"] .alert-config-chip strong,
+[data-theme="carbon-black"] .server-detail-title-block h1,
+[data-theme="carbon-black"] .pr-review-panel-head h3 {
+  color: var(--app-text) !important;
+}
+
+/* 字段标签 / 副标题 / 数据时间戳走 muted 灰 */
+[data-theme="carbon-black"] .observability-hero-kpi span,
+[data-theme="carbon-black"] .observability-health-stat span,
+[data-theme="carbon-black"] .observability-timeline-card span,
+[data-theme="carbon-black"] .observability-hero-head p,
+[data-theme="carbon-black"] .observability-panel-head p,
+[data-theme="carbon-black"] .observability-instance-head p,
+[data-theme="carbon-black"] .server-detail-list dt,
+[data-theme="carbon-black"] .resource-chip span,
+[data-theme="carbon-black"] .alert-config-chip span,
+[data-theme="carbon-black"] .pr-review-panel-head p,
+[data-theme="carbon-black"] .pr-review-metric-label,
+[data-theme="carbon-black"] .pr-review-metric-card small,
+[data-theme="carbon-black"] .pr-review-form-item,
+[data-theme="carbon-black"] .detail-back-link,
+[data-theme="carbon-black"] .observability-back-link,
+[data-theme="carbon-black"] .pr-review-hero-kicker {
+  color: var(--app-text-muted) !important;
+}
+
+/* PR 评审指标卡背景用 4 个色系（success / warning / danger / 默认），在暗色下换成混合主题色 */
+[data-theme="carbon-black"] .pr-review-metric-card {
+  background: var(--app-surface-card) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+}
+
+[data-theme="carbon-black"] .pr-review-metric-card.success {
+  background: color-mix(in srgb, var(--app-success) 16%, var(--app-surface-card)) !important;
+  border-color: rgba(var(--app-success-rgb), 0.32) !important;
+}
+
+[data-theme="carbon-black"] .pr-review-metric-card.warning {
+  background: color-mix(in srgb, var(--app-warning) 16%, var(--app-surface-card)) !important;
+  border-color: rgba(255, 179, 92, 0.36) !important;
+}
+
+[data-theme="carbon-black"] .pr-review-metric-card.danger {
+  background: color-mix(in srgb, var(--app-danger) 16%, var(--app-surface-card)) !important;
+  border-color: rgba(var(--app-danger-rgb), 0.4) !important;
+}
+
+/* PR 评审顶部 hero 本身已经走渐变（#0f766e → #14532d → #1d4ed8），暗色下保留但把文字色提亮避免糊掉 */
+[data-theme="carbon-black"] .pr-review-hero h2 {
+  color: #f8fffd !important;
+}
+
+/* 详情头部次要操作按钮在 SFC 沿用 rgba(15, 23, 42, 0.08) 模拟灰底，暗色下走 surface-muted */
+[data-theme="carbon-black"] .server-detail-page .detail-hero-action-button.secondary,
+[data-theme="carbon-black"] .observability-page .detail-hero-action-button.secondary {
+  background: var(--app-surface-muted) !important;
+  color: var(--app-text-soft) !important;
+}
+
+/*
+  曜石黑主题下 Element Plus disabled 控件 / ProfileView 灰底专项收口。
+  业务意图：个人中心里"用户名 / 角色"用 el-input + :disabled 渲染，但
+  carbon-black 主题预设（theme.ts）没覆盖 --el-disabled-bg-color，
+  Element Plus 内部继续用浅色默认值；这里把 disabled 状态、placeholder
+  颜色以及个人中心 .profile-identity-panel / .profile-gitlab-binding-item
+  / .profile-theme-window 等白底容器一次性拉到暗色。
+*/
+[data-theme="carbon-black"] .el-input.is-disabled .el-input__wrapper,
+[data-theme="carbon-black"] .el-textarea.is-disabled .el-textarea__inner,
+[data-theme="carbon-black"] .el-select.is-disabled .el-select__wrapper,
+[data-theme="carbon-black"] .el-input__inner:disabled,
+[data-theme="carbon-black"] .el-textarea__inner:disabled {
+  background-color: var(--app-surface-muted) !important;
+  box-shadow: 0 0 0 1px rgba(var(--app-outline-rgb), 0.2) inset !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .el-input.is-disabled .el-input__inner,
+[data-theme="carbon-black"] .el-input__inner:disabled,
+[data-theme="carbon-black"] .el-textarea.is-disabled .el-textarea__inner,
+[data-theme="carbon-black"] .el-textarea__inner:disabled {
+  -webkit-text-fill-color: var(--app-text-soft) !important;
+  color: var(--app-text-soft) !important;
+}
+
+[data-theme="carbon-black"] .el-input.is-disabled .el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px rgba(var(--app-outline-rgb), 0.2) inset !important;
+}
+
+[data-theme="carbon-black"] .profile-identity-panel,
+[data-theme="carbon-black"] .profile-gitlab-binding-item,
+[data-theme="carbon-black"] .profile-theme-window,
+[data-theme="carbon-black"] .profile-theme-summary,
+[data-theme="carbon-black"] .profile-theme-card {
+  background: var(--app-surface-card) !important;
+  color: var(--app-text) !important;
+  border-color: rgba(var(--app-outline-rgb), 0.22) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28) !important;
+}
+
+[data-theme="carbon-black"] .profile-title,
+[data-theme="carbon-black"] .profile-gitlab-binding-title {
+  color: var(--app-text) !important;
+}
+
+[data-theme="carbon-black"] .profile-subtitle,
+[data-theme="carbon-black"] .profile-avatar-tip,
+[data-theme="carbon-black"] .profile-theme-card-label,
+[data-theme="carbon-black"] .profile-theme-card-desc,
+[data-theme="carbon-black"] .profile-theme-cache-note,
+[data-theme="carbon-black"] .profile-identity-subtitle,
+[data-theme="carbon-black"] .profile-gitlab-binding-item span {
+  color: var(--app-text-muted) !important;
+}
+
+[data-theme="carbon-black"] .profile-theme-card.active {
+  border-color: rgba(var(--app-primary-rgb), 0.5) !important;
+  box-shadow: 0 0 0 1px rgba(var(--app-primary-rgb), 0.5) inset !important;
 }

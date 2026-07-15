@@ -23,7 +23,8 @@ public record AssistantConversationState(
         AssistantGroundingState groundingState,
         List<Map<String, Object>> toolExecutions,
         String lastErrorMessage,
-        AssistantToolExecutionPolicy toolExecutionPolicy
+        AssistantToolExecutionPolicy toolExecutionPolicy,
+        AssistantConversationContextState contextState
 ) {
     public AssistantConversationState(String scopeKey,
                                    String clientConversationId,
@@ -41,7 +42,28 @@ public record AssistantConversationState(
                                    String lastErrorMessage) {
         this(scopeKey, clientConversationId, currentUser, context, currentRequest, mcpSessionToken, transcript,
                 references, suggestions, actions, selectionCards, groundingState, toolExecutions, lastErrorMessage,
-                AssistantToolExecutionPolicy.empty());
+                AssistantToolExecutionPolicy.empty(), AssistantConversationContextState.empty());
+    }
+
+    /** 兼容已经使用工具执行策略的旧调用方。 */
+    public AssistantConversationState(String scopeKey,
+                                   String clientConversationId,
+                                   CurrentUserInfo currentUser,
+                                   AssistantConversationContextSnapshot context,
+                                   AssistantConversationRequestSnapshot currentRequest,
+                                   String mcpSessionToken,
+                                   List<AssistantConversationTurn> transcript,
+                                   List<AssistantReferenceSummary> references,
+                                   List<String> suggestions,
+                                   List<AssistantActionSummary> actions,
+                                   List<AssistantSelectionCard> selectionCards,
+                                   AssistantGroundingState groundingState,
+                                   List<Map<String, Object>> toolExecutions,
+                                   String lastErrorMessage,
+                                   AssistantToolExecutionPolicy toolExecutionPolicy) {
+        this(scopeKey, clientConversationId, currentUser, context, currentRequest, mcpSessionToken, transcript,
+                references, suggestions, actions, selectionCards, groundingState, toolExecutions, lastErrorMessage,
+                toolExecutionPolicy, AssistantConversationContextState.empty());
     }
 
     public AssistantConversationState {
@@ -61,5 +83,13 @@ public record AssistantConversationState(
                 .toList();
         lastErrorMessage = lastErrorMessage == null ? "" : lastErrorMessage.trim();
         toolExecutionPolicy = toolExecutionPolicy == null ? AssistantToolExecutionPolicy.empty() : toolExecutionPolicy;
+        contextState = contextState == null ? AssistantConversationContextState.empty() : contextState;
+    }
+
+    /** 更新长对话摘要和结构化事实，保留其余运行时状态不变。 */
+    public AssistantConversationState withContextState(AssistantConversationContextState nextContextState) {
+        return new AssistantConversationState(scopeKey, clientConversationId, currentUser, context, currentRequest,
+                mcpSessionToken, transcript, references, suggestions, actions, selectionCards, groundingState,
+                toolExecutions, lastErrorMessage, toolExecutionPolicy, nextContextState);
     }
 }

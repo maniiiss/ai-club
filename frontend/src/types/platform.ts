@@ -387,6 +387,10 @@ export interface RuntimeRegistryItem {
   capabilities: string[]
   sandboxPolicyJson: string
   fallbackRuntimeCodes: string[]
+  contextWindowTokens: number
+  maxOutputTokens: number
+  compactionThresholdPercent: number
+  compactionStrategy: 'NATIVE_FIRST' | 'BACKEND_FALLBACK' | 'DISABLED'
   healthStatus: 'UNKNOWN' | 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY' | 'DISABLED'
   healthMessage: string
   healthCheckedAt: string | null

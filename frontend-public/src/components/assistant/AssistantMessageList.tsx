@@ -3,7 +3,6 @@ import { AssistantMarkdown } from '@/src/components/common/AssistantMarkdown'
 import { cn } from '@/src/lib/utils'
 import type {
   AssistantAttachmentItem,
-  AssistantDebugInfoItem,
   AssistantMessageItem,
   AssistantReferenceItem,
   AssistantFeedbackVote,
@@ -15,7 +14,6 @@ interface AssistantMessageListProps {
   roleName: string
   references: AssistantReferenceItem[]
   suggestions: string[]
-  debug: AssistantDebugInfoItem | null
   streamStatusText: string
   streamingActive: boolean
   disabled: boolean
@@ -45,34 +43,11 @@ const AttachmentBar = ({ attachments }: { attachments: AssistantAttachmentItem[]
   )
 }
 
-const ToolTrace = ({ message }: { message: AssistantMessageItem }) => {
-  const toolExecutions = message.toolExecutions || []
-  if (!toolExecutions.length) return null
-  const failedCount = toolExecutions.filter((item) => String(item.status || '').toUpperCase() === 'FAILED').length
-  return (
-    <details className={cn(
-      'mt-3 rounded-lg border px-3 py-2 text-[12px]',
-      failedCount ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    )}>
-      <summary className="cursor-pointer font-medium">工具调用 · {toolExecutions.length} 次</summary>
-      <div className="mt-2 space-y-1 text-[11px]">
-        {toolExecutions.slice(0, 8).map((item, index) => (
-          <div key={`${String(item.toolCallId || item.toolCode || index)}`} className="flex justify-between gap-2">
-            <span>{String(item.toolCode || item.functionName || '未知工具')}</span>
-            <span>{String(item.status || 'UNKNOWN')}</span>
-          </div>
-        ))}
-      </div>
-    </details>
-  )
-}
-
 export const AssistantMessageList = ({
   messages,
   roleName,
   references,
   suggestions,
-  debug,
   streamStatusText,
   streamingActive,
   disabled,
@@ -126,7 +101,6 @@ export const AssistantMessageList = ({
                       {streamStatusText || '继续生成中'}
                     </div>
                   )}
-                  <ToolTrace message={message} />
                   {message.status === 'done' && Number.isSafeInteger(Number(message.id)) && (
                     <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border-light)] pt-2">
                       <span className="text-[11px] text-[var(--color-text-tertiary)]">这条回答有帮助吗？</span>
@@ -169,7 +143,7 @@ export const AssistantMessageList = ({
       </div>
     )}
 
-    {(references.length > 0 || suggestions.length > 0 || debug) && (
+    {(references.length > 0 || suggestions.length > 0) && (
       <div className="mx-auto mt-4 w-full max-w-4xl space-y-3">
         {references.length > 0 && (
           <section className="rounded-lg border border-[var(--color-border-light)] bg-white p-3">
@@ -205,14 +179,6 @@ export const AssistantMessageList = ({
               ))}
             </div>
           </section>
-        )}
-        {debug && (
-          <details className="rounded-lg border border-[var(--color-border-light)] bg-white p-3 text-[12px]">
-            <summary className="cursor-pointer font-semibold text-[var(--color-text-primary)]">调试轨迹</summary>
-            <pre className="mt-2 max-h-[320px] overflow-auto rounded-lg bg-[#111827] p-3 text-[11px] leading-5 text-white">
-              {JSON.stringify(debug, null, 2)}
-            </pre>
-          </details>
         )}
       </div>
     )}

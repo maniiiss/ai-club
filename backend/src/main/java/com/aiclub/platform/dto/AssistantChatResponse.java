@@ -1,10 +1,12 @@
 package com.aiclub.platform.dto;
 
 import java.util.List;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
  * Assistant 平台内置助手的非流式响应体。
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record AssistantChatResponse(
         Long sessionId,
         Long userMessageId,

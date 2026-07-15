@@ -28,7 +28,10 @@ public class AssistantActionFallbackService {
     private static final Pattern PROJECT_PATTERN = Pattern.compile("([A-Za-z][A-Za-z0-9_-]{1,20})项目");
     private static final Pattern REPOSITORY_PATH_PATTERN = Pattern.compile("([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){1,4})");
     private static final Pattern PROJECT_OF_REPOSITORY_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5A-Za-z0-9][\\u4e00-\\u9fa5A-Za-z0-9 _-]{1,40})\\s*的\\s*([A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){1,4})");
-    private static final Pattern BRANCH_PATTERN = Pattern.compile("(?:分支|branch)[：:\\s]*([A-Za-z0-9._/-]+)", Pattern.CASE_INSENSITIVE);
+    /** 同时支持“分支：deploy”和“deploy 分支”，兼容用户对上一轮追问的自然回复。 */
+    private static final Pattern BRANCH_PATTERN = Pattern.compile(
+            "(?:分支|branch)[：:\\s]*([A-Za-z0-9._/-]+)|([A-Za-z0-9._/-]+)[：:\\s]*(?:分支|branch)",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern PROJECT_ID_PATTERN = Pattern.compile("#\\s*(\\d+)");
 
     private final AssistantInternalToolExecutionService assistantInternalToolExecutionService;
@@ -590,7 +593,9 @@ public class AssistantActionFallbackService {
             return "";
         }
         Matcher matcher = BRANCH_PATTERN.matcher(question);
-        return matcher.find() ? matcher.group(1).trim() : "";
+        if (!matcher.find()) return "";
+        String branch = matcher.group(1) == null ? matcher.group(2) : matcher.group(1);
+        return branch == null ? "" : branch.trim();
     }
 
     /**

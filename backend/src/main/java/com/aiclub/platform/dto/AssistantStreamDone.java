@@ -1,10 +1,12 @@
 package com.aiclub.platform.dto;
 
 import java.util.List;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
  * 流式回答完成后的终态事件。
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record AssistantStreamDone(
         Long sessionId,
         Long userMessageId,

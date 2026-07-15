@@ -30,6 +30,9 @@ public class RuntimeChatService {
     private final RuntimeAdapterRegistry runtimeAdapterRegistry;
     private final RuntimeToolContractService runtimeToolContractService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private AssistantConversationContextMetrics contextMetrics;
+
     public RuntimeChatService(RuntimeRegistryService runtimeRegistryService,
                                RuntimeAdapterRegistry runtimeAdapterRegistry,
                                RuntimeToolContractService runtimeToolContractService) {
@@ -41,6 +44,22 @@ public class RuntimeChatService {
     /** 判断是否应该继续走历史 Assistant Gateway 兼容链路。 */
     public boolean isLegacy(String runtimeCode) {
         return HERMES_LEGACY.equals(normalize(runtimeCode));
+    }
+
+    /**
+     * 查询当前聊天 Runtime 是否声明某项能力。
+     * 业务意图：上下文编排必须先尊重 Runtime 原生压缩，再决定是否由 backend 兜底，不能只看管理员选择的策略名称。
+     */
+    public boolean supportsCapability(String runtimeCode, RuntimeCapability capability) {
+        String normalized = normalize(runtimeCode);
+        if (isLegacy(normalized) || capability == null) {
+            return false;
+        }
+        try {
+            return runtimeRegistryService.descriptor(normalized).supports(capability);
+        } catch (RuntimeException ignored) {
+            return false;
+        }
     }
 
     /**
@@ -77,6 +96,9 @@ public class RuntimeChatService {
         RuntimeStreamContentAssembler assembler = new RuntimeStreamContentAssembler();
         StringBuilder streamedContent = new StringBuilder();
         RuntimeChatResult result = adapter.streamChat(context, event -> {
+            if (event != null && event.is("CONTEXT_COMPACTED") && contextMetrics != null) {
+                contextMetrics.recordNativeCompaction(normalized);
+            }
             String displayDelta = assembler.accept(event);
             if (displayDelta.isEmpty()) {
                 return;

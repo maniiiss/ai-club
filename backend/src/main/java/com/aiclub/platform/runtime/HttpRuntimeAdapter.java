@@ -245,6 +245,9 @@ public final class HttpRuntimeAdapter implements RuntimeAdapter {
             payload.set("toolPolicy", objectMapper.valueToTree(context.toolContext().policy()));
             payload.put("runtimeToolContractVersion", context.toolContext().contractVersion());
         }
+        if (!payload.has("contextProfile")) {
+            payload.set("contextProfile", objectMapper.valueToTree(descriptor().contextProfile()));
+        }
         return payload;
     }
 

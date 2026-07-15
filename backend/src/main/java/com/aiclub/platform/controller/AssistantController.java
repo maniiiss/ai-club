@@ -7,6 +7,7 @@ import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.AssistantChatResponse;
 import com.aiclub.platform.dto.AssistantConversationDetail;
 import com.aiclub.platform.dto.AssistantConversationSessionSummary;
+import com.aiclub.platform.dto.AssistantConversationSearchResult;
 import com.aiclub.platform.dto.AssistantMemoryConsolidationStatus;
 import com.aiclub.platform.dto.AssistantMemoryOverview;
 import com.aiclub.platform.dto.AssistantMemoryConsolidationTask;
@@ -101,6 +102,26 @@ public class AssistantController {
             @RequestParam(defaultValue = "ALL") String scope,
             @RequestParam(required = false) Long projectId) {
         return ApiResponse.success(assistantConversationSessionService.pageSessions(page, size, archived, scope, projectId));
+    }
+
+    /**
+     * 搜索当前项目下当前用户的 Assistant 历史消息，包含活跃与已归档会话。
+     */
+    @GetMapping("/sessions/search")
+    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    public ApiResponse<PageResponse<AssistantConversationSearchResult>> searchSessions(
+            @RequestParam(defaultValue = "") String query,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam Long projectId,
+            @RequestParam(defaultValue = "PROJECT") String scope,
+            @RequestParam(defaultValue = "true") boolean includeArchived) {
+        if (!"PROJECT".equalsIgnoreCase(scope)) {
+            throw new IllegalArgumentException("Assistant 历史搜索仅支持 PROJECT 作用域");
+        }
+        return ApiResponse.success(assistantConversationSessionService.searchProjectSessions(
+                page, size, projectId, query, includeArchived
+        ));
     }
 
     /**

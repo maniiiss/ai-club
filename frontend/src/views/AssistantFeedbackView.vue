@@ -1,13 +1,5 @@
 <template>
-  <div class="assistant-feedback-view management-page-shell">
-    <div class="management-page-header">
-      <div>
-        <h1 class="management-page-title">GitPilot 反馈运营</h1>
-        <p class="management-page-description">集中处理单条助手回答反馈，并沉淀可复盘的数据样本。</p>
-      </div>
-      <el-button :icon="RefreshRight" :loading="loading" @click="loadAll">刷新</el-button>
-    </div>
-
+  <div class="management-list-page assistant-feedback-view">
     <el-alert
       v-if="!canManage"
       class="assistant-feedback-permission-alert"
@@ -23,49 +15,131 @@
       <div class="assistant-feedback-stat assistant-feedback-stat-danger"><span>负面反馈</span><strong>{{ stats.negativeCount }}</strong></div>
     </div>
 
-    <section class="management-list-card">
-      <div class="assistant-feedback-filter-bar">
-        <el-input v-model="filters.keyword" clearable placeholder="搜索问题、回答或补充说明" @keyup.enter="handleSearch" />
-        <el-select v-model="filters.vote" clearable placeholder="评价方向" @change="handleSearch">
-          <el-option label="点踩" value="DOWN" />
-          <el-option label="点赞" value="UP" />
-        </el-select>
-        <el-select v-model="filters.status" clearable placeholder="处理状态" @change="handleSearch">
-          <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
-        </el-select>
-        <el-select v-model="filters.datasetStatus" clearable placeholder="数据集状态" @change="handleSearch">
-          <el-option label="待标记" value="PENDING" />
-          <el-option label="已纳入" value="INCLUDED" />
-          <el-option label="已排除" value="EXCLUDED" />
-        </el-select>
-        <el-button type="primary" @click="handleSearch">查询</el-button>
-      </div>
-
-      <el-table v-loading="loading" :data="items" row-key="id" @row-click="openDetail">
-        <el-table-column label="反馈" min-width="280">
-          <template #default="{ row }">
-            <div class="assistant-feedback-row-main">
-              <span class="assistant-feedback-vote" :class="row.vote === 'DOWN' ? 'is-down' : 'is-up'">{{ row.vote === 'DOWN' ? '点踩' : '点赞' }}</span>
-              <span class="assistant-feedback-row-question">{{ row.questionSnapshot || '暂无问题快照' }}</span>
-            </div>
-            <div class="assistant-feedback-row-sub">{{ row.submitterNickname || row.submitterUsername }} · {{ row.createdAt || '-' }}</div>
+    <section class="management-list-toolbar">
+      <div class="management-list-toolbar-main">
+        <div class="management-list-search-shell">
+          <el-icon class="management-list-search-icon"><Search /></el-icon>
+          <input
+            v-model="filters.keyword"
+            class="management-list-search-input"
+            type="text"
+            placeholder="搜索问题、回答或补充说明"
+            @keyup.enter="handleSearch"
+          />
+        </div>
+        <span class="management-list-toolbar-divider" aria-hidden="true"></span>
+        <el-popover v-model:visible="feedbackFilterPopoverVisible" trigger="click" placement="bottom-start" :width="320" popper-class="management-list-popper">
+          <template #reference>
+            <button class="management-list-toolbar-button" type="button">
+              <el-icon><Filter /></el-icon>
+              <span>筛选</span>
+            </button>
           </template>
-        </el-table-column>
-        <el-table-column label="原因" min-width="180">
-          <template #default="{ row }">{{ resolveReasons(row.reasonCodes) }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="120">
-          <template #default="{ row }"><el-tag :type="statusTone(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template>
-        </el-table-column>
-        <el-table-column label="数据集" width="110">
-          <template #default="{ row }">{{ datasetLabel(row.datasetStatus) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="90" fixed="right">
-          <template #default="{ row }"><el-button link type="primary" @click.stop="openDetail(row)">处理</el-button></template>
-        </el-table-column>
-      </el-table>
-      <div class="assistant-feedback-pagination">
-        <el-pagination v-model:current-page="pagination.page" v-model:page-size="pagination.size" :total="pagination.total" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next" @current-change="loadItems" @size-change="handleSizeChange" />
+          <div class="management-list-filter-panel management-list-compact-input">
+            <div class="management-list-filter-field">
+              <label>评价方向</label>
+              <el-select v-model="filters.vote" clearable placeholder="全部" style="width: 100%" :teleported="false">
+                <el-option label="点踩" value="DOWN" />
+                <el-option label="点赞" value="UP" />
+              </el-select>
+            </div>
+            <div class="management-list-filter-field">
+              <label>处理状态</label>
+              <el-select v-model="filters.status" clearable placeholder="全部" style="width: 100%" :teleported="false">
+                <el-option v-for="item in statusOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </div>
+            <div class="management-list-filter-field">
+              <label>数据集状态</label>
+              <el-select v-model="filters.datasetStatus" clearable placeholder="全部" style="width: 100%" :teleported="false">
+                <el-option label="待标记" value="PENDING" />
+                <el-option label="已纳入" value="INCLUDED" />
+                <el-option label="已排除" value="EXCLUDED" />
+              </el-select>
+            </div>
+            <div class="management-list-filter-actions">
+              <el-button type="primary" @click="handleSearch">查询</el-button>
+              <el-button @click="handleReset">重置</el-button>
+            </div>
+          </div>
+        </el-popover>
+        <button class="management-list-toolbar-button" type="button" :disabled="loading" @click="loadAll">
+          <el-icon><RefreshRight /></el-icon>
+          <span>刷新</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="management-list-shell">
+      <div class="management-list-table-scroll mobile-card-scroll" v-loading="loading">
+        <table class="management-list-table assistant-feedback-table mobile-card-table">
+          <thead>
+            <tr>
+              <th class="feedback-col-main">反馈</th>
+              <th class="feedback-col-reason">原因</th>
+              <th class="feedback-col-status">状态</th>
+              <th class="feedback-col-dataset">数据集</th>
+              <th class="feedback-col-actions right">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in items" :key="row.id" class="management-list-row">
+              <td class="feedback-col-main" data-label="反馈">
+                <button class="management-list-title-trigger" type="button" @click="openDetail(row)">
+                  <div class="management-list-title-cell">
+                    <span class="management-list-pill" :class="row.vote === 'DOWN' ? 'danger' : 'success'">{{ row.vote === 'DOWN' ? '点踩' : '点赞' }}</span>
+                    <div class="management-list-title-copy">
+                      <div class="management-list-title">{{ row.questionSnapshot || '暂无问题快照' }}</div>
+                      <div class="management-list-subtitle">{{ row.submitterNickname || row.submitterUsername }} · {{ row.createdAt || '-' }}</div>
+                    </div>
+                  </div>
+                </button>
+              </td>
+              <td class="feedback-col-reason" data-label="原因">
+                <span class="management-list-empty">{{ resolveReasons(row.reasonCodes) }}</span>
+              </td>
+              <td class="feedback-col-status" data-label="状态">
+                <span class="management-list-pill" :class="statusPillClass(row.status)">{{ statusLabel(row.status) }}</span>
+              </td>
+              <td class="feedback-col-dataset" data-label="数据集">
+                <span class="management-list-empty">{{ datasetLabel(row.datasetStatus) }}</span>
+              </td>
+              <td class="feedback-col-actions right" data-label="操作">
+                <div class="management-list-row-actions">
+                  <button class="management-list-row-button" type="button" title="处理反馈" @click.stop="openDetail(row)">
+                    <el-icon><View /></el-icon>
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="!loading && !items.length">
+              <td colspan="5"><el-empty description="暂无符合条件的反馈" /></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="management-list-footer">
+        <div class="management-list-footer-total">共 <span>{{ pagination.total }}</span> 条</div>
+        <div class="management-list-footer-controls">
+          <div class="management-list-page-size management-list-compact-input">
+            <span>每页</span>
+            <el-select v-model="pagination.size" size="small" style="width: 92px" @change="handleSizeChange">
+              <el-option :value="10" label="10" />
+              <el-option :value="20" label="20" />
+              <el-option :value="50" label="50" />
+              <el-option :value="100" label="100" />
+            </el-select>
+          </div>
+          <div class="management-list-page-nav">
+            <button class="management-list-page-button" type="button" :disabled="pagination.page <= 1" @click="handlePrevPage">
+              <el-icon><ArrowLeft /></el-icon>
+            </button>
+            <span class="management-list-page-text">第 {{ pagination.page }} / {{ totalPages }} 页</span>
+            <button class="management-list-page-button" type="button" :disabled="pagination.page >= totalPages" @click="handleNextPage">
+              <el-icon><ArrowRight /></el-icon>
+            </button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -114,7 +188,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { RefreshRight } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Filter, RefreshRight, Search, View } from '@element-plus/icons-vue'
 import { listUserOptions } from '@/api/access'
 import { getAssistantFeedbackDetail, getAssistantFeedbackStats, pageAssistantFeedback, resolveAssistantFeedback, triageAssistantFeedback } from '@/api/assistant-feedback'
 import type { AssistantFeedbackDetail, AssistantFeedbackItem, AssistantFeedbackStats } from '@/types/assistant-feedback'
@@ -132,18 +206,26 @@ const items = ref<AssistantFeedbackItem[]>([])
 const userOptions = ref<UserOptionItem[]>([])
 const detail = ref<AssistantFeedbackDetail | null>(null)
 const detailVisible = ref(false)
+const feedbackFilterPopoverVisible = ref(false)
 const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('system:assistant-feedback:manage'))
 const stats = reactive<AssistantFeedbackStats>({ newCount: 0, inProgressCount: 0, resolvedCount: 0, negativeCount: 0, totalCount: 0 })
 const filters = reactive({ keyword: '', vote: '', status: '', datasetStatus: '' })
 const pagination = reactive({ page: 1, size: 20, total: 0 })
+const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
 const triageForm = reactive({ status: 'NEW', assigneeUserId: null as number | null, note: '' })
 const resolutionForm = reactive({ status: 'RESOLVED', resolutionCode: 'PROMPT_FIX', resolutionNote: '', improvementTagsText: '', datasetStatus: 'PENDING' })
 
 const statusLabel = (value: string) => statusOptions.find((item) => item.value === value)?.label || value
-const statusTone = (value: string) => value === 'RESOLVED' || value === 'AUTO_CLOSED' ? 'success' : value === 'REJECTED' || value === 'DUPLICATE' ? 'info' : value === 'IN_PROGRESS' ? 'warning' : 'danger'
+/** 反馈状态映射为列表药片色调，与其它管理列表的状态标签保持一致。 */
+const statusPillClass = (value: string) => {
+  if (value === 'RESOLVED' || value === 'AUTO_CLOSED') return 'success'
+  if (value === 'REJECTED' || value === 'DUPLICATE') return 'neutral'
+  if (value === 'IN_PROGRESS') return 'warning'
+  return 'danger'
+}
 const datasetLabel = (value: string) => ({ PENDING: '待标记', INCLUDED: '已纳入', EXCLUDED: '已排除' }[value] || value)
-const resolveReasons = (values: string[]) => values?.map((value) => reasonLabels[value] || value).join('、') || '—'
+const resolveReasons = (values: string[]) => values?.map((value) => reasonLabels[value] || value).join('、') || '-'
 /** 将负责人用户显示为“昵称（用户名）”，避免运营人员只看到无法识别的数字 ID。 */
 const buildUserLabel = (user: UserOptionItem) => user.nickname?.trim() ? `${user.nickname}（${user.username}）` : user.username
 
@@ -169,8 +251,28 @@ const loadUserOptions = async () => {
     usersLoading.value = false
   }
 }
-const handleSearch = async () => { pagination.page = 1; await loadItems() }
+const handleSearch = async () => { feedbackFilterPopoverVisible.value = false; pagination.page = 1; await loadItems() }
+/** 清空全部筛选条件并回到第一页，便于运营快速切换查看范围。 */
+const handleReset = async () => {
+  filters.keyword = ''
+  filters.vote = ''
+  filters.status = ''
+  filters.datasetStatus = ''
+  feedbackFilterPopoverVisible.value = false
+  pagination.page = 1
+  await loadItems()
+}
 const handleSizeChange = async () => { pagination.page = 1; await loadItems() }
+const handlePrevPage = async () => {
+  if (pagination.page <= 1) return
+  pagination.page -= 1
+  await loadItems()
+}
+const handleNextPage = async () => {
+  if (pagination.page >= totalPages.value) return
+  pagination.page += 1
+  await loadItems()
+}
 const openDetail = async (row: AssistantFeedbackItem) => {
   try {
     detail.value = await getAssistantFeedbackDetail(row.id)
@@ -206,21 +308,18 @@ onMounted(loadAll)
 </script>
 
 <style scoped>
-.assistant-feedback-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
-.assistant-feedback-permission-alert { margin-bottom: 18px; }
+.assistant-feedback-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.assistant-feedback-permission-alert { margin-bottom: 0; }
 .assistant-feedback-stat { padding: 18px 20px; border: 1px solid var(--app-border, #e5e7eb); border-radius: 16px; background: #fff; display: flex; justify-content: space-between; align-items: center; color: #64748b; }
 .assistant-feedback-stat strong { font-size: 25px; color: #172033; }
 .assistant-feedback-stat-danger strong { color: #dc2626; }
-.assistant-feedback-filter-bar { display: flex; gap: 10px; margin-bottom: 16px; }
-.assistant-feedback-filter-bar .el-input { max-width: 320px; }
-.assistant-feedback-filter-bar .el-select { width: 150px; }
-.assistant-feedback-row-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.assistant-feedback-vote { flex: none; font-size: 11px; }
-.assistant-feedback-vote.is-down { color: #dc2626; }.assistant-feedback-vote.is-up { color: #059669; }
-.assistant-feedback-row-question { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #172033; }
-.assistant-feedback-row-sub { margin-top: 5px; color: #94a3b8; font-size: 12px; }
-.assistant-feedback-pagination { display: flex; justify-content: flex-end; padding-top: 18px; }
+.assistant-feedback-table { min-width: 880px; }
+.feedback-col-main { width: 40%; }
+.feedback-col-reason { width: 22%; }
+.feedback-col-status { width: 120px; }
+.feedback-col-dataset { width: 100px; }
+.feedback-col-actions { width: 72px; }
 .assistant-feedback-detail-section h3 { margin: 16px 0 8px; color: #172033; font-size: 14px; }.assistant-feedback-detail-section pre { max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; padding: 12px; border-radius: 10px; background: #f8fafc; color: #334155; font: 13px/1.7 inherit; }
 .assistant-feedback-detail-meta { display: flex; gap: 10px; align-items: center; color: #64748b; font-size: 12px; }.assistant-feedback-reason-list { margin-top: 10px; color: #dc2626; font-size: 12px; }
-@media (max-width: 900px) { .assistant-feedback-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }.assistant-feedback-filter-bar { flex-wrap: wrap; }.assistant-feedback-filter-bar .el-input { max-width: none; width: 100%; } }
+@media (max-width: 900px) { .assistant-feedback-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

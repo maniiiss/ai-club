@@ -1,6 +1,7 @@
 package com.aiclub.platform.dto.request;
 
 import com.aiclub.platform.runtime.RuntimeAdapterType;
+import com.aiclub.platform.runtime.CompactionStrategy;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -16,6 +17,10 @@ public record RuntimeRegistryRequest(
         List<String> capabilities,
         @Size(max = 20000) String sandboxPolicyJson,
         List<String> fallbackRuntimeCodes,
+        Integer contextWindowTokens,
+        Integer maxOutputTokens,
+        Integer compactionThresholdPercent,
+        CompactionStrategy compactionStrategy,
         Boolean enabled
 ) {
 }
