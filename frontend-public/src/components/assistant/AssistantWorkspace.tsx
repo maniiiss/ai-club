@@ -13,6 +13,8 @@ import {
   restoreAssistantConversationSession,
   streamAssistantSessionChat,
   streamAssistantSessionChatWithFiles,
+  pageAssistantFeedback,
+  submitAssistantMessageFeedback,
   transcribeAssistantSpeech,
   type AssistantStreamHandlers,
 } from '@/src/api/assistant'
@@ -32,11 +34,13 @@ import { AssistantSelectionCards } from './AssistantSelectionCards'
 import { AssistantSessionSidebar } from './AssistantSessionSidebar'
 import type {
   AssistantActionItem,
+  AssistantFeedbackVote,
   AssistantConversationDetailItem,
   AssistantConversationMode,
   AssistantConversationSessionSummaryItem,
   AssistantDebugInfoItem,
   AssistantMessageItem,
+  AssistantMessageFeedbackSummary,
   AssistantReferenceItem,
   AssistantSelectionCardItem,
   AssistantSelectionPayload,
@@ -60,14 +64,25 @@ const buildSessionPayload = (projectId?: number) => ({
   projectId: projectId ?? null,
 })
 
-const toLocalMessages = (detail: AssistantConversationDetailItem): AssistantMessageItem[] =>
+const toLocalMessages = (detail: AssistantConversationDetailItem, feedbackByMessageId: Map<number, AssistantMessageFeedbackSummary> = new Map()): AssistantMessageItem[] =>
   detail.messages.map((message) => ({
     id: String(message.id),
     role: message.role === 'user' ? 'user' : 'assistant',
     content: message.content,
     status: message.status === 'error' ? 'error' : 'done',
     attachments: message.attachments || [],
+    feedback: message.role === 'assistant' ? feedbackByMessageId.get(message.id) || null : undefined,
   }))
+
+const FEEDBACK_REASON_OPTIONS = [
+  ['WRONG_ANSWER', '事实错误'],
+  ['IRRELEVANT', '答非所问'],
+  ['MISSING_CONTEXT', '上下文缺失'],
+  ['TOOL_FAILED', '工具执行失败'],
+  ['INTERRUPTED', '响应中断'],
+  ['UNCLEAR', '表达不清'],
+  ['OTHER', '其他'],
+] as const
 
 const buildLocalAttachment = (file: File) => ({
   id: null,
@@ -106,6 +121,8 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
   const [renameDialog, setRenameDialog] = useState<{ session: AssistantConversationSessionSummaryItem; title: string } | null>(null)
   const [deleteDialog, setDeleteDialog] = useState<AssistantConversationSessionSummaryItem | null>(null)
   const [actionDialog, setActionDialog] = useState<{ action: AssistantActionItem; actionKey: string } | null>(null)
+  const [feedbackDialog, setFeedbackDialog] = useState<{ messageId: string; vote: AssistantFeedbackVote; reasonCodes: string[]; comment: string } | null>(null)
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
   const [dialogLoading, setDialogLoading] = useState(false)
   const [error, setError] = useState('')
   const streamControllerRef = useRef<StreamController | null>(null)
@@ -151,8 +168,8 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
     }
   }, [archivedView, mode, projectId, resetDisplayState])
 
-  const applyDetail = (detail: AssistantConversationDetailItem) => {
-    setMessages(toLocalMessages(detail))
+  const applyDetail = (detail: AssistantConversationDetailItem, feedbackByMessageId?: Map<number, AssistantMessageFeedbackSummary>) => {
+    setMessages(toLocalMessages(detail, feedbackByMessageId))
     setReferences(detail.latestDisplayState.references || [])
     setSuggestions(detail.latestDisplayState.suggestions || [])
     setActions(detail.latestDisplayState.actions || [])
@@ -166,7 +183,14 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
     setError('')
     try {
       const detail = await getAssistantConversationDetail(sessionId)
-      applyDetail(detail)
+      let feedbackByMessageId = new Map<number, AssistantMessageFeedbackSummary>()
+      try {
+        const feedbackPage = await pageAssistantFeedback({ page: 1, size: 100, sessionId })
+        feedbackByMessageId = new Map(feedbackPage.records.map((item) => [item.assistantMessageId, item]))
+      } catch {
+        // 反馈读取失败不阻断历史消息回显。
+      }
+      applyDetail(detail, feedbackByMessageId)
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
@@ -263,6 +287,7 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
           applyStreamDisplayState(event.references, event.suggestions, event.actions, event.selectionCards, event.debug)
           updateMessage(assistantMessageId, (current) => ({
             ...current,
+            id: event.assistantMessageId ? String(event.assistantMessageId) : current.id,
             content: event.content || current.content,
             status: 'done',
             attachments: event.attachments || [],
@@ -328,6 +353,51 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
       return
     }
     executeAction(action, actionKey)
+  }
+
+  /** 点赞直接提交；点踩先打开原因补充面板，避免用户被迫输入长文本。 */
+  const handleFeedback = (message: AssistantMessageItem, vote: AssistantFeedbackVote) => {
+    if (!selectedSessionId || !Number.isSafeInteger(Number(message.id)) || message.status !== 'done') return
+    if (vote === 'DOWN') {
+      setFeedbackDialog({
+        messageId: message.id,
+        vote,
+        reasonCodes: message.feedback?.reasonCodes || [],
+        comment: message.feedback?.comment || '',
+      })
+      return
+    }
+    void submitFeedback(message.id, { vote, reasonCodes: [], comment: '' })
+  }
+
+  /** 提交反馈并将服务端返回的状态回写到当前消息。 */
+  const submitFeedback = async (messageId: string, payload: { vote: AssistantFeedbackVote; reasonCodes: string[]; comment: string }) => {
+    if (!selectedSessionId) return
+    if (payload.vote === 'DOWN' && payload.reasonCodes.length === 0) {
+      setError('点踩反馈至少选择一个原因')
+      return
+    }
+    setFeedbackSubmitting(true)
+    setError('')
+    try {
+      const saved = await submitAssistantMessageFeedback(selectedSessionId, Number(messageId), payload)
+      updateMessage(messageId, (current) => ({ ...current, feedback: saved }))
+      setFeedbackDialog(null)
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setFeedbackSubmitting(false)
+    }
+  }
+
+  const toggleFeedbackReason = (reason: string) => {
+    setFeedbackDialog((current) => {
+      if (!current) return current
+      const reasonCodes = current.reasonCodes.includes(reason)
+        ? current.reasonCodes.filter((item) => item !== reason)
+        : [...current.reasonCodes, reason]
+      return { ...current, reasonCodes }
+    })
   }
 
   const confirmRenameSession = async () => {
@@ -437,6 +507,7 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
             streamingActive={sending}
             disabled={disabled}
             onSuggestion={submitQuestion}
+            onFeedback={handleFeedback}
           />
           <div className="space-y-3 px-4 pb-3 sm:px-5">
             <AssistantSelectionCards cards={selectionCards} disabled={disabled} onSelect={(selection) => submitQuestion(selection.resumeQuestion || '继续处理', selection)} />
@@ -475,6 +546,48 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
         onCancel={() => setRenameDialog(null)}
         onConfirm={confirmRenameSession}
       />
+      {feedbackDialog && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/30 px-4" role="dialog" aria-modal="true" aria-label="反馈回答">
+          <div className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-lg)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-[16px] font-semibold text-[var(--color-text-primary)]">告诉我们哪里需要改进</h3>
+                <p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">选择原因后提交，帮助我们持续改进 GitPilot。</p>
+              </div>
+              <button type="button" className="text-[12px] text-[var(--color-text-tertiary)]" onClick={() => setFeedbackDialog(null)}>关闭</button>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {FEEDBACK_REASON_OPTIONS.map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => toggleFeedbackReason(value)}
+                  className={value && feedbackDialog.reasonCodes.includes(value)
+                    ? 'rounded-full bg-rose-100 px-3 py-1.5 text-[12px] text-rose-700'
+                    : 'rounded-full border border-[var(--color-border)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)]'}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={feedbackDialog.comment}
+              maxLength={2000}
+              onChange={(event) => setFeedbackDialog((current) => current ? { ...current, comment: event.target.value } : current)}
+              placeholder="可以补充具体问题（可选）"
+              className="mt-4 min-h-24 w-full rounded-xl border border-[var(--color-border)] p-3 text-[13px] outline-none focus:border-[var(--color-primary)]"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setFeedbackDialog(null)}>取消</Button>
+              <Button
+                type="button"
+                loading={feedbackSubmitting}
+                onClick={() => void submitFeedback(feedbackDialog.messageId, feedbackDialog)}
+              >提交反馈</Button>
+            </div>
+          </div>
+        </div>
+      )}
       <ConfirmDialog
         open={Boolean(deleteDialog)}
         title="删除会话"

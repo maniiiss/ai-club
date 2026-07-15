@@ -1,4 +1,4 @@
-import { ExternalLink, Loader2 } from 'lucide-react'
+import { ExternalLink, Loader2, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { AssistantMarkdown } from '@/src/components/common/AssistantMarkdown'
 import { cn } from '@/src/lib/utils'
 import type {
@@ -6,6 +6,7 @@ import type {
   AssistantDebugInfoItem,
   AssistantMessageItem,
   AssistantReferenceItem,
+  AssistantFeedbackVote,
 } from '@/src/types/assistant'
 import { resolveAssistantDisplayState } from '@/src/lib/assistantUtils'
 
@@ -19,6 +20,7 @@ interface AssistantMessageListProps {
   streamingActive: boolean
   disabled: boolean
   onSuggestion: (question: string) => void
+  onFeedback: (message: AssistantMessageItem, vote: AssistantFeedbackVote) => void
 }
 
 const formatFileSize = (size: number) => {
@@ -75,6 +77,7 @@ export const AssistantMessageList = ({
   streamingActive,
   disabled,
   onSuggestion,
+  onFeedback,
 }: AssistantMessageListProps) => (
   <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4 sm:px-5">
     {messages.length === 0 ? (
@@ -124,6 +127,39 @@ export const AssistantMessageList = ({
                     </div>
                   )}
                   <ToolTrace message={message} />
+                  {message.status === 'done' && Number.isSafeInteger(Number(message.id)) && (
+                    <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border-light)] pt-2">
+                      <span className="text-[11px] text-[var(--color-text-tertiary)]">这条回答有帮助吗？</span>
+                      <button
+                        type="button"
+                        aria-label="回答有帮助"
+                        onClick={() => onFeedback(message, 'UP')}
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors',
+                          message.feedback?.vote === 'UP'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'text-[var(--color-text-tertiary)] hover:bg-emerald-50 hover:text-emerald-700',
+                        )}
+                      >
+                        <ThumbsUp className="h-3.5 w-3.5" />
+                        {message.feedback?.vote === 'UP' ? '已认可' : '有帮助'}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="回答需要改进"
+                        onClick={() => onFeedback(message, 'DOWN')}
+                        className={cn(
+                          'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] transition-colors',
+                          message.feedback?.vote === 'DOWN'
+                            ? 'bg-rose-50 text-rose-700'
+                            : 'text-[var(--color-text-tertiary)] hover:bg-rose-50 hover:text-rose-700',
+                        )}
+                      >
+                        <ThumbsDown className="h-3.5 w-3.5" />
+                        {message.feedback?.vote === 'DOWN' ? '已反馈' : '需要改进'}
+                      </button>
+                    </div>
+                  )}
                 </>
               )}
               <AttachmentBar attachments={message.attachments} />

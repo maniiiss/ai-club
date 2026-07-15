@@ -10,6 +10,10 @@ import type {
   AssistantConversationDetailItem,
   AssistantConversationSessionQuery,
   AssistantConversationSessionSummaryItem,
+  AssistantFeedbackDetail,
+  AssistantFeedbackQuery,
+  AssistantMessageFeedbackPayload,
+  AssistantMessageFeedbackSummary,
   AssistantFileLibraryItem,
   AssistantMemoryConsolidationStatus,
   AssistantMemoryConsolidationTask,
@@ -65,6 +69,35 @@ export const pageAssistantConversationSessions = async (
 
 export const getAssistantConversationDetail = async (sessionId: number): Promise<AssistantConversationDetailItem> => {
   const res = await http.get<ApiResponse<AssistantConversationDetailItem>>(`/api/assistant/sessions/${sessionId}`)
+  return unwrap(res)
+}
+
+/** 提交或覆盖当前用户对某条 GitPilot 回答的评价。 */
+export const submitAssistantMessageFeedback = async (
+  sessionId: number,
+  messageId: number,
+  payload: AssistantMessageFeedbackPayload,
+): Promise<AssistantMessageFeedbackSummary> => {
+  const res = await http.post<ApiResponse<AssistantMessageFeedbackSummary>>(
+    `/api/assistant/sessions/${sessionId}/messages/${messageId}/feedback`,
+    payload,
+  )
+  return unwrap(res)
+}
+
+/** 分页读取当前用户的 GitPilot 反馈。 */
+export const pageAssistantFeedback = async (
+  query: AssistantFeedbackQuery,
+): Promise<PageResponse<AssistantMessageFeedbackSummary>> => {
+  const res = await http.get<ApiResponse<PageResponse<AssistantMessageFeedbackSummary>>>('/api/assistant/feedback', {
+    params: cleanParams(query),
+  })
+  return unwrap(res)
+}
+
+/** 读取当前用户的一条反馈详情。 */
+export const getAssistantFeedback = async (id: number): Promise<AssistantFeedbackDetail> => {
+  const res = await http.get<ApiResponse<AssistantFeedbackDetail>>(`/api/assistant/feedback/${id}`)
   return unwrap(res)
 }
 

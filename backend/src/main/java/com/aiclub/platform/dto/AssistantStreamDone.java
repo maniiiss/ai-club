@@ -6,6 +6,9 @@ import java.util.List;
  * 流式回答完成后的终态事件。
  */
 public record AssistantStreamDone(
+        Long sessionId,
+        Long userMessageId,
+        Long assistantMessageId,
         String scopeKey,
         String roleName,
         String content,

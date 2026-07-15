@@ -89,6 +89,59 @@ export interface AssistantConversationMessageItem {
   attachments: AssistantAttachmentItem[]
 }
 
+/** GitPilot 单条回答的当前用户反馈状态。 */
+export interface AssistantMessageFeedbackSummary {
+  id: number
+  sessionId: number
+  assistantMessageId: number
+  userMessageId: number | null
+  submitterUserId: number
+  submitterUsername: string
+  submitterNickname: string
+  vote: 'UP' | 'DOWN' | string
+  reasonCodes: string[]
+  comment: string
+  questionSnapshot: string
+  answerSnapshot: string
+  runtimeRegistryCode: string
+  routeName: string
+  projectId: number | null
+  status: string
+  assigneeUserId: number | null
+  resolutionCode: string | null
+  resolutionNote: string
+  improvementTags: string[]
+  datasetStatus: string
+  createdAt: string | null
+  updatedAt: string | null
+  resolvedAt: string | null
+}
+
+/** 反馈活动时间线项。 */
+export interface AssistantFeedbackActivitySummary {
+  id: number
+  actionType: string
+  fromStatus: string | null
+  toStatus: string | null
+  note: string
+  actorUserId: number | null
+  createdAt: string | null
+}
+
+/** 用户反馈详情。 */
+export interface AssistantFeedbackDetail {
+  feedback: AssistantMessageFeedbackSummary
+  activities: AssistantFeedbackActivitySummary[]
+}
+
+export type AssistantFeedbackVote = 'UP' | 'DOWN'
+
+export interface AssistantMessageFeedbackPayload {
+  vote: AssistantFeedbackVote
+  reasonCodes?: string[]
+  comment?: string
+}
+
 export interface AssistantReferenceItem {
   type: string
   id: number | null
@@ -149,6 +202,9 @@ export interface AssistantConversationDetailItem extends AssistantConversationSe
 }
 
 export interface AssistantSessionChatResponsePayload {
+  sessionId: number
+  userMessageId: number | null
+  assistantMessageId: number | null
   scopeKey: string
   roleName: string
   content: string
@@ -168,6 +224,7 @@ export interface AssistantMessageItem {
   attachments: AssistantAttachmentItem[]
   actions?: AssistantActionItem[]
   toolExecutions?: Array<Record<string, unknown>>
+  feedback?: AssistantMessageFeedbackSummary | null
 }
 
 export interface AssistantStreamMetaEvent {
@@ -191,6 +248,9 @@ export interface AssistantStreamStatusEvent {
 }
 
 export interface AssistantStreamDoneEvent {
+  sessionId: number
+  userMessageId: number | null
+  assistantMessageId: number | null
   scopeKey: string
   roleName: string
   content: string
@@ -200,6 +260,13 @@ export interface AssistantStreamDoneEvent {
   selectionCards: AssistantSelectionCardItem[]
   debug: AssistantDebugInfoItem | null
   attachments: AssistantAttachmentItem[]
+}
+
+/** 我的反馈分页查询参数。 */
+export interface AssistantFeedbackQuery {
+  page: number
+  size: number
+  sessionId?: number
 }
 
 export interface AssistantStreamErrorEvent {

@@ -18,7 +18,9 @@ export const SYSTEM_MANAGEMENT_PERMISSION_CODES = [
   'system:role:view',
   'system:permission:view',
   'system:env:view',
-  'system:operation-log:view'
+  'system:operation-log:view',
+  'system:assistant-feedback:view',
+  'system:release:view'
 ] as const
 
 export const PLATFORM_MANAGEMENT_PERMISSION_CODES = [
@@ -46,7 +48,9 @@ const SYSTEM_PERMISSION_SET = new Set<string>([
   'system:user:manage',
   'system:role:manage',
   'system:permission:manage',
-  'system:env:manage'
+  'system:env:manage',
+  'system:assistant-feedback:manage',
+  'system:release:manage'
 ])
 
 const PLATFORM_PERMISSION_SET = new Set<string>([

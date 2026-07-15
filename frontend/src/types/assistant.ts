@@ -187,6 +187,9 @@ export interface AssistantConversationDetailItem extends AssistantConversationSe
  * Assistant 非流式问答返回体。
  */
 export interface AssistantSessionChatResponsePayload {
+  sessionId: number
+  userMessageId: number | null
+  assistantMessageId: number | null
   scopeKey: string
   roleName: string
   content: string
@@ -247,6 +250,9 @@ export interface AssistantStreamStatusEvent {
  * Assistant 流式 done 事件。
  */
 export interface AssistantStreamDoneEvent {
+  sessionId: number
+  userMessageId: number | null
+  assistantMessageId: number | null
   scopeKey: string
   roleName: string
   content: string

@@ -19,4 +19,7 @@ public interface AssistantConversationMessageRepository extends JpaRepository<As
      * 判断指定会话是否已有消息记录。
      */
     boolean existsBySession_Id(Long sessionId);
+
+    /** 校验一条消息是否为指定会话中的助手回答。 */
+    java.util.Optional<AssistantConversationMessageEntity> findByIdAndSession_IdAndRole(Long id, Long sessionId, String role);
 }

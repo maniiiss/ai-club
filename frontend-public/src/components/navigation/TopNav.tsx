@@ -5,7 +5,7 @@
  */
 import { useState, useRef, useEffect } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Menu, X, LogOut, User, ChevronDown, Coins, PlayCircle, Bell } from 'lucide-react'
+import { Menu, X, LogOut, User, ChevronDown, Coins, PlayCircle, Bell, MessageSquareText } from 'lucide-react'
 import { useAuthStore } from '@/src/stores/auth'
 import { useNotificationStore } from '@/src/stores/notifications'
 import { NotificationDrawer } from '@/src/components/notifications/NotificationDrawer'
@@ -202,6 +202,16 @@ export const TopNav = () => {
               <button
                 onClick={() => {
                   setMenuOpen(false)
+                  navigate('/settings/feedback')
+                }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                <MessageSquareText className="h-4 w-4" strokeWidth={1.75} />
+                我的反馈
+              </button>
+              <button
+                onClick={() => {
+                  setMenuOpen(false)
                   resetAllGuides().then(() => {
                     window.location.href = '/dashboard'
                   })
@@ -295,6 +305,16 @@ export const TopNav = () => {
             >
               <User className="h-4 w-4" />
               个人资料
+            </button>
+            <button
+              onClick={() => {
+                setMobileOpen(false)
+                navigate('/settings/feedback')
+              }}
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[14px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+            >
+              <MessageSquareText className="h-4 w-4" />
+              我的反馈
             </button>
             <button
               onClick={() => {

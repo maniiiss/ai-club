@@ -14,6 +14,7 @@ import { DashboardPage } from '@/src/pages/dashboard/DashboardPage'
 import { ProjectsPage } from '@/src/pages/projects/ProjectsPage'
 import { ProjectDetailPage } from '@/src/pages/projects/ProjectDetailPage'
 import { ProfilePage } from '@/src/pages/settings/ProfilePage'
+import { AssistantFeedbackPage } from '@/src/pages/settings/AssistantFeedbackPage'
 import { NotificationsPage } from '@/src/pages/notifications/NotificationsPage'
 import { NotFoundPage } from '@/src/pages/NotFoundPage'
 import { PlanningPage } from '@/src/pages/planning/PlanningPage'
@@ -47,6 +48,7 @@ export const router = createBrowserRouter([
       { path: '/projects', element: <ProjectsPage /> },
       { path: '/chat', element: <ChatPage /> },
       { path: '/settings/profile', element: <ProfilePage /> },
+      { path: '/settings/feedback', element: <AssistantFeedbackPage /> },
       { path: '/notifications', element: <NotificationsPage /> },
       // 兼容后端历史通知中的执行任务链接，详情页会在缺少 projectId 时使用任务自身的项目归属返回。
       { path: '/tasks/:taskId', element: <ExecutionTaskDetailPage /> },

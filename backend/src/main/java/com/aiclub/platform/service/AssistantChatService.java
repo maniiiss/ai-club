@@ -5,6 +5,8 @@ import com.aiclub.platform.domain.model.AssistantConversationSessionEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.AssistantChatResponse;
+import com.aiclub.platform.dto.AssistantConversationDetail;
+import com.aiclub.platform.dto.AssistantConversationMessageItem;
 import com.aiclub.platform.dto.AssistantConversationContextSnapshot;
 import com.aiclub.platform.dto.AssistantConversationRequestSnapshot;
 import com.aiclub.platform.dto.AssistantConversationState;
@@ -239,7 +241,7 @@ public class AssistantChatService {
                 );
                 assistantConversationStateStore.save(finalizedConversation.state());
                 AssistantDebugInfo debugInfo = buildDebugInfo(finalizedConversation.state(), gatewayResult.responseId());
-                assistantConversationSessionService.recordSuccess(
+                AssistantConversationDetail persistedDetail = assistantConversationSessionService.recordSuccess(
                         session,
                         effectiveRequest,
                         finalizedConversation.state(),
@@ -255,7 +257,7 @@ public class AssistantChatService {
                         finalizedConversation.content(),
                         finalizedConversation.state()
                 );
-                finishSuccess(outputStream, audit, gatewayResult, finalizedConversation, debugInfo, attachments);
+                finishSuccess(outputStream, sessionId, audit, gatewayResult, finalizedConversation, debugInfo, attachments, persistedDetail);
             } catch (AssistantClientStreamDisconnectedException exception) {
                 log.info("Assistant 流式响应写出时客户端已断开，停止当前输出：{}", resolveErrorMessage(exception));
                 AssistantConversationState latestState = loadLatestState(preparedConversation.state());
@@ -327,7 +329,7 @@ public class AssistantChatService {
             );
             assistantConversationStateStore.save(finalizedConversation.state());
             AssistantDebugInfo debugInfo = buildDebugInfo(finalizedConversation.state(), gatewayResult.responseId());
-            assistantConversationSessionService.recordSuccess(
+            AssistantConversationDetail persistedDetail = assistantConversationSessionService.recordSuccess(
                     session,
                     effectiveRequest,
                     finalizedConversation.state(),
@@ -351,6 +353,9 @@ public class AssistantChatService {
             assistantChatAuditRepository.save(audit);
 
             return new AssistantChatResponse(
+                    sessionId,
+                    resolveMessageId(persistedDetail, "user"),
+                    resolveMessageId(persistedDetail, "assistant"),
                     finalizedConversation.state().scopeKey(),
                     defaultString(context.roleName()),
                     defaultString(finalizedConversation.content()),
@@ -915,11 +920,13 @@ public class AssistantChatService {
      * 写出成功结束事件并更新审计日志。
      */
     private void finishSuccess(OutputStream outputStream,
+                               Long sessionId,
                                AssistantChatAuditEntity audit,
                                ChatExecutionResult gatewayResult,
                                FinalizedConversation finalizedConversation,
                                AssistantDebugInfo debugInfo,
-                               List<AssistantAttachmentService.PreparedAttachment> attachments) {
+                               List<AssistantAttachmentService.PreparedAttachment> attachments,
+                               AssistantConversationDetail persistedDetail) {
         audit.setStatus("SUCCESS");
         audit.setResponseSummary(abbreviate(finalizedConversation.content(), 1000));
         audit.setAssistantResponseId(defaultString(gatewayResult.responseId()));
@@ -928,6 +935,9 @@ public class AssistantChatService {
 
         try {
             writeEvent(outputStream, "done", new AssistantStreamDone(
+                    sessionId,
+                    resolveMessageId(persistedDetail, "user"),
+                    resolveMessageId(persistedDetail, "assistant"),
                     finalizedConversation.state().scopeKey(),
                     finalizedConversation.state().context() == null ? "" : defaultString(finalizedConversation.state().context().roleName()),
                     defaultString(finalizedConversation.content()),
@@ -943,6 +953,16 @@ public class AssistantChatService {
         } catch (IOException exception) {
             throw new AssistantClientStreamDisconnectedException("Assistant 完成事件发送时客户端已断开", exception);
         }
+    }
+
+    /** 从持久化详情中提取最近一条指定角色消息 ID，供前端立即挂载反馈控件。 */
+    private Long resolveMessageId(AssistantConversationDetail detail, String role) {
+        if (detail == null || detail.messages() == null) return null;
+        for (int index = detail.messages().size() - 1; index >= 0; index--) {
+            AssistantConversationMessageItem message = detail.messages().get(index);
+            if (role.equalsIgnoreCase(message.role())) return message.id();
+        }
+        return null;
     }
 
 

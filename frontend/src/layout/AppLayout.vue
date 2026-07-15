@@ -691,6 +691,7 @@ import {
   Message,
   MoreFilled,
   Odometer,
+  Promotion,
   Search,
   Setting,
   SwitchButton,
@@ -838,6 +839,7 @@ const iconRegistry: Record<string, unknown> = {
   FolderOpened,
   Link,
   Management,
+  Promotion,
   Odometer,
   Search,
   Setting,
@@ -870,7 +872,9 @@ const systemMenuSeedMap: Record<(typeof SYSTEM_MANAGEMENT_PERMISSION_CODES)[numb
   'system:role:view': { permission: 'system:role:view', fallbackPath: '/roles', fallbackLabel: '角色管理', shortLabel: '角色', fallbackIcon: Management, matchNames: ['roles'] },
   'system:permission:view': { permission: 'system:permission:view', fallbackPath: '/permissions', fallbackLabel: '功能管理', shortLabel: '功能', fallbackIcon: Setting, matchNames: ['permissions'] },
   'system:env:view': { permission: 'system:env:view', fallbackPath: '/env-vars', fallbackLabel: '环境变量管理', shortLabel: '变量', fallbackIcon: Key, matchNames: ['env-vars'] },
-  'system:operation-log:view': { permission: 'system:operation-log:view', fallbackPath: '/operation-logs', fallbackLabel: '操作日志', shortLabel: '日志', fallbackIcon: Document, matchNames: ['operation-logs'] }
+  'system:operation-log:view': { permission: 'system:operation-log:view', fallbackPath: '/operation-logs', fallbackLabel: '操作日志', shortLabel: '日志', fallbackIcon: Document, matchNames: ['operation-logs'] },
+  'system:assistant-feedback:view': { permission: 'system:assistant-feedback:view', fallbackPath: '/assistant-feedback', fallbackLabel: 'GitPilot反馈', shortLabel: '反馈', fallbackIcon: ChatDotRound, matchNames: ['assistant-feedback'] },
+  'system:release:view': { permission: 'system:release:view', fallbackPath: '/releases', fallbackLabel: '版本发布', shortLabel: '发布', fallbackIcon: Promotion, matchNames: ['platform-releases'] }
 }
 
 const platformMenuSeedMap: Record<(typeof PLATFORM_MANAGEMENT_PERMISSION_CODES)[number], MenuSeed> = {
