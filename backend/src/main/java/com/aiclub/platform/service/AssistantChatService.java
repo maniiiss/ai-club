@@ -225,6 +225,9 @@ public class AssistantChatService {
 
         return outputStream -> {
             try {
+                if (preparedConversation.contextCompacted()) {
+                    emitStatus(outputStream, "compacting", "GitPilot 正在压缩上下文");
+                }
                 emitStatus(outputStream, "connecting", "GitPilot 正在连接服务");
                 writeEvent(outputStream, "meta", buildMetaEvent(preparedConversation.state()));
                 emitStatus(outputStream, "thinking", "GitPilot 正在思考");
@@ -241,6 +244,13 @@ public class AssistantChatService {
                                     throw new AssistantClientStreamDisconnectedException("GitPilot 客户端流式连接已断开", exception);
                                 }
                             });
+                        },
+                        () -> {
+                            try {
+                                emitStatus(outputStream, "compacting", "GitPilot 正在压缩上下文");
+                            } catch (IOException exception) {
+                                throw new AssistantClientStreamDisconnectedException("GitPilot 客户端流式连接已断开", exception);
+                            }
                         }
                 );
                 responseStreamFilter.finish(visibleDelta -> {
@@ -343,7 +353,7 @@ public class AssistantChatService {
                 assistantConversationSessionService.readTranscript(session), nativeCompactionAvailable);
 
         try {
-            ChatExecutionResult gatewayResult = executeChat(session, preparedConversation, null);
+            ChatExecutionResult gatewayResult = executeChat(session, preparedConversation, null, null);
             AssistantConversationState latestState = loadLatestState(preparedConversation.state());
             FinalizedConversation finalizedConversation = finalizeConversation(
                     latestState,
@@ -416,8 +426,9 @@ public class AssistantChatService {
      * Legacy 继续保留原生工具调用链；其他 Runtime 通过统一同步聊天协议执行，避免平台入口仍偷偷固定到 Assistant。
      */
     private ChatExecutionResult executeChat(AssistantConversationSessionEntity session,
-                                             PreparedConversation preparedConversation,
-                                             Consumer<String> deltaConsumer) {
+                                              PreparedConversation preparedConversation,
+                                              Consumer<String> deltaConsumer,
+                                              Runnable contextCompactionConsumer) {
         String runtimeCode = defaultString(session.getRuntimeRegistryCode()).isBlank()
                 ? RuntimeChatService.HERMES_LEGACY
                 : session.getRuntimeRegistryCode().trim().toUpperCase(java.util.Locale.ROOT);
@@ -461,6 +472,12 @@ public class AssistantChatService {
             return new ChatExecutionResult(result.content(), result.runId());
         }
         RuntimeChatResult result = runtimeChatService.streamChat(runtimeCode, context, event -> {
+            if (event.is("CONTEXT_COMPACTED")) {
+                if (contextCompactionConsumer != null) {
+                    contextCompactionConsumer.run();
+                }
+                return;
+            }
             String delta = event.textDelta();
             if (hasText(delta)) {
                 deltaConsumer.accept(delta);
@@ -534,6 +551,7 @@ public class AssistantChatService {
                 existingState == null ? AssistantToolExecutionPolicy.empty() : existingState.toolExecutionPolicy(),
                 existingState == null ? persistedContextState : existingState.contextState()
         );
+        long contextVersionBeforePreparation = preparedState.contextState().version();
         AssistantConversationContextService.ContextPreparation contextPreparation = assistantConversationContextService.prepare(
                 preparedState.transcript(), preparedState.contextState(), contextProfile,
                 AssistantConversationContextService.ContextBudget.empty(), nativeCompactionAvailable);
@@ -589,7 +607,8 @@ public class AssistantChatService {
                 preparedState,
                 currentUserTurn,
                 contextPreparation.outboundTranscript(),
-                prompt
+                prompt,
+                preparedState.contextState().version() > contextVersionBeforePreparation
         );
     }
 
@@ -1306,7 +1325,8 @@ public class AssistantChatService {
             AssistantConversationState state,
             AssistantConversationTurn currentUserTurn,
             List<AssistantConversationTurn> outboundTranscript,
-            AssistantPromptBuilder.AssistantPrompt prompt
+            AssistantPromptBuilder.AssistantPrompt prompt,
+            boolean contextCompacted
     ) {
     }
 

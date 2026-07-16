@@ -5,6 +5,7 @@
 
 import type { ProjectItem } from './project'
 import type { WorkItem } from './planning'
+import type { UserPosition } from './auth'
 
 /** 工作台统计数据。 */
 export interface DashboardStats {
@@ -108,6 +109,18 @@ export interface GitlabAutoMergeLogSummary {
   executedAt: string
 }
 
+/** 首页按用户定位计算的优先关注事项。 */
+export interface DashboardFocusItem {
+  category: 'RISK' | 'REQUIREMENT' | 'UI_DESIGN' | 'DEVELOPMENT' | 'TECHNICAL' | 'GITLAB_MERGE' | 'BUILD' | string
+  title: string
+  description: string
+  severity: 'INFO' | 'WARNING' | 'CRITICAL' | string
+  status: string
+  projectId: number | null
+  workItemId: number | null
+  externalUrl: string | null
+}
+
 /** 工作台全局概览。 */
 export interface DashboardOverview {
   stats: DashboardStats
@@ -125,4 +138,8 @@ export interface DashboardOverview {
   mergeAlerts?: GitlabAutoMergeLogSummary[]
   /** 当前用户维度的任务（后端 myTasks，公众端暂未单独展示）。 */
   myTasks?: WorkItem[]
+  /** 当前账号的主定位，空值时保持原有通用首页。 */
+  userPosition?: UserPosition | null
+  /** 当前定位需要优先展示的工作项或合并告警。 */
+  focusItems?: DashboardFocusItem[]
 }

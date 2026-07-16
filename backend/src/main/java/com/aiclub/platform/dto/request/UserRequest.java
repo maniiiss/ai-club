@@ -1,5 +1,6 @@
 package com.aiclub.platform.dto.request;
 
+import com.aiclub.platform.common.UserPosition;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -30,9 +31,29 @@ public record UserRequest(
         @NotNull(message = "Enabled flag cannot be null")
         Boolean enabled,
         List<Long> roleIds,
+        /** 管理端可保留为空，以兼容尚未补齐定位的存量账号。 */
+        UserPosition userPosition,
         @Size(min = 6, max = 100, message = "Password length must be between 6 and 100")
         String password
 ) {
+
+    /** 兼容旧版完整用户管理载荷；新增定位前的调用统一保留为未设置。 */
+    public UserRequest(String username,
+                       String nickname,
+                       String email,
+                       String phone,
+                       Long gitlabUserId,
+                       String gitlabUsername,
+                       String gitlabName,
+                       Long giteeMemberId,
+                       String giteeUsername,
+                       String giteeName,
+                       Boolean enabled,
+                       List<Long> roleIds,
+                       String password) {
+        this(username, nickname, email, phone, gitlabUserId, gitlabUsername, gitlabName,
+                giteeMemberId, giteeUsername, giteeName, enabled, roleIds, null, password);
+    }
 
     public UserRequest(String username,
                        String nickname,
@@ -58,6 +79,7 @@ public record UserRequest(
                 giteeName,
                 enabled,
                 roleIds,
+                null,
                 password
         );
     }

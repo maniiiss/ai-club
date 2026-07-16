@@ -7,6 +7,7 @@ import { useAuthStore } from '@/src/stores/auth'
 import { Button } from '@/src/components/common/Button'
 import { Input } from '@/src/components/common/Input'
 import { getErrorMessage } from '@/src/lib/utils'
+import type { UserPosition } from '@/src/types/auth'
 
 const isValidEmail = (email: string): boolean =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -22,6 +23,7 @@ export const RegisterPage = () => {
     email: '',
     phone: '',
     gitlabUsername: '',
+    userPosition: '' as UserPosition | '',
     password: '',
     confirmPassword: '',
   })
@@ -54,6 +56,7 @@ export const RegisterPage = () => {
     } else if (form.password.length < 6) {
       errs.password = '密码至少 6 个字符'
     }
+    if (!form.userPosition) errs.userPosition = '请选择你的工作定位'
     if (form.password !== form.confirmPassword) {
       errs.confirmPassword = '两次输入的密码不一致'
     }
@@ -73,6 +76,7 @@ export const RegisterPage = () => {
         email: form.email.trim(),
         phone: form.phone.trim(),
         gitlabUsername: form.gitlabUsername.trim(),
+        userPosition: form.userPosition,
         password: form.password,
       })
       setSuccess(true)
@@ -145,6 +149,26 @@ export const RegisterPage = () => {
             autoComplete="email"
           />
         </div>
+        <fieldset className="rounded-xl border border-[var(--color-border)] p-3.5">
+          <legend className="px-1 text-[13px] font-medium text-[var(--color-text-secondary)]">你的工作定位 *</legend>
+          <p className="mb-3 text-[11px] text-[var(--color-text-tertiary)]">用于定制首页重点，不影响你可访问的数据和功能。</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {POSITION_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => updateField('userPosition', option.value)}
+                className={`rounded-lg border p-2.5 text-left transition-colors ${form.userPosition === option.value
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary-light)]'
+                  : 'border-[var(--color-border)] hover:border-[var(--color-primary)]/50'}`}
+              >
+                <span className="block text-[13px] font-semibold text-[var(--color-text-primary)]">{option.label}</span>
+                <span className="mt-0.5 block text-[11px] text-[var(--color-text-tertiary)]">{option.description}</span>
+              </button>
+            ))}
+          </div>
+          {errors.userPosition && <p className="mt-2 text-[12px] text-[var(--color-danger)]">{errors.userPosition}</p>}
+        </fieldset>
         <div className="grid grid-cols-2 gap-3">
           <Input
             label="手机号"
@@ -195,3 +219,12 @@ export const RegisterPage = () => {
     </div>
   )
 }
+
+/** 注册定位选项与首页场景说明保持集中，避免页面与工作台文案漂移。 */
+const POSITION_OPTIONS: Array<{ value: UserPosition; label: string; description: string }> = [
+  { value: 'PROJECT_MANAGER', label: '项目经理', description: '优先关注风险、阻塞和交付进度' },
+  { value: 'PRODUCT', label: '产品', description: '优先查看需求清单、状态与排期' },
+  { value: 'UI_DESIGNER', label: 'UI', description: '优先查看设计任务和待补原型需求' },
+  { value: 'DEVELOPER', label: '开发', description: '优先查看开发任务、MR 与构建入口' },
+  { value: 'TECHNICAL_MANAGER', label: '技术经理', description: '优先关注技术交付、质量和研发风险' },
+]

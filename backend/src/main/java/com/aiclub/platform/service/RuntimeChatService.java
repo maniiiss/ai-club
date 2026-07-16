@@ -96,8 +96,15 @@ public class RuntimeChatService {
         RuntimeStreamContentAssembler assembler = new RuntimeStreamContentAssembler();
         StringBuilder streamedContent = new StringBuilder();
         RuntimeChatResult result = adapter.streamChat(context, event -> {
-            if (event != null && event.is("CONTEXT_COMPACTED") && contextMetrics != null) {
-                contextMetrics.recordNativeCompaction(normalized);
+            if (event != null && event.is("CONTEXT_COMPACTED")) {
+                if (contextMetrics != null) {
+                    contextMetrics.recordNativeCompaction(normalized);
+                }
+                // 上层可将原生压缩事件映射为前端状态提示，不能把它误当成正文增量。
+                if (eventConsumer != null) {
+                    eventConsumer.accept(event);
+                }
+                return;
             }
             String displayDelta = assembler.accept(event);
             if (displayDelta.isEmpty()) {

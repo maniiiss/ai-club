@@ -34,6 +34,12 @@
                 <el-option v-for="item in roleOptions" :key="item.id" :label="item.name" :value="item.id" />
               </el-select>
             </div>
+            <div class="management-list-filter-field">
+              <label>定位</label>
+              <el-select v-model="filters.userPosition" clearable placeholder="用户定位" style="width: 100%" :teleported="false">
+                <el-option v-for="item in userPositionOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </div>
             <div class="management-list-filter-actions">
               <el-button type="primary" @click="handleSearch">查询</el-button>
               <el-button @click="handleReset">重置</el-button>
@@ -68,6 +74,7 @@
               <th class="user-col-gitlab">GitLab</th>
               <th class="user-col-gitee">Gitee</th>
               <th class="user-col-role">角色</th>
+              <th class="user-col-position">定位</th>
               <th class="user-col-email">邮箱</th>
               <th class="user-col-phone">手机号</th>
               <th class="user-col-status center">状态</th>
@@ -101,6 +108,9 @@
                   <span v-if="row.roleNames.length > 3" class="management-list-chip muted">+{{ row.roleNames.length - 3 }}</span>
                 </div>
                 <span v-else class="management-list-empty">-</span>
+              </td>
+              <td class="user-col-position" data-label="定位">
+                <span class="management-list-chip" :class="{ muted: !row.userPosition }">{{ formatUserPosition(row.userPosition) }}</span>
               </td>
               <td class="user-col-email" data-label="邮箱">
                 <span class="management-list-empty">{{ row.email || '-' }}</span>
@@ -171,6 +181,10 @@
                       </div>
                       <span v-else class="mobile-entity-empty-text">-</span>
                     </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">定位</span>
+                    <div class="mobile-entity-field-content"><span class="management-list-chip" :class="{ muted: !row.userPosition }">{{ formatUserPosition(row.userPosition) }}</span></div>
                   </div>
                   <div class="mobile-entity-field">
                     <span class="mobile-entity-field-label">邮箱</span>
@@ -333,6 +347,11 @@
         <el-form-item label="手机号">
           <el-input v-model="form.phone" placeholder="请输入手机号" />
         </el-form-item>
+        <el-form-item label="用户定位">
+          <el-select v-model="form.userPosition" clearable placeholder="未设置（存量账号兼容）" style="width: 100%">
+            <el-option v-for="item in userPositionOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="角色">
           <el-select v-model="form.roleIds" multiple filterable collapse-tags placeholder="请选择角色" style="width: 100%">
             <el-option v-for="item in roleOptions" :key="item.id" :label="item.name" :value="item.id" />
@@ -440,6 +459,11 @@
         <el-form-item label="手机号">
           <el-input v-model="form.phone" placeholder="请输入手机号" />
         </el-form-item>
+        <el-form-item label="用户定位">
+          <el-select v-model="form.userPosition" clearable placeholder="未设置（存量账号兼容）" style="width: 100%">
+            <el-option v-for="item in userPositionOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="角色">
           <el-select v-model="form.roleIds" multiple filterable collapse-tags placeholder="请选择角色" style="width: 100%">
             <el-option v-for="item in roleOptions" :key="item.id" :label="item.name" :value="item.id" />
@@ -471,7 +495,7 @@ import { createUser, deleteUser, listRoleOptions, pageUsers, resetUserPassword, 
 import { listGiteeMembers } from '@/api/gitee'
 import { listGitlabUsers } from '@/api/gitlab'
 import { useAuthStore } from '@/stores/auth'
-import type { GiteeMemberItem, GitlabUserItem, RoleItem, UserItem } from '@/types/platform'
+import type { GiteeMemberItem, GitlabUserItem, RoleItem, UserItem, UserPosition } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
@@ -488,6 +512,8 @@ interface UserForm {
   giteeName: string
   enabled: boolean
   roleIds: number[]
+  /** 用户主定位只影响公众端首页内容优先级，允许为空兼容存量账号。 */
+  userPosition: UserPosition | null
   password: string
 }
 
@@ -518,7 +544,14 @@ const { sentinelRef, requestPage, requestSize, showDesktopPagination, hasMoreMob
   pagination,
   loadPage: async () => loadUsers()
 })
-const filters = reactive<{ keyword: string; enabled: boolean | ''; roleId?: number }>({ keyword: '', enabled: '', roleId: undefined })
+const filters = reactive<{ keyword: string; enabled: boolean | ''; roleId?: number; userPosition?: UserPosition }>({ keyword: '', enabled: '', roleId: undefined, userPosition: undefined })
+const userPositionOptions: Array<{ value: UserPosition; label: string }> = [
+  { value: 'PROJECT_MANAGER', label: '项目经理' },
+  { value: 'PRODUCT', label: '产品' },
+  { value: 'UI_DESIGNER', label: 'UI' },
+  { value: 'DEVELOPER', label: '开发' },
+  { value: 'TECHNICAL_MANAGER', label: '技术经理' }
+]
 const userFilterPopoverVisible = ref(false)
 const dialogTitle = computed(() => {
   if (readonlyMode.value) {
@@ -548,6 +581,7 @@ const form = reactive<UserForm>({
   giteeName: '',
   enabled: true,
   roleIds: [],
+  userPosition: null,
   password: ''
 })
 
@@ -579,6 +613,7 @@ const resetForm = () => {
   giteeMemberOptions.value = []
   form.enabled = true
   form.roleIds = []
+  form.userPosition = null
   form.password = ''
   formRef.value?.clearValidate()
 }
@@ -595,7 +630,8 @@ const loadUsers = async () => {
       size: requestSize.value,
       keyword: filters.keyword,
       enabled: filters.enabled,
-      roleId: filters.roleId
+      roleId: filters.roleId,
+      userPosition: filters.userPosition
     })
     userList.value = data.records
     pagination.total = data.total
@@ -614,6 +650,7 @@ const handleReset = async () => {
   filters.keyword = ''
   filters.enabled = ''
   filters.roleId = undefined
+  filters.userPosition = undefined
   resetMobilePagination()
   await loadUsers()
 }
@@ -624,6 +661,9 @@ const handleSizeChange = async () => {
 }
 
 const userInitial = (value?: string | null) => (value || 'UN').slice(0, 2).toUpperCase()
+
+/** 将后端枚举映射为管理端可读标签，空值表示存量账号尚未设置。 */
+const formatUserPosition = (value: UserPosition | null) => userPositionOptions.find((item) => item.value === value)?.label || '未设置'
 
 const formatGitlabUser = (row: UserItem) => {
   const displayName = row.gitlabName || row.gitlabUsername
@@ -688,6 +728,7 @@ const fillForm = (row: UserItem) => {
     : []
   form.enabled = row.enabled
   form.roleIds = [...row.roleIds]
+  form.userPosition = row.userPosition
   form.password = ''
 }
 
@@ -800,6 +841,7 @@ const handleSubmit = async () => {
       giteeName: form.giteeName,
       enabled: form.enabled,
       roleIds: form.roleIds,
+      userPosition: form.userPosition,
       password: isEditing.value ? undefined : form.password
     }
     if (isEditing.value && currentId.value !== null) {
@@ -871,7 +913,11 @@ onMounted(async () => {
 }
 
 .user-col-role {
-  width: 16%;
+  width: 14%;
+}
+
+.user-col-position {
+  width: 9%;
 }
 
 .user-col-email {

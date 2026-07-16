@@ -1,6 +1,7 @@
 package com.aiclub.platform.security;
 
 import com.aiclub.platform.dto.CurrentUserInfo;
+import com.aiclub.platform.common.UserPosition;
 
 import java.util.List;
 import java.util.Set;
@@ -20,7 +21,9 @@ public record LoginSession(
         List<String> permissionCodes,
         List<String> guideCompleted,
         /** 当前会话缓存的账号主题 ID。 */
-        String themeId
+        String themeId,
+        /** 当前会话缓存的用户主定位，供登录响应与首页即时读取。 */
+        UserPosition userPosition
 ) {
 
     /** 兼容历史 Redis 会话反序列化和旧测试构造。 */
@@ -37,7 +40,25 @@ public record LoginSession(
                         List<String> permissionCodes,
                         List<String> guideCompleted) {
         this(userId, username, nickname, email, phone, gitlabUsername, avatarUrl, enabled,
-                roleCodes, roleNames, permissionCodes, guideCompleted, null);
+                roleCodes, roleNames, permissionCodes, guideCompleted, null, null);
+    }
+
+    /** 兼容已有 Redis 会话数据中已包含主题、但尚未包含用户定位的结构。 */
+    public LoginSession(Long userId,
+                        String username,
+                        String nickname,
+                        String email,
+                        String phone,
+                        String gitlabUsername,
+                        String avatarUrl,
+                        boolean enabled,
+                        List<String> roleCodes,
+                        List<String> roleNames,
+                        List<String> permissionCodes,
+                        List<String> guideCompleted,
+                        String themeId) {
+        this(userId, username, nickname, email, phone, gitlabUsername, avatarUrl, enabled,
+                roleCodes, roleNames, permissionCodes, guideCompleted, themeId, null);
     }
 
     public static LoginSession fromCurrentUserInfo(CurrentUserInfo currentUserInfo) {
@@ -54,7 +75,8 @@ public record LoginSession(
                 List.copyOf(currentUserInfo.roleNames()),
                 List.copyOf(currentUserInfo.permissionCodes()),
                 List.copyOf(currentUserInfo.guideCompleted()),
-                currentUserInfo.themeId()
+                currentUserInfo.themeId(),
+                currentUserInfo.userPosition()
         );
     }
 
@@ -72,7 +94,8 @@ public record LoginSession(
                 List.copyOf(roleNames),
                 List.copyOf(permissionCodes),
                 List.copyOf(guideCompleted),
-                themeId
+                themeId,
+                userPosition
         );
     }
 

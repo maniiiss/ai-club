@@ -1,5 +1,6 @@
 package com.aiclub.platform.dto;
 
+import com.aiclub.platform.common.UserPosition;
 import com.aiclub.platform.constants.ThemeCatalog;
 
 import java.util.List;
@@ -20,7 +21,9 @@ public record CurrentUserInfo(
         /** 用户已完成新手引导的页面 key 列表。 */
         List<String> guideCompleted,
         /** 用户账号级主题 ID，公众端与管理端共用。 */
-        String themeId
+        String themeId,
+        /** 用户主定位，仅用于公众端首页信息优先级。 */
+        UserPosition userPosition
 ) {
 
     public CurrentUserInfo {
@@ -41,6 +44,24 @@ public record CurrentUserInfo(
                            List<String> permissionCodes,
                            List<String> guideCompleted) {
         this(id, username, nickname, email, phone, gitlabUsername, avatarUrl, enabled,
-                roleCodes, roleNames, permissionCodes, guideCompleted, ThemeCatalog.DEFAULT_THEME_ID);
+                roleCodes, roleNames, permissionCodes, guideCompleted, ThemeCatalog.DEFAULT_THEME_ID, null);
+    }
+
+    /** 兼容已有调用方传入主题但尚未传入用户定位。 */
+    public CurrentUserInfo(Long id,
+                           String username,
+                           String nickname,
+                           String email,
+                           String phone,
+                           String gitlabUsername,
+                           String avatarUrl,
+                           boolean enabled,
+                           List<String> roleCodes,
+                           List<String> roleNames,
+                           List<String> permissionCodes,
+                           List<String> guideCompleted,
+                           String themeId) {
+        this(id, username, nickname, email, phone, gitlabUsername, avatarUrl, enabled,
+                roleCodes, roleNames, permissionCodes, guideCompleted, themeId, null);
     }
 }

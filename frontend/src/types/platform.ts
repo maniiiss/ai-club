@@ -2307,7 +2307,12 @@ export interface UserItem {
   roleIds: number[]
   roleCodes: string[]
   roleNames: string[]
+  /** 用户主定位，仅用于公众端首页内容优先级；空值表示尚未设置。 */
+  userPosition: UserPosition | null
 }
+
+/** 用户主定位的后端枚举映射，独立于角色与权限。 */
+export type UserPosition = 'PROJECT_MANAGER' | 'PRODUCT' | 'UI_DESIGNER' | 'DEVELOPER' | 'TECHNICAL_MANAGER'
 
 export interface CreditGlobalConfigItem {
   /** 新用户注册后是否自动赠送积分。 */

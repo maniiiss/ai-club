@@ -3,6 +3,7 @@ package com.aiclub.platform.service;
 import com.aiclub.platform.dto.CreditAccountBackfillSummary;
 import com.aiclub.platform.dto.CreditAccountSummary;
 import com.aiclub.platform.dto.CreditTransactionSummary;
+import com.aiclub.platform.common.UserPosition;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.request.CreditAdjustmentRequest;
 import com.aiclub.platform.dto.request.CreditFeatureConfigRequest;
@@ -58,6 +59,7 @@ class CreditServiceIntegrationTests {
                 "credit-register@example.com",
                 "13800001111",
                 "",
+                UserPosition.PRODUCT,
                 "secret123"
         ));
 
@@ -66,6 +68,7 @@ class CreditServiceIntegrationTests {
         List<CreditTransactionSummary> transactions = creditService.pageAccountTransactions(userId, 1, 10).records();
 
         assertThat(account.balance()).isEqualTo(88);
+        assertThat(userRepository.findById(userId).orElseThrow().getUserPosition()).isEqualTo(UserPosition.PRODUCT);
         assertThat(transactions).hasSize(1);
         assertThat(transactions.get(0).transactionType()).isEqualTo("REGISTER_GRANT");
         assertThat(transactions.get(0).amount()).isEqualTo(88);

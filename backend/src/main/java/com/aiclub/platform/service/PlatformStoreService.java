@@ -1,6 +1,7 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.common.DataPermissionScopeType;
+import com.aiclub.platform.common.UserPosition;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
 import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.domain.model.IterationEntity;
@@ -12,6 +13,7 @@ import com.aiclub.platform.domain.model.TaskUpdateRecordSource;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.AgentSummary;
 import com.aiclub.platform.dto.DashboardCardOverview;
+import com.aiclub.platform.dto.DashboardFocusItem;
 import com.aiclub.platform.dto.DashboardOverview;
 import com.aiclub.platform.dto.DashboardStats;
 import com.aiclub.platform.dto.GitlabAutoMergeLogSummary;
@@ -19,6 +21,7 @@ import com.aiclub.platform.dto.GitlabUserOauthBindingSummary;
 import com.aiclub.platform.dto.IterationBoardSummary;
 import com.aiclub.platform.dto.IterationSummary;
 import com.aiclub.platform.dto.PageResponse;
+import com.aiclub.platform.dto.PipelineCenterEntrySummary;
 import com.aiclub.platform.dto.ProjectMemberSummary;
 import com.aiclub.platform.dto.ProjectListStatsSummary;
 import com.aiclub.platform.dto.ProjectSummary;
@@ -44,6 +47,7 @@ import com.aiclub.platform.repository.TaskPrdProjectionRepository;
 import com.aiclub.platform.repository.TaskRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.security.AuthContextHolder;
+import com.aiclub.platform.security.AuthContext;
 import com.aiclub.platform.util.RequirementDocumentUtils;
 import com.aiclub.platform.util.RichTextUtils;
 import com.aiclub.platform.util.TaskStatusUtils;
@@ -113,6 +117,8 @@ public class PlatformStoreService {
     private final DashboardShortcutEntryService dashboardShortcutEntryService;
     private final GitlabUserOauthService gitlabUserOauthService;
     private final GitlabManagementService gitlabManagementService;
+    /** 可选的流水线中心聚合，旧单元测试直接构造本服务时允许为空。 */
+    private CicdManagementService cicdManagementService;
     private final SecureRandom workItemCodeRandom = new SecureRandom();
 
     @Autowired
@@ -156,6 +162,12 @@ public class PlatformStoreService {
         this.dashboardShortcutEntryService = dashboardShortcutEntryService;
         this.gitlabUserOauthService = gitlabUserOauthService;
         this.gitlabManagementService = gitlabManagementService;
+    }
+
+    /** 注入流水线中心服务，为有构建查看权限的定位工作台补充失败构建风险。 */
+    @Autowired
+    void setCicdManagementService(CicdManagementService cicdManagementService) {
+        this.cicdManagementService = cicdManagementService;
     }
 
     /**
@@ -205,6 +217,9 @@ public class PlatformStoreService {
                 .filter(log -> "FAILED".equalsIgnoreCase(log.result())
                         || "AI_REJECTED".equalsIgnoreCase(log.result()))
                 .toList();
+        UserPosition userPosition = resolveCurrentUserPosition();
+        Long currentUserId = AuthContextHolder.get().map(AuthContext::userId).orElse(null);
+        List<DashboardFocusItem> focusItems = buildDashboardFocusItems(userPosition, taskList, currentUserId, mergeAlerts);
 
         DashboardStats stats = new DashboardStats(
                 projectList.size(),
@@ -229,8 +244,168 @@ public class PlatformStoreService {
                 List.of(),
                 mergeAlerts,
                 null,
-                null
+                null,
+                userPosition,
+                focusItems
         );
+    }
+
+    /**
+     * 为公众端按主定位筛选最需要关注的事项。
+     * 业务意图：任务列表已经由 listAllTasks 按项目数据权限过滤，定位仅改变排序和信息密度，不产生额外数据可见性。
+     */
+    private List<DashboardFocusItem> buildDashboardFocusItems(UserPosition userPosition,
+                                                               List<TaskSummary> taskList,
+                                                               Long currentUserId,
+                                                               List<GitlabAutoMergeLogSummary> mergeAlerts) {
+        if (userPosition == null) {
+            return List.of();
+        }
+        List<DashboardFocusItem> items = new ArrayList<>();
+        switch (userPosition) {
+            case PROJECT_MANAGER -> {
+                taskList.stream().filter(this::isRiskTask).limit(4)
+                        .map(task -> toWorkItemFocus(task, "RISK", riskSeverity(task), "项目风险"))
+                        .forEach(items::add);
+                appendMergeAlertFocus(items, mergeAlerts, 6);
+                appendBuildFailureFocus(items, 8);
+            }
+            case PRODUCT -> taskList.stream()
+                    .filter(task -> TaskStatusUtils.WORK_ITEM_TYPE_REQUIREMENT.equals(task.workItemType()))
+                    .limit(8)
+                    .map(task -> toWorkItemFocus(task, "REQUIREMENT", requirementSeverity(task), "需求事项"))
+                    .forEach(items::add);
+            case UI_DESIGNER -> {
+                taskList.stream()
+                        .filter(task -> ("UI设计".equals(task.taskType()) && isAssignedOrCollaborating(task, currentUserId))
+                                || (TaskStatusUtils.WORK_ITEM_TYPE_REQUIREMENT.equals(task.workItemType())
+                                && (task.prototypeUrl() == null || task.prototypeUrl().isBlank())))
+                        .limit(8)
+                        .map(task -> toWorkItemFocus(task, "UI_DESIGN", requirementSeverity(task), "设计待办"))
+                        .forEach(items::add);
+            }
+            case DEVELOPER -> {
+                taskList.stream()
+                        .filter(task -> isAssignedOrCollaborating(task, currentUserId)
+                                && ("开发任务".equals(task.taskType())
+                                || TaskStatusUtils.WORK_ITEM_TYPE_DEFECT.equals(task.workItemType())))
+                        .limit(4)
+                        .map(task -> toWorkItemFocus(task, "DEVELOPMENT", riskSeverity(task), "研发待办"))
+                        .forEach(items::add);
+                appendMergeAlertFocus(items, mergeAlerts, 6);
+                appendBuildFailureFocus(items, 8);
+            }
+            case TECHNICAL_MANAGER -> {
+                taskList.stream()
+                        .filter(task -> "技术设计".equals(task.taskType()) || "开发任务".equals(task.taskType()) || isRiskTask(task))
+                        .limit(4)
+                        .map(task -> toWorkItemFocus(task, isRiskTask(task) ? "RISK" : "TECHNICAL", riskSeverity(task), "技术交付"))
+                        .forEach(items::add);
+                appendMergeAlertFocus(items, mergeAlerts, 6);
+                appendBuildFailureFocus(items, 8);
+            }
+        }
+        return items.stream().limit(8).toList();
+    }
+
+    /** 将当前用户的失败或 AI 拒绝 MR 追加为定位化工作台的可执行告警。 */
+    private void appendMergeAlertFocus(List<DashboardFocusItem> items,
+                                       List<GitlabAutoMergeLogSummary> mergeAlerts,
+                                       int limit) {
+        mergeAlerts.stream()
+                .limit(Math.max(0, limit - items.size()))
+                .map(log -> new DashboardFocusItem(
+                        "GITLAB_MERGE",
+                        log.mergeRequestTitle() == null || log.mergeRequestTitle().isBlank() ? "GitLab 合并告警" : log.mergeRequestTitle(),
+                        log.reason() == null || log.reason().isBlank() ? "自动合并失败或 AI 审核拒绝，请处理后重新提交。" : log.reason(),
+                        "CRITICAL",
+                        log.result(),
+                        null,
+                        null,
+                        log.webUrl()))
+                .forEach(items::add);
+    }
+
+    /**
+     * 追加当前数据权限范围内的失败构建；没有 cicd:view 权限时不探测也不暴露流水线状态。
+     */
+    private void appendBuildFailureFocus(List<DashboardFocusItem> items, int limit) {
+        if (cicdManagementService == null || !hasCurrentPermission("cicd:view") || items.size() >= limit) {
+            return;
+        }
+        cicdManagementService.pagePipelineCenterEntries(1, limit, null, null, true, null).records().stream()
+                .filter(item -> isFailedBuildStatus(item.lastRunStatus()))
+                .limit(Math.max(0, limit - items.size()))
+                .map(item -> new DashboardFocusItem(
+                        "BUILD",
+                        item.displayName(),
+                        item.projectName() + " · " + (item.lastRunMessage() == null || item.lastRunMessage().isBlank() ? "最近构建失败，请查看发布记录。" : item.lastRunMessage()),
+                        "CRITICAL",
+                        item.lastRunStatus(),
+                        item.projectId(),
+                        null,
+                        null))
+                .forEach(items::add);
+    }
+
+    private boolean isFailedBuildStatus(String status) {
+        String normalized = status == null ? "" : status.trim().toUpperCase();
+        return "FAILED".equals(normalized) || "FAILURE".equals(normalized) || "ERROR".equals(normalized);
+    }
+
+    private boolean hasCurrentPermission(String permissionCode) {
+        return AuthContextHolder.get().map(context -> context.permissionCodes().contains(permissionCode)).orElse(false);
+    }
+
+    /** 将工作项转换为可跨定位复用的首页关注事项。 */
+    private DashboardFocusItem toWorkItemFocus(TaskSummary task, String category, String severity, String prefix) {
+        String deadline = task.planEndDate() == null || task.planEndDate().isBlank() ? "未设置截止日期" : "截止 " + task.planEndDate();
+        String iteration = task.iterationName() == null || task.iterationName().isBlank() ? "未排期" : task.iterationName();
+        return new DashboardFocusItem(category, task.name(), prefix + " · " + task.projectName() + " · " + iteration + " · " + deadline,
+                severity, task.status(), task.projectId(), task.id(), null);
+    }
+
+    /** 风险统一由已阻塞、未完成高优先级或逾期未完成工作项组成。 */
+    private boolean isRiskTask(TaskSummary task) {
+        return "已阻塞".equals(TaskStatusUtils.normalizeStatus(task.workItemType(), task.status()))
+                || (!isCompletedTask(task) && "高".equals(task.priority()))
+                || isOverdueTask(task);
+    }
+
+    private boolean isCompletedTask(TaskSummary task) {
+        return TaskStatusUtils.isCompletedStatus(task.workItemType(), task.status());
+    }
+
+    private boolean isOverdueTask(TaskSummary task) {
+        if (task.planEndDate() == null || task.planEndDate().isBlank()) {
+            return false;
+        }
+        try {
+            return TaskStatusUtils.isOverdue(LocalDate.parse(task.planEndDate(), DATE_FORMATTER), task.workItemType(), task.status(), LocalDate.now());
+        } catch (DateTimeParseException ignored) {
+            return false;
+        }
+    }
+
+    private String riskSeverity(TaskSummary task) {
+        return "已阻塞".equals(TaskStatusUtils.normalizeStatus(task.workItemType(), task.status())) || isOverdueTask(task)
+                ? "CRITICAL" : "WARNING";
+    }
+
+    private String requirementSeverity(TaskSummary task) {
+        return "已阻塞".equals(TaskStatusUtils.normalizeStatus(task.workItemType(), task.status())) ? "WARNING" : "INFO";
+    }
+
+    private boolean isAssignedOrCollaborating(TaskSummary task, Long currentUserId) {
+        return currentUserId != null && (currentUserId.equals(task.assigneeUserId()) || task.collaboratorUserIds().contains(currentUserId));
+    }
+
+    /** 从数据库读取最新定位，确保管理员调整后下次首页刷新即可生效。 */
+    private UserPosition resolveCurrentUserPosition() {
+        return AuthContextHolder.get()
+                .flatMap(context -> userRepository.findWithDetailsById(context.userId()))
+                .map(UserEntity::getUserPosition)
+                .orElse(null);
     }
 
     /**

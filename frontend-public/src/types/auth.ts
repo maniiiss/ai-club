@@ -9,6 +9,9 @@ export interface LoginPayload {
   password: string
 }
 
+/** 用户主定位，仅用于公众端首页的内容优先级，不代表权限角色。 */
+export type UserPosition = 'PROJECT_MANAGER' | 'PRODUCT' | 'UI_DESIGNER' | 'DEVELOPER' | 'TECHNICAL_MANAGER'
+
 /** 注册请求载荷。 */
 export interface RegisterPayload {
   username: string
@@ -16,6 +19,8 @@ export interface RegisterPayload {
   email: string
   phone: string
   gitlabUsername: string
+  /** 注册必须选择主定位，后续仅允许管理员在用户管理中调整。 */
+  userPosition: UserPosition
   password: string
 }
 
@@ -64,4 +69,6 @@ export interface CurrentUserInfo {
   guideCompleted: string[]
   /** 账号级主题 ID，公众端与管理端共用。 */
   themeId: string
+  /** 用户主定位为空时，公众端继续显示通用工作台。 */
+  userPosition: UserPosition | null
 }

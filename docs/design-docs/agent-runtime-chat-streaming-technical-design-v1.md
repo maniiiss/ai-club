@@ -37,6 +37,8 @@ Content-Type: application/json
 
 `RuntimeChatService` 负责校验 `CHAT` 能力并调用适配器。`AssistantChatService` 将 `TEXT_DELTA` 写成对浏览器的 SSE `delta` 事件；`ChatAssistantService` 将同一增量广播为聊天室 WebSocket 的 `HERMES_STREAM_DELTA`，历史事件名保持兼容。
 
+当 backend 在发送前压缩历史，或 Runtime 在流式运行中发出 `CONTEXT_COMPACTED` 时，Assistant SSE 会发送 `status={ stage: "compacting", message: "GitPilot 正在压缩上下文" }`。该状态只用于界面提示，不会写入助手正文、会话历史或模型上下文。
+
 聊天室首次运行且尚无工具策略记录时，平台会将当前启用、允许自动执行的只读工具固化为房间策略，并同时作为 AgentRuntime 工具契约发送；写工具不会自动初始化，仍须由房主显式授权。这样聊天室的默认可用工具状态与 Runtime 实际工具目录保持一致。
 
 ## Pi Runtime 实现

@@ -1,5 +1,6 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.common.UserPosition;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.UserSummary;
 import com.aiclub.platform.dto.request.UserRequest;
@@ -72,5 +73,22 @@ class AccessManagementServiceIntegrationTests {
                 .contains(updated.id());
         assertThat(userRepository.findById(updated.id()).orElseThrow().getGiteeUsername()).isEqualTo("lisi");
         assertThat(userRepository.findById(updated.id()).orElseThrow().getGitlabUserId()).isEqualTo(882L);
+    }
+
+    /** 用户定位须与用户管理读写和筛选链路一同持久化，且不依赖角色配置。 */
+    @Test
+    void shouldPersistAndFilterUserPosition() {
+        UserSummary created = accessManagementService.createUser(new UserRequest(
+                "positioned-user", "定位用户", "position@example.com", "", null, "", "",
+                null, "", "", true, List.of(), UserPosition.PRODUCT, "secret123"
+        ));
+
+        PageResponse<UserSummary> pageData = accessManagementService.pageUsers(
+                1, 10, null, true, null, UserPosition.PRODUCT
+        );
+
+        assertThat(created.userPosition()).isEqualTo(UserPosition.PRODUCT);
+        assertThat(pageData.records()).extracting(UserSummary::id).contains(created.id());
+        assertThat(userRepository.findById(created.id()).orElseThrow().getUserPosition()).isEqualTo(UserPosition.PRODUCT);
     }
 }

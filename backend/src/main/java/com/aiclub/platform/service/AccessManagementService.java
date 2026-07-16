@@ -1,5 +1,6 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.common.UserPosition;
 import com.aiclub.platform.domain.model.PermissionEntity;
 import com.aiclub.platform.domain.model.RoleEntity;
 import com.aiclub.platform.domain.model.UserEntity;
@@ -55,11 +56,16 @@ public class AccessManagementService {
         this.passwordEncoder = passwordEncoder;
     }
 
-    public PageResponse<UserSummary> pageUsers(int page, int size, String keyword, Boolean enabled, Long roleId) {
+    public PageResponse<UserSummary> pageUsers(int page, int size, String keyword, Boolean enabled, Long roleId, UserPosition userPosition) {
         Pageable pageable = buildPageable(page, size, Sort.by(Sort.Direction.ASC, "id"));
-        Page<UserSummary> pageData = userRepository.findAll(userSpecification(keyword, enabled, roleId), pageable)
+        Page<UserSummary> pageData = userRepository.findAll(userSpecification(keyword, enabled, roleId, userPosition), pageable)
                 .map(this::toUserSummary);
         return PageResponse.from(pageData);
+    }
+
+    /** 兼容现有服务调用，未传定位筛选时返回全部定位及未设置账号。 */
+    public PageResponse<UserSummary> pageUsers(int page, int size, String keyword, Boolean enabled, Long roleId) {
+        return pageUsers(page, size, keyword, enabled, roleId, null);
     }
 
     public List<UserOptionSummary> listUserOptions() {
@@ -95,6 +101,7 @@ public class AccessManagementService {
         entity.setNickname(request.nickname().trim());
         entity.setEmail(defaultString(request.email()));
         entity.setPhone(defaultString(request.phone()));
+        entity.setUserPosition(request.userPosition());
         applyGitlabUserBinding(entity, request);
         applyGiteeMemberBinding(entity, request);
         entity.setEnabled(Boolean.TRUE.equals(request.enabled()));
@@ -113,6 +120,7 @@ public class AccessManagementService {
         entity.setNickname(request.nickname().trim());
         entity.setEmail(defaultString(request.email()));
         entity.setPhone(defaultString(request.phone()));
+        entity.setUserPosition(request.userPosition());
         applyGitlabUserBinding(entity, request);
         applyGiteeMemberBinding(entity, request);
         entity.setEnabled(Boolean.TRUE.equals(request.enabled()));
@@ -314,7 +322,7 @@ public class AccessManagementService {
         return PageRequest.of(safePage - 1, safeSize, sort);
     }
 
-    private Specification<UserEntity> userSpecification(String keyword, Boolean enabled, Long roleId) {
+    private Specification<UserEntity> userSpecification(String keyword, Boolean enabled, Long roleId, UserPosition userPosition) {
         return (root, query, cb) -> {
             if (query != null) {
                 query.distinct(true);
@@ -335,6 +343,9 @@ public class AccessManagementService {
             }
             if (enabled != null) {
                 predicates.add(cb.equal(root.get("enabled"), enabled));
+            }
+            if (userPosition != null) {
+                predicates.add(cb.equal(root.get("userPosition"), userPosition));
             }
             if (roleId != null) {
                 predicates.add(cb.equal(root.join("roles", JoinType.LEFT).get("id"), roleId));
@@ -403,7 +414,8 @@ public class AccessManagementService {
                 entity.getLastLoginAt() == null ? null : entity.getLastLoginAt().format(TIME_FORMATTER),
                 roles.stream().map(RoleEntity::getId).toList(),
                 roles.stream().map(RoleEntity::getCode).toList(),
-                roles.stream().map(RoleEntity::getName).toList()
+                roles.stream().map(RoleEntity::getName).toList(),
+                entity.getUserPosition()
         );
     }
 

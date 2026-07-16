@@ -9,9 +9,15 @@ import {
   Users,
   GitBranch,
   Plus,
+  AlertTriangle,
+  ClipboardList,
+  Palette,
+  Code2,
+  Network,
 } from 'lucide-react'
 import { getDashboardOverview } from '@/src/api/dashboard'
-import type { DashboardOverview } from '@/src/types/dashboard'
+import type { DashboardFocusItem, DashboardOverview } from '@/src/types/dashboard'
+import type { UserPosition } from '@/src/types/auth'
 import { Card } from '@/src/components/common/Card'
 import { Button } from '@/src/components/common/Button'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
@@ -65,6 +71,8 @@ export const DashboardPage = () => {
   const shortcutOverview = overview?.shortcutOverview ?? null
   const gitlabUsername = overview?.currentUserGitlabUsername ?? null
   const mergeAlerts = overview?.mergeAlerts || []
+  const userPosition = overview?.userPosition ?? null
+  const focusItems = overview?.focusItems || []
   const hasMyTaskStats = hasDashboardMyTaskStats(stats)
 
   return (
@@ -76,7 +84,7 @@ export const DashboardPage = () => {
             工作台
           </h1>
           <p className="mt-1.5 text-[14px] text-[var(--color-text-tertiary)]">
-            查看项目动态、待办任务和研发数据
+            {userPosition ? POSITION_COPY[userPosition].subtitle : '查看项目动态、待办任务和研发数据'}
           </p>
         </div>
         <Link to="/projects" data-guide-id="dashboard-create-project">
@@ -110,11 +118,20 @@ export const DashboardPage = () => {
             </div>
           )}
 
+          {userPosition && (
+            <PositionFocusSection position={userPosition} items={focusItems} />
+          )}
+
           {/* 快捷操作区：GitLab 发起 MR + 快速构建 */}
-          <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2" data-guide-id="dashboard-quick-actions">
-            <QuickMergeWidget gitlabUsername={gitlabUsername} mergeAlerts={mergeAlerts} />
-            <QuickBuildWidget />
-          </div>
+          {(userPosition === null || userPosition === 'DEVELOPER') && (
+            <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2" data-guide-id="dashboard-quick-actions">
+              <QuickMergeWidget gitlabUsername={gitlabUsername} mergeAlerts={mergeAlerts} />
+              <QuickBuildWidget />
+            </div>
+          )}
+          {userPosition === 'TECHNICAL_MANAGER' && (
+            <div className="mb-8" data-guide-id="dashboard-quick-actions"><QuickBuildWidget /></div>
+          )}
 
           {/* 我的任务统计 */}
           {hasMyTaskStats && (
@@ -250,6 +267,49 @@ export const DashboardPage = () => {
         </>
       )}
     </div>
+  )
+}
+
+/** 各岗位首页标题与信息侧重点；权限与数据范围仍由后端决定。 */
+const POSITION_COPY: Record<UserPosition, { title: string; subtitle: string }> = {
+  PROJECT_MANAGER: { title: '项目风险雷达', subtitle: '优先关注项目风险、阻塞和交付进度' },
+  PRODUCT: { title: '需求工作台', subtitle: '优先查看需求状态、排期与待推进事项' },
+  UI_DESIGNER: { title: '设计工作台', subtitle: '优先查看 UI 设计任务和待补原型需求' },
+  DEVELOPER: { title: '研发工作台', subtitle: '优先查看开发待办、GitLab 合并与构建' },
+  TECHNICAL_MANAGER: { title: '技术交付工作台', subtitle: '优先关注技术交付、质量和研发风险' },
+}
+
+/** 展示后端按定位和数据权限计算的关注项，空数据时明确说明而非回退到无关信息。 */
+const PositionFocusSection = ({ position, items }: { position: UserPosition; items: DashboardFocusItem[] }) => {
+  const Icon = position === 'PROJECT_MANAGER' ? AlertTriangle
+    : position === 'PRODUCT' ? ClipboardList
+      : position === 'UI_DESIGNER' ? Palette
+        : position === 'DEVELOPER' ? Code2 : Network
+  const copy = POSITION_COPY[position]
+  return (
+    <Card title={copy.title} className="mb-8" action={<span className="text-[12px] text-[var(--color-text-tertiary)]">{items.length} 项关注事项</span>}>
+      {items.length === 0 ? (
+        <EmptyState title="当前暂无需要优先关注的事项" description="当工作项、MR 或项目状态发生变化后，会在这里按你的定位展示。" />
+      ) : (
+        <div className="space-y-2">
+          {items.map((item, index) => {
+            const content = (
+              <div className="flex items-start gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3 transition-shadow hover:shadow-[var(--shadow-sm)]">
+                <Icon className={cn('mt-0.5 h-4 w-4 flex-shrink-0', item.severity === 'CRITICAL' ? 'text-red-600' : item.severity === 'WARNING' ? 'text-amber-600' : 'text-[var(--color-primary)]')} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-semibold text-[var(--color-text-primary)]">{item.title}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-[var(--color-text-tertiary)]">{item.description}</p>
+                </div>
+                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium', item.severity === 'CRITICAL' ? 'bg-red-50 text-red-700' : item.severity === 'WARNING' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700')}>{item.status}</span>
+              </div>
+            )
+            if (item.externalUrl) return <a key={`${item.category}-${index}`} href={item.externalUrl} target="_blank" rel="noreferrer">{content}</a>
+            if (item.projectId) return <Link key={`${item.category}-${item.workItemId ?? index}`} to={`/projects/${item.projectId}/${item.category === 'BUILD' ? 'release' : 'planning'}`}>{content}</Link>
+            return <div key={`${item.category}-${index}`}>{content}</div>
+          })}
+        </div>
+      )}
+    </Card>
   )
 }
 

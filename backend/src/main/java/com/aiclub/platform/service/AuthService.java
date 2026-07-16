@@ -3,6 +3,7 @@ package com.aiclub.platform.service;
 import com.aiclub.platform.domain.model.PermissionEntity;
 import com.aiclub.platform.domain.model.RoleEntity;
 import com.aiclub.platform.domain.model.UserEntity;
+import com.aiclub.platform.common.UserPosition;
 import com.aiclub.platform.constants.ThemeCatalog;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.LoginResult;
@@ -116,6 +117,7 @@ public class AuthService {
         entity.setEmail(defaultString(request.email()));
         entity.setPhone(defaultString(request.phone()));
         entity.setGitlabUsername(defaultString(request.gitlabUsername()));
+        entity.setUserPosition(request.userPosition());
         entity.setEnabled(true);
         entity.setBuiltIn(false);
         entity.setPasswordHash(passwordEncoder.encode(request.password().trim()));
@@ -302,7 +304,8 @@ public class AuthService {
                 roles.stream().map(RoleEntity::getName).toList(),
                 permissionCodes,
                 guideCompleted,
-                user.getThemeId()
+                user.getThemeId(),
+                user.getUserPosition()
         );
     }
 

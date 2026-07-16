@@ -1,6 +1,7 @@
 package com.aiclub.platform.controller;
 
 import com.aiclub.platform.annotation.RequirePermission;
+import com.aiclub.platform.common.UserPosition;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.UserOptionSummary;
@@ -38,9 +39,10 @@ public class UserController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Boolean enabled,
-            @RequestParam(required = false) Long roleId
+            @RequestParam(required = false) Long roleId,
+            @RequestParam(required = false) UserPosition userPosition
     ) {
-        return ApiResponse.success(accessManagementService.pageUsers(page, size, keyword, enabled, roleId));
+        return ApiResponse.success(accessManagementService.pageUsers(page, size, keyword, enabled, roleId, userPosition));
     }
 
     @GetMapping("/options")

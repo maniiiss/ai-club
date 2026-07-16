@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { ApiResponse, CreditAccountBackfillResult, CreditAccountItem, CreditFeatureConfigItem, CreditGlobalConfigItem, CreditTransactionItem, DashboardShortcutEntryItem, DataChangeAuditItem, DataChangeDsl, DataChangePreviewResult, DataChangeRequestItem, DataPermissionScopeValue, DataWorkbenchEntityItem, DataWorkbenchEntityParseResult, PageResponse, PermissionItem, PlatformEnvVarDetailItem, PlatformEnvVarItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem } from '@/types/platform'
+import type { ApiResponse, CreditAccountBackfillResult, CreditAccountItem, CreditFeatureConfigItem, CreditGlobalConfigItem, CreditTransactionItem, DashboardShortcutEntryItem, DataChangeAuditItem, DataChangeDsl, DataChangePreviewResult, DataChangeRequestItem, DataPermissionScopeValue, DataWorkbenchEntityItem, DataWorkbenchEntityParseResult, PageResponse, PermissionItem, PlatformEnvVarDetailItem, PlatformEnvVarItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem, UserPosition } from '@/types/platform'
 
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
@@ -19,6 +19,8 @@ export interface UserPayload {
   giteeName?: string
   enabled: boolean
   roleIds: number[]
+  /** 管理端可保存为空，兼容存量账号尚未设置定位的状态。 */
+  userPosition?: UserPosition | null
   password?: string
 }
 
@@ -28,6 +30,7 @@ export interface UserQuery {
   keyword?: string
   enabled?: boolean | ''
   roleId?: number
+  userPosition?: UserPosition
 }
 
 export interface RolePayload {
