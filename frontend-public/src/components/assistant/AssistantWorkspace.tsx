@@ -1,7 +1,8 @@
-import { Archive, Brain, FileText, MoreHorizontal } from 'lucide-react'
+import { Archive, Brain, MoreHorizontal } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/src/components/common/Button'
 import { ConfirmDialog } from '@/src/components/common/ConfirmDialog'
+import { getWorkItemDetail } from '@/src/api/planning'
 import {
   archiveAssistantConversationSession,
   createAssistantConversationSession,
@@ -21,7 +22,9 @@ import {
 } from '@/src/api/assistant'
 import {
   buildAssistantSessionQuery,
+  isDevelopmentExecutionAction,
   markAssistantStreamStopped,
+  resolveDevelopmentExecutionActionContext,
   shouldIgnoreAssistantStreamEvent,
   shouldRenderAssistantWorkspaceHeader,
 } from '@/src/lib/assistantUtils'
@@ -34,6 +37,7 @@ import { AssistantMemoryPanel } from './AssistantMemoryPanel'
 import { AssistantMessageList } from './AssistantMessageList'
 import { AssistantSelectionCards } from './AssistantSelectionCards'
 import { AssistantSessionSidebar } from './AssistantSessionSidebar'
+import { DevelopmentExecutionDialog } from '@/src/pages/planning/DevelopmentExecutionDialog'
 import type {
   AssistantActionItem,
   AssistantFeedbackVote,
@@ -47,6 +51,7 @@ import type {
   AssistantSelectionCardItem,
   AssistantSelectionPayload,
 } from '@/src/types/assistant'
+import type { WorkItem } from '@/src/types/planning'
 
 interface AssistantWorkspaceProps {
   mode: AssistantConversationMode
@@ -126,6 +131,12 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
   const [renameDialog, setRenameDialog] = useState<{ session: AssistantConversationSessionSummaryItem; title: string } | null>(null)
   const [deleteDialog, setDeleteDialog] = useState<AssistantConversationSessionSummaryItem | null>(null)
   const [actionDialog, setActionDialog] = useState<{ action: AssistantActionItem; actionKey: string } | null>(null)
+  const [developmentExecutionDialog, setDevelopmentExecutionDialog] = useState<{
+    action: AssistantActionItem
+    actionKey: string
+    workItem: WorkItem
+    initialInputText: string
+  } | null>(null)
   const [feedbackDialog, setFeedbackDialog] = useState<{ messageId: string; vote: AssistantFeedbackVote; reasonCodes: string[]; comment: string } | null>(null)
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
   const [dialogLoading, setDialogLoading] = useState(false)
@@ -146,6 +157,7 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
     setActions([])
     setSelectionCards([])
     setExecutedActionKeys(new Set())
+    setDevelopmentExecutionDialog(null)
   }, [])
 
   const loadSessions = useCallback(async (nextPage = 1, append = false, nextArchived = archivedView) => {
@@ -375,7 +387,54 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
     }
   }
 
+  /**
+   * 打开开发执行弹窗并准备工作项上下文。
+   * 业务意图：GitPilot 的开发执行动作必须让用户选择仓库和目标分支后才能创建任务。
+   */
+  const openDevelopmentExecutionDialog = async (action: AssistantActionItem, actionKey: string) => {
+    if (!selectedSessionId) return
+    const context = resolveDevelopmentExecutionActionContext(action)
+    if (!context) {
+      setError('GitPilot 开发执行动作缺少有效的项目或工作项上下文')
+      return
+    }
+    setExecutingActionKey(actionKey)
+    setError('')
+    try {
+      const workItem = await getWorkItemDetail(context.workItemId)
+      if (workItem.projectId !== context.projectId) {
+        throw new Error('GitPilot 开发执行动作的工作项不属于当前项目')
+      }
+      setDevelopmentExecutionDialog({ action, actionKey, workItem, initialInputText: context.initialInputText })
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setExecutingActionKey('')
+    }
+  }
+
+  /** 开发执行成功后才持久化动作状态，取消或校验失败都保留待确认动作。 */
+  const completeDevelopmentExecutionAction = async () => {
+    if (!selectedSessionId || !developmentExecutionDialog) return
+    const { actionKey } = developmentExecutionDialog
+    setDevelopmentExecutionDialog(null)
+    setExecutedActionKeys((prev) => new Set([...prev, actionKey]))
+    try {
+      await markAssistantActionExecuted(selectedSessionId, actionKey)
+    } catch (err) {
+      setError(getErrorMessage(err))
+    }
+  }
+
   const requestActionConfirm = (action: AssistantActionItem, _index: number, actionKey: string) => {
+    if (isDevelopmentExecutionAction(action)) {
+      if (action.requiresConfirm) {
+        setActionDialog({ action, actionKey })
+      } else {
+        void openDevelopmentExecutionDialog(action, actionKey)
+      }
+      return
+    }
     if (action.requiresConfirm) {
       setActionDialog({ action, actionKey })
       return
@@ -476,15 +535,6 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
 
   const headerActions = (
     <div className="flex items-center gap-2">
-      <button
-        type="button"
-        title="文件库"
-        aria-label="打开文件库"
-        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--color-border-strong)] bg-white text-[var(--color-text-secondary)] shadow-[var(--shadow-xs)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
-        onClick={() => setWorkspacePanel('fileLibrary')}
-      >
-        <FileText className="h-4 w-4" />
-      </button>
       <div className="relative">
         <button
           type="button"
@@ -567,6 +617,7 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
           searchResults={sessionSearchResults}
           searchLoading={sessionSearchLoading}
           onSearchChange={setSessionSearchQuery}
+          onOpenFileLibrary={() => setWorkspacePanel('fileLibrary')}
           onCreate={createSession}
           onSelect={(sessionId) => {
             setSessionSearchQuery('')
@@ -698,9 +749,23 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
           if (!actionDialog) return
           const pendingAction = actionDialog
           setActionDialog(null)
-          executeAction(pendingAction.action, pendingAction.actionKey)
+          if (isDevelopmentExecutionAction(pendingAction.action)) {
+            void openDevelopmentExecutionDialog(pendingAction.action, pendingAction.actionKey)
+          } else {
+            void executeAction(pendingAction.action, pendingAction.actionKey)
+          }
         }}
       />
+      {developmentExecutionDialog && (
+        <DevelopmentExecutionDialog
+          open
+          workItem={developmentExecutionDialog.workItem}
+          initialInputText={developmentExecutionDialog.initialInputText}
+          triggerSource="HERMES"
+          onClose={() => setDevelopmentExecutionDialog(null)}
+          onCreated={() => void completeDevelopmentExecutionAction()}
+        />
+      )}
     </div>
   )
 }

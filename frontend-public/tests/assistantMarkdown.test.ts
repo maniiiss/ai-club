@@ -50,4 +50,13 @@ describe('AssistantMarkdown - 通用助手消息展示', () => {
     assert.doesNotMatch(html, /<h[1-6]>/)
     assert.doesNotMatch(html, /\*\*|(?<!\*)\*(?!\*)/)
   })
+
+  it('应渲染中文正文紧贴引号的强调文本', () => {
+    const html = renderToStaticMarkup(createElement(AssistantMarkdown, {
+      content: '当前平台的项目状态体系中，并没有**"已中标"**这一状态标记。',
+    }))
+
+    assert.match(html, /并没有<strong>&quot;已中标&quot;<\/strong>这一状态标记。/)
+    assert.doesNotMatch(html, /\*\*|(?<!\*)\*(?!\*)/)
+  })
 })

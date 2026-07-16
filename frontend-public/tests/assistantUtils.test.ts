@@ -4,8 +4,10 @@ import { describe, it } from 'node:test'
 import {
   buildAssistantSessionQuery,
   computeAssistantActionKey,
+  isDevelopmentExecutionAction,
   markAssistantStreamStopped,
   resolveAssistantDisplayState,
+  resolveDevelopmentExecutionActionContext,
   resolveSlashMenuActiveIndex,
   shouldIgnoreAssistantStreamEvent,
   parseAssistantSseChunk,
@@ -38,6 +40,44 @@ describe('Assistant public utilities', () => {
 
     assert.equal(first, second)
     assert.match(first, /^CREATE_EXECUTION_TASK:0:创建扫描任务\|[a-z0-9]+$/)
+  })
+
+  it('resolves GitPilot development execution context for the repository dialog', () => {
+    const action = {
+      type: 'CREATE_EXECUTION_TASK',
+      title: '发起执行任务',
+      description: '',
+      requiresConfirm: true,
+      params: {
+        projectId: 41,
+        workItemId: 99,
+        inputPayload: { userQuestion: '优先保持接口兼容' },
+      },
+    }
+
+    assert.equal(isDevelopmentExecutionAction(action), true)
+    assert.deepEqual(resolveDevelopmentExecutionActionContext(action), {
+      projectId: 41,
+      workItemId: 99,
+      initialInputText: '优先保持接口兼容',
+    })
+  })
+
+  it('rejects invalid or non-development execution actions', () => {
+    assert.equal(resolveDevelopmentExecutionActionContext({
+      type: 'CREATE_EXECUTION_TASK',
+      title: '发起执行任务',
+      description: '',
+      requiresConfirm: true,
+      params: { projectId: 0, workItemId: 'not-a-number' },
+    }), null)
+    assert.equal(isDevelopmentExecutionAction({
+      type: 'CREATE_EXECUTION_TASK',
+      title: '其他执行',
+      description: '',
+      requiresConfirm: true,
+      params: { scenarioCode: 'TEST_AUTOMATION' },
+    }), false)
   })
 
   it('parses one SSE event chunk into event name and JSON payload', () => {

@@ -24,6 +24,8 @@ import type { WorkItem } from '@/src/types/planning'
 interface DevelopmentExecutionDialogProps {
   open: boolean
   workItem: WorkItem
+  initialInputText?: string
+  triggerSource?: string
   onClose: () => void
   onCreated: (executionTask: ExecutionTaskItem) => void
 }
@@ -31,6 +33,8 @@ interface DevelopmentExecutionDialogProps {
 export const DevelopmentExecutionDialog = ({
   open,
   workItem,
+  initialInputText = '',
+  triggerSource = 'PAGE',
   onClose,
   onCreated,
 }: DevelopmentExecutionDialogProps) => {
@@ -87,7 +91,7 @@ export const DevelopmentExecutionDialog = ({
     setRepositories([])
     setSelectedBindingId('')
     setOrchestrationReady(false)
-    setInputText('')
+    setInputText(initialInputText)
     setPlanConfirmationRequired(false)
     setIncludeRequirementContext(true)
     setIncludeTechnicalDesignContext(true)
@@ -115,7 +119,7 @@ export const DevelopmentExecutionDialog = ({
         if (!cancelled) setLoadingOptions(false)
       })
     return () => { cancelled = true }
-  }, [open, showToast, workItem.projectId])
+  }, [initialInputText, open, showToast, workItem.projectId])
 
   useEffect(() => {
     if (!open) return
@@ -159,7 +163,7 @@ export const DevelopmentExecutionDialog = ({
       repositories,
       resolveRepositoryName: resolveBindingName,
     })
-    if (!validation.valid) {
+    if ('message' in validation) {
       showToast('error', validation.message)
       return
     }
@@ -183,7 +187,7 @@ export const DevelopmentExecutionDialog = ({
         scenarioCode: 'DEVELOPMENT_IMPLEMENTATION',
         projectId: workItem.projectId,
         workItemId: workItem.id,
-        triggerSource: 'PAGE',
+        triggerSource,
         planConfirmationRequired,
         inputPayload,
       })

@@ -59,6 +59,40 @@ export const computeAssistantParamsHash = (params: Record<string, unknown> | nul
 export const computeAssistantActionKey = (action: Pick<AssistantActionItem, 'type' | 'title' | 'params'>, index: number): string =>
   `${action.type}:${index}:${action.title}|${computeAssistantParamsHash(action.params)}`
 
+export interface DevelopmentExecutionActionContext {
+  projectId: number
+  workItemId: number
+  initialInputText: string
+}
+
+const resolvePositiveSafeInteger = (value: unknown): number | null => {
+  const normalized = typeof value === 'number' ? value : Number(value)
+  return Number.isSafeInteger(normalized) && normalized > 0 ? normalized : null
+}
+
+/**
+ * 解析 GitPilot 开发执行动作的业务上下文。
+ * 业务意图：开发执行必须经过仓库选择弹窗，不能把缺少 repositories 的动作直接提交给后端。
+ */
+export const isDevelopmentExecutionAction = (action: AssistantActionItem): boolean =>
+  action.type === 'CREATE_EXECUTION_TASK' &&
+  String(action.params?.scenarioCode || 'DEVELOPMENT_IMPLEMENTATION').trim().toUpperCase() === 'DEVELOPMENT_IMPLEMENTATION'
+
+export const resolveDevelopmentExecutionActionContext = (
+  action: AssistantActionItem,
+): DevelopmentExecutionActionContext | null => {
+  if (!isDevelopmentExecutionAction(action)) return null
+  const projectId = resolvePositiveSafeInteger(action.params?.projectId)
+  const workItemId = resolvePositiveSafeInteger(action.params?.workItemId)
+  if (projectId == null || workItemId == null) return null
+
+  const inputPayload = action.params?.inputPayload
+  const initialInputText = inputPayload && typeof inputPayload === 'object'
+    ? String((inputPayload as Record<string, unknown>).userQuestion || '').trim()
+    : ''
+  return { projectId, workItemId, initialInputText }
+}
+
 /**
  * 业务意图：用户主动停止流式生成后，前端必须立刻把当前助手消息收束为终态，
  * 否则消息列表会继续按 streaming 状态展示“正在思考”。

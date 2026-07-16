@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
-import { resolveMarkdownContent } from '@/src/lib/markdownUtils'
+import { remarkAssistantPunctuatedStrong, resolveMarkdownContent } from '@/src/lib/markdownUtils'
 import { cn } from '@/src/lib/utils'
 
 interface MarkdownProps {
@@ -226,7 +226,7 @@ export const Markdown = ({ content, className, variant = 'default', normalize = 
     <>
       <div className={cn('prose-markdown', variant === 'assistant' && 'prose-markdown--assistant', className)}>
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={variant === 'assistant' ? [remarkGfm, remarkAssistantPunctuatedStrong] : [remarkGfm]}
           components={{
             table: ({ children, ...rest }) => (
               <div className="markdown-table-wrap">

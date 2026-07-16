@@ -1,4 +1,4 @@
-import { Archive, MessageSquarePlus, RotateCcw, Search, Trash2 } from 'lucide-react'
+import { Archive, FileText, MessageSquarePlus, RotateCcw, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/src/components/common/Button'
 import { cn } from '@/src/lib/utils'
 import type { AssistantConversationSearchResult, AssistantConversationSessionSummaryItem } from '@/src/types/assistant'
@@ -15,6 +15,8 @@ interface AssistantSessionSidebarProps {
   searchResults: AssistantConversationSearchResult[]
   searchLoading: boolean
   onSearchChange: (value: string) => void
+  /** 文件库入口与当前项目的会话搜索保持同一组顶部导航，避免额外占用助手标题栏。 */
+  onOpenFileLibrary: () => void
   onCreate: () => void
   onSelect: (sessionId: number) => void
   onSelectSearchResult: (result: AssistantConversationSearchResult) => void
@@ -41,6 +43,7 @@ export const AssistantSessionSidebar = ({
   searchResults,
   searchLoading,
   onSearchChange,
+  onOpenFileLibrary,
   onCreate,
   onSelect,
   onSelectSearchResult,
@@ -76,6 +79,14 @@ export const AssistantSessionSidebar = ({
             onChange={(event) => onSearchChange(event.target.value)}
           />
         </label>
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 rounded-lg border border-[var(--color-border-light)] bg-white px-3 py-2 text-left text-[13px] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+          onClick={onOpenFileLibrary}
+        >
+          <FileText className="h-4 w-4 flex-shrink-0" />
+          <span>文件库</span>
+        </button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {searching ? (
@@ -140,7 +151,7 @@ export const AssistantSessionSidebar = ({
                     {session.title || '新会话'}
                   </div>
                 </button>
-                <div className="flex items-center justify-between border-t border-[var(--color-border-light)] px-2 py-1">
+                <div className="invisible flex max-h-0 items-center justify-between overflow-hidden border-t border-[var(--color-border-light)] px-2 py-0 opacity-0 transition-[max-height,opacity,padding] duration-200 group-hover:visible group-hover:max-h-10 group-hover:py-1 group-hover:opacity-100 group-focus-within:visible group-focus-within:max-h-10 group-focus-within:py-1 group-focus-within:opacity-100">
                   <button
                     type="button"
                     className="text-[11px] text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)]"

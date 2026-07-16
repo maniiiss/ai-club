@@ -35,3 +35,54 @@ export const normalizeGeneratedMarkdown = (content: string): string =>
 /** 根据调用方的内容契约决定是否执行最小化归一化。 */
 export const resolveMarkdownContent = (content: string, normalize = true): string =>
   normalize ? normalizeGeneratedMarkdown(content) : content || ''
+
+interface AssistantMarkdownAstNode {
+  type: string
+  value?: string
+  children?: AssistantMarkdownAstNode[]
+}
+
+/**
+ * 修复助手中文正文中紧贴引号的强调标记。
+ * 业务意图：CommonMark 会把 `状态为**"进行中"**的任务` 视为普通文本，
+ * 仅在 Markdown AST 中补成 strong 节点，避免改写原始回答或影响其它 Markdown 场景。
+ */
+export const remarkAssistantPunctuatedStrong = () => (tree: AssistantMarkdownAstNode) => {
+  const punctuatedStrongPattern = /\*\*([("“‘「『（【《][^*\n]*[)"”’」』）】》])\*\*/gu
+
+  const visit = (node: AssistantMarkdownAstNode) => {
+    if (!node.children) return
+    const nextChildren: AssistantMarkdownAstNode[] = []
+    node.children.forEach((child) => {
+      if (child.type !== 'text' || !child.value) {
+        visit(child)
+        nextChildren.push(child)
+        return
+      }
+
+      let cursor = 0
+      let match: RegExpExecArray | null
+      punctuatedStrongPattern.lastIndex = 0
+      while ((match = punctuatedStrongPattern.exec(child.value))) {
+        if (match.index > cursor) {
+          nextChildren.push({ type: 'text', value: child.value.slice(cursor, match.index) })
+        }
+        nextChildren.push({
+          type: 'strong',
+          children: [{ type: 'text', value: match[1] }],
+        })
+        cursor = match.index + match[0].length
+      }
+      if (cursor > 0) {
+        if (cursor < child.value.length) {
+          nextChildren.push({ type: 'text', value: child.value.slice(cursor) })
+        }
+      } else {
+        nextChildren.push(child)
+      }
+    })
+    node.children = nextChildren
+  }
+
+  visit(tree)
+}
