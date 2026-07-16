@@ -572,7 +572,7 @@ public class ChatRoomAgentService {
         if (task == null || task.getRoom() == null || task.getRoom().getId() == null) {
             return AssistantToolExecutionPolicy.empty();
         }
-        List<ChatRoomAgentToolPolicyEntity> policies = toolPolicyRepository.findByRoom_IdOrderByToolCodeAsc(task.getRoom().getId());
+        List<ChatRoomAgentToolPolicyEntity> policies = resolveEffectiveToolPolicies(task);
         List<String> enabledToolCodes = policies.stream()
                 .filter(ChatRoomAgentToolPolicyEntity::isEnabled)
                 .map(ChatRoomAgentToolPolicyEntity::getToolCode)
@@ -600,6 +600,42 @@ public class ChatRoomAgentService {
                 enabledToolCodes,
                 autoExecutableToolCodes
         );
+    }
+
+    /**
+     * 初始化房间首次运行时的受控工具策略。
+     * 业务意图：没有任何策略记录时，界面默认显示为可用的只读工具也必须真实传给 AgentRuntime；
+     * 写工具仍需房主创建显式策略，不能因为初始化而获得调用权限。
+     */
+    private List<ChatRoomAgentToolPolicyEntity> resolveEffectiveToolPolicies(ChatRoomAgentTaskEntity task) {
+        List<ChatRoomAgentToolPolicyEntity> existing = toolPolicyRepository
+                .findByRoom_IdOrderByToolCodeAsc(task.getRoom().getId());
+        if (existing != null && !existing.isEmpty()) {
+            return existing;
+        }
+        UserEntity updatedBy = task.getAuthorizedByUser() == null
+                ? task.getRoom().getCreatorUser() : task.getAuthorizedByUser();
+        return platformToolRegistry.listAutoExecutableReadTools().stream()
+                .map(definition -> createDefaultReadOnlyToolPolicy(task.getRoom(), updatedBy, definition))
+                .toList();
+    }
+
+    /**
+     * 为安全的只读工具创建显式房间策略，确保后续任务与页面配置看到同一份授权事实。
+     */
+    private ChatRoomAgentToolPolicyEntity createDefaultReadOnlyToolPolicy(ChatRoomEntity room,
+                                                                            UserEntity updatedBy,
+                                                                            PlatformToolDefinition definition) {
+        ChatRoomAgentToolPolicyEntity policy = new ChatRoomAgentToolPolicyEntity();
+        policy.setRoom(room);
+        policy.setToolCode(definition.code());
+        policy.setEnabled(true);
+        policy.setAutoExecute(true);
+        policy.setReadOnlySnapshot(true);
+        policy.setRiskLevelSnapshot(definition.riskLevel());
+        policy.setUpdatedByUser(updatedBy);
+        toolPolicyRepository.save(policy);
+        return policy;
     }
 
     /**

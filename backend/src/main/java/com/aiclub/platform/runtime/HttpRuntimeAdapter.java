@@ -223,7 +223,10 @@ public final class HttpRuntimeAdapter implements RuntimeAdapter {
         }
     }
 
-    private JsonNode requestBody(RuntimeInvocationContext context) {
+    /**
+     * 组装所有 HTTP AgentRuntime 共用的请求体，确保平台历史、工具契约和预算配置统一传递。
+     */
+    JsonNode requestBody(RuntimeInvocationContext context) {
         Object supplied = context.variables().get("requestBody");
         ObjectNode payload;
         if (supplied instanceof JsonNode jsonNode && jsonNode.isObject()) {
@@ -244,6 +247,10 @@ public final class HttpRuntimeAdapter implements RuntimeAdapter {
             payload.set("tools", objectMapper.valueToTree(context.toolContext().tools()));
             payload.set("toolPolicy", objectMapper.valueToTree(context.toolContext().policy()));
             payload.put("runtimeToolContractVersion", context.toolContext().contractVersion());
+        }
+        if (!context.conversationHistory().isEmpty()) {
+            // 所有 HTTP Runtime 共享 role/content 历史契约，Runtime 自行转换为原生 SDK 消息格式。
+            payload.set("history", objectMapper.valueToTree(context.conversationHistory()));
         }
         if (!payload.has("contextProfile")) {
             payload.set("contextProfile", objectMapper.valueToTree(descriptor().contextProfile()));

@@ -441,6 +441,50 @@ class ChatRoomAgentServiceTests {
     }
 
     @Test
+    void shouldInitializeReadOnlyToolPoliciesForAgentRuntimeWhenRoomHasNoPolicy() {
+        ChatRoomAgentService service = buildService();
+        UserEntity owner = user(1L);
+        ChatRoomEntity room = room(owner);
+        ChatMessageEntity assistant = message(room, owner, 601L, "");
+        assistant.setRole(ChatRoomService.ROLE_ASSISTANT);
+        ChatMessageEntity trigger = message(room, owner, 602L, "Assistant 查询项目缺陷");
+        ChatRoomAgentTaskEntity task = new ChatRoomAgentTaskEntity();
+        task.setId(603L);
+        task.setRoom(room);
+        task.setAssistantMessage(assistant);
+        task.setTriggerMessage(trigger);
+        task.setAuthorizedByUser(owner);
+        task.setTriggerType(ChatRoomAgentService.TRIGGER_MENTION);
+        task.setStatus(ChatRoomAgentService.TASK_RUNNING);
+        task.setPayloadJson("{\"runtimeRegistryCode\":\"PI_RUNTIME\"}");
+        PlatformToolDefinition readTool = tool(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH, true, "LOW");
+
+        when(taskRepository.claimPendingTask(any(), anyString(), anyString(), anyString(), any())).thenReturn(1);
+        when(taskRepository.findById(603L)).thenReturn(Optional.of(task));
+        when(toolPolicyRepository.findByRoom_IdOrderByToolCodeAsc(41L)).thenReturn(List.of());
+        when(platformToolRegistry.listAutoExecutableReadTools()).thenReturn(List.of(readTool));
+        when(platformToolRegistry.requireDefinition(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH)).thenReturn(readTool);
+        when(toolPolicyRepository.save(any(ChatRoomAgentToolPolicyEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(taskEventRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(chatAssistantService.startAssistantReply(
+                eq(room.getId()), eq(assistant.getId()), eq(trigger.getId()),
+                any(AssistantToolExecutionPolicy.class), eq("PI_RUNTIME")
+        )).thenReturn(AssistantChatRoomAgentTaskResult.empty("已查询"));
+
+        service.runTask(603L);
+
+        ArgumentCaptor<AssistantToolExecutionPolicy> policyCaptor = ArgumentCaptor.forClass(AssistantToolExecutionPolicy.class);
+        verify(chatAssistantService).startAssistantReply(
+                eq(room.getId()), eq(assistant.getId()), eq(trigger.getId()),
+                policyCaptor.capture(), eq("PI_RUNTIME")
+        );
+        assertThat(policyCaptor.getValue().enabledToolCodes()).containsExactly(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH);
+        assertThat(policyCaptor.getValue().autoExecutableToolCodes()).containsExactly(PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH);
+        verify(toolPolicyRepository).save(any(ChatRoomAgentToolPolicyEntity.class));
+    }
+
+    @Test
     void shouldPersistAssistantRuntimeCardsIntoTaskPayloadAndBroadcastSelectionPending() {
         ChatRoomAgentService service = buildService();
         UserEntity owner = user(1L);

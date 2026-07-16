@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { RuntimeManager, normalizeThinkingLevel, resolvePiModel } from '../src/runtime-manager.mjs'
+import { RuntimeManager, normalizeThinkingLevel, resolvePiModel, toPiHistoryMessages } from '../src/runtime-manager.mjs'
 
 test('runtime manager creates stable session and emits lifecycle events', async () => {
   const events = []
@@ -27,4 +27,21 @@ test('normalizes runtime thinking level and keeps unsupported values disabled', 
   assert.equal(normalizeThinkingLevel('HIGH'), 'high')
   assert.equal(normalizeThinkingLevel('invalid'), 'off')
   assert.equal(normalizeThinkingLevel(''), 'off')
+})
+
+test('converts common AgentRuntime history into valid Pi native messages', () => {
+  const model = resolvePiModel('openrouter', 'my-custom-model', 'https://model-gateway.example.com/v1')
+
+  const history = toPiHistoryMessages([
+    { role: 'user', content: '第一轮问题' },
+    { role: 'assistant', content: '第一轮回答' },
+  ], model)
+
+  assert.deepEqual(history[0], { role: 'user', content: '第一轮问题', timestamp: history[0].timestamp })
+  assert.equal(history[1].role, 'assistant')
+  assert.deepEqual(history[1].content, [{ type: 'text', text: '第一轮回答' }])
+  assert.equal(history[1].api, model.api)
+  assert.equal(history[1].provider, model.provider)
+  assert.equal(history[1].model, model.id)
+  assert.equal(history[1].stopReason, 'stop')
 })

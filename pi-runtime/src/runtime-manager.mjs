@@ -4,6 +4,16 @@ import { createPlatformTools } from './agent-tools.mjs'
 
 const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
 
+/** Pi 原生 assistant 历史所需的空用量，历史文本不应被当作本轮模型的真实计费结果。 */
+const EMPTY_USAGE = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+}
+
 /**
  * Pi 会话管理器。
  * 会话快照暂存于进程内，生产环境通过外层部署保证单实例或替换为 Redis Store；
@@ -40,7 +50,7 @@ export class RuntimeManager {
   async chat(request) {
     const sessionId = request.sessionId || `pi-session-${crypto.randomUUID()}`
     const runId = request.runId || `pi-run-${crypto.randomUUID()}`
-    const agent = this.#createAgent(request, sessionId, runId, this.#historyMessages(request))
+    const agent = this.#createAgent(request, sessionId, runId)
     this.sessions.set(sessionId, { agent, request: structuredClone(request), snapshot: request.profileSnapshot || {} })
     await this.sessionStore.save(sessionId, { request: structuredClone(request), messages: [] })
     try {
@@ -73,7 +83,7 @@ export class RuntimeManager {
   async stream(request, eventSink) {
     const sessionId = request.sessionId || `pi-session-${crypto.randomUUID()}`
     const runId = request.runId || `pi-run-${crypto.randomUUID()}`
-    const agent = this.#createAgent(request, sessionId, runId, this.#historyMessages(request), eventSink)
+    const agent = this.#createAgent(request, sessionId, runId, null, eventSink)
     this.sessions.set(sessionId, { agent, request: structuredClone(request), snapshot: request.profileSnapshot || {} })
     await this.sessionStore.save(sessionId, { request: structuredClone(request), messages: [] })
     await this.#run({ agent, sessionId, runId, request, eventSink, disposeSession: true })
@@ -104,12 +114,15 @@ export class RuntimeManager {
     return true
   }
 
-  #createAgent(request, sessionId, runId, messages = [], eventSink = null) {
+  #createAgent(request, sessionId, runId, restoredMessages = null, eventSink = null) {
     const provider = request.modelProvider || this.modelProvider
     const modelId = request.modelId || this.modelId
     if (!provider || !modelId) throw new Error('Pi Runtime model provider and model id are required')
 
     const model = resolvePiModel(provider, modelId, request.modelBaseUrl || this.modelBaseUrl)
+    const messages = Array.isArray(restoredMessages)
+      ? restoredMessages
+      : toPiHistoryMessages(request.history, model)
     const maxOutputTokens = Number(request.contextProfile?.maxOutputTokens || 8192)
     const systemPrompt = request.systemPrompt || request.profileSnapshot?.systemPrompt || ''
     const toolContract = this.#toolContract(request)
@@ -246,14 +259,6 @@ export class RuntimeManager {
     }
   }
 
-  /** 将 backend 的结构化历史转换为 Pi Agent 原生消息，避免把多轮对话压成一段普通文本。 */
-  #historyMessages(request) {
-    if (!Array.isArray(request.history)) return []
-    return request.history
-      .filter((item) => item && (item.role === 'user' || item.role === 'assistant' || item.role === 'toolResult'))
-      .map((item) => ({ role: item.role, content: item.content || '', timestamp: Date.now() }))
-  }
-
   /**
    * 使用 pi-agent-core 的 transformContext 钩子完成 Runtime 原生裁剪。
    * backend 已把历史摘要和结构化事实放入当前输入，因此这里只保留最近完整消息，避免超窗。
@@ -282,8 +287,9 @@ export class RuntimeManager {
       },
     })
     return [{
-      role: 'assistant',
-      content: [{ type: 'text', text: '更早的对话已由 GitPilot backend 保存并摘要；请以当前输入中的历史摘要和结构化事实为准。' }],
+      // 使用 user 消息承载平台摘要，避免伪造缺少 provider/api 元数据的 Pi assistant 消息。
+      role: 'user',
+      content: '更早的对话已由 GitPilot backend 保存并摘要；请以当前输入中的历史摘要和结构化事实为准。',
       timestamp: Date.now(),
     }, ...recent]
   }
@@ -330,4 +336,30 @@ export const resolvePiModel = (provider, modelId, modelBaseUrl) => {
 export const normalizeThinkingLevel = (value) => {
   const normalized = String(value || '').trim().toLowerCase()
   return THINKING_LEVELS.has(normalized) ? normalized : 'off'
+}
+
+/**
+ * 将 AgentRuntime 的通用 role/content 历史转换为 Pi Agent Core 的原生消息。
+ * 业务意图：Pi 专属元数据只在适配器边界补齐，backend 不依赖 Pi SDK 的消息协议。
+ */
+export const toPiHistoryMessages = (history, model) => {
+  if (!Array.isArray(history)) return []
+  return history
+    .filter((item) => item && (item.role === 'user' || item.role === 'assistant'))
+    .map((item) => {
+      const content = typeof item.content === 'string' ? item.content : ''
+      if (item.role === 'assistant') {
+        return {
+          role: 'assistant',
+          content: [{ type: 'text', text: content }],
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          usage: EMPTY_USAGE,
+          stopReason: 'stop',
+          timestamp: Date.now(),
+        }
+      }
+      return { role: 'user', content, timestamp: Date.now() }
+    })
 }

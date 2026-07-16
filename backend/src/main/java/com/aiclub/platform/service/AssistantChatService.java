@@ -435,7 +435,6 @@ public class AssistantChatService {
         requestBody.put("sessionId", preparedConversation.state().clientConversationId());
         requestBody.put("systemPrompt", preparedConversation.prompt().systemPrompt());
         requestBody.put("input", preparedConversation.currentUserTurn().content());
-        requestBody.put("history", preparedConversation.outboundTranscript());
         requestBody.put("sessionToken", preparedConversation.state().mcpSessionToken());
         requestBody.put("contextProfile", assistantConversationSessionService.resolveRuntimeContextProfile(session));
         RuntimeInvocationContext context = new RuntimeInvocationContext(
@@ -448,7 +447,8 @@ public class AssistantChatService {
                         "runtimeProfileVersion", session.getRuntimeProfileVersion() == null ? 1L : session.getRuntimeProfileVersion()),
                 com.aiclub.platform.runtime.RuntimeToolContext.empty(),
                 assistantConversationSessionService.resolveRuntimeContextProfile(session)
-        );
+        ).withConversationHistory(com.aiclub.platform.runtime.RuntimeConversationMessage
+                .fromAssistantTurns(preparedConversation.outboundTranscript()));
         context = runtimeChatService.withToolContract(
                 context,
                 preparedConversation.state().currentUser(),

@@ -544,7 +544,6 @@ public class ChatAssistantService {
         requestBody.put("sessionId", preparedSession.clientConversationId());
         requestBody.put("systemPrompt", prompt.systemPrompt());
         requestBody.put("input", transcript.isEmpty() ? prompt.userPrompt() : transcript.get(transcript.size() - 1).content());
-        requestBody.put("history", transcript);
         requestBody.put("sessionToken", preparedSession.sessionToken());
         RuntimeInvocationContext context = new RuntimeInvocationContext(
                 String.valueOf(requestBody.get("runId")),
@@ -553,7 +552,8 @@ public class ChatAssistantService {
                 prompt.systemPrompt(),
                 Map.of("requestBody", requestBody),
                 Map.of("runtimeRegistryCode", normalizedRuntime, "roomId", room.getId())
-        );
+        ).withConversationHistory(com.aiclub.platform.runtime.RuntimeConversationMessage
+                .fromAssistantTurns(transcript));
         AssistantToolExecutionPolicy toolExecutionPolicy = preparedSession.toolExecutionPolicy();
         context = runtimeChatService.withToolContract(
                 context,
