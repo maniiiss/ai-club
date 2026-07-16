@@ -4,7 +4,7 @@
  */
 import { ChevronRight, Loader2 } from 'lucide-react'
 import { Markdown } from '@/src/components/common/Markdown'
-import { normalizeGeneratedMarkdown } from '@/src/lib/markdownUtils'
+import { normalizeAssistantMarkdown } from '@/src/lib/markdownUtils'
 import { splitAssistantMessageContent } from '@/src/lib/assistantThinking'
 
 interface AssistantMarkdownProps {
@@ -31,7 +31,7 @@ const AssistantThinkingBlock = ({ content, completed }: { content: string; compl
 
 /** 将思考过程作为可选细节展示，正式回复保持普通 Markdown 阅读节奏。 */
 export const AssistantMarkdown = ({ content, finalClassName = 'text-[13px]' }: AssistantMarkdownProps) => {
-  const sections = splitAssistantMessageContent(normalizeGeneratedMarkdown(content))
+  const sections = splitAssistantMessageContent(normalizeAssistantMarkdown(content))
 
   return (
     <>

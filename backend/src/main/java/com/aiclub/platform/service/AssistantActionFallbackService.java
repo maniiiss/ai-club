@@ -176,7 +176,7 @@ public class AssistantActionFallbackService {
                 scanArguments
         ));
         AssistantConversationState afterScanStart = loadState(afterBindingSearch);
-        return new AssistantFallbackResult(afterScanStart, result.message());
+        return new AssistantFallbackResult(afterScanStart, toDisplayMessage(result.message()));
     }
 
     /**
@@ -254,7 +254,7 @@ public class AssistantActionFallbackService {
                         createArguments
                 ));
                 AssistantConversationState afterCreateDraft = loadState(afterMemberResolve);
-                return new AssistantFallbackResult(afterCreateDraft, result.message());
+                return new AssistantFallbackResult(afterCreateDraft, toDisplayMessage(result.message()));
             }
         }
         return null;
@@ -326,7 +326,7 @@ public class AssistantActionFallbackService {
                 "work_item.search",
                 arguments
         ));
-        return new AssistantFallbackResult(loadState(workingState), result.message());
+        return new AssistantFallbackResult(loadState(workingState), toDisplayMessage(result.message()));
     }
 
     /**
@@ -366,7 +366,7 @@ public class AssistantActionFallbackService {
                 toolCode,
                 Map.of("projectId", projectId)
         ));
-        return new AssistantFallbackResult(loadState(workingState == null ? state : workingState), result.message());
+        return new AssistantFallbackResult(loadState(workingState == null ? state : workingState), toDisplayMessage(result.message()));
     }
 
     private AssistantConversationState loadState(AssistantConversationState state) {
@@ -639,6 +639,49 @@ public class AssistantActionFallbackService {
 
     private String defaultString(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    /**
+     * 将工具循环使用的结构化 JSON 转换为兜底回答的展示文本。
+     * 业务意图：工具结果中的 candidates、payload 和 actions 用于模型推理与前端状态恢复，
+     * 不能在模型调用失败后的最终 done 事件中直接展示给用户。
+     */
+    private String toDisplayMessage(String toolMessage) {
+        String source = defaultString(toolMessage);
+        if (!source.startsWith("{")) {
+            return source;
+        }
+        try {
+            JsonNode result = objectMapper.readTree(source);
+            String summary = defaultString(result.path("summary").asText());
+            if (summary.isBlank()) {
+                return source;
+            }
+            JsonNode candidates = result.path("candidates");
+            if (!candidates.isArray() || candidates.isEmpty()) {
+                return summary;
+            }
+            StringBuilder display = new StringBuilder(summary).append("\n\n相关条目：");
+            int count = 0;
+            for (JsonNode candidate : candidates) {
+                String title = defaultString(candidate.path("title").asText());
+                if (title.isBlank()) {
+                    continue;
+                }
+                String subtitle = defaultString(candidate.path("subtitle").asText());
+                display.append("\n- ").append(title);
+                if (!subtitle.isBlank()) {
+                    display.append("（").append(subtitle).append("）");
+                }
+                if (++count >= 5) {
+                    break;
+                }
+            }
+            return count == 0 ? summary : display.toString();
+        } catch (Exception ignored) {
+            // 非标准工具消息仍按原样返回，避免兜底流程因展示格式化失败而中断。
+            return source;
+        }
     }
 
     /**

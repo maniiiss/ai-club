@@ -89,6 +89,46 @@ class AssistantActionFallbackServiceTests {
     }
 
     /**
+     * 兜底查询会复用工具循环的 JSON 结果，但最终回答必须是用户可读文本。
+     */
+    @Test
+    void shouldConvertStructuredWorkItemResultToDisplayText() {
+        AssistantActionFallbackService service = new AssistantActionFallbackService(
+                assistantInternalToolExecutionService,
+                assistantConversationStateStore,
+                new ObjectMapper(),
+                repositoryScanRulesetService
+        );
+        AssistantChatRequest request = new AssistantChatRequest(
+                "帮我查找示例项目 #4 最近的需求工作项",
+                "projects",
+                null,
+                null,
+                null,
+                null,
+                "conversation-1",
+                null,
+                false
+        );
+        AssistantConversationState state = buildState(AssistantGroundingState.empty());
+        String toolMessage = "{\"toolCode\":\"work_item.search\",\"summary\":\"找到 2 个相关工作项\",\"candidates\":[{\"title\":\"需求 A\",\"subtitle\":\"状态：草稿\"},{\"title\":\"缺陷 B\",\"subtitle\":\"状态：已完成\"}]}";
+
+        when(assistantInternalToolExecutionService.execute(eq(new AssistantInternalToolExecuteRequest(
+                "hcs_0123456789abcdef",
+                "work_item.search",
+                Map.of("keyword", "需求", "projectId", 4L)
+        )))).thenReturn(new AssistantInternalToolExecuteResponse(toolMessage));
+        when(assistantConversationStateStore.load("scope-1", "conversation-1"))
+                .thenReturn(Optional.of(state));
+
+        AssistantActionFallbackService.AssistantFallbackResult result = service.trySearchWorkItems(state, request);
+
+        assertThat(result.content())
+                .contains("找到 2 个相关工作项", "需求 A", "状态：草稿", "缺陷 B")
+                .doesNotContain("\"toolCode\"", "\"candidates\"");
+    }
+
+    /**
      * 模型因令牌格式问题无法查询项目迭代时，服务端应直接使用会话态令牌调用项目迭代工具。
      */
     @Test

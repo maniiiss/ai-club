@@ -59,4 +59,27 @@ describe('AssistantMarkdown - 通用助手消息展示', () => {
     assert.match(html, /并没有<strong>&quot;已中标&quot;<\/strong>这一状态标记。/)
     assert.doesNotMatch(html, /\*\*|(?<!\*)\*(?!\*)/)
   })
+
+  it('应修复粘连的 GFM 表格边界并渲染为表格', () => {
+    const html = renderToStaticMarkup(createElement(AssistantMarkdown, {
+      content: [
+        'CRM 项目迭代缺陷分析',
+        '',
+        '各迭代缺陷数量对比|迭代 |状态 |缺陷数 |',
+        '|:----|:----:|:----:|:----:| | 20260429（ID: 1） | 进行中 | 51 |',
+        '',
+        '结论：迭代 20260429 是唯一有工作项的迭代。',
+        '',
+        '| 维度 | 数据 |',
+        '| --- | --- |',
+        '| 工作项总数 | 102 |',
+      ].join('\n'),
+    }))
+
+    assert.match(html, /<table(?:\s|>)/)
+    assert.match(html, /<th(?:\s[^>]*)?>迭代<\/th>/)
+    assert.match(html, /<td(?:\s[^>]*)?>20260429（ID: 1）<\/td>/)
+    assert.match(html, /<th(?:\s[^>]*)?>维度<\/th>/)
+    assert.doesNotMatch(html, /各迭代缺陷数量对比\|迭代|\|-{3,}\|/)
+  })
 })

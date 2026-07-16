@@ -6,6 +6,7 @@ import {
   computeAssistantActionKey,
   isDevelopmentExecutionAction,
   markAssistantStreamStopped,
+  resolveAssistantDoneContent,
   resolveAssistantDisplayState,
   resolveDevelopmentExecutionActionContext,
   resolveSlashMenuActiveIndex,
@@ -128,6 +129,11 @@ describe('Assistant public utilities', () => {
     assert.equal(display.content, '已停止生成')
     assert.equal(display.showThinking, false)
     assert.equal(display.showContinuation, false)
+  })
+
+  it('keeps displayed stream content when the done event carries a different final value', () => {
+    assert.equal(resolveAssistantDoneContent('流式回复', '后端兜底后的最终回复'), '流式回复')
+    assert.equal(resolveAssistantDoneContent('  ', '后端最终回复'), '后端最终回复')
   })
 
 })

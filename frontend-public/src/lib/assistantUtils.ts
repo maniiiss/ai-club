@@ -138,6 +138,16 @@ export const resolveAssistantDisplayState = (
 }
 
 /**
+ * 收束流式回答时优先保留已展示的正文。
+ * 业务意图：`done.content` 是后端持久化后的最终值，可能包含兜底或格式化结果；
+ * 它不能在流结束瞬间覆盖用户已经看到的流式回复，避免消息内容突然跳变。
+ */
+export const resolveAssistantDoneContent = (streamedContent: string | null | undefined, doneContent: string | null | undefined): string => {
+  const streamed = streamedContent || ''
+  return streamed.trim() ? streamed : (doneContent || streamed)
+}
+
+/**
  * 业务意图：AbortController 取消后，浏览器仍可能交付已经读到的 SSE 分片。
  * 这些迟到事件不能再改写已停止的消息，也不能把新的回答内容追加回来。
  */

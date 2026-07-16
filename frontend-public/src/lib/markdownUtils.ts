@@ -32,6 +32,89 @@ const protectSpecialHeadingIds = (content: string): string => content
 export const normalizeGeneratedMarkdown = (content: string): string =>
   protectSpecialHeadingIds((content || '').replace(/\r\n?/g, '\n'))
 
+const tableSeparatorPattern = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/u
+const gluedTableSeparatorPattern = /^(\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|)\s+(\|.*)$/u
+const gluedTableHeaderPattern = /^(.+?)(\|[^|\n]+(?:\|[^|\n]+)+\|)\s*$/u
+
+const splitGluedTableSeparator = (line: string): [string, string] | null => {
+  const match = line.match(gluedTableSeparatorPattern)
+  return match ? [match[1], match[2]] : null
+}
+
+const splitAssistantTableCells = (line: string): string[] => {
+  const trimmed = line.trim()
+  const withoutBoundaryPipes = trimmed.replace(/^\|/, '').replace(/\|$/, '')
+  return withoutBoundaryPipes.split('|').map((cell) => cell.trim())
+}
+
+const normalizeAssistantTableRow = (line: string): string => {
+  const cells = splitAssistantTableCells(line)
+  return `| ${cells.join(' | ')} |`
+}
+
+/**
+ * 修复助手回答中模型粘连的 GFM 表格边界。
+ * 业务意图：模型可能把“说明文字|表头”和“分隔线|首行”分别粘在一起，
+ * 只在下一行确实是表格分隔线时补换行，避免把普通正文中的竖线误判成表格。
+ */
+export const normalizeAssistantMarkdown = (content: string): string => {
+  const lines = normalizeGeneratedMarkdown(content).split('\n')
+  const repairedLines: string[] = []
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    const nextLine = lines[index + 1] || ''
+    const headerMatch = line.match(gluedTableHeaderPattern)
+    const nextSeparator = splitGluedTableSeparator(nextLine)
+
+    if (
+      headerMatch &&
+      !line.trimStart().startsWith('|') &&
+      (tableSeparatorPattern.test(nextLine) || Boolean(nextSeparator)) &&
+      headerMatch[1].trim() &&
+      headerMatch[2].trim().startsWith('|')
+    ) {
+      repairedLines.push(headerMatch[1].trimEnd(), '', headerMatch[2].trimStart())
+      continue
+    }
+
+    const separator = splitGluedTableSeparator(line)
+    if (separator) {
+      repairedLines.push(separator[0], separator[1])
+      continue
+    }
+
+    repairedLines.push(line)
+  }
+
+  const normalizedLines: string[] = []
+  for (let index = 0; index < repairedLines.length;) {
+    const line = repairedLines[index]
+    const separator = repairedLines[index + 1] || ''
+    if (line.trim().startsWith('|') && tableSeparatorPattern.test(separator)) {
+      const headerCells = splitAssistantTableCells(line)
+      const separatorCells = splitAssistantTableCells(separator)
+      // 模型偶尔会多生成一个分隔单元格；按表头列数收敛，保证 GFM 能识别表格。
+      const alignedSeparator = separatorCells.slice(0, headerCells.length)
+      while (alignedSeparator.length < headerCells.length) alignedSeparator.push('---')
+      normalizedLines.push(
+        normalizeAssistantTableRow(line),
+        `| ${alignedSeparator.join(' | ')} |`,
+      )
+      index += 2
+      while (index < repairedLines.length && repairedLines[index].trim().startsWith('|')) {
+        normalizedLines.push(normalizeAssistantTableRow(repairedLines[index]))
+        index += 1
+      }
+      continue
+    }
+    normalizedLines.push(line)
+    index += 1
+  }
+
+  return normalizedLines.join('\n')
+}
+
 /** 根据调用方的内容契约决定是否执行最小化归一化。 */
 export const resolveMarkdownContent = (content: string, normalize = true): string =>
   normalize ? normalizeGeneratedMarkdown(content) : content || ''

@@ -24,6 +24,7 @@ import {
   buildAssistantSessionQuery,
   isDevelopmentExecutionAction,
   markAssistantStreamStopped,
+  resolveAssistantDoneContent,
   resolveDevelopmentExecutionActionContext,
   shouldIgnoreAssistantStreamEvent,
   shouldRenderAssistantWorkspaceHeader,
@@ -344,7 +345,7 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
           updateMessage(assistantMessageId, (current) => ({
             ...current,
             id: event.assistantMessageId ? String(event.assistantMessageId) : current.id,
-            content: event.content || current.content,
+            content: resolveAssistantDoneContent(current.content, event.content),
             status: 'done',
             attachments: event.attachments || [],
           }))
