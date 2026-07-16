@@ -31,6 +31,26 @@ describe('GitPilot 助手工作区布局契约', () => {
     assert.match(sidebar, /group-focus-within:max-h-10/)
   })
 
+  it('紧凑抽屉不再渲染独立的空操作行', () => {
+    const workspace = readFileSync(new URL('../src/components/assistant/AssistantWorkspace.tsx', import.meta.url), 'utf8')
+    const sidebar = readFileSync(new URL('../src/components/assistant/AssistantSessionSidebar.tsx', import.meta.url), 'utf8')
+
+    assert.match(workspace, /\) : null\}/)
+    assert.match(workspace, /headerActions=\{renderWorkspaceHeader \? undefined : headerActions\}/)
+    assert.doesNotMatch(workspace, /justify-end border-b border-\[var\(--color-border-light\)\]/)
+    assert.match(sidebar, /紧凑抽屉中的全局助手操作并入会话栏首行/)
+  })
+
+  it('点击更多菜单外部区域时自动关闭', () => {
+    const workspace = readFileSync(new URL('../src/components/assistant/AssistantWorkspace.tsx', import.meta.url), 'utf8')
+
+    assert.match(workspace, /const moreMenuRef = useRef<HTMLDivElement \| null>\(null\)/)
+    assert.match(workspace, /ref=\{moreMenuRef\}/)
+    assert.match(workspace, /document\.addEventListener\('pointerdown', handleOutsidePointerDown\)/)
+    assert.match(workspace, /setMoreMenuOpen\(false\)/)
+    assert.match(workspace, /removeEventListener\('pointerdown', handleOutsidePointerDown\)/)
+  })
+
   it('左侧搜索使用当前项目历史并延迟 250ms 请求', () => {
     const workspace = readFileSync(new URL('../src/components/assistant/AssistantWorkspace.tsx', import.meta.url), 'utf8')
     const api = readFileSync(new URL('../src/api/assistant.ts', import.meta.url), 'utf8')
@@ -54,5 +74,18 @@ describe('GitPilot 助手工作区布局契约', () => {
     assert.match(workspace, /triggerSource="HERMES"/)
     assert.match(dialog, /initialInputText = ''/)
     assert.match(dialog, /triggerSource = 'PAGE'/)
+  })
+
+  it('opens safe citation routes in a new tab instead of stacking assistant drawers', () => {
+    const messages = readFileSync(new URL('../src/components/assistant/AssistantMessageList.tsx', import.meta.url), 'utf8')
+    const references = readFileSync(new URL('../src/lib/assistantReferenceUtils.ts', import.meta.url), 'utf8')
+
+    assert.match(messages, /target="_blank"/)
+    assert.match(messages, /rel="noopener noreferrer"/)
+    assert.match(messages, /resolveAssistantReferenceHref\(reference\)/)
+    assert.match(references, /startsWith\('\/'\)/)
+    assert.match(references, /normalizeAssistantReferencePath/)
+    assert.match(references, /iterations/)
+    assert.doesNotMatch(messages, /AssistantReferencePreviewDrawer/)
   })
 })

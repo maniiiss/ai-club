@@ -146,6 +146,21 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
   const stopRequestedRef = useRef(false)
   const searchRequestIdRef = useRef(0)
   const pendingSearchSessionIdRef = useRef<number | null>(null)
+  const moreMenuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!moreMenuOpen) return
+
+    /** 菜单打开期间监听外部指针操作，避免菜单在用户切换内容后继续遮挡工作区。 */
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      if (!moreMenuRef.current?.contains(event.target as Node)) {
+        setMoreMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown)
+    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown)
+  }, [moreMenuOpen])
 
   const canUseProjectMode = Boolean(projectId)
   const disabled = !canUseProjectMode || sending || detailLoading || archivedView
@@ -535,7 +550,7 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
 
   const headerActions = (
     <div className="flex items-center gap-2">
-      <div className="relative">
+      <div ref={moreMenuRef} className="relative">
         <button
           type="button"
           title="更多助手选项"
@@ -598,11 +613,7 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
           </div>
           {headerActions}
         </header>
-      ) : (
-        <div className="flex flex-shrink-0 justify-end border-b border-[var(--color-border-light)] bg-white px-4 py-3">
-          {headerActions}
-        </div>
-      )}
+      ) : null}
       {error && <div className="flex-shrink-0 border-b border-red-100 bg-red-50 px-4 py-2 text-[13px] text-red-700">{error}</div>}
       <div className="flex min-h-0 flex-1">
         <AssistantSessionSidebar
@@ -618,6 +629,7 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
           searchLoading={sessionSearchLoading}
           onSearchChange={setSessionSearchQuery}
           onOpenFileLibrary={() => setWorkspacePanel('fileLibrary')}
+          headerActions={renderWorkspaceHeader ? undefined : headerActions}
           onCreate={createSession}
           onSelect={(sessionId) => {
             setSessionSearchQuery('')

@@ -2,8 +2,8 @@
  * 文档模块页面。
  * 三个子 Tab：Wiki 空间（含 CRUD）、知识图谱、API。
  */
-import { useCallback, useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useParams, useSearchParams } from 'react-router-dom'
 import {
   BookOpen, FolderTree, FileText, Network, Search,
   ChevronRight, ChevronDown, Edit3, Trash2, Plus, X, Save, AlertTriangle,
@@ -74,7 +74,10 @@ export const KnowledgePage = () => {
 
 const WikiPanel = () => {
   const { projectId } = useParams<{ projectId: string }>()
+  const [searchParams] = useSearchParams()
   const pid = Number(projectId)
+  const referenceSpaceId = Number(searchParams.get('spaceId'))
+  const referencePageId = Number(searchParams.get('pageId'))
 
   const [spaces, setSpaces] = useState<WikiSpaceItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -95,6 +98,7 @@ const WikiPanel = () => {
 
   const [keyword, setKeyword] = useState('')
   const [searchResults, setSearchResults] = useState<WikiSpacePageSummaryItem[]>([])
+  const openedReferenceKeyRef = useRef('')
 
   // 弹窗
   const [spaceDialogOpen, setSpaceDialogOpen] = useState(false)
@@ -154,6 +158,21 @@ const WikiPanel = () => {
     try { const p = await getWikiPage(spaceId, pageId); setSelectedPage(p); setEditContent(p.content); setEditTitle(p.title) }
     catch { setSelectedPage(null) } finally { setPageLoading(false) }
   }
+
+  useEffect(() => {
+    if (loading || !spaces.length || !Number.isSafeInteger(referenceSpaceId) || referenceSpaceId <= 0) return
+    const targetSpace = spaces.find((space) => space.id === referenceSpaceId)
+    if (!targetSpace) return
+    const referenceKey = `${referenceSpaceId}:${Number.isSafeInteger(referencePageId) && referencePageId > 0 ? referencePageId : ''}`
+    if (openedReferenceKeyRef.current === referenceKey) return
+    openedReferenceKeyRef.current = referenceKey
+    void (async () => {
+      await handleSelectSpace(targetSpace)
+      if (Number.isSafeInteger(referencePageId) && referencePageId > 0) {
+        await handleSelectPage(targetSpace.id, referencePageId)
+      }
+    })()
+  }, [loading, spaces, referencePageId, referenceSpaceId])
 
   const handleStartEdit = () => { if (selectedPage) { setEditContent(selectedPage.content); setEditTitle(selectedPage.title); setEditing(true) } }
 

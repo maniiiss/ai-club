@@ -9,6 +9,8 @@ import com.aiclub.platform.dto.IterationSummary;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.request.IterationRequest;
 import com.aiclub.platform.dto.request.AssistantChatRequest;
+import com.aiclub.platform.dto.WikiSpaceDetail;
+import com.aiclub.platform.dto.request.CreateWikiSpaceRequest;
 import com.aiclub.platform.dto.request.ProjectRequest;
 import com.aiclub.platform.dto.request.TaskCommentRequest;
 import com.aiclub.platform.dto.request.TaskRequest;
@@ -50,6 +52,9 @@ class AssistantContextAssemblerTests {
 
     @Autowired
     private RoleRepository roleRepository;
+
+    @Autowired
+    private WikiSpaceService wikiSpaceService;
 
     @AfterEach
     void clearAuthContext() {
@@ -118,6 +123,10 @@ class AssistantContextAssemblerTests {
         assertThat(context.projectId()).isEqualTo(project.getId());
         assertThat(context.taskId()).isEqualTo(task.id());
         assertThat(context.references()).extracting(reference -> reference.type()).contains("TASK", "PROJECT");
+        assertThat(context.references().stream().filter(reference -> "TASK".equals(reference.type())).findFirst().orElseThrow().route())
+                .isEqualTo("/projects/" + project.getId() + "/planning?openTaskId=" + task.id());
+        assertThat(context.references().stream().filter(reference -> "PROJECT".equals(reference.type())).findFirst().orElseThrow().route())
+                .isEqualTo("/projects/" + project.getId() + "/overview");
         assertThat(context.contextMarkdown()).contains("Assistant 任务");
         assertThat(context.contextMarkdown()).contains("上游接口返回字段仍未稳定");
     }
@@ -206,11 +215,39 @@ class AssistantContextAssemblerTests {
         assertThat(context.sceneCode()).isEqualTo("project-iterations");
         assertThat(context.projectId()).isEqualTo(project.getId());
         assertThat(context.references()).extracting(reference -> reference.type()).contains("PROJECT", "ITERATION", "TASK");
+        assertThat(context.references().stream().filter(reference -> "ITERATION".equals(reference.type())).findFirst().orElseThrow().route())
+                .isEqualTo("/projects/" + project.getId() + "/planning?iterationId=" + iteration.id());
         assertThat(context.contextMarkdown()).contains("当前迭代");
         assertThat(context.contextMarkdown()).contains("发版内容速览");
         assertThat(context.contextMarkdown()).contains("需求：1");
         assertThat(context.contextMarkdown()).contains("缺陷：1");
         assertThat(context.contextMarkdown()).contains("2026.04 发版迭代");
+    }
+
+    /**
+     * 绑定项目的 Wiki 引用必须生成公众端知识页深链，保证新标签页可以定位空间。
+     */
+    @Test
+    void shouldBuildPublicKnowledgeRoutesForWikiReferences() {
+        UserEntity creator = createUser("hermes-wiki-route", "Wiki 成员");
+        ProjectEntity project = createProjectAs(creator, creator, "Wiki 深链项目");
+
+        loginAs(creator);
+        WikiSpaceDetail space = wikiSpaceService.createSpace(new CreateWikiSpaceRequest(
+                "GitPilot Wiki",
+                "",
+                WikiSpaceService.READ_SCOPE_MEMBERS_ONLY,
+                project.getId(),
+                WikiSpaceService.MEMBER_SOURCE_MANUAL
+        ));
+
+        AssistantContextAssembler.AssistantConversationContext context = assistantContextAssembler.assemble(
+                new AssistantChatRequest("打开当前 Wiki", "wiki-space", null, null, null, null, space.id(), null, null, null, null),
+                toCurrentUserInfo(creator)
+        );
+
+        assertThat(context.references().stream().filter(reference -> "WIKI_SPACE".equals(reference.type())).findFirst().orElseThrow().route())
+                .isEqualTo("/projects/" + project.getId() + "/knowledge?spaceId=" + space.id());
     }
 
     /**

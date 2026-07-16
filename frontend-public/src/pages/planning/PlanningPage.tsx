@@ -8,7 +8,7 @@ import {
   Plus, CheckSquare, AlertCircle, FileText, Search,
   X, Edit3, Trash2, LayoutList, LayoutGrid, GripVertical, TrendingDown,
   ChevronDown, MessageSquare, Send, Bot, User, FolderOpen, Link2, Sparkles,
-  Download, Paperclip, ArrowLeft,
+  Download, Paperclip, ArrowLeft, Copy, Check,
 } from 'lucide-react'
 import {
   getIterationBoard, pageProjectWorkItems, listProjectWorkItems, getWorkItemStats,
@@ -30,6 +30,7 @@ import { useAuthStore } from '@/src/stores/auth'
 import { REQUIREMENT_TEMPLATE, TASK_TEMPLATE } from '@/src/lib/markdownTemplates'
 import { uploadMarkdownImage } from '@/src/lib/markdownImageUpload'
 import { buildWorkItemInlineEditPayload } from '@/src/lib/planningInlineEditUtils'
+import { buildPlanningWorkItemRoute, buildWorkItemShareUrl } from '@/src/lib/planningShareUtils'
 import { TASK_TYPE_OPTIONS, isDevelopmentExecutionEntryVisible, isRequirementAiEntryVisible, normalizeTaskType } from '@/src/lib/requirementAiUtils'
 import { isTechnicalDesignEntryVisible } from '@/src/lib/technicalDesignAiUtils'
 import type { IterationBoardItem, IterationItem, WorkItem, WorkItemStats, WorkItemPayload, IterationPayload, BurndownItem, TaskComment, WorkItemLinks, LinkedTestCase } from '@/src/types/planning'
@@ -124,7 +125,7 @@ const getDetailTabCount = (tab: DetailTab, links: WorkItemLinks | null) => {
    ═══════════════════════════════════════════════ */
 
 export const PlanningPage = () => {
-  const { projectId } = useParams<{ projectId: string }>()
+  const { projectId, workItemId } = useParams<{ projectId: string; workItemId?: string }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const canCreateExecution = useAuthStore((state) => state.hasPermission('task:execution:create'))
@@ -192,7 +193,12 @@ export const PlanningPage = () => {
       if (requestId !== boardRequestIdRef.current) return
       setBoard(data)
       setUserOptions(users)
-      const active = data.iterations.find((i) => i.status === '进行中')
+      // 业务意图：GitPilot 引用迭代时通过 query 参数恢复目标迭代，避免新标签页只打开计划首页。
+      const requestedIterationId = Number(searchParams.get('iterationId'))
+      const requestedIteration = Number.isSafeInteger(requestedIterationId) && requestedIterationId > 0
+        ? data.iterations.find((i) => i.id === requestedIterationId)
+        : undefined
+      const active = requestedIteration || data.iterations.find((i) => i.status === '进行中')
       if (active && !selectedIteration) setSelectedIteration(active)
     } catch (err) {
       if (requestId === boardRequestIdRef.current) setBoardError(getErrorMessage(err))
@@ -247,34 +253,49 @@ export const PlanningPage = () => {
 
   const refreshAll = () => { fetchBoard(); fetchStats() }
 
+  /** 将详情抽屉状态同步到地址栏，便于复制链接或通过浏览器前进后退恢复。 */
+  const syncDetailUrl = (workItemId: number | null) => {
+    navigate(buildPlanningWorkItemRoute(pid, workItemId, searchParams), { replace: true })
+  }
+
   const handleOpenDetail = async (id: number, options: { pushHistory?: boolean; preserveHistory?: boolean; previousItem?: WorkItem | null } = {}) => {
     if (options.pushHistory && options.previousItem && options.previousItem.id !== id) {
       setDetailNavigationStack((prev) => [...prev, options.previousItem!])
     } else if (!options.pushHistory && !options.preserveHistory) {
       setDetailNavigationStack([])
     }
+    openedTaskIdRef.current = id
+    syncDetailUrl(id)
     setDetailLoading(true)
     try { setDetailItem(await getWorkItemDetail(id)) }
     catch { setDetailItem(null) }
     finally { setDetailLoading(false) }
   }
 
-  // 处理管理端通知跳转过来的 openTaskId，让用户从消息直接看到对应工作项详情。
+  // 兼容历史通知中的 openTaskId，并统一迁移到新的工作项路径参数地址。
   useEffect(() => {
-    const openTaskId = Number(searchParams.get('openTaskId'))
-    if (boardLoading || !Number.isInteger(openTaskId) || openTaskId <= 0 || openedTaskIdRef.current === openTaskId) return
-    openedTaskIdRef.current = openTaskId
-    void handleOpenDetail(openTaskId)
-  }, [boardLoading, searchParams])
+    const requestedWorkItemId = Number(workItemId || searchParams.get('openTaskId'))
+    if (boardLoading || !Number.isInteger(requestedWorkItemId) || requestedWorkItemId <= 0 || openedTaskIdRef.current === requestedWorkItemId) return
+    openedTaskIdRef.current = requestedWorkItemId
+    void handleOpenDetail(requestedWorkItemId)
+  }, [boardLoading, searchParams, workItemId])
 
   const handleBackDetail = async () => {
     const previous = detailNavigationStack[detailNavigationStack.length - 1]
     if (!previous) return
     setDetailNavigationStack((prev) => prev.slice(0, -1))
+    syncDetailUrl(previous.id)
     setDetailLoading(true)
     try { setDetailItem(await getWorkItemDetail(previous.id)) }
     catch { setDetailItem(previous) }
     finally { setDetailLoading(false) }
+  }
+
+  const handleCloseDetail = () => {
+    openedTaskIdRef.current = null
+    syncDetailUrl(null)
+    setDetailItem(null)
+    setDetailNavigationStack([])
   }
 
   const handleDeleteConfirm = async () => {
@@ -554,7 +575,7 @@ export const PlanningPage = () => {
       {/* ── 弹窗 ── */}
       {iterDialog.open && <IterationDialog projectId={pid} editing={iterDialog.editing} onClose={() => setIterDialog({ open: false })} onSaved={() => { setIterDialog({ open: false }); fetchBoard() }} />}
       {wiDialog.open && <WorkItemDialog projectId={pid} editing={wiDialog.editing} iterationId={selectedIteration && selectedIteration !== 'unplanned' ? selectedIteration.id : undefined} userOptions={userOptions} projectMemberIds={projectMemberIds} onClose={() => setWiDialog({ open: false })} onSaved={(result) => { setWiDialog({ open: false }); refreshAll(); if (result?.autoStandardize && result.item) { setAiAssistantItem(result.item); setAutoRunAction('STANDARDIZE') } }} />}
-      {detailItem && <WorkItemDetailDrawer item={detailItem} loading={detailLoading} userOptions={userOptions} canGoBack={detailNavigationStack.length > 0} canCreateExecution={canCreateExecution} onBack={handleBackDetail} onClose={() => { setDetailItem(null); setDetailNavigationStack([]) }} onEdit={() => { setWiDialog({ open: true, editing: detailItem }); setDetailItem(null); setDetailNavigationStack([]) }} onDelete={(w) => { setDetailItem(null); setDetailNavigationStack([]); setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name }) }} onRefresh={(id) => handleOpenDetail(id, { preserveHistory: true })} onOpenLinkedWorkItem={(id) => handleOpenDetail(id, { pushHistory: true, previousItem: detailItem })} onOpenAi={() => handleOpenSmartAction(detailItem)} />}
+      {detailItem && <WorkItemDetailDrawer item={detailItem} loading={detailLoading} userOptions={userOptions} canGoBack={detailNavigationStack.length > 0} canCreateExecution={canCreateExecution} onBack={handleBackDetail} onClose={handleCloseDetail} onEdit={() => { openedTaskIdRef.current = null; syncDetailUrl(null); setWiDialog({ open: true, editing: detailItem }); setDetailItem(null); setDetailNavigationStack([]) }} onDelete={(w) => { openedTaskIdRef.current = null; syncDetailUrl(null); setDetailItem(null); setDetailNavigationStack([]); setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name }) }} onRefresh={(id) => handleOpenDetail(id, { preserveHistory: true })} onOpenLinkedWorkItem={(id) => handleOpenDetail(id, { pushHistory: true, previousItem: detailItem })} onOpenAi={() => handleOpenSmartAction(detailItem)} />}
       {deleteConfirm && <DeleteConfirmDialog name={deleteConfirm.name} onCancel={() => setDeleteConfirm(null)} onConfirm={handleDeleteConfirm} />}
       {aiAssistantItem && isRequirementAiEntryVisible(aiAssistantItem) && <RequirementAiDialog open={true} workItem={aiAssistantItem} userOptions={userOptions} projectMemberIds={projectMemberIds} onClose={() => { setAiAssistantItem(null); setAutoRunAction(null) }} onChanged={() => { if (detailItem?.id === aiAssistantItem.id) handleOpenDetail(aiAssistantItem.id); refreshAll() }} autoRunAction={autoRunAction} />}
       {technicalDesignItem && <TechnicalDesignAiDialog open={true} workItem={technicalDesignItem} onClose={() => setTechnicalDesignItem(null)} onCreated={(executionTask) => { const sourceItem = technicalDesignItem; setTechnicalDesignItem(null); refreshAll(); navigate(`/projects/${executionTask.projectId || sourceItem.projectId}/execution/tasks/${executionTask.id}`) }} />}
@@ -976,6 +997,7 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
   const [selectedTestCaseId, setSelectedTestCaseId] = useState('')
   const [linkSubmitting, setLinkSubmitting] = useState(false)
   const [attachmentUploading, setAttachmentUploading] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
   const [statusUpdating, setStatusUpdating] = useState(false)
   const [showStatusSelect, setShowStatusSelect] = useState(false)
   /** 关闭动画播放中，延迟父组件卸载 */
@@ -1121,6 +1143,16 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
     URL.revokeObjectURL(url)
   }
 
+  const handleCopyShareLink = async () => {
+    try {
+      await navigator.clipboard.writeText(buildWorkItemShareUrl(window.location, item.projectId, item.id))
+      setShareCopied(true)
+      window.setTimeout(() => setShareCopied(false), 2000)
+    } catch {
+      // 剪贴板受浏览器权限限制时不打断抽屉使用。
+    }
+  }
+
   /** 头部操作按钮，渲染在 SlideDrawer 关闭按钮之前 */
   const headerActions = (
     <>
@@ -1130,6 +1162,10 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
           返回
         </button>
       )}
+      <button onClick={handleCopyShareLink} title="复制工作项链接" aria-label="复制工作项链接" className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-[12px] font-medium text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-primary)]">
+        {shareCopied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+        {shareCopied ? '已复制' : '复制链接'}
+      </button>
       {(isRequirementAiEntryVisible(item) || (canCreateExecution && (isTechnicalDesignEntryVisible(item) || isDevelopmentExecutionEntryVisible(item)))) && onOpenAi && (
         <button onClick={onOpenAi} title="AI 助手" className="rounded-lg p-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors">
           <Sparkles className="h-4 w-4" />

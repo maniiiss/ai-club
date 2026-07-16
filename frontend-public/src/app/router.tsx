@@ -70,6 +70,8 @@ export const router = createBrowserRouter([
           { index: true, element: <ProjectDetailPage /> },
           { path: 'overview', element: <ProjectDetailPage /> },
           { path: 'planning', element: <PlanningPage /> },
+          // 工作项详情使用路径参数，支持分享后直接打开详情抽屉。
+          { path: 'planning/work-items/:workItemId', element: <PlanningPage /> },
           { path: 'knowledge', element: <KnowledgePage /> },
           { path: 'development', element: <DevelopmentPage /> },
           { path: 'testing', element: <TestPlansPage /> },

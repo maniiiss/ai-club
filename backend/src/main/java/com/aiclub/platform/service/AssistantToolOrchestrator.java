@@ -67,7 +67,7 @@ public class AssistantToolOrchestrator {
                     "PROJECT",
                     context.projectId(),
                     projectReference == null ? "当前项目 #" + context.projectId() : defaultString(projectReference.title()),
-                    projectReference == null ? "/projects/" + context.projectId() + "/iterations" : defaultString(projectReference.route()),
+                    projectReference == null ? "/projects/" + context.projectId() + "/overview" : defaultString(projectReference.route()),
                     context.projectId(),
                     "CONTEXT",
                     Map.of("projectId", context.projectId())
@@ -100,7 +100,7 @@ public class AssistantToolOrchestrator {
                     "WIKI_SPACE",
                     context.wikiSpaceId(),
                     wikiSpaceReference == null ? "当前 Wiki 空间 #" + context.wikiSpaceId() : defaultString(wikiSpaceReference.title()),
-                    wikiSpaceReference == null ? "/wiki/spaces/" + context.wikiSpaceId() : defaultString(wikiSpaceReference.route()),
+                    wikiSpaceReference == null ? "" : defaultString(wikiSpaceReference.route()),
                     context.projectId(),
                     "CONTEXT",
                     Map.of("spaceId", context.wikiSpaceId())
@@ -122,7 +122,7 @@ public class AssistantToolOrchestrator {
                     context.wikiPageId(),
                     wikiPageReference == null ? "当前 Wiki 页面 #" + context.wikiPageId() : defaultString(wikiPageReference.title()),
                     wikiPageReference == null
-                            ? (context.wikiSpaceId() == null ? "" : "/wiki/spaces/" + context.wikiSpaceId() + "/pages/" + context.wikiPageId())
+                            ? ""
                             : defaultString(wikiPageReference.route()),
                     context.projectId(),
                     "CONTEXT",
@@ -623,7 +623,7 @@ public class AssistantToolOrchestrator {
                         "PROJECT",
                         projectId,
                         defaultString(String.valueOf(payload.getOrDefault("projectName", "项目 #" + projectId))),
-                        "/projects/" + projectId + "/iterations",
+                        "/projects/" + projectId + "/overview",
                         projectId,
                         "DERIVED",
                         Map.of("projectId", projectId)

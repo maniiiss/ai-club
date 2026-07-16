@@ -1,6 +1,7 @@
 import { ExternalLink, Loader2, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { AssistantMarkdown } from '@/src/components/common/AssistantMarkdown'
 import { cn } from '@/src/lib/utils'
+import { resolveAssistantReferenceHref } from '@/src/lib/assistantReferenceUtils'
 import type {
   AssistantAttachmentItem,
   AssistantMessageItem,
@@ -149,16 +150,30 @@ export const AssistantMessageList = ({
           <section className="rounded-lg border border-[var(--color-border-light)] bg-white p-3">
             <div className="text-[12px] font-semibold text-[var(--color-text-primary)]">引用对象</div>
             <div className="mt-2 flex flex-wrap gap-2">
-              {references.map((reference) => (
-                <a
-                  key={`${reference.type}-${reference.id}-${reference.title}`}
-                  href={reference.route || '#'}
-                  className="inline-flex items-center gap-1 rounded-md border border-[var(--color-border-light)] px-2 py-1 text-[12px] text-[var(--color-text-secondary)] hover:border-[var(--color-primary)]"
-                >
-                  {reference.title}
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              ))}
+              {references.map((reference) => {
+                const href = resolveAssistantReferenceHref(reference)
+                return (
+                  <a
+                    key={`${reference.type}-${reference.id}-${reference.title}`}
+                    href={href || undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-disabled={!href}
+                    onClick={(event) => {
+                      if (!href) event.preventDefault()
+                    }}
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-md border border-[var(--color-border-light)] px-2 py-1 text-[12px] text-[var(--color-text-secondary)]',
+                      href
+                        ? 'hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]'
+                        : 'cursor-not-allowed opacity-50',
+                    )}
+                  >
+                    {reference.title}
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                )
+              })}
             </div>
           </section>
         )}

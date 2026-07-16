@@ -1,4 +1,5 @@
 import { Archive, FileText, MessageSquarePlus, RotateCcw, Search, Trash2 } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { Button } from '@/src/components/common/Button'
 import { cn } from '@/src/lib/utils'
 import type { AssistantConversationSearchResult, AssistantConversationSessionSummaryItem } from '@/src/types/assistant'
@@ -17,6 +18,8 @@ interface AssistantSessionSidebarProps {
   onSearchChange: (value: string) => void
   /** 文件库入口与当前项目的会话搜索保持同一组顶部导航，避免额外占用助手标题栏。 */
   onOpenFileLibrary: () => void
+  /** 紧凑抽屉中的全局助手操作并入会话栏首行，避免渲染独立的空操作行。 */
+  headerActions?: ReactNode
   onCreate: () => void
   onSelect: (sessionId: number) => void
   onSelectSearchResult: (result: AssistantConversationSearchResult) => void
@@ -44,6 +47,7 @@ export const AssistantSessionSidebar = ({
   searchLoading,
   onSearchChange,
   onOpenFileLibrary,
+  headerActions,
   onCreate,
   onSelect,
   onSelectSearchResult,
@@ -58,16 +62,19 @@ export const AssistantSessionSidebar = ({
   return (
     <aside className="flex h-full min-h-0 w-full flex-col border-r border-[var(--color-border-light)] bg-[var(--color-bg-sidebar)] md:w-[280px]">
       <div className="flex-shrink-0 space-y-2 border-b border-[var(--color-border-light)] p-3">
-        <Button
-          type="button"
-          size="sm"
-          className="w-full"
-          icon={<MessageSquarePlus className="h-4 w-4" />}
-          disabled={disabled}
-          onClick={onCreate}
-        >
-          新建会话
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            className="min-w-0 flex-1"
+            icon={<MessageSquarePlus className="h-4 w-4" />}
+            disabled={disabled}
+            onClick={onCreate}
+          >
+            新建会话
+          </Button>
+          {headerActions}
+        </div>
         <label className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-white px-3 py-2">
           <Search className="h-4 w-4 flex-shrink-0 text-[var(--color-text-tertiary)]" />
           <input

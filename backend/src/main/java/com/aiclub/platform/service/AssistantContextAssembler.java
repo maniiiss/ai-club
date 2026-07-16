@@ -308,10 +308,10 @@ public class AssistantContextAssembler {
         WikiSpacePageDetail page = wikiSpaceService.getPageDetail(spaceId, wikiPageId);
         List<WikiSpacePageSummary> relatedPages = wikiSpaceService.relatedPages(spaceId, wikiPageId, assistantProperties.getMaxContextMessages());
         List<AssistantReferenceSummary> references = new ArrayList<>();
-        references.add(wikiSpaceReference(space.id(), space.name()));
-        references.add(wikiPageReference(page.id(), spaceId, page.title()));
+        references.add(wikiSpaceReference(space.id(), space.name(), space.boundProjectId()));
+        references.add(wikiPageReference(page.id(), spaceId, page.title(), page.boundProjectId()));
         for (WikiSpacePageSummary relatedPage : relatedPages.stream().limit(3).toList()) {
-            references.add(wikiPageReference(relatedPage.id(), spaceId, relatedPage.title()));
+            references.add(wikiPageReference(relatedPage.id(), spaceId, relatedPage.title(), relatedPage.boundProjectId()));
         }
         StringBuilder context = new StringBuilder();
         context.append("## 当前场景\n")
@@ -355,9 +355,9 @@ public class AssistantContextAssembler {
                 .limit(assistantProperties.getMaxContextMessages())
                 .toList();
         List<AssistantReferenceSummary> references = new ArrayList<>();
-        references.add(wikiSpaceReference(space.id(), space.name()));
+        references.add(wikiSpaceReference(space.id(), space.name(), space.boundProjectId()));
         for (WikiSpacePageSummary page : recentPages.stream().limit(3).toList()) {
-            references.add(wikiPageReference(page.id(), spaceId, page.title()));
+            references.add(wikiPageReference(page.id(), spaceId, page.title(), page.boundProjectId()));
         }
         StringBuilder context = new StringBuilder();
         context.append("## 当前场景\n")
@@ -513,7 +513,7 @@ public class AssistantContextAssembler {
                 "PROJECT",
                 project.id(),
                 defaultString(project.name()),
-                "/projects/" + project.id() + "/iterations"
+                "/projects/" + project.id() + "/overview"
         );
     }
 
@@ -522,7 +522,7 @@ public class AssistantContextAssembler {
                 "TASK",
                 task.id(),
                 defaultString(task.name()),
-                "/projects/" + task.projectId() + "/iterations?openTaskId=" + task.id()
+                "/projects/" + task.projectId() + "/planning?openTaskId=" + task.id()
         );
     }
 
@@ -531,25 +531,28 @@ public class AssistantContextAssembler {
                 "ITERATION",
                 iteration.id(),
                 defaultString(iteration.name()),
-                "/projects/" + iteration.projectId() + "/iterations?iterationId=" + iteration.id()
+                "/projects/" + iteration.projectId() + "/planning?iterationId=" + iteration.id()
         );
     }
 
-    private AssistantReferenceSummary wikiSpaceReference(Long spaceId, String title) {
+    /**
+     * Wiki 引用只有绑定项目时才能生成公众端深链；未绑定空间仍保留引用对象，但不伪造不可访问的页面地址。
+     */
+    private AssistantReferenceSummary wikiSpaceReference(Long spaceId, String title, Long projectId) {
         return new AssistantReferenceSummary(
                 "WIKI_SPACE",
                 spaceId,
                 defaultString(title),
-                "/wiki/spaces/" + spaceId
+                projectId == null ? "" : "/projects/" + projectId + "/knowledge?spaceId=" + spaceId
         );
     }
 
-    private AssistantReferenceSummary wikiPageReference(Long pageId, Long spaceId, String title) {
+    private AssistantReferenceSummary wikiPageReference(Long pageId, Long spaceId, String title, Long projectId) {
         return new AssistantReferenceSummary(
                 "WIKI_PAGE",
                 pageId,
                 defaultString(title),
-                "/wiki/spaces/" + spaceId + "/pages/" + pageId
+                projectId == null ? "" : "/projects/" + projectId + "/knowledge?spaceId=" + spaceId + "&pageId=" + pageId
         );
     }
 
