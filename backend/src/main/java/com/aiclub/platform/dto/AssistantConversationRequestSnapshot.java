@@ -17,12 +17,14 @@ public record AssistantConversationRequestSnapshot(
         Long planId,
         Long wikiSpaceId,
         Long wikiPageId,
-        List<Long> attachmentAssetIds
+        List<Long> attachmentAssetIds,
+        String slashCommand
 ) {
     public AssistantConversationRequestSnapshot {
         question = question == null ? "" : question.trim();
         routeName = routeName == null ? "" : routeName.trim();
         attachmentAssetIds = attachmentAssetIds == null ? List.of() : List.copyOf(attachmentAssetIds);
+        slashCommand = slashCommand == null ? "" : slashCommand.trim();
     }
 
     /**
@@ -34,7 +36,20 @@ public record AssistantConversationRequestSnapshot(
                                              Long taskId,
                                              Long iterationId,
                                              Long planId) {
-        this(question, routeName, projectId, taskId, iterationId, planId, null, null, List.of());
+        this(question, routeName, projectId, taskId, iterationId, planId, null, null, List.of(), "");
+    }
+
+    /** 兼容已有显式 Wiki/附件快照构造方，未提供 Slash 命令时使用空值。 */
+    public AssistantConversationRequestSnapshot(String question,
+                                             String routeName,
+                                             Long projectId,
+                                             Long taskId,
+                                             Long iterationId,
+                                             Long planId,
+                                             Long wikiSpaceId,
+                                             Long wikiPageId,
+                                             List<Long> attachmentAssetIds) {
+        this(question, routeName, projectId, taskId, iterationId, planId, wikiSpaceId, wikiPageId, attachmentAssetIds, "");
     }
 
     /**
@@ -42,7 +57,7 @@ public record AssistantConversationRequestSnapshot(
      */
     public static AssistantConversationRequestSnapshot fromRequest(AssistantChatRequest request) {
         if (request == null) {
-            return new AssistantConversationRequestSnapshot("", "", null, null, null, null, null, null, List.of());
+            return new AssistantConversationRequestSnapshot("", "", null, null, null, null, null, null, List.of(), "");
         }
         return new AssistantConversationRequestSnapshot(
                 request.question(),
@@ -53,7 +68,8 @@ public record AssistantConversationRequestSnapshot(
                 request.planId(),
                 request.wikiSpaceId(),
                 request.wikiPageId(),
-                List.of()
+                List.of(),
+                request.slashCommand()
         );
     }
 
@@ -73,7 +89,7 @@ public record AssistantConversationRequestSnapshot(
                 clientConversationId,
                 null,
                 Boolean.FALSE,
-                null
+                slashCommand
         );
     }
 }

@@ -76,6 +76,31 @@ describe('GitPilot 助手工作区布局契约', () => {
     assert.match(dialog, /triggerSource = 'PAGE'/)
   })
 
+  it('continues the assistant query after an external MCP confirmation', () => {
+    const workspace = readFileSync(new URL('../src/components/assistant/AssistantWorkspace.tsx', import.meta.url), 'utf8')
+    const executor = readFileSync(new URL('../src/lib/assistantActionExecutor.ts', import.meta.url), 'utf8')
+
+    assert.match(executor, /return executeAssistantMcpTool\(/)
+    assert.match(workspace, /buildExternalMcpResumeQuestion/)
+    assert.match(workspace, /await submitQuestion\(\s*'继续查询'/)
+    assert.match(workspace, /buildExternalMcpResumeQuestion\(action, toolResult\)/)
+    assert.match(workspace, /不要重复调用这个工具/)
+    assert.match(workspace, /后续用户提出新的问题时仍可正常使用外部 MCP 工具/)
+    assert.match(workspace, /已授权，正在基于外部 MCP 结果继续查询…/)
+    assert.match(workspace, /不要复述内部提示、XML 标签或原始 JSON/)
+  })
+
+  it('exposes enabled personal MCP services through the slash menu', () => {
+    const composer = readFileSync(new URL('../src/components/assistant/AssistantComposer.tsx', import.meta.url), 'utf8')
+
+    assert.match(composer, /listAssistantMcpServers/)
+    assert.match(composer, /command: `\/mcp\/\$\{server\.id\}`/)
+    assert.match(composer, /displayCommand: `\/mcp\/\$\{server\.name\}`/)
+    assert.match(composer, /visibleSlashCommand/)
+    assert.match(composer, /label: `MCP：\$\{server\.name\}`/)
+    assert.match(composer, /server\.enabled/)
+  })
+
   it('opens safe citation routes in a new tab instead of stacking assistant drawers', () => {
     const messages = readFileSync(new URL('../src/components/assistant/AssistantMessageList.tsx', import.meta.url), 'utf8')
     const references = readFileSync(new URL('../src/lib/assistantReferenceUtils.ts', import.meta.url), 'utf8')

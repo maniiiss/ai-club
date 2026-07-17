@@ -40,6 +40,8 @@ public class PlatformEnvVarRegistry {
     public static final String KEY_HERMES_SPEECH_API_KEY = "PLATFORM_HERMES_SPEECH_API_KEY";
     public static final String KEY_HERMES_SPEECH_MODEL = "PLATFORM_HERMES_SPEECH_MODEL";
     public static final String KEY_HERMES_SPEECH_TIMEOUT_SECONDS = "PLATFORM_HERMES_SPEECH_TIMEOUT_SECONDS";
+    /** GitPilot 外部 MCP 访问目标的管理员白名单。 */
+    public static final String KEY_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS = "PLATFORM_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS";
     public static final String KEY_HINDSIGHT_API_URL = "HINDSIGHT_API_URL";
     public static final String KEY_HINDSIGHT_API_KEY = "HINDSIGHT_API_KEY";
     public static final String KEY_HERMES_HINDSIGHT_BANK_ID = "HERMES_HINDSIGHT_BANK_ID";
@@ -227,6 +229,14 @@ public class PlatformEnvVarRegistry {
                 "语音转写请求等待外部模型服务响应的最长秒数。",
                 false
         ), 10, 300);
+        // 外部 MCP 的内网访问范围由管理员在环境变量管理中动态维护；空值表示不额外放行私网地址。
+        registerAllowlist(new PlatformEnvVarDefinition(
+                KEY_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS,
+                "platform.assistant.external-mcp.allowed-hosts",
+                "GitPilot 外部 MCP 访问白名单",
+                "配置可访问的域名、IP 或 CIDR，使用英文逗号分隔；公网 HTTPS 地址无需加入白名单。",
+                false
+        ));
         registerUrl(new PlatformEnvVarDefinition(
                 KEY_HINDSIGHT_API_URL,
                 "platform.hindsight.base-url",
@@ -361,6 +371,11 @@ public class PlatformEnvVarRegistry {
 
     private void registerText(PlatformEnvVarDefinition definition) {
         register(definition.withValidator(value -> requireText(value, definition.displayName() + "不能为空")));
+    }
+
+    /** 注册允许清空的域名/IP/CIDR 白名单配置。 */
+    private void registerAllowlist(PlatformEnvVarDefinition definition) {
+        register(definition.withValidator(value -> value == null ? "" : value.trim()));
     }
 
     private void registerUrl(PlatformEnvVarDefinition definition) {

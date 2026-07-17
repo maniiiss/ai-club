@@ -70,9 +70,14 @@ def _stop_stale_process_if_needed() -> None:
 
 def _start_gitnexus_serve(gitnexus_cli: Path) -> None:
     global _SERVE_PROCESS
+    # Docker 场景必须监听容器全部网卡，否则新版 GitNexus 可能只绑定 IPv6 的 localhost，
+    # 平台随后通过 127.0.0.1 探活时会误判服务未启动。
+    serve_host = (settings.gitnexus_serve_host or "").strip() or "0.0.0.0"
     command = [
         str(gitnexus_cli),
         "serve",
+        "--host",
+        serve_host,
         "--port",
         str(settings.gitnexus_serve_port),
     ]
@@ -86,8 +91,9 @@ def _start_gitnexus_serve(gitnexus_cli: Path) -> None:
         creationflags = subprocess.CREATE_NO_WINDOW
     _SERVE_PROCESS = subprocess.Popen(
         command,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        # 继承 code-processing 的标准输出，便于 Docker 日志暴露 GitNexus 启动失败原因。
+        stdout=None,
+        stderr=None,
         stdin=subprocess.DEVNULL,
         startupinfo=startupinfo,
         creationflags=creationflags,

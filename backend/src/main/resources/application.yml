@@ -137,6 +137,11 @@ platform:
     service-token: ${PLATFORM_PI_RUNTIME_SERVICE_TOKEN:${PLATFORM_INTERNAL_SERVICE_TOKEN:git-ai-club-internal-service-token}}
   assistant:
     default-runtime-code: ${PLATFORM_GITPILOT_DEFAULT_RUNTIME_CODE:HERMES_LEGACY}
+    external-mcp:
+      # 环境变量管理中的数据库覆盖优先；此配置仅作为部署环境兜底。
+      allowed-hosts: ${PLATFORM_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS:}
+      connect-timeout-ms: ${PLATFORM_ASSISTANT_EXTERNAL_MCP_CONNECT_TIMEOUT_MS:5000}
+      request-timeout-ms: ${PLATFORM_ASSISTANT_EXTERNAL_MCP_REQUEST_TIMEOUT_MS:20000}
   hindsight:
     base-url: ${HINDSIGHT_API_URL:}
     api-key: ${HINDSIGHT_API_KEY:}

@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Annotated
 
@@ -8,6 +10,11 @@ from pydantic import Field
 
 from app.services.hermes_internal_client import hermes_internal_client
 from app.services.lightrag_queue_consumer import lightrag_queue_consumer
+from app.services.gitnexus_cli_support import discover_gitnexus_cli_path
+from app.services.gitnexus_serve_manager import ensure_gitnexus_serve_running
+
+
+logger = logging.getLogger(__name__)
 
 
 mcp_server = FastMCP(
@@ -479,8 +486,18 @@ async def test_plan_create_draft(
 
 @asynccontextmanager
 async def mcp_lifespan(_: FastAPI):
-    """确保 FastMCP 的 session manager 与 FastAPI 生命周期保持一致，并启动 LightRAG 队列消费者。"""
+    """统一管理 MCP、LightRAG 和 GitNexus serve 的进程生命周期。"""
     lightrag_queue_consumer.start()
+    gitnexus_cli = discover_gitnexus_cli_path()
+    if gitnexus_cli is None:
+        logger.warning("未找到 GitNexus CLI，跳过 code-processing 启动时的 serve 自动启动。")
+    else:
+        try:
+            # 放到线程池中等待端口就绪，避免阻塞 FastAPI 事件循环；失败不阻断其他代码处理接口启动。
+            await asyncio.to_thread(ensure_gitnexus_serve_running, gitnexus_cli)
+            logger.info("GitNexus serve 已随 code-processing 启动并监听端口。")
+        except Exception:
+            logger.exception("GitNexus serve 随 code-processing 启动失败，后续 launch 请求将继续尝试自愈启动。")
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(mcp_server.session_manager.run())
         yield

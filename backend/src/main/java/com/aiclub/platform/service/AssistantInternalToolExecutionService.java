@@ -3,6 +3,8 @@ package com.aiclub.platform.service;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.AssistantConversationState;
 import com.aiclub.platform.dto.AssistantGroundingState;
+import com.aiclub.platform.dto.AssistantActionSummary;
+import com.aiclub.platform.dto.AssistantMcpToolSummary;
 import com.aiclub.platform.dto.AssistantInternalToolExecuteResponse;
 import com.aiclub.platform.dto.AssistantReferenceSummary;
 import com.aiclub.platform.dto.AssistantToolCallRequest;
@@ -25,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 处理 Python MCP bridge 转发过来的平台工具调用。
@@ -41,17 +44,20 @@ public class AssistantInternalToolExecutionService {
     private final AssistantToolOrchestrator assistantToolOrchestrator;
     private final AssistantFallbackAnswerService assistantFallbackAnswerService;
     private final PlatformToolRegistry platformToolRegistry;
+    private final AssistantMcpServerService assistantMcpServerService;
 
     public AssistantInternalToolExecutionService(AssistantConversationStateStore assistantConversationStateStore,
                                               AssistantMcpSessionTokenService assistantMcpSessionTokenService,
                                               AssistantToolOrchestrator assistantToolOrchestrator,
                                               AssistantFallbackAnswerService assistantFallbackAnswerService,
-                                              PlatformToolRegistry platformToolRegistry) {
+                                              PlatformToolRegistry platformToolRegistry,
+                                              AssistantMcpServerService assistantMcpServerService) {
         this.assistantConversationStateStore = assistantConversationStateStore;
         this.assistantMcpSessionTokenService = assistantMcpSessionTokenService;
         this.assistantToolOrchestrator = assistantToolOrchestrator;
         this.assistantFallbackAnswerService = assistantFallbackAnswerService;
         this.platformToolRegistry = platformToolRegistry;
+        this.assistantMcpServerService = assistantMcpServerService;
     }
 
     /**
@@ -64,6 +70,32 @@ public class AssistantInternalToolExecutionService {
         validateStateOwnership(state, claims);
 
         String toolCode = normalizeToolCode(request.toolCode());
+        if (assistantMcpServerService != null && assistantMcpServerService.isExternalToolCode(toolCode)) {
+            String slashCommand = state.currentRequest() == null ? "" : state.currentRequest().slashCommand();
+            if (!assistantMcpServerService.isToolAllowedForSlashCommand(toolCode, slashCommand)) {
+                throw new ForbiddenException("当前专项 MCP 未授权调用该外部工具");
+            }
+            Map<String, Object> arguments = sanitizeArguments(request.arguments());
+            AssistantMcpToolSummary externalTool = assistantMcpServerService.findExternalTool(state.currentUser().id(), toolCode);
+            if (externalTool.requiresConfirm()) {
+                AssistantActionSummary action = new AssistantActionSummary(
+                        "EXTERNAL_MCP_TOOL",
+                        "确认执行外部 MCP 工具：" + externalTool.name(),
+                        externalTool.description().isBlank() ? "该工具不是明确只读工具，执行前需要用户确认。" : externalTool.description(),
+                        true,
+                        Map.of("toolCode", toolCode, "arguments", arguments,
+                                "scopeKey", state.scopeKey(),
+                                "clientConversationId", state.clientConversationId(),
+                                "confirmationToken", UUID.randomUUID().toString()));
+                assistantConversationStateStore.save(new AssistantConversationState(
+                        state.scopeKey(), state.clientConversationId(), state.currentUser(), state.context(), state.currentRequest(),
+                        state.mcpSessionToken(), state.transcript(), state.references(), state.suggestions(), List.of(action),
+                        state.selectionCards(), state.groundingState(), state.toolExecutions(), "", state.toolExecutionPolicy(), state.contextState()));
+                return new AssistantInternalToolExecuteResponse("外部 MCP 工具需要用户确认后执行：" + externalTool.name());
+            }
+            String result = assistantMcpServerService.executeExternalTool(state.currentUser().id(), toolCode, arguments);
+            return new AssistantInternalToolExecuteResponse(result);
+        }
         PlatformToolDefinition definition = platformToolRegistry.requireDefinition(toolCode);
         if (definition.readOnly() && !platformToolRegistry.isAllowAutoExecute(toolCode)) {
             throw new ForbiddenException("当前工具未开启自动执行：" + toolCode);

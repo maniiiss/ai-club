@@ -502,6 +502,9 @@ GitPilot 的产品入口与具体 Runtime 解耦，Runtime 注册项统一维护
 - Pi Runtime 的模型部署配置由 `PLATFORM_PI_RUNTIME_MODEL_PROVIDER`、`PLATFORM_PI_RUNTIME_MODEL_ID`、`PLATFORM_PI_RUNTIME_MODEL_BASE_URL` 和 `PLATFORM_PI_RUNTIME_API_KEY` 提供；其中 Base URL 可覆盖 Pi 内置模型地址，用于 OpenAI-compatible 或自建模型网关，不属于 Runtime Registry 的 endpointRef。
 - 所有非 Legacy AgentRuntime 通过统一 `tools` / `toolPolicy` 契约接收平台工具目录、JSON Schema、授权工具编码、自动执行工具编码和短期会话令牌；backend 的 `RuntimeToolContractService` 负责按用户权限和聊天室策略生成契约，具体 Runtime 只做原生 tool calling 转换。
 - Runtime 工具函数名使用稳定的 `project__search` 形式，执行时仍回传平台内部编码 `project.search`；工具最终由 backend `/internal/runtime/tools/execute` 二次鉴权、按项目范围执行并记录审计，不能由 Runtime 本地策略绕过。
+- GitPilot 公众端支持用户在助手“更多”菜单配置个人外部 MCP 服务，配置保存在 `assistant_mcp_server` 并按用户隔离。backend 负责 Streamable HTTP/SSE 握手、工具发现和实际调用，Bearer/API Key 通过 `TokenCipherService` 加密保存，不把长期凭证下发给 Runtime。
+- 外部 MCP 服务必须通过管理员网络白名单校验。管理员在“系统管理 → 环境变量管理”配置 `PLATFORM_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS`，填写 `10.0.0.0/8,192.168.1.0/24,corp.example.com` 等英文逗号分隔的域名/IP/CIDR；公网服务使用 HTTPS，内网、HTTP、回环和云元数据地址需要命中该配置。新建 GitPilot 会话固化启用服务的加密快照和配置版本，历史会话不会因用户编辑服务而漂移。
+- 非 Legacy Runtime 的统一工具契约会加入 `external_mcp__{serverId}__v{version}__{toolName}` 命名空间。外部工具默认需要确认，用户在个人 MCP 配置中明确取消确认后才进入自动执行列表，并由界面提示未声明只读工具的风险；`HERMES_LEGACY` 保持平台固定 MCP 兼容边界。具体设计见 `docs/design-docs/gitpilot-external-mcp-technical-design-v1.md`。
 
 因此，“当前使用哪个 Runtime”应分别查看会话的 `runtimeRegistryCode`、聊天室任务 payload 和执行任务的 `runtimeRegistryCodeSnapshot`；Runtime 管理页的场景默认只影响后续新建会话/任务，不会改写历史会话、已入队任务或运行中的步骤。
 

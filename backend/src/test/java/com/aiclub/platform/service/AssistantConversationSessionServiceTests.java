@@ -26,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -57,6 +58,9 @@ class AssistantConversationSessionServiceTests {
 
     @Mock
     private AssistantConversationMessageRepository assistantConversationMessageRepository;
+
+    @Mock
+    private AssistantMcpServerService assistantMcpServerService;
 
     /**
      * 新建会话时应生成稳定的 clientConversationId，并固化当前页面上下文。
@@ -364,6 +368,44 @@ class AssistantConversationSessionServiceTests {
         assertThat(userIdCaptor.getValue()).isEqualTo(5L);
         assertThat(routeNameCaptor.getValue()).isEqualTo("projects");
         assertThat(projectIdCaptor.getValue()).isEqualTo(12L);
+    }
+
+    /** 空会话被复用时，应重新固化最新的个人 MCP 配置，避免工具目录停留在旧快照。 */
+    @Test
+    void shouldRefreshMcpSnapshotWhenReusingEmptySession() {
+        AssistantConversationSessionService service = new AssistantConversationSessionService(
+                authService,
+                userRepository,
+                assistantConversationSessionRepository,
+                assistantConversationMessageRepository,
+                new ObjectMapper()
+        );
+        ReflectionTestUtils.setField(service, "assistantMcpServerService", assistantMcpServerService);
+
+        CurrentUserInfo currentUser = buildCurrentUser();
+        UserEntity userEntity = new UserEntity();
+        userEntity.setId(5L);
+        userEntity.setUsername("pm-user");
+        userEntity.setNickname("项目经理");
+        AssistantConversationSessionEntity emptySession = buildSessionEntity();
+        emptySession.setExternalMcpSnapshotCiphertext("");
+
+        when(authService.currentUser()).thenReturn(currentUser);
+        when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
+        when(assistantConversationSessionRepository.findUnusedSessionByContext(
+                any(), any(), any(), any(), any(), any(), any(), any()
+        )).thenReturn(List.of(emptySession));
+        when(assistantMcpServerService.snapshotForNewSession(5L)).thenReturn("latest-mcp-snapshot");
+        when(assistantConversationSessionRepository.save(any(AssistantConversationSessionEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.createSession(new CreateAssistantConversationSessionRequest(
+                "projects", 12L, null, null, null, null, null
+        ));
+
+        assertThat(emptySession.getExternalMcpSnapshotCiphertext()).isEqualTo("latest-mcp-snapshot");
+        verify(assistantMcpServerService).snapshotForNewSession(5L);
+        verify(assistantConversationSessionRepository).save(emptySession);
     }
 
     /**

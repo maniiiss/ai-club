@@ -2,6 +2,7 @@ package com.aiclub.platform.service;
 
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.AssistantCallableTool;
+import com.aiclub.platform.dto.AssistantMcpToolSummary;
 import com.aiclub.platform.dto.PlatformToolDefinition;
 import com.aiclub.platform.runtime.RuntimeToolContext;
 import com.aiclub.platform.runtime.RuntimeToolDefinition;
@@ -36,7 +37,14 @@ public class RuntimeToolContractService {
 
     /** 为普通 GitPilot 会话构建当前用户可见的 Runtime 工具目录。 */
     public RuntimeToolContext forUser(CurrentUserInfo currentUser, String sessionToken) {
-        return build(currentUser, sessionToken, null, null);
+        return build(currentUser, sessionToken, null, null, null);
+    }
+
+    /** 为 GitPilot 新 Runtime 添加当前会话固定的个人外部 MCP 工具。 */
+    public RuntimeToolContext forUser(CurrentUserInfo currentUser,
+                                      String sessionToken,
+                                      Collection<AssistantMcpToolSummary> externalTools) {
+        return build(currentUser, sessionToken, null, null, externalTools);
     }
 
     /** 为聊天室/Agent 任务构建受房间策略约束的 Runtime 工具目录。 */
@@ -44,21 +52,33 @@ public class RuntimeToolContractService {
                                       String sessionToken,
                                       Collection<String> restrictedToolCodes,
                                       Collection<String> autoExecuteToolCodes) {
-        return build(currentUser, sessionToken, restrictedToolCodes, autoExecuteToolCodes);
+        return build(currentUser, sessionToken, restrictedToolCodes, autoExecuteToolCodes, null);
+    }
+
+    /** 为聊天室或受策略限制的 GitPilot 会话附加个人 MCP 工具目录。 */
+    public RuntimeToolContext forUser(CurrentUserInfo currentUser,
+                                      String sessionToken,
+                                      Collection<String> restrictedToolCodes,
+                                      Collection<String> autoExecuteToolCodes,
+                                      Collection<AssistantMcpToolSummary> externalTools) {
+        return build(currentUser, sessionToken, restrictedToolCodes, autoExecuteToolCodes, externalTools);
     }
 
     private RuntimeToolContext build(CurrentUserInfo currentUser,
                                      String sessionToken,
                                      Collection<String> restrictedToolCodes,
-                                     Collection<String> autoExecuteToolCodes) {
+                                     Collection<String> autoExecuteToolCodes,
+                                     Collection<AssistantMcpToolSummary> externalTools) {
         Map<String, AssistantCallableTool> candidates = new LinkedHashMap<>();
         appendVisibleTools(candidates, assistantToolSchemaService.listCallableTools(currentUser), currentUser);
         appendVisibleTools(candidates, assistantToolSchemaService.listCallableWriteTools(currentUser), currentUser);
+        appendExternalTools(candidates, externalTools);
 
         Set<String> restricted = normalizeCodes(restrictedToolCodes);
         List<RuntimeToolDefinition> definitions = candidates.values().stream()
                 .filter(tool -> restrictedToolCodes == null || restricted.contains(normalize(tool.toolCode())))
-                .filter(tool -> platformToolRegistry.isEnabled(tool.toolCode()))
+                .filter(tool -> tool.toolCode().startsWith("external_mcp__")
+                        || platformToolRegistry.isEnabled(tool.toolCode()))
                 .map(this::toRuntimeDefinition)
                 .toList();
 
@@ -70,6 +90,18 @@ public class RuntimeToolContractService {
                 .toList();
         return new RuntimeToolContext("v1", definitions,
                 new RuntimeToolPolicy(sessionToken, allowedCodes, autoCodes));
+    }
+
+    /** 将会话快照中的外部 MCP 工具转换为统一 Runtime 工具定义。 */
+    private void appendExternalTools(Map<String, AssistantCallableTool> target,
+                                     Collection<AssistantMcpToolSummary> externalTools) {
+        if (externalTools == null) return;
+        for (AssistantMcpToolSummary tool : externalTools) {
+            if (tool == null || !tool.enabled() || tool.toolCode() == null || tool.toolCode().isBlank()) continue;
+            target.putIfAbsent(normalize(tool.toolCode()), new AssistantCallableTool(
+                    tool.toolCode(), tool.toolCode(), tool.name(),
+                    tool.description(), tool.readOnly(), tool.requiresConfirm(), tool.inputSchema()));
+        }
     }
 
     private void appendVisibleTools(Map<String, AssistantCallableTool> target,
@@ -102,9 +134,12 @@ public class RuntimeToolContractService {
                                      Collection<String> requestedAutoCodes,
                                      Set<String> normalizedRequestedAutoCodes) {
         if (requestedAutoCodes != null) {
-            return normalizedRequestedAutoCodes.contains(normalize(tool.toolCode()));
+            return !tool.requiresConfirm()
+                    && (tool.readOnly() || tool.toolCode().startsWith("external_mcp__"))
+                    && normalizedRequestedAutoCodes.contains(normalize(tool.toolCode()));
         }
-        return tool.readOnly() && platformToolRegistry.isAllowAutoExecute(tool.toolCode());
+        return !tool.requiresConfirm() && (tool.toolCode().startsWith("external_mcp__")
+                || platformToolRegistry.isAllowAutoExecute(tool.toolCode()));
     }
 
     private boolean hasPermission(CurrentUserInfo currentUser, String toolCode) {

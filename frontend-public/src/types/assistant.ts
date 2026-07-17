@@ -40,6 +40,8 @@ export interface AssistantSessionChatRequestPayload {
   question: string
   selection?: AssistantSelectionPayload | null
   slashCommand?: string | null
+  /** 外部 MCP 确认后的内部续答上下文，不展示为用户消息。 */
+  internalContext?: string | null
 }
 
 export interface AssistantSpeechTranscriptionPayload {
@@ -331,4 +333,56 @@ export interface UpdateAssistantFileLibraryItemPayload {
   title?: string
   description?: string
   enabled?: boolean
+}
+
+/** 外部 MCP 工具的脱敏发现结果。 */
+export interface AssistantMcpToolSummary {
+  toolCode: string
+  name: string
+  description: string
+  readOnly: boolean
+  requiresConfirm: boolean
+  enabled: boolean
+  inputSchema: Record<string, unknown>
+}
+
+/** 当前用户的外部 MCP 服务配置摘要。 */
+export interface AssistantMcpServerSummary {
+  id: number
+  name: string
+  endpointUrl: string
+  transport: 'AUTO' | 'STREAMABLE_HTTP' | 'SSE' | string
+  authType: 'NONE' | 'BEARER' | 'API_KEY' | string
+  credentialConfigured: boolean
+  enabled: boolean
+  configVersion: number
+  connectionStatus: string
+  connectionMessage: string
+  serverName: string
+  serverVersion: string
+  tools: AssistantMcpToolSummary[]
+  lastTestedAt: string | null
+}
+
+/** 外部 MCP 配置请求；credential 为空时后端保留已有密钥。 */
+export interface AssistantMcpServerPayload {
+  name: string
+  endpointUrl: string
+  transport: string
+  authType: string
+  credential?: string
+  enabled?: boolean
+  /** 按工具名称配置是否需要人工确认；默认值由 MCP 工具发现结果提供。 */
+  toolConfirmationOverrides?: Record<string, boolean>
+  /** 按工具名称配置是否注入新会话。 */
+  toolEnabledOverrides?: Record<string, boolean>
+}
+
+/** 未保存 MCP 配置的连接测试结果。 */
+export interface AssistantMcpConnectionTestResult {
+  success: boolean
+  message: string
+  serverName: string
+  serverVersion: string
+  tools: AssistantMcpToolSummary[]
 }

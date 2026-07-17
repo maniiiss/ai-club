@@ -1,7 +1,9 @@
 import { Mic, Paperclip, Send, Square, X } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/src/components/common/Button'
 import { resolveSlashMenuActiveIndex } from '@/src/lib/assistantUtils'
+import { listAssistantMcpServers } from '@/src/api/assistant'
+import type { AssistantMcpServerSummary } from '@/src/types/assistant'
 
 interface AssistantComposerProps {
   disabled: boolean
@@ -15,7 +17,7 @@ interface AssistantComposerProps {
 }
 
 const acceptedFileTypes = '.pdf,.docx,.pptx,.xlsx'
-const slashCommands = [
+const builtinSlashCommands = [
   { command: '/文件库', label: '个人文件库问答' },
   { command: '/wiki', label: 'Wiki 问答' },
   { command: '/需求', label: '创建或整理需求' },
@@ -23,12 +25,25 @@ const slashCommands = [
   { command: '/执行任务', label: '查询或发起执行任务' },
 ] as const
 
-const parseSlashQuestion = (rawQuestion: string) => {
+type SlashCommandOption = { command: string; label: string; displayCommand?: string }
+
+const visibleSlashCommand = (item: SlashCommandOption) => item.displayCommand || item.command
+
+const parseSlashQuestion = (rawQuestion: string, slashCommands: SlashCommandOption[]) => {
   const normalized = rawQuestion.trim()
-  const matchedCommand = slashCommands.find((item) => normalized === item.command || normalized.startsWith(`${item.command} `))
+  const matchedCommand = slashCommands.find((item) => {
+    const displayCommand = visibleSlashCommand(item)
+    return normalized === item.command
+      || normalized.startsWith(`${item.command} `)
+      || normalized === displayCommand
+      || normalized.startsWith(`${displayCommand} `)
+  })
   if (!matchedCommand) return { question: normalized, slashCommand: null as string | null }
+  const matchedPrefix = normalized === matchedCommand.command || normalized.startsWith(`${matchedCommand.command} `)
+    ? matchedCommand.command
+    : visibleSlashCommand(matchedCommand)
   return {
-    question: normalized.slice(matchedCommand.command.length).trim() || matchedCommand.label,
+    question: normalized.slice(matchedPrefix.length).trim() || matchedCommand.label,
     slashCommand: matchedCommand.command,
   }
 }
@@ -43,6 +58,7 @@ export const AssistantComposer = ({
   onTranscribe,
   onError,
 }: AssistantComposerProps) => {
+  const [mcpServers, setMcpServers] = useState<AssistantMcpServerSummary[]>([])
   const [question, setQuestion] = useState('')
   const [selectedSlashCommand, setSelectedSlashCommand] = useState<string | null>(null)
   const [activeSlashCommandIndex, setActiveSlashCommandIndex] = useState(0)
@@ -52,13 +68,35 @@ export const AssistantComposer = ({
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
 
+  /** 加载当前账号可用于专项提问的个人 MCP 服务。 */
+  useEffect(() => {
+    let active = true
+    void listAssistantMcpServers()
+      .then((servers) => {
+        if (active) setMcpServers(servers.filter((server) => server.enabled))
+      })
+      .catch(() => {
+        // MCP 菜单加载失败不应阻断普通 Slash Skill 和助手问答。
+      })
+    return () => { active = false }
+  }, [])
+
+  const slashCommands: SlashCommandOption[] = [
+    ...builtinSlashCommands,
+    ...mcpServers.map((server) => ({
+      command: `/mcp/${server.id}`,
+      displayCommand: `/mcp/${server.name}`,
+      label: `MCP：${server.name}`,
+    })),
+  ]
+
   const submit = () => {
     const parsed = selectedSlashCommand
       ? {
           question: question.trim() || slashCommands.find((item) => item.command === selectedSlashCommand)?.label || '业务 Skill',
           slashCommand: selectedSlashCommand,
         }
-      : parseSlashQuestion(question)
+      : parseSlashQuestion(question, slashCommands)
     if (!parsed.question || disabled || sending) return
     onSubmit(parsed.question, parsed.slashCommand)
     setQuestion('')
@@ -150,7 +188,7 @@ export const AssistantComposer = ({
                 onMouseEnter={() => setActiveSlashCommandIndex(index)}
                 onClick={() => selectSlashCommand(item.command)}
               >
-                <strong className="text-[var(--color-text-primary)]">{item.command}</strong>
+                <strong className="text-[var(--color-text-primary)]">{visibleSlashCommand(item)}</strong>
                 <span className="text-[var(--color-text-tertiary)]">{item.label}</span>
               </button>
             ))}
@@ -159,7 +197,7 @@ export const AssistantComposer = ({
         {selectedSlashCommand && (
           <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[var(--color-primary-light)] bg-[var(--color-primary-soft)] px-3 py-1.5 text-[12px] text-[var(--color-text-secondary)]">
             <span className="text-[10px] font-black uppercase tracking-wide text-[var(--color-primary)]">Skill</span>
-            <strong className="text-[var(--color-text-primary)]">{selectedSlashCommand}</strong>
+            <strong className="text-[var(--color-text-primary)]">{visibleSlashCommand(slashCommands.find((item) => item.command === selectedSlashCommand) || { command: selectedSlashCommand })}</strong>
             <span>{slashCommands.find((item) => item.command === selectedSlashCommand)?.label}</span>
             <button
               type="button"

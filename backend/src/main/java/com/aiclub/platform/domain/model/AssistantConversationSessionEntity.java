@@ -60,6 +60,10 @@ public class AssistantConversationSessionEntity {
     @Column(name = "runtime_context_profile_snapshot_json", nullable = false, columnDefinition = "TEXT")
     private String runtimeContextProfileSnapshotJson = "{}";
 
+    /** 创建会话时固化的个人外部 MCP 配置密文快照，避免用户后续编辑影响历史会话。 */
+    @Column(name = "external_mcp_snapshot_ciphertext", nullable = false, columnDefinition = "TEXT")
+    private String externalMcpSnapshotCiphertext = "";
+
     /** 压缩后的滚动对话摘要，原始消息仍完整保留在消息表。 */
     @Column(name = "context_summary", nullable = false, columnDefinition = "TEXT")
     private String contextSummary = "";
@@ -253,6 +257,8 @@ public class AssistantConversationSessionEntity {
     public void setRuntimeProfileVersion(Long runtimeProfileVersion) { this.runtimeProfileVersion = runtimeProfileVersion; }
     public String getRuntimeContextProfileSnapshotJson() { return runtimeContextProfileSnapshotJson; }
     public void setRuntimeContextProfileSnapshotJson(String runtimeContextProfileSnapshotJson) { this.runtimeContextProfileSnapshotJson = runtimeContextProfileSnapshotJson; }
+    public String getExternalMcpSnapshotCiphertext() { return externalMcpSnapshotCiphertext; }
+    public void setExternalMcpSnapshotCiphertext(String externalMcpSnapshotCiphertext) { this.externalMcpSnapshotCiphertext = externalMcpSnapshotCiphertext; }
     public String getContextSummary() { return contextSummary; }
     public void setContextSummary(String contextSummary) { this.contextSummary = contextSummary; }
     public String getContextFactsJson() { return contextFactsJson; }

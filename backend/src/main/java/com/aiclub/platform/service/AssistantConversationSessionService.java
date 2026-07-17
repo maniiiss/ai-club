@@ -60,6 +60,10 @@ public class AssistantConversationSessionService {
     @Autowired(required = false)
     private RuntimeRegistryService runtimeRegistryService;
 
+    /** 个人 MCP 服务配置门面；旧测试或未执行新迁移的环境允许为空。 */
+    @Autowired(required = false)
+    private AssistantMcpServerService assistantMcpServerService;
+
     /** 新建会话的默认标题。 */
     private static final String DEFAULT_SESSION_TITLE = "新会话";
 
@@ -139,8 +143,13 @@ public class AssistantConversationSessionService {
                 );
 
         if (!unusedSessions.isEmpty()) {
-            // 如果有同上下文未使用的会话，直接复用，避免重复创建空会话。
-            return toSummary(unusedSessions.get(0));
+            // 如果有同上下文未使用的会话，复用前刷新空会话快照，避免页面预创建的旧会话吞掉最新 MCP 配置。
+            AssistantConversationSessionEntity reusableSession = unusedSessions.get(0);
+            boolean snapshotRefreshed = refreshReusableSessionSnapshot(reusableSession, currentUser.id());
+            if (snapshotRefreshed) {
+                return toSummary(assistantConversationSessionRepository.save(reusableSession));
+            }
+            return toSummary(reusableSession);
         }
 
         // 如果没有未使用的会话，创建新会话
@@ -154,6 +163,8 @@ public class AssistantConversationSessionService {
         entity.setRuntimeProfileVersion(1L);
         entity.setRuntimeContextProfileSnapshotJson(writeRuntimeContextProfile(
                 resolveRuntimeContextProfile(entity.getRuntimeRegistryCode())));
+        entity.setExternalMcpSnapshotCiphertext(assistantMcpServerService == null
+                ? "" : assistantMcpServerService.snapshotForNewSession(currentUser.id()));
         entity.setProjectId(request.projectId());
         entity.setTaskId(request.taskId());
         entity.setIterationId(request.iterationId());
@@ -164,6 +175,27 @@ public class AssistantConversationSessionService {
         entity.setLatestDisplayStateJson(writeLatestDisplayState(AssistantLatestDisplayState.empty()));
         AssistantConversationSessionEntity saved = assistantConversationSessionRepository.save(entity);
         return toSummary(saved);
+    }
+
+    /**
+     * 刷新尚未产生消息的可复用会话快照。
+     * 业务意图：空会话尚未形成用户可见历史，允许它吸收管理员 Runtime 和用户 MCP 的最新配置；
+     * 一旦会话产生消息，后续续聊仍严格保持创建时的不可变快照。
+     */
+    private boolean refreshReusableSessionSnapshot(AssistantConversationSessionEntity session, Long userId) {
+        boolean refreshed = false;
+        if (runtimeScenarioDefaultService != null) {
+            String runtimeCode = resolveAssistantRuntimeCode();
+            session.setRuntimeRegistryCode(runtimeCode);
+            session.setRuntimeProfileVersion(1L);
+            session.setRuntimeContextProfileSnapshotJson(writeRuntimeContextProfile(resolveRuntimeContextProfile(runtimeCode)));
+            refreshed = true;
+        }
+        if (assistantMcpServerService != null) {
+            session.setExternalMcpSnapshotCiphertext(assistantMcpServerService.snapshotForNewSession(userId));
+            refreshed = true;
+        }
+        return refreshed;
     }
 
     /** 新会话实时读取管理端配置，兼容尚未执行 V129 的旧测试和旧数据库。 */
@@ -186,6 +218,18 @@ public class AssistantConversationSessionService {
         }
         String runtimeCode = session == null ? resolveAssistantRuntimeCode() : session.getRuntimeRegistryCode();
         return resolveRuntimeContextProfile(runtimeCode);
+    }
+
+    /** 读取会话创建时固定的外部 MCP 工具目录。 */
+    public List<com.aiclub.platform.dto.AssistantMcpToolSummary> resolveExternalMcpTools(AssistantConversationSessionEntity session) {
+        return resolveExternalMcpTools(session, null);
+    }
+
+    /** 读取会话快照中的 MCP 工具，并按当前专项 Slash 命令限定服务范围。 */
+    public List<com.aiclub.platform.dto.AssistantMcpToolSummary> resolveExternalMcpTools(AssistantConversationSessionEntity session,
+                                                                                         String slashCommand) {
+        if (assistantMcpServerService == null || session == null) return List.of();
+        return assistantMcpServerService.toolsFromSnapshot(session.getExternalMcpSnapshotCiphertext(), slashCommand);
     }
 
     private RuntimeContextProfile resolveRuntimeContextProfile(String runtimeCode) {
@@ -714,6 +758,10 @@ public class AssistantConversationSessionService {
     private String buildDisplayedUserMessage(AssistantChatRequest request) {
         if (request == null) {
             return "";
+        }
+        // 外部 MCP 确认后的内部续答包含原始工具结果，只在 Runtime 上下文中使用，历史消息不展示 JSON。
+        if (defaultString(request.question()).startsWith("【仅当前续答轮次】")) {
+            return "已授权，正在基于外部 MCP 结果继续查询。";
         }
         if (request.selection() == null) {
             return defaultString(request.question());

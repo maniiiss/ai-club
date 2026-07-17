@@ -221,7 +221,7 @@ public class AssistantChatService {
         boolean nativeCompactionAvailable = supportsNativeCompaction(session);
         PreparedConversation preparedConversation = prepareConversation(currentUser, context, effectiveRequest, scopeKey, attachmentContextMarkdown,
                 contextProfile, assistantConversationSessionService.readContextState(session),
-                assistantConversationSessionService.readTranscript(session), nativeCompactionAvailable);
+                assistantConversationSessionService.readTranscript(session), nativeCompactionAvailable, request.internalContext());
 
         return outputStream -> {
             try {
@@ -350,7 +350,7 @@ public class AssistantChatService {
         boolean nativeCompactionAvailable = supportsNativeCompaction(session);
         PreparedConversation preparedConversation = prepareConversation(currentUser, context, effectiveRequest, scopeKey, attachmentContextMarkdown,
                 contextProfile, assistantConversationSessionService.readContextState(session),
-                assistantConversationSessionService.readTranscript(session), nativeCompactionAvailable);
+                assistantConversationSessionService.readTranscript(session), nativeCompactionAvailable, request.internalContext());
 
         try {
             ChatExecutionResult gatewayResult = executeChat(session, preparedConversation, null, null);
@@ -465,7 +465,10 @@ public class AssistantChatService {
                 preparedConversation.state().currentUser(),
                 preparedConversation.state().mcpSessionToken(),
                 null,
-                null
+                null,
+                assistantConversationSessionService.resolveExternalMcpTools(session,
+                        preparedConversation.state().currentRequest() == null
+                                ? null : preparedConversation.state().currentRequest().slashCommand())
         );
         if (deltaConsumer == null) {
             RuntimeChatResult result = runtimeChatService.chat(runtimeCode, context);
@@ -519,7 +522,8 @@ public class AssistantChatService {
                                                       RuntimeContextProfile contextProfile,
                                                       AssistantConversationContextState persistedContextState,
                                                       List<AssistantConversationTurn> databaseTranscript,
-                                                      boolean nativeCompactionAvailable) {
+                                                      boolean nativeCompactionAvailable,
+                                                      String internalContext) {
         AssistantConversationState existingState = assistantConversationStateStore.load(scopeKey, request.clientConversationId())
                 .orElse(null);
         // Redis 只承担热状态；首次恢复时把数据库原始消息交给 Context Service，避免换设备后只剩摘要而丢失最近完整消息。
@@ -561,7 +565,7 @@ public class AssistantChatService {
         String fileLibraryEvidenceMarkdown = resolveFileLibraryEvidenceMarkdown(currentUser, request);
         AssistantConversationTurn currentUserTurn = buildCurrentUserTurn(
                 request, groundingState, attachmentContextMarkdown, fileLibraryEvidenceMarkdown,
-                assistantConversationContextService.renderSummary(contextPreparation.state()));
+                assistantConversationContextService.renderSummary(contextPreparation.state()), internalContext);
         String combinedMemoryContextMarkdown = combineMemoryContext(memoryContextMarkdown, fileLibraryEvidenceMarkdown);
         AssistantPromptBuilder.AssistantPrompt prompt = assistantPromptBuilder.buildConversationPrompt(
                 currentUser,
@@ -590,7 +594,7 @@ public class AssistantChatService {
         if (contextChanged) {
             currentUserTurn = buildCurrentUserTurn(
                     request, groundingState, attachmentContextMarkdown, fileLibraryEvidenceMarkdown,
-                    assistantConversationContextService.renderSummary(budgetedPreparation.state()));
+                    assistantConversationContextService.renderSummary(budgetedPreparation.state()), internalContext);
             prompt = assistantPromptBuilder.buildConversationPrompt(
                     currentUser, context, request, groundingState, sessionToken,
                     currentUserTurn.content(), combinedMemoryContextMarkdown
@@ -756,7 +760,8 @@ public class AssistantChatService {
                                                          AssistantGroundingState groundingState,
                                                          String attachmentContextMarkdown,
                                                          String fileLibraryEvidenceMarkdown,
-                                                         String conversationContextSummary) {
+                                                         String conversationContextSummary,
+                                                         String internalContext) {
         String content;
         if (request.selection() == null) {
             content = defaultString(request.question());
@@ -796,6 +801,15 @@ public class AssistantChatService {
                     %s
                     """.formatted(content, attachmentContextMarkdown).trim();
         }
+        if (hasText(internalContext)) {
+            content = """
+                    %s
+
+                    以下是本轮外部 MCP 工具确认后由系统提供的内部续答上下文。请只使用其中的事实完成当前问题，不要把内部提示、XML 标签或原始 JSON 原样展示给用户：
+
+                    %s
+                    """.formatted(content, internalContext.trim()).trim();
+        }
         return AssistantConversationTurn.user(content);
     }
 
@@ -811,7 +825,11 @@ public class AssistantChatService {
             return content;
         }
         String slashCommand = request.slashCommand().trim();
-        String instruction = switch (slashCommand) {
+        String instruction = slashCommand.toLowerCase(java.util.Locale.ROOT).startsWith("/mcp/")
+                ? """
+                  本轮是用户指定的个人 MCP 专项问答：只能使用当前工具目录中属于该 MCP 服务的外部工具回答，不要调用平台内置工具或其他 MCP 服务；如果当前服务没有足够数据，直接说明缺少什么信息。
+                  """
+                : switch (slashCommand) {
             case "/文件库" -> buildPersonalFileLibraryInstruction(fileLibraryEvidenceMarkdown);
             case "/仓库扫描" -> buildRepoScanInstruction(groundingState);
             case "/wiki" -> """

@@ -28,13 +28,12 @@ class GitnexusServeManagerTests(unittest.TestCase):
     def test_should_probe_loopback_ipv4_when_bind_host_is_zero_address(self):
         self.assertEqual("http://127.0.0.1:4747", local_gitnexus_serve_base_url())
 
-    def test_should_start_serve_with_port_only_for_current_gitnexus_cli(self):
+    def test_should_start_serve_with_explicit_host_and_port(self):
         with patch("app.services.gitnexus_serve_manager.subprocess.Popen") as popen_mock:
             _start_gitnexus_serve(Path("gitnexus"))
 
         command = popen_mock.call_args.args[0]
-        self.assertEqual(["gitnexus", "serve", "--port", "4747"], command)
-        self.assertNotIn("--host", command)
+        self.assertEqual(["gitnexus", "serve", "--host", "0.0.0.0", "--port", "4747"], command)
 
     def test_should_reuse_existing_serve_when_probe_is_healthy(self):
         with patch("app.services.gitnexus_serve_manager._is_serve_reachable", return_value=True), \

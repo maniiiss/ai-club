@@ -19,6 +19,9 @@ import type {
   AssistantMemoryConsolidationStatus,
   AssistantMemoryConsolidationTask,
   AssistantMemoryOverview,
+  AssistantMcpConnectionTestResult,
+  AssistantMcpServerPayload,
+  AssistantMcpServerSummary,
   AssistantSessionChatRequestPayload,
   AssistantSessionChatResponsePayload,
   AssistantSpeechTranscriptionPayload,
@@ -37,6 +40,68 @@ export interface AssistantStreamHandlers {
   onDelta?: (payload: AssistantStreamDeltaEvent) => void
   onDone?: (payload: AssistantStreamDoneEvent) => void
   onError?: (payload: AssistantStreamErrorEvent) => void
+}
+
+/** 读取当前用户的个人 MCP 服务。 */
+export const listAssistantMcpServers = async (): Promise<AssistantMcpServerSummary[]> => {
+  const res = await http.get<ApiResponse<AssistantMcpServerSummary[]>>('/api/assistant/mcp-servers')
+  return unwrap(res) || []
+}
+
+/** 测试未保存 MCP 配置并发现工具。 */
+export const testAssistantMcpServer = async (
+  payload: AssistantMcpServerPayload,
+): Promise<AssistantMcpConnectionTestResult> => {
+  const res = await http.post<ApiResponse<AssistantMcpConnectionTestResult>>('/api/assistant/mcp-servers/test', payload)
+  return unwrap(res)
+}
+
+/** 新增个人 MCP 服务。 */
+export const createAssistantMcpServer = async (
+  payload: AssistantMcpServerPayload,
+): Promise<AssistantMcpServerSummary> => {
+  const res = await http.post<ApiResponse<AssistantMcpServerSummary>>('/api/assistant/mcp-servers', payload)
+  return unwrap(res)
+}
+
+/** 更新个人 MCP 服务。 */
+export const updateAssistantMcpServer = async (
+  id: number,
+  payload: AssistantMcpServerPayload,
+): Promise<AssistantMcpServerSummary> => {
+  const res = await http.put<ApiResponse<AssistantMcpServerSummary>>(`/api/assistant/mcp-servers/${id}`, payload)
+  return unwrap(res)
+}
+
+/** 重新测试已保存的个人 MCP 服务。 */
+export const retestAssistantMcpServer = async (id: number): Promise<AssistantMcpServerSummary> => {
+  const res = await http.post<ApiResponse<AssistantMcpServerSummary>>(`/api/assistant/mcp-servers/${id}/test`)
+  return unwrap(res)
+}
+
+/** 启用或停用个人 MCP 服务。 */
+export const setAssistantMcpServerEnabled = async (id: number, enabled: boolean): Promise<AssistantMcpServerSummary> => {
+  const res = await http.patch<ApiResponse<AssistantMcpServerSummary>>(`/api/assistant/mcp-servers/${id}/enabled`, { enabled })
+  return unwrap(res)
+}
+
+/** 删除个人 MCP 服务。 */
+export const deleteAssistantMcpServer = async (id: number): Promise<void> => {
+  await http.delete<ApiResponse<null>>(`/api/assistant/mcp-servers/${id}`)
+}
+
+/** 执行动作卡片确认后的外部 MCP 工具。 */
+export const executeAssistantMcpTool = async (
+  toolCode: string,
+  argumentsValue: Record<string, unknown>,
+  confirmation: { scopeKey: string; clientConversationId: string; confirmationToken: string },
+): Promise<string> => {
+  const res = await http.post<ApiResponse<string>>('/api/assistant/mcp-servers/actions/execute', {
+    toolCode,
+    ...confirmation,
+    arguments: argumentsValue,
+  })
+  return unwrap(res)
 }
 
 const isAbortLikeError = (error: unknown, signal: AbortSignal) => {

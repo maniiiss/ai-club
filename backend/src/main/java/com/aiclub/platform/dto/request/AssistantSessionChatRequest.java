@@ -24,7 +24,10 @@ public record AssistantSessionChatRequest(
          * 前端 Slash 命令菜单传入的结构化 Skill 唤起指令，例如 /需求、/wiki。
          */
         @Size(max = 40, message = "Slash 命令长度不能超过 40 个字符")
-        String slashCommand
+        String slashCommand,
+        /** 外部 MCP 确认后的内部续答上下文，不作为用户问题展示或标题来源。 */
+        @Size(max = 100000, message = "内部续答上下文不能超过 100000 个字符")
+        String internalContext
 ) {
     /**
      * 兼容旧调用方：未提供 Slash 命令时不启用业务 Skill。
@@ -32,6 +35,14 @@ public record AssistantSessionChatRequest(
     public AssistantSessionChatRequest(String question,
                                     AssistantSelectionRequest selection,
                                     Boolean debug) {
-        this(question, selection, debug, null);
+        this(question, selection, debug, null, null);
+    }
+
+    /** 兼容现有 Slash 调用方，未提供内部续答上下文时使用空值。 */
+    public AssistantSessionChatRequest(String question,
+                                    AssistantSelectionRequest selection,
+                                    Boolean debug,
+                                    String slashCommand) {
+        this(question, selection, debug, slashCommand, null);
     }
 }

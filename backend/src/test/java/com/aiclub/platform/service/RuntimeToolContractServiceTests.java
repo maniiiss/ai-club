@@ -2,6 +2,7 @@ package com.aiclub.platform.service;
 
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.AssistantCallableTool;
+import com.aiclub.platform.dto.AssistantMcpToolSummary;
 import com.aiclub.platform.dto.PlatformToolDefinition;
 import com.aiclub.platform.runtime.RuntimeToolContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -97,6 +98,76 @@ class RuntimeToolContractServiceTests {
 
         assertThat(context.tools()).isEmpty();
         assertThat(context.policy().allowedToolCodes()).isEmpty();
+    }
+
+    /** 外部 MCP 只读工具应进入自动执行目录，未知/写工具不能自动执行。 */
+    @Test
+    void shouldAppendExternalMcpToolsWithSafeAutoExecutionPolicy() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        AssistantMcpToolSummary readTool = new AssistantMcpToolSummary(
+                "external_mcp__7__v2__search", "search", "查询知识库", true, false,
+                objectMapper.readTree("{\"type\":\"object\"}"));
+        AssistantMcpToolSummary writeTool = new AssistantMcpToolSummary(
+                "external_mcp__7__v2__update", "update", "修改知识库", false, true,
+                objectMapper.readTree("{\"type\":\"object\"}"));
+        when(assistantToolSchemaService.listCallableTools(currentUser())).thenReturn(List.of());
+        when(assistantToolSchemaService.listCallableWriteTools(currentUser())).thenReturn(List.of());
+
+        RuntimeToolContext context = new RuntimeToolContractService(assistantToolSchemaService, platformToolRegistry)
+                .forUser(currentUser(), "session-token", List.of(readTool, writeTool));
+
+        assertThat(context.tools()).extracting(tool -> tool.toolCode())
+                .containsExactly("external_mcp__7__v2__search", "external_mcp__7__v2__update");
+        assertThat(context.policy().autoExecuteToolCodes()).containsExactly("external_mcp__7__v2__search");
+    }
+
+    /** 明确只读工具也可以被用户改为每次确认，人工策略不得进入自动执行目录。 */
+    @Test
+    void shouldRespectManualConfirmationForReadOnlyExternalTool() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        AssistantMcpToolSummary confirmedReadTool = new AssistantMcpToolSummary(
+                "external_mcp__7__v2__search", "search", "查询知识库", true, true,
+                objectMapper.readTree("{\"type\":\"object\"}"));
+        when(assistantToolSchemaService.listCallableTools(currentUser())).thenReturn(List.of());
+        when(assistantToolSchemaService.listCallableWriteTools(currentUser())).thenReturn(List.of());
+
+        RuntimeToolContext context = new RuntimeToolContractService(assistantToolSchemaService, platformToolRegistry)
+                .forUser(currentUser(), "session-token", List.of(confirmedReadTool));
+
+        assertThat(context.tools().get(0).requiresConfirm()).isTrue();
+        assertThat(context.policy().autoExecuteToolCodes()).isEmpty();
+    }
+
+    /** 用户明确取消确认后，即使服务没有声明只读，外部工具也应进入自动执行目录。 */
+    @Test
+    void shouldAllowManuallyAuthorizedExternalToolWithoutReadOnlyHint() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        AssistantMcpToolSummary manuallyAuthorizedTool = new AssistantMcpToolSummary(
+                "external_mcp__7__v2__search", "search", "查询知识库", false, false,
+                objectMapper.readTree("{\"type\":\"object\"}"));
+        when(assistantToolSchemaService.listCallableTools(currentUser())).thenReturn(List.of());
+        when(assistantToolSchemaService.listCallableWriteTools(currentUser())).thenReturn(List.of());
+
+        RuntimeToolContext context = new RuntimeToolContractService(assistantToolSchemaService, platformToolRegistry)
+                .forUser(currentUser(), "session-token", List.of(manuallyAuthorizedTool));
+
+        assertThat(context.policy().autoExecuteToolCodes()).containsExactly("external_mcp__7__v2__search");
+    }
+
+    /** 关闭工具后，统一 Runtime 契约不得继续暴露该工具。 */
+    @Test
+    void shouldExcludeDisabledExternalToolFromRuntimeContract() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        AssistantMcpToolSummary disabledTool = new AssistantMcpToolSummary(
+                "external_mcp__7__v2__search", "search", "查询知识库", true, false,
+                objectMapper.readTree("{\"type\":\"object\"}"), false);
+        when(assistantToolSchemaService.listCallableTools(currentUser())).thenReturn(List.of());
+        when(assistantToolSchemaService.listCallableWriteTools(currentUser())).thenReturn(List.of());
+
+        RuntimeToolContext context = new RuntimeToolContractService(assistantToolSchemaService, platformToolRegistry)
+                .forUser(currentUser(), "session-token", List.of(disabledTool));
+
+        assertThat(context.tools()).isEmpty();
     }
 
     private CurrentUserInfo currentUser() {

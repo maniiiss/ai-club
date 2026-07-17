@@ -9,6 +9,7 @@ import com.aiclub.platform.runtime.RuntimeStreamContentAssembler;
 import com.aiclub.platform.runtime.RuntimeToolContext;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.RuntimeChatOptionSummary;
+import com.aiclub.platform.dto.AssistantMcpToolSummary;
 import org.springframework.stereotype.Service;
 
 import java.util.Collection;
@@ -144,11 +145,21 @@ public class RuntimeChatService {
                                                       String sessionToken,
                                                       Collection<String> restrictedToolCodes,
                                                       Collection<String> autoExecuteToolCodes) {
+        return withToolContract(context, currentUser, sessionToken, restrictedToolCodes, autoExecuteToolCodes, null);
+    }
+
+    /** 为普通 GitPilot 会话注入固定版本的个人外部 MCP 工具。 */
+    public RuntimeInvocationContext withToolContract(RuntimeInvocationContext context,
+                                                      CurrentUserInfo currentUser,
+                                                      String sessionToken,
+                                                      Collection<String> restrictedToolCodes,
+                                                      Collection<String> autoExecuteToolCodes,
+                                                      Collection<AssistantMcpToolSummary> externalTools) {
         if (context == null || runtimeToolContractService == null) {
             return context;
         }
         RuntimeToolContext toolContext = runtimeToolContractService.forUser(
-                currentUser, sessionToken, restrictedToolCodes, autoExecuteToolCodes);
+                currentUser, sessionToken, restrictedToolCodes, autoExecuteToolCodes, externalTools);
         return context.withToolContext(toolContext);
     }
 

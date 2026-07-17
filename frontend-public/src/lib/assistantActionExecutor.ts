@@ -1,4 +1,5 @@
 import { createGitlabBindingScanTask } from '@/src/api/development'
+import { executeAssistantMcpTool } from '@/src/api/assistant'
 import { createExecutionTask, createTestPlan } from '@/src/api/execution'
 import { createWorkItem } from '@/src/api/planning'
 import type { AssistantActionItem } from '@/src/types/assistant'
@@ -9,8 +10,20 @@ import { normalizeTaskType } from '@/src/lib/requirementAiUtils'
  * 执行 Assistant 动作卡片对应的既有业务 API。
  * 业务意图：聊天室和 Assistant 抽屉共用同一套动作分发，避免为聊天室另起一套动作协议。
  */
-export const executeAssistantAction = async (action: AssistantActionItem): Promise<void> => {
+export const executeAssistantAction = async (action: AssistantActionItem): Promise<string | void> => {
   const params = action.params || {}
+  if (action.type === 'EXTERNAL_MCP_TOOL') {
+    // 外部 MCP 的确认动作需要把真实工具结果交回工作区，才能继续当前用户问题。
+    return executeAssistantMcpTool(
+      String(params.toolCode || ''),
+      (params.arguments || {}) as Record<string, unknown>,
+      {
+        scopeKey: String(params.scopeKey || ''),
+        clientConversationId: String(params.clientConversationId || ''),
+        confirmationToken: String(params.confirmationToken || ''),
+      },
+    )
+  }
   if (action.type === 'CREATE_EXECUTION_TASK') {
     await createExecutionTask({
       scenarioCode: String(params.scenarioCode || ''),
