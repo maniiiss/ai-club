@@ -134,6 +134,30 @@ export interface WorkItemPayload {
   requirementTaskId?: number | null
 }
 
+/** 工作项列表轻量更新字段，避免快捷编辑提交完整工作项载荷。 */
+export type WorkItemInlineUpdateField = 'STATUS' | 'PRIORITY' | 'ASSIGNEE' | 'PLAN_DATES'
+
+/** 工作项列表快捷更新请求，仅包含当前修改字段及其值。 */
+export interface WorkItemInlineUpdatePayload {
+  field: WorkItemInlineUpdateField
+  value?: string
+  assigneeUserId?: number | null
+  planStartDate?: string | null
+  planEndDate?: string | null
+}
+
+/** 工作项列表轻量更新结果，不包含描述和需求文档。 */
+export interface WorkItemInlineUpdateResult {
+  id: number
+  status: string
+  priority: string
+  assignee: string
+  assigneeUserId: number | null
+  planStartDate: string | null
+  planEndDate: string | null
+  updatedAt: string | null
+}
+
 /** 公众端批量工作项更新支持的字段。 */
 export type BatchWorkItemUpdateField = 'STATUS' | 'PRIORITY' | 'ASSIGNEE' | 'ITERATION'
 
@@ -154,6 +178,9 @@ export interface BatchWorkItemOperationResult {
 }
 
 /** 工作项查询参数。 */
+export type WorkItemSortField = 'name' | 'workItemType' | 'status' | 'priority' | 'assignee' | 'planStartDate' | 'createdAt'
+export type WorkItemSortDirection = 'asc' | 'desc'
+
 export interface WorkItemQuery {
   iterationId?: number
   unplanned?: boolean
@@ -161,6 +188,14 @@ export interface WorkItemQuery {
   keyword?: string
   status?: string
   priority?: string
+  assigneeUserId?: number
+  assigneeUnassigned?: boolean
+  createdFrom?: string
+  createdTo?: string
+  planDateFrom?: string
+  planDateTo?: string
+  sortBy?: WorkItemSortField
+  sortDirection?: WorkItemSortDirection
 }
 
 /** 工作项统计。 */

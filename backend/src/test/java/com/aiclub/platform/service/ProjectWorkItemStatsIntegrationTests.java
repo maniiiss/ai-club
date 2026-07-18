@@ -4,11 +4,14 @@ import com.aiclub.platform.common.DataPermissionScopeType;
 import com.aiclub.platform.domain.model.RoleEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.IterationSummary;
+import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.ProjectSummary;
 import com.aiclub.platform.dto.ProjectWorkItemStatsSummary;
+import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.request.IterationRequest;
 import com.aiclub.platform.dto.request.ProjectRequest;
 import com.aiclub.platform.dto.request.TaskRequest;
+import com.aiclub.platform.dto.request.TaskInlineUpdateRequest;
 import com.aiclub.platform.repository.RoleRepository;
 import com.aiclub.platform.repository.UserRepository;
 import com.aiclub.platform.security.AuthContext;
@@ -19,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -127,6 +131,97 @@ class ProjectWorkItemStatsIntegrationTests {
         assertThat(unplannedStats.completionRate()).isZero();
     }
 
+    /** 验证修改计划时间后，项目工作项列表仍按创建时间倒序展示。 */
+    @Test
+    void shouldKeepProjectWorkItemOrderByCreatedTimeAfterUpdatingPlanDates() {
+        UserEntity creator = createUser("creator-order-a", "排序创建人");
+        loginAs(creator);
+        ProjectSummary project = platformStoreService.createProject(new ProjectRequest(
+                "排序项目A",
+                "",
+                creator.getId(),
+                List.of(),
+                "进行中",
+                "用于验证工作项创建时间排序"
+        ));
+
+        TaskSummary older = platformStoreService.createTask(buildTaskRequest(
+                "较早创建的工作项", "任务", "待开始", project.id(), null
+        ));
+        TaskSummary newer = platformStoreService.createTask(buildTaskRequest(
+                "较晚创建的工作项", "任务", "待开始", project.id(), null
+        ));
+
+        platformStoreService.updateTask(older.id(), buildTaskRequest(
+                "较早创建的工作项", "任务", "待开始", project.id(), null,
+                "2026-07-20", "2026-07-22"
+        ));
+
+        PageResponse<TaskSummary> page = platformStoreService.pageProjectWorkItems(
+                project.id(), 1, 20, null, null, null, null, null, null, null
+        );
+        assertThat(page.records()).extracting(TaskSummary::id).containsExactly(newer.id(), older.id());
+    }
+
+    /** 验证公众端列表支持服务端字段排序，以及计划时间范围的重叠筛选。 */
+    @Test
+    void shouldSortAndFilterProjectWorkItemsByAdvancedQuery() {
+        UserEntity creator = createUser("creator-filter-a", "高级筛选创建人");
+        loginAs(creator);
+        ProjectSummary project = platformStoreService.createProject(new ProjectRequest(
+                "高级筛选项目A", "", creator.getId(), List.of(), "进行中", "用于验证列表高级筛选"
+        ));
+        TaskSummary laterName = platformStoreService.createTask(buildTaskRequest(
+                "Z 工作项", "任务", "待开始", project.id(), null, "2026-07-20", "2026-07-22"
+        ));
+        TaskSummary earlierName = platformStoreService.createTask(buildTaskRequest(
+                "A 工作项", "任务", "待开始", project.id(), null
+        ));
+
+        PageResponse<TaskSummary> sorted = platformStoreService.pageProjectWorkItems(
+                project.id(), 1, 20, null, null, null, null, null, null, null,
+                null, null, null, null, "name", "asc"
+        );
+        assertThat(sorted.records()).extracting(TaskSummary::id).containsExactly(earlierName.id(), laterName.id());
+
+        PageResponse<TaskSummary> plannedOnDate = platformStoreService.pageProjectWorkItems(
+                project.id(), 1, 20, null, null, null, null, null, null, null,
+                null, null, LocalDate.of(2026, 7, 21), LocalDate.of(2026, 7, 21), "createdAt", "desc"
+        );
+        assertThat(plannedOnDate.records()).extracting(TaskSummary::id).containsExactly(laterName.id());
+    }
+
+    /** 验证列表轻量更新只改目标字段，不会覆盖工作项描述。 */
+    @Test
+    void shouldUpdateInlineFieldWithoutReplacingDescription() {
+        UserEntity creator = createUser("creator-inline-a", "列表编辑人");
+        loginAs(creator);
+        ProjectSummary project = platformStoreService.createProject(new ProjectRequest(
+                "列表编辑项目A",
+                "",
+                creator.getId(),
+                List.of(),
+                "进行中",
+                "用于验证列表轻量更新"
+        ));
+
+        TaskSummary created = platformStoreService.createTask(buildTaskRequest(
+                "保留描述的工作项", "任务", "待开始", project.id(), null
+        ));
+        platformStoreService.updateTaskInline(created.id(), new TaskInlineUpdateRequest(
+                TaskInlineUpdateRequest.Field.PLAN_DATES,
+                null,
+                null,
+                "2026-07-20",
+                "2026-07-22"
+        ));
+
+        TaskSummary updated = platformStoreService.getTask(created.id());
+        assertThat(updated.description()).isEqualTo(created.description());
+        assertThat(updated.planStartDate()).isEqualTo("2026-07-20");
+        assertThat(updated.planEndDate()).isEqualTo("2026-07-22");
+    }
+
     private UserEntity createUser(String username, String nickname) {
         RoleEntity defaultRole = createRole("ROLE_" + username.toUpperCase());
         UserEntity user = new UserEntity();
@@ -165,6 +260,11 @@ class ProjectWorkItemStatsIntegrationTests {
      * 统一构造测试工作项，请求体中的状态直接走最新主状态定义。
      */
     private TaskRequest buildTaskRequest(String name, String workItemType, String status, Long projectId, Long iterationId) {
+        return buildTaskRequest(name, workItemType, status, projectId, iterationId, null, null);
+    }
+
+    private TaskRequest buildTaskRequest(String name, String workItemType, String status, Long projectId, Long iterationId,
+                                         String planStartDate, String planEndDate) {
         String requirementMarkdown = "需求".equals(workItemType)
                 ? """
                 # 用户故事
@@ -195,8 +295,8 @@ class ProjectWorkItemStatsIntegrationTests {
                 false,
                 false,
                 null,
-                null,
-                null,
+                planStartDate,
+                planEndDate,
                 projectId,
                 null,
                 iterationId,

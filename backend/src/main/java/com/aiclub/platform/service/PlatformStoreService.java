@@ -27,6 +27,7 @@ import com.aiclub.platform.dto.ProjectListStatsSummary;
 import com.aiclub.platform.dto.ProjectSummary;
 import com.aiclub.platform.dto.ProjectBurndownSummary;
 import com.aiclub.platform.dto.ProjectWorkItemStatsSummary;
+import com.aiclub.platform.dto.TaskInlineUpdateSummary;
 import com.aiclub.platform.dto.TaskCommentSummary;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.request.AgentRequest;
@@ -35,6 +36,7 @@ import com.aiclub.platform.dto.request.IterationRequest;
 import com.aiclub.platform.dto.request.ProjectRequest;
 import com.aiclub.platform.dto.request.TaskCommentRequest;
 import com.aiclub.platform.dto.request.TaskRequest;
+import com.aiclub.platform.dto.request.TaskInlineUpdateRequest;
 import com.aiclub.platform.exception.ForbiddenException;
 import com.aiclub.platform.exception.UnauthorizedException;
 import com.aiclub.platform.repository.AiModelConfigRepository;
@@ -54,6 +56,7 @@ import com.aiclub.platform.util.RichTextUtils;
 import com.aiclub.platform.util.TaskStatusUtils;
 import jakarta.persistence.criteria.From;
 import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -97,6 +100,8 @@ public class PlatformStoreService {
     private static final int WORK_ITEM_CODE_RANDOM_LENGTH = 6;
     private static final String DEFAULT_REQUIREMENT_MODULE_NAME = "未分类";
     private static final Set<String> TASK_TYPE_OPTIONS = Set.of("需求设计", "UI设计", "技术设计", "开发任务", "测试任务", "运维任务");
+    /** 项目工作项列表固定按创建时间倒序，修改计划时间等字段不会改变用户当前看到的顺序。 */
+    private static final Sort PROJECT_WORK_ITEM_CREATED_DESC_SORT = Sort.by(Sort.Direction.DESC, "createdAt", "id");
 
     private final ProjectRepository projectRepository;
     private final ProjectGitlabBindingRepository projectGitlabBindingRepository;
@@ -897,7 +902,7 @@ public class PlatformStoreService {
         if (iterationId != null) {
             requireIteration(projectId, iterationId);
         }
-        return taskRepository.findAll(workItemSpecification(projectId, iterationId, unplanned, workItemType, keyword), Sort.by(Sort.Direction.DESC, "updatedAt", "id"))
+        return taskRepository.findAll(workItemSpecification(projectId, iterationId, unplanned, workItemType, keyword), PROJECT_WORK_ITEM_CREATED_DESC_SORT)
                 .stream()
                 .map(this::toTaskSummary)
                 .toList();
@@ -919,22 +924,48 @@ public class PlatformStoreService {
             requireIteration(projectId, iterationId);
         }
         List<TaskEntity> items = taskRepository.findAll(
-                workItemPageSpecification(projectId, iterationId, unplanned, workItemType, keyword, status, priority, assigneeUserId),
-                Sort.by(Sort.Direction.DESC, "updatedAt", "id")
+                workItemPageSpecification(projectId, iterationId, unplanned, workItemType, keyword, status, priority,
+                        assigneeUserId, false, null, null, null, null),
+                PROJECT_WORK_ITEM_CREATED_DESC_SORT
         );
         return summarizeProjectWorkItems(items);
     }
 
     public PageResponse<TaskSummary> pageProjectWorkItems(Long projectId, int page, int size,
-                                                          Long iterationId, Boolean unplanned, String workItemType, String keyword,
-                                                          String status, String priority, Long assigneeUserId) {
+                                                           Long iterationId, Boolean unplanned, String workItemType, String keyword,
+                                                           String status, String priority, Long assigneeUserId) {
+        return pageProjectWorkItems(projectId, page, size, iterationId, unplanned, workItemType, keyword,
+                status, priority, assigneeUserId, false, null, null, null, null, null, null);
+    }
+
+    /**
+     * 公众端工作项列表查询：排序和高级日期筛选在服务端完成，保证分页后的顺序和筛选结果一致。
+     */
+    public PageResponse<TaskSummary> pageProjectWorkItems(Long projectId, int page, int size,
+                                                           Long iterationId, Boolean unplanned, String workItemType, String keyword,
+                                                           String status, String priority, Long assigneeUserId,
+                                                           LocalDate createdFrom, LocalDate createdTo,
+                                                           LocalDate planDateFrom, LocalDate planDateTo,
+                                                           String sortBy, String sortDirection) {
+        return pageProjectWorkItems(projectId, page, size, iterationId, unplanned, workItemType, keyword,
+                status, priority, assigneeUserId, false, createdFrom, createdTo, planDateFrom, planDateTo, sortBy, sortDirection);
+    }
+
+    public PageResponse<TaskSummary> pageProjectWorkItems(Long projectId, int page, int size,
+                                                           Long iterationId, Boolean unplanned, String workItemType, String keyword,
+                                                           String status, String priority, Long assigneeUserId,
+                                                           Boolean assigneeUnassigned,
+                                                           LocalDate createdFrom, LocalDate createdTo,
+                                                          LocalDate planDateFrom, LocalDate planDateTo,
+                                                          String sortBy, String sortDirection) {
         requireProject(projectId);
         if (iterationId != null) {
             requireIteration(projectId, iterationId);
         }
-        Pageable pageable = buildPageable(page, size, Sort.by(Sort.Direction.DESC, "updatedAt", "id"));
+        Pageable pageable = buildProjectWorkItemPageable(page, size, sortBy, sortDirection);
         Page<TaskSummary> pageData = taskRepository.findAll(
-                        workItemPageSpecification(projectId, iterationId, unplanned, workItemType, keyword, status, priority, assigneeUserId),
+                        workItemPageSpecification(projectId, iterationId, unplanned, workItemType, keyword, status, priority,
+                                assigneeUserId, assigneeUnassigned, createdFrom, createdTo, planDateFrom, planDateTo),
                         pageable
                 )
                 .map(this::toTaskSummary);
@@ -1086,6 +1117,58 @@ public class PlatformStoreService {
     }
 
     /**
+     * 列表快捷更新工作项字段。
+     * 业务意图：只修改列表允许编辑的字段，不构造完整 TaskRequest，避免携带和处理大段描述内容。
+     */
+    @Transactional
+    public TaskInlineUpdateSummary updateTaskInline(Long id, TaskInlineUpdateRequest request) {
+        TaskEntity entity = requireTask(id);
+        Map<String, TaskUpdateRecordService.FieldSnapshot> previousEditableFields = taskUpdateRecordService.captureEditableFields(entity);
+        Long previousAssigneeUserId = entity.getAssigneeUser() == null ? null : entity.getAssigneeUser().getId();
+        String previousStatus = entity.getStatus();
+        Set<Long> previousCollaboratorUserIds = entity.getCollaborators().stream()
+                .map(UserEntity::getId)
+                .collect(LinkedHashSet::new, LinkedHashSet::add, LinkedHashSet::addAll);
+
+        switch (request.field()) {
+            case STATUS -> {
+                String status = normalizeWorkItemStatus(entity.getWorkItemType(), requireBatchText(request.value(), "状态", 50));
+                validateWorkItemStatus(entity.getWorkItemType(), status);
+                entity.setStatus(status);
+            }
+            case PRIORITY -> entity.setPriority(requireBatchText(request.value(), "优先级", 30));
+            case ASSIGNEE -> {
+                UserEntity assigneeUser = request.assigneeUserId() == null ? null : requireUser(request.assigneeUserId());
+                validateProjectParticipants(entity.getProject(), assigneeUser, entity.getCollaborators());
+                entity.setAssigneeUser(assigneeUser);
+                entity.setAssignee(buildAssignee("", assigneeUser));
+            }
+            case PLAN_DATES -> {
+                TaskPlanDateRange planDateRange = resolveTaskPlanDateRange(request.planStartDate(), request.planEndDate());
+                entity.setPlanStartDate(planDateRange.planStartDate());
+                entity.setPlanEndDate(planDateRange.planEndDate());
+            }
+        }
+        syncOverdueNotificationState(entity);
+        TaskEntity saved = taskRepository.save(entity);
+        taskNotificationService.notifyTaskUpdated(saved, previousAssigneeUserId, previousStatus, previousCollaboratorUserIds);
+        if (taskUpdateRecordService != null) {
+            taskUpdateRecordService.recordChanges(saved, previousEditableFields, TaskUpdateRecordSource.MANUAL);
+        }
+        knowledgeGraphService.rebuildProjectGraph(saved.getProject().getId());
+        return new TaskInlineUpdateSummary(
+                saved.getId(),
+                saved.getStatus(),
+                saved.getPriority(),
+                saved.getAssignee(),
+                saved.getAssigneeUser() == null ? null : saved.getAssigneeUser().getId(),
+                formatDate(saved.getPlanStartDate()),
+                formatDate(saved.getPlanEndDate()),
+                saved.getUpdatedAt() == null ? null : saved.getUpdatedAt().format(TIME_FORMATTER)
+        );
+    }
+
+    /**
      * 批量操作中的单条字段更新。每次调用独立事务，控制器可安全汇总部分成功结果。
      * 业务意图：更新接口仍复用完整工作项校验与通知逻辑，避免批量入口绕过关联、成员和更新记录约束。
      */
@@ -1159,6 +1242,22 @@ public class PlatformStoreService {
         int safePage = Math.max(page, 1);
         int safeSize = Math.max(1, Math.min(size, 100));
         return PageRequest.of(safePage - 1, safeSize, sort);
+    }
+
+    /** 仅允许公众端表头对应的字段参与排序，避免把任意请求参数直接交给 JPA Sort。 */
+    private Pageable buildProjectWorkItemPageable(int page, int size, String sortBy, String sortDirection) {
+        String property = switch (defaultString(sortBy).trim()) {
+            case "name" -> "name";
+            case "workItemType" -> "workItemType";
+            case "status" -> "status";
+            case "priority" -> "priority";
+            case "assignee" -> "assignee";
+            case "planStartDate" -> "planStartDate";
+            case "createdAt", "" -> "createdAt";
+            default -> "createdAt";
+        };
+        Sort.Direction direction = "asc".equalsIgnoreCase(sortDirection) ? Sort.Direction.ASC : Sort.Direction.DESC;
+        return buildPageable(page, size, Sort.by(direction, property).and(Sort.by(direction, "id")));
     }
 
     private Specification<ProjectEntity> projectSpecification(String keyword, String status,
@@ -1270,7 +1369,10 @@ public class PlatformStoreService {
 
     private Specification<TaskEntity> workItemPageSpecification(Long projectId, Long iterationId, Boolean unplanned,
                                                                  String workItemType, String keyword, String status,
-                                                                 String priority, Long assigneeUserId) {
+                                                                 String priority, Long assigneeUserId,
+                                                                 Boolean assigneeUnassigned,
+                                                                 LocalDate createdFrom, LocalDate createdTo,
+                                                                 LocalDate planDateFrom, LocalDate planDateTo) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             appendProjectVisibilityPredicate(predicates, root.join("project", JoinType.INNER), query, cb,
@@ -1298,8 +1400,27 @@ public class PlatformStoreService {
             if (hasText(priority)) {
                 predicates.add(cb.equal(root.get("priority"), priority.trim()));
             }
-            if (assigneeUserId != null) {
+            if (Boolean.TRUE.equals(assigneeUnassigned)) {
+                predicates.add(cb.isNull(root.get("assigneeUser")));
+            } else if (assigneeUserId != null) {
                 predicates.add(cb.equal(root.get("assigneeUser").get("id"), assigneeUserId));
+            }
+            if (createdFrom != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.<LocalDateTime>get("createdAt"), createdFrom.atStartOfDay()));
+            }
+            if (createdTo != null) {
+                predicates.add(cb.lessThan(root.<LocalDateTime>get("createdAt"), createdTo.plusDays(1).atStartOfDay()));
+            }
+            if (planDateFrom != null || planDateTo != null) {
+                Path<LocalDate> planStart = root.get("planStartDate");
+                Path<LocalDate> planEnd = root.get("planEndDate");
+                predicates.add(cb.or(cb.isNotNull(planStart), cb.isNotNull(planEnd)));
+                if (planDateFrom != null) {
+                    predicates.add(cb.or(cb.isNull(planEnd), cb.greaterThanOrEqualTo(planEnd, planDateFrom)));
+                }
+                if (planDateTo != null) {
+                    predicates.add(cb.or(cb.isNull(planStart), cb.lessThanOrEqualTo(planStart, planDateTo)));
+                }
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };

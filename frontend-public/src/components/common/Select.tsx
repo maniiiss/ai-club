@@ -131,6 +131,7 @@ export const Select = ({
   const dropdown = open && menuStyle ? createPortal(
     <div
       ref={menuRef}
+      data-select-menu="true"
       className="absolute z-[70] rounded-xl border border-[var(--color-border)] bg-white py-1.5 shadow-[var(--shadow-lg)] animate-scaleIn overflow-y-auto"
       style={{
         top: menuStyle.top,

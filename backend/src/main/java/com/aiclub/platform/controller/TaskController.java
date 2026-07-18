@@ -12,6 +12,7 @@ import com.aiclub.platform.dto.TaskCommentSummary;
 import com.aiclub.platform.dto.TaskLinksSummary;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.TaskUpdateRecordSummary;
+import com.aiclub.platform.dto.TaskInlineUpdateSummary;
 import com.aiclub.platform.dto.request.ApplyTaskPrdSuggestionRequest;
 import com.aiclub.platform.dto.request.BatchTaskDeleteRequest;
 import com.aiclub.platform.dto.request.BatchTaskUpdateRequest;
@@ -22,6 +23,7 @@ import com.aiclub.platform.dto.request.TaskLinkRequest;
 import com.aiclub.platform.dto.request.TaskPrdAnalyzeRequest;
 import com.aiclub.platform.dto.request.TaskRequirementAiRequest;
 import com.aiclub.platform.dto.request.TaskRequest;
+import com.aiclub.platform.dto.request.TaskInlineUpdateRequest;
 import com.aiclub.platform.service.PlatformStoreService;
 import com.aiclub.platform.service.ExecutionTaskService;
 import com.aiclub.platform.service.RequirementAiExecutionQueryService;
@@ -235,6 +237,14 @@ public class TaskController {
     @RequirePermission("task:manage")
     public ApiResponse<TaskSummary> update(@PathVariable Long id, @Valid @RequestBody TaskRequest request) {
         return ApiResponse.success(platformStoreService.updateTask(id, request));
+    }
+
+    /** 列表快捷编辑入口，只接收状态、优先级、负责人或计划时间等轻量字段。 */
+    @PutMapping("/{id}/inline")
+    @RequirePermission("task:manage")
+    public ApiResponse<TaskInlineUpdateSummary> inlineUpdate(@PathVariable Long id,
+                                                             @Valid @RequestBody TaskInlineUpdateRequest request) {
+        return ApiResponse.success(platformStoreService.updateTaskInline(id, request));
     }
 
     /**

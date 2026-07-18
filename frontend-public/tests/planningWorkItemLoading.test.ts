@@ -10,6 +10,8 @@ const planningPage = readFileSync(
 
 test('工作项空列表加载保持稳定并忽略重复请求结果', () => {
   assert.match(planningPage, /wiLoading && !workItems/)
+  assert.match(planningPage, /wiLoading && workItems/)
+  assert.match(planningPage, /更新中/)
   assert.match(planningPage, /!workItems && !wiError/)
   assert.match(planningPage, /min-h-\[240px\]/)
   assert.match(planningPage, /boardRequestIdRef/)

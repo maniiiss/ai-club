@@ -8,12 +8,12 @@ import {
   Plus, CheckSquare, AlertCircle, FileText, Search,
   X, Edit3, Trash2, LayoutList, LayoutGrid, GripVertical, TrendingDown,
   ChevronDown, MessageSquare, Send, Bot, User, FolderOpen, Link2, Sparkles,
-  Download, Paperclip, ArrowLeft, Copy, Check,
+  Download, Paperclip, ArrowLeft, Copy, Check, Loader2, ArrowDown, ArrowUp, ArrowUpDown, SlidersHorizontal,
 } from 'lucide-react'
 import {
   getIterationBoard, pageProjectWorkItems, listProjectWorkItems, getWorkItemStats,
   createIteration, updateIteration, deleteIteration,
-  batchDeleteWorkItems, batchUpdateWorkItems, createWorkItem, updateWorkItem, deleteWorkItem, getWorkItemDetail,
+  batchDeleteWorkItems, batchUpdateWorkItems, createWorkItem, updateWorkItem, updateWorkItemInline, deleteWorkItem, getWorkItemDetail,
   getProjectBurndown, listTaskComments, createTaskComment, pageTaskUpdateRecords,
   getWorkItemLinks, addWorkItemChild, removeWorkItemChild,
   addRelatedWorkItem, removeRelatedWorkItem, addWorkItemTestCase, removeWorkItemTestCase,
@@ -31,12 +31,11 @@ import { WorkItemUpdateTimeline } from '@/src/components/planning/WorkItemUpdate
 import { useAuthStore } from '@/src/stores/auth'
 import { REQUIREMENT_TEMPLATE, TASK_TEMPLATE } from '@/src/lib/markdownTemplates'
 import { uploadMarkdownImage } from '@/src/lib/markdownImageUpload'
-import { buildWorkItemInlineEditPayload } from '@/src/lib/planningInlineEditUtils'
 import { getBatchWorkItemAvailability, toggleAllBatchWorkItemSelection, toggleBatchWorkItemSelection } from '@/src/lib/planningBatchUtils'
 import { buildPlanningIterationRoute, buildPlanningWorkItemRoute, buildWorkItemShareUrl } from '@/src/lib/planningShareUtils'
 import { TASK_TYPE_OPTIONS, isDevelopmentExecutionEntryVisible, isRequirementAiEntryVisible, normalizeTaskType } from '@/src/lib/requirementAiUtils'
 import { isTechnicalDesignEntryVisible } from '@/src/lib/technicalDesignAiUtils'
-import type { IterationBoardItem, IterationItem, WorkItem, WorkItemStats, WorkItemPayload, IterationPayload, BurndownItem, TaskComment, WorkItemLinks, LinkedTestCase } from '@/src/types/planning'
+import type { IterationBoardItem, IterationItem, WorkItem, WorkItemStats, WorkItemPayload, IterationPayload, BurndownItem, TaskComment, WorkItemLinks, LinkedTestCase, WorkItemSortDirection, WorkItemSortField } from '@/src/types/planning'
 import type { PageResponse } from '@/src/types/api'
 import { Button } from '@/src/components/common/Button'
 import { Input } from '@/src/components/common/Input'
@@ -48,7 +47,7 @@ import { EmptyState } from '@/src/components/common/EmptyState'
 import { Select } from '@/src/components/common/Select'
 import { SlideDrawer, SlideDrawerFooter } from '@/src/components/common/SlideDrawer'
 import { DateRangePicker } from '@/src/components/common/DateRangePicker'
-import { AssigneePicker, UserAvatar, WorkItemMemberPicker } from '@/src/components/common/AssigneePicker'
+import { AssigneeFilterPicker, AssigneePicker, UserAvatar, WorkItemMemberPicker, type AssigneeFilterValue } from '@/src/components/common/AssigneePicker'
 import { cn, formatDate, formatDateTime, getErrorMessage } from '@/src/lib/utils'
 
 /* ── 常量 ── */
@@ -59,6 +58,21 @@ type DetailTab = 'detail' | 'children' | 'related' | 'testCases' | 'attachments'
 type ActivityTab = 'comments' | 'updateRecords'
 type BatchField = 'status' | 'priority' | 'assignee' | 'iteration'
 type BatchDialog = BatchField | 'delete'
+type AdvancedWorkItemFilters = {
+  priority: string
+  createdFrom: string
+  createdTo: string
+  planDateFrom: string
+  planDateTo: string
+}
+
+const EMPTY_ADVANCED_WORK_ITEM_FILTERS: AdvancedWorkItemFilters = {
+  priority: '',
+  createdFrom: '',
+  createdTo: '',
+  planDateFrom: '',
+  planDateTo: '',
+}
 
 type BatchWorkItemChange =
   | { field: 'status'; value: string }
@@ -153,6 +167,7 @@ export const PlanningPage = () => {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const canCreateExecution = useAuthStore((state) => state.hasPermission('task:execution:create'))
+  const currentUser = useAuthStore((state) => state.user)
   const pid = Number(projectId)
 
   const [board, setBoard] = useState<IterationBoardItem | null>(null)
@@ -165,11 +180,21 @@ export const PlanningPage = () => {
   const [wiError, setWiError] = useState<string | null>(null)
   const [typeFilter, setTypeFilter] = useState<WorkItemTypeFilter>('全部')
   const [statusFilter, setStatusFilter] = useState('')
-  const [priorityFilter, setPriorityFilter] = useState('')
+  /** 基础筛选只保留负责人快捷入口，高级筛选承载优先级和时间条件。 */
+  const [assigneeFilter, setAssigneeFilter] = useState<AssigneeFilterValue>('')
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedWorkItemFilters>(EMPTY_ADVANCED_WORK_ITEM_FILTERS)
+  const [advancedFilterDraft, setAdvancedFilterDraft] = useState<AdvancedWorkItemFilters>(EMPTY_ADVANCED_WORK_ITEM_FILTERS)
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
+  const advancedFiltersRef = useRef<HTMLDivElement>(null)
   const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
+  /** 默认保持列表按创建时间倒序；表头点击后服务端按对应字段分页排序。 */
+  const [sortBy, setSortBy] = useState<WorkItemSortField>('createdAt')
+  const [sortDirection, setSortDirection] = useState<WorkItemSortDirection>('desc')
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [inlineEditError, setInlineEditError] = useState<string | null>(null)
+  /** 正在保存的列表内联编辑工作项，用行尾小旋转图标反馈请求状态。 */
+  const [inlineEditingIds, setInlineEditingIds] = useState<Set<number>>(new Set())
   /** 当前列表页的批量选择；切换列表上下文时清空，避免误操作其他筛选结果。 */
   const [selectedWorkItemIds, setSelectedWorkItemIds] = useState<Set<number>>(new Set())
   const [batchFieldDialog, setBatchFieldDialog] = useState<BatchDialog | null>(null)
@@ -251,11 +276,24 @@ export const PlanningPage = () => {
     const requestId = ++workItemRequestIdRef.current
     setWiLoading(true); setWiError(null)
     try {
+      const assigneeUserId = assigneeFilter === 'mine'
+        ? currentUser?.id
+        : assigneeFilter.startsWith('user:')
+          ? Number(assigneeFilter.slice('user:'.length))
+          : undefined
       const query: Parameters<typeof pageProjectWorkItems>[1] = {
         page, size: 20, keyword: keyword || undefined,
         workItemType: typeFilter === '全部' ? undefined : typeFilter,
         status: statusFilter || undefined,
-        priority: priorityFilter || undefined,
+        priority: advancedFilters.priority || undefined,
+        assigneeUserId,
+        assigneeUnassigned: assigneeFilter === 'unassigned' ? true : undefined,
+        createdFrom: advancedFilters.createdFrom || undefined,
+        createdTo: advancedFilters.createdTo || undefined,
+        planDateFrom: advancedFilters.planDateFrom || undefined,
+        planDateTo: advancedFilters.planDateTo || undefined,
+        sortBy,
+        sortDirection,
       }
       if (selectedIteration === 'unplanned') query.unplanned = true
       else if (selectedIteration) query.iterationId = selectedIteration.id
@@ -266,7 +304,7 @@ export const PlanningPage = () => {
     } finally {
       if (requestId === workItemRequestIdRef.current) setWiLoading(false)
     }
-  }, [pid, page, keyword, typeFilter, statusFilter, priorityFilter, selectedIteration])
+  }, [pid, page, keyword, typeFilter, statusFilter, assigneeFilter, advancedFilters, sortBy, sortDirection, currentUser?.id, selectedIteration])
 
   const fetchStats = async () => {
     try { setStats(await getWorkItemStats(pid)) } catch { /* ignore */ }
@@ -305,7 +343,19 @@ export const PlanningPage = () => {
   useEffect(() => {
     setSelectedWorkItemIds(new Set())
     setBatchNotice(null)
-  }, [page, typeFilter, statusFilter, priorityFilter, keyword, selectedIteration, viewMode])
+  }, [page, typeFilter, statusFilter, assigneeFilter, advancedFilters, keyword, selectedIteration, viewMode, sortBy, sortDirection])
+
+  // 点击高级筛选面板外部时关闭浮层；下拉菜单通过 data-select-menu 保持可继续选择。
+  useEffect(() => {
+    if (!advancedFiltersOpen) return
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Element
+      if (advancedFiltersRef.current?.contains(target) || target.closest('[data-select-menu]')) return
+      setAdvancedFiltersOpen(false)
+    }
+    document.addEventListener('click', handleOutsideClick)
+    return () => document.removeEventListener('click', handleOutsideClick)
+  }, [advancedFiltersOpen])
 
   const refreshAll = () => { fetchBoard(); fetchStats() }
 
@@ -376,6 +426,39 @@ export const PlanningPage = () => {
     navigate(buildPlanningIterationRoute(pid, iteration === 'unplanned' ? null : iteration.id, searchParams))
   }
 
+  /** 表头排序只修改查询状态，实际数据由列表请求按服务端分页结果返回。 */
+  const handleWorkItemSort = (field: WorkItemSortField) => {
+    if (sortBy === field) setSortDirection((current) => current === 'asc' ? 'desc' : 'asc')
+    else {
+      setSortBy(field)
+      setSortDirection(field === 'createdAt' ? 'desc' : 'asc')
+    }
+    setPage(1)
+  }
+
+  const advancedFilterCount = [
+    advancedFilters.priority,
+    advancedFilters.createdFrom || advancedFilters.createdTo,
+    advancedFilters.planDateFrom || advancedFilters.planDateTo,
+  ].filter(Boolean).length
+
+  const openAdvancedFilters = () => {
+    setAdvancedFilterDraft({ ...advancedFilters })
+    setAdvancedFiltersOpen(true)
+  }
+
+  const applyAdvancedFilters = () => {
+    setAdvancedFilters({ ...advancedFilterDraft })
+    setPage(1)
+    setAdvancedFiltersOpen(false)
+  }
+
+  const clearAdvancedFilters = () => {
+    setAdvancedFilterDraft({ ...EMPTY_ADVANCED_WORK_ITEM_FILTERS })
+    setAdvancedFilters({ ...EMPTY_ADVANCED_WORK_ITEM_FILTERS })
+    setPage(1)
+  }
+
   const handleDeleteConfirm = async () => {
     if (!deleteConfirm) return
     try {
@@ -389,13 +472,110 @@ export const PlanningPage = () => {
   const handleInlineWorkItemChange = async (item: WorkItem, field: 'status' | 'priority', value: string) => {
     if (item[field] === value) return
     setInlineEditError(null)
+    setInlineEditingIds((current) => new Set(current).add(item.id))
+    /** 先更新当前行，接口只负责持久化；失败时用保存前快照回滚。 */
+    const optimisticChanges = field === 'status'
+      ? { status: value, updatedAt: item.updatedAt }
+      : { priority: value, updatedAt: item.updatedAt }
+    applyInlineWorkItemChanges(item.id, optimisticChanges)
     try {
-      await updateWorkItem(item.id, buildWorkItemInlineEditPayload(item, { [field]: value }))
-      refreshAll()
-      if (detailItem?.id === item.id) handleOpenDetail(item.id, { preserveHistory: true })
+      const updated = await updateWorkItemInline(item.id, { field: field === 'status' ? 'STATUS' : 'PRIORITY', value })
+      applyInlineWorkItemChanges(item.id, { [field]: updated[field], updatedAt: updated.updatedAt || item.updatedAt })
     } catch (err) {
+      applyInlineWorkItemChanges(item.id, { [field]: item[field], updatedAt: item.updatedAt })
       setInlineEditError(getErrorMessage(err) || '更新工作项失败')
+    } finally {
+      setInlineEditingIds((current) => {
+        const next = new Set(current)
+        next.delete(item.id)
+        return next
+      })
     }
+  }
+
+  /** 列表内修改负责人时同时提交负责人名称和 ID，确保后端展示字段与关联用户一致。 */
+  const handleInlineWorkItemAssigneeChange = async (item: WorkItem, assigneeUserId: number | null): Promise<boolean> => {
+    const selectedUser = userOptions.find((user) => user.id === assigneeUserId)
+    const assignee = selectedUser?.nickname || selectedUser?.username || ''
+    if (item.assigneeUserId === assigneeUserId && (!assigneeUserId || item.assignee === assignee)) return true
+    setInlineEditError(null)
+    setInlineEditingIds((current) => new Set(current).add(item.id))
+    applyInlineWorkItemChanges(item.id, {
+      assignee,
+      assigneeUserId,
+      updatedAt: item.updatedAt,
+    })
+    try {
+      const updated = await updateWorkItemInline(item.id, { field: 'ASSIGNEE', assigneeUserId })
+      applyInlineWorkItemChanges(item.id, {
+        assignee: updated.assignee,
+        assigneeUserId: updated.assigneeUserId,
+        updatedAt: updated.updatedAt || item.updatedAt,
+      })
+      return true
+    } catch (err) {
+      applyInlineWorkItemChanges(item.id, {
+        assignee: item.assignee,
+        assigneeUserId: item.assigneeUserId,
+        updatedAt: item.updatedAt,
+      })
+      setInlineEditError(getErrorMessage(err) || '更新负责人失败')
+      return false
+    } finally {
+      setInlineEditingIds((current) => {
+        const next = new Set(current)
+        next.delete(item.id)
+        return next
+      })
+    }
+  }
+
+  /** 列表内一次提交完整计划周期，避免只修改一端日期时覆盖另一端。 */
+  const handleInlineWorkItemDateChange = async (item: WorkItem, startDate: string, endDate: string): Promise<boolean> => {
+    if ((item.planStartDate || '') === startDate && (item.planEndDate || '') === endDate) return true
+    setInlineEditError(null)
+    setInlineEditingIds((current) => new Set(current).add(item.id))
+    applyInlineWorkItemChanges(item.id, {
+      planStartDate: startDate || null,
+      planEndDate: endDate || null,
+      updatedAt: item.updatedAt,
+    })
+    try {
+      const updated = await updateWorkItemInline(item.id, {
+        field: 'PLAN_DATES',
+        planStartDate: startDate || null,
+        planEndDate: endDate || null,
+      })
+      applyInlineWorkItemChanges(item.id, {
+        planStartDate: updated.planStartDate,
+        planEndDate: updated.planEndDate,
+        updatedAt: updated.updatedAt || item.updatedAt,
+      })
+      return true
+    } catch (err) {
+      applyInlineWorkItemChanges(item.id, {
+        planStartDate: item.planStartDate,
+        planEndDate: item.planEndDate,
+        updatedAt: item.updatedAt,
+      })
+      setInlineEditError(getErrorMessage(err) || '更新计划时间失败')
+      return false
+    } finally {
+      setInlineEditingIds((current) => {
+        const next = new Set(current)
+        next.delete(item.id)
+        return next
+      })
+    }
+  }
+
+  /** 列表快捷更新成功后只合并当前行，避免重新请求迭代看板和完整工作项详情。 */
+  const applyInlineWorkItemChanges = (itemId: number, changes: Partial<Pick<WorkItem, 'status' | 'priority' | 'assignee' | 'assigneeUserId' | 'planStartDate' | 'planEndDate' | 'updatedAt'>>) => {
+    setWorkItems((current) => current ? {
+      ...current,
+      records: current.records.map((item) => item.id === itemId ? { ...item, ...changes } : item),
+    } : current)
+    setDetailItem((current) => current?.id === itemId ? { ...current, ...changes } : current)
   }
 
   const toggleWorkItemSelection = (id: number) => {
@@ -432,7 +612,8 @@ export const PlanningPage = () => {
     setBatchNotice(`批量${batchFieldLabel[change.field]}完成：成功 ${successCount} 项，失败 ${failedIds.size} 项${failedIds.size ? '（失败项已保留选中）' : ''}`)
     setBatchFieldDialog(null)
     await fetchWorkItems()
-    refreshAll()
+    if (change.field === 'iteration') await fetchBoard()
+    else if (change.field === 'status') await fetchStats()
     if (detailItem && !failedIds.has(detailItem.id)) void handleOpenDetail(detailItem.id, { preserveHistory: true, iterationId: detailItem.iterationId })
     setBatchSubmitting(false)
   }
@@ -694,19 +875,83 @@ export const PlanningPage = () => {
                 placeholder="全部状态"
                 className="w-[120px]"
               />
-              {/* 优先级筛选 */}
-              <Select
-                value={priorityFilter}
-                onChange={(v) => { setPriorityFilter(v); setPage(1) }}
-                options={[
-                  { value: '', label: '全部优先级' },
-                  { value: '高', label: '高', icon: <span className="inline-block h-2 w-2 rounded-full bg-red-500" /> },
-                  { value: '中', label: '中', icon: <span className="inline-block h-2 w-2 rounded-full bg-amber-500" /> },
-                  { value: '低', label: '低', icon: <span className="inline-block h-2 w-2 rounded-full bg-gray-400" /> },
-                ]}
-                placeholder="全部优先级"
-                className="w-[120px]"
+              {/* 负责人筛选复用列表负责人选择器的分组：未分配、我负责的、项目成员、企业成员。 */}
+              <AssigneeFilterPicker
+                value={assigneeFilter}
+                onChange={(v) => { setAssigneeFilter(v); setPage(1) }}
+                userOptions={userOptions}
+                projectMemberIds={projectMemberIds}
+                currentUserId={currentUser?.id || null}
+                ariaLabel="按负责人筛选工作项"
+                className="w-[150px]"
               />
+              <div ref={advancedFiltersRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => advancedFiltersOpen ? setAdvancedFiltersOpen(false) : openAdvancedFilters()}
+                  className={cn(
+                    'inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] transition-colors',
+                    advancedFiltersOpen || advancedFilterCount > 0
+                      ? 'border-[var(--color-primary)] bg-[var(--color-primary-light)] text-[var(--color-primary)]'
+                      : 'border-[var(--color-border-strong)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]',
+                  )}
+                >
+                  <SlidersHorizontal className="h-3.5 w-3.5" />
+                  筛选
+                  {advancedFilterCount > 0 && <span className="rounded-full bg-[var(--color-primary)] px-1.5 py-0.5 text-[10px] font-semibold text-white">{advancedFilterCount}</span>}
+                </button>
+
+                {advancedFiltersOpen && (
+                  <div className="absolute right-0 top-full z-50 mt-2 w-[min(360px,calc(100vw-2rem))] overflow-visible rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-xl)]">
+                    <div className="flex items-start justify-between border-b border-[var(--color-border-light)] px-5 py-4">
+                      <div>
+                        <h3 className="text-[16px] font-semibold text-[var(--color-text-primary)]">筛选条件</h3>
+                        <p className="mt-1 text-[11px] text-[var(--color-text-tertiary)]">设置完成后点击筛选，列表位置保持不变。</p>
+                      </div>
+                      <button type="button" aria-label="关闭高级筛选" onClick={() => setAdvancedFiltersOpen(false)} className="rounded-lg p-1 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]">
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <div className="p-5">
+                      <div className="flex flex-col gap-4">
+                        <Select
+                          label="优先级"
+                          value={advancedFilterDraft.priority}
+                          onChange={(value) => setAdvancedFilterDraft((current) => ({ ...current, priority: value }))}
+                          options={[
+                            { value: '', label: '全部优先级' },
+                            { value: '高', label: '高', icon: <span className="inline-block h-2 w-2 rounded-full bg-red-500" /> },
+                            { value: '中', label: '中', icon: <span className="inline-block h-2 w-2 rounded-full bg-amber-500" /> },
+                            { value: '低', label: '低', icon: <span className="inline-block h-2 w-2 rounded-full bg-gray-400" /> },
+                          ]}
+                          placeholder="全部优先级"
+                        />
+                        <DateRangePicker
+                          label="创建时间"
+                          startDate={advancedFilterDraft.createdFrom}
+                          endDate={advancedFilterDraft.createdTo}
+                          onChange={(start, end) => setAdvancedFilterDraft((current) => ({ ...current, createdFrom: start, createdTo: end }))}
+                          ariaLabel="筛选创建时间范围"
+                        />
+                        <DateRangePicker
+                          label="计划时间"
+                          startDate={advancedFilterDraft.planDateFrom}
+                          endDate={advancedFilterDraft.planDateTo}
+                          onChange={(start, end) => setAdvancedFilterDraft((current) => ({ ...current, planDateFrom: start, planDateTo: end }))}
+                          ariaLabel="筛选计划时间范围"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-[var(--color-border-light)] px-5 py-4">
+                      <button type="button" onClick={clearAdvancedFilters} className="rounded-lg border border-[var(--color-border-strong)] bg-white px-3 py-2 text-[12px] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]">重置</button>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="secondary" onClick={() => { setAdvancedFilterDraft({ ...advancedFilters }); setAdvancedFiltersOpen(false) }}>取消</Button>
+                        <Button size="sm" onClick={applyAdvancedFilters}>筛选</Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
               {/* 视图切换 */}
               <div className="flex rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-0.5 shadow-[var(--shadow-xs)]">
                 <button onClick={() => setViewMode('list')} className={cn('rounded-md p-1.5 transition-colors', viewMode === 'list' ? 'bg-[var(--color-bg-hover)] text-[var(--color-text-primary)]' : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]')}><LayoutList className="h-4 w-4" /></button>
@@ -721,9 +966,9 @@ export const PlanningPage = () => {
               </div>
               <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setWiDialog({ open: true })}>新建工作项</Button>
             </div>
-          </div>
+           </div>
 
-          {viewMode === 'list' && selectedWorkItems.length > 0 && (
+           {viewMode === 'list' && selectedWorkItems.length > 0 && (
             <div className="mb-4 flex flex-col gap-3 rounded-xl border border-[var(--color-primary)]/25 bg-[var(--color-primary-light)]/45 px-4 py-3 shadow-[var(--shadow-xs)] lg:flex-row lg:items-center">
               <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--color-primary)]">
                 <CheckSquare className="h-4 w-4" />
@@ -749,14 +994,20 @@ export const PlanningPage = () => {
           )}
 
            {/* 内容 */}
-           <div className="min-h-[240px]">
+           <div className="relative min-h-[240px]">
+           {wiLoading && workItems && (
+             <div role="status" aria-live="polite" className="pointer-events-none absolute right-2 top-2 z-20 inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-bg-card)]/95 px-2.5 py-1 text-[11px] text-[var(--color-text-secondary)] shadow-[var(--shadow-sm)]">
+               <Loader2 className="h-3 w-3 animate-spin text-[var(--color-primary)]" />
+               更新中
+             </div>
+           )}
            {boardError ? <ErrorState description={boardError} onRetry={fetchBoard} />
              : showWorkItemLoading || (wiLoading && !workItems) ? <div className="flex min-h-[240px] items-start"><LoadingSpinner text="加载工作项…" /></div>
              : wiError ? <ErrorState description={wiError} onRetry={fetchWorkItems} />
             : !workItems || workItems.records.length === 0
               ? <div className="min-h-[240px] rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]"><EmptyState title="暂无工作项" description="点击右上角「新建工作项」开始。" icon={<CheckSquare className="h-6 w-6" strokeWidth={1.5} />} /></div>
               : viewMode === 'list'
-                ? <WorkItemTable items={workItems} selectedIds={selectedWorkItemIds} onToggleSelect={toggleWorkItemSelection} onToggleSelectAll={toggleAllVisibleWorkItems} onOpenDetail={(item) => handleOpenDetail(item.id, { iterationId: item.iterationId })} onEdit={(w) => setWiDialog({ open: true, editing: w })} onDelete={(w) => setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name })} onInlineChange={handleInlineWorkItemChange} error={inlineEditError} page={page} totalPages={workItems.totalPages} total={workItems.total} onPageChange={setPage} />
+                ? <WorkItemTable items={workItems} selectedIds={selectedWorkItemIds} inlineEditingIds={inlineEditingIds} sortBy={sortBy} sortDirection={sortDirection} onSort={handleWorkItemSort} onToggleSelect={toggleWorkItemSelection} onToggleSelectAll={toggleAllVisibleWorkItems} onOpenDetail={(item) => handleOpenDetail(item.id, { iterationId: item.iterationId })} onEdit={(w) => setWiDialog({ open: true, editing: w })} onDelete={(w) => setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name })} onInlineChange={handleInlineWorkItemChange} onAssigneeChange={handleInlineWorkItemAssigneeChange} onPlanDateChange={handleInlineWorkItemDateChange} userOptions={userOptions} projectMemberIds={projectMemberIds} error={inlineEditError} page={page} totalPages={workItems.totalPages} total={workItems.total} onPageChange={setPage} />
                 : <KanbanBoard items={workItems.records} onOpenDetail={(item) => handleOpenDetail(item.id, { iterationId: item.iterationId })} />
           }
           </div>
@@ -811,10 +1062,38 @@ export const PlanningPage = () => {
    工作项表格
    ═══════════════════════════════════════════════ */
 
-const WorkItemTable = ({ items, selectedIds, onToggleSelect, onToggleSelectAll, onOpenDetail, onEdit, onDelete, onInlineChange, error, page, totalPages, total, onPageChange }: {
+const SortableWorkItemHeader = ({ label, field, activeField, direction, onSort, className }: {
+  label: string
+  field: WorkItemSortField
+  activeField: WorkItemSortField
+  direction: WorkItemSortDirection
+  onSort: (field: WorkItemSortField) => void
+  className?: string
+}) => {
+  const Icon = activeField !== field ? ArrowUpDown : direction === 'asc' ? ArrowUp : ArrowDown
+  return (
+    <th className={cn('px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wider', className)}>
+      <button
+        type="button"
+        aria-label={`按${label}${activeField === field && direction === 'asc' ? '降序' : '升序'}排序`}
+        onClick={() => onSort(field)}
+        className="inline-flex items-center gap-1 text-[var(--color-text-tertiary)] transition-colors hover:text-[var(--color-primary)]"
+      >
+        {label}
+        <Icon className="h-3 w-3" />
+      </button>
+    </th>
+  )
+}
+
+const WorkItemTable = ({ items, selectedIds, inlineEditingIds, sortBy, sortDirection, onSort, onToggleSelect, onToggleSelectAll, onOpenDetail, onEdit, onDelete, onInlineChange, onAssigneeChange, onPlanDateChange, userOptions, projectMemberIds, error, page, totalPages, total, onPageChange }: {
   items: PageResponse<WorkItem>; onOpenDetail: (item: WorkItem) => void; onEdit: (w: WorkItem) => void; onDelete: (w: WorkItem) => void
-  selectedIds: Set<number>; onToggleSelect: (id: number) => void; onToggleSelectAll: () => void
+  selectedIds: Set<number>; inlineEditingIds: Set<number>; onToggleSelect: (id: number) => void; onToggleSelectAll: () => void
+  sortBy: WorkItemSortField; sortDirection: WorkItemSortDirection; onSort: (field: WorkItemSortField) => void
   onInlineChange: (item: WorkItem, field: 'status' | 'priority', value: string) => void; error: string | null
+  onAssigneeChange: (item: WorkItem, assigneeUserId: number | null) => Promise<boolean>
+  onPlanDateChange: (item: WorkItem, startDate: string, endDate: string) => Promise<boolean>
+  userOptions: UserOptionItem[]; projectMemberIds: number[]
   page: number; totalPages: number; total: number; onPageChange: (p: number) => void
 }) => {
   const allSelected = items.records.length > 0 && items.records.every((item) => selectedIds.has(item.id))
@@ -840,21 +1119,22 @@ const WorkItemTable = ({ items, selectedIds, onToggleSelect, onToggleSelectAll, 
                 className="h-4 w-4 rounded border-[var(--color-border-strong)] text-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
               />
             </th>
-            <th className="px-4 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">工作项</th>
-            <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider w-[70px]">类型</th>
-            <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider w-[80px]">状态</th>
-            <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider w-[55px]">优先级</th>
-            <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider w-[70px]">负责人</th>
-            <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider w-[140px]">计划时间</th>
-            <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider w-[120px]">创建时间</th>
+            <SortableWorkItemHeader label="工作项" field="name" activeField={sortBy} direction={sortDirection} onSort={onSort} className="px-4" />
+            <SortableWorkItemHeader label="类型" field="workItemType" activeField={sortBy} direction={sortDirection} onSort={onSort} className="w-[70px]" />
+            <SortableWorkItemHeader label="状态" field="status" activeField={sortBy} direction={sortDirection} onSort={onSort} className="w-[80px]" />
+            <SortableWorkItemHeader label="优先级" field="priority" activeField={sortBy} direction={sortDirection} onSort={onSort} className="w-[55px]" />
+            <SortableWorkItemHeader label="负责人" field="assignee" activeField={sortBy} direction={sortDirection} onSort={onSort} className="w-[150px]" />
+            <SortableWorkItemHeader label="计划时间" field="planStartDate" activeField={sortBy} direction={sortDirection} onSort={onSort} className="w-[180px]" />
+            <SortableWorkItemHeader label="创建时间" field="createdAt" activeField={sortBy} direction={sortDirection} onSort={onSort} className="w-[120px]" />
             <th className="px-3 py-2 w-[70px]" />
           </tr>
         </thead>
       <tbody className="divide-y divide-[var(--color-border-light)]">
         {items.records.map((item) => {
           const TypeIcon = typeIconMap[item.workItemType] || FileText
+          const inlineEditing = inlineEditingIds.has(item.id)
           return (
-            <tr key={item.id} className="group hover:bg-[var(--color-bg-hover)]/50 transition-colors cursor-pointer" onClick={() => onOpenDetail(item)}>
+            <tr key={item.id} aria-busy={inlineEditing || undefined} className={cn('group cursor-pointer transition-colors hover:bg-[var(--color-bg-hover)]/50', inlineEditing && 'bg-[var(--color-primary-light)]/20')} onClick={() => onOpenDetail(item)}>
               <td className="px-3 py-2 text-center" onClick={(event) => event.stopPropagation()}>
                 <input
                   aria-label={`选择工作项 ${item.name}`}
@@ -878,14 +1158,24 @@ const WorkItemTable = ({ items, selectedIds, onToggleSelect, onToggleSelectAll, 
                   onChange={(value) => onInlineChange(item, 'priority', value)}
                 />
               </td>
-              <td className="px-3 py-2 whitespace-nowrap text-[12px] text-[var(--color-text-secondary)] truncate max-w-[70px]">{item.assignee || '-'}</td>
-              <td className="px-3 py-2 whitespace-nowrap text-[12px] text-[var(--color-text-secondary)]">{item.planStartDate ? <span>{formatDate(item.planStartDate)}{item.planEndDate ? <span className="text-[var(--color-text-tertiary)]"> ~ {formatDate(item.planEndDate)}</span> : ''}</span> : <span className="text-[var(--color-text-tertiary)]">-</span>}</td>
+              <td className="px-3 py-2 whitespace-nowrap" onClick={(event) => event.stopPropagation()}>
+                <InlineAssigneePicker item={item} userOptions={userOptions} projectMemberIds={projectMemberIds} onChange={onAssigneeChange} />
+              </td>
+              <td className="px-3 py-2 whitespace-nowrap" onClick={(event) => event.stopPropagation()}>
+                <InlinePlanDateRangePicker item={item} onChange={onPlanDateChange} />
+              </td>
               <td className="px-3 py-2 whitespace-nowrap text-[12px] text-[var(--color-text-tertiary)]">{formatDateTime(item.createdAt)}</td>
               <td className="px-3 py-2">
-                <div className="flex items-center gap-1 justify-end lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
-                  <button onClick={(e) => { e.stopPropagation(); onEdit(item) }} className="rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"><Edit3 className="h-3.5 w-3.5" /></button>
-                  {item.canDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(item) }} className="rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-bg-hover)] transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>}
-                </div>
+                {inlineEditing ? (
+                  <div className="flex items-center justify-end pr-1" title="保存中" aria-label="保存中">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-[var(--color-primary)]" />
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-end gap-1 transition-opacity lg:opacity-0 lg:group-hover:opacity-100">
+                    <button onClick={(e) => { e.stopPropagation(); onEdit(item) }} className="rounded p-1 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-primary)]"><Edit3 className="h-3.5 w-3.5" /></button>
+                    {item.canDelete && <button onClick={(e) => { e.stopPropagation(); onDelete(item) }} className="rounded p-1 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-danger)]"><Trash2 className="h-3.5 w-3.5" /></button>}
+                  </div>
+                )}
               </td>
             </tr>
           )
@@ -903,6 +1193,69 @@ const WorkItemTable = ({ items, selectedIds, onToggleSelect, onToggleSelectAll, 
       </div>
     )}
   </div>
+  )
+}
+
+/** 工作项列表中的紧凑负责人选择器，保存期间禁用重复操作。 */
+const InlineAssigneePicker = ({ item, userOptions, projectMemberIds, onChange }: {
+  item: WorkItem
+  userOptions: UserOptionItem[]
+  projectMemberIds: number[]
+  onChange: (item: WorkItem, assigneeUserId: number | null) => Promise<boolean>
+}) => {
+  const [saving, setSaving] = useState(false)
+
+  const handleChange = async (assigneeUserId: number | null) => {
+    if (saving) return
+    setSaving(true)
+    try {
+      await onChange(item, assigneeUserId)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className={cn('min-w-[132px]', saving && 'pointer-events-none opacity-60')}>
+      <AssigneePicker
+        value={item.assigneeUserId}
+        onChange={(assigneeUserId) => { void handleChange(assigneeUserId) }}
+        userOptions={userOptions}
+        projectMemberIds={projectMemberIds}
+        compact
+        ariaLabel={`修改工作项「${item.name}」的负责人`}
+      />
+    </div>
+  )
+}
+
+/** 工作项列表中的紧凑计划周期编辑器；只有选择完整范围或清除范围时才提交。 */
+const InlinePlanDateRangePicker = ({ item, onChange }: {
+  item: WorkItem
+  onChange: (item: WorkItem, startDate: string, endDate: string) => Promise<boolean>
+}) => {
+  const [draft, setDraft] = useState({ startDate: item.planStartDate || '', endDate: item.planEndDate || '' })
+
+  useEffect(() => {
+    setDraft({ startDate: item.planStartDate || '', endDate: item.planEndDate || '' })
+  }, [item.planStartDate, item.planEndDate])
+
+  const handleChange = async (startDate: string, endDate: string) => {
+    setDraft({ startDate, endDate })
+    if ((startDate && endDate) || (!startDate && !endDate)) {
+      const saved = await onChange(item, startDate, endDate)
+      if (!saved) setDraft({ startDate: item.planStartDate || '', endDate: item.planEndDate || '' })
+    }
+  }
+
+  return (
+    <DateRangePicker
+      startDate={draft.startDate}
+      endDate={draft.endDate}
+      onChange={(startDate, endDate) => { void handleChange(startDate, endDate) }}
+      compact
+      ariaLabel={`修改工作项「${item.name}」的计划时间`}
+    />
   )
 }
 

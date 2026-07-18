@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -127,10 +128,10 @@ public class IterationController {
                                                                      @RequestParam(required = false) Long iterationId,
                                                                      @RequestParam(required = false) Boolean unplanned,
                                                                      @RequestParam(required = false) String workItemType,
-                                                                     @RequestParam(required = false) String keyword,
-                                                                     @RequestParam(required = false) String status,
-                                                                     @RequestParam(required = false) String priority,
-                                                                     @RequestParam(required = false) Long assigneeUserId) {
+                                                                      @RequestParam(required = false) String keyword,
+                                                                      @RequestParam(required = false) String status,
+                                                                      @RequestParam(required = false) String priority,
+                                                                      @RequestParam(required = false) Long assigneeUserId) {
         return ApiResponse.success(platformStoreService.getProjectWorkItemStats(
                 projectId,
                 iterationId,
@@ -138,8 +139,8 @@ public class IterationController {
                 workItemType,
                 keyword,
                 status,
-                priority,
-                assigneeUserId
+                 priority,
+                 assigneeUserId
         ));
     }
 
@@ -153,8 +154,15 @@ public class IterationController {
                                                                 @RequestParam(required = false) String workItemType,
                                                                 @RequestParam(required = false) String keyword,
                                                                 @RequestParam(required = false) String status,
-                                                                @RequestParam(required = false) String priority,
-                                                                @RequestParam(required = false) Long assigneeUserId) {
+                                                                  @RequestParam(required = false) String priority,
+                                                                  @RequestParam(required = false) Long assigneeUserId,
+                                                                  @RequestParam(required = false) Boolean assigneeUnassigned,
+                                                                  @RequestParam(required = false) LocalDate createdFrom,
+                                                                 @RequestParam(required = false) LocalDate createdTo,
+                                                                 @RequestParam(required = false) LocalDate planDateFrom,
+                                                                 @RequestParam(required = false) LocalDate planDateTo,
+                                                                 @RequestParam(required = false) String sortBy,
+                                                                 @RequestParam(required = false) String sortDirection) {
         return ApiResponse.success(platformStoreService.pageProjectWorkItems(
                 projectId,
                 page,
@@ -164,8 +172,15 @@ public class IterationController {
                 workItemType,
                 keyword,
                 status,
-                priority,
-                assigneeUserId
+                  priority,
+                  assigneeUserId,
+                  assigneeUnassigned,
+                  createdFrom,
+                 createdTo,
+                 planDateFrom,
+                 planDateTo,
+                 sortBy,
+                 sortDirection
         ));
     }
 }

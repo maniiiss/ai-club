@@ -18,6 +18,23 @@ interface AssigneePickerProps {
   projectMemberIds: number[]
   /** 标签文字。 */
   label?: string
+  /** 紧凑模式用于工作项列表等密集布局。 */
+  compact?: boolean
+  /** 触发器的无障碍名称和悬浮提示。 */
+  ariaLabel?: string
+}
+
+/** 负责人筛选器的值：空值表示全部，特殊值支持未分配和当前用户快捷筛选。 */
+export type AssigneeFilterValue = '' | 'mine' | 'unassigned' | `user:${number}`
+
+interface AssigneeFilterPickerProps {
+  value: AssigneeFilterValue
+  onChange: (value: AssigneeFilterValue) => void
+  userOptions: UserOptionItem[]
+  projectMemberIds: number[]
+  currentUserId: number | null
+  ariaLabel?: string
+  className?: string
 }
 
 interface WorkItemMemberPickerProps {
@@ -43,6 +60,8 @@ export const AssigneePicker = ({
   userOptions,
   projectMemberIds,
   label,
+  compact = false,
+  ariaLabel,
 }: AssigneePickerProps) => {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -109,9 +128,12 @@ export const AssigneePicker = ({
       )}
       <button
         type="button"
+        aria-label={ariaLabel}
+        title={ariaLabel}
         onClick={() => setOpen(!open)}
         className={cn(
-          'flex items-center h-10 rounded-lg border bg-white px-3 transition-all duration-150 text-left gap-2',
+          'flex w-full items-center rounded-lg border bg-white text-left transition-all duration-150',
+          compact ? 'h-8 rounded-md gap-1.5 px-2' : 'h-10 gap-2 px-3',
           'hover:border-[var(--color-border-strong)]',
           open
             ? 'border-[var(--color-primary)] ring-2 ring-[var(--color-primary)]/20'
@@ -120,13 +142,13 @@ export const AssigneePicker = ({
       >
         {selectedUser ? (
           <>
-            <UserAvatar user={selectedUser} size={20} />
-            <span className="text-[13px] text-[var(--color-text-primary)] truncate">{displayName}</span>
+            <UserAvatar user={selectedUser} size={compact ? 18 : 20} />
+            <span className={cn('truncate text-[var(--color-text-primary)]', compact ? 'text-[12px]' : 'text-[13px]')}>{displayName}</span>
           </>
         ) : (
-          <span className="text-[13px] text-[var(--color-text-placeholder)]">选择负责人</span>
+          <span className={cn('text-[var(--color-text-placeholder)]', compact ? 'text-[12px]' : 'text-[13px]')}>{compact ? '未分配' : '选择负责人'}</span>
         )}
-        <ChevronDown className="ml-auto h-3.5 w-3.5 text-[var(--color-text-tertiary)] shrink-0" />
+        <ChevronDown className={cn('ml-auto shrink-0 text-[var(--color-text-tertiary)]', compact ? 'h-3 w-3' : 'h-3.5 w-3.5')} />
       </button>
 
       {open && (
@@ -181,6 +203,125 @@ export const AssigneePicker = ({
             {projectMembers.length === 0 && enterpriseMembers.length === 0 && (
               <p className="px-3 py-4 text-center text-[12px] text-[var(--color-text-tertiary)]">无匹配成员</p>
             )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * 工作项列表负责人筛选器。
+ * 复用负责人选择器的成员分组和搜索交互，同时增加“我负责的”快捷条件。
+ */
+export const AssigneeFilterPicker = ({
+  value,
+  onChange,
+  userOptions,
+  projectMemberIds,
+  currentUserId,
+  ariaLabel,
+  className,
+}: AssigneeFilterPickerProps) => {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const containerRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const memberSet = useMemo(() => new Set(projectMemberIds), [projectMemberIds])
+  const selectedUserId = value.startsWith('user:') ? Number(value.slice('user:'.length)) : null
+  const selectedUser = userOptions.find((user) => user.id === selectedUserId)
+
+  const { projectMembers, enterpriseMembers } = useMemo(() => {
+    const keyword = search.trim().toLowerCase()
+    const filtered = keyword
+      ? userOptions.filter((user) => user.nickname.toLowerCase().includes(keyword) || user.username.toLowerCase().includes(keyword))
+      : userOptions
+    const pm: UserOptionItem[] = []
+    const em: UserOptionItem[] = []
+    filtered.forEach((user) => (memberSet.has(user.id) ? pm : em).push(user))
+    return { projectMembers: pm, enterpriseMembers: em }
+  }, [memberSet, search, userOptions])
+
+  useEffect(() => {
+    if (open) {
+      setSearch('')
+      setTimeout(() => searchInputRef.current?.focus(), 50)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const handleSelect = (nextValue: AssigneeFilterValue) => {
+    onChange(nextValue)
+    setOpen(false)
+  }
+
+  const displayName = value === 'mine'
+    ? '我负责的'
+    : value === 'unassigned'
+      ? '未分配'
+      : selectedUser?.nickname || selectedUser?.username || '全部负责人'
+
+  return (
+    <div ref={containerRef} className={cn('relative flex flex-col gap-1.5', className)}>
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        title={ariaLabel}
+        onClick={() => setOpen(!open)}
+        className={cn(
+          'flex h-10 w-full cursor-pointer items-center justify-between rounded-lg border bg-white px-3.5 text-[14px] transition-all duration-150',
+          'focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20',
+          open
+            ? 'border-[var(--color-primary)] ring-2 ring-[var(--color-primary)]/20'
+            : 'border-[var(--color-border-strong)] hover:border-[var(--color-border-strong)]',
+        )}
+      >
+        <span className={cn('truncate', value ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-placeholder)]')}>{displayName}</span>
+        <ChevronDown className={cn('h-4 w-4 shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-150', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-[260px] rounded-xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-xl)] animate-fadeIn">
+          <div className="border-b border-[var(--color-border-light)] p-2">
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="搜索成员…"
+              className="h-8 w-full rounded-lg border border-[var(--color-border-strong)] bg-white px-3 text-[13px] placeholder:text-[var(--color-text-placeholder)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20"
+            />
+          </div>
+          <div className="max-h-[320px] overflow-y-auto py-1">
+            <button type="button" onClick={() => handleSelect('')} className={cn('flex w-full items-center px-3 py-2 text-left text-[13px] transition-colors', value === '' ? 'bg-[var(--color-primary-light)] text-[var(--color-primary)]' : 'text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]')}>全部负责人</button>
+            <UserRow user={null} selected={value === 'unassigned'} onClick={() => handleSelect('unassigned')} />
+            {currentUserId && (
+              <button type="button" onClick={() => handleSelect('mine')} className={cn('flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors', value === 'mine' ? 'bg-[var(--color-primary-light)] text-[var(--color-primary)]' : 'text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]')}>
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[var(--color-primary-light)] text-[var(--color-primary)]"><User className="h-3.5 w-3.5" /></span>
+                我负责的
+              </button>
+            )}
+            {projectMembers.length > 0 && (
+              <>
+                <GroupLabel label="项目成员" />
+                {projectMembers.map((user) => <UserRow key={user.id} user={user} selected={value === `user:${user.id}`} onClick={() => handleSelect(`user:${user.id}`)} />)}
+              </>
+            )}
+            {enterpriseMembers.length > 0 && (
+              <>
+                <GroupLabel label="企业成员" />
+                {enterpriseMembers.map((user) => <UserRow key={user.id} user={user} selected={value === `user:${user.id}`} onClick={() => handleSelect(`user:${user.id}`)} />)}
+              </>
+            )}
+            {projectMembers.length === 0 && enterpriseMembers.length === 0 && <p className="px-3 py-4 text-center text-[12px] text-[var(--color-text-tertiary)]">无匹配成员</p>}
           </div>
         </div>
       )}

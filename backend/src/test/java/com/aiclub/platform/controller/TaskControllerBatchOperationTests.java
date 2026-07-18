@@ -3,6 +3,7 @@ package com.aiclub.platform.controller;
 import com.aiclub.platform.dto.BatchTaskOperationItem;
 import com.aiclub.platform.dto.request.BatchTaskDeleteRequest;
 import com.aiclub.platform.dto.request.BatchTaskUpdateRequest;
+import com.aiclub.platform.dto.request.TaskInlineUpdateRequest;
 import com.aiclub.platform.service.ExecutionTaskService;
 import com.aiclub.platform.service.PlatformStoreService;
 import com.aiclub.platform.service.RequirementAiExecutionQueryService;
@@ -56,6 +57,19 @@ class TaskControllerBatchOperationTests {
         assertThat(results.get(1).errorMessage()).isEqualTo("当前角色配置不允许删除该工作项");
         verify(platformStoreService).deleteTask(21L);
         verify(platformStoreService).deleteTask(22L);
+    }
+
+    /** 列表快捷编辑走独立轻量接口，不复用完整工作项更新入口。 */
+    @Test
+    void shouldDelegateInlineUpdateToLightweightServiceMethod() {
+        PlatformStoreService platformStoreService = mock(PlatformStoreService.class);
+        TaskController controller = controller(platformStoreService);
+        TaskInlineUpdateRequest request = new TaskInlineUpdateRequest(
+                TaskInlineUpdateRequest.Field.PLAN_DATES, null, null, "2026-07-20", "2026-07-22");
+
+        controller.inlineUpdate(11L, request);
+
+        verify(platformStoreService).updateTaskInline(11L, request);
     }
 
     private TaskController controller(PlatformStoreService platformStoreService) {

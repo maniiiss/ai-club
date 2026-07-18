@@ -18,6 +18,8 @@ import type {
   BatchWorkItemUpdatePayload,
   WorkItemLinks,
   WorkItemPayload,
+  WorkItemInlineUpdatePayload,
+  WorkItemInlineUpdateResult,
   WorkItemQuery,
   WorkItemStats,
 } from '@/src/types/planning'
@@ -86,6 +88,12 @@ export const createWorkItem = async (payload: WorkItemPayload): Promise<WorkItem
 
 export const updateWorkItem = async (id: number, payload: WorkItemPayload): Promise<WorkItem> => {
   const res = await http.put<ApiResponse<WorkItem>>(`/api/tasks/${id}`, payload)
+  return unwrap(res)
+}
+
+/** 列表轻量更新入口，不上传描述、需求文档等完整工作项字段。 */
+export const updateWorkItemInline = async (id: number, payload: WorkItemInlineUpdatePayload): Promise<WorkItemInlineUpdateResult> => {
+  const res = await http.put<ApiResponse<WorkItemInlineUpdateResult>>(`/api/tasks/${id}/inline`, payload)
   return unwrap(res)
 }
 

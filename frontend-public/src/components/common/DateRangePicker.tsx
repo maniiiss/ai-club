@@ -1,7 +1,7 @@
 /**
  * 日期范围选择器。
  * 基于 react-day-picker，点击触发区域弹出左右双月日历面板，支持选择开始/结束日期范围。
- * 每个月份独立导航（前后翻页）。
+ * 两个月份由同一个范围选择实例渲染，避免跨月日期被多个实例重复处理。
  */
 import { useEffect, useRef, useState } from 'react'
 import { DayPicker, type DateRange } from 'react-day-picker'
@@ -19,6 +19,10 @@ interface DateRangePickerProps {
   onChange: (start: string, end: string) => void
   /** 标签文字。 */
   label?: string
+  /** 紧凑模式用于表格等密集布局，保留日历交互但缩小触发器。 */
+  compact?: boolean
+  /** 触发器的无障碍名称和悬浮提示。 */
+  ariaLabel?: string
 }
 
 /** 将 YYYY-MM-DD 字符串转为 Date 对象（按本地时区解析，避免时区偏移）。 */
@@ -44,18 +48,16 @@ const nextMonth = (d: Date): Date => new Date(d.getFullYear(), d.getMonth() + 1,
 /** 获取指定月份的上一个月。 */
 const prevMonth = (d: Date): Date => new Date(d.getFullYear(), d.getMonth() - 1, 1)
 
-export const DateRangePicker = ({ startDate, endDate, onChange, label }: DateRangePickerProps) => {
+export const DateRangePicker = ({ startDate, endDate, onChange, label, compact = false, ariaLabel }: DateRangePickerProps) => {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   /** 打开后已点击日历的次数，用于判断是否完成一轮开始+结束选择后再自动关闭。 */
   const clickCountRef = useRef(0)
-  /** 左面板当前显示月份。 */
+  /** 双月日历当前显示的第一个月份。 */
   const [leftMonth, setLeftMonth] = useState(() => {
     const d = parseDate(startDate)
     return d ? new Date(d.getFullYear(), d.getMonth(), 1) : new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   })
-  /** 右面板始终为左面板的下一个月。 */
-  const rightMonth = nextMonth(leftMonth)
 
   const range: DateRange = { from: parseDate(startDate), to: parseDate(endDate) }
 
@@ -68,7 +70,7 @@ export const DateRangePicker = ({ startDate, endDate, onChange, label }: DateRan
 
     /* 只在第二次点击且产生了完整范围时才自动关闭，
        保证重新编辑已有范围时第一次点击不会直接关掉面板。 */
-    if (clickCountRef.current >= 2 && from && to && from !== to) {
+    if (clickCountRef.current >= 2 && from && to) {
       setTimeout(() => setOpen(false), 60)
     }
   }
@@ -108,29 +110,34 @@ export const DateRangePicker = ({ startDate, endDate, onChange, label }: DateRan
     mode: 'range' as const,
     selected: range,
     onSelect: handleSelect,
+    /** 编辑已有完整范围时，第一次点击先重新选择开始日，避免提前形成完整范围并触发保存。 */
+    resetOnSelect: true,
     showOutsideDays: true,
     locale: zhCN,
   }
 
   return (
-    <div ref={containerRef} className="relative flex flex-col gap-1.5 w-full">
+    <div ref={containerRef} className="relative flex w-full flex-col gap-1.5">
       {label && (
         <label className="text-[13px] font-medium text-[var(--color-text-secondary)]">{label}</label>
       )}
       <button
         type="button"
+        aria-label={ariaLabel}
+        title={ariaLabel}
         onClick={() => { clickCountRef.current = 0; setOpen(!open) }}
         className={cn(
-          'flex items-center w-full h-10 rounded-lg border bg-white transition-all duration-150 text-left',
+          'flex w-full items-center rounded-lg border bg-white text-left transition-all duration-150',
+          compact ? 'h-8 rounded-md' : 'h-10',
           'hover:border-[var(--color-border-strong)]',
           open
             ? 'border-[var(--color-primary)] ring-2 ring-[var(--color-primary)]/20'
             : 'border-[var(--color-border-strong)]',
         )}
       >
-        <CalendarRange className="ml-2.5 h-3.5 w-3.5 text-[var(--color-text-tertiary)] shrink-0" strokeWidth={1.75} />
+        <CalendarRange className={cn('shrink-0 text-[var(--color-text-tertiary)]', compact ? 'ml-2 h-3 w-3' : 'ml-2.5 h-3.5 w-3.5')} strokeWidth={1.75} />
         <span className={cn(
-          'ml-2 mr-2.5 text-[13px] flex items-center gap-0 flex-1 min-w-0',
+          'flex min-w-0 flex-1 items-center gap-0', compact ? 'ml-1.5 mr-1.5 text-[11px]' : 'ml-2 mr-2.5 text-[13px]',
           hasValue ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-placeholder)]',
         )}>
           <span className="truncate">{startDate || '开始日期'}</span>
@@ -142,28 +149,15 @@ export const DateRangePicker = ({ startDate, endDate, onChange, label }: DateRan
       {open && (
         <div className="absolute right-0 top-full z-50 mt-1 animate-fadeIn">
           <div className="rounded-xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-xl)] p-4 date-range-picker">
-            <div className="flex gap-6">
-              {/* 左面板：显示 leftMonth，隐藏内置导航，用自定义按钮控制 */}
-              <div className="relative">
-                <DayPicker
-                  {...dayPickerProps}
-                  month={leftMonth}
-                  onMonthChange={setLeftMonth}
-                  numberOfMonths={1}
-                  hideNavigation
-                />
-              </div>
-              {/* 竖分隔线 */}
-              <div className="w-px bg-[var(--color-border-light)]" />
-              {/* 右面板：显示 rightMonth，隐藏内置导航，用自定义按钮控制 */}
-              <div className="relative">
-                <DayPicker
-                  {...dayPickerProps}
-                  month={rightMonth}
-                  numberOfMonths={1}
-                  hideNavigation
-                />
-              </div>
+            <div className="relative">
+              {/* 使用一个范围选择实例渲染连续两个月，避免跨月点击产生两个受控状态更新。 */}
+              <DayPicker
+                {...dayPickerProps}
+                month={leftMonth}
+                onMonthChange={setLeftMonth}
+                numberOfMonths={2}
+                hideNavigation
+              />
             </div>
             {/* 自定义导航按钮覆盖在两侧 */}
             <div className="absolute inset-x-0 top-4 flex items-center justify-between px-2 pointer-events-none">

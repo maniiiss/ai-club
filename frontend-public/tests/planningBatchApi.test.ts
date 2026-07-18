@@ -8,6 +8,7 @@ test('批量规划操作通过单次服务端接口提交', async () => {
   const planningPage = await readFile(new URL('../src/pages/planning/PlanningPage.tsx', import.meta.url), 'utf8')
 
   assert.match(planningApi, /http\.put<ApiResponse<BatchWorkItemOperationResult\[\]>>\('\/api\/tasks\/batch'/)
+  assert.match(planningApi, /http\.put<ApiResponse<WorkItemInlineUpdateResult>>\(`\/api\/tasks\/\$\{id\}\/inline`/)
   assert.match(planningApi, /http\.delete<ApiResponse<BatchWorkItemOperationResult\[\]>>\('\/api\/tasks\/batch'/)
   assert.match(requirementAiApi, /'\/api\/public\/tasks\/batch-requirement-ai'/)
   assert.match(planningPage, /await batchUpdateWorkItems\(payload\)/)
